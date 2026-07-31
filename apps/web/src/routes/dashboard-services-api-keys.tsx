@@ -17,6 +17,7 @@ import { RotateKeyDialog } from '../components/api-keys/rotate-key-dialog';
 import type { ApiKeysPageData } from '../components/api-keys/types';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
+import { EmptyStateLine } from '../components/ui/empty-state';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { Panel } from '../components/ui/panel';
@@ -46,13 +47,13 @@ const loadPageData = async (current: Pick<ApiKeysPageData, 'keys' | 'upstreams' 
   };
 };
 
-const emptyPageData: Pick<ApiKeysPageData, 'keys' | 'upstreams' | 'models'> = { keys: [], upstreams: [], models: [] };
+const unloadedPageData: Pick<ApiKeysPageData, 'keys' | 'upstreams' | 'models'> = { keys: null, upstreams: null, models: null };
 
 export async function clientLoader(): Promise<LoaderData> {
   if (!getSessionToken()) throw redirect('/');
-  const data = await loadPageData(emptyPageData);
+  const data = await loadPageData(unloadedPageData);
   const stored = localStorage.getItem(selectedKeyStorageKey) ?? '';
-  const selectedKeyId = data.keys.some(key => key.id === stored) ? stored : '';
+  const selectedKeyId = data.keys?.some(key => key.id === stored) ? stored : '';
   if (!selectedKeyId) return { ...data, selectedKeyId, setupError: null, setupLease: null };
   const setup = await callApi(() => api.api.setup.$post({ json: { apiKeyId: selectedKeyId } }));
   return { ...data, selectedKeyId, setupError: setup.error?.message ?? null, setupLease: setup.data ?? null };
@@ -80,8 +81,8 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
   const [deletingKey, setDeletingKey] = useState(false);
   const { copiedTag, copy, copyFailedTag } = useCopyToClipboard();
 
-  const selectedKey = data.keys.find(key => key.id === selectedKeyId) ?? null;
-  const agentSetupModels = selectedKey
+  const selectedKey = data.keys?.find(key => key.id === selectedKeyId) ?? null;
+  const agentSetupModels = selectedKey && data.models
     ? modelsForAgentSetup(data.models, selectedKey.upstream_ids, user.upstreamIds)
     : [];
   useEffect(() => {
@@ -95,7 +96,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
     const next = await loadPageData(data);
     setData(next);
     setPageError(next.error);
-    setSelectedKeyId(current => next.keys.some(key => key.id === current) ? current : '');
+    setSelectedKeyId(current => next.keys?.some(key => key.id === current) ? current : '');
   };
 
   const { refresh, refreshing } = useRefresh(reload);
@@ -116,12 +117,15 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
     await reload();
   };
 
+  const { keys, models, upstreams } = data;
+  const loaded = keys !== null && models !== null && upstreams !== null;
+
   return (
     <div className="dashboard-page">
       <DashboardPageHeader
         actions={<ResourceListActions
           createLabel={t('dashboard.apiKeys.actions.create')}
-          disabled={deletingKey}
+          disabled={deletingKey || !loaded}
           onCreate={() => editorDialog.open({ kind: 'create' })}
           onRefresh={() => void refresh()}
           refreshLabel={t('dashboard.apiKeys.actions.refresh')}
@@ -135,81 +139,83 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
         <OutcomeMessageBar onDismiss={() => setPageError(null)}>{pageError}</OutcomeMessageBar>
       )}
 
-      <ResourceListPanel>
-        <KeysTable
-          copiedTag={copiedTag}
-          copyFailedTag={copyFailedTag}
-          disabled={refreshing || deletingKey}
-          keys={data.keys}
-          onCopy={copy}
-          onDelete={openDeleteDialog}
-          onEdit={apiKey => editorDialog.open({ kind: 'edit', apiKey })}
-          onRotate={rotateDialog.open}
-          onSelect={setSelectedKeyId}
-          selectedKeyId={selectedKey?.id ?? ''}
-          upstreams={data.upstreams}
-        />
-      </ResourceListPanel>
+      {!loaded ? <Panel><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel> : <>
+        <ResourceListPanel>
+          <KeysTable
+            copiedTag={copiedTag}
+            copyFailedTag={copyFailedTag}
+            disabled={refreshing || deletingKey}
+            keys={keys}
+            onCopy={copy}
+            onDelete={openDeleteDialog}
+            onEdit={apiKey => editorDialog.open({ kind: 'edit', apiKey })}
+            onRotate={rotateDialog.open}
+            onSelect={setSelectedKeyId}
+            selectedKeyId={selectedKey?.id ?? ''}
+            upstreams={upstreams}
+          />
+        </ResourceListPanel>
 
-      <Panel className="!grid !gap-[14px] min-w-0">
-        <AgentSetupCard
-          copiedTag={copiedTag}
-          copyFailedTag={copyFailedTag}
-          initialApiKeyId={loaderData.selectedKeyId || null}
-          initialError={loaderData.setupError}
-          initialLease={loaderData.setupLease}
-          models={agentSetupModels}
-          onCopy={copy}
-          selectedKey={selectedKey}
-        />
-      </Panel>
+        <Panel className="!grid !gap-[14px] min-w-0">
+          <AgentSetupCard
+            copiedTag={copiedTag}
+            copyFailedTag={copyFailedTag}
+            initialApiKeyId={loaderData.selectedKeyId || null}
+            initialError={loaderData.setupError}
+            initialLease={loaderData.setupLease}
+            models={agentSetupModels}
+            onCopy={copy}
+            selectedKey={selectedKey}
+          />
+        </Panel>
 
-      {editorDialog.invocation?.value.kind === 'create' && <KeyDialog
-        open={editorDialog.isOpen}
-        key={editorDialog.invocation.key}
-        models={data.models}
-        mode="create"
-        onOpenChange={open => { if (!open) editorDialog.close(); }}
-        onSaved={async key => { await reload(); setSelectedKeyId(key.id); }}
-        upstreams={data.upstreams}
-        userUpstreamIds={user.upstreamIds}
-      />}
-      {editorDialog.invocation?.value.kind === 'edit' && <KeyDialog
-        open={editorDialog.isOpen}
-        apiKey={editorDialog.invocation.value.apiKey}
-        key={editorDialog.invocation.key}
-        models={data.models}
-        mode="edit"
-        onOpenChange={open => { if (!open) editorDialog.close(); }}
-        onSaved={async () => { await reload(); }}
-        upstreams={data.upstreams}
-        userUpstreamIds={user.upstreamIds}
-      />}
-      {rotateDialog.invocation && <RotateKeyDialog
-        open={rotateDialog.isOpen}
-        apiKey={rotateDialog.invocation.value}
-        key={rotateDialog.invocation.key}
-        onOpenChange={open => { if (!open) rotateDialog.close(); }}
-        onSaved={reload}
-      />}
-      {deleteDialog.invocation && <ConfirmDialog
-        open={deleteDialog.isOpen}
-        actionLabel={t('dashboard.apiKeys.actions.delete')}
-        busy={deletingKey}
-        error={deleteError}
-        onDismissError={() => setDeleteError(null)}
-        message={t('dashboard.apiKeys.delete.message', {
-          name: deleteDialog.invocation.value.name,
-        })}
-        onConfirm={() => {
-          if (!deletingKey) void deleteKey(deleteDialog.invocation!.value);
-        }}
-        onOpenChange={open => {
-          if (!deletingKey && !open) deleteDialog.close();
-        }}
-        key={deleteDialog.invocation.key}
-        title={t('dashboard.apiKeys.delete.title')}
-      />}
+        {editorDialog.invocation?.value.kind === 'create' && <KeyDialog
+          open={editorDialog.isOpen}
+          key={editorDialog.invocation.key}
+          models={models}
+          mode="create"
+          onOpenChange={open => { if (!open) editorDialog.close(); }}
+          onSaved={async key => { await reload(); setSelectedKeyId(key.id); }}
+          upstreams={upstreams}
+          userUpstreamIds={user.upstreamIds}
+        />}
+        {editorDialog.invocation?.value.kind === 'edit' && <KeyDialog
+          open={editorDialog.isOpen}
+          apiKey={editorDialog.invocation.value.apiKey}
+          key={editorDialog.invocation.key}
+          models={models}
+          mode="edit"
+          onOpenChange={open => { if (!open) editorDialog.close(); }}
+          onSaved={async () => { await reload(); }}
+          upstreams={upstreams}
+          userUpstreamIds={user.upstreamIds}
+        />}
+        {rotateDialog.invocation && <RotateKeyDialog
+          open={rotateDialog.isOpen}
+          apiKey={rotateDialog.invocation.value}
+          key={rotateDialog.invocation.key}
+          onOpenChange={open => { if (!open) rotateDialog.close(); }}
+          onSaved={reload}
+        />}
+        {deleteDialog.invocation && <ConfirmDialog
+          open={deleteDialog.isOpen}
+          actionLabel={t('dashboard.apiKeys.actions.delete')}
+          busy={deletingKey}
+          error={deleteError}
+          onDismissError={() => setDeleteError(null)}
+          message={t('dashboard.apiKeys.delete.message', {
+            name: deleteDialog.invocation.value.name,
+          })}
+          onConfirm={() => {
+            if (!deletingKey) void deleteKey(deleteDialog.invocation!.value);
+          }}
+          onOpenChange={open => {
+            if (!deletingKey && !open) deleteDialog.close();
+          }}
+          key={deleteDialog.invocation.key}
+          title={t('dashboard.apiKeys.delete.title')}
+        />}
+      </>}
     </div>
   );
 }

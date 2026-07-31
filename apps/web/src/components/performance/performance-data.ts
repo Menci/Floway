@@ -55,14 +55,6 @@ export interface PerformanceOverviewResponse {
   keys: Array<{ id: string; name: string; createdAt: string }>;
 }
 
-export const emptyPerformanceOverview = (): PerformanceOverviewResponse => ({
-  series: [],
-  axes: { none: [], keyId: [], userId: [], model: [], upstream: [], operation: [], runtimeLocation: [] },
-  dimensionValues: { models: [], upstreams: [], operations: [], runtimeLocations: [], keyIds: [], userIds: [] },
-  users: [],
-  keys: [],
-});
-
 export const buildPerformanceQuery = (
   view: PerformanceView,
   range: PerformanceRange,

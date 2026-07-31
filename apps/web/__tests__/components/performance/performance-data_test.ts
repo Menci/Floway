@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildPerformanceChart } from '../../../src/components/performance/performance-chart-model';
-import { buildPerformanceQuery, clearGroupedFilter, emptyPerformanceOverview, parsePerformanceUrlState, performanceValue, serializePerformanceUrlState, type PerformanceDisplayRecord } from '../../../src/components/performance/performance-data';
+import { buildPerformanceQuery, clearGroupedFilter, parsePerformanceUrlState, performanceValue, serializePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewResponse } from '../../../src/components/performance/performance-data';
+
+const emptyOverview = (): PerformanceOverviewResponse => ({
+  series: [],
+  axes: { none: [], keyId: [], userId: [], model: [], upstream: [], operation: [], runtimeLocation: [] },
+  dimensionValues: { models: [], upstreams: [], operations: [], runtimeLocations: [], keyIds: [], userIds: [] },
+  users: [],
+  keys: [],
+});
 
 describe('performance overview query', () => {
   it('sends group-by and all active filters using the new API shape', () => {
@@ -52,7 +60,7 @@ describe('performance chart series', () => {
       tpotUsP95: 20_000,
       tpotUsP99: 30_000,
     });
-    const overview = emptyPerformanceOverview();
+    const overview = emptyOverview();
     overview.keys = [
       { id: 'key-1', name: 'Shared name', createdAt: '' },
       { id: 'key-2', name: 'Shared name', createdAt: '' },

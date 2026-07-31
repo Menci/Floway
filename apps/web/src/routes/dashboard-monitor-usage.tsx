@@ -10,6 +10,7 @@ import type { ControlPlaneModel } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
+import { EmptyStateLine } from '../components/ui/empty-state';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { ResourceListActions } from '../components/ui/resource-list';
@@ -77,7 +78,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const [loadedAt, setLoadedAt] = useState(loaderData.loadedAt);
   const [usage, setUsage] = useState(loaderData.usage);
   const [search, setSearch] = useState(loaderData.search);
-  const [models, setModels] = useState<ControlPlaneModel[]>(loaderData.models);
+  const [models, setModels] = useState<ControlPlaneModel[] | null>(loaderData.models);
   const [metric, setMetric] = useState<UsageMetric>(loaderData.metric);
   const [redactKeys, setRedactKeys] = useState(loaderData.redactKeys);
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(() => new Set(loaderData.hiddenKeys));
@@ -164,30 +165,28 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   );
 
   const summary = useMemo(
-    () =>
-      summarizeUsage(
-        usage.records.filter(
-          record =>
-            !hiddenKeys.has(record.keyId) && !hiddenModels.has(record.model),
-        ),
+    () => usage && summarizeUsage(
+      usage.records.filter(
+        record =>
+          !hiddenKeys.has(record.keyId) && !hiddenModels.has(record.model),
       ),
-    [hiddenKeys, hiddenModels, usage.records],
+    ),
+    [hiddenKeys, hiddenModels, usage],
   );
 
   const byKeyChart = useMemo(
-    () =>
-      buildTokenChart({
-        records: usage.records,
-        metadata: usage.keys,
-        models,
-        groupKey: 'keyId',
-        hiddenOwn: hiddenKeys,
-        hiddenOther: hiddenModels,
-        redactKeys,
-        metric,
-        range: loadedRange,
-        buckets,
-      }),
+    () => usage && models && buildTokenChart({
+      records: usage.records,
+      metadata: usage.keys,
+      models,
+      groupKey: 'keyId',
+      hiddenOwn: hiddenKeys,
+      hiddenOther: hiddenModels,
+      redactKeys,
+      metric,
+      range: loadedRange,
+      buckets,
+    }),
     [
       buckets,
       hiddenKeys,
@@ -196,25 +195,23 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
       metric,
       models,
       redactKeys,
-      usage.keys,
-      usage.records,
+      usage,
     ],
   );
 
   const byModelChart = useMemo(
-    () =>
-      buildTokenChart({
-        records: usage.records,
-        metadata: usage.keys,
-        models,
-        groupKey: 'model',
-        hiddenOwn: hiddenModels,
-        hiddenOther: hiddenKeys,
-        redactKeys,
-        metric,
-        range: loadedRange,
-        buckets,
-      }),
+    () => usage && models && buildTokenChart({
+      records: usage.records,
+      metadata: usage.keys,
+      models,
+      groupKey: 'model',
+      hiddenOwn: hiddenModels,
+      hiddenOther: hiddenKeys,
+      redactKeys,
+      metric,
+      range: loadedRange,
+      buckets,
+    }),
     [
       buckets,
       hiddenKeys,
@@ -223,26 +220,26 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
       metric,
       models,
       redactKeys,
-      usage.keys,
-      usage.records,
+      usage,
     ],
   );
 
   const searchChart = useMemo(
-    () =>
-      buildSearchChart({
-        search,
-        hiddenKeys,
-        redactKeys,
-        range: loadedRange,
-        buckets,
-      }),
+    () => search && buildSearchChart({
+      search,
+      hiddenKeys,
+      redactKeys,
+      range: loadedRange,
+      buckets,
+    }),
     [buckets, hiddenKeys, loadedRange, redactKeys, search],
   );
 
   // The panel follows the data, not the switch: recorded search traffic stays
   // visible after the operator turns search off or moves to another provider.
-  const showSearch = searchChart.entries.length > 0;
+  // An unavailable half still gets its panel, because "no search traffic" is
+  // not something a failed fetch establishes.
+  const showSearch = searchChart === null || searchChart.entries.length > 0;
   const chartTitle =
     view === 'all-by-user'
       ? t('dashboard.usage.charts.byUser')
@@ -309,40 +306,50 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
           />
         </div>
 
-        <ChartSection
-          chart={byKeyChart}
-          detailsLabel={chartTitle}
-          hidden={hiddenKeys}
-          onHiddenChange={setHiddenKeys}
-          title={chartTitle}
-          valueFormatter={value => formatMetricValue(value, metric, locale)}
-        />
+        {byKeyChart === null || byModelChart === null || summary === null ? (
+          <EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine>
+        ) : (
+          <>
+            <ChartSection
+              chart={byKeyChart}
+              detailsLabel={chartTitle}
+              hidden={hiddenKeys}
+              onHiddenChange={setHiddenKeys}
+              title={chartTitle}
+              valueFormatter={value => formatMetricValue(value, metric, locale)}
+            />
 
-        <ChartSection
-          chart={byModelChart}
-          detailsLabel={t('dashboard.usage.charts.byModel')}
-          hidden={hiddenModels}
-          onHiddenChange={setHiddenModels}
-          title={t('dashboard.usage.charts.byModel')}
-          valueFormatter={value => formatMetricValue(value, metric, locale)}
-        />
+            <ChartSection
+              chart={byModelChart}
+              detailsLabel={t('dashboard.usage.charts.byModel')}
+              hidden={hiddenModels}
+              onHiddenChange={setHiddenModels}
+              title={t('dashboard.usage.charts.byModel')}
+              valueFormatter={value => formatMetricValue(value, metric, locale)}
+            />
 
-        <SummaryMetrics metric={metric} onMetricChange={setMetric} summary={summary} />
+            <SummaryMetrics metric={metric} onMetricChange={setMetric} summary={summary} />
+          </>
+        )}
 
       </Panel>
 
       {showSearch && (
         <Panel className="!grid !gap-[18px] min-w-0">
-          <ChartSection
-            chart={searchChart}
-            detailsLabel={t('dashboard.usage.charts.search')}
-            hidden={hiddenKeys}
-            onHiddenChange={setHiddenKeys}
-            title={t('dashboard.usage.charts.searchWithProvider', {
-              provider: searchChart.providers.map(formatProvider).join(' · '),
-            })}
-            valueFormatter={value => formatCount(value, locale)}
-          />
+          {searchChart === null ? (
+            <EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine>
+          ) : (
+            <ChartSection
+              chart={searchChart}
+              detailsLabel={t('dashboard.usage.charts.search')}
+              hidden={hiddenKeys}
+              onHiddenChange={setHiddenKeys}
+              title={t('dashboard.usage.charts.searchWithProvider', {
+                provider: searchChart.providers.map(formatProvider).join(' · '),
+              })}
+              valueFormatter={value => formatCount(value, locale)}
+            />
+          )}
         </Panel>
       )}
     </section>

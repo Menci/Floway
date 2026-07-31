@@ -1,8 +1,6 @@
 import type {
   DisplayUsageRecord,
-  SearchUsageResponse,
   UsageRange,
-  UsageResponse,
   UsageView,
 } from './types';
 import { callApi } from '../../api/auth';
@@ -12,8 +10,6 @@ import type {
   TokenUsageByKeyResponse,
 } from '@floway-dev/gateway/control-plane/usage-types';
 
-export const emptyUsageResponse = (): UsageResponse => ({ records: [], keys: [] });
-export const emptySearchUsageResponse = (): SearchUsageResponse => ({ records: [], keys: [] });
 const userBucketId = (userId: number) => `user-${userId}`;
 
 export const metricsFromWire = (
@@ -22,6 +18,9 @@ export const metricsFromWire = (
   metrics.map(({ metric, quantity }) => [metric, quantity]),
 );
 
+// Each half answers `null` when its fetch failed. A fetch that failed did not
+// report zero usage, and a zeroed chart beside a dismissible bar reads as a
+// quiet gateway.
 async function fetchUsageForView(view: UsageView, start: string, end: string) {
   if (view === 'all-by-user') {
     const [usageRes, searchRes] = await Promise.all([
@@ -44,11 +43,11 @@ async function fetchUsageForView(view: UsageView, start: string, end: string) {
           metrics: metricsFromWire(record.metrics),
         })),
         keys: usageData.users.map(user => ({ id: userBucketId(user.id), name: user.username })),
-      } : emptyUsageResponse(),
+      } : null,
       search: searchData ? {
         records: searchData.records.map(({ userId, ...record }) => ({ ...record, keyId: userBucketId(userId) })),
         keys: searchData.users.map(user => ({ id: userBucketId(user.id), name: user.username })),
-      } : emptySearchUsageResponse(),
+      } : null,
       error: usageRes.error ?? searchRes.error ?? null,
     };
   }
@@ -68,8 +67,8 @@ async function fetchUsageForView(view: UsageView, start: string, end: string) {
     usage: usageData ? {
       records: usageData.records.map(record => ({ ...record, metrics: metricsFromWire(record.metrics) })),
       keys: usageData.keys,
-    } : emptyUsageResponse(),
-    search: searchData ? { records: searchData.records, keys: searchData.keys } : emptySearchUsageResponse(),
+    } : null,
+    search: searchData ? { records: searchData.records, keys: searchData.keys } : null,
     error: usageRes.error ?? searchRes.error ?? null,
   };
 }
@@ -84,5 +83,9 @@ export async function loadUsagePageData(
     fetchUsageForView(view, start, end),
     callApi(() => api.api.models.$get({ query: {} })),
   ]);
-  return { ...usageData, models: modelsResult.data?.data ?? [] };
+  return {
+    ...usageData,
+    models: modelsResult.data?.data ?? null,
+    error: usageData.error ?? modelsResult.error ?? null,
+  };
 }

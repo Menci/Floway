@@ -19,7 +19,6 @@ import { buildPerformanceChart, type PerformanceBucket, type PerformanceChartEnt
 import {
   buildPerformanceQuery,
   clearGroupedFilter,
-  emptyPerformanceOverview,
   parsePerformanceUrlState,
   resolvePerformanceGroup,
   serializePerformanceUrlState,
@@ -86,7 +85,10 @@ const usePerformanceTableStyles = makeStyles({
 interface LoaderData {
   error: GlobalError | null;
   loadedAt: number;
-  overview: PerformanceOverviewResponse;
+  // `null` is a failed fetch, not a quiet gateway. An empty overview renders
+  // eight zeroes and a table that says nobody sent a request, which is a
+  // telemetry page asserting something it does not know.
+  overview: PerformanceOverviewResponse | null;
   state: ReturnType<typeof parsePerformanceUrlState>;
   upstreamNames: UpstreamName[];
   view: PerformanceView;
@@ -108,7 +110,7 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   return {
     error: overview.error ?? upstreams.error ?? null,
     loadedAt,
-    overview: overview.data ?? emptyPerformanceOverview(),
+    overview: overview.data ?? null,
     state: { ...state, groupBy },
     upstreamNames: upstreams.data ?? [],
     view,
@@ -137,7 +139,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const [breakdownGroup, setBreakdownGroup] = useState<PerformanceGroupBy>('model');
   const [filters, setFilters] = useState<PerformanceFilters>(initialState.filters);
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set(initialState.hidden));
-  const [overview, setOverview] = useState<PerformanceOverviewResponse>(loaderData.overview);
+  const [overview, setOverview] = useState<PerformanceOverviewResponse | null>(loaderData.overview);
   const [upstreamNames] = useState(() => new Map(loaderData.upstreamNames.map(item => [item.id, item.name])));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
@@ -192,8 +194,8 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   };
   const setFilter = (key: keyof PerformanceFilters, value: string) => setFilters(current => ({ ...current, [key]: value }));
   const buckets = useMemo(() => performanceBuckets(loadedRange, loadedAt, locale), [loadedAt, loadedRange, locale]);
-  const chart = useMemo(() => buildPerformanceChart(overview.series, metric, percentile, groupBy, overview, upstreamNames, buckets, loadedRange), [buckets, groupBy, loadedRange, metric, overview, percentile, upstreamNames]);
-  const summary = overview.axes.none[0];
+  const chart = useMemo(() => overview && buildPerformanceChart(overview.series, metric, percentile, groupBy, overview, upstreamNames, buckets, loadedRange), [buckets, groupBy, loadedRange, metric, overview, percentile, upstreamNames]);
+  const summary = overview?.axes.none[0];
   const summaryCards = [
     ['requests', formatCount(summary?.requests ?? 0, locale)],
     ['errors', formatCount(summary?.errors ?? 0, locale)],
@@ -204,10 +206,10 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     ['ttftP99', formatDuration(summary?.ttftMsP99 ?? null)],
     ['speedP99', formatTokenRateFromTpot(summary?.tpotUsP99 ?? null)],
   ] as const;
-  const breakdowns = groupByValues
+  const breakdowns = overview === null ? [] : groupByValues
     .filter(key => key !== 'userId' || view === 'all-by-user')
     .map(key => ({ key, rows: overview.axes[key] }));
-  const activeBreakdown = breakdowns.find(item => item.key === breakdownGroup) ?? breakdowns[0]!;
+  const activeBreakdown = breakdowns.find(item => item.key === breakdownGroup) ?? breakdowns[0];
 
   return <section className="dashboard-page">
     <DashboardPageHeader
@@ -216,60 +218,62 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       title={t('dashboard.nav.performance')}
     />
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error.message}</OutcomeMessageBar>}
-    <Panel className="!grid min-w-0">
-      <div className="flex items-end gap-3 min-w-0 flex-wrap">
-        <Field className="w-[160px] flex-none" label={t('dashboard.performance.groupBy.label')}>
-          <div className="flex items-center gap-2">
-            <Dropdown
-              aria-label={t('dashboard.performance.groupBy.label')}
-              className="!min-w-0 flex-1"
-              selectedOptions={[groupBy]}
-              value={t(`dashboard.performance.groupBy.${groupBy}`)}
-              onOptionSelect={(_, data) => data.optionValue !== undefined && changeGroupBy(data.optionValue as PerformanceGroupBy)}
-            >
-              {groupByValues.filter(value => value !== 'userId' || view === 'all-by-user').map(value => <Option key={value} value={value}>{t(`dashboard.performance.groupBy.${value}`)}</Option>)}
-            </Dropdown>
-            {groupBy === 'keyId' && (
-              <Tooltip content={t('dashboard.performance.apiKeyScopeInfo')} relationship="description">
-                <Button
-                  appearance="subtle"
-                  aria-label={t('dashboard.performance.apiKeyScopeLabel')}
-                  className="!min-w-[36px] !text-fui-base500"
-                  icon={<InfoRegular fontSize={22} />}
-                  size="large"
-                />
-              </Tooltip>
-            )}
-          </div>
-        </Field>
-        <PerformanceFilterFields filters={filters} groupBy={groupBy} overview={overview} upstreamNames={upstreamNames} view={view} onChange={setFilter} />
-      </div>
-      <div className="grid gap-2.5 grid-cols-8 max-[1150px]:grid-cols-4 max-[620px]:grid-cols-2">
-        {summaryCards.map(([label, value]) => <div className="grid gap-1 min-w-0 px-2 py-1" key={label}>
-          <Text size={200} weight="semibold" className="text-fui-fg2">{t(`dashboard.performance.summary.${label}`)}</Text>
-          <Text size={500} weight="semibold" className="tabular-nums overflow-wrap-anywhere">{value}</Text>
-        </div>)}
-      </div>
-      <div className="flex items-center justify-between gap-4 min-w-0 flex-wrap">
-        <ChoiceGroup ariaLabel={t('dashboard.performance.metric.label')} items={[
-          { value: 'ttft', label: t('dashboard.performance.metric.ttft') },
-          { value: 'tokPerSec', label: t('dashboard.performance.metric.outputSpeed') },
-        ]} onChange={value => setMetric(value as PerformanceMetric)} value={metric} />
-        <ChoiceGroup ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} />
-        <ChoiceGroup ariaLabel={t('dashboard.performance.range.label')} items={[
-          { value: 'today', label: t('dashboard.performance.range.today') }, { value: '7d', label: t('dashboard.performance.range.sevenDays') }, { value: '30d', label: t('dashboard.performance.range.thirtyDays') },
-        ]} onChange={value => setRange(value as PerformanceRange)} value={range} />
-      </div>
-    </Panel>
-    <Panel className="!grid !gap-[18px] min-w-0">
-      <PerformanceChartSection chart={chart} hidden={hiddenSeries} onHiddenChange={setHiddenSeries} title={t('dashboard.performance.chartTitle', { metric: t(`dashboard.performance.metric.${metric === 'ttft' ? 'ttft' : 'outputSpeed'}`), group: t(`dashboard.performance.groupBy.${groupBy}`), percentile })} />
-    </Panel>
-    <Panel className="!grid !gap-3 min-w-0">
-      <ScrollArea axes="horizontal" className="min-w-0"><TabList selectedValue={activeBreakdown.key} onTabSelect={(_, data) => setBreakdownGroup(data.value as PerformanceGroupBy)}>
-        {breakdowns.map(({ key }) => <Tab key={key} value={key}>{t(`dashboard.performance.groupBy.${key}`)}</Tab>)}
-      </TabList></ScrollArea>
-      <PerformanceTable groupBy={activeBreakdown.key} overview={overview} rows={activeBreakdown.rows} showTitle={false} upstreamNames={upstreamNames} />
-    </Panel>
+    {overview === null || chart === null || activeBreakdown === undefined ? <Panel><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel> : <>
+      <Panel className="!grid min-w-0">
+        <div className="flex items-end gap-3 min-w-0 flex-wrap">
+          <Field className="w-[160px] flex-none" label={t('dashboard.performance.groupBy.label')}>
+            <div className="flex items-center gap-2">
+              <Dropdown
+                aria-label={t('dashboard.performance.groupBy.label')}
+                className="!min-w-0 flex-1"
+                selectedOptions={[groupBy]}
+                value={t(`dashboard.performance.groupBy.${groupBy}`)}
+                onOptionSelect={(_, data) => data.optionValue !== undefined && changeGroupBy(data.optionValue as PerformanceGroupBy)}
+              >
+                {groupByValues.filter(value => value !== 'userId' || view === 'all-by-user').map(value => <Option key={value} value={value}>{t(`dashboard.performance.groupBy.${value}`)}</Option>)}
+              </Dropdown>
+              {groupBy === 'keyId' && (
+                <Tooltip content={t('dashboard.performance.apiKeyScopeInfo')} relationship="description">
+                  <Button
+                    appearance="subtle"
+                    aria-label={t('dashboard.performance.apiKeyScopeLabel')}
+                    className="!min-w-[36px] !text-fui-base500"
+                    icon={<InfoRegular fontSize={22} />}
+                    size="large"
+                  />
+                </Tooltip>
+              )}
+            </div>
+          </Field>
+          <PerformanceFilterFields filters={filters} groupBy={groupBy} overview={overview} upstreamNames={upstreamNames} view={view} onChange={setFilter} />
+        </div>
+        <div className="grid gap-2.5 grid-cols-8 max-[1150px]:grid-cols-4 max-[620px]:grid-cols-2">
+          {summaryCards.map(([label, value]) => <div className="grid gap-1 min-w-0 px-2 py-1" key={label}>
+            <Text size={200} weight="semibold" className="text-fui-fg2">{t(`dashboard.performance.summary.${label}`)}</Text>
+            <Text size={500} weight="semibold" className="tabular-nums overflow-wrap-anywhere">{value}</Text>
+          </div>)}
+        </div>
+        <div className="flex items-center justify-between gap-4 min-w-0 flex-wrap">
+          <ChoiceGroup ariaLabel={t('dashboard.performance.metric.label')} items={[
+            { value: 'ttft', label: t('dashboard.performance.metric.ttft') },
+            { value: 'tokPerSec', label: t('dashboard.performance.metric.outputSpeed') },
+          ]} onChange={value => setMetric(value as PerformanceMetric)} value={metric} />
+          <ChoiceGroup ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} />
+          <ChoiceGroup ariaLabel={t('dashboard.performance.range.label')} items={[
+            { value: 'today', label: t('dashboard.performance.range.today') }, { value: '7d', label: t('dashboard.performance.range.sevenDays') }, { value: '30d', label: t('dashboard.performance.range.thirtyDays') },
+          ]} onChange={value => setRange(value as PerformanceRange)} value={range} />
+        </div>
+      </Panel>
+      <Panel className="!grid !gap-[18px] min-w-0">
+        <PerformanceChartSection chart={chart} hidden={hiddenSeries} onHiddenChange={setHiddenSeries} title={t('dashboard.performance.chartTitle', { metric: t(`dashboard.performance.metric.${metric === 'ttft' ? 'ttft' : 'outputSpeed'}`), group: t(`dashboard.performance.groupBy.${groupBy}`), percentile })} />
+      </Panel>
+      <Panel className="!grid !gap-3 min-w-0">
+        <ScrollArea axes="horizontal" className="min-w-0"><TabList selectedValue={activeBreakdown.key} onTabSelect={(_, data) => setBreakdownGroup(data.value as PerformanceGroupBy)}>
+          {breakdowns.map(({ key }) => <Tab key={key} value={key}>{t(`dashboard.performance.groupBy.${key}`)}</Tab>)}
+        </TabList></ScrollArea>
+        <PerformanceTable groupBy={activeBreakdown.key} overview={overview} rows={activeBreakdown.rows} showTitle={false} upstreamNames={upstreamNames} />
+      </Panel>
+    </>}
   </section>;
 }
 

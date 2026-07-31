@@ -62,7 +62,10 @@ const {
   tokens,
 } = fluentComponents;
 
-interface LoaderData { keys: ApiKey[]; models: ControlPlaneModel[]; error: string | null }
+// `null` is a fetch that failed. An empty key list tells the operator to go
+// and create a key, which is the wrong instruction when the list is simply
+// unknown.
+interface LoaderData { keys: ApiKey[] | null; models: ControlPlaneModel[] | null; error: string | null }
 
 export async function clientLoader(): Promise<LoaderData> {
   if (!getSessionToken()) throw redirect('/');
@@ -71,8 +74,8 @@ export async function clientLoader(): Promise<LoaderData> {
     callApi(() => api.api.models.$get({ query: {} })),
   ]);
   return {
-    keys: keys.data ?? [],
-    models: models.data?.data ?? [],
+    keys: keys.data ?? null,
+    models: models.data?.data ?? null,
     error: keys.error?.message ?? models.error?.message ?? null,
   };
 }
@@ -105,7 +108,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const { user } = useDashboardOutletContext();
   const s = useStyles();
   const [api, setApi] = useState<PlaygroundApi>('responses');
-  const [keyId, setKeyId] = useState(loaderData.keys[0]?.id ?? '');
+  const [keyId, setKeyId] = useState(loaderData.keys?.[0]?.id ?? '');
   const [modelId, setModelId] = useState('');
   // `null` means the picker is showing its selection rather than a search
   // term. Opening the list clears the field so the first keystroke starts a
@@ -131,13 +134,13 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const scrollRef = useRef<HTMLDivElement>(null);
   const narrow = useMediaQuery('(max-width: 1100px)');
 
-  const selectedKey = loaderData.keys.find(key => key.id === keyId) ?? null;
+  const selectedKey = loaderData.keys?.find(key => key.id === keyId) ?? null;
   const cap = useMemo(
     () => effectiveUpstreamCap(selectedKey?.upstream_ids ?? null, user.upstreamIds),
     [selectedKey, user.upstreamIds],
   );
   const models = useMemo(
-    () => availableModels(loaderData.models, cap),
+    () => availableModels(loaderData.models ?? [], cap),
     [cap, loaderData.models],
   );
   const selectedModel = models.find(model => model.id === modelId) ?? models[0] ?? null;
@@ -301,13 +304,13 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
     <SettingsSection title={t('dashboard.playground.settings.connection')}>
       <Field label={t('dashboard.playground.key')}>
         <Dropdown
-          disabled={!loaderData.keys.length}
+          disabled={!loaderData.keys?.length}
           selectedOptions={[keyId]}
           value={selectedKey ? `${selectedKey.name} (${selectedKey.key.slice(-4)})` : t('dashboard.playground.noKeyOption')}
           onOptionSelect={(_, data) => data.optionValue !== undefined && changeContext(() => setKeyId(data.optionValue!))}
         >
-          {!loaderData.keys.length && <Option value="">{t('dashboard.playground.noKeyOption')}</Option>}
-          {loaderData.keys.map(key => <Option key={key.id} text={`${key.name} (${key.key.slice(-4)})`} value={key.id}>{key.name} ({key.key.slice(-4)})</Option>)}
+          {!loaderData.keys?.length && <Option value="">{t('dashboard.playground.noKeyOption')}</Option>}
+          {loaderData.keys?.map(key => <Option key={key.id} text={`${key.name} (${key.key.slice(-4)})`} value={key.id}>{key.name} ({key.key.slice(-4)})</Option>)}
         </Dropdown>
       </Field>
       <Field label={t('dashboard.playground.api')}>
@@ -332,7 +335,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
           {matchingModels.map(model => <Option key={model.id} value={model.id} text={model.display_name}><div className="min-w-0 grid gap-1"><div className="truncate leading-[var(--lineHeightBase300)]">{model.display_name}</div><div className={`text-fui-fg2 truncate leading-[var(--lineHeightBase200)] ${s.code}`}>{model.id}</div></div></Option>)}
         </Combobox>
       </Field>
-      {selectedModel && <ModelInfoBadges cap={cap} catalog={loaderData.models} model={selectedModel} />}
+      {selectedModel && <ModelInfoBadges cap={cap} catalog={loaderData.models ?? []} model={selectedModel} />}
     </SettingsSection>
     <SettingsSection title={t('dashboard.playground.settings.generation')}>
       <Field label={t('dashboard.playground.generation.reasoningEffort')}>
@@ -386,9 +389,10 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
           <ScrollArea ref={scrollRef} axes="vertical" className="min-h-0" contentClassName="flex min-h-full flex-col" noTabIndex>
             {loadError && <OutcomeMessageBar className="!mb-3" onDismiss={() => setLoadError(null)}>{loadError}</OutcomeMessageBar>}
             {requestError && <OutcomeMessageBar className="!mb-3" onDismiss={() => setRequestError(null)}>{requestError}</OutcomeMessageBar>}
-            {!selectedKey ? <EmptyState className="flex-1 px-6" title={t('dashboard.playground.noKey')} />
-              : !selectedModel ? <EmptyState className="flex-1 px-6" title={t('dashboard.playground.noModelForApi')} />
-                  : messages.length === 0 && !sending ? <EmptyState className="flex-1 px-6" title={t('dashboard.playground.empty')} /> : null}
+            {loaderData.keys === null || loaderData.models === null ? <EmptyState className="flex-1 px-6" title={t('dashboard.pages.unavailable')} />
+              : !selectedKey ? <EmptyState className="flex-1 px-6" title={t('dashboard.playground.noKey')} />
+                  : !selectedModel ? <EmptyState className="flex-1 px-6" title={t('dashboard.playground.noModelForApi')} />
+                      : messages.length === 0 && !sending ? <EmptyState className="flex-1 px-6" title={t('dashboard.playground.empty')} /> : null}
             <div className="mt-auto grid gap-3" data-winui-card-restyle="off">
               {messages.map(message => (
                 <div key={message.id} className={`flex min-w-0 ${message.role === 'user' ? 'justify-end' : 'justify-start'} ${s.messageRow}`}>

@@ -20,9 +20,11 @@ import type { Route } from './+types/dashboard-admin-users';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { DialogShell } from '../components/ui/dialog-shell';
+import { EmptyStateLine } from '../components/ui/empty-state';
 import { Input } from '../components/ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
+import { Panel } from '../components/ui/panel';
 import { ResourceListActions, ResourceListEmptyState, ResourceListPanel } from '../components/ui/resource-list';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { SettingsCard, SettingsSwitch } from '../components/ui/settings-card';
@@ -54,10 +56,13 @@ const {
   TableRow,
 } = fluentComponents;
 
+// `null` is a fetch that failed, not an empty deployment: a list showing zero
+// users on a gateway that certainly has at least one is a page inventing an
+// answer.
 interface UsersPageData {
-  users: ControlPlaneUser[];
-  upstreams: UpstreamOption[];
-  models: ControlPlaneModel[];
+  users: ControlPlaneUser[] | null;
+  upstreams: UpstreamOption[] | null;
+  models: ControlPlaneModel[] | null;
   error: string | null;
 }
 
@@ -88,7 +93,7 @@ async function loadPageData(current: Pick<UsersPageData, 'users' | 'upstreams' |
   };
 }
 
-const emptyPageData: Pick<UsersPageData, 'users' | 'upstreams' | 'models'> = { users: [], upstreams: [], models: [] };
+const unloadedPageData: Pick<UsersPageData, 'users' | 'upstreams' | 'models'> = { users: null, upstreams: null, models: null };
 
 export async function clientLoader(): Promise<UsersPageData> {
   if (!getSessionToken()) throw redirect('/');
@@ -98,7 +103,7 @@ export async function clientLoader(): Promise<UsersPageData> {
     throw redirect('/dashboard/services/api-keys');
   }
 
-  return await loadPageData(emptyPageData);
+  return await loadPageData(unloadedPageData);
 }
 
 export function meta({}: Route.MetaArgs) {
@@ -153,12 +158,15 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
     await refresh();
   };
 
+  const { models, upstreams, users } = data;
+  const loaded = users !== null && models !== null && upstreams !== null;
+
   return (
     <div className="dashboard-page">
       <DashboardPageHeader
         actions={<ResourceListActions
           createLabel={t('dashboard.users.actions.create')}
-          disabled={deleting}
+          disabled={deleting || !loaded}
           onCreate={() => editorDialog.open({ kind: 'create' })}
           onRefresh={() => void refresh()}
           refreshLabel={t('dashboard.users.actions.refresh')}
@@ -179,63 +187,65 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
         </OutcomeMessageBar>
       )}
 
-      <ResourceListPanel>
-        <UsersTable
-          actorId={actor.id}
-          disabled={refreshing || deleting}
-          onDelete={deleteDialog.open}
-          onEdit={user => editorDialog.open({ kind: 'edit', user })}
-          onResetPassword={passwordDialog.open}
-          users={data.users}
-        />
-      </ResourceListPanel>
+      {!loaded ? <Panel><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel> : <>
+        <ResourceListPanel>
+          <UsersTable
+            actorId={actor.id}
+            disabled={refreshing || deleting}
+            onDelete={deleteDialog.open}
+            onEdit={user => editorDialog.open({ kind: 'edit', user })}
+            onResetPassword={passwordDialog.open}
+            users={users}
+          />
+        </ResourceListPanel>
 
-      {editorDialog.invocation?.value.kind === 'create' && <UserDialog
-        open={editorDialog.isOpen}
-        actorId={actor.id}
-        key={editorDialog.invocation.key}
-        mode="create"
-        models={data.models}
-        onOpenChange={open => { if (!open) editorDialog.close(); }}
-        onSaved={() => afterSaved()}
-        upstreams={data.upstreams}
-      />}
-      {editorDialog.invocation?.value.kind === 'edit' && <UserDialog
-        open={editorDialog.isOpen}
-        actorId={actor.id}
-        key={editorDialog.invocation.key}
-        mode="edit"
-        models={data.models}
-        onOpenChange={open => { if (!open) editorDialog.close(); }}
-        onSaved={afterSaved}
-        upstreams={data.upstreams}
-        user={editorDialog.invocation.value.user}
-      />}
-      {passwordDialog.invocation && <PasswordDialog
-        open={passwordDialog.isOpen}
-        key={passwordDialog.invocation.key}
-        onOpenChange={open => { if (!open) passwordDialog.close(); }}
-        onSaved={refresh}
-        user={passwordDialog.invocation.value}
-      />}
-      {deleteDialog.invocation && <ConfirmDialog
-        open={deleteDialog.isOpen}
-        actionLabel={deleting
-          ? t('dashboard.users.actions.deleting')
-          : t('dashboard.users.actions.delete')}
-        busy={deleting}
-        error={deleteError}
-        key={deleteDialog.invocation.key}
-        message={t('dashboard.users.delete.message', {
-          username: deleteDialog.invocation.value.username,
-        })}
-        onConfirm={() => {
-          if (!deleting) void deleteUser(deleteDialog.invocation!.value);
-        }}
-        onDismissError={() => setDeleteError(null)}
-        onOpenChange={open => { if (!deleting && !open) deleteDialog.close(); }}
-        title={t('dashboard.users.delete.title')}
-      />}
+        {editorDialog.invocation?.value.kind === 'create' && <UserDialog
+          open={editorDialog.isOpen}
+          actorId={actor.id}
+          key={editorDialog.invocation.key}
+          mode="create"
+          models={models}
+          onOpenChange={open => { if (!open) editorDialog.close(); }}
+          onSaved={() => afterSaved()}
+          upstreams={upstreams}
+        />}
+        {editorDialog.invocation?.value.kind === 'edit' && <UserDialog
+          open={editorDialog.isOpen}
+          actorId={actor.id}
+          key={editorDialog.invocation.key}
+          mode="edit"
+          models={models}
+          onOpenChange={open => { if (!open) editorDialog.close(); }}
+          onSaved={afterSaved}
+          upstreams={upstreams}
+          user={editorDialog.invocation.value.user}
+        />}
+        {passwordDialog.invocation && <PasswordDialog
+          open={passwordDialog.isOpen}
+          key={passwordDialog.invocation.key}
+          onOpenChange={open => { if (!open) passwordDialog.close(); }}
+          onSaved={refresh}
+          user={passwordDialog.invocation.value}
+        />}
+        {deleteDialog.invocation && <ConfirmDialog
+          open={deleteDialog.isOpen}
+          actionLabel={deleting
+            ? t('dashboard.users.actions.deleting')
+            : t('dashboard.users.actions.delete')}
+          busy={deleting}
+          error={deleteError}
+          key={deleteDialog.invocation.key}
+          message={t('dashboard.users.delete.message', {
+            username: deleteDialog.invocation.value.username,
+          })}
+          onConfirm={() => {
+            if (!deleting) void deleteUser(deleteDialog.invocation!.value);
+          }}
+          onDismissError={() => setDeleteError(null)}
+          onOpenChange={open => { if (!deleting && !open) deleteDialog.close(); }}
+          title={t('dashboard.users.delete.title')}
+        />}
+      </>}
     </div>
   );
 }
