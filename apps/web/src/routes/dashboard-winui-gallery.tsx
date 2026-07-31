@@ -856,7 +856,7 @@ function ProgressSection() {
     <Row label="spinner - appearance and label">
       <Spinner label="Refreshing the model catalog…" />
       <Spinner labelPosition="after" label="Saving" />
-      <div className="rounded-md p-3 bg-[var(--colorNeutralBackgroundInverted)]">
+      <div className="rounded-md p-3" style={{ background: 'var(--colorNeutralBackgroundInverted)' }}>
         <Spinner appearance="inverted" label="On an inverted surface" />
       </div>
     </Row>
