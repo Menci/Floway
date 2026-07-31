@@ -1,5 +1,6 @@
-import { api, callApi, type ApiResult } from './client';
 import type { InferResponseType } from 'hono/client';
+
+import { api, callApi, type ApiResult } from './client';
 
 // Derived from the routes themselves, the way every other control-plane DTO in
 // api/types.ts is: a hand-written copy of a response shape only reports drift
