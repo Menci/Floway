@@ -13,6 +13,7 @@ import { useState } from 'react';
 
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Combobox, Dropdown } from '../components/ui/fluent-form-controls';
+import { SectionHeader } from '../components/ui/section-header';
 import { fluentComponents } from '../fluent';
 
 const {
@@ -122,7 +123,7 @@ export function meta() {
 
 function Section({ children, id, title }: { children: React.ReactNode; id: string; title: string }) {
   return <section className="grid gap-4" id={id}>
-    <Text as="h2" size={500} weight="semibold" className="m-0">{title}</Text>
+    <SectionHeader level={2} title={title} />
     <Card className="!gap-5 !p-5">{children}</Card>
   </section>;
 }

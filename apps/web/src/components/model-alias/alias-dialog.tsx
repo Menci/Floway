@@ -19,6 +19,7 @@ import { DialogShell } from '../ui/dialog-shell';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
+import { SectionHeader } from '../ui/section-header';
 import { SettingsCard, SettingsExpander, SettingsSwitch } from '../ui/settings-card';
 import { MODEL_KINDS } from '@floway-dev/protocols/common';
 
@@ -111,7 +112,13 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
       <Field label={t('dashboard.modelAliases.form.selection')}><ChoiceGroup ariaLabel={t('dashboard.modelAliases.form.selection')} value={values.selection} onChange={value => setValue('selection', value as AliasFormValues['selection'])} items={[{ value: 'first-available', label: t('dashboard.modelAliases.selection.first') }, { value: 'random', label: t('dashboard.modelAliases.selection.random') }]} /></Field>
     </div>
     <section className="grid gap-2" role="group" aria-labelledby="alias-targets-heading">
-      <div className="flex items-center justify-between gap-3"><div className="min-w-0"><Text id="alias-targets-heading" size={400} weight="semibold">{t('dashboard.modelAliases.target.heading')}</Text><Text block size={200} className="text-fui-fg2">{t('dashboard.modelAliases.target.description')}</Text></div><Button className="!whitespace-nowrap flex-none" icon={<AddRegular />} onClick={() => append(blankTarget())}>{t('dashboard.modelAliases.actions.addTarget')}</Button></div>
+      <SectionHeader
+        description={t('dashboard.modelAliases.target.description')}
+        level={3}
+        title={t('dashboard.modelAliases.target.heading')}
+        titleId="alias-targets-heading"
+        actions={<Button className="!whitespace-nowrap flex-none" icon={<AddRegular />} onClick={() => append(blankTarget())}>{t('dashboard.modelAliases.actions.addTarget')}</Button>}
+      />
       {fields.map((field, index) => <AliasTargetRow key={field.id} disabled={saving} index={index} isFirst={index === 0} isLast={index === fields.length - 1} isSole={fields.length === 1} kind={kind} models={models} target={targets[index] ?? field} targetIds={targetIds} onChange={target => setValue(`targets.${index}`, target, { shouldDirty: true, shouldValidate: true })} onMove={direction => move(index, index + direction)} onRemove={() => remove(index)} />)}
       {errors.targets?.message && <Text role="alert" className="text-fui-fg2">{t(errors.targets.message)}</Text>}
     </section>

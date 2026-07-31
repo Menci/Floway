@@ -12,6 +12,7 @@ import { Input } from '../components/ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { Panel } from '../components/ui/panel';
+import { SectionHeader } from '../components/ui/section-header';
 import { fluentComponents } from '../fluent';
 
 const {
@@ -112,9 +113,7 @@ export default function DashboardSettings() {
       <DashboardPageHeader description={t('dashboard.settings.description')} title={t('dashboard.nav.settings')} />
 
       <Panel className="grid w-full max-w-[480px] gap-[18px] !p-[22px_24px] max-[680px]:!p-[18px]">
-        <Text as="h2" size={400} weight="semibold" className="m-0">
-          {t('dashboard.settings.changePassword')}
-        </Text>
+        <SectionHeader level={2} title={t('dashboard.settings.changePassword')} />
 
         <form className="grid gap-4" onSubmit={event => void handleSubmit(submit)(event)}>
           <Controller

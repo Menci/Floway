@@ -14,6 +14,7 @@ import type {
 import { fluentComponents } from '../../fluent';
 import { ChoiceGroup } from '../ui/choice-group';
 import { Checkbox, Combobox, Dropdown, Input, Switch } from '../ui/fluent-form-controls';
+import { SectionHeader } from '../ui/section-header';
 import { modelsField, type UpstreamChatModelConfig } from '@floway-dev/provider';
 
 const {
@@ -104,10 +105,7 @@ export function ModelDetail({
 
   return (
     <div className="grid gap-3 min-w-0">
-      <header className="flex items-center justify-between gap-4 min-w-0">
-        <Text as="h2" size={500} weight="semibold" truncate className="m-0 min-w-0">
-          {row.config.display_name ?? publicModelId(row.config)}
-        </Text>
+      <SectionHeader level={2} truncate title={row.config.display_name ?? publicModelId(row.config)} actions={
         <div className="flex-none">
           <ChoiceGroup
             ariaLabel={t('dashboard.upstreamEditor.models.source')}
@@ -119,7 +117,7 @@ export function ModelDetail({
             value={row.source}
           />
         </div>
-      </header>
+      } />
 
       {section === 'flags' ? <FeatureFlagsEditor
         defaults={record.flag_defaults}
@@ -227,7 +225,7 @@ export function ModelDetail({
 
 function ModelEditorSection({ children, description, title }: { children: React.ReactNode; description?: string; title: string }) {
   return <section className="grid gap-3">
-    <div className="grid gap-1"><Text as="h3" size={400} weight="semibold" className="m-0">{title}</Text>{description && <Text size={200} className="text-fui-fg2">{description}</Text>}</div>
+    <SectionHeader description={description} level={3} title={title} />
     {children}
   </section>;
 }

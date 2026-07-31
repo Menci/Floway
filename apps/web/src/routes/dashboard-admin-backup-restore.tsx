@@ -16,6 +16,7 @@ import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { Panel } from '../components/ui/panel';
+import { SectionHeader } from '../components/ui/section-header';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { fluentComponents } from '../fluent';
 import { formatBytes } from '../lib/format-number';
@@ -317,12 +318,7 @@ export default function DashboardAdminBackupRestore() {
       <DashboardPageHeader title={t('dashboard.backupRestore.heading')} />
 
       <Panel className="!p-[22px_24px] grid">
-        <Text as="h2" size={400} weight="semibold" className="m-0">
-          {t('dashboard.backupRestore.export.heading')}
-        </Text>
-        <Text size={300} className="text-fui-fg3">
-          {t('dashboard.backupRestore.export.description')}
-        </Text>
+        <SectionHeader description={t('dashboard.backupRestore.export.description')} level={2} title={t('dashboard.backupRestore.export.heading')} />
 
         <Checkbox
           label={t('dashboard.backupRestore.export.includePerformance')}
@@ -352,12 +348,7 @@ export default function DashboardAdminBackupRestore() {
       </Panel>
 
       <Panel className="!p-[22px_24px] grid">
-        <Text as="h2" size={400} weight="semibold" className="m-0">
-          {t('dashboard.backupRestore.import.heading')}
-        </Text>
-        <Text size={300} className="text-fui-fg3">
-          {t('dashboard.backupRestore.import.description')}
-        </Text>
+        <SectionHeader description={t('dashboard.backupRestore.import.description')} level={2} title={t('dashboard.backupRestore.import.heading')} />
 
         <input
           ref={fileInputRef}

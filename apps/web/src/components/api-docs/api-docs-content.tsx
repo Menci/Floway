@@ -7,6 +7,7 @@ import { HttpMethodBadge } from '../ui/http-badge';
 import { OpenLinkLabel } from '../ui/open-link-label';
 import { Panel } from '../ui/panel';
 import { ScrollArea } from '../ui/scroll-area';
+import { SectionHeader } from '../ui/section-header';
 import { TableActionsHeader } from '../ui/table-actions';
 import { useCopyToClipboard } from '../ui/use-copy-to-clipboard';
 
@@ -30,8 +31,7 @@ export function ApiDocsContent() {
 
   return <>
     <Panel className="grid gap-4 !p-[22px_24px] max-[680px]:!p-[18px]">
-      <Text as="h2" size={500} weight="semibold" className="m-0">{t('dashboard.apiDocs.authentication.title')}</Text>
-      <Text className="text-fui-fg2">{t('dashboard.apiDocs.authentication.description')}</Text>
+      <SectionHeader description={t('dashboard.apiDocs.authentication.description')} level={2} title={t('dashboard.apiDocs.authentication.title')} />
       <div className="grid gap-2 text-sm">
         <Text><strong>{t('dashboard.apiDocs.authentication.baseUrl')}:</strong> <code>{window.location.origin}</code></Text>
       </div>
@@ -40,14 +40,11 @@ export function ApiDocsContent() {
     </Panel>
 
     <Panel className="grid gap-5 !p-[22px_24px] max-[680px]:!p-[18px]">
-      <div className="grid gap-1">
-        <Text as="h2" size={500} weight="semibold" className="m-0">{t('dashboard.apiDocs.endpointsTitle')}</Text>
-        <Text size={300} className="text-fui-fg2">{t('dashboard.apiDocs.endpointsDescription')}</Text>
-      </div>
+      <SectionHeader description={t('dashboard.apiDocs.endpointsDescription')} level={2} title={t('dashboard.apiDocs.endpointsTitle')} />
       {apiDocsGroups.map(group => {
         const endpoints = apiDocsEndpoints.filter(endpoint => endpoint.group === group);
         return <section className="grid gap-2" key={group}>
-          <Text as="h3" size={400} weight="semibold" className="m-0">{t(`dashboard.apiDocs.groups.${group}`)}</Text>
+          <SectionHeader level={3} title={t(`dashboard.apiDocs.groups.${group}`)} />
           <ScrollArea axes="horizontal" className="min-w-0">
             <Table aria-label={t(`dashboard.apiDocs.groups.${group}`)} className="min-w-[780px] table-fixed" size="small">
               <colgroup><col className="w-[72px]" /><col /><col className="w-[300px]" /><col className="w-[144px]" /></colgroup>

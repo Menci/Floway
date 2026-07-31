@@ -31,6 +31,7 @@ import { ConfirmDialog } from '../ui/confirm-dialog';
 import { Input } from '../ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { ScrollArea } from '../ui/scroll-area';
+import { SectionHeader } from '../ui/section-header';
 import { TableActions, TableActionsHeader, TableCentredCell, TableCentredHeader } from '../ui/table-actions';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { useCopyToClipboard } from '../ui/use-copy-to-clipboard';
@@ -278,13 +279,14 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
     };
     return <div className="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] h-full min-h-[480px] min-w-0">
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-5 py-4">
-        <div className="grid gap-0.5">
-          <Text as="h2" size={500} weight="semibold" className="m-0">{t('dashboard.upstreamEditor.models.yamlTitle')}</Text>
-          <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.models.yamlHint')}</Text>
-        </div>
-        <Button appearance="secondary" className="!min-w-[160px]" icon={<CheckmarkCircleRegular />} onClick={applyAndLeave}>
-          {t('dashboard.upstreamEditor.models.editWithUi')}
-        </Button>
+        <SectionHeader
+          description={t('dashboard.upstreamEditor.models.yamlHint')}
+          level={2}
+          title={t('dashboard.upstreamEditor.models.yamlTitle')}
+          actions={<Button appearance="secondary" className="!min-w-[160px]" icon={<CheckmarkCircleRegular />} onClick={applyAndLeave}>
+            {t('dashboard.upstreamEditor.models.editWithUi')}
+          </Button>}
+        />
       </div>
       <div className="h-full min-h-0 overflow-hidden border-0 border-y border-solid border-fui-stroke1">
         <Suspense fallback={<ContentLoadingScreen label={t('common.loading')} />}>
@@ -305,7 +307,11 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
 
   return <div className="grid grid-cols-[minmax(0,1fr)] gap-4 min-w-0">
     <div className="flex flex-wrap items-center gap-3">
-      <div className="grid gap-0.5"><Text size={500} weight="semibold">{t('dashboard.upstreamEditor.models.title')}</Text><Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.models.summary', { total: rows.length, manual: manual.length, auto: rows.length - manual.length })}</Text></div>
+      <SectionHeader
+        description={t('dashboard.upstreamEditor.models.summary', { total: rows.length, manual: manual.length, auto: rows.length - manual.length })}
+        level={2}
+        title={t('dashboard.upstreamEditor.models.title')}
+      />
       <div className="ml-auto flex flex-wrap items-center gap-2">
         {!readOnly && <Button appearance="primary" icon={<AddRegular />} onClick={() => append({ upstreamModelId: '', kind: 'chat', endpoints: { chatCompletions: {} } })}>{t('dashboard.upstreamEditor.models.add')}</Button>}
         {!readOnly && <Button appearance="secondary" className="!min-w-[160px]" icon={<CodeRegular />} onClick={() => { onYamlChange(serializeModels(manual)); onYamlErrorChange(null); onViewChange('yaml'); }}>{t('dashboard.upstreamEditor.models.editAsYaml')}</Button>}

@@ -23,6 +23,7 @@ import {
 import { fluentComponents } from '../../fluent';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
 import { TIGHT_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
+import { SectionHeader } from '../ui/section-header';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { PRICING_AXES, type BillingMetric, type ModelKind, type ModelPricing, type ModelPricingIssue } from '@floway-dev/protocols/common';
 
@@ -199,13 +200,15 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
 
     {active && <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-4">
       <section className="grid min-w-0 gap-3" aria-labelledby={conditionsHeadingId}>
-        <div className="flex min-w-0 items-start justify-between gap-3">
-          <div className={TIGHT_STACK_CLASS}>
-            <Text as="h4" id={conditionsHeadingId} size={300} weight="semibold" className="m-0">{t('dashboard.upstreamEditor.models.pricingConditions')}</Text>
-            <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.models.pricingConditionsHint')}</Text>
-          </div>
-          {editable && selectedIndex !== baseIndex && <TooltipIconButton icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.removePricingEntry')} onClick={removeActive} />}
-        </div>
+        <SectionHeader
+          description={t('dashboard.upstreamEditor.models.pricingConditionsHint')}
+          level={4}
+          title={t('dashboard.upstreamEditor.models.pricingConditions')}
+          titleId={conditionsHeadingId}
+          actions={editable && selectedIndex !== baseIndex
+            ? <TooltipIconButton icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.removePricingEntry')} onClick={removeActive} />
+            : undefined}
+        />
         <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
           {PRICING_AXES.map(axis => {
             if (axis.kind === 'equality') {
@@ -256,10 +259,12 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
       <Divider />
 
       <section className="grid min-w-0 gap-3" aria-labelledby={ratesHeadingId}>
-        <div className={TIGHT_STACK_CLASS}>
-          <Text as="h4" id={ratesHeadingId} size={300} weight="semibold" className="m-0">{t('dashboard.upstreamEditor.models.pricingRates')}</Text>
-          <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.models.pricingRatesHint')}</Text>
-        </div>
+        <SectionHeader
+          description={t('dashboard.upstreamEditor.models.pricingRatesHint')}
+          level={4}
+          title={t('dashboard.upstreamEditor.models.pricingRates')}
+          titleId={ratesHeadingId}
+        />
         <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(180px,1fr))]">
           {fields.map((field: PricingField) => <RateInput
             editable={editable}

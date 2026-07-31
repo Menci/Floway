@@ -15,6 +15,7 @@ import { CodeBlock } from '../ui/code-block';
 import { Combobox, Dropdown } from '../ui/fluent-form-controls';
 import { infoLabelSlot } from '../ui/info-label';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
+import { SectionHeader } from '../ui/section-header';
 
 const { Button, Field, Option, Switch, Tab, TabList, Text } = fluentComponents;
 type Agent = 'claude' | 'codex';
@@ -83,15 +84,12 @@ export function AgentSetupCard({ copiedTag, copyFailedTag, initialApiKeyId, init
     : `# ${t(selectedKey ? 'dashboard.apiKeys.agentSetup.commandPending' : 'dashboard.apiKeys.agentSetup.selectKey')}`;
 
   return <div className="grid gap-[14px] min-w-0">
-    <div className="flex items-center gap-3 justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
-      <Text as="h2" size={500} weight="semibold" className="m-0 text-fui-fg1 min-w-0">
-        {t('dashboard.apiKeys.configuration.title')}
-      </Text>
+    <SectionHeader level={2} title={t('dashboard.apiKeys.configuration.title')} actions={
       <TabList aria-label={t('dashboard.apiKeys.agentSetup.accessMethod')} onTabSelect={(_, data) => setView(data.value === 'snippets' ? 'snippets' : 'setup')} selectedValue={view} size="small">
         <Tab value="setup">{t('dashboard.apiKeys.agentSetup.setupTab')}</Tab>
         <Tab value="snippets">{t('dashboard.apiKeys.agentSetup.snippetsTab')}</Tab>
       </TabList>
-    </div>
+    } />
 
     <div className="grid gap-5 min-w-0 grid-cols-[190px_minmax(0,1fr)] max-[720px]:grid-cols-1">
       <nav className="grid content-start">
@@ -112,7 +110,7 @@ export function AgentSetupCard({ copiedTag, copyFailedTag, initialApiKeyId, init
           : setup.error && <OutcomeMessageBar onDismiss={setup.dismissError}>{setup.error}</OutcomeMessageBar>}
 
         <section className="grid gap-3">
-          <Text as="h3" size={400} weight="semibold" className="m-0">{t('dashboard.apiKeys.agentSetup.modelSelection')}</Text>
+          <SectionHeader level={3} title={t('dashboard.apiKeys.agentSetup.modelSelection')} />
           <AgentConfigurationFields agent={agent} configuration={activeDraft} models={models} onChange={updateConfiguration} />
         </section>
 
@@ -282,7 +280,7 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
       </Field>
     </div>
     <section className="grid gap-3">
-      <Text as="h4" size={300} weight="semibold" className="m-0">{t('dashboard.apiKeys.agentSetup.miscSettings')}</Text>
+      <SectionHeader level={4} title={t('dashboard.apiKeys.agentSetup.miscSettings')} />
       <SwitchSetting
         checked={configuration.claudeCode.modelDiscovery}
         description={t('dashboard.apiKeys.agentSetup.modelDiscoveryHint')}

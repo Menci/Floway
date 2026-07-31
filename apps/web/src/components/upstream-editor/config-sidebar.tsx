@@ -11,6 +11,7 @@ import { fluentComponents } from '../../fluent';
 import { Combobox, Dropdown, Input } from '../ui/fluent-form-controls';
 import { ReorderButtons } from '../ui/reorder-buttons';
 import { ScrollArea } from '../ui/scroll-area';
+import { SectionHeader } from '../ui/section-header';
 import { StatusBadge } from '../ui/status-badge';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { UpstreamColorPicker } from '../upstreams/upstream-color-picker';
@@ -117,7 +118,7 @@ function UpstreamColorEditor({ kind }: { kind: UpstreamRecord['kind'] }) {
 function EditorSection({ children, description, inline = false, required = false, title }: { children: React.ReactNode; description?: string; inline?: boolean; required?: boolean; title: string }) {
   const styles = useEditorSectionStyles();
   return <section className={inline ? 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4' : 'grid gap-4'}>
-    <div className="grid gap-1"><Text as="h2" size={500} weight="semibold" className="m-0">{title}{required && <span aria-hidden className={styles.required}> *</span>}</Text>{description && <Text size={200} className="text-fui-fg2">{description}</Text>}</div>
+    <SectionHeader description={description} level={2} title={<>{title}{required && <span aria-hidden className={styles.required}> *</span>}</>} />
     {children}
   </section>;
 }

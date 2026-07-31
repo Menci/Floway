@@ -20,6 +20,7 @@ import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { Panel } from '../components/ui/panel';
 import { SecretInput } from '../components/ui/secret-input';
+import { SectionHeader } from '../components/ui/section-header';
 import { SettingsExpander, SettingsSwitch } from '../components/ui/settings-card';
 import { StatusBadge } from '../components/ui/status-badge';
 import { fluentComponents } from '../fluent';
@@ -407,9 +408,7 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
 
       {testResult && (
         <Panel className="!p-[22px_24px] grid gap-[14px]">
-          <Text as="h2" size={400} weight="semibold" className="m-0">
-            {t('dashboard.searchConfig.testResults')}
-          </Text>
+          <SectionHeader level={2} title={t('dashboard.searchConfig.testResults')} />
 
           <div className="flex items-center gap-[8px] flex-wrap">
             <StatusBadge color={testResult.ok ? 'success' : 'danger'}>

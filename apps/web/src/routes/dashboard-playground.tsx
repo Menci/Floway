@@ -38,6 +38,7 @@ import { Combobox, Dropdown, Input, Textarea } from '../components/ui/fluent-for
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { ScrollArea } from '../components/ui/scroll-area';
+import { SectionHeader } from '../components/ui/section-header';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { fluentComponents } from '../fluent';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
@@ -459,7 +460,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
 }
 
 function SettingsSection({ children, title }: { children: React.ReactNode; title: string }) {
-  return <section className="grid gap-3 min-w-0"><Text as="h2" size={500} weight="semibold" className="m-0">{title}</Text>{children}</section>;
+  return <section className="grid gap-3 min-w-0"><SectionHeader level={2} title={title} />{children}</section>;
 }
 
 function EmptyState({ text }: { text: string }) {

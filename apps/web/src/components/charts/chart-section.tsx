@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { colorForSlot } from './palette';
 import { invertedSeries, isolatedSeries, toggledSeries } from './series-selection';
 import { fluentComponents } from '../../fluent';
+import { SectionHeader } from '../ui/section-header';
 
 const { InteractionTag, InteractionTagPrimary, Text, Toolbar, ToolbarButton, Tooltip } = fluentComponents;
 
@@ -41,8 +42,7 @@ export function ChartSection({
 
   return (
     <section className="grid gap-3 min-w-0">
-      <div className="flex items-center gap-3 justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
-        <Text as="h2" size={500} weight="semibold" className="m-0 text-fui-fg1">{title}</Text>
+      <SectionHeader level={2} title={title} actions={
         <Toolbar aria-label={controlsLabel} className="flex-none !p-0" size="small">
           <Tooltip content={t('dashboard.charts.series.all')} relationship="label">
             <ToolbarButton aria-label={t('dashboard.charts.series.all')} icon={<SelectAllOnRegular />} onClick={() => onHiddenChange(new Set())} />
@@ -54,7 +54,7 @@ export function ChartSection({
             <ToolbarButton aria-label={t('dashboard.charts.series.invert')} icon={<SquareMultipleRegular />} onClick={() => onHiddenChange(invertedSeries(ids, hidden))} />
           </Tooltip>
         </Toolbar>
-      </div>
+      } />
 
       {entries.length
         ? <div className="flex flex-wrap gap-1.5 min-w-0">

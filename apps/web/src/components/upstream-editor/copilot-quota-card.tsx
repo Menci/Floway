@@ -7,6 +7,7 @@ import type { CopilotQuotaSnapshot, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { ResourceListActions } from '../ui/resource-list';
+import { SectionHeader } from '../ui/section-header';
 
 const { ProgressBar, Text } = fluentComponents;
 
@@ -40,15 +41,14 @@ export const CopilotQuotaCard = ({ record }: { record: Extract<UpstreamRecord, {
     : null;
 
   return <section className="grid gap-2">
-    <div className="flex items-center justify-between gap-3">
-      <Text as="h3" size={300} weight="semibold" className="m-0">{t('dashboard.upstreamEditor.copilot.quota.title')}</Text>
+    <SectionHeader level={3} title={t('dashboard.upstreamEditor.copilot.quota.title')} actions={
       <ResourceListActions
         appearance="subtle"
         onRefresh={() => void load()}
         refreshLabel={t(`dashboard.upstreamEditor.copilot.quota.${quota ? 'refresh' : 'load'}`)}
         refreshing={loading}
       />
-    </div>
+    } />
 
     {premium && used !== null && usedFraction !== null && <div className="grid gap-1">
       <ProgressBar max={1} value={usedFraction} thickness="large" />
