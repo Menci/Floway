@@ -11,6 +11,7 @@ import { useMediaQuery } from '../../lib/use-media-query';
 import { useNow } from '../../lib/use-now';
 import { ResourceListEmptyState } from '../ui/resource-list';
 import { ScrollArea } from '../ui/scroll-area';
+import { TableActions, useTrailingCellClass } from '../ui/table-actions';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 
 const {
@@ -21,10 +22,6 @@ const {
 } = fluentComponents;
 
 const useStyles = makeStyles({
-  actionsCell: {
-    justifyContent: 'flex-end',
-    '& .fui-TableHeaderCell__button': { justifyContent: 'flex-end' },
-  },
   accentText: { color: 'var(--colorBrandForeground1)' },
   dangerText: { color: 'var(--colorPaletteRedForeground1)' },
   mobileItem: {
@@ -48,6 +45,7 @@ export function KeysTable({
 }) {
   const { t } = useTranslation();
   const s = useStyles();
+  const trailingCell = useTrailingCellClass();
   const narrow = useMediaQuery('(max-width: 760px)');
   const locale = useLocale();
   // "Last used" is read relative to the wall clock, so the column re-renders on
@@ -107,7 +105,7 @@ export function KeysTable({
         renderCell: key => {
           const copyTag = `key-${key.id}`;
           return (
-            <div className="inline-flex items-center gap-[2px]">
+            <TableActions>
               <TooltipIconButton
                 disabled={disabled}
                 icon={copyFailedTag === copyTag ? <DismissRegular /> : copiedTag === copyTag ? <CheckmarkRegular /> : <CopyRegular />}
@@ -117,7 +115,7 @@ export function KeysTable({
               <TooltipIconButton disabled={disabled} icon={<EditRegular />} label={t('dashboard.apiKeys.actions.edit')} onClick={() => onEdit(key)} />
               <TooltipIconButton disabled={disabled} icon={<ArrowClockwiseRegular />} label={t('dashboard.apiKeys.actions.rotate')} onClick={() => onRotate(key)} />
               <TooltipIconButton danger disabled={disabled} icon={<DeleteRegular />} label={t('dashboard.apiKeys.actions.delete')} onClick={() => onDelete(key)} />
-            </div>
+            </TableActions>
           );
         },
       }),
@@ -188,7 +186,7 @@ export function KeysTable({
         <DataGridHeader>
           <DataGridRow selectionCell={{ 'aria-label': t('dashboard.apiKeys.table.select') }}>
             {({ renderHeaderCell, columnId }) => (
-              <DataGridHeaderCell className={columnId === 'actions' ? s.actionsCell : undefined}>
+              <DataGridHeaderCell className={columnId === 'actions' ? trailingCell : undefined}>
                 {renderHeaderCell()}
               </DataGridHeaderCell>
             )}
@@ -202,7 +200,7 @@ export function KeysTable({
             >
               {({ renderCell, columnId }) => (
                 <DataGridCell
-                  className={columnId === 'actions' ? s.actionsCell : undefined}
+                  className={columnId === 'actions' ? trailingCell : undefined}
                   focusMode={columnId === 'actions' ? 'group' : 'cell'}
                 >
                   {renderCell(item)}

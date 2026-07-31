@@ -411,7 +411,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
                         </>
                       )}
                     </PlaygroundMessageCard>
-                    <div className={`playground-message-actions flex justify-end gap-0.5 mt-1 ${s.messageActions}`}>
+                    <div className={`playground-message-actions flex justify-end gap-1 mt-1 ${s.messageActions}`}>
                       <TooltipIconButton className={s.brandIconAction} label={t('dashboard.playground.actions.edit')} icon={<EditRegular />} onClick={() => beginEdit(message)} />
                       <TooltipIconButton className={s.brandIconAction} label={t('dashboard.playground.actions.delete')} icon={<DeleteRegular />} onClick={() => removeMessage(message.id)} />
                     </div>
