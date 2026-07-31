@@ -232,9 +232,9 @@ export const choiceCss = `
   width: 20px;
   height: 20px;
   transform: scale(0.6);
-  transition:
-    transform var(--winui-control-normal-animation-duration)
-      var(--winui-control-fast-out-slow-in-easing);
+  transition-duration: var(--winui-control-normal-animation-duration);
+  transition-property: transform;
+  transition-timing-function: var(--winui-control-fast-out-slow-in-easing);
 }
 
 /* The dot grows and shrinks, which alters its perceived size, so it is motion
