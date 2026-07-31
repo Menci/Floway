@@ -29,7 +29,7 @@ export function ChartCalloutTable({ columns, rows, title }: { columns: ChartCall
     <tbody>
       {rows.map(row => <tr key={row.key}>
         <td className="max-w-[180px] min-w-[120px] pl-0 text-left">
-          <span className="flex items-center gap-[6px] min-w-0 overflow-hidden text-ellipsis">
+          <span className="flex items-center gap-1.5 min-w-0 overflow-hidden text-ellipsis">
             <i className="rounded-[2px] h-[10px] w-[10px] flex-shrink-0" style={{ backgroundColor: row.color }} />
             <Text style={bodyTextStyle}>{row.label}</Text>
           </span>

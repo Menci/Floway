@@ -21,6 +21,7 @@ import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { Panel } from '../components/ui/panel';
 import { SecretInput } from '../components/ui/secret-input';
 import { SettingsExpander, SettingsSwitch } from '../components/ui/settings-card';
+import { StatusBadge } from '../components/ui/status-badge';
 import { fluentComponents } from '../fluent';
 import { errorMessage } from '../lib/error-message';
 import { useAuthStore } from '../stores/auth-store';
@@ -28,7 +29,6 @@ import { useAuthStore } from '../stores/auth-store';
 type SearchConfigTestResult = InferResponseType<typeof api.api['search-config']['test']['$post'], 200>;
 
 const {
-  Badge,
   Button,
   Field,
   Link,
@@ -412,9 +412,9 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
           </Text>
 
           <div className="flex items-center gap-[8px] flex-wrap">
-            <Badge appearance="tint" color={testResult.ok ? 'success' : 'danger'}>
+            <StatusBadge color={testResult.ok ? 'success' : 'danger'}>
               {testResult.ok ? t('dashboard.searchConfig.testBadge.ok') : t('dashboard.searchConfig.testBadge.error')}
-            </Badge>
+            </StatusBadge>
             <Text size={200} className="text-fui-fg3">
               {t('dashboard.searchConfig.testedProvider', { provider: testedProviderLabel })}
               {testResult.query ? ` · ${t('dashboard.searchConfig.testedQuery', { query: testResult.query })}` : ''}
@@ -481,7 +481,7 @@ const modelLabel = (model: ControlPlaneModel) => model.display_name ?? model.id;
 
 function DescribedOptionLabel({ description, label }: { description?: string; label: string }) {
   return (
-    <span className="grid gap-[2px] min-w-0">
+    <span className="grid gap-0.5 min-w-0">
       <span className="truncate">{label}</span>
       {description && (
         <Text size={100} className="text-fui-fg3 truncate">

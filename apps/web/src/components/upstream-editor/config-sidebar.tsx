@@ -1,4 +1,4 @@
-import { ArrowDownRegular, ArrowUpRegular, DeleteRegular, WarningRegular } from '@fluentui/react-icons';
+import { DeleteRegular, WarningRegular } from '@fluentui/react-icons';
 import { useId, useMemo, useState } from 'react';
 import { Controller, useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -9,12 +9,14 @@ import { ApiPathsSection, ProviderConfigSection } from './provider-config';
 import type { ProxyRecord, UpstreamModelConfig, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { Combobox, Dropdown, Input } from '../ui/fluent-form-controls';
+import { ReorderButtons } from '../ui/reorder-buttons';
 import { ScrollArea } from '../ui/scroll-area';
+import { StatusBadge } from '../ui/status-badge';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { UpstreamColorPicker } from '../upstreams/upstream-color-picker';
 import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX } from '@floway-dev/provider/model-prefix';
 
-const { Badge, Button, Checkbox, Field, MessageBar, MessageBarBody, Option, Text, makeStyles } = fluentComponents;
+const { Button, Checkbox, Field, MessageBar, MessageBarBody, Option, Text, makeStyles } = fluentComponents;
 
 const useEditorSectionStyles = makeStyles({
   required: { color: 'var(--colorPaletteRedForeground1)' },
@@ -164,7 +166,7 @@ function DisabledModelsCombobox({ catalogAvailable, discovered }: { catalogAvail
       {filtered.map(option => <Option key={option.id} text={option.id} value={option.id}>
         <span className="flex items-center justify-between gap-3 min-w-0 w-full">
           <span className="font-mono min-w-0 truncate">{option.id}</span>
-          {option.missing && <Badge appearance="tint" color="warning">{t('dashboard.upstreamEditor.disabledModelsUnavailable')}</Badge>}
+          {option.missing && <StatusBadge color="warning">{t('dashboard.upstreamEditor.disabledModelsUnavailable')}</StatusBadge>}
         </span>
       </Option>)}
     </Combobox>
@@ -193,8 +195,7 @@ function ProxyFallbackEditor({ proxies, runtime }: { proxies: ProxyRecord[]; run
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
         <Controller control={control} name={`proxyFallbackList.${index}.id`} render={({ field: item }) => <Dropdown aria-label={t('dashboard.upstreamEditor.sections.proxy')} selectedOptions={[item.value]} value={available.find(proxy => proxy.id === item.value)?.name ?? item.value} onOptionSelect={(_, data) => data.optionValue !== undefined && item.onChange(data.optionValue)}>{available.map(proxy => <Option key={proxy.id} value={proxy.id}>{proxy.name}</Option>)}</Dropdown>} />
         <div className="inline-flex">
-          <TooltipIconButton disabled={index === 0} icon={<ArrowUpRegular />} label={t('dashboard.upstreamEditor.actions.moveUp')} onClick={() => move(index, index - 1)} />
-          <TooltipIconButton disabled={index === fields.length - 1} icon={<ArrowDownRegular />} label={t('dashboard.upstreamEditor.actions.moveDown')} onClick={() => move(index, index + 1)} />
+          <ReorderButtons downLabel={t('dashboard.upstreamEditor.actions.moveDown')} isFirst={index === 0} isLast={index === fields.length - 1} onMove={direction => move(index, index + direction)} upLabel={t('dashboard.upstreamEditor.actions.moveUp')} />
           <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.actions.remove')} onClick={() => remove(index)} />
         </div>
       </div>
@@ -233,7 +234,7 @@ function ColoCombobox({ current, onChange, value }: { current: string; onChange:
     value={open ? query : value.length === 0 ? '' : value.join(', ')}
   >
     {options.map(location => <Option key={location} text={location} value={location}>
-      <span className="flex items-center justify-between gap-2 w-full"><span className="font-mono">{location}</span>{location === current && <Badge appearance="tint" color="informative">{t('dashboard.upstreamEditor.proxy.currentColo')}</Badge>}</span>
+      <span className="flex items-center justify-between gap-2 w-full"><span className="font-mono">{location}</span>{location === current && <StatusBadge color="informative">{t('dashboard.upstreamEditor.proxy.currentColo')}</StatusBadge>}</span>
     </Option>)}
   </Combobox>;
 }

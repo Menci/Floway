@@ -26,6 +26,7 @@ import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { ResourceListActions, ResourceListEmptyState, ResourceListPanel } from '../components/ui/resource-list';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { SettingsCard, SettingsSwitch } from '../components/ui/settings-card';
+import { StatusBadge } from '../components/ui/status-badge';
 import { TableActions, TableActionsHeader } from '../components/ui/table-actions';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
@@ -36,7 +37,6 @@ import { useLocale } from '../lib/use-locale';
 import { useAuthStore } from '../stores/auth-store';
 
 const {
-  Badge,
   Button,
   DialogActions,
   DialogTitle,
@@ -282,9 +282,9 @@ function UsersTable({
                   </TableCellLayout>
                 </TableCell>
                 <TableCell>
-                  <Badge appearance="tint" color={user.isAdmin ? 'brand' : 'informative'}>
+                  <StatusBadge color={user.isAdmin ? 'brand' : 'informative'}>
                     {t(`dashboard.users.role.${user.isAdmin ? 'admin' : 'operator'}`)}
-                  </Badge>
+                  </StatusBadge>
                 </TableCell>
                 <TableCell>
                   {user.upstreamIds === null

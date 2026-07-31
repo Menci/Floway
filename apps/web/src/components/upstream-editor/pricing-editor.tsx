@@ -22,10 +22,11 @@ import {
 } from './pricing-model';
 import { fluentComponents } from '../../fluent';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
+import { TIGHT_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
+import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { PRICING_AXES, type BillingMetric, type ModelKind, type ModelPricing, type ModelPricingIssue } from '@floway-dev/protocols/common';
 
 const { Button, Divider, Field, List, ListItem, MessageBar, MessageBarBody, Option, Text, Toolbar, ToolbarButton, Tooltip, makeStyles } = fluentComponents;
-const TIGHT_STACK_CLASS = 'grid gap-1';
 const usePricingStyles = makeStyles({
   // Selection is drawn by the WinUI layer, which marks a selected row with the
   // accent bar WinUI runs down its leading edge; a full-height border here
@@ -203,11 +204,9 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
             <Text as="h4" id={conditionsHeadingId} size={300} weight="semibold" className="m-0">{t('dashboard.upstreamEditor.models.pricingConditions')}</Text>
             <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.models.pricingConditionsHint')}</Text>
           </div>
-          {editable && selectedIndex !== baseIndex && <Tooltip content={t('dashboard.upstreamEditor.models.removePricingEntry')} relationship="label">
-            <Button appearance="subtle" aria-label={t('dashboard.upstreamEditor.models.removePricingEntry')} icon={<DeleteRegular />} onClick={removeActive} size="small" />
-          </Tooltip>}
+          {editable && selectedIndex !== baseIndex && <TooltipIconButton icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.removePricingEntry')} onClick={removeActive} />}
         </div>
-        <div className="grid gap-3 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] max-[560px]:grid-cols-1">
+        <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
           {PRICING_AXES.map(axis => {
             if (axis.kind === 'equality') {
               const current = active.selector[axis.id];

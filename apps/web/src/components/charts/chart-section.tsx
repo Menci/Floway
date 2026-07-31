@@ -57,7 +57,7 @@ export function ChartSection({
       </div>
 
       {entries.length
-        ? <div className="flex flex-wrap gap-[6px] min-w-0">
+        ? <div className="flex flex-wrap gap-1.5 min-w-0">
             {entries.map(entry => (
               <InteractionTag appearance="outline" key={entry.id} shape="circular" size="small">
                 <InteractionTagPrimary

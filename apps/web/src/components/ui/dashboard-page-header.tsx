@@ -10,7 +10,7 @@ export function DashboardPageHeader({ actions, description, title }: {
   // Centred against the whole block rather than aligned to its first line: the
   // actions answer the page, not its title.
   return <header className="flex items-center gap-[18px] justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
-    <div className="grid gap-[6px] min-w-0">
+    <div className="grid gap-1.5 min-w-0">
       <Text as="h1" size={700} weight="semibold" className="m-0">
         {title}
       </Text>

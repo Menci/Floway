@@ -1,4 +1,4 @@
-import { ArrowDownRegular, ArrowUpRegular, ChevronDownRegular, DeleteRegular, WarningRegular } from '@fluentui/react-icons';
+import { ChevronDownRegular, DeleteRegular, WarningRegular } from '@fluentui/react-icons';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -6,6 +6,7 @@ import { computeModelWarning, computeRuleWarnings, findCatalogModel } from './wa
 import type { AliasTarget, ControlPlaneModel, ModelKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { Combobox, Dropdown, Input } from '../ui/fluent-form-controls';
+import { ReorderButtons } from '../ui/reorder-buttons';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 
 const { Button, Field, MessageBar, MessageBarBody, Option, Tooltip } = fluentComponents;
@@ -77,8 +78,7 @@ export function AliasTargetRow({
           {modelWarning
             ? <Tooltip content={t(`dashboard.modelAliases.warnings.${modelWarning.key}`, modelWarning.values)} relationship="description"><span className="grid h-8 w-8 place-items-center"><WarningRegular aria-label={t('dashboard.modelAliases.warnings.label')} fontSize={20} /></span></Tooltip>
             : <span aria-hidden className="h-8 w-8" />}
-          <TooltipIconButton disabled={disabled || isFirst} icon={<ArrowUpRegular />} label={t('dashboard.modelAliases.target.moveUp')} onClick={() => onMove(-1)} />
-          <TooltipIconButton disabled={disabled || isLast} icon={<ArrowDownRegular />} label={t('dashboard.modelAliases.target.moveDown')} onClick={() => onMove(1)} />
+          <ReorderButtons disabled={disabled} downLabel={t('dashboard.modelAliases.target.moveDown')} isFirst={isFirst} isLast={isLast} onMove={onMove} upLabel={t('dashboard.modelAliases.target.moveUp')} />
           <TooltipIconButton danger disabled={disabled || isSole} icon={<DeleteRegular />} label={t('dashboard.modelAliases.target.remove')} onClick={onRemove} />
         </div>
       </div>

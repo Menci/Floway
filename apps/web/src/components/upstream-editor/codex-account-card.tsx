@@ -8,6 +8,7 @@ import { dateTime } from '../../lib/format-time';
 import { clampPercent } from '../../lib/percent';
 import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
+import { StatusBadge } from '../ui/status-badge';
 import { ProviderIcon } from '../upstreams/provider-badge';
 
 const { Badge, ProgressBar, Text } = fluentComponents;
@@ -39,16 +40,16 @@ export const CodexAccountCard = ({ record }: { record: CodexRecord }) => {
       <div className="grid gap-1 min-w-0 flex-1">
         <Text weight="semibold" truncate>{account.email}</Text>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge appearance="tint" color="brand">{account.planType}</Badge>
+          <StatusBadge color="brand">{account.planType}</StatusBadge>
           {credits?.credits_has_credits === false
-            ? <Badge appearance="tint" color="danger">{t('dashboard.upstreamEditor.codex.noCredits')}</Badge>
+            ? <StatusBadge color="danger">{t('dashboard.upstreamEditor.codex.noCredits')}</StatusBadge>
             : credits?.credits_balance !== undefined && <Badge appearance="outline">
               {t('dashboard.upstreamEditor.codex.credits', { balance: credits.credits_balance })}
             </Badge>}
           <Text size={200} className="text-fui-fg3 font-mono" title={account.chatgptAccountId}>{shortAccountId(account.chatgptAccountId)}</Text>
         </div>
       </div>
-      <Badge appearance="tint" color={status.tone}>{statusLabel}</Badge>
+      <StatusBadge color={status.tone}>{statusLabel}</StatusBadge>
     </div>
 
     {status.tone === 'danger' && 'detail' in status && status.detail && <Text size={200} className="text-fui-fg2">{status.detail}</Text>}

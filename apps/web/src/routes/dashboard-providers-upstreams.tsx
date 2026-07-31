@@ -1,6 +1,4 @@
 import {
-  ArrowDownRegular,
-  ArrowUpRegular,
   CheckmarkCircleRegular,
   ChevronDownRegular,
   DeleteRegular,
@@ -25,6 +23,7 @@ import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
+import { ReorderButtons } from '../components/ui/reorder-buttons';
 import { ResourceListActions, ResourceListEmptyState, ResourceListPanel } from '../components/ui/resource-list';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { TableActions, TableActionsHeader, TableCentredCell, TableCentredHeader } from '../components/ui/table-actions';
@@ -352,17 +351,13 @@ function UpstreamsTable({
               <TableCell>
                 <div className="inline-flex items-center gap-1">
                   <Text size={300} className="text-fui-fg3 min-w-[22px] text-center">{index + 1}</Text>
-                  <TooltipIconButton
-                    disabled={mutating || index === 0}
-                    icon={<ArrowUpRegular />}
-                    label={t('dashboard.upstreams.actions.moveUp', { name: record.name })}
-                    onClick={() => onMove(record, -1)}
-                  />
-                  <TooltipIconButton
-                    disabled={mutating || index === data.upstreams.length - 1}
-                    icon={<ArrowDownRegular />}
-                    label={t('dashboard.upstreams.actions.moveDown', { name: record.name })}
-                    onClick={() => onMove(record, 1)}
+                  <ReorderButtons
+                    disabled={mutating}
+                    downLabel={t('dashboard.upstreams.actions.moveDown', { name: record.name })}
+                    isFirst={index === 0}
+                    isLast={index === data.upstreams.length - 1}
+                    onMove={direction => onMove(record, direction)}
+                    upLabel={t('dashboard.upstreams.actions.moveUp', { name: record.name })}
                   />
                 </div>
               </TableCell>
@@ -444,7 +439,7 @@ function ModelStatus({
 
   return (
     <Tooltip content={detail} relationship="description">
-      <span className="inline-flex items-center gap-[6px] min-w-0 w-fit max-w-full">
+      <span className="inline-flex items-center gap-1.5 min-w-0 w-fit max-w-full">
         <Text size={300} className="whitespace-nowrap">
           {modelsAvailable
             ? t('dashboard.upstreams.models.count', { count })

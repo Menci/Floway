@@ -1,13 +1,13 @@
-import { ArrowDownRegular, ArrowUpRegular, ShieldKeyhole24Regular } from '@fluentui/react-icons';
+import { ShieldKeyhole24Regular } from '@fluentui/react-icons';
 import { useCallback, useId, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ProviderBadge } from './provider-badge';
 import type { ControlPlaneModel, UpstreamOption } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { ReorderButtons } from '../ui/reorder-buttons';
 import { ScrollArea } from '../ui/scroll-area';
 import { SettingsExpander, SettingsSwitch } from '../ui/settings-card';
-import { TooltipIconButton } from '../ui/tooltip-icon-button';
 
 const {
   Checkbox,
@@ -116,7 +116,7 @@ export function UpstreamAccessControl({
               const index = ids.indexOf(row.id);
               return <TableRow key={row.id}>
                 <TableCell><Checkbox aria-label={`${t('dashboard.upstreamAccess.enabled')}: ${row.name}`} checked={row.enabled} disabled={disabled || !override} onChange={(_, data) => toggleUpstream(row.id, !!data.checked)} /></TableCell>
-                <TableCell><div className="inline-flex items-center gap-1"><TooltipIconButton disabled={disabled || !override || index <= 0} icon={<ArrowUpRegular />} label={t('dashboard.upstreamAccess.moveUp')} onClick={() => moveUpstream(row.id, -1)} /><TooltipIconButton disabled={disabled || !override || index === -1 || index >= ids.length - 1} icon={<ArrowDownRegular />} label={t('dashboard.upstreamAccess.moveDown')} onClick={() => moveUpstream(row.id, 1)} /></div></TableCell>
+                <TableCell><div className="inline-flex items-center gap-1"><ReorderButtons disabled={disabled || !override} downLabel={t('dashboard.upstreamAccess.moveDown')} isFirst={index <= 0} isLast={index === -1 || index >= ids.length - 1} onMove={direction => moveUpstream(row.id, direction)} upLabel={t('dashboard.upstreamAccess.moveUp')} /></div></TableCell>
                 <TableCell><ProviderBadge color={row.color} kind={row.kind} label={row.name} /></TableCell>
                 <TableCell><Text>{t('dashboard.upstreamAccess.modelCount', { count: row.modelCount })}</Text></TableCell>
               </TableRow>;

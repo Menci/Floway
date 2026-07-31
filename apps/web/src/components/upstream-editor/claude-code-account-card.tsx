@@ -18,6 +18,7 @@ import { dateTime, relativeTime } from '../../lib/format-time';
 import { clampPercent } from '../../lib/percent';
 import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
+import { StatusBadge } from '../ui/status-badge';
 import { ProviderIcon } from '../upstreams/provider-badge';
 
 const {
@@ -61,17 +62,17 @@ export const ClaudeCodeAccountCard = ({ onRefreshQuota, probing, record }: {
       <div className="grid gap-1 min-w-0 flex-1">
         <Text weight="semibold" truncate>{account.email ?? accountUuidShort}</Text>
         <div className="flex flex-wrap items-center gap-2">
-          {credential?.tokenKind === 'setup-token' && <Badge appearance="tint" color="important" title={t('dashboard.upstreamEditor.claudeCode.setupTokenHint')}>
+          {credential?.tokenKind === 'setup-token' && <StatusBadge color="important" title={t('dashboard.upstreamEditor.claudeCode.setupTokenHint')}>
             {t('dashboard.upstreamEditor.claudeCode.setupToken')}
-          </Badge>}
-          {subscription && <Badge appearance="tint" color="brand">{subscription}</Badge>}
+          </StatusBadge>}
+          {subscription && <StatusBadge color="brand">{subscription}</StatusBadge>}
           <Text size={200} className="text-fui-fg3 font-mono" title={account.accountUuid}>{accountUuidShort}</Text>
           {account.email === null && <Text size={200} className="text-fui-fg3" title={t('dashboard.upstreamEditor.claudeCode.noEmailScopeHint')}>
             {t('dashboard.upstreamEditor.claudeCode.noEmailScope')}
           </Text>}
         </div>
       </div>
-      <Badge appearance="tint" color={status.tone}>{statusLabel}</Badge>
+      <StatusBadge color={status.tone}>{statusLabel}</StatusBadge>
     </div>
 
     {status.tone === 'danger' && status.detail && <Text size={200} className="text-fui-fg2">{status.detail}</Text>}
@@ -113,15 +114,15 @@ export const ClaudeCodeAccountCard = ({ onRefreshQuota, probing, record }: {
       {quota?.representativeClaim && <Badge appearance="outline">
         {t('dashboard.upstreamEditor.claudeCode.representative', { claim: quota.representativeClaim })}
       </Badge>}
-      {quota?.overage?.status === 'allowed' && <Badge appearance="tint" color="success">
+      {quota?.overage?.status === 'allowed' && <StatusBadge color="success">
         {t('dashboard.upstreamEditor.claudeCode.overageAllowed')}
-      </Badge>}
-      {disabledReason && <Badge appearance="tint" color="danger">
+      </StatusBadge>}
+      {disabledReason && <StatusBadge color="danger">
         {t('dashboard.upstreamEditor.claudeCode.disabledReason', { reason: disabledReason })}
-      </Badge>}
-      {quota?.fallbackAvailable === false && <Badge appearance="tint" color="warning">
+      </StatusBadge>}
+      {quota?.fallbackAvailable === false && <StatusBadge color="warning">
         {t('dashboard.upstreamEditor.claudeCode.fallbackUnavailable')}
-      </Badge>}
+      </StatusBadge>}
     </div>
 
     {(headerRawEntries.length > 0 || probeExtraEntries.length > 0) && <Accordion collapsible>
