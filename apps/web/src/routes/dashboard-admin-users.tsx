@@ -118,6 +118,14 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
   const editorDialog = useDialogInvocation<{ kind: 'create' } | { kind: 'edit'; user: ControlPlaneUser }>();
   const passwordDialog = useDialogInvocation<ControlPlaneUser>();
   const deleteDialog = useDialogInvocation<ControlPlaneUser>();
+
+  // The error belongs to the attempt that produced it. Opening the dialog for
+  // another user starts a new attempt, so the previous one's failure is cleared
+  // here rather than waiting for a dismissal that may never come.
+  const openDeleteDialog = (target: ControlPlaneUser) => {
+    setDeleteError(null);
+    deleteDialog.open(target);
+  };
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
@@ -186,7 +194,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
           <UsersTable
             actorId={actor.id}
             disabled={refreshing || deleting}
-            onDelete={deleteDialog.open}
+            onDelete={openDeleteDialog}
             onEdit={user => editorDialog.open({ kind: 'edit', user })}
             onResetPassword={passwordDialog.open}
             users={users}

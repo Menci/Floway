@@ -218,8 +218,12 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       <header className="flex items-center gap-3 min-w-0 px-1">
         <BackNavigationButton onClick={leave}>{t('dashboard.upstreamEditor.actions.back')}</BackNavigationButton>
         {hasUnsavedChanges && <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.unsaved')}</Text>}
+        {/* Save is the same flag the unsaved hint reads: with nothing to send
+            it would post an identical payload, so it says so rather than doing
+            it. An invalid colour draft counts as a change, which keeps the
+            button live for the one press that surfaces the field's own error. */}
         <div className="ml-auto flex items-center gap-2">
-          <Button appearance="primary" disabled={saving} icon={saving ? <Spinner size="tiny" /> : <SaveRegular />} onClick={() => void submitForm()}>{saving ? t('dashboard.upstreamEditor.actions.saving') : t('dashboard.upstreamEditor.actions.save')}</Button>
+          <Button appearance="primary" disabled={saving || !hasUnsavedChanges} icon={saving ? <Spinner size="tiny" /> : <SaveRegular />} onClick={() => void submitForm()}>{saving ? t('dashboard.upstreamEditor.actions.saving') : t('dashboard.upstreamEditor.actions.save')}</Button>
         </div>
       </header>
       {saveError && <OutcomeMessageBar onDismiss={() => setSaveError(null)}>{saveError}</OutcomeMessageBar>}
