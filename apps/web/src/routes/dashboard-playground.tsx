@@ -453,7 +453,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
         {narrow ? <OverlayDrawer onOpenChange={(_, data) => setSettingsOpen(data.open)} open={settingsOpen} position="end" size="medium">
           <DrawerHeader><DrawerHeaderTitle action={<Button appearance="subtle" aria-label={t('dashboard.playground.settings.close')} icon={<DismissRegular />} onClick={() => setSettingsOpen(false)} />}>{t('dashboard.playground.settings.title')}</DrawerHeaderTitle></DrawerHeader>
           <DrawerBody className="!p-0 min-h-0">{settingsContent}</DrawerBody>
-        </OverlayDrawer> : <Panel className="min-h-0 overflow-hidden !p-0">{settingsContent}</Panel>}
+        </OverlayDrawer> : <Panel className="min-h-0 overflow-hidden" padding="flush">{settingsContent}</Panel>}
       </section>
     </>
   );

@@ -86,9 +86,7 @@ export function LoginForm() {
   const usernameError = errors.username?.message;
 
   return (
-    <Panel
-      className="w-[min(440px,100%)] !p-7 max-[520px]:!p-5"
-    >
+    <Panel className="w-[min(440px,100%)]">
       <header className="mb-9 grid justify-items-center gap-6 text-center">
         <FlowayLogo />
         <h1 className="m-0 text-fui-base600 font-fui-semibold leading-[1.15]">

@@ -317,7 +317,7 @@ export default function DashboardAdminBackupRestore() {
     <section className="dashboard-page max-w-[960px]">
       <DashboardPageHeader title={t('dashboard.backupRestore.heading')} />
 
-      <Panel className="!p-[22px_24px] grid">
+      <Panel className="grid">
         <SectionHeader description={t('dashboard.backupRestore.export.description')} level={2} title={t('dashboard.backupRestore.export.heading')} />
 
         <Checkbox
@@ -347,7 +347,7 @@ export default function DashboardAdminBackupRestore() {
         </div>
       </Panel>
 
-      <Panel className="!p-[22px_24px] grid">
+      <Panel className="grid">
         <SectionHeader description={t('dashboard.backupRestore.import.description')} level={2} title={t('dashboard.backupRestore.import.heading')} />
 
         <input

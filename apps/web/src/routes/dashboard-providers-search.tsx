@@ -407,7 +407,7 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
       )}
 
       {testResult && (
-        <Panel className="!p-[22px_24px] grid gap-[14px]">
+        <Panel className="grid gap-[14px]">
           <SectionHeader level={2} title={t('dashboard.searchConfig.testResults')} />
 
           <div className="flex items-center gap-[8px] flex-wrap">

@@ -139,7 +139,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
       {keysError && keys.length === 0 ? (
         <OutcomeMessageBar onDismiss={() => setReplacement({ ...shown, keysError: null })}>{keysError}</OutcomeMessageBar>
       ) : keys.length === 0 ? (
-        <Panel className="!p-[28px] grid place-items-center text-center">
+        <Panel className="grid place-items-center text-center">
           <div className="grid justify-items-center gap-2 max-w-[480px]">
             <Text weight="semibold" className="!text-center">{t('dashboard.requests.noKeys')}</Text>
             <Text size={300} className="text-fui-fg3 !text-center">{t('dashboard.requests.noKeysDescription')}</Text>
@@ -147,7 +147,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
           </div>
         </Panel>
       ) : selectedKeyId ? narrow ? <>
-        <Panel className="!p-0 !block overflow-hidden min-w-0 h-full">
+        <Panel className="!block overflow-hidden min-w-0 h-full" padding="flush">
           <RequestListPanel
             apiKeys={keys}
             error={subscription.error ?? shown.recordsError ?? keysError}
@@ -173,10 +173,10 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
         </OverlayDrawer>
       </> : (
         <div className="h-full min-h-0 min-w-0 grid grid-cols-[minmax(0,1fr)_420px] gap-3">
-          <Panel className="!p-0 !block overflow-hidden min-w-0 h-full">
+          <Panel className="!block overflow-hidden min-w-0 h-full" padding="flush">
             <RequestDetailPanel collected={loaderData.collected} error={loaderData.recordError} record={loaderData.record} recordId={selectedRecordId} />
           </Panel>
-          <Panel className="!p-0 !block overflow-hidden min-w-0 h-full">
+          <Panel className="!block overflow-hidden min-w-0 h-full" padding="flush">
             <RequestListPanel
               apiKeys={keys}
               error={subscription.error ?? shown.recordsError ?? keysError}

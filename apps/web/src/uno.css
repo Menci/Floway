@@ -12,13 +12,25 @@
    puts two panels side by side separates them by the same measure, so the space
    around the page and the space between its panels read as one rhythm rather
    than two. */
+/* The inset a panel keeps from its own edge. WinUI's nearest surfaces state 16
+   -- SettingsCard's padding
+   (https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L99)
+   and Expander's ContentPadding
+   (https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml) --
+   but both are control-scale: one row of a settings list, one disclosure body.
+   A panel here is page-scale and holds a whole form, table or chart, and
+   microsoft-ui-xaml ships no card control to transcribe. So this number is
+   ours, and it steps down at the same width the page inset does, so a panel
+   and the space around it narrow together. */
 :root {
   --floway-page-inset: 28px;
+  --floway-panel-inset: 22px 24px;
 }
 
 @media (max-width: 680px) {
   :root {
     --floway-page-inset: 16px;
+    --floway-panel-inset: 18px;
   }
 }
 

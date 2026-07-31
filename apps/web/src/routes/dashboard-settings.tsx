@@ -112,7 +112,7 @@ export default function DashboardSettings() {
     <section className="dashboard-page max-w-[960px]">
       <DashboardPageHeader description={t('dashboard.settings.description')} title={t('dashboard.nav.settings')} />
 
-      <Panel className="grid w-full max-w-[480px] gap-[18px] !p-[22px_24px] max-[680px]:!p-[18px]">
+      <Panel className="grid w-full max-w-[480px] gap-[18px]">
         <SectionHeader level={2} title={t('dashboard.settings.changePassword')} />
 
         <form className="grid gap-4" onSubmit={event => void handleSubmit(submit)(event)}>

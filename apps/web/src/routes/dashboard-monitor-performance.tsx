@@ -215,7 +215,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       title={t('dashboard.nav.performance')}
     />
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
-    <Panel className="!grid min-w-0 !p-[18px]">
+    <Panel className="!grid min-w-0">
       <div className="flex items-end gap-3 min-w-0 flex-wrap">
         <Field className="w-[160px] flex-none" label={t('dashboard.performance.groupBy.label')}>
           <div className="flex items-center gap-2">
@@ -260,10 +260,10 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
         ]} onChange={value => setRange(value as PerformanceRange)} value={range} />
       </div>
     </Panel>
-    <Panel className="!grid gap-[18px] min-w-0 !p-[18px]">
+    <Panel className="!grid gap-[18px] min-w-0">
       <PerformanceChartSection chart={chart} hidden={hiddenSeries} onHiddenChange={setHiddenSeries} title={t('dashboard.performance.chartTitle', { metric: t(`dashboard.performance.metric.${metric === 'ttft' ? 'ttft' : 'outputSpeed'}`), group: t(`dashboard.performance.groupBy.${groupBy}`), percentile })} />
     </Panel>
-    <Panel className="!grid gap-3 !p-[18px] min-w-0">
+    <Panel className="!grid gap-3 min-w-0">
       <ScrollArea axes="horizontal" className="min-w-0"><TabList selectedValue={activeBreakdown.key} onTabSelect={(_, data) => setBreakdownGroup(data.value as PerformanceGroupBy)}>
         {breakdowns.map(({ key }) => <Tab key={key} value={key}>{t(`dashboard.performance.groupBy.${key}`)}</Tab>)}
       </TabList></ScrollArea>

@@ -67,7 +67,8 @@ export function ResourceListPanel({ className, rowHeight = DEFAULT_ROW_HEIGHT, s
   return (
     <Panel
       {...props}
-      className={mergeClasses('grid min-w-0 !gap-0 !p-0 overflow-hidden', styles.table, className)}
+      className={mergeClasses('grid min-w-0 !gap-0 overflow-hidden', styles.table, className)}
+      padding="flush"
       style={{ ...style, [ROW_HEIGHT]: rowHeight } as CSSProperties}
     />
   );

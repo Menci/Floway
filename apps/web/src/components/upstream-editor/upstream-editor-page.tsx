@@ -201,7 +201,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       </header>
       {saveError && <OutcomeMessageBar onDismiss={() => setSaveError(null)}>{saveError}</OutcomeMessageBar>}
       <div className="grid grid-cols-[380px_minmax(0,1fr)] gap-[18px] min-h-0 min-w-0 flex-1 max-[1050px]:grid-cols-1">
-        <Panel className="min-h-0 min-w-0 overflow-hidden !p-0">
+        <Panel className="min-h-0 min-w-0 overflow-hidden" padding="flush">
           <UpstreamConfigSidebar
             catalogAvailable={modelsError === null}
             discovered={discovered}
@@ -212,7 +212,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
             runtime={data.runtime}
           />
         </Panel>
-        <Panel className="min-h-0 min-w-0 overflow-hidden !p-0">
+        <Panel className="min-h-0 min-w-0 overflow-hidden" padding="flush">
           <UpstreamWorkspace record={record} discovered={discovered} loadingModels={modelsLoading} modelsError={modelsError} onRefreshModels={() => void refreshModels()} />
         </Panel>
       </div>

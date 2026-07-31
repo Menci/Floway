@@ -30,7 +30,7 @@ export function ApiDocsContent() {
   const authExample = authCurlExample(window.location.origin);
 
   return <>
-    <Panel className="grid gap-4 !p-[22px_24px] max-[680px]:!p-[18px]">
+    <Panel className="grid gap-4">
       <SectionHeader description={t('dashboard.apiDocs.authentication.description')} level={2} title={t('dashboard.apiDocs.authentication.title')} />
       <div className="grid gap-2 text-sm">
         <Text><strong>{t('dashboard.apiDocs.authentication.baseUrl')}:</strong> <code>{window.location.origin}</code></Text>
@@ -39,7 +39,7 @@ export function ApiDocsContent() {
       <CodeBlock code={authExample} copied={copiedTag === 'auth'} copyFailed={copyFailedTag === 'auth'} language="bash" onCopy={() => copy(authExample, 'auth')} />
     </Panel>
 
-    <Panel className="grid gap-5 !p-[22px_24px] max-[680px]:!p-[18px]">
+    <Panel className="grid gap-5">
       <SectionHeader description={t('dashboard.apiDocs.endpointsDescription')} level={2} title={t('dashboard.apiDocs.endpointsTitle')} />
       {apiDocsGroups.map(group => {
         const endpoints = apiDocsEndpoints.filter(endpoint => endpoint.group === group);

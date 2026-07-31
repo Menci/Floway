@@ -174,7 +174,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
         />
       </ResourceListPanel>
 
-      <Panel className="grid gap-[14px] min-w-0 !p-[18px]">
+      <Panel className="grid gap-[14px] min-w-0">
         <AgentSetupCard
           copiedTag={copiedTag}
           copyFailedTag={copyFailedTag}
