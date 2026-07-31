@@ -2,9 +2,9 @@ import { useTranslation } from 'react-i18next';
 
 import { bucketKeyForCallout, formatCompactDecimalCount, formatRatePercent, formatUsdCost, summarizeCounters } from './chart-model';
 import type { CalloutPoint, UsageChartModel } from './types';
+import { sumDecimalStrings } from '../../lib/decimal-display';
 import { formatCount } from '../../lib/format-number';
 import { useLocale } from '../../lib/use-locale';
-import { sumDecimalStrings } from '../../utils/decimal-display';
 import { ChartCalloutTable } from '../charts/chart-callout-table';
 import { formatCalloutTitle } from '../charts/dashboard-time';
 import { ScrollArea } from '../ui/scroll-area';

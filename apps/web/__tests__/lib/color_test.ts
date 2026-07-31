@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { HEX_RE, hexToRgb, hsvToRgb, rgbToHex, rgbToHsv } from '../../src/utils/color';
+import { HEX_RE, hexToRgb, hsvToRgb, rgbToHex, rgbToHsv } from '../../src/lib/color';
 
 describe('HEX_RE', () => {
   it('accepts 6-digit hex in either case', () => {

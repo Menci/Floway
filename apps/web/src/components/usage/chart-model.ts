@@ -3,8 +3,8 @@ import { curveMonotoneX } from 'd3-shape';
 
 import type { ChartEntry, DisplayUsageRecord, SearchChartModel, SearchUsageResponse, TokenChartModel, TokenCounters, TokenSummary, UsageBucket, UsageMetric, UsageRange, UsageResponse } from './types';
 import type { ControlPlaneModel, BillingMetric } from '../../api/types';
+import { decimalStringToPlottableNumber, formatDecimalQuantity, formatUsd, sumDecimalStrings } from '../../lib/decimal-display';
 import { formatCompactCount, formatCount } from '../../lib/format-number';
-import { decimalStringToPlottableNumber, formatDecimalQuantity, formatUsd, sumDecimalStrings } from '../../utils/decimal-display';
 import {
   dashboardBucketFrames,
   dashboardBucketKeyForUtcHour,

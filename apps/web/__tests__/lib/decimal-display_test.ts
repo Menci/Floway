@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { decimalStringToPlottableNumber, formatDecimalQuantity, formatUsd, sumDecimalStrings } from '../../src/utils/decimal-display';
+import { decimalStringToPlottableNumber, formatDecimalQuantity, formatUsd, sumDecimalStrings } from '../../src/lib/decimal-display';
 
 test('decimal display helpers aggregate and format without binary floating-point rounding', () => {
   expect(sumDecimalStrings('9007199254740993', '0.1', '0.2')).toBe('9007199254740993.3');
