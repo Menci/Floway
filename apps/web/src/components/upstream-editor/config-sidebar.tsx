@@ -4,7 +4,7 @@ import { Controller, useFieldArray, useFormContext, useWatch } from 'react-hook-
 import { useTranslation } from 'react-i18next';
 
 import type { RuntimeInfo, UpstreamEditorValues } from './editor-data';
-import { publicModelId } from './editor-data';
+import { modelPrefixIsValid, publicModelId } from './editor-data';
 import { ApiPathsSection, ProviderConfigSection } from './provider-config';
 import type { ProxyRecord, UpstreamModelConfig, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
@@ -15,11 +15,12 @@ import { SectionHeader } from '../ui/section-header';
 import { StatusBadge } from '../ui/status-badge';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { UpstreamColorPicker } from '../upstreams/upstream-color-picker';
-import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX } from '@floway-dev/provider/model-prefix';
+import { MODEL_PREFIX_MAX_LENGTH } from '@floway-dev/provider/model-prefix';
 
 const { Button, Checkbox, Field, MessageBar, MessageBarBody, Option, Text, makeStyles } = fluentComponents;
 
-const useEditorSectionStyles = makeStyles({
+const useSidebarStyles = makeStyles({
+  error: { color: 'var(--colorPaletteRedForeground1)' },
   required: { color: 'var(--colorPaletteRedForeground1)' },
 });
 
@@ -33,6 +34,7 @@ const COMMON_COLO_LOCATIONS = [
 export function UpstreamConfigSidebar({
   catalogAvailable,
   discovered,
+  onColorValidityChange,
   onPatch,
   onRefreshModels,
   proxies,
@@ -41,6 +43,7 @@ export function UpstreamConfigSidebar({
 }: {
   catalogAvailable: boolean;
   discovered: UpstreamModelConfig[];
+  onColorValidityChange: (invalid: boolean) => void;
   onPatch: (patch: { config?: unknown; state?: unknown }, persisted?: boolean) => void;
   onRefreshModels: () => void;
   proxies: ProxyRecord[];
@@ -48,7 +51,7 @@ export function UpstreamConfigSidebar({
   runtime: RuntimeInfo;
 }) {
   const { t } = useTranslation();
-  const { control } = useFormContext<UpstreamEditorValues>();
+  const { control, formState: { errors } } = useFormContext<UpstreamEditorValues>();
   return <ScrollArea axes="vertical" className="h-full min-h-0 max-[1050px]:h-auto" noTabIndex>
     <div className="p-[18px_20px_28px]">
       <aside className="grid gap-7">
@@ -56,26 +59,34 @@ export function UpstreamConfigSidebar({
           <Controller
             control={control}
             name="name"
-            rules={{ required: true }}
             render={({ field }) => (
-              <Input
-                aria-label={t('dashboard.upstreamEditor.fields.name')}
-                required
-                value={field.value}
-                onBlur={field.onBlur}
-                onChange={(_, data) => field.onChange(data.value)}
-              />
+              <Field
+                validationMessage={errors.name?.message ? t(errors.name.message) : undefined}
+                validationState={errors.name ? 'error' : undefined}
+              >
+                <Input
+                  aria-label={t('dashboard.upstreamEditor.fields.name')}
+                  required
+                  value={field.value}
+                  onBlur={field.onBlur}
+                  onChange={(_, data) => field.onChange(data.value)}
+                />
+              </Field>
             )}
           />
         </EditorSection>
         <EditorSection
+          error={errors.color?.message ? t(errors.color.message) : undefined}
           inline
           title={t('dashboard.upstreamEditor.sections.color')}
           description={t('dashboard.upstreamEditor.color.description')}
         >
-          <UpstreamColorEditor kind={record.kind} />
+          <UpstreamColorEditor kind={record.kind} onValidityChange={onColorValidityChange} />
         </EditorSection>
-        <EditorSection title={t('dashboard.upstreamEditor.sections.connection')}>
+        <EditorSection
+          error={errors.config?.message ? t(errors.config.message) : undefined}
+          title={t('dashboard.upstreamEditor.sections.connection')}
+        >
           <ProviderConfigSection record={record} onPatch={onPatch} />
         </EditorSection>
         <EditorSection title={t('dashboard.upstreamEditor.sections.proxy')} description={t('dashboard.upstreamEditor.proxy.empty')}>
@@ -100,26 +111,27 @@ export function UpstreamConfigSidebar({
   </ScrollArea>;
 }
 
-function UpstreamColorEditor({ kind }: { kind: UpstreamRecord['kind'] }) {
-  const { clearErrors, control, setError } = useFormContext<UpstreamEditorValues>();
+function UpstreamColorEditor({ kind, onValidityChange }: { kind: UpstreamRecord['kind']; onValidityChange: (invalid: boolean) => void }) {
+  const { control } = useFormContext<UpstreamEditorValues>();
   return <Controller control={control} name="color" render={({ field }) => <div className="grid gap-3">
     <UpstreamColorPicker
       kind={kind}
       value={field.value}
       onChange={field.onChange}
-      onValidityChange={invalid => {
-        if (invalid) setError('color', { type: 'validate' });
-        else clearErrors('color');
-      }}
+      onValidityChange={onValidityChange}
     />
   </div>} />;
 }
 
-function EditorSection({ children, description, inline = false, required = false, title }: { children: React.ReactNode; description?: string; inline?: boolean; required?: boolean; title: string }) {
-  const styles = useEditorSectionStyles();
+// A section states what it holds and, when the schema refuses it, why: the
+// composite editors here -- the colour popover, a provider's own credential
+// flow -- are not one control a Fluent `Field` could speak for.
+function EditorSection({ children, description, error, inline = false, required = false, title }: { children: React.ReactNode; description?: string; error?: string; inline?: boolean; required?: boolean; title: string }) {
+  const styles = useSidebarStyles();
   return <section className={inline ? 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4' : 'grid gap-4'}>
     <SectionHeader description={description} level={2} title={<>{title}{required && <span aria-hidden className={styles.required}> *</span>}</>} />
     {children}
+    {error && <Text className={`${styles.error} ${inline ? 'col-span-2' : ''}`} role="alert" size={200}>{error}</Text>}
   </section>;
 }
 
@@ -242,14 +254,21 @@ function ColoCombobox({ current, onChange, value }: { current: string; onChange:
 
 function ModelPrefixEditor() {
   const { t } = useTranslation();
-  const { control } = useFormContext<UpstreamEditorValues>();
+  const { control, formState: { errors }, setValue } = useFormContext<UpstreamEditorValues>();
+  // Commit through setValue so the prefix is re-checked per keystroke: the
+  // input carries the whole rule, and a prefix is wrong from the character
+  // that makes it wrong.
+  const commit = (value: UpstreamEditorValues['modelPrefix']) => setValue('modelPrefix', value, { shouldDirty: true, shouldValidate: true });
   return <Controller control={control} name="modelPrefix" render={({ field }) => {
     const value = field.value;
     const prefix = value?.prefix ?? '';
-    const invalid = prefix !== '' && (!MODEL_PREFIX_REGEX.test(prefix) || prefix.length > MODEL_PREFIX_MAX_LENGTH);
-    const update = (next: string) => field.onChange(next ? { prefix: next, addressable: value?.addressable ?? ['unprefixed'], listed: value?.listed ?? ['unprefixed'] } : null);
+    const invalid = prefix !== '' && !modelPrefixIsValid(prefix);
+    const update = (next: string) => commit(next ? { prefix: next, addressable: value?.addressable ?? ['unprefixed'], listed: value?.listed ?? ['unprefixed'] } : null);
     return <div className="grid gap-3">
-      <Field validationState={invalid ? 'error' : 'none'} validationMessage={invalid ? t('dashboard.upstreamEditor.prefixInvalid', { max: MODEL_PREFIX_MAX_LENGTH }) : undefined}>
+      <Field
+        validationState={errors.modelPrefix ? 'error' : 'none'}
+        validationMessage={errors.modelPrefix?.message ? t(errors.modelPrefix.message, { max: MODEL_PREFIX_MAX_LENGTH }) : undefined}
+      >
         <Input value={prefix} onChange={(_, data) => update(data.value)} className="font-mono" placeholder="openrouter/" />
       </Field>
       {value && !invalid && <div className="grid gap-2">
@@ -258,10 +277,11 @@ function ModelPrefixEditor() {
           <div className="flex gap-2">
             <Checkbox label={t('dashboard.upstreamEditor.prefix.addressable')} checked={value.addressable.includes(form)} onChange={(_, data) => {
               const set = new Set(value.addressable); if (data.checked) set.add(form); else if (set.size > 1) set.delete(form);
-              field.onChange({ ...value, addressable: [...set], listed: value.listed.filter(item => set.has(item)) });
+              commit({ ...value, addressable: [...set], listed: value.listed.filter(item => set.has(item)) });
             }} />
             <Checkbox label={t('dashboard.upstreamEditor.prefix.listed')} disabled={!value.addressable.includes(form)} checked={value.listed.includes(form)} onChange={(_, data) => {
-              const set = new Set(value.listed); if (data.checked) set.add(form); else set.delete(form); field.onChange({ ...value, listed: [...set] });
+              const set = new Set(value.listed); if (data.checked) set.add(form); else set.delete(form);
+              commit({ ...value, listed: [...set] });
             }} />
           </div>
         </div>)}

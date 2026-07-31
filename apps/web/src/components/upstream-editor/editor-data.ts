@@ -13,6 +13,7 @@ import type {
   UpstreamRecord,
   UpstreamRecordEnvelope,
 } from '../../api/types';
+import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX } from '@floway-dev/provider/model-prefix';
 
 type CreateUpstreamBody = InferRequestType<typeof api.api.upstreams.$post>['json'];
 type UpdateUpstreamBody = InferRequestType<typeof api.api.upstreams[':id']['$patch']>['json'];
@@ -247,6 +248,9 @@ export const discoveredModelsFromResponse = (
     };
   });
 };
+
+export const modelPrefixIsValid = (prefix: string) =>
+  MODEL_PREFIX_REGEX.test(prefix) && prefix.length <= MODEL_PREFIX_MAX_LENGTH;
 
 export const publicModelId = (model: UpstreamModelConfig) => {
   const configured = typeof model.publicModelId === 'string' ? model.publicModelId.trim() : '';

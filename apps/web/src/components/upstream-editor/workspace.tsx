@@ -51,7 +51,12 @@ const {
   TableRow,
   Text,
   Tooltip,
+  makeStyles,
 } = fluentComponents;
+
+const useWorkspaceStyles = makeStyles({
+  error: { color: 'var(--colorPaletteRedForeground1)' },
+});
 
 interface ModelRow {
   key: string;
@@ -92,6 +97,8 @@ export function UpstreamWorkspace({
   record: UpstreamRecord;
 }) {
   const { t } = useTranslation();
+  const styles = useWorkspaceStyles();
+  const { formState: { errors } } = useFormContext<UpstreamEditorValues>();
   const [params, setParams] = useSearchParams();
   const [yaml, setYaml] = useState('');
   const [yamlError, setYamlError] = useState<string | null>(null);
@@ -156,7 +163,12 @@ export function UpstreamWorkspace({
       {tab === 'models' && modelView === 'yaml'
         ? modelsWorkspace
         : <div className="px-5 py-4">
-            {tab === 'models' ? modelsWorkspace : <div className="grid gap-5">
+            {tab === 'models' ? <div className="grid gap-4">
+              {/* The list and the detail are both here, so a model the schema
+                  refused stays named while the operator walks into it. */}
+              {errors.manualModels?.message && <Text className={styles.error} role="alert" size={200}>{t(errors.manualModels.message)}</Text>}
+              {modelsWorkspace}
+            </div> : <div className="grid gap-5">
               <Text size={300} className="text-fui-fg2">
                 {t('dashboard.upstreamEditor.flags.intro')}
               </Text>

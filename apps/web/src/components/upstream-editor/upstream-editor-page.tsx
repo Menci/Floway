@@ -1,14 +1,17 @@
 import { SaveRegular } from '@fluentui/react-icons';
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { FormProvider, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useBlocker, useNavigate } from 'react-router';
+import { z } from 'zod';
 
 import { BackNavigationButton } from './back-navigation-button';
 import { UpstreamConfigSidebar } from './config-sidebar';
 import {
   createBody,
   discoveredModelsFromResponse,
+  modelPrefixIsValid,
   previewRecord,
   updateBody,
   valuesFromRecord,
@@ -26,7 +29,6 @@ import { PANE_GAP_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { Panel } from '../ui/panel';
 import { useDialogInvocation } from '../ui/use-dialog-invocation';
-import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX } from '@floway-dev/provider/model-prefix';
 
 const {
   Button,
@@ -51,21 +53,45 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const [modelsError, setModelsError] = useState<string | null>(data.modelsError);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // The colour picker never writes a malformed hex into the form -- it holds
+  // the half-typed draft itself and commits only what parses. The draft is
+  // still an edit the operator made and expects saving to keep, so the page
+  // holds the fact that one is outstanding: it is what the schema rejects on,
+  // and what the leave prompt counts as an unsaved change.
+  const [colorDraftInvalid, setColorDraftInvalid] = useState(false);
   const allowNavigation = useRef(false);
   const initialValues = valuesFromRecord(data.record);
   const [savedBaseline, setSavedBaseline] = useState(() => comparableValues(initialValues));
+  const schema = useMemo(() => z.object({
+    name: z.string().trim().min(1, 'dashboard.upstreamEditor.validation.name'),
+    enabled: z.boolean(),
+    color: z.any(),
+    proxyFallbackList: z.any(),
+    modelPrefix: z.any(),
+    disabledPublicModelIds: z.array(z.string()),
+    flagOverrides: z.any(),
+    config: z.any(),
+    state: z.any(),
+    manualModels: z.any(),
+  }).superRefine((values, ctx) => {
+    if (colorDraftInvalid) ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.validation.color', path: ['color'] });
+    if (values.modelPrefix && !modelPrefixIsValid(values.modelPrefix.prefix)) ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.prefixInvalid', path: ['modelPrefix'] });
+    if (values.modelPrefix?.addressable.length === 0) ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.validation.prefix', path: ['modelPrefix'] });
+    if (!modelsAreValid(values.manualModels)) ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.validation.models', path: ['manualModels'] });
+    // A credential is a create-time gate only: an upstream that already exists
+    // keeps the one it was created with, and the editor never sends it back.
+    if (data.mode !== 'create') return;
+    if (record.kind === 'copilot' && !values.config.githubToken) ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.validation.copilot', path: ['config'] });
+    if ((record.kind === 'codex' || record.kind === 'claude-code') && values.config.accounts.length === 0) ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.validation.credential', path: ['config'] });
+  }), [colorDraftInvalid, data.mode, record.kind]);
   const form = useForm<UpstreamEditorValues>({
     defaultValues: initialValues,
     mode: 'onBlur',
+    resolver: zodResolver(schema),
   });
-  const { control, getValues, handleSubmit, reset, setValue, formState: { errors } } = form;
+  const { control, getValues, handleSubmit, reset, setValue } = form;
   const currentValues = useWatch({ control }) as UpstreamEditorValues;
-  const hasUnsavedChanges = comparableValues(currentValues) !== savedBaseline || errors.color !== undefined;
-  // `required` on the name is the only rule the form itself validates, and the
-  // invalid branch of the submit reports the color error alone -- an empty name
-  // rejects the submit with nothing said anywhere. A name that is only
-  // whitespace clears that rule and reaches the handler's own message.
-  const nameMissing = currentValues.name === '';
+  const hasUnsavedChanges = comparableValues(currentValues) !== savedBaseline || colorDraftInvalid;
 
   const blocker = useBlocker(useCallback(
     () => hasUnsavedChanges && !allowNavigation.current,
@@ -154,11 +180,6 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   };
 
   const submitForm = () => handleSubmit(async values => {
-    if (!values.name.trim()) { setSaveError(t('dashboard.upstreamEditor.validation.name')); return; }
-    if (values.modelPrefix && (!MODEL_PREFIX_REGEX.test(values.modelPrefix.prefix) || values.modelPrefix.prefix.length > MODEL_PREFIX_MAX_LENGTH || values.modelPrefix.addressable.length === 0)) { setSaveError(t('dashboard.upstreamEditor.validation.prefix')); return; }
-    if (!modelsAreValid(values.manualModels)) { setSaveError(t('dashboard.upstreamEditor.validation.models')); return; }
-    if (data.mode === 'create' && record.kind === 'copilot' && !(values.config as Extract<UpstreamRecord, { kind: 'copilot' }>['config']).githubToken) { setSaveError(t('dashboard.upstreamEditor.validation.copilot')); return; }
-    if (data.mode === 'create' && (record.kind === 'codex' || record.kind === 'claude-code') && (values.config as Extract<UpstreamRecord, { kind: 'codex' | 'claude-code' }>['config']).accounts.length === 0) { setSaveError(t('dashboard.upstreamEditor.validation.credential')); return; }
     setSaving(true); setSaveError(null);
     const result = data.mode === 'create'
       ? await callApi(() => api.api.upstreams.$post({ json: createBody(record, values) }))
@@ -182,7 +203,9 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       showSavedToast();
     }
   }, () => {
-    if (errors.color) setSaveError(t('dashboard.upstreamEditor.validation.color'));
+    // Every rejection is rendered on the control that produced it, so the
+    // page-level bar stays what it is elsewhere: where a server says no.
+    setSaveError(null);
   })();
 
   const leave = () => void navigate('/dashboard/providers/upstreams');
@@ -197,7 +220,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
         <BackNavigationButton onClick={leave}>{t('dashboard.upstreamEditor.actions.back')}</BackNavigationButton>
         {hasUnsavedChanges && <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.unsaved')}</Text>}
         <div className="ml-auto flex items-center gap-2">
-          <Button appearance="primary" disabled={saving || nameMissing} icon={saving ? <Spinner size="tiny" /> : <SaveRegular />} onClick={() => void submitForm()}>{saving ? t('dashboard.upstreamEditor.actions.saving') : t('dashboard.upstreamEditor.actions.save')}</Button>
+          <Button appearance="primary" disabled={saving} icon={saving ? <Spinner size="tiny" /> : <SaveRegular />} onClick={() => void submitForm()}>{saving ? t('dashboard.upstreamEditor.actions.saving') : t('dashboard.upstreamEditor.actions.save')}</Button>
         </div>
       </header>
       {saveError && <OutcomeMessageBar onDismiss={() => setSaveError(null)}>{saveError}</OutcomeMessageBar>}
@@ -206,6 +229,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
           <UpstreamConfigSidebar
             catalogAvailable={modelsError === null}
             discovered={discovered}
+            onColorValidityChange={setColorDraftInvalid}
             onPatch={applyProviderPatch}
             onRefreshModels={() => void refreshModels()}
             proxies={data.proxies}
