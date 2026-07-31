@@ -244,9 +244,10 @@ export const choiceCss = `
    authored as a VisualState storyboard rather than a VisualTransition -- the
    RadioButton dictionary contains no VisualTransition at all -- and the
    animations-disabled gate reaches only Transition and Dynamic storyboards.
-   Same shape as the Expander's, and the same reasoning: a control that changes
-   size is motion animation by WCAG's own definition, and the gap in WinUI is an
-   unactioned bug rather than a design.
+   The reasoning is this layer's own rather than WinUI's: a control that changes
+   size is motion animation by WCAG's own definition, which turns on perceived
+   size and position, so the preference is about it whatever the framework's
+   gate happens to reach.
 
    0.01ms rather than none, for the reason WinUI runs a disabled
    ConnectedAnimation for 1ms instead of zero: the completion still has to fire.

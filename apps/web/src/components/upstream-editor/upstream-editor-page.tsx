@@ -183,8 +183,14 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     const result = data.mode === 'create'
       ? await callApi(() => api.api.upstreams.$post({ json: createBody(record, values) }))
       : await callApi(() => api.api.upstreams[':id'].$patch({ param: { id: record.id }, json: updateBody(record, values) }));
-    setSaving(false);
-    if (result.error) { setSaveError(result.error.message); return; }
+    // `saving` means a save is in progress, not that the write returned. What
+    // follows the write is a second round trip in edit mode and a navigation in
+    // create mode -- and the create route's loader probes the provider for its
+    // catalog, so the page stays mounted and interactive for as long as that
+    // takes. Clearing the flag here left Save live across that window with a
+    // form the dirty gate no longer covers, and a second click there posts a
+    // second create.
+    if (result.error) { setSaving(false); setSaveError(result.error.message); return; }
     let saved: UpstreamRecord = result.data;
     if (data.mode === 'edit') {
       const full = await callApi(() => api.api.upstreams[':id'].$get({ param: { id: record.id } }));
@@ -197,8 +203,12 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     if (data.mode === 'create') {
       allowNavigation.current = true;
       sessionStorage.setItem(saveToastFlashKey, '1');
+      // Left set: the editor unmounts when the target route commits, and the
+      // button reads as busy for the whole hand-off rather than going live
+      // again a beat before the page changes underneath it.
       void navigate(`/dashboard/providers/upstreams/${encodeURIComponent(saved.id)}`, { replace: true });
     } else {
+      setSaving(false);
       showSavedToast();
     }
   }, () => {

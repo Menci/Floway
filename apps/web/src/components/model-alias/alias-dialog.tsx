@@ -47,7 +47,7 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
     kind: z.enum(MODEL_KINDS),
     selection: z.enum(['first-available', 'random']),
     visible: z.boolean(),
-    targets: z.array(z.object({ target_model_id: z.string(), rules: z.any().refine(value => value !== undefined) })).min(1, 'dashboard.modelAliases.validation.targetsRequired'),
+    targets: z.array(z.object({ target_model_id: z.string(), rules: z.any().refine(value => value !== undefined) })).min(1),
     manualMetadata: z.boolean(),
     announcedMetadata: z.any().refine(value => value !== undefined),
   }).superRefine((values, ctx) => {

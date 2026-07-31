@@ -68,8 +68,11 @@ const useStyles = makeStyles({
   // Stated per state rather than once, because the row carries both classes and
   // the hover rule above is a pseudo-class: it outranks a bare declaration on
   // the same element, so a selected row under the pointer would take the subtle
-  // wash in place of its brand fill and read as deselected. mergeClasses puts
-  // this class last, so matching the pseudo-classes is what wins the property.
+  // wash in place of its brand fill and read as deselected. Matching the
+  // pseudo-classes settles it twice over: where the two atoms collide on a key
+  // mergeClasses drops the row's outright, and where they do not this class is
+  // merged last and wins the cascade. The argument order at the call site is
+  // load-bearing either way.
   selected: {
     backgroundColor: 'var(--colorBrandBackgroundInvertedHover)',
     ':hover': { backgroundColor: 'var(--colorBrandBackgroundInvertedHover)' },

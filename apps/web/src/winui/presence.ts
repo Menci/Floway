@@ -111,13 +111,25 @@ export const withWinuiMotion = (components: FluentComponents): FluentComponents 
   const MenuSurfaceMotion = components.createPresenceComponent(({ element }) => {
     const above = element.getAttribute('data-popper-placement')?.startsWith('top') ?? false;
     const closedOffset = above ? '0 50%' : '0 -50%';
-    const closedClip = above ? 'inset(0% 0% 50% 0%)' : 'inset(50% 0% 0% 0%)';
+    // The clip has to clear the surface's own elevation shadow, or it holds it
+    // suppressed for the whole reveal and snaps it in when the animation drops.
+    // Only the three edges that do not travel can go outside the box: beyond
+    // the travelling edge lies the element's own translated body, which the
+    // clip cannot tell from shadow, and a negative value there lets the surface
+    // overshoot its final position mid-flight.
+    //
+    // 32px is clearance for `shadow16`, whose key term paints 28px below the
+    // border box and whose ambient reaches 20px to either side. A deeper
+    // elevation would need more.
+    // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/tokens/src/utils/shadows.ts
+    const closedClip = above ? 'inset(-32px -32px 50% -32px)' : 'inset(50% -32px -32px -32px)';
+    const openClip = above ? 'inset(-32px -32px 0% -32px)' : 'inset(0% -32px -32px -32px)';
 
     return {
       enter: {
         keyframes: [
           { translate: closedOffset, clipPath: closedClip },
-          { translate: '0 0', clipPath: 'inset(0% 0% 0% 0%)' },
+          { translate: '0 0', clipPath: openClip },
         ],
         duration: CONTROL_NORMAL_ANIMATION_MS,
         easing: CONTROL_FAST_OUT_SLOW_IN_EASING,

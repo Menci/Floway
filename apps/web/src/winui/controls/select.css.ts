@@ -361,7 +361,12 @@ export const selectCss = `
 /* The final inset is negative rather than zero because clip-path clips every
    painted thing, the popup's own elevation shadow included, and the shadow is
    declared on this element. Ending at the border box would hold it suppressed
-   for the whole reveal and snap it in on the frame the clip is dropped. */
+   for the whole reveal and snap it in on the frame the clip is dropped.
+
+   32px is clearance for shadow16, whose key term paints 28px below the border
+   box and whose ambient reaches 20px to either side; a deeper elevation would
+   need more.
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/tokens/src/utils/shadows.ts */
 @keyframes floway-combobox-listbox-reveal {
   from { clip-path: inset(25% -32px 25% -32px); }
   to { clip-path: inset(-32px); }

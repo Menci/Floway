@@ -147,7 +147,8 @@ function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
   const handleSave = useCallback(async () => {
     setShowValidation(true);
     setSaveError(null);
-    if (Object.keys(issues).length > 0 || urlError !== null || dialTimeout.error !== null) return;
+    if (Object.keys(proxyDraftIssues({ config, name: formName, url: urlInput })).length > 0
+      || urlError !== null || dialTimeout.error !== null) return;
     setSaving(true);
     const body = { name: formName.trim(), url: urlInput.trim(), dial_timeout_seconds: dialTimeout.value };
     const handle = toasts.start(t('dashboard.proxy.toast.save.pending', { name: body.name }));
@@ -163,7 +164,7 @@ function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
     onOpenChange(false);
     handle.succeed(t('dashboard.proxy.actions.saveSuccess'));
     await onSaved();
-  }, [dialTimeout, editingId, formName, issues, onOpenChange, onSaved, t, toasts, urlError, urlInput]);
+  }, [config, dialTimeout, editingId, formName, onOpenChange, onSaved, t, toasts, urlError, urlInput]);
   const handleTest = useCallback(async () => {
     setTesting(true);
     setTestResult(null);
