@@ -171,15 +171,8 @@ export default function DashboardSettings() {
           )}
 
           <div className="flex justify-end pt-1">
-            <Button appearance="primary" disabled={saving} type="submit">
-              {saving ? (
-                <span className="inline-flex items-center gap-2">
-                  <Spinner size="tiny" />
-                  {t('dashboard.settings.saving')}
-                </span>
-              ) : (
-                t('dashboard.settings.save')
-              )}
+            <Button appearance="primary" disabled={saving} icon={saving ? <Spinner size="tiny" /> : undefined} type="submit">
+              {saving ? t('dashboard.settings.saving') : t('dashboard.settings.save')}
             </Button>
           </div>
         </form>

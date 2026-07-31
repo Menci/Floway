@@ -148,16 +148,10 @@ export function LoginForm() {
           appearance="primary"
           className="mt-3.5 !min-h-[34px] w-full text-fui-base300"
           disabled={isSubmitting}
+          icon={isSubmitting ? <Spinner size="tiny" /> : undefined}
           type="submit"
         >
-          {isSubmitting ? (
-            <span className="inline-flex items-center gap-2">
-              <Spinner size="tiny" />
-              {t('auth.login.submitting')}
-            </span>
-          ) : (
-            t('auth.login.submit')
-          )}
+          {isSubmitting ? t('auth.login.submitting') : t('auth.login.submit')}
         </Button>
 
         <p className="m-0 text-center text-fui-base300 text-fui-fg2">
