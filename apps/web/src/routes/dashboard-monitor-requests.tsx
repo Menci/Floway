@@ -139,7 +139,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
       {keysError && keys.length === 0 ? (
         <OutcomeMessageBar onDismiss={() => setReplacement({ ...shown, keysError: null })}>{keysError}</OutcomeMessageBar>
       ) : keys.length === 0 ? (
-        <Panel className="grid place-items-center text-center">
+        <Panel className="!grid place-items-center text-center">
           <div className="grid justify-items-center gap-2 max-w-[480px]">
             <Text weight="semibold" className="!text-center">{t('dashboard.requests.noKeys')}</Text>
             <Text size={300} className="text-fui-fg3 !text-center">{t('dashboard.requests.noKeysDescription')}</Text>

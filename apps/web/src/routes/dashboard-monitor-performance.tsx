@@ -260,10 +260,10 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
         ]} onChange={value => setRange(value as PerformanceRange)} value={range} />
       </div>
     </Panel>
-    <Panel className="!grid gap-[18px] min-w-0">
+    <Panel className="!grid !gap-[18px] min-w-0">
       <PerformanceChartSection chart={chart} hidden={hiddenSeries} onHiddenChange={setHiddenSeries} title={t('dashboard.performance.chartTitle', { metric: t(`dashboard.performance.metric.${metric === 'ttft' ? 'ttft' : 'outputSpeed'}`), group: t(`dashboard.performance.groupBy.${groupBy}`), percentile })} />
     </Panel>
-    <Panel className="!grid gap-3 min-w-0">
+    <Panel className="!grid !gap-3 min-w-0">
       <ScrollArea axes="horizontal" className="min-w-0"><TabList selectedValue={activeBreakdown.key} onTabSelect={(_, data) => setBreakdownGroup(data.value as PerformanceGroupBy)}>
         {breakdowns.map(({ key }) => <Tab key={key} value={key}>{t(`dashboard.performance.groupBy.${key}`)}</Tab>)}
       </TabList></ScrollArea>

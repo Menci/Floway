@@ -266,7 +266,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
 
       {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
 
-      <Panel className="!grid gap-[18px] min-w-0">
+      <Panel className="!grid !gap-[18px] min-w-0">
         <div className="flex items-center gap-3 justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
           <div className="flex items-center flex-wrap gap-2.5 min-w-0">
             {canSwitchView && (
@@ -331,7 +331,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
       </Panel>
 
       {showSearch && (
-        <Panel className="!grid gap-[18px] min-w-0">
+        <Panel className="!grid !gap-[18px] min-w-0">
           <ChartSection
             chart={searchChart}
             detailsLabel={t('dashboard.usage.charts.search')}
