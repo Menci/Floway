@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import type { CalloutPoint, UsageChartModel } from './types';
 import { UsageChartCallout } from './usage-callout';
 import { fluentComponents } from '../../fluent';
-import { localeForLanguage } from '../../i18n';
+import { useLocale } from '../../lib/use-locale';
 import { useUnclippedChartFrame } from '../charts/chart-frame-styles';
 import { useChartStateStyles } from '../charts/chart-state-styles';
 import { chartTickValues, formatAxisDate } from '../charts/dashboard-time';
@@ -23,13 +23,13 @@ const useAreaBoundaryStyles = makeStyles({
 const chartMargins = { top: 16, right: 20, bottom: 42, left: 54 } as const;
 
 export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: UsageChartModel; valueFormatter: (value: number) => string; visibleLegends: string[] }) {
-  const { i18n, t } = useTranslation();
+  const { t } = useTranslation();
   const chartStateStyles = useChartStateStyles();
   const areaBoundaryStyles = useAreaBoundaryStyles();
   const chartRootStyles = useUnclippedChartFrame();
   const [host, setHost] = useState<HTMLDivElement | null>(null);
   const size = useElementSize(host);
-  const locale = localeForLanguage(i18n.language);
+  const locale = useLocale();
   const entryByLegend = useMemo(() => new Map(chart.entries.map(entry => [entry.legend, entry])), [chart.entries]);
   const labelByTime = useMemo(() => new Map(chart.buckets.map(bucket => [bucket.date.getTime(), bucket.label])), [chart.buckets]);
   const tickCount = Math.max(2, Math.min(chart.buckets.length <= 24 ? 6 : 7, Math.floor(Math.max(0, size.width - chartMargins.left - chartMargins.right) / 120)));
@@ -37,8 +37,8 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
   const dateFormatter = useCallback((date: Date) => formatAxisDate(date, chart.range, locale), [chart.range, locale]);
 
   const renderCallout = useCallback((point: CalloutPoint | null) => (
-    <UsageChartCallout chart={chart} labelByTime={labelByTime} locale={locale} point={point} valueFormatter={valueFormatter} />
-  ), [chart, labelByTime, locale, valueFormatter]);
+    <UsageChartCallout chart={chart} labelByTime={labelByTime} point={point} valueFormatter={valueFormatter} />
+  ), [chart, labelByTime, valueFormatter]);
 
   const lineCallout = useCallback((data?: CustomizedCalloutData) => renderCallout(data ? {
     x: data.x,

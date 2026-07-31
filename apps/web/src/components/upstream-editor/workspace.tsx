@@ -23,8 +23,9 @@ import { ModelDetail } from './model-detail';
 import { parseModels, serializeModels } from './models-yaml';
 import type { UpstreamModelConfig, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { dateTime, relativeTime } from '../../lib/format-time';
+import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
-import { formatFullTime, formatRelativeTime } from '../requests/format';
 import { ContentLoadingScreen } from '../ui/app-loading-screen';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { Input } from '../ui/fluent-form-controls';
@@ -356,16 +357,18 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
 
 function ModelsCacheStatus({ cache }: { cache: UpstreamRecord['modelsCache'] }) {
   const { t } = useTranslation();
+  const locale = useLocale();
   const now = useNow(10_000);
-  const elapsed = cache.fetchedAt === null ? null : formatRelativeTime(cache.fetchedAt);
-  const label = elapsed === null
+  const label = cache.fetchedAt === null
     ? t('dashboard.upstreamEditor.models.cacheNever')
-    : now - cache.fetchedAt! < 10_000
+    : now - cache.fetchedAt < 10_000
       ? t('dashboard.upstreamEditor.models.cacheFetchedNow')
-      : t('dashboard.upstreamEditor.models.cacheFetched', { time: elapsed });
+      : t('dashboard.upstreamEditor.models.cacheFetched', {
+          time: relativeTime(cache.fetchedAt, locale, { now }) ?? dateTime(cache.fetchedAt, locale),
+        });
   const detail = cache.lastError
-    ? t('dashboard.upstreamEditor.models.cacheErrorDetail', { message: cache.lastError.message, time: formatFullTime(cache.lastError.at) })
-    : cache.fetchedAt === null ? label : formatFullTime(cache.fetchedAt);
+    ? t('dashboard.upstreamEditor.models.cacheErrorDetail', { message: cache.lastError.message, time: dateTime(cache.lastError.at, locale) })
+    : cache.fetchedAt === null ? label : dateTime(cache.fetchedAt, locale);
   return <Tooltip content={detail} relationship="description">
     <span className="inline-flex items-center gap-1 text-fui-fg2" tabIndex={0}>
       {cache.lastError ? <WarningRegular /> : <CheckmarkCircleRegular />}

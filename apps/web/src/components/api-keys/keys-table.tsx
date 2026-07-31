@@ -6,7 +6,9 @@ import type { UpstreamOption } from './types';
 import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
+import { useLocale } from '../../lib/use-locale';
 import { useMediaQuery } from '../../lib/use-media-query';
+import { useNow } from '../../lib/use-now';
 import { ResourceListEmptyState } from '../ui/resource-list';
 import { ScrollArea } from '../ui/scroll-area';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
@@ -33,6 +35,8 @@ const useStyles = makeStyles({
   },
 });
 
+const RELATIVE_REFRESH_MS = 30_000;
+
 export function KeysTable({
   copiedTag, copyFailedTag, disabled, keys, onCopy, onDelete, onEdit, onRotate, onSelect, selectedKeyId, upstreams,
 }: {
@@ -45,6 +49,10 @@ export function KeysTable({
   const { t } = useTranslation();
   const s = useStyles();
   const narrow = useMediaQuery('(max-width: 760px)');
+  const locale = useLocale();
+  // "Last used" is read relative to the wall clock, so the column re-renders on
+  // its own rather than only when a key changes.
+  const now = useNow(RELATIVE_REFRESH_MS);
   const upstreamById = useMemo(
     () => new Map(upstreams.map(upstream => [upstream.id, upstream])),
     [upstreams],
@@ -83,14 +91,14 @@ export function KeysTable({
       createTableColumn<ApiKey>({
         columnId: 'created', compare: (a, b) => a.created_at.localeCompare(b.created_at),
         renderHeaderCell: () => t('dashboard.apiKeys.table.created'),
-        renderCell: key => <span title={dateTime(key.created_at)}>{shortDate(key.created_at)}</span>,
+        renderCell: key => <span title={dateTime(key.created_at, locale)}>{shortDate(key.created_at, locale)}</span>,
       }),
       createTableColumn<ApiKey>({
         columnId: 'lastUsed', compare: (a, b) => (a.last_used_at ?? '').localeCompare(b.last_used_at ?? ''),
         renderHeaderCell: () => t('dashboard.apiKeys.table.lastUsed'),
         renderCell: key => key.last_used_at
-          ? <span title={dateTime(key.last_used_at)}>
-              {relativeTime(key.last_used_at) ?? t('dashboard.apiKeys.table.usedOn', { date: shortDate(key.last_used_at) })}
+          ? <span title={dateTime(key.last_used_at, locale)}>
+              {relativeTime(key.last_used_at, locale, { now }) ?? t('dashboard.apiKeys.table.usedOn', { date: shortDate(key.last_used_at, locale) })}
             </span>
           : <span>{t('dashboard.apiKeys.table.never')}</span>,
       }),
@@ -114,7 +122,7 @@ export function KeysTable({
         },
       }),
     ],
-    [copiedTag, copyFailedTag, disabled, onCopy, onDelete, onEdit, onRotate, s, t, upstreamById],
+    [copiedTag, copyFailedTag, disabled, locale, now, onCopy, onDelete, onEdit, onRotate, s, t, upstreamById],
   );
 
   if (keys.length === 0) {
@@ -134,7 +142,7 @@ export function KeysTable({
     {keys.map(key => {
       const copyTag = `key-${key.id}`;
       const lastUsed = key.last_used_at
-        ? relativeTime(key.last_used_at) ?? t('dashboard.apiKeys.table.usedOn', { date: shortDate(key.last_used_at) })
+        ? relativeTime(key.last_used_at, locale, { now }) ?? t('dashboard.apiKeys.table.usedOn', { date: shortDate(key.last_used_at, locale) })
         : t('dashboard.apiKeys.table.never');
       return <ListItem checkmark={null} className={s.mobileItem} disabledSelection={disabled} key={key.id} value={key.id}>
         <div className="flex items-start gap-2 min-w-0 w-full">
@@ -142,7 +150,7 @@ export function KeysTable({
             <Text truncate size={300}>{key.name}</Text>
             <code className="block truncate" title={key.key}>{key.key}</code>
             <Text truncate size={200} className="text-fui-fg2" title={upstreamsTitle(key, upstreamById, t)}>{upstreamsText(key, upstreamById, t)}</Text>
-            <Text size={200} className="text-fui-fg3">{shortDate(key.created_at)} · {lastUsed}</Text>
+            <Text size={200} className="text-fui-fg3">{shortDate(key.created_at, locale)} · {lastUsed}</Text>
           </div>
           <Menu>
             <MenuTrigger disableButtonEnhancement>

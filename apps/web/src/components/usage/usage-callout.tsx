@@ -2,13 +2,15 @@ import { useTranslation } from 'react-i18next';
 
 import { bucketKeyForCallout, formatCompactDecimalCount, formatCount, formatRatePercent, formatUsdCost, summarizeCounters } from './chart-model';
 import type { CalloutPoint, UsageChartModel } from './types';
+import { useLocale } from '../../lib/use-locale';
 import { sumDecimalStrings } from '../../utils/decimal-display';
 import { ChartCalloutTable } from '../charts/chart-callout-table';
 import { formatCalloutTitle } from '../charts/dashboard-time';
 import { ScrollArea } from '../ui/scroll-area';
 
-export function UsageChartCallout({ chart, labelByTime, locale, point, valueFormatter }: { chart: UsageChartModel; labelByTime: Map<number, string>; locale: string; point: CalloutPoint | null; valueFormatter: (value: number) => string }) {
+export function UsageChartCallout({ chart, labelByTime, point, valueFormatter }: { chart: UsageChartModel; labelByTime: Map<number, string>; point: CalloutPoint | null; valueFormatter: (value: number) => string }) {
   const { t } = useTranslation();
+  const locale = useLocale();
   if (!point?.rows.length) return null;
   const bucketKey = bucketKeyForCallout(point.x, chart.buckets);
   const bucketDetails = chart.kind === 'token' && bucketKey ? chart.details.get(bucketKey) : undefined;

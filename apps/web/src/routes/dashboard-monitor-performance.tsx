@@ -40,7 +40,7 @@ import { Panel } from '../components/ui/panel';
 import { ResourceListActions } from '../components/ui/resource-list';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { fluentComponents } from '../fluent';
-import { localeForLanguage } from '../i18n';
+import { useLocale } from '../lib/use-locale';
 import { useAuthStore } from '../stores/auth-store';
 
 const {
@@ -119,7 +119,7 @@ export function meta({}: Route.MetaArgs) {
 }
 
 export default function DashboardMonitorPerformance({ loaderData }: Route.ComponentProps) {
-  const { i18n, t } = useTranslation();
+  const { t } = useTranslation();
   const clearAuth = useAuthStore(state => state.clear);
   const [, setSearchParams] = useSearchParams();
   const initialState = loaderData.state;
@@ -139,7 +139,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const [error, setError] = useState<string | null>(loaderData.error);
   const requestIdRef = useRef(0);
   const mountedRef = useRef(false);
-  const locale = localeForLanguage(i18n.language);
+  const locale = useLocale();
 
   // A background poll must not clear a failure the operator has not read:
   // these pages reload themselves every minute, and wiping the bar on the way
@@ -312,13 +312,13 @@ function PerformanceChartSection({ chart, hidden, onHiddenChange, title }: { cha
 }
 
 function PerformanceChart({ chart, hidden }: { chart: PerformanceChartModel; hidden: Set<string> }) {
-  const { i18n, t } = useTranslation();
+  const { t } = useTranslation();
   const stateStyles = useChartStateStyles();
   const chartStyles = usePerformanceChartStyles();
   const chartRootStyles = useUnclippedChartFrame();
   const [host, setHost] = useState<HTMLDivElement | null>(null);
   const size = useElementSize(host);
-  const locale = localeForLanguage(i18n.language);
+  const locale = useLocale();
   const formatter = chart.metric === 'ttft' ? formatDuration : formatRate;
   const entryByLegend = useMemo(() => new Map(chart.entries.map(entry => [entry.legend, entry])), [chart.entries]);
   const visibleLegends = useMemo(() => new Set(chart.entries.filter(entry => !hidden.has(entry.id)).map(entry => entry.legend)), [chart.entries, hidden]);
@@ -374,8 +374,8 @@ function PerformanceChartCallout({ data, details, entryByLegend, title }: {
 }
 
 function PerformanceTable({ groupBy, overview, rows, showTitle = true, upstreamNames }: { groupBy: PerformanceGroupBy; overview: PerformanceOverviewResponse; rows: PerformanceDisplayRecord[]; showTitle?: boolean; upstreamNames: ReadonlyMap<string, string> }) {
-  const { i18n, t } = useTranslation();
-  const locale = localeForLanguage(i18n.language);
+  const { t } = useTranslation();
+  const locale = useLocale();
   const styles = usePerformanceTableStyles();
   const [sort, setSort] = useState<{ direction: 'ascending' | 'descending'; key: PerformanceTableSortKey }>({ direction: 'descending', key: 'requests' });
   const sortBy = (key: PerformanceTableSortKey) => setSort(current => current.key === key

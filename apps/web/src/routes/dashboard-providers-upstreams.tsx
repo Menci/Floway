@@ -33,6 +33,7 @@ import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
 import { fluentComponents } from '../fluent';
 import { dateTime } from '../lib/format-time';
+import { useLocale } from '../lib/use-locale';
 
 const {
   Button,
@@ -426,6 +427,7 @@ function ModelStatus({
   record: UpstreamRecord;
 }) {
   const { t } = useTranslation();
+  const locale = useLocale();
   const s = useStyles();
   const cacheStatus = record.modelsCache.lastError
     ? 'failed'
@@ -434,10 +436,10 @@ function ModelStatus({
   const detail = record.modelsCache.lastError
     ? t('dashboard.upstreams.cache.failedDetail', {
         message: record.modelsCache.lastError.message,
-        time: dateTime(record.modelsCache.lastError.at),
+        time: dateTime(record.modelsCache.lastError.at, locale),
       })
     : record.modelsCache.fetchedAt !== null
-      ? t('dashboard.upstreams.cache.readyDetail', { time: dateTime(record.modelsCache.fetchedAt) })
+      ? t('dashboard.upstreams.cache.readyDetail', { time: dateTime(record.modelsCache.fetchedAt, locale) })
       : t('dashboard.upstreams.cache.emptyDetail');
 
   return (

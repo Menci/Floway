@@ -15,14 +15,14 @@ import {
   errorLabel,
   formatBytes,
   formatDuration,
-  formatFullTime,
-  formatRelativeTime,
   formatTokens,
   requestSeverity,
   totalTokens,
 } from './format';
 import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
+import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
 import { Dropdown } from '../ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
@@ -98,6 +98,7 @@ interface RowProps {
 function RequestRow({ index, style, records, selectedId, now, onSelect, selectByIndex }: RowComponentProps<RowProps>) {
   const s = useStyles();
   const { t } = useTranslation();
+  const locale = useLocale();
   const record = records[index];
   if (!record) return null;
   const severity = requestSeverity(record.status, record.error);
@@ -136,8 +137,11 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
         <Text size={300} className="truncate min-w-0 font-mono">
           {record.model ?? t('dashboard.requests.unknownModel')}
         </Text>
-        <Text size={200} className="ml-auto shrink-0 text-fui-fg3" title={formatFullTime(record.startedAt)}>
-          {formatRelativeTime(record.startedAt, now)}
+        <Text size={200} className="ml-auto shrink-0 text-fui-fg3" title={dateTime(record.startedAt, locale)}>
+          {/* The narrow style, alone in the app: this is a trailing column in a
+              dense virtualized row, where "4m ago" has to fit beside the model
+              name that the row is actually about. */}
+          {relativeTime(record.startedAt, locale, { now, style: 'narrow' }) ?? shortDate(record.startedAt, locale)}
         </Text>
       </div>
       <div className="flex items-center gap-2 min-w-0">

@@ -15,6 +15,8 @@ import { quotaBarColor } from './subscription-account-quota';
 import { fluentComponents } from '../../fluent';
 import { dateTime, relativeTime } from '../../lib/format-time';
 import { clampPercent } from '../../lib/percent';
+import { useLocale } from '../../lib/use-locale';
+import { useNow } from '../../lib/use-now';
 import { ProviderIcon } from '../upstreams/provider-badge';
 
 const {
@@ -22,12 +24,18 @@ const {
   MessageBar, MessageBarBody, ProgressBar, Text,
 } = fluentComponents;
 
+const TOKEN_EXPIRY_REFRESH_MS = 60_000;
+
 export const ClaudeCodeAccountCard = ({ onRefreshQuota, probing, record }: {
   onRefreshQuota: () => void;
   probing: boolean;
   record: ClaudeCodeRecord;
 }) => {
   const { t } = useTranslation();
+  const locale = useLocale();
+  // The access token expires on the wall clock rather than on any state
+  // change, so the countdown has to re-evaluate on its own.
+  const now = useNow(TOKEN_EXPIRY_REFRESH_MS);
   const account = record.config.accounts[0];
   const lookup = lookUpCredential(record);
   const credential = lookup.kind === 'present' ? lookup.credential : null;
@@ -85,7 +93,7 @@ export const ClaudeCodeAccountCard = ({ onRefreshQuota, probing, record }: {
         <div className="flex items-baseline justify-between gap-3">
           <Text size={200}>
             {t(`dashboard.upstreamEditor.claudeCode.window.${row.key}`)}
-            <span className="ml-1.5 text-fui-fg3 uppercase text-[10px] tracking-wide" title={t('dashboard.upstreamEditor.claudeCode.fetchedAt', { time: dateTime(row.fetchedAt) })}>
+            <span className="ml-1.5 text-fui-fg3 uppercase text-[10px] tracking-wide" title={t('dashboard.upstreamEditor.claudeCode.fetchedAt', { time: dateTime(row.fetchedAt, locale) })}>
               {t(`dashboard.upstreamEditor.claudeCode.source.${row.source}`)}
             </span>
           </Text>
@@ -95,7 +103,7 @@ export const ClaudeCodeAccountCard = ({ onRefreshQuota, probing, record }: {
         </div>
         <ProgressBar color={quotaBarColor(row.percent)} max={100} thickness="large" value={clampPercent(row.percent)} />
         {row.resetAt && <Text size={200} className="text-fui-fg3">
-          {t('dashboard.upstreamEditor.claudeCode.resetsAt', { time: dateTime(row.resetAt) })}
+          {t('dashboard.upstreamEditor.claudeCode.resetsAt', { time: dateTime(row.resetAt, locale) })}
         </Text>}
       </div>)}
     </div>}
@@ -128,13 +136,13 @@ export const ClaudeCodeAccountCard = ({ onRefreshQuota, probing, record }: {
 
     <div className="flex flex-wrap gap-x-4 gap-y-1 border-0 border-t border-solid border-fui-stroke2 pt-3">
       {credential?.stateUpdatedAt && <Text size={200} className="text-fui-fg3">
-        {t('dashboard.upstreamEditor.claudeCode.stateUpdated', { time: dateTime(credential.stateUpdatedAt) })}
+        {t('dashboard.upstreamEditor.claudeCode.stateUpdated', { time: dateTime(credential.stateUpdatedAt, locale) })}
       </Text>}
       {accessTokenExpiresAt !== null && <Text size={200} className="text-fui-fg3">
-        {t('dashboard.upstreamEditor.claudeCode.tokenExpires', { time: relativeTime(accessTokenExpiresAt) ?? dateTime(accessTokenExpiresAt) })}
+        {t('dashboard.upstreamEditor.claudeCode.tokenExpires', { time: relativeTime(accessTokenExpiresAt, locale, { now }) ?? dateTime(accessTokenExpiresAt, locale) })}
       </Text>}
       {probe && <Text size={200} className="text-fui-fg3">
-        {t('dashboard.upstreamEditor.claudeCode.probeFetched', { time: dateTime(probe.fetchedAt) })}
+        {t('dashboard.upstreamEditor.claudeCode.probeFetched', { time: dateTime(probe.fetchedAt, locale) })}
       </Text>}
     </div>
   </section>;

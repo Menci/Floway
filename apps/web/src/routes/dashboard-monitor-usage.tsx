@@ -18,8 +18,8 @@ import { SummaryMetrics } from '../components/usage/summary-metrics';
 import type { UsageMetric, UsageRange, UsageView } from '../components/usage/types';
 import { loadUsagePageData } from '../components/usage/usage-data';
 import { fluentComponents } from '../fluent';
-import { localeForLanguage } from '../i18n';
 import { errorMessage } from '../lib/error-message';
+import { useLocale } from '../lib/use-locale';
 import { useAuthStore } from '../stores/auth-store';
 
 const { Button, Tooltip } = fluentComponents;
@@ -64,7 +64,7 @@ export const shouldRevalidate = ({ currentUrl, defaultShouldRevalidate, nextUrl 
   currentUrl.pathname === nextUrl.pathname ? false : defaultShouldRevalidate;
 
 export default function DashboardMonitorUsage({ loaderData }: Route.ComponentProps) {
-  const { i18n, t } = useTranslation();
+  const { t } = useTranslation();
   const { user } = useDashboardOutletContext();
   const [, setSearchParams] = useSearchParams();
   const clearAuth = useAuthStore(state => state.clear);
@@ -85,7 +85,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const mountedRef = useRef(false);
 
   const canSwitchView = user.isAdmin;
-  const locale = localeForLanguage(i18n.language);
+  const locale = useLocale();
 
   // A background poll must not clear a failure the operator has not read:
   // these pages reload themselves every minute, and wiping the bar on the way
@@ -328,7 +328,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
           valueFormatter={value => formatMetricValue(value, metric, locale)}
         />
 
-        <SummaryMetrics locale={locale} metric={metric} onMetricChange={setMetric} summary={summary} />
+        <SummaryMetrics metric={metric} onMetricChange={setMetric} summary={summary} />
 
       </Panel>
 

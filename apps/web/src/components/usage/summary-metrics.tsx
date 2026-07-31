@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { formatSummaryMetric, metricConfig, summaryMetrics } from './chart-model';
 import type { TokenSummary, UsageMetric } from './types';
 import { fluentComponents } from '../../fluent';
+import { useLocale } from '../../lib/use-locale';
 const { Text, ToggleButton, makeStyles, mergeClasses } = fluentComponents;
 
 // One of a set of metrics, not a switch that happens to be on. WinUI fills a
@@ -94,8 +95,9 @@ function SummaryMetricButton({
     </ToggleButton>
   );
 }
-export function SummaryMetrics({ locale, metric, onMetricChange, summary }: { locale: string; metric: UsageMetric; onMetricChange: (metric: UsageMetric) => void; summary: TokenSummary }) {
+export function SummaryMetrics({ metric, onMetricChange, summary }: { metric: UsageMetric; onMetricChange: (metric: UsageMetric) => void; summary: TokenSummary }) {
   const { t } = useTranslation();
+  const locale = useLocale();
   return <div className="grid gap-2.5 grid-cols-5 max-[900px]:grid-cols-2 max-[520px]:grid-cols-1">
     {summaryMetrics.map(group => <div className="grid gap-2 min-w-0" key={group.join('-')}>
       {group.map(item => <SummaryMetricButton active={metric === item} key={item} label={t(metricConfig[item].labelKey)} onClick={() => onMetricChange(item)} value={formatSummaryMetric(summary, item, locale)} />)}

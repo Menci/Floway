@@ -31,7 +31,8 @@ import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { UpstreamAccessControl } from '../components/upstreams/upstream-access-control';
 import { fluentComponents } from '../fluent';
-import { localeForLanguage } from '../i18n';
+import { shortDate } from '../lib/format-time';
+import { useLocale } from '../lib/use-locale';
 import { useAuthStore } from '../stores/auth-store';
 
 const {
@@ -249,13 +250,8 @@ function UsersTable({
   onResetPassword: (user: ControlPlaneUser) => void;
   users: ControlPlaneUser[];
 }) {
-  const { i18n, t } = useTranslation();
-  const dateFormatter = useMemo(
-    () => new Intl.DateTimeFormat(localeForLanguage(i18n.resolvedLanguage), {
-      dateStyle: 'medium',
-    }),
-    [i18n.resolvedLanguage],
-  );
+  const { t } = useTranslation();
+  const locale = useLocale();
 
   if (users.length === 0) {
     return <ResourceListEmptyState>{t('dashboard.users.empty')}</ResourceListEmptyState>;
@@ -297,7 +293,7 @@ function UsersTable({
                 </TableCell>
                 <TableCell>
                   <span title={new Date(user.createdAt).toLocaleString()}>
-                    {dateFormatter.format(new Date(user.createdAt))}
+                    {shortDate(user.createdAt, locale)}
                   </span>
                 </TableCell>
                 <TableCell>

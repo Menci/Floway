@@ -36,21 +36,5 @@ export function formatTokens(value: number): string {
   return new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(value);
 }
 
-export function formatRelativeTime(timestamp: number, now = Date.now()): string {
-  const seconds = Math.max(0, Math.floor((now - timestamp) / 1000));
-  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto', style: 'narrow' });
-  if (seconds < 60) return formatter.format(-seconds, 'second');
-  if (seconds < 3600) return formatter.format(-Math.floor(seconds / 60), 'minute');
-  if (seconds < 86_400) return formatter.format(-Math.floor(seconds / 3600), 'hour');
-  return formatter.format(-Math.floor(seconds / 86_400), 'day');
-}
-
 const formatNumber = (value: number, maximumFractionDigits: number): string =>
   new Intl.NumberFormat(undefined, { maximumFractionDigits }).format(value);
-
-export function formatFullTime(timestamp: number): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'medium',
-  }).format(timestamp);
-}

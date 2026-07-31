@@ -5,6 +5,7 @@ import { quotaBarColor } from './subscription-account-quota';
 import { fluentComponents } from '../../fluent';
 import { dateTime } from '../../lib/format-time';
 import { clampPercent } from '../../lib/percent';
+import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
 import { ProviderIcon } from '../upstreams/provider-badge';
 
@@ -17,6 +18,7 @@ export const CodexAccountCard = ({ record }: { record: CodexRecord }) => {
   // `ratelimited_until` expires on the wall clock rather than on any state
   // change, so the badge has to re-evaluate on its own.
   const now = useNow(QUOTA_REFRESH_MS);
+  const locale = useLocale();
   const account = record.config.accounts[0];
   const lookup = findCredential(record);
   const credential = lookup.kind === 'present' ? lookup.credential : null;
@@ -27,7 +29,7 @@ export const CodexAccountCard = ({ record }: { record: CodexRecord }) => {
   const statusLabel = status.reason === 'heavy'
     ? t('dashboard.upstreamEditor.codex.status.heavy', { percent: status.percent })
     : status.reason === 'rate-limited'
-      ? t('dashboard.upstreamEditor.codex.status.rateLimited', { time: dateTime(status.until) })
+      ? t('dashboard.upstreamEditor.codex.status.rateLimited', { time: dateTime(status.until, locale) })
       : t(`dashboard.upstreamEditor.codex.status.${status.reason}`);
 
   return <section className="grid gap-4">
@@ -67,19 +69,19 @@ export const CodexAccountCard = ({ record }: { record: CodexRecord }) => {
             </div>
             <ProgressBar color={quotaBarColor(item.percent)} max={100} thickness="large" value={clampPercent(item.percent)} />
             {item.resetAt && <Text size={200} className="text-fui-fg3">
-              {t('dashboard.upstreamEditor.codex.resetsAt', { time: dateTime(item.resetAt) })}
+              {t('dashboard.upstreamEditor.codex.resetsAt', { time: dateTime(item.resetAt, locale) })}
             </Text>}
           </div>)}
           <div className="flex flex-wrap gap-x-4 gap-y-1">
             {entry.rateLimitedUntil && <Text size={200} className="text-fui-fg3">
-              {t('dashboard.upstreamEditor.codex.rateLimitedUntil', { time: dateTime(entry.rateLimitedUntil) })}
+              {t('dashboard.upstreamEditor.codex.rateLimitedUntil', { time: dateTime(entry.rateLimitedUntil, locale) })}
             </Text>}
-            <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.codex.observed', { time: dateTime(entry.observedAt) })}</Text>
+            <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.codex.observed', { time: dateTime(entry.observedAt, locale) })}</Text>
           </div>
         </section>)}
 
     {credential?.state_updated_at && <Text size={200} className="text-fui-fg3 border-0 border-t border-solid border-fui-stroke2 pt-3">
-      {t('dashboard.upstreamEditor.codex.stateUpdated', { time: dateTime(credential.state_updated_at) })}
+      {t('dashboard.upstreamEditor.codex.stateUpdated', { time: dateTime(credential.state_updated_at, locale) })}
     </Text>}
   </section>;
 };
