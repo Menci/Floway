@@ -50,7 +50,7 @@ export const formatDecimalQuantity = (value: DecimalString): string => {
 };
 
 export const formatUsd = (value: DecimalString | null): string => {
-  if (value === null) return '—';
+  if (value === null) return '-';
   if (decimalStringIsZero(value)) return '$0';
   const scale = compareDecimalStrings(value, '1') >= 0
     ? 2

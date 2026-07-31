@@ -8,7 +8,7 @@ test('decimal display helpers aggregate and format without binary floating-point
   expect(formatUsd('1.005')).toBe('$1.01');
   expect(formatUsd('0.0105')).toBe('$0.011');
   expect(formatUsd('0.00005')).toBe('$0.0001');
-  expect(formatUsd(null)).toBe('—');
+  expect(formatUsd(null)).toBe('-');
 });
 
 test('chart conversion rejects decimal values that JavaScript cannot represent on a numeric axis', () => {

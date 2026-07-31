@@ -40,29 +40,35 @@ export function OutcomeToastProvider({ children }: PropsWithChildren) {
   const sequence = useRef(0);
   const { dispatchToast, dismissToast, updateToast } = useToastController(toasterId);
 
+  // A toast is an aside, and an aside that has been read has nothing left to
+  // say. Clicking one takes it back rather than making the operator wait out
+  // its timeout or aim at a close button it does not have.
+  const toastFor = useCallback((toastId: string, message: string, pending: boolean) => (
+    <Toast className="cursor-pointer" onClick={() => dismissToast(toastId)}>
+      <ToastTitle media={pending ? <Spinner size="tiny" /> : undefined}>{message}</ToastTitle>
+    </Toast>
+  ), [dismissToast]);
+
+  const nextToastId = useCallback(() => `${toasterId}-${sequence.current++}`, [toasterId]);
+
   const succeed = useCallback((message: string) => {
-    dispatchToast(
-      <Toast><ToastTitle>{message}</ToastTitle></Toast>,
-      { intent: 'success', timeout: TOAST_DISMISS_MS },
-    );
-  }, [dispatchToast]);
+    const toastId = nextToastId();
+    dispatchToast(toastFor(toastId, message, false), { intent: 'success', toastId, timeout: TOAST_DISMISS_MS });
+  }, [dispatchToast, nextToastId, toastFor]);
 
   const start = useCallback((pending: string): OutcomeHandle => {
-    const toastId = `${toasterId}-${sequence.current++}`;
-    dispatchToast(
-      <Toast><ToastTitle media={<Spinner size="tiny" />}>{pending}</ToastTitle></Toast>,
-      { toastId, timeout: -1 },
-    );
+    const toastId = nextToastId();
+    dispatchToast(toastFor(toastId, pending, true), { toastId, timeout: -1 });
     return {
       succeed: message => updateToast({
-        content: <Toast><ToastTitle>{message}</ToastTitle></Toast>,
+        content: toastFor(toastId, message, false),
         intent: 'success',
         toastId,
         timeout: TOAST_DISMISS_MS,
       }),
       settle: () => dismissToast(toastId),
     };
-  }, [dismissToast, dispatchToast, toasterId, updateToast]);
+  }, [dismissToast, dispatchToast, nextToastId, toastFor, updateToast]);
 
   const value = useMemo<OutcomeToasts>(() => ({ start, succeed }), [start, succeed]);
 
