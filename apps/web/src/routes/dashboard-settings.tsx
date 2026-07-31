@@ -109,7 +109,7 @@ export default function DashboardSettings() {
 
   return (
     <section className="dashboard-page max-w-[960px]">
-      <DashboardPageHeader description={t('dashboard.settings.description')} eyebrow={t('dashboard.settings.eyebrow')} title={t('dashboard.nav.settings')} />
+      <DashboardPageHeader description={t('dashboard.settings.description')} title={t('dashboard.nav.settings')} />
 
       <Panel className="grid w-full max-w-[480px] gap-[18px] !p-[22px_24px] max-[680px]:!p-[18px]">
         <Text as="h2" size={400} weight="semibold" className="m-0">

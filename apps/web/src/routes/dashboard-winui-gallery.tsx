@@ -1131,7 +1131,6 @@ export default function DashboardWinuiGallery() {
   return <section className="grid gap-7 min-w-0">
     <DashboardPageHeader
       description="Every control the WinUI override layer restyles, with each appearance variant and the states that props can force. This page follows the operating system colour scheme like the rest of Floway does, so switch light and dark in your OS or browser appearance settings to review the other theme — there is no in-app toggle to build against."
-      eyebrow="Design"
       title="WinUI gallery"
     />
     <ButtonSection />

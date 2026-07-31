@@ -310,7 +310,7 @@ export default function DashboardAdminBackupRestore() {
   if (!user.isAdmin) {
     return (
       <section className="dashboard-page max-w-[960px]">
-        <DashboardPageHeader eyebrow={t('dashboard.groups.admin')} title={t('dashboard.backupRestore.heading')} />
+        <DashboardPageHeader title={t('dashboard.backupRestore.heading')} />
         <AdminOnlyNotice />
       </section>
     );
@@ -318,7 +318,7 @@ export default function DashboardAdminBackupRestore() {
 
   return (
     <section className="dashboard-page max-w-[960px]">
-      <DashboardPageHeader eyebrow={t('dashboard.groups.admin')} title={t('dashboard.backupRestore.heading')} />
+      <DashboardPageHeader title={t('dashboard.backupRestore.heading')} />
 
       <Panel className="!p-[22px_24px] grid">
         <Text as="h2" size={400} weight="semibold" className="m-0">

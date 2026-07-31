@@ -11,7 +11,7 @@ export default function DashboardServicesApiDocs() {
   const { t } = useTranslation();
   return (
     <section className="dashboard-page max-w-[1200px]">
-      <DashboardPageHeader description={t('dashboard.pages.apiDocs')} eyebrow={t('dashboard.groups.services')} title={t('dashboard.nav.apiDocs')} />
+      <DashboardPageHeader description={t('dashboard.pages.apiDocs')} title={t('dashboard.nav.apiDocs')} />
       <ApiDocsContent />
     </section>
   );

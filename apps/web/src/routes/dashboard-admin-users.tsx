@@ -159,7 +159,6 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
           refreshing={loading}
         />}
         description={t('dashboard.pages.users')}
-        eyebrow={t('dashboard.groups.admin')}
         title={t('dashboard.nav.users')}
       />
 

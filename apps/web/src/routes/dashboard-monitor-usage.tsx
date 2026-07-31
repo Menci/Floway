@@ -261,7 +261,6 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
           </Tooltip>
         </>}
         description={t('dashboard.pages.usage')}
-        eyebrow={t('dashboard.groups.monitor')}
         title={t('dashboard.nav.usage')}
       />
 

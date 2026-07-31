@@ -273,7 +273,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
   if (!user.isAdmin) {
     return (
       <section className="dashboard-page">
-        <DashboardPageHeader description={t('dashboard.proxy.description')} eyebrow={t('dashboard.groups.providers')} title={t('dashboard.proxy.heading')} />
+        <DashboardPageHeader description={t('dashboard.proxy.description')} title={t('dashboard.proxy.heading')} />
         <AdminOnlyNotice />
       </section>
     );
@@ -290,7 +290,6 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
           refreshing={refreshing}
         />}
         description={t('dashboard.proxy.description')}
-        eyebrow={t('dashboard.groups.providers')}
         title={t('dashboard.proxy.heading')}
       />
 

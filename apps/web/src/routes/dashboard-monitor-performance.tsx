@@ -213,7 +213,6 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
         <Tooltip content={t('dashboard.performance.actions.refresh')} relationship="label"><Button appearance="subtle" disabled={loading} icon={<ArrowClockwiseRegular />} onClick={() => void refresh()} /></Tooltip>
       </>}
       description={t('dashboard.pages.performance')}
-      eyebrow={t('dashboard.groups.monitor')}
       title={t('dashboard.nav.performance')}
     />
     {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}

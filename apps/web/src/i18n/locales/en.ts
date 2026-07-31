@@ -47,7 +47,6 @@ const en = {
     dashboard: {
       title: 'Dashboard',
       groups: {
-        models: 'Models',
         providers: 'Providers',
         services: 'Services',
         monitor: 'Monitor',

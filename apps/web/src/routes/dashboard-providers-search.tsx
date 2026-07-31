@@ -139,7 +139,6 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
       <section className="dashboard-page max-w-[960px]">
         <DashboardPageHeader
           description={t('dashboard.searchConfig.description')}
-          eyebrow={t('dashboard.groups.providers')}
           title={t('dashboard.searchConfig.heading')}
         />
         <AdminOnlyNotice />
@@ -263,7 +262,6 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
     <section className="dashboard-page max-w-[960px]">
       <DashboardPageHeader
         description={t('dashboard.searchConfig.description')}
-        eyebrow={t('dashboard.groups.providers')}
         title={t('dashboard.searchConfig.heading')}
       />
 

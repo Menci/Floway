@@ -90,7 +90,6 @@ export default function DashboardProvidersModelAliases({ loaderData }: Route.Com
       refreshing={refreshing}
     /> : undefined}
     description={t('dashboard.modelAliases.description')}
-    eyebrow={t('dashboard.groups.providers')}
     title={t('dashboard.modelAliases.heading')}
   />;
   if (!user.isAdmin) return <section className="dashboard-page">{header}<AdminOnlyNotice /></section>;

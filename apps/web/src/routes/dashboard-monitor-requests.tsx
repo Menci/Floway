@@ -116,7 +116,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
 
   return (
     <section className="h-full min-h-0 grid grid-rows-[auto_minmax(0,1fr)] gap-[18px] min-w-0">
-      <DashboardPageHeader description={t('dashboard.pages.requests')} eyebrow={t('dashboard.groups.monitor')} title={t('dashboard.nav.requests')} />
+      <DashboardPageHeader description={t('dashboard.pages.requests')} title={t('dashboard.nav.requests')} />
       {keysError && keys.length === 0 ? (
         <MessageBar intent="error"><MessageBarBody>{keysError}</MessageBarBody></MessageBar>
       ) : keys.length === 0 ? (

@@ -247,7 +247,6 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
           refreshing={mutation?.kind === 'reload'}
         />}
         description={t('dashboard.pages.upstreams')}
-        eyebrow={t('dashboard.groups.providers')}
         title={t('dashboard.nav.upstreams')}
       />
 

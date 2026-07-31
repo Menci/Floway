@@ -160,7 +160,6 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
           refreshing={refreshing}
         />}
         description={t('dashboard.pages.apiKeys')}
-        eyebrow={t('dashboard.groups.services')}
         title={t('dashboard.nav.apiKeys')}
       />
 

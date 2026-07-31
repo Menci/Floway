@@ -2,19 +2,15 @@ import { fluentComponents } from '../../fluent';
 
 const { Text } = fluentComponents;
 
-export function DashboardPageHeader({ actions, description, eyebrow, title }: {
+export function DashboardPageHeader({ actions, description, title }: {
   actions?: React.ReactNode;
   description?: string;
-  eyebrow: string;
   title: string;
 }) {
   // Centred against the whole block rather than aligned to its first line: the
   // actions answer the page, not its title.
   return <header className="flex items-center gap-[18px] justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
     <div className="grid gap-[6px] min-w-0">
-      <Text size={200} weight="semibold" className="text-fui-fg2 uppercase">
-        {eyebrow}
-      </Text>
       <Text as="h1" size={700} weight="semibold" className="m-0">
         {title}
       </Text>
