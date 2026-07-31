@@ -9,6 +9,7 @@ import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
 import { useMediaQuery } from '../../lib/use-media-query';
 import { useNow } from '../../lib/use-now';
+import { useDangerActionClasses } from '../ui/danger-action';
 import { ResourceListEmptyState } from '../ui/resource-list';
 import { ScrollArea } from '../ui/scroll-area';
 import { TableActions, useTrailingCellClass } from '../ui/table-actions';
@@ -23,6 +24,8 @@ const {
 
 const useStyles = makeStyles({
   accentText: { color: 'var(--colorBrandForeground1)' },
+  // A key that reaches no upstream is a state the column reports, not an
+  // action, so this one is resident where `useDangerActionClasses` is not.
   dangerText: { color: 'var(--colorPaletteRedForeground1)' },
   mobileItem: {
     borderBottom: '1px solid var(--colorNeutralStroke2)',
@@ -45,6 +48,7 @@ export function KeysTable({
 }) {
   const { t } = useTranslation();
   const s = useStyles();
+  const dangerClasses = useDangerActionClasses();
   const trailingCell = useTrailingCellClass();
   const narrow = useMediaQuery('(max-width: 760px)');
   const locale = useLocale();
@@ -158,7 +162,7 @@ export function KeysTable({
               <MenuItem icon={copyFailedTag === copyTag ? <DismissRegular /> : copiedTag === copyTag ? <CheckmarkRegular /> : <CopyRegular />} onClick={() => onCopy(key.key, copyTag)}>{t('dashboard.apiKeys.actions.copy')}</MenuItem>
               <MenuItem icon={<EditRegular />} onClick={() => onEdit(key)}>{t('dashboard.apiKeys.actions.edit')}</MenuItem>
               <MenuItem icon={<ArrowClockwiseRegular />} onClick={() => onRotate(key)}>{t('dashboard.apiKeys.actions.rotate')}</MenuItem>
-              <MenuItem className={s.dangerText} icon={<DeleteRegular />} onClick={() => onDelete(key)}>{t('dashboard.apiKeys.actions.delete')}</MenuItem>
+              <MenuItem className={dangerClasses.menuItem} icon={<DeleteRegular />} onClick={() => onDelete(key)}>{t('dashboard.apiKeys.actions.delete')}</MenuItem>
             </MenuList></MenuPopover>
           </Menu>
         </div>
