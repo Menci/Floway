@@ -64,7 +64,7 @@ export function ConfirmDialog({
   title: string;
 }) {
   const { t } = useTranslation();
-  const s = useStyles();
+  const styles = useStyles();
 
   return (
     <DialogShell
@@ -82,7 +82,7 @@ export function ConfirmDialog({
         </Button>
         <Button
           appearance="primary"
-          className={actionIntent === 'danger' ? s.danger : undefined}
+          className={actionIntent === 'danger' ? styles.danger : undefined}
           disabled={busy}
           icon={busy ? <Spinner size="tiny" /> : undefined}
           onClick={onConfirm}

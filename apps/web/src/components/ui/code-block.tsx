@@ -69,16 +69,16 @@ interface CodeBlockProps {
 
 export function CodeBlock({ code, copied, copyFailed, disabled = false, header, language, onCopy }: CodeBlockProps) {
   const { t } = useTranslation();
-  const s = useStyles();
+  const styles = useStyles();
   const highlighted = useMemo(() => {
     const grammar = Prism.languages[language] ?? Prism.languages.plain;
     return grammar ? Prism.highlight(code, grammar, language) : escapeHtml(code);
   }, [code, language]);
 
   return (
-    <div className={s.root}>
-      <div aria-live="polite" className={s.header}>
-        {header ?? <span className={s.lang}>{language}</span>}
+    <div className={styles.root}>
+      <div aria-live="polite" className={styles.header}>
+        {header ?? <span className={styles.lang}>{language}</span>}
         <Button
           appearance="subtle"
           disabled={disabled}
@@ -90,9 +90,9 @@ export function CodeBlock({ code, copied, copyFailed, disabled = false, header, 
         </Button>
       </div>
       <ScrollArea axes="both" className="max-h-[340px]">
-        <pre className={mergeClasses(`language-${language}`, s.pre, 'm-0')}>
+        <pre className={mergeClasses(`language-${language}`, styles.pre, 'm-0')}>
           <code
-            className={mergeClasses(`language-${language}`, s.code)}
+            className={mergeClasses(`language-${language}`, styles.code)}
             dangerouslySetInnerHTML={{ __html: highlighted }}
           />
         </pre>

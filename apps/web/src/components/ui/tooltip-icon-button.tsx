@@ -20,13 +20,13 @@ export function TooltipIconButton({ className, danger = false, disabled, icon, l
   label: string;
   onClick: (event: React.MouseEvent<HTMLButtonElement>) => void;
 }) {
-  const s = useStyles();
+  const styles = useStyles();
   const dangerClasses = useDangerActionClasses();
   return <Tooltip content={label} relationship="label">
     <Button
       appearance="subtle"
       aria-label={label}
-      className={mergeClasses(s.action, danger && dangerClasses.button, className)}
+      className={mergeClasses(styles.action, danger && dangerClasses.button, className)}
       disabled={disabled}
       icon={icon}
       onClick={onClick}

@@ -238,12 +238,12 @@ const useStyles = makeStyles({
 });
 
 function CardText({ description, header, icon, id }: { description?: string; header: ReactNode; icon?: ReactNode; id?: string }) {
-  const s = useStyles();
+  const styles = useStyles();
   return <>
-    {icon !== undefined && <span aria-hidden className={s.icon}>{icon}</span>}
-    <span className={s.text}>
+    {icon !== undefined && <span aria-hidden className={styles.icon}>{icon}</span>}
+    <span className={styles.text}>
       <Text block id={id}>{header}</Text>
-      {description !== undefined && <Text block size={200} className={s.description}>{description}</Text>}
+      {description !== undefined && <Text block size={200} className={styles.description}>{description}</Text>}
     </span>
   </>;
 }
@@ -256,9 +256,9 @@ export function SettingsSwitch({ checked, disabled, label, onChange }: {
   label: string;
   onChange: (checked: boolean) => void;
 }) {
-  const s = useStyles();
+  const styles = useStyles();
   const { t } = useTranslation();
-  return <span className={s.switchRow}>
+  return <span className={styles.switchRow}>
     <Text>{t(checked ? 'common.on' : 'common.off')}</Text>
     <Switch aria-label={label} checked={checked} disabled={disabled} onChange={(_, data) => onChange(data.checked)} />
   </span>;
@@ -271,8 +271,8 @@ export function SettingsCard({ action, description, header, icon, onClick }: {
   icon?: ReactNode;
   onClick?: () => void;
 }) {
-  const s = useStyles();
-  const className = mergeClasses(s.card, onClick && s.interactive);
+  const styles = useStyles();
+  const className = mergeClasses(styles.card, onClick && styles.interactive);
   const content = <>
     <CardText description={description} header={header} icon={icon} />
     {action}
@@ -307,7 +307,7 @@ export function SettingsExpander({ action, children, defaultOpen = false, descri
    */
   toggledOn?: boolean;
 }) {
-  const s = useStyles();
+  const styles = useStyles();
   const [open, setOpen] = useState(defaultOpen);
   const [toggleWas, setToggleWas] = useState(toggledOn);
   if (toggledOn !== undefined && toggledOn !== toggleWas) {
@@ -320,7 +320,7 @@ export function SettingsExpander({ action, children, defaultOpen = false, descri
     <button
       aria-controls={contentId}
       aria-expanded={open}
-      className={mergeClasses(s.card, s.interactive, s.expanderHeader, open && s.expanderHeaderOpen)}
+      className={mergeClasses(styles.card, styles.interactive, styles.expanderHeader, open && styles.expanderHeaderOpen)}
       onClick={() => setOpen(value => !value)}
       type="button"
     >
@@ -330,21 +330,21 @@ export function SettingsExpander({ action, children, defaultOpen = false, descri
           it; in the DOM the click would carry on to the header, so it is
           stopped here -- the switch throws without the row opening. */}
       {action !== undefined && <span onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>{action}</span>}
-      <span aria-hidden className={s.chevron} title={expandLabel}>
-        <svg className={mergeClasses(s.chevronGlyph, open && s.chevronOpen)} width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+      <span aria-hidden className={styles.chevron} title={expandLabel}>
+        <svg className={mergeClasses(styles.chevronGlyph, open && styles.chevronOpen)} width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
           <path d="M3.15 5.65c.2-.2.5-.2.7 0L8 9.79l4.15-4.14a.5.5 0 0 1 .7.7l-4.5 4.5a.5.5 0 0 1-.7 0l-4.5-4.5a.5.5 0 0 1 0-.7Z" />
         </svg>
       </span>
     </button>
-    <div className={mergeClasses(s.contentFrame, open && s.contentFrameOpen)}>
-      <div className={s.contentClip}>
+    <div className={mergeClasses(styles.contentFrame, open && styles.contentFrameOpen)}>
+      <div className={styles.contentClip}>
         {/* Closed, the region is inert rather than hidden. `hidden` is
             `display: none`, which takes the content out of flow in the same
             frame the row starts collapsing, leaving the row nothing to
             animate towards -- it just vanished. `inert` takes it out of the
             tab order and away from assistive technology without touching
             layout, so the row can close over its own duration. */}
-        <div aria-labelledby={headerId} className={s.content} id={contentId} inert={!open} role="group">{children}</div>
+        <div aria-labelledby={headerId} className={styles.content} id={contentId} inert={!open} role="group">{children}</div>
       </div>
     </div>
   </div>;
