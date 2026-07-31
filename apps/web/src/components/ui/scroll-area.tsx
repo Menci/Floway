@@ -66,11 +66,13 @@ const subscribeToScrollbarSize = (listener: () => void) => {
 const getNativeScrollbarSize = () => nativeScrollbarSize;
 const getServerScrollbarSize = () => 0;
 
-export const useOverlayScrollbarsEnabled = () => useSyncExternalStore(
-  subscribeToScrollbarSize,
-  getNativeScrollbarSize,
-  getServerScrollbarSize,
-) > 0;
+export function useOverlayScrollbarsEnabled() {
+  return useSyncExternalStore(
+    subscribeToScrollbarSize,
+    getNativeScrollbarSize,
+    getServerScrollbarSize,
+  ) > 0;
+}
 
 // OverlayScrollbars wants `scroll`: it reads the axis it is asked to take over
 // from the element's own overflow. Native scrolling wants `auto`, because
