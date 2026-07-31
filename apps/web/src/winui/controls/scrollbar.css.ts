@@ -34,7 +34,9 @@
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ScrollBar_themeresources.xaml#L394-L395
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ScrollBar_themeresources.xaml#L484
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ScrollBar_themeresources.xaml#L587
-const host = `.floway-scroll-area[data-overlayscrollbars='host']:not([data-winui-card-restyle='off'] *)`;
+import { notOptedOut } from '../tokens';
+
+const host = `.floway-scroll-area[data-overlayscrollbars='host']${notOptedOut}`;
 
 export const scrollbarCss = `
 /* Rail geometry and thumb colour. ScrollBarSize is the rail; the handle is
