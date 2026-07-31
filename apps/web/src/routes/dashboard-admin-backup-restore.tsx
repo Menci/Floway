@@ -427,7 +427,7 @@ export default function DashboardAdminBackupRestore() {
 
             <div>
               <Button
-                appearance={importMode === 'replace' ? 'primary' : 'primary'}
+                appearance="primary"
                 disabled={importing}
                 icon={importing ? <Spinner size="tiny" /> : <ArrowUploadRegular />}
                 onClick={handleImportClick}
