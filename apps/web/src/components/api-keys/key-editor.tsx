@@ -8,7 +8,7 @@ import { z } from 'zod';
 
 import { keyWriteBody, type KeySource } from './key-source';
 import { KeySourceControl } from './key-source-control';
-import { RetentionField, type RetentionValue } from './retention-field';
+import { RetentionField, parsedRetention, type RetentionValue } from './retention-field';
 import type { UpstreamOption } from './types';
 import { api, callApi } from '../../api/client';
 import type { ApiKey, ControlPlaneModel } from '../../api/types';
@@ -91,9 +91,13 @@ export function KeyDialog(props: KeyDialogProps) {
           }
           for (const field of ['dumpRetention', 'responsesRetention'] as const) {
             if (value[field] === 'invalid') {
+              // The retention row already says so, on itself, from the moment
+              // the draft stops parsing; this is the same rule refusing the
+              // submit, and it names the same string rather than a second
+              // wording of it.
               ctx.addIssue({
                 code: 'custom',
-                message: 'dashboard.apiKeys.validation.retentionInvalid',
+                message: 'dashboard.apiKeys.retention.invalid',
                 path: [field],
               });
             }
@@ -138,16 +142,14 @@ export function KeyDialog(props: KeyDialogProps) {
   );
 
   const save = async (values: KeyFormValues) => {
-    if (values.dumpRetention === 'invalid' || values.responsesRetention === 'invalid') return;
-
     setSaving(true);
     setError(null);
     try {
       const common = {
         name: values.name.trim(),
         upstream_ids: values.upstreamOverride ? values.upstreamIds : null,
-        dump_retention_seconds: values.dumpRetention,
-        responses_retention_seconds: values.responsesRetention,
+        dump_retention_seconds: parsedRetention(values.dumpRetention),
+        responses_retention_seconds: parsedRetention(values.responsesRetention),
       };
       const mutationKind = isCreate ? 'create' : 'edit';
       const handle = toasts.start(t(`dashboard.apiKeys.toast.${mutationKind}.pending`, { name: common.name }));

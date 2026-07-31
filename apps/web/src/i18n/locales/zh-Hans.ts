@@ -356,7 +356,6 @@ const zhHansCN = {
         validation: {
           nameRequired: '名称不能为空。',
           customKeyRequired: '必须填写自定义 API 密钥。',
-          retentionInvalid: '保留时间必须是秒数，或类似 30m、2h、3d 的值。',
         },
         upstreams: {
           all: '全部',

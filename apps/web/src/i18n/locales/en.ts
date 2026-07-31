@@ -368,8 +368,6 @@ const en = {
         validation: {
           nameRequired: 'Name is required.',
           customKeyRequired: 'Custom API key is required.',
-          retentionInvalid:
-              'Retention must be seconds or a value like 30m, 2h, or 3d.',
         },
         upstreams: {
           all: 'All',

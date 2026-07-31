@@ -16,6 +16,15 @@ const SECONDS_PER_DAY = 24 * 60 * 60;
 // distinguishes them, so the caller says which one this control emits.
 export type RetentionValue = number | null | 'invalid';
 
+// The sentinel is a state of the editor, not a value the gateway has a name
+// for, so it is dropped at the point a form turns its draft into a request. A
+// form that submits one has already been let through by a rule that should
+// have refused it, and says so rather than inventing a period.
+export const parsedRetention = <T extends number | null>(value: T | 'invalid'): T => {
+  if (value === 'invalid') throw new TypeError('Unparseable retention reached the request body');
+  return value;
+};
+
 export interface RetentionPreset {
   readonly seconds: number;
   readonly label: string;
@@ -122,7 +131,10 @@ export function RetentionField({
     onChange(parsed);
   };
 
-  const invalid = choice === 'custom' && parseCustom(custom) === null;
+  // The sentinel the control emits is the whole of the rule: re-parsing the
+  // draft here would state the same condition a second time and let the two
+  // disagree.
+  const invalid = value === 'invalid';
   const displayValue = choice === 'off'
     ? offLabel
     : choice === 'custom'
