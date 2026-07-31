@@ -27,6 +27,17 @@ export const navCss = `
    \`color\` alone would leave that keyframe starting from Fluent's grey.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L21
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L23 */
+/* The pane is not fenced off from the page. NavigationView's left pane shares
+   the window surface with the content beside it, and Windows' own Settings app
+   shows no rule between the two: what separates them is the content's own card,
+   not a hairline down the middle. Fluent's inline drawer paints one on the edge
+   facing the content, so the nav drawer declines it — ./drawer.css still colours
+   that edge for every other inline drawer, which is a divider between two
+   regions of one page and does belong there. */
+.fui-NavDrawer.fui-InlineDrawer {
+  border-inline-end-style: none;
+}
+
 .fui-NavItem.fui-NavItem,
 .fui-NavSubItem.fui-NavSubItem,
 .fui-NavCategoryItem.fui-NavCategoryItem,

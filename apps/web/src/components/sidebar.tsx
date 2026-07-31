@@ -228,7 +228,10 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
           </div>
         </ScrollArea>
       </NavDrawerBody>
-      <NavDrawerFooter className="!bg-transparent border-t border-t-solid !gap-y-1 !px-[10px] !py-3" style={{ borderTopColor: 'var(--colorNeutralStroke2)' }}>
+      {/* No rule above these. NavigationView's footer items are the same list
+          as the ones above them, placed at the other end of it rather than
+          grouped apart. */}
+      <NavDrawerFooter className="!bg-transparent !gap-y-1 !px-[10px] !py-3">
         <div className="grid gap-y-1 relative w-full" ref={footerRef}>
           <NavSelectionIndicator containerRef={footerRef} inset={NAV_INDICATOR_INSET} otherListIs="above" selectedValue={selectedValue} />
           <SidebarLink
