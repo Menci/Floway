@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { fluentComponents } from '../../fluent';
 
-const { Switch, Text, makeStyles, mergeClasses } = fluentComponents;
+const { Switch, Text, makeStyles, mergeClasses, shorthands } = fluentComponents;
 
 // The row the Windows Settings app is built out of: an icon, a header, a
 // description, and a control at the trailing edge -- and a variant of the same
@@ -34,10 +34,7 @@ const useStyles = makeStyles({
     borderRightWidth: '1px',
     borderBottomWidth: '1px',
     borderLeftWidth: '1px',
-    borderTopColor: 'var(--winui-card-stroke-default)',
-    borderRightColor: 'var(--winui-card-stroke-default)',
-    borderBottomColor: 'var(--winui-card-stroke-default)',
-    borderLeftColor: 'var(--winui-card-stroke-default)',
+    ...shorthands.borderColor('var(--winui-card-stroke-default)'),
     borderRadius: 'var(--winui-control-corner-radius)',
     boxSizing: 'border-box',
     display: 'flex',
@@ -65,10 +62,7 @@ const useStyles = makeStyles({
     },
     '&:active': {
       backgroundColor: 'var(--winui-control-fill-tertiary)',
-      borderTopColor: 'var(--winui-control-stroke-default)',
-      borderRightColor: 'var(--winui-control-stroke-default)',
-      borderBottomColor: 'var(--winui-control-stroke-default)',
-      borderLeftColor: 'var(--winui-control-stroke-default)',
+      ...shorthands.borderColor('var(--winui-control-stroke-default)'),
     },
   },
   text: { display: 'grid', minWidth: 0, marginInlineEnd: 'auto', paddingInlineEnd: '24px' },
@@ -111,10 +105,7 @@ const useStyles = makeStyles({
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml
   expanderHeader: {
     backgroundColor: 'var(--winui-card-background-fill-default)',
-    borderTopColor: 'var(--winui-card-stroke-default)',
-    borderRightColor: 'var(--winui-card-stroke-default)',
-    borderBottomColor: 'var(--winui-card-stroke-default)',
-    borderLeftColor: 'var(--winui-card-stroke-default)',
+    ...shorthands.borderColor('var(--winui-card-stroke-default)'),
     color: 'var(--winui-text-fill-primary)',
     fontFamily: 'inherit',
     fontSize: 'inherit',
