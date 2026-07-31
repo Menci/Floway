@@ -28,18 +28,11 @@ export interface GlobalError {
 
 export type ApiResult<T> = { data: T; error?: undefined } | { data?: undefined; error: GlobalError };
 
-// A 204 carries no body by definition (RFC 9110 §15.3.5), so there is nothing
-// to parse and no data to hand back. The gateway answers `DELETE /api/aliases/
-// :id` and `DELETE /api/proxies/:id` that way; parsing it as JSON turned a
-// successful delete into "Unexpected end of JSON input", which the dashboard
-// reported as a failed request while the row was already gone server-side.
-//
-// https://www.rfc-editor.org/rfc/rfc9110#section-15.3.5
-const NO_CONTENT = 204;
-
-export const callApi = async <T>(
+// Transport and failure handling, shared by both entry points: what differs
+// between them is only what a successful response is expected to carry.
+const runRequest = async (
   fn: () => Promise<Response>,
-): Promise<ApiResult<T>> => {
+): Promise<{ response: Response; error?: undefined } | { response?: undefined; error: GlobalError }> => {
   let response: Response;
   try {
     response = await fn();
@@ -47,31 +40,46 @@ export const callApi = async <T>(
     return { error: { status: 0, message: e instanceof Error ? e.message : String(e) } };
   }
 
-  if (!response.ok) {
-    let body: unknown;
-    try {
-      body = await response.json();
-    } catch { /* non-JSON body */ }
-    let message = `HTTP ${response.status}`;
-    if (body && typeof body === 'object') {
-      const obj = body as Record<string, unknown>;
-      if (typeof obj.error === 'string') message = obj.error;
-      else if (obj.error && typeof obj.error === 'object' && typeof (obj.error as Record<string, unknown>).message === 'string') {
-        message = (obj.error as { message: string }).message;
-      }
-    }
-    return { error: { status: response.status, message, raw: body } };
-  }
+  if (response.ok) return { response };
 
-  // Callers of a body-less route read `error` and ignore `data`; typing the
-  // absent body as `T` keeps the result shape uniform for everyone else.
-  if (response.status === NO_CONTENT) return { data: undefined as T };
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch { /* non-JSON body */ }
+  let message = `HTTP ${response.status}`;
+  if (body && typeof body === 'object') {
+    const obj = body as Record<string, unknown>;
+    if (typeof obj.error === 'string') message = obj.error;
+    else if (obj.error && typeof obj.error === 'object' && typeof (obj.error as Record<string, unknown>).message === 'string') {
+      message = (obj.error as { message: string }).message;
+    }
+  }
+  return { error: { status: response.status, message, raw: body } };
+};
+
+export const callApi = async <T>(
+  fn: () => Promise<Response>,
+): Promise<ApiResult<T>> => {
+  const result = await runRequest(fn);
+  if (result.error) return { error: result.error };
 
   let data: T;
   try {
-    data = (await response.json()) as T;
+    data = (await result.response.json()) as T;
   } catch (e: unknown) {
-    return { error: { status: response.status, message: e instanceof Error ? e.message : 'Invalid JSON response' } };
+    return { error: { status: result.response.status, message: e instanceof Error ? e.message : 'Invalid JSON response' } };
   }
   return { data };
+};
+
+// For a route that answers 204, which carries no body at all
+// (https://www.rfc-editor.org/rfc/rfc9110#section-15.3.5) — the gateway's
+// `DELETE /api/aliases/:id` and `DELETE /api/proxies/:id`. Success is the
+// absence of an error, so nothing is parsed and `data` is `void`; asking
+// `callApi<T>` for one of these would report a real success as a JSON error.
+export const callApiNoContent = async (
+  fn: () => Promise<Response>,
+): Promise<ApiResult<void>> => {
+  const { error } = await runRequest(fn);
+  return error ? { error } : { data: undefined };
 };

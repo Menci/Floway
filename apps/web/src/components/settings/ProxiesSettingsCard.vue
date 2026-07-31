@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 
 import ProxyRow from './ProxyRow.vue';
-import { callApi, useApi } from '../../api/client.ts';
+import { callApiNoContent, useApi } from '../../api/client.ts';
 import type { ProxyConflictBody, ProxyRecord } from '../../api/types.ts';
 import { useProxiesStore } from '../../composables/useProxies.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
@@ -28,7 +28,7 @@ const upstreamNames = computed<Map<string, string>>(() => {
 
 const deleteProxy = async (record: ProxyRecord) => {
   if (!window.confirm(`Delete proxy "${record.name}"?`)) return;
-  const { error } = await callApi(() => api.api.proxies[':id'].$delete({ param: { id: record.id } }));
+  const { error } = await callApiNoContent(() => api.api.proxies[':id'].$delete({ param: { id: record.id } }));
   if (error) {
     if (error.status === 409) {
       const refs = (error.raw as ProxyConflictBody | undefined)?.referencing_upstream_ids ?? [];

@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 
 import AliasRow from './AliasRow.vue';
-import { callApi, useApi } from '../../api/client.ts';
+import { callApiNoContent, useApi } from '../../api/client.ts';
 import type { ModelAlias } from '../../api/types.ts';
 import { useModelAliases } from '../../composables/useModelAliases.ts';
 import { useRawModelsStore } from '../../composables/useModels.ts';
@@ -22,7 +22,7 @@ const aliases = computed<ModelAlias[]>(() => aliasesStore.aliases.value ?? []);
 
 const deleteAlias = async (record: ModelAlias) => {
   if (!window.confirm(`Delete alias "${record.name}"?`)) return;
-  const { error } = await callApi(() => api.api.aliases[':id'].$delete({ param: { id: record.id } }));
+  const { error } = await callApiNoContent(() => api.api.aliases[':id'].$delete({ param: { id: record.id } }));
   if (error) {
     window.alert(`Delete failed: ${error.message}`);
     return;
