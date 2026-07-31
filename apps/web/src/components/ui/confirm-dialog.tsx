@@ -4,7 +4,7 @@ import { DialogShell } from './dialog-shell';
 import { OutcomeMessageBar } from './outcome-message-bar';
 import { fluentComponents } from '../../fluent';
 
-const { Button, DialogActions, DialogTitle, Spinner, makeStyles } = fluentComponents;
+const { Button, DialogActions, DialogTitle, Spinner, makeStyles, mergeClasses } = fluentComponents;
 
 const useStyles = makeStyles({
   // The danger fill is DangerBackground3, the same #c50f1f in both themes, so
@@ -82,11 +82,10 @@ export function ConfirmDialog({
         </Button>
         <Button
           appearance="primary"
-          className={actionIntent === 'danger' ? styles.danger : undefined}
+          className={mergeClasses('!whitespace-nowrap', actionIntent === 'danger' && styles.danger)}
           disabled={busy}
           icon={busy ? <Spinner size="tiny" /> : undefined}
           onClick={onConfirm}
-          style={{ whiteSpace: 'nowrap' }}
         >
           {actionLabel}
         </Button>

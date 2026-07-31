@@ -10,6 +10,7 @@ const useStyles = makeStyles({
     fontSize: '13px',
     fontWeight: 'var(--fontWeightRegular)',
     justifyContent: 'center',
+    lineHeight: '20px',
     minWidth: '48px',
   },
 });
@@ -23,7 +24,6 @@ function HttpBadge({ children, color }: { children: ReactNode; color: HttpBadgeC
     className={styles.root}
     color={color}
     size="medium"
-    style={{ fontSize: '13px', lineHeight: '20px' }}
     translate="no"
   >{children}</Badge>;
 }
