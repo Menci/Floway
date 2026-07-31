@@ -62,6 +62,7 @@ export function RetentionField({
   children,
   customInputUnit = 'duration',
   description,
+  disabled = false,
   icon,
   label,
   maximumSeconds,
@@ -75,6 +76,7 @@ export function RetentionField({
   children?: ReactNode;
   customInputUnit?: 'duration' | 'days';
   description: string;
+  disabled?: boolean;
   icon: ReactNode;
   label: string;
   maximumSeconds?: number;
@@ -130,6 +132,7 @@ export function RetentionField({
   const action = <Combobox
     aria-label={label}
     className="!w-auto flex-none"
+    disabled={disabled}
     freeform
     // The row's action is as wide as what it currently reads, not as wide
     // as its widest option -- a settings row sizes its control to its

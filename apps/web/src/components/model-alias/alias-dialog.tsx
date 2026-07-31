@@ -123,7 +123,7 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
         level={3}
         title={t('dashboard.modelAliases.target.heading')}
         titleId="alias-targets-heading"
-        actions={<Button className="!whitespace-nowrap flex-none" icon={<AddRegular />} onClick={() => append(blankTarget())}>{t('dashboard.modelAliases.actions.addTarget')}</Button>}
+        actions={<Button className="!whitespace-nowrap flex-none" disabled={saving} icon={<AddRegular />} onClick={() => append(blankTarget())}>{t('dashboard.modelAliases.actions.addTarget')}</Button>}
       />
       {fields.map((field, index) => <AliasTargetRow key={field.id} disabled={saving} index={index} isFirst={index === 0} isLast={index === fields.length - 1} isSole={fields.length === 1} catalog={catalog} kind={kind} target={targets[index] ?? field} targetIds={targetIds} onChange={target => setValue(`targets.${index}`, target, { shouldDirty: true, shouldValidate: true })} onMove={direction => move(index, index + direction)} onRemove={() => remove(index)} />)}
       {errors.targets?.message && <Text role="alert" className="text-fui-fg2">{t(errors.targets.message)}</Text>}

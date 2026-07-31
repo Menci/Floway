@@ -273,7 +273,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
       )}
 
       {data.modelsError && (
-        <OutcomeMessageBar intent="warning">
+        <OutcomeMessageBar intent="warning" onDismiss={() => setData(current => ({ ...current, modelsError: null }))}>
           {t('dashboard.upstreams.errors.models', { message: data.modelsError })}
         </OutcomeMessageBar>
       )}

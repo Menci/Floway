@@ -245,6 +245,7 @@ export function KeyDialog(props: KeyDialogProps) {
           <>
             <RetentionField
               description={t('dashboard.apiKeys.form.retentionHint')}
+              disabled={saving}
               icon={<History24Regular />}
               label={t('dashboard.apiKeys.form.retention')}
               offLabel={t('dashboard.apiKeys.retention.offCapture')}
@@ -277,6 +278,7 @@ export function KeyDialog(props: KeyDialogProps) {
             <RetentionField
               customInputUnit="days"
               description={t('dashboard.apiKeys.form.responsesRetentionHint')}
+              disabled={saving}
               icon={<Database24Regular />}
               label={t('dashboard.apiKeys.form.responsesRetention')}
               maximumSeconds={RESPONSES_RETENTION_MAX_SECONDS}

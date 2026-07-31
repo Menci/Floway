@@ -29,6 +29,9 @@ export function ProxyBackoffPanel({ backoffs, onReset, proxyId }: {
   const toasts = useOutcomeToasts();
   const nowSeconds = useNow(1000) / 1000;
   const [resetError, setResetError] = useState<string | null>(null);
+  // One request at a time, like every other mutation in the app: without it a
+  // second click posts a second reset while the first is still in flight.
+  const [resetting, setResetting] = useState(false);
 
   // `>=` keeps a row visible through its expiry second, so the countdown's
   // last tick can render the expiring label instead of the row vanishing
@@ -41,11 +44,13 @@ export function ProxyBackoffPanel({ backoffs, onReset, proxyId }: {
 
   const reset = async (upstreamId?: string) => {
     setResetError(null);
+    setResetting(true);
     const handle = toasts.start(t('dashboard.proxy.toast.backoff.pending'));
     const { error } = await callApi(() => api.api.proxies[':id'].backoffs.reset.$post({
       param: { id: proxyId },
       json: upstreamId === undefined ? {} : { upstream_id: upstreamId },
     }));
+    setResetting(false);
     if (error) {
       handle.settle();
       setResetError(error.message);
@@ -58,7 +63,7 @@ export function ProxyBackoffPanel({ backoffs, onReset, proxyId }: {
   return <section className="grid gap-2" aria-label={t('dashboard.proxy.backoff.title')}>
     <div className="flex items-center justify-between gap-2">
       <Text weight="semibold">{t('dashboard.proxy.backoff.title')}</Text>
-      <Button appearance="subtle" icon={<ArrowResetRegular />} onClick={() => void reset()} size="small">
+      <Button appearance="subtle" disabled={resetting} icon={<ArrowResetRegular />} onClick={() => void reset()} size="small">
         {t('dashboard.proxy.backoff.resetAll')}
       </Button>
     </div>
@@ -77,7 +82,7 @@ export function ProxyBackoffPanel({ backoffs, onReset, proxyId }: {
           {row.last_error && <Tooltip content={row.last_error} relationship="description">
             <Text size={200} className="max-w-[220px] truncate text-fui-fg3">{row.last_error}</Text>
           </Tooltip>}
-          <Button appearance="subtle" onClick={() => void reset(row.upstream_id)} size="small">
+          <Button appearance="subtle" disabled={resetting} onClick={() => void reset(row.upstream_id)} size="small">
             {t('dashboard.proxy.backoff.reset')}
           </Button>
         </li>;
