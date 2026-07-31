@@ -6,8 +6,10 @@ import { callApi } from '../../api/auth';
 import { api } from '../../api/client';
 import type { BackoffRow } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { OutcomeMessageBar } from '../ui/outcome-message-bar';
+import { useOutcomeToasts } from '../ui/outcome-toast';
 
-const { Button, MessageBar, MessageBarBody, Text, Tooltip } = fluentComponents;
+const { Button, Text, Tooltip } = fluentComponents;
 
 const formatCountdown = (seconds: number): string => {
   if (seconds <= 0) return '0s';
@@ -24,6 +26,7 @@ export const ProxyBackoffPanel = ({ backoffs, onReset, proxyId }: {
   proxyId: string;
 }) => {
   const { t } = useTranslation();
+  const toasts = useOutcomeToasts();
   const [nowSeconds, setNowSeconds] = useState(() => Math.floor(Date.now() / 1000));
   const [resetError, setResetError] = useState<string | null>(null);
 
@@ -43,14 +46,17 @@ export const ProxyBackoffPanel = ({ backoffs, onReset, proxyId }: {
 
   const reset = async (upstreamId?: string) => {
     setResetError(null);
+    const handle = toasts.start(t('dashboard.proxy.toast.backoff.pending'));
     const { error } = await callApi(() => api.api.proxies[':id'].backoffs.reset.$post({
       param: { id: proxyId },
       json: upstreamId === undefined ? {} : { upstream_id: upstreamId },
     }));
     if (error) {
+      handle.settle();
       setResetError(error.message);
       return;
     }
+    handle.succeed(t('dashboard.proxy.toast.backoff.success'));
     onReset();
   };
 
@@ -83,6 +89,6 @@ export const ProxyBackoffPanel = ({ backoffs, onReset, proxyId }: {
       })}
     </ul>
 
-    {resetError && <MessageBar intent="error"><MessageBarBody>{resetError}</MessageBarBody></MessageBar>}
+    {resetError && <OutcomeMessageBar onDismiss={() => setResetError(null)}>{resetError}</OutcomeMessageBar>}
   </section>;
 };

@@ -1193,6 +1193,11 @@ const en = {
           egressIp: 'Egress IP: {{ip}}',
           failed: 'Test failed: {{error}}',
         },
+        toast: {
+          save: { pending: 'Saving proxy {{name}}' },
+          delete: { pending: 'Deleting proxy {{name}}', success: 'Deleted proxy {{name}}' },
+          backoff: { pending: 'Resetting backoff', success: 'Backoff reset.' },
+        },
         delete: {
           title: 'Delete Proxy',
           message: 'Delete proxy {{name}}? This cannot be undone.',

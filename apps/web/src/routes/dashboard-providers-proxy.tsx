@@ -18,6 +18,8 @@ import { ProxyForm, type ProxyTestResult } from '../components/proxy/proxy-form'
 import { ProxyList } from '../components/proxy/proxy-list';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DialogShell } from '../components/ui/dialog-shell';
+import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
+import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { ResourceListActions, ResourceListPanel } from '../components/ui/resource-list';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import type { ProxyConfig } from '@floway-dev/proxy/proxy-config';
@@ -87,6 +89,7 @@ function ProxyDialog({ backoffs, onDismiss, open, onSaved, record }: {
   record: ProxyRecord | null;
 }) {
   const { t } = useTranslation();
+  const toasts = useOutcomeToasts();
   const [initial] = useState(() => proxyDialogDraft(record));
   const { editingId, initialDraft } = initial;
   const [formName, setFormName] = useState(initial.formName);
@@ -136,37 +139,27 @@ function ProxyDialog({ backoffs, onDismiss, open, onSaved, record }: {
   }, [clearDiagnostics]);
   const handleSave = useCallback(async () => {
     setShowValidation(true);
-    setSaving(true);
     setSaveError(null);
     const trimmedName = formName.trim();
-    if (!trimmedName) {
-      setSaveError(t('dashboard.proxy.validation.nameRequired'));
-      setSaving(false);
-      return;
-    }
     const builtUrl = urlInput.trim();
-    if (!builtUrl || urlError || !config.host.trim() || !isValidPort(config.port)) {
-      setSaveError(urlError ?? t('dashboard.proxy.validation.urlRequired'));
-      setSaving(false);
-      return;
-    }
-    if (dialTimeout.error) {
-      setSaveError(t(`dashboard.proxy.validation.timeout.${dialTimeout.error}`));
-      setSaving(false);
-      return;
-    }
+    // Every one of these has a field of its own to say so on.
+    if (!trimmedName || !builtUrl || urlError || !config.host.trim() || !isValidPort(config.port) || dialTimeout.error) return;
+    setSaving(true);
     const body = { name: trimmedName, url: builtUrl, dial_timeout_seconds: dialTimeout.value };
+    const handle = toasts.start(t('dashboard.proxy.toast.save.pending', { name: trimmedName }));
     const result = editingId === null
       ? await callApi(() => api.api.proxies.$post({ json: body }))
       : await callApi(() => api.api.proxies[':id'].$patch({ param: { id: editingId }, json: body }));
     if (result.error) {
+      handle.settle();
       setSaveError(result.error.message);
       setSaving(false);
       return;
     }
     onDismiss();
+    handle.succeed(t('dashboard.proxy.actions.saveSuccess'));
     await onSaved();
-  }, [config.host, config.port, dialTimeout, editingId, formName, onDismiss, onSaved, t, urlError, urlInput]);
+  }, [config.host, config.port, dialTimeout, editingId, formName, onDismiss, onSaved, t, toasts, urlError, urlInput]);
   const handleTest = useCallback(async () => {
     setTesting(true);
     setTestResult(null);
@@ -197,6 +190,7 @@ function ProxyDialog({ backoffs, onDismiss, open, onSaved, record }: {
     {editingId !== null && <ProxyBackoffPanel backoffs={backoffs} onReset={() => void onSaved()} proxyId={editingId} />}
     <ProxyForm
       config={config}
+      dialTimeoutError={dialTimeout.error}
       dialTimeoutInput={dialTimeoutInput}
       formName={formName}
       onConfigChange={updateStructuredConfig}
@@ -210,13 +204,14 @@ function ProxyDialog({ backoffs, onDismiss, open, onSaved, record }: {
       urlInput={urlInput}
     />
     {testResult && <MessageBar intent={testResult.ok ? 'success' : 'error'}><MessageBarBody><div className="grid gap-1"><Text size={200} weight="semibold">{testResult.ok ? t('dashboard.proxy.test.ok') : t('dashboard.proxy.test.failed', { error: testResult.error })}</Text>{testResult.ok && <Text size={200} className="text-fui-fg3">{t('dashboard.proxy.test.egressIp', { ip: testResult.egress_ip })}</Text>}</div></MessageBarBody></MessageBar>}
-    {saveError && <MessageBar intent="error"><MessageBarBody>{saveError}</MessageBarBody></MessageBar>}
+    {saveError && <OutcomeMessageBar onDismiss={() => setSaveError(null)}>{saveError}</OutcomeMessageBar>}
   </DialogShell>;
 }
 
 export default function DashboardProvidersProxy({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
   const { user } = useDashboardOutletContext();
+  const toasts = useOutcomeToasts();
 
   const [proxies, setProxies] = useState(loaderData.proxies);
   const [loadError, setLoadError] = useState(loaderData.error);
@@ -250,10 +245,12 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
     setDeleting(true);
     setDeleteError(null);
 
+    const handle = toasts.start(t('dashboard.proxy.toast.delete.pending', { name: target.name }));
     const result = await callApi(() => api.api.proxies[':id'].$delete({ param: { id: target.id } }));
 
     setDeleting(false);
     if (result.error) {
+      handle.settle();
       const raw = result.error.raw as ProxyConflictBody | undefined;
       if (
         raw?.referencing_upstream_ids &&
@@ -265,13 +262,13 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
       } else {
         setDeleteError(result.error.message);
       }
-      setDeleteOpen(false);
       return;
     }
 
     setDeleteOpen(false);
+    handle.succeed(t('dashboard.proxy.toast.delete.success', { name: target.name }));
     await refreshProxies();
-  }, [refreshProxies, t]);
+  }, [refreshProxies, t, toasts]);
 
   if (!user.isAdmin) {
     return (
@@ -298,15 +295,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
       />
 
       {loadError && (
-        <MessageBar intent="error">
-          <MessageBarBody>{loadError}</MessageBarBody>
-        </MessageBar>
-      )}
-
-      {deleteError && (
-        <MessageBar intent="error">
-          <MessageBarBody>{deleteError}</MessageBarBody>
-        </MessageBar>
+        <OutcomeMessageBar onDismiss={() => setLoadError(null)}>{loadError}</OutcomeMessageBar>
       )}
 
       <ResourceListPanel>
@@ -331,10 +320,12 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
               : t('dashboard.proxy.actions.delete')
           }
           busy={deleting}
+          error={deleteError}
           message={t('dashboard.proxy.delete.message', {
             name: deleteTarget.name,
           })}
           onConfirm={() => void handleDeleteConfirm(deleteTarget)}
+          onDismissError={() => setDeleteError(null)}
           onOpenChange={open => {
             if (!deleting) setDeleteOpen(open);
           }}

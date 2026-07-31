@@ -1,7 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { DEFAULT_DIAL_TIMEOUT_SECONDS, FORM_KIND_LABELS, KIND_OPTIONS, SS2022_METHOD_OPTIONS, SS_METHOD_OPTIONS, formKindFromConfig, isValidPort, isValidUuid, orUndef, proxyUrlPlaceholder } from './proxy-config';
+import { DEFAULT_DIAL_TIMEOUT_SECONDS, FORM_KIND_LABELS, KIND_OPTIONS, SS2022_METHOD_OPTIONS, SS_METHOD_OPTIONS, formKindFromConfig, isValidPort, isValidUuid, orUndef, proxyUrlPlaceholder, type DialTimeoutResult } from './proxy-config';
 import { fluentComponents } from '../../fluent';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
 import type {
@@ -22,6 +22,7 @@ export type ProxyTestResult =
 
 export interface ProxyFormProps {
   config: ProxyConfig;
+  dialTimeoutError: DialTimeoutResult['error'];
   dialTimeoutInput: string;
   formName: string;
   onConfigChange: Dispatch<SetStateAction<ProxyConfig>>;
@@ -37,6 +38,7 @@ export interface ProxyFormProps {
 
 export function ProxyForm({
   config,
+  dialTimeoutError,
   dialTimeoutInput,
   formName,
   onConfigChange: setConfig,
@@ -52,6 +54,7 @@ export function ProxyForm({
   const { t } = useTranslation();
   const formKind = formKindFromConfig(config);
   const nameInvalid = showValidation && !formName.trim();
+  const urlMessage = urlError ?? (showValidation && !urlInput.trim() ? t('dashboard.proxy.validation.urlRequired') : null);
   const hostInvalid = showValidation && !config.host.trim();
   const portInvalid = showValidation && !isValidPort(config.port);
   const uuidNeeded = config.kind === 'vless-tcp' || config.kind === 'vless-ws' || config.kind === 'reality';
@@ -68,8 +71,8 @@ export function ProxyForm({
 
       <Field
         label={t('dashboard.proxy.form.url')}
-        validationMessage={urlError ?? undefined}
-        validationState={urlError ? 'error' : undefined}
+        validationMessage={urlMessage ?? undefined}
+        validationState={urlMessage ? 'error' : undefined}
       >
         <Input
           className="font-mono"
@@ -462,6 +465,8 @@ export function ProxyForm({
       <Field
         hint={t('dashboard.proxy.form.timeoutHint')}
         label={t('dashboard.proxy.form.timeout')}
+        validationMessage={dialTimeoutError ? t(`dashboard.proxy.validation.timeout.${dialTimeoutError}`) : undefined}
+        validationState={dialTimeoutError ? 'error' : undefined}
       >
         <Input
           inputMode="numeric"

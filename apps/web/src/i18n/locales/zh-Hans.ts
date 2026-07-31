@@ -1137,6 +1137,11 @@ const zhHansCN = {
           egressIp: '出口 IP：{{ip}}',
           failed: '测试失败：{{error}}',
         },
+        toast: {
+          save: { pending: '正在保存代理 {{name}}' },
+          delete: { pending: '正在删除代理 {{name}}', success: '已删除代理 {{name}}' },
+          backoff: { pending: '正在重置退避', success: '退避已重置。' },
+        },
         delete: {
           title: '删除代理',
           message: '删除代理 {{name}}？此操作无法撤销。',
