@@ -40,6 +40,18 @@ const useStyles = makeStyles({
     // columns drifted apart by it.
     '& .fui-TableRow > :is(th, td, div):first-of-type': { paddingInlineStart: EDGE_INSET },
     '& .fui-TableRow > :is(th, td, div):last-of-type': { paddingInlineEnd: EDGE_INSET },
+    // Fluent sizes the selection column at a fixed 44, which is its own 16px
+    // radio plus the margins the layer has taken off the control, and it is
+    // styled apart from an ordinary cell -- so it never took the trailing
+    // padding every other cell carries either. It is rebuilt from what is
+    // actually in it: the leading inset, the control, and that same trailing
+    // padding, named from the token the other cells read it from.
+    '& .fui-TableSelectionCell': {
+      maxWidth: `calc(${EDGE_INSET} + 20px + var(--spacingHorizontalS))`,
+      minWidth: `calc(${EDGE_INSET} + 20px + var(--spacingHorizontalS))`,
+      paddingInlineEnd: 'var(--spacingHorizontalS)',
+      width: `calc(${EDGE_INSET} + 20px + var(--spacingHorizontalS))`,
+    },
     // The last row's edge and the card's own would otherwise stack into one
     // heavier line a pixel above the corner.
     '& .fui-TableBody .fui-TableRow:last-child': { borderBottomStyle: 'none' },

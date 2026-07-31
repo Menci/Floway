@@ -40,6 +40,10 @@ export const choiceCss = `
   width: 20px;
   height: 20px;
   font-size: 12px;
+  /* Fluent pins the box to the top so it meets the first line of a label that
+     wraps. Against a field-height row holding one line, that reads as the box
+     sitting above its own text, so it centres with everything else. */
+  align-self: center;
   margin: 0;
 }
 
@@ -220,6 +224,7 @@ export const choiceCss = `
 .fui-Radio__indicator.fui-Radio__indicator {
   width: 20px;
   height: 20px;
+  align-self: center;
   margin: 0;
 }
 

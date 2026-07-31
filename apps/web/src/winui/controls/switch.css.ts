@@ -65,6 +65,7 @@ export const switchCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L602-L606 */
 .fui-Switch__indicator.fui-Switch__indicator {
   align-items: center;
+  align-self: center;
   background-color: transparent;
   border-color: transparent;
   display: flex;
