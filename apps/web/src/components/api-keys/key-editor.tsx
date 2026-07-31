@@ -20,6 +20,7 @@ import { OpenLinkLabel } from '../ui/open-link-label';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
 import { UpstreamAccessControl } from '../upstreams/upstream-access-control';
+import { refineUpstreamAccess } from '../upstreams/upstream-access-validation';
 const { Button, DialogActions, DialogTitle, Field, MessageBar, MessageBarBody } = fluentComponents;
 interface KeyFormValues { name: string; keySource: KeySource; customKey: string; upstreamOverride: boolean; upstreamIds: string[]; dumpRetention: RetentionValue; responsesRetention: Exclude<RetentionValue, null> }
 const RESPONSES_RETENTION_MAX_SECONDS = 10 * 365 * 86400;
@@ -77,13 +78,7 @@ export function KeyDialog(props: KeyDialogProps) {
           responsesRetention: z.union([z.number(), z.literal('invalid')]),
         })
         .superRefine((value, ctx) => {
-          if (value.upstreamOverride && value.upstreamIds.length === 0) {
-            ctx.addIssue({
-              code: 'custom',
-              message: 'dashboard.upstreamAccess.validation',
-              path: ['upstreamIds'],
-            });
-          }
+          refineUpstreamAccess(value, ctx);
           if (isCreate && value.keySource === 'custom' && !value.customKey.trim()) {
             ctx.addIssue({
               code: 'custom',
