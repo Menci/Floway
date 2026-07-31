@@ -77,8 +77,8 @@ export function UpstreamAccessControl({
     const nextIndex = index + direction;
     if (index === -1 || nextIndex < 0 || nextIndex >= ids.length) return;
     const next = [...ids];
-    const [item] = next.splice(index, 1);
-    next.splice(nextIndex, 0, item);
+    const [moved] = next.splice(index, 1);
+    next.splice(nextIndex, 0, moved);
     onChange({ override: true, ids: next });
   }, [ids, onChange]);
 

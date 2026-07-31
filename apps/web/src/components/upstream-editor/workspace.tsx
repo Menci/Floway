@@ -102,8 +102,8 @@ export function UpstreamWorkspace({
   // about a row that survives a reload -- the row keys the table works in are
   // rebuilt per render for the manual entries.
   const tab = params.get(TAB_PARAM) === 'flags' ? 'flags' : 'models';
-  const selectedModelId = params.get(MODEL_PARAM);
-  const modelView: ModelView = selectedModelId !== null
+  const selectedUpstreamModelId = params.get(MODEL_PARAM);
+  const modelView: ModelView = selectedUpstreamModelId !== null
     ? 'detail'
     : params.get(VIEW_PARAM) === 'yaml' ? 'yaml' : 'list';
   const modelDetailTab: ModelDetailTab = params.get(SECTION_PARAM) === 'flags' ? 'flags' : 'details';
@@ -128,7 +128,7 @@ export function UpstreamWorkspace({
 
   const changeModelView = (next: ModelView) => navigate({
     tab,
-    model: next === 'detail' ? selectedModelId : null,
+    model: next === 'detail' ? selectedUpstreamModelId : null,
     section: 'details',
     view: next === 'yaml' ? 'yaml' : 'list',
   });
@@ -136,13 +136,13 @@ export function UpstreamWorkspace({
   useLayoutEffect(() => {
     workspaceScrollRef.current?.scrollTo({ left: 0, top: 0 });
   }, [modelDetailTab, modelView, tab]);
-  const modelsWorkspace = <ModelsWorkspace detailSection={modelDetailTab} onSelectModel={selectModel} selectedModelId={selectedModelId} discovered={discovered} loading={loadingModels} error={modelsError} onRefresh={onRefreshModels} onViewChange={changeModelView} record={record} view={modelView} yaml={yaml} yamlError={yamlError} onYamlChange={setYaml} onYamlErrorChange={setYamlError} />;
+  const modelsWorkspace = <ModelsWorkspace detailSection={modelDetailTab} onSelectUpstreamModel={selectModel} selectedUpstreamModelId={selectedUpstreamModelId} discovered={discovered} loading={loadingModels} error={modelsError} onRefresh={onRefreshModels} onViewChange={changeModelView} record={record} view={modelView} yaml={yaml} yamlError={yamlError} onYamlChange={setYaml} onYamlErrorChange={setYamlError} />;
   return <section className="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] h-full min-h-0 min-w-0 max-[1050px]:h-auto">
     <div className="flex items-center gap-2 border-b border-b-solid border-fui-stroke1 px-5 pt-2">
       {showModelDetail
         ? <>
             <BackNavigationButton onClick={() => selectModel(null)}>{t('dashboard.upstreamEditor.models.back')}</BackNavigationButton>
-            <TabList selectedValue={modelDetailTab} onTabSelect={(_, data) => navigate({ tab, model: selectedModelId, section: data.value as ModelDetailTab, view: 'list' })}>
+            <TabList selectedValue={modelDetailTab} onTabSelect={(_, data) => navigate({ tab, model: selectedUpstreamModelId, section: data.value as ModelDetailTab, view: 'list' })}>
               <Tab value="details">{t('dashboard.upstreamEditor.models.details')}</Tab>
               <Tab value="flags">{t('dashboard.upstreamEditor.models.flags')}</Tab>
             </TabList>
@@ -167,18 +167,18 @@ export function UpstreamWorkspace({
   </section>;
 }
 
-function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh, onSelectModel, onViewChange, onYamlChange, onYamlErrorChange, record, selectedModelId, view, yaml, yamlError }: {
+function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh, onSelectUpstreamModel, onViewChange, onYamlChange, onYamlErrorChange, record, selectedUpstreamModelId, view, yaml, yamlError }: {
   detailSection: ModelDetailTab;
   discovered: UpstreamModelConfig[];
   error: string | null;
   loading: boolean;
   onRefresh: () => void;
-  onSelectModel: (id: string | null) => void;
+  onSelectUpstreamModel: (id: string | null) => void;
   onViewChange: (view: ModelView) => void;
   onYamlChange: (value: string) => void;
   onYamlErrorChange: (value: string | null) => void;
   record: UpstreamRecord;
-  selectedModelId: string | null;
+  selectedUpstreamModelId: string | null;
   view: ModelView;
   yaml: string;
   yamlError: string | null;
@@ -191,7 +191,7 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
   const disabled = useWatch({ control, name: 'disabledPublicModelIds' });
   const upstreamFlags = useWatch({ control, name: 'flagOverrides' });
   const deleteDialog = useDialogInvocation<ModelRow>();
-  const [pendingManualId, setPendingManualId] = useState<string | null>(null);
+  const [pendingManualUpstreamModelId, setPendingManualUpstreamModelId] = useState<string | null>(null);
   const [pendingManualConfig, setPendingManualConfig] = useState<UpstreamModelConfig | null>(null);
   const [search, setSearch] = useState('');
   const { copiedTag, copy, copyFailedTag } = useCopyToClipboard();
@@ -206,7 +206,7 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
     for (const item of visibleDiscovered) if (!manualIds.has(item.upstreamModelId)) result.push({ key: `auto:${item.upstreamModelId}`, source: 'auto', config: item, manualIndex: null, hasAuto: true });
     return result;
   }, [autoFetchEnabled, discovered, fields, manual]);
-  const selectedRow = rows.find(row => row.config.upstreamModelId === selectedModelId) ?? null;
+  const selectedRow = rows.find(row => row.config.upstreamModelId === selectedUpstreamModelId) ?? null;
   const pendingManualRow: ModelRow | null = pendingManualConfig === null ? null : {
     key: 'pending-manual',
     source: 'manual',
@@ -221,18 +221,18 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
   // Once the row the pending manual model produced exists, drop the
   // placeholder — a one-shot handoff, not synchronised state. The selection
   // needs no handing over: it names the model, and the model is the same one.
-  const settledManualRow = pendingManualId === null
+  const settledManualRow = pendingManualUpstreamModelId === null
     ? undefined
-    : rows.find(row => row.source === 'manual' && row.config.upstreamModelId === pendingManualId);
+    : rows.find(row => row.source === 'manual' && row.config.upstreamModelId === pendingManualUpstreamModelId);
   if (settledManualRow) {
-    setPendingManualId(null);
+    setPendingManualUpstreamModelId(null);
     setPendingManualConfig(null);
   }
 
   const setModelSource = (row: ModelRow, source: 'auto' | 'manual') => {
     if (source === row.source || readOnly) return;
     if (source === 'manual' && row.source === 'auto') {
-      setPendingManualId(row.config.upstreamModelId);
+      setPendingManualUpstreamModelId(row.config.upstreamModelId);
       const manualConfig = structuredClone(row.config);
       if (manualConfig.kind === 'rerank') {
         manualConfig.endpoints = { rerank: {} };
@@ -249,7 +249,7 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
 
   const deleteModel = (target: ModelRow & { manualIndex: number }) => {
     remove(target.manualIndex);
-    if (selectedRow?.key === target.key) onSelectModel(null);
+    if (selectedRow?.key === target.key) onSelectUpstreamModel(null);
     deleteDialog.close();
   };
 
@@ -342,7 +342,7 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
             <TableCell className="overflow-hidden">
               <button
                 className="block bg-transparent border-0 cursor-pointer min-w-0 max-w-full truncate p-0 text-fui-base300 text-fui-fg1 text-left hover:underline"
-                onClick={() => onSelectModel(row.config.upstreamModelId)}
+                onClick={() => onSelectUpstreamModel(row.config.upstreamModelId)}
                 title={row.config.display_name ?? id}
                 type="button"
               >
@@ -352,7 +352,7 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
             <TableCentredCell><Text size={300}>{t(`dashboard.upstreamEditor.models.kindValue.${row.config.kind}`)}</Text></TableCentredCell>
             <TableCell className="overflow-hidden"><span className="flex items-center gap-1 min-w-0 max-w-full overflow-hidden"><code className="block min-w-0 truncate leading-[var(--lineHeightBase300)]" style={{ maxWidth: 'calc(100% - 36px)' }} title={id}>{id}</code><TooltipIconButton className="flex-none" icon={copyFailedTag === id ? <DismissRegular /> : copiedTag === id ? <CheckmarkRegular /> : <CopyRegular />} label={copyFailedTag === id ? t('dashboard.apiKeys.copy.failed') : copiedTag === id ? t('dashboard.apiKeys.copy.copied') : t('dashboard.upstreamEditor.models.copy')} onClick={() => copy(id, id)} /></span></TableCell>
             <TableCentredCell><Text size={300}>{t(`dashboard.upstreamEditor.models.${row.source}`)}</Text></TableCentredCell>
-            <TableCell><TableActions><TooltipIconButton icon={<EditRegular />} label={t('dashboard.upstreamEditor.models.edit')} onClick={() => onSelectModel(row.config.upstreamModelId)} />{row.manualIndex !== null && <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.delete')} onClick={() => deleteDialog.open(row)} />}</TableActions></TableCell>
+            <TableCell><TableActions><TooltipIconButton icon={<EditRegular />} label={t('dashboard.upstreamEditor.models.edit')} onClick={() => onSelectUpstreamModel(row.config.upstreamModelId)} />{row.manualIndex !== null && <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.delete')} onClick={() => deleteDialog.open(row)} />}</TableActions></TableCell>
           </TableRow>;
         })}</TableBody>
       </Table>

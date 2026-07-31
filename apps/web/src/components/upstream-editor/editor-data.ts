@@ -249,7 +249,7 @@ export const discoveredModelsFromResponse = (
 };
 
 export const publicModelId = (model: UpstreamModelConfig) => {
-  const publicId = typeof model.publicModelId === 'string' ? model.publicModelId.trim() : '';
-  if (publicId) return publicId;
+  const configured = typeof model.publicModelId === 'string' ? model.publicModelId.trim() : '';
+  if (configured) return configured;
   return typeof model.upstreamModelId === 'string' ? model.upstreamModelId : '';
 };

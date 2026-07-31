@@ -8,7 +8,7 @@ export type AgentModelRanking =
 
 export interface AgentModelOption {
   value: string;
-  modelId: string;
+  publicModelId: string;
 }
 
 const CLAUDE_DEFAULT_ORDER: readonly ClaudeTier[] = ['fable', 'opus', 'sonnet', 'haiku', 'other'];
@@ -97,7 +97,7 @@ export const buildAgentModelOptions = (
       : model.id;
     if (values.has(value)) continue;
     values.add(value);
-    options.push({ value, modelId: model.id });
+    options.push({ value, publicModelId: model.id });
   }
   return options;
 };

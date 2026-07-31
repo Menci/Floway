@@ -18,19 +18,19 @@ export const handle = dashboardWorkspaceHandle;
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   if (!getSessionToken()) throw redirect('/');
   if (!(await requireAdmin())) throw redirect('/dashboard/services/api-keys');
-  const provider = ALL_PROVIDER_KINDS.find(kind => kind === params.provider);
-  if (!provider) {
+  const kind = ALL_PROVIDER_KINDS.find(candidate => candidate === params.provider);
+  if (!kind) {
     throw redirect('/dashboard/providers/upstreams');
   }
   const [recordResult, aux] = await Promise.all([
     callApi(() =>
-      api.api.upstreams.blueprint.$get({ query: { kind: provider } })),
+      api.api.upstreams.blueprint.$get({ query: { kind } })),
     loadEditorAux(),
   ]);
   if (recordResult.error) throw new Error(recordResult.error.message);
   const record = {
     ...recordResult.data,
-    name: providerDefaultName[provider],
+    name: providerDefaultName[kind],
     enabled: true,
   };
   return { ...aux, mode: 'create' as const, record, discovered: [], modelsError: null };

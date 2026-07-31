@@ -110,7 +110,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const s = useStyles();
   const [api, setApi] = useState<PlaygroundApi>('responses');
   const [keyId, setKeyId] = useState(loaderData.keys?.[0]?.id ?? '');
-  const [modelId, setModelId] = useState('');
+  const [publicModelId, setPublicModelId] = useState('');
   // `null` means the picker is showing its selection rather than a search
   // term. Opening the list clears the field so the first keystroke starts a
   // query instead of extending the selected model's display name.
@@ -145,7 +145,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
     () => availableModels(loaderData.models ?? [], cap),
     [cap, loaderData.models],
   );
-  const selectedModel = models.find(model => model.id === modelId) ?? models[0] ?? null;
+  const selectedModel = models.find(model => model.id === publicModelId) ?? models[0] ?? null;
   const imageEnabled = supportsImageInput(selectedModel);
   const effortOptions = selectedModel?.chat?.reasoning?.effort?.supported ?? [];
   const matchingModels = models.filter(model => {
@@ -163,8 +163,8 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
 
   // The picker holds an id; the catalog decides whether it still resolves.
   // Reconciling during render keeps the two from disagreeing for a frame.
-  const resolvedModelId = selectedModel?.id ?? '';
-  if (resolvedModelId !== modelId) setModelId(resolvedModelId);
+  const resolvedPublicModelId = selectedModel?.id ?? '';
+  if (resolvedPublicModelId !== publicModelId) setPublicModelId(resolvedPublicModelId);
 
   // A model that cannot take images has no attachment to show; reconciling
   // during render avoids painting the composer with a stale one.
@@ -328,7 +328,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
         <Combobox value={modelQuery ?? selectedModel?.display_name ?? ''} selectedOptions={selectedModel ? [selectedModel.id] : []} placeholder={t('dashboard.playground.modelPlaceholder')} onChange={event => setModelQuery(event.target.value)} onOptionSelect={(_, data) => {
           if (!data.optionValue) return;
           changeContext(() => {
-            setModelId(data.optionValue!);
+            setPublicModelId(data.optionValue!);
             setModelQuery(null);
             setMessages([]);
             setEditingId(null);

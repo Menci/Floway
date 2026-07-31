@@ -142,7 +142,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const [filters, setFilters] = useState<PerformanceFilters>(initialState.filters);
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set(initialState.hidden));
   const [overview, setOverview] = useState<PerformanceOverviewResponse | null>(loaderData.overview);
-  const [upstreamNames] = useState(() => new Map(loaderData.upstreamNames.map(item => [item.id, item.name])));
+  const [upstreamNames] = useState(() => new Map(loaderData.upstreamNames.map(record => [record.id, record.name])));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
   const requestRef = useRef<AbortController | null>(null);

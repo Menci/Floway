@@ -398,4 +398,4 @@ export const filterModelOptions = (options: readonly ModelOption[], query: strin
 
 export const modelOptions = (models: ControlPlaneModel[], family: 'claude' | 'codex', picker: ClaudePicker) =>
   buildAgentModelOptions(models, family === 'claude' ? { family, picker } : { family })
-    .map(option => ({ value: option.value, label: option.modelId }));
+    .map(option => ({ value: option.value, label: option.publicModelId }));

@@ -155,8 +155,8 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     setPageError(null);
     setData(current => ({
       ...current,
-      upstreams: current.upstreams.map(item =>
-        item.id === record.id ? { ...item, enabled } : item),
+      upstreams: current.upstreams.map(candidate =>
+        candidate.id === record.id ? { ...candidate, enabled } : candidate),
     }));
 
     const result = await patchUpstream(record.id, { enabled });
@@ -173,7 +173,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
 
   const move = async (record: UpstreamRecord, direction: -1 | 1) => {
     const snapshot = data.upstreams;
-    const index = snapshot.findIndex(item => item.id === record.id);
+    const index = snapshot.findIndex(candidate => candidate.id === record.id);
     const targetIndex = index + direction;
     if (index < 0 || targetIndex < 0 || targetIndex >= snapshot.length) return;
 

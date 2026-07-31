@@ -53,7 +53,7 @@ describe('Agent Setup persisted model values', () => {
       model('claude-sonnet-4-5', 1_000_000),
       model('claude-sonnet-4-5[1m]', 1_000_000),
     ], { family: 'claude', picker: 'sonnet' })).toEqual([
-      { value: 'claude-sonnet-4-5[1m]', modelId: 'claude-sonnet-4-5' },
+      { value: 'claude-sonnet-4-5[1m]', publicModelId: 'claude-sonnet-4-5' },
     ]);
   });
 

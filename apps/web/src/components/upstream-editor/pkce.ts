@@ -1,3 +1,5 @@
+import type { UpstreamProviderKind } from '../../api/types';
+
 const encoder = new TextEncoder();
 
 const base64url = (bytes: Uint8Array) =>
@@ -15,14 +17,14 @@ export const generatePkce = async () => {
   return { verifier, challenge, state: random(24) };
 };
 
-const storageKey = (provider: string, kind = 'oauth') => `floway-pkce:${provider}:${kind}`;
+const storageKey = (kind: UpstreamProviderKind, flowKind = 'oauth') => `floway-pkce:${kind}:${flowKind}`;
 
-export const stashPkce = (provider: string, kind: string, value: { verifier: string; state: string }) => {
-  sessionStorage.setItem(storageKey(provider, kind), JSON.stringify(value));
+export const stashPkce = (kind: UpstreamProviderKind, flowKind: string, value: { verifier: string; state: string }) => {
+  sessionStorage.setItem(storageKey(kind, flowKind), JSON.stringify(value));
 };
 
-export const recallPkce = (provider: string, kind: string, state: string) => {
-  const raw = sessionStorage.getItem(storageKey(provider, kind));
+export const recallPkce = (kind: UpstreamProviderKind, flowKind: string, state: string) => {
+  const raw = sessionStorage.getItem(storageKey(kind, flowKind));
   if (!raw) return null;
   const value = JSON.parse(raw) as unknown;
   if (!value || typeof value !== 'object') throw new TypeError('Stored PKCE state must be an object');
@@ -35,8 +37,8 @@ export const recallPkce = (provider: string, kind: string, state: string) => {
     : null;
 };
 
-export const clearPkce = (provider: string, kind: string) => {
-  sessionStorage.removeItem(storageKey(provider, kind));
+export const clearPkce = (kind: UpstreamProviderKind, flowKind: string) => {
+  sessionStorage.removeItem(storageKey(kind, flowKind));
 };
 
 export const parseCallbackPaste = (text: string) => {
