@@ -27,7 +27,7 @@ import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { ResourceListActions, ResourceListEmptyState, ResourceListPanel } from '../components/ui/resource-list';
 import { ScrollArea } from '../components/ui/scroll-area';
-import { TableActions, TableActionsHeader } from '../components/ui/table-actions';
+import { TableActions, TableActionsHeader, TableCentredCell, TableCentredHeader } from '../components/ui/table-actions';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
 import { fluentComponents } from '../fluent';
@@ -331,8 +331,8 @@ function UpstreamsTable({
             <TableHeaderCell>{t('dashboard.upstreams.table.priority')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.upstreams.table.provider')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.upstreams.table.upstream')}</TableHeaderCell>
-            <TableHeaderCell>{t('dashboard.upstreams.table.models')}</TableHeaderCell>
-            <TableHeaderCell>{t('dashboard.upstreams.table.enabled')}</TableHeaderCell>
+            <TableCentredHeader>{t('dashboard.upstreams.table.models')}</TableCentredHeader>
+            <TableCentredHeader>{t('dashboard.upstreams.table.enabled')}</TableCentredHeader>
             <TableActionsHeader>{t('dashboard.upstreams.table.actions')}</TableActionsHeader>
           </TableRow>
         </TableHeader>
@@ -371,17 +371,17 @@ function UpstreamsTable({
                   </Text>
                 </div>
               </TableCell>
-              <TableCell>
+              <TableCentredCell>
                 <ModelStatus count={modelCounts.get(record.id)!} modelsAvailable={data.models !== null} record={record} />
-              </TableCell>
-              <TableCell>
+              </TableCentredCell>
+              <TableCentredCell>
                 <Switch
                   aria-label={t('dashboard.upstreams.actions.toggle', { name: record.name })}
                   checked={record.enabled}
                   disabled={busy}
                   onChange={(_, detail) => onToggle(record, detail.checked)}
                 />
-              </TableCell>
+              </TableCentredCell>
               <TableCell>
                 <TableActions>
                   <TooltipIconButton
