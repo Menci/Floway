@@ -136,7 +136,14 @@ export function ChoiceGroup({
     }
     const rootBox = root.getBoundingClientRect();
     const itemBox = item.getBoundingClientRect();
-    setBox({ left: itemBox.left - rootBox.left, width: itemBox.width });
+    // Snapped to the device grid. An item's width is whatever its label
+    // measures, so the track lands on a fraction of a pixel, and a fraction is
+    // rasterized one way while the pill is a scaled layer and another way once
+    // the transform is dropped: the far edge covers one device pixel more
+    // during the animation than at rest, and drops it on the final frame. On
+    // the grid both states paint the same column.
+    const snap = (value: number) => Math.round(value * window.devicePixelRatio) / window.devicePixelRatio;
+    setBox({ left: snap(itemBox.left - rootBox.left), width: snap(itemBox.width) });
   }, [items, value]);
 
   useEffect(() => {
