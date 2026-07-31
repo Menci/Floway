@@ -260,9 +260,9 @@ const en = {
           confirmPassword: 'Confirm new password',
           administrator: 'Administrator',
           administratorDescription:
-              'Can manage users, upstreams, search configuration, and data transfer.',
-          userOneLocked: 'The seed administrator cannot be demoted.',
-          selfLocked: 'You cannot demote your own account.',
+              'Can manage users, upstreams, search configuration, and data transfer',
+          userOneLocked: 'The seed administrator cannot be demoted',
+          selfLocked: 'You cannot demote your own account',
         },
         validation: {
           username: 'Use 1-64 letters, numbers, underscores, dots, or hyphens.',
@@ -357,7 +357,7 @@ const en = {
           retention: 'Request dump retention',
           viewCapturedRequests: 'View captured requests',
           responsesRetention: 'Stateful Responses retention',
-          responsesRetentionHint: 'How long this key\'s Responses items stay available for a follow-up request to reference by id — off persists nothing',
+          responsesRetentionHint: 'How long this key\'s Responses items stay available for a follow-up request to reference by id (off persists nothing)',
           retentionHint:
               'When enabled, model-invoking requests through this key are captured for the configured window',
           retentionCustom: 'Custom retention',
@@ -408,7 +408,7 @@ const en = {
           codexWindowsAuthHint: 'Windows PowerShell: store the same provider token without changing the official account login.',
         },
         agentSetup: {
-          agent: 'Agent', accessMethod: 'Connection method', setupTab: 'Setup script', snippetsTab: 'Config snippet', platform: 'Platform', commandPending: 'Preparing setup command…', modelSelection: 'Model selection', miscSettings: 'Miscellaneous settings', selectKey: 'Select an API key above to prepare a setup command.', noKey: 'Create an API key to use Agent Setup.', expired: 'This setup link has expired. Retry to create a fresh link.', retry: 'Retry', expires: 'The setup link stays alive while this page is visible and expires after you leave.', defaultModel: 'Default model', fableModel: 'Fable model', opusModel: 'Opus model', sonnetModel: 'Sonnet model', haikuModel: 'Haiku model', reasoningEffort: 'Reasoning effort', modelDefault: 'Default', noModelMatches: 'No matching models', modelDiscovery: 'Gateway model discovery', modelDiscoveryHint: 'Let Claude Code discover available models from this Floway gateway.', cleanupRetention: 'Cleanup retention', cleanupRetentionHint: 'Set how long Claude Code retains local session data before cleanup.', cleanupDays: '{{count}} days', optOutAiAttribution: 'Opt out of Claude Code AI attribution', optOutAiAttributionHint: 'Remove Claude Code attribution ("Co-Authored-By") from commits and pull requests, and hide session links.', unavailable: '{{id}} (unavailable)',
+          agent: 'Agent', accessMethod: 'Connection method', setupTab: 'Setup script', snippetsTab: 'Config snippet', platform: 'Platform', commandPending: 'Preparing setup command…', modelSelection: 'Model selection', miscSettings: 'Miscellaneous settings', selectKey: 'Select an API key above to prepare a setup command.', noKey: 'Create an API key to use Agent Setup.', expired: 'This setup link has expired. Retry to create a fresh link.', retry: 'Retry', expires: 'The setup link stays alive while this page is visible and expires after you leave.', defaultModel: 'Default model', fableModel: 'Fable model', opusModel: 'Opus model', sonnetModel: 'Sonnet model', haikuModel: 'Haiku model', reasoningEffort: 'Reasoning effort', modelDefault: 'Default', noModelMatches: 'No matching models', modelDiscovery: 'Gateway model discovery', modelDiscoveryHint: 'Let Claude Code discover available models from this Floway gateway', cleanupRetention: 'Cleanup retention', cleanupRetentionHint: 'Set how long Claude Code retains local session data before cleanup.', cleanupDays: '{{count}} days', optOutAiAttribution: 'Opt out of Claude Code AI attribution', optOutAiAttributionHint: 'Remove Claude Code attribution ("Co-Authored-By") from commits and pull requests, and hide session links', unavailable: '{{id}} (unavailable)',
         },
         rotate: {
           title: 'Rotate API Key',
@@ -509,7 +509,7 @@ const en = {
         pathOverridesHint:
             'Leave an entry blank to use its default /v1 path.',
         disabledModelsHint:
-            'Disabled models stay hidden from the catalog and routing while their metadata remains editable.',
+            'Disabled models stay hidden from the catalog and routing while their metadata remains editable',
         disabledModelsPlaceholder: 'Search models…',
         disabledModelsSelected_one: '{{count}} model disabled',
         disabledModelsSelected_other: '{{count}} models disabled',
@@ -518,7 +518,7 @@ const en = {
         prefixInvalid:
             'The prefix must end in /, use only letters, numbers, dots, underscores, hyphens, or slashes, and contain at most {{max}} characters.',
         prefixDescription:
-            'Matched as a literal prefix on incoming model ids. Must end with /.',
+            'Matched as a literal prefix on incoming model ids. Must end with /',
         actions: {
           back: 'Back to upstreams',
           save: 'Save changes',
@@ -538,7 +538,7 @@ const en = {
           disabledModels: 'Disabled models',
         },
         color: {
-          description: 'Choose how this upstream is distinguished across the console.',
+          description: 'Choose how this upstream is distinguished across the console',
           inherit: 'Provider default',
           custom: 'Custom hex',
           label: 'Badge color',
@@ -566,7 +566,7 @@ const en = {
           direct: 'Direct',
           directFetch: 'Direct (Fetch)',
           directConnect: 'Direct (TCP connect)',
-          empty: 'Without a fallback entry, traffic uses direct Fetch.',
+          empty: 'Without a fallback entry, traffic uses direct Fetch',
           add: 'Add fallback entry',
           colo: 'Current Cloudflare colo: {{colo}}',
           colos: 'Colo whitelist',
@@ -723,7 +723,7 @@ const en = {
           maximum: 'Maximum',
           pricing: 'Pricing',
           pricingHint:
-              'Used only for Floway usage statistics and estimated cost reporting on the Usage page. This does not change upstream billing or request parameters. Prices are in USD per million tokens.',
+              'Used only for Floway usage statistics and estimated cost reporting on the Usage page. This does not change upstream billing or request parameters. Prices are in USD per million tokens',
           pricingRules: 'Pricing rules',
           pricingEmptyHint: 'Start with a Base price. You can add conditional overrides afterward.',
           setupPricing: 'Set up Base pricing',

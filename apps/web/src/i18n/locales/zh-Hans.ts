@@ -249,9 +249,9 @@ const zhHansCN = {
           newPassword: '新密码',
           confirmPassword: '确认新密码',
           administrator: '管理员',
-          administratorDescription: '可以管理用户、上游、搜索配置和数据迁移。',
-          userOneLocked: '初始管理员不能被降级。',
-          selfLocked: '不能降级自己的账号。',
+          administratorDescription: '可以管理用户、上游、搜索配置和数据迁移',
+          userOneLocked: '初始管理员不能被降级',
+          selfLocked: '不能降级自己的账号',
         },
         validation: {
           username: '用户名须为 1-64 位字母、数字、下划线、点或连字符。',
@@ -345,7 +345,7 @@ const zhHansCN = {
           retention: '记录请求转储',
           viewCapturedRequests: '查看已捕获的请求',
           responsesRetention: 'Stateful Responses 保留',
-          responsesRetentionHint: '该 key 的 Responses 条目可被后续请求按 id 引用的时长——关闭表示不做持久化',
+          responsesRetentionHint: '该 key 的 Responses 条目可被后续请求按 id 引用的时长（关闭表示不做持久化）',
           retentionHint:
               '启用后，通过该 API 密钥发起的模型请求会在配置窗口内被记录',
           retentionCustom: '自定义保留时间',
@@ -390,7 +390,7 @@ const zhHansCN = {
           codexAuthHint: 'Linux 和 macOS：仅在 CODEX_HOME 下保存 Floway provider token。',
           codexWindowsAuthHint: 'Windows PowerShell：保存相同 token，不修改官方账号登录。',
         },
-        agentSetup: { agent: 'Agent', accessMethod: '接入方式', setupTab: '自动配置脚本', snippetsTab: '配置文件片段', platform: '操作系统', commandPending: '正在准备安装命令…', modelSelection: '模型选择', miscSettings: '杂项设置', selectKey: '请先在上方选择 API 密钥。', noKey: '请先创建 API 密钥。', expired: '此安装链接已过期，请重试生成新链接。', retry: '重试', expires: '页面可见时链接会自动续期，离开后数分钟过期。', defaultModel: '默认模型', fableModel: 'Fable 模型', opusModel: 'Opus 模型', sonnetModel: 'Sonnet 模型', haikuModel: 'Haiku 模型', reasoningEffort: '思考强度', modelDefault: '默认', noModelMatches: '没有匹配的模型', modelDiscovery: 'Gateway 模型发现', modelDiscoveryHint: '允许 Claude Code 从此 Floway gateway 发现可用模型。', cleanupRetention: '清理保留期', cleanupRetentionHint: '设置 Claude Code 本地会话数据的清理保留期。', cleanupDays: '{{count}} 天', optOutAiAttribution: '停用 Claude Code AI 归属标记', optOutAiAttributionHint: '移除提交和 Pull Request 中的 Claude Code 归属信息（"Co-Authored-By"），并隐藏会话链接。', unavailable: '{{id}}（不可用）' },
+        agentSetup: { agent: 'Agent', accessMethod: '接入方式', setupTab: '自动配置脚本', snippetsTab: '配置文件片段', platform: '操作系统', commandPending: '正在准备安装命令…', modelSelection: '模型选择', miscSettings: '杂项设置', selectKey: '请先在上方选择 API 密钥。', noKey: '请先创建 API 密钥。', expired: '此安装链接已过期，请重试生成新链接。', retry: '重试', expires: '页面可见时链接会自动续期，离开后数分钟过期。', defaultModel: '默认模型', fableModel: 'Fable 模型', opusModel: 'Opus 模型', sonnetModel: 'Sonnet 模型', haikuModel: 'Haiku 模型', reasoningEffort: '思考强度', modelDefault: '默认', noModelMatches: '没有匹配的模型', modelDiscovery: 'Gateway 模型发现', modelDiscoveryHint: '允许 Claude Code 从此 Floway gateway 发现可用模型', cleanupRetention: '清理保留期', cleanupRetentionHint: '设置 Claude Code 本地会话数据的清理保留期。', cleanupDays: '{{count}} 天', optOutAiAttribution: '停用 Claude Code AI 归属标记', optOutAiAttributionHint: '移除提交和 Pull Request 中的 Claude Code 归属信息（"Co-Authored-By"），并隐藏会话链接', unavailable: '{{id}}（不可用）' },
         rotate: {
           title: '轮换 API 密钥',
           message: '为 {{name}} 选择替换 API 密钥。轮换后旧 API 密钥会立即停止工作。',
@@ -486,14 +486,14 @@ const zhHansCN = {
         secretKeep: '留空以保持不变。',
         pathOverridesHint: '留空时使用对应的默认 /v1 路径。',
         disabledModelsHint:
-            '禁用后的模型不会出现在目录中，也不会参与路由；其元数据仍可编辑。',
+            '禁用后的模型不会出现在目录中，也不会参与路由；其元数据仍可编辑',
         disabledModelsPlaceholder: '搜索模型…',
         disabledModelsSelected_other: '已禁用 {{count}} 个模型',
         disabledModelsUnavailable: '已不存在',
         disabledModelsMissing: '已不在当前模型目录中：{{models}}',
         prefixInvalid:
             '前缀必须以 / 结尾，只能包含字母、数字、点、下划线、连字符或斜杠，且不超过 {{max}} 个字符。',
-        prefixDescription: '作为字面前缀匹配传入的模型 ID，必须以 / 结尾。',
+        prefixDescription: '作为字面前缀匹配传入的模型 ID，必须以 / 结尾',
         actions: {
           back: '返回上游列表',
           save: '保存更改',
@@ -513,7 +513,7 @@ const zhHansCN = {
           disabledModels: '禁用的模型',
         },
         color: {
-          description: '选择在控制台中区分此上游的颜色。',
+          description: '选择在控制台中区分此上游的颜色',
           inherit: '提供商默认值',
           custom: '自定义十六进制',
           'label': '徽章颜色',
@@ -541,7 +541,7 @@ const zhHansCN = {
           direct: '直连',
           directFetch: '直连（Fetch）',
           directConnect: '直连（TCP connect）',
-          empty: '未配置回退出口时，流量使用直连 Fetch。',
+          empty: '未配置回退出口时，流量使用直连 Fetch',
           add: '添加回退出口',
           colo: '当前 Cloudflare colo：{{colo}}',
           colos: 'Colo 白名单',
@@ -697,7 +697,7 @@ const zhHansCN = {
           maximum: '最大值',
           pricing: '定价',
           pricingHint:
-              '仅用于 Floway 的用量统计和费用估算，并展示在 Usage 页面；不会修改上游计费或请求参数。价格单位为美元/百万 Token。',
+              '仅用于 Floway 的用量统计和费用估算，并展示在 Usage 页面；不会修改上游计费或请求参数。价格单位为美元/百万 Token',
           pricingRules: '定价规则',
           pricingEmptyHint: '先设置基础价格，之后可按服务层级或 Token 数量添加条件价格。',
           setupPricing: '设置基础价格',
@@ -1046,7 +1046,7 @@ const zhHansCN = {
         pageAge: '{{age}} 前',
       },
       modelAliases: {
-        heading: '模型别名', description: '创建虚拟模型 ID，将请求路由到一个或多个目标模型，并可锁定请求规则。', listTitle: '别名', empty: '尚未配置别名。创建别名以公开虚拟模型 ID。',
+        heading: '模型别名', description: '创建虚拟模型 ID，将请求路由到一个或多个目标模型，并可锁定请求规则', listTitle: '别名', empty: '尚未配置别名。创建别名以公开虚拟模型 ID。',
         columns: { alias: '别名', kind: '类型', targets: '目标', selection: '选择策略', visibility: '模型列表', actions: '操作' },
         actions: { create: '新建别名', refresh: '刷新别名', save: '保存', saving: '保存中…', delete: '删除', deleting: '删除中…', addTarget: '添加目标', editNamed: '编辑别名 {{name}}', deleteNamed: '删除别名 {{name}}' },
         dialog: { createTitle: '创建别名', editTitle: '编辑别名：{{name}}' },
