@@ -15,7 +15,8 @@ const { Text } = fluentComponents;
 // reached by scrolling rather than by moving the statement off centre.
 export function ErrorShell({ action, children, message, title }: PropsWithChildren<{
   action?: ReactNode;
-  message: string;
+  /** Omitted when a trace is shown: the trace's first line is this sentence. */
+  message?: string;
   title: string;
 }>) {
   return (
@@ -28,7 +29,7 @@ export function ErrorShell({ action, children, message, title }: PropsWithChildr
         <div className="grid justify-items-center gap-4">
           <div className="grid gap-1.5">
             <Text as="h1" className="m-0" size={700} weight="semibold">{title}</Text>
-            <Text as="p" className="m-0 text-fui-fg2" size={300}>{message}</Text>
+            {message !== undefined && <Text as="p" className="m-0 text-fui-fg2" size={300}>{message}</Text>}
           </div>
           {action}
         </div>
@@ -42,17 +43,15 @@ export function ErrorShell({ action, children, message, title }: PropsWithChildr
 // evidence attached to the message rather than as more of the message, and it
 // scrolls on its own so a long line cannot widen the page under it. Its text is
 // left-aligned against the centred page above: a trace is read from its first
-// character, not from its middle.
-export function ErrorStack({ children, label }: PropsWithChildren<{ label: string }>) {
+// character, not from its middle. It carries no heading -- its first line names
+// the error, which is the only label it could be given.
+export function ErrorStack({ children }: PropsWithChildren) {
   return (
-    <section className="grid w-full min-w-0 gap-2 text-left">
-      <Text as="h2" className="m-0 text-fui-fg2" size={200} weight="semibold">{label}</Text>
-      <ScrollArea
-        axes="horizontal"
-        className="min-w-0 rounded-[var(--winui-overlay-corner-radius,8px)] border border-solid border-fui-stroke1 bg-fui-bg2"
-      >
-        <pre className="m-0 w-max min-w-full p-4 font-mono"><code>{children}</code></pre>
-      </ScrollArea>
-    </section>
+    <ScrollArea
+      axes="horizontal"
+      className="w-full min-w-0 rounded-[var(--winui-overlay-corner-radius,8px)] border border-solid border-fui-stroke1 bg-fui-bg2 text-left"
+    >
+      <pre className="m-0 w-max min-w-full p-4 font-mono"><code>{children}</code></pre>
+    </ScrollArea>
   );
 }

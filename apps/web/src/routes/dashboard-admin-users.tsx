@@ -178,12 +178,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
       />
 
       {pageError && (
-        <OutcomeMessageBar
-          action={<Button appearance="transparent" disabled={refreshing} onClick={() => void refresh()}>
-            {t('dashboard.users.actions.retry')}
-          </Button>}
-          onDismiss={() => setPageError(null)}
-        >
+        <OutcomeMessageBar onDismiss={() => setPageError(null)}>
           {pageError}
         </OutcomeMessageBar>
       )}

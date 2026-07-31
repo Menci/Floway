@@ -16,11 +16,10 @@ const en = {
       errors: {
         refresh: 'Refresh',
         back: 'Back',
-        stack: 'Stack trace',
         title: 'Error',
         unexpectedTitle: 'Something went wrong',
-        unexpectedDescription: 'An unexpected error occurred.',
-        notFound: 'The requested page could not be found.',
+        unexpectedDescription: 'An unexpected error occurred',
+        notFound: 'The requested page could not be found',
       },
     },
     auth: {
@@ -210,7 +209,6 @@ const en = {
           resetPassword: 'Reset password',
           delete: 'Delete user',
           refresh: 'Refresh users',
-          retry: 'Retry',
           save: 'Save changes',
           saving: 'Saving...',
           deleting: 'Deleting...',

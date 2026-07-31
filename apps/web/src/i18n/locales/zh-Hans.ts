@@ -16,11 +16,10 @@ const zhHansCN = {
       errors: {
         refresh: '刷新',
         back: '返回',
-        stack: '调用栈',
         title: '错误',
         unexpectedTitle: '出现错误',
-        unexpectedDescription: '发生了意外错误。',
-        notFound: '找不到请求的页面。',
+        unexpectedDescription: '发生了意外错误',
+        notFound: '找不到请求的页面',
       },
     },
     auth: {
@@ -200,7 +199,6 @@ const zhHansCN = {
           resetPassword: '重置密码',
           delete: '删除用户',
           refresh: '刷新用户',
-          retry: '重试',
           save: '保存更改',
           saving: '正在保存...',
           deleting: '正在删除...',

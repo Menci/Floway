@@ -151,10 +151,10 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
           <Button onClick={() => window.history.back()}>{t('common.errors.back')}</Button>
         </div>
       }
-      message={details}
+      message={stack ? undefined : details}
       title={message}
     >
-      {stack && <ErrorStack label={t('common.errors.stack')}>{stack}</ErrorStack>}
+      {stack && <ErrorStack>{stack}</ErrorStack>}
     </ErrorShell>
   );
 }

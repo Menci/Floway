@@ -35,7 +35,6 @@ import { dateTime } from '../lib/format-time';
 import { useLocale } from '../lib/use-locale';
 
 const {
-  Button,
   Menu,
   MenuItem,
   MenuList,
@@ -55,7 +54,8 @@ const {
 } = fluentComponents;
 
 interface UpstreamsPageData {
-  upstreams: UpstreamRecord[];
+  /** `null` when the fetch failed, which is not the same as none configured. */
+  upstreams: UpstreamRecord[] | null;
   models: ControlPlaneModel[] | null;
   loadError: string | null;
   modelsError: string | null;
@@ -151,11 +151,12 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
 
   const setEnabled = async (record: UpstreamRecord, enabled: boolean) => {
     const snapshot = data.upstreams;
+    if (snapshot === null) return;
     setMutation({ kind: 'toggle', id: record.id });
     setPageError(null);
     setData(current => ({
       ...current,
-      upstreams: current.upstreams.map(candidate =>
+      upstreams: (current.upstreams ?? []).map(candidate =>
         candidate.id === record.id ? { ...candidate, enabled } : candidate),
     }));
 
@@ -173,6 +174,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
 
   const move = async (record: UpstreamRecord, direction: -1 | 1) => {
     const snapshot = data.upstreams;
+    if (snapshot === null) return;
     const index = snapshot.findIndex(candidate => candidate.id === record.id);
     const targetIndex = index + direction;
     if (index < 0 || targetIndex < 0 || targetIndex >= snapshot.length) return;
@@ -261,12 +263,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
       />
 
       {pageError && (
-        <OutcomeMessageBar
-          action={<Button appearance="transparent" disabled={mutating} onClick={() => void handleReload()}>
-            {t('dashboard.upstreams.actions.retry')}
-          </Button>}
-          onDismiss={() => setPageError(null)}
-        >{pageError}</OutcomeMessageBar>
+        <OutcomeMessageBar onDismiss={() => setPageError(null)}>{pageError}</OutcomeMessageBar>
       )}
 
       {data.modelsError && (
@@ -329,9 +326,13 @@ function UpstreamsTable({
   onToggle: (record: UpstreamRecord, enabled: boolean) => void;
 }) {
   const { t } = useTranslation();
-  const modelCounts = useMemo(() => buildModelCounts(data.upstreams, data.models), [data.models, data.upstreams]);
+  const upstreams = data.upstreams;
+  const modelCounts = useMemo(() => buildModelCounts(upstreams ?? [], data.models), [data.models, upstreams]);
 
-  if (data.upstreams.length === 0) {
+  // A failed fetch is not an empty list. The bar above carries the reason; the
+  // region says nothing rather than claiming nothing is configured.
+  if (upstreams === null) return null;
+  if (upstreams.length === 0) {
     return <ResourceListEmptyState>{t('dashboard.upstreams.empty')}</ResourceListEmptyState>;
   }
 
@@ -350,7 +351,7 @@ function UpstreamsTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {data.upstreams.map((record, index) => (
+          {upstreams.map((record, index) => (
             <TableRow key={record.id}>
               <TableCell>
                 <div className="inline-flex items-center gap-1">
@@ -359,7 +360,7 @@ function UpstreamsTable({
                     disabled={mutating}
                     downLabel={t('dashboard.upstreams.actions.moveDown', { name: record.name })}
                     isFirst={index === 0}
-                    isLast={index === data.upstreams.length - 1}
+                    isLast={index === upstreams.length - 1}
                     onMove={direction => onMove(record, direction)}
                     upLabel={t('dashboard.upstreams.actions.moveUp', { name: record.name })}
                   />
@@ -463,7 +464,7 @@ const loadUpstreamsPageData = async (): Promise<UpstreamsPageData> => {
     callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } })),
   ]);
   return {
-    upstreams: (upstreamsResult.data ?? []).sort(compareUpstreams),
+    upstreams: upstreamsResult.data?.sort(compareUpstreams) ?? null,
     models: modelsResult.data?.data ?? null,
     loadError: upstreamsResult.error?.message ?? null,
     modelsError: modelsResult.error?.message ?? null,
