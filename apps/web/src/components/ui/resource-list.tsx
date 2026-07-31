@@ -1,10 +1,11 @@
 import { AddRegular, ArrowClockwiseRegular } from '@fluentui/react-icons';
 import type { CSSProperties, ReactElement, ReactNode } from 'react';
 
+import { EmptyStateLine } from './empty-state';
 import { Panel, type PanelProps } from './panel';
 import { fluentComponents } from '../../fluent';
 
-const { Button, Spinner, Text, Tooltip, makeStyles, mergeClasses } = fluentComponents;
+const { Button, Spinner, Tooltip, makeStyles, mergeClasses } = fluentComponents;
 
 // Everything here is scoped to this panel rather than stated on the table
 // layer, because it answers what this panel is: a card whose only content is a
@@ -130,5 +131,5 @@ export function ResourceListActions(props: ResourceListActionsProps) {
 // An empty list has no rows to reach the panel's edge, so this one thing inside
 // it carries the inset the panel no longer states.
 export function ResourceListEmptyState({ children }: { children: ReactNode }) {
-  return <Text block size={300} className="text-fui-fg2 p-[16px]">{children}</Text>;
+  return <EmptyStateLine className="p-4">{children}</EmptyStateLine>;
 }

@@ -14,6 +14,7 @@ import { RequestListPanel } from '../components/requests/request-list';
 import { collectStream, detectCollectKind, type CollectedStream } from '../components/requests/stream-render';
 import { useDumpSubscription } from '../components/requests/use-dump-subscription';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
+import { EmptyState } from '../components/ui/empty-state';
 import { PANE_GAP_CLASS } from '../components/ui/layout';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
@@ -24,7 +25,7 @@ import type { DumpMetadata, DumpRecord } from '@floway-dev/gateway/dump-types';
 
 export const handle = dashboardWorkspaceHandle;
 
-const { Button, DrawerBody, DrawerHeader, DrawerHeaderTitle, OverlayDrawer, Text } = fluentComponents;
+const { Button, DrawerBody, DrawerHeader, DrawerHeaderTitle, OverlayDrawer } = fluentComponents;
 
 interface LoaderData {
   collected: CollectedStream | null;
@@ -140,12 +141,12 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
       {keysError && keys.length === 0 ? (
         <OutcomeMessageBar onDismiss={() => setReplacement({ ...shown, keysError: null })}>{keysError}</OutcomeMessageBar>
       ) : keys.length === 0 ? (
-        <Panel className="!grid place-items-center text-center">
-          <div className="grid justify-items-center gap-2 max-w-[480px]">
-            <Text weight="semibold" className="!text-center">{t('dashboard.requests.noKeys')}</Text>
-            <Text size={300} className="text-fui-fg3 !text-center">{t('dashboard.requests.noKeysDescription')}</Text>
-            <Link to="/dashboard/services/api-keys" className="text-fui-fg2">{t('dashboard.requests.goToApiKeys')}</Link>
-          </div>
+        <Panel className="!grid">
+          <EmptyState
+            action={<Link to="/dashboard/services/api-keys" className="text-fui-fg2">{t('dashboard.requests.goToApiKeys')}</Link>}
+            description={t('dashboard.requests.noKeysDescription')}
+            title={t('dashboard.requests.noKeys')}
+          />
         </Panel>
       ) : selectedKeyId ? narrow ? <>
         <Panel className="!block overflow-hidden min-w-0 h-full" padding="flush">

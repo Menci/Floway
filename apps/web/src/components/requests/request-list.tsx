@@ -19,6 +19,7 @@ import { formatBytes, formatCompactCount } from '../../lib/format-number';
 import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
+import { EmptyState } from '../ui/empty-state';
 import { Dropdown } from '../ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { initializeScrollArea, scrollAreaHostClassName, useOverlayScrollbarsEnabled } from '../ui/scroll-area';
@@ -214,9 +215,7 @@ export function RequestListPanel(props: RequestListProps) {
       </Dropdown>
       {props.error && <OutcomeMessageBar className="!m-2" onDismiss={props.onDismissError}>{props.error}</OutcomeMessageBar>}
       {props.records.length === 0 ? (
-        <div className="flex-1 grid place-items-center text-center p-6">
-          <Text size={200} className="text-fui-fg3">{t('dashboard.requests.empty')}</Text>
-        </div>
+        <EmptyState className="flex-1 p-6" title={t('dashboard.requests.empty')} />
       ) : (
         <div className={`${scrollAreaHostClassName} flex-1 min-h-0`} {...(overlayScrollbarsEnabled ? { 'data-overlayscrollbars-initialize': '' } : {})} ref={scrollHostRef}>
           <List

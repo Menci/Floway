@@ -34,6 +34,7 @@ import {
 import { PlaygroundMarkdown } from '../components/playground/playground-markdown';
 import { PlaygroundMessageCard } from '../components/playground/playground-message-card';
 import { streamPlaygroundText } from '../components/playground/playground-stream';
+import { EmptyState } from '../components/ui/empty-state';
 import { Combobox, Dropdown, Input, Textarea } from '../components/ui/fluent-form-controls';
 import { PANE_GAP_CLASS } from '../components/ui/layout';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
@@ -386,9 +387,9 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
           <ScrollArea ref={scrollRef} axes="vertical" className="min-h-0" contentClassName="flex min-h-full flex-col" noTabIndex>
             {loadError && <OutcomeMessageBar className="!mb-3" onDismiss={() => setLoadError(null)}>{loadError}</OutcomeMessageBar>}
             {requestError && <OutcomeMessageBar className="!mb-3" onDismiss={() => setRequestError(null)}>{requestError}</OutcomeMessageBar>}
-            {!selectedKey ? <EmptyState text={t('dashboard.playground.noKey')} />
-              : !selectedModel ? <EmptyState text={t('dashboard.playground.noModelForApi')} />
-                  : messages.length === 0 && !sending ? <EmptyState text={t('dashboard.playground.empty')} /> : null}
+            {!selectedKey ? <EmptyState className="flex-1 px-6" title={t('dashboard.playground.noKey')} />
+              : !selectedModel ? <EmptyState className="flex-1 px-6" title={t('dashboard.playground.noModelForApi')} />
+                  : messages.length === 0 && !sending ? <EmptyState className="flex-1 px-6" title={t('dashboard.playground.empty')} /> : null}
             <div className="mt-auto grid gap-3" data-winui-card-restyle="off">
               {messages.map(message => (
                 <div key={message.id} className={`flex min-w-0 ${message.role === 'user' ? 'justify-end' : 'justify-start'} ${s.messageRow}`}>
@@ -462,8 +463,4 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
 
 function SettingsSection({ children, title }: { children: React.ReactNode; title: string }) {
   return <section className="grid gap-3 min-w-0"><SectionHeader level={2} title={title} />{children}</section>;
-}
-
-function EmptyState({ text }: { text: string }) {
-  return <div className="flex-1 min-h-[180px] grid place-items-center text-center px-6"><Text className="text-fui-fg2">{text}</Text></div>;
 }

@@ -4,9 +4,10 @@ import { useTranslation } from 'react-i18next';
 import { colorForSlot } from './palette';
 import { invertedSeries, isolatedSeries, toggledSeries } from './series-selection';
 import { fluentComponents } from '../../fluent';
+import { EmptyStateLine } from '../ui/empty-state';
 import { SectionHeader } from '../ui/section-header';
 
-const { InteractionTag, InteractionTagPrimary, Text, Toolbar, ToolbarButton, Tooltip } = fluentComponents;
+const { InteractionTag, InteractionTagPrimary, Toolbar, ToolbarButton, Tooltip } = fluentComponents;
 
 export interface SeriesLegendEntry {
   id: string;
@@ -79,7 +80,7 @@ export function ChartSection({
               </InteractionTag>
             ))}
           </div>
-        : <Text size={200} className="text-fui-fg2">{emptyText}</Text>}
+        : <EmptyStateLine>{emptyText}</EmptyStateLine>}
 
       <div className="min-h-[320px] min-w-0">{children}</div>
     </section>

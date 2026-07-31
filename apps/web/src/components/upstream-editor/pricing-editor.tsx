@@ -21,8 +21,9 @@ import {
   type PricingField,
 } from './pricing-model';
 import { fluentComponents } from '../../fluent';
+import { EmptyState } from '../ui/empty-state';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
-import { PANE_GAP_CLASS, TIGHT_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
+import { PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { SectionHeader } from '../ui/section-header';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { PRICING_AXES, type BillingMetric, type ModelKind, type ModelPricing, type ModelPricingIssue } from '@floway-dev/protocols/common';
@@ -149,15 +150,14 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
   };
 
   if (drafts.length === 0) {
-    return <div className="grid justify-items-start gap-3 py-2">
-      <div className={TIGHT_STACK_CLASS}>
-        <Text weight="semibold">{t('dashboard.upstreamEditor.models.noPricingEntries')}</Text>
-        <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.models.pricingEmptyHint')}</Text>
-      </div>
-      {editable && <Button appearance="primary" icon={<AddRegular />} onClick={addEntry}>
+    return <EmptyState
+      action={editable && <Button appearance="primary" icon={<AddRegular />} onClick={addEntry}>
         {t('dashboard.upstreamEditor.models.setupPricing')}
       </Button>}
-    </div>;
+      align="start"
+      description={t('dashboard.upstreamEditor.models.pricingEmptyHint')}
+      title={t('dashboard.upstreamEditor.models.noPricingEntries')}
+    />;
   }
 
   const activeIssues = issues.filter(issue => issueAffectsEntry(issue, selectedIndex));

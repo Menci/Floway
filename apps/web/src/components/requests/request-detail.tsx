@@ -20,6 +20,7 @@ import {
   type CollectedStream,
 } from './stream-render';
 import { fluentComponents } from '../../fluent';
+import { EmptyState, EmptyStateLine } from '../ui/empty-state';
 import { HttpMethodBadge, HttpStatusBadge } from '../ui/http-badge';
 import { prismTokenStyles } from '../ui/prism-token-styles';
 import { ScrollArea } from '../ui/scroll-area';
@@ -167,7 +168,7 @@ export function RequestDetailPanel({ collected: loadedCollected, error, record, 
   const collectKind = record ? detectCollectKind(record.meta.path) : null;
   const renderedEvents = useMemo(() => renderStreamEvents(collectKind, streamEvents), [collectKind, streamEvents]);
 
-  if (!recordId) return <div className="h-full grid place-items-center p-8 text-center"><Text className="text-fui-fg3">{t('dashboard.requests.selectPrompt')}</Text></div>;
+  if (!recordId) return <EmptyState className="h-full p-8" title={t('dashboard.requests.selectPrompt')} />;
   if (error) return <div className="p-4"><MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar></div>;
   if (!record) return null;
 
@@ -191,13 +192,13 @@ export function RequestDetailPanel({ collected: loadedCollected, error, record, 
         <SectionHeader title={t('dashboard.requests.requestBody')} copyText={requestBody.text ? requestBody.copyText : undefined} />
         <SectionBody>
           {requestBody.decodeError && <MessageBar intent="warning" className="!m-3"><MessageBarBody>{t('dashboard.requests.decodeError', { error: requestBody.decodeError })}</MessageBarBody></MessageBar>}
-          {requestBody.text ? <CodeView body={requestBody} /> : <Text size={200} className="block p-4 text-fui-fg3">{t('dashboard.requests.noRequestBody')}</Text>}
+          {requestBody.text ? <CodeView body={requestBody} /> : <EmptyStateLine className="p-4">{t('dashboard.requests.noRequestBody')}</EmptyStateLine>}
         </SectionBody>
       </section>
       <section className={s.section}>
         <SectionHeader title={t('dashboard.requests.response')} detail={<><HttpStatusBadge color={severity === 'success' ? 'success' : severity === 'warning' ? 'warning' : 'danger'}>{record.response.status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>{responseError && <Text size={200} className={s.error}>{responseError}</Text>}</>} copyText={record.response.headers.length ? responseHeadersCopy : undefined} />
         <HeaderSectionBody>
-          {record.response.headers.length ? <HeaderTable key={`response-${record.meta.id}`} headers={record.response.headers} /> : <Text size={200} className="block p-4 text-fui-fg3">{t('dashboard.requests.noResponseHeaders')}</Text>}
+          {record.response.headers.length ? <HeaderTable key={`response-${record.meta.id}`} headers={record.response.headers} /> : <EmptyStateLine className="p-4">{t('dashboard.requests.noResponseHeaders')}</EmptyStateLine>}
         </HeaderSectionBody>
       </section>
       <section>
@@ -218,8 +219,8 @@ export function RequestDetailPanel({ collected: loadedCollected, error, record, 
                 : undefined}
         />
         <SectionBody>
-          {record.response.body.type === 'none' ? <Text size={200} className="block p-4 text-fui-fg3">{t('dashboard.requests.noResponseBody')}</Text> : null}
-          {record.response.body.type === 'bytes' && (responseBody.text ? <CodeView body={responseBody} /> : <Text size={200} className="block p-4 text-fui-fg3">{t('dashboard.requests.emptyBody')}</Text>)}
+          {record.response.body.type === 'none' ? <EmptyStateLine className="p-4">{t('dashboard.requests.noResponseBody')}</EmptyStateLine> : null}
+          {record.response.body.type === 'bytes' && (responseBody.text ? <CodeView body={responseBody} /> : <EmptyStateLine className="p-4">{t('dashboard.requests.emptyBody')}</EmptyStateLine>)}
           {record.response.body.type === 'stream' && streamView === 'collected' && (
             collectKind === null ? <MessageBar intent="warning" className="!m-3"><MessageBarBody>{t('dashboard.requests.noCollector')}</MessageBarBody></MessageBar>
               : collected === null ? null
