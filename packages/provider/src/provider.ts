@@ -11,7 +11,7 @@ import type { EmbeddingsPayload } from '@floway-dev/protocols/embeddings';
 import type { ImagesGenerationsPayload } from '@floway-dev/protocols/images';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { CanonicalRerankRequest } from '@floway-dev/protocols/rerank';
-import type { CanonicalResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ResponsesCompactionResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 // Action tag threaded through the Responses pipeline. `generate` is a normal
 // streaming /responses turn; `compact` is the summarize-and-replace-history
@@ -74,7 +74,7 @@ export type ProviderStreamResult<TEvent> =
 export type ProviderResponsesResult =
   | { action: 'generate'; ok: true; events: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>; modelKey: string; headers?: Headers }
   | { action: 'generate'; ok: false; response: Response; modelKey: string }
-  | { action: 'compact'; ok: true; result: ResponsesResult; modelKey: string }
+  | { action: 'compact'; ok: true; result: ResponsesCompactionResult; modelKey: string }
   | { action: 'compact'; ok: false; response: Response; modelKey: string };
 
 // Per-call options the gateway threads through to the provider.

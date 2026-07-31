@@ -2,7 +2,7 @@ import { hashResponsesItem, responsesItemId } from './identity.ts';
 import type { StatefulResponsesStore } from './store.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { responsesResultToEvents, type ResponsesOutputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { responsesResultToEvents, type ResponsesCompactionResult, type ResponsesOutputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 // Complete output items become reusable at their first done frame, so each row
 // commits before that frame is yielded. Later done frames remain
@@ -117,4 +117,13 @@ export const wrapResponsesClientOutput = async function* (
 export const syntheticEventsFromResult = async function* (result: ResponsesResult): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
   yield* responsesResultToEvents(result, { genericOutputItems: true });
   yield doneFrame();
+};
+
+// `ResponsesCompactionResult` states no `status`, so the terminal is stated
+// here rather than read off the body: a compaction that got this far is one the
+// upstream answered 200, and there is no spelling for a failed one. Widening it
+// back to `ResponsesResult` is safe because the expansion reads no
+// response-only field — it spreads whatever the body carried.
+export const syntheticEventsFromCompaction = async function* (result: ResponsesCompactionResult): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+  yield* responsesResultToEvents(result as unknown as ResponsesResult, { genericOutputItems: true, terminal: 'response.completed' });  yield doneFrame();
 };

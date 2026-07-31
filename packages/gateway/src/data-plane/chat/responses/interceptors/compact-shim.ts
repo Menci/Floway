@@ -327,6 +327,8 @@ const simulateCompaction = async (ctx: ResponsesInvocation, gatewayCtx: ChatGate
   const cmpId = createRandomResponsesItemId('compaction');
   const synthesized = buildCompactionEnvelope(cmpId, summaryText, collected);
 
+  // A real generate turn backs this envelope, so its own `incomplete` or
+  // `failed` status must reach the terminal event.
   return {
     ...upstreamResult,
     events: syntheticEventsFromResult(synthesized),

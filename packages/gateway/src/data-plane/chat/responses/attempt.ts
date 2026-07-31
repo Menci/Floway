@@ -1,7 +1,7 @@
 import { responsesInterceptors } from './interceptors/index.ts';
 import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors/types.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
-import { syntheticEventsFromResult } from './items/output.ts';
+import { syntheticEventsFromCompaction } from './items/output.ts';
 import { billableUsageFromResponsesEvent } from './usage.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared/telemetry/attribution.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
@@ -228,7 +228,7 @@ const providerResponsesResultToExecuteResult = async (
     return { ...(await readUpstreamApiError(providerResult.response, candidate.provider.upstreamId)), performance: context };
   }
   return eventResult(
-    syntheticEventsFromResult(providerResult.result),
+    syntheticEventsFromCompaction(providerResult.result),
     telemetryModelIdentity(candidate, providerResult.modelKey),
     { performance: context },
   );
