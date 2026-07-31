@@ -63,7 +63,7 @@ export function FeatureFlagsEditor({
       : t(`dashboard.upstreamEditor.flags.${state}`);
     const label = t(`dashboard.upstreamEditor.flags.entries.${flagId}.label`);
     const description = t(`dashboard.upstreamEditor.flags.entries.${flagId}.description`);
-    return <section className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-t border-t-solid border-fui-stroke1 py-3 first:border-t-0" key={flagId}>
+    return <section className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-0 border-t border-solid border-fui-stroke1 py-3 first:border-t-0" key={flagId}>
       <div className="grid gap-1 min-w-0">
         <Text weight="semibold">
           <InlineMarkdown>{label}</InlineMarkdown>

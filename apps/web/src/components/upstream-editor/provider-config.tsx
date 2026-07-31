@@ -17,6 +17,7 @@ import { CodexAccountCard } from './codex-account-card';
 import { CopilotQuotaCard } from './copilot-quota-card';
 import type { UpstreamEditorValues } from './editor-data';
 import { previewRecord } from './editor-data';
+import { useMonoLabelStyles } from './mono-label';
 import { clearPkce, generatePkce, parseCallbackPaste, recallPkce, stashPkce } from './pkce';
 import { api, callApi } from '../../api/client';
 import type {
@@ -49,19 +50,7 @@ const {
   TabList,
   Text,
   Tooltip,
-  makeStyles,
 } = fluentComponents;
-
-const useStyles = makeStyles({
-  endpointCheckbox: {
-    fontFamily: 'var(--fontFamilyMonospace) !important',
-    fontSize: 'var(--floway-font-size-mono) !important',
-  },
-  pathOverrideLabel: {
-    fontFamily: 'var(--fontFamilyMonospace) !important',
-    fontSize: 'var(--floway-font-size-mono) !important',
-  },
-});
 
 // OAuth 2.0 device flow slow_down increases the current polling interval by five seconds.
 // https://www.rfc-editor.org/rfc/rfc8628#section-3.5
@@ -131,7 +120,7 @@ function CustomConfig({ record }: { record: Extract<UpstreamRecord, { kind: 'cus
 
 function CustomApiPaths({ onRefreshModels }: { onRefreshModels: () => void }) {
   const { t } = useTranslation();
-  const styles = useStyles();
+  const monoLabel = useMonoLabelStyles();
   const idPrefix = useId();
   const { control } = useFormContext<UpstreamEditorValues>();
   return (
@@ -166,7 +155,7 @@ function CustomApiPaths({ onRefreshModels }: { onRefreshModels: () => void }) {
               key={path}
               name={`config.pathOverrides.${path}` as never}
               render={({ field }) => (
-                <Field className="min-w-0" label={{ children: path, className: styles.pathOverrideLabel }}>
+                <Field className="min-w-0" label={{ children: path, className: monoLabel.label }}>
                   <Input
                     className="!w-full"
                     placeholder={`/v1${path}`}
@@ -267,7 +256,7 @@ const pathOverrideKeys = [
 
 function EndpointPicker() {
   const { t } = useTranslation();
-  const styles = useStyles();
+  const monoLabel = useMonoLabelStyles();
   const idPrefix = useId();
   const { control, getValues, setValue } = useFormContext<UpstreamEditorValues>();
   const config = useWatch({ control, name: 'config' });
@@ -285,7 +274,7 @@ function EndpointPicker() {
           name={`default-endpoint-${key}`}
           key={key}
           checked={selected}
-          label={{ children: label, className: styles.endpointCheckbox }}
+          label={{ children: label, className: monoLabel.label }}
           onChange={(_, data) => {
             const latestConfig = getValues('config') as Extract<UpstreamRecord, { kind: 'custom' }>['config'];
             const next = { ...latestConfig.endpoints };

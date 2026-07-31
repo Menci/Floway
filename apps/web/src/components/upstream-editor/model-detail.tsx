@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import type { ModelRow } from './editor-data';
 import { publicModelId } from './editor-data';
 import { FeatureFlagsEditor } from './feature-flags';
+import { useMonoLabelStyles } from './mono-label';
 import { PricingEditor } from './pricing-editor';
 import { pricingEntryDraftsFor, pricingIsValid } from './pricing-model';
 import { RerankTargetEditor } from './rerank-target-editor';
@@ -26,15 +27,7 @@ const {
   MessageBarBody,
   Option,
   Text,
-  makeStyles,
 } = fluentComponents;
-
-const useStyles = makeStyles({
-  endpointLabel: {
-    fontFamily: 'var(--fontFamilyMonospace) !important',
-    fontSize: 'var(--floway-font-size-mono) !important',
-  },
-});
 
 const reasoningPresets = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 
@@ -58,7 +51,7 @@ export function ModelDetail({
   upstreamFlags: UpstreamRecord['flag_overrides'];
 }) {
   const { t } = useTranslation();
-  const styles = useStyles();
+  const monoLabel = useMonoLabelStyles();
   const reasoningLabelId = useId();
   // The detail is read-only for the same two reasons everywhere in it: the
   // provider owns its catalog, or this row is the upstream's own listing
@@ -160,7 +153,7 @@ export function ModelDetail({
               checked={key in row.config.endpoints}
               readOnly={fieldsReadOnly}
               key={key}
-              label={{ children: label, className: styles.endpointLabel }}
+              label={{ children: label, className: monoLabel.label }}
               onChange={(_, data) => {
                 const endpoints = { ...row.config.endpoints };
                 if (data.checked) endpoints[key] = {}; else delete endpoints[key];

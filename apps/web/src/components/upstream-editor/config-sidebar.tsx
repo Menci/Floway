@@ -20,8 +20,7 @@ import { MODEL_PREFIX_MAX_LENGTH } from '@floway-dev/provider/model-prefix';
 const { Button, Checkbox, Field, MessageBar, MessageBarBody, Option, Text, makeStyles } = fluentComponents;
 
 const useSidebarStyles = makeStyles({
-  error: { color: 'var(--colorPaletteRedForeground1)' },
-  required: { color: 'var(--colorPaletteRedForeground1)' },
+  danger: { color: 'var(--colorPaletteRedForeground1)' },
 });
 
 const COMMON_COLO_LOCATIONS = [
@@ -129,9 +128,9 @@ function UpstreamColorEditor({ kind, onValidityChange }: { kind: UpstreamRecord[
 function EditorSection({ children, description, error, inline = false, required = false, title }: { children: React.ReactNode; description?: string; error?: string; inline?: boolean; required?: boolean; title: string }) {
   const styles = useSidebarStyles();
   return <section className={inline ? 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4' : 'grid gap-4'}>
-    <SectionHeader description={description} level={2} title={<>{title}{required && <span aria-hidden className={styles.required}> *</span>}</>} />
+    <SectionHeader description={description} level={2} title={<>{title}{required && <span aria-hidden className={styles.danger}> *</span>}</>} />
     {children}
-    {error && <Text className={`${styles.error} ${inline ? 'col-span-2' : ''}`} role="alert" size={200}>{error}</Text>}
+    {error && <Text className={`${styles.danger} ${inline ? 'col-span-2' : ''}`} role="alert" size={200}>{error}</Text>}
   </section>;
 }
 

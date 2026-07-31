@@ -137,7 +137,7 @@ export function UpstreamWorkspace({
   }, [modelDetailTab, modelView, tab]);
   const modelsWorkspace = <ModelsWorkspace detailSection={modelDetailTab} onSelectUpstreamModel={selectModel} selectedUpstreamModelId={selectedUpstreamModelId} discovered={discovered} modelsLoading={modelsLoading} modelsError={modelsError} onRefreshModels={onRefreshModels} onViewChange={changeModelView} record={record} view={modelView} yaml={yaml} yamlError={yamlError} onYamlChange={setYaml} onYamlErrorChange={setYamlError} />;
   return <section className="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] h-full min-h-0 min-w-0 max-[1050px]:h-auto">
-    <div className="flex items-center gap-2 border-b border-b-solid border-fui-stroke1 px-5 pt-2">
+    <div className="flex items-center gap-2 border-0 border-b border-solid border-fui-stroke1 px-5 pt-2">
       {showModelDetail
         ? <>
             <BackNavigationButton onClick={() => selectModel(null)}>{t('dashboard.upstreamEditor.models.back')}</BackNavigationButton>
@@ -337,8 +337,8 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
     </OutcomeMessageBar>}
     <Input value={search} onChange={(_, data) => setSearch(data.value)} placeholder={t('dashboard.upstreamEditor.models.search')} />
     <ScrollArea axes="horizontal" className="min-w-0">
-      <Table className="w-full min-w-[640px]" style={{ tableLayout: 'fixed' }}>
-        <colgroup><col style={{ width: 80 }} /><col style={{ width: '25%' }} /><col style={{ width: 88 }} /><col /><col style={{ width: 80 }} /><col style={{ width: 80 }} /></colgroup>
+      <Table className="w-full min-w-[640px]">
+        <colgroup><col className="w-[80px]" /><col className="w-[25%]" /><col className="w-[88px]" /><col /><col className="w-[80px]" /><col className="w-[80px]" /></colgroup>
         <TableHeader><TableRow><TableCentredHeader>{t('dashboard.upstreamEditor.models.enabled')}</TableCentredHeader><TableHeaderCell>{t('dashboard.upstreamEditor.models.name')}</TableHeaderCell><TableCentredHeader>{t('dashboard.upstreamEditor.models.kind')}</TableCentredHeader><TableHeaderCell>{t('dashboard.upstreamEditor.models.id')}</TableHeaderCell><TableCentredHeader>{t('dashboard.upstreamEditor.models.source')}</TableCentredHeader><TableActionsHeader>{t('dashboard.upstreamEditor.models.actions')}</TableActionsHeader></TableRow></TableHeader>
         <TableBody>{filtered.map(row => {
           const id = publicModelId(row.config); return <TableRow className="h-14" key={row.key}>
@@ -354,7 +354,7 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
               </button>
             </TableCell>
             <TableCentredCell><Text size={300}>{t(`dashboard.upstreamEditor.models.kindValue.${row.config.kind}`)}</Text></TableCentredCell>
-            <TableCell className="overflow-hidden"><span className="flex items-center gap-1 min-w-0 max-w-full overflow-hidden"><code className="block min-w-0 truncate leading-[var(--lineHeightBase300)]" style={{ maxWidth: 'calc(100% - 36px)' }} title={id}>{id}</code><TooltipIconButton className="flex-none" icon={copyFailedTag === id ? <DismissRegular /> : copiedTag === id ? <CheckmarkRegular /> : <CopyRegular />} label={copyFailedTag === id ? t('dashboard.apiKeys.copy.failed') : copiedTag === id ? t('dashboard.apiKeys.copy.copied') : t('dashboard.upstreamEditor.models.copy')} onClick={() => copy(id, id)} /></span></TableCell>
+            <TableCell className="overflow-hidden"><span className="flex items-center gap-1 min-w-0 max-w-full overflow-hidden"><code className="block min-w-0 max-w-[calc(100%-36px)] truncate leading-[var(--lineHeightBase300)]" title={id}>{id}</code><TooltipIconButton className="flex-none" icon={copyFailedTag === id ? <DismissRegular /> : copiedTag === id ? <CheckmarkRegular /> : <CopyRegular />} label={copyFailedTag === id ? t('dashboard.apiKeys.copy.failed') : copiedTag === id ? t('dashboard.apiKeys.copy.copied') : t('dashboard.upstreamEditor.models.copy')} onClick={() => copy(id, id)} /></span></TableCell>
             <TableCentredCell><Text size={300}>{t(`dashboard.upstreamEditor.models.${row.source}`)}</Text></TableCentredCell>
             <TableCell><TableActions><TooltipIconButton icon={<EditRegular />} label={t('dashboard.upstreamEditor.models.edit')} onClick={() => onSelectUpstreamModel(row.config.upstreamModelId)} />{row.manualIndex !== null && <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.delete')} onClick={() => deleteDialog.open(row)} />}</TableActions></TableCell>
           </TableRow>;
