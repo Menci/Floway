@@ -1,7 +1,8 @@
 import { useTranslation } from 'react-i18next';
 
-import { bucketKeyForCallout, formatCompactDecimalCount, formatCount, formatHitRate, formatInputRate, formatUsdCost, summarizeCounters } from './chart-model';
+import { bucketKeyForCallout, formatCompactDecimalCount, formatCount, formatRatePercent, formatUsdCost, summarizeCounters } from './chart-model';
 import type { CalloutPoint, UsageChartModel } from './types';
+import { sumDecimalStrings } from '../../utils/decimal-display';
 import { ChartCalloutTable } from '../charts/chart-callout-table';
 import { formatCalloutTitle } from '../charts/dashboard-time';
 import { ScrollArea } from '../ui/scroll-area';
@@ -31,7 +32,7 @@ export function UsageChartCallout({ chart, labelByTime, locale, point, valueForm
               color: item.color,
               key: item.id,
               label: item.label,
-              values: [formatCount(summary.requests, locale), formatUsdCost(summary.cost), formatCompactDecimalCount(summary.total, locale), formatCompactDecimalCount(summary.cacheRead, locale), formatInputRate(summary.cacheRead, summary.prompt), formatCompactDecimalCount(summary.prefill, locale), formatCompactDecimalCount(summary.output, locale), formatHitRate(summary.cacheRead, summary.cacheCreation)],
+              values: [formatCount(summary.requests, locale), formatUsdCost(summary.cost), formatCompactDecimalCount(summary.total, locale), formatCompactDecimalCount(summary.cacheRead, locale), formatRatePercent(summary.cacheRead, summary.prompt), formatCompactDecimalCount(summary.prefill, locale), formatCompactDecimalCount(summary.output, locale), formatRatePercent(summary.cacheRead, sumDecimalStrings(summary.cacheRead, summary.cacheCreation))],
             }];
           })}
           title={title}
