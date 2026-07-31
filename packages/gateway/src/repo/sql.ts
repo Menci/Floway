@@ -1361,6 +1361,7 @@ const toBackoffRow = (row: BackoffRowDb): BackoffRow => ({
 });
 
 interface ModelAliasRow {
+  id: string;
   name: string;
   kind: string;
   selection: string;
@@ -1373,7 +1374,7 @@ interface ModelAliasRow {
   updated_at: string;
 }
 
-const MODEL_ALIAS_COLUMNS = 'name, kind, selection, display_name, visible_in_models_list, targets, announced_metadata_json, sort_order, created_at, updated_at';
+const MODEL_ALIAS_COLUMNS = 'id, name, kind, selection, display_name, visible_in_models_list, targets, announced_metadata_json, sort_order, created_at, updated_at';
 
 const parseAliasTargets = (raw: string, name: string): AliasTarget[] => {
   let parsed: unknown;
@@ -1396,6 +1397,7 @@ const parseAnnouncedMetadata = (raw: string | null, name: string): AnnouncedMeta
 };
 
 const toModelAliasRecord = (row: ModelAliasRow): ModelAliasRecord => ({
+  id: row.id,
   name: row.name,
   kind: parseModelKind(row.kind, `model_aliases.kind for ${row.name}`),
   selection: row.selection as AliasSelection,
@@ -1429,12 +1431,21 @@ class SqlModelAliasesRepo implements ModelAliasesRepo {
     return row ? toModelAliasRecord(row) : null;
   }
 
+  async getById(id: string): Promise<ModelAliasRecord | null> {
+    const row = await this.db
+      .prepare(`SELECT ${MODEL_ALIAS_COLUMNS} FROM model_aliases WHERE id = ?`)
+      .bind(id)
+      .first<ModelAliasRow>();
+    return row ? toModelAliasRecord(row) : null;
+  }
+
   async insert(record: ModelAliasRecord): Promise<void> {
     await this.db
       .prepare(
-        `INSERT INTO model_aliases (${MODEL_ALIAS_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO model_aliases (${MODEL_ALIAS_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
+        record.id,
         record.name,
         record.kind,
         record.selection,
@@ -1449,69 +1460,43 @@ class SqlModelAliasesRepo implements ModelAliasesRepo {
       .run();
   }
 
-  async update(oldName: string, record: ModelAliasRecord): Promise<void> {
-    if (oldName === record.name) {
-      const result = await this.db
-        .prepare(
-          `UPDATE model_aliases SET
-             kind = ?,
-             selection = ?,
-             display_name = ?,
-             visible_in_models_list = ?,
-             targets = ?,
-             announced_metadata_json = ?,
-             sort_order = ?,
-             created_at = ?,
-             updated_at = ?
-           WHERE name = ?`,
-        )
-        .bind(
-          record.kind,
-          record.selection,
-          record.displayName,
-          record.visibleInModelsList ? 1 : 0,
-          JSON.stringify(record.targets),
-          announcedMetadataBind(record.announcedMetadata),
-          record.sortOrder,
-          record.createdAt,
-          record.updatedAt,
-          oldName,
-        )
-        .run();
-      if ((result.meta.changes ?? 0) === 0) throw new Error(`alias ${oldName} not found`);
-      return;
-    }
-
-    // Rename. Verify the source row exists first, then INSERT(new) +
-    // DELETE(old) atomically through the batch primitive — a PK collision
-    // against `record.name` bubbles up from the INSERT, which the route
-    // layer translates to 409.
-    const existing = await this.getByName(oldName);
-    if (!existing) throw new Error(`alias ${oldName} not found`);
-
-    await runStatements(this.db, [
-      this.db
-        .prepare(`INSERT INTO model_aliases (${MODEL_ALIAS_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(
-          record.name,
-          record.kind,
-          record.selection,
-          record.displayName,
-          record.visibleInModelsList ? 1 : 0,
-          JSON.stringify(record.targets),
-          announcedMetadataBind(record.announcedMetadata),
-          record.sortOrder,
-          record.createdAt,
-          record.updatedAt,
-        ),
-      this.db.prepare('DELETE FROM model_aliases WHERE name = ?').bind(oldName),
-    ]);
+  async update(record: ModelAliasRecord): Promise<void> {
+    const result = await this.db
+      .prepare(
+        `UPDATE model_aliases SET
+           name = ?,
+           kind = ?,
+           selection = ?,
+           display_name = ?,
+           visible_in_models_list = ?,
+           targets = ?,
+           announced_metadata_json = ?,
+           sort_order = ?,
+           created_at = ?,
+           updated_at = ?
+         WHERE id = ?`,
+      )
+      .bind(
+        record.name,
+        record.kind,
+        record.selection,
+        record.displayName,
+        record.visibleInModelsList ? 1 : 0,
+        JSON.stringify(record.targets),
+        announcedMetadataBind(record.announcedMetadata),
+        record.sortOrder,
+        record.createdAt,
+        record.updatedAt,
+        record.id,
+      )
+      .run();
+    if ((result.meta.changes ?? 0) === 0) throw new Error(`alias ${record.id} not found`);
   }
 
-  async delete(name: string): Promise<boolean> {
+  async delete(id: string): Promise<boolean> {
     const result = await this.db
-      .prepare('DELETE FROM model_aliases WHERE name = ?')
-      .bind(name)
+      .prepare('DELETE FROM model_aliases WHERE id = ?')
+      .bind(id)
       .run();
     return (result.meta.changes ?? 0) > 0;
   }

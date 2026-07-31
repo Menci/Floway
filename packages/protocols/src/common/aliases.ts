@@ -100,7 +100,14 @@ export interface AnnouncedMetadata {
 // targets + rules at listing time". `kind` picks the endpoint family the
 // alias serves; rules are only meaningful when the kind admits them (today
 // that is `chat`).
+//
+// `id` is the row's opaque, server-issued handle — the only thing the
+// control-plane routes address an alias by. `name` is the public model id
+// clients send on the data plane, and an operator renames it freely; it
+// carries whatever characters a model id carries, `/` included, so it is
+// unfit for a URL path segment.
 export interface ModelAlias {
+  id: string;
   name: string;
   kind: ModelKind;
   selection: AliasSelection;

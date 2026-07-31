@@ -26,7 +26,7 @@ vi.mock('../../../src/api/client.ts', () => ({
     api: {
       aliases: {
         $post: (arg: unknown) => postSpy(arg),
-        ':name': { $put: (arg: unknown) => putSpy(arg) },
+        ':id': { $put: (arg: unknown) => putSpy(arg) },
       },
     },
   }),
@@ -45,6 +45,7 @@ const realModel = (id: string, display?: string): ControlPlaneModel =>
   buildRealModel(display !== undefined ? { id, display_name: display } : { id });
 
 const baseAlias = (over: Partial<ModelAlias> & { name: string }): ModelAlias => ({
+  id: `alias_${over.name}`,
   kind: 'chat',
   selection: 'first-available',
   display_name: null,
@@ -287,7 +288,10 @@ describe('AliasEditDialog', () => {
     const save = portalQueryAll<HTMLButtonElement>('button').find(button => button.textContent?.trim() === 'Save')!;
     save.click();
     await nextTick();
-    expect(putSpy.mock.calls.at(-1)?.[0]).toMatchObject({ json: { kind: 'rerank', announced_metadata: null } });
+    expect(putSpy.mock.calls.at(-1)?.[0]).toMatchObject({
+      param: { id: 'alias_reranker' },
+      json: { kind: 'rerank', announced_metadata: null },
+    });
     wrapper.unmount();
   });
 });

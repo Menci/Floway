@@ -156,7 +156,7 @@ const saveError = ref<string | null>(null);
 const validationError = computed<string | null>(() => {
   const trimmed = aliasName.value.trim();
   if (trimmed === '') return 'Alias id is required';
-  const collisions = (aliasesStore.aliases.value ?? []).filter(a => a.name === trimmed && a.name !== props.record?.name);
+  const collisions = (aliasesStore.aliases.value ?? []).filter(a => a.name === trimmed && a.id !== props.record?.id);
   if (collisions.length > 0) return `An alias with id "${trimmed}" already exists`;
   if (targets.value.some(t => t.target_model_id.trim() === '')) return 'Every target needs a model id';
   return null;
@@ -195,9 +195,9 @@ const save = async () => {
       const { error } = await callApi(() => api.api.aliases.$post({ json: body }));
       if (error) { saveError.value = error.message; return; }
     } else if (props.record) {
-      const oldName = props.record.name;
-      const { error } = await callApi(() => api.api.aliases[':name'].$put({
-        param: { name: oldName },
+      const id = props.record.id;
+      const { error } = await callApi(() => api.api.aliases[':id'].$put({
+        param: { id },
         json: body,
       }));
       if (error) { saveError.value = error.message; return; }

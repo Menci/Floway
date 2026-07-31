@@ -472,6 +472,7 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
+      id: 'alias_smart',
       name: 'smart', kind: 'chat', selection: 'first-available',
       targets: [
         { target_model_id: 'gpt-5', rules: {} },
@@ -499,6 +500,7 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
+      id: 'alias_random-alias',
       name: 'random-alias', kind: 'chat', selection: 'random',
       targets: [
         { target_model_id: 'gpt-5', rules: {} },
@@ -531,6 +533,7 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
+      id: 'alias_dup-alias',
       name: 'dup-alias', kind: 'chat', selection: 'first-available',
       targets: [
         { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low' } } },
@@ -557,6 +560,7 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
+      id: 'alias_two-rules',
       name: 'two-rules', kind: 'chat', selection: 'first-available',
       targets: [
         { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low' } } },
@@ -582,6 +586,7 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
+      id: 'alias_fallback',
       name: 'fallback', kind: 'chat', selection: 'first-available',
       targets: [
         { target_model_id: 'missing', rules: { verbosity: 'low' } },

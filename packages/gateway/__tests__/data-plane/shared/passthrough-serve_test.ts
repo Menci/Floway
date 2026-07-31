@@ -193,6 +193,7 @@ test('passthrough-serve: alias whose targets have no kind-matching binding surfa
   const { apiKey, repo } = await setupAppTest();
   await registerEmbeddingsUpstream(repo);
   await repo.modelAliases.insert({
+    id: 'alias_embed-fast',
     name: 'embed-fast',
     kind: 'embedding',
     selection: 'first-available',

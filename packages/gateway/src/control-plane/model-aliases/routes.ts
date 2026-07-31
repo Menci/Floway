@@ -7,12 +7,13 @@ import type { Context } from 'hono';
 import { recordToWire, wireToRecord } from './serialize.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
+import { shortId } from '../../shared/short-id.ts';
 import type { createAliasBody, updateAliasBody } from '../schemas.ts';
 import { nextSortOrder } from '../shared/sort-order.ts';
 
 // Both D1 and node:sqlite raise a UNIQUE-constraint error naming the column;
-// the repo layer's alias INSERT / rename UPDATE lets that bubble up so the
-// route can translate a lost read-then-write race into a structured 409.
+// the repo layer's alias INSERT / UPDATE lets that bubble up so the route can
+// translate a lost read-then-write race into a structured 409.
 const isAliasNameCollision = (err: unknown): boolean =>
   err instanceof Error &&
   err.message.includes('UNIQUE constraint failed: model_aliases.name');
@@ -29,6 +30,7 @@ export const createAlias = async (c: CtxWithJson<typeof createAliasBody>) => {
   const existing = await repo.modelAliases.list();
   const now = new Date().toISOString();
   const record = wireToRecord(body, {
+    id: shortId('alias'),
     sortOrder: body.sort_order ?? nextSortOrder(existing),
     createdAt: now,
     updatedAt: now,
@@ -43,14 +45,15 @@ export const createAlias = async (c: CtxWithJson<typeof createAliasBody>) => {
 };
 
 export const updateAlias = async (c: CtxWithJson<typeof updateAliasBody>) => {
-  const oldName = c.req.param('name')!;
+  const id = c.req.param('id')!;
   const body = c.req.valid('json');
   const repo = getRepo();
 
-  const existing = await repo.modelAliases.getByName(oldName);
+  const existing = await repo.modelAliases.getById(id);
   if (!existing) return c.json({ error: 'Alias not found' }, 404);
 
   const next = wireToRecord(body, {
+    id: existing.id,
     // Preserve the original sortOrder unless the client explicitly overrides
     // it; createdAt belongs to the row's first-seen instant and never moves.
     sortOrder: body.sort_order ?? existing.sortOrder,
@@ -58,7 +61,7 @@ export const updateAlias = async (c: CtxWithJson<typeof updateAliasBody>) => {
     updatedAt: new Date().toISOString(),
   });
   try {
-    await repo.modelAliases.update(oldName, next);
+    await repo.modelAliases.update(next);
   } catch (err) {
     if (isAliasNameCollision(err)) return c.json({ error: `Alias ${body.name} already exists` }, 409);
     throw err;
@@ -67,9 +70,9 @@ export const updateAlias = async (c: CtxWithJson<typeof updateAliasBody>) => {
 };
 
 export const deleteAlias = async (c: Context) => {
-  const name = c.req.param('name')!;
+  const id = c.req.param('id')!;
   // Idempotent — success whether or not a row existed. 204 keeps verb-shape
   // parity with DELETE /api/proxies/:id.
-  await getRepo().modelAliases.delete(name);
+  await getRepo().modelAliases.delete(id);
   return c.body(null, 204);
 };

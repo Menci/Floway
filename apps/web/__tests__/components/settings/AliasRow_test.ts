@@ -6,6 +6,7 @@ import AliasRow from '../../../src/components/settings/AliasRow.vue';
 import { buildAliasModel, buildRealModel } from '../../api/test-fixtures.ts';
 
 const alias = (over: Partial<ModelAlias> & { name: string }): ModelAlias => ({
+  id: `alias_${over.name}`,
   kind: 'chat',
   selection: 'first-available',
   display_name: null,

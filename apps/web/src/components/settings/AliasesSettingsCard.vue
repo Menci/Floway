@@ -22,7 +22,7 @@ const aliases = computed<ModelAlias[]>(() => aliasesStore.aliases.value ?? []);
 
 const deleteAlias = async (record: ModelAlias) => {
   if (!window.confirm(`Delete alias "${record.name}"?`)) return;
-  const { error } = await callApi(() => api.api.aliases[':name'].$delete({ param: { name: record.name } }));
+  const { error } = await callApi(() => api.api.aliases[':id'].$delete({ param: { id: record.id } }));
   if (error) {
     window.alert(`Delete failed: ${error.message}`);
     return;
@@ -54,7 +54,7 @@ const deleteAlias = async (record: ModelAlias) => {
     <div v-else-if="aliases.length > 0" class="space-y-2">
       <AliasRow
         v-for="alias in aliases"
-        :key="alias.name"
+        :key="alias.id"
         :alias="alias"
         :models="modelsStore.models.value"
         @edit="emit('edit', alias)"

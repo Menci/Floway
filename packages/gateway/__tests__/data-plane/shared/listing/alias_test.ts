@@ -6,6 +6,7 @@ import type { ModelAliasRecord } from '../../../../src/repo/types.ts';
 import type { InternalModel, ProviderModel } from '@floway-dev/provider';
 
 const aliasFixture = (overrides: Partial<ModelAliasRecord> = {}): ModelAliasRecord => ({
+  id: `alias_${overrides.name ?? 'gpt-fast'}`,
   name: 'gpt-fast',
   kind: 'chat',
   selection: 'first-available',

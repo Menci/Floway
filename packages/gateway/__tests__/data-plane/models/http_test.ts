@@ -703,6 +703,7 @@ test('/v1/models appends visible aliases with their aliasedFrom block and folds 
   // replace the catalog entry; one points at a real id under a brand-new
   // name (`gpt-fast`).
   await repo.modelAliases.insert({
+    id: 'alias_gpt-4o',
     name: 'gpt-4o',
     kind: 'chat',
     selection: 'first-available',
@@ -715,6 +716,7 @@ test('/v1/models appends visible aliases with their aliasedFrom block and folds 
     updatedAt: '2026-06-26T00:00:00.000Z',
   });
   await repo.modelAliases.insert({
+    id: 'alias_gpt-fast',
     name: 'gpt-fast',
     kind: 'chat',
     selection: 'first-available',
@@ -727,6 +729,7 @@ test('/v1/models appends visible aliases with their aliasedFrom block and folds 
     updatedAt: '2026-06-26T00:00:00.000Z',
   });
   await repo.modelAliases.insert({
+    id: 'alias_hidden-alias',
     name: 'hidden-alias',
     kind: 'chat',
     selection: 'first-available',
@@ -802,6 +805,7 @@ test('/v1/models folds a real-id collision onto the alias even when the alias po
     },
   }));
   await repo.modelAliases.insert({
+    id: 'alias_orphan-shadow',
     name: 'orphan-shadow',
     kind: 'chat',
     selection: 'first-available',

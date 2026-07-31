@@ -20,7 +20,7 @@ vi.mock('../../../src/api/client.ts', () => ({
   useApi: () => ({
     api: {
       aliases: {
-        ':name': { $delete: (arg: unknown) => deleteSpy(arg) },
+        ':id': { $delete: (arg: unknown) => deleteSpy(arg) },
       },
     },
   }),
@@ -35,6 +35,7 @@ vi.mock('../../../src/api/client.ts', () => ({
 const { default: AliasesSettingsCard } = await import('../../../src/components/settings/AliasesSettingsCard.vue');
 
 const baseAlias = (over: Partial<ModelAlias> & { name: string }): ModelAlias => ({
+  id: `alias_${over.name}`,
   kind: 'chat',
   selection: 'first-available',
   display_name: null,
@@ -97,6 +98,7 @@ describe('AliasesSettingsCard', () => {
     await w.find('button[aria-label="Delete alias"]').trigger('click');
     await nextTick();
     expect(deleteSpy).toHaveBeenCalledTimes(1);
+    expect(deleteSpy).toHaveBeenCalledWith({ param: { id: 'alias_doomed' } });
     expect(w.emitted('changed')).toHaveLength(1);
   });
 
