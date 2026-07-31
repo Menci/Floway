@@ -69,11 +69,25 @@ export function KeysTable({
       }),
       createTableColumn<ApiKey>({
         columnId: 'key', renderHeaderCell: () => t('dashboard.apiKeys.table.key'),
-        renderCell: key => (
-          <code className="max-w-[220px] truncate" title={key.key}>
-            {key.key}
-          </code>
-        ),
+        // Copying belongs beside the thing being copied, not at the far end of
+        // the row: the key is the only cell an operator reaches for by value,
+        // and it is elided, so the button is what makes the whole of it
+        // reachable.
+        renderCell: key => {
+          const copyTag = `key-${key.id}`;
+          return (
+            <span className="flex items-center gap-1 min-w-0">
+              <code className="min-w-0 truncate" title={key.key}>{key.key}</code>
+              <TooltipIconButton
+                className="flex-none"
+                disabled={disabled}
+                icon={copyFailedTag === copyTag ? <DismissRegular /> : copiedTag === copyTag ? <CheckmarkRegular /> : <CopyRegular />}
+                label={copyFailedTag === copyTag ? t('dashboard.apiKeys.copy.failed') : copiedTag === copyTag ? t('dashboard.apiKeys.copy.copied') : t('dashboard.apiKeys.actions.copy')}
+                onClick={() => onCopy(key.key, copyTag)}
+              />
+            </span>
+          );
+        },
       }),
       createTableColumn<ApiKey>({
         columnId: 'upstreams', renderHeaderCell: () => t('dashboard.apiKeys.table.upstreams'),
@@ -107,15 +121,8 @@ export function KeysTable({
       createTableColumn<ApiKey>({
         columnId: 'actions', renderHeaderCell: () => t('dashboard.apiKeys.table.actions'),
         renderCell: key => {
-          const copyTag = `key-${key.id}`;
           return (
             <TableActions>
-              <TooltipIconButton
-                disabled={disabled}
-                icon={copyFailedTag === copyTag ? <DismissRegular /> : copiedTag === copyTag ? <CheckmarkRegular /> : <CopyRegular />}
-                label={copyFailedTag === copyTag ? t('dashboard.apiKeys.copy.failed') : copiedTag === copyTag ? t('dashboard.apiKeys.copy.copied') : t('dashboard.apiKeys.actions.copy')}
-                onClick={() => onCopy(key.key, copyTag)}
-              />
               <TooltipIconButton disabled={disabled} icon={<EditRegular />} label={t('dashboard.apiKeys.actions.edit')} onClick={() => onEdit(key)} />
               <TooltipIconButton disabled={disabled} icon={<ArrowClockwiseRegular />} label={t('dashboard.apiKeys.actions.rotate')} onClick={() => onRotate(key)} />
               <TooltipIconButton danger disabled={disabled} icon={<DeleteRegular />} label={t('dashboard.apiKeys.actions.delete')} onClick={() => onDelete(key)} />
