@@ -8,9 +8,10 @@ import {
   EditRegular,
   WarningRegular,
 } from '@fluentui/react-icons';
-import { lazy, Suspense, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Controller, useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router';
 
 import { BackNavigationButton } from './back-navigation-button';
 import type { UpstreamEditorValues } from './editor-data';
@@ -56,6 +57,18 @@ interface ModelRow {
 }
 
 type ModelView = 'list' | 'detail' | 'yaml';
+type WorkspaceTab = 'models' | 'flags';
+interface WorkspaceLocation {
+  tab: WorkspaceTab;
+  model: string | null;
+  section: ModelDetailTab;
+  view: 'list' | 'yaml';
+}
+
+const TAB_PARAM = 'tab';
+const MODEL_PARAM = 'model';
+const SECTION_PARAM = 'section';
+const VIEW_PARAM = 'view';
 type ModelDetailTab = 'details' | 'flags';
 
 const ModelsYamlEditor = lazy(() => import('./models-yaml-editor'));
@@ -74,32 +87,62 @@ export function UpstreamWorkspace({
   record: UpstreamRecord;
 }) {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<'models' | 'flags'>('models');
-  const [modelView, setModelView] = useState<ModelView>('list');
-  const [modelDetailTab, setModelDetailTab] = useState<ModelDetailTab>('details');
+  const [params, setParams] = useSearchParams();
   const [yaml, setYaml] = useState('');
   const [yamlError, setYamlError] = useState<string | null>(null);
   const workspaceScrollRef = useRef<HTMLDivElement>(null);
+
+  // Where the operator is, is in the URL: which tab, which model, and which
+  // side of that model. A model is named by its upstream id, the one thing
+  // about a row that survives a reload -- the row keys the table works in are
+  // rebuilt per render for the manual entries.
+  const tab = params.get(TAB_PARAM) === 'flags' ? 'flags' : 'models';
+  const selectedModelId = params.get(MODEL_PARAM);
+  const modelView: ModelView = selectedModelId !== null
+    ? 'detail'
+    : params.get(VIEW_PARAM) === 'yaml' ? 'yaml' : 'list';
+  const modelDetailTab: ModelDetailTab = params.get(SECTION_PARAM) === 'flags' ? 'flags' : 'details';
   const showModelDetail = modelView === 'detail';
-  const changeModelView = (next: ModelView) => {
-    setModelView(next);
-    if (next === 'detail') setModelDetailTab('details');
-  };
+
+  // Replace rather than push: moving around inside one editor is not a place
+  // the back button should have to walk out of a step at a time.
+  const navigate = useCallback((next: WorkspaceLocation) => {
+    setParams(previous => {
+      const search = new URLSearchParams(previous);
+      for (const [key, value] of Object.entries({
+        [TAB_PARAM]: next.tab === 'models' ? null : next.tab,
+        [MODEL_PARAM]: next.model,
+        [SECTION_PARAM]: next.model !== null && next.section === 'flags' ? 'flags' : null,
+        [VIEW_PARAM]: next.model === null && next.view === 'yaml' ? 'yaml' : null,
+      })) {
+        if (value === null) search.delete(key); else search.set(key, value);
+      }
+      return search;
+    }, { replace: true });
+  }, [setParams]);
+
+  const changeModelView = (next: ModelView) => navigate({
+    tab,
+    model: next === 'detail' ? selectedModelId : null,
+    section: 'details',
+    view: next === 'yaml' ? 'yaml' : 'list',
+  });
+  const selectModel = (id: string | null) => navigate({ tab, model: id, section: 'details', view: 'list' });
   useLayoutEffect(() => {
     workspaceScrollRef.current?.scrollTo({ left: 0, top: 0 });
   }, [modelDetailTab, modelView, tab]);
-  const modelsWorkspace = <ModelsWorkspace detailSection={modelDetailTab} discovered={discovered} loading={loadingModels} error={modelsError} onRefresh={onRefreshModels} onViewChange={changeModelView} record={record} view={modelView} yaml={yaml} yamlError={yamlError} onYamlChange={setYaml} onYamlErrorChange={setYamlError} />;
+  const modelsWorkspace = <ModelsWorkspace detailSection={modelDetailTab} onSelectModel={selectModel} selectedModelId={selectedModelId} discovered={discovered} loading={loadingModels} error={modelsError} onRefresh={onRefreshModels} onViewChange={changeModelView} record={record} view={modelView} yaml={yaml} yamlError={yamlError} onYamlChange={setYaml} onYamlErrorChange={setYamlError} />;
   return <section className="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] h-full min-h-0 min-w-0 max-[1050px]:h-auto">
     <div className="flex items-center gap-2 border-b border-b-solid border-fui-stroke1 px-5 pt-2">
       {showModelDetail
         ? <>
-            <BackNavigationButton onClick={() => setModelView('list')}>{t('dashboard.upstreamEditor.models.back')}</BackNavigationButton>
-            <TabList selectedValue={modelDetailTab} onTabSelect={(_, data) => setModelDetailTab(data.value as ModelDetailTab)}>
+            <BackNavigationButton onClick={() => selectModel(null)}>{t('dashboard.upstreamEditor.models.back')}</BackNavigationButton>
+            <TabList selectedValue={modelDetailTab} onTabSelect={(_, data) => navigate({ tab, model: selectedModelId, section: data.value as ModelDetailTab, view: 'list' })}>
               <Tab value="details">{t('dashboard.upstreamEditor.models.details')}</Tab>
               <Tab value="flags">{t('dashboard.upstreamEditor.models.flags')}</Tab>
             </TabList>
           </>
-        : <TabList selectedValue={tab} onTabSelect={(_, data) => setTab(data.value as typeof tab)}>
+        : <TabList selectedValue={tab} onTabSelect={(_, data) => navigate({ tab: data.value as WorkspaceTab, model: null, section: 'details', view: 'list' })}>
             <Tab value="models">{t('dashboard.upstreamEditor.tabs.models')}</Tab>
             <Tab value="flags">{t('dashboard.upstreamEditor.tabs.flags')}</Tab>
           </TabList>}
@@ -119,16 +162,18 @@ export function UpstreamWorkspace({
   </section>;
 }
 
-function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh, onViewChange, onYamlChange, onYamlErrorChange, record, view, yaml, yamlError }: {
+function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh, onSelectModel, onViewChange, onYamlChange, onYamlErrorChange, record, selectedModelId, view, yaml, yamlError }: {
   detailSection: ModelDetailTab;
   discovered: UpstreamModelConfig[];
   error: string | null;
   loading: boolean;
   onRefresh: () => void;
+  onSelectModel: (id: string | null) => void;
   onViewChange: (view: ModelView) => void;
   onYamlChange: (value: string) => void;
   onYamlErrorChange: (value: string | null) => void;
   record: UpstreamRecord;
+  selectedModelId: string | null;
   view: ModelView;
   yaml: string;
   yamlError: string | null;
@@ -140,7 +185,6 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
   const config = useWatch({ control, name: 'config' });
   const disabled = useWatch({ control, name: 'disabledPublicModelIds' });
   const upstreamFlags = useWatch({ control, name: 'flagOverrides' });
-  const [selected, setSelected] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ModelRow | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [pendingManualId, setPendingManualId] = useState<string | null>(null);
@@ -157,7 +201,7 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
     for (const item of visibleDiscovered) if (!manualIds.has(item.upstreamModelId)) result.push({ key: `auto:${item.upstreamModelId}`, source: 'auto', config: item, manualIndex: null, hasAuto: true });
     return result;
   }, [autoFetchEnabled, discovered, fields, manual]);
-  const selectedRow = rows.find(row => row.key === selected) ?? null;
+  const selectedRow = rows.find(row => row.config.upstreamModelId === selectedModelId) ?? null;
   const pendingManualRow: ModelRow | null = pendingManualConfig === null ? null : {
     key: 'pending-manual',
     source: 'manual',
@@ -169,13 +213,13 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
   const filtered = rows.filter(row => `${row.config.display_name ?? ''} ${publicModelId(row.config)} ${row.config.upstreamModelId}`.toLowerCase().includes(search.toLowerCase()));
 
   const setEnabled = (id: string, enabled: boolean) => setValue('disabledPublicModelIds', enabled ? disabled.filter(item => item !== id) : [...new Set([...disabled, id])], { shouldDirty: true });
-  // Once the row the pending manual model produced exists, hand selection to
-  // it and drop the placeholder — a one-shot handoff, not synchronised state.
+  // Once the row the pending manual model produced exists, drop the
+  // placeholder — a one-shot handoff, not synchronised state. The selection
+  // needs no handing over: it names the model, and the model is the same one.
   const settledManualRow = pendingManualId === null
     ? undefined
     : rows.find(row => row.source === 'manual' && row.config.upstreamModelId === pendingManualId);
   if (settledManualRow) {
-    setSelected(settledManualRow.key);
     setPendingManualId(null);
     setPendingManualConfig(null);
   }
@@ -194,18 +238,13 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
       return;
     }
     if (source === 'auto' && row.manualIndex !== null && row.hasAuto) {
-      const autoKey = `auto:${row.config.upstreamModelId}`;
       remove(row.manualIndex);
-      setSelected(autoKey);
     }
   };
 
   const deleteModel = (target: ModelRow & { manualIndex: number }) => {
     remove(target.manualIndex);
-    if (selected === target.key) {
-      setSelected(null);
-      onViewChange('list');
-    }
+    if (selectedRow?.key === target.key) onSelectModel(null);
     setDeleteOpen(false);
   };
 
@@ -292,7 +331,7 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
             <TableCell className="overflow-hidden">
               <button
                 className="block bg-transparent border-0 cursor-pointer min-w-0 max-w-full overflow-hidden p-0 text-ellipsis text-fui-base300 text-fui-fg1 text-left whitespace-nowrap hover:underline"
-                onClick={() => { setSelected(row.key); onViewChange('detail'); }}
+                onClick={() => onSelectModel(row.config.upstreamModelId)}
                 title={row.config.display_name ?? id}
                 type="button"
               >
@@ -302,7 +341,7 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
             <TableCell><Text size={300}>{t(`dashboard.upstreamEditor.models.kindValue.${row.config.kind}`)}</Text></TableCell>
             <TableCell className="overflow-hidden"><span className="flex items-center gap-1 min-w-0 max-w-full overflow-hidden"><code className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap leading-[var(--lineHeightBase300)]" style={{ maxWidth: 'calc(100% - 36px)' }} title={id}>{id}</code><Tooltip content={t('dashboard.upstreamEditor.models.copy')} relationship="label"><Button appearance="subtle" className="flex-none" icon={<CopyRegular />} size="small" onClick={() => void navigator.clipboard.writeText(id)} /></Tooltip></span></TableCell>
             <TableCell><Text size={300}>{t(`dashboard.upstreamEditor.models.${row.source}`)}</Text></TableCell>
-            <TableCell><TableActions><TooltipIconButton icon={<EditRegular />} label={t('dashboard.upstreamEditor.models.edit')} onClick={() => { setSelected(row.key); onViewChange('detail'); }} />{row.manualIndex !== null && <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.delete')} onClick={() => { setDeleteTarget(row); setDeleteOpen(true); }} />}</TableActions></TableCell>
+            <TableCell><TableActions><TooltipIconButton icon={<EditRegular />} label={t('dashboard.upstreamEditor.models.edit')} onClick={() => onSelectModel(row.config.upstreamModelId)} />{row.manualIndex !== null && <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.delete')} onClick={() => { setDeleteTarget(row); setDeleteOpen(true); }} />}</TableActions></TableCell>
           </TableRow>;
         })}</TableBody>
       </Table>

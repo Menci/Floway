@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { forwardRef } from 'react';
 import type { PropsWithChildren } from 'react';
 import { FormProvider, useForm } from 'react-hook-form';
+import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { UpstreamRecord } from '../../../src/api/types';
@@ -61,17 +62,21 @@ const record = {
 function Harness() {
   const form = useForm<UpstreamEditorValues>({ defaultValues: valuesFromRecord(record) });
   return (
-    <FluentProvider theme={flowayLightTheme}>
-      <FormProvider {...form}>
-        <UpstreamWorkspace
-          discovered={[]}
-          loadingModels={false}
-          modelsError={null}
-          onRefreshModels={vi.fn()}
-          record={record}
-        />
-      </FormProvider>
-    </FluentProvider>
+    // The workspace reads which tab and which model it is on out of the search,
+    // so it needs a router to read one from.
+    <MemoryRouter>
+      <FluentProvider theme={flowayLightTheme}>
+        <FormProvider {...form}>
+          <UpstreamWorkspace
+            discovered={[]}
+            loadingModels={false}
+            modelsError={null}
+            onRefreshModels={vi.fn()}
+            record={record}
+          />
+        </FormProvider>
+      </FluentProvider>
+    </MemoryRouter>
   );
 }
 

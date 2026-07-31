@@ -1,4 +1,4 @@
-import { redirect } from 'react-router';
+import { redirect, type ShouldRevalidateFunctionArgs } from 'react-router';
 
 import type { Route } from './+types/dashboard-providers-upstreams-edit';
 import { callApi } from '../api/auth';
@@ -32,6 +32,12 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
 export function meta({}: Route.MetaArgs) {
   return [{ title: 'Edit Upstream | Floway' }];
 }
+
+// The workspace keeps which tab and which model it is on in the search, and
+// none of what this loader fetches depends on either. Left to revalidate, every
+// tab click would refetch the upstream and its whole model catalog.
+export const shouldRevalidate = ({ currentUrl, defaultShouldRevalidate, nextUrl }: ShouldRevalidateFunctionArgs) =>
+  currentUrl.pathname === nextUrl.pathname ? false : defaultShouldRevalidate;
 
 export default function DashboardProvidersUpstreamsEdit({ loaderData }: Route.ComponentProps) {
   return <UpstreamEditorPage data={loaderData} />;
