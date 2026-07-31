@@ -103,6 +103,4 @@ export default function Dashboard({}: Route.ComponentProps) {
   );
 }
 
-export function useDashboardOutletContext() {
-  return useOutletContext<DashboardOutletContext>();
-}
+export const useDashboardOutletContext = (): DashboardOutletContext => useOutletContext<DashboardOutletContext>();

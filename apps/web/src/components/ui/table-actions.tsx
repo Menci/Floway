@@ -26,9 +26,7 @@ const useStyles = makeStyles({
 });
 
 /** The trailing rule itself, for a cell that is not a `TableHeaderCell`. */
-export function useTrailingCellClass() {
-  return useStyles().trailing;
-}
+export const useTrailingCellClass = (): string => useStyles().trailing;
 
 export function TableActionsHeader({ className, ...props }: TableHeaderCellProps) {
   const styles = useStyles();

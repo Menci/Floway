@@ -80,8 +80,8 @@ export function OutcomeToastProvider({ children }: PropsWithChildren) {
   );
 }
 
-export function useOutcomeToasts(): OutcomeToasts {
+export const useOutcomeToasts = (): OutcomeToasts => {
   const value = useContext(OutcomeToastContext);
   if (!value) throw new Error('useOutcomeToasts requires an OutcomeToastProvider above it');
   return value;
-}
+};

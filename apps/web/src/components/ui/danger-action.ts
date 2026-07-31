@@ -28,6 +28,4 @@ const useStyles = makeStyles({
   },
 });
 
-export function useDangerActionClasses() {
-  return useStyles();
-}
+export const useDangerActionClasses = (): ReturnType<typeof useStyles> => useStyles();
