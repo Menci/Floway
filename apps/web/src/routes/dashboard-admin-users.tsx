@@ -59,7 +59,7 @@ const {
 // `null` is a fetch that failed, not an empty deployment: a list showing zero
 // users on a gateway that certainly has at least one is a page inventing an
 // answer.
-interface UsersPageData {
+interface LoaderData {
   users: ControlPlaneUser[] | null;
   upstreams: UpstreamOption[] | null;
   models: ControlPlaneModel[] | null;
@@ -80,9 +80,9 @@ interface PasswordFormValues {
 }
 
 const loadPageData = async (
-  current: Pick<UsersPageData, 'users' | 'upstreams' | 'models'>,
+  current: Pick<LoaderData, 'users' | 'upstreams' | 'models'>,
   signal?: AbortSignal,
-): Promise<UsersPageData> => {
+): Promise<LoaderData> => {
   const [usersResult, upstreamsResult, modelsResult] = await Promise.all([
     callApi(() => api.api.users.$get(undefined, { init: { signal } })),
     callApi(() => api.api['upstream-options'].$get(undefined, { init: { signal } })),
@@ -96,9 +96,9 @@ const loadPageData = async (
   };
 };
 
-const unloadedPageData: Pick<UsersPageData, 'users' | 'upstreams' | 'models'> = { users: null, upstreams: null, models: null };
+const unloadedPageData: Pick<LoaderData, 'users' | 'upstreams' | 'models'> = { users: null, upstreams: null, models: null };
 
-export async function clientLoader(): Promise<UsersPageData> {
+export async function clientLoader(): Promise<LoaderData> {
   if (!getSessionToken()) throw redirect('/');
 
   if (!(await requireAdmin())) throw redirect('/dashboard/services/api-keys');
@@ -114,7 +114,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
   const { user: actor } = useDashboardOutletContext();
   const refreshAuth = useAuthStore(state => state.refresh);
   const toasts = useOutcomeToasts();
-  const [data, setData] = useState<UsersPageData>(loaderData);
+  const [data, setData] = useState<LoaderData>(loaderData);
   const [pageError, setPageError] = useState<string | null>(loaderData.error);
   const editorDialog = useDialogInvocation<{ kind: 'create' } | { kind: 'edit'; user: ControlPlaneUser }>();
   const passwordDialog = useDialogInvocation<ControlPlaneUser>();

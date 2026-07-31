@@ -52,7 +52,7 @@ const {
   makeStyles,
 } = fluentComponents;
 
-interface UpstreamsPageData {
+interface LoaderData {
   /** `null` when the fetch failed, which is not the same as none configured. */
   upstreams: UpstreamRecord[] | null;
   models: ControlPlaneModel[] | null;
@@ -80,10 +80,10 @@ const useStyles = makeStyles({
   warning: { color: 'var(--colorPaletteDarkOrangeForeground1)' },
 });
 
-export async function clientLoader(): Promise<UpstreamsPageData> {
+export async function clientLoader(): Promise<LoaderData> {
   if (!getSessionToken()) throw redirect('/');
   if (!(await requireAdmin())) throw redirect('/dashboard/services/api-keys');
-  return await loadUpstreamsPageData();
+  return await loadPageData();
 }
 
 export function meta({}: Route.MetaArgs) {
@@ -134,8 +134,8 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     return () => handle.settle();
   }, [mutationKind, t, toasts]);
 
-  const reload = async (): Promise<UpstreamsPageData> => {
-    const next = await loadUpstreamsPageData();
+  const reload = async (): Promise<LoaderData> => {
+    const next = await loadPageData();
     setData(next);
     setPageError(next.loadError);
     return next;
@@ -316,7 +316,7 @@ function UpstreamsTable({
   onMove,
   onToggle,
 }: {
-  data: UpstreamsPageData;
+  data: LoaderData;
   mutating: boolean;
   mutation: Mutation | null;
   onDelete: (record: UpstreamRecord) => void;
@@ -457,7 +457,7 @@ function ModelStatus({
   );
 }
 
-const loadUpstreamsPageData = async (): Promise<UpstreamsPageData> => {
+const loadPageData = async (): Promise<LoaderData> => {
   const [upstreamsResult, modelsResult] = await Promise.all([
     callApi(() => api.api.upstreams.$get()),
     callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } })),

@@ -38,14 +38,14 @@ const {
   Tooltip,
 } = fluentComponents;
 
-interface SearchPageLoaderData {
+interface LoaderData {
   config: SearchConfig;
   upstreams: UpstreamRecord[];
   models: ControlPlaneModel[];
   error: string | null;
 }
 
-export async function clientLoader(): Promise<SearchPageLoaderData> {
+export async function clientLoader(): Promise<LoaderData> {
   if (!getSessionToken()) throw redirect('/');
   if (!(await requireAdmin())) throw redirect('/dashboard/services/api-keys');
   const [configResult, upstreamsResult, modelsResult] = await Promise.all([
