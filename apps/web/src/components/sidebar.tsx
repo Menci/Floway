@@ -228,9 +228,13 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
           </div>
         </ScrollArea>
       </NavDrawerBody>
-      {/* No rule above these. NavigationView's footer items are the same list
-          as the ones above them, placed at the other end of it rather than
-          grouped apart. */}
+      {/* No rule above these. NavigationView does own a separator for this
+          seam, but it is authored collapsed and UpdatePaneLayout reveals it
+          only once the menu and the footer compete for the pane's height — an
+          overflow affordance, not a grouping rule. With room for both, the
+          footer group is set apart by being bottom-anchored and nothing else.
+          https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L375
+          https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.cpp#L1585-L1626 */}
       <NavDrawerFooter className="!bg-transparent !gap-y-1 !px-[10px] !py-3">
         <div className="grid gap-y-1 relative w-full" ref={footerRef}>
           <NavSelectionIndicator containerRef={footerRef} inset={NAV_INDICATOR_INSET} otherListIs="above" selectedValue={selectedValue} />

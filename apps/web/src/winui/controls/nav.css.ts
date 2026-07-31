@@ -27,13 +27,19 @@ export const navCss = `
    \`color\` alone would leave that keyframe starting from Fluent's grey.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L21
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L23 */
-/* The pane is not fenced off from the page. NavigationView's left pane shares
-   the window surface with the content beside it, and Windows' own Settings app
-   shows no rule between the two: what separates them is the content's own card,
-   not a hairline down the middle. Fluent's inline drawer paints one on the edge
-   facing the content, so the nav drawer declines it — ./drawer.css still colours
-   that edge for every other inline drawer, which is a divider between two
-   regions of one page and does belong there. */
+/* The pane draws no edge. NavigationView's PaneContentGrid names a border
+   brush and never a thickness, and the split view around it is driven to
+   PaneNotOverlaying in the expanded form, which sets its own border
+   transparent. The hairline one sees at the boundary in Windows belongs to the
+   other side: ContentGrid carries 1,1,0,0 of CardStrokeColorDefault under an
+   8,0,0,0 corner radius over LayerFillColorDefault — a card the content sits
+   on, whose left edge happens to run down the seam. Fluent's inline drawer
+   paints that seam from the pane instead, so the nav drawer declines it;
+   ./drawer.css still colours the edge for every other inline drawer, where it
+   really is a divider between two regions of one page.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L289-L291
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L392
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L234-L241 */
 .fui-NavDrawer.fui-InlineDrawer {
   border-inline-end-style: none;
 }
