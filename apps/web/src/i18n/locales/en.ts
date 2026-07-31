@@ -1096,6 +1096,7 @@ const en = {
         test: 'Test Search',
         testing: 'Testing…',
         testResults: 'Test Results',
+        testBadge: { ok: 'OK', error: 'Error' },
         testedProvider: 'Provider: {{provider}}',
         testedQuery: 'Query: {{query}}',
         testSuccess:

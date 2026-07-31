@@ -15,6 +15,8 @@ import { getSessionToken } from '../auth/session';
 import { AdminOnlyNotice } from '../components/admin-only-notice';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Dropdown, LISTBOX_POSITIONING } from '../components/ui/fluent-form-controls';
+import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
+import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { Panel } from '../components/ui/panel';
 import { SecretInput } from '../components/ui/secret-input';
 import { SettingsExpander, SettingsSwitch } from '../components/ui/settings-card';
@@ -149,17 +151,18 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
 
 function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData }) {
   const { t } = useTranslation();
+  const toasts = useOutcomeToasts();
   const [draft, setDraft] = useState<SearchConfig>(loaderData.config);
   const upstreams = loaderData.upstreams;
   const models = loaderData.models;
-  const loadError = loaderData.error;
+  const [loadError, setLoadError] = useState(loaderData.error);
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState(false);
   const [secretVisible, setSecretVisible] = useState(false);
 
   const [testing, setTesting] = useState(false);
+  const [testError, setTestError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<SearchConfigTestResult | null>(
     null,
   );
@@ -185,7 +188,6 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
       ...current,
       passthroughOpenAiSearch: { enabled: true, upstreamId, model: model.id },
     }));
-    setSaveSuccess(false);
   }, [models]);
 
   const togglePassthrough = useCallback((enabled: boolean) => {
@@ -206,8 +208,8 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
           ...prev,
           provider: data.optionValue as SearchConfig['provider'],
         }));
-        setSaveSuccess(false);
         setTestResult(null);
+        setTestError(null);
       }
     },
     [],
@@ -216,7 +218,6 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
   const handleApiKeyChange = useCallback(
     (_: unknown, data: { value: string }) => {
       setDraft(prev => activeOption.setApiKey(prev, data.value));
-      setSaveSuccess(false);
     },
     [activeOption],
   );
@@ -224,19 +225,21 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
   const handleSave = useCallback(async () => {
     setSaving(true);
     setSaveError(null);
-    setSaveSuccess(false);
+    const handle = toasts.start(t('dashboard.searchConfig.saving'));
     const result = await callApi(() =>
       api.api['search-config'].$put({ json: draft }));
     setSaving(false);
     if (result.error) {
+      handle.settle();
       setSaveError(result.error.message);
-    } else {
-      setSaveSuccess(true);
+      return;
     }
-  }, [draft]);
+    handle.succeed(t('dashboard.searchConfig.saveSuccess'));
+  }, [draft, t, toasts]);
 
   const handleTest = useCallback(async () => {
     setTesting(true);
+    setTestError(null);
     setTestResult(null);
     try {
       const response = await api.api['search-config'].test.$post({ json: draft });
@@ -246,19 +249,15 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
       if (!('ok' in result)) throw new Error(result.error);
       setTestResult(result);
     } catch (e) {
-      setTestResult({
-        ok: false,
-        provider: draft.provider,
-        query: '',
-        error: {
-          code: 'NETWORK',
-          message: e instanceof Error ? e.message : String(e),
-        },
-      });
+      // The probe never ran, so there is no result to report -- this is the
+      // Test button's own failure and belongs beside it.
+      setTestError(t('dashboard.searchConfig.testFailed', {
+        message: e instanceof Error ? e.message : String(e),
+      }));
     } finally {
       setTesting(false);
     }
-  }, [draft]);
+  }, [draft, t]);
 
   return (
     <section className="dashboard-page max-w-[960px]">
@@ -269,9 +268,7 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
       />
 
       {loadError && (
-        <MessageBar intent="error">
-          <MessageBarBody>{loadError}</MessageBarBody>
-        </MessageBar>
+        <OutcomeMessageBar onDismiss={() => setLoadError(null)}>{loadError}</OutcomeMessageBar>
       )}
 
       <SettingsExpander
@@ -363,7 +360,6 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
                   const model = data.optionValue;
                   if (!model) return;
                   setDraft(current => ({ ...current, passthroughOpenAiSearch: { ...current.passthroughOpenAiSearch, model } }));
-                  setSaveSuccess(false);
                 }}
                 selectedOptions={[draft.passthroughOpenAiSearch.model]}
                 value={selectedModel ? modelLabel(selectedModel) : ''}
@@ -406,16 +402,10 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
       </div>
 
       {saveError && (
-        <MessageBar intent="error">
-          <MessageBarBody>{saveError}</MessageBarBody>
-        </MessageBar>
+        <OutcomeMessageBar onDismiss={() => setSaveError(null)}>{saveError}</OutcomeMessageBar>
       )}
-      {saveSuccess && (
-        <MessageBar intent="success">
-          <MessageBarBody>
-            {t('dashboard.searchConfig.saveSuccess')}
-          </MessageBarBody>
-        </MessageBar>
+      {testError && (
+        <OutcomeMessageBar onDismiss={() => setTestError(null)}>{testError}</OutcomeMessageBar>
       )}
 
       {testResult && (
@@ -426,7 +416,7 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
 
           <div className="flex items-center gap-[8px] flex-wrap">
             <Badge appearance="tint" color={testResult.ok ? 'success' : 'danger'}>
-              {testResult.ok ? 'OK' : 'Error'}
+              {testResult.ok ? t('dashboard.searchConfig.testBadge.ok') : t('dashboard.searchConfig.testBadge.error')}
             </Badge>
             <Text size={200} className="text-fui-fg3">
               {t('dashboard.searchConfig.testedProvider', { provider: testedProviderLabel })}

@@ -1046,6 +1046,7 @@ const zhHansCN = {
         test: '测试搜索',
         testing: '测试中…',
         testResults: '测试结果',
+        testBadge: { ok: '成功', error: '失败' },
         testedProvider: '提供商：{{provider}}',
         testedQuery: '查询：{{query}}',
         testSuccess: '连接测试成功 — 返回 {{count}} 条结果。',
