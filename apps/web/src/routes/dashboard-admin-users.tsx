@@ -5,7 +5,7 @@ import {
   PersonKey24Regular,
 } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { redirect } from 'react-router';
@@ -30,7 +30,9 @@ import { StatusBadge } from '../components/ui/status-badge';
 import { TableActions, TableActionsHeader } from '../components/ui/table-actions';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
+import { useRefresh } from '../components/ui/use-refresh';
 import { UpstreamAccessControl } from '../components/upstreams/upstream-access-control';
+import { refineUpstreamAccess } from '../components/upstreams/upstream-access-validation';
 import { fluentComponents } from '../fluent';
 import { shortDate } from '../lib/format-time';
 import { useLocale } from '../lib/use-locale';
@@ -57,9 +59,6 @@ interface UsersPageData {
   upstreams: UpstreamOption[];
   models: ControlPlaneModel[];
   error: string | null;
-  modelsLoaded: boolean;
-  usersLoaded: boolean;
-  upstreamsLoaded: boolean;
 }
 
 interface UserFormValues {
@@ -75,6 +74,22 @@ interface PasswordFormValues {
   confirmation: string;
 }
 
+async function loadPageData(current: Pick<UsersPageData, 'users' | 'upstreams' | 'models'>): Promise<UsersPageData> {
+  const [usersResult, upstreamsResult, modelsResult] = await Promise.all([
+    callApi(() => api.api.users.$get()),
+    callApi(() => api.api['upstream-options'].$get()),
+    callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } })),
+  ]);
+  return {
+    users: usersResult.data ?? current.users,
+    upstreams: upstreamsResult.data ?? current.upstreams,
+    models: modelsResult.data?.data ?? current.models,
+    error: usersResult.error?.message ?? upstreamsResult.error?.message ?? modelsResult.error?.message ?? null,
+  };
+}
+
+const emptyPageData: Pick<UsersPageData, 'users' | 'upstreams' | 'models'> = { users: [], upstreams: [], models: [] };
+
 export async function clientLoader(): Promise<UsersPageData> {
   if (!getSessionToken()) throw redirect('/');
 
@@ -83,7 +98,7 @@ export async function clientLoader(): Promise<UsersPageData> {
     throw redirect('/dashboard/services/api-keys');
   }
 
-  return await loadUsersPageData();
+  return await loadPageData(emptyPageData);
 }
 
 export function meta({}: Route.MetaArgs) {
@@ -97,31 +112,21 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
   const toasts = useOutcomeToasts();
   const [data, setData] = useState<UsersPageData>(loaderData);
   const [pageError, setPageError] = useState<string | null>(loaderData.error);
-  const [loading, setLoading] = useState(false);
   const editorDialog = useDialogInvocation<{ kind: 'create' } | { kind: 'edit'; user: ControlPlaneUser }>();
   const passwordDialog = useDialogInvocation<ControlPlaneUser>();
   const deleteDialog = useDialogInvocation<ControlPlaneUser>();
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const reload = async () => {
-    setLoading(true);
-    const next = await loadUsersPageData();
-    setLoading(false);
-    setData(current => ({
-      models: next.modelsLoaded ? next.models : current.models,
-      users: next.usersLoaded ? next.users : current.users,
-      upstreams: next.upstreamsLoaded ? next.upstreams : current.upstreams,
-      error: next.error,
-      modelsLoaded: next.modelsLoaded,
-      usersLoaded: next.usersLoaded,
-      upstreamsLoaded: next.upstreamsLoaded,
-    }));
+  const reload = useCallback(async () => {
+    const next = await loadPageData(data);
+    setData(next);
     setPageError(next.error);
-  };
+  }, [data]);
+  const { refresh, refreshing } = useRefresh(reload);
 
   const afterSaved = async (savedId?: number) => {
-    await reload();
+    await refresh();
     if (savedId !== actor.id) return;
 
     const refreshed = await refreshAuth();
@@ -145,7 +150,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
     }
     deleteDialog.close();
     handle.succeed(t('dashboard.users.toast.delete.success', { username: target.username }));
-    await reload();
+    await refresh();
   };
 
   return (
@@ -155,9 +160,9 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
           createLabel={t('dashboard.users.actions.create')}
           disabled={deleting}
           onCreate={() => editorDialog.open({ kind: 'create' })}
-          onRefresh={() => void reload()}
+          onRefresh={() => void refresh()}
           refreshLabel={t('dashboard.users.actions.refresh')}
-          refreshing={loading}
+          refreshing={refreshing}
         />}
         description={t('dashboard.pages.users')}
         title={t('dashboard.nav.users')}
@@ -165,7 +170,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
 
       {pageError && (
         <OutcomeMessageBar
-          action={<Button appearance="transparent" disabled={loading} onClick={() => void reload()}>
+          action={<Button appearance="transparent" disabled={refreshing} onClick={() => void refresh()}>
             {t('dashboard.users.actions.retry')}
           </Button>}
           onDismiss={() => setPageError(null)}
@@ -177,7 +182,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
       <ResourceListPanel>
         <UsersTable
           actorId={actor.id}
-          disabled={loading || deleting}
+          disabled={refreshing || deleting}
           onDelete={deleteDialog.open}
           onEdit={user => editorDialog.open({ kind: 'edit', user })}
           onResetPassword={passwordDialog.open}
@@ -210,7 +215,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
         open={passwordDialog.isOpen}
         key={passwordDialog.invocation.key}
         onOpenChange={open => { if (!open) passwordDialog.close(); }}
-        onSaved={reload}
+        onSaved={refresh}
         user={passwordDialog.invocation.value}
       />}
       {deleteDialog.invocation && <ConfirmDialog
@@ -360,9 +365,7 @@ function UserDialog(props: UserDialogProps) {
       if (mode === 'create' && !value.password) {
         ctx.addIssue({ code: 'custom', message: 'dashboard.users.validation.passwordRequired', path: ['password'] });
       }
-      if (value.upstreamOverride && value.upstreamIds.length === 0) {
-        ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamAccess.validation', path: ['upstreamIds'] });
-      }
+      refineUpstreamAccess(value, ctx);
     }),
     [mode],
   );
@@ -577,22 +580,5 @@ function userFormDefaults(user: ControlPlaneUser | null): UserFormValues {
     isAdmin: user?.isAdmin ?? false,
     upstreamOverride: user?.upstreamIds !== null && user?.upstreamIds !== undefined,
     upstreamIds: user?.upstreamIds ?? [],
-  };
-}
-
-async function loadUsersPageData(): Promise<UsersPageData> {
-  const [usersResult, upstreamsResult, modelsResult] = await Promise.all([
-    callApi(() => api.api.users.$get()),
-    callApi(() => api.api['upstream-options'].$get()),
-    callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } })),
-  ]);
-  return {
-    users: usersResult.data ?? [],
-    upstreams: upstreamsResult.data ?? [],
-    models: modelsResult.data?.data ?? [],
-    error: usersResult.error?.message ?? upstreamsResult.error?.message ?? modelsResult.error?.message ?? null,
-    modelsLoaded: !!modelsResult.data,
-    usersLoaded: !!usersResult.data,
-    upstreamsLoaded: !!upstreamsResult.data,
   };
 }
