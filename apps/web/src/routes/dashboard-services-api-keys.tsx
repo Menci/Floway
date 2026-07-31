@@ -61,6 +61,14 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
   const { t } = useTranslation();
   const { user } = useDashboardOutletContext();
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // The error belongs to the attempt that produced it. Opening the dialog for
+  // another key starts a new attempt, so the previous one's failure is cleared
+  // here rather than waiting for a dismissal that may never come.
+  const openDeleteDialog = (target: ApiKey) => {
+    setDeleteError(null);
+    deleteDialog.open(target);
+  };
   const [data, setData] = useState<ApiKeysPageData>(loaderData);
   const [selectedKeyId, setSelectedKeyId] = useState(loaderData.selectedKeyId);
   const [pageError, setPageError] = useState(loaderData.error);
@@ -157,7 +165,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
           disabled={refreshing || deletingKey}
           keys={data.keys}
           onCopy={copy}
-          onDelete={deleteDialog.open}
+          onDelete={openDeleteDialog}
           onEdit={apiKey => editorDialog.open({ kind: 'edit', apiKey })}
           onRotate={rotateDialog.open}
           onSelect={setSelectedKeyId}
