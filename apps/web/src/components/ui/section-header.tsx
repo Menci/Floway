@@ -1,14 +1,9 @@
 import type { ReactNode } from 'react';
 
-import { TIGHT_STACK_CLASS } from './layout';
+import { HEADER_ROW_CLASS, TIGHT_STACK_CLASS } from './layout';
 import { fluentComponents } from '../../fluent';
 
 const { Text, mergeClasses } = fluentComponents;
-
-// The row a header shares with its own actions. WinUI's `PART_ContentPresenter`
-// is a bare presenter with no panel or spacing opinion, so both the 12px and
-// the width at which the actions drop under the title are ours.
-const HEADER_ROW_CLASS = 'flex items-center justify-between gap-3 min-w-0 max-[900px]:flex-col max-[900px]:items-stretch';
 
 // Level 4 is WinUI's own section heading — BodyStrong, 14px SemiBold, per
 // https://github.com/microsoft/WinUI-Gallery/blob/f4dc3eb367f4bcecac1793829d9a221e924e5bfb/WinUIGallery/Samples/ControlPagesSampleCode/SettingsCard/SettingsPageExample.xaml#L17-L24
@@ -44,5 +39,5 @@ export function SectionHeader({ actions, description, level, title, titleId, tru
       </div>;
 
   if (actions === undefined) return block;
-  return <div className={HEADER_ROW_CLASS}>{block}{actions}</div>;
+  return <div className={mergeClasses(HEADER_ROW_CLASS, 'gap-3')}>{block}{actions}</div>;
 }
