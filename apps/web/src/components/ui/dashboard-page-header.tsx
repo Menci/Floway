@@ -8,7 +8,9 @@ export function DashboardPageHeader({ actions, description, eyebrow, title }: {
   eyebrow: string;
   title: string;
 }) {
-  return <header className="flex items-start gap-[18px] justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
+  // Centred against the whole block rather than aligned to its first line: the
+  // actions answer the page, not its title.
+  return <header className="flex items-center gap-[18px] justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
     <div className="grid gap-[6px] min-w-0">
       <Text size={200} weight="semibold" className="text-fui-fg2 uppercase">
         {eyebrow}

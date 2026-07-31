@@ -23,7 +23,7 @@ import type {
 import { getSessionToken } from '../auth/session';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
-import { ResourceListEmptyState, ResourceListPanel, ResourceListToolbar } from '../components/ui/resource-list-toolbar';
+import { ResourceListActions, ResourceListEmptyState, ResourceListPanel } from '../components/ui/resource-list';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { TableActions, TableActionsHeader } from '../components/ui/table-actions';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
@@ -243,6 +243,36 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
       <Toaster toasterId={toasterId} position="top-end" />
 
       <DashboardPageHeader
+        actions={<ResourceListActions
+          createLabel={t('dashboard.upstreams.actions.create')}
+          createTrailingIcon={<ChevronDownRegular className="ml-1.5" />}
+          createTrigger={button => (
+            <Menu positioning={{ autoSize: true }}>
+              <MenuTrigger disableButtonEnhancement>{button}</MenuTrigger>
+              <MenuPopover>
+                <MenuList>
+                  {providers.map(kind => (
+                    <MenuItem
+                      icon={{
+                        children: <ProviderIcon kind={kind} className="h-5 w-5" />,
+                        className: '!self-center',
+                      }}
+                      key={kind}
+                      onClick={() => void navigate(`/dashboard/providers/upstreams/new/${kind}`)}
+                      subText={t(`dashboard.upstreams.providers.${kind}`)}
+                    >
+                      {t(`provider.${kind}`)}
+                    </MenuItem>
+                  ))}
+                </MenuList>
+              </MenuPopover>
+            </Menu>
+          )}
+          disabled={busy}
+          onRefresh={() => void handleReload()}
+          refreshLabel={t('dashboard.upstreams.actions.refresh')}
+          refreshing={mutation?.kind === 'reload'}
+        />}
         description={t('dashboard.pages.upstreams')}
         eyebrow={t('dashboard.groups.providers')}
         title={t('dashboard.nav.upstreams')}
@@ -268,38 +298,6 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
       )}
 
       <ResourceListPanel>
-        <ResourceListToolbar
-          createLabel={t('dashboard.upstreams.actions.create')}
-          createTrailingIcon={<ChevronDownRegular className="ml-1.5" />}
-          createTrigger={button => (
-            <Menu positioning={{ autoSize: true }}>
-              <MenuTrigger disableButtonEnhancement>{button}</MenuTrigger>
-              <MenuPopover>
-                <MenuList>
-                  {providers.map(kind => (
-                    <MenuItem
-                      icon={{
-                        children: <ProviderIcon kind={kind} className="h-5 w-5" />,
-                        className: '!self-center',
-                      }}
-                      key={kind}
-                      onClick={() => void navigate(`/dashboard/providers/upstreams/new/${kind}`)}
-                      subText={t(`dashboard.upstreams.providers.${kind}`)}
-                    >
-                      {t(`provider.${kind}`)}
-                    </MenuItem>
-                  ))}
-                </MenuList>
-              </MenuPopover>
-            </Menu>
-          )}
-          detail={t('dashboard.upstreams.count', { count: data.upstreams.length })}
-          disabled={busy}
-          onRefresh={() => void handleReload()}
-          refreshLabel={t('dashboard.upstreams.actions.refresh')}
-          refreshing={mutation?.kind === 'reload'}
-          title={t('dashboard.nav.upstreams')}
-        />
         <UpstreamsTable
           busy={busy}
           data={data}
@@ -414,7 +412,6 @@ function UpstreamsTable({
                   checked={record.enabled}
                   disabled={busy}
                   onChange={(_, detail) => onToggle(record, detail.checked)}
-                  size="small"
                 />
               </TableCell>
               <TableCell>

@@ -205,8 +205,6 @@ const en = {
       users: {
         loading: 'Refreshing users',
         empty: 'No users found.',
-        count_one: '{{count}} configured',
-        count_other: '{{count}} configured',
         actions: {
           create: 'New user',
           edit: 'Edit user',
@@ -278,8 +276,6 @@ const en = {
       },
       apiKeys: {
         empty: 'No API keys yet. Create one to call Floway.',
-        count_one: '{{count}} configured',
-        count_other: '{{count}} configured',
         actions: {
           create: 'Create API Key',
           refresh: 'Refresh API keys',
@@ -410,8 +406,6 @@ const en = {
       },
       upstreams: {
         empty: 'No upstreams configured. Add an upstream to serve models.',
-        count_one: '{{count}} configured',
-        count_other: '{{count}} configured',
         actions: {
           create: 'New upstream',
           refresh: 'Refresh upstreams',
@@ -1088,7 +1082,7 @@ const en = {
       modelAliases: {
         heading: 'Model Aliases',
         description: 'Create virtual model IDs that route to one or more target models with optional locked request rules.',
-        listTitle: 'Aliases', count: '{{count}} configured', empty: 'No aliases configured. Create one to expose a virtual model ID.',
+        listTitle: 'Aliases', empty: 'No aliases configured. Create one to expose a virtual model ID.',
         columns: { alias: 'Alias', kind: 'Kind', targets: 'Targets', selection: 'Selection', visibility: 'Models list', actions: 'Actions' },
         actions: { create: 'New alias', refresh: 'Refresh aliases', save: 'Save', saving: 'Saving…', delete: 'Delete', deleting: 'Deleting…', addTarget: 'Add target', editNamed: 'Edit alias {{name}}', deleteNamed: 'Delete alias {{name}}' },
         dialog: { createTitle: 'Create alias', editTitle: 'Edit alias: {{name}}' },
@@ -1110,8 +1104,6 @@ const en = {
             'Outbound proxies referenced by per-upstream fallback lists.',
         listTitle: 'Proxies',
         columns: { actions: 'Actions' },
-        count_one: '{{count}} configured',
-        count_other: '{{count}} configured',
         empty: 'No proxies configured. Add a proxy to route outbound traffic.',
         addTitle: 'Add Proxy',
         editTitle: 'Edit Proxy',

@@ -195,8 +195,6 @@ const zhHansCN = {
       users: {
         loading: '正在刷新用户',
         empty: '没有用户。',
-        count_one: '已配置 {{count}} 个',
-        count_other: '已配置 {{count}} 个',
         actions: {
           create: '新建用户',
           edit: '编辑用户',
@@ -266,8 +264,6 @@ const zhHansCN = {
       },
       apiKeys: {
         empty: '还没有 API 密钥。创建一个后即可调用 Floway。',
-        count_one: '已配置 {{count}} 个',
-        count_other: '已配置 {{count}} 个',
         actions: {
           create: '创建 API 密钥',
           refresh: '刷新 API 密钥',
@@ -389,8 +385,6 @@ const zhHansCN = {
       },
       upstreams: {
         empty: '尚未配置上游。添加上游后即可提供模型服务。',
-        count_one: '已配置 {{count}} 个',
-        count_other: '已配置 {{count}} 个',
         actions: {
           create: '新建上游',
           refresh: '刷新上游',
@@ -1035,7 +1029,7 @@ const zhHansCN = {
         pageAge: '{{age}} 前',
       },
       modelAliases: {
-        heading: '模型别名', description: '创建虚拟模型 ID，将请求路由到一个或多个目标模型，并可锁定请求规则。', listTitle: '别名', count: '已配置 {{count}} 个', empty: '尚未配置别名。创建别名以公开虚拟模型 ID。',
+        heading: '模型别名', description: '创建虚拟模型 ID，将请求路由到一个或多个目标模型，并可锁定请求规则。', listTitle: '别名', empty: '尚未配置别名。创建别名以公开虚拟模型 ID。',
         columns: { alias: '别名', kind: '类型', targets: '目标', selection: '选择策略', visibility: '模型列表', actions: '操作' },
         actions: { create: '新建别名', refresh: '刷新别名', save: '保存', saving: '保存中…', delete: '删除', deleting: '删除中…', addTarget: '添加目标', editNamed: '编辑别名 {{name}}', deleteNamed: '删除别名 {{name}}' },
         dialog: { createTitle: '创建别名', editTitle: '编辑别名：{{name}}' },
@@ -1053,8 +1047,6 @@ const zhHansCN = {
         description: '上游回退列表引用的出口代理。',
         listTitle: '代理列表',
         columns: { actions: '操作' },
-        count_one: '已配置 {{count}} 个',
-        count_other: '已配置 {{count}} 个',
         empty: '暂无代理。添加代理后即可路由出口流量。',
         addTitle: '添加代理',
         editTitle: '编辑代理',

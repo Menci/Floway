@@ -15,7 +15,7 @@ import { mergeModelAliasesPageData } from '../components/model-alias/load-data';
 import { computeAliasWarnings } from '../components/model-alias/warnings';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
-import { ResourceListEmptyState, ResourceListPanel, ResourceListToolbar } from '../components/ui/resource-list-toolbar';
+import { ResourceListActions, ResourceListEmptyState, ResourceListPanel } from '../components/ui/resource-list';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { TableActions, TableActionsHeader } from '../components/ui/table-actions';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
@@ -77,7 +77,18 @@ export default function DashboardProvidersModelAliases({ loaderData }: Route.Com
     setRefreshing(false);
   };
 
-  const header = <DashboardPageHeader description={t('dashboard.modelAliases.description')} eyebrow={t('dashboard.groups.providers')} title={t('dashboard.modelAliases.heading')} />;
+  const header = <DashboardPageHeader
+    actions={user.isAdmin ? <ResourceListActions
+      createLabel={t('dashboard.modelAliases.actions.create')}
+      onCreate={() => editorDialog.open(null)}
+      onRefresh={() => void refresh()}
+      refreshLabel={t('dashboard.modelAliases.actions.refresh')}
+      refreshing={refreshing}
+    /> : undefined}
+    description={t('dashboard.modelAliases.description')}
+    eyebrow={t('dashboard.groups.providers')}
+    title={t('dashboard.modelAliases.heading')}
+  />;
   if (!user.isAdmin) return <section className="dashboard-page">{header}<AdminOnlyNotice /></section>;
 
   const deleteAlias = async (target: ModelAlias) => {
@@ -100,15 +111,6 @@ export default function DashboardProvidersModelAliases({ loaderData }: Route.Com
     {error && <MessageBar intent="error"><MessageBarBody>{t('dashboard.modelAliases.errors.message', { message: error })}</MessageBarBody></MessageBar>}
     {modelsError && <MessageBar intent="warning"><MessageBarBody>{t('dashboard.modelAliases.errors.models', { message: modelsError })}</MessageBarBody></MessageBar>}
     <ResourceListPanel>
-      <ResourceListToolbar
-        createLabel={t('dashboard.modelAliases.actions.create')}
-        detail={t('dashboard.modelAliases.count', { count: aliases.length })}
-        onCreate={() => editorDialog.open(null)}
-        onRefresh={() => void refresh()}
-        refreshLabel={t('dashboard.modelAliases.actions.refresh')}
-        refreshing={refreshing}
-        title={t('dashboard.modelAliases.listTitle')}
-      />
       {aliases.length === 0 ? <ResourceListEmptyState>{t('dashboard.modelAliases.empty')}</ResourceListEmptyState> : <ScrollArea axes="horizontal"><Table aria-label={t('dashboard.modelAliases.listTitle')} className="w-full min-w-[760px] table-fixed"><TableHeader><TableRow><TableHeaderCell>{t('dashboard.modelAliases.columns.alias')}</TableHeaderCell><TableHeaderCell className="!w-[88px]">{t('dashboard.modelAliases.columns.kind')}</TableHeaderCell><TableHeaderCell className="!w-[88px]">{t('dashboard.modelAliases.columns.targets')}</TableHeaderCell><TableHeaderCell className="!w-[120px]">{t('dashboard.modelAliases.columns.selection')}</TableHeaderCell><TableHeaderCell className="!w-[96px]">{t('dashboard.modelAliases.columns.visibility')}</TableHeaderCell><TableActionsHeader className="!w-[88px]">{t('dashboard.modelAliases.columns.actions')}</TableActionsHeader></TableRow></TableHeader><TableBody>{aliases.map(alias => {
         const warnings = computeAliasWarnings(alias, models);
         return <TableRow className="h-14" key={alias.name}><TableCell className="overflow-hidden"><div className="flex items-center gap-2 min-w-0 max-w-full"><div className="grid gap-[3px] min-w-0 flex-1 overflow-hidden"><Text block className="overflow-hidden text-ellipsis whitespace-nowrap" title={alias.display_name ?? alias.name} wrap={false}>{alias.display_name ?? alias.name}</Text><Text block size={200} className="font-mono text-fui-fg2 overflow-hidden text-ellipsis whitespace-nowrap" title={alias.name} wrap={false}>{alias.name}</Text></div>{warnings.length > 0 && <Tooltip content={warnings.map(warning => t(`dashboard.modelAliases.warnings.${warning.key}`, warning.values)).join('\n')} relationship="description"><WarningRegular aria-label={t('dashboard.modelAliases.warnings.label')} className="flex-none" /></Tooltip>}</div></TableCell><TableCell>{t(`dashboard.modelAliases.kind.${alias.kind}`)}</TableCell><TableCell>{t('dashboard.modelAliases.target.count', { count: alias.targets.length })}</TableCell><TableCell>{t(`dashboard.modelAliases.selection.${alias.selection === 'first-available' ? 'first' : 'random'}`)}</TableCell><TableCell>{alias.visible_in_models_list ? t('dashboard.modelAliases.visibility.visible') : t('dashboard.modelAliases.visibility.hidden')}</TableCell><TableCell><TableActions><TooltipIconButton disabled={refreshing || mutating} icon={<EditRegular />} label={t('dashboard.modelAliases.actions.editNamed', { name: alias.name })} onClick={() => editorDialog.open(alias)} /><TooltipIconButton danger disabled={refreshing || mutating} icon={<DeleteRegular />} label={t('dashboard.modelAliases.actions.deleteNamed', { name: alias.name })} onClick={() => deleteDialog.open(alias)} /></TableActions></TableCell></TableRow>;

@@ -18,7 +18,7 @@ import { ProxyForm, type ProxyTestResult } from '../components/proxy/proxy-form'
 import { ProxyList } from '../components/proxy/proxy-list';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DialogShell } from '../components/ui/dialog-shell';
-import { ResourceListPanel, ResourceListToolbar } from '../components/ui/resource-list-toolbar';
+import { ResourceListActions, ResourceListPanel } from '../components/ui/resource-list';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import type { ProxyConfig } from '@floway-dev/proxy/proxy-config';
 import { formatProxyUri } from '@floway-dev/proxy/url';
@@ -284,7 +284,18 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
 
   return (
     <section className="dashboard-page">
-      <DashboardPageHeader description={t('dashboard.proxy.description')} eyebrow={t('dashboard.groups.providers')} title={t('dashboard.proxy.heading')} />
+      <DashboardPageHeader
+        actions={<ResourceListActions
+          createLabel={t('dashboard.proxy.actions.create')}
+          onCreate={() => editorDialog.open(null)}
+          onRefresh={() => void refresh()}
+          refreshLabel={t('dashboard.proxy.actions.refresh')}
+          refreshing={refreshing}
+        />}
+        description={t('dashboard.proxy.description')}
+        eyebrow={t('dashboard.groups.providers')}
+        title={t('dashboard.proxy.heading')}
+      />
 
       {loadError && (
         <MessageBar intent="error">
@@ -299,15 +310,6 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
       )}
 
       <ResourceListPanel>
-        <ResourceListToolbar
-          createLabel={t('dashboard.proxy.actions.create')}
-          detail={t('dashboard.proxy.count', { count: proxies.length })}
-          onCreate={() => editorDialog.open(null)}
-          onRefresh={() => void refresh()}
-          refreshLabel={t('dashboard.proxy.actions.refresh')}
-          refreshing={refreshing}
-          title={t('dashboard.proxy.listTitle')}
-        />
         <ProxyList disabled={refreshing || deleting} proxies={proxies} onDelete={target => { setDeleteTarget(target); setDeleteOpen(true); }} onEdit={editorDialog.open} />
       </ResourceListPanel>
 

@@ -7,7 +7,7 @@ import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
 import { useMediaQuery } from '../../lib/use-media-query';
-import { ResourceListEmptyState } from '../ui/resource-list-toolbar';
+import { ResourceListEmptyState } from '../ui/resource-list';
 import { ScrollArea } from '../ui/scroll-area';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 

@@ -18,7 +18,7 @@ import type { ApiKeysPageData, MutationToastController } from '../components/api
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Panel } from '../components/ui/panel';
-import { ResourceListPanel, ResourceListToolbar } from '../components/ui/resource-list-toolbar';
+import { ResourceListActions, ResourceListPanel } from '../components/ui/resource-list';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { fluentComponents } from '../fluent';
 
@@ -195,6 +195,14 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
       <Toaster toasterId={toasterId} position="top-end" />
 
       <DashboardPageHeader
+        actions={<ResourceListActions
+          createLabel={t('dashboard.apiKeys.actions.create')}
+          disabled={deletingKey}
+          onCreate={() => editorDialog.open({ kind: 'create' })}
+          onRefresh={() => void refresh()}
+          refreshLabel={t('dashboard.apiKeys.actions.refresh')}
+          refreshing={refreshing}
+        />}
         description={t('dashboard.pages.apiKeys')}
         eyebrow={t('dashboard.groups.services')}
         title={t('dashboard.nav.apiKeys')}
@@ -207,16 +215,6 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
       )}
 
       <ResourceListPanel>
-        <ResourceListToolbar
-          createLabel={t('dashboard.apiKeys.actions.create')}
-          detail={t('dashboard.apiKeys.count', { count: data.keys.length })}
-          disabled={deletingKey}
-          onCreate={() => editorDialog.open({ kind: 'create' })}
-          onRefresh={() => void refresh()}
-          refreshLabel={t('dashboard.apiKeys.actions.refresh')}
-          refreshing={refreshing}
-          title={t('dashboard.apiKeys.table.title')}
-        />
         <KeysTable
           copiedTag={copiedTag}
           copyFailedTag={copyFailedTag}

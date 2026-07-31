@@ -21,7 +21,7 @@ import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { DialogShell } from '../components/ui/dialog-shell';
 import { Input } from '../components/ui/fluent-form-controls';
-import { ResourceListEmptyState, ResourceListPanel, ResourceListToolbar } from '../components/ui/resource-list-toolbar';
+import { ResourceListActions, ResourceListEmptyState, ResourceListPanel } from '../components/ui/resource-list';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { SettingsCard, SettingsSwitch } from '../components/ui/settings-card';
 import { TableActions, TableActionsHeader } from '../components/ui/table-actions';
@@ -144,6 +144,14 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
   return (
     <div className="dashboard-page">
       <DashboardPageHeader
+        actions={<ResourceListActions
+          createLabel={t('dashboard.users.actions.create')}
+          disabled={deleting}
+          onCreate={() => editorDialog.open({ kind: 'create' })}
+          onRefresh={() => void reload()}
+          refreshLabel={t('dashboard.users.actions.refresh')}
+          refreshing={loading}
+        />}
         description={t('dashboard.pages.users')}
         eyebrow={t('dashboard.groups.admin')}
         title={t('dashboard.nav.users')}
@@ -161,16 +169,6 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
       )}
 
       <ResourceListPanel>
-        <ResourceListToolbar
-          createLabel={t('dashboard.users.actions.create')}
-          detail={t('dashboard.users.count', { count: data.users.length })}
-          disabled={deleting}
-          onCreate={() => editorDialog.open({ kind: 'create' })}
-          onRefresh={() => void reload()}
-          refreshLabel={t('dashboard.users.actions.refresh')}
-          refreshing={loading}
-          title={t('dashboard.users.table.label')}
-        />
         <UsersTable
           actorId={actor.id}
           disabled={loading || deleting}

@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { hostPortLabel, KIND_COLORS } from './proxy-config';
 import type { ProxyRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
-import { ResourceListEmptyState } from '../ui/resource-list-toolbar';
+import { ResourceListEmptyState } from '../ui/resource-list';
 import { ScrollArea } from '../ui/scroll-area';
 import { TableActions, TableActionsHeader } from '../ui/table-actions';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
