@@ -118,12 +118,12 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   };
 }
 
-export const shouldRevalidate = ({ currentUrl, defaultShouldRevalidate, nextUrl }: ShouldRevalidateFunctionArgs) =>
-  currentUrl.pathname === nextUrl.pathname ? false : defaultShouldRevalidate;
-
 export function meta({}: Route.MetaArgs) {
   return [{ title: 'Performance | Floway' }];
 }
+
+export const shouldRevalidate = ({ currentUrl, defaultShouldRevalidate, nextUrl }: ShouldRevalidateFunctionArgs) =>
+  currentUrl.pathname === nextUrl.pathname ? false : defaultShouldRevalidate;
 
 export default function DashboardMonitorPerformance({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();

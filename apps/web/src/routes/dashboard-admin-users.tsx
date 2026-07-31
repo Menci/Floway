@@ -11,12 +11,12 @@ import { useTranslation } from 'react-i18next';
 import { redirect } from 'react-router';
 import { z } from 'zod';
 
+import type { Route } from './+types/dashboard-admin-users';
 import { useDashboardOutletContext } from './dashboard';
 import { api, callApi } from '../api/client';
 import type { ControlPlaneModel, ControlPlaneUser, UpstreamOption } from '../api/types';
 import { requireAdmin } from '../auth/require-admin';
 import { getSessionToken } from '../auth/session';
-import type { Route } from './+types/dashboard-admin-users';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { DialogShell } from '../components/ui/dialog-shell';
@@ -100,7 +100,6 @@ const unloadedPageData: Pick<LoaderData, 'users' | 'upstreams' | 'models'> = { u
 
 export async function clientLoader(): Promise<LoaderData> {
   if (!getSessionToken()) throw redirect('/');
-
   if (!(await requireAdmin())) throw redirect('/dashboard/services/api-keys');
   return await loadPageData(unloadedPageData);
 }

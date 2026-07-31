@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { redirect } from 'react-router';
 
+import type { Route } from './+types/dashboard-services-api-keys';
 import { useDashboardOutletContext } from './dashboard';
 import { api, callApi } from '../api/client';
 import type { ApiKey } from '../api/types';
 import { getSessionToken } from '../auth/session';
-import type { Route } from './+types/dashboard-services-api-keys';
 import { AgentSetupCard } from '../components/api-keys/agent-setup-card';
 import type { AgentSetupLease } from '../components/api-keys/agent-setup-contract';
 import { KeyDialog } from '../components/api-keys/key-editor';

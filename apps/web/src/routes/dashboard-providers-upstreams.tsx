@@ -80,6 +80,19 @@ const useStyles = makeStyles({
   warning: { color: 'var(--colorPaletteDarkOrangeForeground1)' },
 });
 
+const loadPageData = async (): Promise<LoaderData> => {
+  const [upstreamsResult, modelsResult] = await Promise.all([
+    callApi(() => api.api.upstreams.$get()),
+    callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } })),
+  ]);
+  return {
+    upstreams: upstreamsResult.data?.sort(compareUpstreams) ?? null,
+    models: modelsResult.data?.data ?? null,
+    loadError: upstreamsResult.error?.message ?? null,
+    modelsError: modelsResult.error?.message ?? null,
+  };
+};
+
 export async function clientLoader(): Promise<LoaderData> {
   if (!getSessionToken()) throw redirect('/');
   if (!(await requireAdmin())) throw redirect('/dashboard/services/api-keys');
@@ -456,19 +469,6 @@ function ModelStatus({
     </Tooltip>
   );
 }
-
-const loadPageData = async (): Promise<LoaderData> => {
-  const [upstreamsResult, modelsResult] = await Promise.all([
-    callApi(() => api.api.upstreams.$get()),
-    callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } })),
-  ]);
-  return {
-    upstreams: upstreamsResult.data?.sort(compareUpstreams) ?? null,
-    models: modelsResult.data?.data ?? null,
-    loadError: upstreamsResult.error?.message ?? null,
-    modelsError: modelsResult.error?.message ?? null,
-  };
-};
 
 const patchUpstream = (id: string, body: { enabled?: boolean; sort_order?: number }) =>
   callApi(() => api.api.upstreams[':id'].$patch({ param: { id }, json: body }));
