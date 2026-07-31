@@ -3,7 +3,7 @@ import { curveMonotoneX } from 'd3-shape';
 
 import type { ChartEntry, DisplayUsageRecord, SearchChartModel, SearchUsageResponse, TokenChartModel, TokenCounters, TokenSummary, UsageBucket, UsageMetric, UsageRange, UsageResponse } from './types';
 import type { ControlPlaneModel, BillingMetric } from '../../api/types';
-import { formatCompactCount } from '../../lib/format-number';
+import { formatCompactCount, formatCount } from '../../lib/format-number';
 import { decimalStringToPlottableNumber, formatDecimalQuantity, formatUsd, sumDecimalStrings } from '../../utils/decimal-display';
 import {
   dashboardBucketFrames,
@@ -459,10 +459,6 @@ export function bucketKeyForCallout(
     );
   }
   return null;
-}
-
-export function formatCount(value: number, locale: string): string {
-  return Math.round(value).toLocaleString(locale);
 }
 
 // Aggregate token totals are decimal strings; grouping them digit-wise keeps

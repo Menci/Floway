@@ -15,3 +15,22 @@ export const formatBytes = (value: number, locale: string): string => {
 // number is locale-owned, and zh-Hans groups by 万, not by K.
 export const formatCompactCount = (value: number, locale: string): string =>
   new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(value);
+
+// Clamped at zero: a counter is a tally of things that happened, so a negative
+// reading is an arithmetic artifact rather than a quantity, and printing it
+// would invite the reader to interpret it.
+export const formatCount = (value: number, locale: string): string =>
+  Math.max(0, Math.round(value)).toLocaleString(locale);
+
+// Three significant figures across the whole plausible range, so a column of
+// rates stays the same width and stays comparable digit by digit.
+export const formatTokenRate = (tokensPerSecond: number | null): string => {
+  if (tokensPerSecond === null || !Number.isFinite(tokensPerSecond) || tokensPerSecond <= 0) return '-';
+  if (tokensPerSecond >= 100) return `${Math.round(tokensPerSecond)} tok/s`;
+  if (tokensPerSecond >= 10) return `${tokensPerSecond.toFixed(1)} tok/s`;
+  return `${tokensPerSecond.toFixed(2)} tok/s`;
+};
+
+// Telemetry records time per output token; the reader wants its reciprocal.
+export const formatTokenRateFromTpot = (us: number | null): string =>
+  us === null || us <= 0 ? '-' : formatTokenRate(1_000_000 / us);

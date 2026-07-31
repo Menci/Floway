@@ -12,13 +12,15 @@ import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { ResourceListActions } from '../components/ui/resource-list';
-import { buildSearchChart, buildTokenChart, dashboardBuckets, formatCount, formatMetricValue, formatProvider, summarizeUsage } from '../components/usage/chart-model';
+import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
+import { buildSearchChart, buildTokenChart, dashboardBuckets, formatMetricValue, formatProvider, summarizeUsage } from '../components/usage/chart-model';
 import { ChartSection } from '../components/usage/chart-section';
 import { SummaryMetrics } from '../components/usage/summary-metrics';
 import type { UsageMetric, UsageRange, UsageView } from '../components/usage/types';
 import { loadUsagePageData } from '../components/usage/usage-data';
 import { fluentComponents } from '../fluent';
 import { errorMessage } from '../lib/error-message';
+import { formatCount } from '../lib/format-number';
 import { useLocale } from '../lib/use-locale';
 import { useAuthStore } from '../stores/auth-store';
 
@@ -138,12 +140,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     };
   }, [refresh]);
 
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      void refresh({ background: true });
-    }, 60_000);
-    return () => window.clearInterval(timer);
-  }, [refresh]);
+  usePollWhileVisible(refresh, 60_000);
 
   useEffect(() => {
     if (error === 'HTTP 401') clearAuth();

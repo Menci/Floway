@@ -1,7 +1,8 @@
 import { useTranslation } from 'react-i18next';
 
-import { bucketKeyForCallout, formatCompactDecimalCount, formatCount, formatRatePercent, formatUsdCost, summarizeCounters } from './chart-model';
+import { bucketKeyForCallout, formatCompactDecimalCount, formatRatePercent, formatUsdCost, summarizeCounters } from './chart-model';
 import type { CalloutPoint, UsageChartModel } from './types';
+import { formatCount } from '../../lib/format-number';
 import { useLocale } from '../../lib/use-locale';
 import { sumDecimalStrings } from '../../utils/decimal-display';
 import { ChartCalloutTable } from '../charts/chart-callout-table';

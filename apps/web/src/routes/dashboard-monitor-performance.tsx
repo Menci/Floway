@@ -40,8 +40,10 @@ import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { ResourceListActions } from '../components/ui/resource-list';
 import { ScrollArea } from '../components/ui/scroll-area';
+import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
 import { fluentComponents } from '../fluent';
 import { formatDuration } from '../lib/format-duration';
+import { formatCount, formatTokenRate, formatTokenRateFromTpot } from '../lib/format-number';
 import { useLocale } from '../lib/use-locale';
 import { useAuthStore } from '../stores/auth-store';
 
@@ -172,12 +174,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     return () => { requestIdRef.current += 1; };
   }, [refresh]);
 
-  useEffect(() => {
-    const onVisibility = () => { if (document.visibilityState === 'visible') void refresh(); };
-    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void refresh({ background: true }); }, 60_000);
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', onVisibility); };
-  }, [refresh]);
+  usePollWhileVisible(refresh, 60_000);
 
   useEffect(() => { if (error === 'HTTP 401') clearAuth(); }, [clearAuth, error]);
 
@@ -198,11 +195,11 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     ['requests', formatCount(summary?.requests ?? 0, locale)],
     ['errors', formatCount(summary?.errors ?? 0, locale)],
     ['ttftP50', formatDuration(summary?.ttftMsP50 ?? null)],
-    ['speedP50', formatTokensPerSecond(summary?.tpotUsP50 ?? null)],
+    ['speedP50', formatTokenRateFromTpot(summary?.tpotUsP50 ?? null)],
     ['ttftP95', formatDuration(summary?.ttftMsP95 ?? null)],
-    ['speedP95', formatTokensPerSecond(summary?.tpotUsP95 ?? null)],
+    ['speedP95', formatTokenRateFromTpot(summary?.tpotUsP95 ?? null)],
     ['ttftP99', formatDuration(summary?.ttftMsP99 ?? null)],
-    ['speedP99', formatTokensPerSecond(summary?.tpotUsP99 ?? null)],
+    ['speedP99', formatTokenRateFromTpot(summary?.tpotUsP99 ?? null)],
   ] as const;
   const breakdowns = groupByValues
     .filter(key => key !== 'userId' || view === 'all-by-user')
@@ -321,7 +318,7 @@ function PerformanceChart({ chart, hidden }: { chart: PerformanceChartModel; hid
   const [host, setHost] = useState<HTMLDivElement | null>(null);
   const size = useElementSize(host);
   const locale = useLocale();
-  const formatter = chart.metric === 'ttft' ? formatDuration : formatRate;
+  const formatter = chart.metric === 'ttft' ? formatDuration : formatTokenRate;
   const entryByLegend = useMemo(() => new Map(chart.entries.map(entry => [entry.legend, entry])), [chart.entries]);
   const visibleLegends = useMemo(() => new Set(chart.entries.filter(entry => !hidden.has(entry.id)).map(entry => entry.legend)), [chart.entries, hidden]);
   const visibleData = useMemo<ChartProps>(() => ({ ...chart.data, lineChartData: chart.data.lineChartData?.filter(series => visibleLegends.has(series.legend)) }), [chart.data, visibleLegends]);
@@ -362,7 +359,7 @@ function PerformanceChartCallout({ data, details, entryByLegend, title }: {
         color: item.color,
         key: entry.id,
         label: entry.label,
-        values: [formatDuration(point?.ttft ?? null), formatRate(point?.outputSpeed ?? null)],
+        values: [formatDuration(point?.ttft ?? null), formatTokenRate(point?.outputSpeed ?? null)],
       }];
     });
 
@@ -409,7 +406,7 @@ function PerformanceTable({ groupBy, overview, rows, showTitle = true, upstreamN
           the four measure columns to their widest label leaves the rest to the
           name, which is the only column whose content has no bound. */}
       <TableHeader><TableRow><TableHeaderCell sortable sortDirection={sortDirection('group')} onClick={() => sortBy('group')}>{t(`dashboard.performance.filters.${groupBy}`)}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('requests')} onClick={() => sortBy('requests')} className={`${styles.numericHeader} text-right !w-[112px]`}>{t('dashboard.performance.tables.requests')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('errors')} onClick={() => sortBy('errors')} className={`${styles.numericHeader} text-right !w-[88px]`}>{t('dashboard.performance.tables.errors')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('ttft')} onClick={() => sortBy('ttft')} className={`${styles.numericHeader} text-right !w-[112px]`}>{t('dashboard.performance.tables.ttftP95')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('speed')} onClick={() => sortBy('speed')} className={`${styles.numericHeader} text-right !w-[160px]`}>{t('dashboard.performance.tables.speedP95')}</TableHeaderCell></TableRow></TableHeader>
-      <TableBody>{sortedRows.length ? sortedRows.map(row => <TableRow key={row.group}><TableCell><span className="block overflow-hidden text-ellipsis whitespace-nowrap" title={row.group}>{resolvePerformanceGroup(row.group, groupBy, overview, upstreamNames)}</span></TableCell><TableCell className="text-right tabular-nums">{formatCount(row.requests, locale)}</TableCell><TableCell className="text-right tabular-nums">{formatCount(row.errors, locale)}</TableCell><TableCell className="text-right tabular-nums">{formatDuration(row.ttftMsP95)}</TableCell><TableCell className="text-right tabular-nums">{formatTokensPerSecond(row.tpotUsP95)}</TableCell></TableRow>) : <TableRow><TableCell colSpan={5}><EmptyStateLine>{t('dashboard.performance.empty')}</EmptyStateLine></TableCell></TableRow>}</TableBody>
+      <TableBody>{sortedRows.length ? sortedRows.map(row => <TableRow key={row.group}><TableCell><span className="block overflow-hidden text-ellipsis whitespace-nowrap" title={row.group}>{resolvePerformanceGroup(row.group, groupBy, overview, upstreamNames)}</span></TableCell><TableCell className="text-right tabular-nums">{formatCount(row.requests, locale)}</TableCell><TableCell className="text-right tabular-nums">{formatCount(row.errors, locale)}</TableCell><TableCell className="text-right tabular-nums">{formatDuration(row.ttftMsP95)}</TableCell><TableCell className="text-right tabular-nums">{formatTokenRateFromTpot(row.tpotUsP95)}</TableCell></TableRow>) : <TableRow><TableCell colSpan={5}><EmptyStateLine>{t('dashboard.performance.empty')}</EmptyStateLine></TableCell></TableRow>}</TableBody>
     </Table></ScrollArea>
   </section>;
 }
@@ -433,6 +430,3 @@ const performanceBuckets = (range: PerformanceRange, now: number, locale: string
         ? date.toLocaleString(locale, { month: 'short', day: 'numeric', hour: '2-digit' })
         : date.toLocaleDateString(locale, { month: 'short', day: 'numeric' }),
   }));
-function formatRate(value: number | null) { if (value === null || !Number.isFinite(value) || value <= 0) return '-'; return value >= 100 ? `${Math.round(value)} tok/s` : value >= 10 ? `${value.toFixed(1)} tok/s` : `${value.toFixed(2)} tok/s`; }
-const formatTokensPerSecond = (us: number | null) => us === null || us <= 0 ? '-' : formatRate(1_000_000 / us);
-const formatCount = (value: number, locale: string) => Math.max(0, Math.round(value)).toLocaleString(locale);
