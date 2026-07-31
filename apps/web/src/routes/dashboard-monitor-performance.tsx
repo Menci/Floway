@@ -141,11 +141,14 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const mountedRef = useRef(false);
   const locale = localeForLanguage(i18n.language);
 
-  const refresh = useCallback(async () => {
+  // A background poll must not clear a failure the operator has not read:
+  // these pages reload themselves every minute, and wiping the bar on the way
+  // in meant a server's own words could appear and vanish unseen.
+  const refresh = useCallback(async ({ background = false }: { background?: boolean } = {}) => {
     const requestId = ++requestIdRef.current;
     const requestedAt = Date.now();
     setLoading(true);
-    setError(null);
+    if (!background) setError(null);
     const search = buildPerformanceQuery(view, range, groupBy, filters, requestedAt);
     const result = await callApi(() => api.api.performance.overview.$get({ query: Object.fromEntries(search) }));
     if (requestId !== requestIdRef.current) return;
@@ -169,7 +172,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
 
   useEffect(() => {
     const onVisibility = () => { if (document.visibilityState === 'visible') void refresh(); };
-    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void refresh(); }, 60_000);
+    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void refresh({ background: true }); }, 60_000);
     document.addEventListener('visibilitychange', onVisibility);
     return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', onVisibility); };
   }, [refresh]);

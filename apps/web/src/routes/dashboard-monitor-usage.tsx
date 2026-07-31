@@ -84,13 +84,16 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const canSwitchView = user.isAdmin;
   const locale = localeForLanguage(i18n.language);
 
-  const refresh = useCallback(async () => {
+  // A background poll must not clear a failure the operator has not read:
+  // these pages reload themselves every minute, and wiping the bar on the way
+  // in meant a server's own words could appear and vanish unseen.
+  const refresh = useCallback(async ({ background = false }: { background?: boolean } = {}) => {
     const requestId = ++requestIdRef.current;
     const requestedView = view;
     const requestedRange = range;
     const requestedAt = Date.now();
     setLoading(true);
-    setError(null);
+    if (!background) setError(null);
 
     try {
       const next = await loadUsagePageData(
@@ -134,7 +137,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
 
   useEffect(() => {
     const timer = window.setInterval(() => {
-      void refresh();
+      void refresh({ background: true });
     }, 60_000);
     return () => window.clearInterval(timer);
   }, [refresh]);

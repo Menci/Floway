@@ -25,6 +25,7 @@ import type {
 } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { Dropdown, Input, Textarea } from '../ui/fluent-form-controls';
+import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SecretInput } from '../ui/secret-input';
 import { ProviderIcon, providerLabel } from '../upstreams/provider-badge';
 
@@ -481,6 +482,7 @@ function OAuthConfig({ record, onPatch }: {
       </Button>
       <Button appearance="secondary" onClick={() => setOpen(value => !value)}>{open ? t('common.cancel') : t('dashboard.upstreamEditor.oauth.reimport')}</Button>
     </div>}
+    {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
     {open && <>
       <TabList selectedValue={tab} onTabSelect={(_, data) => { setTab(String(data.value)); setAuthorizeUrl(null); }}>
         {record.kind === 'codex' ? <><Tab value="json">auth.json</Tab><Tab value="oauth">OAuth</Tab></> : <><Tab value="oauth">OAuth</Tab><Tab value="setup">Setup Token</Tab><Tab value="json">credentials.json</Tab></>}
@@ -489,7 +491,6 @@ function OAuthConfig({ record, onPatch }: {
         {busy && !authorizeUrl ? <Spinner label={t('dashboard.upstreamEditor.oauth.preparing')} /> : authorizeUrl && <div className="flex items-center gap-2 min-w-0"><Link href={authorizeUrl} target="_blank" className="truncate">{t('dashboard.upstreamEditor.oauth.openAuthorize')}</Link><Button appearance="subtle" icon={<CopyRegular />} aria-label={t('dashboard.upstreamEditor.oauth.copy')} onClick={() => void navigator.clipboard.writeText(authorizeUrl)} /></div>}
         <Field label={t('dashboard.upstreamEditor.oauth.callback')}><Textarea rows={3} value={callback} onChange={(_, data) => setCallback(data.value)} className="font-mono" /></Field>
       </div>}
-      {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
       <Button appearance="primary" disabled={busy} icon={busy ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />} onClick={() => void submit()}>{hasAccount ? t('dashboard.upstreamEditor.oauth.reimport') : t('dashboard.upstreamEditor.oauth.import')}</Button>
     </>}
   </div>;
