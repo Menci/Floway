@@ -35,6 +35,7 @@ import { PlaygroundMarkdown } from '../components/playground/playground-markdown
 import { PlaygroundMessageCard } from '../components/playground/playground-message-card';
 import { streamPlaygroundText } from '../components/playground/playground-stream';
 import { Combobox, Dropdown, Input, Textarea } from '../components/ui/fluent-form-controls';
+import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
@@ -51,8 +52,6 @@ const {
   DrawerHeader,
   DrawerHeaderTitle,
   Field,
-  MessageBar,
-  MessageBarBody,
   Option,
   OverlayDrawer,
   Text,
@@ -116,6 +115,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const [imageUrl, setImageUrl] = useState('');
   const [showImage, setShowImage] = useState(false);
   const [sending, setSending] = useState(false);
+  const [loadError, setLoadError] = useState(loaderData.error);
   const [requestError, setRequestError] = useState<string | null>(null);
   const [customDraft, setCustomDraft] = useState('{}');
   const [customError, setCustomError] = useState<string | null>(null);
@@ -382,8 +382,8 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
             )}
           </div>
           <ScrollArea ref={scrollRef} axes="vertical" className="min-h-0" contentClassName="flex min-h-full flex-col" noTabIndex>
-            {loaderData.error && <MessageBar intent="error" className="!mb-3"><MessageBarBody>{loaderData.error}</MessageBarBody></MessageBar>}
-            {requestError && <MessageBar intent="error" className="!mb-3"><MessageBarBody>{requestError}</MessageBarBody></MessageBar>}
+            {loadError && <OutcomeMessageBar className="!mb-3" onDismiss={() => setLoadError(null)}>{loadError}</OutcomeMessageBar>}
+            {requestError && <OutcomeMessageBar className="!mb-3" onDismiss={() => setRequestError(null)}>{requestError}</OutcomeMessageBar>}
             {!selectedKey ? <EmptyState text={t('dashboard.playground.noKey')} />
               : !selectedModel ? <EmptyState text={t('dashboard.playground.noModelForApi')} />
                   : messages.length === 0 && !sending ? <EmptyState text={t('dashboard.playground.empty')} /> : null}

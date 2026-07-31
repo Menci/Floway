@@ -14,8 +14,9 @@ import { fluentComponents } from '../../fluent';
 import { CodeBlock } from '../ui/code-block';
 import { Combobox, Dropdown } from '../ui/fluent-form-controls';
 import { infoLabelSlot } from '../ui/info-label';
+import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 
-const { Button, Field, MessageBar, MessageBarBody, Option, Switch, Tab, TabList, Text } = fluentComponents;
+const { Button, Field, Option, Switch, Tab, TabList, Text } = fluentComponents;
 type Agent = 'claude' | 'codex';
 type Platform = AgentSetupPlatform;
 const NONE = '__floway_none__';
@@ -101,11 +102,14 @@ export function AgentSetupCard({ copiedTag, copyFailedTag, initialApiKeyId, init
       </nav>
 
       <div className="grid gap-4 min-w-0 content-start grid-cols-[minmax(0,1fr)]">
-        {setup.noSelectableKey && <MessageBar><MessageBarBody>{t('dashboard.apiKeys.agentSetup.noKey')}</MessageBarBody></MessageBar>}
-        {setup.terminated && <MessageBar intent="warning"><MessageBarBody>{t('dashboard.apiKeys.agentSetup.expired')}</MessageBarBody></MessageBar>}
+        {setup.noSelectableKey && <OutcomeMessageBar intent="info">{t('dashboard.apiKeys.agentSetup.noKey')}</OutcomeMessageBar>}
+        {setup.terminated && <OutcomeMessageBar intent="warning">{t('dashboard.apiKeys.agentSetup.expired')}</OutcomeMessageBar>}
         {setup.createError && !setup.lease
-          ? <MessageBar intent="error"><MessageBarBody><span className="inline-flex items-center gap-2 flex-wrap">{setup.createError}<Button appearance="secondary" onClick={setup.retryCreate} size="small">{t('dashboard.apiKeys.agentSetup.retry')}</Button></span></MessageBarBody></MessageBar>
-          : setup.error && <MessageBar intent="error"><MessageBarBody>{setup.error}</MessageBarBody></MessageBar>}
+          ? <OutcomeMessageBar
+              action={<Button appearance="secondary" onClick={setup.retryCreate} size="small">{t('dashboard.apiKeys.agentSetup.retry')}</Button>}
+              onDismiss={setup.dismissError}
+            >{setup.createError}</OutcomeMessageBar>
+          : setup.error && <OutcomeMessageBar onDismiss={setup.dismissError}>{setup.error}</OutcomeMessageBar>}
 
         <section className="grid gap-3">
           <Text as="h3" size={400} weight="semibold" className="m-0">{t('dashboard.apiKeys.agentSetup.modelSelection')}</Text>
@@ -115,7 +119,7 @@ export function AgentSetupCard({ copiedTag, copyFailedTag, initialApiKeyId, init
         {view === 'snippets' && selectedKey
           ? <AgentConfigSnippets agent={agent} apiKey={selectedKey.key} configuration={activeDraft} copiedTag={copiedTag} copyFailedTag={copyFailedTag} onCopy={onCopy} onPlatformChange={setPlatform} platform={platform} />
           : view === 'snippets'
-            ? <MessageBar><MessageBarBody>{t('dashboard.apiKeys.agentSetup.selectKey')}</MessageBarBody></MessageBar>
+            ? <OutcomeMessageBar intent="info">{t('dashboard.apiKeys.agentSetup.selectKey')}</OutcomeMessageBar>
             : <div className="border-t border-t-solid border-fui-stroke1 pt-4">
                 <CodeBlock
                   code={command}

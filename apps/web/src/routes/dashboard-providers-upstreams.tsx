@@ -23,6 +23,7 @@ import type {
 import { getSessionToken } from '../auth/session';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
+import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { ResourceListActions, ResourceListEmptyState, ResourceListPanel } from '../components/ui/resource-list';
 import { ScrollArea } from '../components/ui/scroll-area';
@@ -39,9 +40,6 @@ const {
   MenuList,
   MenuPopover,
   MenuTrigger,
-  MessageBar,
-  MessageBarActions,
-  MessageBarBody,
   Spinner,
   Switch,
   Table,
@@ -251,22 +249,18 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
       />
 
       {pageError && (
-        <MessageBar intent="error">
-          <MessageBarBody>{pageError}</MessageBarBody>
-          <MessageBarActions>
-            <Button appearance="transparent" disabled={busy} onClick={() => void handleReload()}>
-              {t('dashboard.upstreams.actions.retry')}
-            </Button>
-          </MessageBarActions>
-        </MessageBar>
+        <OutcomeMessageBar
+          action={<Button appearance="transparent" disabled={busy} onClick={() => void handleReload()}>
+            {t('dashboard.upstreams.actions.retry')}
+          </Button>}
+          onDismiss={() => setPageError(null)}
+        >{pageError}</OutcomeMessageBar>
       )}
 
       {data.modelsError && (
-        <MessageBar intent="warning">
-          <MessageBarBody>
-            {t('dashboard.upstreams.errors.models', { message: data.modelsError })}
-          </MessageBarBody>
-        </MessageBar>
+        <OutcomeMessageBar intent="warning">
+          {t('dashboard.upstreams.errors.models', { message: data.modelsError })}
+        </OutcomeMessageBar>
       )}
 
       <ResourceListPanel rowHeight="56px">

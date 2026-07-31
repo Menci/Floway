@@ -14,6 +14,7 @@ import { RequestListPanel } from '../components/requests/request-list';
 import { collectStream, detectCollectKind, type CollectedStream } from '../components/requests/stream-render';
 import { useDumpSubscription } from '../components/requests/use-dump-subscription';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
+import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { fluentComponents } from '../fluent';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
@@ -22,7 +23,7 @@ import type { DumpMetadata, DumpRecord } from '@floway-dev/gateway/dump-types';
 
 export const handle = dashboardWorkspaceHandle;
 
-const { Button, DrawerBody, DrawerHeader, DrawerHeaderTitle, MessageBar, MessageBarBody, OverlayDrawer, Text } = fluentComponents;
+const { Button, DrawerBody, DrawerHeader, DrawerHeaderTitle, OverlayDrawer, Text } = fluentComponents;
 
 interface LoaderData {
   collected: CollectedStream | null;
@@ -76,10 +77,15 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [keyRefresh, setKeyRefresh] = useState<{ source: LoaderData; keys: ApiKey[]; error: string | null } | null>(null);
-  const currentKeyRefresh = keyRefresh?.source === loaderData ? keyRefresh : null;
-  const keys = currentKeyRefresh?.keys ?? loaderData.keys;
-  const keysError = currentKeyRefresh?.error ?? loaderData.error;
+  // What the page shows, which starts as what the loader returned and is
+  // replaced by a key refresh or by the operator dismissing a failure. It is
+  // tied to the payload it came from, so a navigation that loads a new one
+  // discards it rather than showing one route's keys under another's URL.
+  const [replacement, setReplacement] = useState<{ source: LoaderData; keys: ApiKey[]; keysError: string | null; recordsError: string | null } | null>(null);
+  const shown = replacement?.source === loaderData
+    ? replacement
+    : { source: loaderData, keys: loaderData.keys, keysError: loaderData.error, recordsError: loaderData.recordsError };
+  const { keys, keysError } = shown;
   const narrow = useMediaQuery('(max-width: 1200px)');
   const selectedRecordId = searchParams.get('record');
   const selectedKeyId = loaderData.selectedKeyId;
@@ -102,7 +108,12 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
         if (nextSelectedKeyId) next.set('key', nextSelectedKeyId);
         void navigate(`/dashboard/monitor/requests${next.size ? `?${next}` : ''}`, { replace: true });
       },
-      onUpdate: (nextKeys, error) => setKeyRefresh({ source: loaderData, keys: nextKeys, error }),
+      onUpdate: (nextKeys, error) => setReplacement(current => ({
+        source: loaderData,
+        keys: nextKeys,
+        keysError: error,
+        recordsError: current?.source === loaderData ? current.recordsError : loaderData.recordsError,
+      })),
       selectedKeyId: loaderData.selectedKeyId,
       signal: controller.signal,
     });
@@ -114,11 +125,19 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
     };
   }, [keys, loaderData, navigate]);
 
+  // The list's bar reports whichever of the three streams failed, so clearing
+  // it has to clear all three: what the operator dismissed is the message, not
+  // one of the sources behind it.
+  const dismissListError = () => {
+    subscription.dismissError();
+    setReplacement({ ...shown, keysError: null, recordsError: null });
+  };
+
   return (
     <section className="h-full min-h-0 grid grid-rows-[auto_minmax(0,1fr)] gap-[18px] min-w-0">
       <DashboardPageHeader description={t('dashboard.pages.requests')} title={t('dashboard.nav.requests')} />
       {keysError && keys.length === 0 ? (
-        <MessageBar intent="error"><MessageBarBody>{keysError}</MessageBarBody></MessageBar>
+        <OutcomeMessageBar onDismiss={() => setReplacement({ ...shown, keysError: null })}>{keysError}</OutcomeMessageBar>
       ) : keys.length === 0 ? (
         <Panel className="!p-[28px] grid place-items-center text-center">
           <div className="grid justify-items-center gap-2 max-w-[480px]">
@@ -131,8 +150,9 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
         <Panel className="!p-0 !block overflow-hidden min-w-0 h-full">
           <RequestListPanel
             apiKeys={keys}
-            error={subscription.error ?? loaderData.recordsError ?? keysError}
+            error={subscription.error ?? shown.recordsError ?? keysError}
             hasOlder={subscription.hasOlder}
+            onDismissError={dismissListError}
             onKeyChange={keyId => updateSelection(keyId)}
             onLoadOlder={() => void subscription.loadOlder()}
             onRecordChange={recordId => updateSelection(selectedKeyId, recordId)}
@@ -159,8 +179,9 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
           <Panel className="!p-0 !block overflow-hidden min-w-0 h-full">
             <RequestListPanel
               apiKeys={keys}
-              error={subscription.error ?? loaderData.recordsError ?? keysError}
+              error={subscription.error ?? shown.recordsError ?? keysError}
               hasOlder={subscription.hasOlder}
+              onDismissError={dismissListError}
               onKeyChange={keyId => updateSelection(keyId)}
               onLoadOlder={() => void subscription.loadOlder()}
               onRecordChange={recordId => updateSelection(selectedKeyId, recordId)}

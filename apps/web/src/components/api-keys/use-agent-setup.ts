@@ -331,6 +331,14 @@ export function useAgentSetup(
     setCreateAttempt(value => value + 1);
   }, [abortRequests, apiKeyId]);
 
+  // One bar reports whichever of the three failed, so clearing it clears all
+  // three; each is written again the next time the operation behind it fails.
+  const dismissError = useCallback(() => {
+    setSaveError(null);
+    setHeartbeatError(null);
+    setCreateError(null);
+  }, []);
+
   const syncing = generation !== confirmedGeneration;
   const canCopy = !!lease && !!draft && !syncing && !terminated && !expired && draft.apiKeyId === apiKeyId;
   const error = saveError ?? heartbeatError ?? createError;
@@ -339,11 +347,12 @@ export function useAgentSetup(
     draft,
     error,
     createError,
+    dismissError,
     terminated,
     noSelectableKey,
     syncing,
     canCopy,
     updateDraft,
     retryCreate,
-  }), [canCopy, createError, draft, error, lease, noSelectableKey, retryCreate, syncing, terminated, updateDraft]);
+  }), [canCopy, createError, dismissError, draft, error, lease, noSelectableKey, retryCreate, syncing, terminated, updateDraft]);
 }

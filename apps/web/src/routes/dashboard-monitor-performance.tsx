@@ -35,6 +35,7 @@ import {
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Dropdown } from '../components/ui/fluent-form-controls';
+import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { ResourceListActions } from '../components/ui/resource-list';
 import { ScrollArea } from '../components/ui/scroll-area';
@@ -43,7 +44,7 @@ import { localeForLanguage } from '../i18n';
 import { useAuthStore } from '../stores/auth-store';
 
 const {
-  Button, Field, Option, Tab, TabList, makeStyles, MessageBar, MessageBarBody,
+  Button, Field, Option, Tab, TabList, makeStyles,
   Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, Tooltip,
 } = fluentComponents;
 
@@ -212,7 +213,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       description={t('dashboard.pages.performance')}
       title={t('dashboard.nav.performance')}
     />
-    {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
+    {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
     <Panel className="!grid min-w-0 !p-[18px]">
       <div className="flex items-end gap-3 min-w-0 flex-wrap">
         <Field className="w-[160px] flex-none" label={t('dashboard.performance.groupBy.label')}>

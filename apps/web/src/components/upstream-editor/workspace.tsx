@@ -26,14 +26,13 @@ import { formatFullTime, formatRelativeTime } from '../requests/format';
 import { ContentLoadingScreen } from '../ui/app-loading-screen';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { Input } from '../ui/fluent-form-controls';
+import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { ScrollArea } from '../ui/scroll-area';
 import { TableActions, TableActionsHeader } from '../ui/table-actions';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 
 const {
   Button,
-  MessageBar,
-  MessageBarBody,
   Spinner,
   Switch,
   Tab,
@@ -285,7 +284,7 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
           <ModelsYamlEditor value={yaml} onChange={value => { onYamlChange(value); onYamlErrorChange(null); }} />
         </Suspense>
       </div>
-      {yamlError && <div className="px-5 py-3"><MessageBar intent="error"><MessageBarBody>{yamlError}</MessageBarBody></MessageBar></div>}
+      {yamlError && <div className="px-5 py-3"><OutcomeMessageBar>{yamlError}</OutcomeMessageBar></div>}
     </div>;
   }
 
@@ -309,17 +308,16 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
         </>}
       </div>
     </div>
-    {error && <MessageBar
+    {error && <OutcomeMessageBar
+      bodyClassName="min-w-0 [overflow-wrap:anywhere]"
       className="min-w-0"
       icon={<WarningRegular />}
       intent="warning"
     >
-      <MessageBarBody className="min-w-0 [overflow-wrap:anywhere]">
-        {error === 'Upstream model listing failed'
-          ? t('dashboard.upstreamEditor.models.listingFailed')
-          : t('dashboard.upstreamEditor.models.listingFailedWithDetail', { message: error })}
-      </MessageBarBody>
-    </MessageBar>}
+      {error === 'Upstream model listing failed'
+        ? t('dashboard.upstreamEditor.models.listingFailed')
+        : t('dashboard.upstreamEditor.models.listingFailedWithDetail', { message: error })}
+    </OutcomeMessageBar>}
     <Input value={search} onChange={(_, data) => setSearch(data.value)} placeholder={t('dashboard.upstreamEditor.models.search')} />
     <ScrollArea axes="horizontal" className="min-w-0">
       <Table className="w-full min-w-[640px]" style={{ tableLayout: 'fixed' }}>

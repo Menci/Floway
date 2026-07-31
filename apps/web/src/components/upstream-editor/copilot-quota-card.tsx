@@ -5,9 +5,10 @@ import { callApi } from '../../api/auth';
 import { api } from '../../api/client';
 import type { CopilotQuotaSnapshot, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { ResourceListActions } from '../ui/resource-list';
 
-const { MessageBar, MessageBarBody, ProgressBar, Text } = fluentComponents;
+const { ProgressBar, Text } = fluentComponents;
 
 // Copilot's own client derives premium-interaction usage from the on-demand
 // `copilot_internal/user` snapshot:
@@ -61,6 +62,6 @@ export const CopilotQuotaCard = ({ record }: { record: Extract<UpstreamRecord, {
 
     {quota && (!premium || premium.unlimited) && <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.copilot.quota.unmetered')}</Text>}
 
-    {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
+    {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
   </section>;
 };

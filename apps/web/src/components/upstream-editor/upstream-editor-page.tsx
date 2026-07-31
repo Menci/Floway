@@ -22,13 +22,12 @@ import { api } from '../../api/client';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { ConfirmDialog } from '../ui/confirm-dialog';
+import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { Panel } from '../ui/panel';
 import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX } from '@floway-dev/provider/model-prefix';
 
 const {
   Button,
-  MessageBar,
-  MessageBarBody,
   Spinner,
   Text,
   Toast,
@@ -187,7 +186,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
           <Button appearance="primary" disabled={saving || nameMissing} icon={saving ? <Spinner size="tiny" /> : <SaveRegular />} onClick={() => void submitForm()}>{saving ? t('dashboard.upstreamEditor.actions.saving') : t('dashboard.upstreamEditor.actions.save')}</Button>
         </div>
       </header>
-      {saveError && <MessageBar intent="error"><MessageBarBody>{saveError}</MessageBarBody></MessageBar>}
+      {saveError && <OutcomeMessageBar onDismiss={() => setSaveError(null)}>{saveError}</OutcomeMessageBar>}
       <div className="grid grid-cols-[380px_minmax(0,1fr)] gap-[18px] min-h-0 min-w-0 flex-1 max-[1050px]:grid-cols-1">
         <Panel className="min-h-0 min-w-0 overflow-hidden !p-0">
           <UpstreamConfigSidebar

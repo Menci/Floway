@@ -23,8 +23,6 @@ const {
   Checkbox,
   Field,
   makeStyles,
-  MessageBar,
-  MessageBarBody,
   Radio,
   RadioGroup,
   shorthands,
@@ -433,11 +431,9 @@ export default function DashboardAdminBackupRestore() {
             </Field>
 
             {importMode === 'replace' && (
-              <MessageBar intent="warning">
-                <MessageBarBody>
-                  {t('dashboard.backupRestore.import.replaceWarning')}
-                </MessageBarBody>
-              </MessageBar>
+              <OutcomeMessageBar intent="warning">
+                {t('dashboard.backupRestore.import.replaceWarning')}
+              </OutcomeMessageBar>
             )}
 
             <div>

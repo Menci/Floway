@@ -9,6 +9,7 @@ import type { ControlPlaneModel } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
+import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { ResourceListActions } from '../components/ui/resource-list';
 import { buildSearchChart, buildTokenChart, dashboardBuckets, formatCount, formatMetricValue, formatProvider, summarizeUsage } from '../components/usage/chart-model';
@@ -21,7 +22,7 @@ import { localeForLanguage } from '../i18n';
 import { errorMessage } from '../lib/error-message';
 import { useAuthStore } from '../stores/auth-store';
 
-const { Button, MessageBar, MessageBarBody, Tooltip } = fluentComponents;
+const { Button, Tooltip } = fluentComponents;
 const usageMetricValues: UsageMetric[] = ['requests', 'cost', 'total', 'input', 'output', 'prefill', 'cached', 'cachedRate', 'cacheCreation', 'cacheHitRate'];
 const usageRangeValues: UsageRange[] = ['today', '7d', '30d'];
 
@@ -259,7 +260,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
         title={t('dashboard.nav.usage')}
       />
 
-      {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
+      {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
 
       <Panel className="!grid gap-[18px] min-w-0 !p-[18px]">
         <div className="flex items-center gap-3 justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">

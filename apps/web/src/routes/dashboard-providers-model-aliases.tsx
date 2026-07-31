@@ -24,7 +24,7 @@ import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { fluentComponents } from '../fluent';
 
-const { MessageBar, MessageBarBody, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, Tooltip } = fluentComponents;
+const { Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, Tooltip } = fluentComponents;
 
 interface LoaderData {
   catalog: { aliases: ModelAlias[]; models: ControlPlaneModel[] | null };
@@ -113,7 +113,7 @@ export default function DashboardProvidersModelAliases({ loaderData }: Route.Com
   return <section className="dashboard-page">
     {header}
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{t('dashboard.modelAliases.errors.message', { message: error })}</OutcomeMessageBar>}
-    {modelsError && <MessageBar intent="warning"><MessageBarBody>{t('dashboard.modelAliases.errors.models', { message: modelsError })}</MessageBarBody></MessageBar>}
+    {modelsError && <OutcomeMessageBar intent="warning" onDismiss={() => setModelsError(null)}>{t('dashboard.modelAliases.errors.models', { message: modelsError })}</OutcomeMessageBar>}
     <ResourceListPanel rowHeight="56px">
       {aliases.length === 0 ? <ResourceListEmptyState>{t('dashboard.modelAliases.empty')}</ResourceListEmptyState> : <ScrollArea axes="horizontal"><Table aria-label={t('dashboard.modelAliases.listTitle')} className="w-full min-w-[760px] table-fixed"><TableHeader><TableRow><TableHeaderCell>{t('dashboard.modelAliases.columns.alias')}</TableHeaderCell><TableHeaderCell className="!w-[88px]">{t('dashboard.modelAliases.columns.kind')}</TableHeaderCell><TableHeaderCell className="!w-[88px]">{t('dashboard.modelAliases.columns.targets')}</TableHeaderCell><TableHeaderCell className="!w-[120px]">{t('dashboard.modelAliases.columns.selection')}</TableHeaderCell><TableHeaderCell className="!w-[96px]">{t('dashboard.modelAliases.columns.visibility')}</TableHeaderCell><TableActionsHeader className="!w-[88px]">{t('dashboard.modelAliases.columns.actions')}</TableActionsHeader></TableRow></TableHeader><TableBody>{aliases.map(alias => {
         const warnings = computeAliasWarnings(alias, models);

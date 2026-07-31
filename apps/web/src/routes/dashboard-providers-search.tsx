@@ -32,9 +32,6 @@ const {
   Button,
   Field,
   Link,
-  MessageBar,
-  MessageBarBody,
-  MessageBarTitle,
   Option,
   Spinner,
   Text,
@@ -468,12 +465,9 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
               </ul>
             )
           ) : !testResult.ok ? (
-            <MessageBar intent="error">
-              <MessageBarBody>
-                <MessageBarTitle>{testResult.error.code}</MessageBarTitle>
-                {testResult.error.message}
-              </MessageBarBody>
-            </MessageBar>
+            <OutcomeMessageBar onDismiss={() => setTestResult(null)} title={testResult.error.code}>
+              {testResult.error.message}
+            </OutcomeMessageBar>
           ) : null}
         </Panel>
       )}

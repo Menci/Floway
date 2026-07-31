@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { Trans, useTranslation } from 'react-i18next';
 import { useFetcher } from 'react-router';
@@ -8,13 +8,12 @@ import { z } from 'zod';
 import { fluentComponents } from '../fluent';
 import { FlowayLogo } from './logo';
 import { Input } from './ui/fluent-form-controls';
+import { OutcomeMessageBar } from './ui/outcome-message-bar';
 import { Panel } from './ui/panel';
 
 const {
   Button,
   Field,
-  MessageBar,
-  MessageBarBody,
   Spinner,
 } = fluentComponents;
 
@@ -43,6 +42,16 @@ export function LoginForm() {
   const { t } = useTranslation();
   const fetcher = useFetcher<LoginActionData>();
   const isSubmitting = fetcher.state !== 'idle';
+  // The fetcher keeps its last response for as long as it lives, so a bar read
+  // straight off it has no state a dismiss could clear. The rejection is taken
+  // into state as each response arrives — during render rather than in an
+  // effect, so the bar and the response it reports are painted together.
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [reportedResponse, setReportedResponse] = useState(fetcher.data);
+  if (reportedResponse !== fetcher.data) {
+    setReportedResponse(fetcher.data);
+    setServerError(fetcher.data?.ok === false ? fetcher.data.error : null);
+  }
 
   const {
     control,
@@ -75,8 +84,6 @@ export function LoginForm() {
 
   const passwordError = errors.password?.message;
   const usernameError = errors.username?.message;
-  const serverError =
-    fetcher.data?.ok === false ? fetcher.data.error : undefined;
 
   return (
     <Panel
@@ -166,9 +173,9 @@ export function LoginForm() {
       </form>
 
       {serverError && (
-        <MessageBar intent="error" className="mt-[18px]">
-          <MessageBarBody>{t(serverError)}</MessageBarBody>
-        </MessageBar>
+        <OutcomeMessageBar className="mt-[18px]" onDismiss={() => setServerError(null)}>
+          {t(serverError)}
+        </OutcomeMessageBar>
       )}
     </Panel>
   );

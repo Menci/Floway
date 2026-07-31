@@ -94,5 +94,7 @@ export function useDumpSubscription(keyId: string | null, initialRecords: DumpMe
     }
   }, [hasOlder, keyId, records]);
 
-  return { records, hasOlder, error, loadOlder };
+  const dismissError = useCallback(() => setError(null), []);
+
+  return { records, hasOlder, error, dismissError, loadOlder };
 }

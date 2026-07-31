@@ -25,11 +25,12 @@ import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useNow } from '../../lib/use-now';
 import { Dropdown } from '../ui/fluent-form-controls';
+import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { initializeScrollArea, scrollAreaHostClassName, useOverlayScrollbarsEnabled } from '../ui/scroll-area';
 import { ProviderBadge } from '../upstreams/provider-badge';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 
-const { MessageBar, MessageBarBody, Option, Text, makeStyles, mergeClasses } = fluentComponents;
+const { Option, Text, makeStyles, mergeClasses } = fluentComponents;
 const ROW_HEIGHT = 84;
 
 const useStyles = makeStyles({
@@ -82,6 +83,7 @@ interface RequestListProps {
   onRecordChange: (recordId: string) => void;
   hasOlder: boolean;
   error: string | null;
+  onDismissError: () => void;
   onLoadOlder: () => void;
 }
 
@@ -211,7 +213,7 @@ export function RequestListPanel(props: RequestListProps) {
       >
         {props.apiKeys.map(key => <Option key={key.id} text={`${key.name} (${key.key.slice(-4)})`} value={key.id}>{key.name} ({key.key.slice(-4)})</Option>)}
       </Dropdown>
-      {props.error && <MessageBar intent="error" className="!m-2"><MessageBarBody>{props.error}</MessageBarBody></MessageBar>}
+      {props.error && <OutcomeMessageBar className="!m-2" onDismiss={props.onDismissError}>{props.error}</OutcomeMessageBar>}
       {props.records.length === 0 ? (
         <div className="flex-1 grid place-items-center text-center p-6">
           <Text size={200} className="text-fui-fg3">{t('dashboard.requests.empty')}</Text>
