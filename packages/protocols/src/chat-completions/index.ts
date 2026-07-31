@@ -75,7 +75,12 @@ interface ChatCompletionsTextPart {
 
 interface ChatCompletionsImagePart {
   type: 'image_url';
-  image_url: { url: string; detail?: 'low' | 'high' | 'auto' };
+  // OpenAI publishes `detail` as an optional `[auto, low, high]` string
+  // defaulting to `auto`, with no null member. The value is open here because
+  // the upstream owns the accept decision, and the absent case is the only one
+  // whose meaning the protocol itself fixes.
+  // https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L30795-L30803
+  image_url: { url: string; detail?: 'low' | 'high' | 'auto' | (string & {}) };
 }
 
 interface ChatCompletionsRefusalPart {

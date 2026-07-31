@@ -592,7 +592,6 @@ const en = {
             shims: 'Capability Shims',
             apiCompatibility: 'API Feature Compatibility',
             sanitization: 'Request Sanitization',
-            retry: 'Retry Policies',
           },
           entries: {
             'vendor-deepseek': {
@@ -609,11 +608,6 @@ const en = {
               label: 'Kimi Compatibility',
               description:
                   "Kimi's API uses a non-standard format for cached-token usage statistics.\nEnable this option to normalize the flat cached-token field (`cached_tokens`) in Kimi responses to the OpenAI canonical format (`prompt_tokens_details.cached_tokens`).\nEnable this when the upstream is the **Kimi (Moonshot AI) Chat Completions API**.",
-            },
-            'retry-cyber-policy': {
-              label: 'Retry Cybersecurity Policy Blocks',
-              description:
-                  "OpenAI's Cybersecurity policy may occasionally produce false-positive `cyber_policy` blocks for some requests.\nWhen this option is enabled, Floway automatically retries an upstream request that is incorrectly blocked with a `cyber_policy` 4xx error, up to 10 times.",
             },
             'messages-web-search-shim': {
               label: 'Messages Web Search Shim',

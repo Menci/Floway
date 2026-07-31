@@ -32,25 +32,25 @@ test('provider flags: resolveEffectiveFlags — no layers → empty set', () => 
 });
 
 test('provider flags: resolveEffectiveFlags — a layer with a true flag adds it', () => {
-  const set = resolveEffectiveFlags([{ 'retry-cyber-policy': true }]);
-  assertEquals([...set].sort(), ['retry-cyber-policy']);
+  const set = resolveEffectiveFlags([{ 'strip-prompt-cache-key': true }]);
+  assertEquals([...set].sort(), ['strip-prompt-cache-key']);
 });
 
 test('provider flags: resolveEffectiveFlags — a later layer can force-off an earlier true', () => {
   const set = resolveEffectiveFlags([
-    { 'retry-cyber-policy': true },
-    { 'retry-cyber-policy': false },
+    { 'strip-prompt-cache-key': true },
+    { 'strip-prompt-cache-key': false },
   ]);
   assertEquals([...set].sort(), []);
 });
 
 test('provider flags: resolveEffectiveFlags — a still-later layer can force-on again', () => {
   const set = resolveEffectiveFlags([
-    { 'retry-cyber-policy': true },
-    { 'retry-cyber-policy': false },
-    { 'retry-cyber-policy': true },
+    { 'strip-prompt-cache-key': true },
+    { 'strip-prompt-cache-key': false },
+    { 'strip-prompt-cache-key': true },
   ]);
-  assertEquals([...set].sort(), ['retry-cyber-policy']);
+  assertEquals([...set].sort(), ['strip-prompt-cache-key']);
 });
 
 test('provider flags: resolveEffectiveFlags — upstream layer force-on adds a flag', () => {
@@ -75,6 +75,6 @@ test('provider flags: resolveEffectiveFlags — later layer wins when both set t
 });
 
 test('provider flags: resolveEffectiveFlags — undefined layers are skipped', () => {
-  const set = resolveEffectiveFlags([undefined, { 'retry-cyber-policy': true }, undefined]);
-  assertEquals([...set].sort(), ['retry-cyber-policy']);
+  const set = resolveEffectiveFlags([undefined, { 'strip-prompt-cache-key': true }, undefined]);
+  assertEquals([...set].sort(), ['strip-prompt-cache-key']);
 });

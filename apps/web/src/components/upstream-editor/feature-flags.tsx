@@ -7,15 +7,14 @@ import { OPTIONAL_FLAG_IDS, type FlagDefaults, type FlagId, type FlagOverrides }
 
 const { Option, Text } = fluentComponents;
 
-type FlagGroupId = 'vendor' | 'shims' | 'apiCompatibility' | 'sanitization' | 'retry';
+type FlagGroupId = 'vendor' | 'shims' | 'apiCompatibility' | 'sanitization';
 
-const flagGroupOrder: readonly FlagGroupId[] = ['vendor', 'shims', 'apiCompatibility', 'sanitization', 'retry'];
+const flagGroupOrder: readonly FlagGroupId[] = ['vendor', 'shims', 'apiCompatibility', 'sanitization'];
 
 const flagGroupById = {
   'vendor-deepseek': 'vendor',
   'vendor-qwen': 'vendor',
   'vendor-kimi': 'vendor',
-  'retry-cyber-policy': 'retry',
   'messages-web-search-shim': 'shims',
   'responses-web-search-shim': 'shims',
   'responses-image-generation-shim': 'shims',

@@ -19,7 +19,7 @@ import type {
   MessagesTextCitation,
   MessagesUsageSnapshot,
 } from '@floway-dev/protocols/messages';
-import { createRandomResponsesItemId, type ResponsesOutputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { createRandomResponsesItemId, type ResponsesAnnotation, type ResponsesOutputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const UPSTREAM_MESSAGES_MISSING_TERMINAL_MESSAGE = 'Upstream Messages stream ended without a message_stop event.';
 
@@ -52,12 +52,11 @@ type OutputBlockInfo =
     outputIndex: number;
     itemId: string;
     blockText: string;
-    // Monotonic counter of url_citation annotations for this text
-    // content part. The Responses protocol requires per-content-part
-    // ordering and Responses targets always use content_index=0 for our
-    // single-part assistant message, so one counter per text block
-    // matches the spec.
-    annotationIndex: number;
+    // Citations accumulated in emission order, then carried on the completed
+    // content part. `annotation_index` is scoped to one content part and
+    // Responses targets always use content_index=0 for our single-part
+    // assistant message, so this array's length at push time is that index.
+    annotations: ResponsesAnnotation[];
   }
   | {
     type: 'tool_use';
@@ -98,6 +97,7 @@ const buildResult = (state: MessagesToResponsesStreamState, status: ResponsesRes
   const hasCacheCreation = state.usage.cache_creation_input_tokens !== undefined
     || state.usage.cache_creation?.ephemeral_5m_input_tokens !== undefined
     || state.usage.cache_creation?.ephemeral_1h_input_tokens !== undefined;
+  const thinkingTokens = state.usage.output_tokens_details?.thinking_tokens;
   const serviceTier = openAIServiceTierFromMessagesUsage(state.usage);
 
   return responses.result({
@@ -123,6 +123,12 @@ const buildResult = (state: MessagesToResponsesStreamState, status: ResponsesRes
             },
           }
         : {}),
+      // Anthropic's `thinking_tokens` and Responses' `reasoning_tokens` are the
+      // same quantity: the reasoning share of the inclusive output-token total.
+      // As with the input breakdown above, an upstream that reports none is
+      // translated to absence rather than to a synthesized zero.
+      // https://github.com/openai/openai-python/blob/f16fbbd2bd25dc1ff150b5f78dbd15ff6bab6d91/src/openai/types/responses/response_usage.py#L21-L47
+      ...(thinkingTokens === undefined ? {} : { output_tokens_details: { reasoning_tokens: thinkingTokens } }),
     },
     ...(serviceTier !== undefined ? { serviceTier } : {}),
     ...(status === 'failed' ? { error: messagesRefusalResponsesError(state.stopDetails) } : {}),
@@ -176,7 +182,7 @@ const handleContentBlockStart = (event: MessagesContentBlockStartEvent, state: M
       outputIndex,
       itemId,
       blockText: '',
-      annotationIndex: 0,
+      annotations: [],
     });
 
     return responses.textStart(state, outputIndex, itemId);
@@ -256,7 +262,16 @@ const handleTextCitation = (info: Extract<OutputBlockInfo, { type: 'text' }>, ci
 
   const endIndex = info.blockText.length;
   const startIndex = Math.max(0, endIndex - citation.cited_text.length);
-  const annotationIndex = info.annotationIndex++;
+  const annotationIndex = info.annotations.length;
+  const annotation: ResponsesAnnotation = {
+    type: 'url_citation',
+    url: citation.url,
+    title: citation.title,
+    start_index: startIndex,
+    end_index: endIndex,
+  };
+
+  info.annotations.push(annotation);
 
   return responses.seq(state, [
     {
@@ -265,13 +280,7 @@ const handleTextCitation = (info: Extract<OutputBlockInfo, { type: 'text' }>, ci
       content_index: 0,
       item_id: info.itemId,
       annotation_index: annotationIndex,
-      annotation: {
-        type: 'url_citation',
-        url: citation.url,
-        title: citation.title,
-        start_index: startIndex,
-        end_index: endIndex,
-      },
+      annotation,
     },
   ]);
 };
@@ -332,11 +341,12 @@ const handleContentBlockStop = (event: MessagesContentBlockStopEvent, state: Mes
   }
 
   if (info.type === 'text') {
-    const item = responses.messageItem(info.itemId, info.blockText);
+    const part = responses.textPart(info.blockText, info.annotations);
+    const item = responses.messageItem(info.itemId, 'completed', part);
 
     state.completedItems.push(item);
 
-    return responses.textDone(state, info.outputIndex, info.itemId, info.blockText, item);
+    return responses.textDone(state, info.outputIndex, info.itemId, part, item);
   }
 
   if (info.type === 'custom_tool_use') {
@@ -403,8 +413,18 @@ export const translateMessagesEventToResponsesEvents = (event: MessagesStreamEve
 
     return responses.terminal(state, response);
   }
+  // Anthropic's `ping` is a transport keep-alive with no Responses counterpart:
+  // every spec event is either a delta event or a state-machine event, and a
+  // `ping` is neither.
+  // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L459
+  // The rule belongs with the producer rather than at a gateway transport
+  // boundary, so that it holds for every consumer of this translation and not
+  // only for the transports the gateway happens to serve; the native path
+  // likewise drops an upstream `ping` inside `parseResponsesStream`. Consuming
+  // the event without emitting one also keeps the sequence numbering
+  // contiguous, which a boundary filter could not do.
   case 'ping':
-    return responses.seq(state, [{ type: 'ping' }]);
+    return [];
   case 'error':
     return responses.seq(state, [
       {

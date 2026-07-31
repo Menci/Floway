@@ -19,6 +19,12 @@ const deleteAuthed = (adminSession: string): RequestInit => ({
   headers: { 'x-floway-session': adminSession },
 });
 
+const createAlias = async (adminSession: string, overrides: Record<string, unknown> = {}): Promise<ModelAlias> => {
+  const resp = await requestApp('/api/aliases', authed(adminSession, baseBody(overrides)));
+  assertEquals(resp.status, 201);
+  return (await resp.json()) as ModelAlias;
+};
+
 const baseBody = (overrides: Record<string, unknown> = {}) => ({
   name: 'gpt-fast',
   kind: 'chat',
@@ -36,13 +42,13 @@ test('GET /api/aliases lists every row in sort order', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.modelAliases.deleteAll();
   await repo.modelAliases.insert({
-    name: 'b', kind: 'chat', selection: 'random', displayName: null, visibleInModelsList: true,
+    id: 'alias_b', name: 'b', kind: 'chat', selection: 'random', displayName: null, visibleInModelsList: true,
     targets: [{ target_model_id: 'm1', rules: {} }],
     announcedMetadata: null,
     sortOrder: 1, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
   });
   await repo.modelAliases.insert({
-    name: 'a', kind: 'chat', selection: 'random', displayName: null, visibleInModelsList: true,
+    id: 'alias_a', name: 'a', kind: 'chat', selection: 'random', displayName: null, visibleInModelsList: true,
     targets: [{ target_model_id: 'm2', rules: {} }],
     announcedMetadata: null,
     sortOrder: 0, createdAt: '2026-01-02T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
@@ -61,6 +67,7 @@ test('POST /api/aliases creates an alias and returns the snake_case wire shape',
   const resp = await requestApp('/api/aliases', authed(adminSession, baseBody()));
   assertEquals(resp.status, 201);
   const created = (await resp.json()) as ModelAlias;
+  assertEquals(created.id.startsWith('alias_'), true);
   assertEquals(created.name, 'gpt-fast');
   assertEquals(created.visible_in_models_list, true);
   assertEquals(created.targets[0].target_model_id, 'gpt-5.4');
@@ -81,77 +88,98 @@ test('POST /api/aliases rejects a name collision with 409', async () => {
   assertEquals(body.error?.includes('already exists'), true);
 });
 
-test('PUT /api/aliases/:name updates rules and refreshes updated_at', async () => {
+test('PUT /api/aliases/:id updates rules and refreshes updated_at', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.modelAliases.deleteAll();
-  await requestApp('/api/aliases', authed(adminSession, baseBody()));
-  const before = await repo.modelAliases.getByName('gpt-fast');
-  assertExists(before);
+  const before = await createAlias(adminSession);
   await new Promise(resolve => setTimeout(resolve, 5));
 
   const resp = await requestApp(
-    '/api/aliases/gpt-fast',
+    `/api/aliases/${before.id}`,
     putAuthed(adminSession, baseBody({ display_name: 'GPT Fast', targets: [{ target_model_id: 'gpt-5.4', rules: { reasoning: { effort: 'high' } } }] })),
   );
   assertEquals(resp.status, 200);
   const updated = (await resp.json()) as ModelAlias;
   assertEquals(updated.display_name, 'GPT Fast');
   assertEquals(updated.targets[0].rules, { reasoning: { effort: 'high' } });
-  // createdAt is preserved; updatedAt is fresh.
-  assertEquals(updated.created_at, before.createdAt);
-  if (updated.updated_at === before.updatedAt) throw new Error('updated_at did not refresh');
+  assertEquals(updated.id, before.id);
+  // created_at is preserved; updated_at is fresh.
+  assertEquals(updated.created_at, before.created_at);
+  if (updated.updated_at === before.updated_at) throw new Error('updated_at did not refresh');
 });
 
-test('PUT /api/aliases/:name with a different body.name renames the row', async () => {
+test('PUT /api/aliases/:id with a different body.name renames the row in place', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.modelAliases.deleteAll();
-  await requestApp('/api/aliases', authed(adminSession, baseBody()));
+  const created = await createAlias(adminSession);
 
   const resp = await requestApp(
-    '/api/aliases/gpt-fast',
+    `/api/aliases/${created.id}`,
     putAuthed(adminSession, baseBody({ name: 'gpt-fastest' })),
   );
   assertEquals(resp.status, 200);
   assertEquals(await repo.modelAliases.getByName('gpt-fast'), null);
-  assertExists(await repo.modelAliases.getByName('gpt-fastest'));
+  const renamed = await repo.modelAliases.getById(created.id);
+  assertExists(renamed);
+  assertEquals(renamed.name, 'gpt-fastest');
 });
 
-test('PUT /api/aliases/:name rename collision returns 409', async () => {
+test('PUT /api/aliases/:id rename collision returns 409', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.modelAliases.deleteAll();
-  await requestApp('/api/aliases', authed(adminSession, baseBody({ name: 'gpt-fast' })));
-  await requestApp('/api/aliases', authed(adminSession, baseBody({ name: 'gpt-slow' })));
+  const fast = await createAlias(adminSession, { name: 'gpt-fast' });
+  await createAlias(adminSession, { name: 'gpt-slow' });
 
   const resp = await requestApp(
-    '/api/aliases/gpt-fast',
+    `/api/aliases/${fast.id}`,
     putAuthed(adminSession, baseBody({ name: 'gpt-slow' })),
   );
   assertEquals(resp.status, 409);
 });
 
-test('PUT /api/aliases/:name on a missing alias returns 404', async () => {
+test('PUT /api/aliases/:id on a missing alias returns 404', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.modelAliases.deleteAll();
 
-  const resp = await requestApp('/api/aliases/nope', putAuthed(adminSession, baseBody({ name: 'nope' })));
+  const resp = await requestApp('/api/aliases/alias_nope', putAuthed(adminSession, baseBody({ name: 'nope' })));
   assertEquals(resp.status, 404);
 });
 
-test('DELETE /api/aliases/:name returns 204 when present', async () => {
+// A model id routinely carries a slash (`vendor/model`). Addressing the row by
+// its opaque id keeps every mutation reachable no matter what the operator
+// names the alias.
+test('an alias whose name contains a slash stays editable and deletable', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.modelAliases.deleteAll();
-  await requestApp('/api/aliases', authed(adminSession, baseBody()));
+  const created = await createAlias(adminSession, { name: 'vendor/model' });
 
-  const resp = await requestApp('/api/aliases/gpt-fast', deleteAuthed(adminSession));
+  const updated = await requestApp(
+    `/api/aliases/${created.id}`,
+    putAuthed(adminSession, baseBody({ name: 'vendor/model', display_name: 'Vendor Model' })),
+  );
+  assertEquals(updated.status, 200);
+  assertEquals(((await updated.json()) as ModelAlias).display_name, 'Vendor Model');
+
+  const deleted = await requestApp(`/api/aliases/${created.id}`, deleteAuthed(adminSession));
+  assertEquals(deleted.status, 204);
+  assertEquals(await repo.modelAliases.getByName('vendor/model'), null);
+});
+
+test('DELETE /api/aliases/:id returns 204 when present', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.modelAliases.deleteAll();
+  const created = await createAlias(adminSession);
+
+  const resp = await requestApp(`/api/aliases/${created.id}`, deleteAuthed(adminSession));
   assertEquals(resp.status, 204);
   assertEquals(await repo.modelAliases.getByName('gpt-fast'), null);
 });
 
-test('DELETE /api/aliases/:name is idempotent — 204 even when the row is absent', async () => {
+test('DELETE /api/aliases/:id is idempotent — 204 even when the row is absent', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.modelAliases.deleteAll();
 
-  const resp = await requestApp('/api/aliases/missing', deleteAuthed(adminSession));
+  const resp = await requestApp('/api/aliases/alias_missing', deleteAuthed(adminSession));
   assertEquals(resp.status, 204);
 });
 
@@ -268,13 +296,13 @@ test('POST /api/aliases rejects reasoning that combines adaptive=true with budge
   assertEquals(body.error?.includes('budget_tokens'), true);
 });
 
-test('PUT /api/aliases/:name rejects an update that pairs adaptive=true with budget_tokens (400)', async () => {
+test('PUT /api/aliases/:id rejects an update that pairs adaptive=true with budget_tokens (400)', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.modelAliases.deleteAll();
-  await requestApp('/api/aliases', authed(adminSession, baseBody()));
+  const created = await createAlias(adminSession);
 
   const resp = await requestApp(
-    '/api/aliases/gpt-fast',
+    `/api/aliases/${created.id}`,
     putAuthed(adminSession, baseBody({
       targets: [{ target_model_id: 'gpt-5.4', rules: { reasoning: { adaptive: true, budget_tokens: 4096 } } }],
     })),

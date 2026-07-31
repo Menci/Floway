@@ -100,7 +100,7 @@ const makeResponsesResult = (id = 'resp_test'): ResponsesResult => ({
     id: 'msg_1',
     role: 'assistant',
     status: 'completed',
-    content: [{ type: 'output_text', text: 'hi' }],
+    content: [{ type: 'output_text', text: 'hi', annotations: [] }],
   }],
   output_text: 'hi',
   error: null,
@@ -189,6 +189,7 @@ test('compact returns a result envelope from the wrapped attempt', async () => {
     ...makeResponsesResult(),
     object: 'response.compaction',
     output: [compactionItem] as unknown as ResponsesResult['output'],
+    usage: { input_tokens: 12, output_tokens: 3, total_tokens: 15 },
   };
   const observedModelIds: string[] = [];
   const callResponses = vi.fn(async (model: unknown, _body: unknown, action: ResponsesAction): Promise<ProviderResponsesResult> => {

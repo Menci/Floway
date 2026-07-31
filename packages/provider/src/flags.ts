@@ -23,7 +23,6 @@ export const OPTIONAL_FLAG_IDS = [
   'vendor-deepseek',
   'vendor-qwen',
   'vendor-kimi',
-  'retry-cyber-policy',
   'messages-web-search-shim',
   'responses-web-search-shim',
   'responses-image-generation-shim',

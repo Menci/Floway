@@ -5,6 +5,7 @@ import type { ModelAliasRecord } from '../../../src/repo/types.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const record: ModelAliasRecord = {
+  id: 'alias_0123456789abcdef01234567',
   name: 'codex-auto-review',
   kind: 'chat',
   selection: 'first-available',
@@ -22,6 +23,7 @@ const record: ModelAliasRecord = {
 
 test('recordToWire flips camelCase fields to snake_case', () => {
   const wire = recordToWire(record);
+  assertEquals(wire.id, 'alias_0123456789abcdef01234567');
   assertEquals(wire.name, 'codex-auto-review');
   assertEquals(wire.kind, 'chat');
   assertEquals(wire.selection, 'first-available');
@@ -36,6 +38,7 @@ test('recordToWire flips camelCase fields to snake_case', () => {
 test('wireToRecord roundtrips back to the original record', () => {
   const wire = recordToWire(record);
   const roundTripped = wireToRecord(wire, {
+    id: wire.id,
     sortOrder: wire.sort_order,
     createdAt: wire.created_at,
     updatedAt: wire.updated_at,
@@ -46,6 +49,7 @@ test('wireToRecord roundtrips back to the original record', () => {
 test('wireToRecord uses meta sortOrder when the wire payload omits it', () => {
   const { sort_order: _drop, ...partial } = recordToWire(record);
   const built = wireToRecord(partial, {
+    id: record.id,
     sortOrder: 7,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-06-26T12:00:00.000Z',
@@ -57,7 +61,7 @@ test('wireToRecord uses meta sortOrder when the wire payload omits it', () => {
 test('wireToRecord preserves a null display_name', () => {
   const built = wireToRecord(
     { ...recordToWire(record), display_name: null },
-    { sortOrder: 0, createdAt: 'x', updatedAt: 'y' },
+    { id: record.id, sortOrder: 0, createdAt: 'x', updatedAt: 'y' },
   );
   assertEquals(built.displayName, null);
 });
@@ -76,6 +80,7 @@ test('announced_metadata round-trips a populated override', () => {
     chat: { modalities: { input: ['text'], output: ['text'] } },
   });
   const roundTripped = wireToRecord(wire, {
+    id: wire.id,
     sortOrder: wire.sort_order,
     createdAt: wire.created_at,
     updatedAt: wire.updated_at,

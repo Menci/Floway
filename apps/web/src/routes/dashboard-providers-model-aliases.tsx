@@ -98,7 +98,7 @@ export default function DashboardProvidersModelAliases({ loaderData }: Route.Com
     setMutating(true);
     setDeleteError(null);
     const handle = toasts.start(t('dashboard.modelAliases.toast.delete.pending', { name: target.name }));
-    const result = await callApi(() => api.api.aliases[':name'].$delete({ param: { name: target.name } }));
+    const result = await callApi(() => api.api.aliases[':id'].$delete({ param: { id: target.id } }));
     setMutating(false);
     if (result.error) {
       handle.settle();

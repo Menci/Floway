@@ -24,8 +24,9 @@ const makeResponse = (status: ResponsesResult['status'], overrides: Partial<Resp
     {
       type: 'message',
       id: 'msg_fast',
+      status: 'completed',
       role: 'assistant',
-      content: [{ type: 'output_text', text: 'hello' }],
+      content: [{ type: 'output_text', text: 'hello', annotations: [] }],
     },
   ],
   error: null,
@@ -315,8 +316,9 @@ test('parseResponsesStream fast-paths response.failed terminal with partial outp
       {
         type: 'message',
         id: 'msg_partial',
+        status: 'completed',
         role: 'assistant',
-        content: [{ type: 'output_text', text: 'partial' }],
+        content: [{ type: 'output_text', text: 'partial', annotations: [] }],
       },
     ],
     error: { type: 'server_error', code: 'server_error', message: 'upstream failed mid-stream' },
@@ -370,7 +372,7 @@ test('parseResponsesStream fast-paths when ping interleaves the wrappers', async
     sseFrame('[DONE]'),
   ));
 
-  const eventTypes = frames.filter(frame => frame.type === 'event').map(frame => (frame.type === 'event' ? frame.event.type : ''));
+  const eventTypes: string[] = frames.filter(frame => frame.type === 'event').map(frame => (frame.type === 'event' ? frame.event.type : ''));
   assertEquals(eventTypes.includes('response.output_item.added'), true);
   assertEquals(eventTypes.at(-1), 'response.completed');
   assertEquals(eventTypes.includes('ping'), false);

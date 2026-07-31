@@ -6,9 +6,8 @@ import type { ApiErrorResult } from '@floway-dev/provider';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 import { TranslatorInputError } from '@floway-dev/translate';
 
-const apiErrorOf = (result: ReturnType<typeof responsesInputErrorResult>): ApiErrorResult => result as ApiErrorResult;
-const bodyOf = (result: ReturnType<typeof responsesInputErrorResult>): unknown =>
-  JSON.parse(new TextDecoder().decode(apiErrorOf(result).body));
+const bodyOf = (result: ApiErrorResult): unknown =>
+  JSON.parse(new TextDecoder().decode(result.body));
 
 test('round-trips the Responses-only item-not-found failure through throw/catch', () => {
   const failure: ResponsesServeFailure = { kind: 'item-not-found', itemId: 'msg_abc' };
@@ -20,17 +19,30 @@ test('responsesInputErrorResult renders an OpenAI 400 invalid_request_error enve
   const result = responsesInputErrorResult(
     new TranslatorInputError("Invalid input item type 'image_generation_call'."),
   );
-  const apiError = apiErrorOf(result);
-
-  assertEquals(apiError.type, 'api-error');
-  assertEquals(apiError.source, 'gateway');
-  assertEquals(apiError.status, 400);
+  assertEquals(result.type, 'api-error');
+  assertEquals(result.source, 'gateway');
+  assertEquals(result.status, 400);
   assertEquals(bodyOf(result), {
     error: {
       message: "Invalid input item type 'image_generation_call'.",
       type: 'invalid_request_error',
       param: 'input',
       code: null,
+    },
+  });
+});
+
+test('responsesInputErrorResult carries an explicit error code into the envelope', () => {
+  const result = responsesInputErrorResult(
+    new TranslatorInputError("Missing required parameter: 'model'.", { param: 'model', code: 'missing_required_parameter' }),
+  );
+
+  assertEquals(bodyOf(result), {
+    error: {
+      message: "Missing required parameter: 'model'.",
+      type: 'invalid_request_error',
+      param: 'model',
+      code: 'missing_required_parameter',
     },
   });
 });

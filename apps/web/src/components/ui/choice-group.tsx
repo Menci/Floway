@@ -112,11 +112,20 @@ export function ChoiceGroup({
   ariaLabel,
   items,
   onChange,
+  readOnly,
   value,
 }: {
   ariaLabel: string;
   items: ChoiceGroupItem[];
   onChange: (value: string) => void;
+  /**
+   * The choice is shown but is not this operator's to make -- as distinct from
+   * disabled, which says the choice is not available at all. It reads as it
+   * does at rest, takes focus, and refuses the selection. The same distinction,
+   * and why the refusal has to cancel the click, is written down in
+   * ./fluent-form-controls.tsx for the controls Fluent ships.
+   */
+  readOnly?: boolean;
   value: string;
 }) {
   const styles = useStyles();
@@ -187,14 +196,17 @@ export function ChoiceGroup({
     ], { duration: INDICATOR_DURATION_MS });
   }, [box]);
 
-  return <div aria-label={ariaLabel} className={styles.root} ref={rootRef} role="radiogroup">
+  return <div aria-label={ariaLabel} aria-readonly={readOnly === true ? true : undefined} className={styles.root} ref={rootRef} role="radiogroup">
     {items.map(item => <label className={styles.item} data-choice={item.value} key={item.value}>
       <input
         checked={value === item.value}
         className={styles.input}
         disabled={item.disabled}
         name={name}
-        onChange={() => onChange(item.value)}
+        onChange={readOnly === true ? undefined : () => onChange(item.value)}
+        // A radio's default action is the selection, so cancelling the click is
+        // what refuses it while leaving the control its own appearance.
+        onClick={readOnly === true ? event => event.preventDefault() : undefined}
         type="radio"
         value={item.value}
       />

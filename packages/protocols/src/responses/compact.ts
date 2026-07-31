@@ -1,8 +1,10 @@
 import type {
   CanonicalResponsesPayload,
   ResponsesInputItem,
+  ResponsesOutputItem,
   ResponsesPromptCacheOptions,
   ResponsesPromptCacheRetention,
+  ResponsesResult,
 } from './index.ts';
 
 // Narrower payload for `/responses/compact`. The official endpoint accepts a
@@ -48,3 +50,19 @@ export const toCompactPayloadShape = (payload: Omit<CanonicalResponsesPayload, '
   ...(payload.prompt_cache_retention !== undefined && { prompt_cache_retention: payload.prompt_cache_retention }),
   ...(payload.service_tier !== undefined && { service_tier: payload.service_tier }),
 });
+
+// The `/responses/compact` wire body: `CompactResource` states none of the
+// response-only fields a `ResponseResource` requires — no `status`, `model`,
+// `error` or `incomplete_details`.
+// https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L3935-L4008
+//
+// This models what an upstream sends, so `created_at` and `usage` stay optional
+// even though the schema requires them; presence on the client-facing body is
+// `ClientResponsesCompaction`'s guarantee.
+export interface ResponsesCompactionResult {
+  id: string;
+  object: string;
+  output: ResponsesOutputItem[];
+  created_at?: number;
+  usage?: ResponsesResult['usage'];
+}

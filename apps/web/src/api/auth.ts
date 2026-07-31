@@ -56,9 +56,11 @@ type SuccessfulJson<TResponse extends Response> = TResponse extends {
     : never
   : never;
 
-const callResponse = async <T>(
+// Everything up to the body: the network, the 401 path and a failed status all
+// resolve here, so the two callers below differ only in whether they parse.
+const requestResponse = async (
   fn: () => Promise<Response>,
-): Promise<ApiResult<T>> => {
+): Promise<ApiResult<Response>> => {
   let response: Response;
   try {
     response = await fn();
@@ -88,12 +90,19 @@ const callResponse = async <T>(
     };
   }
 
+  return { data: response };
+};
+
+const callResponse = async <T>(fn: () => Promise<Response>): Promise<ApiResult<T>> => {
+  const result = await requestResponse(fn);
+  if (result.error) return result;
+
   try {
-    return { data: (await response.json()) as T };
+    return { data: (await result.data.json()) as T };
   } catch (error: unknown) {
     return {
       error: {
-        status: response.status,
+        status: result.data.status,
         message:
           error instanceof Error ? error.message : 'Invalid JSON response',
       },
@@ -105,6 +114,14 @@ export const callApi = <TResponse extends Response>(
   fn: () => Promise<TResponse>,
 ): Promise<ApiResult<SuccessfulJson<TResponse>>> =>
   callResponse<SuccessfulJson<TResponse>>(fn);
+
+// A 204 carries no body at all, so success is the absence of an error and
+// nothing is parsed. Asking for the JSON would turn one into a parse failure.
+// https://www.rfc-editor.org/rfc/rfc9110#section-15.3.5
+export const callApiNoContent = async (fn: () => Promise<Response>): Promise<ApiResult<void>> => {
+  const { error } = await requestResponse(fn);
+  return error ? { error } : { data: undefined };
+};
 
 const errorMessageFromBody = (body: unknown): string | null => {
   if (!body || typeof body !== 'object') return null;

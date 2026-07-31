@@ -29,7 +29,7 @@ export const chatCompletionsContentToResponsesInputContent = (content: string | 
         return {
           type: 'input_image',
           image_url: part.image_url.url,
-          detail: part.image_url.detail ?? 'auto',
+          ...(part.image_url.detail === undefined ? {} : { detail: part.image_url.detail }),
         };
       }
     },
@@ -51,19 +51,17 @@ export const responsesContentToChatCompletionsContent = (content: string | Respo
             if (typeof part.image_url !== 'string') {
               throw new TranslatorInputError('Cannot translate file_id-only image content to Chat Completions.');
             }
-            let detail: 'auto' | 'low' | 'high';
-            switch (part.detail) {
-            case 'auto': detail = 'auto'; break;
-            case 'low': detail = 'low'; break;
-            case 'high': detail = 'high'; break;
-            default:
-              throw new TranslatorInputError(`Cannot translate image detail '${part.detail}' to Chat Completions.`);
-            }
             return {
               type: 'image_url',
               image_url: {
                 url: part.image_url,
-                detail,
+                // Both protocols read an absent `detail` as `auto`, and Chat
+                // Completions has no null member, so an absent or null value
+                // becomes an omitted key. Anything else is the upstream's to
+                // accept or reject.
+                // https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L30795-L30803
+                // https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L67946-L67951
+                ...(part.detail == null ? {} : { detail: part.detail }),
               },
             };
           }

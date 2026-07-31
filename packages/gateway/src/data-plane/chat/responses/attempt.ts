@@ -1,8 +1,8 @@
 import { responsesInterceptors } from './interceptors/index.ts';
 import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors/types.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
-import { syntheticEventsFromResult } from './items/output.ts';
-import { billableUsageFromResponsesEvent } from './usage.ts';
+import { syntheticEventsFromCompaction } from './items/output.ts';
+import { billableUsageFromResponsesEvent, billableUsageFromResponsesResult } from './usage.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared/telemetry/attribution.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
@@ -227,9 +227,16 @@ const providerResponsesResultToExecuteResult = async (
   if (!providerResult.ok) {
     return { ...(await readUpstreamApiError(providerResult.response, candidate.provider.upstreamId)), performance: context };
   }
+  // A native compaction is a turn the upstream ran and charged for, and its
+  // body states the counts.
+  const modelIdentity = telemetryModelIdentity(candidate, providerResult.modelKey);
+  const billableUsage = billableUsageFromResponsesResult(providerResult.result);
   return eventResult(
-    syntheticEventsFromResult(providerResult.result),
-    telemetryModelIdentity(candidate, providerResult.modelKey),
-    { performance: context },
+    syntheticEventsFromCompaction(providerResult.result),
+    modelIdentity,
+    {
+      performance: context,
+      ...(billableUsage === null ? {} : { finalMetadata: Promise.resolve({ modelIdentity, billableUsage }) }),
+    },
   );
 };

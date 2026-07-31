@@ -567,7 +567,6 @@ const zhHansCN = {
             shims: '能力兼容层',
             apiCompatibility: 'API 功能兼容',
             sanitization: '请求净化',
-            retry: '重试策略',
           },
           entries: {
             'vendor-deepseek': {
@@ -584,11 +583,6 @@ const zhHansCN = {
               label: 'Kimi 兼容',
               description:
                   'Kimi 的 API 在缓存 Token 用量统计方面采用了非标准格式。\n开启此开关，以将 Kimi 响应中的扁平缓存 Token 字段 (`cached_tokens`) 归一化为 OpenAI 规范格式 (`prompt_tokens_details.cached_tokens`)。\n当上游为 **Kimi（月之暗面）chat completions API** 时应开启。',
-            },
-            'retry-cyber-policy': {
-              label: '安全策略拦截重试',
-              description:
-                  'OpenAI 的 Cybersecurity 安全策略可能在部分请求中产生偶发的 `cyber_policy` 误判拦截。\n开启此开关后，当上游误判，返回 `cyber_policy` 4xx 错误时会自动重试。最多 10 次。',
             },
             'messages-web-search-shim': {
               label: 'Messages 网页搜索兼容层',

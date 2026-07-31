@@ -431,6 +431,7 @@ test('/v1beta/models emits visible aliases as models/<alias-name> entries with d
     },
   }));
   await repo.modelAliases.insert({
+    id: 'alias_gpt-fast',
     name: 'gpt-fast',
     kind: 'chat',
     selection: 'first-available',

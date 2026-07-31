@@ -181,6 +181,7 @@ test('/api/models — admin sees raw alias.targets; non-admin sees the caller-na
   const { adminSession, repo } = await setupAppTest();
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_custom_models', sortOrder: 100 }));
   await repo.modelAliases.insert({
+    id: 'alias_mix',
     name: 'mix',
     kind: 'chat',
     selection: 'first-available',
@@ -267,6 +268,7 @@ test('/api/models — admin self-restriction does NOT leak per-alias metadata va
     },
   }));
   await repo.modelAliases.insert({
+    id: 'alias_shared-alias',
     name: 'shared-alias',
     kind: 'chat',
     selection: 'first-available',

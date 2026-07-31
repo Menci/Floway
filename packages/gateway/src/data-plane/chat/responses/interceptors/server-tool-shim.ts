@@ -193,7 +193,7 @@ export const sumUsage = (a: MergeUsage, b: MergeUsage): MergeUsage => {
   return out;
 };
 
-const usageForWire = (state: MergeState): ResponsesResult['usage'] => {
+const usageForWire = (state: MergeState): NonNullable<ResponsesResult['usage']> | undefined => {
   const u = state.accumulatedUsage;
   if (
     u.input_tokens === undefined
@@ -214,7 +214,7 @@ const usageForWire = (state: MergeState): ResponsesResult['usage'] => {
 };
 
 const usageOf = (usage: ResponsesResult['usage']): MergeUsage => {
-  if (usage === undefined) return {};
+  if (usage == null) return {};
   const out: MergeUsage = {};
   if (usage.input_tokens !== undefined) out.input_tokens = usage.input_tokens;
   if (usage.output_tokens !== undefined) out.output_tokens = usage.output_tokens;
@@ -653,6 +653,12 @@ export const consumeTurnStreaming = async function* (
       continue;
     }
 
+    // Filler a transport injects to hold a connection open. It has to be named
+    // here, because the positionless fall-through below forwards whatever it
+    // does not recognize. `keepalive` is openai-node's name for the same frame.
+    // https://github.com/openai/openai-node/blob/d77cf24d9f3885739c6cba76bc009abf0ab97428/src/lib/responses/ResponseAccumulator.ts#L382-L386
+    if ((event.type as string) === 'ping' || (event.type as string) === 'keepalive') continue;
+
     const rewriteResult = rewriteOutputIndex(event, openItems, openItemIds, merge);
     if (rewriteResult !== null) {
       const maybeItemEvent = rewriteResult as ResponsesStreamEvent & { output_index?: number; item?: unknown };
@@ -662,6 +668,12 @@ export const consumeTurnStreaming = async function* (
       yield stamp(rewriteResult);
       continue;
     }
+
+    // No event of the current protocol reaches here; every positionless type is
+    // answered above. This line is for what the protocol grows:
+    // `parseResponsesStream` classifies by deny-list so an unrecognized type
+    // survives as structured, and dropping it here would spend that guarantee.
+    yield stamp(event);
   }
 
   if (terminalStatus === undefined) {

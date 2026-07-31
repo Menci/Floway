@@ -1116,7 +1116,13 @@ const cloneModelAliasRecord = (record: ModelAliasRecord): ModelAliasRecord => ({
 });
 
 class MemoryModelAliasesRepo implements ModelAliasesRepo {
+  // Keyed by id, mirroring the table's primary key; the name uniqueness the
+  // SQL backend enforces with a UNIQUE index is checked by scan here.
   private store = new Map<string, ModelAliasRecord>();
+
+  private nameTaken(name: string, exceptId: string | null): boolean {
+    return [...this.store.values()].some(record => record.name === name && record.id !== exceptId);
+  }
 
   list(): Promise<ModelAliasRecord[]> {
     return Promise.resolve(
@@ -1126,29 +1132,33 @@ class MemoryModelAliasesRepo implements ModelAliasesRepo {
     );
   }
 
+  getById(id: string): Promise<ModelAliasRecord | null> {
+    const found = this.store.get(id);
+    return Promise.resolve(found ? cloneModelAliasRecord(found) : null);
+  }
+
   getByName(name: string): Promise<ModelAliasRecord | null> {
-    const found = this.store.get(name);
+    const found = [...this.store.values()].find(record => record.name === name);
     return Promise.resolve(found ? cloneModelAliasRecord(found) : null);
   }
 
   insert(record: ModelAliasRecord): Promise<void> {
-    if (this.store.has(record.name)) throw new Error('UNIQUE constraint failed: model_aliases.name');
-    this.store.set(record.name, cloneModelAliasRecord(record));
+    if (this.nameTaken(record.name, null)) throw new Error('UNIQUE constraint failed: model_aliases.name');
+    this.store.set(record.id, cloneModelAliasRecord(record));
     return Promise.resolve();
   }
 
-  update(oldName: string, record: ModelAliasRecord): Promise<void> {
-    if (!this.store.has(oldName)) throw new Error(`alias ${oldName} not found`);
-    if (oldName !== record.name && this.store.has(record.name)) {
+  update(record: ModelAliasRecord): Promise<void> {
+    if (!this.store.has(record.id)) throw new Error(`alias ${record.id} not found`);
+    if (this.nameTaken(record.name, record.id)) {
       throw new Error('UNIQUE constraint failed: model_aliases.name');
     }
-    this.store.delete(oldName);
-    this.store.set(record.name, cloneModelAliasRecord(record));
+    this.store.set(record.id, cloneModelAliasRecord(record));
     return Promise.resolve();
   }
 
-  delete(name: string): Promise<boolean> {
-    return Promise.resolve(this.store.delete(name));
+  delete(id: string): Promise<boolean> {
+    return Promise.resolve(this.store.delete(id));
   }
 
   deleteAll(): Promise<void> {

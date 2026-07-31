@@ -4,7 +4,11 @@ import { responsesResultFromStreamEvent, type ResponsesResult, type ResponsesStr
 // service_tier reports the tier actually served and therefore selects the
 // matching pricing entry rather than the tier originally requested.
 // https://developers.openai.com/api/docs/guides/priority-processing
-export const billableUsageFromResponsesResult = (response: ResponsesResult): BillableUsage | null => {
+// Takes the two fields it reads rather than a whole result, so a compaction
+// body can be priced through the same helper.
+export const billableUsageFromResponsesResult = (
+  response: { readonly usage?: ResponsesResult['usage']; readonly service_tier?: ResponsesResult['service_tier'] },
+): BillableUsage | null => {
   const usage = response.usage;
   if (!usage) return null;
   const cacheWrite = usage.input_tokens_details?.cache_write_tokens ?? 0;

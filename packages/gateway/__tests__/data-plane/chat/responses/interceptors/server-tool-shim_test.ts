@@ -152,8 +152,9 @@ const mkMessageAdded = (outputIndex: number): ProtocolFrame<ResponsesStreamEvent
     output_index: outputIndex,
     item: {
       type: 'message',
+      status: 'in_progress',
       role: 'assistant',
-      content: [{ type: 'output_text', text: '' }],
+      content: [{ type: 'output_text', text: '', annotations: [] }],
     },
   });
 
@@ -163,8 +164,9 @@ const mkMessageDone = (outputIndex: number, text: string): ProtocolFrame<Respons
     output_index: outputIndex,
     item: {
       type: 'message',
+      status: 'completed',
       role: 'assistant',
-      content: [{ type: 'output_text', text }],
+      content: [{ type: 'output_text', text, annotations: [] }],
     },
   });
 
@@ -2801,7 +2803,7 @@ test('upstream-emitted `output_text` on in-progress envelopes flows through verb
       object: 'response',
       model: 'test-model',
       output: [
-        { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'real result' }] },
+        { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'real result', annotations: [] }] },
       ],
       status: 'completed',
       error: null,
@@ -5209,7 +5211,7 @@ test('consumeTurn forwards content_part / output_text / annotation events live w
         item_id: 'msg_upstream',
         output_index: 0,
         content_index: 0,
-        part: { type: 'output_text', text: '' },
+        part: { type: 'output_text', text: '', annotations: [] },
       }),
       eventFrame<ResponsesStreamEvent>({
         type: 'response.output_text.delta',
@@ -5244,7 +5246,7 @@ test('consumeTurn forwards content_part / output_text / annotation events live w
         item_id: 'msg_upstream',
         output_index: 0,
         content_index: 0,
-        part: { type: 'output_text', text: 'hello world' },
+        part: { type: 'output_text', text: 'hello world', annotations: [] },
       }),
       mkMessageDone(0, 'hello world'),
       mkResponseCompleted(),
@@ -5352,7 +5354,7 @@ test('consumeTurn preserves upstream message item.id (no fabrication) when upstr
         item: {
           type: 'message',
           role: 'assistant',
-          content: [{ type: 'output_text', text: '' }],
+          content: [{ type: 'output_text', text: '', annotations: [] }],
           // Upstream-provided id.
           id: 'msg_xyz_real_id',
         } as never,
@@ -5828,13 +5830,13 @@ test('consumeTurn live-forwards indexed progress events without hardcoded event-
   assertEquals(new Set(indices).size, 1);
 });
 
-test('consumeTurn keeps swallowing keepalive/ping-shape events that lack output_index', async () => {
+test('consumeTurn swallows keepalive/ping filler frames', async () => {
   const state = createMergeState();
   const result = await consumeTurn(
     framesOf(
       mkResponseCreated(),
       eventFrame<ResponsesStreamEvent>({ type: 'keepalive' } as unknown as ResponsesStreamEvent),
-      eventFrame<ResponsesStreamEvent>({ type: 'ping' }),
+      eventFrame<ResponsesStreamEvent>({ type: 'ping' } as unknown as ResponsesStreamEvent),
       mkResponseCompleted(),
     ),
     state,
@@ -5877,9 +5879,9 @@ test('createMergeState starts with empty sparse usage accumulator and a synthesi
 
 test('materializeAccumulatedOutput returns items in output_index order regardless of insertion order', () => {
   const s = createMergeState();
-  const itemA: ResponsesOutputItem = { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'A' }] };
-  const itemB: ResponsesOutputItem = { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'B' }] };
-  const itemC: ResponsesOutputItem = { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'C' }] };
+  const itemA: ResponsesOutputItem = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'A', annotations: [] }] };
+  const itemB: ResponsesOutputItem = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'B', annotations: [] }] };
+  const itemC: ResponsesOutputItem = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'C', annotations: [] }] };
   s.accumulatedOutput.set(2, itemC);
   s.accumulatedOutput.set(0, itemA);
   s.accumulatedOutput.set(1, itemB);
@@ -5892,7 +5894,7 @@ test('materializeAccumulatedOutput returns items in output_index order regardles
 
 test('materializeAccumulatedOutput drops holes in the index sequence (defensive)', () => {
   const s = createMergeState();
-  const itemB: ResponsesOutputItem = { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'B' }] };
+  const itemB: ResponsesOutputItem = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'B', annotations: [] }] };
   s.accumulatedOutput.set(1, itemB);
   const out = materializeAccumulatedOutput(s);
   assertEquals(out.length, 1);
@@ -6256,4 +6258,22 @@ test('the shim carries the upstream turn cost onto the metadata pricing reads', 
   assert(result.type === 'events');
   await collectFrames(result.events);
   assertEquals((await result.finalMetadata!).billableUsage, billableUsage);
+});
+
+test('consumeTurn forwards an event carrying no output_index instead of dropping it', async () => {
+  const unrecognized = eventFrame({
+    type: 'response.some_future_event',
+    detail: 'carried through',
+  } as unknown as ResponsesStreamEvent);
+
+  const result = await consumeTurn(
+    framesOf(mkResponseCreated(), unrecognized, mkResponseCompleted()),
+    createMergeState(),
+    true,
+  );
+
+  assertEquals(eventTypesOf(result.downstreamFrames), ['response.created', 'response.some_future_event']);
+  const forwarded = result.downstreamFrames[1];
+  assert(forwarded.type === 'event');
+  assertEquals((forwarded.event as unknown as { detail: string }).detail, 'carried through');
 });
