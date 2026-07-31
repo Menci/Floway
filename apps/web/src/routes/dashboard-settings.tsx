@@ -75,7 +75,7 @@ export default function DashboardSettings() {
   const { t } = useTranslation();
   const fetcher = useFetcher<SettingsActionData>();
   const toasts = useOutcomeToasts();
-  const [error, setError] = useState<string | null>(null);
+  const [dismissed, setDismissed] = useState<SettingsActionData | null>(null);
   const saving = fetcher.state !== 'idle';
   const {
     control,
@@ -91,16 +91,14 @@ export default function DashboardSettings() {
     },
   });
 
-  // The action's result is the only record of what happened, and it survives
-  // the render that consumed it; reading it into state here is what lets the
-  // failure be dismissed and the success be a toast that leaves on its own.
+  // A dismissal names the result it dismissed rather than clearing a copy of
+  // it, so the next submission's failure appears on its own account.
+  const error = fetcher.data && !fetcher.data.ok && fetcher.data !== dismissed
+    ? t(fetcher.data.error)
+    : null;
+
   useEffect(() => {
-    if (!fetcher.data) return;
-    if (!fetcher.data.ok) {
-      setError(t(fetcher.data.error));
-      return;
-    }
-    setError(null);
+    if (!fetcher.data?.ok) return;
     reset();
     toasts.succeed(t('dashboard.settings.passwordUpdated'));
   }, [fetcher.data, reset, t, toasts]);
@@ -169,7 +167,7 @@ export default function DashboardSettings() {
           </Text>
 
           {error && (
-            <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>
+            <OutcomeMessageBar onDismiss={() => setDismissed(fetcher.data ?? null)}>{error}</OutcomeMessageBar>
           )}
 
           <div className="flex justify-end pt-1">
