@@ -67,6 +67,15 @@ export const choiceCss = `
   padding: 0;
 }
 
+/* Fluent sizes the radio it puts in a table's selection cell to a fixed 28 --
+   its own 16px indicator plus the margins this file has just taken off -- and
+   lets it grow into whatever the cell leaves. Ours draws 20, so the box is held
+   to that and the cell goes on centring it. */
+.fui-TableSelectionCell__radioIndicator.fui-TableSelectionCell__radioIndicator {
+  flex: none;
+  width: 20px;
+}
+
 /* A control that carries a label is a field, and stands in a row beside inputs
    and combo boxes; one that does not is a mark in a cell, and is only itself.
    So the field floor lands on the labelled form alone, and the centring above

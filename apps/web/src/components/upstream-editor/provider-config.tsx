@@ -48,9 +48,6 @@ const {
 } = fluentComponents;
 
 const useStyles = makeStyles({
-  apiControlOffset: {
-    marginLeft: '-8px',
-  },
   endpointCheckbox: {
     fontFamily: 'var(--fontFamilyMonospace) !important',
     fontSize: 'var(--floway-font-size-mono) !important',
@@ -138,7 +135,6 @@ function CustomApiPaths({ onRefreshModels }: { onRefreshModels: () => void }) {
       <Controller control={control} name={'config.modelsFetch.enabled' as never} render={({ field }) => (
         <Switch
           checked={Boolean(field.value)}
-          className={styles.apiControlOffset}
           label={t('dashboard.upstreamEditor.fields.fetchModels')}
           onChange={(_, data) => {
             field.onChange(data.checked);
@@ -284,7 +280,6 @@ function EndpointPicker() {
           name={`default-endpoint-${key}`}
           key={key}
           checked={selected}
-          className={styles.apiControlOffset}
           label={{ children: label, className: styles.endpointCheckbox }}
           onChange={(_, data) => {
             const latestConfig = getValues('config') as Extract<UpstreamRecord, { kind: 'custom' }>['config'];
