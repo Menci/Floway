@@ -217,6 +217,24 @@ const en = {
           saving: 'Saving...',
           deleting: 'Deleting...',
         },
+        toast: {
+          create: {
+            pending: 'Creating user {{username}}',
+            success: 'Created user {{username}}',
+          },
+          edit: {
+            pending: 'Saving user {{username}}',
+            success: 'Saved user {{username}}',
+          },
+          password: {
+            pending: 'Resetting the password of {{username}}',
+            success: 'Reset the password of {{username}}',
+          },
+          delete: {
+            pending: 'Deleting user {{username}}',
+            success: 'Deleted user {{username}}',
+          },
+        },
         table: {
           label: 'Floway users',
           username: 'Username',

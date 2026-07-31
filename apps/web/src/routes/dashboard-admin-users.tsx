@@ -21,6 +21,8 @@ import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { DialogShell } from '../components/ui/dialog-shell';
 import { Input } from '../components/ui/fluent-form-controls';
+import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
+import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { ResourceListActions, ResourceListEmptyState, ResourceListPanel } from '../components/ui/resource-list';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { SettingsCard, SettingsSwitch } from '../components/ui/settings-card';
@@ -39,7 +41,6 @@ const {
   DialogTitle,
   Field,
   MessageBar,
-  MessageBarActions,
   MessageBarBody,
   Table,
   TableBody,
@@ -92,6 +93,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
   const { t } = useTranslation();
   const { user: actor } = useOutletContext<DashboardOutletContext>();
   const refreshAuth = useAuthStore(state => state.refresh);
+  const toasts = useOutcomeToasts();
   const [data, setData] = useState<UsersPageData>(loaderData);
   const [pageError, setPageError] = useState<string | null>(loaderData.error);
   const [loading, setLoading] = useState(false);
@@ -99,6 +101,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
   const passwordDialog = useDialogInvocation<ControlPlaneUser>();
   const deleteDialog = useDialogInvocation<ControlPlaneUser>();
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const reload = async () => {
     setLoading(true);
@@ -129,15 +132,18 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
 
   const deleteUser = async (target: ControlPlaneUser) => {
     setDeleting(true);
-    setPageError(null);
+    setDeleteError(null);
+    const handle = toasts.start(t('dashboard.users.toast.delete.pending', { username: target.username }));
     const result = await callApi(() =>
       api.api.users[':id'].$delete({ param: { id: String(target.id) } }));
     setDeleting(false);
     if (result.error) {
-      setPageError(result.error.message);
+      handle.settle();
+      setDeleteError(result.error.message);
       return;
     }
     deleteDialog.close();
+    handle.succeed(t('dashboard.users.toast.delete.success', { username: target.username }));
     await reload();
   };
 
@@ -158,14 +164,14 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
       />
 
       {pageError && (
-        <MessageBar intent="error">
-          <MessageBarBody>{pageError}</MessageBarBody>
-          <MessageBarActions>
-            <Button appearance="transparent" disabled={loading} onClick={() => void reload()}>
-              {t('dashboard.users.actions.retry')}
-            </Button>
-          </MessageBarActions>
-        </MessageBar>
+        <OutcomeMessageBar
+          action={<Button appearance="transparent" disabled={loading} onClick={() => void reload()}>
+            {t('dashboard.users.actions.retry')}
+          </Button>}
+          onDismiss={() => setPageError(null)}
+        >
+          {pageError}
+        </OutcomeMessageBar>
       )}
 
       <ResourceListPanel>
@@ -213,6 +219,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
           ? t('dashboard.users.actions.deleting')
           : t('dashboard.users.actions.delete')}
         busy={deleting}
+        error={deleteError}
         key={deleteDialog.invocation.key}
         message={t('dashboard.users.delete.message', {
           username: deleteDialog.invocation.value.username,
@@ -220,6 +227,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
         onConfirm={() => {
           if (!deleting) void deleteUser(deleteDialog.invocation!.value);
         }}
+        onDismissError={() => setDeleteError(null)}
         onOpenChange={open => { if (!deleting && !open) deleteDialog.close(); }}
         title={t('dashboard.users.delete.title')}
       />}
@@ -342,6 +350,7 @@ type UserDialogProps = UserDialogCommonProps & (
 function UserDialog(props: UserDialogProps) {
   const { actorId, mode, models, onOpenChange, onSaved, upstreams } = props;
   const { t } = useTranslation();
+  const toasts = useOutcomeToasts();
   const user = props.mode === 'edit' ? props.user : null;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -373,11 +382,13 @@ function UserDialog(props: UserDialogProps) {
   const save = async (form: UserFormValues) => {
     setSaving(true);
     setError(null);
+    const username = form.username.trim();
     const upstreamIds = form.upstreamOverride ? form.upstreamIds : null;
+    const handle = toasts.start(t(`dashboard.users.toast.${mode}.pending`, { username }));
     const result = props.mode === 'create'
       ? await callApi(() => api.api.users.$post({
           json: {
-            username: form.username.trim(),
+            username,
             password: form.password,
             isAdmin: form.isAdmin,
             upstreamIds,
@@ -385,17 +396,19 @@ function UserDialog(props: UserDialogProps) {
         }))
       : await callApi(() => api.api.users[':id'].$patch({
           param: { id: String(props.user.id) }, json: {
-            username: form.username.trim(),
+            username,
             ...(!adminLocked ? { isAdmin: form.isAdmin } : {}),
             upstreamIds,
           },
         }));
     if (result.error) {
       setSaving(false);
+      handle.settle();
       setError(result.error.message);
       return;
     }
     onOpenChange(false);
+    handle.succeed(t(`dashboard.users.toast.${mode}.success`, { username }));
     await onSaved(props.mode === 'edit' ? props.user.id : undefined);
   };
 
@@ -475,7 +488,7 @@ function UserDialog(props: UserDialogProps) {
       {mode === 'create' && (
         <MessageBar intent="info"><MessageBarBody>{t('dashboard.users.createdDefaultKey')}</MessageBarBody></MessageBar>
       )}
-      {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
+      {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
     </DialogShell>
   );
 }
@@ -487,6 +500,7 @@ function PasswordDialog({ onOpenChange, open, onSaved, user }: {
   user: ControlPlaneUser;
 }) {
   const { t } = useTranslation();
+  const toasts = useOutcomeToasts();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const schema = useMemo(() => z.object({
@@ -503,16 +517,19 @@ function PasswordDialog({ onOpenChange, open, onSaved, user }: {
   const save = async (values: PasswordFormValues) => {
     setSaving(true);
     setError(null);
+    const handle = toasts.start(t('dashboard.users.toast.password.pending', { username: user.username }));
     const result = await callApi(() => api.api.users[':id'].$patch({
       param: { id: String(user.id) },
       json: { password: values.password },
     }));
     if (result.error) {
       setSaving(false);
+      handle.settle();
       setError(result.error.message);
       return;
     }
     onOpenChange(false);
+    handle.succeed(t('dashboard.users.toast.password.success', { username: user.username }));
     await onSaved();
   };
 
@@ -547,7 +564,7 @@ function PasswordDialog({ onOpenChange, open, onSaved, user }: {
           <Input {...field} autoComplete="new-password" disabled={saving} type="password" />
         </Field>
       )} />
-      {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
+      {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
     </DialogShell>
   );
 }

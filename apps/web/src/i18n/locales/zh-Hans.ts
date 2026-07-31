@@ -207,6 +207,24 @@ const zhHansCN = {
           saving: '正在保存...',
           deleting: '正在删除...',
         },
+        toast: {
+          create: {
+            pending: '正在创建用户 {{username}}',
+            success: '已创建用户 {{username}}',
+          },
+          edit: {
+            pending: '正在保存用户 {{username}}',
+            success: '已保存用户 {{username}}',
+          },
+          password: {
+            pending: '正在重置 {{username}} 的密码',
+            success: '已重置 {{username}} 的密码',
+          },
+          delete: {
+            pending: '正在删除用户 {{username}}',
+            success: '已删除用户 {{username}}',
+          },
+        },
         table: {
           label: 'Floway 用户',
           username: '用户名',
