@@ -12,6 +12,10 @@ export type ModelBadge =
   | { key: string; kind: 'selection'; selection: 'random' | 'first-available' }
   | { key: string; kind: 'rule'; field: AliasRuleBadgeField; value: AliasRuleBadge['value'] | null; varies: boolean };
 
+// A specification, not a count: the badge quotes what the model advertises,
+// and "128k context" is how that number is written in the documentation an
+// operator would compare it against. Deliberately not the app's compact number
+// formatter, which would render it `128K`, and `12.8万` under zh-Hans.
 const formatTokenLimit = (count: number): string => {
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(count % 1_000_000 === 0 ? 0 : 1)}M`;
   if (count >= 1_000) return `${(count / 1_000).toFixed(count % 1_000 === 0 ? 0 : 1)}k`;

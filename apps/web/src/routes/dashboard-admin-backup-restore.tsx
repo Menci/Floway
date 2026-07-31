@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { redirect } from 'react-router';
 
 import type { Route } from './+types/dashboard-admin-backup-restore';
+import { useDashboardOutletContext } from './dashboard';
 import { callApi } from '../api/auth';
 import { api } from '../api/client';
 import type { BackupImportCounts } from '../api/types';
@@ -17,7 +18,8 @@ import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { Panel } from '../components/ui/panel';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { fluentComponents } from '../fluent';
-import { useDashboardOutletContext } from './dashboard';
+import { formatBytes } from '../lib/format-number';
+import { useLocale } from '../lib/use-locale';
 
 const {
   Button,
@@ -117,12 +119,6 @@ const PREVIEW_LABEL_KEYS = [
   'searchUsage',
   'performance',
 ] as const;
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 function countRecords(data: BackupFileData): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const key of PREVIEW_LABEL_KEYS) {
@@ -151,6 +147,7 @@ function importedSummary(
 
 export default function DashboardAdminBackupRestore() {
   const { t } = useTranslation();
+  const locale = useLocale();
   const { user } = useDashboardOutletContext();
   const toasts = useOutcomeToasts();
 
@@ -393,7 +390,7 @@ export default function DashboardAdminBackupRestore() {
               <Text size={300} weight="semibold">
                 {t('dashboard.backupRestore.import.fileSelected', {
                   name: importFile.name,
-                  size: formatFileSize(importFile.size),
+                  size: formatBytes(importFile.size, locale),
                 })}
               </Text>
               <Button

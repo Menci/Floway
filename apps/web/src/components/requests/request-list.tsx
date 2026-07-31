@@ -11,16 +11,11 @@ import { useTranslation } from 'react-i18next';
 import { List } from 'react-window';
 import type { ListImperativeAPI, RowComponentProps } from 'react-window';
 
-import {
-  errorLabel,
-  formatBytes,
-  formatTokens,
-  requestSeverity,
-  totalTokens,
-} from './format';
+import { errorLabel, requestSeverity, totalTokens } from './format';
 import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { formatDuration } from '../../lib/format-duration';
+import { formatBytes, formatCompactCount } from '../../lib/format-number';
 import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
@@ -161,13 +156,13 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
           <TimerRegular aria-hidden="true" className="block flex-none" fontSize={18} /> <Text size={200}>{formatDuration(record.durationMs)}</Text>
         </span>
         <span className="inline-flex items-center gap-1 shrink-0" title={t('dashboard.requests.requestBytes', { value: record.requestBytes })}>
-          <ArrowUploadRegular aria-hidden="true" className="block flex-none" fontSize={18} /> <Text size={200}>{formatBytes(record.requestBytes)}</Text>
+          <ArrowUploadRegular aria-hidden="true" className="block flex-none" fontSize={18} /> <Text size={200}>{formatBytes(record.requestBytes, locale)}</Text>
         </span>
         <span className="inline-flex items-center gap-1 shrink-0" title={t('dashboard.requests.responseBytes', { value: record.responseBytes })}>
-          <ArrowDownloadRegular aria-hidden="true" className="block flex-none" fontSize={18} /> <Text size={200}>{formatBytes(record.responseBytes)}</Text>
+          <ArrowDownloadRegular aria-hidden="true" className="block flex-none" fontSize={18} /> <Text size={200}>{formatBytes(record.responseBytes, locale)}</Text>
         </span>
         <Text size={200} className={mergeClasses('ml-auto truncate', rowError ? s.error : 'text-fui-fg3')} title={rowError ?? undefined}>
-          {rowError ?? (tokens === null ? '-' : `${formatTokens(tokens)} tok`)}
+          {rowError ?? (tokens === null ? '-' : `${formatCompactCount(tokens, locale)} tok`)}
         </Text>
       </div>
     </div>
