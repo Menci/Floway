@@ -7,11 +7,11 @@ import { UsageChartCallout } from './usage-callout';
 import { fluentComponents } from '../../fluent';
 import { localeForLanguage } from '../../i18n';
 import { useUnclippedChartFrame } from '../charts/chart-frame-styles';
+import { useChartStateStyles } from '../charts/chart-state-styles';
 import { chartTickValues, formatAxisDate } from '../charts/dashboard-time';
 import { useElementSize } from '../charts/use-element-size';
 
 const { makeStyles } = fluentComponents;
-const useChartStateStyles = makeStyles({ root: { alignItems: 'center', color: 'var(--colorNeutralForeground3)', display: 'grid', fontSize: 'var(--fontSizeBase300)', height: '100%', lineHeight: 'var(--lineHeightBase300)', justifyItems: 'center' } });
 const useAreaBoundaryStyles = makeStyles({
   root: {
     '& path[id*="-line-"]': { opacity: '1', strokeWidth: '2px' },

@@ -12,6 +12,7 @@ import { getSessionToken } from '../auth/session';
 import { ChartCalloutTable } from '../components/charts/chart-callout-table';
 import { useUnclippedChartFrame } from '../components/charts/chart-frame-styles';
 import { ChartSection } from '../components/charts/chart-section';
+import { useChartStateStyles } from '../components/charts/chart-state-styles';
 import { chartTickValues, dashboardBucketFrames, formatAxisDate, formatCalloutTitle } from '../components/charts/dashboard-time';
 import { useElementSize } from '../components/charts/use-element-size';
 import { buildPerformanceChart, type PerformanceBucket, type PerformanceChartEntry, type PerformanceChartModel, type PerformanceChartPointDetails } from '../components/performance/performance-chart-model';
@@ -62,9 +63,6 @@ const labelledOnLogAxis = (value: number): boolean => {
 };
 const groupByValues: PerformanceGroupBy[] = ['model', 'upstream', 'operation', 'runtimeLocation', 'keyId', 'userId'];
 
-const useChartStateStyles = makeStyles({
-  root: { alignItems: 'center', color: 'var(--colorNeutralForeground3)', display: 'grid', fontSize: 'var(--fontSizeBase300)', height: '100%', lineHeight: 'var(--lineHeightBase300)', justifyItems: 'center' },
-});
 const usePerformanceChartStyles = makeStyles({
   root: {
     '& .fui-cart__xAxis line': { pointerEvents: 'none' },
