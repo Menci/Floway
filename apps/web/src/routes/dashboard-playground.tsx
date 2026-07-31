@@ -46,6 +46,7 @@ import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { fluentComponents } from '../fluent';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
 import { errorMessage } from '../lib/error-message';
+import { prefersReducedMotion } from '../lib/reduced-motion';
 import { useMediaQuery } from '../lib/use-media-query';
 
 export const handle = dashboardWorkspaceHandle;
@@ -175,7 +176,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   useEffect(() => {
     scrollRef.current?.scrollTo({
       top: scrollRef.current.scrollHeight,
-      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      behavior: prefersReducedMotion() ? 'auto' : 'smooth',
     });
   }, [messages, sending]);
 

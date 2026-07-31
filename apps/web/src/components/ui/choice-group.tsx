@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 
 import { fluentComponents } from '../../fluent';
+import { prefersReducedMotion } from '../../lib/reduced-motion';
 import {
   INDICATOR_DURATION_MS,
   INDICATOR_POSITION_SNAP,
@@ -8,7 +9,7 @@ import {
   INDICATOR_STRETCH_EASING,
 } from '../../winui/motion';
 
-const { makeStyles, tokens } = fluentComponents;
+const { makeStyles, mergeClasses, tokens } = fluentComponents;
 
 // A row of mutually exclusive choices, shaped after WinUI's SelectorBar.
 //
@@ -160,7 +161,7 @@ export function ChoiceGroup({
     const previous = previousRef.current;
     previousRef.current = box;
     if (!pill || !box || !previous) return;
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (prefersReducedMotion()) return;
 
     const distance = box.left - previous.left;
     if (distance === 0 && previous.width === box.width) return;
@@ -214,7 +215,7 @@ export function ChoiceGroup({
     </label>)}
     {box && <span aria-hidden className={styles.pillTrack} style={{ left: box.left, width: box.width }}>
       <span
-        className={selected?.disabled ? `${styles.pill} ${styles.pillDisabled}` : styles.pill}
+        className={mergeClasses(styles.pill, selected?.disabled && styles.pillDisabled)}
         ref={pillRef}
       />
     </span>}

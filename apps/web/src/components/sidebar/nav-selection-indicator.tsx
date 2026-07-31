@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 
+import { prefersReducedMotion } from '../../lib/reduced-motion';
 import { INDICATOR_DURATION_MS, INDICATOR_POSITION_SNAP, INDICATOR_REACH_MS, INDICATOR_SETTLE_EASING, INDICATOR_SETTLE_MS, INDICATOR_STRETCH_EASING } from '../../winui/motion';
 
 // WinUI's NavigationView does not move one indicator between items. It keeps a
@@ -103,7 +104,7 @@ export function NavSelectionIndicator({
     const container = containerRef.current;
     if (!geometry || container?.querySelector(`[data-nav-value="${CSS.escape(selectedValue)}"]`)) return;
     const bar = barRef.current;
-    if (bar && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (bar && !prefersReducedMotion()) {
       bar.style.transformOrigin = otherListIs === 'below' ? 'top' : 'bottom';
       bar.animate(
         [{ transform: 'scaleY(1)' }, { transform: `scaleY(${geometry.height / bar.offsetHeight + 1})` }],
@@ -148,7 +149,7 @@ export function NavSelectionIndicator({
     const previous = previousRef.current;
     previousRef.current = geometry;
     if (!track || !bar || !geometry) return;
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (prefersReducedMotion()) return;
 
     // Arriving from the other list: there is no position in this one to travel
     // from, so the reach is the item's own length toward where it came from.
