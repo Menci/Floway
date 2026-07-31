@@ -17,6 +17,7 @@ import {
   type CollectedStream,
 } from './stream-render';
 import { fluentComponents } from '../../fluent';
+import { useDangerTextClass } from '../ui/danger';
 import { EmptyState, EmptyStateLine } from '../ui/empty-state';
 import { HttpMethodBadge, HttpStatusBadge } from '../ui/http-badge';
 import { prismTokenStyles } from '../ui/prism-token-styles';
@@ -60,7 +61,6 @@ const useStyles = makeStyles({
   headerRow: { borderBottom: '1px solid var(--colorNeutralStroke3)' },
   headerName: { color: 'var(--colorNeutralForeground3)', fontWeight: 'var(--fontWeightRegular)', padding: '7px 14px 7px 16px', textAlign: 'left', verticalAlign: 'top', whiteSpace: 'nowrap' },
   headerValue: { color: 'var(--colorNeutralForeground1)', overflowWrap: 'anywhere', padding: '7px 16px 7px 0', verticalAlign: 'top', whiteSpace: 'normal' },
-  error: { color: 'var(--colorPaletteRedForeground1)' },
 });
 
 function CopyButton({ text }: { text: string }) {
@@ -141,6 +141,7 @@ export function RequestDetailPanel({ collected: loadedCollected, error, record, 
 }) {
   const { t } = useTranslation();
   const s = useStyles();
+  const dangerText = useDangerTextClass();
   const [streamView, setStreamView] = useState<'collected' | 'events'>('collected');
   const [collected, setCollected] = useState(loadedCollected);
 
@@ -188,7 +189,7 @@ export function RequestDetailPanel({ collected: loadedCollected, error, record, 
         </SectionBody>
       </section>
       <section className={s.section}>
-        <DetailSectionHeader title={t('dashboard.requests.response')} detail={<><HttpStatusBadge color={severity === 'success' ? 'success' : severity === 'warning' ? 'warning' : 'danger'}>{record.response.status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>{responseError && <Text size={200} className={s.error}>{responseError}</Text>}</>} copyText={record.response.headers.length ? responseHeadersCopy : undefined} />
+        <DetailSectionHeader title={t('dashboard.requests.response')} detail={<><HttpStatusBadge color={severity === 'success' ? 'success' : severity === 'warning' ? 'warning' : 'danger'}>{record.response.status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>{responseError && <Text size={200} className={dangerText}>{responseError}</Text>}</>} copyText={record.response.headers.length ? responseHeadersCopy : undefined} />
         <HeaderSectionBody>
           {record.response.headers.length ? <HeaderTable key={`response-${record.meta.id}`} headers={record.response.headers} /> : <EmptyStateLine className="p-4">{t('dashboard.requests.noResponseHeaders')}</EmptyStateLine>}
         </HeaderSectionBody>
@@ -224,7 +225,7 @@ export function RequestDetailPanel({ collected: loadedCollected, error, record, 
           )}
           {record.response.body.type === 'stream' && streamView === 'events' && renderedEvents.map((event, index) => (
             <div className={s.section} key={index}>
-              <div className="flex items-center gap-2 px-4 pt-3"><Text size={100} className="font-mono mono-size-100 text-fui-fg2">{event.event ?? t('dashboard.requests.unlabeled')}</Text>{event.parseError && <Text size={100} className={s.error}>{t('dashboard.requests.jsonParseFailed')}</Text>}<Text size={100} className="ml-auto font-mono mono-size-100 text-fui-fg3">+{event.timestamp.toFixed(event.timestamp < 1 ? 3 : 0)}ms</Text></div>
+              <div className="flex items-center gap-2 px-4 pt-3"><Text size={100} className="font-mono mono-size-100 text-fui-fg2">{event.event ?? t('dashboard.requests.unlabeled')}</Text>{event.parseError && <Text size={100} className={dangerText}>{t('dashboard.requests.jsonParseFailed')}</Text>}<Text size={100} className="ml-auto font-mono mono-size-100 text-fui-fg3">+{event.timestamp.toFixed(event.timestamp < 1 ? 3 : 0)}ms</Text></div>
               <CodeView body={{ text: event.text, copyText: event.text, decodeError: event.parseError, isJson: !event.parseError }} />
             </div>
           ))}

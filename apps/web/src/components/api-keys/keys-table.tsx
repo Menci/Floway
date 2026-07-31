@@ -9,7 +9,7 @@ import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
 import { useMediaQuery } from '../../lib/use-media-query';
 import { useNow } from '../../lib/use-now';
-import { useDangerActionClasses } from '../ui/danger-action';
+import { useDangerActionClasses, useDangerTextClass } from '../ui/danger';
 import { ResourceListEmptyState } from '../ui/resource-list';
 import { ScrollArea } from '../ui/scroll-area';
 import { TableActions, useTrailingCellClass } from '../ui/table-actions';
@@ -27,7 +27,6 @@ const useStyles = makeStyles({
   accentText: { color: 'var(--colorBrandForeground1)' },
   // A key that reaches no upstream is a state the column reports, not an
   // action, so this one is resident where `useDangerActionClasses` is not.
-  dangerText: { color: 'var(--colorPaletteRedForeground1)' },
   mobileItem: {
     borderBottom: '1px solid var(--colorNeutralStroke2)',
     borderRadius: 'var(--borderRadiusMedium)',
@@ -50,6 +49,7 @@ export function KeysTable({
   const { t } = useTranslation();
   const copyLabel = useCopyLabel();
   const s = useStyles();
+  const dangerText = useDangerTextClass();
   const dangerClasses = useDangerActionClasses();
   const trailingCell = useTrailingCellClass();
   const narrow = useMediaQuery('(max-width: 760px)');
@@ -110,7 +110,7 @@ export function KeysTable({
             truncate
             className={
               !key.upstream_ids ? undefined
-                : key.upstream_ids.length === 0 ? s.dangerText : s.accentText
+                : key.upstream_ids.length === 0 ? dangerText : s.accentText
             }
             title={upstreamsTitle(key, upstreamById, t)}
           >

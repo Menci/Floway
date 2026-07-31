@@ -4,10 +4,10 @@ import { useTranslation } from 'react-i18next';
 import type { KeySource } from './key-source';
 import { fluentComponents } from '../../fluent';
 import { ChoiceGroup } from '../ui/choice-group';
+import { useDangerTextClass } from '../ui/danger';
 import { Input } from '../ui/fluent-form-controls';
 
-const { Text, makeStyles } = fluentComponents;
-const useStyles = makeStyles({ fieldError: { color: 'var(--colorPaletteRedForeground1)' } });
+const { Text } = fluentComponents;
 
 export function KeySourceControl({
   customKey,
@@ -25,7 +25,7 @@ export function KeySourceControl({
   source: KeySource;
 }) {
   const { t } = useTranslation();
-  const styles = useStyles();
+  const dangerText = useDangerTextClass();
   const label = t('dashboard.apiKeys.form.customKey');
   const errorId = useId();
 
@@ -55,7 +55,7 @@ export function KeySourceControl({
       />
       {error && (
         <Text
-          className={`col-start-2 max-[620px]:col-start-1 ${styles.fieldError}`}
+          className={`col-start-2 max-[620px]:col-start-1 ${dangerText}`}
           id={errorId}
           role="alert"
           size={200}

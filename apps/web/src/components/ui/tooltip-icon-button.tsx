@@ -1,6 +1,6 @@
 import type { MouseEvent, ReactElement } from 'react';
 
-import { useDangerActionClasses } from './danger-action';
+import { useDangerActionClasses } from './danger';
 import { fluentComponents } from '../../fluent';
 
 const { Button, Tooltip, makeStyles, mergeClasses } = fluentComponents;

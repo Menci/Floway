@@ -25,6 +25,7 @@ import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
 import { ContentLoadingScreen } from '../ui/app-loading-screen';
 import { ConfirmDialog } from '../ui/confirm-dialog';
+import { useDangerTextClass } from '../ui/danger';
 import { Input } from '../ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { ScrollArea } from '../ui/scroll-area';
@@ -48,12 +49,7 @@ const {
   TableRow,
   Text,
   Tooltip,
-  makeStyles,
 } = fluentComponents;
-
-const useWorkspaceStyles = makeStyles({
-  error: { color: 'var(--colorPaletteRedForeground1)' },
-});
 
 type ModelView = 'list' | 'detail' | 'yaml';
 type WorkspaceTab = 'models' | 'flags';
@@ -86,7 +82,7 @@ export function UpstreamWorkspace({
   record: UpstreamRecord;
 }) {
   const { t } = useTranslation();
-  const styles = useWorkspaceStyles();
+  const dangerText = useDangerTextClass();
   const { formState: { errors } } = useFormContext<UpstreamEditorValues>();
   const [params, setParams] = useSearchParams();
   const [yaml, setYaml] = useState('');
@@ -155,7 +151,7 @@ export function UpstreamWorkspace({
             {tab === 'models' ? <div className="grid gap-4">
               {/* The list and the detail are both here, so a model the schema
                   refused stays named while the operator walks into it. */}
-              {errors.manualModels?.message && <Text className={styles.error} role="alert" size={200}>{t(errors.manualModels.message)}</Text>}
+              {errors.manualModels?.message && <Text className={dangerText} role="alert" size={200}>{t(errors.manualModels.message)}</Text>}
               {modelsWorkspace}
             </div> : <div className="grid gap-5">
               <Text size={300} className="text-fui-fg2">

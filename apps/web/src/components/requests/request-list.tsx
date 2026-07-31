@@ -72,9 +72,11 @@ const useStyles = makeStyles({
       backgroundColor: 'var(--colorBrandBackground2)',
     },
   },
+  // One of three severities the row indexes by name, so it stays with its
+  // siblings rather than joining the shared danger text.
+  error: { color: 'var(--colorPaletteRedForeground1)' },
   success: { color: 'var(--colorPaletteGreenForeground1)' },
   warning: { color: 'var(--colorPaletteDarkOrangeForeground1)' },
-  error: { color: 'var(--colorPaletteRedForeground1)' },
 });
 
 interface RequestListProps {

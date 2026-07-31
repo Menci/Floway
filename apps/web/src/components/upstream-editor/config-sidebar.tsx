@@ -8,6 +8,7 @@ import { modelPrefixIsValid, publicModelId } from './editor-data';
 import { ApiPathsSection, ProviderConfigSection } from './provider-config';
 import type { ProxyRecord, UpstreamModelConfig, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { useDangerTextClass } from '../ui/danger';
 import { Combobox, Dropdown, Input } from '../ui/fluent-form-controls';
 import { ReorderButtons } from '../ui/reorder-buttons';
 import { ScrollArea } from '../ui/scroll-area';
@@ -17,11 +18,7 @@ import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { UpstreamColorPicker } from '../upstreams/upstream-color-picker';
 import { MODEL_PREFIX_MAX_LENGTH } from '@floway-dev/provider/model-prefix';
 
-const { Button, Checkbox, Field, MessageBar, MessageBarBody, Option, Text, makeStyles } = fluentComponents;
-
-const useSidebarStyles = makeStyles({
-  danger: { color: 'var(--colorPaletteRedForeground1)' },
-});
+const { Button, Checkbox, Field, MessageBar, MessageBarBody, Option, Text } = fluentComponents;
 
 const COMMON_COLO_LOCATIONS = [
   'HKG', 'NRT', 'KIX', 'TPE', 'ICN', 'SIN', 'BKK', 'KUL',
@@ -126,11 +123,11 @@ function UpstreamColorEditor({ kind, onValidityChange }: { kind: UpstreamRecord[
 // composite editors here -- the colour popover, a provider's own credential
 // flow -- are not one control a Fluent `Field` could speak for.
 function EditorSection({ children, description, error, inline = false, required = false, title }: { children: React.ReactNode; description?: string; error?: string; inline?: boolean; required?: boolean; title: string }) {
-  const styles = useSidebarStyles();
+  const dangerText = useDangerTextClass();
   return <section className={inline ? 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4' : 'grid gap-4'}>
-    <SectionHeader description={description} level={2} title={<>{title}{required && <span aria-hidden className={styles.danger}> *</span>}</>} />
+    <SectionHeader description={description} level={2} title={<>{title}{required && <span aria-hidden className={dangerText}> *</span>}</>} />
     {children}
-    {error && <Text className={`${styles.danger} ${inline ? 'col-span-2' : ''}`} role="alert" size={200}>{error}</Text>}
+    {error && <Text className={`${dangerText} ${inline ? 'col-span-2' : ''}`} role="alert" size={200}>{error}</Text>}
   </section>;
 }
 

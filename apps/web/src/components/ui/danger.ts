@@ -2,8 +2,12 @@ import { fluentComponents } from '../../fluent';
 
 const { makeStyles } = fluentComponents;
 
-// A destructive action reads as destructive when the operator reaches for it:
-// resident red would shout from every row and break its rhythm.
+// How danger is painted, in the two forms it takes.
+//
+// Text that reports a failure wears the colour at rest, because the colour is
+// the report. A destructive action does not: it reads as destructive when the
+// operator reaches for it, and resident red would shout from every row and
+// break the rhythm of the list it sits in.
 //
 // The guard is the whole of it. Without one the warning colour also paints an
 // action the operator is not allowed to press, which is the opposite of what
@@ -29,3 +33,12 @@ const useStyles = makeStyles({
 });
 
 export const useDangerActionClasses = (): ReturnType<typeof useStyles> => useStyles();
+
+// Eight components declared this same one-property rule under five names --
+// `error`, `danger`, `dangerText`, `fieldError` -- for the one job of saying
+// something went wrong.
+const useTextStyles = makeStyles({
+  danger: { color: 'var(--colorPaletteRedForeground1)' },
+});
+
+export const useDangerTextClass = (): string => useTextStyles().danger;

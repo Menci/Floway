@@ -4,12 +4,11 @@ import { useTranslation } from 'react-i18next';
 
 import { fluentComponents } from '../../fluent';
 import { formatDurationInput, parseDuration } from '../../lib/duration-input';
+import { useDangerTextClass } from '../ui/danger';
 import { Combobox, LISTBOX_POSITIONING } from '../ui/fluent-form-controls';
 import { SettingsCard, SettingsExpander } from '../ui/settings-card';
 
-const { Option, Text, makeStyles } = fluentComponents;
-
-const useStyles = makeStyles({ error: { color: 'var(--colorPaletteRedForeground1)' } });
+const { Option, Text } = fluentComponents;
 
 const SECONDS_PER_DAY = 24 * 60 * 60;
 
@@ -87,7 +86,7 @@ export function RetentionField({
   value: RetentionValue;
 }) {
   const { t } = useTranslation();
-  const styles = useStyles();
+  const dangerText = useDangerTextClass();
   const [editor, setEditor] = useState(() => editorStateFor(value, offValue, presets, customInputUnit));
   if (editor.value !== value) {
     setEditor(editorStateFor(value, offValue, presets, customInputUnit));
@@ -158,6 +157,6 @@ export function RetentionField({
     {children === undefined
       ? <SettingsCard action={action} description={description} header={label} icon={icon} />
       : <SettingsExpander action={action} description={description} expandLabel={label} header={label} icon={icon}>{children}</SettingsExpander>}
-    {invalid && <Text className={styles.error} role="alert" size={200}>{t('dashboard.apiKeys.retention.invalid')}</Text>}
+    {invalid && <Text className={dangerText} role="alert" size={200}>{t('dashboard.apiKeys.retention.invalid')}</Text>}
   </>;
 }

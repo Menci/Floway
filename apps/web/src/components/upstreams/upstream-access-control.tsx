@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { ProviderBadge } from './provider-badge';
 import type { ControlPlaneModel, UpstreamOption } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { useDangerTextClass } from '../ui/danger';
 import { ReorderButtons } from '../ui/reorder-buttons';
 import { ScrollArea } from '../ui/scroll-area';
 import { SettingsExpander, SettingsSwitch } from '../ui/settings-card';
@@ -18,12 +19,7 @@ const {
   TableHeaderCell,
   TableRow,
   Text,
-  makeStyles,
 } = fluentComponents;
-
-const useStyles = makeStyles({
-  error: { color: 'var(--colorPaletteRedForeground1)' },
-});
 
 interface UpstreamAccessRow {
   color: UpstreamOption['color'];
@@ -52,7 +48,7 @@ export function UpstreamAccessControl({
   override: boolean;
 }) {
   const { t } = useTranslation();
-  const styles = useStyles();
+  const dangerText = useDangerTextClass();
   const errorId = useId();
   const rows = useMemo(() => accessRows(available, ids, models), [available, ids, models]);
 
@@ -97,7 +93,7 @@ export function UpstreamAccessControl({
       toggledOn={override}
     >
       <div className="grid gap-3 min-w-0">
-        {error && <Text className={styles.error} id={errorId} role="alert" size={200}>{error}</Text>}
+        {error && <Text className={dangerText} id={errorId} role="alert" size={200}>{error}</Text>}
         <ScrollArea axes="horizontal" className="min-w-0">
           {/* Fluent's Table is already `width: 100%; table-layout: fixed`, so the
               only thing this minimum decides is when the region starts scrolling.
