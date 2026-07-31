@@ -529,13 +529,11 @@ test('later done and terminal views may omit id after first-done durability', as
   const first = {
     type: 'message' as const,
     id: 'msg_first_done',
-    status: 'completed' as const,
     role: 'assistant' as const,
     content: [{ type: 'output_text' as const, text: 'first', annotations: [] }],
   };
   const later = {
     type: 'message' as const,
-    status: 'completed' as const,
     role: 'assistant' as const,
     content: [{ type: 'output_text' as const, text: 'later', annotations: [] }],
   };
@@ -594,4 +592,37 @@ test('snapshot output IDs follow output_index rather than done arrival order', a
   expect((await repo.responsesSnapshots.lookup('key-a', 'resp_public', 0))?.itemIds).toEqual(
     terminal.output.map(item => item.id),
   );
+});
+
+test('snapshot retains completed streamed items omitted from the terminal output', async () => {
+  const { repo, store } = memoryOutputHarness();
+  const call = {
+    type: 'custom_tool_call' as const,
+    id: 'ctc_streamed_only',
+    call_id: 'call_streamed_only',
+    name: 'exec_command',
+    input: 'printf floway-repro',
+    status: 'completed',
+  };
+  const response: ResponsesResult = {
+    id: 'resp_upstream',
+    object: 'response',
+    model: 'model',
+    status: 'completed',
+    output: [],
+    error: null,
+    incomplete_details: null,
+  };
+  const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: call });
+    yield eventFrame({ type: 'response.completed', response });
+  };
+
+  for await (const _frame of wrapResponsesClientOutput(input(), {
+    store,
+    responseId: 'resp_public',
+  })) { /* drain */ }
+
+  expect((await repo.responsesSnapshots.lookup('key-a', 'resp_public', 0))?.itemIds).toEqual([call.id]);
+  expect((await repo.responsesItems.lookupMany('key-a', [call.id], 0))[0].payload.item).toEqual(call);
 });
