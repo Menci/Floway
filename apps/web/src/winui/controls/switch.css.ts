@@ -68,8 +68,27 @@ export const switchCss = `
   background-color: transparent;
   border-color: transparent;
   display: flex;
+  /* Fluent rings the track with eight pixels of margin, which builds a hit
+     target and spaces the label in one stroke -- and makes the control claim
+     sixteen more pixels than it draws in both axes. The root spaces its own
+     children instead, on the twelve the template's gap column states, which is
+     also the only form that survives the label moving to either side.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L501 */
+  margin: 0;
   position: relative;
   transition-property: none;
+}
+
+.fui-Switch.fui-Switch {
+  align-items: center;
+  gap: 12px;
+}
+
+/* Fluent pads the label block-wise to the height the margin above used to give
+   the control, which is the last thing holding the root taller than the track
+   it draws. */
+.fui-Switch__label.fui-Switch__label {
+  padding-block: 0;
 }
 
 /* Turning on cross-fades the two capsules over ControlFasterAnimationDuration,

@@ -40,21 +40,42 @@ export const choiceCss = `
   width: 20px;
   height: 20px;
   font-size: 12px;
+  margin: 0;
+}
+
+/* Fluent rings each of these indicators with eight pixels of margin, which
+   builds a hit target and spaces the label in one stroke -- and makes the
+   control claim sixteen more pixels than it draws in both axes, so a row of
+   them never lines up with anything measured off what is on screen. The margin
+   goes and the root spaces its own children instead, which is also the only
+   form that survives the label being placed before, after or above the
+   indicator. A control with no label is then exactly its own size.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L274
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L187 */
+.fui-Checkbox.fui-Checkbox,
+.fui-Radio.fui-Radio {
+  align-items: center;
+  gap: 8px;
+}
+
+/* Fluent pads the label block-wise to the height the margins above used to
+   give the control. With those gone it is the last thing holding the root
+   taller than what it draws, so it goes too and the root centres its children
+   against the indicator instead. */
+.fui-Checkbox__label.fui-Checkbox__label,
+.fui-Radio__label.fui-Radio__label {
+  padding-block: 0;
 }
 
 .fui-Checkbox[data-winui-shape='square'] > .fui-Checkbox__indicator.fui-Checkbox__indicator {
   border-radius: var(--winui-control-corner-radius);
 }
 
-/* The input is the hit target and the label's optical centring is a function
-   of the box, so both follow it off Fluent's 16px geometry. */
+/* The input is the hit target, and follows the box off Fluent's 16px
+   geometry. It is positioned, so it can stay larger than what is drawn without
+   the control claiming the difference. */
 .fui-Checkbox__input.fui-Checkbox__input {
   width: calc(20px + 2 * var(--spacingHorizontalS));
-}
-
-.fui-Checkbox__label.fui-Checkbox__label {
-  margin-top: calc((20px - var(--lineHeightBase300)) / 2);
-  margin-bottom: calc((20px - var(--lineHeightBase300)) / 2);
 }
 
 @media not (forced-colors: active) {
@@ -180,6 +201,7 @@ export const choiceCss = `
 .fui-Radio__indicator.fui-Radio__indicator {
   width: 20px;
   height: 20px;
+  margin: 0;
 }
 
 .fui-Radio__indicator.fui-Radio__indicator::after {

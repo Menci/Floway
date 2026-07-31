@@ -215,11 +215,6 @@ const useStyles = makeStyles({
     height: '36px',
     justifyContent: 'flex-end',
     minWidth: 0,
-    // Fluent pads its track with eight pixels either side for a label slot this
-    // switch does not use. Both sides go: the leading one would widen the
-    // template's twelve, and the trailing one would stand the track off the
-    // chevron beside it.
-    '& .fui-Switch__indicator': { marginLeft: 0, marginRight: 0 },
   },
 });
 
