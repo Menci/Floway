@@ -74,10 +74,15 @@ export function meta({}: Route.MetaArgs) {
   return [{ title: 'Provider Search | Floway' }];
 }
 
+// Search passthrough sends a chat completion to the upstream it names, so the
+// model it picks has to be one that upstream actually serves on that endpoint.
+const servesChatFor = (model: ControlPlaneModel, upstreamId: string) =>
+  model.kind === 'chat' && model.upstreams.some(binding => binding.id === upstreamId);
+
 export const eligibleSearchUpstreams = (upstreams: readonly UpstreamRecord[], models: readonly ControlPlaneModel[]) =>
   upstreams.filter(upstream => upstream.enabled
     && (upstream.kind === 'codex' || upstream.kind === 'custom')
-    && models.some(model => model.kind === 'chat' && model.upstreams.some(binding => binding.id === upstream.id)));
+    && models.some(model => servesChatFor(model, upstream.id)));
 
 // A search provider is a third party the operator recognizes by its mark, so
 // each mark is shown in its owner's colors. This is the opposite call from the
@@ -174,14 +179,15 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
   const testedOption = PROVIDER_OPTIONS.find(option => option.value === testResult?.provider);
   const testedProviderLabel = testedOption ? t(testedOption.labelKey) : testResult?.provider;
   const eligibleUpstreams = useMemo(() => eligibleSearchUpstreams(upstreams, models), [models, upstreams]);
-  const modelsForSelectedUpstream = useMemo(() => models.filter(model =>
-    model.kind === 'chat' && model.upstreams.some(binding => binding.id === draft.passthroughOpenAiSearch.upstreamId)), [draft.passthroughOpenAiSearch.upstreamId, models]);
+  const modelsForSelectedUpstream = useMemo(
+    () => models.filter(model => servesChatFor(model, draft.passthroughOpenAiSearch.upstreamId)),
+    [draft.passthroughOpenAiSearch.upstreamId, models],
+  );
   const selectedUpstream = eligibleUpstreams.find(upstream => upstream.id === draft.passthroughOpenAiSearch.upstreamId);
   const selectedModel = modelsForSelectedUpstream.find(model => model.id === draft.passthroughOpenAiSearch.model);
 
   const setPassthroughUpstream = useCallback((upstreamId: string, preferredModel?: string) => {
-    const candidates = models.filter(model => model.kind === 'chat'
-      && model.upstreams.some(binding => binding.id === upstreamId));
+    const candidates = models.filter(model => servesChatFor(model, upstreamId));
     const model = candidates.find(candidate => candidate.id === preferredModel) ?? candidates[0];
     if (!model) throw new Error(`Search passthrough upstream ${upstreamId} has no chat model`);
     setDraft(current => ({
