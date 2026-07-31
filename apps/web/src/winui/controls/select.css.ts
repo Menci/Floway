@@ -311,7 +311,7 @@ export const selectCss = `
 .fui-Option.fui-Option[aria-selected='true']::before {
   background-color: var(--winui-accent-fill-default);
   border-radius: 1.5px;
-  content: "";
+  content: '';
   inset-block: 25%;
   inset-inline-start: 0;
   pointer-events: none;

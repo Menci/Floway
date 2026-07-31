@@ -92,10 +92,10 @@ export const colorPickerCss = `
     inset 0 0 0 var(--strokeWidthThicker) var(--winui-focus-stroke-inner);
 }
 
-.fui-ColorSwatch.fui-ColorSwatch[aria-checked="true"][data-fui-focus-visible],
-.fui-ColorSwatch.fui-ColorSwatch[aria-selected="true"][data-fui-focus-visible],
-.fui-ImageSwatch.fui-ImageSwatch[aria-checked="true"][data-fui-focus-visible],
-.fui-ImageSwatch.fui-ImageSwatch[aria-selected="true"][data-fui-focus-visible] {
+.fui-ColorSwatch.fui-ColorSwatch[aria-checked='true'][data-fui-focus-visible],
+.fui-ColorSwatch.fui-ColorSwatch[aria-selected='true'][data-fui-focus-visible],
+.fui-ImageSwatch.fui-ImageSwatch[aria-checked='true'][data-fui-focus-visible],
+.fui-ImageSwatch.fui-ImageSwatch[aria-selected='true'][data-fui-focus-visible] {
   box-shadow:
     inset 0 0 0 var(--strokeWidthThicker) var(--winui-focus-stroke-outer),
     inset 0 0 0 5px var(--winui-focus-stroke-inner);
