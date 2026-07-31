@@ -207,9 +207,9 @@ export default function DashboardAdminBackupRestore() {
 
       const reader = new FileReader();
       reader.onload = () => {
-        const result = typeof reader.result === 'string' ? parseBackupFile(reader.result) : { ok: false as const };
+        const result = parseBackupFile(reader.result as string);
         if (!result.ok) {
-          setImportError(t('dashboard.backupRestore.import.errorInvalidFile'));
+          setImportError(t('dashboard.backupRestore.import.errorInvalidFile', { message: result.message }));
           setImportFile(null);
           setImportParsedData(null);
           return;

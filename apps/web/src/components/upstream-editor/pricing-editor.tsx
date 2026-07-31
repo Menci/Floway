@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import {
   baseEntryOf,
   collectDraftIssues,
-  coordinateKey,
+  isBaseEntry,
   nextPricingDraftId,
   pricingEntryCoordinateLabel,
   pricingEntryDraftsFor,
@@ -108,7 +108,7 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
   const active = drafts[selectedIndex];
   const fields = useMemo(() => visiblePricingFields(drafts, kind), [drafts, kind]);
   const issues = useMemo(() => collectDraftIssues(drafts, value), [drafts, value]);
-  const baseIndex = drafts.findIndex(draft => coordinateKey(draft) === '{}');
+  const baseIndex = drafts.findIndex(isBaseEntry);
 
   const metricName = (metric: BillingMetric): string => t(`dashboard.upstreamEditor.models.pricingMetrics.${metric}`);
 

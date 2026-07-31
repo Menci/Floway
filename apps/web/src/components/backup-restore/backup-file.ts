@@ -2,6 +2,7 @@ import type { InferResponseType } from 'hono/client';
 import { z } from 'zod';
 
 import type { api } from '../../api/client';
+import { errorMessage } from '../../lib/error-message';
 
 // Annotated with the gateway's own literal so a bump there fails this
 // assignment rather than silently leaving the dashboard rejecting every backup
@@ -35,15 +36,27 @@ const backupFileSchema = z.object({
 export type BackupFile = z.infer<typeof backupFileSchema>;
 export type BackupFileData = BackupFile['data'];
 
-export const parseBackupFile = (
-  raw: string,
-): { ok: true; payload: BackupFile } | { ok: false } => {
+export type ParsedBackupFile =
+  | { ok: true; payload: BackupFile }
+  | { ok: false; message: string };
+
+// A rejected file is nearly always an export from another version or another
+// product, and which field disagreed is the whole diagnosis. Every issue is
+// reported, addressed by its path, rather than collapsed into "not a valid
+// backup file".
+const issueList = (error: z.ZodError): string => error.issues
+  .map(issue => (issue.path.length > 0 ? `${issue.path.join('.')}: ${issue.message}` : issue.message))
+  .join('; ');
+
+export const parseBackupFile = (raw: string): ParsedBackupFile => {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
-  } catch {
-    return { ok: false };
+  } catch (error) {
+    return { ok: false, message: errorMessage(error) };
   }
   const result = backupFileSchema.safeParse(parsed);
-  return result.success ? { ok: true, payload: result.data } : { ok: false };
+  return result.success
+    ? { ok: true, payload: result.data }
+    : { ok: false, message: issueList(result.error) };
 };

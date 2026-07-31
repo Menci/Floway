@@ -999,7 +999,7 @@ const zhHansCN = {
           successEmpty: '导入完成。备份文件中没有任何记录。',
           summaryItem: '{{label}} × {{n}}',
           error: '导入失败。',
-          errorInvalidFile: '所选文件不是有效的 Floway 备份文件。',
+          errorInvalidFile: '所选文件不是有效的 Floway 备份文件：{{message}}',
           errorReadFile: '无法读取所选备份文件。',
           previewLabel: {
             users: '用户',

@@ -1,7 +1,6 @@
 import {
   BILLING_METRICS,
   PRICING_AXES,
-  canonicalPricingSelectorKey,
   collectModelPricingIssues,
   divideDecimalString,
   multiplyDecimalStrings,
@@ -75,16 +74,16 @@ export const compactSelector = (draft: PricingEntryDraft): PricingSelector => {
   return selector;
 };
 
-export const coordinateKey = (draft: PricingEntryDraft): string | null => {
-  try {
-    return canonicalPricingSelectorKey(compactSelector(draft));
-  } catch {
-    return null;
-  }
-};
+// The base entry is the one that names no coordinate. Asked of the compacted
+// selector rather than of its canonical key, because a draft mid-edit can hold
+// a threshold the canonicalizer rejects, and "does not canonicalize" is not an
+// answer to "is this the base entry" -- `collectDraftIssues` is where an
+// operator is told the selector is invalid.
+export const isBaseEntry = (draft: PricingEntryDraft): boolean =>
+  Object.keys(compactSelector(draft)).length === 0;
 
 export const baseEntryOf = (drafts: readonly PricingEntryDraft[]): PricingEntryDraft | undefined =>
-  drafts.find(draft => coordinateKey(draft) === '{}');
+  drafts.find(isBaseEntry);
 
 // The declared field set for the kind, plus any metric an entry actually
 // prices — an upstream may bill on something this kind does not list, and

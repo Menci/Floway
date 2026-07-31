@@ -1043,7 +1043,7 @@ const en = {
           summaryItem: '{{n}} × {{label}}',
           error: 'Import failed.',
           errorInvalidFile:
-              'The selected file is not a valid Floway backup file.',
+              'The selected file is not a valid Floway backup file: {{message}}',
           errorReadFile: 'The selected backup file could not be read.',
           previewLabel: {
             users: 'Users',
