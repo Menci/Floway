@@ -26,12 +26,6 @@ export function formatBytes(value: number): string {
   return `${formatNumber(value / 1024 ** 3, 2)} GB`;
 }
 
-export function formatDuration(value: number): string {
-  if (value < 1000) return `${Math.round(value)}ms`;
-  if (value < 60_000) return `${(value / 1000).toFixed(1)}s`;
-  return `${Math.round(value / 1000)}s`;
-}
-
 export function formatTokens(value: number): string {
   return new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(value);
 }

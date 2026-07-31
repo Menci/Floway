@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseDuration } from '../../src/lib/parse-duration';
+import { formatDurationInput, parseDuration } from '../../src/lib/duration-input';
 
 describe('parseDuration', () => {
   it('parses seconds with the s suffix', () => {
@@ -53,5 +53,20 @@ describe('parseDuration', () => {
     expect(parseDuration('0m')).toBeNull();
     expect(parseDuration('0h')).toBeNull();
     expect(parseDuration('0d')).toBeNull();
+  });
+});
+
+describe('formatDurationInput', () => {
+  it('spells a window in the coarsest whole unit the grammar has', () => {
+    expect(formatDurationInput(7 * 86400)).toBe('7d');
+    expect(formatDurationInput(6 * 3600)).toBe('6h');
+    expect(formatDurationInput(30 * 60)).toBe('30m');
+    expect(formatDurationInput(45)).toBe('45s');
+  });
+
+  it('round-trips back through the parser', () => {
+    for (const seconds of [1, 45, 90, 1800, 3600, 5400, 86400, 7 * 86400]) {
+      expect(parseDuration(formatDurationInput(seconds))).toBe(seconds);
+    }
   });
 });

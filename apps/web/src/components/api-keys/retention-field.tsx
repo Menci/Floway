@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { fluentComponents } from '../../fluent';
-import { parseDuration } from '../../lib/parse-duration';
+import { formatDurationInput, parseDuration } from '../../lib/duration-input';
 import { Combobox, LISTBOX_POSITIONING } from '../ui/fluent-form-controls';
 import { SettingsCard, SettingsExpander } from '../ui/settings-card';
 
@@ -30,13 +30,6 @@ interface RetentionEditorState {
   value: RetentionValue;
 }
 
-const formatDuration = (seconds: number): string => {
-  if (seconds % SECONDS_PER_DAY === 0) return `${seconds / SECONDS_PER_DAY}d`;
-  if (seconds % 3600 === 0) return `${seconds / 3600}h`;
-  if (seconds % 60 === 0) return `${seconds / 60}m`;
-  return `${seconds}s`;
-};
-
 const choiceFor = (value: RetentionValue, offValue: 0 | null, presets: readonly RetentionPreset[]): Choice => {
   if (value === 'invalid') return 'custom';
   if (value === offValue) return 'off';
@@ -53,7 +46,7 @@ const editorStateFor = (
   value,
   choice: choiceFor(value, offValue, presets),
   custom: typeof value === 'number' && value !== offValue && !presets.some(preset => preset.seconds === value)
-    ? (customInputUnit === 'days' ? String(value / SECONDS_PER_DAY) : formatDuration(value))
+    ? (customInputUnit === 'days' ? String(value / SECONDS_PER_DAY) : formatDurationInput(value))
     : '',
 });
 

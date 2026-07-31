@@ -14,13 +14,13 @@ import type { ListImperativeAPI, RowComponentProps } from 'react-window';
 import {
   errorLabel,
   formatBytes,
-  formatDuration,
   formatTokens,
   requestSeverity,
   totalTokens,
 } from './format';
 import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { formatDuration } from '../../lib/format-duration';
 import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';

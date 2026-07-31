@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseDuration } from '../../../src/lib/parse-duration';
+import { parseDuration } from '../../../src/lib/duration-input';
 
 // The retention control resolves a preset or a typed window into the number of
 // seconds the gateway stores, and reports `invalid` rather than silently

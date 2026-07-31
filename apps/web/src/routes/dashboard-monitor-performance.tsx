@@ -40,6 +40,7 @@ import { Panel } from '../components/ui/panel';
 import { ResourceListActions } from '../components/ui/resource-list';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { fluentComponents } from '../fluent';
+import { formatDuration } from '../lib/format-duration';
 import { useLocale } from '../lib/use-locale';
 import { useAuthStore } from '../stores/auth-store';
 
@@ -424,7 +425,6 @@ const performanceBuckets = (range: PerformanceRange, now: number, locale: string
         ? date.toLocaleString(locale, { month: 'short', day: 'numeric', hour: '2-digit' })
         : date.toLocaleDateString(locale, { month: 'short', day: 'numeric' }),
   }));
-function formatDuration(ms: number | null) { if (ms === null || !Number.isFinite(ms)) return '-'; if (ms >= 60_000) return `${(ms / 60_000).toFixed(1)}m`; if (ms >= 1_000) return `${(ms / 1_000).toFixed(1)}s`; return `${Math.round(ms)}ms`; }
 function formatRate(value: number | null) { if (value === null || !Number.isFinite(value) || value <= 0) return '-'; return value >= 100 ? `${Math.round(value)} tok/s` : value >= 10 ? `${value.toFixed(1)} tok/s` : `${value.toFixed(2)} tok/s`; }
 const formatTokensPerSecond = (us: number | null) => us === null || us <= 0 ? '-' : formatRate(1_000_000 / us);
 const formatCount = (value: number, locale: string) => Math.max(0, Math.round(value)).toLocaleString(locale);
