@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { redirect, useSearchParams, type ShouldRevalidateFunctionArgs } from 'react-router';
 
 import type { Route } from './+types/dashboard-monitor-performance';
-import { callApi } from '../api/auth';
+import { callApi, type GlobalError } from '../api/auth';
 import { api } from '../api/client';
 import { getSessionToken } from '../auth/session';
 import { ChartCalloutTable } from '../components/charts/chart-callout-table';
@@ -84,7 +84,7 @@ const usePerformanceTableStyles = makeStyles({
 });
 
 interface LoaderData {
-  error: string | null;
+  error: GlobalError | null;
   loadedAt: number;
   overview: PerformanceOverviewResponse;
   state: ReturnType<typeof parsePerformanceUrlState>;
@@ -106,7 +106,7 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
     callApi(() => api.api.upstreams.$get()),
   ]);
   return {
-    error: overview.error?.message ?? upstreams.error?.message ?? null,
+    error: overview.error ?? upstreams.error ?? null,
     loadedAt,
     overview: overview.data ?? emptyPerformanceOverview(),
     state: { ...state, groupBy },
@@ -140,7 +140,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const [overview, setOverview] = useState<PerformanceOverviewResponse>(loaderData.overview);
   const [upstreamNames] = useState(() => new Map(loaderData.upstreamNames.map(item => [item.id, item.name])));
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(loaderData.error);
+  const [error, setError] = useState<GlobalError | null>(loaderData.error);
   const requestIdRef = useRef(0);
   const mountedRef = useRef(false);
   const locale = useLocale();
@@ -156,7 +156,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     const search = buildPerformanceQuery(view, range, groupBy, filters, requestedAt);
     const result = await callApi(() => api.api.performance.overview.$get({ query: Object.fromEntries(search) }));
     if (requestId !== requestIdRef.current) return;
-    if (result.error) setError(result.error.message);
+    if (result.error) setError(result.error);
     else {
       setOverview(result.data);
       setLoadedRange(range);
@@ -176,7 +176,10 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
 
   usePollWhileVisible(refresh, 60_000);
 
-  useEffect(() => { if (error === 'HTTP 401') clearAuth(); }, [clearAuth, error]);
+  // The session is gone, not the page: the gateway said so with a status, and
+  // only the status says it -- a 401 body carrying its own words never matches
+  // a message comparison.
+  useEffect(() => { if (error?.status === 401) clearAuth(); }, [clearAuth, error]);
 
   useEffect(() => {
     setSearchParams(serializePerformanceUrlState({ metric, percentile, groupBy, range, filters, hidden: [...hiddenSeries] }), { replace: true });
@@ -212,7 +215,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       description={t('dashboard.pages.performance')}
       title={t('dashboard.nav.performance')}
     />
-    {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
+    {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error.message}</OutcomeMessageBar>}
     <Panel className="!grid min-w-0">
       <div className="flex items-end gap-3 min-w-0 flex-wrap">
         <Field className="w-[160px] flex-none" label={t('dashboard.performance.groupBy.label')}>

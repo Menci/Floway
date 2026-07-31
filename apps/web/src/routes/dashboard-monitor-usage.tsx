@@ -5,6 +5,7 @@ import { redirect, useSearchParams, type ShouldRevalidateFunctionArgs } from 're
 
 import type { Route } from './+types/dashboard-monitor-usage';
 import { useDashboardOutletContext } from './dashboard';
+import type { GlobalError } from '../api/auth';
 import type { ControlPlaneModel } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import { ChoiceGroup } from '../components/ui/choice-group';
@@ -82,7 +83,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(() => new Set(loaderData.hiddenKeys));
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(() => new Set(loaderData.hiddenModels));
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(loaderData.error);
+  const [error, setError] = useState<GlobalError | null>(loaderData.error);
   const requestIdRef = useRef(0);
   const mountedRef = useRef(false);
 
@@ -121,7 +122,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
       setError(next.error);
     } catch (caught) {
       if (requestId !== requestIdRef.current) return;
-      setError(errorMessage(caught));
+      setError({ status: 0, message: errorMessage(caught) });
     } finally {
       if (requestId === requestIdRef.current) {
         setLoading(false);
@@ -142,8 +143,11 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
 
   usePollWhileVisible(refresh, 60_000);
 
+  // The session is gone, not the page: the gateway said so with a status, and
+  // only the status says it -- a 401 body carrying its own words never matches
+  // a message comparison.
   useEffect(() => {
-    if (error === 'HTTP 401') clearAuth();
+    if (error?.status === 401) clearAuth();
   }, [clearAuth, error]);
 
   useEffect(() => {
@@ -261,7 +265,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
         title={t('dashboard.nav.usage')}
       />
 
-      {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
+      {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error.message}</OutcomeMessageBar>}
 
       <Panel className="!grid !gap-[18px] min-w-0">
         <div className="flex items-center gap-3 justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">

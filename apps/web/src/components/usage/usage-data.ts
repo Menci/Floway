@@ -49,7 +49,7 @@ async function fetchUsageForView(view: UsageView, start: string, end: string) {
         records: searchData.records.map(({ userId, ...record }) => ({ ...record, keyId: userBucketId(userId) })),
         keys: searchData.users.map(user => ({ id: userBucketId(user.id), name: user.username })),
       } : emptySearchUsageResponse(),
-      error: usageRes.error?.message ?? searchRes.error?.message ?? null,
+      error: usageRes.error ?? searchRes.error ?? null,
     };
   }
   const [usageRes, searchRes] = await Promise.all([
@@ -70,7 +70,7 @@ async function fetchUsageForView(view: UsageView, start: string, end: string) {
       keys: usageData.keys,
     } : emptyUsageResponse(),
     search: searchData ? { records: searchData.records, keys: searchData.keys } : emptySearchUsageResponse(),
-    error: usageRes.error?.message ?? searchRes.error?.message ?? null,
+    error: usageRes.error ?? searchRes.error ?? null,
   };
 }
 
