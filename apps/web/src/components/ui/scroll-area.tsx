@@ -75,7 +75,22 @@ export const useOverlayScrollbarsEnabled = () => useSyncExternalStore(
 // permanent strip of missing content. The element carries this inline from the
 // first render, before the library has initialised, so writing `scroll`
 // unconditionally hands every scroller a native bar for that window.
-const overflowFor = (axes: ScrollAxes, overlayScrollbarsEnabled: boolean) => {
+// What the library is asked to take over. Its vocabulary is its own -- there is
+// no `auto` in it -- and `scroll` here means "this axis is mine", not "reserve a
+// bar".
+const libraryOverflowFor = (axes: ScrollAxes) => ({
+  x: axes === 'vertical' ? 'hidden' as const : 'scroll' as const,
+  y: axes === 'horizontal' ? 'hidden' as const : 'scroll' as const,
+});
+
+// What the element itself carries, inline, from the first render. `scroll`
+// reserves the bar's width whether or not there is anything to scroll, so on a
+// platform whose bars take layout width it is a permanent strip of missing
+// content -- and the element carries this before the library has initialised,
+// so writing it unconditionally hands every scroller a native bar for that
+// window. Native scrolling asks for `auto`; the library's own path keeps
+// `scroll`, which is what it reads the axis from.
+const elementOverflowFor = (axes: ScrollAxes, overlayScrollbarsEnabled: boolean) => {
   const scrollable = overlayScrollbarsEnabled ? 'scroll' as const : 'auto' as const;
   return {
     x: axes === 'vertical' ? 'hidden' as const : scrollable,
@@ -92,7 +107,7 @@ export const initializeScrollArea = (
 ) => {
   if (!overlayScrollbarsEnabled) return;
   const instance = OverlayScrollbars({ target: host, elements: { viewport } }, {
-    overflow: overflowFor(axes, true),
+    overflow: libraryOverflowFor(axes),
     scrollbars: {
       autoHide: 'leave',
       autoHideSuspend: true,
@@ -125,7 +140,7 @@ export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function S
     return initializeScrollArea(host, viewport, axes, noTabIndex, overlayScrollbarsEnabled);
   }, [axes, noTabIndex, overlayScrollbarsEnabled]);
 
-  const overflow = overflowFor(axes, overlayScrollbarsEnabled);
+  const overflow = elementOverflowFor(axes, overlayScrollbarsEnabled);
   return (
     <div
       className={`${scrollAreaHostClassName} ${className}`}
