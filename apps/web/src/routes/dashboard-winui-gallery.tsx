@@ -674,7 +674,7 @@ function DrawerSection() {
       </OverlayDrawer>
     </Row>
     <Row label="inline drawer - open and closed">
-      <div className="relative flex h-[180px] w-full overflow-hidden rounded-lg border border-solid" style={{ borderColor: 'var(--colorNeutralStroke2)' }}>
+      <div className="relative flex h-[180px] w-full overflow-hidden rounded-lg border border-solid border-[var(--colorNeutralStroke2)]">
         <InlineDrawer open position="start" separator>
           <DrawerHeader><DrawerHeaderTitle>Filters</DrawerHeaderTitle></DrawerHeader>
           <DrawerBody>
@@ -856,7 +856,7 @@ function ProgressSection() {
     <Row label="spinner - appearance and label">
       <Spinner label="Refreshing the model catalog…" />
       <Spinner labelPosition="after" label="Saving" />
-      <div className="rounded-md p-3" style={{ background: 'var(--colorNeutralBackgroundInverted)' }}>
+      <div className="rounded-md p-3 bg-[var(--colorNeutralBackgroundInverted)]">
         <Spinner appearance="inverted" label="On an inverted surface" />
       </div>
     </Row>

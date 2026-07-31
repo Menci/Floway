@@ -163,7 +163,7 @@ function DisabledModelsCombobox({ catalogAvailable, discovered }: { catalogAvail
     >
       {filtered.map(option => <Option key={option.id} text={option.id} value={option.id}>
         <span className="flex items-center justify-between gap-3 min-w-0 w-full">
-          <span className="font-mono min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{option.id}</span>
+          <span className="font-mono min-w-0 truncate">{option.id}</span>
           {option.missing && <Badge appearance="tint" color="warning">{t('dashboard.upstreamEditor.disabledModelsUnavailable')}</Badge>}
         </span>
       </Option>)}

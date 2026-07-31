@@ -330,7 +330,7 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
             <TableCell><Switch checked={!disabled.includes(id)} onChange={(_, data) => setEnabled(id, data.checked)} /></TableCell>
             <TableCell className="overflow-hidden">
               <button
-                className="block bg-transparent border-0 cursor-pointer min-w-0 max-w-full overflow-hidden p-0 text-ellipsis text-fui-base300 text-fui-fg1 text-left whitespace-nowrap hover:underline"
+                className="block bg-transparent border-0 cursor-pointer min-w-0 max-w-full truncate p-0 text-fui-base300 text-fui-fg1 text-left hover:underline"
                 onClick={() => onSelectModel(row.config.upstreamModelId)}
                 title={row.config.display_name ?? id}
                 type="button"
@@ -339,7 +339,7 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
               </button>
             </TableCell>
             <TableCell><Text size={300}>{t(`dashboard.upstreamEditor.models.kindValue.${row.config.kind}`)}</Text></TableCell>
-            <TableCell className="overflow-hidden"><span className="flex items-center gap-1 min-w-0 max-w-full overflow-hidden"><code className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap leading-[var(--lineHeightBase300)]" style={{ maxWidth: 'calc(100% - 36px)' }} title={id}>{id}</code><Tooltip content={t('dashboard.upstreamEditor.models.copy')} relationship="label"><Button appearance="subtle" className="flex-none" icon={<CopyRegular />} size="small" onClick={() => void navigator.clipboard.writeText(id)} /></Tooltip></span></TableCell>
+            <TableCell className="overflow-hidden"><span className="flex items-center gap-1 min-w-0 max-w-full overflow-hidden"><code className="block min-w-0 truncate leading-[var(--lineHeightBase300)]" style={{ maxWidth: 'calc(100% - 36px)' }} title={id}>{id}</code><Tooltip content={t('dashboard.upstreamEditor.models.copy')} relationship="label"><Button appearance="subtle" className="flex-none" icon={<CopyRegular />} size="small" onClick={() => void navigator.clipboard.writeText(id)} /></Tooltip></span></TableCell>
             <TableCell><Text size={300}>{t(`dashboard.upstreamEditor.models.${row.source}`)}</Text></TableCell>
             <TableCell><TableActions><TooltipIconButton icon={<EditRegular />} label={t('dashboard.upstreamEditor.models.edit')} onClick={() => onSelectModel(row.config.upstreamModelId)} />{row.manualIndex !== null && <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.delete')} onClick={() => { setDeleteTarget(row); setDeleteOpen(true); }} />}</TableActions></TableCell>
           </TableRow>;
