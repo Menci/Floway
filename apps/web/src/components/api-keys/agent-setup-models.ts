@@ -74,7 +74,12 @@ export const rankAgentSetupModels = (
 
 const ONE_MILLION_CONTEXT_TOKENS = 1_000_000;
 
-// Claude Code selects the one-million-token window through a `[1m]` suffix.
+// Claude Code selects the one-million-token window through a `[1m]` suffix, and
+// documents it for two of the four pinned-model variables: the opus and sonnet
+// ones. The haiku variable is the model Claude Code reaches for background work
+// and simple tasks, and the suffix is only to be appended where the underlying
+// model supports the window at all, so the haiku picker is left to name its
+// model plainly.
 // https://code.claude.com/docs/en/model-config
 const claudeModelOverride = (model: ControlPlaneModel, picker: ClaudePicker): string => {
   if (picker === 'haiku') return model.id;
