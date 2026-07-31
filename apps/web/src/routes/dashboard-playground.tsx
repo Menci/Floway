@@ -143,6 +143,12 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
     const query = (modelQuery ?? '').trim().toLowerCase();
     return !query || model.id.toLowerCase().includes(query) || model.display_name.toLowerCase().includes(query);
   });
+  // What a send needs, or nothing. The composer's send affordance and the send
+  // itself read this one value, so an enabled control always has a request to
+  // make.
+  const sendTarget = selectedKey && selectedModel && (draft.trim() || imageUrl.trim())
+    ? { apiKey: selectedKey, model: selectedModel }
+    : null;
 
   const stop = useCallback(() => abortRef.current?.abort(), []);
 
@@ -177,7 +183,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const send = async () => {
     const text = draft.trim();
     const image = imageUrl.trim();
-    if (sending || !selectedKey || !selectedModel || (!text && !image)) return;
+    if (sending || !sendTarget) return;
     if (image && !imageEnabled) {
       setRequestError(t('dashboard.playground.errors.imageUnsupported'));
       return;
@@ -226,11 +232,11 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
       };
       for await (const delta of streamPlaygroundText({
         api,
-        apiKey: selectedKey.key,
-        model: selectedModel.id,
+        apiKey: sendTarget.apiKey.key,
+        model: sendTarget.model.id,
         system: system.trim(),
         messages: context,
-        options: generationOptions(api, reasoningEffort || undefined, defaultMaxOutputTokens(selectedModel)),
+        options: generationOptions(api, reasoningEffort || undefined, defaultMaxOutputTokens(sendTarget.model)),
         signal: controller.signal,
         fetchImpl: wireFetch,
       })) {
@@ -285,7 +291,6 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
     setEditingId(null);
   };
 
-  const canSend = Boolean(selectedKey && selectedModel && (draft.trim() || imageUrl.trim()));
   const lastMessageId = messages.length === 0 ? null : messages[messages.length - 1]!.id;
 
   const settingsContent = <ScrollArea axes="vertical" className="h-full min-h-0" contentClassName="p-4 grid content-start gap-5" noTabIndex>
@@ -415,7 +420,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
           </ScrollArea>
           <div data-winui-card-restyle="off">
             <PlaygroundComposer
-              canSend={canSend}
+              canSend={sendTarget !== null}
               cancelLabel={t('common.cancel')}
               draft={draft}
               imageEnabled={imageEnabled}
