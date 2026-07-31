@@ -17,6 +17,8 @@ import { fluentComponents } from '../../fluent';
 import { ChoiceGroup } from '../ui/choice-group';
 import { DialogShell } from '../ui/dialog-shell';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
+import { OutcomeMessageBar } from '../ui/outcome-message-bar';
+import { useOutcomeToasts } from '../ui/outcome-toast';
 import { SettingsCard, SettingsExpander, SettingsSwitch } from '../ui/settings-card';
 import { MODEL_KINDS } from '@floway-dev/protocols/common';
 
@@ -31,6 +33,7 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
   record: ModelAlias | null;
 }) {
   const { t } = useTranslation();
+  const toasts = useOutcomeToasts();
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const schema = useMemo(() => z.object({
@@ -81,12 +84,16 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
   };
   const save = async (form: AliasFormValues) => {
     setSaving(true); setServerError(null);
+    const name = form.name.trim();
     const body = aliasBody(form, record);
+    const handle = toasts.start(t('dashboard.modelAliases.toast.save.pending', { name }));
     const result = record
       ? await callApi(() => api.api.aliases[':name'].$put({ param: { name: record.name }, json: body }))
       : await callApi(() => api.api.aliases.$post({ json: body }));
-    if (result.error) { setSaving(false); setServerError(result.error.message); return; }
-    onOpenChange(false); await onSaved();
+    if (result.error) { setSaving(false); handle.settle(); setServerError(result.error.message); return; }
+    onOpenChange(false);
+    handle.succeed(t('dashboard.modelAliases.toast.save.success', { name }));
+    await onSaved();
   };
 
   return <DialogShell
@@ -97,7 +104,6 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
     title={<DialogTitle>{record ? t('dashboard.modelAliases.dialog.editTitle', { name: record.name }) : t('dashboard.modelAliases.dialog.createTitle')}</DialogTitle>}
     actions={<DialogActions><Button disabled={saving} onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button><Button appearance="primary" disabled={saving} type="submit">{saving ? t('dashboard.modelAliases.actions.saving') : t('dashboard.modelAliases.actions.save')}</Button></DialogActions>}
   >
-    {serverError && <MessageBar intent="error"><MessageBarBody>{serverError}</MessageBarBody></MessageBar>}
     <div className="grid grid-cols-2 gap-3 max-[620px]:grid-cols-1">
       <Controller control={control} name="name" render={({ field }) => <Field required label={t('dashboard.modelAliases.form.name')} validationMessage={errors.name?.message ? t(errors.name.message) : undefined} validationState={errors.name ? 'error' : undefined}><Input {...field} className="font-mono" disabled={saving} placeholder={t('dashboard.modelAliases.form.namePlaceholder')} /></Field>} />
       <Controller control={control} name="displayName" render={({ field }) => <Field label={t('dashboard.modelAliases.form.displayName')}><Input {...field} disabled={saving} placeholder={values.name || t('dashboard.modelAliases.form.displayPlaceholder')} /></Field>} />
@@ -125,5 +131,6 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
       header={t('dashboard.modelAliases.form.visible')}
       icon={<Eye24Regular />}
     />
+    {serverError && <OutcomeMessageBar onDismiss={() => setServerError(null)}>{serverError}</OutcomeMessageBar>}
   </DialogShell>;
 }
