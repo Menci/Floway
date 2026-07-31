@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 
 import { DialogShell } from './dialog-shell';
+import { OutcomeMessageBar } from './outcome-message-bar';
 import { fluentComponents } from '../../fluent';
 
 const { Button, DialogActions, DialogTitle, Spinner, makeStyles } = fluentComponents;
@@ -25,7 +26,9 @@ export function ConfirmDialog({
   actionIntent = 'danger',
   busy = false,
   cancelLabel,
+  error,
   message,
+  onDismissError,
   onCancel,
   onConfirm,
   onOpenChange,
@@ -36,7 +39,15 @@ export function ConfirmDialog({
   actionIntent?: 'danger' | 'primary';
   busy?: boolean;
   cancelLabel?: string;
+  /**
+   * A failed attempt at the action, reported here rather than behind the
+   * dialog. Without this the caller has nowhere to put it while the dialog is
+   * still open, and every delete failure in the app ended up at page level,
+   * under the very dialog the operator was looking at.
+   */
+  error?: string | null;
   message: string;
+  onDismissError?: () => void;
   onCancel?: () => void;
   onConfirm: () => void;
   onOpenChange: (open: boolean) => void;
@@ -75,7 +86,10 @@ export function ConfirmDialog({
       surfaceClassName="!w-[min(430px,calc(100vw-48px))]"
       title={<DialogTitle>{title}</DialogTitle>}
     >
-      {message}
+      <div className="grid gap-3 min-w-0">
+        <span>{message}</span>
+        {error && <OutcomeMessageBar onDismiss={onDismissError}>{error}</OutcomeMessageBar>}
+      </div>
     </DialogShell>
   );
 }

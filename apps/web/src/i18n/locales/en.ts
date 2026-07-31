@@ -12,6 +12,7 @@ const en = {
       on: 'On',
       off: 'Off',
       cancel: 'Cancel',
+      dismiss: 'Dismiss',
       errors: {
         title: 'Error',
         unexpectedTitle: 'Something went wrong',

@@ -14,6 +14,7 @@ import type { AuthUser } from '../api/auth';
 import { getSessionToken } from '../auth/session';
 import { FlowayLogo } from '../components/logo';
 import { Sidebar } from '../components/sidebar';
+import { OutcomeToastProvider } from '../components/ui/outcome-toast';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { fluentComponents } from '../fluent';
 import { isDashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
@@ -48,7 +49,7 @@ export default function Dashboard({}: Route.ComponentProps) {
   if (!user) return <Navigate replace to="/" />;
 
   return (
-    <>
+    <OutcomeToastProvider>
       <a
         className="fixed left-3 top-3 z-[100000] -translate-y-20 rounded-md bg-fui-bg1 px-3 py-2 text-fui-fg1 shadow-lg focus:translate-y-0"
         href="#dashboard-main"
@@ -93,7 +94,7 @@ export default function Dashboard({}: Route.ComponentProps) {
           <Sidebar onNavigate={() => setNavigationOpen(false)} user={user} />
         </DrawerBody>
       </OverlayDrawer>
-    </>
+    </OutcomeToastProvider>
   );
 }
 

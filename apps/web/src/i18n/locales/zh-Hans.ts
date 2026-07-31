@@ -12,6 +12,7 @@ const zhHansCN = {
       on: '开',
       off: '关',
       cancel: '取消',
+      dismiss: '关闭',
       errors: {
         title: '错误',
         unexpectedTitle: '出现错误',
