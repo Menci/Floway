@@ -68,10 +68,20 @@ export const useOverlayScrollbarsEnabled = () => useSyncExternalStore(
   getServerScrollbarSize,
 ) > 0;
 
-const overflowFor = (axes: ScrollAxes) => ({
-  x: axes === 'vertical' ? 'hidden' as const : 'scroll' as const,
-  y: axes === 'horizontal' ? 'hidden' as const : 'scroll' as const,
-});
+// OverlayScrollbars wants `scroll`: it reads the axis it is asked to take over
+// from the element's own overflow. Native scrolling wants `auto`, because
+// `scroll` reserves the bar's width whether or not there is anything to scroll,
+// and on a platform whose bars take layout width that reservation is a
+// permanent strip of missing content. The element carries this inline from the
+// first render, before the library has initialised, so writing `scroll`
+// unconditionally hands every scroller a native bar for that window.
+const overflowFor = (axes: ScrollAxes, overlayScrollbarsEnabled: boolean) => {
+  const scrollable = overlayScrollbarsEnabled ? 'scroll' as const : 'auto' as const;
+  return {
+    x: axes === 'vertical' ? 'hidden' as const : scrollable,
+    y: axes === 'horizontal' ? 'hidden' as const : scrollable,
+  };
+};
 
 export const initializeScrollArea = (
   host: HTMLDivElement,
@@ -82,7 +92,7 @@ export const initializeScrollArea = (
 ) => {
   if (!overlayScrollbarsEnabled) return;
   const instance = OverlayScrollbars({ target: host, elements: { viewport } }, {
-    overflow: overflowFor(axes),
+    overflow: overflowFor(axes, true),
     scrollbars: {
       autoHide: 'leave',
       autoHideSuspend: true,
@@ -115,7 +125,7 @@ export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function S
     return initializeScrollArea(host, viewport, axes, noTabIndex, overlayScrollbarsEnabled);
   }, [axes, noTabIndex, overlayScrollbarsEnabled]);
 
-  const overflow = overflowFor(axes);
+  const overflow = overflowFor(axes, overlayScrollbarsEnabled);
   return (
     <div
       className={`${scrollAreaHostClassName} ${className}`}
