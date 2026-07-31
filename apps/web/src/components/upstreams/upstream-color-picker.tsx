@@ -6,6 +6,7 @@ import { KIND_DEFAULT_TONES } from './upstream-paint';
 import type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { HEX_RE, hexToRgb, hsvToRgb, rgbToHex, rgbToHsv } from '../../lib/color';
+import { useDangerTextClass } from '../ui/danger';
 import { Input } from '../ui/fluent-form-controls';
 import { UPSTREAM_COLOR_PRESETS } from '@floway-dev/provider/model';
 
@@ -41,6 +42,7 @@ export function UpstreamColorPicker({ kind, onChange, onValidityChange, value }:
   value: UpstreamColor | null;
 }) {
   const { t } = useTranslation();
+  const dangerText = useDangerTextClass();
   const [hexDraft, setHexDraft] = useState<string>(() => (isHex(value) ? value : DEFAULT_CUSTOM_HEX));
   const rgb = hexToRgb(hexDraft) ?? hexToRgb(DEFAULT_CUSTOM_HEX)!;
   const [hue, saturation, brightness] = rgbToHsv(rgb[0], rgb[1], rgb[2]);
@@ -119,7 +121,7 @@ export function UpstreamColorPicker({ kind, onChange, onValidityChange, value }:
                 onChange={(_, data) => commitHex(data.value.trim())}
               />
               {draftInvalid
-                ? <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.color.invalidHex')}</Text>
+                ? <Text size={200} className={dangerText}>{t('dashboard.upstreamEditor.color.invalidHex')}</Text>
                 : <ColorSwatch aria-hidden color={hexDraft} value={hexDraft} />}
             </div>
           </div>
