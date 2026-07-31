@@ -4,6 +4,7 @@
 // wholly from its newest snapshot rather than merging fields across sources:
 // https://github.com/anthropics/claude-agent-sdk-python/blob/f8b9ec923982082a02c485924e0f60367949c3a1/src/claude_agent_sdk/types.py#L1270-L1300
 
+import { HEAVY_USAGE_THRESHOLD_PERCENT, heaviestPercent } from './subscription-account-quota';
 import type {
   ClaudeCodeAccountCredentialSummary,
   ClaudeCodeQuotaWindow,
@@ -11,8 +12,6 @@ import type {
 } from '../../api/types';
 
 export type ClaudeCodeRecord = Extract<UpstreamRecord, { kind: 'claude-code' }>;
-
-export const HEAVY_USAGE_THRESHOLD_PERCENT = 80;
 
 export const formatSubscription = (
   subscriptionType: 'pro' | 'max' | 'team' | 'enterprise' | null | undefined,
@@ -135,7 +134,7 @@ export const accountStatus = (lookup: CredentialLookup, windows: WindowRow[]): A
   // `rejected` on the primary status means a limit was hit; overage is a
   // separate optional window in the official SDK contract linked above.
   if (credential?.quotaSnapshot?.data.status === 'rejected') return { tone: 'danger', reason: 'exhausted' };
-  const heaviest = windows.length ? Math.max(...windows.map(row => row.percent)) : null;
+  const heaviest = heaviestPercent(windows.map(row => row.percent));
   if (heaviest !== null && heaviest >= HEAVY_USAGE_THRESHOLD_PERCENT) return { tone: 'warning', reason: 'heavy', percent: Math.round(heaviest) };
   return { tone: 'success', reason: 'active' };
 };

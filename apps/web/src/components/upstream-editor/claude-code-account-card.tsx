@@ -11,6 +11,7 @@ import {
   rawEntries,
   readProbeSnapshot,
 } from './claude-code-account';
+import { quotaBarColor } from './subscription-account-quota';
 import { fluentComponents } from '../../fluent';
 import { dateTime, relativeTime } from '../../lib/format-time';
 import { clampPercent } from '../../lib/percent';
@@ -20,11 +21,6 @@ const {
   Accordion, AccordionHeader, AccordionItem, AccordionPanel, Badge, Button,
   MessageBar, MessageBarBody, ProgressBar, Text,
 } = fluentComponents;
-
-// A window is "spent" well before it refuses, so the bar turns before the
-// account does — an operator watching the card gets warning colour ahead of
-// the first 429 rather than alongside it.
-const barColor = (percent: number) => percent >= 90 ? 'error' : percent >= 80 ? 'warning' : 'brand';
 
 export const ClaudeCodeAccountCard = ({ onRefreshQuota, probing, record }: {
   onRefreshQuota: () => void;
@@ -97,7 +93,7 @@ export const ClaudeCodeAccountCard = ({ onRefreshQuota, probing, record }: {
             {clampPercent(row.percent)}%{row.status ? ` · ${row.status}` : ''}
           </Text>
         </div>
-        <ProgressBar color={barColor(row.percent)} max={100} thickness="large" value={clampPercent(row.percent)} />
+        <ProgressBar color={quotaBarColor(row.percent)} max={100} thickness="large" value={clampPercent(row.percent)} />
         {row.resetAt && <Text size={200} className="text-fui-fg3">
           {t('dashboard.upstreamEditor.claudeCode.resetsAt', { time: dateTime(row.resetAt) })}
         </Text>}

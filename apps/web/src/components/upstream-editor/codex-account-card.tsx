@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 
 import { accountStatus, type CodexRecord, findCredential, latestCredits, quotaEntries, shortAccountId } from './codex-account';
+import { quotaBarColor } from './subscription-account-quota';
 import { fluentComponents } from '../../fluent';
 import { dateTime } from '../../lib/format-time';
 import { clampPercent } from '../../lib/percent';
@@ -8,8 +9,6 @@ import { useNow } from '../../lib/use-now';
 import { ProviderIcon } from '../upstreams/provider-badge';
 
 const { Badge, ProgressBar, Text } = fluentComponents;
-
-const barColor = (percent: number) => percent >= 90 ? 'error' : percent >= 80 ? 'warning' : 'brand';
 
 const QUOTA_REFRESH_MS = 60_000;
 
@@ -66,7 +65,7 @@ export const CodexAccountCard = ({ record }: { record: CodexRecord }) => {
                 {item.windowMinutes !== null ? ` · ${t('dashboard.upstreamEditor.codex.windowMinutes', { minutes: item.windowMinutes })}` : ''}
               </Text>
             </div>
-            <ProgressBar color={barColor(item.percent)} max={100} thickness="large" value={clampPercent(item.percent)} />
+            <ProgressBar color={quotaBarColor(item.percent)} max={100} thickness="large" value={clampPercent(item.percent)} />
             {item.resetAt && <Text size={200} className="text-fui-fg3">
               {t('dashboard.upstreamEditor.codex.resetsAt', { time: dateTime(item.resetAt) })}
             </Text>}
