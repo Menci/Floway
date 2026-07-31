@@ -128,6 +128,7 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
     {aliasWarnings.length > 0 && <MessageBar intent="warning"><MessageBarBody><ul className="m-0 pl-5">{aliasWarnings.map(warning => <li key={warning.type}>{t(`dashboard.modelAliases.warnings.${warning.key}`, warning.values)}</li>)}</ul></MessageBarBody></MessageBar>}
     <SettingsCard
       action={<SettingsSwitch checked={values.visible} disabled={saving} label={t('dashboard.modelAliases.form.visible')} onChange={checked => setValue('visible', checked)} />}
+      description={t('dashboard.modelAliases.form.visibleHint')}
       header={t('dashboard.modelAliases.form.visible')}
       icon={<Eye24Regular />}
     />
