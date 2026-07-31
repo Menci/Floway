@@ -1,8 +1,5 @@
 import type { AliasTarget, ChatAliasRules, ControlPlaneModel, ModelKind } from '../../api/types';
-
-export function findCatalogModel(models: readonly ControlPlaneModel[] | null | undefined, id: string) {
-  return (models ?? []).find(model => model.id === id && model.aliasedFrom === undefined);
-}
+import type { CatalogIndex } from '../models/catalog-index';
 
 export function realModelIdsOfKind(models: readonly ControlPlaneModel[] | null | undefined, kind: ModelKind) {
   return (models ?? [])
@@ -61,19 +58,16 @@ export type AliasWarning =
 
 export function computeAliasWarnings(
   alias: { name: string; targets: readonly Pick<AliasTarget, 'target_model_id'>[] },
-  models: readonly ControlPlaneModel[] | null | undefined,
+  catalog: CatalogIndex | null,
 ): AliasWarning[] {
   const warnings: AliasWarning[] = [];
-  const shadowed = (models ?? []).find(model =>
-    model.id === alias.name && model.aliasedFrom === undefined && model.unlisted !== true);
+  const named = catalog?.get(alias.name);
+  const shadowed = named?.unlisted !== true ? named : undefined;
   if (shadowed && !alias.targets.some(target => target.target_model_id === alias.name)) {
     warnings.push({ type: 'shadow', key: 'shadow', values: { id: shadowed.id, display: shadowed.display_name === shadowed.id ? '' : shadowed.display_name } });
   }
-  if (models != null) {
-    const addressable = new Set(models.filter(model => model.aliasedFrom === undefined).map(model => model.id));
-    if (!alias.targets.some(target => addressable.has(target.target_model_id))) {
-      warnings.push({ type: 'no-target', key: 'noTarget' });
-    }
+  if (catalog !== null && !alias.targets.some(target => catalog.has(target.target_model_id))) {
+    warnings.push({ type: 'no-target', key: 'noTarget' });
   }
   return warnings;
 }

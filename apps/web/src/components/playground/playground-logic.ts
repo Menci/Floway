@@ -1,5 +1,6 @@
 
 import type { ControlPlaneModel } from '../../api/types';
+import { indexCatalog } from '../models/catalog-index';
 import { isModelReachable } from '../models/reachability';
 import { MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/messages';
 
@@ -18,8 +19,9 @@ export function availableModels(
   catalog: readonly ControlPlaneModel[],
   cap: readonly string[] | null,
 ): ControlPlaneModel[] {
+  const index = indexCatalog(catalog);
   return catalog.filter(
-    model => model.kind === 'chat' && isModelReachable(model, catalog, cap),
+    model => model.kind === 'chat' && isModelReachable(model, index, cap),
   );
 }
 

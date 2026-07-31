@@ -134,6 +134,7 @@ const accessRows = (
   models: ControlPlaneModel[],
 ): UpstreamAccessRow[] => {
   const selected = new Set(ids);
+  const byId = new Map(available.map(upstream => [upstream.id, upstream]));
   const modelCounts = new Map<string, number>();
   for (const model of models) {
     for (const id of new Set(model.upstreams.map(upstream => upstream.id))) {
@@ -147,7 +148,7 @@ const accessRows = (
   });
   return [
     ...ids.map(id => {
-      const upstream = available.find(candidate => candidate.id === id);
+      const upstream = byId.get(id);
       return upstream
         ? rowFor(upstream, true)
         : { id, name: `Unknown (${id})`, kind: null, color: null, enabled: true, modelCount: 0 };

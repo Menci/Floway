@@ -4,7 +4,8 @@ import type { AliasTarget, ControlPlaneModel, ModelAlias } from '../../../src/ap
 import { computeAnnouncedMetadata } from '../../../src/components/model-alias/announced-metadata';
 import { aliasBody, aliasDefaults, metadataForKind } from '../../../src/components/model-alias/form-data';
 import { mergeModelAliasesPageData } from '../../../src/components/model-alias/load-data';
-import { computeAliasWarnings, computeModelWarning, computeRuleWarnings, findCatalogModel } from '../../../src/components/model-alias/warnings';
+import { computeAliasWarnings, computeModelWarning, computeRuleWarnings } from '../../../src/components/model-alias/warnings';
+import { indexCatalog } from '../../../src/components/models/catalog-index';
 
 const model = (id: string, extra: Partial<ControlPlaneModel> = {}): ControlPlaneModel => ({
   id, object: 'model', type: 'model', display_name: id, kind: 'chat',
@@ -50,12 +51,12 @@ const aliasDefaultsToRecord = (name: string): ModelAlias => ({
 describe('model alias warnings', () => {
   it('never treats an alias catalog row as a real target', () => {
     const aliasRow = model('virtual', { aliasedFrom: { selection: 'first-available', targets: [] } });
-    expect(findCatalogModel([aliasRow], 'virtual')).toBeUndefined();
+    expect(indexCatalog([aliasRow]).get('virtual')).toBeUndefined();
     expect(computeModelWarning('virtual', undefined, 'chat')?.key).toBe('unknownTarget');
   });
 
   it('reports shadow and unreachable-target warnings independently', () => {
-    const catalog = [model('gpt-5', { display_name: 'GPT 5' })];
+    const catalog = indexCatalog([model('gpt-5', { display_name: 'GPT 5' })]);
     expect(computeAliasWarnings({ name: 'gpt-5', targets: [target('missing')] }, catalog).map(warning => warning.type)).toEqual(['shadow', 'no-target']);
     expect(computeAliasWarnings({ name: 'gpt-5', targets: [target('gpt-5')] }, catalog)).toEqual([]);
     expect(computeAliasWarnings({ name: 'fresh', targets: [target('missing')] }, null)).toEqual([]);
@@ -70,19 +71,19 @@ describe('model alias warnings', () => {
 
 describe('announced metadata', () => {
   it('intersects limits, modalities, and effort across reachable targets', () => {
-    const result = computeAnnouncedMetadata([target('a'), target('b')], 'chat', [
+    const result = computeAnnouncedMetadata([target('a'), target('b')], 'chat', indexCatalog([
       model('a', { limits: { max_context_window_tokens: 200000 }, chat: { modalities: { input: ['text', 'image'], output: ['text'] }, reasoning: { effort: { supported: ['low', 'medium'], default: 'medium' } } } }),
       model('b', { limits: { max_context_window_tokens: 128000 }, chat: { modalities: { input: ['text'], output: ['text'] }, reasoning: { effort: { supported: ['low'], default: 'low' } } } }),
-    ]);
+    ]));
     expect(result.limits).toEqual({ max_context_window_tokens: 128000 });
     expect(result.chat?.modalities).toEqual({ input: ['text'], output: ['text'] });
     expect(result.chat?.reasoning?.effort).toEqual({ supported: ['low'], default: 'low' });
   });
 
   it('removes a capability from the intersection when a target rule pins it', () => {
-    const result = computeAnnouncedMetadata([target('a', { reasoning: { effort: 'low' } })], 'chat', [
+    const result = computeAnnouncedMetadata([target('a', { reasoning: { effort: 'low' } })], 'chat', indexCatalog([
       model('a', { chat: { reasoning: { effort: { supported: ['low', 'medium'], default: 'medium' } } } }),
-    ]);
+    ]));
     expect(result.chat?.reasoning).toBeUndefined();
   });
 });

@@ -14,6 +14,7 @@ import { callApi } from '../../api/auth';
 import { api } from '../../api/client';
 import type { ControlPlaneModel, ModelAlias, ModelKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { indexCatalog } from '../models/catalog-index';
 import { ChoiceGroup } from '../ui/choice-group';
 import { DialogShell } from '../ui/dialog-shell';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
@@ -66,9 +67,10 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
   const targets = values.targets;
   const kind = values.kind;
   const { append, fields, move, remove, replace } = useFieldArray({ control, name: 'targets' });
-  const automaticMetadata = useMemo(() => computeAnnouncedMetadata(targets, kind, models), [kind, models, targets]);
+  const catalog = useMemo(() => indexCatalog(models), [models]);
+  const automaticMetadata = useMemo(() => computeAnnouncedMetadata(targets, kind, catalog), [catalog, kind, targets]);
   const targetIds = useMemo(() => realModelIdsOfKind(models, kind), [kind, models]);
-  const aliasWarnings = computeAliasWarnings({ name: values.name.trim(), targets }, models);
+  const aliasWarnings = computeAliasWarnings({ name: values.name.trim(), targets }, models === null ? null : catalog);
 
   const changeKind = (next: ModelKind) => {
     setValue('kind', next, { shouldValidate: true });
@@ -124,7 +126,7 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
         titleId="alias-targets-heading"
         actions={<Button className="!whitespace-nowrap flex-none" icon={<AddRegular />} onClick={() => append(blankTarget())}>{t('dashboard.modelAliases.actions.addTarget')}</Button>}
       />
-      {fields.map((field, index) => <AliasTargetRow key={field.id} disabled={saving} index={index} isFirst={index === 0} isLast={index === fields.length - 1} isSole={fields.length === 1} kind={kind} models={models} target={targets[index] ?? field} targetIds={targetIds} onChange={target => setValue(`targets.${index}`, target, { shouldDirty: true, shouldValidate: true })} onMove={direction => move(index, index + direction)} onRemove={() => remove(index)} />)}
+      {fields.map((field, index) => <AliasTargetRow key={field.id} disabled={saving} index={index} isFirst={index === 0} isLast={index === fields.length - 1} isSole={fields.length === 1} catalog={catalog} kind={kind} target={targets[index] ?? field} targetIds={targetIds} onChange={target => setValue(`targets.${index}`, target, { shouldDirty: true, shouldValidate: true })} onMove={direction => move(index, index + direction)} onRemove={() => remove(index)} />)}
       {errors.targets?.message && <Text role="alert" className="text-fui-fg2">{t(errors.targets.message)}</Text>}
     </section>
     {kind !== 'image' && <SettingsExpander

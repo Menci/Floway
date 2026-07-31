@@ -5,7 +5,7 @@ import {
   EditRegular,
   WarningRegular,
 } from '@fluentui/react-icons';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, redirect, useLocation, useNavigate } from 'react-router';
 
@@ -112,13 +112,21 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     deleteDialog.open(record);
   };
 
+  // The flag says an upstream could not be found, which is a failure of the
+  // address the operator arrived on, not an outcome of anything they did here.
+  // It is reported once and then taken out of the URL, so a reload or a second
+  // render cannot announce it again -- the effect runs twice under StrictMode,
+  // and `announcedMissing` is what stops the second run repeating it before the
+  // navigation has landed.
+  const announcedMissing = useRef(false);
   useEffect(() => {
     const search = new URLSearchParams(location.search);
-    if (search.get('missing') !== '1') return;
+    if (search.get('missing') !== '1' || announcedMissing.current) return;
 
-    toasts.succeed(t('dashboard.upstreams.toast.missing'));
+    announcedMissing.current = true;
+    setPageError(t('dashboard.upstreams.errors.missing'));
     void navigate(location.pathname, { replace: true });
-  }, [location.pathname, location.search, navigate, t, toasts]);
+  }, [location.pathname, location.search, navigate, t]);
 
   const mutationKind = mutation?.kind ?? null;
   useEffect(() => {
@@ -472,11 +480,12 @@ const buildModelCounts = (
   upstreams: UpstreamRecord[],
   models: ControlPlaneModel[] | null,
 ): Map<string, number> => {
+  const byId = new Map(upstreams.map(record => [record.id, record]));
   const counts = new Map(upstreams.map(record => [record.id, record.kind === 'azure' ? record.config.models.length : 0]));
   if (!models) return counts;
   for (const model of models) {
     for (const binding of model.upstreams) {
-      const record = upstreams.find(item => item.id === binding.id);
+      const record = byId.get(binding.id);
       if (record && record.kind !== 'azure') counts.set(record.id, counts.get(record.id)! + 1);
     }
   }

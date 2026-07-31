@@ -1,3 +1,4 @@
+import type { CatalogIndex } from './catalog-index';
 import type { ControlPlaneModel } from '../../api/types';
 
 export const effectiveUpstreamCap = (
@@ -21,21 +22,19 @@ const realModelReachable = (
 // unreachable, as is one whose every binding sits outside the cap.
 export const reachableTargets = (
   alias: ControlPlaneModel,
-  catalog: readonly ControlPlaneModel[],
+  catalog: CatalogIndex,
   cap: readonly string[] | null,
 ): readonly ControlPlaneModel[] => {
   if (alias.aliasedFrom === undefined) return [];
   return alias.aliasedFrom.targets.flatMap(target => {
-    const resolved = catalog.find(
-      candidate => candidate.id === target.target_model_id && candidate.aliasedFrom === undefined,
-    );
+    const resolved = catalog.get(target.target_model_id);
     return resolved !== undefined && realModelReachable(resolved, cap) ? [resolved] : [];
   });
 };
 
 export const isModelReachable = (
   model: ControlPlaneModel,
-  catalog: readonly ControlPlaneModel[],
+  catalog: CatalogIndex,
   cap: readonly string[] | null,
 ): boolean => model.aliasedFrom === undefined
   ? realModelReachable(model, cap)

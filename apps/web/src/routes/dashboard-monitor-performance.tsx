@@ -20,11 +20,13 @@ import {
   buildPerformanceQuery,
   clearGroupedFilter,
   parsePerformanceUrlState,
+  performanceLabels,
   resolvePerformanceGroup,
   serializePerformanceUrlState,
   type PerformanceDisplayRecord,
   type PerformanceFilters,
   type PerformanceGroupBy,
+  type PerformanceLabels,
   type PerformanceMetric,
   type PerformanceOverviewResponse,
   type PerformancePercentile,
@@ -200,7 +202,8 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   };
   const setFilter = (key: keyof PerformanceFilters, value: string) => setFilters(current => ({ ...current, [key]: value }));
   const buckets = useMemo(() => performanceBuckets(loadedRange, loadedAt, locale), [loadedAt, loadedRange, locale]);
-  const chart = useMemo(() => overview && buildPerformanceChart(overview.series, metric, percentile, groupBy, overview, upstreamNames, buckets, loadedRange), [buckets, groupBy, loadedRange, metric, overview, percentile, upstreamNames]);
+  const labels = useMemo(() => overview && performanceLabels(overview, upstreamNames), [overview, upstreamNames]);
+  const chart = useMemo(() => overview && labels && buildPerformanceChart(overview.series, metric, percentile, groupBy, labels, buckets, loadedRange), [buckets, groupBy, labels, loadedRange, metric, overview, percentile]);
   const summary = overview?.axes.none[0];
   const summaryCards = [
     ['requests', formatCount(summary?.requests ?? 0, locale)],
@@ -224,7 +227,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       title={t('dashboard.nav.performance')}
     />
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error.message}</OutcomeMessageBar>}
-    {overview === null || chart === null || activeBreakdown === undefined ? <Panel><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel> : <>
+    {overview === null || chart === null || labels === null || activeBreakdown === undefined ? <Panel><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel> : <>
       <Panel className="!grid min-w-0">
         <div className="flex items-end gap-3 min-w-0 flex-wrap">
           <Field className="w-[160px] flex-none" label={t('dashboard.performance.groupBy.label')}>
@@ -251,7 +254,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
               )}
             </div>
           </Field>
-          <PerformanceFilterFields filters={filters} groupBy={groupBy} overview={overview} upstreamNames={upstreamNames} view={view} onChange={setFilter} />
+          <PerformanceFilterFields filters={filters} groupBy={groupBy} labels={labels} overview={overview} view={view} onChange={setFilter} />
         </div>
         <div className="grid gap-2.5 grid-cols-8 max-[1150px]:grid-cols-4 max-[620px]:grid-cols-2">
           {summaryCards.map(([label, value]) => <div className="grid gap-1 min-w-0 px-2 py-1" key={label}>
@@ -277,24 +280,25 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
         <ScrollArea axes="horizontal" className="min-w-0"><TabList selectedValue={activeBreakdown.key} onTabSelect={(_, data) => setBreakdownGroup(data.value as PerformanceGroupBy)}>
           {breakdowns.map(({ key }) => <Tab key={key} value={key}>{t(`dashboard.performance.groupBy.${key}`)}</Tab>)}
         </TabList></ScrollArea>
-        <PerformanceTable groupBy={activeBreakdown.key} overview={overview} rows={activeBreakdown.rows} showTitle={false} upstreamNames={upstreamNames} />
+        <PerformanceTable groupBy={activeBreakdown.key} labels={labels} rows={activeBreakdown.rows} showTitle={false} />
       </Panel>
     </>}
   </section>;
 }
 
-function PerformanceFilterFields({ filters, groupBy, onChange, overview, upstreamNames, view }: {
-  filters: PerformanceFilters; groupBy: PerformanceGroupBy; onChange: (key: keyof PerformanceFilters, value: string) => void;
-  overview: PerformanceOverviewResponse; upstreamNames: ReadonlyMap<string, string>; view: PerformanceView;
+function PerformanceFilterFields({ filters, groupBy, labels, onChange, overview, view }: {
+  filters: PerformanceFilters; groupBy: PerformanceGroupBy; labels: PerformanceLabels;
+  onChange: (key: keyof PerformanceFilters, value: string) => void;
+  overview: PerformanceOverviewResponse; view: PerformanceView;
 }) {
   const { t } = useTranslation();
   const entries: Array<{ key: keyof PerformanceFilters; values: Array<{ value: string; label: string }> }> = [
     { key: 'model', values: overview.dimensionValues.models.map(value => ({ value, label: value })) },
-    { key: 'upstream', values: overview.dimensionValues.upstreams.map(value => ({ value, label: upstreamNames.get(value) ?? value })) },
+    { key: 'upstream', values: overview.dimensionValues.upstreams.map(value => ({ value, label: labels.upstreams.get(value) ?? value })) },
     { key: 'operation', values: overview.dimensionValues.operations.map(value => ({ value, label: value })) },
     { key: 'runtimeLocation', values: overview.dimensionValues.runtimeLocations.map(value => ({ value, label: value })) },
-    { key: 'userId', values: overview.dimensionValues.userIds.map(value => ({ value: String(value), label: overview.users.find(user => user.id === value)?.username ?? `user ${value}` })) },
-    { key: 'keyId', values: overview.dimensionValues.keyIds.map(value => ({ value, label: overview.keys.find(key => key.id === value)?.name ?? value })) },
+    { key: 'userId', values: overview.dimensionValues.userIds.map(value => ({ value: String(value), label: labels.users.get(String(value)) ?? `user ${value}` })) },
+    { key: 'keyId', values: overview.dimensionValues.keyIds.map(value => ({ value, label: labels.keys.get(value) ?? value })) },
   ];
   return <>
     {entries.filter(({ key }) => {
@@ -392,7 +396,7 @@ function PerformanceChartCallout({ data, details, entryByLegend, title }: {
   );
 }
 
-function PerformanceTable({ groupBy, overview, rows, showTitle = true, upstreamNames }: { groupBy: PerformanceGroupBy; overview: PerformanceOverviewResponse; rows: PerformanceDisplayRecord[]; showTitle?: boolean; upstreamNames: ReadonlyMap<string, string> }) {
+function PerformanceTable({ groupBy, labels, rows, showTitle = true }: { groupBy: PerformanceGroupBy; labels: PerformanceLabels; rows: PerformanceDisplayRecord[]; showTitle?: boolean }) {
   const { t } = useTranslation();
   const locale = useLocale();
   const styles = usePerformanceTableStyles();
@@ -401,13 +405,13 @@ function PerformanceTable({ groupBy, overview, rows, showTitle = true, upstreamN
     ? { key, direction: current.direction === 'ascending' ? 'descending' : 'ascending' }
     : { key, direction: key === 'group' ? 'ascending' : 'descending' });
   const sortedRows = useMemo(() => rows.toSorted((left, right) => {
-    const leftValue = performanceTableSortValue(left, sort.key, groupBy, overview, upstreamNames);
-    const rightValue = performanceTableSortValue(right, sort.key, groupBy, overview, upstreamNames);
+    const leftValue = performanceTableSortValue(left, sort.key, groupBy, labels);
+    const rightValue = performanceTableSortValue(right, sort.key, groupBy, labels);
     const order = typeof leftValue === 'string' && typeof rightValue === 'string'
       ? leftValue.localeCompare(rightValue)
       : Number(leftValue) - Number(rightValue);
     return sort.direction === 'ascending' ? order : -order;
-  }), [groupBy, overview, rows, sort, upstreamNames]);
+  }), [groupBy, labels, rows, sort]);
   const sortDirection = (key: PerformanceTableSortKey) => sort.key === key ? sort.direction : undefined;
   return <section className="grid gap-2.5 min-w-0">
     {showTitle && <Text size={300} weight="semibold">{t(`dashboard.performance.groupBy.${groupBy}`)}</Text>}
@@ -419,15 +423,15 @@ function PerformanceTable({ groupBy, overview, rows, showTitle = true, upstreamN
           the four measure columns to their widest label leaves the rest to the
           name, which is the only column whose content has no bound. */}
       <TableHeader><TableRow><TableHeaderCell sortable sortDirection={sortDirection('group')} onClick={() => sortBy('group')}>{t(`dashboard.performance.filters.${groupBy}`)}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('requests')} onClick={() => sortBy('requests')} className={`${styles.numericHeader} text-right !w-[112px]`}>{t('dashboard.performance.tables.requests')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('errors')} onClick={() => sortBy('errors')} className={`${styles.numericHeader} text-right !w-[88px]`}>{t('dashboard.performance.tables.errors')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('ttft')} onClick={() => sortBy('ttft')} className={`${styles.numericHeader} text-right !w-[112px]`}>{t('dashboard.performance.tables.ttftP95')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('speed')} onClick={() => sortBy('speed')} className={`${styles.numericHeader} text-right !w-[160px]`}>{t('dashboard.performance.tables.speedP95')}</TableHeaderCell></TableRow></TableHeader>
-      <TableBody>{sortedRows.length ? sortedRows.map(row => <TableRow key={row.group}><TableCell><span className="block overflow-hidden text-ellipsis whitespace-nowrap" title={row.group}>{resolvePerformanceGroup(row.group, groupBy, overview, upstreamNames)}</span></TableCell><TableCell className="text-right tabular-nums">{formatCount(row.requests, locale)}</TableCell><TableCell className="text-right tabular-nums">{formatCount(row.errors, locale)}</TableCell><TableCell className="text-right tabular-nums">{formatDuration(row.ttftMsP95)}</TableCell><TableCell className="text-right tabular-nums">{formatTokenRateFromTpot(row.tpotUsP95)}</TableCell></TableRow>) : <TableRow><TableCell colSpan={5}><EmptyStateLine>{t('dashboard.performance.empty')}</EmptyStateLine></TableCell></TableRow>}</TableBody>
+      <TableBody>{sortedRows.length ? sortedRows.map(row => <TableRow key={row.group}><TableCell><span className="block overflow-hidden text-ellipsis whitespace-nowrap" title={row.group}>{resolvePerformanceGroup(row.group, groupBy, labels)}</span></TableCell><TableCell className="text-right tabular-nums">{formatCount(row.requests, locale)}</TableCell><TableCell className="text-right tabular-nums">{formatCount(row.errors, locale)}</TableCell><TableCell className="text-right tabular-nums">{formatDuration(row.ttftMsP95)}</TableCell><TableCell className="text-right tabular-nums">{formatTokenRateFromTpot(row.tpotUsP95)}</TableCell></TableRow>) : <TableRow><TableCell colSpan={5}><EmptyStateLine>{t('dashboard.performance.empty')}</EmptyStateLine></TableCell></TableRow>}</TableBody>
     </Table></ScrollArea>
   </section>;
 }
 
 type PerformanceTableSortKey = 'group' | 'requests' | 'errors' | 'ttft' | 'speed';
 
-const performanceTableSortValue = (row: PerformanceDisplayRecord, key: PerformanceTableSortKey, groupBy: PerformanceGroupBy, overview: PerformanceOverviewResponse, upstreamNames: ReadonlyMap<string, string>): string | number => {
-  if (key === 'group') return resolvePerformanceGroup(row.group, groupBy, overview, upstreamNames);
+const performanceTableSortValue = (row: PerformanceDisplayRecord, key: PerformanceTableSortKey, groupBy: PerformanceGroupBy, labels: PerformanceLabels): string | number => {
+  if (key === 'group') return resolvePerformanceGroup(row.group, groupBy, labels);
   if (key === 'requests' || key === 'errors') return row[key];
   if (key === 'ttft') return row.ttftMsP95 ?? Number.NEGATIVE_INFINITY;
   return row.tpotUsP95 !== null && row.tpotUsP95 > 0 ? 1_000_000 / row.tpotUsP95 : Number.NEGATIVE_INFINITY;

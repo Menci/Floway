@@ -1,4 +1,5 @@
 import type { ControlPlaneModel } from '../../api/types';
+import { indexCatalog } from '../models/catalog-index';
 import { effectiveUpstreamCap, isModelReachable } from '../models/reachability';
 
 export const modelsForAgentSetup = (
@@ -7,5 +8,6 @@ export const modelsForAgentSetup = (
   userUpstreamIds: readonly string[] | null,
 ) => {
   const cap = effectiveUpstreamCap(keyUpstreamIds, userUpstreamIds);
-  return catalog.filter(model => isModelReachable(model, catalog, cap));
+  const index = indexCatalog(catalog);
+  return catalog.filter(model => isModelReachable(model, index, cap));
 };

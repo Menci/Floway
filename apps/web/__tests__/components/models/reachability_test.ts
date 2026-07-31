@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ControlPlaneModel } from '../../../src/api/types';
+import { indexCatalog } from '../../../src/components/models/catalog-index';
 import { effectiveUpstreamCap, isModelReachable } from '../../../src/components/models/reachability';
 
 const model = (id: string, upstreamId: string): ControlPlaneModel => ({
@@ -31,7 +32,8 @@ describe('model reachability', () => {
         targets: [{ target_model_id: real.id, rules: {} }],
       },
     };
-    expect(isModelReachable(alias, [real, alias], ['u1'])).toBe(true);
-    expect(isModelReachable(alias, [real, alias], ['u2'])).toBe(false);
+    const catalog = indexCatalog([real, alias]);
+    expect(isModelReachable(alias, catalog, ['u1'])).toBe(true);
+    expect(isModelReachable(alias, catalog, ['u2'])).toBe(false);
   });
 });

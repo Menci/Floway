@@ -7,7 +7,7 @@ import {
   type PerformanceDisplayRecord,
   type PerformanceGroupBy,
   type PerformanceMetric,
-  type PerformanceOverviewResponse,
+  type PerformanceLabels,
   type PerformancePercentile,
   type PerformanceRange,
 } from './performance-data';
@@ -31,15 +31,14 @@ export function buildPerformanceChart(
   metric: PerformanceMetric,
   percentile: PerformancePercentile,
   groupBy: PerformanceGroupBy,
-  overview: PerformanceOverviewResponse,
-  upstreamNames: ReadonlyMap<string, string>,
+  labels: PerformanceLabels,
   buckets: PerformanceBucket[],
   range: PerformanceRange,
 ): PerformanceChartModel {
   const groups = [...new Set(records.map(record => record.group))].sort();
   const entries = withUniqueSeriesLegends(groups.map((group, colorSlot) => ({
     id: group,
-    label: resolvePerformanceGroup(group, groupBy, overview, upstreamNames),
+    label: resolvePerformanceGroup(group, groupBy, labels),
     colorSlot,
   })));
   const values = new Map(records.map(record => [`${record.bucket}\0${record.group}`, record]));

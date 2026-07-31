@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildPerformanceChart } from '../../../src/components/performance/performance-chart-model';
-import { buildPerformanceQuery, clearGroupedFilter, parsePerformanceUrlState, performanceValue, serializePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewResponse } from '../../../src/components/performance/performance-data';
+import { buildPerformanceQuery, clearGroupedFilter, parsePerformanceUrlState, performanceLabels, performanceValue, serializePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewResponse } from '../../../src/components/performance/performance-data';
 
 const emptyOverview = (): PerformanceOverviewResponse => ({
   series: [],
@@ -70,8 +70,7 @@ describe('performance chart series', () => {
       'ttft',
       'p95',
       'keyId',
-      overview,
-      new Map(),
+      performanceLabels(overview, new Map()),
       [{ key: 'bucket-1', label: 'Bucket 1', date: new Date(0) }],
       'today',
     );

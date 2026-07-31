@@ -1,4 +1,5 @@
 import type { AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ControlPlaneModel, ModelKind, PublicModelLimits } from '../../api/types';
+import type { CatalogIndex } from '../models/catalog-index';
 
 const intersectArrays = <T>(arrays: readonly (readonly T[])[]) => {
   if (!arrays.length) return [];
@@ -52,9 +53,8 @@ function intersectChat(chats: readonly ChatModelInfo[]): ChatModelInfo | undefin
 export function computeAnnouncedMetadata(
   targets: readonly AliasTarget[],
   kind: ModelKind,
-  models: readonly ControlPlaneModel[] | null | undefined,
+  catalog: CatalogIndex,
 ): AnnouncedMetadata {
-  const catalog = new Map((models ?? []).filter(model => model.aliasedFrom === undefined).map(model => [model.id, model]));
   const available = targets
     .map(target => ({ target, model: catalog.get(target.target_model_id) }))
     .filter((entry): entry is { target: AliasTarget; model: ControlPlaneModel } => entry.model?.kind === kind);

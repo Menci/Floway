@@ -93,15 +93,32 @@ export const performanceValue = (
   return us === null || us <= 0 ? null : 1_000_000 / us;
 };
 
+// A group is resolved to a name once per chart series, once per table row and
+// twice per comparison of the table's sort, so the three id-to-name lookups are
+// indexed together rather than scanned per call.
+export interface PerformanceLabels {
+  upstreams: ReadonlyMap<string, string>;
+  users: ReadonlyMap<string, string>;
+  keys: ReadonlyMap<string, string>;
+}
+
+export const performanceLabels = (
+  overview: PerformanceOverviewResponse,
+  upstreamNames: ReadonlyMap<string, string>,
+): PerformanceLabels => ({
+  upstreams: upstreamNames,
+  users: new Map(overview.users.map(user => [String(user.id), user.username])),
+  keys: new Map(overview.keys.map(key => [key.id, key.name])),
+});
+
 export const resolvePerformanceGroup = (
   group: string,
   groupBy: PerformanceGroupBy,
-  overview: PerformanceOverviewResponse,
-  upstreamNames: ReadonlyMap<string, string>,
+  labels: PerformanceLabels,
 ): string => {
-  if (groupBy === 'upstream') return upstreamNames.get(group) ?? group;
-  if (groupBy === 'userId') return overview.users.find(user => String(user.id) === group)?.username ?? `user ${group}`;
-  if (groupBy === 'keyId') return overview.keys.find(key => key.id === group)?.name ?? group;
+  if (groupBy === 'upstream') return labels.upstreams.get(group) ?? group;
+  if (groupBy === 'userId') return labels.users.get(group) ?? `user ${group}`;
+  if (groupBy === 'keyId') return labels.keys.get(group) ?? group;
   return group;
 };
 

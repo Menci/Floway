@@ -2,9 +2,10 @@ import { ChevronDownRegular, DeleteRegular, WarningRegular } from '@fluentui/rea
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { computeModelWarning, computeRuleWarnings, findCatalogModel } from './warnings';
-import type { AliasTarget, ControlPlaneModel, ModelKind } from '../../api/types';
+import { computeModelWarning, computeRuleWarnings } from './warnings';
+import type { AliasTarget, ModelKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import type { CatalogIndex } from '../models/catalog-index';
 import { Combobox, Dropdown, Input } from '../ui/fluent-form-controls';
 import { TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { ReorderButtons } from '../ui/reorder-buttons';
@@ -20,7 +21,7 @@ const suggestions = {
 };
 
 export function AliasTargetRow({
-  disabled, index, isFirst, isLast, isSole, kind, models, onChange, onMove, onRemove, target, targetIds,
+  catalog, disabled, index, isFirst, isLast, isSole, kind, onChange, onMove, onRemove, target, targetIds,
 }: {
   disabled: boolean;
   index: number;
@@ -28,7 +29,7 @@ export function AliasTargetRow({
   isLast: boolean;
   isSole: boolean;
   kind: ModelKind;
-  models: readonly ControlPlaneModel[] | null;
+  catalog: CatalogIndex;
   onChange: (target: AliasTarget) => void;
   onMove: (direction: -1 | 1) => void;
   onRemove: () => void;
@@ -37,7 +38,7 @@ export function AliasTargetRow({
 }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
-  const model = findCatalogModel(models, target.target_model_id);
+  const model = catalog.get(target.target_model_id);
   const modelWarning = computeModelWarning(target.target_model_id, model, kind);
   const ruleWarnings = computeRuleWarnings(target.rules, model);
   const options = useMemo(() => targetIds.filter(id => id.toLowerCase().includes(target.target_model_id.toLowerCase())), [target.target_model_id, targetIds]);

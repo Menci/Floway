@@ -16,6 +16,7 @@ import { callApi } from '../api/auth';
 import { api } from '../api/client';
 import type { ApiKey, ControlPlaneModel } from '../api/types';
 import { getSessionToken } from '../auth/session';
+import { indexCatalog } from '../components/models/catalog-index';
 import { ModelInfoBadges } from '../components/models/model-info-badges';
 import { effectiveUpstreamCap } from '../components/models/reachability';
 import { bingAccentForeground, bingAccentForegroundHover } from '../components/playground/bing-chat-tokens';
@@ -139,6 +140,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
     () => effectiveUpstreamCap(selectedKey?.upstream_ids ?? null, user.upstreamIds),
     [selectedKey, user.upstreamIds],
   );
+  const catalog = useMemo(() => indexCatalog(loaderData.models), [loaderData.models]);
   const models = useMemo(
     () => availableModels(loaderData.models ?? [], cap),
     [cap, loaderData.models],
@@ -335,7 +337,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
           {matchingModels.map(model => <Option key={model.id} value={model.id} text={model.display_name}><div className="min-w-0 grid gap-1"><div className="truncate leading-[var(--lineHeightBase300)]">{model.display_name}</div><div className={`text-fui-fg2 truncate leading-[var(--lineHeightBase200)] ${s.code}`}>{model.id}</div></div></Option>)}
         </Combobox>
       </Field>
-      {selectedModel && <ModelInfoBadges cap={cap} catalog={loaderData.models ?? []} model={selectedModel} />}
+      {selectedModel && <ModelInfoBadges cap={cap} catalog={catalog} model={selectedModel} />}
     </SettingsSection>
     <SettingsSection title={t('dashboard.playground.settings.generation')}>
       <Field label={t('dashboard.playground.generation.reasoningEffort')}>

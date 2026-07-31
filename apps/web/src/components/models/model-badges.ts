@@ -1,3 +1,4 @@
+import type { CatalogIndex } from './catalog-index';
 import { reachableTargets } from './reachability';
 import type { ControlPlaneModel } from '../../api/types';
 import { ALIAS_RULE_BADGE_FIELDS, formatAliasRuleBadges, type AliasRuleBadge, type AliasRuleBadgeField, type AliasTarget } from '@floway-dev/protocols/common';
@@ -29,7 +30,7 @@ const formatTokenLimit = (count: number): string => {
 // model has.
 export const effectiveUpstreams = (
   model: ControlPlaneModel,
-  catalog: readonly ControlPlaneModel[],
+  catalog: CatalogIndex,
   cap: readonly string[] | null,
 ): readonly ControlPlaneModel['upstreams'][number][] => {
   if (model.aliasedFrom === undefined) return cap === null
@@ -74,7 +75,7 @@ const ruleBadges = (targets: readonly AliasTarget[]): ModelBadge[] => {
 
 export const modelBadges = (
   model: ControlPlaneModel,
-  catalog: readonly ControlPlaneModel[],
+  catalog: CatalogIndex,
   cap: readonly string[] | null,
 ): ModelBadge[] => {
   const badges: ModelBadge[] = ([

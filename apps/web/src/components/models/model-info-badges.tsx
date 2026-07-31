@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
+import type { CatalogIndex } from './catalog-index';
 import { effectiveUpstreams, modelBadges, type ModelBadge } from './model-badges';
 import type { ControlPlaneModel } from '../../api/types';
 import { fluentComponents } from '../../fluent';
@@ -94,7 +95,7 @@ const badgeContent = (
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-badge/stories/src/Badge/BadgeDescription.md
 export function ModelInfoBadges({ cap, catalog, model }: {
   cap: readonly string[] | null;
-  catalog: readonly ControlPlaneModel[];
+  catalog: CatalogIndex;
   model: ControlPlaneModel;
 }) {
   const { t } = useTranslation();
