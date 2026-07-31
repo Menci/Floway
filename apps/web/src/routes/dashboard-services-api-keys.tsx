@@ -212,12 +212,8 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
           message={t('dashboard.apiKeys.delete.message', {
             name: deleteDialog.invocation.value.name,
           })}
-          onConfirm={() => {
-            if (!deletingKey) void deleteKey(deleteDialog.invocation!.value);
-          }}
-          onOpenChange={open => {
-            if (!deletingKey && !open) deleteDialog.close();
-          }}
+          onConfirm={() => void deleteKey(deleteDialog.invocation!.value)}
+          onOpenChange={open => { if (!open) deleteDialog.close(); }}
           key={deleteDialog.invocation.key}
           title={t('dashboard.apiKeys.delete.title')}
         />}

@@ -232,11 +232,9 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
           message={t('dashboard.users.delete.message', {
             username: deleteDialog.invocation.value.username,
           })}
-          onConfirm={() => {
-            if (!deleting) void deleteUser(deleteDialog.invocation!.value);
-          }}
+          onConfirm={() => void deleteUser(deleteDialog.invocation!.value)}
           onDismissError={() => setDeleteError(null)}
-          onOpenChange={open => { if (!deleting && !open) deleteDialog.close(); }}
+          onOpenChange={open => { if (!open) deleteDialog.close(); }}
           title={t('dashboard.users.delete.title')}
         />}
       </>}

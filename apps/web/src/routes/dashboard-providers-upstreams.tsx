@@ -302,12 +302,8 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
         onDismissError={() => setDeleteError(null)}
         key={deleteDialog.invocation.key}
         message={t('dashboard.upstreams.delete.message', { name: deleteDialog.invocation.value.name })}
-        onConfirm={() => {
-          if (!mutating) void deleteUpstream(deleteDialog.invocation!.value);
-        }}
-        onOpenChange={open => {
-          if (mutation?.kind !== 'delete' && !open) deleteDialog.close();
-        }}
+        onConfirm={() => void deleteUpstream(deleteDialog.invocation!.value)}
+        onOpenChange={open => { if (!open) deleteDialog.close(); }}
         title={t('dashboard.upstreams.delete.title')}
       />}
     </section>

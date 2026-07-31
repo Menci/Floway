@@ -325,7 +325,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
           onConfirm={() => void handleDeleteConfirm(deleteDialog.invocation!.value)}
           onDismissError={() => setDeleteError(null)}
           onOpenChange={open => {
-            if (!mutating && !open) deleteDialog.close();
+            if (!open) deleteDialog.close();
           }}
           title={t('dashboard.proxy.delete.title')}
         />
