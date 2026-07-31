@@ -8,15 +8,19 @@ import type { EventResultMetadata, ExecuteResult, ResponsesInvocation, Telemetry
 export type { ResponsesInvocation };
 
 // The chain runner produces an event stream for both actions — the attempt
-// post-processes it into a single `response.compaction` envelope when the
-// caller's intent action was 'compact'. `modelIdentity`, `usage`, and
-// `performance` carry the per-turn attribution forward so the http layer
-// records the success path identically to streaming generate.
-export type ResponsesAttemptResult =
+// drains it into a single non-streaming result when the caller's intent action
+// was 'compact', and serve completes that result into the compaction resource.
+// `modelIdentity`, `usage`, and `performance` carry the per-turn attribution
+// forward so the http layer records the success path identically to streaming
+// generate.
+// The non-streaming result is parameterized because `/responses/compact`
+// answers with `CompactResource` rather than the response resource, and its
+// own completion narrows the type further.
+export type ResponsesAttemptResult<Result = ResponsesResult> =
   | ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>
   | {
     readonly type: 'result';
-    readonly result: ResponsesResult;
+    readonly result: Result;
     readonly modelIdentity: TelemetryModelIdentity;
     readonly usage: TokenUsage | null;
     readonly performance: EventResultMetadata['performance'];

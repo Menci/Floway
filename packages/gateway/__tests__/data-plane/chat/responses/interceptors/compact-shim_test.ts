@@ -562,3 +562,50 @@ test('round-trip: outbound synthesis then inbound expansion recovers the summary
   assertEquals(items[0].role, 'user');
   assertEquals(items[0].content[0].text, `${SUMMARY_PREFIX}\nSUMMARY TEXT`);
 });
+
+const upstreamRunStatingNoOutput = (summaryText: string): () => Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
+  const message = {
+    type: 'message' as const,
+    id: 'msg_1',
+    role: 'assistant' as const,
+    status: 'completed' as const,
+    content: [{ type: 'output_text' as const, text: summaryText, annotations: [] }],
+  };
+  const response: ResponsesResult = {
+    id: 'resp_fake_upstream',
+    object: 'response',
+    model: 'test-upstream-model',
+    status: 'completed',
+    output: [],
+    error: null,
+    incomplete_details: null,
+    usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 },
+  };
+  return () => Promise.resolve(eventResult(
+    (async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+      yield eventFrame({ type: 'response.output_item.added', sequence_number: 0, output_index: 0, item: message });
+      yield eventFrame({ type: 'response.output_item.done', sequence_number: 1, output_index: 0, item: message });
+      yield eventFrame({ type: 'response.completed', sequence_number: 2, response });
+      yield doneFrame();
+    })(),
+    testTelemetryModelIdentity,
+  ));
+};
+
+test('compact + flag on: the summary is the item the turn closed, not the output its terminal stated', async () => {
+  const inv = makeInvocation(
+    { input: [{ type: 'message', role: 'user', content: 'long conversation history' }] },
+    { action: 'compact' },
+  );
+
+  const result = await withResponsesCompactShim(inv, stubCtx, upstreamRunStatingNoOutput('CONDENSED SUMMARY'));
+  if (result.type !== 'events') throw new Error(`expected events branch, got ${result.type}`);
+
+  const collected = await collectResponsesProtocolEventsToResult(result.events);
+  const compaction = collected.output[0] as unknown as { type: string; encrypted_content: string };
+  assertEquals(compaction.type, 'compaction');
+  const decoded = JSON.parse(new TextDecoder().decode(
+    Uint8Array.from(atob(compaction.encrypted_content.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)),
+  )) as Array<{ content: Array<{ text: string }> }>;
+  assertEquals(decoded[0]?.content[0]?.text, `${SUMMARY_PREFIX}\nCONDENSED SUMMARY`);
+});

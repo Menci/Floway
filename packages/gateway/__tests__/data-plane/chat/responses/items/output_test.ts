@@ -595,3 +595,36 @@ test('snapshot output IDs follow output_index rather than done arrival order', a
     terminal.output.map(item => item.id),
   );
 });
+
+test('snapshot retains completed streamed items omitted from the terminal output', async () => {
+  const { repo, store } = memoryOutputHarness();
+  const call = {
+    type: 'custom_tool_call' as const,
+    id: 'ctc_streamed_only',
+    call_id: 'call_streamed_only',
+    name: 'exec_command',
+    input: 'printf floway-repro',
+    status: 'completed',
+  };
+  const response: ResponsesResult = {
+    id: 'resp_upstream',
+    object: 'response',
+    model: 'model',
+    status: 'completed',
+    output: [],
+    error: null,
+    incomplete_details: null,
+  };
+  const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: call });
+    yield eventFrame({ type: 'response.completed', response });
+  };
+
+  for await (const _frame of wrapResponsesClientOutput(input(), {
+    store,
+    responseId: 'resp_public',
+  })) { /* drain */ }
+
+  expect((await repo.responsesSnapshots.lookup('key-a', 'resp_public', 0))?.itemIds).toEqual([call.id]);
+  expect((await repo.responsesItems.lookupMany('key-a', [call.id], 0))[0].payload.item).toEqual(call);
+});

@@ -4,7 +4,7 @@ import { azureFetchAudioTranscriptions, azureFetchChatCompletions, azureFetchCom
 import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completions';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
-import { parseResponsesStream, type ResponsesResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
+import { parseResponsesStream, type ResponsesCompactionResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
 import { serializeModelPathAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, type ProviderInstance, type Provider, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
 
 const upstreamModelIdOf = (model: ProviderModel): string => (model.providerData as { upstreamModelId: string }).upstreamModelId;
@@ -79,7 +79,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
           { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
         );
         return response.ok
-          ? { action: 'compact', ok: true, result: (await response.json()) as ResponsesResult, modelKey: upstreamModelId }
+          ? { action: 'compact', ok: true, result: (await response.json()) as ResponsesCompactionResult, modelKey: upstreamModelId }
           : { action: 'compact', ok: false, response, modelKey: upstreamModelId };
       }
       default:

@@ -60,10 +60,13 @@ const connectCodexResponsesWebSocket = async (
   return pair!.client;
 };
 
-const responseDoneId = (messages: readonly Record<string, unknown>[]): string => {
-  const done = messages.find(message => message.type === 'response.done') as { response?: { id?: unknown } } | undefined;
-  expect(done?.response?.id).toEqual(expect.any(String));
-  return done!.response!.id as string;
+const isTerminalResponseEvent = (message: Record<string, unknown>): boolean =>
+  message.type === 'response.completed' || message.type === 'response.failed' || message.type === 'response.incomplete';
+
+const terminalResponseId = (messages: readonly Record<string, unknown>[]): string => {
+  const terminal = messages.find(isTerminalResponseEvent) as { response?: { id?: unknown } } | undefined;
+  expect(terminal?.response?.id).toEqual(expect.any(String));
+  return terminal!.response!.id as string;
 };
 
 it('chains previous_response_id on the Codex Responses WebSocket', async () => {
@@ -103,15 +106,15 @@ it('chains previous_response_id on the Codex Responses WebSocket', async () => {
     },
     async () => await withWorkerWebSocketRuntime(async runtime => {
       const client = await connectCodexResponsesWebSocket(runtime, apiKey.key);
-      const firstDone = waitForMessages(client, messages => messages.some(message => message.type === 'response.done'));
+      const firstTerminal = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
       client.send(JSON.stringify({
         type: 'response.create',
         response: { model: 'gpt-direct-responses', input: 'codex first', store: false },
       }));
-      const firstResponseId = responseDoneId(await firstDone);
+      const firstResponseId = terminalResponseId(await firstTerminal);
       expect(firstResponseId).not.toBe('resp_codex_ws_1');
 
-      const secondDone = waitForMessages(client, messages => messages.some(message => message.type === 'response.done'));
+      const secondTerminal = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
       client.send(JSON.stringify({
         type: 'response.create',
         response: {
@@ -121,7 +124,7 @@ it('chains previous_response_id on the Codex Responses WebSocket', async () => {
           store: false,
         },
       }));
-      const secondResponseId = responseDoneId(await secondDone);
+      const secondResponseId = terminalResponseId(await secondTerminal);
       expect(secondResponseId).not.toBe('resp_codex_ws_2');
       expect(secondResponseId).not.toBe(firstResponseId);
     }),
