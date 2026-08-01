@@ -27,6 +27,11 @@ export async function clientAction({
       ok: false,
       values: { username },
       error: result.error.message || 'auth.login.genericError',
+      // A 401 is the gateway rejecting the credentials, which is a statement
+      // about what was typed and belongs on the field that holds it. Anything
+      // else -- a network failure, a gateway fault -- belongs to the attempt
+      // rather than to a field, and has nowhere else to go than the bar.
+      credentials: result.error.status === 401,
     };
   }
 

@@ -36,6 +36,8 @@ export interface LoginActionData {
   ok: false;
   values: Pick<LoginFormValues, 'username'>;
   error: string;
+  /** Whether the gateway rejected the credentials rather than failing to answer. */
+  credentials: boolean;
 }
 
 export function LoginForm() {
@@ -47,10 +49,13 @@ export function LoginForm() {
   // into state as each response arrives — during render rather than in an
   // effect, so the bar and the response it reports are painted together.
   const [serverError, setServerError] = useState<string | null>(null);
+  const [credentialError, setCredentialError] = useState<string | null>(null);
   const [reportedResponse, setReportedResponse] = useState(fetcher.data);
   if (reportedResponse !== fetcher.data) {
     setReportedResponse(fetcher.data);
-    setServerError(fetcher.data?.ok === false ? fetcher.data.error : null);
+    const failure = fetcher.data?.ok === false ? fetcher.data : null;
+    setServerError(failure && !failure.credentials ? failure.error : null);
+    setCredentialError(failure?.credentials === true ? failure.error : null);
   }
 
   const {
@@ -87,13 +92,15 @@ export function LoginForm() {
 
   return (
     <Panel className="w-[min(440px,100%)]">
-      <header className="mb-9 grid justify-items-center gap-6 text-center">
-        <FlowayLogo />
-        <h1 className="m-0 text-fui-base600 font-fui-semibold leading-[1.15]">
-          {t('auth.login.title')}
-        </h1>
+      {/* The mark alone, at the size the dashboard wears it. A heading under it
+          would name the page the mark has already named. */}
+      <header className="grid justify-items-center">
+        <FlowayLogo size="compact" />
       </header>
 
+      {/* 12px from the mark to the first field. The form's first Field carries
+          12px of its own above its label, so the gap states none and lets that
+          be the whole of it -- stating 12 here would read as 24 on screen. */}
       <form
         className="mx-auto grid w-full max-w-full gap-5"
         onSubmit={event => void handleSubmit(onSubmit)(event)}
@@ -126,8 +133,11 @@ export function LoginForm() {
           render={({ field }) => (
             <Field
               label={t('auth.login.password')}
-              validationMessage={passwordError ? t(passwordError) : undefined}
-              validationState={passwordError ? 'error' : undefined}
+              validationMessage={(passwordError ?? credentialError) === undefined || (passwordError ?? credentialError) === null
+                ? undefined
+                : t((passwordError ?? credentialError)!)}
+              validationMessageIcon={null}
+              validationState={passwordError ?? credentialError ? 'error' : undefined}
             >
               <Input
                 {...field}
@@ -152,7 +162,9 @@ export function LoginForm() {
           {isSubmitting ? t('auth.login.submitting') : t('auth.login.submit')}
         </Button>
 
-        <p className="m-0 text-center text-fui-base300 text-fui-fg2">
+        {/* A step quieter than the form it explains, and with the leading that
+            step is set with rather than the one it inherited from a larger. */}
+        <p className="m-0 text-center text-fui-base200 leading-[var(--lineHeightBase300)] text-fui-fg2">
           <Trans
             i18nKey="auth.adminKeyHint"
             components={{
