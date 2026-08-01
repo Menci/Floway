@@ -9,9 +9,9 @@
 // The overlaying pane's fill is the brush FlyoutPresenter also carries, so the
 // overlay drawer takes that surface whole: the acrylic brush's flat fallback
 // from ../tokens.ts for the fill, the flyout stroke for the outline. The header
-// and footer scroll separators are ContentDialog's title separator, that being
-// the WinUI surface which likewise carries a title block over scrolling
-// content.
+// and footer scroll separators take their colour from ContentDialog's
+// separator, which is the bottom edge of its scrolling content band and the
+// one hairline in the corpus dividing scrolling content from a fixed band.
 export const drawerCss = `
 /* Foreground, in place of Fluent's neutral one. Both flavours take WinUI's
    default text brush, which resolves to the primary text fill.
@@ -46,22 +46,18 @@ export const drawerCss = `
   background-color: var(--winui-solid-background-fill-base);
 }
 
-/* The seam an inline drawer makes with the page. WinUI's expanded pane carries
-   no edge of its own -- PaneNotOverlaying sets the split view's border
-   transparent -- so the hairline between two regions of one page is the divider
-   stroke, and it is drawn here from the pane's side. It is painted in every
-   state rather than only under Fluent's \`separator\` prop, because the colour
-   that prop reaches for is a neutral fill this layer already points at the same
-   surface the inline drawer itself takes, so the prop on its own would draw an
-   invisible line. The side is Fluent's: it gives a border style to the edge
-   facing the content -- inline-end for a start drawer, inline-start for an end
-   one -- so this shorthand lands only there. A bottom drawer is the one flavour
-   whose styled edge exists only under the prop, and it takes the stroke then.
+/* An inline drawer's page-facing edge carries no seam. WinUI's expanded pane
+   states no edge of its own -- PaneNotOverlaying sets the split view's border
+   transparent -- and the hairline a NavigationView shows at that boundary is
+   drawn from the content side: ContentGrid is a card, with 1,1,0,0 of
+   CardStrokeColorDefault under an 8,0,0,0 radius over LayerFillColorDefault,
+   and the seam is that card's start edge. Nothing this drawer sits beside is
+   that card, so the seam has no owner and Fluent's transparent border is left
+   as it stands. ./nav.css.ts clears the same edge on the sidebar's NavDrawer.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L127
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L257 */
-.fui-InlineDrawer.fui-InlineDrawer {
-  border-color: var(--winui-divider-stroke-default);
-}
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L392
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L49
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L234 */
 
 /* The edge facing the page is a flyout border. WinUI strokes all four sides at
    FlyoutBorderThemeThickness 1; only the page-facing edge is painted here,
@@ -123,14 +119,19 @@ export const drawerCss = `
   overflow: hidden;
 }
 
-/* The hairline that appears once the body scrolls is WinUI's ContentDialog
-   title separator, a card stroke rather than a neutral one, and it fades on
-   WinUI's normal control timing instead of Fluent's. Header and footer share
-   one style module, differing only in which pseudo-element carries it, so both
-   are named to keep the two hairlines one colour. Fluent generates the
-   pseudo-element only while the body is scrollable, so naming it
-   unconditionally restyles it without bringing it into existence.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L44
+/* The hairline that appears once the body scrolls takes the colour of
+   ContentDialog's separator -- a card stroke rather than a neutral one -- and
+   fades on WinUI's normal control timing instead of Fluent's. WinUI hangs that
+   stroke on the bottom edge of the scrolling content band, so the footer's
+   hairline is the one with a counterpart and the header's is the same stroke
+   read from the other side. Header and footer share one style module,
+   differing only in which pseudo-element carries it, so both are named to keep
+   the two hairlines one colour. Fluent generates the pseudo-element only while
+   the body is scrollable, so naming it unconditionally restyles it without
+   bringing it into existence.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L10
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L19
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L233
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L602-L603 */
 .fui-DrawerHeader.fui-DrawerHeader::after,
 .fui-DrawerFooter.fui-DrawerFooter::before {
