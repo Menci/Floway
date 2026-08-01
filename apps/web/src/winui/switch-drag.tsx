@@ -124,7 +124,6 @@ export const withWinuiDrag = (components: FluentComponents): FluentComponents =>
         travel,
       };
       gestureRef.current = gesture;
-      suppressClickRef.current = false;
       element.setPointerCapture(event.pointerId);
       // Entering Dragging takes no movement at all: Thumb raises DragStarted from
       // OnPointerPressed, and ToggleSwitch pins the knob's current translate as a

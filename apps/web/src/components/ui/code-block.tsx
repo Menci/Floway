@@ -88,7 +88,7 @@ export function CodeBlock({ code, copyOutcome, disabled = false, header, languag
         </Button>
       </div>
       <ScrollArea axes="both" className="max-h-[340px]">
-        <pre className={mergeClasses(`language-${language}`, styles.pre, 'm-0')}>
+        <pre className={mergeClasses(`language-${language}`, styles.pre)}>
           <code
             className={mergeClasses(`language-${language}`, styles.code)}
             dangerouslySetInnerHTML={{ __html: highlighted }}

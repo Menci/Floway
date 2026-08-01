@@ -175,8 +175,7 @@ export function ProviderBadge({ color, kind, label, size = 'small', title }: {
 // tone, in a menu it is plain foreground, and dark mode needs no inversion.
 // Masking keeps the negative space (Copilot's eyes, Ollama's outline) that a
 // flat recolor would fill in.
-const providerIconUrls: Record<UpstreamProviderKind, string | null> = {
-  custom: null,
+const providerIconUrls: Record<Exclude<UpstreamProviderKind, 'custom'>, string> = {
   azure: azureIconUrl,
   copilot: githubCopilotIconUrl,
   // Codex is the ChatGPT subscription, so it wears OpenAI's mark.
@@ -206,7 +205,5 @@ export function ProviderIcon({
   const baseClassName = `block flex-none ${className}`;
   if (kind === null) return null;
   if (kind === 'custom') return <ServerRegular className={baseClassName} />;
-  const iconUrl = providerIconUrls[kind];
-  if (iconUrl === null) return null;
-  return <MaskedIcon className={className} maskSize={providerIconMaskSizes[kind]} url={iconUrl} />;
+  return <MaskedIcon className={className} maskSize={providerIconMaskSizes[kind]} url={providerIconUrls[kind]} />;
 }

@@ -56,11 +56,12 @@ export const dialogCss = `
    browser scrollbar by widening three border edges to 4px. DialogShell keeps
    the same three-band grid at every height, so neither the native scroll path
    nor its compensating border survives; only the middle OverlayScrollbars
-   viewport contracts. */
+   viewport contracts. The scroll path is already cancelled by the surface rule
+   above, which outranks Fluent's overflow-y at every height, so only the border
+   is restated here. */
 @media (max-height: 359px) {
   .fui-DialogSurface.fui-DialogSurface {
     border-width: 1px;
-    overflow: hidden;
   }
 }
 

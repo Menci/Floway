@@ -198,7 +198,7 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
     >
       <NavDrawerHeader className="!bg-transparent !px-5 !py-4">
         <div className="flex items-center min-h-10">
-          <FlowayLogo size="compact" />
+          <FlowayLogo />
           {onNavigate && <Button appearance="subtle" aria-label={t('dashboard.nav.close')} className="!ml-auto" icon={<DismissRegular />} onClick={onNavigate} />}
         </div>
       </NavDrawerHeader>

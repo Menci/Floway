@@ -67,7 +67,7 @@ export default function Dashboard({}: Route.ComponentProps) {
             icon={<NavigationRegular />}
             onClick={() => setNavigationOpen(true)}
           />
-          <FlowayLogo size="compact" />
+          <FlowayLogo />
         </header>
         <ScrollArea
           axes="vertical"

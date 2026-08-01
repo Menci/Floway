@@ -128,12 +128,12 @@ export type AccountStatus =
 
 export const accountStatus = (lookup: CredentialLookup, windows: WindowRow[]): AccountStatus => {
   if (lookup.kind === 'uuid-mismatch') return { tone: 'danger', reason: 'uuid-mismatch' };
-  const credential = lookup.kind === 'present' ? lookup.credential : null;
-  if (credential?.state === 'session_terminated') return { tone: 'danger', reason: 'session-terminated', detail: credential.stateMessage };
-  if (credential?.state === 'refresh_failed') return { tone: 'danger', reason: 'refresh-failed', detail: credential.stateMessage };
+  const { credential } = lookup;
+  if (credential.state === 'session_terminated') return { tone: 'danger', reason: 'session-terminated', detail: credential.stateMessage };
+  if (credential.state === 'refresh_failed') return { tone: 'danger', reason: 'refresh-failed', detail: credential.stateMessage };
   // `rejected` on the primary status means a limit was hit; overage is a
   // separate optional window in the official SDK contract linked above.
-  if (credential?.quotaSnapshot?.data.status === 'rejected') return { tone: 'danger', reason: 'exhausted' };
+  if (credential.quotaSnapshot?.data.status === 'rejected') return { tone: 'danger', reason: 'exhausted' };
   const heaviest = heaviestPercent(windows.map(row => row.percent));
   if (heaviest !== null && heaviest >= HEAVY_USAGE_THRESHOLD_PERCENT) return { tone: 'warning', reason: 'heavy', percent: Math.round(heaviest) };
   return { tone: 'success', reason: 'active' };

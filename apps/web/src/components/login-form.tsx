@@ -97,7 +97,7 @@ export function LoginForm() {
       {/* The mark alone, at the size the dashboard wears it. A heading under it
           would name the page the mark has already named. */}
       <header className="grid justify-items-center">
-        <FlowayLogo size="compact" />
+        <FlowayLogo />
       </header>
 
       {/* 12px from the mark to the first field. The form's first Field carries

@@ -326,8 +326,7 @@ function CopilotConfig({ record, onPatch }: {
       timer.current = window.setTimeout(() => void poll(deviceCode, next), next * 1000);
       return;
     }
-    const next = interval;
-    timer.current = window.setTimeout(() => void poll(deviceCode, next), next * 1000);
+    timer.current = window.setTimeout(() => void poll(deviceCode, interval), interval * 1000);
   };
   const start = async () => {
     stop(); setBusy(true); setError(null);

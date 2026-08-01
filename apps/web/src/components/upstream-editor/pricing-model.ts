@@ -32,7 +32,7 @@ const pricingField = (metric: BillingMetric): PricingField => {
   return tokenPricingField(metric);
 };
 
-export const PRICING_FIELD_BY_METRIC = Object.fromEntries(
+const PRICING_FIELD_BY_METRIC = Object.fromEntries(
   BILLING_METRICS.map(metric => [metric, pricingField(metric)]),
 ) as Record<BillingMetric, PricingField>;
 
@@ -65,7 +65,7 @@ export const pricingEntryDraftsFor = (value: ModelPricing | undefined): PricingE
     rates: { ...entry.rates },
   }));
 
-export const compactSelector = (draft: PricingEntryDraft): PricingSelector => {
+const compactSelector = (draft: PricingEntryDraft): PricingSelector => {
   const selector: Record<string, PricingCoordinateValue> = {};
   for (const [axisId, coordinate] of Object.entries(draft.selector)) {
     if (typeof coordinate === 'string') selector[axisId] = coordinate;

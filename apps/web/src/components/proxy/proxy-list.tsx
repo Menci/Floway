@@ -53,8 +53,8 @@ export function ProxyList({
           {proxies.map(proxy => {
             const kind = kindFromUri(proxy.url);
             const colors = KIND_COLORS[kind] ?? {
-              bg: 'light-dark(#f3f4f6, #374151)',
-              fg: 'light-dark(#6b7280, #9ca3af)',
+              bg: 'var(--colorNeutralBackground3)',
+              fg: 'var(--colorNeutralForeground3)',
             };
 
             return (

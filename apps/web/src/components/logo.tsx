@@ -11,31 +11,20 @@ const useMarkStyles = makeStyles({
     borderRadius: '6px',
     boxShadow: 'none',
     display: 'inline-flex',
-    fontSize: '20px',
-    height: '28px',
-    justifyContent: 'center',
-    lineHeight: 1,
-    width: '28px',
-  } as any,
-  compact: {
     fontSize: '22px',
     height: '36px',
+    justifyContent: 'center',
+    lineHeight: 1,
     width: '36px',
   } as any,
 });
 
-export function FlowayLogo({ size = 'default' }: { size?: 'default' | 'compact' }) {
-  const compact = size === 'compact';
+export function FlowayLogo() {
   const ms = useMarkStyles();
 
   return (
-    <div
-      className={`inline-flex items-center min-w-0 text-fui-fg2 ${compact ? 'gap-2.5' : 'gap-2'}`}
-    >
-      <span
-        className={`${ms.root} ${compact ? ms.compact : ''}`}
-        aria-hidden="true"
-      >
+    <div className="inline-flex items-center min-w-0 gap-2.5 text-fui-fg2">
+      <span className={ms.root} aria-hidden="true">
         🌸
       </span>
       <span

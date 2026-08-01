@@ -17,7 +17,7 @@ export const generatePkce = async () => {
   return { verifier, challenge, state: random(24) };
 };
 
-const storageKey = (kind: UpstreamProviderKind, flowKind = 'oauth') => `floway-pkce:${kind}:${flowKind}`;
+const storageKey = (kind: UpstreamProviderKind, flowKind: string) => `floway-pkce:${kind}:${flowKind}`;
 
 export const stashPkce = (kind: UpstreamProviderKind, flowKind: string, value: { verifier: string; state: string }) => {
   sessionStorage.setItem(storageKey(kind, flowKind), JSON.stringify(value));

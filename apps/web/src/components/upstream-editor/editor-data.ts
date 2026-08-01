@@ -129,9 +129,7 @@ export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues =
         ? { ...structuredClone(record.config), apiKey: '' }
         : structuredClone(record.config);
   const manualModels = record.kind === 'custom' || record.kind === 'azure' || record.kind === 'ollama'
-    ? structuredClone(record.config.models).map(model => model.flagOverrides
-        ? { ...model }
-        : model)
+    ? structuredClone(record.config.models)
     : [];
   return {
     name: record.name,
@@ -150,7 +148,7 @@ export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues =
 // The editor holds one flat form model for every provider kind, so the config
 // is assembled structurally and only becomes a specific union member here.
 // This is the single point where the two representations meet.
-export const configFromValues = (
+const configFromValues = (
   record: UpstreamRecord,
   values: UpstreamEditorValues,
   options: { preserveStoredSecret?: boolean } = {},

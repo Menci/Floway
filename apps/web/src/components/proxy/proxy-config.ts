@@ -139,7 +139,7 @@ export const parseProxyInput = (url: string): ProxyUrlParseResult => {
   }
 };
 
-export const parseSavedUrl = (url: string): ProxyConfig | null =>
+const parseSavedUrl = (url: string): ProxyConfig | null =>
   parseProxyInput(url).config;
 
 export type DialTimeoutResult =
@@ -184,14 +184,19 @@ export const hostPortLabel = (url: string): string => {
   }
 };
 
+// The scheme badge's palette. The hues are Fluent's, not chosen values: the
+// dashboard already picks palette hues by meaning for syntax highlighting, and
+// a palette token carries its own light and dark step, which a literal pair has
+// to restate. Schemes that share a transport share a hue -- HTTP with HTTPS,
+// the three that tunnel a stream, the three VLESS shapes.
 export const KIND_COLORS: Record<string, { bg: string; fg: string }> = {
-  HTTP: { bg: 'light-dark(#dbeafe, #1e3a5f)', fg: 'light-dark(#1e40af, #93c5fd)' },
-  HTTPS: { bg: 'light-dark(#dbeafe, #1e3a5f)', fg: 'light-dark(#1e40af, #93c5fd)' },
-  SOCKS5: { bg: 'light-dark(#d1fae5, #064e3b)', fg: 'light-dark(#065f46, #6ee7b7)' },
-  SS: { bg: 'light-dark(#ede9fe, #3b1f6e)', fg: 'light-dark(#6d28d9, #c4b5fd)' },
-  'SS-2022': { bg: 'light-dark(#ede9fe, #3b1f6e)', fg: 'light-dark(#6d28d9, #c4b5fd)' },
-  TROJAN: { bg: 'light-dark(#ede9fe, #3b1f6e)', fg: 'light-dark(#6d28d9, #c4b5fd)' },
-  VLESS: { bg: 'light-dark(#cffafe, #164e63)', fg: 'light-dark(#0e7490, #67e8f9)' },
-  'VLESS-WS': { bg: 'light-dark(#cffafe, #164e63)', fg: 'light-dark(#0e7490, #67e8f9)' },
-  REALITY: { bg: 'light-dark(#cffafe, #164e63)', fg: 'light-dark(#0e7490, #67e8f9)' },
+  HTTP: { bg: 'var(--colorPaletteBlueBackground2)', fg: 'var(--colorPaletteBlueForeground2)' },
+  HTTPS: { bg: 'var(--colorPaletteBlueBackground2)', fg: 'var(--colorPaletteBlueForeground2)' },
+  SOCKS5: { bg: 'var(--colorPaletteGreenBackground2)', fg: 'var(--colorPaletteGreenForeground2)' },
+  SS: { bg: 'var(--colorPalettePurpleBackground2)', fg: 'var(--colorPalettePurpleForeground2)' },
+  'SS-2022': { bg: 'var(--colorPalettePurpleBackground2)', fg: 'var(--colorPalettePurpleForeground2)' },
+  TROJAN: { bg: 'var(--colorPalettePurpleBackground2)', fg: 'var(--colorPalettePurpleForeground2)' },
+  VLESS: { bg: 'var(--colorPaletteTealBackground2)', fg: 'var(--colorPaletteTealForeground2)' },
+  'VLESS-WS': { bg: 'var(--colorPaletteTealBackground2)', fg: 'var(--colorPaletteTealForeground2)' },
+  REALITY: { bg: 'var(--colorPaletteTealBackground2)', fg: 'var(--colorPaletteTealForeground2)' },
 };
