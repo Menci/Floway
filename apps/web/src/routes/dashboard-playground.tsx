@@ -391,9 +391,9 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
             {loadError && <OutcomeMessageBar className="!mb-3" onDismiss={() => setLoadError(null)}>{loadError}</OutcomeMessageBar>}
             {requestError && <OutcomeMessageBar className="!mb-3" onDismiss={() => setRequestError(null)}>{requestError}</OutcomeMessageBar>}
             {loaderData.keys === null || loaderData.models === null ? <EmptyState className="flex-1 px-6" title={t('dashboard.pages.unavailable')} />
-              : !selectedKey ? <EmptyState className="flex-1 px-6" title={t('dashboard.playground.noKey')} />
-                  : !selectedModel ? <EmptyState className="flex-1 px-6" title={t('dashboard.playground.noModelForApi')} />
-                      : messages.length === 0 && !sending ? <EmptyState className="flex-1 px-6" title={t('dashboard.playground.empty')} /> : null}
+              : !selectedKey ? <EmptyState className="flex-1 px-6" description={t('dashboard.playground.noKeyDescription')} title={t('dashboard.playground.noKey')} />
+                  : !selectedModel ? <EmptyState className="flex-1 px-6" description={t('dashboard.playground.noModelForApiDescription')} title={t('dashboard.playground.noModelForApi')} />
+                      : messages.length === 0 && !sending ? <EmptyState className="flex-1 px-6" description={t('dashboard.playground.emptyDescription')} title={t('dashboard.playground.empty')} /> : null}
             <div className="mt-auto grid gap-3" data-winui-card-restyle="off">
               {messages.map(message => (
                 <div key={message.id} className={`flex min-w-0 ${message.role === 'user' ? 'justify-end' : 'justify-start'} ${s.messageRow}`}>
