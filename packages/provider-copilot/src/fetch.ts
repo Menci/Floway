@@ -7,9 +7,8 @@ export type CopilotFetchConfig = CopilotAuth;
 export interface CopilotDataPlaneFetchOptions extends UpstreamFetchOptions {
   /** Extends the runtime past the response so the quota persist below
    *  survives on workerd, which cancels orphan promises the moment the client
-   *  response is sent. Absent on the catalog fetch, which runs outside a
-   *  client request and whose `/models` response carries no quota headers
-   *  anyway. */
+   *  response is sent. The catalog fetch threads none: a `/models` response
+   *  carries no quota headers, so nothing is ever scheduled on that path. */
   waitUntil?: (promise: Promise<unknown>) => void;
 }
 

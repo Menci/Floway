@@ -30,9 +30,11 @@ import { githubHeaders } from './auth.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
 import { getProviderRepo, type Fetcher } from '@floway-dev/provider';
 
-// One quota bucket. `entitlement` and `quota_remaining` both use `-1` as the
-// unlimited sentinel, which is distinct from the REST body's separate
-// `unlimited` boolean — an unlimited bucket carries both.
+// One quota bucket. `unlimited` is the authoritative flag on both sources, and
+// it is the only one: the headers spell an uncapped bucket `ent=-1&totRem=-1`
+// (from which we derive the flag), while the REST body reports the same bucket
+// as `unlimited: true` with `entitlement: 0` and `quota_remaining: 0`. Reading
+// either number to infer a cap is wrong on one source or the other.
 export interface CopilotQuotaDetail {
   entitlement: number;
   overage_count: number;

@@ -98,8 +98,9 @@ export interface CopilotUpstreamConfig {
 
 // One entitlement bucket, keyed in `CopilotQuotaSnapshot.quotas` by Copilot's
 // open-string `quota_id` (`premium_interactions`, `chat`, `completions`, and
-// `premium_models` in the wild). `-1` is the unlimited sentinel on both
-// `entitlement` and `quota_remaining`.
+// `premium_models` in the wild). `unlimited` is the only reliable way to tell
+// an uncapped bucket: the two quota sources express it with different
+// `entitlement` / `quota_remaining` values, so neither number infers a cap.
 export interface CopilotQuotaDetail {
   entitlement: number;
   overage_count: number;
