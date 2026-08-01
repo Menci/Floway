@@ -177,7 +177,7 @@ const en = {
         columns: { method: 'Method', endpoint: 'Endpoint', description: 'Description', docs: 'Documentation' },
         authentication: {
           title: 'Base URL and authentication',
-          description: 'Use an API key created under Services → API Keys.',
+          description: 'Use an API key created under <0>API Keys</0>.',
           baseUrl: 'Base URL',
           warning: 'Dashboard session tokens and ADMIN_KEY are not data-plane credentials.',
         },

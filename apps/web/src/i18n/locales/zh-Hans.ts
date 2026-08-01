@@ -169,7 +169,7 @@ const zhHansCN = {
         columns: { method: '方法', endpoint: '端点', description: '说明', docs: '文档' },
         authentication: {
           title: '基础 URL 与身份验证',
-          description: '使用「服务 → API 密钥」中创建的 API 密钥。',
+          description: '使用在 <0>API 密钥</0> 中创建的 API 密钥。',
           baseUrl: '基础 URL',
           warning: '控制台 Session Token 和 ADMIN_KEY 不是数据面凭据。',
         },

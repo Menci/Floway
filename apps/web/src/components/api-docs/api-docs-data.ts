@@ -25,8 +25,8 @@ const endpoint = (
 const geminiActionPath = (action: string) =>
   PUBLIC_DATA_PLANE_ROUTES.geminiAction.paths[0].replace(':modelAction{.+}', `{model}:${action}`);
 
-export const authCurlExample = (origin: string) => `curl "${origin}/v1/models" \\
-  -H "Authorization: Bearer $FLOWAY_API_KEY"`;
+export const authCurlExample = (origin: string) =>
+  `curl "${origin}/v1/models" -H "Authorization: Bearer $FLOWAY_API_KEY"`;
 
 export const apiDocsEndpoints: readonly ApiDocsEndpoint[] = [
   endpoint('models', { group: 'models', name: 'openAiModels', docs: `${openAi}/models/list` }),

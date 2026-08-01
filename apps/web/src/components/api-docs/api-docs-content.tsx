@@ -1,4 +1,5 @@
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
+import { Link as RouterLink } from 'react-router';
 
 import { apiDocsEndpoints, apiDocsGroups, authCurlExample } from './api-docs-data';
 import { fluentComponents } from '../../fluent';
@@ -32,7 +33,14 @@ export function ApiDocsContent() {
 
   return <>
     <Panel className="!grid !gap-4">
-      <SectionHeader description={t('dashboard.apiDocs.authentication.description')} level={2} title={t('dashboard.apiDocs.authentication.title')} />
+      <SectionHeader
+        description={<Trans
+          components={[<RouterLink className="text-fui-brand1 no-underline hover:underline" key="api-keys" to="/dashboard/services/api-keys" />]}
+          i18nKey="dashboard.apiDocs.authentication.description"
+        />}
+        level={2}
+        title={t('dashboard.apiDocs.authentication.title')}
+      />
       <div className="grid gap-2 text-sm">
         <Text><strong>{t('dashboard.apiDocs.authentication.baseUrl')}:</strong> <code>{window.location.origin}</code></Text>
       </div>

@@ -28,8 +28,10 @@ describe('API Docs catalog', () => {
   });
 
   it('renders a paste-ready authentication command', () => {
+    // One line: a continuation is a thing to get wrong when the command is
+    // pasted somewhere that does not honour it.
     expect(authCurlExample('https://floway.example')).toBe(
-      'curl "https://floway.example/v1/models" \\\n  -H "Authorization: Bearer $FLOWAY_API_KEY"',
+      'curl "https://floway.example/v1/models" -H "Authorization: Bearer $FLOWAY_API_KEY"',
     );
   });
 });

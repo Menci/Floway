@@ -19,7 +19,7 @@ import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SectionHeader } from '../ui/section-header';
 import type { ClipboardCopy } from '../ui/use-copy-to-clipboard';
 
-const { Button, Field, Option, Switch, Tab, TabList, Text } = fluentComponents;
+const { Button, Field, InfoButton, Option, Switch, Tab, TabList, Text } = fluentComponents;
 type Agent = 'claude' | 'codex';
 type Platform = AgentSetupPlatform;
 const NONE = '__floway_none__';
@@ -328,11 +328,19 @@ function SwitchSetting({ checked, description, label, onChange }: {
   label: string;
   onChange: (checked: boolean) => void;
 }) {
-  return <Switch
-    checked={checked}
-    label={{ children: infoLabelSlot(label, description) }}
-    onChange={(_, data) => onChange(data.checked)}
-  />;
+  // The info button sits beside the switch rather than inside its label. A
+  // Switch injects `htmlFor` into whatever it is given as a label, and the
+  // browser activates a labelled control from anywhere inside that label -- so
+  // a button placed there threw the switch and never opened, before any handler
+  // of its own could run.
+  return <span className="inline-flex items-center gap-1">
+    <Switch
+      checked={checked}
+      label={label}
+      onChange={(_, data) => onChange(data.checked)}
+    />
+    <InfoButton info={description} />
+  </span>;
 }
 
 function ModelSelect({ family, label, models, onChange, picker, value }: {

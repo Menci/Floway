@@ -365,6 +365,53 @@ export const selectCss = `
   display: none;
 }
 
+/* The check box a multiselect option keeps, on WinUI's own state table rather
+   than Fluent's. WinUI moves the interior a step down the alt-fill ramp on
+   pointer-over and holds ControlStrongStrokeColorDefault while unchecked; once
+   checked, the stroke IS the accent fill, so the box reads as a filled square
+   with no outline, and both walk the accent ramp together through pointer-over
+   and pressed. Fluent instead brightens the stroke on hover and keeps a neutral
+   outline around the checked box.
+
+   ./choice.css.ts states the same table for the check box control. An option
+   draws its box from a different slot, so it is restated here rather than
+   inherited.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L217-L222
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L229-L234
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L57-L59
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L69-L71 */
+.fui-Option[aria-checked='false'] .fui-Option__checkIcon.fui-Option__checkIcon {
+  background-color: var(--winui-control-alt-fill-secondary);
+  border-color: var(--winui-control-strong-stroke-default);
+}
+
+.fui-Option[aria-checked='false']:hover .fui-Option__checkIcon.fui-Option__checkIcon {
+  background-color: var(--winui-control-alt-fill-tertiary);
+  border-color: var(--winui-control-strong-stroke-default);
+}
+
+.fui-Option[aria-checked='false']:active .fui-Option__checkIcon.fui-Option__checkIcon {
+  background-color: var(--winui-control-alt-fill-quarternary);
+  border-color: var(--winui-control-strong-stroke-default);
+}
+
+.fui-Option[aria-checked='true'] .fui-Option__checkIcon.fui-Option__checkIcon {
+  background-color: var(--winui-accent-fill-default);
+  border-color: var(--winui-accent-fill-default);
+  color: var(--winui-text-on-accent-fill-primary);
+}
+
+.fui-Option[aria-checked='true']:hover .fui-Option__checkIcon.fui-Option__checkIcon {
+  background-color: var(--winui-accent-fill-secondary);
+  border-color: var(--winui-accent-fill-secondary);
+}
+
+.fui-Option[aria-checked='true']:active .fui-Option__checkIcon.fui-Option__checkIcon {
+  background-color: var(--winui-accent-fill-tertiary);
+  border-color: var(--winui-accent-fill-tertiary);
+  color: var(--winui-text-on-accent-fill-secondary);
+}
+
 /* The drop-down's reveal. WinUI does not slide or fade a ComboBox popup: it
    runs SplitOpenThemeAnimation, which holds the popup opaque from the first
    frame and grows a vertical clip out of a band half the list's height. 250ms
