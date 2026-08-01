@@ -1,9 +1,11 @@
 import { DeleteRegular, EditRegular } from '@fluentui/react-icons';
 import { useTranslation } from 'react-i18next';
 
-import { hostPortLabel, KIND_COLORS } from './proxy-config';
+import { hostPortLabel, KIND_HUES } from './proxy-config';
 import type { ProxyRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { badgeHueStyle } from '../../lib/color';
+import { Chip } from '../ui/chip';
 import { ResourceListEmptyState } from '../ui/resource-list';
 import { ScrollArea } from '../ui/scroll-area';
 import { TableActions, TableActionsHeader } from '../ui/table-actions';
@@ -11,7 +13,6 @@ import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { kindFromUri } from '@floway-dev/proxy/url-kind';
 
 const {
-  Badge,
   Table,
   TableBody,
   TableCell,
@@ -52,23 +53,15 @@ export function ProxyList({
         <TableBody>
           {proxies.map(proxy => {
             const kind = kindFromUri(proxy.url);
-            const colors = KIND_COLORS[kind] ?? {
-              bg: 'var(--colorNeutralBackground3)',
-              fg: 'var(--colorNeutralForeground3)',
-            };
+            const hue = KIND_HUES[kind] ?? '#616161';
 
             return (
               <TableRow key={proxy.id}>
                 <TableCell className="overflow-hidden">
                   <div className="flex items-center gap-2 min-w-0">
-                    <Badge
-                      appearance="tint"
-                      className="uppercase flex-none"
-                      size="large"
-                      style={{ backgroundColor: colors.bg, color: colors.fg }}
-                    >
+                    <Chip className="uppercase flex-none" style={badgeHueStyle(hue)}>
                       {t(`dashboard.proxy.kind.${kind}` as never, kind)}
-                    </Badge>
+                    </Chip>
                     <Tooltip content={proxy.name} relationship="label">
                       <Text className="truncate" tabIndex={0}>{proxy.name}</Text>
                     </Tooltip>

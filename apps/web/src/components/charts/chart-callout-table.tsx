@@ -31,7 +31,7 @@ export function ChartCalloutTable({ columns, rows, title }: { columns: ChartCall
       {rows.map(row => <tr key={row.key}>
         <td className="max-w-[180px] min-w-[120px] pl-0 text-left">
           <span className="flex items-center gap-1.5 min-w-0 overflow-hidden text-ellipsis">
-            <SeriesMarker color={row.color} shape="area" />
+            <SeriesMarker color={row.color} />
             <Text style={bodyTextStyle}>{row.label}</Text>
           </span>
         </td>

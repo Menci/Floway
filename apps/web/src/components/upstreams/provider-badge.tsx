@@ -10,7 +10,7 @@ import githubCopilotIconUrl from '../../assets/githubcopilot.svg?no-inline';
 import ollamaIconUrl from '../../assets/ollama.svg?no-inline';
 import openaiIconUrl from '../../assets/openai.svg?no-inline';
 import { fluentComponents } from '../../fluent';
-import { blendHex, isHexColor, readableTone } from '../../lib/color';
+import { badgeHueStyle, isHexColor } from '../../lib/color';
 import { Chip } from '../ui/chip';
 import { MaskedIcon } from '../ui/masked-icon';
 
@@ -98,33 +98,9 @@ export const providerLabel = (kind: ProviderBadgeKind) =>
 
 // A preset tone states a foreground per scheme; a colour the operator typed
 // states one literal for both, and that literal was picked against whichever
-// scheme they were in. Used raw it labels a chip on a near-white card and on a
-// near-black one alike. The fill needs no such treatment: it is 10% of the hue,
-// so it composites over whichever surface is beneath and follows the scheme on
-// its own.
-//
-// The label is resolved against that composited fill rather than against the
-// card, because the fill is the colour actually behind the glyph and a 10% wash
-// of the hue moves the reading by enough to change the answer: a mid magenta
-// clears the floor against bare white at 4.64:1, and against its own chip reads
-// 4.03:1 in light and 2.41:1 in dark.
-//
-// The card is `--winui-solid-background-fill-quarternary` under the card fill
-// the surface paints over it: in dark that is #ffffff0d over #2c2c2c, which
-// composites to #373737, and in light both resolve to #ffffff.
-const CARD_SURFACE = { light: '#FFFFFF', dark: '#373737' } as const;
-const FILL_ALPHA = 0.1;
-
-const customColorStyle = (color: `#${string}`) => {
-  const label = (surface: string) => readableTone(color, blendHex(color, FILL_ALPHA, surface));
-  return {
-    '--provider-color': color,
-    backgroundColor: `color-mix(in srgb, var(--provider-color) ${FILL_ALPHA * 100}%, transparent)`,
-    borderColor: 'color-mix(in srgb, var(--provider-color) 35%, transparent)',
-    color: `light-dark(${label(CARD_SURFACE.light)}, ${label(CARD_SURFACE.dark)})`,
-  } as React.CSSProperties;
-};
-
+// scheme they were in. The construction itself -- the tenth, the third, and a
+// label resolved against the composited fill -- lives in lib/color.ts, because
+// the proxy badge paints the same way from its own palette.
 export function ProviderBadge({ color, kind, label, size = 'small', title }: {
   color: UpstreamColor | null;
   kind: ProviderBadgeKind;
@@ -148,7 +124,7 @@ export function ProviderBadge({ color, kind, label, size = 'small', title }: {
     <Tooltip content={title ?? visibleLabel} relationship={title === undefined ? 'label' : 'description'}>
       <Chip
         className={styles[tone]}
-        style={isHexColor(color) ? customColorStyle(color) : undefined}
+        style={isHexColor(color) ? badgeHueStyle(color) : undefined}
         icon={<ProviderIcon kind={kind} className={size === 'extra-small' ? 'h-3 w-3' : 'h-4 w-4'} />}
         size={size}
         textClassName={styles.tagText}

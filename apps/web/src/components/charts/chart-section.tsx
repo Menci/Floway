@@ -58,7 +58,7 @@ export function ChartSection({
                 <Tooltip content={t('dashboard.charts.series.toggleHint')} relationship="description">
                   <InteractionTagPrimary
                     className={hidden.has(entry.id) ? 'line-through opacity-[0.55]' : ''}
-                    icon={<SeriesMarker className="mx-[4px]" color={colorForSlot(entry.colorSlot)} shape="line" />}
+                    icon={<SeriesMarker className="mx-[4px]" color={colorForSlot(entry.colorSlot)} />}
                     // A double-click delivers its two clicks first; both land on
                     // this same series and cancel out, so the isolate that follows
                     // starts from the state the reader saw.

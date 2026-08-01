@@ -181,19 +181,20 @@ export const hostPortLabel = (url: string): string => {
   }
 };
 
-// The scheme badge's palette. The hues are Fluent's, not chosen values: the
-// dashboard already picks palette hues by meaning for syntax highlighting, and
-// a palette token carries its own light and dark step, which a literal pair has
-// to restate. Schemes that share a transport share a hue -- HTTP with HTTPS,
-// the three that tunnel a stream, the three VLESS shapes.
-export const KIND_COLORS: Record<string, { bg: string; fg: string }> = {
-  HTTP: { bg: 'var(--colorPaletteBlueBackground2)', fg: 'var(--colorPaletteBlueForeground2)' },
-  HTTPS: { bg: 'var(--colorPaletteBlueBackground2)', fg: 'var(--colorPaletteBlueForeground2)' },
-  SOCKS5: { bg: 'var(--colorPaletteGreenBackground2)', fg: 'var(--colorPaletteGreenForeground2)' },
-  SS: { bg: 'var(--colorPalettePurpleBackground2)', fg: 'var(--colorPalettePurpleForeground2)' },
-  'SS-2022': { bg: 'var(--colorPalettePurpleBackground2)', fg: 'var(--colorPalettePurpleForeground2)' },
-  TROJAN: { bg: 'var(--colorPalettePurpleBackground2)', fg: 'var(--colorPalettePurpleForeground2)' },
-  VLESS: { bg: 'var(--colorPaletteTealBackground2)', fg: 'var(--colorPaletteTealForeground2)' },
-  'VLESS-WS': { bg: 'var(--colorPaletteTealBackground2)', fg: 'var(--colorPaletteTealForeground2)' },
-  REALITY: { bg: 'var(--colorPaletteTealBackground2)', fg: 'var(--colorPaletteTealForeground2)' },
+// The hue a scheme's badge is painted in. Schemes that share a transport share
+// a hue -- HTTP with HTTPS, the three that tunnel a stream, the three VLESS
+// shapes. The values are Fluent's own palette anchors, so they sit in the same
+// family as the hues the dashboard picks by meaning for syntax highlighting;
+// the badge takes a tenth of the hue for its fill and a third for its stroke,
+// which is what lib/color.ts's badgeHueStyle does for every other badge.
+export const KIND_HUES: Record<string, string> = {
+  HTTP: '#0f6cbd',
+  HTTPS: '#0f6cbd',
+  SOCKS5: '#107c10',
+  SS: '#8764b8',
+  'SS-2022': '#8764b8',
+  TROJAN: '#8764b8',
+  VLESS: '#038387',
+  'VLESS-WS': '#038387',
+  REALITY: '#038387',
 };

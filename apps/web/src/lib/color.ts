@@ -133,3 +133,30 @@ export const readableTone = (hex: string, surface: string): string => {
 
 /** Whether an upstream's colour is a literal rather than one of the named tones. */
 export const isHexColor = (color: UpstreamColor | null): color is `#${string}` => color?.startsWith('#') === true;
+
+// The surface a badge's own fill composites over, which is what its label has to
+// read against. In dark that is `--winui-solid-background-fill-quarternary`
+// under the card fill the surface paints over it -- #ffffff0d over #2c2c2c,
+// which composites to #373737; in light both resolve to white.
+const BADGE_SURFACE = { light: '#FFFFFF', dark: '#373737' } as const;
+const BADGE_FILL_ALPHA = 0.1;
+const BADGE_STROKE_ALPHA = 0.35;
+
+/**
+ * A badge painted in an arbitrary hue: the hue at a tenth for the fill, at a
+ * third for the stroke, and a label resolved against the fill rather than the
+ * card, because the wash moves the reading by enough to change the answer.
+ *
+ * The fill and stroke need no light-dark pair -- they are fractions of the hue
+ * and composite over whichever surface is beneath. The label does: one literal
+ * would be picked against one scheme and used in both.
+ */
+export const badgeHueStyle = (hue: string): Record<string, string> => {
+  const label = (surface: string) => readableTone(hue, blendHex(hue, BADGE_FILL_ALPHA, surface));
+  return {
+    '--floway-badge-hue': hue,
+    backgroundColor: `color-mix(in srgb, var(--floway-badge-hue) ${BADGE_FILL_ALPHA * 100}%, transparent)`,
+    borderColor: `color-mix(in srgb, var(--floway-badge-hue) ${BADGE_STROKE_ALPHA * 100}%, transparent)`,
+    color: `light-dark(${label(BADGE_SURFACE.light)}, ${label(BADGE_SURFACE.dark)})`,
+  };
+};
