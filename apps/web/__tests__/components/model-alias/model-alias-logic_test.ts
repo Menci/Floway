@@ -62,6 +62,16 @@ describe('model alias warnings', () => {
     expect(computeAliasWarnings({ name: 'fresh', targets: [target('missing')] }, null)).toEqual([]);
   });
 
+  it('says nothing about a target nobody has entered yet', () => {
+    // A new alias opens on one blank row, so no target resolves by
+    // construction; reporting that is reporting the starting state as a fault.
+    const catalog = indexCatalog([model('gpt-5')]);
+    expect(computeAliasWarnings({ name: '', targets: [target('')] }, catalog)).toEqual([]);
+    expect(computeAliasWarnings({ name: '', targets: [target(''), target('')] }, catalog)).toEqual([]);
+    expect(computeAliasWarnings({ name: '', targets: [target(''), target('missing')] }, catalog).map(warning => warning.type))
+      .toEqual(['no-target']);
+  });
+
   it('warns when pinned rules exceed advertised capabilities', () => {
     const catalog = model('reasoner', { chat: { reasoning: { effort: { supported: ['low'], default: 'low' }, budget_tokens: { min: 100, max: 1000 } } } });
     const warnings = computeRuleWarnings({ reasoning: { effort: 'high', budget_tokens: 5000, adaptive: true } }, catalog);
