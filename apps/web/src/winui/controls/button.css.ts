@@ -80,6 +80,12 @@ export const buttonCss = `
   transition-duration: var(--winui-control-faster-animation-duration);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .fui-Button.fui-Button${notOptedOut} {
+    transition-duration: 0.01ms;
+  }
+}
+
 /* The default and outline appearances. A WinUI button's fill is translucent
    where Fluent's Background1 is opaque; its label holds at the primary text
    fill on hover and drops to the secondary fill only while pressed. Both

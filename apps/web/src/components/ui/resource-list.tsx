@@ -93,9 +93,9 @@ type ResourceListActionsProps = {
 //
 // A page that only reads — the monitor views, an upstream's quota card — has no
 // create action and still wants the refresh control this states: the spinner in
-// place of the glyph, the label that grows an ellipsis, and the live region
-// that says so to a screen reader. Such a page also sits among subtle controls
-// rather than beside a primary create button, so it picks the appearance.
+// place of the glyph, and the live region that says so to a screen reader. Such
+// a page also sits among subtle controls rather than beside a primary create
+// button, so it picks the appearance.
 export function ResourceListActions(props: ResourceListActionsProps) {
   const { appearance, createLabel, createTrailingIcon, disabled = false, onRefresh, refreshLabel, refreshing = false } = props;
   const busy = disabled || refreshing;
@@ -117,7 +117,8 @@ export function ResourceListActions(props: ResourceListActionsProps) {
         <Button
           appearance={appearance}
           aria-label={refreshLabel}
-          disabled={busy}
+          disabled={disabled}
+          disabledFocusable={refreshing}
           icon={refreshing ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />}
           onClick={onRefresh}
         />

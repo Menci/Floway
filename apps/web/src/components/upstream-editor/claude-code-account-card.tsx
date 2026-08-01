@@ -86,7 +86,7 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
       <Text size={200} className="text-fui-fg2">
         {windows.length ? t('dashboard.upstreamEditor.claudeCode.windows') : t('dashboard.upstreamEditor.claudeCode.noSnapshot')}
       </Text>
-      <Button appearance="subtle" disabled={probing} icon={<ArrowClockwiseRegular />} onClick={onRefreshQuota} size="small">
+      <Button appearance="subtle" disabledFocusable={probing} icon={<ArrowClockwiseRegular />} onClick={onRefreshQuota} size="small">
         {t('dashboard.upstreamEditor.claudeCode.refreshQuota')}
       </Button>
     </div>

@@ -63,7 +63,7 @@ export function ProxyBackoffPanel({ backoffs, onReset, proxyId }: {
   return <section className="grid gap-2" aria-label={t('dashboard.proxy.backoff.title')}>
     <div className="flex items-center justify-between gap-2">
       <Text weight="semibold">{t('dashboard.proxy.backoff.title')}</Text>
-      <Button appearance="subtle" disabled={resetting} icon={<ArrowResetRegular />} onClick={() => void reset()} size="small">
+      <Button appearance="subtle" disabledFocusable={resetting} icon={<ArrowResetRegular />} onClick={() => void reset()} size="small">
         {t('dashboard.proxy.backoff.resetAll')}
       </Button>
     </div>
@@ -84,7 +84,7 @@ export function ProxyBackoffPanel({ backoffs, onReset, proxyId }: {
           {row.last_error && <Tooltip content={row.last_error} relationship="description">
             <Text size={200} className="max-w-[220px] truncate text-fui-fg3">{row.last_error}</Text>
           </Tooltip>}
-          <Button appearance="subtle" disabled={resetting} onClick={() => void reset(row.upstream_id)} size="small">
+          <Button appearance="subtle" disabledFocusable={resetting} onClick={() => void reset(row.upstream_id)} size="small">
             {t('dashboard.proxy.backoff.reset')}
           </Button>
         </li>;

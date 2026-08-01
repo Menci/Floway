@@ -104,7 +104,8 @@ export const accordionCss = `
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
+  .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon,
+  .fui-AccordionHeader__button[aria-expanded='true'] .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
     transition-duration: 0.01ms;
   }
 }
