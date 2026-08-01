@@ -304,7 +304,10 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
 
   const settingsContent = <ScrollArea axes="vertical" className="h-full min-h-0" contentClassName="p-4 grid content-start gap-5" noTabIndex>
     <SettingsSection title={t('dashboard.playground.settings.connection')}>
-      <Field label={t('dashboard.playground.key')}>
+      <Field
+        hint={loaderData.keys?.length === 0 ? t('dashboard.playground.noKey') : undefined}
+        label={t('dashboard.playground.key')}
+      >
         <Dropdown
           disabled={!loaderData.keys?.length}
           selectedOptions={[keyId]}
@@ -323,7 +326,10 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
           {playgroundApis.map(value => <Option key={value} value={value}>{t(`dashboard.playground.apis.${value}`)}</Option>)}
         </Dropdown>
       </Field>
-      <Field label={t('dashboard.playground.model')}>
+      <Field
+        hint={selectedKey && !selectedModel ? t('dashboard.playground.noModelForApi') : undefined}
+        label={t('dashboard.playground.model')}
+      >
         <Combobox value={modelQuery ?? selectedModel?.display_name ?? ''} selectedOptions={selectedModel ? [selectedModel.id] : []} placeholder={t('dashboard.playground.modelPlaceholder')} onChange={event => setModelQuery(event.target.value)} onOptionSelect={(_, data) => {
           if (!data.optionValue) return;
           changeContext(() => {
@@ -390,10 +396,16 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
           <ScrollArea ref={scrollRef} axes="vertical" className="min-h-0" contentClassName="flex min-h-full flex-col" noTabIndex>
             {loadError && <OutcomeMessageBar className="!mb-3" onDismiss={() => setLoadError(null)}>{loadError}</OutcomeMessageBar>}
             {requestError && <OutcomeMessageBar className="!mb-3" onDismiss={() => setRequestError(null)}>{requestError}</OutcomeMessageBar>}
-            {loaderData.keys === null || loaderData.models === null ? <EmptyState className="flex-1 px-6" title={t('dashboard.pages.unavailable')} />
-              : !selectedKey ? <EmptyState className="flex-1 px-6" description={t('dashboard.playground.noKeyDescription')} title={t('dashboard.playground.noKey')} />
-                  : !selectedModel ? <EmptyState className="flex-1 px-6" description={t('dashboard.playground.noModelForApiDescription')} title={t('dashboard.playground.noModelForApi')} />
-                      : messages.length === 0 && !sending ? <div className="flex flex-1 items-center justify-center px-6"><EmptyStateLine>{t('dashboard.playground.empty')}</EmptyStateLine></div> : null}
+            {/* The transcript speaks for itself and nothing else. A missing key
+                or an unreachable model is a fact about the picker that would
+                supply it, so it is said under that picker rather than in the
+                space the conversation will occupy -- which leaves this region
+                with one line, the invitation to start. */}
+            {loaderData.keys === null || loaderData.models === null
+              ? <EmptyState className="flex-1 px-6" title={t('dashboard.pages.unavailable')} />
+              : messages.length === 0 && !sending
+                ? <div className="flex flex-1 items-center justify-center px-6"><EmptyStateLine>{t('dashboard.playground.empty')}</EmptyStateLine></div>
+                : null}
             <div className="mt-auto grid gap-3" data-winui-card-restyle="off">
               {messages.map(message => (
                 <div key={message.id} className={`flex min-w-0 ${message.role === 'user' ? 'justify-end' : 'justify-start'} ${s.messageRow}`}>
