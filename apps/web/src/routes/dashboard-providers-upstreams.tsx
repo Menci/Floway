@@ -347,7 +347,7 @@ function UpstreamsTable({
             <TableHeaderCell>{t('dashboard.upstreams.table.priority')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.upstreams.table.provider')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.upstreams.table.upstream')}</TableHeaderCell>
-            <TableCentredHeader>{t('dashboard.upstreams.table.models')}</TableCentredHeader>
+            <TableHeaderCell>{t('dashboard.upstreams.table.models')}</TableHeaderCell>
             <TableCentredHeader>{t('dashboard.upstreams.table.enabled')}</TableCentredHeader>
             <TableActionsHeader>{t('dashboard.upstreams.table.actions')}</TableActionsHeader>
           </TableRow>
@@ -383,9 +383,9 @@ function UpstreamsTable({
                   </Text>
                 </div>
               </TableCell>
-              <TableCentredCell>
+              <TableCell>
                 <ModelStatus count={modelCounts.get(record.id)!} modelsAvailable={data.models !== null} record={record} />
-              </TableCentredCell>
+              </TableCell>
               <TableCentredCell>
                 <Switch
                   aria-label={t('dashboard.upstreams.actions.toggle', { name: record.name })}

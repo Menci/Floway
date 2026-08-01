@@ -160,6 +160,16 @@ export const buttonCss = `
   color: var(--winui-text-on-accent-fill-disabled);
 }
 
+/* The icon has to be named separately. Fluent colours a disabled button's icon
+   through a descendant rule of its own rather than letting it inherit, so a
+   colour stated on the root reaches the label and not the glyph -- which left an
+   accent button's label on the on-accent disabled white and its icon on the
+   neutral disabled foreground, a white word beside a black mark. */
+.fui-Button.fui-Button[data-winui-appearance='primary']:disabled${notOptedOut} .fui-Button__icon,
+.fui-Button.fui-Button[data-winui-appearance='primary'][aria-disabled='true']${notOptedOut} .fui-Button__icon {
+  color: var(--winui-text-on-accent-fill-disabled);
+}
+
 /* The subtle and transparent appearances are both WinUI's SubtleButtonStyle,
    whose three fills already match Fluent's subtle fills. What differs is the
    foreground: WinUI keeps a chromeless button's label and icon at the full
