@@ -2282,8 +2282,8 @@ test('POST /api/upstreams/copilot/quota projects the GitHub body and persists it
 
 // The passive header path refuses to write an empty snapshot so a good
 // reading survives; the operator refresh has to honour the same contract, or
-// pressing Refresh on a free seat — whose usage body carries no quota_snapshots
-// at all — would erase what the headers harvested.
+// pressing Refresh against a body on the pre-2026-06 shape — which carries no
+// `quota_snapshots` — would erase what the headers harvested.
 test('POST /api/upstreams/copilot/quota leaves the stored snapshot alone when the body reports no buckets', async () => {
   const { repo, adminSession, copilotUpstream } = await setupAppTest();
   const stored = await repo.upstreams.getById(copilotUpstream.id);
@@ -2306,7 +2306,7 @@ test('POST /api/upstreams/copilot/quota leaves the stored snapshot alone when th
   await withMockedFetch(
     async (request: Request) => {
       if (request.url === 'https://api.github.com/copilot_internal/user') {
-        return jsonResponse({ access_type_sku: 'free_limited_copilot', copilot_plan: 'free', limited_user_quotas: { chat: 10 } });
+        return jsonResponse({ access_type_sku: 'free_limited_copilot', copilot_plan: 'individual', limited_user_quotas: { chat: 500, completions: 3876 }, monthly_quotas: { chat: 500, completions: 4000 } });
       }
       throw new Error(`Unhandled fetch ${request.url}`);
     },

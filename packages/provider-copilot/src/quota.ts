@@ -70,6 +70,10 @@ export interface CopilotQuotaSnapshot {
 
 const QUOTA_SNAPSHOT_HEADER_PREFIX = 'x-quota-snapshot-';
 
+// `-1` denotes an unlimited entitlement, per GitHub's own SDK declaration of
+// this field — `@github/copilot-sdk@1.0.8`, `dist/generated/rpc.d.ts`:
+// "Number of requests/units included in the entitlement for this period; `-1`
+// denotes an unlimited entitlement."
 const UNLIMITED_SENTINEL = -1;
 
 const isUnsafeQuotaId = (id: string): boolean =>
@@ -137,11 +141,15 @@ export const parseCopilotQuotaHeaders = (headers: Headers, now: Date): CopilotQu
   return { observed_at: now.toISOString(), reset_at: resetAt, quotas };
 };
 
-// `GET /copilot_internal/user`. Every field is optional: that is how GitHub's own
-// Copilot CLI SDK types this endpoint (a zod schema in `@github/copilot`'s
-// typings, `strip` mode so unknown keys pass through), and the captures agree.
-// We declare only what we project — a field we do not read has no business
-// being here.
+// `GET /copilot_internal/user`. Every field is optional, including every field
+// inside a bucket — that is how GitHub's own SDK declares this endpoint, in
+// `@github/copilot-sdk@1.0.8`, `dist/generated/rpc.d.ts` (`quota_snapshots?` on
+// `CopilotUserResponse`, and `entitlement?` / `percent_remaining?` /
+// `quota_remaining?` / `unlimited?` on `CopilotUserResponseQuotaSnapshotsChat`).
+// The captures we have carry every field, so the SDK is the only source for the
+// optionality; it is a generated declaration file rather than a runtime schema,
+// and the interfaces are marked `@experimental`. We declare only what we
+// project — a field we do not read has no business being here.
 //
 // Two body shapes are live at once, split by GitHub's 2026-06-01 AI-Credits
 // change. A seat on the current shape reports `quota_snapshots` whatever its

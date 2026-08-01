@@ -118,10 +118,11 @@ test('projectCopilotUsageResponse reports a missing reset instant as null', () =
   assertEquals(projected?.quotas.premium_interactions.quota_remaining, 270);
 });
 
-// A free / limited seat omits `quota_snapshots` entirely and reports through
-// `limited_user_quotas` instead. Same null contract as the header path: no
-// buckets is "nothing observed", so an operator's refresh on such a seat
-// neither fails nor overwrites what the headers already harvested.
+// A body on the pre-2026-06 shape leaves `quota_snapshots` empty or absent and
+// reports through `limited_user_quotas`, which we do not read. Same null
+// contract as the header path: no buckets is "nothing observed", so an
+// operator's refresh against such a body neither fails nor overwrites what the
+// headers already harvested.
 test('projectCopilotUsageResponse reports a body with no quota buckets as no observation', () => {
   assertEquals(projectCopilotUsageResponse({}, NOW), null);
   assertEquals(projectCopilotUsageResponse({ quota_snapshots: {} }, NOW), null);
