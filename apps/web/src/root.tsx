@@ -20,7 +20,7 @@ import {
   AppLoadingScreen,
   appLoadingCriticalCss,
 } from './components/ui/app-loading-screen';
-import { ErrorShell, ErrorStack } from './components/ui/error-shell';
+import { ErrorShell, ErrorStack, errorShellCriticalCss } from './components/ui/error-shell';
 import { fluentComponents } from './fluent';
 import { fontFamilyCriticalCss } from './theme';
 import { winuiCss } from './winui';
@@ -81,14 +81,23 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)" />
         <Meta />
         <Links />
+        {/* What has to be true before the stylesheet arrives. In dev that is a
+            second-and-a-bit: global.css is served through Vite's transform
+            while this block is part of the document, so anything the first
+            paint depends on has to be here rather than in a utility class.
+            The body's own margin is the clearest case -- left to `m-0` it is
+            the user agent's 8px until the stylesheet lands, which reads as a
+            white border around the whole app. */}
         <style>{`
           html, body { height: 100%; overflow: hidden; }
+          body { margin: 0; }
           @media (prefers-color-scheme: dark) { html { color-scheme: dark; } }
           *, *::before, *::after { box-sizing: border-box; }
           html body pre[class*="language-"] { border: 0; }
           ${fontFamilyCriticalCss}
           ${gradientBackgroundCriticalCss}
           ${appLoadingCriticalCss}
+          ${errorShellCriticalCss}
           ${navigationProgressCss}
         `}</style>
         <style>{winuiCss}</style>
@@ -160,7 +169,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   return (
     <ErrorShell
       action={
-        <div className="flex flex-wrap justify-center gap-2">
+        <div className="floway-error-shell-actions">
           {/* A reload, not a re-render: whatever failed may have left the app's
               own state or its modules in a shape a router navigation would
               keep, and the browser's own back is the one exit that does not
