@@ -292,11 +292,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
 
       {deleteDialog.invocation && <ConfirmDialog
         open={deleteDialog.isOpen}
-        actionLabel={
-          mutation?.kind === 'delete'
-            ? t('dashboard.upstreams.actions.deleting')
-            : t('dashboard.upstreams.actions.delete')
-        }
+        actionLabel={t('dashboard.upstreams.actions.delete')}
         busy={mutation?.kind === 'delete'}
         error={deleteError}
         onDismissError={() => setDeleteError(null)}

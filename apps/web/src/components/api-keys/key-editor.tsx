@@ -142,6 +142,9 @@ export function KeyDialog(props: KeyDialogProps) {
   );
 
   const save = async (values: KeyFormValues) => {
+    // The button stays focusable while this runs, so its form can still be
+    // submitted from it; refusing here is what makes the second press inert.
+    if (saving) return;
     setSaving(true);
     setError(null);
     try {
@@ -192,12 +195,8 @@ export function KeyDialog(props: KeyDialogProps) {
           <Button disabled={saving} onClick={() => onOpenChange(false)}>
             {t('common.cancel')}
           </Button>
-          <Button appearance="primary" disabled={saving} type="submit">
-            {saving
-              ? t('dashboard.apiKeys.actions.saving')
-              : isCreate
-                ? t('dashboard.apiKeys.actions.create')
-                : t('dashboard.apiKeys.actions.save')}
+          <Button appearance="primary" disabledFocusable={saving} type="submit">
+            {isCreate ? t('dashboard.apiKeys.actions.create') : t('dashboard.apiKeys.actions.save')}
           </Button>
         </DialogActions>
       }

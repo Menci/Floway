@@ -232,9 +232,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
         />}
         {deleteDialog.invocation && <ConfirmDialog
           open={deleteDialog.isOpen}
-          actionLabel={deleting
-            ? t('dashboard.users.actions.deleting')
-            : t('dashboard.users.actions.delete')}
+          actionLabel={t('dashboard.users.actions.delete')}
           busy={deleting}
           error={deleteError}
           key={deleteDialog.invocation.key}
@@ -391,6 +389,9 @@ function UserDialog(props: UserDialogProps) {
   const adminLocked = props.mode === 'edit' && (props.user.id === 1 || props.user.id === actorId);
 
   const save = async (form: UserFormValues) => {
+    // The button stays focusable while this runs, so its form can still be
+    // submitted from it; refusing here is what makes the second press inert.
+    if (saving) return;
     setSaving(true);
     setError(null);
     try {
@@ -432,10 +433,8 @@ function UserDialog(props: UserDialogProps) {
       actions={
         <DialogActions>
           <Button disabled={saving} onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
-          <Button appearance="primary" disabled={saving} type="submit">
-            {saving ? t('dashboard.users.actions.saving') : mode === 'create'
-              ? t('dashboard.users.actions.create')
-              : t('dashboard.users.actions.save')}
+          <Button appearance="primary" disabledFocusable={saving} type="submit">
+            {mode === 'create' ? t('dashboard.users.actions.create') : t('dashboard.users.actions.save')}
           </Button>
         </DialogActions>
       }
@@ -529,6 +528,9 @@ function PasswordDialog({ onOpenChange, open, onSaved, user }: {
     defaultValues: { password: '', confirmation: '' },
   });
   const save = async (values: PasswordFormValues) => {
+    // The button stays focusable while this runs, so its form can still be
+    // submitted from it; refusing here is what makes the second press inert.
+    if (saving) return;
     setSaving(true);
     setError(null);
     try {
@@ -555,8 +557,8 @@ function PasswordDialog({ onOpenChange, open, onSaved, user }: {
       open={open}
       actions={<DialogActions>
         <Button disabled={saving} onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
-        <Button appearance="primary" disabled={saving} type="submit">
-          {saving ? t('dashboard.users.actions.saving') : t('dashboard.users.actions.save')}
+        <Button appearance="primary" disabledFocusable={saving} type="submit">
+          {t('dashboard.users.actions.save')}
         </Button>
       </DialogActions>}
       onOpenChange={(_, data) => !saving && onOpenChange(data.open)}

@@ -147,6 +147,9 @@ function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
   const handleSave = useCallback(async () => {
     setShowValidation(true);
     setSaveError(null);
+    // The button stays focusable while saving, so the form can still be
+    // submitted from it; this is what makes the second press do nothing.
+    if (saving) return;
     if (Object.keys(proxyDraftIssues({ config, name: formName, url: urlInput })).length > 0
       || urlError !== null || dialTimeout.error !== null) return;
     setSaving(true);
@@ -164,7 +167,7 @@ function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
     onOpenChange(false);
     handle.succeed(t('dashboard.proxy.actions.saveSuccess'));
     await onSaved();
-  }, [config, dialTimeout.error, dialTimeout.value, editingId, formName, onOpenChange, onSaved, t, toasts, urlError, urlInput]);
+  }, [config, dialTimeout.error, dialTimeout.value, editingId, formName, onOpenChange, onSaved, saving, t, toasts, urlError, urlInput]);
   const handleTest = useCallback(async () => {
     setTesting(true);
     setTestResult(null);
@@ -187,8 +190,8 @@ function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
     open={open}
     actions={<DialogActions>
       <Button className="!whitespace-nowrap" disabled={saving || testing} onClick={() => onOpenChange(false)} type="button">{t('common.cancel')}</Button>
-      <Button className="!whitespace-nowrap" disabled={!canTest || saving || testing} onClick={() => void handleTest()} type="button">{t('dashboard.proxy.actions.test')}</Button>
-      <Button appearance="primary" className="!whitespace-nowrap" disabled={saving || testing} type="submit">{t('dashboard.proxy.actions.save')}</Button>
+      <Button className="!whitespace-nowrap" disabled={!canTest || saving} disabledFocusable={testing} onClick={() => void handleTest()} type="button">{t('dashboard.proxy.actions.test')}</Button>
+      <Button appearance="primary" className="!whitespace-nowrap" disabled={testing} disabledFocusable={saving} type="submit">{t('dashboard.proxy.actions.save')}</Button>
     </DialogActions>}
     onOpenChange={(_, data) => {
       if (!data.open && !saving && !testing && !draftDirty) onOpenChange(data.open);
@@ -317,11 +320,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
       {deleteDialog.invocation && (
         <ConfirmDialog
           open={deleteDialog.isOpen}
-          actionLabel={
-            mutating
-              ? t('dashboard.proxy.actions.deleting')
-              : t('dashboard.proxy.actions.delete')
-          }
+          actionLabel={t('dashboard.proxy.actions.delete')}
           busy={mutating}
           error={deleteError}
           key={deleteDialog.invocation.key}

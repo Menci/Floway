@@ -107,6 +107,10 @@ export default function DashboardSettings() {
   }, [fetcher.data, reset, t, toasts]);
 
   const submit = (values: PasswordFormValues) => {
+    // `disabledFocusable` keeps the button in the tab order by leaving the
+    // native disabled attribute off, so a second Enter still submits the form.
+    // Refusing here is what actually makes the button inert.
+    if (saving) return;
     void fetcher.submit(values, { method: 'post' });
   };
 
@@ -172,7 +176,7 @@ export default function DashboardSettings() {
           )}
 
           <div className="flex justify-end pt-1">
-            <Button appearance="primary" disabled={saving} type="submit">
+            <Button appearance="primary" disabledFocusable={saving} type="submit">
               {t('dashboard.settings.save')}
             </Button>
           </div>

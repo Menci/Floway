@@ -67,8 +67,8 @@ export function RotateKeyDialog({
           <Button disabled={saving} onClick={() => onOpenChange(false)}>
             {t('common.cancel')}
           </Button>
-          <Button appearance="primary" disabled={saving} onClick={() => void rotate()}>
-            {saving ? t('dashboard.apiKeys.actions.saving') : t('dashboard.apiKeys.actions.rotate')}
+          <Button appearance="primary" disabledFocusable={saving} onClick={() => void rotate()}>
+            {t('dashboard.apiKeys.actions.rotate')}
           </Button>
         </DialogActions>
       }

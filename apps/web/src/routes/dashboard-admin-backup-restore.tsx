@@ -303,7 +303,7 @@ export default function DashboardAdminBackupRestore() {
         <div>
           <Button
             appearance="primary"
-            disabled={exporting}
+            disabledFocusable={exporting}
             icon={exporting ? <Spinner size="tiny" /> : <ArrowDownloadRegular />}
             onClick={() => void handleExport()}
           >
@@ -400,7 +400,7 @@ export default function DashboardAdminBackupRestore() {
             <div>
               <Button
                 appearance="primary"
-                disabled={importing}
+                disabledFocusable={importing}
                 icon={importing ? <Spinner size="tiny" /> : <ArrowUploadRegular />}
                 onClick={handleImportClick}
               >

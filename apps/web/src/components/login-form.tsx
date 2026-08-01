@@ -77,6 +77,9 @@ export function LoginForm() {
   }, [fetcher.data, setError]);
 
   const onSubmit = (values: LoginFormValues) => {
+    // See the note at the submit button: it stays focusable while in flight,
+    // which leaves the form's own submission path open.
+    if (isSubmitting) return;
     void fetcher.submit(
       {
         username: values.username.trim(),
@@ -154,7 +157,7 @@ export function LoginForm() {
         <Button
           appearance="primary"
           className="mt-3.5 !min-h-[34px] w-full text-fui-base300"
-          disabled={isSubmitting}
+          disabledFocusable={isSubmitting}
           type="submit"
         >
           {t('auth.login.submit')}

@@ -213,8 +213,6 @@ const en = {
           delete: 'Delete user',
           refresh: 'Refresh users',
           save: 'Save changes',
-          saving: 'Saving…',
-          deleting: 'Deleting…',
         },
         toast: {
           create: {
@@ -298,7 +296,6 @@ const en = {
           create: 'Create API Key',
           refresh: 'Refresh API keys',
           save: 'Save changes',
-          saving: 'Saving…',
           copy: 'Copy',
           edit: 'Edit key',
           rotate: 'Rotate key',
@@ -426,7 +423,6 @@ const en = {
           delete: 'Delete upstream',
           editNamed: 'Edit {{name}}',
           deleteNamed: 'Delete {{name}}',
-          deleting: 'Deleting…',
           toggle: 'Toggle {{name}}',
           moveUp: 'Move {{name}} up',
           moveDown: 'Move {{name}} down',
@@ -820,7 +816,6 @@ const en = {
           windows: 'Rate-limit windows',
           noSnapshot: 'No quota snapshot yet - refresh, or wait for the next Claude Code call to populate headers.',
           refreshQuota: 'Refresh quota',
-          probing: 'Probing…',
           window: {
             fiveHour: '5-hour window',
             sevenDay: '7-day window',
@@ -1168,7 +1163,6 @@ const en = {
           test: 'Test',
           delete: 'Delete',
           deleteNamed: 'Delete proxy {{name}}',
-          deleting: 'Deleting…',
           refresh: 'Refresh proxies',
         },
         test: {

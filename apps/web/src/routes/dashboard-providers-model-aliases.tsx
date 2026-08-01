@@ -125,6 +125,6 @@ export default function DashboardProvidersModelAliases({ loaderData }: Route.Com
       })}</TableBody></Table></ScrollArea>}
     </ResourceListPanel>
     {editorDialog.invocation && <AliasDialog open={editorDialog.isOpen} aliases={aliases} key={editorDialog.invocation.key} models={models} onOpenChange={open => { if (!open) editorDialog.close(); }} onSaved={refresh} record={editorDialog.invocation.value} />}
-    {deleteDialog.invocation && <ConfirmDialog open={deleteDialog.isOpen} busy={mutating} error={deleteError} key={deleteDialog.invocation.key} onDismissError={() => setDeleteError(null)} onOpenChange={open => { if (!open) deleteDialog.close(); }} title={t('dashboard.modelAliases.delete.title')} message={t('dashboard.modelAliases.delete.message', { name: deleteDialog.invocation.value.name })} actionLabel={mutating ? t('dashboard.modelAliases.actions.deleting') : t('dashboard.modelAliases.actions.delete')} onConfirm={() => void deleteAlias(deleteDialog.invocation!.value)} />}
+    {deleteDialog.invocation && <ConfirmDialog open={deleteDialog.isOpen} busy={mutating} error={deleteError} key={deleteDialog.invocation.key} onDismissError={() => setDeleteError(null)} onOpenChange={open => { if (!open) deleteDialog.close(); }} title={t('dashboard.modelAliases.delete.title')} message={t('dashboard.modelAliases.delete.message', { name: deleteDialog.invocation.value.name })} actionLabel={t('dashboard.modelAliases.actions.delete')} onConfirm={() => void deleteAlias(deleteDialog.invocation!.value)} />}
   </section>;
 }

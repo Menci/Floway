@@ -203,8 +203,6 @@ const zhHansCN = {
           delete: '删除用户',
           refresh: '刷新用户',
           save: '保存更改',
-          saving: '正在保存…',
-          deleting: '正在删除…',
         },
         toast: {
           create: {
@@ -286,7 +284,6 @@ const zhHansCN = {
           create: '创建 API 密钥',
           refresh: '刷新 API 密钥',
           save: '保存更改',
-          saving: '正在保存…',
           copy: '复制',
           edit: '编辑 API 密钥',
           rotate: '轮换 API 密钥',
@@ -406,7 +403,6 @@ const zhHansCN = {
           delete: '删除上游',
           editNamed: '编辑 {{name}}',
           deleteNamed: '删除 {{name}}',
-          deleting: '正在删除…',
           toggle: '切换 {{name}} 的启用状态',
           moveUp: '上移 {{name}}',
           moveDown: '下移 {{name}}',
@@ -782,7 +778,6 @@ const zhHansCN = {
           windows: '限流窗口',
           noSnapshot: '尚无配额快照。可点击刷新，或等待下一次 Claude Code 调用写入响应头。',
           refreshQuota: '刷新配额',
-          probing: '探测中…',
           window: {
             fiveHour: '5 小时窗口',
             sevenDay: '7 天窗口',
@@ -1113,7 +1108,6 @@ const zhHansCN = {
           test: '测试',
           delete: '删除',
           deleteNamed: '删除代理 {{name}}',
-          deleting: '删除中…',
           refresh: '刷新代理',
         },
         test: {

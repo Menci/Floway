@@ -364,13 +364,14 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
       <div className="flex flex-col gap-[10px] sm:flex-row sm:items-center">
         <Button
           appearance="primary"
-          disabled={saving}
+          disabledFocusable={saving}
           onClick={() => void handleSave()}
         >
           {t('dashboard.searchConfig.save')}
         </Button>
         <Button
-          disabled={draft.provider === 'disabled' || testing}
+          disabled={draft.provider === 'disabled'}
+          disabledFocusable={testing}
           onClick={() => void handleTest()}
         >
           {t('dashboard.searchConfig.test')}

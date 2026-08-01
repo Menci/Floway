@@ -341,7 +341,7 @@ function CopilotConfig({ record, onPatch }: {
   return <div className="grid gap-3">
     <Text size={300} className="text-fui-fg2">{t('dashboard.upstreamEditor.copilot.description')}</Text>
     {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
-    {!flow ? <Button appearance="primary" disabled={busy} icon={busy ? <Spinner size="tiny" /> : <PlugConnectedRegular />} onClick={() => void start()}>{t('dashboard.upstreamEditor.copilot.connect')}</Button> : <>
+    {!flow ? <Button appearance="primary" disabledFocusable={busy} icon={busy ? <Spinner size="tiny" /> : <PlugConnectedRegular />} onClick={() => void start()}>{t('dashboard.upstreamEditor.copilot.connect')}</Button> : <>
       <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.copilot.deviceCode')}</Text>
       <code className="mono-display tracking-[0.25em] text-fui-fg1">{flow.user_code}</code>
       <Link href={flow.verification_uri} target="_blank">{flow.verification_uri}</Link>
@@ -465,7 +465,7 @@ function OAuthConfig({ record, onPatch }: {
         />)}
     {hasAccount && record.id === '' && <ReadyToSaveHint kind={record.kind} />}
     {hasAccount && <div className="flex flex-wrap items-center gap-2">
-      <Button appearance="primary" disabled={refreshing} icon={refreshing ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={() => void refreshCredential()}>
+      <Button appearance="primary" disabledFocusable={refreshing} icon={refreshing ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={() => void refreshCredential()}>
         {t('dashboard.upstreamEditor.oauth.refresh')}
       </Button>
       <Button appearance="secondary" onClick={() => setOpen(value => !value)}>{open ? t('common.cancel') : t('dashboard.upstreamEditor.oauth.reimport')}</Button>
@@ -479,7 +479,7 @@ function OAuthConfig({ record, onPatch }: {
         {busy && !authorizeUrl ? <Spinner label={t('dashboard.upstreamEditor.oauth.preparing')} /> : authorizeUrl && <div className="flex items-center gap-2 min-w-0"><Link href={authorizeUrl} target="_blank" className="truncate">{t('dashboard.upstreamEditor.oauth.openAuthorize')}</Link><TooltipIconButton icon={copyOutcomeIcon(outcomeFor())} label={copyLabel(outcomeFor(), t('dashboard.upstreamEditor.oauth.copy'))} onClick={() => copy(authorizeUrl)} /></div>}
         <Field label={t('dashboard.upstreamEditor.oauth.callback')}><Textarea rows={3} value={callback} onChange={(_, data) => setCallback(data.value)} className="font-mono" /></Field>
       </div>}
-      <Button appearance="primary" disabled={busy} icon={busy ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />} onClick={() => void submit()}>{hasAccount ? t('dashboard.upstreamEditor.oauth.reimport') : t('dashboard.upstreamEditor.oauth.import')}</Button>
+      <Button appearance="primary" disabledFocusable={busy} icon={busy ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />} onClick={() => void submit()}>{hasAccount ? t('dashboard.upstreamEditor.oauth.reimport') : t('dashboard.upstreamEditor.oauth.import')}</Button>
     </>}
   </div>;
 }

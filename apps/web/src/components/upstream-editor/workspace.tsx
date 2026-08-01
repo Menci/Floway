@@ -315,7 +315,7 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
         {!readOnly && <Button appearance="secondary" className="!min-w-[160px]" icon={<CodeRegular />} onClick={() => { onYamlChange(serializeModels(manual)); onYamlErrorChange(null); onViewChange('yaml'); }}>{t('dashboard.upstreamEditor.models.editAsYaml')}</Button>}
         {record.kind !== 'azure' && <>
           <ModelsCacheStatus cache={record.modelsCache} />
-          <Button disabled={modelsLoading || !autoFetchEnabled} icon={modelsLoading ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={onRefreshModels}>{t('dashboard.upstreamEditor.models.refresh')}</Button>
+          <Button disabled={!autoFetchEnabled} disabledFocusable={modelsLoading} icon={modelsLoading ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={onRefreshModels}>{t('dashboard.upstreamEditor.models.refresh')}</Button>
         </>}
       </div>
     </div>

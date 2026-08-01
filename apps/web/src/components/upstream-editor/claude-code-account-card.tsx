@@ -87,7 +87,7 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
         {windows.length ? t('dashboard.upstreamEditor.claudeCode.windows') : t('dashboard.upstreamEditor.claudeCode.noSnapshot')}
       </Text>
       <Button appearance="subtle" disabled={probing} icon={<ArrowClockwiseRegular />} onClick={onRefreshQuota} size="small">
-        {probing ? t('dashboard.upstreamEditor.claudeCode.probing') : t('dashboard.upstreamEditor.claudeCode.refreshQuota')}
+        {t('dashboard.upstreamEditor.claudeCode.refreshQuota')}
       </Button>
     </div>
 

@@ -83,7 +83,7 @@ export function ConfirmDialog({
         <Button
           appearance="primary"
           className={mergeClasses('!whitespace-nowrap', actionIntent === 'danger' && styles.danger)}
-          disabled={busy}
+          disabledFocusable={busy}
           onClick={onConfirm}
         >
           {actionLabel}

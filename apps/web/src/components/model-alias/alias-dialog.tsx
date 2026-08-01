@@ -87,6 +87,9 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
     setValue('announcedMetadata', enabled ? structuredClone(automaticMetadata) : {});
   };
   const save = async (form: AliasFormValues) => {
+    // The button stays focusable while this runs, so its form can still be
+    // submitted from it; refusing here is what makes the second press inert.
+    if (saving) return;
     setSaving(true); setServerError(null);
     try {
       const name = form.name.trim();
@@ -110,7 +113,7 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
     onOpenChange={(_, data) => !saving && onOpenChange(data.open)}
     onSubmit={() => void handleSubmit(save)()}
     title={<DialogTitle>{record ? t('dashboard.modelAliases.dialog.editTitle', { name: record.name }) : t('dashboard.modelAliases.dialog.createTitle')}</DialogTitle>}
-    actions={<DialogActions><Button disabled={saving} onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button><Button appearance="primary" disabled={saving} type="submit">{saving ? t('dashboard.modelAliases.actions.saving') : t('dashboard.modelAliases.actions.save')}</Button></DialogActions>}
+    actions={<DialogActions><Button disabled={saving} onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button><Button appearance="primary" disabledFocusable={saving} type="submit">{t('dashboard.modelAliases.actions.save')}</Button></DialogActions>}
   >
     <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
       <Controller control={control} name="name" render={({ field }) => <Field required label={t('dashboard.modelAliases.form.name')} validationMessage={errors.name?.message ? t(errors.name.message) : undefined} validationState={errors.name ? 'error' : undefined}><Input {...field} className="font-mono" disabled={saving} placeholder={t('dashboard.modelAliases.form.namePlaceholder')} /></Field>} />
