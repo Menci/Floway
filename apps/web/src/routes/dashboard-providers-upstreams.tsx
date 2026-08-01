@@ -31,6 +31,7 @@ import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
 import { fluentComponents } from '../fluent';
 import { dateTime } from '../lib/format-time';
+import { pageNavigation } from '../lib/page-navigation';
 import { useLocale } from '../lib/use-locale';
 
 const {
@@ -249,7 +250,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
                         className: '!self-center',
                       }}
                       key={kind}
-                      onClick={() => void navigate(`/dashboard/providers/upstreams/new/${kind}`)}
+                      onClick={() => void navigate(`/dashboard/providers/upstreams/new/${kind}`, pageNavigation)}
                       subText={t(`dashboard.upstreams.providers.${kind}`)}
                     >
                       {t(`provider.${kind}`)}
@@ -284,7 +285,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
           mutating={mutating}
           mutation={mutation}
           onDelete={openDeleteDialog}
-          onEdit={record => void navigate(`/dashboard/providers/upstreams/${encodeURIComponent(record.id)}`)}
+          onEdit={record => void navigate(`/dashboard/providers/upstreams/${encodeURIComponent(record.id)}`, pageNavigation)}
           onMove={(record, direction) => void move(record, direction)}
           onToggle={(record, enabled) => void setEnabled(record, enabled)}
         />
@@ -369,6 +370,7 @@ function UpstreamsTable({
                 <div className="grid gap-[3px] min-w-0 max-w-[520px]">
                   <Tooltip content={record.name} relationship="label">
                     <Link
+                      {...pageNavigation}
                       className="text-fui-fg1 no-underline hover:underline truncate"
                       to={`/dashboard/providers/upstreams/${encodeURIComponent(record.id)}`}
                     >

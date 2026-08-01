@@ -69,9 +69,14 @@ export default function Dashboard({}: Route.ComponentProps) {
           />
           <FlowayLogo />
         </header>
+        {/* The scroller, not the `<main>` inside it, is what the page
+            transition animates: it is the one box in this chain that is always
+            exactly the viewport's height, so the snapshot the browser takes of
+            it is bounded however long the page it holds turns out to be. See
+            ../winui/page-transition.css.ts. */}
         <ScrollArea
           axes="vertical"
-          className="min-h-0"
+          className="min-h-0 floway-page-transition"
           contentClassName={workspace ? 'h-full' : 'min-h-full'}
           noTabIndex
         >

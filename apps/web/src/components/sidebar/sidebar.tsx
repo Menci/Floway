@@ -24,6 +24,7 @@ import { useLinkClickHandler, useLocation, useNavigation } from 'react-router';
 
 import type { AuthUser } from '../../api/auth';
 import { fluentComponents } from '../../fluent';
+import { pageNavigation } from '../../lib/page-navigation';
 import { FlowayLogo } from '../logo';
 import { NavSelectionIndicator } from './nav-selection-indicator';
 import { useAuthStore } from '../../stores/auth-store';
@@ -158,7 +159,7 @@ function SidebarLink({ children, icon, onNavigate, pending, to }: {
   to: string;
 }) {
   const styles = useStyles();
-  const handleLinkClick = useLinkClickHandler(to);
+  const handleLinkClick = useLinkClickHandler(to, pageNavigation);
   const handleClick: MouseEventHandler<HTMLAnchorElement> = event => {
     const followsInThisView = event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
     handleLinkClick(event);

@@ -13,6 +13,7 @@ import type { UpstreamOption } from './types';
 import { api, callApi } from '../../api/client';
 import type { ApiKey, ControlPlaneModel } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { pageNavigation } from '../../lib/page-navigation';
 import { DialogShell } from '../ui/dialog-shell';
 import { Input } from '../ui/fluent-form-controls';
 import { OpenLinkLabel } from '../ui/open-link-label';
@@ -256,7 +257,7 @@ export function KeyDialog(props: KeyDialogProps) {
               onChange={field.onChange}
             >
               {apiKey !== null && field.value !== null && field.value !== 'invalid'
-                ? <Link className="text-fui-brand1 no-underline hover:underline" to={`/dashboard/monitor/requests?key=${encodeURIComponent(apiKey.id)}`}>
+                ? <Link {...pageNavigation} className="text-fui-brand1 no-underline hover:underline" to={`/dashboard/monitor/requests?key=${encodeURIComponent(apiKey.id)}`}>
                     <OpenLinkLabel>{t('dashboard.apiKeys.form.viewCapturedRequests')}</OpenLinkLabel>
                   </Link>
                 : undefined}

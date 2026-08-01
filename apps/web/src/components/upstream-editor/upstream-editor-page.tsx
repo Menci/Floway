@@ -23,6 +23,7 @@ import { UpstreamWorkspace } from './workspace';
 import { api, callApi } from '../../api/client';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { pageNavigation } from '../../lib/page-navigation';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { PANE_GAP_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
@@ -217,7 +218,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     setSaveError(null);
   })();
 
-  const leave = () => void navigate('/dashboard/providers/upstreams');
+  const leave = () => void navigate('/dashboard/providers/upstreams', pageNavigation);
 
   return <FormProvider {...form}>
     <Toaster toasterId={toasterId} position="top-end" />
