@@ -90,6 +90,7 @@ export function UpstreamAccessControl({
       expandLabel={t('dashboard.upstreamAccess.title')}
       header={t('dashboard.upstreamAccess.title')}
       icon={<ShieldKeyhole24Regular />}
+      revealOn={error !== null}
       toggledOn={override}
     >
       <div className="grid gap-3 min-w-0">

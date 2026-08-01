@@ -300,7 +300,7 @@ export function SettingsCard({ action, description, header, icon, onClick }: {
 // gets there -- which the DOM does not do on its own, so the chevron is its own
 // button rather than the header being one.
 // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml
-export function SettingsExpander({ action, children, defaultOpen = false, description, expandLabel, header, icon, toggledOn }: {
+export function SettingsExpander({ action, children, defaultOpen = false, description, expandLabel, header, icon, revealOn, toggledOn }: {
   action?: ReactNode;
   children: ReactNode;
   defaultOpen?: boolean;
@@ -308,6 +308,15 @@ export function SettingsExpander({ action, children, defaultOpen = false, descri
   expandLabel: string;
   header: ReactNode;
   icon?: ReactNode;
+  /**
+   * Whether the region currently holds something the operator has to see --
+   * a validation message that refused their submit. Rising, it opens the row:
+   * an answer behind a closed disclosure is an answer nobody reads, and the
+   * control that produced it is in here too. Falling, it does nothing, because
+   * closing the row while someone is still editing inside it takes their work
+   * off the screen mid-correction.
+   */
+  revealOn?: boolean;
   /**
    * The state of the switch in `action`, when there is one. Throwing it opens
    * the row, and turning it off closes the row again -- what the switch admits
@@ -324,6 +333,11 @@ export function SettingsExpander({ action, children, defaultOpen = false, descri
   if (toggledOn !== undefined && toggledOn !== toggleWas) {
     setToggleWas(toggledOn);
     setOpen(toggledOn);
+  }
+  const [revealWas, setRevealWas] = useState(revealOn);
+  if (revealOn !== revealWas) {
+    setRevealWas(revealOn);
+    if (revealOn === true) setOpen(true);
   }
   const contentId = useId();
   const headerId = useId();
