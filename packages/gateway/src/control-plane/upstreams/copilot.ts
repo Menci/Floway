@@ -16,6 +16,8 @@ import {
   fetchCopilotUsage,
   fetchGitHubUser,
   pollGitHubDeviceFlow,
+  projectCopilotUsageResponse,
+  putCopilotQuota,
   readCopilotUpstreamState,
   startGitHubDeviceFlow,
   type CopilotTokenEntry,
@@ -113,10 +115,14 @@ export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
   });
 };
 
-// Look up GitHub Copilot quota for the draft's github token. Pure query —
-// no DB touch, no patch — because the response is a live snapshot that
-// the dashboard renders in place. Works uniformly in create and edit
-// state (draft.config.githubToken is the sole input).
+// Refresh GitHub Copilot quota for the draft's github token. The data plane
+// already keeps `state.quotaSnapshot` current from the `x-quota-snapshot-*`
+// headers on every upstream response, so this is the explicit path: it seeds an
+// upstream that has not served a request yet (including one still in create
+// state, where there is no row to persist to), and lets an operator force a
+// read without generating traffic. The projected snapshot is written into the
+// same slot the passive path fills, so both sources render identically and the
+// newer observation always wins.
 export const copilotQuota = async (c: CtxWithJson<typeof copilotQuotaBody>) => {
   try {
     const { record } = c.req.valid('json');
@@ -134,8 +140,16 @@ export const copilotQuota = async (c: CtxWithJson<typeof copilotQuotaBody>) => {
       return c.json({ error: `GitHub API error: ${resp.status} ${text}` }, status as 400 | 404 | 500 | 502);
     }
 
-    const data = (await resp.json()) as CopilotUsageResponse;
-    return c.json(data);
+    const snapshot = projectCopilotUsageResponse((await resp.json()) as CopilotUsageResponse, new Date());
+    // Persistence is best-effort and deliberately outside the caller's result:
+    // the operator asked for a reading, and a CAS loss to concurrent data-plane
+    // traffic means a fresher snapshot already won the slot.
+    if (record.id !== '') {
+      await putCopilotQuota(record.id, snapshot).catch((err: unknown) => {
+        console.warn(`Failed to persist Copilot quota snapshot for ${record.id}:`, err);
+      });
+    }
+    return c.json(snapshot);
   } catch (e: unknown) {
     return c.json({ error: errorMessage(e) }, 502);
   }

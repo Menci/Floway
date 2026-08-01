@@ -96,14 +96,38 @@ export interface CopilotUpstreamConfig {
   githubTokenSet?: boolean;
 }
 
+// One entitlement bucket, keyed in `CopilotQuotaSnapshot.quotas` by Copilot's
+// open-string `quota_id` (`premium_interactions`, `chat`, `completions`, and
+// `premium_models` in the wild). `-1` is the unlimited sentinel on both
+// `entitlement` and `quota_remaining`.
+export interface CopilotQuotaDetail {
+  entitlement: number;
+  overage_count: number;
+  overage_permitted: boolean;
+  percent_remaining: number;
+  quota_remaining: number;
+  unlimited: boolean;
+}
+
+export interface CopilotQuotaSnapshot {
+  observed_at: string;
+  reset_at: string | null;
+  quotas: Record<string, CopilotQuotaDetail>;
+}
+
 // Per-tier data-plane host GitHub last routed our PAT to. Populated on the
 // first successful token exchange and refreshed alongside the bearer token
 // (matches vscode-copilot-chat domainServiceImpl.ts). Null on a freshly-
 // imported upstream that hasn't completed a token exchange — but the import
 // path mints one synchronously, so a null here in steady state means
 // something is wrong (PAT revoked, network blocked).
+//
+// `quotaSnapshot` is filled by whichever quota source observed the seat last:
+// the gateway harvests `x-quota-snapshot-*` off every data-plane response, and
+// the explicit refresh writes the same shape. `fetchedAt` is unix ms.
 export interface CopilotUpstreamState {
   copilotToken: { baseUrl: string } | null;
+  quotaSnapshot: { fetchedAt: number; data: CopilotQuotaSnapshot } | null;
 }
 
 // Account-pool identity derived from the id_token at codex import. Today's
@@ -360,16 +384,6 @@ export interface SearchConfig {
   microsoftWebIq: { apiKey: string };
   jina: { apiKey: string };
   passthroughOpenAiSearch: { enabled: boolean; upstreamId: string; model: string };
-}
-
-export interface CopilotQuotaSnapshot {
-  quota_snapshots?: {
-    premium_interactions?: {
-      entitlement: number;
-      remaining: number;
-      reset_date?: string;
-    };
-  };
 }
 
 export interface DeviceFlowStart {

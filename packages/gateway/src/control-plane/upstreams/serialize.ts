@@ -157,7 +157,13 @@ const redactedState = (upstream: UpstreamRecord): unknown => {
     // material has no presentation use.
     const token = serializeOpaqueRecord(upstream, 'copilotToken', state.copilotToken);
     const baseUrl = typeof token?.baseUrl === 'string' ? token.baseUrl : null;
-    return { copilotToken: baseUrl !== null ? { baseUrl } : null };
+    return {
+      copilotToken: baseUrl !== null ? { baseUrl } : null,
+      // The whole snapshot is upstream-owned numbers with no secret in it, so
+      // it round-trips verbatim. Rows written before the slot existed carry no
+      // key at all — the same absent-is-null boundary the state reader applies.
+      quotaSnapshot: serializeOpaqueRecord(upstream, 'quotaSnapshot', state.quotaSnapshot ?? null),
+    };
   }
   case 'custom':
   case 'azure':

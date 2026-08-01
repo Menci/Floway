@@ -22,32 +22,53 @@ const isCreate = computed(() => props.draft.id === '');
 const accountTypeDisplay = computed(() => copilotAccountTypeDisplay(props.draft.state));
 
 const api = useApi();
-// Quota is a pure query — no draft mutation and no persistence.
-const quota = ref<CopilotQuotaSnapshot | null>(null);
-const quotaError = ref<string | null>(null);
-const loadingQuota = ref(false);
+// The persisted snapshot is whatever source saw the seat last — the data plane
+// harvests one from every upstream response, so it is normally current without
+// anyone pressing anything. A manual refresh returns the same shape and is
+// persisted server-side too; holding the reply locally just avoids re-fetching
+// the record to display it.
+const refreshed = ref<CopilotQuotaSnapshot | null>(null);
+const refreshError = ref<string | null>(null);
+const refreshing = ref(false);
 
-const loadQuota = async () => {
-  loadingQuota.value = true;
-  quotaError.value = null;
+const persisted = computed(() => props.draft.state?.quotaSnapshot ?? null);
+const quota = computed(() => refreshed.value ?? persisted.value?.data ?? null);
+
+const refresh = async () => {
+  refreshing.value = true;
+  refreshError.value = null;
   const { data, error } = await callApi<CopilotQuotaSnapshot>(
     () => api.api.upstreams.copilot.quota.$post({ json: { record: toRecordEnvelope(props.draft) } }),
   );
-  loadingQuota.value = false;
+  refreshing.value = false;
   if (error) {
-    quotaError.value = error.message;
+    refreshError.value = error.message;
     return;
   }
-  quota.value = data ?? null;
+  refreshed.value = data ?? null;
 };
 
-const premium = computed(() => quota.value?.quota_snapshots?.premium_interactions);
+// Every bucket the seat reports, in the upstream's own naming. A paid seat
+// meters `premium_interactions` (or `premium_models`) against a real
+// entitlement and reports `chat` / `completions` as unlimited; a free seat
+// meters the latter two instead. Rendering whatever comes back keeps the card
+// honest on both without pinning a known set of quota ids.
+const buckets = computed(() => Object.entries(quota.value?.quotas ?? {}).map(([id, detail]) => ({
+  id,
+  label: id.replace(/_/g, ' '),
+  detail,
+  usedPercent: Math.min(100, Math.max(0, Math.round(100 - detail.percent_remaining))),
+  used: Math.round(detail.entitlement - detail.quota_remaining),
+})));
 
-const usedPercent = computed(() => {
-  const p = premium.value;
-  if (!p || p.entitlement <= 0) return null;
-  const used = Math.max(0, p.entitlement - p.remaining);
-  return Math.min(100, Math.round((used / p.entitlement) * 100));
+const observedAt = computed(() => {
+  const iso = quota.value?.observed_at;
+  return iso === undefined ? null : new Date(iso).toLocaleString();
+});
+
+const resetsOn = computed(() => {
+  const iso = quota.value?.reset_at ?? null;
+  return iso === null ? null : new Date(iso).toLocaleDateString();
 });
 </script>
 
@@ -70,35 +91,41 @@ const usedPercent = computed(() => {
 
     <Card :padded="false" class="space-y-3 p-4">
       <header class="flex items-center justify-between">
-        <h4 class="text-sm font-semibold text-white">Premium quota</h4>
+        <h4 class="text-sm font-semibold text-white">Quota</h4>
         <button
           type="button"
           class="text-xs text-accent-cyan hover:text-accent-cyan"
-          :disabled="loadingQuota"
-          @click="loadQuota"
+          :disabled="refreshing"
+          @click="refresh"
         >
-          {{ loadingQuota ? 'Loading…' : (quota ? 'Refresh' : 'Load') }}
+          {{ refreshing ? 'Refreshing…' : 'Refresh' }}
         </button>
       </header>
-      <div v-if="quotaError" class="text-xs text-accent-rose">{{ quotaError }}</div>
-      <template v-else-if="premium">
-        <div class="space-y-1.5">
+      <div v-if="refreshError" class="text-xs text-accent-rose">{{ refreshError }}</div>
+      <template v-if="buckets.length > 0">
+        <div v-for="bucket in buckets" :key="bucket.id" class="space-y-1.5">
           <div class="flex items-baseline justify-between text-sm">
-            <span class="text-white">{{ premium.entitlement - premium.remaining }} / {{ premium.entitlement }}</span>
-            <span class="text-xs text-gray-400">{{ usedPercent }}% used</span>
+            <span class="capitalize text-gray-300">{{ bucket.label }}</span>
+            <span v-if="bucket.detail.unlimited" class="text-xs text-gray-400">Unlimited</span>
+            <span v-else class="text-white">
+              {{ bucket.used.toLocaleString() }} / {{ bucket.detail.entitlement.toLocaleString() }}
+              <span class="text-xs text-gray-400">· {{ bucket.usedPercent }}% used</span>
+            </span>
           </div>
-          <div class="h-1.5 overflow-hidden rounded-full bg-surface-700">
+          <div v-if="!bucket.detail.unlimited" class="h-1.5 overflow-hidden rounded-full bg-surface-700">
             <div
               class="h-full bg-accent-cyan transition-[width]"
-              :style="{ width: `${usedPercent ?? 0}%` }"
+              :style="{ width: `${bucket.usedPercent}%` }"
             />
           </div>
-          <p v-if="premium.reset_date" class="text-xs text-gray-500">
-            Resets on {{ new Date(premium.reset_date).toLocaleDateString() }}
-          </p>
         </div>
+        <p class="text-xs text-gray-500">
+          <span v-if="resetsOn">Resets on {{ resetsOn }} · </span>Observed {{ observedAt }}
+        </p>
       </template>
-      <p v-else-if="!loadingQuota" class="text-xs text-gray-500">Click Load to fetch the current premium quota.</p>
+      <p v-else-if="!refreshing" class="text-xs text-gray-500">
+        No quota observed yet. One arrives with the first request this upstream serves, or click Refresh.
+      </p>
     </Card>
 
     <!-- Create-state prompt: the operator has completed the device flow but
