@@ -53,7 +53,7 @@ const useStyles = makeStyles({
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CornerRadius_themeresources.xaml#L5
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L68
   root: {
-    backgroundColor: 'var(--winui-solid-background-fill-base)',
+    backgroundColor: 'var(--winui-solid-background-fill-tertiary)',
     border: '1px solid var(--winui-control-stroke-default)',
     borderRadius: 'var(--winui-control-corner-radius)',
     minWidth: 0,
@@ -70,7 +70,7 @@ const useStyles = makeStyles({
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L9
   header: {
     alignItems: 'center',
-    backgroundColor: 'var(--winui-solid-background-fill-tertiary)',
+    backgroundColor: 'var(--winui-solid-background-fill-quarternary)',
     borderBottom: '1px solid var(--winui-control-stroke-default)',
     display: 'flex',
     gap: '8px',

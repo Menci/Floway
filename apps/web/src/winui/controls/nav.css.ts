@@ -22,27 +22,18 @@
 // variable that stop reads is the one place left where the colour can still be
 // chosen. See ./tokens.ts for the selector convention.
 export const navCss = `
-/* The seam between the pane and the page. WinUI's pane draws no edge of its
-   own -- PaneContentGrid names a border brush and never a thickness, and the
-   split view around it is driven to PaneNotOverlaying in the expanded form,
-   which sets its own border transparent. The hairline one sees at the boundary
-   comes from the other side: ContentGrid carries 1,1,0,0 of
-   CardStrokeColorDefault under an 8,0,0,0 corner radius over
-   LayerFillColorDefault -- a card the content sits on, whose start edge runs
-   down the seam. The dashboard's content region is not that card: it has no
-   border, no radius and no layer fill of its own, so the seam is drawn from
-   the pane's inline-end edge, which is the one side Fluent gives a border
-   style to. It is retinted from the divider stroke ./drawer.css gives every
-   inline drawer to the card stroke WinUI paints this particular seam with; the
-   rounded start corner belongs to the content side and is not reproduced.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L127
+/* The pane's inline-end edge carries no seam. WinUI's hairline at this boundary
+   is drawn by the content side: ContentGrid is a card, with 1,1,0,0 of
+   CardStrokeColorDefault under an 8,0,0,0 radius over LayerFillColorDefault,
+   and the seam is that card's start edge. The dashboard's content region is not
+   a card -- no border, no radius, no layer fill -- so there is no edge for the
+   seam to belong to, and drawing one on the pane instead would be inventing a
+   boundary WinUI states nowhere. Fluent's own inline drawer border is cleared
+   for the same reason.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L290
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L392
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L49
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L234
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L263 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L234 */
 .fui-NavDrawer.fui-InlineDrawer {
-  border-inline-end-color: var(--winui-card-stroke-default);
+  border-inline-end-style: none;
 }
 
 /* Item foreground. Fluent's neutral pair gives way to WinUI's primary text

@@ -32,7 +32,10 @@ const paint = (hue: number) => ({
 const useMarkStyles = makeStyles({
   root: {
     alignItems: 'center',
-    borderRadius: '6px',
+    // The tile takes OverlayCornerRadius rather than the control radius: it is a
+    // mark on the page, not a control on it.
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CornerRadius_themeresources.xaml#L6
+    borderRadius: '8px',
     display: 'inline-flex',
     height: '36px',
     justifyContent: 'center',

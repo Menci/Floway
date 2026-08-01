@@ -8,15 +8,15 @@
 // at the top centre falling into a vertical ramp, which gives the canvas the
 // lit-from-above reading Mica gets from the wallpaper behind the title bar.
 //
-// The values are not ours. All four stops per scheme are WinUI's own
-// SolidBackgroundFill ramp, taken in role order -- Quarternary is the brightest
-// step and the centre of the highlight, Tertiary is where the highlight fades
-// out, and the ramp beneath runs Base to Secondary. That keeps the canvas
-// inside the same neutral range as every card, flyout and nav surface drawn on
-// top of it, which read their fills from the same ramp through
-// ../winui/theme.ts.
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L272-L275
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L68-L71
+// The stops are ours as well, and they are not the neutral ramp. Light carries
+// a blue cast and dark runs a step deeper at the foot than any page fill WinUI
+// states -- both deliberate, because a canvas mixed from the same greys as the
+// cards on top of it reads as one flat sheet, which is the one thing Mica never
+// looks like. Mica is a tinted sample of the wallpaper, so it carries a colour
+// the window's own surfaces do not; the cast here stands in for that.
+//
+// The surfaces drawn over it do read the neutral ramp, through ../winui/theme.ts.
+// The canvas being slightly off it is what separates them.
 //
 // The literals are spelled out rather than taken from `--winui-*`:
 // ../critical.css.ts inlines this block into the document head so the canvas is
@@ -33,16 +33,16 @@
 export const gradientBackgroundCss = `
   .floway-gradient-background {
     background-image:
-      radial-gradient(circle at 50% 0%, #ffffff 0%, #f9f9f9 36%, transparent 64%),
-      linear-gradient(180deg, #f3f3f3 0%, #eeeeee 100%);
+      radial-gradient(circle at 50% 0%, #ffffff 0%, #f7fbff 36%, transparent 64%),
+      linear-gradient(180deg, #f6f8fb 0%, #eef2f6 100%);
     height: 100dvh;
     overflow: hidden;
   }
   @media (prefers-color-scheme: dark) {
     .floway-gradient-background {
       background-image:
-        radial-gradient(circle at 50% 0%, #2c2c2c 0%, #282828 36%, transparent 64%),
-        linear-gradient(180deg, #202020 0%, #1c1c1c 100%);
+        radial-gradient(circle at 50% 0%, #2d2d2d 0%, #242424 38%, transparent 68%),
+        linear-gradient(180deg, #1f1f1f 0%, #171717 100%);
     }
   }
 `;

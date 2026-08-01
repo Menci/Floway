@@ -106,12 +106,19 @@ export const appLoadingCss = `
      of the smaller ones. Fluent leaves the colour to inherit from the provider,
      which the layer points at TextFillColorPrimary.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L209-L213 */
+  /* The line under the ring is ours: WinUI's ProgressRing carries no label slot,
+     so there is nothing to transcribe and the ramp is the one a Windows app
+     would set a sentence in -- BodyTextBlockStyle, 14px at Normal. Fluent sets
+     a medium Spinner's label in subtitle2, 16px SemiBold, which reads as a
+     heading over a boot screen that has no heading.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBlock_themeresources.xaml#L4
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBlock_themeresources.xaml#L23-L25 */
   .floway-app-loading .fui-Spinner__label {
     color: var(--colorNeutralForeground1, #000000e4);
     font-family: var(--fontFamilyBase, sans-serif);
-    font-size: var(--fontSizeBase400, 16px);
-    font-weight: var(--fontWeightSemibold, 600);
-    line-height: var(--lineHeightBase400, 22px);
+    font-size: var(--fontSizeBase300, 14px);
+    font-weight: var(--fontWeightRegular, 400);
+    line-height: var(--lineHeightBase300, 20px);
   }
   /* The dark dictionary's values for the accent arc and for the label. Each
      declaration reads the same token as the rule above it and only the literal

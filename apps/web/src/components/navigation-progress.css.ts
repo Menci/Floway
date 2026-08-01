@@ -42,7 +42,11 @@ export const navigationProgressCss = `
     position: fixed;
     transition: opacity var(--winui-control-fast-animation-duration)
       var(--winui-control-fast-out-slow-in-easing);
-    z-index: 100001;
+    /* Above Fluent's portal mount, which sits at 1000000 and carries every
+       dialog, drawer, popover and their scrims. A route can be loading while one
+       of those is open -- a dialog's own action navigates -- and the strip is
+       the only report that it is. */
+    z-index: 1000001;
   }
 
   .floway-navigation-progress[data-active='true'] { opacity: 1; }
@@ -110,14 +114,25 @@ export const navigationProgressCss = `
     100% { transform: translateX(166%); }
   }
 
-  /* The sweep is the whole of what the strip says, and WinUI states one
-     indeterminate storyboard and no quieter variant of it, so a reduced-motion
-     preference reaches the fade alone. It is clamped rather than dropped, the
-     shape the WinUI layer gives a transition of its own, so the transition
-     still completes and fires. */
-  @media (prefers-reduced-motion: reduce) {
-    .floway-navigation-progress { transition-duration: 0.01ms; }
-  }
+  /* Nothing here answers a reduced-motion preference, and both halves are
+     deliberate.
+
+     The sweep is not decoration: it is the whole of what the strip reports. A
+     bar that holds still says a navigation is in flight no more than an empty
+     bar does, and the strip has no other way to say it -- there is no
+     determinate width to fall back on, since a route load states no progress.
+     WinUI agrees by construction: its indeterminate ProgressBar states one
+     storyboard and no quieter variant, and ProgressBar is an
+     AnimatedVisualPlayer, so it reaches neither UISettings.AnimationsEnabled
+     nor the visual-state gate that seeks a storyboard to its end frame.
+
+     The fade that brings the strip in and out is a state change reporting that
+     the navigation started or finished, and it is over in 83ms.
+
+     A reader who asked for less motion still gets a 3px strip sweeping at the
+     top of the window for as long as a route is loading. That is a real cost of
+     reporting the state at all, and it is the cost WinUI itself accepts.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar.xaml#L100-L111 */
 
   /* WinUI's HighContrast dictionary answers the bar with a WindowTextColor
      border a pixel thick around indicators on HighlightColor, and that is what

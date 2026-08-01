@@ -200,7 +200,11 @@ const useStyles = makeStyles({
       inset: 0,
       borderRadius: 'inherit',
       backgroundImage: bingAccentGradient,
-      transitionProperty: 'transform',
+      // Both of the things the fill changes are transitioned. The press scales
+      // it and the pointer swaps its gradient, and animating one while the
+      // other cuts leaves the button answering a hover instantly and a press
+      // over time.
+      transitionProperty: 'transform, background-image',
       transitionDuration: bingComposerTransitionDuration,
       transitionTimingFunction: bingComposerTransitionEasing,
       // The press scales the fill, which alters its perceived size, so it is
