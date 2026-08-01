@@ -20,20 +20,32 @@ interface ScrollAreaProps extends PropsWithChildren {
 }
 
 let nativeScrollbarSize = 0;
+let scrollbarProbe: HTMLDivElement | null = null;
 const scrollbarSizeListeners = new Set<() => void>();
 
 // Whether the platform's scrollbars take layout width, measured rather than
 // assumed: a 500px box overflowed by a 1000px child gives the bar's width as
 // the difference between its border box and its content box.
 //
-// The probe is built, read and removed inside one call, leaving nothing behind.
-// React renders this app's whole document, so a node parked in `<body>` before
-// hydration is a node React did not put there -- it is removed during
-// reconciliation, and a detached element measures zero on both boxes. Keeping
-// one alive across hydration therefore reported a real width once and zero
-// forever after, which reads exactly like the platform having overlay bars.
-const measureNativeScrollbarSize = () => {
-  if (typeof document === 'undefined' || !document.body) return 0;
+// The probe is parked off-page rather than hidden, because a box that is not
+// painted is a poor place to read a painted scrollbar's width from. It stays in
+// the document so a ResizeObserver can watch it: the answer changes under a
+// running page -- a system setting, or DevTools switching between a desktop and
+// a device viewport -- and not every such change resizes the window, so the
+// element itself is the only reliable signal.
+//
+// It is re-attached if it ever loses the document. React renders this app's
+// whole document, so anything parked in `<body>` is living in a tree React
+// reconciles; a detached element reports the same width for both boxes, which
+// is indistinguishable from a platform with overlay bars and would silently
+// disable the library everywhere.
+const ensureScrollbarProbe = () => {
+  if (typeof document === 'undefined' || !document.body) return null;
+  if (scrollbarProbe?.isConnected) return scrollbarProbe;
+  if (scrollbarProbe) {
+    document.body.appendChild(scrollbarProbe);
+    return scrollbarProbe;
+  }
   const outer = document.createElement('div');
   outer.setAttribute('aria-hidden', 'true');
   outer.style.cssText = 'position:absolute;top:-9999px;width:500px;height:500px;overflow:auto;';
@@ -41,28 +53,28 @@ const measureNativeScrollbarSize = () => {
   inner.style.cssText = 'width:1000px;height:1000px;';
   outer.appendChild(inner);
   document.body.appendChild(outer);
-  const size = Math.max(outer.offsetWidth - outer.clientWidth, outer.offsetHeight - outer.clientHeight);
-  outer.remove();
-  return size;
+  scrollbarProbe = outer;
+  new ResizeObserver(updateNativeScrollbarSize).observe(outer);
+  window.addEventListener('resize', updateNativeScrollbarSize);
+  return outer;
 };
 
-const updateNativeScrollbarSize = () => {
-  const next = measureNativeScrollbarSize();
+function updateNativeScrollbarSize() {
+  const probe = ensureScrollbarProbe();
+  if (!probe) return;
+  const next = Math.max(probe.offsetWidth - probe.clientWidth, probe.offsetHeight - probe.clientHeight);
   if (next === nativeScrollbarSize) return;
   nativeScrollbarSize = next;
   scrollbarSizeListeners.forEach(listener => listener());
-};
+}
 
-// The setting is a system one and can change under a running page. Nothing
-// fires on the change itself, so it is re-read at the moments the answer could
-// have changed while the page was not looking.
+// The first ScrollArea must know the answer before React renders it. Module
+// scripts run after the document is parsed, so this normally measures
+// synchronously; the listener only covers tooling that imports the module
+// earlier than a browser would.
 if (typeof document !== 'undefined') {
-  const measureNow = () => updateNativeScrollbarSize();
-  if (document.body) measureNow();
-  else document.addEventListener('DOMContentLoaded', measureNow, { once: true });
-  window.addEventListener('resize', measureNow);
-  window.addEventListener('focus', measureNow);
-  document.addEventListener('visibilitychange', measureNow);
+  if (document.body) updateNativeScrollbarSize();
+  else document.addEventListener('DOMContentLoaded', updateNativeScrollbarSize, { once: true });
 }
 
 const subscribeToScrollbarSize = (listener: () => void) => {
