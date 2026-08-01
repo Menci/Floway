@@ -1,5 +1,80 @@
 import { reactRouter } from '@react-router/dev/vite';
+import { createJiti } from 'jiti';
 import { defineConfig, type Plugin } from 'vite';
+
+// Part of the app's CSS is authored in TypeScript, because its rules spend
+// values the running app spends too: the WinUI layer under src/winui
+// interpolates the token names, motion durations and opt-out selector that the
+// same modules hand to Fluent. Rendered straight into a `<style>` element that
+// text never meets Vite's CSS pipeline -- it ships unminified, unhashed, and is
+// re-sent in full with every HTML response.
+//
+// Each such module is therefore also reachable as a virtual `.css` module. The
+// TypeScript is evaluated here and its string handed to Vite, which from that
+// point treats it as an ordinary stylesheet: `?url` emits a hashed, minified,
+// cacheable asset and yields its URL, `?inline` yields the minified text for a
+// sheet that has to stay in the document.
+//
+// The evaluation is jiti's rather than a second bundler's. These modules are
+// pure string-building TypeScript over relative imports, which is the shape
+// jiti is at its cheapest on, and the module registry it leaves behind names
+// every file it read -- which is exactly the watch list the dev server needs to
+// invalidate the virtual sheet when one of them changes. Nothing in these
+// graphs may reach a module that expects a browser, since this runs in Node.
+const virtualStylesheets = {
+  'virtual:floway-winui.css': { exportName: 'winuiCss', module: './src/winui/index.ts' },
+} as const;
+
+// `?url` is a build-time contract: `vite:css` turns it into an emitted asset
+// only while bundling, and both the asset and the CSS plugins skip the query
+// otherwise. The dev server therefore serves the URL form from a path of this
+// plugin's own, so that the document carries the same `<link>` in the same
+// place in both modes rather than a style element in one and a link in the
+// other.
+const DEV_STYLESHEET_PATH = '/@floway/stylesheet/';
+
+const typescriptStylesheets = (): Plugin => {
+  const rendered = new Map<string, string>();
+
+  const specifierOf = (id: string) => (id.startsWith('\0') ? id.slice(1) : id).split('?', 1)[0]!;
+  const sourceOf = (id: string): { exportName: string; module: string } | undefined =>
+    virtualStylesheets[specifierOf(id) as keyof typeof virtualStylesheets];
+
+  return {
+    name: 'floway-typescript-stylesheets',
+    resolveId(id) {
+      // The resolved id keeps whatever query it arrived with, so `vite:css`
+      // still sees `?url` and `?inline` on an id that ends in `.css`.
+      return sourceOf(id) ? `\0${id.startsWith('\0') ? id.slice(1) : id}` : undefined;
+    },
+    async load(id) {
+      const source = sourceOf(id);
+      if (!id.startsWith('\0') || !source) return;
+      // A fresh registry per load is what re-evaluates the graph; jiti's
+      // on-disk transform cache survives it, so the cost is the evaluation
+      // alone.
+      const jiti = createJiti(import.meta.filename);
+      const stylesheet = await jiti.import<Record<string, string>>(source.module);
+      for (const file of Object.keys(jiti.cache)) if (!file.includes('node_modules')) this.addWatchFile(file);
+      const css = stylesheet[source.exportName]!;
+      if (this.environment.mode !== 'dev' || !/[?&]url\b/.test(id)) return css;
+      const specifier = specifierOf(id);
+      rendered.set(specifier, css);
+      // The timestamp is what makes an edit visible: the module reloads, the
+      // element re-renders with a new href, and the browser fetches the sheet
+      // again instead of answering from its own cache.
+      return `export default ${JSON.stringify(`${DEV_STYLESHEET_PATH}${specifier}?t=${Date.now()}`)}`;
+    },
+    configureServer(server) {
+      server.middlewares.use(DEV_STYLESHEET_PATH, (request, response, next) => {
+        const css = rendered.get(decodeURIComponent(request.url!.slice(1).split('?', 1)[0]!));
+        if (css === undefined) return next();
+        response.setHeader('content-type', 'text/css');
+        response.end(css);
+      });
+    },
+  };
+};
 
 // Prism ships its language components as scripts that mutate a global `Prism`
 // rather than as modules. Prepending the import supplies that required binding:
@@ -86,7 +161,7 @@ export default defineConfig({
       'zustand',
     ],
   },
-  plugins: [prismComponentsEsm(), reactRouter()],
+  plugins: [prismComponentsEsm(), typescriptStylesheets(), reactRouter()],
   // Fluent's ESM facade imports named exports from its provider packages,
   // whose `node` export condition points at CommonJS. Dev SSR must transform
   // the whole family together; externalizing the nested provider lets Node

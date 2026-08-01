@@ -50,6 +50,7 @@
     "@types/react-dom": "^19.2.3",
     "@unocss/postcss": "^66.7.5",
     "happy-dom": "^20.11.1",
+    "jiti": "2.6.1",
     "unocss": "^66.7.5",
     "vite": "^8.1.5"
   }

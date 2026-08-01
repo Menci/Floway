@@ -10,8 +10,8 @@
    Order is load-bearing and is the order the two files this replaces were
    imported in: the utilities come after the font so a utility can override a
    face, and before the app's own rules so those can override a utility. The
-   WinUI layer arrives later still, as a style element in ../root.tsx, and
-   Griffel later than that at runtime. */
+   WinUI layer arrives later still, as the stylesheet ../root.tsx links by
+   hand, and Griffel later than that at runtime. */
 
 /* Segoe UI Variable is the typeface Fluent's type ramp is drawn for. Without a
    webfont only Windows 11 renders the dashboard as designed; everyone else

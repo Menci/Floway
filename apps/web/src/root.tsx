@@ -7,6 +7,7 @@ import {
   Outlet,
   Scripts,
 } from 'react-router';
+import winuiStylesheet from 'virtual:floway-winui.css?url';
 
 import type { Route } from './+types/root';
 import { BrowserLanguageSync } from './components/browser-language-sync';
@@ -24,7 +25,6 @@ import {
 import { ErrorShell, ErrorStack, errorShellCriticalCss } from './components/ui/error-shell';
 import { fluentComponents } from './fluent';
 import { fontFamilyCriticalCss } from './theme';
-import { winuiCss } from './winui';
 import { winuiDarkTheme, winuiLightTheme } from './winui/theme';
 import './i18n';
 import '@fontsource/maple-mono/400.css';
@@ -82,7 +82,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)" />
         <Meta />
         <Links />
-        {/* What has to be true before the stylesheet arrives. In dev that is a
+        {/* What has to be true before the linked stylesheets arrive. In dev that is a
             second-and-a-bit: global.css is served through Vite's transform
             while this block is part of the document, so anything the first
             paint depends on has to be here rather than in a utility class.
@@ -101,7 +101,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
           ${errorShellCriticalCss}
           ${navigationProgressCss}
         `}</style>
-        <style>{winuiCss}</style>
+        {/* The WinUI layer is linked rather than emitted through `<Links />`
+            because where it sits is what it is: it has to follow the block
+            above, whose spinner rules reach Fluent's own class names at the
+            same specificity its do. `<Links />` renders the route's stylesheets
+            ahead of anything this component writes, so the link is placed by
+            hand. */}
+        <link href={winuiStylesheet} rel="stylesheet" />
         {/* Draws this load's mark and sets the tab icon before anything paints. */}
         <script dangerouslySetInnerHTML={{ __html: markPickerScript }} />
       </head>
