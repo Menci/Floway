@@ -55,18 +55,19 @@ export function ChartSection({
         ? <div className="flex flex-wrap gap-1.5 min-w-0">
             {entries.map(entry => (
               <InteractionTag appearance="outline" key={entry.id} shape="circular" size="small">
-                <InteractionTagPrimary
-                  className={hidden.has(entry.id) ? 'line-through opacity-[0.55]' : ''}
-                  icon={<SeriesMarker className="mx-[4px]" color={colorForSlot(entry.colorSlot)} shape="line" />}
-                  title={t('dashboard.charts.series.toggleHint')}
-                  // A double-click delivers its two clicks first; both land on
-                  // this same series and cancel out, so the isolate that follows
-                  // starts from the state the reader saw.
-                  onClick={event => { if (event.shiftKey) isolate(entry.id); else onHiddenChange(toggledSeries(hidden, entry.id)); }}
-                  onDoubleClick={() => isolate(entry.id)}
-                >
-                  {entry.label}
-                </InteractionTagPrimary>
+                <Tooltip content={t('dashboard.charts.series.toggleHint')} relationship="description">
+                  <InteractionTagPrimary
+                    className={hidden.has(entry.id) ? 'line-through opacity-[0.55]' : ''}
+                    icon={<SeriesMarker className="mx-[4px]" color={colorForSlot(entry.colorSlot)} shape="line" />}
+                    // A double-click delivers its two clicks first; both land on
+                    // this same series and cancel out, so the isolate that follows
+                    // starts from the state the reader saw.
+                    onClick={event => { if (event.shiftKey) isolate(entry.id); else onHiddenChange(toggledSeries(hidden, entry.id)); }}
+                    onDoubleClick={() => isolate(entry.id)}
+                  >
+                    {entry.label}
+                  </InteractionTagPrimary>
+                </Tooltip>
               </InteractionTag>
             ))}
           </div>

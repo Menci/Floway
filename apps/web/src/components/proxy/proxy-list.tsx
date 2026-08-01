@@ -19,6 +19,7 @@ const {
   TableHeaderCell,
   TableRow,
   Text,
+  Tooltip,
 } = fluentComponents;
 
 export function ProxyList({
@@ -69,13 +70,17 @@ export function ProxyList({
                     >
                       {t(`dashboard.proxy.kind.${kind}` as never, kind)}
                     </Badge>
-                    <Text className="truncate" title={proxy.name}>{proxy.name}</Text>
+                    <Tooltip content={proxy.name} relationship="label">
+                      <Text className="truncate" tabIndex={0}>{proxy.name}</Text>
+                    </Tooltip>
                   </div>
                 </TableCell>
                 <TableCell className="overflow-hidden">
-                  <Text block className="text-fui-fg2 truncate" title={hostPortLabel(proxy.url)}>
-                    {hostPortLabel(proxy.url)}
-                  </Text>
+                  <Tooltip content={hostPortLabel(proxy.url)} relationship="label">
+                    <Text block className="text-fui-fg2 truncate" tabIndex={0}>
+                      {hostPortLabel(proxy.url)}
+                    </Text>
+                  </Tooltip>
                 </TableCell>
                 <TableCell>
                   <TableActions>

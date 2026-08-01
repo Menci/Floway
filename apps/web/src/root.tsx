@@ -29,8 +29,7 @@ import './i18n';
 import '@fontsource/maple-mono/400.css';
 import '@fontsource/maple-mono/600.css';
 import '@fontsource/maple-mono/700.css';
-import './segoe-ui-variable.css';
-import './uno.css';
+import './global.css';
 
 const { Button, FluentProvider } = fluentComponents;
 

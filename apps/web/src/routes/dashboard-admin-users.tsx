@@ -54,6 +54,7 @@ const {
   TableHeader,
   TableHeaderCell,
   TableRow,
+  Tooltip,
 } = fluentComponents;
 
 // `null` is a fetch that failed, not an empty deployment: a list showing zero
@@ -307,9 +308,11 @@ function UsersTable({
                     : t('dashboard.users.upstreams.count', { count: user.upstreamIds.length })}
                 </TableCell>
                 <TableCell>
-                  <span title={new Date(user.createdAt).toLocaleString()}>
-                    {shortDate(user.createdAt, locale)}
-                  </span>
+                  <Tooltip content={new Date(user.createdAt).toLocaleString()} relationship="description">
+                    <span tabIndex={0}>
+                      {shortDate(user.createdAt, locale)}
+                    </span>
+                  </Tooltip>
                 </TableCell>
                 <TableCell>
                   <TableActions>

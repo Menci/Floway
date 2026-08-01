@@ -23,7 +23,7 @@ import { ProviderIcon } from '../upstreams/provider-badge';
 
 const {
   Accordion, AccordionHeader, AccordionItem, AccordionPanel, Badge, Button,
-  MessageBar, MessageBarBody, ProgressBar, Text,
+  MessageBar, MessageBarBody, ProgressBar, Text, Tooltip,
 } = fluentComponents;
 
 export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
@@ -59,14 +59,18 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
       <div className="grid gap-1 min-w-0 flex-1">
         <Text weight="semibold" truncate>{account.email ?? accountUuidShort}</Text>
         <div className="flex flex-wrap items-center gap-2">
-          {credential?.tokenKind === 'setup-token' && <StatusBadge color="important" title={t('dashboard.upstreamEditor.claudeCode.setupTokenHint')}>
-            {t('dashboard.upstreamEditor.claudeCode.setupToken')}
-          </StatusBadge>}
+          {credential?.tokenKind === 'setup-token' && <Tooltip content={t('dashboard.upstreamEditor.claudeCode.setupTokenHint')} relationship="description">
+            <span className="inline-flex" tabIndex={0}>
+              <StatusBadge color="important">{t('dashboard.upstreamEditor.claudeCode.setupToken')}</StatusBadge>
+            </span>
+          </Tooltip>}
           {subscription && <StatusBadge color="brand">{subscription}</StatusBadge>}
-          <Text size={200} className="text-fui-fg3 font-mono" title={account.accountUuid}>{accountUuidShort}</Text>
-          {account.email === null && <Text size={200} className="text-fui-fg3" title={t('dashboard.upstreamEditor.claudeCode.noEmailScopeHint')}>
-            {t('dashboard.upstreamEditor.claudeCode.noEmailScope')}
-          </Text>}
+          <Tooltip content={account.accountUuid} relationship="description">
+            <Text size={200} className="text-fui-fg3 font-mono" tabIndex={0}>{accountUuidShort}</Text>
+          </Tooltip>
+          {account.email === null && <Tooltip content={t('dashboard.upstreamEditor.claudeCode.noEmailScopeHint')} relationship="description">
+            <Text size={200} className="text-fui-fg3" tabIndex={0}>{t('dashboard.upstreamEditor.claudeCode.noEmailScope')}</Text>
+          </Tooltip>}
         </div>
       </div>
       <StatusBadge color={status.tone}>{statusLabel}</StatusBadge>
@@ -94,9 +98,11 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
           <div className="flex items-baseline justify-between gap-3">
             <Text size={200}>
               {t(`dashboard.upstreamEditor.claudeCode.window.${row.key}`)}
-              <span className="ml-1.5 text-fui-fg3 uppercase text-[10px] tracking-wide" title={t('dashboard.upstreamEditor.claudeCode.fetchedAt', { time: dateTime(row.fetchedAt, locale) })}>
-                {t(`dashboard.upstreamEditor.claudeCode.source.${row.source}`)}
-              </span>
+              <Tooltip content={t('dashboard.upstreamEditor.claudeCode.fetchedAt', { time: dateTime(row.fetchedAt, locale) })} relationship="description">
+                <span className="ml-1.5 text-fui-fg3 uppercase text-[10px] tracking-wide" tabIndex={0}>
+                  {t(`dashboard.upstreamEditor.claudeCode.source.${row.source}`)}
+                </span>
+              </Tooltip>
             </Text>
             <Text size={200} className="text-fui-fg2">
               {percentText(percent)}{row.status ? ` · ${row.status}` : ''}
@@ -153,8 +159,12 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
 function EntryList({ entries }: { entries: [string, string][] }) {
   return <dl className="grid gap-1 m-0">
     {entries.map(([key, value]) => <div key={key} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-3">
-      <dt className="truncate font-mono mono-size-xs text-xs text-fui-fg3" title={key}>{key}</dt>
-      <dd className="truncate font-mono mono-size-xs text-xs text-fui-fg2 m-0" title={value}>{value}</dd>
+      <Tooltip content={key} relationship="label">
+        <dt className="truncate font-mono mono-size-xs text-xs text-fui-fg3" tabIndex={0}>{key}</dt>
+      </Tooltip>
+      <Tooltip content={value} relationship="label">
+        <dd className="truncate font-mono mono-size-xs text-xs text-fui-fg2 m-0" tabIndex={0}>{value}</dd>
+      </Tooltip>
     </div>)}
   </dl>;
 }

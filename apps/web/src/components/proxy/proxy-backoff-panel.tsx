@@ -72,7 +72,9 @@ export function ProxyBackoffPanel({ backoffs, onReset, proxyId }: {
       {active.map(row => {
         const remaining = row.expires_at - nowSeconds;
         return <li className="flex items-center gap-3 rounded-md bg-fui-bg2 px-3 py-2" key={`${row.proxy_id}:${row.upstream_id}`}>
-          <span className="min-w-0 flex-1 truncate font-mono text-fui-base200" title={row.upstream_id}>{row.upstream_id}</span>
+          <Tooltip content={row.upstream_id} relationship="label">
+            <span className="min-w-0 flex-1 truncate font-mono text-fui-base200" tabIndex={0}>{row.upstream_id}</span>
+          </Tooltip>
           <Text size={200} className="text-fui-fg2">
             {remaining <= 0
               ? t('dashboard.proxy.backoff.expiring')

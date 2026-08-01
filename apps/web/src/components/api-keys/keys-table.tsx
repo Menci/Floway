@@ -19,7 +19,7 @@ import { copyOutcomeIcon, useCopyLabel, type ClipboardCopy } from '../ui/use-cop
 const {
   Button,
   DataGrid, DataGridBody, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow,
-  List, ListItem, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, TableCellLayout, Text,
+  List, ListItem, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, TableCellLayout, Text, Tooltip,
   createTableColumn, makeStyles,
 } = fluentComponents;
 
@@ -90,7 +90,9 @@ export function KeysTable({
           const copyTag = `key-${key.id}`;
           return (
             <span className="flex items-center gap-1 min-w-0">
-              <code className="w-[144px] flex-none truncate" title={key.key}>{key.key}</code>
+              <Tooltip content={key.key} relationship="label">
+                <code className="w-[144px] flex-none truncate" tabIndex={0}>{key.key}</code>
+              </Tooltip>
               <TooltipIconButton
                 className="flex-none"
                 disabled={disabled}
@@ -105,30 +107,36 @@ export function KeysTable({
       createTableColumn<ApiKey>({
         columnId: 'upstreams', renderHeaderCell: () => t('dashboard.apiKeys.table.upstreams'),
         renderCell: key => (
-          <TableCellLayout
-            truncate
-            className={
-              !key.upstream_ids ? undefined
-                : key.upstream_ids.length === 0 ? dangerText : s.accentText
-            }
-            title={upstreamsTitle(key, upstreamById, t)}
-          >
-            {upstreamsText(key, upstreamById, t)}
-          </TableCellLayout>
+          <Tooltip content={upstreamsTitle(key, upstreamById, t)} relationship="description">
+            <TableCellLayout
+              truncate
+              className={
+                !key.upstream_ids ? undefined
+                  : key.upstream_ids.length === 0 ? dangerText : s.accentText
+              }
+              tabIndex={0}
+            >
+              {upstreamsText(key, upstreamById, t)}
+            </TableCellLayout>
+          </Tooltip>
         ),
       }),
       createTableColumn<ApiKey>({
         columnId: 'created', compare: (a, b) => a.created_at.localeCompare(b.created_at),
         renderHeaderCell: () => t('dashboard.apiKeys.table.created'),
-        renderCell: key => <span title={dateTime(key.created_at, locale)}>{shortDate(key.created_at, locale)}</span>,
+        renderCell: key => <Tooltip content={dateTime(key.created_at, locale)} relationship="description">
+          <span tabIndex={0}>{shortDate(key.created_at, locale)}</span>
+        </Tooltip>,
       }),
       createTableColumn<ApiKey>({
         columnId: 'lastUsed', compare: (a, b) => (a.last_used_at ?? '').localeCompare(b.last_used_at ?? ''),
         renderHeaderCell: () => t('dashboard.apiKeys.table.lastUsed'),
         renderCell: key => key.last_used_at
-          ? <span title={dateTime(key.last_used_at, locale)}>
-              {relativeTime(key.last_used_at, locale, { now }) ?? t('dashboard.apiKeys.table.usedOn', { date: shortDate(key.last_used_at, locale) })}
-            </span>
+          ? <Tooltip content={dateTime(key.last_used_at, locale)} relationship="description">
+              <span tabIndex={0}>
+                {relativeTime(key.last_used_at, locale, { now }) ?? t('dashboard.apiKeys.table.usedOn', { date: shortDate(key.last_used_at, locale) })}
+              </span>
+            </Tooltip>
           : <span>{t('dashboard.apiKeys.table.never')}</span>,
       }),
       createTableColumn<ApiKey>({
@@ -170,8 +178,12 @@ export function KeysTable({
         <div className="flex items-start gap-2 min-w-0 w-full">
           <div className="grid gap-0.5 min-w-0 flex-1">
             <Text truncate size={300}>{key.name}</Text>
-            <code className="block truncate" title={key.key}>{key.key}</code>
-            <Text truncate size={200} className="text-fui-fg2" title={upstreamsTitle(key, upstreamById, t)}>{upstreamsText(key, upstreamById, t)}</Text>
+            <Tooltip content={key.key} relationship="label">
+              <code className="block truncate" tabIndex={0}>{key.key}</code>
+            </Tooltip>
+            <Tooltip content={upstreamsTitle(key, upstreamById, t)} relationship="description">
+              <Text truncate size={200} className="text-fui-fg2" tabIndex={0}>{upstreamsText(key, upstreamById, t)}</Text>
+            </Tooltip>
             <Text size={200} className="text-fui-fg3">{shortDate(key.created_at, locale)} · {lastUsed}</Text>
           </div>
           <Menu>

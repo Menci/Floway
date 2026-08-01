@@ -338,17 +338,18 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
           const id = publicModelId(row.config); return <TableRow className="h-14" key={row.key}>
             <TableCentredCell><Switch checked={!disabled.includes(id)} onChange={(_, data) => setEnabled(id, data.checked)} /></TableCentredCell>
             <TableCell className="overflow-hidden">
-              <button
-                className="block bg-transparent border-0 cursor-pointer min-w-0 max-w-full truncate p-0 text-fui-base300 text-fui-fg1 text-left hover:underline"
-                onClick={() => onSelectUpstreamModel(row.config.upstreamModelId)}
-                title={row.config.display_name ?? id}
-                type="button"
-              >
-                {row.config.display_name ?? id}
-              </button>
+              <Tooltip content={row.config.display_name ?? id} relationship="label">
+                <button
+                  className="block bg-transparent border-0 cursor-pointer min-w-0 max-w-full truncate p-0 text-fui-base300 text-fui-fg1 text-left hover:underline"
+                  onClick={() => onSelectUpstreamModel(row.config.upstreamModelId)}
+                  type="button"
+                >
+                  {row.config.display_name ?? id}
+                </button>
+              </Tooltip>
             </TableCell>
             <TableCentredCell><Text size={300}>{t(`dashboard.upstreamEditor.models.kindValue.${row.config.kind}`)}</Text></TableCentredCell>
-            <TableCell className="overflow-hidden"><span className="flex items-center gap-1 min-w-0 max-w-full overflow-hidden"><code className="block min-w-0 max-w-[calc(100%-36px)] truncate leading-[var(--lineHeightBase300)]" title={id}>{id}</code><TooltipIconButton className="flex-none" icon={copyOutcomeIcon(outcomeFor(id))} label={copyLabel(outcomeFor(id), t('dashboard.upstreamEditor.models.copy'))} onClick={() => copy(id, id)} /></span></TableCell>
+            <TableCell className="overflow-hidden"><span className="flex items-center gap-1 min-w-0 max-w-full overflow-hidden"><Tooltip content={id} relationship="label"><code className="block min-w-0 max-w-[calc(100%-36px)] truncate leading-[var(--lineHeightBase300)]" tabIndex={0}>{id}</code></Tooltip><TooltipIconButton className="flex-none" icon={copyOutcomeIcon(outcomeFor(id))} label={copyLabel(outcomeFor(id), t('dashboard.upstreamEditor.models.copy'))} onClick={() => copy(id, id)} /></span></TableCell>
             <TableCentredCell><Text size={300}>{t(`dashboard.upstreamEditor.models.${row.source}`)}</Text></TableCentredCell>
             <TableCell><TableActions><TooltipIconButton icon={<EditRegular />} label={t('dashboard.upstreamEditor.models.edit')} onClick={() => onSelectUpstreamModel(row.config.upstreamModelId)} />{row.manualIndex !== null && <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.delete')} onClick={() => deleteDialog.open(row)} />}</TableActions></TableCell>
           </TableRow>;

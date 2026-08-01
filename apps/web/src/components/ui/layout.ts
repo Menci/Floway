@@ -29,7 +29,7 @@ export const HEADER_ROW_CLASS = 'flex items-center justify-between min-w-0 max-[
 export const TWO_COLUMN_FORM_CLASS = 'grid grid-cols-2 max-[680px]:grid-cols-1';
 
 // What separates the two panes of a master–detail shell. It reads the page
-// inset rather than stating a number of its own, which is what `uno.css`
+// inset rather than stating a number of its own, which is what `global.css`
 // already says that inset is for: a layout that puts two panels side by side
 // separates them by the same measure it keeps from the edge of the region, so
 // the space around a page and the space inside it read as one rhythm. The

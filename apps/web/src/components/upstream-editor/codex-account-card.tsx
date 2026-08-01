@@ -11,7 +11,7 @@ import { useNow } from '../../lib/use-now';
 import { StatusBadge } from '../ui/status-badge';
 import { ProviderIcon } from '../upstreams/provider-badge';
 
-const { Badge, ProgressBar, Text } = fluentComponents;
+const { Badge, ProgressBar, Text, Tooltip } = fluentComponents;
 
 export function CodexAccountCard({ record }: { record: CodexRecord }) {
   const { t } = useTranslation();
@@ -43,7 +43,9 @@ export function CodexAccountCard({ record }: { record: CodexRecord }) {
             : credits?.credits_balance !== undefined && <Badge appearance="outline">
               {t('dashboard.upstreamEditor.codex.credits', { balance: credits.credits_balance })}
             </Badge>}
-          <Text size={200} className="text-fui-fg3 font-mono" title={account.chatgptAccountId}>{shortAccountId(account.chatgptAccountId)}</Text>
+          <Tooltip content={account.chatgptAccountId} relationship="description">
+            <Text size={200} className="text-fui-fg3 font-mono" tabIndex={0}>{shortAccountId(account.chatgptAccountId)}</Text>
+          </Tooltip>
         </div>
       </div>
       <StatusBadge color={status.tone}>{statusLabel}</StatusBadge>
@@ -55,7 +57,9 @@ export function CodexAccountCard({ record }: { record: CodexRecord }) {
       ? <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.codex.noSnapshot')}</Text>
       : entries.map(entry => <section className="grid gap-3 border-0 border-t border-solid border-fui-stroke1 py-3 first:border-t-0" key={entry.key}>
           <div className="flex items-baseline justify-between gap-3 min-w-0">
-            <Text truncate weight="semibold" title={entry.label}>{entry.label}</Text>
+            <Tooltip content={entry.label} relationship="label">
+              <Text truncate weight="semibold" tabIndex={0}>{entry.label}</Text>
+            </Tooltip>
             <Text size={200} className="text-fui-fg3 shrink-0 uppercase tracking-wide">{t('dashboard.upstreamEditor.codex.activeLimit')}</Text>
           </div>
           {entry.windows.map(item => {

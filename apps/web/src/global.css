@@ -1,3 +1,47 @@
+/* The app's global stylesheet: everything that is true of the document rather
+   than of a component. Three things live here and nothing else does.
+
+   The webfont, first, because a face has to be declared before anything is set
+   in it. Then UnoCSS's generated utilities, which the `@unocss` directive
+   stands in for. Then the app's own custom properties and element defaults --
+   the values that are Floway's rather than Fluent's or WinUI's, and the resets
+   that make an element behave the same wherever it appears.
+
+   Order is load-bearing and is the order the two files this replaces were
+   imported in: the utilities come after the font so a utility can override a
+   face, and before the app's own rules so those can override a utility. The
+   WinUI layer arrives later still, as a style element in ../root.tsx, and
+   Griffel later than that at runtime. */
+
+/* Segoe UI Variable is the typeface Fluent's type ramp is drawn for. Without a
+   webfont only Windows 11 renders the dashboard as designed; everyone else
+   falls back through the stack to Helvetica or Roboto.
+
+   Microsoft publishes the variable face from Learn's static tree, and mirrors
+   it byte-for-byte at the same path on Azure China. We point at the mirror:
+   learn.microsoft.com is fronted by Akamai, which maps mainland clients onto
+   European and US edges, while this host stays on Microsoft's own AS8075.
+   Measured from China Telecom in Nanjing that is 1.0 s against 3.4 s; from
+   Tokyo and Hong Kong the two are within noise of each other.
+   https://learn.microsoft.com/en-us/typography/font-list/segoe-ui-variable
+
+   TrueType is the only container upstream — there is no woff2 of the variable
+   face. It costs less than it looks: the CDN gzips it to 1.05 MB against the
+   949 KB woff2 on microsoft.design, and that host answers a large share of
+   mainland requests with a Cloudflare challenge instead of the font.
+
+   Declaring no font-variation-settings is deliberate. The face carries an
+   `opsz` axis over 5-36, so the initial `font-optical-sizing: auto` drives it
+   from the used font size and the ramp gets Small, Text and Display
+   continuously rather than at two pinned stops. */
+@font-face {
+  font-family: 'Segoe UI Variable Web';
+  src: url('https://docs.azure.cn/static/third-party/SegoeUIVariable/SegoeUI-VF.ttf?floway-vf=2.02') format('truetype');
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+}
+
 @unocss;
 
 /* The monospace ramp. WinUI states none -- it has no code face -- so this is the

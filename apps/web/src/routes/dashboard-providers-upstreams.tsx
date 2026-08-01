@@ -371,16 +371,19 @@ function UpstreamsTable({
               <TableCell><ProviderBadge color={record.color} kind={record.kind} /></TableCell>
               <TableCell className="overflow-hidden">
                 <div className="grid gap-[3px] min-w-0 max-w-[520px]">
-                  <Link
-                    className="text-fui-fg1 no-underline hover:underline truncate"
-                    title={record.name}
-                    to={`/dashboard/providers/upstreams/${encodeURIComponent(record.id)}`}
-                  >
-                    {record.name}
-                  </Link>
-                  <Text size={200} className="text-fui-fg3 truncate max-w-full" title={upstreamSummary(record, t)}>
-                    {upstreamSummary(record, t)}
-                  </Text>
+                  <Tooltip content={record.name} relationship="label">
+                    <Link
+                      className="text-fui-fg1 no-underline hover:underline truncate"
+                      to={`/dashboard/providers/upstreams/${encodeURIComponent(record.id)}`}
+                    >
+                      {record.name}
+                    </Link>
+                  </Tooltip>
+                  <Tooltip content={upstreamSummary(record, t)} relationship="label">
+                    <Text size={200} className="text-fui-fg3 truncate max-w-full" tabIndex={0}>
+                      {upstreamSummary(record, t)}
+                    </Text>
+                  </Tooltip>
                 </div>
               </TableCell>
               <TableCell>
