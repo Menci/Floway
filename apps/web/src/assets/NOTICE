@@ -1,3 +1,43 @@
+The five logo marks are taken from microsoft/fluentui-emoji at commit
+62ecdc0d7ca5c6df32148c169556bc8d3782fca4, in the Color style, which is the
+design Windows 11 renders:
+
+- emoji-cherry-blossom.svg
+  https://github.com/microsoft/fluentui-emoji/blob/62ecdc0d7ca5c6df32148c169556bc8d3782fca4/assets/Cherry%20blossom/Color/cherry_blossom_color.svg
+- emoji-blossom.svg
+  https://github.com/microsoft/fluentui-emoji/blob/62ecdc0d7ca5c6df32148c169556bc8d3782fca4/assets/Blossom/Color/blossom_color.svg
+- emoji-hibiscus.svg
+  https://github.com/microsoft/fluentui-emoji/blob/62ecdc0d7ca5c6df32148c169556bc8d3782fca4/assets/Hibiscus/Color/hibiscus_color.svg
+- emoji-snowflake.svg
+  https://github.com/microsoft/fluentui-emoji/blob/62ecdc0d7ca5c6df32148c169556bc8d3782fca4/assets/Snowflake/Color/snowflake_color.svg
+- emoji-broccoli.svg
+  https://github.com/microsoft/fluentui-emoji/blob/62ecdc0d7ca5c6df32148c169556bc8d3782fca4/assets/Broccoli/Color/broccoli_color.svg
+
+Each is passed through svgo 4.0.2 with --precision=2 --multipass, which halves
+the byte count and changes no drawn shape. The artwork is otherwise verbatim.
+
+MIT License
+
+Copyright (c) Microsoft Corporation.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
 The following assets are taken from lobe-icons at commit
 a88f09a2892016a74f4c20f096c167c88f6c19c1:
 
