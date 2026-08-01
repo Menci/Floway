@@ -149,9 +149,12 @@ export const tableCss = `
    above outranks, so without this the row would lose its one forced-colours
    state rather than gain WinUI's.
 
-   The header is left to the user agent: WinUI has no sortable column header to
-   transcribe, and forcing the header cell's fill onto Canvas is what that mode
-   does with a fill nobody claims.
+   The header's own pinned foreground needs no answer here, because the mode
+   already produces the same one: forced colours repaints every \`color\` it
+   reaches, so the header label's rest and hovered values both arrive at
+   CanvasText, which is the one-foreground result the rule above states. The
+   body row is the case that does need writing out, since Highlight against
+   HighlightText is a pair the mode never arrives at on its own.
 
    A media query carries no specificity, so each selector repeats the shape of
    the rule it answers.
