@@ -121,7 +121,7 @@
 // forces a narrower scope: the layer's vocabulary is independent of where
 // Fluent chooses to declare its theme.
 
-import { COLLAPSE_ANIMATION_MS, CONTROL_FASTER_ANIMATION_MS, CONTROL_FAST_ANIMATION_MS, CONTROL_FAST_OUT_SLOW_IN_EASING, CONTROL_NORMAL_ANIMATION_MS, EXPAND_ANIMATION_MS, REPOSITION_ANIMATION_MS, REPOSITION_EASING } from './motion';
+import { COLLAPSE_ANIMATION_MS, CONTROL_FASTER_ANIMATION_MS, CONTROL_FAST_ANIMATION_MS, CONTROL_FAST_OUT_SLOW_IN_EASING, CONTROL_NORMAL_ANIMATION_MS, EXPAND_ANIMATION_MS, PAGE_ENTER_EASING, PAGE_ENTER_MS, PAGE_ENTER_OFFSET_PX, PAGE_LEAVE_EASING, PAGE_LEAVE_MS, REPOSITION_ANIMATION_MS, REPOSITION_EASING } from './motion';
 
 // The selector half of the opt-out documented above: appended to a rule's
 // subject compound, it stops the rule at the boundary of an opted-out subtree.
@@ -631,6 +631,11 @@ export const winuiTokenCss = `
   --winui-collapse-animation-duration: ${COLLAPSE_ANIMATION_MS}ms;
   --winui-reposition-animation-duration: ${REPOSITION_ANIMATION_MS}ms;
   --winui-reposition-easing: ${REPOSITION_EASING};
+  --winui-page-leave-duration: ${PAGE_LEAVE_MS}ms;
+  --winui-page-leave-easing: ${PAGE_LEAVE_EASING};
+  --winui-page-enter-duration: ${PAGE_ENTER_MS}ms;
+  --winui-page-enter-easing: ${PAGE_ENTER_EASING};
+  --winui-page-enter-offset: ${PAGE_ENTER_OFFSET_PX}px;
 }
 
 /* Button padding. XAML thicknesses read left,top,right,bottom while the CSS

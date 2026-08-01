@@ -75,3 +75,32 @@ export const INDICATOR_REACH_MS = Math.round(INDICATOR_DURATION_MS * INDICATOR_P
 export const INDICATOR_SETTLE_MS = INDICATOR_DURATION_MS - INDICATOR_REACH_MS;
 export const INDICATOR_STRETCH_EASING = 'cubic-bezier(0.9, 0.1, 1, 0.2)';
 export const INDICATOR_SETTLE_EASING = 'cubic-bezier(0.1, 0.9, 0.2, 1)';
+
+// EntranceNavigationTransitionInfo -- what a frame plays when it navigates
+// forward, and the one animation here whose numbers are literals in the source
+// rather than a dictionary entry or a PVL record.
+//
+// Two things are worth stating because they are easy to get wrong. The
+// animation is strictly sequential, not a cross-fade: the outgoing frame's
+// opacity is splined to zero over the first 150, and the incoming frame is held
+// at zero for exactly that long. And the incoming frame does not fade in at
+// all. Its opacity is a pair of DISCRETE key frames -- 0 at 0, 1 at 150 -- so
+// it appears whole at the moment the outgoing one is gone, and the only thing
+// that then animates is the 140 it travels up. A fade-in belongs to back
+// navigation, which splines opacity across the second leg and translates
+// nothing.
+//
+// The two curves are the source's own point pairs, each two points of a
+// KeySpline and so directly the two control points of a CSS cubic-bezier. The
+// incoming one is the same curve as REPOSITION_EASING above, arrived at from a
+// different direction: WinJS's enterPage, Fluent's curveDecelerateMax and the
+// reposition record decoded from the shipped style all state it, and nothing
+// found disputes it. They stay separate constants because they are separate
+// declarations with separate owners.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/phone/lib/ThemeTransitions.cpp#L3179-L3186
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/phone/lib/ThemeTransitions.cpp#L3194-L3206
+export const PAGE_LEAVE_MS = 150;
+export const PAGE_ENTER_MS = 300;
+export const PAGE_ENTER_OFFSET_PX = 140;
+export const PAGE_LEAVE_EASING = 'cubic-bezier(0.7, 0, 1, 0.5)';
+export const PAGE_ENTER_EASING = 'cubic-bezier(0.1, 0.9, 0.2, 1)';

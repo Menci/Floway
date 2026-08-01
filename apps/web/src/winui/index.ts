@@ -23,12 +23,13 @@ import { textCss } from './controls/text.css';
 import { toastCss } from './controls/toast.css';
 import { toolbarCss } from './controls/toolbar.css';
 import { tooltipCss } from './controls/tooltip.css';
+import { pageTransitionCss } from './page-transition.css';
 import { winuiResetCss } from './reset.css';
 import { winuiTokenCss } from './tokens';
 
 // The whole override layer as one stylesheet: the box-model reset first, then
 // the token vocabulary, so a reader meets the `--winui-*` names before the
-// rules that spend them, then the controls. Order beyond that carries no meaning — every rule doubles its
+// rules that spend them, then the app's own frame motion, then the controls. Order beyond that carries no meaning — every rule doubles its
 // subject's class, so none of them is resolved against another by document
 // order. See ./tokens.ts for the selector convention every rule here follows.
 // The document head is where this lands, next to the app's other critical
@@ -51,6 +52,7 @@ import { winuiTokenCss } from './tokens';
 export const winuiCss = [
   winuiResetCss,
   winuiTokenCss,
+  pageTransitionCss,
   accordionCss,
   badgeTagCss,
   buttonCss,
