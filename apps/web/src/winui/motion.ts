@@ -1,10 +1,11 @@
 // The WinUI 3 motion vocabulary, as values.
 //
-// ./tokens.ts publishes the first group below as custom properties so a CSS
-// rule can name a duration, and ./presence.ts and the measured indicators read
-// them as numbers, because a Web Animations keyframe takes a number and a
-// `var()` is a string the animation API will not resolve. Declaring them here
-// and interpolating them there is what keeps the two forms one value.
+// ./tokens.ts publishes these as custom properties so a CSS rule can name a
+// duration, and ./presence.ts and the measured indicators read them as numbers,
+// because a Web Animations keyframe takes a number and a `var()` is a string
+// the animation API will not resolve. Declaring them here and interpolating
+// them there is what keeps the two forms one value. The indicator group is the
+// exception: nothing states it in CSS, so it is not published.
 
 // The durations and the easing every WinUI control shares. WinUI states a
 // duration as a XAML timespan and an easing as a KeySpline, whose four numbers
@@ -17,16 +18,11 @@ export const CONTROL_FASTER_ANIMATION_MS = 83;
 export const CONTROL_FAST_OUT_SLOW_IN_EASING = 'cubic-bezier(0, 0, 0, 1)';
 
 // Expander's own open and close, which are not the control durations above and
-// are not symmetric. The content travels by its own height under a static clip,
-// The close carries its own spline, cubic-bezier(1, 1, 0, 1), which is not
-// transcribed and is not published here: it creeps for a third of its run and
-// then snaps, because its time mapping is stationary at the midpoint. Under
-// WinUI's fixed-height clip that is a flick of content; the consumer here
-// animates a height, where it would jolt the page below, and says so at the
-// rule that departs. Which end of the height it travels from depends on the expand
-// direction, so the durations and splines are what carries over rather than the
-// offsets: the four states in ExpandStates state the same 333 and 167 whichever
-// way the content opens.
+// are not symmetric. Which end of the height the content travels from depends
+// on the expand direction, so the durations are what carries over rather than
+// the offsets: the four states in ExpandStates state the same 333 and 167
+// whichever way the content opens. WinUI's closing spline is not transcribed
+// and so is not published here; the rule that departs says why.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander.xaml#L33-L90
 export const EXPAND_ANIMATION_MS = 333;
 export const COLLAPSE_ANIMATION_MS = 167;

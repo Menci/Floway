@@ -132,7 +132,6 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
     {kind !== 'image' && <SettingsExpander
       action={<SettingsSwitch checked={values.manualMetadata} disabled={saving} label={t('dashboard.modelAliases.metadata.manual')} onChange={setManual} />}
       description={t('dashboard.modelAliases.metadata.description')}
-      expandLabel={t('dashboard.modelAliases.metadata.heading')}
       icon={<Info24Regular />}
       header={t('dashboard.modelAliases.metadata.heading')}
       revealOn={errors.announcedMetadata !== undefined}

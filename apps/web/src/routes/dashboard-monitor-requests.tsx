@@ -1,4 +1,4 @@
-import { DismissRegular, KeyMultipleRegular } from '@fluentui/react-icons';
+import { DismissRegular } from '@fluentui/react-icons';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, redirect, useNavigate, useSearchParams } from 'react-router';
@@ -15,6 +15,7 @@ import { useDumpSubscription } from '../components/requests/use-dump-subscriptio
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyState } from '../components/ui/empty-state';
 import { PANE_GAP_CLASS } from '../components/ui/layout';
+import { OpenLinkLabel } from '../components/ui/open-link-label';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { fluentComponents } from '../fluent';
@@ -142,7 +143,10 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
       ) : keys.length === 0 ? (
         <Panel className="!grid">
           <EmptyState
-            action={<Link to="/dashboard/services/api-keys"><Button appearance="primary" icon={<KeyMultipleRegular />}>{t('dashboard.requests.goToApiKeys')}</Button></Link>}
+            action={<Link className="text-fui-brand1 no-underline hover:underline" to="/dashboard/services/api-keys">
+              <OpenLinkLabel>{t('dashboard.requests.goToApiKeys')}</OpenLinkLabel>
+            </Link>}
+            align="start"
             description={t('dashboard.requests.noKeysDescription')}
             title={t('dashboard.requests.noKeys')}
           />

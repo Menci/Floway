@@ -277,7 +277,6 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
         </Dropdown>}
         defaultOpen={draft.provider !== 'disabled'}
         description={t('dashboard.searchConfig.providerHint')}
-        expandLabel={t('dashboard.searchConfig.providerLabel')}
         header={t('dashboard.searchConfig.providerLabel')}
         icon={<GlobeSearch24Regular />}
         toggledOn={draft.provider !== 'disabled'}
@@ -310,7 +309,6 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
         />}
         defaultOpen={draft.passthroughOpenAiSearch.enabled}
         description={t('dashboard.searchConfig.passthrough.description')}
-        expandLabel={t('dashboard.searchConfig.passthrough.title')}
         header={t('dashboard.searchConfig.passthrough.title')}
         icon={<ArrowRouting24Regular />}
         toggledOn={draft.passthroughOpenAiSearch.enabled}

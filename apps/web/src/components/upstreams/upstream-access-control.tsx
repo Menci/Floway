@@ -87,7 +87,6 @@ export function UpstreamAccessControl({
         onChange={toggleOverride}
       />}
       description={t('dashboard.upstreamAccess.description')}
-      expandLabel={t('dashboard.upstreamAccess.title')}
       header={t('dashboard.upstreamAccess.title')}
       icon={<ShieldKeyhole24Regular />}
       revealOn={error !== null}

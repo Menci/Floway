@@ -154,7 +154,6 @@ describe('readableTone', () => {
   const chip = (hue: string, card: string) => blendHex(hue, 0.1, card);
   const CARD_LIGHT = '#FFFFFF';
   const CARD_DARK = '#373737';
-  const ratio = contrast;
   const toned = (hue: string, card: string) => readableTone(hue, chip(hue, card));
 
   it('returns the colour untouched when it already reads', () => {
@@ -165,10 +164,10 @@ describe('readableTone', () => {
   it('darkens a mid hue for a light surface and lightens it for a dark one', () => {
     const light = toned('#C239B3', CARD_LIGHT);
     const dark = toned('#C239B3', CARD_DARK);
-    expect(ratio('#C239B3', chip('#C239B3', CARD_LIGHT))).toBeLessThan(4.5);
-    expect(ratio('#C239B3', chip('#C239B3', CARD_DARK))).toBeLessThan(4.5);
-    expect(ratio(light, chip('#C239B3', CARD_LIGHT))).toBeGreaterThanOrEqual(4.5);
-    expect(ratio(dark, chip('#C239B3', CARD_DARK))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast('#C239B3', chip('#C239B3', CARD_LIGHT))).toBeLessThan(4.5);
+    expect(contrast('#C239B3', chip('#C239B3', CARD_DARK))).toBeLessThan(4.5);
+    expect(contrast(light, chip('#C239B3', CARD_LIGHT))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(dark, chip('#C239B3', CARD_DARK))).toBeGreaterThanOrEqual(4.5);
     expect(hexToRgb(light)![0]).toBeLessThan(hexToRgb('#C239B3')![0]);
     expect(hexToRgb(dark)![0]).toBeGreaterThan(hexToRgb('#C239B3')![0]);
   });
@@ -183,7 +182,7 @@ describe('readableTone', () => {
     // Darkening always works, because every hue reaches black. Even a saturated
     // yellow, which looks like the hard case, is solved by value alone.
     const result = toned('#FFD740', CARD_LIGHT);
-    expect(ratio(result, chip('#FFD740', CARD_LIGHT))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(result, chip('#FFD740', CARD_LIGHT))).toBeGreaterThanOrEqual(4.5);
     const [, sourceSaturation] = rgbToHsv(...hexToRgb('#FFD740')!);
     const [, resultSaturation] = rgbToHsv(...hexToRgb(result)!);
     expect(resultSaturation).toBeCloseTo(sourceSaturation, 1);
@@ -193,8 +192,8 @@ describe('readableTone', () => {
     // A fully saturated blue reads 1.44:1 on its own chip at full value, and its
     // channels are already at their limit, so the search has to desaturate.
     const result = toned('#0000FF', CARD_DARK);
-    expect(ratio('#0000FF', chip('#0000FF', CARD_DARK))).toBeLessThan(1.5);
-    expect(ratio(result, chip('#0000FF', CARD_DARK))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast('#0000FF', chip('#0000FF', CARD_DARK))).toBeLessThan(1.5);
+    expect(contrast(result, chip('#0000FF', CARD_DARK))).toBeGreaterThanOrEqual(4.5);
     const [, sourceSaturation] = rgbToHsv(...hexToRgb('#0000FF')!);
     const [, resultSaturation] = rgbToHsv(...hexToRgb(result)!);
     expect(resultSaturation).toBeLessThan(sourceSaturation);
@@ -203,7 +202,7 @@ describe('readableTone', () => {
   it('reaches the floor for every preset the picker offers, in both schemes', () => {
     for (const preset of ['#FFD740', '#00E676', '#00E5FF', '#A78BFA', '#FF5252', '#FF9800']) {
       for (const card of [CARD_LIGHT, CARD_DARK]) {
-        expect(ratio(toned(preset, card), chip(preset, card))).toBeGreaterThanOrEqual(4.5);
+        expect(contrast(toned(preset, card), chip(preset, card))).toBeGreaterThanOrEqual(4.5);
       }
     }
   });
@@ -230,11 +229,10 @@ describe('blendHex', () => {
 });
 
 describe('readableTone on a mid surface', () => {
-  const contrastWith = contrast;
-
   it('never returns a malformed hex when saturation runs out', () => {
-    // The loop used to test its terminal condition after the body, so the last
-    // pass ran at a negative saturation and overflowed a channel past 255.
+    // A grey surface is the case that exhausts the search: neither direction
+    // clears the floor at full saturation, so the loop runs to its last pass,
+    // where a saturation off by one step would overflow a channel past 255.
     for (const surface of ['#787878', '#808080', '#6E6E6E', '#949494']) {
       for (const hue of ['#0000FF', '#00FF00', '#FF0000', '#FFFF00']) {
         expect(readableTone(hue, surface)).toMatch(/^#[0-9A-F]{6}$/);
@@ -263,9 +261,9 @@ describe('readableTone on a mid surface', () => {
     // Between luminance 0.183 and 0.5 white misses 4.5 and black clears it, so
     // a light-versus-dark test would search the direction that cannot arrive.
     const surface = '#787878';
-    expect(contrastWith('#FFFFFF', surface)).toBeLessThan(4.5);
-    expect(contrastWith('#000000', surface)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast('#FFFFFF', surface)).toBeLessThan(4.5);
+    expect(contrast('#000000', surface)).toBeGreaterThanOrEqual(4.5);
     const result = readableTone('#0000FF', surface);
-    expect(contrastWith(result, surface)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(result, surface)).toBeGreaterThanOrEqual(4.5);
   });
 });

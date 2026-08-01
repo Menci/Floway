@@ -315,12 +315,11 @@ export function SettingsCard({ action, description, header, icon, onClick }: {
 // gets there -- which the DOM does not do on its own, so the chevron is its own
 // button rather than the header being one.
 // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml
-export function SettingsExpander({ action, children, defaultOpen = false, description, expandLabel, header, icon, revealOn, toggledOn }: {
+export function SettingsExpander({ action, children, defaultOpen = false, description, header, icon, revealOn, toggledOn }: {
   action?: ReactNode;
   children: ReactNode;
   defaultOpen?: boolean;
   description?: string;
-  expandLabel: string;
   header: ReactNode;
   icon?: ReactNode;
   /**
@@ -370,7 +369,7 @@ export function SettingsExpander({ action, children, defaultOpen = false, descri
           it; in the DOM the click would carry on to the header, so it is
           stopped here -- the switch throws without the row opening. */}
       {action !== undefined && <span onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>{action}</span>}
-      <span aria-hidden className={styles.chevron} title={expandLabel}>
+      <span aria-hidden className={styles.chevron}>
         <svg className={mergeClasses(styles.chevronGlyph, open && styles.chevronOpen)} width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
           <path d="M3.15 5.65c.2-.2.5-.2.7 0L8 9.79l4.15-4.14a.5.5 0 0 1 .7.7l-4.5 4.5a.5.5 0 0 1-.7 0l-4.5-4.5a.5.5 0 0 1 0-.7Z" />
         </svg>

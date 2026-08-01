@@ -24,7 +24,6 @@ const { Text } = fluentComponents;
 // avoid for itself.
 export const errorShellCriticalCss = `
   .floway-error-shell {
-    box-sizing: border-box;
     display: grid;
     align-content: center;
     justify-items: center;
@@ -34,7 +33,6 @@ export const errorShellCriticalCss = `
     margin: 0 auto;
     max-width: 720px;
     padding: 64px 24px;
-    text-align: center;
   }
   .floway-error-shell > * { min-width: 0; max-width: 100%; }
   .floway-error-shell-viewport { height: 100dvh; }
@@ -53,7 +51,8 @@ export function ErrorShell({ action, children, message, title }: PropsWithChildr
       {/* Filling the scroller rather than the window. Its viewport is shorter
           than the window whenever a scrollbar takes width, so a child measured
           against the window is permanently taller than its container and the
-          bar can never retract. `min-h-max` keeps a long trace scrolling. */}
+          bar can never retract. The shell's own `min-height: max-content` is
+          what keeps a long trace scrolling. */}
       <main className="floway-error-shell">
         <div className="floway-error-shell-stack">
           {/* `align` rather than a rule of our own: Fluent's Text emits a

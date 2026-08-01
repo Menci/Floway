@@ -107,9 +107,8 @@ export const listCss = `
    state that selects it -- a pseudo-element cannot.
 
    Fluent draws no indicator on a list item at all, so this is entirely the
-   layer's own motion so its timing is stated unconditionally and
-   clamped under reduce — see ../index.ts for the two shapes and which is
-   which.
+   layer's own motion: its timing is stated unconditionally and clamped under
+   reduce -- see ../index.ts for the two shapes and which is which.
    https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/dxaml/lib/ListViewBaseItemPresenter_Partial.cpp#L891-L1022 */
 .fui-ListItem.fui-ListItem[aria-selected='true']::before {
   animation:

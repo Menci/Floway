@@ -138,7 +138,7 @@ function ScrollableListbox({
           https://www.24a11y.com/2019/select-your-poison-part-2/ */}
       <div className="floway-combobox-listbox-content">
         {Children.toArray(children).length === 0
-          ? <Option disabled value="">{t(freeform === true ? 'common.noSuggestions' : 'common.noOptions')}</Option>
+          ? <Option disabled value="">{t(freeform ? 'common.noSuggestions' : 'common.noOptions')}</Option>
           : children}
       </div>
     </div>,

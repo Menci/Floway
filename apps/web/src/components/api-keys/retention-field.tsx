@@ -171,7 +171,7 @@ export function RetentionField({
   return <>
     {children === undefined
       ? <SettingsCard action={action} description={description} header={label} icon={icon} />
-      : <SettingsExpander action={action} description={description} expandLabel={label} header={label} icon={icon}>{children}</SettingsExpander>}
+      : <SettingsExpander action={action} description={description} header={label} icon={icon}>{children}</SettingsExpander>}
     {invalid && <Text className={dangerText} role="alert" size={200}>{t('dashboard.apiKeys.retention.invalid')}</Text>}
   </>;
 }

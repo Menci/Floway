@@ -85,8 +85,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
             second-and-a-bit: global.css is served through Vite's transform
             while this block is part of the document, so anything the first
             paint depends on has to be here rather than in a utility class.
-            The body's own margin is the clearest case -- left to `m-0` it is
-            the user agent's 8px until the stylesheet lands, which reads as a
+            The body's own margin is the clearest case -- left to a utility it
+            is the user agent's 8px until the stylesheet lands, which reads as a
             white border around the whole app. */}
         <style>{`
           html, body { height: 100%; overflow: hidden; }
@@ -102,7 +102,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         `}</style>
         <style>{winuiCss}</style>
       </head>
-      <body className="text-[14px] m-0">
+      <body className="text-[14px]">
         <FluentProvider theme={theme}>
           <BrowserLanguageSync />
           <GradientBackground>{children}</GradientBackground>
@@ -134,8 +134,7 @@ export function HydrateFallback() {
 // party to the exchange. An error boundary is not: it renders in place of the
 // tree during hydration itself, so React finds a page where it expected a
 // spinner, refuses the tree it was given and rebuilds it from scratch -- a
-// hydration mismatch, and for the frames it lasts the page is half styled,
-// which is why this surfaced as an alignment fault.
+// hydration mismatch, and for the frames it lasts the page is half styled.
 //
 // Hydrating the fallback first and showing the failure on the pass after keeps
 // the exchange the one React already handles. Read through

@@ -332,10 +332,9 @@ export const selectCss = `
 /* The drop-down's reveal. WinUI does not slide or fade a ComboBox popup: it
    runs SplitOpenThemeAnimation, which holds the popup opaque from the first
    frame and grows a vertical clip out of a band half the list's height. 250ms
-   on the fast-out-slow-in spline; the
-   same constants the menu's reveal uses, and unrelated to the
-   PopupThemeTransition whose timing ../presence.ts declines to guess at, which
-   ComboBox never invokes.
+   on the fast-out-slow-in spline; the same constants the menu's reveal uses,
+   and unrelated to the PopupThemeTransition whose timing ../presence.ts
+   declines to guess at, which ComboBox never invokes.
 
    WinUI's split is centred on the FIELD, not on the popup: it aligns the
    selected item over the faceplate and grows out from there, which is what
@@ -372,27 +371,19 @@ export const selectCss = `
    itself -- the same gate Radix puts on its own popper content, for the same
    reason.
 
-   32px is headroom over what shadow16 needs. A blur radius spreads a shadow by
-   about its own length past the offset edge -- the transition it paints is
-   roughly twice the radius wide and centred on that edge -- so shadow16's key
-   term, 0 8px 16px, reaches about 24px below the border box and 16px to either
-   side, and its ambient term, 0 0 2px, about 2px all round. A deeper elevation
-   would need more: shadow28's key term, 0 14px 28px, reaches about 42px.
+   32px is headroom over what shadow16 needs -- the derivation is written once,
+   at the same constant in ./menu.css.ts. The leading edge nonetheless starts on
+   the border box rather than outside it: a clip that opened at -32px would show
+   a band of the popup's own shadow before any of the list it belongs to. It
+   reaches -32px by the end, so the shadow grows in with the content it is cast
+   by.
+
+   The reveal starts from half the list, not from none of it: WinUI's clip opens
+   at a scale of ClosedRatio, 0.50, and grows to cover, so half the popup is
+   already on screen at the first frame and the animation only finishes it.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L517-L528
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/SplitOpenThemeAnimation_Partial.h#L16-L17
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/ThemeAnimations.cpp#L596-L721
-   https://www.w3.org/TR/css-backgrounds-3/#shadow-blur
-   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/tokens/src/utils/shadows.ts */
-/* The reveal starts from half the list, not from none of it. WinUI's clip opens
-   at a scale of ClosedRatio, 0.50, and grows to cover -- so half the popup is
-   already on screen at the first frame and the animation only finishes it. Over
-   the same 250ms an unfurl that started from zero travels twice as far, which
-   is what made this read as a longer motion than the one it transcribes.
-
-   The leading edge starts on the border box rather than outside it: a clip that
-   opened at -32px would show a band of the popup's own shadow before any of the
-   list it belongs to. It reaches -32px by the end, so the shadow grows in with
-   the content it is cast by. */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/ThemeAnimations.cpp#L596-L721 */
 @keyframes floway-combobox-listbox-reveal {
   from {
     clip-path: inset(

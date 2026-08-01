@@ -304,7 +304,7 @@ const editorFieldIssue = (model: UpstreamModelConfig): string | null => {
   return null;
 };
 
-export const modelValidationError = (model: UpstreamModelConfig, t: ReturnType<typeof useTranslation>['t']): string | null => {
+const modelValidationError = (model: UpstreamModelConfig, t: ReturnType<typeof useTranslation>['t']): string | null => {
   const issue = editorFieldIssue(model);
   if (issue) return t(issue);
   try {
