@@ -28,6 +28,7 @@ import { Dropdown, Input, Textarea } from '../ui/fluent-form-controls';
 import { TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SecretInput } from '../ui/secret-input';
+import { SectionHeader } from '../ui/section-header';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-copy-to-clipboard';
 import { ProviderIcon, providerLabel } from '../upstreams/provider-badge';
@@ -123,28 +124,31 @@ function CustomApiPaths({ onRefreshModels }: { onRefreshModels: () => void }) {
   return (
     <div className="grid gap-4">
       <EndpointPicker />
-      <Controller control={control} name={'config.modelsFetch.enabled' as never} render={({ field }) => (
-        <Switch
-          checked={Boolean(field.value)}
-          label={t('dashboard.upstreamEditor.fields.fetchModels')}
-          onChange={(_, data) => {
-            field.onChange(data.checked);
-            if (data.checked) onRefreshModels();
-          }}
-        />
-      )} />
-      <Field label={t('dashboard.upstreamEditor.fields.modelsPath')}>
-        <Controller control={control} name={'config.modelsFetch.endpoint' as never} render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="/v1/models" ref={field.ref} value={typeof field.value === 'string' ? field.value : ''} />} />
-      </Field>
+      {/* The path and the switch that turns fetching on are one decision, so
+          they sit together, and the path comes first: it is what the switch
+          acts on. */}
+      <div className="grid gap-2">
+        <Field label={t('dashboard.upstreamEditor.fields.modelsPath')}>
+          <Controller control={control} name={'config.modelsFetch.endpoint' as never} render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="/v1/models" ref={field.ref} value={typeof field.value === 'string' ? field.value : ''} />} />
+        </Field>
+        <Controller control={control} name={'config.modelsFetch.enabled' as never} render={({ field }) => (
+          <Switch
+            checked={Boolean(field.value)}
+            label={t('dashboard.upstreamEditor.fields.fetchModels')}
+            onChange={(_, data) => {
+              field.onChange(data.checked);
+              if (data.checked) onRefreshModels();
+            }}
+          />
+        )} />
+      </div>
       <div
         aria-describedby={`${idPrefix}-hint`}
         aria-labelledby={`${idPrefix}-label`}
         className="grid gap-1.5"
         role="group"
       >
-        <Text id={`${idPrefix}-label`}>
-          {t('dashboard.upstreamEditor.fields.pathOverrides')}
-        </Text>
+        <SectionHeader level={3} title={t('dashboard.upstreamEditor.fields.pathOverrides')} titleId={`${idPrefix}-label`} />
         <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
           {pathOverrideKeys.map(path => (
             <Controller
@@ -154,7 +158,7 @@ function CustomApiPaths({ onRefreshModels }: { onRefreshModels: () => void }) {
               render={({ field }) => (
                 <Field className="min-w-0" label={{ children: path, className: monoLabel }}>
                   <Input
-                    className="!w-full"
+                    className="!w-full font-mono"
                     placeholder={`/v1${path}`}
                     size="small"
                     value={typeof field.value === 'string' ? field.value : ''}
@@ -259,10 +263,8 @@ function EndpointPicker() {
   const config = useWatch({ control, name: 'config' });
   const customConfig = config as Extract<UpstreamRecord, { kind: 'custom' }>['config'];
   const value = customConfig.endpoints;
-  return <div className="grid gap-1" role="group" aria-labelledby={`${idPrefix}-label`}>
-    <Text id={`${idPrefix}-label`} size={300}>
-      {t('dashboard.upstreamEditor.fields.defaultEndpoints')}
-    </Text>
+  return <div className="grid gap-1.5" role="group" aria-labelledby={`${idPrefix}-label`}>
+    <SectionHeader level={3} title={t('dashboard.upstreamEditor.fields.defaultEndpoints')} titleId={`${idPrefix}-label`} />
     <div className="grid gap-1">
       {endpointOptions.map(([key, label]) => {
         const selected = value[key] !== undefined;
