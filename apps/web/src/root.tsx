@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   isRouteErrorResponse,
@@ -119,8 +119,21 @@ export function HydrateFallback() {
   return <AppLoadingScreen label={t('common.loading')} />;
 }
 
+// The prerendered index.html carries HydrateFallback's boot screen, because
+// every path in the SPA starts from that one file. A route that resolves
+// normally swaps the fallback for its content through the router, and React is
+// party to the exchange. An error boundary is not: it renders in place of the
+// tree during hydration itself, so React finds a page where it expected a
+// spinner, refuses the tree it was given and rebuilds it from scratch -- a
+// hydration mismatch, and for the frames it lasts the page is half styled,
+// which is why this surfaced as an alignment fault.
+//
+// Hydrating the fallback first and showing the failure on the pass after keeps
+// the exchange the one React already handles.
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   const { t } = useTranslation();
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => setHydrated(true), []);
   let message = t('common.errors.unexpectedTitle');
   let details = t('common.errors.unexpectedDescription');
   let stack: string | undefined;
@@ -135,6 +148,8 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
     details = error.message;
     stack = error.stack;
   }
+
+  if (!hydrated) return <AppLoadingScreen label={t('common.loading')} />;
 
   return (
     <ErrorShell
