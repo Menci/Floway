@@ -238,7 +238,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
             the credential gates are submit-time schema issues, so Save is the
             only thing that can raise them. */}
         <div className="ml-auto flex items-center gap-2">
-          <Button appearance="primary" disabled={saving || (data.mode === 'edit' && !hasUnsavedChanges)} icon={saving ? <Spinner size="tiny" /> : <SaveRegular />} onClick={() => void submitForm()}>{saving ? t('dashboard.upstreamEditor.actions.saving') : t('dashboard.upstreamEditor.actions.save')}</Button>
+          <Button appearance="primary" disabled={saving || (data.mode === 'edit' && !hasUnsavedChanges)} icon={saving ? <Spinner size="tiny" /> : <SaveRegular />} onClick={() => void submitForm()}>{t('dashboard.upstreamEditor.actions.save')}</Button>
         </div>
       </header>
       {saveError && <OutcomeMessageBar onDismiss={() => setSaveError(null)}>{saveError}</OutcomeMessageBar>}

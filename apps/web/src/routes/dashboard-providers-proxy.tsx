@@ -1,3 +1,4 @@
+import { PlugConnectedRegular, SaveRegular } from '@fluentui/react-icons';
 import { useCallback, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -187,8 +188,8 @@ function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
     open={open}
     actions={<DialogActions>
       <Button className="!whitespace-nowrap" disabled={saving || testing} onClick={() => onOpenChange(false)} type="button">{t('common.cancel')}</Button>
-      <Button className="!whitespace-nowrap" disabled={!canTest || saving || testing} icon={testing ? <Spinner size="tiny" /> : undefined} onClick={() => void handleTest()} type="button">{testing ? t('dashboard.proxy.actions.testing') : t('dashboard.proxy.actions.test')}</Button>
-      <Button appearance="primary" className="!whitespace-nowrap" disabled={saving || testing} icon={saving ? <Spinner size="tiny" /> : undefined} type="submit">{saving ? t('dashboard.proxy.actions.saving') : t('dashboard.proxy.actions.save')}</Button>
+      <Button className="!whitespace-nowrap" disabled={!canTest || saving || testing} icon={testing ? <Spinner size="tiny" /> : <PlugConnectedRegular />} onClick={() => void handleTest()} type="button">{t('dashboard.proxy.actions.test')}</Button>
+      <Button appearance="primary" className="!whitespace-nowrap" disabled={saving || testing} icon={saving ? <Spinner size="tiny" /> : <SaveRegular />} type="submit">{t('dashboard.proxy.actions.save')}</Button>
     </DialogActions>}
     onOpenChange={(_, data) => {
       if (!data.open && !saving && !testing && !draftDirty) onOpenChange(data.open);

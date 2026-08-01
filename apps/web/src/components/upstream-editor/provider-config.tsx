@@ -466,7 +466,7 @@ function OAuthConfig({ record, onPatch }: {
     {hasAccount && record.id === '' && <ReadyToSaveHint kind={record.kind} />}
     {hasAccount && <div className="flex flex-wrap items-center gap-2">
       <Button appearance="primary" disabled={refreshing} icon={refreshing ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={() => void refreshCredential()}>
-        {refreshing ? t('dashboard.upstreamEditor.oauth.refreshing') : t('dashboard.upstreamEditor.oauth.refresh')}
+        {t('dashboard.upstreamEditor.oauth.refresh')}
       </Button>
       <Button appearance="secondary" onClick={() => setOpen(value => !value)}>{open ? t('common.cancel') : t('dashboard.upstreamEditor.oauth.reimport')}</Button>
     </div>}

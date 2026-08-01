@@ -159,7 +159,7 @@ export function LoginForm() {
           icon={isSubmitting ? <Spinner size="tiny" /> : undefined}
           type="submit"
         >
-          {isSubmitting ? t('auth.login.submitting') : t('auth.login.submit')}
+          {t('auth.login.submit')}
         </Button>
 
         {/* A step quieter than the form it explains, and with the leading that

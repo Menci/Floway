@@ -39,7 +39,6 @@ const en = {
         password: 'Password',
         passwordPlaceholder: 'Enter your password',
         submit: 'Sign in',
-        submitting: 'Signing in…',
         genericError: 'Unable to sign in. Check the gateway and try again.',
       },
     },
@@ -174,7 +173,6 @@ const en = {
         confirmPassword: 'Confirm password',
         otherDevices: 'Other devices currently logged in as you will be signed out.',
         save: 'Change password',
-        saving: 'Saving…',
         passwordUpdated: 'Password updated. Other devices have been signed out.',
         validation: {
           currentPasswordRequired: 'Current password is required.',
@@ -519,7 +517,6 @@ const en = {
         actions: {
           back: 'Back to upstreams',
           save: 'Save changes',
-          saving: 'Saving…',
           moveUp: 'Move up',
           moveDown: 'Move down',
           remove: 'Remove',
@@ -852,7 +849,6 @@ const en = {
         },
         oauth: {
           refresh: 'Refresh credential',
-          refreshing: 'Refreshing…',
           reimport: 'Re-import credential',
           import: 'Import credential',
           credentialJson: 'Credential JSON',
@@ -895,7 +891,7 @@ const en = {
         closeDetails: 'Close request details',
         noKeys: 'No API key has request retention enabled',
         noKeysDescription: 'Enable request dump retention on an API key to start capturing requests.',
-        goToApiKeys: 'Go to API Keys',
+        apiKeysLink: 'API Keys',
         request: 'Request',
         requestBody: 'Request body',
         response: 'Response',
@@ -1008,7 +1004,6 @@ const en = {
           includePerformanceHint:
               'When enabled, the export will include recorded performance metrics alongside configuration data. Performance data can significantly increase file size.',
           button: 'Export JSON',
-          buttonExporting: 'Exporting…',
           pending: 'Preparing the export',
           success: 'Downloaded {{name}}',
         },
@@ -1032,7 +1027,6 @@ const en = {
           replaceWarning:
               'Replace mode will permanently delete all existing data before importing. This action cannot be undone.',
           button: 'Import Data',
-          buttonImporting: 'Importing…',
           pending: 'Importing the backup file',
           success: 'Import completed: {{summary}}.',
           successEmpty: 'Import completed. The backup file carried no records.',
@@ -1081,7 +1075,6 @@ const en = {
         saving: 'Saving…',
         saveSuccess: 'Search configuration saved.',
         test: 'Test Search',
-        testing: 'Testing…',
         testResults: 'Test Results',
         testBadge: { ok: 'OK', error: 'Error' },
         testedProvider: 'Provider: {{provider}}',
@@ -1169,12 +1162,10 @@ const en = {
         actions: {
           create: 'New Proxy',
           save: 'Save Proxy',
-          saving: 'Saving…',
           saveSuccess: 'Proxy saved.',
           edit: 'Edit',
           editNamed: 'Edit proxy {{name}}',
           test: 'Test',
-          testing: 'Testing…',
           delete: 'Delete',
           deleteNamed: 'Delete proxy {{name}}',
           deleting: 'Deleting…',

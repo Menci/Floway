@@ -39,7 +39,6 @@ const zhHansCN = {
         password: '密码',
         passwordPlaceholder: '输入密码',
         submit: '登录',
-        submitting: '正在登录…',
         genericError: '无法登录。请检查 gateway 后重试。',
       },
     },
@@ -164,7 +163,6 @@ const zhHansCN = {
         confirmPassword: '确认密码',
         otherDevices: '当前以你的账户登录的其他设备将会退出登录。',
         save: '修改密码',
-        saving: '正在保存…',
         passwordUpdated: '密码已更新，其他设备已退出登录。',
         validation: {
           currentPasswordRequired: '必须填写当前密码。',
@@ -495,7 +493,6 @@ const zhHansCN = {
         actions: {
           back: '返回上游列表',
           save: '保存更改',
-          saving: '正在保存…',
           moveUp: '上移',
           moveDown: '下移',
           remove: '移除',
@@ -814,7 +811,6 @@ const zhHansCN = {
         },
         oauth: {
           'refresh': '刷新凭据',
-          'refreshing': '刷新中…',
           reimport: '重新导入凭据',
           import: '导入凭据',
           credentialJson: '凭据 JSON',
@@ -856,7 +852,7 @@ const zhHansCN = {
         closeDetails: '关闭请求详情',
         noKeys: '没有 API 密钥启用请求保留',
         noKeysDescription: '在 API 密钥上启用请求转储保留后，即可开始捕获请求。',
-        goToApiKeys: '前往 API 密钥',
+        apiKeysLink: 'API 密钥',
         request: '请求',
         requestBody: '请求体',
         response: '响应',
@@ -968,7 +964,6 @@ const zhHansCN = {
           includePerformanceHint:
               '启用后，导出文件将包含已记录的性能指标以及配置数据。性能数据可能会显著增加文件大小。',
           button: '导出 JSON',
-          buttonExporting: '正在导出…',
           pending: '正在准备导出',
           success: '已下载 {{name}}',
         },
@@ -990,7 +985,6 @@ const zhHansCN = {
           replaceWarning:
               '替换模式将永久删除所有现有数据后再导入。此操作无法撤销。',
           button: '导入数据',
-          buttonImporting: '正在导入…',
           pending: '正在导入备份文件',
           success: '导入完成：{{summary}}。',
           successEmpty: '导入完成。备份文件中没有任何记录。',
@@ -1032,7 +1026,6 @@ const zhHansCN = {
         saving: '保存中…',
         saveSuccess: '搜索配置已保存。',
         test: '测试搜索',
-        testing: '测试中…',
         testResults: '测试结果',
         testBadge: { ok: '成功', error: '失败' },
         testedProvider: '提供商：{{provider}}',
@@ -1114,12 +1107,10 @@ const zhHansCN = {
         actions: {
           create: '新建代理',
           save: '保存代理',
-          saving: '保存中…',
           saveSuccess: '代理已保存。',
           edit: '编辑',
           editNamed: '编辑代理 {{name}}',
           test: '测试',
-          testing: '测试中…',
           delete: '删除',
           deleteNamed: '删除代理 {{name}}',
           deleting: '删除中…',

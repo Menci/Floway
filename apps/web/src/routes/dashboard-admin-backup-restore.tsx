@@ -307,9 +307,7 @@ export default function DashboardAdminBackupRestore() {
             icon={exporting ? <Spinner size="tiny" /> : <ArrowDownloadRegular />}
             onClick={() => void handleExport()}
           >
-            {exporting
-              ? t('dashboard.backupRestore.export.buttonExporting')
-              : t('dashboard.backupRestore.export.button')}
+            {t('dashboard.backupRestore.export.button')}
           </Button>
         </div>
       </Panel>
@@ -406,9 +404,7 @@ export default function DashboardAdminBackupRestore() {
                 icon={importing ? <Spinner size="tiny" /> : <ArrowUploadRegular />}
                 onClick={handleImportClick}
               >
-                {importing
-                  ? t('dashboard.backupRestore.import.buttonImporting')
-                  : t('dashboard.backupRestore.import.button')}
+                {t('dashboard.backupRestore.import.button')}
               </Button>
             </div>
           </>

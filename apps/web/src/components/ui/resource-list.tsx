@@ -116,7 +116,7 @@ export function ResourceListActions(props: ResourceListActionsProps) {
       <Tooltip content={refreshLabel} relationship="label">
         <Button
           appearance={appearance}
-          aria-label={refreshing ? `${refreshLabel}…` : refreshLabel}
+          aria-label={refreshLabel}
           disabled={busy}
           icon={refreshing ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />}
           onClick={onRefresh}
