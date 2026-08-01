@@ -16,8 +16,6 @@ import { withInteractionIdHeaderSet } from './set-interaction-id-header.ts';
 import { withVisionHeaderSet } from './set-vision-header.ts';
 import { withCacheControlExtensionsStripped } from './strip-cache-control-extensions.ts';
 import { withEagerInputStreamingStripped } from './strip-eager-input-streaming.ts';
-import { withStructuredOutputFormatStripped } from './strip-structured-output-format.ts';
-import { withToolStrictStripped } from './strip-tool-strict.ts';
 import type { CopilotMessagesBoundaryInterceptor, CopilotMessagesCountTokensBoundaryInterceptor } from './types.ts';
 
 // Order rationale, split into two lanes that run back-to-back:
@@ -66,8 +64,6 @@ export const COPILOT_MESSAGES_BOUNDARY = [
   withTopLevelCacheControlApplied,
   withCacheControlExtensionsStripped,
   withEagerInputStreamingStripped,
-  withToolStrictStripped,
-  withStructuredOutputFormatStripped,
   withVisionHeaderSet,
   withInitiatorHeaderSet,
   withAnthropicBetaHeaderFiltered,
