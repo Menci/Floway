@@ -17,8 +17,8 @@ const translateChatTools = (tools?: ChatCompletionsTool[] | null): ResponsesTool
       }))
     : null;
 
-const translateChatToolChoice = (choice?: ChatCompletionsPayload['tool_choice']): ResponsesToolChoice =>
-  choice == null ? 'auto' : typeof choice === 'string' ? choice : { type: 'function', name: choice.function.name };
+const translateChatToolChoice = (choice: NonNullable<ChatCompletionsPayload['tool_choice']>): ResponsesToolChoice =>
+  typeof choice === 'string' ? choice : { type: 'function', name: choice.function.name };
 
 const translateAssistantContent = (message: ChatCompletionsMessage): ResponsesInputContent[] => {
   const content: ResponsesInputContent[] = [];
@@ -149,7 +149,14 @@ export const buildTargetRequest = (payload: ChatCompletionsPayload): CanonicalRe
     ...(payload.top_p !== undefined ? { top_p: payload.top_p } : {}),
     ...(payload.max_tokens !== undefined ? { max_output_tokens: payload.max_tokens } : {}),
     ...(payload.tools !== undefined ? { tools: translateChatTools(payload.tools) } : {}),
-    tool_choice: translateChatToolChoice(payload.tool_choice),
+    // Responses upstreams disagree on an orphaned `tool_choice` — one sent
+    // without tools: OpenAI-backed models ignore it, while xAI-backed ones
+    // reject the request with `invalid-argument: A tool_choice was set on the
+    // request but no tools were specified`. Other gateways hit the same wall on
+    // both the native Responses path and the Responses → Chat Completions path:
+    // https://github.com/Wei-Shaw/sub2api/issues/4819
+    // https://github.com/jlcodes99/cockpit-tools/issues/1727
+    ...(payload.tool_choice != null && payload.tools?.length ? { tool_choice: translateChatToolChoice(payload.tool_choice) } : {}),
     // Same-purpose OpenAI fields are normal Chat/Responses adapter surface;
     // provider-specific policy filtering belongs at the target boundary, not in
     // pairwise translation.
