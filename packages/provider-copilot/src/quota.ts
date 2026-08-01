@@ -146,7 +146,12 @@ export interface CopilotUsageResponse {
   }>;
 }
 
-export const projectCopilotUsageResponse = (body: CopilotUsageResponse, now: Date): CopilotQuotaSnapshot => {
+// Same null contract as `parseCopilotQuotaHeaders`: a body that reports no
+// buckets is "nothing observed", not "everything is zero". Returning a
+// well-formed empty snapshot here would let an operator's refresh overwrite a
+// good reading the header path had already harvested — which is exactly the
+// seat class that reaches this branch.
+export const projectCopilotUsageResponse = (body: CopilotUsageResponse, now: Date): CopilotQuotaSnapshot | null => {
   const quotas: Record<string, CopilotQuotaDetail> = {};
   for (const [quotaId, detail] of Object.entries(body.quota_snapshots ?? {})) {
     if (isUnsafeQuotaId(quotaId)) continue;
@@ -159,6 +164,7 @@ export const projectCopilotUsageResponse = (body: CopilotUsageResponse, now: Dat
       unlimited: detail.unlimited,
     };
   }
+  if (Object.keys(quotas).length === 0) return null;
   return {
     observed_at: now.toISOString(),
     reset_at: body.quota_reset_date_utc ?? null,

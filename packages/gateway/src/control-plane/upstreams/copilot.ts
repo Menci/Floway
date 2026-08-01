@@ -122,7 +122,9 @@ export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
 // state, where there is no row to persist to), and lets an operator force a
 // read without generating traffic. The projected snapshot is written into the
 // same slot the passive path fills, so both sources render identically and the
-// newer observation always wins.
+// newer observation always wins. Replying with `null` means the upstream
+// reported no buckets at all; the dashboard then keeps showing the stored
+// snapshot rather than blanking the card.
 export const copilotQuota = async (c: CtxWithJson<typeof copilotQuotaBody>) => {
   try {
     const { record } = c.req.valid('json');
@@ -141,10 +143,13 @@ export const copilotQuota = async (c: CtxWithJson<typeof copilotQuotaBody>) => {
     }
 
     const snapshot = projectCopilotUsageResponse((await resp.json()) as CopilotUsageResponse, new Date());
-    // Persistence is best-effort and deliberately outside the caller's result:
-    // the operator asked for a reading, and a CAS loss to concurrent data-plane
-    // traffic means a fresher snapshot already won the slot.
-    if (record.id !== '') {
+    // A body that reports no buckets is "nothing observed", so it neither
+    // persists nor replaces what the dashboard is already showing — the
+    // caller falls back to the stored snapshot. Persistence is otherwise
+    // best-effort and deliberately outside the caller's result: the operator
+    // asked for a reading, and a CAS loss to concurrent data-plane traffic
+    // means a fresher snapshot already won the slot.
+    if (snapshot !== null && record.id !== '') {
       await putCopilotQuota(record.id, snapshot).catch((err: unknown) => {
         console.warn(`Failed to persist Copilot quota snapshot for ${record.id}:`, err);
       });

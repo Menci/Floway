@@ -94,9 +94,9 @@ test('projectCopilotUsageResponse lands on the same shape the headers produce', 
   const projected = projectCopilotUsageResponse(body, NOW);
   const fromHeaders = parseCopilotQuotaHeaders(liveHeaders(), NOW);
 
-  assertEquals(projected.quotas.premium_interactions, fromHeaders?.quotas.premium_interactions);
-  assertEquals(projected.observed_at, '2026-08-01T19:42:34.000Z');
-  assertEquals(projected.reset_at, '2026-09-01T00:00:00.000Z');
+  assertEquals(projected?.quotas.premium_interactions, fromHeaders?.quotas.premium_interactions);
+  assertEquals(projected?.observed_at, '2026-08-01T19:42:34.000Z');
+  assertEquals(projected?.reset_at, '2026-09-01T00:00:00.000Z');
 });
 
 // The REST body is the only source for a seat that has never served a request,
@@ -106,23 +106,34 @@ test('projectCopilotUsageResponse reports a missing reset instant as null', () =
   const projected = projectCopilotUsageResponse({
     access_type_sku: 'copilot_pro',
     copilot_plan: 'individual',
-    quota_snapshots: {},
+    quota_snapshots: {
+      premium_interactions: {
+        entitlement: 300,
+        overage_count: 0,
+        overage_permitted: false,
+        percent_remaining: 90,
+        quota_remaining: 270,
+        unlimited: false,
+      },
+    },
   }, NOW);
 
-  assertEquals(projected.reset_at, null);
-  assertEquals(projected.quotas, {});
+  assertEquals(projected?.reset_at, null);
+  assertEquals(projected?.quotas.premium_interactions.quota_remaining, 270);
 });
 
 // A free / limited seat omits `quota_snapshots` entirely and reports through
-// `limited_user_quotas` instead. That projects to no buckets — which the
-// dashboard renders as "not observed yet" and the header path fills on the
-// seat's first request — rather than failing the operator's refresh.
-test('projectCopilotUsageResponse tolerates a body with no quota_snapshots at all', () => {
-  const projected = projectCopilotUsageResponse({
+// `limited_user_quotas` instead. Same null contract as the header path: no
+// buckets is "nothing observed", so an operator's refresh on such a seat
+// neither fails nor overwrites what the headers already harvested.
+test('projectCopilotUsageResponse reports a body with no quota buckets as no observation', () => {
+  assertEquals(projectCopilotUsageResponse({
     access_type_sku: 'free_limited_copilot',
     copilot_plan: 'free',
-  }, NOW);
-
-  assertEquals(projected.quotas, {});
-  assertEquals(projected.reset_at, null);
+  }, NOW), null);
+  assertEquals(projectCopilotUsageResponse({
+    access_type_sku: 'copilot_pro',
+    copilot_plan: 'individual',
+    quota_snapshots: {},
+  }, NOW), null);
 });

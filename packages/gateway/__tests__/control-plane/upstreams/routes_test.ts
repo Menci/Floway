@@ -2280,6 +2280,47 @@ test('POST /api/upstreams/copilot/quota projects the GitHub body and persists it
   assertEquals(snapshot.data.quotas.premium_interactions.quota_remaining, 270);
 });
 
+// The passive header path refuses to write an empty snapshot so a good
+// reading survives; the operator refresh has to honour the same contract, or
+// pressing Refresh on a free seat — whose usage body carries no quota_snapshots
+// at all — would erase what the headers harvested.
+test('POST /api/upstreams/copilot/quota leaves the stored snapshot alone when the body reports no buckets', async () => {
+  const { repo, adminSession, copilotUpstream } = await setupAppTest();
+  const stored = await repo.upstreams.getById(copilotUpstream.id);
+  if (!stored) throw new Error('copilot upstream missing');
+  const harvested = {
+    fetchedAt: 1_700_000_000_000,
+    data: {
+      observed_at: '2026-08-01T00:00:00.000Z',
+      reset_at: '2026-09-01T00:00:00.000Z',
+      quotas: { chat: { entitlement: 50, overage_count: 0, overage_permitted: false, percent_remaining: 80, quota_remaining: 40, unlimited: false } },
+    },
+  };
+  await repo.upstreams.saveState(
+    copilotUpstream.id,
+    { ...(stored.state as Record<string, unknown>), quotaSnapshot: harvested },
+    { expectedState: stored.state },
+  );
+
+  const envelope = envelopeFromRecord(await getRecord(repo, copilotUpstream.id));
+  await withMockedFetch(
+    async (request: Request) => {
+      if (request.url === 'https://api.github.com/copilot_internal/user') {
+        return jsonResponse({ access_type_sku: 'free_limited_copilot', copilot_plan: 'free', limited_user_quotas: { chat: 10 } });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const resp = await requestApp('/api/upstreams/copilot/quota', authed(adminSession, { record: envelope }));
+      assertEquals(resp.status, 200);
+      assertEquals(await resp.json(), null);
+    },
+  );
+
+  const after = await repo.upstreams.getById(copilotUpstream.id);
+  assertEquals((after?.state as { quotaSnapshot: unknown }).quotaSnapshot, harvested);
+});
+
 test('POST /api/upstreams/copilot/quota rejects a non-copilot record with 400', async () => {
   const { adminSession } = await setupAppTest();
   const resp = await requestApp('/api/upstreams/copilot/quota', authed(adminSession, {
