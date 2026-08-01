@@ -35,7 +35,7 @@ import { PlaygroundMarkdown } from '../components/playground/playground-markdown
 import { PlaygroundMessageCard } from '../components/playground/playground-message-card';
 import { streamPlaygroundText } from '../components/playground/playground-stream';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
-import { EmptyState } from '../components/ui/empty-state';
+import { EmptyState, EmptyStateLine } from '../components/ui/empty-state';
 import { Combobox, Dropdown, Input, Textarea } from '../components/ui/fluent-form-controls';
 import { PANE_GAP_CLASS } from '../components/ui/layout';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
@@ -393,7 +393,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
             {loaderData.keys === null || loaderData.models === null ? <EmptyState className="flex-1 px-6" title={t('dashboard.pages.unavailable')} />
               : !selectedKey ? <EmptyState className="flex-1 px-6" description={t('dashboard.playground.noKeyDescription')} title={t('dashboard.playground.noKey')} />
                   : !selectedModel ? <EmptyState className="flex-1 px-6" description={t('dashboard.playground.noModelForApiDescription')} title={t('dashboard.playground.noModelForApi')} />
-                      : messages.length === 0 && !sending ? <EmptyState className="flex-1 px-6" description={t('dashboard.playground.emptyDescription')} title={t('dashboard.playground.empty')} /> : null}
+                      : messages.length === 0 && !sending ? <div className="flex flex-1 items-center justify-center px-6"><EmptyStateLine>{t('dashboard.playground.empty')}</EmptyStateLine></div> : null}
             <div className="mt-auto grid gap-3" data-winui-card-restyle="off">
               {messages.map(message => (
                 <div key={message.id} className={`flex min-w-0 ${message.role === 'user' ? 'justify-end' : 'justify-start'} ${s.messageRow}`}>
