@@ -331,37 +331,45 @@ export const selectCss = `
 
 /* The drop-down's reveal. WinUI does not slide or fade a ComboBox popup: it
    runs SplitOpenThemeAnimation, which holds the popup opaque from the first
-   frame and grows a vertical clip out of a band half the popup's height,
-   centred on it -- the clip origin is pinned at (0, 0.5) so the two edges
-   travel at the same speed. 250ms on the fast-out-slow-in spline; the same
-   constants the menu's reveal uses, and unrelated to the PopupThemeTransition
-   whose timing ../presence.ts declines to guess at, which ComboBox never
-   invokes.
+   frame and grows a vertical clip. 250ms on the fast-out-slow-in spline; the
+   same constants the menu's reveal uses, and unrelated to the
+   PopupThemeTransition whose timing ../presence.ts declines to guess at, which
+   ComboBox never invokes.
 
-   The opacity leg of the split is deliberately not transcribed. WinUI dims the
-   faceplate from 1.0 to 0.5 as the popup opens because the popup covers the
-   field, so that leg is one half of a crossfade between the field's own text
-   and the list; Fluent places the popup below the field instead -- measured,
-   the field ends at 181 and the list starts at 184 -- so there is no text
-   underneath for it to cross-fade with, and dimming the field would only make
-   it look disabled.
+   WinUI's split is centred on the FIELD, not on the popup: it aligns the
+   selected item over the faceplate and grows out from there, which is what
+   OffsetFromCenter carries. That needs the popup to cover the field, and
+   Fluent places it beside -- measured, the field ends at 181 and the list
+   begins at 184 -- so the faithful form is not available without moving the
+   popup, which is a layout change rather than a motion one. What is left of
+   the idea is the direction: the list unfurls from the edge that meets the
+   field, away from it. A popup below grows downward, one that flipped above
+   grows upward.
+
+   The opacity leg of the split is deliberately not transcribed either, for the
+   same reason: WinUI dims the faceplate from 1.0 to 0.5 as the popup covers it,
+   so that leg is one half of a crossfade between the field's own text and the
+   list. With the popup beside the field there is nothing underneath for it to
+   cross-fade with, and dimming the field would only make it look disabled.
 
    The close is not animated. Fluent unmounts the listbox when the combo box
-   closes, so there is no element left for an exit to run on; a close animation
-   needs a wrapper that holds the popup mounted through it.
+   closes, so there is no element left for an exit to run on.
 
    Written as an animation rather than a transition because the element enters
    already in its final state, and on clip-path rather than transform because
    transform is where Fluent's positioning lives -- the popup is placed by a
    matrix translate, and a keyframe naming transform would replace it and play
    the reveal at the origin of the containing block.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L517-L528
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/SplitOpenThemeAnimation_Partial.h#L16-L17
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/ThemeAnimations.cpp#L596-L721 */
-/* The final inset is negative rather than zero because clip-path clips every
-   painted thing, the popup's own elevation shadow included, and the shadow is
-   declared on this element. Ending at the border box would hold it suppressed
-   for the whole reveal and snap it in on the frame the clip is dropped.
+
+   Two things about the shape of this rule. The direction is carried by custom
+   properties inside ONE set of keyframes rather than by two animation names:
+   the placement attribute is written a few milliseconds after the element
+   mounts, and swapping animation-name at that point restarts the animation from
+   zero, where swapping a custom property leaves it running and simply
+   recomputes. And the animation is gated on the attribute existing at all, so
+   an unplaced popup does not animate in the default direction and then correct
+   itself -- the same gate Radix puts on its own popper content, for the same
+   reason.
 
    32px is headroom over what shadow16 needs. A blur radius spreads a shadow by
    about its own length past the offset edge -- the transition it paints is
@@ -369,17 +377,37 @@ export const selectCss = `
    term, 0 8px 16px, reaches about 24px below the border box and 16px to either
    side, and its ambient term, 0 0 2px, about 2px all round. A deeper elevation
    would need more: shadow28's key term, 0 14px 28px, reaches about 42px.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L517-L528
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/SplitOpenThemeAnimation_Partial.h#L16-L17
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/ThemeAnimations.cpp#L596-L721
    https://www.w3.org/TR/css-backgrounds-3/#shadow-blur
    https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/tokens/src/utils/shadows.ts */
+/* The leading edge starts on the border box rather than outside it: a clip that
+   opened at -32px would show a band of the popup's own shadow before any of the
+   list it belongs to. It reaches -32px by the end, so the shadow grows in with
+   the content it is cast by. */
 @keyframes floway-combobox-listbox-reveal {
-  from { clip-path: inset(25% -32px 25% -32px); }
+  from {
+    clip-path: inset(
+      var(--floway-listbox-reveal-leading) -32px var(--floway-listbox-reveal-trailing) -32px);
+  }
   to { clip-path: inset(-32px); }
 }
 
 .floway-combobox-listbox {
-  animation-name: floway-combobox-listbox-reveal;
+  --floway-listbox-reveal-leading: 0%;
+  --floway-listbox-reveal-trailing: 100%;
   animation-duration: var(--winui-control-normal-animation-duration);
   animation-timing-function: var(--winui-control-fast-out-slow-in-easing);
+}
+
+.floway-combobox-listbox[data-popper-placement^='top'] {
+  --floway-listbox-reveal-leading: 100%;
+  --floway-listbox-reveal-trailing: 0%;
+}
+
+.floway-combobox-listbox[data-popper-placement] {
+  animation-name: floway-combobox-listbox-reveal;
 }
 
 /* The reveal grows the popup out of a band, which alters its perceived size, so
