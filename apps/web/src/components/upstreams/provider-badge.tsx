@@ -88,7 +88,7 @@ const useStyles = makeStyles({
   // The tone classes paint the identity color; the chip supplies geometry.
   tagText: {
     fontSize: '12px',
-    fontWeight: tokens.fontWeightSemibold,
+    fontWeight: tokens.fontWeightMedium,
     lineHeight: '16px',
   },
 });

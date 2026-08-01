@@ -5,20 +5,25 @@ import { fluentComponents } from '../../fluent';
 const { Badge, makeStyles } = fluentComponents;
 
 // A method or a status is a badge like any other here, so it takes the size the
-// upstream and model badges take: a 24px pill with a 12px label, and 11px where
-// the label is monospace -- a pixel down, because a monospace face at the same
-// nominal size out-measures the proportional one beside it.
+// upstream and model badges take: a 24px pill with a 12px label. The label is
+// monospace but stays at 12 -- the pixel a monospace face gives up elsewhere is
+// given up against prose it sits inside, and a badge label has none beside it.
 //
 // The floor holds a column of them to one width. GET, POST and DELETE differ by
 // four characters, and a table reads down its column rather than across its row.
+//
+// The padding is a compensation, not a spacing. Maple Mono's ascent and descent
+// are not symmetric about its cap band, so centring the line box leaves the
+// glyph high; half of this is how far the centred content moves down.
 const useStyles = makeStyles({
   root: {
     fontFamily: 'var(--fontFamilyMonospace)',
-    fontSize: '11px',
+    fontSize: '12px',
     fontWeight: 'var(--fontWeightRegular)',
     justifyContent: 'center',
     lineHeight: '16px',
     minWidth: '48px',
+    paddingTop: '1.5px',
   },
 });
 
