@@ -129,7 +129,7 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
         titleId="alias-targets-heading"
         actions={<Button className="!whitespace-nowrap flex-none" disabled={saving} icon={<AddRegular />} onClick={() => append(blankTarget())}>{t('dashboard.modelAliases.actions.addTarget')}</Button>}
       />
-      {fields.map((field, index) => <AliasTargetRow key={field.id} disabled={saving} error={errors.targets?.[index]?.target_model_id?.message} index={index} isFirst={index === 0} isLast={index === fields.length - 1} isSole={fields.length === 1} catalog={catalog} kind={kind} target={targets[index] ?? field} targetIds={targetIds} onChange={target => setValue(`targets.${index}`, target, { shouldDirty: true, shouldValidate: true })} onMove={direction => move(index, index + direction)} onRemove={() => remove(index)} />)}
+      {fields.map((field, index) => <AliasTargetRow key={field.id} disabled={saving} error={errors.targets?.[index]?.target_model_id?.message ? t(errors.targets[index].target_model_id.message) : undefined} index={index} isFirst={index === 0} isLast={index === fields.length - 1} isSole={fields.length === 1} catalog={catalog} kind={kind} target={targets[index] ?? field} targetIds={targetIds} onChange={target => setValue(`targets.${index}`, target, { shouldDirty: true, shouldValidate: true })} onMove={direction => move(index, index + direction)} onRemove={() => remove(index)} />)}
       {errors.targets?.message && <Text className={dangerText} role="alert" size={200}>{t(errors.targets.message)}</Text>}
     </section>
     {kind !== 'image' && <SettingsExpander

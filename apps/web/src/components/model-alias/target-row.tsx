@@ -93,7 +93,7 @@ export function AliasTargetRow({
       {/* The rule the schema refused belongs to this target, and a target is
           the whole row: the model id and the rules behind the disclosure are
           one thing to name, and the message lines up with the id column. */}
-      {error && <Text block className={`${dangerText} ml-10 pb-2`} role="alert" size={200}>{t(error)}</Text>}
+      {error && <Text block className={`${dangerText} ml-10 pb-2`} role="alert" size={200}>{error}</Text>}
       {expanded && kind === 'chat' && (
         <div className={`${TWO_COLUMN_FORM_CLASS} gap-3 ml-10 py-3`}>
           <RuleCombobox label={t('dashboard.modelAliases.rules.effort')} value={target.rules.reasoning?.effort ?? ''} items={suggestions.effort} disabled={disabled} warning={warningFor('reasoning.effort')} onChange={value => patchReasoning({ effort: value || undefined })} />

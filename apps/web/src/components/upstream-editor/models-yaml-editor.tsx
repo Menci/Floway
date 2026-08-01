@@ -8,7 +8,7 @@ import { monospaceStack } from '../../theme';
 
 interface MonacoEnvironment {
   getWorker: (moduleId: string, label: string) => Worker;
-};
+}
 
 (globalThis as typeof globalThis & { MonacoEnvironment: MonacoEnvironment }).MonacoEnvironment = {
   getWorker: (moduleId, label) => label === 'yaml' || moduleId.includes('monaco-yaml') ? new YamlWorker() : new EditorWorker(),

@@ -5,7 +5,7 @@ import { ProviderBadge } from './provider-badge';
 import { KIND_DEFAULT_TONES } from './upstream-paint';
 import type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
-import { HEX_RE, hexToRgb, hsvToRgb, rgbToHex, rgbToHsv } from '../../lib/color';
+import { HEX_RE, hexToRgb, hsvToRgb, isHexColor, rgbToHex, rgbToHsv } from '../../lib/color';
 import { useDangerTextClass } from '../ui/danger';
 import { Input } from '../ui/fluent-form-controls';
 import { UPSTREAM_COLOR_PRESETS } from '@floway-dev/provider/model';
@@ -33,7 +33,6 @@ const PRESET_HEX: Record<UpstreamColorPreset, string> = {
 };
 
 const DEFAULT_CUSTOM_HEX = '#00e5ff';
-const isHex = (value: UpstreamColor | null): value is `#${string}` => value?.startsWith('#') ?? false;
 
 export function UpstreamColorPicker({ kind, onChange, onValidityChange, value }: {
   kind: UpstreamProviderKind;
@@ -43,13 +42,13 @@ export function UpstreamColorPicker({ kind, onChange, onValidityChange, value }:
 }) {
   const { t } = useTranslation();
   const dangerText = useDangerTextClass();
-  const [hexDraft, setHexDraft] = useState<string>(() => (isHex(value) ? value : DEFAULT_CUSTOM_HEX));
+  const [hexDraft, setHexDraft] = useState<string>(() => (isHexColor(value) ? value : DEFAULT_CUSTOM_HEX));
   const rgb = hexToRgb(hexDraft) ?? hexToRgb(DEFAULT_CUSTOM_HEX)!;
   const [hue, saturation, brightness] = rgbToHsv(rgb[0], rgb[1], rgb[2]);
   const draftInvalid = !HEX_RE.test(hexDraft);
   const visibleLabel = value === null
     ? t('dashboard.upstreamEditor.color.inherit')
-    : isHex(value)
+    : isHexColor(value)
       ? value
       : t(`dashboard.upstreamEditor.color.preset.${value}`);
 
@@ -82,7 +81,7 @@ export function UpstreamColorPicker({ kind, onChange, onValidityChange, value }:
             <SwatchPicker
               aria-label={t('dashboard.upstreamEditor.color.label')}
               layout="row"
-              selectedValue={isHex(value) ? '' : (value ?? 'inherit')}
+              selectedValue={isHexColor(value) ? '' : (value ?? 'inherit')}
               onSelectionChange={(_, data) => {
                 onValidityChange(false);
                 onChange(data.selectedValue === 'inherit' ? null : (data.selectedValue as UpstreamColorPreset));

@@ -344,7 +344,7 @@ function CopilotConfig({ record, onPatch }: {
   }
   return <div className="grid gap-3">
     <Text size={300} className="text-fui-fg2">{t('dashboard.upstreamEditor.copilot.description')}</Text>
-    {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
+    {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
     {!flow ? <Button appearance="primary" disabledFocusable={busy} icon={busy ? <Spinner size="tiny" /> : <PlugConnectedRegular />} onClick={() => void start()}>{t('dashboard.upstreamEditor.copilot.connect')}</Button> : <>
       <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.copilot.deviceCode')}</Text>
       <code className="mono-display tracking-[0.25em] text-fui-fg1">{flow.user_code}</code>

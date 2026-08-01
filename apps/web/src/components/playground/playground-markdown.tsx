@@ -158,7 +158,7 @@ function MarkdownPre({ children }: ComponentProps<'pre'>) {
 interface PlaygroundMarkdownProps {
   content: string;
   streaming: boolean;
-};
+}
 
 export const PlaygroundMarkdown = memo(function PlaygroundMarkdown({ content, streaming }: PlaygroundMarkdownProps) {
   const s = useStyles();

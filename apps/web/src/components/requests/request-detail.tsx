@@ -20,6 +20,7 @@ import { fluentComponents } from '../../fluent';
 import { useDangerTextClass } from '../ui/danger';
 import { EmptyStateLine } from '../ui/empty-state';
 import { HttpMethodBadge, HttpStatusBadge } from '../ui/http-badge';
+import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { prismTokenStyles } from '../ui/prism-token-styles';
 import { ScrollArea } from '../ui/scroll-area';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
@@ -164,7 +165,7 @@ export function RequestDetailPanel({ collected: loadedCollected, error, record, 
   // An invitation standing where the detail will be, not a state with an
   // explanation under it -- the same shape the playground's transcript uses.
   if (!recordId) return <div className="grid h-full place-items-center p-8"><EmptyStateLine>{t('dashboard.requests.selectPrompt')}</EmptyStateLine></div>;
-  if (error) return <div className="p-4"><MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar></div>;
+  if (error) return <OutcomeMessageBar className="!m-4">{error}</OutcomeMessageBar>;
   if (!record) return null;
 
   const severity = requestSeverity(record.response.status, record.meta.error);

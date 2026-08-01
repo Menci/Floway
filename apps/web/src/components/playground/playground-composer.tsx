@@ -225,7 +225,7 @@ interface PlaygroundComposerProps {
   showImage: boolean;
   stopLabel: string;
   cancelLabel: string;
-};
+}
 
 export function PlaygroundComposer({
   canSend,

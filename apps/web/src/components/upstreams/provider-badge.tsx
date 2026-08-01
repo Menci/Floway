@@ -10,7 +10,7 @@ import githubCopilotIconUrl from '../../assets/githubcopilot.svg?no-inline';
 import ollamaIconUrl from '../../assets/ollama.svg?no-inline';
 import openaiIconUrl from '../../assets/openai.svg?no-inline';
 import { fluentComponents } from '../../fluent';
-import { blendHex, readableTone } from '../../lib/color';
+import { blendHex, isHexColor, readableTone } from '../../lib/color';
 import { Chip } from '../ui/chip';
 import { MaskedIcon } from '../ui/masked-icon';
 
@@ -124,9 +124,6 @@ const customColorStyle = (color: `#${string}`) => {
     color: `light-dark(${label(CARD_SURFACE.light)}, ${label(CARD_SURFACE.dark)})`,
   } as React.CSSProperties;
 };
-
-const isHexColor = (color: UpstreamColor | null): color is `#${string}` =>
-  color?.startsWith('#') === true;
 
 export function ProviderBadge({ color, kind, label, size = 'small', title }: {
   color: UpstreamColor | null;

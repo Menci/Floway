@@ -8,6 +8,7 @@
 // the canonical wire form (`#RRGGBB`, upper-or-lower case accepted).
 
 import { UPSTREAM_COLOR_HEX_REGEX } from '@floway-dev/provider/model';
+import type { UpstreamColor } from '@floway-dev/provider/model';
 
 // Alias for the canonical wire regex so the picker validates hex against
 // the same rule the control-plane schema enforces.
@@ -129,3 +130,6 @@ export const readableTone = (hex: string, surface: string): string => {
   // about 4.58. No surface exists that neither extreme reads on.
   return rgbToHex(...(darken ? BLACK : WHITE));
 };
+
+/** Whether an upstream's colour is a literal rather than one of the named tones. */
+export const isHexColor = (color: UpstreamColor | null): color is `#${string}` => color?.startsWith('#') === true;

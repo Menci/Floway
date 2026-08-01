@@ -111,7 +111,7 @@ const zhHansCN = {
         actions: { newTopic: '新话题', edit: '编辑', delete: '删除', save: '保存', image: '添加图片 URL', send: '发送', stop: '停止' },
         generation: {
           reasoningEffort: '思考强度',
-          providerDefault: 'Provider 默认值',
+          providerDefault: '提供商默认值',
         },
         badges: {
           aliasOfModel: '别名指向 <model>{{target}}</model>',
@@ -221,7 +221,6 @@ const zhHansCN = {
         role: { admin: '管理员', operator: '操作员' },
         upstreams: {
           all: '全部上游',
-          count_one: '{{count}} 个上游',
           count_other: '{{count}} 个上游',
         },
         dialog: {
@@ -403,7 +402,6 @@ const zhHansCN = {
           ollama: 'ollama.com 或自托管服务',
         },
         models: {
-          count_one: '{{count}} 个模型',
           count_other: '{{count}} 个模型',
           unavailable: '数量不可用',
         },
@@ -1007,7 +1005,7 @@ const zhHansCN = {
         dialog: { createTitle: '创建别名', editTitle: '编辑别名：{{name}}' },
         form: { name: '别名 ID', namePlaceholder: 'my-alias-id', displayName: '显示名称', displayPlaceholder: '可选显示名称', kind: '类型', selection: '选择策略', visible: '在 /v1/models 中可见', visibleHint: '关闭只是不在列表中展示，别名仍然可以按名称请求。' },
         kind: { 'chat': '对话', 'embedding': '嵌入', 'image': '图像', 'rerank': '重排', 'transcription': '转录' }, selection: { first: '首个可用', random: '随机' }, visibility: { visible: '可见', hidden: '隐藏' },
-        target: { heading: '模型', description: '使用“首个可用”时将按顺序尝试目标。可选择建议或输入任意模型 ID。', label: '目标 {{number}}', modelId: '目标模型 ID', placeholder: '目标模型 ID', toggle: '展开目标规则', moveUp: '上移目标', moveDown: '下移目标', remove: '移除目标', count_one: '{{count}} 个目标', count_other: '{{count}} 个目标' },
+        target: { heading: '模型', description: '使用“首个可用”时将按顺序尝试目标。可选择建议或输入任意模型 ID。', label: '目标 {{number}}', modelId: '目标模型 ID', placeholder: '目标模型 ID', toggle: '展开目标规则', moveUp: '上移目标', moveDown: '下移目标', remove: '移除目标', count_other: '{{count}} 个目标' },
         rules: { effort: '思考强度', budget: '思考预算 token', adaptive: '自适应思考', adaptiveAuto: '自动（遵循模型）', adaptiveOn: '开启（强制自适应）', adaptiveOff: '关闭（强制非自适应）', summary: '思考摘要', verbosity: '详细程度', serviceTier: '服务等级' },
         metadata: { heading: '手动声明元数据', description: '/v1/models 为此别名报告的能力', manual: '手动声明元数据', limits: 'Token 限制', context: '上下文窗口', prompt: '提示 token', output: '输出 token', modalities: '模态', imageInput: '图像输入', reasoning: '思考', effortEnabled: '强度级别', budgetEnabled: '预算 token', adaptive: '自适应', mandatory: '强制思考', efforts: '支持的强度', effortsHint: '使用逗号分隔；保留顺序。', defaultEffort: '默认强度', minBudget: '最小预算', maxBudget: '最大预算' },
         warnings: { label: '别名警告', shadow: '别名 ID 会遮蔽真实模型 {{id}} {{display}}。', noTarget: '当前没有目标可解析到此 gateway 上的模型。', unknownTarget: '{{id}} 当前无法解析到已启用模型。', wrongKind: '{{id}} 是 {{actual}} 模型，但此别名类型为 {{expected}}。', notAdvertisedEffort: '目标未声明思考强度能力。', unsupportedEffort: '目标声明的强度为：{{values}}。', adaptiveBudgetConflict: '自适应思考不能与固定预算同时使用。', notAdvertisedBudget: '目标未声明思考预算能力。', budgetBelow: '低于目标最小值（{{value}}）。', budgetAbove: '高于目标最大值（{{value}}）。', notAdvertisedAdaptive: '目标未声明自适应思考能力。', ruleAdvisory: '一项或多项规则可能不受此目标支持。' },

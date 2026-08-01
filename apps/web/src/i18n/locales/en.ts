@@ -1074,8 +1074,8 @@ const en = {
         listTitle: 'Proxies',
         columns: { actions: 'Actions' },
         empty: 'No proxies configured. Add a proxy to route outbound traffic.',
-        addTitle: 'Add Proxy',
-        editTitle: 'Edit Proxy',
+        addTitle: 'Add proxy',
+        editTitle: 'Edit proxy',
         form: {
           name: 'Name',
           namePlaceholder: 'My proxy',
@@ -1121,8 +1121,8 @@ const en = {
           },
         },
         actions: {
-          create: 'New Proxy',
-          save: 'Save Proxy',
+          create: 'New proxy',
+          save: 'Save proxy',
           saveSuccess: 'Proxy saved.',
           editNamed: 'Edit proxy {{name}}',
           test: 'Test',
@@ -1141,7 +1141,7 @@ const en = {
           backoff: { pending: 'Resetting backoff', success: 'Backoff reset.' },
         },
         delete: {
-          title: 'Delete Proxy',
+          title: 'Delete proxy',
           message: 'Delete proxy {{name}}? This cannot be undone.',
           conflict: 'Cannot delete: proxy is referenced by upstreams.',
           conflictWithIds: 'Referenced by upstream IDs: {{ids}}',

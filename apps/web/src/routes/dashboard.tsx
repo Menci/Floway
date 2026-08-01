@@ -24,7 +24,7 @@ const { Button, DrawerBody, OverlayDrawer } = fluentComponents;
 
 export interface DashboardOutletContext {
   user: AuthUser;
-};
+}
 
 export async function clientLoader() {
   const token = getSessionToken();

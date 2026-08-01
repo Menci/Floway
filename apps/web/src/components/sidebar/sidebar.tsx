@@ -78,13 +78,13 @@ interface NavItemDefinition {
   labelKey: string;
   icon: FluentIcon;
   adminOnly?: boolean;
-};
+}
 
 interface NavGroup {
   labelKey?: string;
   adminOnly?: boolean;
   items: NavItemDefinition[];
-};
+}
 
 const navGroups: NavGroup[] = [
   {
