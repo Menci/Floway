@@ -19,16 +19,6 @@ const { makeStyles } = fluentComponents;
 export const useUnclippedChartFrame = makeStyles({
   root: {
     overflow: 'visible',
-    // Axis labels take Caption, the step WinUI sets a chart's own annotations
-    // in and the smallest size its ramp states. Fluent's charts draw the ticks
-    // at 10px SemiBold, which is below every step WinUI has and heavier than
-    // the body text the labels sit beside.
-    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBlock_themeresources.xaml#L3
-    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBlock_themeresources.xaml#L19-L22
-    '& .tick text': {
-      fontSize: 'var(--fontSizeBase200)',
-      fontWeight: 'var(--fontWeightRegular)',
-    },
     // The outermost ticks are centred on the plot's own edges, so half of each
     // label hangs past the axis. Anchoring them inward keeps the range the
     // chart actually covers legible without narrowing the plot.
