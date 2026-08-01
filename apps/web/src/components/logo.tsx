@@ -1,4 +1,4 @@
-import { mark } from './logo-mark';
+import { currentMark } from './logo-mark';
 import { fluentComponents } from '../fluent';
 import { hsvToRgb, rgbToHex } from '../lib/color';
 
@@ -23,8 +23,6 @@ const paint = (hue: number) => ({
   background: `light-dark(${tone(hue, SURFACE_LIGHT)}, ${tone(hue, SURFACE_DARK)})`,
 });
 
-const markPaint = paint(mark.hue);
-
 const useMarkStyles = makeStyles({
   root: {
     alignItems: 'center',
@@ -39,10 +37,11 @@ const useMarkStyles = makeStyles({
 
 export function FlowayLogo() {
   const ms = useMarkStyles();
+  const mark = currentMark();
 
   return (
     <div className="inline-flex items-center min-w-0 gap-2.5 text-fui-fg2">
-      <span aria-hidden="true" className={ms.root} style={markPaint}>
+      <span aria-hidden="true" className={ms.root} style={paint(mark.hue)}>
         <img alt="" className={ms.glyph} src={mark.url} />
       </span>
       <span

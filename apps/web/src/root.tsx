@@ -11,11 +11,11 @@ import {
 import type { Route } from './+types/root';
 import { BrowserLanguageSync } from './components/browser-language-sync';
 import { DocumentTitleSync } from './components/document-title-sync';
-import { FaviconSync } from './components/favicon-sync';
 import {
   GradientBackground,
   gradientBackgroundCriticalCss,
 } from './components/gradient-background';
+import { markPickerScript } from './components/logo-mark';
 import { NavigationProgress, navigationProgressCss } from './components/navigation-progress';
 import {
   AppLoadingScreen,
@@ -102,6 +102,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
           ${navigationProgressCss}
         `}</style>
         <style>{winuiCss}</style>
+        {/* Draws this load's mark and sets the tab icon before anything paints. */}
+        <script dangerouslySetInnerHTML={{ __html: markPickerScript }} />
       </head>
       <body className="text-[14px]">
         <FluentProvider theme={theme}>
@@ -119,7 +121,6 @@ export default function App() {
     <>
       <NavigationProgress />
       <DocumentTitleSync />
-      <FaviconSync />
       <Outlet />
     </>
   );

@@ -21,7 +21,7 @@ import snowflakeUrl from '../assets/emoji-snowflake.svg?no-inline';
 // weighted by alpha x saturation x value so that outlines and highlights --
 // which carry little colour -- cannot outvote the petals. The heaviest bin's
 // weighted mean is the colour, and its hue is what is recorded here.
-const MARKS = [
+export const MARKS = [
   { hue: 346, url: cherryBlossomUrl },
   { hue: 272, url: blossomUrl },
   { hue: 315, url: hibiscusUrl },
@@ -29,7 +29,36 @@ const MARKS = [
   { hue: 153, url: broccoliUrl },
 ] as const;
 
-// Drawn once per load rather than once per mount, so the logo, the tab and any
-// second logo on the page are the same mark, and moving between pages does not
-// reshuffle it.
-export const mark = MARKS[Math.floor(Math.random() * MARKS.length)]!;
+const MARK_ATTRIBUTE = 'data-floway-mark';
+
+// The draw happens in the document head, before anything renders.
+//
+// It has to happen somewhere that runs once per load and before the first
+// paint. A module-scope draw in this file would satisfy the first but not the
+// second: the tab would keep the previous page's icon until the bundle had
+// parsed and an effect had run, and the icon is the one part of the mark the
+// reader sees before the app exists. Doing it here also makes the draw the
+// single source of truth -- the logo reads the result rather than drawing
+// again, so the tab and the page cannot disagree.
+//
+// The URLs are interpolated at build time because Vite hashes them; the script
+// therefore has to be assembled where the imports are, not written by hand in
+// the document. It is inline, so a future Content-Security-Policy would need a
+// nonce or a hash for it.
+export const markPickerScript = `(function(){
+var u=${JSON.stringify(MARKS.map(m => m.url))};
+var i=Math.floor(Math.random()*u.length);
+document.documentElement.setAttribute(${JSON.stringify(MARK_ATTRIBUTE)},i);
+var l=document.createElement('link');
+l.rel='icon';l.type='image/svg+xml';l.href=u[i];
+document.head.appendChild(l);
+})();`;
+
+// What the head drew, for the logo to render. Falls back to the first mark when
+// there is no document to read -- the build-time prerender, where the script is
+// inert text in the HTML it is writing.
+export const currentMark = () => {
+  if (typeof document === 'undefined') return MARKS[0]!;
+  const drawn = Number(document.documentElement.getAttribute(MARK_ATTRIBUTE));
+  return MARKS[Number.isInteger(drawn) ? drawn : 0] ?? MARKS[0]!;
+};
