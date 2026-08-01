@@ -73,6 +73,12 @@ export const fieldCss = `
   display: none;
 }
 
+/* Fluent indents the message by the column the glyph sat in, so removing the
+   glyph alone leaves the words hanging off the field's leading edge. */
+.fui-Field__validationMessage.fui-Field__validationMessage {
+  padding-inline-start: 0;
+}
+
 /* An invalid control is the one validation state Fluent states in the DOM
    rather than in a Griffel atom: the Field pushes aria-invalid onto the
    control it wraps (useFieldControlProps.js, getFieldControlProps), which lets
