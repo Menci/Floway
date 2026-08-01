@@ -76,8 +76,6 @@ test('parseCopilotQuotaHeaders ignores a prototype-polluting quota id', () => {
 
 test('projectCopilotUsageResponse lands on the same shape the headers produce', () => {
   const body: CopilotUsageResponse = {
-    access_type_sku: 'copilot_pro',
-    copilot_plan: 'individual',
     quota_reset_date_utc: '2026-09-01T00:00:00.000Z',
     quota_snapshots: {
       premium_interactions: {
@@ -104,8 +102,6 @@ test('projectCopilotUsageResponse lands on the same shape the headers produce', 
 // inventing one.
 test('projectCopilotUsageResponse reports a missing reset instant as null', () => {
   const projected = projectCopilotUsageResponse({
-    access_type_sku: 'copilot_pro',
-    copilot_plan: 'individual',
     quota_snapshots: {
       premium_interactions: {
         entitlement: 300,
@@ -127,13 +123,70 @@ test('projectCopilotUsageResponse reports a missing reset instant as null', () =
 // buckets is "nothing observed", so an operator's refresh on such a seat
 // neither fails nor overwrites what the headers already harvested.
 test('projectCopilotUsageResponse reports a body with no quota buckets as no observation', () => {
-  assertEquals(projectCopilotUsageResponse({
-    access_type_sku: 'free_limited_copilot',
-    copilot_plan: 'free',
-  }, NOW), null);
-  assertEquals(projectCopilotUsageResponse({
-    access_type_sku: 'copilot_pro',
-    copilot_plan: 'individual',
-    quota_snapshots: {},
-  }, NOW), null);
+  assertEquals(projectCopilotUsageResponse({}, NOW), null);
+  assertEquals(projectCopilotUsageResponse({ quota_snapshots: {} }, NOW), null);
+});
+
+// Captured from a live `free_limited_copilot` seat on 2026-07-08
+// (https://github.com/TopiCsarno/yapcap/blob/152ea67c3abd44776268627d58533003099da951/fixtures/copilot/copilot_user_response.json).
+// The seat meters chat and completions and reports `premium_interactions` as
+// `entitlement: 0` — an allotment it does not have, not one it has exhausted.
+test('projectCopilotUsageResponse keeps a free seat’s metered buckets and its zero-entitlement one apart', () => {
+  const projected = projectCopilotUsageResponse({
+    quota_reset_date_utc: '2026-08-01T00:00:00.000Z',
+    quota_snapshots: {
+      chat: { entitlement: 200, unlimited: false, quota_remaining: 200, percent_remaining: 100, overage_count: 0, overage_permitted: false },
+      completions: { entitlement: 2000, unlimited: false, quota_remaining: 2000, percent_remaining: 100, overage_count: 0, overage_permitted: false },
+      premium_interactions: { entitlement: 0, unlimited: false, quota_remaining: 0, percent_remaining: 0, overage_count: 0, overage_permitted: false },
+    },
+  }, NOW);
+
+  assertEquals(projected?.quotas.chat.entitlement, 200);
+  assertEquals(projected?.quotas.completions.entitlement, 2000);
+  // Projected verbatim; the dashboard reads `entitlement > 0` to tell a bucket
+  // the seat does not have from one it has burned through.
+  assertEquals(projected?.quotas.premium_interactions.entitlement, 0);
+  assertEquals(projected?.quotas.premium_interactions.unlimited, false);
+});
+
+// Every field on this endpoint is optional per GitHub's own SDK schema. A
+// bucket without a cap or a remainder cannot be rendered honestly, so it is
+// dropped the way the header path drops a half-parsed one.
+test('projectCopilotUsageResponse drops a bucket whose cap or remainder is missing', () => {
+  const projected = projectCopilotUsageResponse({
+    quota_snapshots: {
+      chat: { percent_remaining: 50 },
+      completions: { entitlement: 2000, quota_remaining: 1500 },
+    },
+  }, NOW);
+
+  assertEquals(Object.keys(projected?.quotas ?? {}), ['completions']);
+});
+
+// `percent_remaining` is optional; deriving it from the two fields we do
+// require is arithmetic, not a default standing in for an unknown.
+test('projectCopilotUsageResponse derives percent_remaining when the body omits it', () => {
+  const projected = projectCopilotUsageResponse({
+    quota_snapshots: {
+      completions: { entitlement: 2000, quota_remaining: 1500 },
+    },
+  }, NOW);
+
+  assertEquals(projected?.quotas.completions.percent_remaining, 75);
+});
+
+// Both sources can report an empty reset instant — `rst=` with no value, or
+// `quota_reset_date_utc: ""`. Rendering either produces "Invalid Date".
+test('both quota sources report an unparseable reset instant as none', () => {
+  const fromBody = projectCopilotUsageResponse({
+    quota_reset_date_utc: '',
+    quota_snapshots: { chat: { entitlement: 200, quota_remaining: 200, percent_remaining: 100 } },
+  }, NOW);
+  assertEquals(fromBody?.reset_at, null);
+
+  const fromHeaders = parseCopilotQuotaHeaders(
+    new Headers({ 'x-quota-snapshot-chat': 'ent=200&ov=0.0&ovPerm=false&rem=100.0&rst=&totRem=200' }),
+    NOW,
+  );
+  assertEquals(fromHeaders?.reset_at, null);
 });

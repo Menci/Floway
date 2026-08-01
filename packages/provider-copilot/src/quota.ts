@@ -30,11 +30,21 @@ import { githubHeaders } from './auth.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
 import { getProviderRepo, type Fetcher } from '@floway-dev/provider';
 
-// One quota bucket. `unlimited` is the authoritative flag on both sources, and
-// it is the only one: the headers spell an uncapped bucket `ent=-1&totRem=-1`
-// (from which we derive the flag), while the REST body reports the same bucket
-// as `unlimited: true` with `entitlement: 0` and `quota_remaining: 0`. Reading
-// either number to infer a cap is wrong on one source or the other.
+// One quota bucket. A seat reports three kinds of bucket and both sources spell
+// them differently, so nothing but the pair below is safe to read:
+//
+//   metered      real cap, real consumption.
+//   uncapped     `unlimited`. Headers spell it `ent=-1&totRem=-1`; the REST body
+//                sets the flag with `entitlement: 0`, so neither number infers it.
+//   unavailable  the bucket does not apply to this seat — a free seat's
+//                `premium_interactions` comes back `entitlement: 0` with
+//                `has_quota: false` and `percent_remaining: 0`. Reading that as
+//                consumption renders "0 / 0 · 100% used" on a seat that simply
+//                has no premium allotment.
+//
+// `entitlement > 0` separates metered from unavailable on both sources, which is
+// why `has_quota` is not projected: the headers have no counterpart for it, so a
+// consumer keying off it would work on one source and not the other.
 export interface CopilotQuotaDetail {
   entitlement: number;
   overage_count: number;
@@ -69,6 +79,18 @@ const parseNumber = (raw: string | null): number | null => {
   if (raw === null) return null;
   const value = Number(raw);
   return Number.isFinite(value) ? value : null;
+};
+
+const finiteOrNull = (value: number | undefined): number | null =>
+  typeof value === 'number' && Number.isFinite(value) ? value : null;
+
+// Both sources hand us a reset instant as a string, and both can hand us an
+// empty one — `rst=` with no value, or `quota_reset_date_utc: ""`. Rendering
+// that produces "Invalid Date", so anything unparseable reads as "no reset
+// instant reported".
+const resetInstantOrNull = (raw: string | null | undefined): string | null => {
+  if (raw === null || raw === undefined || raw.trim() === '') return null;
+  return Number.isNaN(new Date(raw).getTime()) ? null : raw;
 };
 
 // `ent=-1&ov=0.0&ovPerm=false&rem=100.0&rst=...&totRem=-1`. A bucket is only
@@ -108,66 +130,85 @@ export const parseCopilotQuotaHeaders = (headers: Headers, now: Date): CopilotQu
     const detail = parseQuotaDetail(fields);
     if (detail === null) return;
     quotas[quotaId] = detail;
-    resetAt ??= fields.get('rst');
+    resetAt ??= resetInstantOrNull(fields.get('rst'));
   });
 
   if (Object.keys(quotas).length === 0) return null;
   return { observed_at: now.toISOString(), reset_at: resetAt, quotas };
 };
 
-// `GET /copilot_internal/user`. Beyond the fields projected below, the body also
-// carries `credits_used`, `overage_entitlement`, `has_quota`,
-// `token_based_billing` (the AI-Credits vs. premium-interactions
-// discriminator), a per-bucket `timestamp_utc`, and the seat's plan and org
-// metadata. None of it has a consumer yet, and the header path cannot supply
-// any of it — surfacing one would mean a field that silently blanks out
-// whenever the passive path wins the race. Widen this interface and
-// `projectCopilotUsageResponse` together when something needs them.
+// `GET /copilot_internal/user`. Every field is optional: that is how GitHub's own
+// Copilot CLI SDK types this endpoint (a zod schema in `@github/copilot`'s
+// typings, `strip` mode so unknown keys pass through), and the captures agree.
+// We declare only what we project — a field we do not read has no business
+// being here.
 //
-// `quota_snapshots` is optional because a free / limited seat reports its
-// entitlement through `limited_user_quotas` + `monthly_quotas` instead and
-// omits the map entirely. We do not read those: the header path covers those
-// seats from their first request, and a body we cannot project reads as "no
-// buckets" rather than as a gateway error.
-// Prior art on the optionality:
-// https://github.com/raycast/extensions/blob/main/extensions/agent-usage/src/copilot/fetcher.ts
-// https://github.com/onllm-dev/onWatch/blob/main/internal/api/copilot_types.go
+// Two body shapes are live at once, split by GitHub's 2026-06-01 AI-Credits
+// change. A seat on the current shape reports `quota_snapshots` whatever its
+// plan, including free (captured 2026-07-08 on a `free_limited_copilot` seat:
+// `chat` 200, `completions` 2000, `premium_interactions` entitlement 0 with
+// `has_quota: false`). A seat on the legacy shape reports through
+// `limited_user_quotas` (remaining) + `monthly_quotas` (entitlement) and leaves
+// `quota_snapshots` empty or absent — we do not read those, so such a body
+// projects to "nothing observed" and the header path is what fills the slot.
+// Captured legacy and current bodies for the same free SKU:
+// https://github.com/TopiCsarno/yapcap/blob/152ea67c3abd44776268627d58533003099da951/fixtures/copilot/copilot_user_response.json
+// https://github.com/bugwz/AIMeter/blob/main/docs/providers/copliot/demo.free.json
 export interface CopilotUsageResponse {
-  access_type_sku: string;
-  copilot_plan: string;
   quota_reset_date_utc?: string;
   quota_snapshots?: Record<string, {
-    entitlement: number;
-    overage_count: number;
-    overage_permitted: boolean;
-    percent_remaining: number;
-    quota_remaining: number;
-    unlimited: boolean;
+    entitlement?: number;
+    overage_count?: number;
+    overage_permitted?: boolean;
+    percent_remaining?: number;
+    quota_remaining?: number;
+    unlimited?: boolean;
   }>;
 }
+
+// The REST body holds the same three numbers the headers do, so it gets the same
+// treatment: a bucket whose cap or remainder is missing or non-finite is dropped
+// rather than rendered as a confident zero. `percent_remaining` is derived when
+// the body omits it, because that is arithmetic on the two fields we require —
+// not a default standing in for an unknown.
+const projectQuotaDetail = (detail: {
+  entitlement?: number;
+  overage_count?: number;
+  overage_permitted?: boolean;
+  percent_remaining?: number;
+  quota_remaining?: number;
+  unlimited?: boolean;
+}): CopilotQuotaDetail | null => {
+  const entitlement = finiteOrNull(detail.entitlement);
+  const quotaRemaining = finiteOrNull(detail.quota_remaining);
+  if (entitlement === null || quotaRemaining === null) return null;
+  const percentRemaining = finiteOrNull(detail.percent_remaining)
+    ?? (entitlement > 0 ? (quotaRemaining / entitlement) * 100 : 0);
+  return {
+    entitlement,
+    overage_count: finiteOrNull(detail.overage_count) ?? 0,
+    overage_permitted: detail.overage_permitted === true,
+    percent_remaining: percentRemaining,
+    quota_remaining: quotaRemaining,
+    unlimited: detail.unlimited === true || entitlement === UNLIMITED_SENTINEL,
+  };
+};
 
 // Same null contract as `parseCopilotQuotaHeaders`: a body that reports no
 // buckets is "nothing observed", not "everything is zero". Returning a
 // well-formed empty snapshot here would let an operator's refresh overwrite a
-// good reading the header path had already harvested — which is exactly the
-// seat class that reaches this branch.
+// good reading the header path had already harvested.
 export const projectCopilotUsageResponse = (body: CopilotUsageResponse, now: Date): CopilotQuotaSnapshot | null => {
   const quotas: Record<string, CopilotQuotaDetail> = {};
   for (const [quotaId, detail] of Object.entries(body.quota_snapshots ?? {})) {
     if (isUnsafeQuotaId(quotaId)) continue;
-    quotas[quotaId] = {
-      entitlement: detail.entitlement,
-      overage_count: detail.overage_count,
-      overage_permitted: detail.overage_permitted,
-      percent_remaining: detail.percent_remaining,
-      quota_remaining: detail.quota_remaining,
-      unlimited: detail.unlimited,
-    };
+    const projected = projectQuotaDetail(detail);
+    if (projected !== null) quotas[quotaId] = projected;
   }
   if (Object.keys(quotas).length === 0) return null;
   return {
     observed_at: now.toISOString(),
-    reset_at: body.quota_reset_date_utc ?? null,
+    reset_at: resetInstantOrNull(body.quota_reset_date_utc),
     quotas,
   };
 };

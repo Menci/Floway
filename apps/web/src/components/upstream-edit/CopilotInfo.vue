@@ -48,27 +48,34 @@ const refresh = async () => {
   refreshed.value = data ?? null;
 };
 
-// Every bucket the seat reports, in the upstream's own naming. A paid seat
-// meters `premium_interactions` (or `premium_models`) against a real
-// entitlement and reports `chat` / `completions` as unlimited; a free seat
-// meters the latter two instead. Rendering whatever comes back keeps the card
-// honest on both without pinning a known set of quota ids.
+// Every bucket the seat reports, in the upstream's own naming, sorted into the
+// three kinds a seat actually reports. A paid seat meters
+// `premium_interactions` (or `premium_models`) and reports `chat` /
+// `completions` as unlimited; a free seat meters the latter two and reports
+// `premium_interactions` as unavailable — `entitlement: 0`, which the upstream
+// pairs with `percent_remaining: 0`, so treating it as a metered bucket would
+// render a full bar on a seat that simply has no premium allotment.
+//
+// `usedPercent` is reported as the upstream computed it, including past 100
+// when an overage-permitted bucket runs negative. Only the bar is clamped,
+// because a bar cannot be wider than itself.
 const allBuckets = computed(() => Object.entries(quota.value?.quotas ?? {}).map(([id, detail]) => ({
   id,
   label: id.replace(/_/g, ' '),
   detail,
-  usedPercent: Math.min(100, Math.max(0, Math.round(100 - detail.percent_remaining))),
+  kind: detail.unlimited ? 'unlimited' : detail.entitlement > 0 ? 'metered' : 'unavailable',
+  usedPercent: Math.round(100 - detail.percent_remaining),
+  barPercent: Math.min(100, Math.max(0, Math.round(100 - detail.percent_remaining))),
   used: Math.round(detail.entitlement - detail.quota_remaining),
 })));
 
-// An unlimited bucket has nothing to report, so the card shows only what is
-// actually metered. A seat with no metered bucket at all still gets one row —
-// otherwise the card would read as "no quota observed" when the truth is
-// "nothing is capped". The premium bucket is the one an operator looks for, so
-// it is the preferred stand-in; falling back to the first reported bucket
-// keeps that working if GitHub renames it.
+// Only metered buckets carry information, so they are the card. A seat with
+// nothing metered still gets one row — otherwise the card would read as "no
+// quota observed" when the truth is "nothing is capped". The premium bucket is
+// the one an operator looks for, so it is the preferred stand-in; falling back
+// to the first reported bucket keeps that working if GitHub renames it.
 const buckets = computed(() => {
-  const metered = allBuckets.value.filter(bucket => !bucket.detail.unlimited);
+  const metered = allBuckets.value.filter(bucket => bucket.kind === 'metered');
   if (metered.length > 0) return metered;
   const premium = allBuckets.value.find(bucket => bucket.id.startsWith('premium'));
   const standIn = premium ?? allBuckets.value[0];
@@ -120,16 +127,17 @@ const resetsOn = computed(() => {
         <div v-for="bucket in buckets" :key="bucket.id" class="space-y-1.5">
           <div class="flex items-baseline justify-between text-sm">
             <span class="capitalize text-gray-300">{{ bucket.label }}</span>
-            <span v-if="bucket.detail.unlimited" class="text-xs text-gray-400">Unlimited</span>
+            <span v-if="bucket.kind === 'unlimited'" class="text-xs text-gray-400">Unlimited</span>
+            <span v-else-if="bucket.kind === 'unavailable'" class="text-xs text-gray-400">Not included in this plan</span>
             <span v-else class="text-white">
               {{ bucket.used.toLocaleString() }} / {{ bucket.detail.entitlement.toLocaleString() }}
               <span class="text-xs text-gray-400">· {{ bucket.usedPercent }}% used</span>
             </span>
           </div>
-          <div v-if="!bucket.detail.unlimited" class="h-1.5 overflow-hidden rounded-full bg-surface-700">
+          <div v-if="bucket.kind === 'metered'" class="h-1.5 overflow-hidden rounded-full bg-surface-700">
             <div
               class="h-full bg-accent-cyan transition-[width]"
-              :style="{ width: `${bucket.usedPercent}%` }"
+              :style="{ width: `${bucket.barPercent}%` }"
             />
           </div>
         </div>

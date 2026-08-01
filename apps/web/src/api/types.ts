@@ -98,9 +98,10 @@ export interface CopilotUpstreamConfig {
 
 // One entitlement bucket, keyed in `CopilotQuotaSnapshot.quotas` by Copilot's
 // open-string `quota_id` (`premium_interactions`, `chat`, `completions`, and
-// `premium_models` in the wild). `unlimited` is the only reliable way to tell
-// an uncapped bucket: the two quota sources express it with different
-// `entitlement` / `quota_remaining` values, so neither number infers a cap.
+// `premium_models` in the wild). A bucket is uncapped when `unlimited` is set —
+// the two quota sources spell that with different `entitlement` values, so no
+// number infers it — and does not apply to the seat at all when `entitlement`
+// is not positive, which is how a free seat reports `premium_interactions`.
 export interface CopilotQuotaDetail {
   entitlement: number;
   overage_count: number;
