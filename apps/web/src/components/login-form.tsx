@@ -138,7 +138,6 @@ export function LoginForm() {
               validationMessage={(passwordError ?? credentialError) === undefined || (passwordError ?? credentialError) === null
                 ? undefined
                 : t((passwordError ?? credentialError)!)}
-              validationMessageIcon={null}
               validationState={passwordError ?? credentialError ? 'error' : undefined}
             >
               <Input

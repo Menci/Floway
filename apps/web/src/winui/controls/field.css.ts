@@ -61,18 +61,26 @@ export const fieldCss = `
   --colorNeutralForeground3: var(--winui-text-fill-secondary);
 }
 
+/* The glyph Fluent sets beside a validation message. WinUI states no validation
+   visual on a text field at all -- neither TextBox_themeresources.xaml nor the
+   common dictionary mentions error, invalid or validation -- and the one slot it
+   does give a field for subordinate text, Description, is a bare
+   ContentPresenter with a foreground and no glyph. So the message here is text
+   in the critical fill and nothing else, which is also what carries it: the
+   colour and the words say the same thing the icon would.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L340 */
+.fui-Field__validationMessageIcon.fui-Field__validationMessageIcon {
+  display: none;
+}
+
 /* An invalid control is the one validation state Fluent states in the DOM
    rather than in a Griffel atom: the Field pushes aria-invalid onto the
    control it wraps (useFieldControlProps.js, getFieldControlProps), which lets
-   the message and its icon be addressed from the root. WinUI's counterpart is
-   SystemFillColorCritical. The icon carries its own per-state color atom
-   nested inside the message, so inheriting from the message is not enough and
-   both slots are named; the icon is addressed through the message so that it
-   also outranks the broader warning rule below.
+   the message be addressed from the root. WinUI's counterpart is
+   SystemFillColorCritical.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L282
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L78 */
-.fui-Field:has([aria-invalid='true']) .fui-Field__validationMessage.fui-Field__validationMessage,
-.fui-Field:has([aria-invalid='true']) .fui-Field__validationMessage .fui-Field__validationMessageIcon.fui-Field__validationMessageIcon {
+.fui-Field:has([aria-invalid='true']) .fui-Field__validationMessage.fui-Field__validationMessage {
   color: var(--winui-system-fill-critical);
 }
 
@@ -85,8 +93,7 @@ export const fieldCss = `
    validation state at all.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L281
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L77 */
-.fui-Field__validationMessage.fui-Field__validationMessage[role='alert'],
-.fui-Field__validationMessage[role='alert'] .fui-Field__validationMessageIcon.fui-Field__validationMessageIcon {
+.fui-Field__validationMessage.fui-Field__validationMessage[role='alert'] {
   color: var(--winui-system-fill-caution);
 }
 
