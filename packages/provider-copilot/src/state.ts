@@ -19,8 +19,11 @@ export interface CopilotTokenEntry {
 }
 
 // Most recent entitlement observation, from either quota source. `fetchedAt`
-// is unix ms — the same wrapper Codex and Claude Code persist their snapshots
-// under, so the dashboard's staleness rendering is uniform across providers.
+// is unix ms — the wrapper matches the slot Codex and Claude Code persist
+// their snapshots under, so the state shape and its serializer contract stay
+// uniform across the three providers. The dashboard reads the observation time
+// off the snapshot's own `observed_at`, which is the only one of the two that
+// also travels on the refresh endpoint's reply.
 // No TTL: a Copilot seat resets monthly, so an old snapshot rendered with its
 // timestamp is more useful to an operator than an empty card, and any traffic
 // on the upstream replaces it.
