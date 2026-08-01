@@ -6,10 +6,7 @@ import { fluentComponents } from '../../fluent';
 const { Spinner, Toast, Toaster, ToastTitle, useToastController } = fluentComponents;
 
 // One toaster for the whole dashboard, and one way to report that an action
-// finished. Every page used to own whichever surface it happened to reach for,
-// so the same kind of outcome was announced three different ways depending on
-// which screen you were on, and thirteen actions announced success by saying
-// nothing at all.
+// finished.
 //
 // The division of labour is by whether the message has to survive being read.
 // Success carries nothing the operator needs to keep, so it goes here and

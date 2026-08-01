@@ -3,9 +3,9 @@ import { fluentComponents } from '../../fluent';
 const { mergeClasses } = fluentComponents;
 
 // The swatch that carries a series' colour in a legend tag and in a callout
-// row. The shape is not decoration: a square names a stacked-area series and a
-// circle names a line series, and both charts draw both forms, so this carries
-// the distinction rather than resolving it.
+// row. The shape follows the form the chart draws — a square for an area, a
+// circle for a line — which today also tells the two surfaces apart, since the
+// legend sits over the line chart and the callout over the area chart.
 //
 // WinUI ships no chart legend and no callout, so the 10px is ours. It is the
 // callout table's number rather than the legend's 8, because a 2px radius eats

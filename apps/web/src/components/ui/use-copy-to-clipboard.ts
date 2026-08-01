@@ -10,10 +10,8 @@ const FAILED_MS = 2000;
 
 export type CopyOutcome = 'idle' | 'copied' | 'failed';
 
-// Every copy button reads the same three states off the same two tags, and each
-// one used to spell the pair of nested ternaries out again -- once for the icon
-// and once for the label. The states are named here instead, so a button asks
-// for the one it is in rather than deriving it.
+// The same three states drive every copy button's icon, so the mapping is named
+// here and a button asks for the state it is in rather than deriving the icon.
 const COPY_OUTCOME_ICON = {
   idle: CopyRegular,
   copied: CheckmarkRegular,
@@ -26,8 +24,7 @@ export const copyOutcomeIcon = (outcome: CopyOutcome): ReactElement =>
   createElement(COPY_OUTCOME_ICON[outcome]);
 
 // The labels sit under `common` rather than under a page, because the control
-// they belong to is not one page's. Two pages had their own pair with the same
-// two words in it.
+// they belong to is not one page's.
 //
 // Only the resting label belongs to the call site -- "Copy", "Copy model ID",
 // "Copy authorization URL" -- so that one is asked for and the two outcome

@@ -88,10 +88,7 @@ export const orUndef = (v: string): string | undefined => (v === '' ? undefined 
 // Every field the proxy form can refuse, and the message it refuses with.
 //
 // The form renders these and the dialog's save button reads whether there are
-// any, so the two cannot disagree about what a complete draft is. They did:
-// the save gate listed the four fields every protocol has and let a blank
-// pre-shared key or a malformed UUID through to the gateway while the field
-// beside it was already saying so.
+// any, so the two cannot disagree about what a complete draft is.
 export type ProxyDraftField =
   | 'name' | 'url' | 'host' | 'port'
   | 'uuid' | 'secret' | 'path' | 'serverName' | 'publicKey';

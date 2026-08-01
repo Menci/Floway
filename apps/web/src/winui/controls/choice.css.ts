@@ -261,10 +261,10 @@ export const choiceCss = `
   }
 }
 
-/* The input is the hit target and has to span the grown ellipse and its
-   margins. It is widened through min-width because labelPosition="below"
-   stacks the label under the ellipse and stretches the input to the full root
-   width; a floor leaves that stretch intact. */
+/* The same hit target as the check box above, on the ellipse. It is stated as a
+   floor rather than a width because labelPosition="below" stacks the label under
+   the ellipse and stretches the input to the full root width; a floor leaves
+   that stretch intact. */
 .fui-Radio__input.fui-Radio__input {
   min-width: calc(20px + 2 * var(--spacingHorizontalS));
 }

@@ -316,11 +316,7 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
           <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
             <Field label={t('dashboard.searchConfig.passthrough.upstream')}>
               <Dropdown
-                // An upstream with no chat models cannot supply this value, so
-                // the picker is unusable rather than merely unsuggested -- the
-                // same reading the upstream picker above it already takes when
-                // no eligible upstream exists.
-                disabled={!draft.passthroughOpenAiSearch.enabled || modelsForSelectedUpstream.length === 0}
+                disabled={!draft.passthroughOpenAiSearch.enabled}
                 onOptionSelect={(_, data) => data.optionValue && setPassthroughUpstream(data.optionValue)}
                 selectedOptions={[draft.passthroughOpenAiSearch.upstreamId]}
                 value={selectedUpstream?.name ?? ''}
@@ -337,7 +333,12 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
             </Field>
             <Field label={t('dashboard.searchConfig.passthrough.model')}>
               <Dropdown
-                disabled={!draft.passthroughOpenAiSearch.enabled}
+                // An upstream with no chat models cannot supply this value, so
+                // the picker is unusable rather than merely unsuggested. The
+                // gate belongs here and not on the upstream beside it: an
+                // upstream picker closed by its own selection cannot be used to
+                // leave that selection.
+                disabled={!draft.passthroughOpenAiSearch.enabled || modelsForSelectedUpstream.length === 0}
                 onOptionSelect={(_, data) => {
                   const model = data.optionValue;
                   if (!model) return;

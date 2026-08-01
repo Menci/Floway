@@ -154,8 +154,8 @@ const useStyles = makeStyles({
   // difference is the eight of air plus the four that remains: the glyph ends
   // up twelve from the card's edge and eight from whatever precedes it, which
   // is why it reads as centred between the two without either gap being
-  // written down. An explicit margin on top of that is what pushed it off
-  // centre in both directions while I was moving one.
+  // written down. An explicit margin on top of that pushes the glyph off
+  // centre in both directions.
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml#L15
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml#L540-L560
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L99

@@ -51,10 +51,6 @@ const useStyles = makeStyles({
   // per item, because WinUI animates the pill between the item leaving
   // selection and the one taking it, which needs one element that outlives both.
   item: {
-    // ControlCornerRadius, which the theme layer already sets on
-    // borderRadiusMedium -- restated only because Fluent's own nav radius has
-    // to be outranked here alongside the rest of this block.
-    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CornerRadius_themeresources.xaml#L13
     gap: '12px',
     height: '36px',
     minHeight: '36px',

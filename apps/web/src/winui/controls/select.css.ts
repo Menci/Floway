@@ -295,14 +295,12 @@ export const selectCss = `
 /* The accent selection pill on the item's leading edge. WinUI draws it as a
    Rectangle in the template's first grid column; here it is the item's own
    ::before, which is free because Fluent spends ::after on the
-   active-descendant focus ring. Since the pill is WinUI's whole single-select
-   indicator, the check glyph Fluent shows in the same role is hidden with it —
-   the space it occupies is kept so labels stay aligned down the list. A
-   multiselect option is left alone in both respects: WinUI's ComboBox has no
-   multiselect form, and Fluent's checkbox there is a control of its own rather
-   than a second reading of the same state. WinUI's standard 32px item carries
-   a 16px pill; quarter-block insets preserve that exact geometry and let the
-   indicator grow proportionally when an Option has multi-line content.
+   active-descendant focus ring. A multiselect option gets no pill: WinUI's
+   ComboBox has no multiselect form, and Fluent's checkbox there is a control of
+   its own rather than a second reading of the same state. WinUI's standard 32px
+   item carries a 16px pill; quarter-block insets preserve that exact geometry
+   and let the indicator grow proportionally when an Option has multi-line
+   content.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L106
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L324
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L325

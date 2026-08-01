@@ -48,9 +48,10 @@ const useStyles = makeStyles({
   list: { outlineStyle: 'none' },
   row: {
     backgroundColor: 'transparent',
-    // The rule between rows is a divider, which is the family every other row
-    // separator in the dashboard reads. The neutral stroke this used to name
-    // maps onto the CARD stroke, black at 10% -- invisible against a dark page.
+    // The rule between rows is a divider, the family every other row separator
+    // in the dashboard reads. A card stroke is black at 10%, which is a border
+    // around a surface rather than a line between rows and disappears against a
+    // dark page.
     borderBottom: '1px solid var(--winui-divider-stroke-default)',
     cursor: 'pointer',
     display: 'grid',

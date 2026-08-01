@@ -34,10 +34,9 @@ const useStyles = makeStyles({
 
 export const useDangerActionClasses = (): ReturnType<typeof useStyles> => useStyles();
 
-// Seven components gave up the same one-property rule, which they had been
-// declaring under four names -- `error`, `danger`, `dangerText`, `fieldError`
-// -- for the one job of saying something went wrong. An eighth kept its own,
-// because there the red is one of three severities a row indexes by name.
+// Text that reports a failure is red, and every such report in the dashboard
+// shares this one declaration. A surface that indexes red by severity name
+// alongside its siblings keeps its own scale instead.
 const useTextStyles = makeStyles({
   danger: { color: 'var(--colorPaletteRedForeground1)' },
 });

@@ -72,13 +72,6 @@ export const useOverlayScrollbarsEnabled = (): boolean => useSyncExternalStore(
   getServerScrollbarSize,
 ) > 0;
 
-// OverlayScrollbars wants `scroll`: it reads the axis it is asked to take over
-// from the element's own overflow. Native scrolling wants `auto`, because
-// `scroll` reserves the bar's width whether or not there is anything to scroll,
-// and on a platform whose bars take layout width that reservation is a
-// permanent strip of missing content. The element carries this inline from the
-// first render, before the library has initialised, so writing `scroll`
-// unconditionally hands every scroller a native bar for that window.
 // What the library is asked to take over. Its vocabulary is its own -- there is
 // no `auto` in it -- and `scroll` here means "this axis is mine", not "reserve a
 // bar".
