@@ -14,6 +14,7 @@ const zhHansCN = {
       cancel: '取消',
       dismiss: '关闭',
       noOptions: '无可选项',
+      noSuggestions: '无建议',
       copy: {
         action: '复制',
         copied: '已复制',

@@ -76,8 +76,10 @@ type ListboxRenderPropsWithRef = Omit<ListboxProps, 'as'> & {
 
 function ScrollableListbox({
   ListboxComponent,
+  freeform,
   listboxProps,
 }: {
+  freeform: boolean;
   ListboxComponent: ElementType<ListboxProps>;
   listboxProps: Omit<ListboxProps, 'as'>;
 }) {
@@ -136,20 +138,24 @@ function ScrollableListbox({
           https://www.24a11y.com/2019/select-your-poison-part-2/ */}
       <div className="floway-combobox-listbox-content">
         {Children.toArray(children).length === 0
-          ? <Option disabled value="">{t('common.noOptions')}</Option>
+          ? <Option disabled value="">{t(freeform === true ? 'common.noSuggestions' : 'common.noOptions')}</Option>
           : children}
       </div>
     </div>,
   );
 }
 
-const renderScrollableListbox: ListboxRenderFunction = (ListboxComponent, listboxProps) => (
-  <ScrollableListbox ListboxComponent={ListboxComponent} listboxProps={listboxProps} />
-);
-
-const SCROLLABLE_LISTBOX: NonNullable<ComponentProps<typeof FluentCombobox>['listbox']> = {
-  children: renderScrollableListbox,
-};
+// What an empty list should say depends on whether the control accepts a value
+// the list does not hold. MUI and Ant Design both suppress the message outright
+// on a free-text field, having arrived at it independently, and their reasoning
+// is that an empty suggestion list is not a failure and needs no announcement.
+// That reasoning is about announcing a FAILURE: a row that states what is true
+// -- there is nothing to suggest -- announces no such thing, and it is what
+// keeps a control from changing shape as the model behind it changes.
+const listboxRenderer = (freeform: boolean): ListboxRenderFunction =>
+  (ListboxComponent, listboxProps) => (
+    <ScrollableListbox ListboxComponent={ListboxComponent} freeform={freeform} listboxProps={listboxProps} />
+  );
 
 // Fluent matches the list to the control it drops from, writing the measured
 // width straight onto the list. That is right for a field, where the two read
@@ -159,13 +165,12 @@ const SCROLLABLE_LISTBOX: NonNullable<ComponentProps<typeof FluentCombobox>['lis
 // keeps the measurement as a floor and lets the list grow past it, which is
 // only useful together with an `align: 'end'` positioning: the list has to hang
 // off the trailing edge and open away from it, or it would grow off the page.
-const CONTENT_WIDTH_LISTBOX: NonNullable<ComponentProps<typeof FluentCombobox>['listbox']> = {
-  children: renderScrollableListbox,
-  className: '!w-max !min-w-[var(--fui-match-target-size)] !max-w-[calc(100vw-16px)]',
-};
+const CONTENT_WIDTH_LISTBOX_CLASS = '!w-max !min-w-[var(--fui-match-target-size)] !max-w-[calc(100vw-16px)]';
 
-const listboxFor = (listWidth: 'target' | 'content' | undefined) =>
-  (listWidth === 'content' ? CONTENT_WIDTH_LISTBOX : SCROLLABLE_LISTBOX);
+const listboxFor = (listWidth: 'target' | 'content' | undefined, freeform: boolean) => ({
+  children: listboxRenderer(freeform),
+  ...(listWidth === 'content' ? { className: CONTENT_WIDTH_LISTBOX_CLASS } : {}),
+});
 
 interface ListWidthProp {
   /** Whether the list is pinned to the control's width or free to exceed it. */
@@ -187,7 +192,7 @@ export const Combobox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof 
       input={{ readOnly, ...(typeof props.input === 'object' && props.input !== null ? props.input : {}) }}
       onOptionSelect={readOnly === true ? undefined : onOptionSelect}
       positioning={positioning ?? LISTBOX_POSITIONING}
-      listbox={listboxFor(listWidth)}
+      listbox={listboxFor(listWidth, props.freeform === true)}
       className={mergeClasses(className, MIN_WIDTH_CLASS)}
       ref={ref}
     />
@@ -202,7 +207,7 @@ export const Dropdown = forwardRef<HTMLButtonElement, Omit<ComponentProps<typeof
       expandIcon={expandIcon === undefined ? EXPAND_ICON : expandIcon}
       onOptionSelect={readOnly === true ? undefined : onOptionSelect}
       positioning={positioning ?? LISTBOX_POSITIONING}
-      listbox={listboxFor(listWidth)}
+      listbox={listboxFor(listWidth, false)}
       className={mergeClasses(className, MIN_WIDTH_CLASS)}
       ref={ref}
     />

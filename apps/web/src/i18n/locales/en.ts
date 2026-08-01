@@ -14,6 +14,7 @@ const en = {
       cancel: 'Cancel',
       dismiss: 'Dismiss',
       noOptions: 'No options',
+      noSuggestions: 'No suggestions',
       copy: {
         action: 'Copy',
         copied: 'Copied',
