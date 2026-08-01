@@ -11,8 +11,9 @@ import { useUpstreamsStore } from '../../../composables/useUpstreams.ts';
 
 // Pull the full unredacted record for the editor; the flag catalog and
 // proxies come from the shared stores so the sidebar + proxy fallback UI
-// mount pre-populated. Model catalog and Copilot quota are fetched on
-// demand by the editor.
+// mount pre-populated. The model catalog is fetched on demand by the editor;
+// the Copilot quota snapshot rides along on the record, and the editor only
+// re-reads it when the operator asks for a refresh.
 export const useEditUpstreamData = defineBasicLoader('/dashboard/upstreams/[id]', async route => {
   const api = useApi();
   const upstreamsStore = useUpstreamsStore();
