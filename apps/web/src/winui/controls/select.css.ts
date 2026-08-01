@@ -97,19 +97,29 @@ export const selectCss = `
    states while still finding the button or input inside each root -- WinUI
    splits the same way, giving pointer focus an empty PointerFocused state.
    Fluent's brand underline is the affordance this replaces, so the
-   pseudo-element drawing it is dropped on the appearance WinUI paints. WinUI's
-   focus visual is two concentric rings: the outline supplies the outer one and
-   a shadow spread across the two pixels the outline is offset by supplies the
-   inner one, which is where WinUI puts it -- immediately against the control.
+   pseudo-element drawing it is dropped on the appearance WinUI paints. The
+   field draws no inner focus ring: it opts out of the system focus visual --
+   UseSystemFocusVisuals binds to IsApplicationFocusVisualKindReveal, which is
+   False in every dictionary -- so the FocusStrokeColorInner half of that pair
+   has no owner here. The whole visual is HighlightBackground, a border inset
+   -4 whose 2px stroke is FocusStrokeColorOuter and whose fill is
+   ControlFillColorDefault. The outline carries that stroke; the shadow spread
+   across the two pixels the outline is offset by carries the fill, which is
+   what shows between the stroke and the field. The two brushes coincide in
+   light, where each is 70% white, and part in dark, where the control fill is
+   6% white against an inner ring's 70% black.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L37
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L38
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L338
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L343
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L380
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L570
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L473-L476
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L504 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L504
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L328 */
 .fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:has([data-fui-focus-visible]),
 .fui-Combobox.fui-Combobox[data-winui-appearance='outline']:has([data-fui-focus-visible]) {
-  box-shadow: 0 0 0 2px var(--winui-focus-stroke-inner);
+  box-shadow: 0 0 0 2px var(--winui-control-fill-default);
   outline: 2px solid var(--winui-focus-stroke-outer);
   outline-offset: 2px;
 }
