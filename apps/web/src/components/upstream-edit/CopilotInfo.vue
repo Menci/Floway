@@ -53,13 +53,27 @@ const refresh = async () => {
 // entitlement and reports `chat` / `completions` as unlimited; a free seat
 // meters the latter two instead. Rendering whatever comes back keeps the card
 // honest on both without pinning a known set of quota ids.
-const buckets = computed(() => Object.entries(quota.value?.quotas ?? {}).map(([id, detail]) => ({
+const allBuckets = computed(() => Object.entries(quota.value?.quotas ?? {}).map(([id, detail]) => ({
   id,
   label: id.replace(/_/g, ' '),
   detail,
   usedPercent: Math.min(100, Math.max(0, Math.round(100 - detail.percent_remaining))),
   used: Math.round(detail.entitlement - detail.quota_remaining),
 })));
+
+// An unlimited bucket has nothing to report, so the card shows only what is
+// actually metered. A seat with no metered bucket at all still gets one row —
+// otherwise the card would read as "no quota observed" when the truth is
+// "nothing is capped". The premium bucket is the one an operator looks for, so
+// it is the preferred stand-in; falling back to the first reported bucket
+// keeps that working if GitHub renames it.
+const buckets = computed(() => {
+  const metered = allBuckets.value.filter(bucket => !bucket.detail.unlimited);
+  if (metered.length > 0) return metered;
+  const premium = allBuckets.value.find(bucket => bucket.id.startsWith('premium'));
+  const standIn = premium ?? allBuckets.value[0];
+  return standIn === undefined ? [] : [standIn];
+});
 
 const observedAt = computed(() => {
   const iso = quota.value?.observed_at;
