@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   isRouteErrorResponse,
@@ -129,11 +129,17 @@ export function HydrateFallback() {
 // which is why this surfaced as an alignment fault.
 //
 // Hydrating the fallback first and showing the failure on the pass after keeps
-// the exchange the one React already handles.
+// the exchange the one React already handles. Read through
+// useSyncExternalStore rather than an effect that sets state: the store never
+// changes, so the hook is doing the one thing it exists for -- returning a
+// different value on the server pass than on the client -- without a render
+// that exists only to schedule another.
+const subscribeNever = () => () => {};
+const isClient = () => true;
+const isServer = () => false;
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   const { t } = useTranslation();
-  const [hydrated, setHydrated] = useState(false);
-  useEffect(() => setHydrated(true), []);
+  const hydrated = useSyncExternalStore(subscribeNever, isClient, isServer);
   let message = t('common.errors.unexpectedTitle');
   let details = t('common.errors.unexpectedDescription');
   let stack: string | undefined;
