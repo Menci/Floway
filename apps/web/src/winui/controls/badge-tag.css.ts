@@ -19,38 +19,30 @@
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SplitButton/SplitButton_themeresources.xaml#L28-L30
 //
 // These components compose `appearance`, `color`, `shape` and `size` in
-// JavaScript. The runtime chokepoint stamps Badge's resolved size so its text
-// ramp can be addressed without touching the tiny dot or large label; Tag
-// variants remain unnamed. Everything else below either applies to every
-// variant or redefines a Fluent token read only by the intended atoms. The
-// states that survive into the DOM on their own are Fluent's: `:hover`,
-// `:active`, `:disabled`, `aria-pressed` / `aria-selected` for the selected
-// chip, and `[data-fui-focus-visible]`.
+// JavaScript, so a variant is addressable only where the runtime chokepoint
+// stamps it back onto the DOM. No rule here needs that: each one either
+// applies to every variant or redefines a Fluent token read only by the
+// intended atoms. The states that survive into the DOM on their own are
+// Fluent's: `:hover`, `:active`, `:disabled`, `aria-pressed` /
+// `aria-selected` for the selected chip, and `[data-fui-focus-visible]`.
 export const badgeTagCss = `
 /* Badge weight. The InfoBadge style sets a FontSize on its value TextBlock and
    no FontWeight, so the badge reads at the same weight as the text around it
-   rather than Fluent's semibold.
+   rather than Fluent's semibold. Weight is the whole correction the type
+   needs: Fluent's reset already runs the label at 12px on a 16px line box,
+   which is what WinUI's Caption ramp states, and no Badge size step moves it.
 
-   InfoBadge's geometry is deliberately left to Fluent. MinWidth 4 and
+   InfoBadge's geometry stays Fluent's, by our choice. MinWidth 4 and
    MaxHeight 16 are one package with ValueInfoBadgeTextMargin 4,0,4,2 and
-   InfoBadgeValueFontSize 11, and neither of those two can be ported: Fluent
-   composes size in JavaScript and writes no attribute, so a blanket font
-   size and inline padding would land on the 6×6px tiny dot as well. Taking
-   the bounds alone would sink the floor under every Fluent size step (20px
-   base, 16/24/32px per size) and cap the box at 16px while the reset keeps a
-   20px line box, so a one-glyph badge would leave its own circle.
+   InfoBadgeValueFontSize 11, so transcribing it means a size-scoped
+   font-size: 11px with padding: 0 4px 2px alongside those bounds -- which
+   sinks the floor under every Fluent size step (20px base, 16/24/32px per
+   size) and caps the box at 16px against the reset's 20px box height. That
+   replaces Fluent's size ramp rather than restyling it, and we keep the ramp.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBadge/InfoBadge_themeresources.xaml#L82
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBadge/InfoBadge_themeresources.xaml#L8-L15 */
 .fui-Badge.fui-Badge {
   font-weight: var(--fontWeightRegular);
-}
-
-/* Product text badges use the medium 20px shell with WinUI's 12/16 caption.
-   Large badges retain the 14px body label that scales with their 24px shell;
-   tiny and small remain available only to the component gallery's size ramp. */
-.fui-Badge.fui-Badge[data-winui-size='medium'] {
-  font-size: 12px;
-  line-height: 16px;
 }
 
 /* The chip body, shared by the plain Tag and by both halves of an
@@ -137,12 +129,22 @@ export const badgeTagCss = `
 }
 
 /* The focus visual. WinUI draws two concentric rings so the indicator survives
-   on any fill including accent; Fluent draws one, as an outline two pixels
-   outside the chip. Recolouring that outline to the outer stroke and the
-   chip's own border to the inner one yields WinUI's pair without restating a
-   ring width, which no Tag-shaped WinUI style declares. This also has to
-   outrank the selected outline above, which is why the border colour is
+   on any fill including accent: the primary brush and thickness paint the
+   outer ring, the secondary pair the inner one, and the inner ring is nested
+   inside the outer by the outer's own thickness. The corpus states that pair
+   as 2px over 1px. Fluent draws a single 2px outline in --colorStrokeFocus2,
+   flush against the chip's border box, outside the chip's own 1px border.
+   Recolouring the outline to the outer stroke and that border to the inner
+   one therefore lands WinUI's 2/1 pair with no width restated. The price is
+   the chip's own edge, which is spent on the inner ring for as long as the
+   chip is focused; WinUI keeps its edge, because Button pushes the whole
+   focus visual clear of the control with FocusVisualMargin -3. This also has
+   to outrank the selected outline above, which is why the border colour is
    repeated rather than inherited from it.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L173-L182
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L383-L384
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L441-L452
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button.xaml#L167
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55 */
 .fui-Tag.fui-Tag[data-fui-focus-visible],

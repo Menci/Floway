@@ -55,29 +55,32 @@ const controlFillAppearances = `:is(\
 [data-winui-appearance='filled-lighter-shadow'])`;
 
 export const textInputCss = `
-/* Height. WinUI puts the two side by side at 33 and 34, and both numbers come
-   out of stated values rather than out of either control's floor. A text
-   control is 1px of border over 5 and 6 of padding around a 20px line, which is
-   33 and clears its own TextControlThemeMinHeight of 32; a ComboBox is the same
-   border over ComboBoxPadding's 5 and 7, which is 34 and clears its identical
-   floor. The padding and border are the WinUI 3 values from the controls
-   dictionary, which overrides the framework's legacy generic.xaml on both --
-   10,5,6,6 rather than 10,3,6,6, and 1 rather than 2.
+/* Height. WinUI states 32 as the floor for each control on its own --
+   TextControlThemeMinHeight for a text control, ComboBoxMinHeight for a
+   ComboBox -- and each control's stated padding carries it past that floor. A
+   text control is 1px of border over TextControlThemePadding's 5 and 6 around
+   a 20px line, which is 33; a ComboBox is the same border over ComboBoxPadding's
+   5 and 7, which is 34, and its editable form swaps in
+   ComboBoxEditableTextPadding's 5 and 6 for 33. The padding and border are the
+   WinUI 3 values from the controls dictionary, which overrides the framework's
+   legacy generic.xaml on both -- 10,5,6,6 rather than 10,3,6,6, and 1 rather
+   than 2.
 
-   34 for both is a departure, and this is it: a row that mixes an Input with a
-   Combobox is the common case in this app, and two fields in one row that
-   disagree read as a defect rather than as fidelity. The taller is the one to
-   unify on, because growing a field keeps its content on the same baseline as
-   its neighbour where shrinking one would not.
+   One shared row height of 34 is the operator's choice, not something WinUI
+   states. A row that mixes an Input with a Combobox is the common case in this
+   app, and two fields in one row that disagree by a pixel read as a defect. 34
+   is the number of that choice because growing a field keeps its content on the
+   same baseline as its neighbour where shrinking one would not. The same 34 is
+   taken by ./choice.css.ts and ./switch.css.ts so a whole form row aligns.
 
    Stated on the root rather than on the inner control, because that is where
    Fluent's own floor sits and border-box makes it the whole of the field. The
-   Combobox takes it here too: it is a ComboBox by every other reading in
-   ./select.css, and its editable form is the one that computes from a text
-   control's floor rather than from the button's padding.
+   Combobox takes it from the same rule: it is a ComboBox by every other reading
+   in ./select.css.ts.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources.xaml#L10-L12
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L327
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L341
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L342
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L96
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L173-L175 */
 .fui-Input.fui-Input${notOptedOut},
@@ -159,8 +162,8 @@ export const textInputCss = `
 
 /* Focus flattens the stroke: TextControlElevationBorderFocusedBrush is
    ControlStrokeColorDefault on every side, the accent living only in the
-   bottom gradient stop. Fluent reaches that state through its Pressed pair —
-   WinUI's text controls have no pressed state of their own — and the
+   bottom gradient stop. Fluent reaches that state through its Pressed pair --
+   WinUI's text controls have no pressed state of their own -- and the
    foundation already gives colorNeutralStroke1Pressed the flat stroke, so only
    the accessible half is restated here.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L29
@@ -206,8 +209,8 @@ export const textInputCss = `
 /* Disabled text. WinUI keys TextControlForegroundDisabled to
    TemporaryTextFillColorDisabled, a near-neutral one step off the pure channel
    of TextFillColorDisabled. Fluent reads one variable for both the disabled
-   text and the disabled placeholder, and WinUI splits them — the placeholder
-   keeps TextFillColorDisabled, which the foundation already installs — so the
+   text and the disabled placeholder, and WinUI splits them -- the placeholder
+   keeps TextFillColorDisabled, which the foundation already installs -- so the
    text side is written as a declaration on the control element rather than as
    a redefinition.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L34

@@ -1,15 +1,8 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { useId } from 'react';
 
 import { fluentComponents } from '../../fluent';
-import { prefersReducedMotion } from '../../lib/reduced-motion';
-import {
-  INDICATOR_DURATION_MS,
-  INDICATOR_POSITION_SNAP,
-  INDICATOR_SETTLE_EASING,
-  INDICATOR_STRETCH_EASING,
-} from '../../winui/motion';
 
-const { makeStyles, mergeClasses, tokens } = fluentComponents;
+const { makeStyles, tokens } = fluentComponents;
 
 // A row of mutually exclusive choices, shaped after WinUI's SelectorBar.
 //
@@ -23,27 +16,28 @@ const { makeStyles, mergeClasses, tokens } = fluentComponents;
 // raised pill steps up.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SelectorBar/SelectorBar_themeresources.xaml
 const useStyles = makeStyles({
-  // SelectorBarItemSpacing is 8. SelectorBar's own vertical metrics are not
-  // kept: its padding of 0,4 over an item padded 12,10,12,7 stands the control
-  // 45px tall, and this one is a form field sitting in a row with inputs and
-  // dropdowns that are 32. A control that does not line up with the field
-  // beside it is a worse answer than one that departs from the dictionary, so
-  // the block padding goes to the item and the row comes to 32. The asymmetry
-  // stays, because the shallower bottom is the room the pill occupies.
+  // The items sit flush against one another. SelectorBar hands them to an
+  // ItemsView laid out by a horizontal StackLayout that states no spacing, so
+  // the 12px each item pads by on either side is the whole distance between one
+  // label and the next. SelectorBarItemSpacing, 8, is the gap between an item's
+  // icon and its text rather than between items, and these items carry no icon.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SelectorBar/SelectorBar.xaml#L29-L36
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SelectorBar/SelectorBar.xaml#L174-L178
   root: {
     alignItems: 'center',
     display: 'flex',
-    position: 'relative',
     flexWrap: 'nowrap',
-    gap: '8px',
     maxWidth: '100%',
     width: 'fit-content',
   },
-  // Seven above and below a 20px line is 34, the height of the fields beside it.
-  // SelectorBar's own padding is three pixels shallower at the bottom to leave
-  // the pill its room, but the pill here lives in a track of its own laid over
-  // the row rather than inside the item's box, so the item owes it nothing and
-  // the label sits centred instead of low.
+  // Seven above and below a 20px line is 34, the height every control row in
+  // this dashboard is set to. That number is the operator's choice, not WinUI's:
+  // WinUI pads the item 12,10,12,7 around the label and hangs the pill in a row
+  // of its own beneath that, which stands the control well clear of the inputs
+  // and dropdowns this one shares a form row with. The uniform row is taken
+  // instead, so the label sits centred and the pill finds its 3px inside the
+  // item's own bottom padding rather than adding a row below it.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SelectorBar/SelectorBar_themeresources.xaml#L26-L32
   item: {
     alignItems: 'center',
     cursor: 'pointer',
@@ -63,35 +57,55 @@ const useStyles = makeStyles({
       color: 'var(--winui-text-fill-disabled)',
       cursor: 'not-allowed',
     },
+    // PART_SelectionVisual: a 4px by 3px accent rectangle centred at the bottom
+    // of every item, rounded half a pixel across and one down, held at zero
+    // opacity until its item is the chosen one. Each item carries its own, so
+    // the mark is a pseudo-element rather than one element the group shares.
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SelectorBar/SelectorBar.xaml#L200-L214
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SelectorBar/SelectorBar_themeresources.xaml#L96-L104
+    '&::after': {
+      backgroundColor: 'var(--winui-accent-fill-default)',
+      // Each corner is an ellipse quadrant, half a pixel across and one down,
+      // stated per corner because Griffel splits the `border-radius` shorthand
+      // on whitespace and would not survive its `/`.
+      borderBottomLeftRadius: '0.5px 1px',
+      borderBottomRightRadius: '0.5px 1px',
+      borderTopLeftRadius: '0.5px 1px',
+      borderTopRightRadius: '0.5px 1px',
+      bottom: '0',
+      content: '""',
+      height: '3px',
+      left: 'calc(50% - 2px)',
+      opacity: 0,
+      pointerEvents: 'none',
+      position: 'absolute',
+      width: '4px',
+    },
+    // Selecting fades the pill in and scales it to four times its width -- 16px
+    // -- about its centre, over ComboBoxItemScaleAnimationDuration on the
+    // template's own KeySpline. The centre is the origin SelectorBarItemPill
+    // inherits from ComboBoxItemPill, which is why the pill grows evenly to
+    // either side of where it rests. Deselecting states no storyboard at all,
+    // so the pill snaps away; the timing therefore sits here, on the rule that
+    // is becoming active, and the resting rule above states none.
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SelectorBar/SelectorBar.xaml#L97-L114
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SelectorBar/SelectorBar.xaml#L69
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L330
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L349-L357
+    '&:has(input:checked)::after': {
+      opacity: 1,
+      transform: 'scaleX(4)',
+      transitionDuration: '167ms',
+      transitionProperty: 'opacity, transform',
+      transitionTimingFunction: 'cubic-bezier(0, 0, 0, 1)',
+      '@media (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
+    },
+    // WinUI's Disabled state replaces the pill's fill and leaves the rest of
+    // its drawing alone, so a disabled item that is also the chosen one still
+    // shows the mark, in the disabled accent.
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SelectorBar/SelectorBar.xaml#L164-L166
+    '&:has(input:disabled)::after': { backgroundColor: 'var(--winui-accent-fill-disabled)' },
   },
-  // SelectorBarItemPillHeight is 3 and SelectorBarItemPillWidth 4, the latter
-  // being the diameter its ends round by. SelectorBarItemSelectionVisualMargin
-  // is 0, so the pill spans the item it marks rather than only its label. It is
-  // one element for the group instead of one per item, because WinUI slides it
-  // between items and a pseudo-element cannot outlive the item it belongs to.
-  // The track carries the pill's place in the row and nothing else; the pill
-  // inside it carries the whole animation on one transform. Writing a
-  // translation and a scale as separate properties would compose them in CSS's
-  // fixed order -- translate, rotate, scale, then transform -- and multiply the
-  // travel by the stretch.
-  pillTrack: {
-    bottom: '0',
-    height: '3px',
-    pointerEvents: 'none',
-    position: 'absolute',
-  },
-  // The offset below solves for a pinned edge assuming the scale grows from the
-  // leading one, so the origin is stated here rather than left at the centre it
-  // defaults to.
-  pill: {
-    backgroundColor: 'var(--winui-accent-fill-default)',
-    borderRadius: '2px',
-    display: 'block',
-    height: '100%',
-    transformOrigin: 'left',
-    width: '100%',
-  },
-  pillDisabled: { backgroundColor: 'var(--winui-accent-fill-disabled)' },
   input: {
     height: '1px',
     inset: 0,
@@ -106,8 +120,6 @@ export interface ChoiceGroupItem {
   label: string;
   disabled?: boolean;
 }
-
-interface PillBox { left: number; width: number }
 
 export function ChoiceGroup({
   ariaLabel,
@@ -131,74 +143,9 @@ export function ChoiceGroup({
 }) {
   const styles = useStyles();
   const name = useId();
-  const rootRef = useRef<HTMLDivElement>(null);
-  const pillRef = useRef<HTMLSpanElement>(null);
-  const previousRef = useRef<PillBox | null>(null);
-  const [box, setBox] = useState<PillBox | null>(null);
-  const selected = items.find(item => item.value === value) ?? null;
 
-  useLayoutEffect(() => {
-    const root = rootRef.current;
-    const item = root?.querySelector<HTMLElement>(`[data-choice="${CSS.escape(value)}"]`);
-    if (!root || !item) {
-      setBox(null);
-      return;
-    }
-    const rootBox = root.getBoundingClientRect();
-    const itemBox = item.getBoundingClientRect();
-    // Snapped to the device grid. An item's width is whatever its label
-    // measures, so the track lands on a fraction of a pixel, and a fraction is
-    // rasterized one way while the pill is a scaled layer and another way once
-    // the transform is dropped: the far edge covers one device pixel more
-    // during the animation than at rest, and drops it on the final frame. On
-    // the grid both states paint the same column.
-    const snap = (value: number) => Math.round(value * window.devicePixelRatio) / window.devicePixelRatio;
-    setBox({ left: snap(itemBox.left - rootBox.left), width: snap(itemBox.width) });
-  }, [items, value]);
-
-  useEffect(() => {
-    const pill = pillRef.current;
-    const previous = previousRef.current;
-    previousRef.current = box;
-    if (!pill || !box || !previous) return;
-    if (prefersReducedMotion()) return;
-
-    const distance = box.left - previous.left;
-    if (distance === 0 && previous.width === box.width) return;
-
-    // WinUI's horizontal indicator carries the two widths as scales, because the
-    // bar it leaves and the bar it becomes are not the same length. The element
-    // is sized to the destination, so the end scale is one and the begin scale
-    // is the ratio it starts from.
-    const dimension = box.width;
-    const beginScale = previous.width / dimension;
-    const forward = distance > 0;
-    const peak = Math.abs(distance) / dimension + (forward ? 1 : beginScale);
-
-    // One animation, one property, one origin. WinUI expresses this as three --
-    // an offset that steps, a scale, and an origin that flips at the step -- but
-    // the flip only exists to pin the edge that must stay still, and pinning it
-    // through the offset instead says the same thing without a discontinuity.
-    // Three animations that must agree on a single frame will eventually not,
-    // and the frame they disagree on shows the pill at its stretched length in
-    // the wrong place.
-    //
-    // Solving for the offset that holds the pinned edge: travelling forward the
-    // trailing edge stays at the source until the snap, so the offset is held
-    // and then unwinds with the settle; travelling back the leading edge stays
-    // at the source instead, so the offset unwinds during the stretch and is
-    // held afterwards. Both are affine in the scale, so each follows its own
-    // phase's curve exactly.
-    const from = -distance;
-    pill.animate([
-      { transform: `translateX(${from}px) scaleX(${beginScale})`, easing: INDICATOR_STRETCH_EASING },
-      { transform: `translateX(${forward ? from : 0}px) scaleX(${peak})`, offset: INDICATOR_POSITION_SNAP, easing: INDICATOR_SETTLE_EASING },
-      { transform: 'translateX(0px) scaleX(1)' },
-    ], { duration: INDICATOR_DURATION_MS });
-  }, [box]);
-
-  return <div aria-label={ariaLabel} aria-readonly={readOnly === true ? true : undefined} className={styles.root} ref={rootRef} role="radiogroup">
-    {items.map(item => <label className={styles.item} data-choice={item.value} key={item.value}>
+  return <div aria-label={ariaLabel} aria-readonly={readOnly === true ? true : undefined} className={styles.root} role="radiogroup">
+    {items.map(item => <label className={styles.item} key={item.value}>
       <input
         checked={value === item.value}
         className={styles.input}
@@ -213,11 +160,5 @@ export function ChoiceGroup({
       />
       <span>{item.label}</span>
     </label>)}
-    {box && <span aria-hidden className={styles.pillTrack} style={{ left: box.left, width: box.width }}>
-      <span
-        className={mergeClasses(styles.pill, selected?.disabled && styles.pillDisabled)}
-        ref={pillRef}
-      />
-    </span>}
   </div>;
 }

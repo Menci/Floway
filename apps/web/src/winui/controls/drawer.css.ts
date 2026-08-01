@@ -1,26 +1,49 @@
 // WinUI 3 styling for Fluent v9's Drawer family — both the OverlayDrawer and
 // the InlineDrawer the sidebar's NavDrawer renders, plus the header and footer
-// separators the two flavours share. WinUI ships no drawer, so the surface is
-// composed from the two WinUI surfaces it is made of: the outline is a
-// flyout's, and the fill, foreground and scroll separator are a ContentDialog's
-// — that being the WinUI surface that likewise carries a title block over
-// scrolling content.
+// separators the two flavours share. WinUI's full-height pane is
+// NavigationView's, and it states two surfaces rather than one: the pane that
+// overlays the content carries AcrylicInAppFillColorDefaultBrush, while the
+// pane that sits beside it is transparent and shows the page it is part of.
+// Each flavour here takes the one it corresponds to.
 //
-// FlyoutPresenter fills itself with AcrylicInAppFillColorDefaultBrush, whose
-// flat fallback ../tokens.ts carries. A drawer is not a flyout though: it is
-// the full-height surface a title block sits on, which is a ContentDialog's
-// job, so ContentDialogBackground's solid base is the fill we transcribe.
+// The overlaying pane's fill is the brush FlyoutPresenter also carries, so the
+// overlay drawer takes that surface whole: the acrylic brush's flat fallback
+// from ../tokens.ts for the fill, the flyout stroke for the outline. The header
+// and footer scroll separators are ContentDialog's title separator, that being
+// the WinUI surface which likewise carries a title block over scrolling
+// content.
 export const drawerCss = `
-/* Surface fill and foreground, taken from the ContentDialog keys rather than
-   Fluent's neutral background and foreground pair. Both flavours share the pair
-   through the same shared default styles, so both are named here; letting only
-   the overlay move would leave the sidebar's inline drawer Fluent-white beside
-   it.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L39-L40 */
+/* Foreground, in place of Fluent's neutral one. Both flavours take WinUI's
+   default text brush, which resolves to the primary text fill.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources.xaml#L14 */
 .fui-OverlayDrawer.fui-OverlayDrawer,
 .fui-InlineDrawer.fui-InlineDrawer {
-  background-color: var(--winui-solid-background-fill-base);
   color: var(--winui-text-fill-primary);
+}
+
+/* An overlay drawer is the pane in its overlaying form, filled with
+   AcrylicInAppFillColorDefaultBrush -- the same brush FlyoutPresenter carries,
+   which is why the outline below is a flyout's. ../tokens.ts carries the flat
+   colour that brush declares as its own fallback.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L289
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L5
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/FlyoutPresenter_themeresources.xaml#L5 */
+.fui-OverlayDrawer.fui-OverlayDrawer {
+  background-color: var(--winui-acrylic-in-app-fill-default);
+}
+
+/* An inline drawer is the pane in its expanded form, which NavigationView
+   drives to PaneNotOverlaying: the fill becomes
+   SolidBackgroundFillColorTransparent, so what shows through is the page the
+   pane is part of, and that page is ApplicationPageBackgroundThemeBrush --
+   SolidBackgroundFillColorBase. The resolved colour is named here rather than
+   left transparent, so the surface does not depend on whatever the drawer is
+   placed over.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L129
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L6
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources.xaml#L13 */
+.fui-InlineDrawer.fui-InlineDrawer {
+  background-color: var(--winui-solid-background-fill-base);
 }
 
 /* An inline drawer's optional separator is the hairline between two regions of
@@ -32,13 +55,16 @@ export const drawerCss = `
   border-color: var(--winui-divider-stroke-default);
 }
 
-/* The edge facing the page is a flyout border. Fluent gives a border style to
-   that one side only — the right edge for a start drawer, the left for an end
-   one, none at all for a bottom one — so this shorthand reaches exactly the
-   edge Fluent paints and the style-less sides stay unpainted. While focus is
-   visible Fluent blanks the same border to complete its focus ring, so the
-   override stands aside for that state.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/FlyoutPresenter_themeresources.xaml#L16 */
+/* The edge facing the page is a flyout border. WinUI strokes all four sides at
+   FlyoutBorderThemeThickness 1; only the page-facing edge is painted here,
+   because a viewport-anchored drawer's other three edges run along the window
+   frame. Fluent gives a border style to exactly that side -- the right edge for
+   a start drawer, the left for an end one, none at all for a bottom one -- so
+   this shorthand reaches it and the style-less sides stay unpainted. Two losses
+   come with painting one edge: a bottom drawer takes no stroke at all, and
+   while focus is visible Fluent blanks the same border to complete its focus
+   ring, so the override stands aside for that state and the edge goes with it.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/FlyoutPresenter_themeresources.xaml#L6-L7 */
 .fui-OverlayDrawer.fui-OverlayDrawer:not([data-fui-focus-visible]) {
   border-color: var(--winui-surface-stroke-flyout);
 }

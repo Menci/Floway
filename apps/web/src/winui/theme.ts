@@ -6,8 +6,12 @@ import { flowayDarkTheme, flowayLightTheme } from '../theme';
 // Fluent's tokens has an exact WinUI counterpart: the neutral background ramp,
 // the neutral strokes, the foreground ramp, the corner radii, and the
 // elevation shadows. Overriding just that subset moves the whole component
-// library onto WinUI's palette without disturbing the brand, shared, or status
-// colors, which WinUI has no matching concept for.
+// library onto WinUI's palette, and leaves the brand, shared, and status colors
+// to Fluent. Fluent's shared hue ramps have no WinUI equivalent at all; accent
+// and status do — AccentFillColor* and SystemFillColor*, both transcribed in
+// ./tokens.ts — but Fluent fans each of them across far more slots than WinUI
+// declares, so they are spent per control in ./controls/*.css.ts rather than
+// mapped one-to-one here.
 //
 // Every value here is a `var(--winui-*)` reference rather than a literal.
 // ./tokens.ts is the one transcription of the XAML dictionaries and this file is
@@ -40,14 +44,22 @@ const palette = {
   // one it also paints the text-control underline with.
   //
   // The interaction steps come from Button, which is where WinUI states them:
-  // rest and hover both use ControlElevationBorderBrush, whose heavy stop is
-  // ControlStrokeColorSecondary, so hover takes that heavy stop as the closest
-  // flat reading of the gradient; pressed drops to the flat
-  // ControlStrokeColorDefaultBrush.
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L40
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L138
+  // rest and hover are the same brush, ControlElevationBorderBrush, and pressed
+  // is the flat ControlStrokeColorDefaultBrush. That brush is a gradient mapped
+  // in absolute units across a 3px span, so ControlStrokeColorSecondary covers
+  // roughly one pixel at one edge — the top in dark, the bottom in light, which
+  // flips the gradient — and ControlStrokeColorDefault covers the rest. A
+  // single-valued Fluent token can carry one of the two stops, and over the
+  // height of a control the dominant one is Default, so all three states
+  // resolve to it and the edge highlight is dropped. The controls that draw
+  // that highlight take it from --winui-control-elevation-border-color, which
+  // ./tokens.ts composes as a three-term border-color shorthand.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L38-L40
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L136-L138
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L186-L191
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L382-L390
   colorNeutralStroke1: 'var(--winui-control-stroke-default)',
-  colorNeutralStroke1Hover: 'var(--winui-control-stroke-secondary)',
+  colorNeutralStroke1Hover: 'var(--winui-control-stroke-default)',
   colorNeutralStroke1Pressed: 'var(--winui-control-stroke-default)',
   colorNeutralStroke2: 'var(--winui-card-stroke-default)',
   colorNeutralStroke3: 'var(--winui-divider-stroke-default)',
@@ -63,11 +75,14 @@ const palette = {
 } as const satisfies Partial<Theme>;
 
 // WinUI has exactly two radii where Fluent has four: ControlCornerRadius for
-// anything inline and OverlayCornerRadius for anything that floats. The small
-// step stays on Fluent's own 2px, because the only thing drawn with it here is
-// the inline code of Floway's markdown, whose typography this layer leaves
-// alone.
+// anything inline and OverlayCornerRadius for anything that floats. Fluent's
+// small step keeps its own 2px, because WinUI states no shared radius below
+// ControlCornerRadius's 4 — the smaller values it does declare, 3 and 1.5, are
+// keyed to named parts of a single control and belong to the sheets that draw
+// those parts. Fluent spends the small step on the tooltip arrow's tip and on
+// the focus ring of every size="small" button.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CornerRadius_themeresources.xaml#L13-L15
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L345-L346
 const radii = {
   borderRadiusMedium: 'var(--winui-control-corner-radius)',
   borderRadiusLarge: 'var(--winui-overlay-corner-radius)',

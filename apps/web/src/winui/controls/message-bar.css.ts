@@ -23,14 +23,14 @@
 // could name, so the stamp is what makes the four severities addressable at
 // all; the same chokepoint swaps in the filled counterpart of each glyph.
 //
-// That filled glyph is how the two-layer construction is answered. WinUI draws
-// a disc in the severity colour with the symbol knocked out of it, and a Fluent
-// `*Filled` circle icon is exactly that shape — one path, symbol as negative
-// space. The one departure is what shows through the knock-out: WinUI paints
-// TextFillColorInverse there, while a hole shows the bar's own severity wash.
-// The two differ by a few percent of lightness in each theme, and closing it
-// would mean stacking a second element behind a glyph that is already the right
-// silhouette.
+// That filled glyph carries one half of WinUI's two-layer construction. InfoBar
+// stacks two TextBlocks in the same cell: InfoBarIconBackgroundGlyph, a disc in
+// the severity colour, under the severity symbol painted in
+// TextFillColorInverse. A Fluent `*Filled` circle icon is one path with the
+// symbol as negative space — the same silhouette with the layers inverted — so
+// the icon rule below paints the inverse layer as a disc behind it, and what
+// shows through the knock-out is the colour WinUI states.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar.xaml#L107-L109
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L5-L16
 //
 // Two vertical-orientation terms stay unspent for a structural reason rather
@@ -83,6 +83,14 @@ export const messageBarCss = `
    ones exactly when the body wraps, the case the margin exists for. The margin
    is orientation-independent, so the multiline section below only has to stop
    Fluent's root padding stacking underneath it.
+
+   The disc is the inverse layer of the two-glyph stack, carried as a background
+   rather than as a second element because the negative-space glyph already
+   supplies the severity-coloured layer over it. All four filled circle glyphs
+   are an r=8 circle in a 20 unit box, so on a square 1em icon the disc is 80%
+   of the closest side; the stops land just inside that edge so no ring escapes
+   from under the glyph.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L13-L16
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L76
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L77 */
 .fui-MessageBar__icon.fui-MessageBar__icon {
@@ -90,6 +98,11 @@ export const messageBarCss = `
   font-size: 16px;
   margin-block: 16px;
   margin-inline-end: 14px;
+  background: radial-gradient(
+    closest-side,
+    var(--winui-text-fill-inverse) 79%,
+    transparent 80%
+  );
 }
 
 /* Severity. Each of the four maps onto one SystemFillColor family: the bar

@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { reactRouter } from '@react-router/dev/vite';
 import { createJiti } from 'jiti';
 import { defineConfig, type Plugin } from 'vite';
@@ -63,10 +65,14 @@ const typescriptStylesheets = (): Plugin => {
       if (this.environment.mode !== 'dev' || !/[?&]url\b/.test(id)) return css;
       const specifier = specifierOf(id);
       rendered.set(specifier, css);
-      // The timestamp is what makes an edit visible: the module reloads, the
-      // element re-renders with a new href, and the browser fetches the sheet
-      // again instead of answering from its own cache.
-      return `export default ${JSON.stringify(`${DEV_STYLESHEET_PATH}${specifier}?t=${Date.now()}`)}`;
+      // The query is what makes an edit visible: the module reloads, the element
+      // re-renders with a new href, and the browser fetches the sheet again
+      // instead of answering from its own cache. It is a hash of the sheet
+      // rather than a clock, because the document is rendered twice -- once to
+      // prerender and once to hydrate -- and a clock reads differently each
+      // time, which is a hydration mismatch on an element React owns.
+      const version = createHash('sha256').update(css).digest('hex').slice(0, 8);
+      return `export default ${JSON.stringify(`${DEV_STYLESHEET_PATH}${specifier}?v=${version}`)}`;
     },
     configureServer(server) {
       server.middlewares.use(DEV_STYLESHEET_PATH, (request, response, next) => {

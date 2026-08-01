@@ -173,7 +173,6 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
     ...components,
     AccordionHeader: winuiChevron(components.AccordionHeader),
     MessageBar: stampIntent(components.MessageBar),
-    Badge: stamp(components.Badge, size('medium')),
     Button: stamp(components.Button, appearance('secondary', rootIsPrimary)),
     ToggleButton: stamp(components.ToggleButton, appearance('secondary', rootIsPrimary)),
     CompoundButton: stamp(components.CompoundButton, appearance('secondary', rootIsPrimary)),

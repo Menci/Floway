@@ -26,28 +26,30 @@ export const dialogCss = `
    Fluent's raised Background1, the surface stroke rather than a transparent
    one, and BackgroundSizing="InnerBorderEdge", which is background-clip:
    padding-box on the web, so the translucent border reads against the smoke
-   layer behind it instead of against its own fill. WinUI states a full size
-   envelope where Fluent states only a maximum width. The height cap stays
-   bounded by the viewport, since 756px exceeds many of them, and is exposed as
-   one variable so the body can consume exactly the same envelope. The surface
-   never scrolls; DialogShell gives its middle grid row to OverlayScrollbars.
+   layer behind it instead of against its own fill. WinUI states the whole size
+   envelope on BackgroundElement -- 320 minimum width, 548 maximum, 184 minimum
+   height, 756 maximum -- where Fluent states only a maximum width. The height
+   cap is additionally bounded by the viewport, as the XAML one is bounded by
+   the window, and is exposed as one variable so the body can consume exactly
+   the same envelope. The surface never scrolls; DialogShell gives its middle
+   grid row to OverlayScrollbars.
 
-   ContentDialogMaxWidth is 548 and that is the default here, but it is a
-   variable rather than a literal so a dialog can state its own. WinUI's 548 is
-   the width of a dialog that asks a question; a dialog carrying settings rows,
-   which are laid out for a full-width settings page, does not fit in it, and a
-   dialog that has to be read is worse than one a pixel wider than the
-   dictionary.
+   ContentDialogMaxWidth is a keyed ThemeResource that an app overrides in its
+   own dictionary, so a custom property with a 548px fallback is the faithful
+   shape rather than a loosening of it. The alias editor and the API key editor
+   set it to 720px, because both carry settings rows laid out for a full-width
+   settings page.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L6-L15
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L223 */
 .fui-DialogSurface.fui-DialogSurface {
-  --floway-dialog-max-height: min(756px, calc(100dvh - 32px));
+  --floway-dialog-max-height: min(756px, 100dvh);
   padding: 0;
   background-color: var(--winui-solid-background-fill-base);
   border-color: var(--winui-surface-stroke-default);
   background-clip: padding-box;
   min-width: 320px;
   max-width: var(--floway-dialog-max-width, 548px);
+  min-height: 184px;
   max-height: var(--floway-dialog-max-height);
   overflow: hidden;
 }
@@ -87,14 +89,7 @@ export const dialogCss = `
    a margin on the title itself. The height cap sits here rather than on the
    surface, less the 1px ContentDialogBorderWidth on each end, because the body
    now fills the surface edge to edge and the surface does not clip.
-
-   ContentDialogMinHeight is deliberately not restated. WinUI spends the slack
-   on its star-height content row, so a dialog whose content falls under the
-   floor gets it as a gap between the message and the separator. Windows rarely
-   shows that, because a ContentDialog there carries two lines of body text and
-   a command band that reaches the floor on its own; the confirmations here are
-   one line and would sit under it, wearing the whole difference as empty space
-   below the message.
+   ContentDialogMinHeight belongs to BackgroundElement and is stated there.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L18
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L228-L233 */
 .fui-DialogBody.fui-DialogBody {
@@ -165,11 +160,14 @@ export const dialogCss = `
   justify-self: end;
 }
 
-/* Narrow viewports. Fluent stacks the actions by turning its flex row into a
-   column; the grid above would otherwise keep them side by side, so the same
-   break is restated as a row flow. Equal columns become equal rows, and the
-   lone button gives up its half of the band because no second column is left
-   for it to yield to. */
+/* Narrow viewports. WinUI's CommandSpace declares no width trigger, so its
+   star-width buttons stay side by side however narrow the window gets; Fluent
+   breaks them into a column at 480px and that break is kept here as our own
+   call for small viewports. Fluent expresses it as flex-direction, which is
+   inert under the display: grid above, so it is restated as a row flow. Equal
+   columns become equal rows, and the lone button gives up its half of the band
+   because no second column is left for it to yield to.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L248-L258 */
 @media (max-width: 480px) {
   .fui-DialogActions.fui-DialogActions {
     grid-auto-flow: row;

@@ -52,22 +52,25 @@ export const buttonCss = `
    against its own fill.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L154-L168
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L182-L190 */
-/* ButtonPadding and the absence of a MinWidth apply to a button that carries a
-   label. An icon-only button is square in both libraries, and Fluent expresses
-   that as a 32px box with even padding; CSS cannot tell a label apart from an
-   icon, because a label is a text node and the icon is the only element child
-   either way. Excluding every button that has an icon keeps the square ones
-   square, and costs an icon-and-label button one pixel of horizontal padding.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L152 */
-.fui-Button.fui-Button:not(:has(> .fui-Button__icon))${notOptedOut} {
-  padding: var(--winui-button-padding);
+.fui-Button.fui-Button${notOptedOut} {
+  background-clip: padding-box;
+  font-weight: var(--fontWeightRegular);
   min-width: auto;
   max-width: none;
 }
 
-.fui-Button.fui-Button${notOptedOut} {
-  background-clip: padding-box;
-  font-weight: var(--fontWeightRegular);
+/* ButtonPadding is the padding of a button that carries a label. An icon-only
+   button is square in both libraries, and Fluent reaches its 32px square
+   through even 5px padding around a 20px glyph, which holds on its own once
+   the width reservation above is released; CSS cannot tell a label apart from
+   an icon, because a label is a text node and the icon is the only element
+   child either way. Excluding every button that has an icon keeps the square
+   ones square, and costs an icon-and-label button a pixel of horizontal
+   padding -- Fluent's 12 against WinUI's 11 -- and the extra bottom pixel,
+   5 against 6.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L152 */
+.fui-Button.fui-Button:not(:has(> .fui-Button__icon))${notOptedOut} {
+  padding: var(--winui-button-padding);
 }
 
 /* WinUI animates the fill alone, and only for the ControlFasterAnimationDuration
@@ -104,11 +107,13 @@ export const buttonCss = `
    vertical gradient whose heavier ControlStrokeColorSecondary stop sits at the
    bottom edge in light and the top edge in dark; the foundation already
    transcribes it as a three-term border-colour, so the rule here only has to
-   reach the appearances that own it. Fluent's outline appearance keeps its
-   transparent fill and takes the same stroke — WinUI has no chromeless-but-
-   outlined button, so the two share the default's border. Hover repeats the
-   rest brush, which the rest declaration already outranks; pressed and disabled
-   both fall back to the flat ControlStrokeColorDefault.
+   reach the appearances that own it. Fluent's outline appearance has no WinUI
+   counterpart: it sets a transparent fill and nothing else, so left alone it
+   would keep the flat ControlStrokeColorDefault that the theme already resolves
+   colorNeutralStroke1 to. We hand it the default button's elevation stroke so
+   that the two read as a pair. Hover repeats the rest brush, which the rest
+   declaration already outranks; pressed and disabled both fall back to the flat
+   ControlStrokeColorDefault.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L136-L139
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L38-L41 */
 .fui-Button.fui-Button[data-winui-appearance='secondary']${notOptedOut},
@@ -203,12 +208,22 @@ ${chromeless(':hover:active')} {
    against the control edge and the contrasting FocusStrokeColorOuter around
    it, so the indicator survives on any fill including accent. Fluent builds
    the same two rings out of a border plus an outline one step further out, and
-   leaves the outer one transparent; recolouring its two inputs therefore
-   yields WinUI's visual without restating any ring width, which the Button
-   style does not declare. The rule also has to outrank the elevation strokes
-   above, which is why the border colour is repeated here.
+   leaves the outer one transparent, so recolouring its two inputs yields
+   WinUI's pairing. Fluent's construction and its ring widths are kept as the
+   web idiom; only the two colours here are WinUI's. Two differences follow from
+   that. Fluent paints both its 1px border and a 1px inset shadow from
+   colorStrokeFocus2, so the inner ring reads 2px where
+   DefaultFocusVisualSecondaryThickness is 1. And Fluent's rings sit flush
+   against the control, where FocusVisualMargin -3 expands WinUI's focus
+   rectangle three pixels past the control bounds -- a margin is applied by
+   shrinking the rectangle, so a negative one grows it.
+   The rule also has to outrank the elevation strokes above, which is why the
+   border colour is repeated here.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L167
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/DependencyObject/DependencyProperty.cpp#L24-L25
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/math/math.cpp#L1374-L1381 */
 .fui-Button.fui-Button[data-winui-appearance][data-fui-focus-visible]${notOptedOut} {
   --colorStrokeFocus2: var(--winui-focus-stroke-inner);
   --colorTransparentStroke: var(--winui-focus-stroke-outer);

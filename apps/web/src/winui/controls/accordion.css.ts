@@ -25,9 +25,10 @@ export const accordionCss = `
    on the button. The card fill and the card stroke are both translucent, hence
    clipping the fill to the padding box so the stroke is not painted over.
 
-   WinUI states one Expander min-height and one leading header inset whatever
-   the header holds, so both land on every Fluent size — the size variants are
-   Griffel atoms with no public class to select.
+   WinUI's Expander declares no size variant: one min-height and one leading
+   header inset, whatever the header holds. Both are stated unconditionally
+   here, which overrides the 32px min-height Fluent gives its small header --
+   Fluent's leading inset is already the same at every size.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L96
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L77
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L80
@@ -59,8 +60,11 @@ export const accordionCss = `
    Fluent's trailing variant makes the slot a flex spacer that absorbs the row's
    free space, which would stretch that box and let the pointer fill paint the
    whole remainder of the row, so the box is pinned to its own size instead.
-   Fluent's 8px gap toward the row's content becomes a margin, because a padded
-   box would let the fill below spill into that gap.
+   Fluent's 8px gap toward the row's content becomes a margin, which is where
+   WinUI puts it: ExpanderChevronMargin states 20,0,8,0 outside a 32px
+   ExpanderChevronButtonSize box, so the gap is clear of the pointer fill and
+   the glyph stays centred in the box.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L81
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L84
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L85
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L280 */
@@ -79,33 +83,34 @@ export const accordionCss = `
    itself, but only while it is the one creating the glyph, and the runtime
    chokepoint now supplies a 12px cut in place of the 20px artwork Fluent scales
    down. Fluent stops rotating the chevron once it is no longer the one creating
-   the glyph, so the turn below is this layer's own motion: its timing is stated
-   unconditionally and clamped under reduce -- see ../index.ts for the two
-   shapes and which is which.
+   the glyph, so the turn is stated below: unconditionally, and clamped under
+   reduce -- see ../index.ts for the two shapes and which is which.
 
-   The WinUI chevron is an AnimatedIcon whose curve is not in the dictionaries,
-   so the timing taken is the expander's own: the chevron turns because the
-   region opens, so it turns for as long as the region takes, and it is
-   asymmetric for the same reason. ../../components/ui/settings-card.tsx states
-   the same pairing on the other disclosure this app has.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L280-L281 */
+   Its timing is WinUI's own. The chevron is an AnimatedIcon, so the numbers are
+   not in the theme dictionaries but in the generated visual source, whose
+   4.3333s composition runs at 60fps and is cut into named state segments. The
+   two segments that carry this rotation, NormalOffToNormalOn and
+   NormalOnToNormalOff, each spend ten of those frames turning -- 167ms, on the
+   cubic Bezier through (0.167, 0.167) and (0, 1). The turn is symmetric for
+   that reason, and the Expander's own asymmetric open and close stay with the
+   region they time.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L280-L282
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedChevronUpDownSmallVisualSource.cpp#L104
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedChevronUpDownSmallVisualSource.cpp#L352
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedChevronUpDownSmallVisualSource.cpp#L428-L440
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedChevronUpDownSmallVisualSource.cpp#L789-L796 */
 .fui-AccordionHeader__button[aria-expanded='true'] .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
   rotate: 180deg;
 }
 
 .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
   transition-property: rotate;
-  transition-duration: var(--winui-collapse-animation-duration);
-  transition-timing-function: var(--winui-control-fast-out-slow-in-easing);
-}
-
-.fui-AccordionHeader__button[aria-expanded='true'] .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
-  transition-duration: var(--winui-expand-animation-duration);
+  transition-duration: 167ms;
+  transition-timing-function: cubic-bezier(0.167, 0.167, 0, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon,
-  .fui-AccordionHeader__button[aria-expanded='true'] .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
+  .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
     transition-duration: 0.01ms;
   }
 }
@@ -124,11 +129,13 @@ export const accordionCss = `
    auto inline-start margin reproduces that split, and the row gap supplies the
    20px leading term of the chevron margin as the floor it is -- the auto margin
    alone exceeds it while the row has slack and collapses to nothing once the
-   content fills the row, which is the one case the margin exists for. It is a
-   gap rather than a margin because a header's content is often a bare text
-   node, and an anonymous flex item cannot be given a margin. The trailing 8px
-   and the resulting zero trailing padding on the row are transcribed
-   literally.
+   content fills the row, which is the one case the margin exists for. The 20px
+   rides on the row rather than on the chevron because the chevron's own
+   inline-start margin is spent on that auto, which is what reproduces the split
+   after Fluent's grow spacer was pinned above. Its price is that the row gap
+   also lands between an icon slot and the header text, where Fluent states 8px.
+   The trailing 8px and the resulting zero trailing padding on the row are
+   transcribed literally.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L98-L99
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L81
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L80 */
@@ -144,20 +151,22 @@ export const accordionCss = `
 
 /* Pointer feedback lives entirely on the chevron, and it answers the whole
    header row rather than the chevron alone — the same wiring fluent-svelte's
-   Expander uses. A disabled header is excluded because WinUI's disabled visual
-   state restates the chevron's rest brushes. The guard reads the disabled
-   attribute alone: Fluent marks the sole open item of a non-collapsible
-   Accordion aria-disabled while keeping it an ordinary enabled header
-   visually, and WinUI has no state for it either.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L16 */
-.fui-AccordionHeader__button:enabled:hover .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
+   Expander uses. A header that cannot be actuated is excluded, because WinUI's
+   disabled visual state puts the chevron's rest brush back. Fluent reaches that
+   state two ways: a disabled AccordionItem, which it renders with the native
+   attribute, and the sole open item of a non-collapsible Accordion, which it
+   leaves natively enabled and marks aria-disabled while keeping the header's
+   chrome ungrayed. Both stop the toggle, so both drop the feedback.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L16
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L166-L184 */
+.fui-AccordionHeader__button:enabled:not([aria-disabled='true']):hover .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
   background-color: var(--winui-subtle-fill-secondary);
 }
 
 /* WinUI's pressed subtle fill is lighter than its pointer-over fill, so the
    chevron recedes rather than deepens on press.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L17 */
-.fui-AccordionHeader__button:enabled:active .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
+.fui-AccordionHeader__button:enabled:not([aria-disabled='true']):active .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
   background-color: var(--winui-subtle-fill-tertiary);
 }
 

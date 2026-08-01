@@ -1,8 +1,9 @@
 // Toast, restyled from Fluent 2 Web onto WinUI 3. WinUI ships no toast, so the
-// nearest transient surface is TeachingTip; a toast is flyout-grade, so the
-// surface itself takes the same reading of FlyoutPresenter that popover.css.ts
-// took — the overlay corner, the flyout stroke, and a fill clipped to the inner
-// border edge — rather than a third reading of the same two dictionaries.
+// nearest transient surface is TeachingTip, and TeachingTip states its own
+// background, stroke and corner on the control style rather than borrowing
+// FlyoutPresenter's, so the surface here is a straight transcription of those
+// three setters.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip.xaml#L5-L9
 //
 // Rest, focus and the inverted background appearance are the whole state table.
 // Eight style modules make up the control: Toast, ToastContainer, ToastTitle,
@@ -23,40 +24,43 @@
 // that unrendered close button. The ToastBody subtitle's own 4px step stands
 // too: TeachingTip has two text rows to the toast's three, so the third row's
 // spacing is Fluent's alone.
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip_themeresources.xaml#L76-L77
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip_themeresources.xaml#L75-L77
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip_themeresources.xaml#L96
 //
-// One row is missing rather than kept. TeachingTipTopHighlightBrush paints a 1px
-// highlight along the top edge, and it is strongly theme-dependent — a faint
-// #0DFFFFFF in dark against a near-opaque #99FFFFFF in light — so it cannot be
-// approximated from any neighbouring stroke. tokens.ts declares no variable for
-// it, and this layer does not mint values locally, so the edge stays unpainted
-// until one exists.
+// The top edge stays unpainted because WinUI leaves it unpainted. The dictionary
+// still declares TeachingTipTopHighlightBrush, its 1px height and its border
+// offset, and the control header still declares TopHighlightLeft/TopHighlightRight
+// part names, but the WinUI 3 template instantiates no such element and the
+// implementation looks none of them up: the highlight is a vestige of the earlier
+// template, not a row this layer is missing.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip_themeresources.xaml#L6
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip_themeresources.xaml#L28
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip_themeresources.xaml#L98
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip.h#L297-L302
 export const toastCss = `
-/* The surface. A toast floats, so it takes the overlay corner and the flyout
-   stroke where Fluent draws the control corner and a transparent hairline, and
-   the fill stops at the inner border edge so the translucent stroke reads at its
-   own strength rather than compositing over the fill beneath it.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/FlyoutPresenter_themeresources.xaml#L39
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/FlyoutPresenter_themeresources.xaml#L6
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/FlyoutPresenter_themeresources.xaml#L43
+/* The surface. TeachingTip's style names all three of the values Fluent draws
+   differently: OverlayCornerRadius where Fluent takes the control corner,
+   TeachingTipBorderBrush -- SurfaceStrokeColorDefault -- where Fluent draws a
+   transparent hairline, and TeachingTipBackgroundBrush, the Tertiary step of the
+   solid background ramp, where Fluent paints colorNeutralBackground1. That last
+   one needs naming rather than leaving to the theme layer, which maps
+   colorNeutralBackground1 from the Quarternary step: right for a raised card,
+   wrong for this surface.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip.xaml#L5-L9
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip_themeresources.xaml#L5
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip_themeresources.xaml#L9
 
-   Depth is moved rather than removed. TeachingTip carries its shadow as a
-   ThemeShadow in the control template, so the theme resources name no value to
+   The fill stops at the inner border edge: ContentRootGrid is a Grid, whose
+   BackgroundSizing defaults to InnerBorderEdge, so the translucent stroke reads
+   at its own strength rather than compositing over the fill beneath it.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip.xaml#L312
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/tools/XCPTypesAutoGen/XamlOM/Model/Microsoft.UI.Xaml.Controls.cs#L2583-L2588
+
+   Depth is moved rather than removed. TeachingTip attaches its shadow in code as
+   a ThemeShadow on that same grid, so the theme resources name no value to
    transcribe, but the theme layer's split is clear: it drops elevations 2, 4 and
    8 because WinUI paints no shadow on an inline surface, and keeps 16, 28 and 64
    because an overlay does have depth. Fluent gives the toast the inline
    elevation, so this points it at the flyout one the layer left standing.
-
-   The fill is TeachingTipBackgroundBrush, the Tertiary step of the solid
-   background ramp. It needs saying here because Fluent paints the toast in
-   colorNeutralBackground1, which the theme layer maps from the Quarternary step
-   — that mapping is right for a raised card and wrong for this surface, so the
-   two diverge and the rule names the tertiary fill directly.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip_themeresources.xaml#L9
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip.cpp#L2266-L2271
 
    Padding and foreground already agree with TeachingTipContentMargin and
    TeachingTipForegroundBrush and so carry no rule.
@@ -64,22 +68,24 @@ export const toastCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip_themeresources.xaml#L8 */
 .fui-Toast.fui-Toast {
   border-radius: var(--winui-overlay-corner-radius);
-  border-color: var(--winui-surface-stroke-flyout);
+  border-color: var(--winui-surface-stroke-default);
   background-color: var(--winui-solid-background-fill-tertiary);
   background-clip: padding-box;
   box-shadow: var(--shadow16);
 }
 
-/* The inverted background appearance is flattened onto the default one. WinUI
-   states a single TeachingTip look — the two dictionaries differ from each other,
-   not from a darker variant of themselves — so the dark chip Fluent offers as a
-   second appearance has nothing to correspond to. The variant reaches the DOM
-   only as hashed atoms, but each of them reads a theme token, so routing the
-   inverted tokens to their default counterparts here flattens it without a rule
-   having to name an atom, and inheritance carries the foregrounds to the title,
-   media and action slots. The inverted fill is routed to the tertiary solid
-   background rather than to colorNeutralBackground1, for the reason the surface
-   rule above gives.
+/* The inverted background appearance is flattened onto the default one by our
+   choice. WinUI is silent about a dark toast chip -- TeachingTip states one look
+   per theme dictionary, not a darker variant of itself -- and silence alone does
+   not settle the question, since the same silence is what keeps Fluent's action
+   slot and media glyph size above. Those two are geometry inside a surface that
+   is otherwise WinUI's; the inverted chip is a whole surface, and with the
+   default one now painted in the tertiary solid ramp it would be the only
+   Fluent-coloured surface left in the control. The variant reaches the DOM only
+   as hashed atoms, but each of them reads a theme token, so routing the inverted
+   tokens to their default counterparts here flattens it without a rule having to
+   name an atom, and inheritance carries the foregrounds to the title, media and
+   action slots.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip_themeresources.xaml#L5-L24
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip_themeresources.xaml#L27-L46 */
 .fui-Toast.fui-Toast {
@@ -111,16 +117,21 @@ export const toastCss = `
   padding-inline-end: 12px;
 }
 
-/* Focus. The container is the tab stop, and Fluent rings it with a plain
-   outline in --colorStrokeFocus2 at --strokeWidthThick, so retinting that token
-   gives the outer ring WinUI's colour at the 2px WinUI also asks for. WinUI's
-   visual is two concentric rings, and the inner one is the control's own 1px
-   edge, which here is the toast's border, so the surface stroke gives way to
-   the inner focus stroke while the ring shows. The container's radius is raised
-   to the overlay corner as well, because the outline traces the container box
-   and would otherwise round tighter than the surface inside it.
+/* Focus. The container is the tab stop, and WinUI's focus visual is two
+   concentric rings drawn inside the focus rectangle: a 2px primary stroke in
+   FocusStrokeColorOuter, and inside it, inset by that same thickness, a 1px
+   secondary stroke in FocusStrokeColorInner. The rectangle is the element's
+   bounds less its FocusVisualMargin, which is zero by default. Fluent already
+   rings the container with a plain outline in --colorStrokeFocus2 at
+   --strokeWidthThick, so retinting that token gives the outer stroke where it
+   stands and an inset shadow supplies the inner one immediately within it,
+   leaving the toast's own surface stroke where it is. The container's radius is
+   raised to the overlay corner as well, because both rings trace the container
+   box and would otherwise round tighter than the surface inside it.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L173-L186
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L441-L452
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/DependencyObject/DependencyProperty.cpp#L22-L25
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L250-L252
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CornerRadius_themeresources.xaml#L6 */
 .fui-ToastContainer.fui-ToastContainer {
   border-radius: var(--winui-overlay-corner-radius);
@@ -128,10 +139,7 @@ export const toastCss = `
 
 .fui-ToastContainer.fui-ToastContainer[data-fui-focus-visible] {
   --colorStrokeFocus2: var(--winui-focus-stroke-outer);
-}
-
-.fui-ToastContainer[data-fui-focus-visible] .fui-Toast.fui-Toast {
-  border-color: var(--winui-focus-stroke-inner);
+  box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
 }
 
 /* The body is TeachingTip's main content, so the step under the title is
@@ -142,21 +150,25 @@ export const toastCss = `
 }
 
 /* Both body rows are subtitle-grade text, and TeachingTipSubtitleForegroundBrush
-   resolves to TextFillColorPrimary — the same step the body root already reads —
+   resolves to TextFillColorPrimary -- the same step the body root already reads --
    so the second row loses the secondary foreground Fluent dims it with.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip_themeresources.xaml#L11 */
 .fui-ToastBody__subtitle.fui-ToastBody__subtitle {
   color: var(--colorNeutralForeground1);
 }
 
-/* The footer is TeachingTip's button panel. The gap between its buttons is the
-   4px inner edge of TeachingTipRightButtonMargin, in place of Fluent's 14px.
-   The panel's vertical step keeps Fluent's value: the dictionary states a 12px
-   top on the panel and another on each button, and the theme resources alone do
-   not settle whether the two stack, so there is no single figure to transcribe.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip_themeresources.xaml#L75-L77 */
+/* The footer is TeachingTip's button panel, and the three button margins settle
+   both of its metrics. The 12px top is common to all of them, and the states
+   that apply them are mutually exclusive -- the panel margin goes on whichever
+   single button is visible, the left/right pair on the two together -- so the
+   step under the content is 12 rather than Fluent's 16. With both buttons
+   showing, the pair contributes 4px on each facing edge, and XAML margins do not
+   collapse, so the gap between them is 8 rather than Fluent's 14.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip_themeresources.xaml#L75-L77
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip.xaml#L36-L62 */
 .fui-ToastFooter.fui-ToastFooter {
-  gap: 4px;
+  padding-top: 12px;
+  gap: 8px;
 }
 
 /* The action beside the title reads as a hyperlink, and WinUI colours one with

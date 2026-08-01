@@ -13,18 +13,25 @@
 // `:indeterminate`, `:enabled`, and `:disabled`, which keeps a single rule
 // covering the Fluent states that share one WinUI value.
 //
-// Colour is confined to `@media not (forced-colors: active)`. Fluent already
-// paints both controls with the system Highlight and GrayText keywords under
-// Windows High Contrast, and WinUI's own answer there is a HighContrast theme
-// dictionary we do not transcribe, so the forced-colours pass is left to
-// Fluent. Geometry applies in both modes, except the focus ring's stand-off,
-// which rides with the ring's colours so that forced colours keeps Fluent's
-// ring whole rather than half of ours.
+// Colour is confined to `@media not (forced-colors: active)`. WinUI answers
+// Windows High Contrast with a theme dictionary that maps each of these
+// brushes onto a system colour, a flat map the CSS forced-colours keywords
+// express directly -- but drawing an accent-filled indicator under forced
+// colours also needs `forced-color-adjust: none` on the indicator, which this
+// layer chooses not to take on. Forced colours therefore keeps Fluent's
+// drawing: the radio is painted with Highlight, ButtonBorder and GrayText,
+// while the check box carries a disabled GrayText rule alone and reads as an
+// unfilled box distinguished only by its glyph. Geometry, the focus ring's
+// stand-off included, applies in both modes.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L92-L179
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L62-L119
 export const choiceCss = `
 /* Check box geometry. WinUI draws one box at CheckBoxSize with a
    CheckBoxGlyphSize glyph inside it and has no second size, so both Fluent
-   sizes are pulled onto those two numbers — the medium box grows from 16px and
-   the large glyph shrinks from 16px.
+   sizes are pulled onto those two numbers. Fluent's check mark is an SVG
+   carrying literal width and height attributes -- 12 at the medium size, 16 at
+   the large one -- which no font size reaches, so the glyph is sized on the
+   element itself.
 
    The corner radius has to be stated. CheckBox binds it to ControlCornerRadius
    and binds the check rectangle to the same value, while Fluent's indicator
@@ -39,21 +46,25 @@ export const choiceCss = `
 .fui-Checkbox__indicator.fui-Checkbox__indicator {
   width: 20px;
   height: 20px;
-  font-size: 12px;
-  /* Fluent pins the box to the top so it meets the first line of a label that
-     wraps. Against a field-height row holding one line, that reads as the box
-     sitting above its own text, so it centres with everything else. */
+  /* WinUI centres the check box's 20px grid in the control, where Fluent pins
+     it to the top so that it meets the first line of a label that wraps.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L602 */
   align-self: center;
   margin: 0;
 }
 
-/* Fluent rings each of these indicators with eight pixels of margin, which
-   builds a hit target and spaces the label in one stroke -- and makes the
-   control claim sixteen more pixels than it draws in both axes, so a row of
-   them never lines up with anything measured off what is on screen. The margin
-   goes and the root spaces its own children instead, which is also the only
-   form that survives the label being placed before, after or above the
-   indicator. A control with no label is then exactly its own size.
+.fui-Checkbox__indicator.fui-Checkbox__indicator > svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Fluent rings each of these indicators with eight pixels of margin and pads
+   the label on top of that, putting twelve pixels between indicator and label.
+   WinUI states eight: the leading term of CheckBoxPadding and of RadioButton's
+   Padding, both of which are the label's own offset rather than a surround on
+   the indicator, which WinUI gives none. So the margin goes and the root
+   spaces its own children instead, which also holds when the label is placed
+   before, after or above the indicator.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L274
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L187 */
 .fui-Checkbox.fui-Checkbox,
@@ -71,20 +82,28 @@ export const choiceCss = `
   padding: 0;
 }
 
-/* Fluent sizes the radio it puts in a table's selection cell to a fixed 28 --
-   its own 16px indicator plus the margins this file has just taken off -- and
-   lets it grow into whatever the cell leaves. Ours draws 20, so the box is held
-   to that and the cell goes on centring it. */
+/* Fluent gives the radio it puts in a table's selection cell no width of its
+   own: the radio grows to fill the 44px cell and centres an indicator whose
+   intrinsic footprint is Fluent's 16px box plus the 8px margins this file has
+   just taken off. Ours draws 20, so the box is pinned to that -- ours to
+   choose, since Fluent states nothing here. The cell centres it either way,
+   through \`justify-content\` under the flex layout and through \`text-align\`
+   on the inline-flex radio under the native table one. */
 .fui-TableSelectionCell__radioIndicator.fui-TableSelectionCell__radioIndicator {
   flex: none;
   width: 20px;
 }
 
-/* A control that carries a label is a field, and stands in a row beside inputs
-   and combo boxes; one that does not is a mark in a cell, and is only itself.
-   So the field floor lands on the labelled form alone, and the centring above
-   puts the indicator in the middle of it.
-   ./text-input.css.ts derives the 34 and says where from. */
+/* 34px is this dashboard's shared control-row height, taken so that check
+   boxes, radios, text inputs and combo boxes stand at one height in a form row.
+   WinUI states 32 unconditionally -- CheckBoxHeight, set as the check box's
+   MinHeight, and a 32px indicator band on the radio -- so both the raise to 34
+   and its scope are ours: a control that carries a label is a field and takes
+   the row height, one that does not is a mark in a cell and is only itself.
+   The centring above puts the indicator in the middle of the row.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L272
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L291
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L370 */
 .fui-Checkbox.fui-Checkbox:has(> .fui-Checkbox__label),
 .fui-Radio.fui-Radio:has(> .fui-Radio__label) {
   min-height: 34px;
@@ -99,6 +118,23 @@ export const choiceCss = `
    the control claiming the difference. */
 .fui-Checkbox__input.fui-Checkbox__input {
   width: calc(20px + 2 * var(--spacingHorizontalS));
+}
+
+/* Focus ring stand-off. Both controls set a negative FocusVisualMargin of
+   -7,-3, so the ring stands off the root by 7px horizontally and 3px
+   vertically instead of Fluent's uniform 2px. It is a style setter rather than
+   a theme resource, so the geometry holds in every theme and forced colours
+   gets the whole ring at WinUI's measure; only the ring's colours below are
+   gated. The radius stays Fluent's, which already resolves to
+   ControlCornerRadius.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L275
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L196 */
+.fui-Checkbox.fui-Checkbox[data-fui-focus-within]:focus-within::after,
+.fui-Radio.fui-Radio[data-fui-focus-within]:focus-within::after {
+  top: -3px;
+  right: -7px;
+  bottom: -3px;
+  left: -7px;
 }
 
 @media not (forced-colors: active) {
@@ -185,42 +221,39 @@ export const choiceCss = `
     background-color: var(--winui-accent-fill-disabled);
   }
 
-  /* Focus ring. WinUI's focus visual is two concentric rings — an outer one in
-     the text colour and an inner one in the surface colour — so it stays legible
-     over any fill, where Fluent draws a single accent-adjacent stroke. The
-     inner ring is an inset shadow because it must sit inside the outer ring's
-     own border box. CheckBoxFocusVisualMargin is negative, so the ring stands
-     off the root by 7px horizontally and 3px vertically instead of Fluent's
-     uniform 2px. The radius stays Fluent's, which already resolves to
-     ControlCornerRadius.
-     The two ring thicknesses are the framework defaults, which this corpus
-     states only where ListViewItem restates them.
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L275
+  /* Focus ring colours. WinUI's focus visual is two concentric rings -- an
+     outer one in the text colour and an inner one in the surface colour -- so
+     it stays legible over any fill, where Fluent draws a single accent-adjacent
+     stroke. The inner ring is an inset shadow because it must sit inside the
+     outer ring's own border box. The two ring thicknesses are the framework
+     defaults, which this corpus states only where ListViewItem restates them.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L250-L252 */
   .fui-Checkbox.fui-Checkbox[data-fui-focus-within]:focus-within::after {
-    top: -3px;
-    right: -7px;
-    bottom: -3px;
-    left: -7px;
     border-color: var(--winui-focus-stroke-outer);
     box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
   }
 }
 
 /* Radio geometry. The outer ellipse is 20px and the checked dot is sized in
-   absolute pixels per state — 12 at rest, 14 on pointer-over, 10 while
-   pressed — so the dot's scale factor is that size over the 20px ellipse,
+   absolute pixels per state -- 12 at rest, 14 on pointer-over, 10 while
+   pressed -- so the dot's scale factor is that size over the 20px ellipse,
    replacing Fluent's single 0.625 of a 16px box. WinUI grows and shrinks the
-   dot over ControlNormalAnimationDuration on the fast-out-slow-in spline, which
-   the transform transition restates. The return to rest runs instead at
-   ControlFastAnimationDuration; CSS states one duration per transitioned
-   property, not one per direction, so the growth timing is what the rule
-   carries and the return rides along on it.
+   dot over ControlNormalAnimationDuration on the fast-out-slow-in spline,
+   which the transform transition restates. It writes no size key frame for
+   the return to rest, so shipped WinUI snaps the dot back; the transition is
+   kept symmetric here because an animated return reads better on the web.
+
+   WinUI top-aligns the radio's 32px indicator band while centring the check
+   box's, so the two templates part company once a label wraps. The indicator
+   is centred here for both, which is what the shared control row above asks
+   for.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L371
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L179-L181
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L256
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L293 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L293
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L204-L227
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L370 */
 .fui-Radio__indicator.fui-Radio__indicator {
   width: 20px;
   height: 20px;
@@ -342,10 +375,11 @@ export const choiceCss = `
     border-color: var(--winui-accent-fill-default);
   }
 
-  /* The dot carries a hairline elevation stroke over its accent surround, drawn
-     as a real border rather than the inset shadow the wider elevation strokes
-     use: at 12px an inset ring closes into a filled disc. Border-box sizing
-     keeps the ring inside the geometry the scale factor above establishes.
+  /* The dot carries the accent elevation stroke over its accent surround,
+     drawn as a border because that token is a three-term \`border-color\` whose
+     terms are the top, the sides and the bottom -- a value no box-shadow can
+     consume. Border-box sizing keeps the ring inside the 20px the scale factor
+     above operates on.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L150
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L153
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L158-L160 */
@@ -384,14 +418,10 @@ export const choiceCss = `
     border-color: var(--winui-control-elevation-border-color);
   }
 
-  /* The radio's focus visual is the check box's, down to the same negative
-     margin, so the two rings are built the same way.
+  /* The radio's focus visual is the check box's, so the two rings are built
+     the same way.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L196 */
   .fui-Radio.fui-Radio[data-fui-focus-within]:focus-within::after {
-    top: -3px;
-    right: -7px;
-    bottom: -3px;
-    left: -7px;
     border-color: var(--winui-focus-stroke-outer);
     box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
   }

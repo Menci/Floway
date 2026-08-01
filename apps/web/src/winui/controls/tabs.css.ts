@@ -1,11 +1,16 @@
 // TabList and Tab restyled after WinUI 3's inline tab strip. Two XAML controls
 // stand behind the result. Pivot supplies the shape — a chromeless header row
 // whose only selection affordance is an accent pipe floated under the selected
-// item — and TabView supplies the foreground ramp, because Pivot states its
-// foregrounds as SystemControl* aliases that no dictionary in the corpus
-// resolves, while TabView states the same four states directly over the text
-// fill ramp.
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L475-L497
+// item — and TabView supplies the foreground ramp. Pivot routes its four
+// foreground states through the legacy SystemControl* system-brush layer,
+// which generic.xaml resolves to opacity-scaled black and white; TabView
+// states the same four over the modern TextFillColor* resources this file
+// already transcribes. Preferring the modern layer is our own call, and the
+// two ramps differ where it shows: Pivot brightens on hover and press, TabView
+// holds and then dims, and the state notes below describe TabView's.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L47-L53
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L504-L574
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L265-L285
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L12-L21
 //
 // Fluent's appearance variants — `subtle`, `subtle-circular`, `filled-circular`
@@ -14,14 +19,19 @@
 // all of them. On `subtle` that is the intent. On the two circular appearances
 // it is a repaint we cannot opt out of: those set `color: inherit` on the label
 // and icon slots so a brand-filled chip can hand its on-brand foreground down,
-// and our ramp outranks that. WinUI has no round-chip tab to transcribe against
-// and no dashboard call site asks for one, so we accept the leak rather than
-// chase Griffel's hashed atoms.
+// and our ramp outranks that. WinUI has no round-chip tab to transcribe
+// against, and the gallery route renders both circular appearances, so a
+// selected filled chip shows WinUI's primary text over Fluent's brand fill. We
+// accept that rather than chase Griffel's hashed atoms.
 //
-// Focus stays Fluent's, for the same reason the foregrounds come from TabView:
-// PivotHeaderItemFocusPipeFill resolves to SystemControlHighlightAltAccentBrush,
-// which the corpus references and never defines, leaving nothing to transcribe.
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L54
+// Focus stays Fluent's, because PivotHeaderItem draws no per-item focus visual
+// at all: UseSystemFocusVisuals is off on the style, and the only pipe the
+// template contains is SelectedPipe. PivotHeaderItemFocusPipeFill is declared
+// in the dictionary and no template consumes it. Transcribing that silence
+// would leave the strip looking unfocusable, so Fluent's indicator stays by
+// choice.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L486
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L587
 //
 // The state rules are ordered rest → hover → pressed → selected, and each
 // selected step repeats the interaction pseudo-classes of the step it has to
@@ -46,7 +56,7 @@ export const tabsCss = `
 }
 
 /* Selected: the pipe is the whole distinction, so the label is only promoted
-   to the primary fill and keeps its weight — PivotHeaderItem sets FontWeight
+   to the primary fill and keeps its weight -- PivotHeaderItem sets FontWeight
    once as a style setter, which no visual state can reach.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L14
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L478 */
@@ -81,8 +91,8 @@ export const tabsCss = `
   /* Fluent previews a selection by growing a neutral bar in the slot the accent
      pipe will take. Every unselected Pivot state collapses SelectedPipe
      instead, so the strip only ever shows one pipe and the preview is erased.
-     Collapsed is a visibility, not a brush, so the eraser is the CSS keyword
-     rather than a transcribed fill.
+     The bar is absolutely positioned and contributes only a fill, so nulling
+     the fill removes it outright.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L536-L538
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L559-L561 */
   .fui-Tab.fui-Tab:hover::before,
@@ -108,25 +118,26 @@ export const tabsCss = `
 }
 
 /* Pivot floats the pipe clear of the header's bottom edge with a 2px bottom
-   margin where Fluent sits it flush. Horizontal only: in the vertical strip
-   Fluent reuses the bottom inset as the far edge of a left-edge bar rather
-   than as an offset from an edge, and there is no vertical Pivot to
-   transcribe. Pivot has a single header size, so the one float covers Fluent's
-   three; the pipe's own thickness stays Fluent's, which means the small
-   strip floats a 2px bar where Pivot's Rectangle is 3px — our token set
-   carries no pipe-height value, and Fluent exposes no size hook on the
-   rendered button to scope one to.
+   margin where Fluent sits it flush, and states its thickness once as a 3px
+   Rectangle. Horizontal only: in the vertical strip Fluent reuses the bottom
+   inset as the far edge of a left-edge bar rather than as an offset from an
+   edge, and there is no vertical Pivot to transcribe. Pivot has a single
+   header size, so the one float and the one thickness cover Fluent's three;
+   only the small strip moves, since Fluent's medium and large already resolve
+   to the same 3px.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L587 */
 .fui-TabList[aria-orientation='horizontal'] > .fui-Tab.fui-Tab::after {
   bottom: 2px;
+  height: var(--strokeWidthThicker);
 }
 
 /* The pipe's travel between tabs takes WinUI's normal duration and its
    fast-out-slow-in spline, whose four numbers are the two control points of a
-   cubic-bezier. Fluent's reduced-motion rule sets both transition-property and
-   transition-duration inside a media query, and a media query carries no
-   specificity, so we declare the timing only under the complementary
-   no-preference query and leave that rule whole.
+   cubic-bezier. Pivot gives every header item its own pipe and collapses all
+   but the selected one, so it states no timing for a travel and WinUI's
+   general motion tokens stand in for one. The no-preference wrapper is
+   insurance: Fluent's reduced-motion rule already sets transition-property to
+   none, which holds a declared duration inert on its own.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L602-L603 */
 @media (prefers-reduced-motion: no-preference) {
   .fui-Tab.fui-Tab::after {

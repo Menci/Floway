@@ -19,7 +19,7 @@ const { Switch, Text, makeStyles, mergeClasses, shorthands } = fluentComponents;
 const useStyles = makeStyles({
   // MinHeight 68, Padding 16, ControlCornerRadius, a 1px card stroke.
   //
-  // The 24 between the text and the trailing control is a margin on the text
+  // The 24 between the text and the trailing control is an inset on the text
   // block rather than a gap on the row: a gap falls between every pair of
   // children, so it also landed between the icon and the text, which already
   // states its own 20 and ended up 44 away.
@@ -45,19 +45,18 @@ const useStyles = makeStyles({
   // The fill moves over the control's own duration; the toolkit leaves the
   // border instant.
   //
-  // No reduce branch, deliberately, and this is a departure: WinUI gates its
-  // BrushTransition on the same setting it gates motion with, so a real card
-  // would cross-fade instantly. WCAG's definition of motion animation excludes
-  // changes -- such as changes of colour or opacity -- that do not alter the
-  // perceived size, shape, position or depth of the element, so an 83ms fill
-  // change is not what the preference is about, and suppressing it buys nothing
-  // while costing the clearest hover signal the card has.
-  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L120-L166
-  // https://github.com/w3c/wcag/blob/900ea026b967bc306a2cdbe0c586330a508d6759/guidelines/terms/21/motion-animation.html
+  // WinUI sets that BrushTransition up only while UISettings.AnimationsEnabled
+  // is on, so a card whose animations are off switches its fill in one frame.
+  // The web states the same preference as prefers-reduced-motion, and the
+  // button sheet already clamps this same 83ms fill on it.
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L192-L194
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L206-L245
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/core/elements/panel.cpp#L68-L76
   interactive: {
     cursor: 'pointer',
     transitionDuration: 'var(--winui-control-faster-animation-duration)',
     transitionProperty: 'background-color',
+    '@media (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
     '&:hover': {
       backgroundColor: 'var(--winui-control-fill-secondary)',
       // ControlElevationBorderBrush is a gradient with a heavier bottom edge,
@@ -79,13 +78,16 @@ const useStyles = makeStyles({
   // The holder collapses when there is no icon, so a card without one starts
   // its text at the padding rather than at an empty column.
   //
-  // The 20 is what the glyph's INK fills, not the box it is laid out in. WinUI
-  // holds the icon in a Viewbox, which scales the drawing until it meets that
-  // bound; a Fluent icon cut for 20 carries its ink in the middle 16 of a 20
-  // unit box and would come out a quarter small. The 24 cut carries 20 units of
-  // ink, which is the same drawing at the size the Viewbox would have produced.
+  // The 20 bounds the layout box, not the ink: a Viewbox scales its child by
+  // that child's DesiredSize, which for an icon is the box the glyph is laid
+  // out in, so the literal transcription is a 20px box. The 24 cut is rendered
+  // at 24 instead, because Fluent's 24 cut carries about 20 units of ink where
+  // its 20 cut carries about 16 -- an ink-weight choice of ours rather than a
+  // size the Viewbox produces.
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L103-L106
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L398-L402
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/core/elements/Viewbox.cpp#L266-L289
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/core/elements/icon.cpp#L109-L126
   icon: {
     alignItems: 'center',
     color: 'var(--winui-text-fill-primary)',
@@ -95,9 +97,6 @@ const useStyles = makeStyles({
     flexBasis: 'auto',
     fontSize: '24px',
     justifyContent: 'center',
-    // A Viewbox bounds the drawing, not the box it is laid out in. The 24 cut
-    // carries 20 units of ink in a 24 unit box, so rendering it at 24 puts 20
-    // pixels of ink on screen -- which is the bound.
     '& svg': { height: '24px', width: '24px' },
     marginInlineEnd: '20px',
     marginInlineStart: '2px',
@@ -144,20 +143,19 @@ const useStyles = makeStyles({
   // A 32px square holding a 16px glyph. It is a ContentControl in the toolkit,
   // not a button: its background is SubtleFillColorTransparent and it states no
   // pointer states of its own, because the whole header row is the button and
-  // the chevron only shows which way that button is pointing.
-  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml#L540-L574
-  // The chevron's box is 32 square around a 16px glyph, so it carries eight
-  // pixels of its own air on every side, and that air is what spaces the glyph
-  // rather than any margin.
+  // the chevron only shows which way that button is pointing. The square is
+  // also what spaces the glyph -- eight pixels of its own air on every side,
+  // and no margin around the icon itself.
   //
-  // The header's right padding is 4 where a plain card's is 16, and the
-  // difference is the eight of air plus the four that remains: the glyph ends
-  // up twelve from the card's edge and eight from whatever precedes it, which
-  // is why it reads as centred between the two without either gap being
-  // written down. An explicit margin on top of that pushes the glyph off
-  // centre in both directions.
+  // The toolkit hangs that box beside the header card rather than inside it,
+  // and gives it eight more of margin at the trailing edge: its glyph lands
+  // sixteen from the header's edge, and twelve from whatever precedes it once
+  // the card's own trailing padding of 4 is counted. Here the box sits in the
+  // header row itself, inside that same 4, so the glyph reads twelve from the
+  // edge and eight from what precedes it. The construction is the toolkit's,
+  // one step tighter, and the step is ours.
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml#L15
-  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml#L540-L560
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml#L540-L574
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L99
   chevron: {
     alignItems: 'center',
@@ -170,15 +168,24 @@ const useStyles = makeStyles({
     justifyContent: 'center',
     width: '32px',
   },
-  // The chevron turns on the same schedule the region opens and closes on. Its
-  // own timing is not in the dictionaries -- WinUI draws it as an AnimatedIcon,
-  // whose curve lives in the Lottie source -- so there is nothing to transcribe
-  // and the thing worth matching is the motion it accompanies. Left on one
-  // symmetric duration it finished 83ms after the region had closed.
+  // The chevron's turn is WinUI's own, and it is not the region's. WinUI draws
+  // the glyph as an AnimatedIcon, so the numbers sit in the generated visual
+  // source rather than in a dictionary: a 4.3333s composition at 60fps, cut
+  // into named state segments, of which the two that carry this rotation --
+  // NormalOffToNormalOn and NormalOnToNormalOff -- each spend ten of those
+  // frames turning. That is 167ms either way, on the cubic Bezier through
+  // (0.167, 0.167) and (0, 1), and it is symmetric for that reason while the
+  // Expander's own asymmetric open and close stay with the region they time.
+  // ../../winui/controls/accordion.css.ts states the same turn on the other
+  // disclosure this app has.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedChevronUpDownSmallVisualSource.cpp#L104
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedChevronUpDownSmallVisualSource.cpp#L352
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedChevronUpDownSmallVisualSource.cpp#L428-L440
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedChevronUpDownSmallVisualSource.cpp#L789-L796
   chevronGlyph: {
-    transitionDuration: 'var(--winui-collapse-animation-duration)',
+    transitionDuration: '167ms',
     transitionProperty: 'rotate',
-    transitionTimingFunction: 'var(--winui-control-fast-out-slow-in-easing)',
+    transitionTimingFunction: 'cubic-bezier(0.167, 0.167, 0, 1)',
     // WinUI's expander chevron is an AnimatedIcon, and AnimatedIcon is gated on
     // UISettings.AnimationsEnabled: with animations off it displays the final
     // frame of the transition rather than playing it. The chevron lands in its
@@ -192,30 +199,29 @@ const useStyles = makeStyles({
   // rather than one per direction, so each direction's values sit on the rule
   // that is becoming active -- the closed base here, the open modifier below.
   //
-  // The closing SPLINE is not the source's, and this is why. WinUI translates
-  // the content by its own measured height under a clip of fixed height, so its
-  // region never changes size and nothing below it moves until the region is
-  // collapsed outright at the end. The grid row here changes the region's own
-  // height instead, which reaches the content's height without measuring it --
-  // but it also reflows everything below. WinUI's closing spline,
-  // cubic-bezier(1, 1, 0, 1), creeps for its first third and then snaps: its
-  // time mapping is stationary at the midpoint, so a fifth of the duration
-  // carries half the travel. Under a static clip that is a flick of content;
-  // applied to a height, it is the rest of the page jolting. The close takes
-  // the same fast-out-slow-in spline the open does, which over 167ms reads as
-  // prompt rather than abrupt.
+  // What travels is the region's own height, and that is a simplification of
+  // ours. WinUI translates the content under a composition clip: its region
+  // takes full height at once and only the content moves, and nothing about
+  // that shape is out of reach here, since a percentage translate resolves
+  // against the element's own border box and needs no measurement. Animating
+  // the height buys one grid row and costs two things. Everything below the
+  // row reflows for the length of the transition. And the closing spline goes
+  // with it: WinUI's cubic-bezier(1, 1, 0, 1) is stationary at the midpoint,
+  // so a fifth of the duration carries half the travel -- a flick of content
+  // under a static clip, the rest of the page jolting when the same curve
+  // drives a height. The close takes the fast-out-slow-in spline the open
+  // does, which over 167ms reads as prompt rather than abrupt.
   //
   // The reduce branch departs from shipped WinUI, which keeps sliding: the
   // Expander authors its motion as a VisualState storyboard rather than a
-  // VisualTransition, and the gate only reaches Transition and Dynamic
-  // storyboards, so the content still travels with animations off. That is an
-  // unactioned bug -- microsoft-ui-xaml#3279 asks for exactly this gate, and a
-  // WinUI PM called the general case a framework bug -- not a design, and a
+  // VisualTransition, and the animations gate only reaches Transition and
+  // Dynamic storyboards, so the content still travels with animations off. A
   // region that grows from nothing to its full height is motion animation by
-  // WCAG's own definition, which turns on perceived size and position.
+  // WCAG's own definition, which turns on perceived size and position, so the
+  // preference is honoured here as a web-platform obligation.
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander.xaml#L62-L90
-  // https://github.com/microsoft/microsoft-ui-xaml/issues/3279
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/vsm/VisualStateManagerActuator.cpp#L590-L609
+  // https://github.com/w3c/wcag/blob/900ea026b967bc306a2cdbe0c586330a508d6759/guidelines/terms/21/motion-animation.html
   contentFrame: {
     display: 'grid',
     gridTemplateRows: '0fr',
@@ -247,12 +253,12 @@ const useStyles = makeStyles({
   // That style also compacts the control: MinWidth 0 and Height 36, against the
   // 154 and the content-sized height a standalone switch takes.
   //
-  // Fluent's switch carries eight pixels of margin around the track for a label
-  // slot this one does not use; the trailing side is removed so the track ends
-  // where the card's padding does.
+  // The twelve between the readout and the track is that retemplate's own gap
+  // column, spent here on the wrapper because the readout sits outside the
+  // Fluent control rather than in a slot of it.
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L140-L145
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L483-L492
-  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L1000-L1053
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L985-L1053
   switchRow: {
     alignItems: 'center',
     columnGap: '12px',
@@ -312,8 +318,7 @@ export function SettingsCard({ action, description, header, icon, onClick }: {
 // thrown without opening the row and the row can be opened without touching the
 // switch. In the toolkit that falls out of routed events -- the whole header is
 // a ToggleButton and the trailing control marks the pointer handled before it
-// gets there -- which the DOM does not do on its own, so the chevron is its own
-// button rather than the header being one.
+// gets there -- which the DOM does not do on its own.
 // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml
 export function SettingsExpander({ action, children, defaultOpen = false, description, header, icon, revealOn, toggledOn }: {
   action?: ReactNode;

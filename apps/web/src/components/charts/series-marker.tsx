@@ -3,16 +3,24 @@ import { fluentComponents } from '../../fluent';
 const { mergeClasses } = fluentComponents;
 
 // The swatch that carries a series' colour in a legend tag and in a callout
-// row. The shape follows the form the chart draws — a square for an area, a
-// circle for a line — which today also tells the two surfaces apart, since the
-// legend sits over the line chart and the callout over the area chart.
+// row. Its shape is named for the plot form it is taken from — a square for an
+// area, a circle for a line point — and each surface picks one: the legend
+// tags carry the circle, the callout rows the square, which also tells a
+// reader which of the two a colour is being read from. At 10px a 2px radius
+// still leaves most of each edge straight, so the square keeps reading as a
+// square beside the circle.
 //
-// WinUI ships no chart legend and no callout, so the 10px is ours. It is the
-// callout table's number rather than the legend's 8, because a 2px radius eats
-// most of an 8px square's corners and the two shapes stop reading apart —
-// which is the one thing the swatch has to do. The colour repeats what the
-// label beside it already says, so it is hidden from assistive technology in
-// both places.
+// WinUI ships no chart control at all, so it states neither a legend nor a
+// callout swatch and there is nothing to transcribe; the 10px is our choice.
+// Fluent's own chart swatch is 12px — a 12-unit path inside a 14px SVG for the
+// shape legend, a 12px bordered rect for the flat one — which we find heavy
+// beside the 11-12px text it stands next to, so we take 10.
+// https://github.com/microsoft/microsoft-ui-xaml/tree/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/charts/react-charts/library/src/components/Legends/useLegendsStyles.styles.ts#L14-L19
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/charts/react-charts/library/src/components/Legends/shape.tsx#L39-L48
+//
+// The colour repeats what the label beside it already says, so the swatch is
+// hidden from assistive technology in both places.
 const SHAPE_CLASS = {
   area: 'rounded-[2px]',
   line: 'rounded-full',

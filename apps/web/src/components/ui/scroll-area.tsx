@@ -20,42 +20,49 @@ interface ScrollAreaProps extends PropsWithChildren {
 }
 
 let nativeScrollbarSize = 0;
-let scrollbarProbe: HTMLDivElement | null = null;
 const scrollbarSizeListeners = new Set<() => void>();
 
+// Whether the platform's scrollbars take layout width, measured rather than
+// assumed: a 500px box overflowed by a 1000px child gives the bar's width as
+// the difference between its border box and its content box.
+//
+// The probe is built, read and removed inside one call, leaving nothing behind.
+// React renders this app's whole document, so a node parked in `<body>` before
+// hydration is a node React did not put there -- it is removed during
+// reconciliation, and a detached element measures zero on both boxes. Keeping
+// one alive across hydration therefore reported a real width once and zero
+// forever after, which reads exactly like the platform having overlay bars.
+const measureNativeScrollbarSize = () => {
+  if (typeof document === 'undefined' || !document.body) return 0;
+  const outer = document.createElement('div');
+  outer.setAttribute('aria-hidden', 'true');
+  outer.style.cssText = 'position:absolute;top:-9999px;width:500px;height:500px;overflow:auto;';
+  const inner = document.createElement('div');
+  inner.style.cssText = 'width:1000px;height:1000px;';
+  outer.appendChild(inner);
+  document.body.appendChild(outer);
+  const size = Math.max(outer.offsetWidth - outer.clientWidth, outer.offsetHeight - outer.clientHeight);
+  outer.remove();
+  return size;
+};
+
 const updateNativeScrollbarSize = () => {
-  if (!scrollbarProbe) return;
-  const next = Math.max(
-    scrollbarProbe.offsetWidth - scrollbarProbe.clientWidth,
-    scrollbarProbe.offsetHeight - scrollbarProbe.clientHeight,
-  );
+  const next = measureNativeScrollbarSize();
   if (next === nativeScrollbarSize) return;
   nativeScrollbarSize = next;
   scrollbarSizeListeners.forEach(listener => listener());
 };
 
-const ensureScrollbarProbe = () => {
-  if (scrollbarProbe || typeof document === 'undefined') return;
-  const outer = document.createElement('div');
-  outer.setAttribute('aria-hidden', 'true');
-  outer.style.cssText = 'position:fixed;left:-10000px;top:-10000px;width:500px;height:500px;overflow:scroll;pointer-events:none;visibility:hidden;';
-  const inner = document.createElement('div');
-  inner.style.cssText = 'width:1000px;height:1000px;';
-  outer.appendChild(inner);
-  document.body.appendChild(outer);
-  scrollbarProbe = outer;
-  new ResizeObserver(updateNativeScrollbarSize).observe(outer);
-  window.addEventListener('resize', updateNativeScrollbarSize);
-  updateNativeScrollbarSize();
-};
-
-// The first ScrollArea must know whether native scrollbars consume layout
-// space before React renders it. Module scripts run after the document is
-// parsed, so this normally measures synchronously; the listener only covers
-// non-browser tooling that imports the module unusually early.
+// The setting is a system one and can change under a running page. Nothing
+// fires on the change itself, so it is re-read at the moments the answer could
+// have changed while the page was not looking.
 if (typeof document !== 'undefined') {
-  if (document.body) ensureScrollbarProbe();
-  else document.addEventListener('DOMContentLoaded', ensureScrollbarProbe, { once: true });
+  const measureNow = () => updateNativeScrollbarSize();
+  if (document.body) measureNow();
+  else document.addEventListener('DOMContentLoaded', measureNow, { once: true });
+  window.addEventListener('resize', measureNow);
+  window.addEventListener('focus', measureNow);
+  document.addEventListener('visibilitychange', measureNow);
 }
 
 const subscribeToScrollbarSize = (listener: () => void) => {

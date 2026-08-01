@@ -20,6 +20,29 @@
 // element itself, and in both cases the variable is the one place left where the
 // colour can still be chosen. See ./tokens.ts for the selector convention.
 export const navCss = `
+/* The seam between the pane and the page. WinUI's pane draws no edge of its
+   own -- PaneContentGrid names a border brush and never a thickness, and the
+   split view around it is driven to PaneNotOverlaying in the expanded form,
+   which sets its own border transparent. The hairline one sees at the boundary
+   comes from the other side: ContentGrid carries 1,1,0,0 of
+   CardStrokeColorDefault under an 8,0,0,0 corner radius over
+   LayerFillColorDefault -- a card the content sits on, whose start edge runs
+   down the seam. The dashboard's content region is not that card: it has no
+   border, no radius and no layer fill of its own, so the seam is drawn from
+   the pane's inline-end edge, which is the one side Fluent gives a border
+   style to. It is retinted from the divider stroke ./drawer.css gives every
+   inline drawer to the card stroke WinUI paints this particular seam with; the
+   rounded start corner belongs to the content side and is not reproduced.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L127
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L290
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L392
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L49
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L234
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L263 */
+.fui-NavDrawer.fui-InlineDrawer {
+  border-inline-end-color: var(--winui-card-stroke-default);
+}
+
 /* Item foreground. Fluent's neutral pair gives way to WinUI's primary text
    fill, and the press state drops to the secondary one. The substitution is
    made on the token rather than on \`color\` because the icon slot's
@@ -27,23 +50,6 @@ export const navCss = `
    \`color\` alone would leave that keyframe starting from Fluent's grey.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L21
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L23 */
-/* The pane draws no edge. NavigationView's PaneContentGrid names a border
-   brush and never a thickness, and the split view around it is driven to
-   PaneNotOverlaying in the expanded form, which sets its own border
-   transparent. The hairline one sees at the boundary in Windows belongs to the
-   other side: ContentGrid carries 1,1,0,0 of CardStrokeColorDefault under an
-   8,0,0,0 corner radius over LayerFillColorDefault — a card the content sits
-   on, whose left edge happens to run down the seam. Fluent's inline drawer
-   paints that seam from the pane instead, so the nav drawer declines it;
-   ./drawer.css still colours the edge for every other inline drawer, where it
-   really is a divider between two regions of one page.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L289-L291
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L392
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L234-L241 */
-.fui-NavDrawer.fui-InlineDrawer {
-  border-inline-end-style: none;
-}
-
 .fui-NavItem.fui-NavItem,
 .fui-NavSubItem.fui-NavSubItem,
 .fui-NavCategoryItem.fui-NavCategoryItem,
@@ -162,25 +168,36 @@ export const navCss = `
   --colorNeutralForeground2: var(--winui-text-fill-disabled);
 }
 
-/* Focus. WinUI's focus visual on a navigation item is one ring: the outer
-   stroke, two pixels thick, sitting a pixel beyond the item with nothing drawn
-   in between. The gap is transparent, not filled -- what shows through it is
-   whatever the item sits on, which on Windows is the pane's material. The item
-   itself is untouched, so its fill is the same rectangle in every state.
+/* Focus. A navigation item asks for the system focus visual, which is two
+   adjacent strokes: a 2px outer in FocusStrokeColorOuter and, immediately
+   inside it, a 1px inner in FocusStrokeColorInner. The two are concentric with
+   no gap -- the inner border is inset by exactly the outer thickness -- and
+   both sit within the item's own bounds, since the focus rectangle starts as
+   the element bounds shrunk by FocusVisualMargin and the item states none. The
+   item itself is untouched, so its fill is the same rectangle in every state.
 
-   FocusStrokeColorInner is not a second ring here. It belongs to controls that
-   draw a stroke against their own body, which a navigation item has none of;
-   painting it as one is what puts a pale edge on the fill.
-
-   Fluent draws the same ring but pulls it inward, so only the offset and the
-   colour are restated.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259 */
+   Fluent draws the outer stroke only, as a real outline offset fully inside
+   the border box, which is where WinUI puts it; the colour is restated on the
+   token and the offset is left alone. The inner stroke has no Fluent
+   counterpart to retint, so it is painted as an inset shadow three pixels
+   deep, of which the outline covers the outer two -- the third pixel is the
+   inner ring's place. It is a shadow rather than the two-pseudo-element
+   construction used elsewhere because the item's ::after is spoken for by the
+   selection indicator above.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L429
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources.xaml#L15-L16
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L250-L252
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L173-L174
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L446-L452
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/inc/FocusRectNudging.h#L388 */
 .fui-NavItem.fui-NavItem[data-fui-focus-visible],
 .fui-NavSubItem.fui-NavSubItem[data-fui-focus-visible],
 .fui-NavCategoryItem.fui-NavCategoryItem[data-fui-focus-visible],
 .fui-AppItem.fui-AppItem[data-fui-focus-visible] {
   --colorStrokeFocus2: var(--winui-focus-stroke-outer);
-  outline-offset: 1px;
+  box-shadow:
+    inset 0 0 0 var(--strokeWidthThicker) var(--winui-focus-stroke-inner);
 }
 
 /* A selected item's icon keeps the primary text fill in WinUI instead of taking

@@ -232,11 +232,17 @@ export const winuiTokenCss = `
   }
 }
 
-/* The in-app acrylic material, as the flat colour it declares for itself when
-   acrylic is unavailable. Every AcrylicBrush carries a FallbackColor for
-   exactly that case, and the web is that case: there is no backdrop material
-   here to tint. So a flyout that XAML fills with AcrylicInAppFillColorDefault
-   takes this rather than staying Fluent's flat white.
+/* The in-app acrylic material, taken as the flat FallbackColor the brush
+   declares for itself. Both appearances are WinUI's own -- one AcrylicBrush
+   cross-fades between the acrylic recipe and its FallbackColor as system
+   policy turns transparency effects off -- and we take the fallback. A blurred
+   backdrop is reachable on the web through backdrop-filter, but the recipe
+   over it is not: WinUI blends a luminosity colour into the blurred backdrop
+   to flatten its contrast, blends the tint over that, and composites a noise
+   texture through the result, and CSS has no counterpart to that graph. So a
+   flyout that XAML fills with AcrylicInAppFillColorDefault takes the flat
+   fill, and reads opaque where WinUI lets the page through.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Materials/Acrylic/AcrylicBrush.cpp#L427-L470
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Materials/Acrylic/AcrylicBrush_themeresources.xaml#L96 */
 :root {
   --winui-acrylic-in-app-fill-default: #f9f9f9;
@@ -263,10 +269,14 @@ export const winuiTokenCss = `
    is zero, leaving one directional shadow of blur 8, Y offset Elevation * 0.5
    = 4 and opacity min(8/100 + 0.06, 0.14) in light against a flat 0.26 in
    dark, truncated to a byte as 0x23 and 0x42 over pure black. The compositor
-   is handed the blur radius plus one, so the geometry the rule writes is
-   0 4px 9px.
+   is handed that blur radius plus one, and the extra pixel pays for a caster
+   inset a pixel on every side -- the dummy rounded rectangle is sized two
+   smaller and offset one in -- which CSS has no counterpart for, since a CSS
+   shadow is cast by the element itself. The recipe's 8 is therefore the
+   faithful blur; the rule spending this token in ./controls/tooltip.css.ts
+   writes 9, one pixel of ours.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/graphics/inc/DropShadowRecipe.h#L108-L162
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/comptree/HWCompNodeWinRT.cpp#L1675
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/comptree/HWCompNodeWinRT.cpp#L1608-L1675
 
    Sourced, but not from a dictionary, and it carries one assumption: that
    CompositionDropShadow's BlurRadius and the CSS blur radius describe the same
@@ -341,6 +351,25 @@ export const winuiTokenCss = `
     --winui-text-fill-tertiary: #ffffff87;
     --winui-text-fill-disabled: #ffffff5d;
     --winui-text-fill-inverse: #000000e4;
+  }
+}
+
+/* The description line's own step. SystemControlDescriptionTextForegroundBrush
+   is not part of the modern ramp above: it comes from the framework's legacy
+   system-brush layer, aliasing SystemControlPageTextBaseMediumBrush, which
+   carries SystemBaseMediumColor -- black or white at 60%. That is its own
+   value, distinct from the 62% and 77% the secondary text fill carries, so it
+   is named here rather than folded onto a neighbour.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L321-L327
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L4134 */
+:root {
+  --winui-text-base-medium: #00000099;
+}
+
+/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L209 */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --winui-text-base-medium: #ffffff99;
   }
 }
 
@@ -538,21 +567,25 @@ export const winuiTokenCss = `
 }
 
 /* Composed strokes. WinUI outlines a control with a LinearGradientBrush mapped
-   in absolute units — a 3px span for ControlElevationBorderBrush and
-   AccentControlElevationBorderBrush — so one edge reads heavier than the other
-   three regardless of how tall the control is. The web has no equivalent of an
-   absolute-mapped brush used as a border, so each is transcribed as a
-   border-color shorthand whose three terms are the top, the sides and the
-   bottom.
+   in absolute units -- a 3px span for ControlElevationBorderBrush and
+   AccentControlElevationBorderBrush -- so one edge reads heavier than the other
+   three regardless of how tall the control is, with a 2px band fading from the
+   heavy edge into the flat stroke. Each is transcribed as a border-color
+   shorthand whose three terms are the top, the sides and the bottom.
 
-   The circle stroke is the exception: it outlines a round part that has no
-   border box of its own, so it is transcribed as a set of per-side 1px inset
-   box-shadows, which follow border-radius. Painting each side separately rather
-   than a full ring plus a heavier strip matters because box-shadow composites,
-   and a translucent ring under a translucent strip would render the heavy edge
-   darker than the XAML gradient ever gets. The two pixels where the heavy edge
-   meets a side edge are covered by both insets, and a fully round part rounds
-   them away. */
+   A border-box linear-gradient behind a transparent border reproduces the
+   brush exactly, fade band included. We do not spend one: it would claim the
+   border-box background layer of every control that takes the stroke, and it
+   would stop the stroke being a colour token the dark block below can
+   re-point. The fade band is what the three-term form costs.
+
+   CircleElevationBorderBrush, the third brush of the family, is not emitted.
+   The one part WinUI strokes with it is the toggle switch's on knob, and that
+   Border binds the brush without ever stating a BorderThickness, which
+   defaults to zero -- so shipped WinUI paints no such outline and there is
+   nothing to carry.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L159
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L510 */
 
 /* Light flips the gradient (ScaleY="-1"), putting the heavier
    ControlStrokeColorSecondary edge at the bottom.
@@ -586,23 +619,6 @@ export const winuiTokenCss = `
     var(--winui-control-stroke-on-accent-secondary);
 }
 
-/* The circle stroke is a different construction from the three above: it maps
-   relative to the bounding box rather than in absolute pixels, so its heavy
-   edge is a proportion of the control rather than a fixed pixel, and its stops
-   sit at 0.50 and 0.70 instead of 0.33 and 1.0. Neither dictionary flips it, so
-   the heavy ControlStrokeColorSecondary edge is at the bottom in both themes
-   and no dark override is needed. It outlines the toggle switch's knob; a
-   checked radio dot takes the accent stroke instead.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L192-L197
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L391-L396 */
-:root {
-  --winui-circle-elevation-shadow:
-    inset 0 1px 0 0 var(--winui-control-stroke-default),
-    inset 1px 0 0 0 var(--winui-control-stroke-default),
-    inset -1px 0 0 0 var(--winui-control-stroke-default),
-    inset 0 -1px 0 0 var(--winui-control-stroke-secondary);
-}
-
 /* Motion. The values are declared in ./motion.ts, because the presence
    animations and the measured indicators need them as numbers, and a custom
    property is a string the Web Animations API will not resolve. */
@@ -625,23 +641,32 @@ export const winuiTokenCss = `
   --winui-button-padding: 5px 11px 6px;
 }
 
-/* Unresolved. One family is asked for by the controls above and is not emitted,
-   because there is no single element for it to land on.
+/* Not emitted. One metric the controls above ask for is deliberately left on
+   Fluent's own value.
 
    TextControlThemePadding is 10,5,6,6, stated in the controls dictionary
    alongside a 1px border -- both of which override the framework's legacy
-   generic.xaml, where the same keys read 10,3,6,6 and 2. Fluent splits the
-   inset that thickness describes across two elements, the horizontal half on
-   the field's root and the vertical handled by centring the content, so there
-   is no element whose padding it is. What the pair does determine is the
-   control's height, and that is derived and departed from at the rule that
-   spends it in ./controls/text-input.css.
+   generic.xaml, where the same keys read 10,3,6,6 and 2. XAML template-binds
+   that single thickness to two elements, the text-bearing ScrollViewer and the
+   placeholder TextBlock behind it. Its vertical half is absorbed here by the
+   control's derived height, because Fluent centres the content rather than
+   padding it; its horizontal half is left on the 12px spacingHorizontalM that
+   Fluent's input slot already carries, rather than restated as WinUI's 10 and
+   6. The height the pair determines is derived at the rule that spends it in
+   ./controls/text-input.css.ts, where one shared row height is taken instead.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources.xaml#L10-L12
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L173-L175
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L192-L194
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L337-L338
 
-   There is likewise no spacing or type scale to lift: WinUI states each metric
-   as a per-control thickness or size, of which ButtonPadding above is one, and
-   never as a shared ramp. Anything needing a step other than a metric a control
-   actually declares uses Fluent's spacing and type tokens. */
+   Type and spacing stay Fluent's, for two different reasons. WinUI does state
+   a shared type ramp, but it gives font size and weight only and leaves
+   leading to LineStackingStrategy, which has no CSS counterpart, so the
+   matched size and line-height pairs of Fluent's ramp are spent instead; at
+   the size in use the two agree, fontSizeBase300 and BodyTextBlockFontSize
+   both being 14. Spacing has no shared ramp to lift: WinUI states each step as
+   a per-control thickness, of which ButtonPadding above is one, so a step no
+   control declares takes a Fluent spacing token.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBlock_themeresources.xaml#L3-L9
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBlock_themeresources.xaml#L10-L51 */
 `;
