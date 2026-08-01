@@ -170,8 +170,13 @@ const useStyles = makeStyles({
     justifyContent: 'center',
     width: '32px',
   },
+  // The chevron turns on the same schedule the region opens and closes on. Its
+  // own timing is not in the dictionaries -- WinUI draws it as an AnimatedIcon,
+  // whose curve lives in the Lottie source -- so there is nothing to transcribe
+  // and the thing worth matching is the motion it accompanies. Left on one
+  // symmetric duration it finished 83ms after the region had closed.
   chevronGlyph: {
-    transitionDuration: 'var(--winui-control-normal-animation-duration)',
+    transitionDuration: 'var(--winui-collapse-animation-duration)',
     transitionProperty: 'rotate',
     transitionTimingFunction: 'var(--winui-control-fast-out-slow-in-easing)',
     // WinUI's expander chevron is an AnimatedIcon, and AnimatedIcon is gated on
@@ -182,16 +187,23 @@ const useStyles = makeStyles({
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedIcon.cpp#L432-L444
     '@media screen and (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
   },
-  // Expander's open and close, which are asymmetric in both terms: 333ms on the
-  // fast-out-slow-in spline opening, 167ms on a spline that leaves at once and
-  // arrives slowly closing. CSS states one duration per transitioned property
+  // Expander's open and close, asymmetric in duration as the source is: 333ms
+  // opening, 167ms closing. CSS states one duration per transitioned property
   // rather than one per direction, so each direction's values sit on the rule
   // that is becoming active -- the closed base here, the open modifier below.
   //
-  // WinUI translates the content by its own measured height under a static
-  // clip. The region is a grid whose single row runs from zero to `1fr`
-  // instead, which reaches the content's own height without anything having to
-  // measure it first and reads the same.
+  // The closing SPLINE is not the source's, and this is why. WinUI translates
+  // the content by its own measured height under a clip of fixed height, so its
+  // region never changes size and nothing below it moves until the region is
+  // collapsed outright at the end. The grid row here changes the region's own
+  // height instead, which reaches the content's height without measuring it --
+  // but it also reflows everything below. WinUI's closing spline,
+  // cubic-bezier(1, 1, 0, 1), creeps for its first third and then snaps: its
+  // time mapping is stationary at the midpoint, so a fifth of the duration
+  // carries half the travel. Under a static clip that is a flick of content;
+  // applied to a height, it is the rest of the page jolting. The close takes
+  // the same fast-out-slow-in spline the open does, which over 167ms reads as
+  // prompt rather than abrupt.
   //
   // The reduce branch departs from shipped WinUI, which keeps sliding: the
   // Expander authors its motion as a VisualState storyboard rather than a
@@ -209,7 +221,7 @@ const useStyles = makeStyles({
     gridTemplateRows: '0fr',
     transitionDuration: 'var(--winui-collapse-animation-duration)',
     transitionProperty: 'grid-template-rows',
-    transitionTimingFunction: 'var(--winui-collapse-easing)',
+    transitionTimingFunction: 'var(--winui-control-fast-out-slow-in-easing)',
     '@media screen and (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
   },
   contentFrameOpen: {
@@ -219,7 +231,10 @@ const useStyles = makeStyles({
     '@media screen and (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
   },
   contentClip: { minHeight: 0, overflow: 'hidden' },
-  chevronOpen: { rotate: '180deg' },
+  chevronOpen: {
+    rotate: '180deg',
+    transitionDuration: 'var(--winui-expand-animation-duration)',
+  },
   // A switch in a settings row reads its own state out, and the reading sits
   // BEFORE the track. WinUI's own ToggleSwitch template puts OnContent after it
   // -- column 2 of a three column grid, twelve along from the track in column 0

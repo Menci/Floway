@@ -18,16 +18,18 @@ export const CONTROL_FAST_OUT_SLOW_IN_EASING = 'cubic-bezier(0, 0, 0, 1)';
 
 // Expander's own open and close, which are not the control durations above and
 // are not symmetric. The content travels by its own height under a static clip,
-// with a different spline in each direction -- the close curve leaves
-// immediately and arrives slowly, where every other motion here does the
-// reverse. Which end of the height it travels from depends on the expand
+// The close carries its own spline, cubic-bezier(1, 1, 0, 1), which is not
+// transcribed and is not published here: it creeps for a third of its run and
+// then snaps, because its time mapping is stationary at the midpoint. Under
+// WinUI's fixed-height clip that is a flick of content; the consumer here
+// animates a height, where it would jolt the page below, and says so at the
+// rule that departs. Which end of the height it travels from depends on the expand
 // direction, so the durations and splines are what carries over rather than the
 // offsets: the four states in ExpandStates state the same 333 and 167 whichever
 // way the content opens.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander.xaml#L33-L90
 export const EXPAND_ANIMATION_MS = 333;
 export const COLLAPSE_ANIMATION_MS = 167;
-export const COLLAPSE_EASING = 'cubic-bezier(1, 1, 0, 1)';
 
 // RepositionThemeAnimation, the Windows animation library's move-an-element
 // primitive. A XAML template invokes it by name and states no timing, because
