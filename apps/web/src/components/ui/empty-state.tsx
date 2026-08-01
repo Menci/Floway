@@ -19,25 +19,19 @@ const { Text, mergeClasses } = fluentComponents;
 // ours: the 12px between the text and its action, the 480px measure, and the
 // 180px a centred state fills before it starts growing its container.
 //
-// Both variants centre the block against the height they are given. Without
-// that the block is a stretched grid item, and its own rows then distribute the
-// slack between them -- the title, the line under it and the action drift to
-// opposite ends of whatever panel holds them.
+// The block is centred in the space it is given either way; `align` decides
+// only how its own lines sit inside it. Centring the block is what keeps it
+// from reading as the first column of a layout that has no other columns, and
+// it must be centring rather than stretching: a stretched grid item hands the
+// slack to its own rows, and the title, the line under it and the action drift
+// to opposite ends of whatever panel holds them.
 const ALIGN_CLASS = {
-  center: 'grid place-items-center text-center min-h-[180px]',
-  start: 'grid items-center justify-items-start min-h-[180px]',
-} as const;
-
-const STACK_ALIGN_CLASS = {
-  center: 'justify-items-center',
+  center: 'text-center justify-items-center',
   start: 'justify-items-start',
 } as const;
 
 // The block form: what is missing, optionally why or what to do about it, and
-// optionally the control that does it. Centred in the space it is given, or
-// leading-aligned for a pane whose other content is leading-aligned, where a
-// centred block would read as a second column rather than as the pane's
-// content.
+// optionally the control that does it.
 export function EmptyState({ action, align = 'center', className, description, title }: {
   action?: ReactNode;
   align?: keyof typeof ALIGN_CLASS;
@@ -45,8 +39,8 @@ export function EmptyState({ action, align = 'center', className, description, t
   description?: ReactNode;
   title: ReactNode;
 }) {
-  return <div className={mergeClasses(ALIGN_CLASS[align], className)}>
-    <div className={mergeClasses('grid gap-3 max-w-[480px]', STACK_ALIGN_CLASS[align])}>
+  return <div className={mergeClasses('grid place-items-center min-h-[180px]', className)}>
+    <div className={mergeClasses('grid gap-3 max-w-[480px]', ALIGN_CLASS[align])}>
       <div className={TIGHT_STACK_CLASS}>
         <Text size={300} weight="semibold">{title}</Text>
         {description !== undefined && <Text size={200} className="text-fui-fg2">{description}</Text>}

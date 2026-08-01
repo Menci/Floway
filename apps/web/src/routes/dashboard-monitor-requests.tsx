@@ -144,7 +144,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
         <Panel className="!grid">
           <EmptyState
             action={<Link className="text-fui-brand1 no-underline hover:underline" to="/dashboard/services/api-keys">
-              <OpenLinkLabel>{t('dashboard.requests.goToApiKeys')}</OpenLinkLabel>
+              <OpenLinkLabel>{t('dashboard.requests.apiKeysLink')}</OpenLinkLabel>
             </Link>}
             align="start"
             description={t('dashboard.requests.noKeysDescription')}
