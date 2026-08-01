@@ -81,7 +81,7 @@ export const cardCss = `
   --winui-card-fill: var(--winui-card-background-fill-default);
   --winui-card-fill-alternative: var(--winui-card-background-fill-secondary);
   --winui-card-stroke: var(--winui-card-stroke-default);
-  --winui-card-corner-radius: var(--winui-overlay-corner-radius);
+  --winui-card-corner-radius: var(--winui-control-corner-radius);
   --winui-card-selected-fill: var(--winui-subtle-fill-secondary);
   --winui-card-selected-fill-hover: var(--winui-subtle-fill-tertiary);
   --winui-card-focus-stroke: var(--winui-focus-stroke-outer);
@@ -116,13 +116,18 @@ export const cardCss = `
   --shadow8Brand: 0 0 2px var(--colorBrandShadowAmbient), 0 4px 8px var(--colorBrandShadowKey);
 }
 
-/* WinUI gives every card-shaped surface the same OverlayCornerRadius, where
-   Fluent scales the radius with the card's size; the fallback is Fluent's own
-   per-size variable, so opting out restores that scaling. The focus ring is a
+/* Both surfaces this file draws from round at ControlCornerRadius: the Expander
+   binds its own CornerRadius to it, and ListViewItemCornerRadius states the
+   same 4. That is the radius WinUI gives anything inline, which a card is --
+   the overlay radius belongs to surfaces that float. Fluent instead scales the
+   radius with the card's size; the fallback is its per-size variable, so opting
+   out restores that scaling. The focus ring is a
    border on the same \`::after\`, and Fluent restates the Fluent radius on it
    from a selector no weaker than this one, so the ring is named here too and
    the card keeps one radius whether or not it is focused.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CornerRadius_themeresources.xaml#L6
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CornerRadius_themeresources.xaml#L5
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander.xaml#L26
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L58
    https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-card/library/src/components/Card/useCardStyles.styles.ts#L34-L38 */
 .fui-Card.fui-Card,
 .fui-Card.fui-Card::after,
