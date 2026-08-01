@@ -86,7 +86,7 @@ export function meta({}: Route.MetaArgs) {
 }
 
 const useStyles = makeStyles({
-  toolbar: { borderBottom: '1px solid var(--colorNeutralStroke1)' },
+  toolbar: { borderBottom: `1px solid ${tokens.colorNeutralStroke1}` },
   brandIconAction: {
     color: bingAccentForeground,
     '&:hover': { color: bingAccentForegroundHover },

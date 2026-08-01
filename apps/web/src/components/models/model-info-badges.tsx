@@ -12,13 +12,13 @@ const { makeStyles, tokens } = fluentComponents;
 
 const useStyles = makeStyles({
   modelValue: {
-    fontFamily: 'var(--fontFamilyMonospace)',
+    fontFamily: tokens.fontFamilyMonospace,
     fontSize: '11px',
     fontWeight: tokens.fontWeightSemibold,
     lineHeight: '16px',
   },
   strongValue: { fontWeight: tokens.fontWeightSemibold },
-  tag: { color: 'var(--colorNeutralForeground2)' },
+  tag: { color: tokens.colorNeutralForeground2 },
   tagText: { fontSize: '12px', lineHeight: '16px' },
 });
 
