@@ -114,6 +114,9 @@ const zhHansCN = {
           providerDefault: '提供商默认值',
         },
         badges: {
+          context: '上下文 <strong>{{value}}</strong>',
+          prompt: '输入 <strong>{{value}}</strong>',
+          output: '输出 <strong>{{value}}</strong>',
           aliasOfModel: '别名指向 <model>{{target}}</model>',
           aliasOfCount_other: '别名指向 <strong>{{count}}</strong> 个模型',
           aliasOfPartial: '别名指向 <strong>{{total}}</strong> 个模型中的 <strong>{{reachable}}</strong> 个',

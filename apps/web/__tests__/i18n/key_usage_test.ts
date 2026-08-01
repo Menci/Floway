@@ -29,10 +29,22 @@ const leafKeys = (value: object, prefix = ''): string[] =>
 // backs `t('x.count')` is `x.count_one` / `x.count_other` rather than `x.count`.
 const PLURAL_SUFFIX = /_(zero|one|two|few|many|other)$/;
 
-// Only literal keys are checkable here. A template key (`t(`a.b.${x}`)`) is
-// resolved from a value this test cannot know, so it is out of scope; the
-// resources suite still guarantees both locales agree on whatever exists.
-const LITERAL_KEY = /\bt\(\s*'([a-zA-Z][a-zA-Z0-9_.]*)'/g;
+// A key reaches i18next three ways: `t('a.b')`, `<Trans i18nKey="a.b">`, and a
+// literal sitting behind a ternary inside either. Anchoring on `t(` alone
+// matched only the first, which silently exempted every `<Trans>` in the app --
+// that is how three live keys came to be deleted as orphans.
+//
+// So a key is recognised by its own shape instead of by its call site: a quoted
+// string whose first segment is one of the top-level namespaces below is a
+// translation key wherever it appears. That reads consts and lookup tables too,
+// and cannot match an unrelated string like 'windows' the way a loose scan
+// forward from `t(` could.
+//
+// A template key (`t(`a.b.${x}`)`) resolves from a value this test cannot know
+// and stays out of scope; the resources suite still guarantees both locales
+// agree on whatever exists.
+const NAMESPACES = Object.keys(resources.en.translation);
+const LITERAL_KEY = new RegExp(`['"\`]((?:${NAMESPACES.join('|')})\\.[a-zA-Z][a-zA-Z0-9_.]*)['"\`]`, 'g');
 
 // The reverse direction needs a wider net than `t(...)`. A key reaches the
 // call site through whatever the source does with it -- held in a const, in a
@@ -49,7 +61,7 @@ const LITERAL_KEY = /\bt\(\s*'([a-zA-Z][a-zA-Z0-9_.]*)'/g;
 // clears stays in the file; a key it wrongly accuses would fail a build over a
 // string that is genuinely in use.
 const ANY_STRING = /['"`]([a-zA-Z][a-zA-Z0-9_.]*)['"`]/g;
-const TEMPLATE_KEY_PREFIX = /\bt\(\s*`([a-zA-Z][a-zA-Z0-9_.]*\.)\$\{/g;
+const TEMPLATE_KEY_PREFIX = /(?:\bt\(\s*|i18nKey=\{\s*)`([a-zA-Z][a-zA-Z0-9_.]*\.)\$\{/g;
 
 describe('translation key usage', () => {
   const defined = new Set(leafKeys(resources.en.translation));
@@ -61,7 +73,10 @@ describe('translation key usage', () => {
     for (const file of sourceFiles(SOURCE_ROOT)) {
       const source = readFileSync(file, 'utf8');
       for (const [, key] of source.matchAll(LITERAL_KEY)) {
-        if (!resolves(key)) unresolved.push(`${key} (${file.slice(SOURCE_ROOT.length + 1)})`);
+        // A literal that names no leaf but prefixes one is a stem the call site
+        // completes -- `t(`${prefix}Disable`)` passes the stem and appends.
+        if (resolves(key) || [...defined].some(leaf => leaf.startsWith(`${key}.`) || leaf.startsWith(key))) continue;
+        unresolved.push(`${key} (${file.slice(SOURCE_ROOT.length + 1)})`);
       }
     }
     // An unresolved key renders as the key itself, which reads as a broken
@@ -106,6 +121,11 @@ describe('translation key usage', () => {
     ['dashboard.upstreamEditor.flags.entries', OPTIONAL_FLAG_IDS.flatMap(id => [`${id}.label`, `${id}.description`])],
     ['dashboard.upstreams.providers', ALL_PROVIDER_KINDS],
     ['provider', ALL_PROVIDER_KINDS],
+    // The badge's own union. Reached only as `i18nKey={`…badges.${badge.limit}`}`,
+    // so no literal spells these and neither direction of the scan above can see
+    // them -- deleting all three once passed every check and shipped three raw
+    // keys into the playground.
+    ['dashboard.playground.badges', ['context', 'prompt', 'output']],
   ])('covers every member of the enum behind %s.*', (prefix, members) => {
     expect([...members].filter(member => !resolves(`${prefix}.${member}`))).toEqual([]);
   });
