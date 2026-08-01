@@ -11,14 +11,17 @@ const { Spinner } = fluentComponents;
 // construction: the boot screen would stop matching the spinner the app shows a
 // moment later.
 //
-// That includes the reduced-motion treatment, which is Fluent's design and not
-// this layer's. Fluent slows the ring from 1.5s to 1.8s and freezes the tail
-// into a static conic gradient, so the arc still turns but its length stops
-// pulsing. WinUI does not do this -- ProgressRing is an AnimatedVisualPlayer
-// and consults neither UISettings.AnimationsEnabled nor the visual-state gate
-// that seeks storyboards to their end frame, so a Windows ring keeps its full
-// animation with animations off. The Fluent behaviour is kept because it is the
-// spinner this app draws.
+// The one place it does not copy Fluent is reduced motion, which Fluent answers
+// by slowing the ring to 1.8s and freezing the tail into a static gradient.
+// WinUI answers it by doing nothing: ProgressRing is an AnimatedVisualPlayer and
+// consults neither UISettings.AnimationsEnabled nor the visual-state gate that
+// seeks storyboards to their end frame, so a Windows ring keeps its full
+// animation with animations off. This layer follows WinUI, so there is no reduce
+// branch here and ../../winui/controls/progress.css.ts undoes Fluent's.
+//
+// A loading indicator is the case the preference is least aimed at -- it is
+// small, stationary and bounded -- but it is still motion a reader asked not to
+// see, so this is a real cost of the fidelity, not a free one.
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-spinner/library/src/components/Spinner/useSpinnerStyles.styles.ts
 export const appLoadingCriticalCss = `
   .floway-app-loading {
@@ -108,15 +111,6 @@ export const appLoadingCriticalCss = `
       color: Highlight;
       forced-color-adjust: none;
     }
-  }
-  @media screen and (prefers-reduced-motion: reduce) {
-    .floway-app-loading .fui-Spinner__spinner { animation-duration: 1.8s; }
-    .floway-app-loading .fui-Spinner__spinnerTail {
-      animation-iteration-count: 0;
-      background-image: conic-gradient(transparent 120deg, currentcolor 360deg);
-    }
-    .floway-app-loading .fui-Spinner__spinnerTail::before,
-    .floway-app-loading .fui-Spinner__spinnerTail::after { content: none; }
   }
 `;
 

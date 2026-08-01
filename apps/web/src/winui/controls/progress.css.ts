@@ -78,4 +78,28 @@ export const progressCss = `
   --colorBrandStroke1: var(--winui-accent-fill-default);
   --colorBrandStroke2Contrast: var(--winui-control-fill-transparent);
 }
+
+/* Fluent answers the motion preference by slowing the ring to 1.8s and freezing
+   the tail into a static conic gradient. WinUI answers it by doing nothing:
+   ProgressRing is an AnimatedVisualPlayer, so it reaches neither
+   UISettings.AnimationsEnabled nor the visual-state gate that seeks a storyboard
+   to its end frame, and a Windows ring keeps its full animation with animations
+   off. Each declaration below names the Fluent one it undoes.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressRing/ProgressRing.xaml
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-spinner/library/src/components/Spinner/useSpinnerStyles.styles.ts */
+@media screen and (prefers-reduced-motion: reduce) {
+  .fui-Spinner__spinner.fui-Spinner__spinner {
+    animation-duration: 1.5s;
+  }
+
+  .fui-Spinner__spinnerTail.fui-Spinner__spinnerTail {
+    animation-iteration-count: infinite;
+    background-image: none;
+  }
+
+  .fui-Spinner__spinnerTail.fui-Spinner__spinnerTail::before,
+  .fui-Spinner__spinnerTail.fui-Spinner__spinnerTail::after {
+    content: '';
+  }
+}
 `;
