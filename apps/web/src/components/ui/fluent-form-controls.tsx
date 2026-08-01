@@ -1,7 +1,8 @@
 import type { ListboxProps } from '@fluentui/react-components';
 import { ChevronDown12Regular } from '@fluentui/react-icons';
-import { createElement, forwardRef, useLayoutEffect, useRef } from 'react';
+import { Children, createElement, forwardRef, useLayoutEffect, useRef } from 'react';
 import type { ComponentProps, ElementType, MouseEvent, ReactNode, Ref } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { initializeScrollArea, scrollAreaHostClassName, useOverlayScrollbarsEnabled } from './scroll-area';
 import { fluentComponents } from '../../fluent';
@@ -11,6 +12,7 @@ const {
   Combobox: FluentCombobox,
   Dropdown: FluentDropdown,
   Input: FluentInput,
+  Option,
   Switch: FluentSwitch,
   Textarea: FluentTextarea,
   mergeClasses,
@@ -89,6 +91,7 @@ function ScrollableListbox({
     style,
     ...rootProps
   } = listboxProps as ListboxRenderPropsWithRef;
+  const { t } = useTranslation();
   const mergedRef = useMergedRefs(fluentRef, hostRef);
   useLayoutEffect(() => {
     const host = hostRef.current;
@@ -109,7 +112,22 @@ function ScrollableListbox({
     // JSX rather than createElement for the viewport, so the ref is a ref to
     // the compiler and not an ordinary prop it has to assume is read in render.
     <div className="floway-combobox-listbox-viewport" ref={viewportRef} style={{ overflowX: 'hidden', overflowY: 'scroll' }}>
-      <div className="floway-combobox-listbox-content">{children}</div>
+      {/* An empty list is not just a thin box: a role="listbox" owning no
+          option is the aria-required-children violation, and Fluent renders one
+          whenever a combo box with no options is opened -- it counts options
+          nowhere and gates the popup only on disabled. Every design system that
+          has taken a position on this puts a row in rather than refusing to
+          open, and Fluent ships that shape itself in useComboboxFilter's
+          noOptionsMessage. This is that row, with the one correction its own
+          version needs: the disabled prop rather than aria-disabled, so the row
+          is genuinely inert instead of merely announced as such -- Fluent's
+          useOption reads props.disabled, so aria-disabled alone leaves the row
+          selectable and eligible to become the active descendant. */}
+      <div className="floway-combobox-listbox-content">
+        {Children.toArray(children).length === 0
+          ? <Option disabled value="">{t('common.noOptions')}</Option>
+          : children}
+      </div>
     </div>,
   );
 }

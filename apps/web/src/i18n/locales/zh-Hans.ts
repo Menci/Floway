@@ -13,6 +13,7 @@ const zhHansCN = {
       off: '关',
       cancel: '取消',
       dismiss: '关闭',
+      noOptions: '无可选项',
       copy: {
         action: '复制',
         copied: '已复制',

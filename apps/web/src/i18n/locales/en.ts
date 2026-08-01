@@ -13,6 +13,7 @@ const en = {
       off: 'Off',
       cancel: 'Cancel',
       dismiss: 'Dismiss',
+      noOptions: 'No options',
       copy: {
         action: 'Copy',
         copied: 'Copied',
