@@ -57,26 +57,29 @@ const DEVICE_FLOW_SLOW_DOWN_SECONDS = 5;
 export function ProviderConfigSection({
   record,
   onPatch,
+  onRefreshModels,
 }: {
   record: UpstreamRecord;
   onPatch: (patch: { config?: unknown; state?: unknown }, persisted?: boolean) => void;
+  onRefreshModels: () => void;
 }) {
-  if (record.kind === 'custom') return <CustomConfig record={record} />;
+  if (record.kind === 'custom') return <CustomConfig record={record} onRefreshModels={onRefreshModels} />;
   if (record.kind === 'azure') return <AzureConfig record={record} />;
   if (record.kind === 'ollama') return <OllamaConfig record={record} />;
   if (record.kind === 'copilot') return <CopilotConfig record={record} onPatch={onPatch} />;
   return <OAuthConfig record={record} onPatch={onPatch} />;
 }
 
-export function ApiPathsSection({ record, onRefreshModels }: { record: UpstreamRecord; onRefreshModels: () => void }) {
+export function ApiPathsSection({ record }: { record: UpstreamRecord }) {
   if (record.kind !== 'custom') return null;
-  return <CustomApiPaths onRefreshModels={onRefreshModels} />;
+  return <CustomApiPaths />;
 }
 
-function CustomConfig({ record }: { record: Extract<UpstreamRecord, { kind: 'custom' }> }) {
+function CustomConfig({ onRefreshModels, record }: { onRefreshModels: () => void; record: Extract<UpstreamRecord, { kind: 'custom' }> }) {
   const { t } = useTranslation();
   const { control, setValue } = useFormContext<UpstreamEditorValues>();
   const authStyle = useWatch({ control, name: 'config.authStyle' as never }) as string;
+  const fetchesCatalog = Boolean(useWatch({ control, name: 'config.modelsFetch.enabled' as never }));
   const authStyleLabel = (value: unknown) => {
     if (value === 'bearer') return 'Bearer';
     if (value === 'anthropic') return 'Anthropic';
@@ -112,11 +115,29 @@ function CustomConfig({ record }: { record: Extract<UpstreamRecord, { kind: 'cus
         </Field>
       )} />
       {authStyle !== 'none' && <SecretField name="config.apiKey" secretSet={record.config.apiKeySet === true || Boolean(record.config.apiKey)} />}
+      <Controller control={control} name={'config.modelsFetch.enabled' as never} render={({ field }) => (
+        <Switch
+          checked={Boolean(field.value)}
+          label={t('dashboard.upstreamEditor.fields.fetchModels')}
+          onChange={(_, data) => {
+            field.onChange(data.checked);
+            if (data.checked) onRefreshModels();
+          }}
+        />
+      )} />
+      {/* The path only answers a question the switch has asked. Off, there is
+          nothing to fetch and the field would be configuring a call that is not
+          made. */}
+      {fetchesCatalog && (
+        <Field label={t('dashboard.upstreamEditor.fields.catalogPath')}>
+          <Controller control={control} name={'config.modelsFetch.endpoint' as never} render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="/v1/models" ref={field.ref} value={typeof field.value === 'string' ? field.value : ''} />} />
+        </Field>
+      )}
     </div>
   );
 }
 
-function CustomApiPaths({ onRefreshModels }: { onRefreshModels: () => void }) {
+function CustomApiPaths() {
   const { t } = useTranslation();
   const monoLabel = useMonoLabelClass();
   const idPrefix = useId();
@@ -124,24 +145,6 @@ function CustomApiPaths({ onRefreshModels }: { onRefreshModels: () => void }) {
   return (
     <div className="grid gap-4">
       <EndpointPicker />
-      {/* The path and the switch that turns fetching on are one decision, so
-          they sit together, and the path comes first: it is what the switch
-          acts on. */}
-      <div className="grid gap-2">
-        <Field label={t('dashboard.upstreamEditor.fields.modelsPath')}>
-          <Controller control={control} name={'config.modelsFetch.endpoint' as never} render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="/v1/models" ref={field.ref} value={typeof field.value === 'string' ? field.value : ''} />} />
-        </Field>
-        <Controller control={control} name={'config.modelsFetch.enabled' as never} render={({ field }) => (
-          <Switch
-            checked={Boolean(field.value)}
-            label={t('dashboard.upstreamEditor.fields.fetchModels')}
-            onChange={(_, data) => {
-              field.onChange(data.checked);
-              if (data.checked) onRefreshModels();
-            }}
-          />
-        )} />
-      </div>
       <div
         aria-describedby={`${idPrefix}-hint`}
         aria-labelledby={`${idPrefix}-label`}

@@ -497,7 +497,7 @@ const zhHansCN = {
           authStyle: '认证方式',
           apiKey: 'API 密钥',
           fetchModels: '从上游获取模型列表',
-          modelsPath: '模型列表路径',
+          catalogPath: '模型目录路径',
           defaultEndpoints: '默认 LLM API',
           pathOverrides: '路径覆盖',
         },

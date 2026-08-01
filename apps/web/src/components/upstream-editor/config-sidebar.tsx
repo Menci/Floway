@@ -83,14 +83,14 @@ export function UpstreamConfigSidebar({
           error={errors.config?.message ? t(errors.config.message) : undefined}
           title={t('dashboard.upstreamEditor.sections.connection')}
         >
-          <ProviderConfigSection record={record} onPatch={onPatch} />
+          <ProviderConfigSection record={record} onPatch={onPatch} onRefreshModels={onRefreshModels} />
         </EditorSection>
         <EditorSection title={t('dashboard.upstreamEditor.sections.proxy')} description={t('dashboard.upstreamEditor.proxy.empty')}>
           <ProxyFallbackEditor proxies={proxies} runtime={runtime} />
         </EditorSection>
         {record.kind === 'custom' && (
           <EditorSection title={t('dashboard.upstreamEditor.sections.apiPaths')}>
-            <ApiPathsSection record={record} onRefreshModels={onRefreshModels} />
+            <ApiPathsSection record={record} />
           </EditorSection>
         )}
         <EditorSection
