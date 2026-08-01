@@ -123,11 +123,20 @@ export const parseCopilotQuotaHeaders = (headers: Headers, now: Date): CopilotQu
 // any of it — surfacing one would mean a field that silently blanks out
 // whenever the passive path wins the race. Widen this interface and
 // `projectCopilotUsageResponse` together when something needs them.
+//
+// `quota_snapshots` is optional because a free / limited seat reports its
+// entitlement through `limited_user_quotas` + `monthly_quotas` instead and
+// omits the map entirely. We do not read those: the header path covers those
+// seats from their first request, and a body we cannot project reads as "no
+// buckets" rather than as a gateway error.
+// Prior art on the optionality:
+// https://github.com/raycast/extensions/blob/main/extensions/agent-usage/src/copilot/fetcher.ts
+// https://github.com/onllm-dev/onWatch/blob/main/internal/api/copilot_types.go
 export interface CopilotUsageResponse {
   access_type_sku: string;
   copilot_plan: string;
   quota_reset_date_utc?: string;
-  quota_snapshots: Record<string, {
+  quota_snapshots?: Record<string, {
     entitlement: number;
     overage_count: number;
     overage_permitted: boolean;
@@ -139,7 +148,7 @@ export interface CopilotUsageResponse {
 
 export const projectCopilotUsageResponse = (body: CopilotUsageResponse, now: Date): CopilotQuotaSnapshot => {
   const quotas: Record<string, CopilotQuotaDetail> = {};
-  for (const [quotaId, detail] of Object.entries(body.quota_snapshots)) {
+  for (const [quotaId, detail] of Object.entries(body.quota_snapshots ?? {})) {
     if (isUnsafeQuotaId(quotaId)) continue;
     quotas[quotaId] = {
       entitlement: detail.entitlement,

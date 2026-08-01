@@ -112,3 +112,17 @@ test('projectCopilotUsageResponse reports a missing reset instant as null', () =
   assertEquals(projected.reset_at, null);
   assertEquals(projected.quotas, {});
 });
+
+// A free / limited seat omits `quota_snapshots` entirely and reports through
+// `limited_user_quotas` instead. That projects to no buckets — which the
+// dashboard renders as "not observed yet" and the header path fills on the
+// seat's first request — rather than failing the operator's refresh.
+test('projectCopilotUsageResponse tolerates a body with no quota_snapshots at all', () => {
+  const projected = projectCopilotUsageResponse({
+    access_type_sku: 'free_limited_copilot',
+    copilot_plan: 'free',
+  }, NOW);
+
+  assertEquals(projected.quotas, {});
+  assertEquals(projected.reset_at, null);
+});
