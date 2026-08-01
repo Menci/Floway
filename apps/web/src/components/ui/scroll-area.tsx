@@ -34,16 +34,19 @@ const scrollbarSizeListeners = new Set<() => void>();
 // a device viewport -- and not every such change resizes the window, so the
 // element itself is the only reliable signal.
 //
-// It is re-attached if it ever loses the document. React renders this app's
-// whole document, so anything parked in `<body>` is living in a tree React
-// reconciles; a detached element reports the same width for both boxes, which
-// is indistinguishable from a platform with overlay bars and would silently
-// disable the library everywhere.
+// Losing the document is fatal rather than recoverable. React renders this
+// app's whole document, so anything parked in `<body>` lives in a tree React
+// reconciles, and a detached element reports the same width for both of its
+// boxes -- zero, which is exactly what a platform with overlay scrollbars
+// reports. Repairing that quietly would restore the feature while leaving
+// whatever removed the node in place, and the reading it produces in the
+// meantime is indistinguishable from a correct one. So it throws.
 const ensureScrollbarProbe = () => {
   if (typeof document === 'undefined' || !document.body) return null;
-  if (scrollbarProbe?.isConnected) return scrollbarProbe;
   if (scrollbarProbe) {
-    document.body.appendChild(scrollbarProbe);
+    if (!scrollbarProbe.isConnected) {
+      throw new Error('The native scrollbar probe left the document. Something is removing nodes from <body>; until it stops, every scroll area reads the platform as having overlay scrollbars.');
+    }
     return scrollbarProbe;
   }
   const outer = document.createElement('div');
