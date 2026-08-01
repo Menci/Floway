@@ -151,6 +151,29 @@ test('buildTargetRequest omits store when Chat omits store', () => {
   assertFalse('store' in result);
 });
 
+test('buildTargetRequest omits tool_choice when Chat omits it', () => {
+  const result = buildTargetRequest({
+    model: 'gpt-test',
+    messages: [{ role: 'user', content: 'hello' }],
+    tools: [{ type: 'function', function: { name: 'lookup' } }],
+  });
+
+  assertFalse('tool_choice' in result);
+});
+
+test('buildTargetRequest omits tool_choice when Chat carries no tools to apply it to', () => {
+  for (const tools of [undefined, null, []]) {
+    const result = buildTargetRequest({
+      model: 'gpt-test',
+      messages: [{ role: 'user', content: 'hello' }],
+      tool_choice: 'required',
+      tools,
+    });
+
+    assertFalse('tool_choice' in result);
+  }
+});
+
 test('buildTargetRequest preserves explicit null prompt cache and safety fields', () => {
   const result = buildTargetRequest({
     model: 'gpt-test',
