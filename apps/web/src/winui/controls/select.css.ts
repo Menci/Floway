@@ -331,7 +331,8 @@ export const selectCss = `
 
 /* The drop-down's reveal. WinUI does not slide or fade a ComboBox popup: it
    runs SplitOpenThemeAnimation, which holds the popup opaque from the first
-   frame and grows a vertical clip. 250ms on the fast-out-slow-in spline; the
+   frame and grows a vertical clip out of a band half the list's height. 250ms
+   on the fast-out-slow-in spline; the
    same constants the menu's reveal uses, and unrelated to the
    PopupThemeTransition whose timing ../presence.ts declines to guess at, which
    ComboBox never invokes.
@@ -382,7 +383,13 @@ export const selectCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/ThemeAnimations.cpp#L596-L721
    https://www.w3.org/TR/css-backgrounds-3/#shadow-blur
    https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/tokens/src/utils/shadows.ts */
-/* The leading edge starts on the border box rather than outside it: a clip that
+/* The reveal starts from half the list, not from none of it. WinUI's clip opens
+   at a scale of ClosedRatio, 0.50, and grows to cover -- so half the popup is
+   already on screen at the first frame and the animation only finishes it. Over
+   the same 250ms an unfurl that started from zero travels twice as far, which
+   is what made this read as a longer motion than the one it transcribes.
+
+   The leading edge starts on the border box rather than outside it: a clip that
    opened at -32px would show a band of the popup's own shadow before any of the
    list it belongs to. It reaches -32px by the end, so the shadow grows in with
    the content it is cast by. */
@@ -396,13 +403,13 @@ export const selectCss = `
 
 .floway-combobox-listbox {
   --floway-listbox-reveal-leading: 0%;
-  --floway-listbox-reveal-trailing: 100%;
+  --floway-listbox-reveal-trailing: 50%;
   animation-duration: var(--winui-control-normal-animation-duration);
   animation-timing-function: var(--winui-control-fast-out-slow-in-easing);
 }
 
 .floway-combobox-listbox[data-popper-placement^='top'] {
-  --floway-listbox-reveal-leading: 100%;
+  --floway-listbox-reveal-leading: 50%;
   --floway-listbox-reveal-trailing: 0%;
 }
 
