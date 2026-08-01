@@ -79,6 +79,12 @@
 // a bare child — keeps the doubled Fluent subject in front of it and reaches
 // the child with a combinator.
 //
+// Every `controls/*.css.ts` module is one TypeScript template literal, so a
+// backtick anywhere inside it -- including inside a comment, where prose wants
+// to quote a property name -- terminates the string. It fails at typecheck
+// rather than silently, but it fails after the fact; write property names bare
+// in these files.
+//
 // ---------------------------------------------------------------------------
 // Opting a subtree out of the restyle
 // ---------------------------------------------------------------------------

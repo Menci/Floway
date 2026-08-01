@@ -138,4 +138,99 @@ export const menuCss = `
 .fui-MenuDivider.fui-MenuDivider {
   border-bottom-color: var(--winui-divider-stroke-default);
 }
+
+/* MenuFlyout's open. WinUI reveals a menu rather than moving it: the presenter
+   slides in from half its own height while a clip slides the other way by
+   exactly as much, which pins the visible window to the final layout box and
+   lets only the content travel through it. A menu below its trigger starts as
+   its own bottom half drawn in the top half of the box and grows downward; one
+   above starts as its top half in the bottom half and grows upward. Nothing
+   fades in. 250ms on the fast-out-slow-in spline.
+
+   This lives here rather than in ../presence.ts because the direction cannot be
+   read when a presence factory runs. createPresenceComponent calls the factory
+   synchronously inside a layout effect, and Fluent's positioning writes
+   data-popper-placement a few milliseconds later, so an element.getAttribute
+   there is always null -- every menu took the downward branch, including the
+   ones that flipped. CSS re-resolves when the attribute lands, which is before
+   the first frame is painted, and the animation is gated on the attribute
+   existing at all so an unplaced surface does not animate the wrong way and
+   then correct itself. That gate is what Radix puts on its own popper content,
+   for the same reason.
+
+   The direction is carried by custom properties inside one set of keyframes
+   rather than by two animation names: swapping animation-name once the
+   attribute lands restarts the animation from zero, where swapping a custom
+   property leaves it running and recomputes. Fluent reached the same conclusion
+   and deprecated its own attribute-keyed helper for it.
+
+   The slide is written to translate rather than into transform, because
+   transform is where Fluent's positioning already lives: a surface is placed
+   by translating it to the coordinates the positioning engine computed, and a
+   keyframe naming transform would replace that outright and play the reveal
+   at the origin of the containing block.
+
+   Only the three edges that do not travel go outside the box. Beyond the
+   travelling edge lies the element's own translated body, which a clip cannot
+   tell from shadow, so a negative value there lets the surface overshoot its
+   final position mid-reveal. 32px is headroom over what shadow16 needs: a blur
+   spreads a shadow by about its own length past the offset edge, so its key
+   term, 0 8px 16px, reaches about 24px below the border box and 16px to either
+   side, and its ambient term about 2px all round.
+
+   The close is not here. It is a bare 83ms fade with no transform, and it has
+   to hold the surface mounted while it runs, which only a presence component
+   can do -- ../presence.ts keeps it.
+
+   The submenu's deeper 0.67 ratio is still not reproduced. Fluent renders a
+   submenu through the same components as a menu and writes nothing that tells
+   them apart.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/dxaml/lib/MenuPopupThemeTransition_Partial.h#L24-L25
+   https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/dxaml/lib/LayoutTransition_partial.cpp#L423-L563
+   https://www.w3.org/TR/css-backgrounds-3/#shadow-blur
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/tokens/src/utils/shadows.ts */
+@keyframes winui-menu-flyout-reveal {
+  from {
+    translate: 0 var(--winui-menu-reveal-offset);
+    clip-path: inset(
+      var(--winui-menu-reveal-leading) -32px var(--winui-menu-reveal-trailing) -32px);
+  }
+  to {
+    translate: 0 0;
+    clip-path: inset(
+      var(--winui-menu-open-leading) -32px var(--winui-menu-open-trailing) -32px);
+  }
+}
+
+.fui-MenuPopover.fui-MenuPopover {
+  --winui-menu-reveal-offset: -50%;
+  --winui-menu-reveal-leading: 50%;
+  --winui-menu-reveal-trailing: -32px;
+  --winui-menu-open-leading: 0%;
+  --winui-menu-open-trailing: -32px;
+  animation-duration: var(--winui-control-normal-animation-duration);
+  animation-timing-function: var(--winui-control-fast-out-slow-in-easing);
+}
+
+.fui-MenuPopover.fui-MenuPopover[data-popper-placement^='top'] {
+  --winui-menu-reveal-offset: 50%;
+  --winui-menu-reveal-leading: -32px;
+  --winui-menu-reveal-trailing: 50%;
+  --winui-menu-open-leading: -32px;
+  --winui-menu-open-trailing: 0%;
+}
+
+.fui-MenuPopover.fui-MenuPopover[data-popper-placement] {
+  animation-name: winui-menu-flyout-reveal;
+}
+
+/* The reveal moves and resizes the surface, so it goes when the OS says motion
+   goes. The fade the presence component still runs on close is opacity, which
+   WCAG excludes from motion animation, and Fluent clamps it under the same
+   preference anyway. */
+@media (prefers-reduced-motion: reduce) {
+  .fui-MenuPopover.fui-MenuPopover[data-popper-placement] {
+    animation-duration: 0.01ms;
+  }
+}
 `;
