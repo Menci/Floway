@@ -40,7 +40,7 @@ export function CodexAccountCard({ record }: { record: CodexRecord }) {
           <StatusBadge color="brand">{account.planType}</StatusBadge>
           {credits?.credits_has_credits === false
             ? <StatusBadge color="danger">{t('dashboard.upstreamEditor.codex.noCredits')}</StatusBadge>
-            : credits?.credits_balance !== undefined && <Badge appearance="outline">
+            : credits?.credits_balance !== undefined && <Badge appearance="outline" size="large">
               {t('dashboard.upstreamEditor.codex.credits', { balance: credits.credits_balance })}
             </Badge>}
           <Tooltip content={account.chatgptAccountId} relationship="description">

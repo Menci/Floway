@@ -47,8 +47,12 @@ const useStyles = makeStyles({
     display: 'flex',
     flexDirection: 'column',
     backgroundColor: tokens.colorNeutralBackground1,
-    // The edge is the shadow. In dark that shadow is the ring, so a border
-    // here would be a second one.
+    // The edge is the shadow. In dark that shadow is the ring, so a border here
+    // would be a second one. The transparent outline beside it is the
+    // original's, and it is the edge in forced colors: the shadow is gone there
+    // while `outline-color` is force-adjusted, so the one declaration that
+    // paints in neither theme is the only one that paints under the system's
+    // palette. https://www.w3.org/TR/css-color-adjust-1/#forced-colors-properties
     border: 0,
     outline: '1px solid transparent',
     boxShadow: bingCardShadow,
@@ -61,10 +65,10 @@ const useStyles = makeStyles({
     // Corner radius alters perceived shape, so it goes with motion rather than
     // with colour; the shadow rides along on the one duration the pair share.
     '@media (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
-    // Focus tightens the corners rather than deepening the shadow: the
-    // original lists `:focus` alongside `has-text` on the one rule that
-    // changes the corner, and changes no shadow anywhere.
-    '&:focus-within, &[data-has-text="true"]': { borderRadius: bingComposerRadiusFilled },
+    // Pointer, focus and content all tighten the corners rather than deepening
+    // the shadow: the original lists hover, `:focus` and `has-text` together on
+    // the one rule that changes the corner, and changes no shadow anywhere.
+    '&:hover, &:focus-within, &[data-has-text="true"]': { borderRadius: bingComposerRadiusFilled },
   },
   // Bing grew the field with no script at all. The label is an `inline-grid`
   // whose `::after` mirrors the field's text — same wrap, same metrics, hidden
@@ -112,6 +116,11 @@ const useStyles = makeStyles({
     resize: 'none',
     padding: 0,
     margin: 0,
+    // The original's own placeholder step is `foreground-neutral-secondary`,
+    // which its dark dictionary resolves to the same value as the body
+    // foreground beside it -- a placeholder there is indistinguishable from
+    // typed text. The tertiary text fill is dimmer than the body in both
+    // themes, which is what a placeholder has to be.
     '&::placeholder': { color: tokens.colorNeutralForeground3 },
     '&:disabled': {
       color: tokens.colorNeutralForegroundDisabled,
@@ -129,6 +138,18 @@ const useStyles = makeStyles({
     padding: bingComposerGutterPadding,
     zIndex: 2,
   },
+  // The subtle fill pair -- secondary under the pointer, tertiary while the
+  // button is held -- is what every icon button in the original answers with.
+  // The action bar's own two are the one place it states neither, and a control
+  // that dims when it is disabled and does nothing when it is pressed reads as
+  // inert, so the pair is taken here:
+  // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/globals.scss#L66-L67
+  // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/dark.scss#L58-L59
+  //
+  // They are the original's fills rather than the layer's neutral hover. This
+  // bar sits on SolidBackgroundFillColorQuarternary, which is plain white in
+  // light; WinUI's hover fill is a translucent near-white, and over white it
+  // moves three values out of 255.
   imageButton: {
     height: bingComposerButtonSize,
     width: bingComposerButtonSize,
@@ -140,10 +161,18 @@ const useStyles = makeStyles({
     // work with and the glyph settles against the leading edge.
     padding: 0,
     cursor: 'pointer',
-    '&:hover': {
+    // Both states are held to `:enabled`. A disabled button still matches
+    // `:hover` and `:active`; the original never has to say so, because it
+    // takes the pointer away from the whole bar while the bar is disabled.
+    '&:enabled:hover': {
       color: bingAccentForegroundHover,
-      backgroundColor: tokens.colorNeutralBackground1Hover,
+      backgroundColor: 'light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.06))',
     },
+    '&:enabled:active': {
+      backgroundColor: 'light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.1))',
+    },
+    // Focus is the user agent's ring, as it is in the original: nothing here
+    // writes an outline for the ring to lose to.
     '&:disabled': {
       color: tokens.colorNeutralForegroundDisabled,
       cursor: 'not-allowed',
@@ -180,11 +209,22 @@ const useStyles = makeStyles({
       // is off -- it just answers without travel.
       '@media (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
     },
-    '&:hover::before': { backgroundImage: bingAccentGradientHover },
-    '&:active::before': {
+    '&:enabled:hover::before': { backgroundImage: bingAccentGradientHover },
+    '&:enabled:active::before': {
       backgroundImage: bingAccentGradientActive,
       transform: 'scale3d(0.971, 0.9583, 1)',
     },
+    // The resting outline is transparent, so it takes the focus ring's slot
+    // without painting; the original hands the slot back at focus as a 2px ring
+    // in the focus stroke colour, and without that the button answers a tab
+    // with nothing at all. The same declaration is the button's forced-colors
+    // edge, which is the state its gradient does not survive: `background-image`
+    // computes to `none` unless it holds a `url()`.
+    // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/globals.scss#L121
+    // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/dark.scss#L107
+    '&:focus-visible': { outline: '2px solid light-dark(#111111, #FAF9F8)' },
+    // Held to `:enabled` above, so a disabled button neither brightens under
+    // the pointer nor scales when it is pressed on.
     '&:disabled': { opacity: 0.5, cursor: 'not-allowed' },
   },
   // Above the fill, which is absolutely positioned and would otherwise paint
@@ -195,9 +235,16 @@ const useStyles = makeStyles({
     alignItems: 'center',
     gap: '6px',
   },
+  // The asset fills itself with `currentColor`, which an `<img>` throws away --
+  // an external document takes no colour from the page. Drawn as a mask over
+  // the button's own foreground the intent holds, and it holds in forced colors
+  // too, where the button's `color` is force-adjusted and an image's pixels are
+  // not.
   broomIcon: {
     display: 'block',
-    filter: 'brightness(0) invert(1)',
+    backgroundColor: 'currentColor',
+    maskImage: `url("${broomUrl}")`,
+    maskSize: '100% 100%',
     height: '21px',
     width: '23px',
   },
@@ -283,7 +330,7 @@ export function PlaygroundComposer({
           onClick={onNewTopic}
         >
           <span className={s.newTopicContent}>
-            <img alt="" aria-hidden="true" className={s.broomIcon} src={broomUrl} />
+            <span aria-hidden="true" className={s.broomIcon} />
             <span>{newTopicLabel}</span>
           </span>
         </button>

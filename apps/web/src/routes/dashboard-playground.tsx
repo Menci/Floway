@@ -59,9 +59,30 @@ const {
   Field,
   Option,
   OverlayDrawer,
+  buttonClassNames,
   makeStyles,
   tokens,
 } = fluentComponents;
+
+// A Fluent Button paints its icon slot from a descendant rule of its own once
+// the pointer is on it -- brand-tinted on hover and while pressed, in
+// useButtonStyles -- so a colour stated on the root reaches a label and leaves
+// the glyph. A row command is a glyph and nothing else, so every state it
+// paints has to name the slot beside the root.
+const ICON = `& .${buttonClassNames.icon}`;
+
+// Painting is held to a button the operator can actually press. Fluent states
+// a disabled button's foreground on a single class, which a colour stated here
+// outranks; a Button carries `:disabled` when it is disabled and
+// `aria-disabled` when it is disabled and still focusable, so both close the
+// guard.
+const ENABLED = '&:not(:disabled):not([aria-disabled="true"])';
+const HOVER = `${ENABLED}:hover`;
+// Fluent's own pair of press selectors: a press that began under the pointer,
+// and a press on the button the keyboard is on.
+const PRESSED = `${ENABLED}:hover:active, ${ENABLED}:active:focus-visible`;
+
+const reachedPaint = (color: string) => ({ color, [ICON]: { color } });
 
 // `null` is a fetch that failed. An empty key list tells the operator to go
 // and create a key, which is the wrong instruction when the list is simply
@@ -87,9 +108,27 @@ export function meta({}: Route.MetaArgs) {
 
 const useStyles = makeStyles({
   toolbar: { borderBottom: `1px solid ${tokens.colorNeutralStroke1}` },
+  // The transcript's row commands are the original's icon buttons, so they
+  // take the accent foreground pair the composer's controls take: the primary
+  // step at rest and the secondary step once the button is reached for. The
+  // secondary step is held through the press, because the original states no
+  // third step for the foreground and lets the fill answer a press; in dark
+  // both steps are the same value, so there the fill answers the pointer as
+  // well.
+  //
+  // Under forced colours Fluent pairs a reached button with Highlight and
+  // clears forced-color-adjust while doing it, so a colour here paints for
+  // real rather than being substituted by the user agent. The pairing is
+  // restated for both reached states so a reach still reads as the system
+  // paints a reach.
   brandIconAction: {
-    color: bingAccentForeground,
-    '&:hover': { color: bingAccentForegroundHover },
+    [ENABLED]: { color: bingAccentForeground },
+    [HOVER]: reachedPaint(bingAccentForegroundHover),
+    [PRESSED]: reachedPaint(bingAccentForegroundHover),
+    '@media (forced-colors: active)': {
+      [HOVER]: reachedPaint('Highlight'),
+      [PRESSED]: reachedPaint('Highlight'),
+    },
   },
   messageActions: {
     opacity: 0,

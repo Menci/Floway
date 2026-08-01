@@ -10,10 +10,13 @@
 //
 // The header itself never repaints under the pointer: WinUI resolves the
 // header's background, foreground and border to the same brush in the normal,
-// pointer-over and pressed visual states. The chevron is the whole of the
-// control's pointer feedback, and it reacts to the header being hovered or
-// pressed rather than to being hovered itself, which is also how fluent-svelte's
-// Expander wires it.
+// pointer-over, pressed and expanded visual states, and its dark and light
+// dictionaries carry the same entries key for key, so every colour here is a
+// theme token and no rule below is written per scheme. The chevron is the whole
+// of the control's pointer feedback, and it reacts to the header being hovered
+// or pressed rather than to being hovered itself, which is also how
+// fluent-svelte's Expander wires it. Only the HighContrast dictionary differs,
+// and it is stated in a block of its own below.
 //
 // Accordion and AccordionItem declare no CSS in Fluent — their style hooks only
 // stamp a class name — so nothing below targets them.
@@ -21,7 +24,7 @@ export const accordionCss = `
 /* The header surface. It is the ToggleButton's own Background and BorderBrush in
    WinUI, and Fluent's button slot resets background-color to inherit, so a fill
    placed on the header root would be repainted square by the button over the
-   root's rounded corners — the fill, the stroke and the radius belong together
+   root's rounded corners -- the fill, the stroke and the radius belong together
    on the button. The card fill and the card stroke are both translucent, hence
    clipping the fill to the padding box so the stroke is not painted over.
 
@@ -46,7 +49,7 @@ export const accordionCss = `
 }
 
 /* An expanded header is joined to the content region below it, so its bottom
-   corners square off and the shared edge carries no stroke — WinUI states the
+   corners square off and the shared edge carries no stroke -- WinUI states the
    content region's border thickness as 1,0,1,1 for exactly that reason.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L87 */
 .fui-AccordionHeader__button.fui-AccordionHeader__button[aria-expanded='true'] {
@@ -115,8 +118,8 @@ export const accordionCss = `
   }
 }
 
-/* Fluent's leading chevron has no WinUI counterpart to take spacing from — the
-   Expander always ends its row with the chevron — so the gap Fluent already
+/* Fluent's leading chevron has no WinUI counterpart to take spacing from -- the
+   Expander always ends its row with the chevron -- so the gap Fluent already
    declares is preserved, only moved outside the painted box. Its 8px is the
    same measure as the trailing term of the WinUI chevron margin.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L81 */
@@ -150,13 +153,21 @@ export const accordionCss = `
 }
 
 /* Pointer feedback lives entirely on the chevron, and it answers the whole
-   header row rather than the chevron alone — the same wiring fluent-svelte's
+   header row rather than the chevron alone -- the same wiring fluent-svelte's
    Expander uses. A header that cannot be actuated is excluded, because WinUI's
    disabled visual state puts the chevron's rest brush back. Fluent reaches that
    state two ways: a disabled AccordionItem, which it renders with the native
    attribute, and the sole open item of a non-collapsible Accordion, which it
    leaves natively enabled and marks aria-disabled while keeping the header's
    chrome ungrayed. Both stop the toggle, so both drop the feedback.
+
+   The graying of the first of those two is Fluent's: it colours the header root
+   with the disabled foreground token, which theme.ts points at
+   TextFillColorDisabled -- WinUI's ExpanderHeaderDisabledForeground, which the
+   disabled state gives to the label and the chevron glyph alike -- and the
+   button's inherited colour carries it to both. Nothing here writes a colour on
+   either, so nothing here outranks it.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L12
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L16
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L166-L184 */
 .fui-AccordionHeader__button:enabled:not([aria-disabled='true']):hover .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
@@ -170,15 +181,57 @@ export const accordionCss = `
   background-color: var(--winui-subtle-fill-tertiary);
 }
 
+/* Forced colours. WinUI answers Windows High Contrast with a theme dictionary
+   that maps each of these brushes onto a system colour, and the user agent's
+   forced adjustment reaches most of that map on its own: the header's fill and
+   stroke resolve to ButtonFace and ButtonText, the content region's to Canvas
+   and CanvasText, and a disabled header's label and glyph to the disabled text
+   colour of the button they sit in. The chevron's two pointer fills resolve the
+   same way but keep the alpha they were written with, a few percent, so they
+   land on the untinted chevron this dictionary states rather than on a fill.
+
+   What the adjustment cannot reach is the rest of the pointer state, which this
+   dictionary alone paints in Highlight, and the two strokes it alone thickens
+   to 2px -- the border-box sizing this app resets to keeps that thickness
+   inside the 32px chevron and the 48px row. A media query adds no specificity,
+   so the pointer rules below repeat the selectors they override.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L52-L77
+   https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
+@media (forced-colors: active) {
+  .fui-AccordionHeader__button.fui-AccordionHeader__button {
+    border-width: 2px;
+  }
+
+  .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
+    border: 2px solid ButtonText;
+  }
+
+  .fui-AccordionHeader__button:enabled:not([aria-disabled='true']):hover,
+  .fui-AccordionHeader__button:enabled:not([aria-disabled='true']):active {
+    color: Highlight;
+    border-color: Highlight;
+  }
+
+  .fui-AccordionHeader__button:enabled:not([aria-disabled='true']):hover .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon,
+  .fui-AccordionHeader__button:enabled:not([aria-disabled='true']):active .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
+    border-color: Highlight;
+  }
+}
+
 /* The focus visual. Fluent already draws 2px at a 2px outset, which is WinUI's
    own outer-ring geometry, so the ring's colour is restated through the token
-   the ring reads, rewritten on the element that reads it. A shadow spread
-   across the two pixels of that outset carries WinUI's second, inner ring.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258 */
+   the ring reads, rewritten on the element that reads it. WinUI's second ring
+   sits immediately against the control, inside the first, and an inset shadow
+   is the way to land it there: an inner shadow is clipped to the padding box,
+   so its pixel falls just inside the band the outer ring covers instead of
+   outside it. Under forced colours the shadow is dropped by the user agent and
+   Fluent's own literal system colour carries the ring.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
+   https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
 .fui-AccordionHeader__button.fui-AccordionHeader__button[data-fui-focus-visible] {
   --colorStrokeFocus2: var(--winui-focus-stroke-outer);
-  box-shadow: 0 0 0 2px var(--winui-focus-stroke-inner);
+  box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
 }
 
 /* The content region: the Secondary step of the card ramp, inside the same

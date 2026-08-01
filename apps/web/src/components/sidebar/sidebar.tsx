@@ -50,12 +50,33 @@ const useStyles = makeStyles({
   // Selection is drawn by NavSelectionIndicator rather than by a pseudo-element
   // per item, because WinUI animates the pill between the item leaving
   // selection and the one taking it, which needs one element that outlives both.
+  //
+  // 36px is a floor rather than a fixed height, which is how WinUI states it: a
+  // label that needs two lines -- a long translation, or a reader who has scaled
+  // the text up -- lengthens the row instead of being cut by it. The vertical
+  // pair is what centres a 20px line in that 36.
+  //
+  // The horizontal box is read off the left-pane template. Its icon column is
+  // CompactPaneLength less 8, so 40, and it centres a 16px icon box in that,
+  // leaving 12px between the fill's leading edge and the icon; the label then
+  // begins at that 40 plus the content presenter's own 4, so at 44. The icon
+  // slot here is Fluent's, a 20px box holding the 20px cut of each glyph, so
+  // the gap that carries the label to the same 44 is 12 rather than 16. The
+  // trailing inset is the content grid's own 14; the further 8 the content
+  // presenter adds inside it separates the label from the info-badge column,
+  // which these rows do not have.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L208
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L217
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L219
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L251
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L604-L616
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationViewItemPresenter.cpp#L286-L290
   item: {
     gap: '12px',
-    height: '36px',
     minHeight: '36px',
     paddingBottom: '8px',
     paddingLeft: '12px',
+    paddingRight: '14px',
     paddingTop: '8px',
   },
   // ShareIos draws its tray opening upward. Turned a quarter clockwise the
@@ -65,12 +86,15 @@ const useStyles = makeStyles({
   },
 });
 
-// The pill sits flush against the inside of the item's leading edge. WinUI
-// marks the selected item within its own fill rather than alongside it, which
+// The pill sits flush against the inside of the item's leading edge: WinUI
+// hangs it off the left of the presenter's content root with no margin of its
+// own. Marking the selected item within its own fill rather than alongside it
 // is what keeps the marker and the fill reading as one object. Nothing has to
-// be held back for the item's rounded corners: the pill is 16px of a 36px row
-// and is centred, so it never reaches the height the curve occupies.
+// be held back for the item's rounded corners -- the pill is centred and inset
+// by a quarter of the row at each end, so it never reaches the height the curve
+// occupies.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L220-L222
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L600-L603
 const NAV_INDICATOR_INSET = 0;
 
 interface NavItemDefinition {
@@ -228,8 +252,10 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
       {/* No rule above these. NavigationView does own a separator for this
           seam, but it is authored collapsed and UpdatePaneLayout reveals it
           only once the menu and the footer compete for the pane's height — an
-          overflow affordance, not a grouping rule. With room for both, the
-          footer group is set apart by being bottom-anchored and nothing else.
+          overflow affordance, not a grouping rule. Whether the body's own
+          scroller has overflowed is not read back here, so the seam is left
+          unmarked either way and the footer group is set apart by being
+          bottom-anchored alone.
           https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L375
           https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.cpp#L1585-L1626 */}
       <NavDrawerFooter className="!bg-transparent !gap-y-1 !px-[10px] !py-3">

@@ -71,17 +71,67 @@ const labelledOnLogAxis = (value: number): boolean => {
 };
 const groupByValues: PerformanceGroupBy[] = ['model', 'upstream', 'operation', 'runtimeLocation', 'keyId', 'userId'];
 
+// WinUI ships no chart, so the marks inside the plot are read against Fluent's
+// line chart rather than transcribed from a dictionary. What this layer settles
+// is how large a data point is drawn and which of Fluent's hover affordances
+// answers the pointer.
+//
+// A series here carries `mode: 'lines+markers'` over a monotone curve, which
+// puts Fluent on its curve branch: the line is a single path, every point is a
+// marker circle whose fill and stroke are both the series colour, and one
+// highlight circle per series is parked offscreen and moved under the pointer.
+// Radius and stroke width together give the dot its diameter -- 2px of radius
+// inside a 1.5px stroke reads as 5.5px beside the 2px line -- and they hold in
+// every state, because the pointer is answered at an x position rather than at
+// one series' point.
+//
+// That answer is the vertical line plus a callout, and the callout is a table
+// of every series at that x. Fluent's highlight circle singles one of them out,
+// which would contradict the table standing next to it, so it is not painted.
+// It has to lose its paint rather than its box: Fluent anchors the callout to
+// this circle's bounding rect, which `visibility` leaves in place and `display`
+// would collapse onto the plot's origin. A hidden element also takes no pointer
+// input, so the markers and the line underneath keep theirs.
+//
+// The x axis draws its ticks at the plot's full height so that they double as
+// gridlines, which lays a full-height stroke across every series. Hit testing
+// has to pass through those strokes, or a pointer crossing one leaves the
+// series beneath it unanswered.
+//
+// No rule here states a colour, so both colour schemes and a forced palette are
+// left to Fluent, which paints the marks in the series colours the chart
+// palette hands it.
 const usePerformanceChartStyles = makeStyles({
   root: {
     '& .fui-cart__xAxis line': { pointerEvents: 'none' },
     '& circle:not([id*="staticHighlightCircle"])': { r: '2px !important', strokeWidth: '1.5px' },
-    '& circle[id*="staticHighlightCircle"]': { pointerEvents: 'none', visibility: 'hidden' },
+    '& circle[id*="staticHighlightCircle"]': { visibility: 'hidden' },
   },
 });
 const usePerformanceTableStyles = makeStyles({
   numericHeader: {
     whiteSpace: 'nowrap',
     '& .fui-TableHeaderCell__button': { justifyContent: 'flex-end', whiteSpace: 'nowrap' },
+  },
+  // The truncated group name is the cell's tooltip trigger and therefore a tab
+  // stop of its own, so it draws its own focus visual: the cell around it takes
+  // no focus, and the ring the layer gives a table cell never fires. WinUI's is
+  // a 2px FocusStrokeColorOuter ring with 1px of FocusStrokeColorInner
+  // immediately inside it. Both are drawn inside the name's own box, because
+  // the cell clips whatever leaves it -- the outline covers the outer two of
+  // the shadow's three pixels, which leaves the inner ring as the third. Each
+  // stroke is stated per theme in the dictionaries and reached through the
+  // custom property, so the one declaration serves both schemes; under a forced
+  // palette the user agent drops the shadow and paints the outline in the
+  // system focus colour.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
+  groupName: {
+    ':focus-visible': {
+      boxShadow: 'inset 0 0 0 3px var(--winui-focus-stroke-inner)',
+      outline: '2px solid var(--winui-focus-stroke-outer)',
+      outlineOffset: '-2px',
+    },
   },
 });
 
@@ -423,7 +473,7 @@ function PerformanceTable({ groupBy, labels, rows }: { groupBy: PerformanceGroup
           the four measure columns to their widest label leaves the rest to the
           name, which is the only column whose content has no bound. */}
       <TableHeader><TableRow><TableHeaderCell sortable sortDirection={sortDirection('group')} onClick={() => sortBy('group')}>{t(`dashboard.performance.filters.${groupBy}`)}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('requests')} onClick={() => sortBy('requests')} className={`${styles.numericHeader} text-right !w-[112px]`}>{t('dashboard.performance.tables.requests')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('errors')} onClick={() => sortBy('errors')} className={`${styles.numericHeader} text-right !w-[88px]`}>{t('dashboard.performance.tables.errors')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('ttft')} onClick={() => sortBy('ttft')} className={`${styles.numericHeader} text-right !w-[112px]`}>{t('dashboard.performance.tables.ttftP95')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('speed')} onClick={() => sortBy('speed')} className={`${styles.numericHeader} text-right !w-[160px]`}>{t('dashboard.performance.tables.speedP95')}</TableHeaderCell></TableRow></TableHeader>
-      <TableBody>{sortedRows.length ? sortedRows.map(row => <TableRow key={row.group}><TableCell><Tooltip content={row.group} relationship="description"><span className="block overflow-hidden text-ellipsis whitespace-nowrap" tabIndex={0}>{resolvePerformanceGroup(row.group, groupBy, labels)}</span></Tooltip></TableCell><TableCell className="text-right tabular-nums">{formatCount(row.requests, locale)}</TableCell><TableCell className="text-right tabular-nums">{formatCount(row.errors, locale)}</TableCell><TableCell className="text-right tabular-nums">{formatDuration(row.ttftMsP95)}</TableCell><TableCell className="text-right tabular-nums">{formatTokenRateFromTpot(row.tpotUsP95)}</TableCell></TableRow>) : <TableRow><TableCell colSpan={5}><EmptyStateLine>{t('dashboard.performance.empty')}</EmptyStateLine></TableCell></TableRow>}</TableBody>
+      <TableBody>{sortedRows.length ? sortedRows.map(row => <TableRow key={row.group}><TableCell><Tooltip content={row.group} relationship="description"><span className={`${styles.groupName} block overflow-hidden text-ellipsis whitespace-nowrap`} tabIndex={0}>{resolvePerformanceGroup(row.group, groupBy, labels)}</span></Tooltip></TableCell><TableCell className="text-right tabular-nums">{formatCount(row.requests, locale)}</TableCell><TableCell className="text-right tabular-nums">{formatCount(row.errors, locale)}</TableCell><TableCell className="text-right tabular-nums">{formatDuration(row.ttftMsP95)}</TableCell><TableCell className="text-right tabular-nums">{formatTokenRateFromTpot(row.tpotUsP95)}</TableCell></TableRow>) : <TableRow><TableCell colSpan={5}><EmptyStateLine>{t('dashboard.performance.empty')}</EmptyStateLine></TableCell></TableRow>}</TableBody>
     </Table></ScrollArea>
   </section>;
 }

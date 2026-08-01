@@ -10,15 +10,17 @@
 //
 // NavItem, NavSubItem, NavCategoryItem and AppItem all render Fluent's one
 // shared root reset (sharedNavStyles.styles: useRootDefaultClassName), so the
-// foreground rules below name all four and siblings in one list stay in step.
-// The tokens that only a selected item reads are narrowed to the two that can
-// be selected and carry an icon.
+// foreground and fill rules below name all four and siblings in one list stay
+// in step. AppItem is the one of the four Fluent gives no selected state, so
+// selection, its indicator and the tokens a selected item reads are stated for
+// the other three; the icon tokens narrow further to the two that pair a
+// selected state with an icon slot.
 //
 // Several rows below substitute a Fluent token rather than declare the property
-// the token feeds. That is not a style choice: those values are reached only
-// through a keyframe stop, or through an inline style the sidebar writes on the
-// element itself, and in both cases the variable is the one place left where the
-// colour can still be chosen. See ./tokens.ts for the selector convention.
+// the token feeds. That is not a style choice: those values are painted from a
+// keyframe stop, which outranks every normal rule in the cascade, so the
+// variable that stop reads is the one place left where the colour can still be
+// chosen. See ./tokens.ts for the selector convention.
 export const navCss = `
 /* The seam between the pane and the page. WinUI's pane draws no edge of its
    own -- PaneContentGrid names a border brush and never a thickness, and the
@@ -44,12 +46,16 @@ export const navCss = `
 }
 
 /* Item foreground. Fluent's neutral pair gives way to WinUI's primary text
-   fill, and the press state drops to the secondary one. The substitution is
-   made on the token rather than on \`color\` because the icon slot's
-   de-selection keyframe reads the same token for its 0% stop; declaring
-   \`color\` alone would leave that keyframe starting from Fluent's grey.
+   fill, and the press state drops to the secondary one -- which WinUI states
+   for a selected item as well, so the pressed rule reads on every item and the
+   sidebar's pending row, held pressed for the length of a navigation, is
+   included in it. The substitution is made on the token rather than on
+   \`color\` because the icon slot's de-selection keyframe reads the same token
+   for its 0% stop; declaring \`color\` alone would leave that keyframe starting
+   from Fluent's grey.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L21
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L23 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L23
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L31 */
 .fui-NavItem.fui-NavItem,
 .fui-NavSubItem.fui-NavSubItem,
 .fui-NavCategoryItem.fui-NavCategoryItem,
@@ -58,6 +64,7 @@ export const navCss = `
 }
 
 .fui-NavItem.fui-NavItem:active,
+.fui-NavItem.fui-NavItem[data-nav-pending],
 .fui-NavSubItem.fui-NavSubItem:active,
 .fui-NavCategoryItem.fui-NavCategoryItem:active,
 .fui-AppItem.fui-AppItem:active {
@@ -68,17 +75,26 @@ export const navCss = `
    fill and steps it toward the material on pointer, where Fluent steps it away
    from one. Selection is the same ramp held one step in, so a selected item and
    a hovered one read alike until the indicator distinguishes them -- which is
-   why the indicator, not the fill, is what carries selection here.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L26-L32 */
+   why the indicator, not the fill, is what carries selection here. AppItem
+   joins the list as a pane row drawn from the same template: WinUI states no
+   brush of its own for it, and on Fluent's neutral background 4 it would be the
+   one opaque slab in a transparent pane. It takes only the states it has, which
+   are the unselected ones.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L9-L20 */
 .fui-NavItem.fui-NavItem,
-.fui-NavCategoryItem.fui-NavCategoryItem {
+.fui-NavSubItem.fui-NavSubItem,
+.fui-NavCategoryItem.fui-NavCategoryItem,
+.fui-AppItem.fui-AppItem {
   background-color: var(--winui-subtle-fill-transparent);
 }
 
 .fui-NavItem.fui-NavItem:hover,
 .fui-NavItem.fui-NavItem[aria-current='page'],
+.fui-NavSubItem.fui-NavSubItem:hover,
+.fui-NavSubItem.fui-NavSubItem[aria-current='page'],
 .fui-NavCategoryItem.fui-NavCategoryItem:hover,
-.fui-NavCategoryItem.fui-NavCategoryItem[aria-current='page'] {
+.fui-NavCategoryItem.fui-NavCategoryItem[aria-current='page'],
+.fui-AppItem.fui-AppItem:hover {
   background-color: var(--winui-subtle-fill-secondary);
 }
 
@@ -89,24 +105,29 @@ export const navCss = `
    place the weight is set, so naming the state is enough to undo it.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L641 */
 .fui-NavItem.fui-NavItem[aria-current='page'],
+.fui-NavSubItem.fui-NavSubItem[aria-current='page'],
 .fui-NavCategoryItem.fui-NavCategoryItem[aria-current='page'] {
   font-weight: var(--fontWeightRegular);
 }
 
 /* Fluent draws its own selection indicator as an ::after on the selected item,
    4px wide and 20px tall and fully rounded, in the compound brand foreground.
-   WinUI's is 3px by 16px at a 2px radius in the accent fill.
+   WinUI's is 3px wide at a 2px radius in the accent fill.
 
    A NavItem's is cleared outright: WinUI's indicator animates between the item
    losing selection and the one taking it, which a per-item pseudo-element
    cannot do, so the sidebar draws a measured one and this stops the two from
    both showing. A category row is never the source or the destination of that
-   animation -- it opens and closes rather than navigating -- so it keeps a
-   pseudo-element, restated at WinUI's geometry and colour. The 16px is carried
-   as the inset it leaves against the 36px row it is stated for, which is how
-   every other selection indicator here is written.
+   animation -- it opens and closes rather than navigating -- and a sub-item is
+   rendered nowhere the measured indicator is drawn, so both keep a
+   pseudo-element, restated at WinUI's geometry and colour.
 
-   Its colour is not a declaration but a token substitution, because Fluent
+   WinUI states the pill's length as a fixed 16px on its 36px left-pane row.
+   Our choice is a proportion instead -- a quarter inset at each end -- so the
+   pill keeps its proportion as the row grows rather than sitting short in a
+   tall one. ./list.css.ts and ./select.css.ts state the same quarter inset.
+
+   The colour is not a declaration but a token substitution, because Fluent
    grows the pill in with a keyframe -- \`0% { background: transparent }\` to
    \`100% { background: var(--colorCompoundBrandForeground1) }\` -- filled in
    both directions. An animation outranks every normal rule in the cascade, so
@@ -121,42 +142,67 @@ export const navCss = `
   content: none;
 }
 
+.fui-NavSubItem.fui-NavSubItem[aria-current='page']::after,
 .fui-NavCategoryItem.fui-NavCategoryItem[aria-current='page']::after {
   --colorCompoundBrandForeground1: var(--winui-accent-fill-default);
   border-radius: 2px;
   height: auto;
-  inset-block: 10px;
+  inset-block: 25%;
   width: 3px;
 }
 
 .fui-NavItem.fui-NavItem:active,
 .fui-NavItem.fui-NavItem[data-nav-pending],
 .fui-NavItem.fui-NavItem[aria-current='page']:hover,
+.fui-NavSubItem.fui-NavSubItem:active,
+.fui-NavSubItem.fui-NavSubItem[aria-current='page']:hover,
 .fui-NavCategoryItem.fui-NavCategoryItem:active,
-.fui-NavCategoryItem.fui-NavCategoryItem[aria-current='page']:hover {
+.fui-NavCategoryItem.fui-NavCategoryItem[aria-current='page']:hover,
+.fui-AppItem.fui-AppItem:active {
   background-color: var(--winui-subtle-fill-tertiary);
 }
 
 .fui-NavItem.fui-NavItem[aria-current='page']:active,
+.fui-NavSubItem.fui-NavSubItem[aria-current='page']:active,
 .fui-NavCategoryItem.fui-NavCategoryItem[aria-current='page']:active {
   background-color: var(--winui-subtle-fill-secondary);
 }
 
 /* WinUI leaves a disabled item on the transparent fill rather than dimming it,
-   so the foreground above carries the whole disabled reading.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L33 */
+   so the foreground below carries the whole disabled reading. A disabled item
+   that is also the selected one is the exception: it keeps the standing wash
+   selection puts under it, so that a pane whose current page has been disabled
+   still says which page one is on. Both the native and the ARIA form are named
+   because an item renders as a button or as an anchor depending on whether it
+   was given an href, and each pair comes after the pointer states it has to
+   settle, since a disabled element still matches :hover.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L12
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L20 */
 .fui-NavItem.fui-NavItem:disabled,
 .fui-NavItem.fui-NavItem[aria-disabled='true'],
+.fui-NavSubItem.fui-NavSubItem:disabled,
+.fui-NavSubItem.fui-NavSubItem[aria-disabled='true'],
 .fui-NavCategoryItem.fui-NavCategoryItem:disabled,
-.fui-NavCategoryItem.fui-NavCategoryItem[aria-disabled='true'] {
+.fui-NavCategoryItem.fui-NavCategoryItem[aria-disabled='true'],
+.fui-AppItem.fui-AppItem:disabled,
+.fui-AppItem.fui-AppItem[aria-disabled='true'] {
   background-color: var(--winui-subtle-fill-transparent);
 }
 
+.fui-NavItem.fui-NavItem[aria-current='page']:disabled,
+.fui-NavItem.fui-NavItem[aria-current='page'][aria-disabled='true'],
+.fui-NavSubItem.fui-NavSubItem[aria-current='page']:disabled,
+.fui-NavSubItem.fui-NavSubItem[aria-current='page'][aria-disabled='true'],
+.fui-NavCategoryItem.fui-NavCategoryItem[aria-current='page']:disabled,
+.fui-NavCategoryItem.fui-NavCategoryItem[aria-current='page'][aria-disabled='true'] {
+  background-color: var(--winui-subtle-fill-secondary);
+}
+
 /* Fluent styles no disabled item anywhere in the nav package, so a disabled one
-   reads exactly like an enabled one; WinUI dims it. Both the native and the
-   ARIA form are named because an item renders as a button or as an anchor
-   depending on whether it was given an href.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L24 */
+   reads exactly like an enabled one; WinUI dims it, and dims it to the same
+   fill whether or not the item is the selected one.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L24
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L32 */
 .fui-NavItem.fui-NavItem:disabled,
 .fui-NavItem.fui-NavItem[aria-disabled='true'],
 .fui-NavSubItem.fui-NavSubItem:disabled,
@@ -183,14 +229,17 @@ export const navCss = `
    deep, of which the outline covers the outer two -- the third pixel is the
    inner ring's place. It is a shadow rather than the two-pseudo-element
    construction used elsewhere because the item's ::after is spoken for by the
-   selection indicator above.
+   selection indicator above. Forced colours are left to Fluent and the user
+   agent: the outline colour is one they substitute and the shadow is a property
+   they drop, so the visual there reduces to the system's single ring.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L429
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources.xaml#L15-L16
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L250-L252
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L173-L174
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L446-L452
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/inc/FocusRectNudging.h#L388 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/inc/FocusRectNudging.h#L388
+   https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
 .fui-NavItem.fui-NavItem[data-fui-focus-visible],
 .fui-NavSubItem.fui-NavSubItem[data-fui-focus-visible],
 .fui-NavCategoryItem.fui-NavCategoryItem[data-fui-focus-visible],
@@ -201,14 +250,34 @@ export const navCss = `
 }
 
 /* A selected item's icon keeps the primary text fill in WinUI instead of taking
-   on the brand tint Fluent gives it. The colour is reached only through the
-   100% stop of the icon slot's selection keyframe, so the token is again the
-   one place it can be chosen. Only the two families that pair a selected state
-   with an icon read it.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L29 */
+   on the brand tint Fluent gives it, and it follows the label through the rest
+   of the states: WinUI states one foreground per state and the icon reads the
+   same brush the label does, so pressing a selected item takes both to the
+   secondary fill and disabling it takes both to the disabled one. The colour is
+   reached only through the 100% stop of the icon slot's selection keyframe, and
+   a keyframe outranks every normal rule, so the token is the one place each of
+   those states can be chosen -- without them the icon of a selected item would
+   sit at full strength while its label moved. Only the two families that pair a
+   selected state with an icon read it.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L29
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L31
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L32 */
 .fui-NavItem.fui-NavItem,
 .fui-NavCategoryItem.fui-NavCategoryItem {
   --colorNeutralForeground2BrandSelected: var(--winui-text-fill-primary);
+}
+
+.fui-NavItem.fui-NavItem:active,
+.fui-NavItem.fui-NavItem[data-nav-pending],
+.fui-NavCategoryItem.fui-NavCategoryItem:active {
+  --colorNeutralForeground2BrandSelected: var(--winui-text-fill-secondary);
+}
+
+.fui-NavItem.fui-NavItem:disabled,
+.fui-NavItem.fui-NavItem[aria-disabled='true'],
+.fui-NavCategoryItem.fui-NavCategoryItem:disabled,
+.fui-NavCategoryItem.fui-NavCategoryItem[aria-disabled='true'] {
+  --colorNeutralForeground2BrandSelected: var(--winui-text-fill-disabled);
 }
 
 /* Section header. Fluent styles the header's type but lets its colour inherit
@@ -225,12 +294,17 @@ export const navCss = `
   line-height: var(--lineHeightBase300);
 }
 
-/* The rule separating the footer from the scrolling item list is a nav
-   separator, which WinUI paints from its divider ramp rather than from a
-   neutral control stroke. The sidebar sets that colour inline through Fluent's
-   token, so the token is where the value is chosen.
+/* The hairline separating the footer from the scrolling item list. Fluent
+   generates it as a ::before on the footer, and only while the drawer body is
+   scrollable, which is the same condition NavigationView reveals its own pane
+   separator under -- the seam is an overflow affordance in both. WinUI paints
+   that separator from its divider ramp, so the card stroke ./drawer.css gives
+   every drawer header and footer is retinted here; naming the pseudo-element
+   restyles it without bringing it into existence.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L375
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.cpp#L1585-L1626
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L46 */
-.fui-NavDrawerFooter.fui-NavDrawerFooter {
-  --colorNeutralStroke2: var(--winui-divider-stroke-default);
+.fui-NavDrawerFooter.fui-NavDrawerFooter::before {
+  background-color: var(--winui-divider-stroke-default);
 }
 `;

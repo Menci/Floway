@@ -13,20 +13,32 @@ const { Text, ToggleButton, makeStyles, mergeClasses } = fluentComponents;
 // in this dashboard is -- the subtle fill it would take under the pointer, held,
 // with an accent bar down its leading edge.
 //
-// The fill, the bar and the label are stated here rather than left to the
-// layer, because the layer paints a ToggleButton as WinUI paints one and is
-// right to. Undoing that paint is what needs `!important` on the fill: the
-// layer names the checked state at a specificity a call site cannot reach,
-// which is correct for a rule meant to hold across the dashboard and is exactly
-// the case the escape hatch is for. The accent border goes with it -- it is the
-// accent's own elevation stroke, and against a subtle fill its heavier bottom
-// edge reads as a rule under the tile.
+// So the selected state table below is ListViewItem's rather than
+// ToggleButton's: SubtleFillColorSecondary at rest, tertiary under the pointer,
+// back to secondary while pressed, and TextFillColorPrimary throughout. The
+// label never dims, which is where a selected row parts company with a pressed
+// button. Every value is read from the token layer, which states its own pair
+// per dictionary, so light and dark take the same declarations.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L20-L22
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L26-L28
 //
-// The label is restated for the pointer and the press as well as for rest. A
-// checked ToggleButton's foreground is the on-accent one in every state, which
-// is white here, and Fluent's own hover and pressed atoms outrank a rule that
-// names the checked state alone -- so stating it once left the tile's value
-// white on a pale fill the moment the pointer arrived.
+// The fill and the label are restated per state rather than once, because each
+// answers a Fluent atom that names the same state and would otherwise paint the
+// accent ramp ../../winui/controls/button.css.ts hands the checked atoms. A
+// rule naming the checked state alone ties with `.fXXX:hover` on specificity
+// and loses on order, so stating it once left the tile's value in the
+// on-accent white the moment the pointer arrived. Pressed is two selectors
+// because Fluent's is: a pointer press is `:hover:active` and a keyboard press
+// is `:active:focus-visible`, and whichever of the two goes unanswered flashes
+// the accent under the space bar.
+//
+// The border belongs to that same layer, which gives a checked toggle the
+// accent elevation stroke at a specificity a call site cannot reach -- so
+// clearing it against a subtle fill takes `!important`, and handing it back for
+// the focus visual takes the same. WinUI builds a ListViewItem's focus ring out
+// of the two strokes every other control here uses, so the inner one returns to
+// the value the layer names for it.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L29-L30
 const useStyles = makeStyles({
   tile: {
     '&[aria-pressed="true"]': {
@@ -39,21 +51,30 @@ const useStyles = makeStyles({
       position: 'relative',
     },
     '&[aria-pressed="true"]:hover': {
-      backgroundColor: 'var(--winui-subtle-fill-tertiary) !important',
+      backgroundColor: 'var(--winui-subtle-fill-tertiary)',
       color: 'var(--winui-text-fill-primary)',
     },
-    '&[aria-pressed="true"]:hover:active': {
-      backgroundColor: 'var(--winui-subtle-fill-secondary) !important',
-      color: 'var(--winui-text-fill-secondary)',
+    '&[aria-pressed="true"]:hover:active,&[aria-pressed="true"]:active:focus-visible': {
+      backgroundColor: 'var(--winui-subtle-fill-secondary)',
+      color: 'var(--winui-text-fill-primary)',
+    },
+    '&[aria-pressed="true"][data-fui-focus-visible]': {
+      borderTopColor: 'var(--winui-focus-stroke-inner) !important',
+      borderRightColor: 'var(--winui-focus-stroke-inner) !important',
+      borderBottomColor: 'var(--winui-focus-stroke-inner) !important',
+      borderLeftColor: 'var(--winui-focus-stroke-inner) !important',
     },
     // The bar is a ListViewItem's, so it takes that presenter's arrival: a fade
     // over 83ms while it grows from nothing over 167ms, from its own centre. It
     // does not travel from the tile that lost the selection; only NavigationView
-    // has a moving indicator. Its length is the quarter inset the rest of the
-    // layer uses -- see winui/controls/list.css.ts, where the choice between
-    // that and the presenter's stepped formula is written down.
+    // has a moving indicator. Its brush is the rest accent in all three selected
+    // states, so one declaration carries it. Its length is the quarter inset the
+    // rest of the layer uses -- see winui/controls/list.css.ts, where the choice
+    // between that and the presenter's stepped formula is written down.
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L60
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L75-L77
     // https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/core/core/elements/ListViewBaseItemChrome.cpp#L1750-L1758
-    // https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/dxaml/lib/ListViewBaseItemPresenter_Partial.cpp#L891-L1022
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/dxaml/lib/ListViewBaseItemPresenter_Partial.cpp#L945-L982
     '&[aria-pressed="true"]::after': {
       backgroundColor: 'var(--winui-accent-fill-default)',
       borderRadius: '1.5px',
@@ -70,6 +91,33 @@ const useStyles = makeStyles({
       // is what keeps the completion firing.
       animation: 'winui-selection-indicator-fade 83ms linear, winui-selection-indicator-grow 167ms cubic-bezier(0.167, 0.167, 0, 1)',
       '@media (prefers-reduced-motion: reduce)': { animationDuration: '0.01ms' },
+    },
+    // Under a forced palette Fluent paints a checked toggle Highlight against
+    // HighlightText and sets forced-color-adjust: none, which would hand every
+    // colour above straight to the screen, and it inverts that pair for the
+    // pointer and the press. WinUI's High Contrast dictionary holds one pair
+    // across selected, selected-pointer-over and selected-pressed, and turns
+    // the indicator HighlightText against it. The descendants are named too:
+    // the caption asks for a colour of its own, and forced-color-adjust: none
+    // is what would leave it there.
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L85-L87
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L91-L93
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L151-L153
+    '@media (forced-colors: active)': {
+      '&[aria-pressed="true"]': {
+        backgroundColor: 'Highlight',
+        color: 'HighlightText',
+        '& *': { color: 'HighlightText' },
+      },
+      '&[aria-pressed="true"]:hover': {
+        backgroundColor: 'Highlight',
+        color: 'HighlightText',
+      },
+      '&[aria-pressed="true"]:hover:active,&[aria-pressed="true"]:active:focus-visible': {
+        backgroundColor: 'Highlight',
+        color: 'HighlightText',
+      },
+      '&[aria-pressed="true"]::after': { backgroundColor: 'HighlightText' },
     },
   },
 });

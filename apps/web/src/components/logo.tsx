@@ -10,9 +10,15 @@ const { makeStyles } = fluentComponents;
 // any mark. A cherry blossom therefore lands a few degrees from the tile this
 // replaces, and every other mark is that tile in its own colour.
 //
-// The tile carries no border. Its own edge is what states the shape; the border
-// it used to draw was a tenth of the way from the surface toward a stronger
-// step of the same hue, which is not a difference the screen can render.
+// The tile carries no border: its fill against the surface behind it is what
+// states the shape, and an outline would need a third step per hue to draw an
+// edge the fill already draws.
+//
+// Under forced colours the fill is replaced by the system canvas whatever this
+// writes, so the tile stops reading as a tile -- but the artwork inside it is a
+// replaced element and keeps its own colours, which leaves the mark itself
+// intact and is the rendering we want there.
+// https://drafts.csswg.org/css-color-adjust-1/#forced-colors-properties
 const SURFACE_LIGHT = [0.133, 0.973] as const;
 const SURFACE_DARK = [0.652, 0.361] as const;
 
@@ -40,7 +46,14 @@ export function FlowayLogo() {
   const mark = currentMark();
 
   return (
-    <div className="inline-flex items-center min-w-0 gap-2.5 text-fui-fg2">
+    // The wordmark takes the primary text fill in both themes. Its WinUI
+    // counterpart is the navigation pane's title, which draws in
+    // `NavigationViewItemForeground` -- `TextFillColorPrimaryBrush` in the
+    // Default (dark) and Light dictionaries alike -- so the app's own name is
+    // never a secondary step.
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L198
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L21
+    <div className="inline-flex items-center min-w-0 gap-2.5 text-fui-fg1">
       <span aria-hidden="true" className={ms.root} style={paint(mark.hue)}>
         <img alt="" className={ms.glyph} src={mark.url} />
       </span>

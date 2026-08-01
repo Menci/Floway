@@ -42,6 +42,21 @@
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L179-L182
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-input/library/src/components/Input/useInputStyles.styles.ts#L186-L201
 //
+// The states are mutually exclusive, and they rank: a text control resolves
+// Disabled over Focused over PointerOver over Normal, one state at a time.
+// Every declaration below that belongs to a state either excludes the states
+// that outrank it or says why they cannot reach it, because a CSS declaration
+// wins on selector weight rather than on that order and the weights do not
+// line up with it on their own.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/native/text/Controls/TextBoxBase.cpp#L3548-L3570
+//
+// Forced colours are left to Fluent and to the user agent. Every declaration
+// here is a background-color or a border-color, and forced-colors mode
+// overrides both outright; the one literal Fluent states for that mode --
+// GrayText on the disabled stroke -- is untouched, because the disabled stroke
+// here is a redefined variable rather than a declaration.
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-input/library/src/components/Input/useInputStyles.styles.ts#L206-L208
+//
 // The rules below stop at the boundary of a subtree that opts out of the layer:
 // the composer and transcript of the playground are designed against Fluent's
 // own control palette, and every declaration here would repaint them. See
@@ -99,14 +114,15 @@ export const textInputCss = `
   --colorNeutralBackground1: var(--winui-control-fill-default);
 }
 
-/* Hover fill. Excluded on a disabled field, where WinUI's Disabled state wins
-   over PointerOver and Fluent's disabled atom would otherwise be outranked by
-   this declaration.
+/* Hover fill. Both states that outrank PointerOver are excluded in the
+   selector: a disabled field, whose Fluent atom this declaration would
+   otherwise outrank, and a focused one, whose fill below carries less weight
+   than the disabled exclusion adds here.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L24
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L131
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L256-L290 */
-.fui-Input.fui-Input${controlFillAppearances}:hover:not(:has(> .fui-Input__input:disabled))${notOptedOut},
-.fui-Textarea.fui-Textarea${controlFillAppearances}:hover:not(:has(> .fui-Textarea__textarea:disabled))${notOptedOut} {
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L275-L290 */
+.fui-Input.fui-Input${controlFillAppearances}:hover:not(:focus-within):not(:has(> .fui-Input__input:disabled))${notOptedOut},
+.fui-Textarea.fui-Textarea${controlFillAppearances}:hover:not(:focus-within):not(:has(> .fui-Textarea__textarea:disabled))${notOptedOut} {
   background-color: var(--winui-control-fill-secondary);
 }
 
@@ -124,21 +140,30 @@ export const textInputCss = `
    is a 2px absolute gradient, flipped, whose two stops both sit at offset 1.0:
    a hard edge, so the accent fills the strip and the ordinary control stroke
    holds the remaining sides. WinUI keys that stop to the same step of the ramp
-   the accent fills take -- Dark1 in light, Light2 in dark -- and states no
-   pressed counterpart, so Fluent's pressed step lands on the same colour.
+   the accent fills take -- Dark1 in light, Light2 in dark -- and a text control
+   has no pressed state at all, Pressed being the same state as Focused, so the
+   second selector spends the same colour on the strip Fluent darkens when the
+   pointer goes down inside an already-focused field. That selector is not a
+   narrower repetition of the first: Fluent's own rule for the combination ties
+   the first on weight, and only naming the combination outranks it.
    The colour is stated on the strip rather than on the token Fluent reads for
    it, so it cannot inherit into whatever a caller puts in the content slots.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L57-L65
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L164-L172 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L164-L172
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/native/text/Controls/TextBoxBase.cpp#L3551-L3555
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-input/library/src/components/Input/useInputStyles.styles.ts#L109-L112
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-textarea/library/src/components/Textarea/useTextareaStyles.styles.ts#L86-L89 */
 .fui-Input.fui-Input${notOptedOut}::after,
-.fui-Textarea.fui-Textarea${notOptedOut}::after {
+.fui-Input.fui-Input${notOptedOut}:focus-within:active::after,
+.fui-Textarea.fui-Textarea${notOptedOut}::after,
+.fui-Textarea.fui-Textarea${notOptedOut}:focus-within:active::after {
   border-bottom-color: var(--winui-accent-base);
 }
 
 /* Disabled keeps a fill where Fluent empties it to the transparent background.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L26
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L133
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L260-L262 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L261-L263 */
 .fui-Input.fui-Input${controlFillAppearances}:has(> .fui-Input__input:disabled)${notOptedOut},
 .fui-Textarea.fui-Textarea${controlFillAppearances}:has(> .fui-Textarea__textarea:disabled)${notOptedOut} {
   background-color: var(--winui-control-fill-disabled);
@@ -165,11 +190,15 @@ export const textInputCss = `
    bottom gradient stop. Fluent reaches that state through its Pressed pair --
    WinUI's text controls have no pressed state of their own -- and the
    foundation already gives colorNeutralStroke1Pressed the flat stroke, so only
-   the accessible half is restated here.
+   the accessible half is restated here. The bottom edge itself needs no
+   restatement in either component: the accent strip above sits over it while
+   the field is focused, which is also what covers the compound brand colour
+   Textarea alone puts there.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L29
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L57-L65
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L136
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L164-L172 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L164-L172
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-textarea/library/src/components/Textarea/useTextareaStyles.styles.ts#L136-L139 */
 .fui-Input.fui-Input${notOptedOut},
 .fui-Textarea.fui-Textarea${notOptedOut} {
   --colorNeutralStrokeAccessiblePressed: var(--winui-control-stroke-default);
@@ -180,16 +209,17 @@ export const textInputCss = `
    foundation installs for the rest of the library.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L30
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L137
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L263-L265 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L264-L266 */
 .fui-Input.fui-Input${notOptedOut},
 .fui-Textarea.fui-Textarea${notOptedOut} {
   --colorNeutralStrokeDisabled: var(--winui-control-stroke-default);
 }
 
-/* Placeholder. WinUI sits one step brighter than Fluent's Foreground4 and
-   holds that step through hover and focus; the disabled step is
+/* Placeholder. WinUI states one step more prominent than Fluent's Foreground4
+   and holds that step through hover and focus; the disabled step is
    TextFillColorDisabled, which the foundation already gives
-   colorNeutralForegroundDisabled.
+   colorNeutralForegroundDisabled through Fluent's own disabled atom on the
+   inner control.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L35-L38
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L142-L145 */
 .fui-Input.fui-Input${notOptedOut},
@@ -198,8 +228,10 @@ export const textInputCss = `
 }
 
 /* The affordances flanking the field take the colour WinUI gives the control's
-   own inner buttons, which is a step brighter than the Foreground3 they
-   inherit. Textarea has no such slots.
+   own inner buttons, one step more prominent than the Foreground3 they
+   inherit. Their hover and pressed steps stay with whatever component a caller
+   puts in the slot, and their disabled step stays with Fluent, whose atom on
+   the slot itself outranks this redefinition. Textarea has no such slots.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L45
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L152 */
 .fui-Input.fui-Input${notOptedOut} {

@@ -7,8 +7,13 @@ import { fluentComponents } from '../../fluent';
 const { Button, DialogActions, DialogTitle, makeStyles, mergeClasses } = fluentComponents;
 
 const useStyles = makeStyles({
-  // The danger fill is DangerBackground3, the same #c50f1f in both themes, so
-  // its label has to be the foreground for a surface that does not follow the
+  // A destructive confirmation is an accent button wearing the danger hue.
+  // WinUI has no danger button, so the three fills are Fluent's own danger
+  // ramp -- Background3 and its hover and pressed shades, one #c50f1f family
+  // in both themes because the status ramp reads the same shared colour either
+  // way.
+  //
+  // The label has to be the foreground for a surface that does not follow the
   // theme. That is StaticInverted, white in both.
   //
   // Not OnBrand, which is the trap here: OnBrand is white in both themes in
@@ -21,12 +26,36 @@ const useStyles = makeStyles({
   // Not DangerForegroundInverted either: that is the danger hue for use ON an
   // inverted surface, not the label to place on a danger fill; over
   // DangerBackground3 it reads at 1.74:1 in light and 1.17:1 in dark.
+  //
+  // Every rule is qualified to the enabled states, and pressed is `:active`
+  // alone because WinUI enters Pressed on a keyboard invoke as well as under
+  // the pointer. The `!important` that lets these outrank the WinUI layer's
+  // accent fill would otherwise also outrank the disabled painting, and a
+  // disabled accent button in WinUI abandons the accent for
+  // AccentFillColorDisabled under TextOnAccentFillColorDisabled -- which the
+  // layer paints for this button already, and which is the whole signal that
+  // the confirmation is in flight.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L106-L110
+  //
+  // Colour is confined to `@media not (forced-colors: active)`. WinUI answers
+  // Windows High Contrast by mapping the whole AccentButton brush set onto
+  // system brushes, so intent stops being expressible there; forced colours
+  // keeps Fluent's drawing, which paints this button from Highlight and
+  // HighlightText like any other primary one.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L53-L65
   danger: {
-    backgroundColor: 'var(--colorStatusDangerBackground3) !important',
-    color: 'var(--colorNeutralForegroundStaticInverted) !important',
-    '&:hover': { backgroundColor: 'var(--colorStatusDangerBackground3Hover) !important' },
-    '&:active': { backgroundColor: 'var(--colorStatusDangerBackground3Pressed) !important' },
-    '&:hover:active': { backgroundColor: 'var(--colorStatusDangerBackground3Pressed) !important' },
+    '@media not (forced-colors: active)': {
+      '&:not(:disabled):not([aria-disabled="true"])': {
+        backgroundColor: 'var(--colorStatusDangerBackground3) !important',
+        color: 'var(--colorNeutralForegroundStaticInverted) !important',
+      },
+      '&:not(:disabled):not([aria-disabled="true"]):hover': {
+        backgroundColor: 'var(--colorStatusDangerBackground3Hover) !important',
+      },
+      '&:not(:disabled):not([aria-disabled="true"]):active': {
+        backgroundColor: 'var(--colorStatusDangerBackground3Pressed) !important',
+      },
+    },
   },
 });
 
@@ -50,9 +79,9 @@ export function ConfirmDialog({
   cancelLabel?: string;
   /**
    * A failed attempt at the action, reported here rather than behind the
-   * dialog. Without this the caller has nowhere to put it while the dialog is
-   * still open, and every delete failure in the app ended up at page level,
-   * under the very dialog the operator was looking at.
+   * dialog. Without it the caller has nowhere to put the failure while the
+   * dialog is still open, and a page-level report sits under the very dialog
+   * the operator is looking at.
    */
   error?: string | null;
   message: string;

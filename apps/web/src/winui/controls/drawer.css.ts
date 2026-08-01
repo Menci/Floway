@@ -46,10 +46,18 @@ export const drawerCss = `
   background-color: var(--winui-solid-background-fill-base);
 }
 
-/* An inline drawer's optional separator is the hairline between two regions of
-   one page, which WinUI paints with the divider stroke; Fluent reaches for a
-   neutral fill instead. Fluent gives the border a style on the one side facing
-   the content, so this shorthand lands only there.
+/* The seam an inline drawer makes with the page. WinUI's expanded pane carries
+   no edge of its own -- PaneNotOverlaying sets the split view's border
+   transparent -- so the hairline between two regions of one page is the divider
+   stroke, and it is drawn here from the pane's side. It is painted in every
+   state rather than only under Fluent's \`separator\` prop, because the colour
+   that prop reaches for is a neutral fill this layer already points at the same
+   surface the inline drawer itself takes, so the prop on its own would draw an
+   invisible line. The side is Fluent's: it gives a border style to the edge
+   facing the content -- inline-end for a start drawer, inline-start for an end
+   one -- so this shorthand lands only there. A bottom drawer is the one flavour
+   whose styled edge exists only under the prop, and it takes the stroke then.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L127
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L257 */
 .fui-InlineDrawer.fui-InlineDrawer {
   border-color: var(--winui-divider-stroke-default);
@@ -69,15 +77,34 @@ export const drawerCss = `
   border-color: var(--winui-surface-stroke-flyout);
 }
 
+/* High contrast. FlyoutPresenter's HighContrast dictionary doubles the stroke
+   to 2px, because the surface fill and the page behind it collapse onto the
+   same system Window colour there and the stroke is all that divides them.
+   Forced colours collapse the two fills the same way and leave widths alone,
+   so the width is the one value restated; the brushes that dictionary names
+   are already what forced colours make of the fill and the stroke. Only the
+   page-facing edge carries a border style, so this reaches that edge alone,
+   and a bottom drawer, which has no styled edge, gains nothing here either.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/FlyoutPresenter_themeresources.xaml#L9-L12
+   https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
+@media (forced-colors: active) {
+  .fui-OverlayDrawer.fui-OverlayDrawer {
+    border-width: 2px;
+  }
+}
+
 /* Fluent's drawer focus ring is the single \`::after\` outline in
    --colorStrokeFocus2, so retinting that token gives it WinUI's outer focus
    stroke. WinUI's visual is a two-ring composite, and the inner ring is an
-   inset shadow because it has to sit inside the outer ring's own border box —
+   inset shadow because it has to sit inside the outer ring's own border box --
    the drawer's own border exists on one side only, so it cannot carry it. The
    two thicknesses are the framework defaults, which this corpus states only
-   where ListViewItem restates them.
+   where ListViewItem restates them. Forced colours are left to Fluent and the
+   user agent: Fluent states Highlight for the ring itself there, and the inner
+   ring is a box shadow, a property forced colours drop.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L250-L252 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L251-L253
+   https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
 .fui-OverlayDrawer.fui-OverlayDrawer[data-fui-focus-visible] {
   --colorStrokeFocus2: var(--winui-focus-stroke-outer);
 }

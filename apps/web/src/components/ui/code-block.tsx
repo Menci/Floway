@@ -14,45 +14,122 @@ import { fluentComponents } from '../../fluent';
 
 const { Button, makeStyles, mergeClasses } = fluentComponents;
 
+// A code sample under a caption strip. WinUI has no code control, and its one
+// surface that puts a strip above a content region inside a single frame is the
+// Expander, so the two fills are taken from that relationship -- the strip a
+// step up the ramp from the region it labels.
+//
+// Neither fill is the Expander's own CardBackgroundFill brush, and the frame is
+// not its CardStroke. Those brushes are washes meant to sit over Mica: the card
+// fill is a translucent white that disappears on the white panel this block
+// sits on in light, and CardStrokeColorDefault is black at 10% in dark, which
+// leaves a frame drawn with it invisible there. The solid background ramp
+// carries the same step as opaque colours in both themes, and
+// ControlStrokeColorDefault is a white wash in dark and a black hairline in
+// light, so it draws an edge in both.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L5
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L25
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L46
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L39
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L243
+//
+// Nothing in the frame or the strip repaints on pointer: the Expander declares
+// one header background with no pointer-over counterpart to it, and the only
+// things here that answer input are the copy button and the tab list a caller
+// may pass as the header, each of which paints its own states in the layer.
+// Under forced colours every fill, stroke and token colour below is replaced by
+// the user agent with a system colour, which is the shape of WinUI's own
+// HighContrast dictionary for this surface, so no rule restates it.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L52-L60
+// https://drafts.csswg.org/css-color-adjust/#forced-colors-properties
 const useStyles = makeStyles({
+  // The block is an inline surface, so it takes ControlCornerRadius, the radius
+  // the layer gives everything that does not float, and the page-canvas step of
+  // the solid ramp, so the code reads as recessed from the panel around it in
+  // both themes. The clip is what rounds the strip's fill and the scrolled code
+  // to that radius, and it is why the region's focus visual below is drawn
+  // inside the region rather than around it.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander.xaml#L26
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CornerRadius_themeresources.xaml#L5
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L68
   root: {
-    border: '1px solid var(--colorNeutralStroke1)',
-    borderRadius: '8px',
+    backgroundColor: 'var(--winui-solid-background-fill-base)',
+    border: '1px solid var(--winui-control-stroke-default)',
+    borderRadius: 'var(--winui-control-corner-radius)',
     minWidth: 0,
     overflow: 'hidden',
   },
+  // The strip one step up the ramp from the code, divided from it by the same
+  // stroke the frame is drawn with, as the Expander divides its header from its
+  // content with the one brush it frames both in.
+  //
+  // Its height and inset are ours: the Expander's header is a 48px click target
+  // padded to 16, where this strip is sized to what it holds -- a caption and a
+  // small subtle button.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L70
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L9
   header: {
     alignItems: 'center',
-    backgroundColor: 'var(--colorNeutralBackground2)',
-    borderBottom: '1px solid var(--colorNeutralStroke1)',
+    backgroundColor: 'var(--winui-solid-background-fill-tertiary)',
+    borderBottom: '1px solid var(--winui-control-stroke-default)',
     display: 'flex',
     gap: '8px',
     justifyContent: 'space-between',
     minHeight: '38px',
     padding: '4px 8px 4px 12px',
   },
+  // The caption names the sample rather than being it, so it takes the
+  // secondary text fill; it is set in the code face at the code size, so it
+  // reads as a label on that face rather than as prose above it.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L6
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L210
   lang: {
-    color: 'var(--colorNeutralForeground2)',
+    color: 'var(--winui-text-fill-secondary)',
     fontFamily: 'var(--fontFamilyMonospace)',
     fontSize: 'var(--floway-font-size-mono)',
   },
+  // The document sheet states the face, the size and the line height of every
+  // `pre`, so only the box is stated here. Its inset is ours: the Expander pads
+  // its content region to 16 around a form, where this holds a code sample.
   pre: {
-    fontFamily: 'var(--fontFamilyMonospace)',
-    fontSize: 'var(--floway-font-size-mono)',
-    lineHeight: 'var(--lineHeightBase300)',
     margin: 0,
     minWidth: 0,
     padding: '12px',
     tabSize: '2',
   },
+  // The sample itself is primary text, with the highlighter's token colours
+  // over it. Prism marks one token `table`, which the utility sheet would lay
+  // out as a table, so its display is restated as the inline run it is.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L5
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L209
   code: {
     ...prismTokenStyles,
     '& .token.table': {
       display: 'inline',
     },
-    color: 'var(--colorNeutralForeground1)',
-    fontFamily: 'var(--fontFamilyMonospace)',
+    color: 'var(--winui-text-fill-primary)',
     whiteSpace: 'pre',
+  },
+  // The scrolled region is a tab stop -- the scrollbar library makes its
+  // viewport one wherever the platform's scrollbars take layout width, and a
+  // browser makes a scroll container keyboard-focusable on its own -- so it
+  // draws a focus visual. WinUI's is a 2px FocusStrokeColorOuter ring with a
+  // 1px FocusStrokeColorInner ring immediately inside it. Both are drawn inside
+  // the viewport's own box, because the frame above clips everything outside
+  // it; the outline covers the outer two of the shadow's three pixels, which
+  // leaves the inner ring as the third. The viewport is the only focusable
+  // element the region contains, so the ring needs no more of a subject than
+  // that. Under forced colours the shadow is dropped by the user agent and the
+  // outline takes the system focus colour.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
+  scroll: {
+    maxHeight: '340px',
+    '& :focus-visible': {
+      boxShadow: 'inset 0 0 0 3px var(--winui-focus-stroke-inner)',
+      outline: '2px solid var(--winui-focus-stroke-outer)',
+      outlineOffset: '-2px',
+    },
   },
 });
 
@@ -87,7 +164,7 @@ export function CodeBlock({ code, copyOutcome, disabled = false, header, languag
           {copyLabel(copyOutcome, t('common.copy.action'))}
         </Button>
       </div>
-      <ScrollArea axes="both" className="max-h-[340px]">
+      <ScrollArea axes="both" className={styles.scroll}>
         <pre className={mergeClasses(`language-${language}`, styles.pre)}>
           <code
             className={mergeClasses(`language-${language}`, styles.code)}

@@ -5,17 +5,28 @@
 // three setters.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip.xaml#L5-L9
 //
-// Rest, focus and the inverted background appearance are the whole state table.
-// Eight style modules make up the control: Toast, ToastContainer, ToastTitle,
-// ToastBody, ToastFooter and Toaster paint, while Timer carries a zero-opacity
-// keyframe purely to time the dismissal and AriaLive is visually hidden, so
-// neither of those two states anything to restyle. The container is the focus
-// target — useToastContainer.js gives it `tabIndex: 0` and its reset class
-// carries a `[data-fui-focus-visible]` outline — and it is the only one of the
-// six painting modules with a state beyond rest and inverted. The TeachingTip
-// dictionary's own CommonStates group belongs to its close button, which
-// Fluent's toast does not render.
+// Rest, focus, the intent glyph and the inverted background appearance are the
+// whole state table. Eight style modules make up the control: Toast,
+// ToastContainer, ToastTitle, ToastBody, ToastFooter and Toaster paint, while
+// Timer carries a zero-opacity keyframe purely to time the dismissal and
+// AriaLive is visually hidden, so neither of those two states anything to
+// restyle. The container is the focus target — useToastContainer.js gives it
+// `tabIndex: 0` and its reset class carries a `[data-fui-focus-visible]`
+// outline — and beyond the title's intent glyph it is the only one of the six
+// painting modules with a state at all. Its pointer handlers pause and resume
+// the timer and paint nothing, which is also all TeachingTip's surface does
+// under the pointer: the dictionary's own CommonStates group belongs to its
+// close button, which Fluent's toast does not render.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip_themeresources.xaml#L122-L163
+//
+// Forced colours are left to the user agent, and that lands where the
+// HighContrast dictionary does: the surface fill resolves to Canvas and its
+// stroke to CanvasText, the pair SystemColorWindow and SystemColorWindowText
+// name there. The one row the user agent cannot carry is the inner focus stroke,
+// because forced colours drop box-shadow to none, so the focus visual reduces to
+// its outer ring.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip_themeresources.xaml#L48-L55
+// https://www.w3.org/TR/css-color-adjust-1/#forced-colors-properties
 //
 // Some of Fluent's rows are deliberately kept. The action slot's inline
 // placement in the title's third grid column has no counterpart in TeachingTip,
@@ -112,25 +123,40 @@ export const toastCss = `
 /* The gap between the intent icon and the title. The XAML thickness reads
    left,top,right,bottom, so 0,0,12,0 is a trailing gap; expressing it as a
    logical property covers the mirrored padding Fluent emits under RTL.
+
+   The glyph is also the one slot where the inverted flattening above needs a
+   second value. Fluent gives the info intent colorNeutralForeground2 by default
+   and colorNeutralForegroundInverted2 when inverted, and that token is routed to
+   the primary step at the surface because the title, body and root all read it
+   for body text. Redeclaring it here, where only the glyph inherits from, lands
+   the info intent on the same secondary step in both appearances.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip_themeresources.xaml#L82 */
 .fui-ToastTitle__media.fui-ToastTitle__media {
+  --colorNeutralForegroundInverted2: var(--colorNeutralForeground2);
   padding-inline-end: 12px;
 }
 
-/* Focus. The container is the tab stop, and WinUI's focus visual is two
-   concentric rings drawn inside the focus rectangle: a 2px primary stroke in
-   FocusStrokeColorOuter, and inside it, inset by that same thickness, a 1px
-   secondary stroke in FocusStrokeColorInner. The rectangle is the element's
-   bounds less its FocusVisualMargin, which is zero by default. Fluent already
-   rings the container with a plain outline in --colorStrokeFocus2 at
-   --strokeWidthThick, so retinting that token gives the outer stroke where it
-   stands and an inset shadow supplies the inner one immediately within it,
-   leaving the toast's own surface stroke where it is. The container's radius is
-   raised to the overlay corner as well, because both rings trace the container
-   box and would otherwise round tighter than the surface inside it.
+/* Focus. TeachingTip sets IsTabStop to False, so the rings a focused toast wants
+   are the common focus visual rather than anything the tip states: a 2px primary
+   stroke in FocusStrokeColorOuter and, inset by that same thickness, a 1px
+   secondary stroke in FocusStrokeColorInner, both drawn within the focus
+   rectangle -- the element's bounds less its FocusVisualMargin, which is zero by
+   default. Fluent puts the tab stop on the container and rings it with a plain
+   outline in --colorStrokeFocus2 at --strokeWidthThick, so retinting that token
+   gives the outer stroke. A CSS outline sits outside the border box, so the pair
+   is reproduced outside it as well: offsetting the outline by one pixel opens a
+   band that a 1px spread shadow fills with the inner stroke, which keeps the two
+   concentric and in WinUI's order while leaving the toast's own surface stroke
+   where it is. That shadow is drawn outward rather than inset because the toast
+   is the container's only child and covers its box, so an inset ring would be
+   painted over. The container's radius is raised to the overlay corner as well,
+   because both rings trace the container box and would otherwise round tighter
+   than the surface inside it.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip.xaml#L12
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L173-L186
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L441-L452
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/DependencyObject/DependencyProperty.cpp#L22-L25
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CornerRadius_themeresources.xaml#L6 */
 .fui-ToastContainer.fui-ToastContainer {
@@ -139,7 +165,8 @@ export const toastCss = `
 
 .fui-ToastContainer.fui-ToastContainer[data-fui-focus-visible] {
   --colorStrokeFocus2: var(--winui-focus-stroke-outer);
-  box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 1px var(--winui-focus-stroke-inner);
 }
 
 /* The body is TeachingTip's main content, so the step under the title is

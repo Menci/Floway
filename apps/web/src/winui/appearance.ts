@@ -28,7 +28,8 @@ export const winuiShapeAttribute = 'data-winui-shape';
 
 type SlotProps = Record<string, unknown>;
 type PropCarrier = Record<string, unknown>;
-interface IntentCarrier { intent?: string; icon?: React.ReactNode }
+type MessageBarIntent = 'error' | 'warning' | 'success' | 'info';
+interface IntentCarrier { intent?: MessageBarIntent; icon?: React.ReactNode }
 
 // A top-level prop does not always reach the element that carries the WinUI
 // trait, so each component also names the slots that must be stamped. When the
@@ -36,12 +37,14 @@ interface IntentCarrier { intent?: string; icon?: React.ReactNode }
 // the root element on their own and the list is empty. When it is not,
 // `getPartitionedNativeProps` forwards everything except `style` and
 // `className` to the primary slot, so a top-level `data-*` lands on the inner
-// `<input>` or `<button>` and never on the `.fui-Input`, `.fui-Combobox` or
-// `.fui-Dropdown` root; those name `root`, and end up
-// stamped twice so a rule can address whichever element carries the trait it is
-// restating. SplitButton is a third shape: its root is a plain `<div>` and the
-// two `.fui-Button` elements are slots it renders from Fluent's own unwrapped
-// Button and MenuButton, which this module cannot reach any other way.
+// `<input>`, `<textarea>`, `<select>` or `<button>` and never on the
+// `.fui-Input`, `.fui-Textarea`, `.fui-Select`, `.fui-Combobox`,
+// `.fui-Dropdown`, `.fui-Checkbox` or `.fui-Switch` root; those name `root`,
+// and end up stamped twice so a rule can address whichever element carries the
+// trait it is restating. SplitButton is a third shape: its root is a plain
+// `<div>` and the two `.fui-Button` elements are slots it renders from Fluent's
+// own unwrapped Button and MenuButton, which this module cannot reach any other
+// way.
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-utilities/src/utils/getNativeElementProps.ts#L86-L118
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-button/library/src/components/SplitButton/useSplitButton.ts#L32-L57
 const rootIsPrimary: readonly string[] = [];
@@ -49,8 +52,10 @@ const rootAndPrimary = ['root'] as const;
 const splitButtonSlots = ['primaryActionButton', 'menuButton'] as const;
 
 // Each default is Fluent's own for that component, read from its state hook —
-// they do not agree, so none of them may be assumed. ToggleButton, ToolbarButton
-// and CompoundButton take theirs from the plain button hook they delegate to.
+// they do not agree, so none of them may be assumed. ToggleButton and
+// CompoundButton take theirs from the plain button hook they delegate to; the
+// three Toolbar buttons delegate only the base hook, which carries no
+// design-related default, and name `subtle` themselves.
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-button/library/src/components/Button/useButton.ts#L20
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-button/library/src/components/ToggleButton/useToggleButton.ts#L19
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-button/library/src/components/CompoundButton/useCompoundButton.ts#L21
@@ -119,15 +124,22 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
   const shape = (fallback: string, slots?: readonly string[]) =>
     ({ prop: 'shape', attribute: winuiShapeAttribute, fallback, slots });
 
-  // WinUI draws an InfoBar's severity as a filled disc with the symbol knocked
-  // out of it, and picks the disc by severity. Fluent tints one outline glyph
-  // instead and settles the choice in JavaScript, writing nothing a selector
-  // could name, so both the shape and the reachability have to be answered
-  // here. Each intent gets the filled counterpart of the glyph Fluent would
-  // have drawn, and the intent is stamped so the sheet can finally colour it.
-  // A caller that passes its own icon keeps it.
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L5-L16
-  const severityIcons: Record<string, React.ComponentType> = {
+  // WinUI stacks two glyphs in an InfoBar's icon cell: a disc tinted by
+  // severity, and the severity symbol over it in the inverse text colour, so
+  // the badge reads as a filled disc with the symbol knocked out. Every
+  // severity is a circle there. Fluent draws one tinted glyph and reaches for
+  // a diamond for `error` and a triangle for `warning`, so those two are
+  // replaced with their circular counterparts; `info` and `success` already
+  // agree and are restated so the whole map reads in one place. Fluent settles
+  // the choice in JavaScript and writes nothing a selector could name, which
+  // is why the intent is stamped as well — that is what lets the sheet colour
+  // the disc. A caller that passes its own icon keeps it, and `null` still
+  // suppresses the slot as Fluent lets it.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L70-L74
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar.xaml#L107-L110
+  // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-message-bar/library/src/components/MessageBar/getIntentIcon.tsx#L7-L19
+  // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-message-bar/library/src/components/MessageBar/useMessageBar.ts#L22
+  const severityIcons: Record<MessageBarIntent, React.ComponentType> = {
     error: DismissCircleFilled,
     warning: ErrorCircleFilled,
     success: CheckmarkCircleFilled,
@@ -137,11 +149,10 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
     const elementType = component as React.ElementType;
     const wrapped = React.forwardRef<unknown, IntentCarrier>((props, ref) => {
       const intent = props.intent ?? 'info';
-      const Severity = severityIcons[intent];
       return React.createElement(elementType, {
         ...props,
         [winuiIntentAttribute]: intent,
-        icon: props.icon ?? (Severity ? React.createElement(Severity) : undefined),
+        icon: props.icon === undefined ? React.createElement(severityIcons[intent]) : props.icon,
         ref,
       });
     });
@@ -153,10 +164,11 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
   // when collapsed, where Fluent leads with it and points it right. Fluent also
   // hands the 20px chevron artwork to a 12px box, which is what makes the arrow
   // read thin -- the icon set has a 12px cut, and WinUI states 12 for this glyph
-  // too. Supplying the children ourselves means Fluent no longer applies its
-  // rotation, so ./controls/accordion.css turns it instead.
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L84-L85
+  // too. Fluent only rotates the chevron it supplies itself, so once the
+  // children are ours the turn belongs to ./controls/accordion.css.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L82-L85
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L280-L281
+  // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-accordion/library/src/components/AccordionHeader/useAccordionHeader.tsx#L42-L50
   const winuiChevron = <Component>(component: Component): Component => {
     const elementType = component as React.ElementType;
     const wrapped = React.forwardRef<unknown, PropCarrier>((props, ref) => React.createElement(elementType, {
@@ -189,9 +201,6 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
     Dropdown: stamp(components.Dropdown, appearance('outline', rootAndPrimary)),
     Card: stamp(components.Card, appearance('filled', rootIsPrimary)),
     Checkbox: stamp(components.Checkbox, shape('square', rootAndPrimary)),
-    // A Switch is an input, so Fluent sends whatever it does not recognize to
-    // the input rather than to the root. The stamp has to name the root slot to
-    // land where the sheets read it.
     Switch: stamp(components.Switch, size('medium', rootAndPrimary)),
   };
 };

@@ -23,28 +23,39 @@
 // strokes. Anything here that reads as one value for both themes is one value
 // in the source too.
 
-// `background-fill-accent-gradient-balanced-{primary,secondary,tertiary}`.
+// `cib-color-fill-accent-gradient-balanced-{primary,secondary,tertiary}`.
 // Hover and active are the base gradient under a flat black wash, so the
 // button darkens as it is pressed.
+//
+// The wash is layered above the gradient here, and Balanced's own entry
+// layers it below. A background list paints first layer topmost, so a wash
+// written second sits under an opaque fill and paints nothing, which would
+// leave hover and active pixel-identical to rest. Creative and Precise,
+// declared in the same block from the same shape, write the wash first; that
+// is the order taken here, so hover and active read as the states they are
+// named for:
+// https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/dark.scss#L268-L300
 const ACCENT_GRADIENT = 'linear-gradient(130deg, #2870EA 20%, #1B4AEF 77.5%)';
 const wash = (alpha: number) =>
-  `${ACCENT_GRADIENT}, linear-gradient(0deg, rgba(0, 0, 0, ${alpha}), rgba(0, 0, 0, ${alpha}))`;
+  `linear-gradient(0deg, rgba(0, 0, 0, ${alpha}), rgba(0, 0, 0, ${alpha})), ${ACCENT_GRADIENT}`;
 
 export const bingAccentGradient = ACCENT_GRADIENT;
 export const bingAccentGradientHover = wash(0.1);
 export const bingAccentGradientActive = wash(0.2);
 
-// `foreground-accent-balanced-{primary,secondary}`. Dark resolves both steps to
-// the same value, so an accent glyph does not change colour on hover there and
-// the row's own background carries the state; that is Bing's table, not an
-// omission here.
+// `cib-color-foreground-accent-balanced-{primary,secondary}`. Dark resolves
+// both steps to the same value, so an accent glyph does not change colour on
+// hover there and the row's own background carries the state; that is Bing's
+// table, not an omission here.
 export const bingAccentForeground = 'light-dark(#174AE4, #A2B7F4)';
 export const bingAccentForegroundHover = 'light-dark(#1543CD, #A2B7F4)';
 
-// `foreground-on-accent-{primary,selected}` — `#FFFFFF`, in every theme and
-// every tone. Fluent's own on-brand token cannot stand in for it: WinUI's
-// accent is light in dark mode, so its "text on accent" resolves to a dark
-// foreground, and what sits under this text is Bing's accent, not WinUI's.
+// `cib-color-foreground-on-accent-selected` is the slot the compose button
+// names for its own label, and `-primary` beside it is the same `#FFFFFF` in
+// both the light and the dark dictionary and in all three tones. Fluent's own
+// on-brand token cannot stand in for it: WinUI's accent is light in dark mode,
+// so its "text on accent" resolves to a dark foreground, and what sits under
+// this text is Bing's accent, not WinUI's.
 export const bingOnAccentForeground = '#FFFFFF';
 
 // The composer's field, the broom button's label and a message's body text are
@@ -62,11 +73,13 @@ export const bingComposerFontSize = '14px';
 export const bingComposerLineHeight = '20px';
 export const bingComposerFontWeight = 400;
 
-// `components.actionBar.searchBorderRadius` and
-// `measurements.borderRadius.borderRadiusXLarge`. The corner is a state, not a
-// function of height: the bar is a pill until it holds something, and squares
-// off to 12px the moment it does. Bing keyed this on having content rather than
-// on having wrapped, which is why its corners are never caught mid-blob.
+// `components.actionBar.searchBorderRadius` (24px) and
+// `measurements.borderRadius.borderRadiusXLarge` (12px), restated below with
+// the rest of the bar's geometry. The corner is a state, not a function of
+// height: the bar is a pill until it holds something, and squares off to a
+// quarter of its height the moment it does. Bing keyed this on having content
+// rather than on having wrapped, which is why its corners are never caught
+// mid-blob.
 export const bingComposerRadiusResting = '20px';
 export const bingComposerRadiusFilled = '10px';
 
@@ -75,8 +88,8 @@ export const bingComposerRadiusFilled = '10px';
 // carrying a character counter, which this composer has no counterpart for; the
 // bar would grow downward into a strip holding nothing.
 
-// `static.motion.duration.fast` and `easingFunction.motionIn`, the pair the
-// composer names in its own `transition-property`.
+// `static.motion.duration.fast` and `easingFunction.motionIn` — the duration
+// and easing the bar declares beside its own `transition-property`.
 export const bingComposerTransitionDuration = '187ms';
 export const bingComposerTransitionEasing = 'cubic-bezier(0, 0, 0, 1)';
 
@@ -90,7 +103,10 @@ export const bingComposerTransitionEasing = 'cubic-bezier(0, 0, 0, 1)';
 // line instead of 20px.
 //
 // So the whole set is restated against a 20px line. The trailing inset holds
-// two controls, which is the case the original sized separately.
+// two controls and their gutter, which is the case the original sized
+// separately; the column gap between the bar and the compose button is half
+// the line, and is ours — the original stands the two in separate containers
+// and never spaces them.
 export const bingComposerPaddingBlock = '11px 9px';
 export const bingComposerButtonSize = '30px';
 export const bingComposerGutterPadding = '5px 7px';
@@ -103,14 +119,15 @@ export const bingComposerTrailingInset = '74px';
 // message's content carries instead, and the text of the two lines up.
 export const bingComposerLeadingInset = '16px';
 
-// The only cap the bundle expresses. On the shipped desktop path it sits behind
-// a disabled flag and the field simply grows without bound, which a page-sized
-// composer can afford and a panel-sized one cannot; this is Bing's own number
-// for the same job.
+// The only cap the bundle puts on the field, and it sits behind an
+// `as-ghost-placement` host flag the shipped desktop path never set, so there
+// the field simply grew without bound — which a page-sized composer can afford
+// and a panel-sized one cannot; this is Bing's own number for the same job.
 export const bingComposerMaxHeight = '50vh';
 
-// `shadows.defaults.card` — the bar's edge, and the only shadow the composer
-// row actually shows. The broom button declares `elevation4`, but on the
+// `cib-shadow-card` — the bar's edge, and the only shadow the composer row
+// actually shows. The broom button declares `elevation4`, which in light is
+// the very same pair of layers the card resolves to, but it declares it on the
 // pseudo-element that carries its gradient, sized to the button's whole box
 // inside a button that is `overflow: hidden`; a shadow paints outside its own
 // border box, so the clip removes all of it. Measured against the original's
@@ -118,7 +135,10 @@ export const bingComposerMaxHeight = '50vh';
 // while the bar reads a shadow on both sides. The button is not lifted.
 //
 // In light the card is a shadow; in dark the same token stops being one and
-// becomes a 1px white ring, which is the entire dark-mode edge mechanism.
+// becomes a 1px white ring, which is the entire dark-mode edge mechanism. In
+// forced colors both forms drop out together, `box-shadow` computing to `none`
+// whatever it holds:
+// https://www.w3.org/TR/css-color-adjust-1/#forced-colors-properties
 //
 // `light-dark()` only takes colours, so each theme's layers are written out and
 // the ones that do not apply are made transparent. The layer geometry is the

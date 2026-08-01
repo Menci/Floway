@@ -97,8 +97,16 @@ export const fieldCss = `
    control it wraps (useFieldControlProps.js, getFieldControlProps), which lets
    the message be addressed from the root. WinUI's counterpart is
    SystemFillColorCritical.
+
+   None of the three message colours below states a forced-colors answer,
+   because WinUI has none to transcribe: its HighContrast dictionary poisons
+   every SystemFill colour to #FF0000 so that a control still reading one
+   there shows up as a defect. Forced colours drop all three to the palette's
+   own text colour, which is the whole of WinUI's position on the matter.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L282
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L78 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L78
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L578-L580
+   https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
 .fui-Field:has([aria-invalid='true']) .fui-Field__validationMessage.fui-Field__validationMessage {
   color: var(--winui-system-fill-critical);
 }
@@ -148,6 +156,21 @@ export const fieldCss = `
   color: var(--winui-accent-text-fill-tertiary);
 }
 
+/* A focused link. Fluent's indicator is a doubled underline drawn in
+   --colorStrokeFocus2, where WinUI gives a HyperlinkButton the system focus
+   visual: two concentric rings pushed 3px outside the control. An inline link
+   cannot carry that shape, since the element wraps across lines and the rings
+   would break with it, so the underline stays and only its stroke takes
+   WinUI's outer focus colour, which ../tokens.ts states per theme. Every
+   appearance shares one focus visual in both systems, so this one is not
+   scoped to an appearance.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/HyperlinkButton_themeresources.xaml#L62-L63
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258 */
+.fui-Link.fui-Link[data-fui-focus-visible] {
+  --colorStrokeFocus2: var(--winui-focus-stroke-outer);
+}
+
 /* A disabled link. WinUI names the hyperlink its own disabled token,
    AccentTextFillColorDisabled -- the one member of the accent text ramp the
    dictionaries state as a literal -- and gives it the same value as
@@ -167,12 +190,40 @@ export const fieldCss = `
   color: var(--winui-accent-text-fill-disabled);
 }
 
-/* WinUI's HighContrast dictionary repoints AccentTextFillColorDisabledBrush at
-   SystemColorGrayTextColor, so GrayText is the faithful reading of the same
-   token the rule above spends. A media query adds no specificity, so the
-   override above would otherwise outrank it.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L424 */
+/* WinUI's HighContrast dictionary takes the hyperlink off the accent ramp
+   entirely and names a system colour for each of its four steps:
+   SystemControlHyperlinkTextBrush at rest, which is the Hotlight colour CSS
+   spells LinkText; SystemControlPageTextBaseMediumBrush on pointer, WindowText,
+   which CSS spells CanvasText; SystemControlHighlightBaseMediumLowBrush while
+   pressed, the Highlight colour; and SystemControlDisabledBaseMediumLowBrush
+   when disabled, GrayText.
+
+   A system-colour keyword is the one author colour forced colours honour, so
+   the accent ramp above goes inert there on its own -- but what the user agent
+   substitutes depends on the element, and Fluent renders a Link without an
+   href as a <button>, which would take ButtonText rather than the hyperlink
+   colour. Naming all four steps keeps both element forms on WinUI's answer. A
+   media query adds no specificity, so each selector here repeats the one it
+   overrides.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/HyperlinkButton_themeresources.xaml#L34-L38
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L2083
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L2097
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L2073
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L2026
+   https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
 @media (forced-colors: active) {
+  .fui-Link.fui-Link[data-winui-appearance='default']:not([aria-disabled='true']) {
+    color: LinkText;
+  }
+
+  .fui-Link.fui-Link[data-winui-appearance='default']:not([aria-disabled='true']):hover {
+    color: CanvasText;
+  }
+
+  .fui-Link.fui-Link[data-winui-appearance='default']:not([aria-disabled='true']):active {
+    color: Highlight;
+  }
+
   .fui-Link.fui-Link[data-winui-appearance='default'][aria-disabled='true'],
   .fui-Link.fui-Link[data-winui-appearance='default'][aria-disabled='true']:hover,
   .fui-Link.fui-Link[data-winui-appearance='default'][aria-disabled='true']:active {

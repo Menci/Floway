@@ -12,10 +12,39 @@ import { chartTickValues, formatAxisDate } from '../charts/dashboard-time';
 import { useElementSize } from '../charts/use-element-size';
 
 const { makeStyles } = fluentComponents;
+
+// WinUI ships no chart, so none of this transcribes a XAML dictionary; these
+// are our own reading rules for a plot, and they are ours to state. Every
+// value below is an alpha or a geometry, and the series hues come from a
+// single palette that both colour schemes share, so one declaration serves
+// light and dark alike.
+//
+// Series paint is also what forced colors leaves alone: the UA style sheet
+// gives `svg` `forced-color-adjust: preserve-parent-color`, and Fluent opts
+// only the axis text and gridlines back in with `forcedColorAdjust: 'auto'`.
+// Distinct hues are how a multi-series plot is read, so nothing here opts the
+// series back in either.
+// https://drafts.csswg.org/css-color-adjust-1/#forced-color-adjust-prop
 const useAreaBoundaryStyles = makeStyles({
   root: {
+    // The boundary is what separates one stacked band from the next, so it is
+    // held at full strength in every state. Fluent instead fades a stacked
+    // area's own boundary to 0.3 at rest and restores it to 1 only while the
+    // callout is open, which redraws every outline in the plot on hover.
     '& path[id*="-line-"]': { opacity: '1', strokeWidth: '2px' },
+    // Fluent fills a band at 0.7, where two adjacent palette hues meet as
+    // near-solid blocks and the boundary between them stops reading. At 0.42
+    // each band stays a tint of the surface it sits on -- in either scheme --
+    // and the boundary line is the strongest mark in the plot.
     '& path[id*="-graph-"]': { fillOpacity: '0.42' },
+    // Both forms mark their buckets the same way. Fluent's area form draws no
+    // point until one is hovered, which leaves the bucket count invisible at
+    // rest, so every point is drawn at the radius and stroke the line form's
+    // markers take. The area form's hover and keyboard focus keep Fluent's
+    // fill inversion to colorNeutralBackground1, a token this dashboard's
+    // WinUI layer re-points per scheme; the line form has no inversion of its
+    // own and is marked by the highlight disc Fluent moves under the pointer,
+    // which keeps its own size and is excluded here.
     '& circle:not([id*="staticHighlightCircle"])': { r: '2px', strokeWidth: '1.5px' },
   },
 });
@@ -56,6 +85,10 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
 
   const hasData = chart.plot.data.lineChartData?.some(series => series.data.length > 0) ?? false;
 
+  // Fluent emits each stacked band right after its own boundary line, and the
+  // band's top edge is that line, so every band paints over the stroke it was
+  // meant to be capped by. The lines are moved to the end of the series group,
+  // which is the paint order the boundary rule above assumes.
   useLayoutEffect(() => {
     if (!host || chart.plot.form !== 'area') return;
     const frame = window.requestAnimationFrame(() => {

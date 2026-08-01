@@ -25,6 +25,22 @@
 // intended atoms. The states that survive into the DOM on their own are
 // Fluent's: `:hover`, `:active`, `:disabled`, `aria-pressed` /
 // `aria-selected` for the selected chip, and `[data-fui-focus-visible]`.
+// Fluent writes the selection attribute whether or not the chip is disabled
+// but drops its own selected atoms when it is, so every accent rule below
+// that reads the attribute is answered by a disabled rule that outranks it.
+//
+// The Button, ToggleButton and SplitButton brushes cited below are bound to
+// the same resource key in the Default dictionary and in the Light one, so a
+// single citation carries both colour schemes: the values differ by theme,
+// the roles do not.
+//
+// Windows high contrast is left to Fluent and the user agent. Fluent draws
+// the chip's outline through a pseudo element there and states Highlight and
+// HighlightText for a selected chip, and forced-colors mode overrides the
+// author colours below everywhere except on that selected chip, which opts
+// out with `forced-color-adjust: none` — and there the on-accent strokes are
+// translucent, so they composite over Highlight the way they do over the
+// accent fill.
 export const badgeTagCss = `
 /* Badge weight. The InfoBadge style sets a FontSize on its value TextBlock and
    no FontWeight, so the badge reads at the same weight as the text around it
@@ -59,8 +75,17 @@ export const badgeTagCss = `
    --colorSubtleBackground and the Hover/Pressed steps beside it, which
    ../theme.ts already carries over to SubtleFillColorTransparent/Secondary/
    Tertiary for the whole library.
+
+   The disabled outline joins the fills. Button holds its border on
+   ControlStrokeColorDefault through disabled -- the same brush the rest
+   stroke resolves to -- and SplitButton draws its divider with that brush in
+   every state, where Fluent steps down to the strong disabled stroke. Only
+   the outline chip's edge and the dismiss half's divider draw a visible
+   border, so those are what the substitution repaints.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L128
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L131-L132
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L136-L139
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SplitButton/SplitButton_themeresources.xaml#L26-L27
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L25-L27 */
 .fui-Tag.fui-Tag,
 .fui-InteractionTagPrimary.fui-InteractionTagPrimary,
@@ -68,6 +93,7 @@ export const badgeTagCss = `
   --colorNeutralBackground3: var(--winui-control-fill-default);
   --colorNeutralBackgroundDisabled: var(--winui-control-fill-disabled);
   --colorNeutralForeground2: var(--winui-text-fill-primary);
+  --colorNeutralStrokeDisabled: var(--winui-control-stroke-default);
 }
 
 /* The two InteractionTag halves are the pressable members of the family, so
@@ -108,23 +134,32 @@ export const badgeTagCss = `
   --colorCompoundBrandForeground1Pressed: var(--winui-text-fill-secondary);
 }
 
-/* A selected chip is an accent button. Its fill and label already agree
-   through the brand tokens, so what is left is the outline: WinUI draws the
+/* A selected chip is an accent button. Its fill is the accent one --
+   AccentButtonBackground and SplitButtonBackgroundChecked are both
+   AccentFillColorDefault, where Fluent's --colorBrandBackground stays on its
+   own brand ramp, so the rest fill is restated here to meet the hover and
+   pressed steps above. The label already agrees: Fluent paints it with
+   --colorNeutralForegroundOnBrand, which ../theme.ts maps to
+   TextOnAccentFillColorPrimary. What is left is the outline: WinUI draws the
    on-accent elevation gradient the foundation transcribes as a three-term
    border colour, where Fluent draws one flat brand stroke. A TagGroup with
    the listbox role writes the selection as aria-selected instead, so both
    attributes name the same state. The dismiss half writes no selection
    attribute of its own and is reached through its selected sibling, which is
-   also how SplitButton states it — one accent chrome across both halves. That
-   sibling sits in :where() so the dismiss half's states stack in the same
-   order the primary half's do rather than being lifted over the focus visual
-   by the extra compound.
+   also how SplitButton states it -- one accent chrome across both halves.
+   That sibling sits in :where() so the dismiss half's states stack in the
+   same order the primary half's do rather than being lifted over the focus
+   visual by the extra compound.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L103
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L107
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L111
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SplitButton/SplitButton_themeresources.xaml#L9
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SplitButton/SplitButton_themeresources.xaml#L28 */
 .fui-Tag.fui-Tag[aria-pressed='true'],
 .fui-Tag.fui-Tag[aria-selected='true'],
 .fui-InteractionTagPrimary.fui-InteractionTagPrimary[aria-pressed='true'],
 :where(.fui-InteractionTagPrimary[aria-pressed='true']) + .fui-InteractionTagSecondary.fui-InteractionTagSecondary {
+  --colorBrandBackground: var(--winui-accent-fill-default);
   border-color: var(--winui-accent-control-elevation-border-color);
 }
 
@@ -154,17 +189,55 @@ export const badgeTagCss = `
   border-color: var(--winui-focus-stroke-inner);
 }
 
-/* The accent outline drops away entirely under a press. Fluent signals a press
-   with a plain :active, which a pointer and a keyboard activation both
-   raise, and both chip shapes reach it: an InteractionTag half is a button,
-   and so is a dismissible Tag. This is the last selected-state rule in the
-   sheet because WinUI's Pressed visual state is entered over the focused one
-   and repaints the border either way.
+/* The accent outline drops away entirely under a press, and the label dims
+   with it: AccentButtonForegroundPressed is TextOnAccentFillColorSecondary,
+   where Fluent holds the on-accent primary through the press. Fluent signals
+   a press with a plain :active, which a pointer and a keyboard activation
+   both raise, and both chip shapes reach it: an InteractionTag half is a
+   button, and so is a dismissible Tag. This sits after the focus visual
+   because WinUI's Pressed visual state is entered over the focused one and
+   repaints the border either way.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L109
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L113 */
 .fui-Tag.fui-Tag[aria-pressed='true']:active,
 .fui-Tag.fui-Tag[aria-selected='true']:active,
 .fui-InteractionTagPrimary.fui-InteractionTagPrimary[aria-pressed='true']:active,
 :where(.fui-InteractionTagPrimary[aria-pressed='true']) + .fui-InteractionTagSecondary.fui-InteractionTagSecondary:active {
   border-color: var(--winui-control-fill-transparent);
+  color: var(--winui-text-on-accent-fill-secondary);
+}
+
+/* A disabled selected chip. Fluent keeps writing the selection attribute
+   while dropping every selected atom, so the accent rules above would
+   otherwise outlive the selection and leave an accent outline standing on
+   the neutral disabled fill. ToggleButton is the control that ships a
+   checked-disabled visual, and it keeps the accent side: the fill steps to
+   AccentFillColorDisabled, the outline clears to the transparent control
+   fill, and the label goes to TextOnAccentFillColorDisabled.
+
+   The selector reaches every chip the DOM presents as a button. A Tag that
+   is not dismissible is a span, and Fluent hands a span no attribute for a
+   selector to read.
+
+   Clearing the outline would take the divider between the two halves with
+   it, so the dismiss half restates it. SplitButton draws that divider with
+   ControlStrokeColorDefault and its Disabled state leaves it there.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L14
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L26
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L38
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SplitButton/SplitButton_themeresources.xaml#L27
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SplitButton/SplitButton.xaml#L71-L79
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SplitButton/SplitButton.xaml#L225 */
+.fui-Tag.fui-Tag[aria-pressed='true']:disabled,
+.fui-Tag.fui-Tag[aria-selected='true']:disabled,
+.fui-InteractionTagPrimary.fui-InteractionTagPrimary[aria-pressed='true']:disabled,
+:where(.fui-InteractionTagPrimary[aria-pressed='true']) + .fui-InteractionTagSecondary.fui-InteractionTagSecondary:disabled {
+  background-color: var(--winui-accent-fill-disabled);
+  border-color: var(--winui-control-fill-transparent);
+  color: var(--winui-text-on-accent-fill-disabled);
+}
+
+:where(.fui-InteractionTagPrimary[aria-pressed='true']) + .fui-InteractionTagSecondary.fui-InteractionTagSecondary:disabled {
+  border-left-color: var(--winui-control-stroke-default);
 }
 `;

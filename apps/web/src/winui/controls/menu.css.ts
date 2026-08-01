@@ -15,10 +15,10 @@
 //
 // MenuItemCheckbox, MenuItemRadio, MenuItemSwitch and MenuItemLink each add a
 // root class of their own and then run the MenuItem style hook, so every item
-// rule below reaches all five roots and their shared slot classes. The
-// `__checkmark` slot declares geometry only and takes the item's foreground by
-// inheritance; `__submenuIndicator` carries the separate chevron ramp WinUI
-// states for it.
+// rule below reaches all five roots and their shared slot classes. Both
+// `__checkmark` and `__submenuIndicator` get geometry and nothing else from
+// Fluent, where WinUI ramps each of them apart from the label, so the two
+// ramps are written out below.
 export const menuCss = `
 /* Flyout surface. WinUI rounds a flyout to the overlay radius and outlines it
    with the dedicated flyout stroke.
@@ -97,11 +97,31 @@ export const menuCss = `
   color: inherit;
 }
 
-/* The submenu chevron is the one slot WinUI gives a ramp of its own, subordinate
-   to the label: secondary at rest, on hover and while the submenu is open,
-   tertiary while pressed. Fluent leaves it inheriting the item's foreground, so
-   both values are written here. The pressed rule steps around a disabled item so
-   the disabled group below keeps the chevron without a deeper selector.
+/* The check glyph is a ramp of its own too, and it runs the other way: it sits
+   at the chevron's secondary brush while at rest and rises to the label's
+   primary under the pointer, where the pressed value repeats the pointer-over
+   one, so the hover rule carries both. The toggle item and the radio item state
+   the same ramp. Fluent gives the slot geometry alone, so without these the
+   glyph would sit at the item's own primary in every state.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L488
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L420
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L429
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/RadioMenuFlyoutItem/RadioMenuFlyoutItem_themeresources.xaml#L94
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/RadioMenuFlyoutItem/RadioMenuFlyoutItem_themeresources.xaml#L24
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/RadioMenuFlyoutItem/RadioMenuFlyoutItem_themeresources.xaml#L33 */
+.fui-MenuItem .fui-MenuItem__checkmark.fui-MenuItem__checkmark {
+  color: var(--winui-text-fill-secondary);
+}
+
+.fui-MenuItem:not([aria-disabled='true']):hover .fui-MenuItem__checkmark.fui-MenuItem__checkmark {
+  color: var(--winui-text-fill-primary);
+}
+
+/* The submenu chevron is a ramp of its own as well, subordinate to the label:
+   secondary at rest, on hover and while the submenu is open, tertiary while
+   pressed. Fluent leaves it inheriting the item's foreground, so both values
+   are written here. The pressed rule steps around a disabled item so the
+   disabled group below keeps the chevron without a deeper selector.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L26-L29 */
 .fui-MenuItem .fui-MenuItem__submenuIndicator.fui-MenuItem__submenuIndicator {
   color: var(--winui-text-fill-secondary);
@@ -134,8 +154,8 @@ export const menuCss = `
    is ours to settle. Its rest value already resolves to the WinUI tertiary brush
    through the token table; what Fluent adds on top is a hover and a pressed step
    whose tokens have no WinUI counterpart to map onto, so those two states would
-   paint outside the palette. We hold the rest value across all three, which is
-   how every foreground WinUI does state on this item behaves. */
+   paint outside the palette. We hold the rest value across all three, the way
+   WinUI holds the label and the hint still through the same two states. */
 .fui-MenuItem:not([aria-disabled='true']):hover .fui-MenuItem__subText.fui-MenuItem__subText,
 .fui-MenuItem:not([aria-disabled='true']):hover:active .fui-MenuItem__subText.fui-MenuItem__subText {
   color: var(--winui-text-fill-tertiary);
@@ -166,14 +186,18 @@ export const menuCss = `
   color: var(--winui-text-fill-disabled);
 }
 
-/* The hint, the chevron and the sub-text follow the item into the disabled
-   brush. The hint and the chevron are matched one class deeper than the rule
-   that paints each at rest; the sub-text has no rest rule to outrank, and the
-   two rules that hold it under the pointer already step around a disabled item.
+/* The hint, the chevron, the check glyph and the sub-text follow the item into
+   the disabled brush. The first three are matched one class deeper than the
+   rule that paints each at rest; the sub-text has no rest rule to outrank, and
+   the two rules that hold it under the pointer already step around a disabled
+   item.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L30
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L34 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L34
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L437
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/RadioMenuFlyoutItem/RadioMenuFlyoutItem_themeresources.xaml#L41 */
 .fui-MenuItem[aria-disabled='true'] .fui-MenuItem__secondaryContent.fui-MenuItem__secondaryContent,
 .fui-MenuItem[aria-disabled='true'] .fui-MenuItem__submenuIndicator.fui-MenuItem__submenuIndicator,
+.fui-MenuItem[aria-disabled='true'] .fui-MenuItem__checkmark.fui-MenuItem__checkmark,
 .fui-MenuItem[aria-disabled='true'] .fui-MenuItem__subText.fui-MenuItem__subText {
   color: var(--winui-text-fill-disabled);
 }
@@ -194,11 +218,95 @@ export const menuCss = `
 }
 
 /* Separator. WinUI has a stroke ramp of its own for dividers rather than
-   borrowing a neutral control stroke.
+   borrowing a neutral control stroke, and it sets the rule one pixel off its
+   neighbours and pulls it out to the presenter's edges. Fluent's own inset is
+   4px above and below and a negative inline one that cancels the 4px padding
+   its popover carries; ours carries none inline, so zero already reaches those
+   edges.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L5
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L254
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L258
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L733
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L143 */
 .fui-MenuDivider.fui-MenuDivider {
   border-bottom-color: var(--winui-divider-stroke-default);
+  margin: 1px 0;
+}
+
+/* High Contrast. WinUI collapses the item's whole subtle ramp onto Highlight
+   with a HighlightText foreground, holds an open submenu trigger at the window
+   fill with a Highlight label and chevron, and sends a disabled item to
+   GrayText. Every slot this sheet colours has to be restated here: a colour we
+   pin resolves to the forced palette's plain text entry, which would leave the
+   hint, the chevron and the check glyph reading against the Highlight the row
+   is now filled with. The sub-text has no counterpart in the dictionary, so it
+   follows the row it sits in, the only value legible over both fills.
+
+   The presenter doubles its border there; its fill and stroke, and the
+   separator's, already resolve to the Window and WindowText the dictionary
+   names.
+
+   A media query carries no specificity, so each rule repeats the selector it
+   answers -- including the pressed form of the two slots whose pointer rules
+   are written that deep.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L90-L97
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L101
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L107
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L109-L113
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L114-L117
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L125
+   https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
+@media (forced-colors: active) {
+  .fui-MenuPopover.fui-MenuPopover {
+    border-width: 2px;
+  }
+
+  .fui-MenuItem .fui-MenuItem__secondaryContent.fui-MenuItem__secondaryContent {
+    color: CanvasText;
+  }
+
+  .fui-MenuItem .fui-MenuItem__submenuIndicator.fui-MenuItem__submenuIndicator,
+  .fui-MenuItem .fui-MenuItem__checkmark.fui-MenuItem__checkmark {
+    color: ButtonText;
+  }
+
+  .fui-MenuItem.fui-MenuItem[aria-expanded='true'] {
+    background-color: Canvas;
+    color: Highlight;
+  }
+
+  .fui-MenuItem[aria-expanded='true'] .fui-MenuItem__submenuIndicator.fui-MenuItem__submenuIndicator {
+    color: Highlight;
+  }
+
+  .fui-MenuItem.fui-MenuItem:hover,
+  .fui-MenuItem.fui-MenuItem:hover:active {
+    background-color: Highlight;
+    color: HighlightText;
+  }
+
+  .fui-MenuItem:not([aria-disabled='true']):hover .fui-MenuItem__secondaryContent.fui-MenuItem__secondaryContent,
+  .fui-MenuItem:not([aria-disabled='true']):hover .fui-MenuItem__checkmark.fui-MenuItem__checkmark,
+  .fui-MenuItem:not([aria-disabled='true']):hover .fui-MenuItem__submenuIndicator.fui-MenuItem__submenuIndicator,
+  .fui-MenuItem:not([aria-disabled='true']):hover:active .fui-MenuItem__submenuIndicator.fui-MenuItem__submenuIndicator,
+  .fui-MenuItem:not([aria-disabled='true']):hover .fui-MenuItem__subText.fui-MenuItem__subText,
+  .fui-MenuItem:not([aria-disabled='true']):hover:active .fui-MenuItem__subText.fui-MenuItem__subText {
+    color: HighlightText;
+  }
+
+  .fui-MenuItem.fui-MenuItem[aria-disabled='true'],
+  .fui-MenuItem.fui-MenuItem[aria-disabled='true']:hover,
+  .fui-MenuItem.fui-MenuItem[aria-disabled='true']:hover:active {
+    background-color: Canvas;
+    color: GrayText;
+  }
+
+  .fui-MenuItem[aria-disabled='true'] .fui-MenuItem__secondaryContent.fui-MenuItem__secondaryContent,
+  .fui-MenuItem[aria-disabled='true'] .fui-MenuItem__submenuIndicator.fui-MenuItem__submenuIndicator,
+  .fui-MenuItem[aria-disabled='true'] .fui-MenuItem__checkmark.fui-MenuItem__checkmark,
+  .fui-MenuItem[aria-disabled='true'] .fui-MenuItem__subText.fui-MenuItem__subText {
+    color: GrayText;
+  }
 }
 
 /* MenuFlyout's open. WinUI reveals a menu rather than moving it: the presenter

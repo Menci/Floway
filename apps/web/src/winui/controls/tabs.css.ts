@@ -6,8 +6,10 @@
 // which generic.xaml resolves to opacity-scaled black and white; TabView
 // states the same four over the modern TextFillColor* resources this file
 // already transcribes. Preferring the modern layer is our own call, and the
-// two ramps differ where it shows: Pivot brightens on hover and press, TabView
-// holds and then dims, and the state notes below describe TabView's.
+// two ramps differ where it shows: Pivot brightens an unselected item under
+// the pointer and dims the selected one, while TabView holds the unselected
+// item, dims it only on press, and lets selection outrank the pointer
+// entirely. The state notes below describe TabView's.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L47-L53
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L504-L574
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L265-L285
@@ -33,9 +35,17 @@
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L486
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L587
 //
+// The disabled foreground is left to Fluent. Fluent withholds `aria-selected`
+// from a disabled tab, so no selector below can reach one, and its disabled
+// atom paints label and icon with colorNeutralForegroundDisabled, which the
+// theme already re-points at TextFillColorDisabled -- the brush TabView names
+// for both slots, selected or not.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L16
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L21
+//
 // The state rules are ordered rest → hover → pressed → selected, and each
 // selected step repeats the interaction pseudo-classes of the step it has to
-// outweigh, so a pressed selected tab still reads as pressed.
+// outweigh, so a pressed selected tab still reads as selected.
 export const tabsCss = `
 /* Hover holds the rest brush: TabViewItemHeaderForegroundPointerOver resolves
    to the same TextFillColorSecondary, so the pointer alone carries the state.
@@ -46,8 +56,7 @@ export const tabsCss = `
   color: var(--winui-text-fill-secondary);
 }
 
-/* Press dims rather than deepens, and the pressed key is not qualified by
-   selection, so a selected tab dims from primary to the same tertiary fill.
+/* Press dims an unselected tab from the rest brush down to the tertiary fill.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L13
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L18 */
 .fui-Tab:enabled:active .fui-Tab__content.fui-Tab__content,
@@ -70,14 +79,18 @@ export const tabsCss = `
   color: var(--winui-text-fill-primary);
 }
 
+/* Selection outranks the pointer: PointerOverSelected and PressedSelected each
+   restate the selected foreground rather than the hover or the pressed one, so
+   a selected tab holds the primary fill through both. Fluent moves it in both,
+   to its neutral hover and pressed steps for the label and to the compound
+   brand ramp for the icon, so the two combinations are restated here.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView.xaml#L354-L372
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView.xaml#L373-L391 */
 .fui-Tab[aria-selected='true']:enabled:hover .fui-Tab__content.fui-Tab__content,
-.fui-Tab[aria-selected='true']:enabled:hover .fui-Tab__icon.fui-Tab__icon {
-  color: var(--winui-text-fill-primary);
-}
-
+.fui-Tab[aria-selected='true']:enabled:hover .fui-Tab__icon.fui-Tab__icon,
 .fui-Tab[aria-selected='true']:enabled:active .fui-Tab__content.fui-Tab__content,
 .fui-Tab[aria-selected='true']:enabled:active .fui-Tab__icon.fui-Tab__icon {
-  color: var(--winui-text-fill-tertiary);
+  color: var(--winui-text-fill-primary);
 }
 
 /* Both pseudo-elements are repainted only outside High Contrast. Fluent guards
@@ -100,8 +113,12 @@ export const tabsCss = `
     background-color: transparent;
   }
 
-  /* The pipe itself never reacts to the pointer, so Fluent's hover and pressed
-     steps of the compound brand ramp collapse onto the one accent fill.
+  /* SelectedPipe takes its fill once from the template and no visual state
+     overrides it, so the pipe never reacts to the pointer and Fluent's hover
+     and pressed steps of the compound brand ramp collapse onto the one accent
+     fill. Both theme dictionaries name the same key, so light and dark differ
+     only in what the accent resolves to.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L587
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L55
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L189 */
   .fui-Tab.fui-Tab::after,

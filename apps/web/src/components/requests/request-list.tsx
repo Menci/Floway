@@ -31,14 +31,26 @@ const ROW_HEIGHT = 84;
 
 const useStyles = makeStyles({
   keySelector: {
+    // The selector heads a card and is meant to read as part of it rather than
+    // as a control dropped on top, so the field's fill and three of its four
+    // edges are dropped and the fourth is kept as the line between the header
+    // and the rows. What is left has no fill of its own, so it takes the
+    // subtle ramp instead of a ComboBox's control fills: secondary under the
+    // pointer, tertiary while pressed and for as long as the flyout is open,
+    // because pressed is the state a ComboBox stays in while it is expanded.
+    // The ramp itself is theme-switched at the token layer, so both readings
+    // follow the colour scheme without being restated here.
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L230-L231
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L26-L27
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L34
     backgroundColor: 'transparent !important',
     borderTop: '0 !important',
     borderRight: '0 !important',
     borderBottom: '1px solid var(--colorNeutralStroke1) !important',
     borderLeft: '0 !important',
-    // The selector heads a card, so its top corners follow the card's own
-    // OverlayCornerRadius rather than a value of their own; the bottom pair is
-    // squared off because the list continues underneath it.
+    // The top corners follow the card's own OverlayCornerRadius rather than a
+    // value of their own; the bottom pair is squared off because the list
+    // continues underneath it.
     borderRadius: 'var(--winui-overlay-corner-radius) var(--winui-overlay-corner-radius) 0 0 !important',
     width: '100%',
     '&:hover': { backgroundColor: 'var(--colorSubtleBackgroundHover) !important' },
@@ -64,7 +76,49 @@ const useStyles = makeStyles({
     // ../../winui/controls/list.css.ts
     ':hover': { backgroundColor: 'var(--winui-subtle-fill-secondary)' },
     ':active': { backgroundColor: 'var(--winui-subtle-fill-tertiary)' },
-    ':focus-visible': { boxShadow: 'inset 0 0 0 2px var(--colorCompoundBrandStroke)' },
+    // WinUI's focus visual on a row is two concentric strokes -- 2px of
+    // FocusStrokeColorOuter with 1px of FocusStrokeColorInner nested inside it
+    // -- held a pixel clear of the row's edge by FocusVisualMargin 1, which
+    // here keeps the ring off the divider the row shares with the one above.
+    // The outline carries that pixel and the outer stroke together; the inner
+    // stroke rides a pseudo-element inset to the outer stroke's inner edge,
+    // and the virtualizer positions every row absolutely, so the row is
+    // already the containing block that element resolves against. Both
+    // strokes are neutral and both flip with the theme, which is why they are
+    // read from the dictionaries rather than from a brand token.
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L29-L30
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L181-L182
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L248
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L250
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L252
+    ':focus-visible': {
+      outlineWidth: '2px',
+      outlineStyle: 'solid',
+      outlineColor: 'var(--winui-focus-stroke-outer)',
+      outlineOffset: '-3px',
+    },
+    ':focus-visible::after': {
+      content: '""',
+      position: 'absolute',
+      inset: '3px',
+      boxShadow: 'inset 0 0 0 1px var(--winui-focus-stroke-inner)',
+      pointerEvents: 'none',
+    },
+    // High Contrast collapses the ramp: WinUI paints pointer-over and pressed
+    // with SystemColorHighlight on SystemColorHighlightText, the same pair it
+    // gives a selected row. A forced palette repaints every colour it can
+    // reach, so the fill has to be handed over as the system keyword itself,
+    // and the foreground has to be restated on the descendants, which carry
+    // colours of their own that the palette would otherwise force to
+    // CanvasText over the highlight.
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L83-L84
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L89-L90
+    '@media (forced-colors: active)': {
+      ':hover': { backgroundColor: 'Highlight', color: 'HighlightText' },
+      ':active': { backgroundColor: 'Highlight', color: 'HighlightText' },
+      ':hover *': { color: 'HighlightText' },
+      ':active *': { color: 'HighlightText' },
+    },
   },
   // Stated per state rather than once, because the row carries both classes and
   // the hover rule above is a pseudo-class: it outranks a bare declaration on
@@ -83,12 +137,29 @@ const useStyles = makeStyles({
       ':hover': { backgroundColor: 'var(--colorBrandBackground2)' },
       ':active': { backgroundColor: 'var(--colorBrandBackground2)' },
     },
+    // Under a forced palette the tint is repainted as the page background and
+    // the selection would read as nothing at all, so it is handed over as the
+    // system keywords WinUI's own High Contrast dictionary names for a
+    // selected row: SystemColorHighlight under SystemColorHighlightText, the
+    // same pair that dictionary gives pointer-over and pressed.
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L85-L87
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L91-L93
+    '@media (forced-colors: active)': {
+      backgroundColor: 'Highlight',
+      color: 'HighlightText',
+      '& *': { color: 'HighlightText' },
+    },
   },
   // One of three severities the row indexes by name, so it stays with its
-  // siblings rather than joining the shared danger text.
-  error: { color: 'var(--colorPaletteRedForeground1)' },
-  success: { color: 'var(--colorPaletteGreenForeground1)' },
-  warning: { color: 'var(--colorPaletteDarkOrangeForeground1)' },
+  // siblings rather than joining the shared danger text. The values are WinUI's
+  // SystemFillColorCritical, Success and Caution, which each dictionary tunes
+  // for contrast against its own theme, so all three are read from the token
+  // layer and none of them is restated for dark.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L280-L282
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L76-L78
+  error: { color: 'var(--winui-system-fill-critical)' },
+  success: { color: 'var(--winui-system-fill-success)' },
+  warning: { color: 'var(--winui-system-fill-caution)' },
 });
 
 interface RequestListProps {

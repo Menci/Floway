@@ -23,11 +23,13 @@ const { Button, Spinner, Tooltip, makeStyles, mergeClasses } = fluentComponents;
 // https://drafts.csswg.org/css-tables-3/#row-layout
 const DEFAULT_ROW_HEIGHT = '44px';
 const ROW_HEIGHT = '--floway-resource-row-height';
-// What the leading and trailing cells hold off the card's edge. The rows put
-// twelve pixels between their content and the lines above and below it, which
-// is where this started; it is wider than that on purpose, because the card's
-// edge is the page's boundary where a row's line is only the next row.
-const EDGE_INSET = '16px';
+// What the leading and trailing cells hold off the card's edge. A flush panel
+// states no inset of its own, so the cells carry the panel's own -- the measure
+// every other panel keeps from its edge, declared once in `global.css` and
+// sourced there. The rows' twelve pixels are the space between one row's
+// content and the lines above and below it, which is a different measure and
+// not this one.
+const EDGE_INSET = 'var(--floway-panel-inset)';
 
 const useStyles = makeStyles({
   table: {
@@ -54,9 +56,14 @@ const useStyles = makeStyles({
       width: `calc(${EDGE_INSET} + 20px + var(--spacingHorizontalS))`,
     },
     // The last row's edge and the card's own would otherwise stack into one
-    // heavier line a pixel above the corner.
-    '& .fui-TableBody .fui-TableRow:last-child': { borderBottomStyle: 'none' },
+    // heavier line a pixel above the corner. The narrow-width list that stands
+    // in for a table on a small screen draws the same separator between its
+    // items, so it takes the same answer.
+    '& :is(.fui-TableBody .fui-TableRow, .fui-List > .fui-ListItem):last-child': {
+      borderBottomStyle: 'none',
+    },
   },
+  emptyState: { padding: EDGE_INSET },
 });
 
 // The surface a resource table sits on. It holds the table and nothing else, so
@@ -96,6 +103,16 @@ type ResourceListActionsProps = {
 // place of the glyph, and the live region that says so to a screen reader. Such
 // a page also sits among subtle controls rather than beside a primary create
 // button, so it picks the appearance.
+//
+// A refresh in flight leaves the control focusable while it reads disabled, so
+// a keyboard is not thrown back to the document in the middle of the action.
+// The disabled look arrives either way: Fluent applies the same disabled atoms
+// to both forms, and the WinUI button sheet answers `aria-disabled` beside
+// `:disabled`. The ring inside keeps the accent rather than following the label
+// down to the disabled foreground, which is what a ProgressRing does in WinUI —
+// its own style sets the brush, so an ancestor's disabled foreground never
+// reaches it.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressRing/ProgressRing.xaml#L4
 export function ResourceListActions(props: ResourceListActionsProps) {
   const { appearance, createLabel, createTrailingIcon, disabled = false, onRefresh, refreshLabel, refreshing = false } = props;
   const busy = disabled || refreshing;
@@ -132,5 +149,6 @@ export function ResourceListActions(props: ResourceListActionsProps) {
 // An empty list has no rows to reach the panel's edge, so this one thing inside
 // it carries the inset the panel no longer states.
 export function ResourceListEmptyState({ children }: { children: ReactNode }) {
-  return <EmptyStateLine className="p-4">{children}</EmptyStateLine>;
+  const styles = useStyles();
+  return <EmptyStateLine className={styles.emptyState}>{children}</EmptyStateLine>;
 }

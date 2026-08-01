@@ -11,6 +11,11 @@ import { baseFontStack } from './font-stacks';
 // case -- left to a utility it is the user agent's 8px until the stylesheet
 // lands, which reads as a white border around the whole app.
 //
+// The colour scheme is declared on the same condition ../root.tsx picks the
+// Fluent theme from, and on no other: the dashboard follows the system and
+// offers no override, so one query switches both the theme and the user agent
+// surfaces -- scrollbars, native controls, the canvas behind the first paint.
+//
 // Fluent scopes its tokens to the FluentProvider element, so anything rendered
 // outside it -- `<body>`, the loading screen, the error shell -- sees no
 // `--fontFamilyBase` at all. Publishing the stack at the document root and
@@ -26,7 +31,6 @@ html, body { height: 100%; overflow: hidden; }
 body { margin: 0; }
 @media (prefers-color-scheme: dark) { html { color-scheme: dark; } }
 *, *::before, *::after { box-sizing: border-box; }
-html body pre[class*="language-"] { border: 0; }
 :root { --fontFamilyBase: ${baseFontStack}; }
 body { font-family: var(--fontFamilyBase); }
 `;

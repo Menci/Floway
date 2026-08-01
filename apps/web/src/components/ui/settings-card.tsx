@@ -16,8 +16,22 @@ const { Switch, Text, makeStyles, mergeClasses, shorthands } = fluentComponents;
 // components/SettingsControls/. The brushes are named there and resolved here
 // through the WinUI vocabulary the layer already carries.
 // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L98-L112
+//
+// Both controls carry a HighContrast dictionary, and every brush in it is a
+// system colour. That is the substitution the user agent already performs on
+// background, border, text and outline colours under forced colours, so no
+// rule below states one; the only value forced colours cannot reach is a
+// box-shadow, which it drops, and that is called out where one is spent.
+// https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L67-L95
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L52-L72
+// https://drafts.csswg.org/css-color-adjust/#forced-colors-properties
 const useStyles = makeStyles({
   // MinHeight 68, Padding 16, ControlCornerRadius, a 1px card stroke.
+  //
+  // The row's foreground is the primary text fill, and the header and the
+  // header icon take it by inheritance rather than each pinning its own. That
+  // is what lets the pressed state below move both from one rule.
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L20-L21
   //
   // The 24 between the text and the trailing control is an inset on the text
   // block rather than a gap on the row: a gap falls between every pair of
@@ -37,6 +51,7 @@ const useStyles = makeStyles({
     ...shorthands.borderColor('var(--winui-card-stroke-default)'),
     borderRadius: 'var(--winui-control-corner-radius)',
     boxSizing: 'border-box',
+    color: 'var(--winui-text-fill-primary)',
     display: 'flex',
     minHeight: '68px',
     padding: '16px',
@@ -59,24 +74,82 @@ const useStyles = makeStyles({
     '@media (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
     '&:hover': {
       backgroundColor: 'var(--winui-control-fill-secondary)',
-      // ControlElevationBorderBrush is a gradient with a heavier bottom edge,
-      // which the vocabulary carries as a three-value border-color shorthand.
-      // Griffel will not take a shorthand beside the longhands this rule needs,
-      // so the two stops it is composed of are named directly.
+      // ControlElevationBorderBrush is a gradient with one heavier edge, which
+      // the vocabulary carries as --winui-control-elevation-border-color, a
+      // three-value border-color shorthand. Griffel will not take a shorthand
+      // beside the longhands this rule needs, so the two stops it is composed
+      // of are named directly -- and the arrangement is restated per theme,
+      // because the light dictionary flips the gradient (ScaleY="-1") and the
+      // dark one does not: the heavier ControlStrokeColorSecondary edge sits
+      // at the bottom in light and at the top in dark.
+      // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L382-L390
+      // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L186-L191
       borderTopColor: 'var(--winui-control-stroke-default)',
       borderRightColor: 'var(--winui-control-stroke-default)',
       borderBottomColor: 'var(--winui-control-stroke-secondary)',
       borderLeftColor: 'var(--winui-control-stroke-default)',
+      '@media (prefers-color-scheme: dark)': {
+        borderTopColor: 'var(--winui-control-stroke-secondary)',
+        borderBottomColor: 'var(--winui-control-stroke-default)',
+      },
     },
     '&:active': {
       backgroundColor: 'var(--winui-control-fill-tertiary)',
       ...shorthands.borderColor('var(--winui-control-stroke-default)'),
     },
+    // The system focus visual, which both rows opt into. It is a two-ring
+    // composite: a 2px outer stroke in FocusStrokeColorOuter with a 1px inner
+    // stroke in FocusStrokeColorInner immediately inside it, drawn around a
+    // rect that is the element's bounds shrunk by FocusVisualMargin. That
+    // margin is -3, so the rect sits three outside the border box, the outer
+    // ring lands between one and three out, and the inner ring takes the pixel
+    // against the card. An outline offset by one carries the outer ring and a
+    // 1px spread shadow carries the inner one, both following the row's own
+    // corners -- including the squared bottom of an open expander header.
+    //
+    // Under forced colours the shadow is dropped and the outline is repainted
+    // in a system colour, which is the same single-ring reduction the rest of
+    // the layer takes.
+    //
+    // SettingsCard states that -3 itself and the default ToggleButton style
+    // states it too, but the toolkit's keyed header style carries no BasedOn
+    // and so falls back to a zero margin. We give both rows the -3 placement:
+    // they are one row to the reader, and a ring that shifts three pixels
+    // between two rows of the same list reads as a defect.
+    // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L138-L139
+    // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml#L297
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L193
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L718
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L441-L451
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/DependencyObject/DependencyProperty.cpp#L22-L25
+    // https://drafts.csswg.org/css-color-adjust/#forced-colors-properties
+    '&:focus-visible': {
+      boxShadow: '0 0 0 1px var(--winui-focus-stroke-inner)',
+      outlineColor: 'var(--winui-focus-stroke-outer)',
+      outlineOffset: '1px',
+      outlineStyle: 'solid',
+      outlineWidth: '2px',
+    },
   },
+  // Pressing a clickable card drops its header and its header icon to the
+  // secondary text fill. The description is painted from that same fill at
+  // rest, so it does not move even though the toolkit repaints it here too.
+  //
+  // The expander header does not take this. Its own
+  // ExpanderHeaderForegroundPressed is the primary fill, and the SettingsCard
+  // the toolkit puts inside that header is IsClickEnabled="False", so the
+  // card's pressed foreground never runs there.
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L24-L25
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L236-L267
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml#L87-L96
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L6-L8
+  clickable: { '&:active': { color: 'var(--winui-text-fill-secondary)' } },
   text: { display: 'grid', minWidth: 0, marginInlineEnd: 'auto', paddingInlineEnd: '24px' },
   // SettingsCardHeaderIconMaxSize 20 with SettingsCardHeaderIconMargin 2,0,20,0.
   // The holder collapses when there is no icon, so a card without one starts
-  // its text at the padding rather than at an empty column.
+  // its text at the padding rather than at an empty column. The glyph takes
+  // the row's foreground rather than naming one, because the header icon
+  // presenter is one of the two the pressed state repaints.
   //
   // The 20 bounds the layout box, not the ink: a Viewbox scales its child by
   // that child's DesiredSize, which for an icon is the box the glyph is laid
@@ -90,7 +163,6 @@ const useStyles = makeStyles({
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/core/elements/icon.cpp#L109-L126
   icon: {
     alignItems: 'center',
-    color: 'var(--winui-text-fill-primary)',
     display: 'flex',
     flexGrow: 0,
     flexShrink: 0,
@@ -105,16 +177,18 @@ const useStyles = makeStyles({
   // The header takes no TextBlock style in the toolkit: it inherits the control
   // content size, which is the body step at the regular weight. The description
   // is the caption, a step quieter, and the two lines carry no gap between them.
+  // That quieter step is the same secondary fill the pressed state paints, so
+  // the description holds still while the header above it drops.
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L424
   description: { color: 'var(--winui-text-fill-secondary)' },
   // The expander's header keeps the card's leading padding and gives the
   // chevron its own room at the trailing edge; open, its bottom corners square
-  // off against the region below.
-  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml
+  // off against the region below. Opening changes nothing else: the header's
+  // Checked states repaint it in the same brushes its unchecked ones do.
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml#L420-L501
   expanderHeader: {
     backgroundColor: 'var(--winui-card-background-fill-default)',
     ...shorthands.borderColor('var(--winui-card-stroke-default)'),
-    color: 'var(--winui-text-fill-primary)',
     fontFamily: 'inherit',
     fontSize: 'inherit',
     paddingInlineEnd: '4px',
@@ -145,7 +219,10 @@ const useStyles = makeStyles({
   // pointer states of its own, because the whole header row is the button and
   // the chevron only shows which way that button is pointing. The square is
   // also what spaces the glyph -- eight pixels of its own air on every side,
-  // and no margin around the icon itself.
+  // and no margin around the icon itself. The glyph names the primary text
+  // fill rather than inheriting the row's: ExpanderChevronForeground and its
+  // pointer-over and pressed counterparts are all that same fill, so the
+  // chevron is the one part of the row that never follows a foreground state.
   //
   // The toolkit hangs that box beside the header card rather than inside it,
   // and gives it eight more of margin at the trailing edge: its glyph lands
@@ -157,6 +234,7 @@ const useStyles = makeStyles({
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml#L15
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml#L540-L574
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L99
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L15-L21
   chevron: {
     alignItems: 'center',
     color: 'var(--winui-text-fill-primary)',
@@ -267,6 +345,13 @@ const useStyles = makeStyles({
     justifyContent: 'flex-end',
     minWidth: 0,
   },
+  // The readout is the ToggleSwitch's own OnContent and OffContent in that
+  // retemplate, so a disabled switch paints it TextFillColorDisabled along
+  // with the track. Sitting outside the Fluent control, it is out of reach of
+  // the control's own disabled styling and states the dim itself.
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L715-L724
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L7-L8
+  readoutDisabled: { color: 'var(--winui-text-fill-disabled)' },
 });
 
 function CardText({ description, header, icon, id }: { description?: string; header: ReactNode; icon?: ReactNode; id?: string }) {
@@ -291,7 +376,7 @@ export function SettingsSwitch({ checked, disabled, label, onChange }: {
   const styles = useStyles();
   const { t } = useTranslation();
   return <span className={styles.switchRow}>
-    <Text>{t(checked ? 'common.on' : 'common.off')}</Text>
+    <Text className={disabled === true ? styles.readoutDisabled : undefined}>{t(checked ? 'common.on' : 'common.off')}</Text>
     <Switch aria-label={label} checked={checked} disabled={disabled} onChange={(_, data) => onChange(data.checked)} />
   </span>;
 }
@@ -304,7 +389,7 @@ export function SettingsCard({ action, description, header, icon, onClick }: {
   onClick?: () => void;
 }) {
   const styles = useStyles();
-  const className = mergeClasses(styles.card, onClick && styles.interactive);
+  const className = mergeClasses(styles.card, onClick !== undefined && styles.interactive, onClick !== undefined && styles.clickable);
   const content = <>
     <CardText description={description} header={header} icon={icon} />
     {action}

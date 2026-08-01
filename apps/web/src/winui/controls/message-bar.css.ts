@@ -1,20 +1,35 @@
 // MessageBar, restyled from Fluent 2 Web onto WinUI 3.
 //
-// InfoBar is the counterpart, and its theme resources are a flat dictionary of
-// metrics and severity brushes with no VisualStateManager in them: WinUI gives
-// an InfoBar no hover, pressed, disabled or focus appearance. Every rule below
-// is therefore a rest rule, and the only interactive part in the control is the
-// close button, whose chrome InfoBarCloseButtonStyle inherits wholesale from
-// DefaultButtonStyle — so this file sizes that button and leaves its fill,
-// stroke, radius and states to controls/button.css.ts.
+// InfoBar is the counterpart. Its VisualStateManager groups name severity, icon
+// visibility, close-button visibility, banner content and an author-set
+// foreground; none of them answers the pointer, the keyboard or IsEnabled, so
+// WinUI gives an InfoBar no hover, pressed, disabled or focus appearance and
+// every rule below is a rest rule. What does vary is the theme: the resource
+// dictionary carries Light, Default and HighContrast, and the last of those is
+// transcribed in the forced-colours section near the end of this file.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar.xaml#L16-L92
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L3-L61
+//
+// The one interactive part is the close button. InfoBarCloseButtonStyle takes
+// its metrics from DefaultButtonStyle, but the template rebrushes all twelve of
+// that style's Button brushes onto the AppBarButton family in every theme
+// dictionary, which is the chromeless map: transparent at rest and while
+// disabled, SubtleFillColorSecondary under the pointer, SubtleFillColorTertiary
+// under a press, the primary text fill through rest and hover and the secondary
+// one under a press. Fluent's transparent appearance carries that map once
+// controls/button.css.ts has restated the two pointer fills and the pressed
+// foreground, and the close button is given that appearance, so this file sizes
+// the button and spends nothing on its fill, stroke, radius or states.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L88-L95
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar.xaml#L127-L175
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/AppBarButton_themeresources.xaml#L5-L16
 //
 // InfoBar has a second layout — WinUI calls it vertical orientation, Fluent
 // calls it `layout: 'multiline'` — and it is reachable here despite being
 // JS-merged with no data attribute: Fluent renders the `bottomReflowSpacer`
 // slot only in that layout, so `:has(> .fui-MessageBar__bottomReflowSpacer)`
 // names it structurally. The vertical-orientation metrics are transcribed in
-// the last section of this file.
+// their own section below, ahead of the forced-colours one.
 //
 // The severity fill is the most visible thing InfoBar has, and it is reached
 // through `data-winui-intent`, which the runtime chokepoint stamps with the
@@ -228,5 +243,39 @@ export const messageBarCss = `
 
 .fui-MessageBar__bottomReflowSpacer.fui-MessageBar__bottomReflowSpacer {
   margin-block-end: 18px;
+}
+
+/* Forced colours. WinUI's HighContrast dictionary drops the severity fill --
+   all four backgrounds become the window colour, both text steps the window
+   text -- and the user agent's forced adjustment already lands both of those,
+   because it overrides background-color and color wherever this sheet set them.
+   The stroke is likewise recoloured for us; only its thickness, which the same
+   dictionary doubles, is left to state, and the border-box sizing this app
+   resets to keeps the extra pixel inside the 48px bar.
+
+   The badge is what the adjustment cannot reach. Its two layers land on
+   Highlight and HighlightText there, the same pair for every severity, and the
+   layer carrying HighlightText is a gradient -- background-image is not among
+   the forced properties, so left alone it would go on painting the inverse text
+   fill of whichever scheme is in effect underneath a glyph the adjustment has
+   already repainted. Opting the badge out of the adjustment is what lets both
+   layers be named. A media query adds no specificity, so the selector matches
+   the severity rules it overrides.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L42-L60
+   https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
+@media (forced-colors: active) {
+  .fui-MessageBar.fui-MessageBar {
+    border-width: 2px;
+  }
+
+  .fui-MessageBar[data-winui-intent] .fui-MessageBar__icon.fui-MessageBar__icon {
+    forced-color-adjust: none;
+    color: Highlight;
+    background: radial-gradient(
+      closest-side,
+      HighlightText 79%,
+      transparent 80%
+    );
+  }
 }
 `;

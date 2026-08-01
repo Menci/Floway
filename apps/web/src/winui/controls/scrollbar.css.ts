@@ -4,19 +4,34 @@
 // behind it, and under the pointer it widens to a pill over a track. The two
 // libraries disagree about what the pointer changes. OverlayScrollbars walks
 // the handle through three opacities and leaves its width alone; WinUI holds
-// one colour across rest, hover and press — ScrollBarThumbFill, its PointerOver
-// and its Pressed are all ControlStrongFillColorDefaultBrush — and moves the
-// geometry instead.
+// one colour across rest, hover and press -- ScrollBarThumbFill, its PointerOver
+// and its Pressed are all ControlStrongFillColorDefaultBrush -- and moves the
+// geometry instead. Its conscious states name the thumb's fill twice more,
+// ScrollBarPanningThumbBackground while collapsed and ScrollBarThumbBackground
+// while expanded, and those are the same brush again, so the pill holds one
+// colour through every state it has, in either theme.
 //
-// The visible pill is narrower than the thumb the template animates, because
-// the thumb is a Rectangle stroked with ScrollBarThumbBorderBrush, which is
-// ControlFillColorTransparentBrush, at ScrollBarThumbStrokeThickness. A XAML
-// stroke straddles the edge, so 6px of transparent stroke eats 3px from each
-// side and the fill that remains is the thumb width less 6: the expanded thumb
-// animates to ScrollBarSize, 12, and reads as a 6px pill; the contracted one
-// returns to ScrollBarVerticalThumbMinWidth, 8, and reads as a 2px hairline.
-// ScrollBarCornerRadius confirms the expanded reading — a 3px radius is a full
-// round-off only on a 6px pill.
+// The handle element stands for the thumb's fill rather than for the thumb's
+// box. The thumb is a Rectangle stroked with ScrollBarThumbBorderBrush, which
+// is ControlFillColorTransparentBrush, at ScrollBarThumbStrokeThickness, and a
+// XAML shape shrinks its geometry so that the stroke lands inside the layout
+// box it was given. 6px of transparent stroke therefore ends the fill 3px
+// inside every edge, and each thumb measure reaches the handle as itself less
+// 6: the expanded thumb animates to ScrollBarSize, 12, and reads as a 6px pill;
+// the contracted one returns to ScrollBarVerticalThumbMinWidth, 8, and reads as
+// a 2px hairline; and the floor along the scroll axis,
+// ScrollBarVerticalThumbMinHeight, 30, reads as 24. ScrollBarCornerRadius
+// confirms the expanded reading -- a 3px radius is a full round-off only on a
+// 6px pill.
+//
+// Both pills keep their outer edge 3px inside the rail, and WinUI arrives there
+// from either state: the expanded thumb spans the 12px rail and gives the 3px
+// back as stroke, while the contracted one is 8 wide, centred by the stretch
+// alignment it inherits, and pushed outwards again by ScrollBarThumbOffset, 2,
+// which puts its own stroked edge back on the rail edge. Only the width travels
+// between the two.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/core/elements/shape.cpp#L861-L870
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/core/elements/framework.cpp#L2211-L2214
 //
 // The expanded track is AcrylicInAppFillColorDefaultBrush. That brush declares
 // a flat FallbackColor for where acrylic cannot be composited, and ../tokens.ts
@@ -25,26 +40,39 @@
 // resource closest in role, a translucent sheet meant to sit over content.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Materials/Acrylic/AcrylicBrush_themeresources.xaml#L96
 //
+// A bar with nothing left to scroll needs nothing said here. WinUI's thumb
+// takes its Disabled state to zero opacity, and OverlayScrollbars marks that
+// bar unusable, hides the handle outright and drops the whole control out of
+// hit testing -- which leaves the track with no hover to answer either.
+//
 // Every rule here excludes the opted-out subtree in its selector rather than
 // through a token indirection, because what it states is geometry Fluent never
 // declares — see ../tokens.ts for both mechanisms.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ScrollBar_themeresources.xaml#L26-L30
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ScrollBar_themeresources.xaml#L37-L38
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ScrollBar_themeresources.xaml#L177
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ScrollBar_themeresources.xaml#L180-L185
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ScrollBar_themeresources.xaml#L190
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ScrollBar_themeresources.xaml#L394-L395
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ScrollBar_themeresources.xaml#L399-L406
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ScrollBar_themeresources.xaml#L484
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ScrollBar_themeresources.xaml#L559-L560
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ScrollBar_themeresources.xaml#L571-L572
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ScrollBar_themeresources.xaml#L587
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ScrollBar_themeresources.xaml#L705-L708
 import { notOptedOut } from '../tokens';
 
 const host = `.floway-scroll-area[data-overlayscrollbars='host']${notOptedOut}`;
 
 export const scrollbarCss = `
-/* Rail geometry and thumb colour. ScrollBarSize is the rail; the handle is
-   never shorter than ScrollBarVerticalThumbMinHeight along the scroll axis. */
+/* Rail geometry and thumb colour. ScrollBarSize is the rail; the minimum along
+   the scroll axis is ScrollBarVerticalThumbMinHeight, and it reaches the pill
+   as 24 because the pill is the thumb's fill and the stroke takes 3 off each
+   end as well. */
 ${host} .os-scrollbar {
   --os-size: 12px;
   --os-handle-border-radius: 3px;
-  --os-handle-min-size: 30px;
+  --os-handle-min-size: 24px;
   --os-handle-bg: var(--winui-control-strong-fill-default);
   --os-handle-bg-hover: var(--winui-control-strong-fill-default);
   --os-handle-bg-active: var(--winui-control-strong-fill-default);
@@ -58,10 +86,15 @@ ${host} .os-scrollbar {
    edge of the content on its way somewhere else pumps every scrollbar it
    passes. The delay belongs to whichever rule is becoming active, so the
    expansion carries the 400 and the rest state carries the 500.
+
+   Widening is all that travels. The pill's outer edge stays 3px inside the
+   rail, which is where the thumb's stroke leaves it in both conscious states,
+   so the growth is inwards, away from the content edge.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ScrollBar_themeresources.xaml#L173-L189
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ScrollBar_themeresources.xaml#L528-L601 */
 ${host} .os-scrollbar-vertical .os-scrollbar-handle {
   width: 6px;
+  inset-inline-end: 3px;
   transition-property: width;
   transition-duration: var(--winui-control-fast-animation-duration);
   transition-timing-function: var(--winui-control-fast-out-slow-in-easing);
@@ -70,6 +103,7 @@ ${host} .os-scrollbar-vertical .os-scrollbar-handle {
 
 ${host} .os-scrollbar-horizontal .os-scrollbar-handle {
   height: 6px;
+  inset-block-end: 3px;
   transition-property: height;
   transition-duration: var(--winui-control-fast-animation-duration);
   transition-timing-function: var(--winui-control-fast-out-slow-in-easing);
@@ -103,6 +137,31 @@ ${host} .os-scrollbar .os-scrollbar-track {
 ${host} .os-scrollbar:hover .os-scrollbar-track {
   background-color: var(--winui-layer-fill-default);
   transition-delay: 400ms;
+}
+
+/* High Contrast, where WinUI states the bar again: the thumb on ButtonText
+   through both conscious states, the expanded track on the Window colour.
+   Neither survives on its own -- forced colours keep a background-color's alpha
+   but take its channels from the palette, so the thumb would otherwise wash out
+   to a half-transparent Canvas over the content it sits on, and the track with
+   it. The rest track needs no answer: it is fully transparent, and that is
+   preserved.
+
+   A media query carries no specificity, so each rule repeats the selector it
+   answers.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ScrollBar_themeresources.xaml#L87
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ScrollBar_themeresources.xaml#L93-L94
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L2047
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L2093
+   https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
+@media (forced-colors: active) {
+  ${host} .os-scrollbar .os-scrollbar-handle {
+    background-color: ButtonText;
+  }
+
+  ${host} .os-scrollbar:hover .os-scrollbar-track {
+    background-color: Canvas;
+  }
 }
 
 /* The thumb changes size, which is motion rather than a state colour, so it

@@ -1,9 +1,10 @@
 // WinUI 3 ComboBox styling for Fluent v9's Dropdown, Combobox, Listbox and
 // Option. Fluent paints these as a Fluent 2 Web field — opaque background,
 // uniform neutral outline, brand underline on focus — while WinUI paints a
-// translucent control fill inside a directional elevation stroke, lights a
-// detached focus ring instead of the underline, and marks the selected list
-// item with an accent pill instead of a check glyph alone.
+// translucent control fill inside a directional elevation stroke, answers
+// keyboard focus with a detached ring and an accent pill on the faceplate
+// rather than with the underline, and marks the selected list item with the
+// same accent pill instead of a check glyph alone.
 //
 // The field rules address `[data-winui-appearance='outline']`, the appearance
 // whose Fluent form — opaque fill inside a full outline — is the one WinUI's
@@ -12,7 +13,18 @@
 //
 // The WinUI ComboBox dictionary declares one key set and resolves it per theme,
 // so each rule below is written once against a theme-aware `--winui-*`
-// variable rather than duplicated per color scheme.
+// variable rather than duplicated per color scheme: its Light and its Default
+// dictionary differ only in the legacy `*ThemeBrush` compatibility resources,
+// none of which the current template reads.
+//
+// Windows High Contrast is transcribed for the drop-down list at the end of
+// this sheet, because the HighContrast dictionary collapses every item fill
+// onto Highlight with a HighlightText foreground -- a state table Fluent's
+// option does not state at all, so forced colours would otherwise leave the
+// list with one appearance. The field keeps the border Fluent already paints
+// there, and the multiselect check box keeps Fluent's forced-colours drawing
+// for the reason ./choice.css.ts writes down for every check box.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L110-L136
 //
 // The Dropdown button's root and the Combobox root carry the same border and
 // fill in Fluent, so they are addressed as one selector list throughout.
@@ -33,9 +45,27 @@ export const selectCss = `
   border-color: var(--winui-control-elevation-border-color);
 }
 
-/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L48 */
+/* The placeholder runs its own three-step ramp: secondary at rest, over and
+   focused, tertiary while the field is pressed or open, and the disabled text
+   fill once the field is disabled. The pressed and disabled steps have to be
+   stated because the rest rule outweighs both Fluent's own pressed value and
+   its disabled atom.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L48
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L49
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L52 */
 .fui-Combobox__input.fui-Combobox__input::placeholder {
   color: var(--winui-text-fill-secondary);
+}
+
+/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L50 */
+.fui-Combobox:active .fui-Combobox__input.fui-Combobox__input:enabled::placeholder,
+.fui-Combobox__input.fui-Combobox__input:enabled[aria-expanded='true']::placeholder {
+  color: var(--winui-text-fill-tertiary);
+}
+
+/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L51 */
+.fui-Combobox__input.fui-Combobox__input:disabled::placeholder {
+  color: var(--winui-text-fill-disabled);
 }
 
 /* Hover. WinUI moves the fill one step down the control-fill ramp and leaves
@@ -53,31 +83,55 @@ export const selectCss = `
   border-color: var(--winui-control-elevation-border-color);
 }
 
-/* Keyboard focus. WinUI does not touch the field: it lights a separate
-   highlight border inset by -4px around the control, two pixels of the outer
-   focus stroke drawn at its own 7px corner. An outline reproduces it -- a 2px
-   offset puts the stroke's outer edge at the same 4px out -- except for that
-   corner: the ring is carried by an outline rather than by the ::after this
-   appearance frees below, and an outline takes the field's radius plus its own
-   offset, so the corner lands a pixel tighter than WinUI's fixed 7px. That
-   pixel is the price of the carrier. Fluent's keyboard-modality
-   data attribute keeps pointer focus in the pressed/rest states while still
-   finding the button or input inside each root. Fluent's brand underline is
-   the affordance this replaces, so the pseudo-element drawing it is dropped on
-   the appearance WinUI paints. WinUI's focus visual is two concentric rings:
-   the outline supplies the outer one and a shadow spread across the two pixels
-   the outline is offset by supplies the inner one, which is where WinUI puts
-   it -- immediately against the control.
+/* Keyboard focus. WinUI leaves the field's own fill and stroke alone and lights
+   two things beside it: a separate highlight border inset by -4px around the
+   control, two pixels of the outer focus stroke drawn at its own 7px corner,
+   and the accent pill on the faceplate's leading edge -- the same pill the
+   selected list item carries, stated once and shown by both. An outline
+   reproduces the border -- a 2px offset puts the stroke's outer edge at the
+   same 4px out -- except for that corner: the ring is carried by an outline
+   rather than by the ::after this appearance frees below, and an outline takes
+   the field's radius plus its own offset, so the corner lands a pixel tighter
+   than WinUI's fixed 7px. That pixel is the price of the carrier. Fluent's
+   keyboard-modality data attribute keeps pointer focus in the pressed/rest
+   states while still finding the button or input inside each root -- WinUI
+   splits the same way, giving pointer focus an empty PointerFocused state.
+   Fluent's brand underline is the affordance this replaces, so the
+   pseudo-element drawing it is dropped on the appearance WinUI paints. WinUI's
+   focus visual is two concentric rings: the outline supplies the outer one and
+   a shadow spread across the two pixels the outline is offset by supplies the
+   inner one, which is where WinUI puts it -- immediately against the control.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L38
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L338
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L343
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L570
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L473-L476 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L473-L476
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L504 */
 .fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:has([data-fui-focus-visible]),
 .fui-Combobox.fui-Combobox[data-winui-appearance='outline']:has([data-fui-focus-visible]) {
   box-shadow: 0 0 0 2px var(--winui-focus-stroke-inner);
   outline: 2px solid var(--winui-focus-stroke-outer);
   outline-offset: 2px;
+}
+
+/* The faceplate pill. WinUI states it at a flat 16px against the item's own
+   pill style, a pixel in from the field's leading edge and centred on the row.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L324
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L325
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L346
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L572 */
+.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:has([data-fui-focus-visible])::before,
+.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:has([data-fui-focus-visible])::before {
+  background-color: var(--winui-accent-fill-default);
+  border-radius: 1.5px;
+  content: '';
+  height: 16px;
+  inset-inline-start: 1px;
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  translate: 0 -50%;
+  width: 3px;
 }
 
 .fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']::after,
@@ -116,12 +170,15 @@ export const selectCss = `
 
 /* An open ComboBox is in the same pressed state, so its label dims with the
    fill. WinUI dims it whatever the field looks like, so this one is not tied to
-   an appearance.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L42 */
-.fui-Dropdown:active .fui-Dropdown__button.fui-Dropdown__button,
-.fui-Combobox:active .fui-Combobox__input.fui-Combobox__input,
-.fui-Dropdown__button.fui-Dropdown__button[aria-expanded='true'],
-.fui-Combobox__input.fui-Combobox__input[aria-expanded='true'] {
+   an appearance. A disabled field can still take :active on the root -- the
+   pointer event lands on the wrapper rather than the control -- so the enabled
+   guard keeps the disabled text fill Fluent paints on a single class.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L42
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L43 */
+.fui-Dropdown:active .fui-Dropdown__button.fui-Dropdown__button:enabled,
+.fui-Combobox:active .fui-Combobox__input.fui-Combobox__input:enabled,
+.fui-Dropdown__button.fui-Dropdown__button:enabled[aria-expanded='true'],
+.fui-Combobox__input.fui-Combobox__input:enabled[aria-expanded='true'] {
   color: var(--winui-text-fill-secondary);
 }
 
@@ -278,50 +335,53 @@ export const selectCss = `
 
 /* Item states run on the subtle-fill ramp, which washes over the drop-down
    surface rather than replacing it with a neutral background the way Fluent's
-   NeutralBackground1Hover/Pressed do. WinUI also dims the label on press.
+   NeutralBackground1Hover/Pressed do. WinUI also dims the label on press. A
+   disabled item runs neither state -- its fill is the transparent step of the
+   same ramp -- and Fluent agrees, withholding its interactive atom entirely,
+   so these carry the guard that keeps them from outranking it. Its label is
+   left to Fluent for the reason the field's labels are: WinUI's disabled item
+   foreground is the disabled text fill, and Fluent's own token for it already
+   resolves there.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L16
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L7 */
-.fui-Option.fui-Option:hover {
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L7
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L17
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L8 */
+.fui-Option.fui-Option:not([aria-disabled='true']):hover {
   background-color: var(--winui-subtle-fill-secondary);
   color: var(--winui-text-fill-primary);
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L15
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L6 */
-.fui-Option.fui-Option:active {
+.fui-Option.fui-Option:not([aria-disabled='true']):active {
   background-color: var(--winui-subtle-fill-tertiary);
   color: var(--winui-text-fill-secondary);
-}
-
-/* Restated for the same reason as the glyphs above: the item-state rules
-   further up paint every option, disabled ones included, and would otherwise
-   outrank Fluent's own disabled atom.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L8 */
-.fui-Option.fui-Option[aria-disabled='true'] {
-  color: var(--winui-text-fill-disabled);
 }
 
 /* Selection. Fluent leaves the selected item visually identical to the rest and
    lets the check glyph carry the state; WinUI keeps a standing subtle wash and
    inverts the interaction pair against it, so a selected item goes one step
-   lighter on hover where an unselected item goes one step darker. A multiselect
+   lighter on hover where an unselected item goes one step darker. A disabled
+   selected item keeps that standing wash, which is the rest value, so the
+   enabled guard on the pair above is all a disabled item needs. A multiselect
    listbox reports its options as menuitemcheckbox rather than option, so each
    rule takes the checked state alongside the selected one.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L18
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L20
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L21 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L21
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L22 */
 .fui-Option.fui-Option[aria-selected='true'],
 .fui-Option.fui-Option[aria-checked='true'] {
   background-color: var(--winui-subtle-fill-secondary);
 }
 
-.fui-Option.fui-Option[aria-selected='true']:hover,
-.fui-Option.fui-Option[aria-checked='true']:hover {
+.fui-Option.fui-Option[aria-selected='true']:not([aria-disabled='true']):hover,
+.fui-Option.fui-Option[aria-checked='true']:not([aria-disabled='true']):hover {
   background-color: var(--winui-subtle-fill-tertiary);
 }
 
-.fui-Option.fui-Option[aria-selected='true']:active,
-.fui-Option.fui-Option[aria-checked='true']:active {
+.fui-Option.fui-Option[aria-selected='true']:not([aria-disabled='true']):active,
+.fui-Option.fui-Option[aria-checked='true']:not([aria-disabled='true']):active {
   background-color: var(--winui-subtle-fill-secondary);
 }
 
@@ -335,6 +395,9 @@ export const selectCss = `
    state it as a proportion instead: a quarter inset at each end, which is that
    same 16px on the 32px item this file builds and keeps the pill in proportion
    when an Option carries multi-line content.
+
+   One brush serves every state the pill appears in, disabled included, so the
+   fill is declared once.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L106
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L324
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L325
@@ -349,6 +412,25 @@ export const selectCss = `
   pointer-events: none;
   position: absolute;
   width: 3px;
+}
+
+/* Pressing a selected item shortens its pill to ComboBoxItemPillMinScale about
+   its own centre, over 167ms on the cubic Bezier through (0, 0) and (0, 1).
+   The timing rides the pressed rule rather than the pill's own, because WinUI
+   registers a key frame on the way in and none on the way out: the scale snaps
+   back when the state ends.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L326
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L330
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L726-L728 */
+.fui-Option.fui-Option[aria-selected='true']:not([aria-disabled='true']):active::before {
+  scale: 1 0.625;
+  transition: scale 167ms cubic-bezier(0, 0, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fui-Option.fui-Option[aria-selected='true']:not([aria-disabled='true']):active::before {
+    transition-duration: 0.01ms;
+  }
 }
 
 /* The pill is WinUI's whole single-select indicator, so the check glyph Fluent
@@ -367,49 +449,81 @@ export const selectCss = `
 
 /* The check box a multiselect option keeps, on WinUI's own state table rather
    than Fluent's. WinUI moves the interior a step down the alt-fill ramp on
-   pointer-over and holds ControlStrongStrokeColorDefault while unchecked; once
-   checked, the stroke IS the accent fill, so the box reads as a filled square
-   with no outline, and both walk the accent ramp together through pointer-over
-   and pressed. Fluent instead brightens the stroke on hover and keeps a neutral
-   outline around the checked box.
+   pointer-over and on press, holds ControlStrongStrokeColorDefault while
+   unchecked and drops that outline to the disabled strong stroke under the
+   pointer; once checked, the stroke IS the accent fill, so the box reads as a
+   filled square with no outline, and both walk the accent ramp together
+   through pointer-over and pressed. A disabled box takes the disabled step of
+   whichever fill its state uses behind that same neutral disabled stroke.
+   Fluent instead brightens the stroke on hover, keeps a neutral outline around
+   the checked box, and states its disabled colours on single classes these
+   rules would outrank.
+
+   Colour is confined to the not-forced-colours query below, for the reason
+   ./choice.css.ts writes down for every check box: an accent-filled indicator
+   under forced colours also needs forced-color-adjust: none, which this layer
+   does not take on, so forced colours keeps Fluent's drawing.
 
    ./choice.css.ts states the same table for the check box control. An option
    draws its box from a different slot, so it is restated here rather than
    inherited.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L217-L222
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L229-L234
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L57-L59
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L69-L71 */
-.fui-Option[aria-checked='false'] .fui-Option__checkIcon.fui-Option__checkIcon {
-  background-color: var(--winui-control-alt-fill-secondary);
-  border-color: var(--winui-control-strong-stroke-default);
-}
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L41-L44
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L45-L48
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L53-L56
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L57-L60
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L69-L72 */
+@media not (forced-colors: active) {
+  .fui-Option[aria-checked='false'] .fui-Option__checkIcon.fui-Option__checkIcon {
+    background-color: var(--winui-control-alt-fill-secondary);
+    border-color: var(--winui-control-strong-stroke-default);
+  }
 
-.fui-Option[aria-checked='false']:hover .fui-Option__checkIcon.fui-Option__checkIcon {
-  background-color: var(--winui-control-alt-fill-tertiary);
-  border-color: var(--winui-control-strong-stroke-default);
-}
+  .fui-Option[aria-checked='false']:not([aria-disabled='true']):hover
+    .fui-Option__checkIcon.fui-Option__checkIcon {
+    background-color: var(--winui-control-alt-fill-tertiary);
+    border-color: var(--winui-control-strong-stroke-default);
+  }
 
-.fui-Option[aria-checked='false']:active .fui-Option__checkIcon.fui-Option__checkIcon {
-  background-color: var(--winui-control-alt-fill-quarternary);
-  border-color: var(--winui-control-strong-stroke-default);
-}
+  .fui-Option[aria-checked='false']:not([aria-disabled='true']):active
+    .fui-Option__checkIcon.fui-Option__checkIcon {
+    background-color: var(--winui-control-alt-fill-quarternary);
+    border-color: var(--winui-control-strong-stroke-disabled);
+  }
 
-.fui-Option[aria-checked='true'] .fui-Option__checkIcon.fui-Option__checkIcon {
-  background-color: var(--winui-accent-fill-default);
-  border-color: var(--winui-accent-fill-default);
-  color: var(--winui-text-on-accent-fill-primary);
-}
+  .fui-Option[aria-checked='true'] .fui-Option__checkIcon.fui-Option__checkIcon {
+    background-color: var(--winui-accent-fill-default);
+    border-color: var(--winui-accent-fill-default);
+    color: var(--winui-text-on-accent-fill-primary);
+  }
 
-.fui-Option[aria-checked='true']:hover .fui-Option__checkIcon.fui-Option__checkIcon {
-  background-color: var(--winui-accent-fill-secondary);
-  border-color: var(--winui-accent-fill-secondary);
-}
+  .fui-Option[aria-checked='true']:not([aria-disabled='true']):hover
+    .fui-Option__checkIcon.fui-Option__checkIcon {
+    background-color: var(--winui-accent-fill-secondary);
+    border-color: var(--winui-accent-fill-secondary);
+  }
 
-.fui-Option[aria-checked='true']:active .fui-Option__checkIcon.fui-Option__checkIcon {
-  background-color: var(--winui-accent-fill-tertiary);
-  border-color: var(--winui-accent-fill-tertiary);
-  color: var(--winui-text-on-accent-fill-secondary);
+  .fui-Option[aria-checked='true']:not([aria-disabled='true']):active
+    .fui-Option__checkIcon.fui-Option__checkIcon {
+    background-color: var(--winui-accent-fill-tertiary);
+    border-color: var(--winui-accent-fill-tertiary);
+    color: var(--winui-text-on-accent-fill-secondary);
+  }
+
+  .fui-Option[aria-checked][aria-disabled='true']
+    .fui-Option__checkIcon.fui-Option__checkIcon {
+    border-color: var(--winui-control-strong-stroke-disabled);
+    color: var(--winui-text-on-accent-fill-disabled);
+  }
+
+  .fui-Option[aria-checked='false'][aria-disabled='true']
+    .fui-Option__checkIcon.fui-Option__checkIcon {
+    background-color: var(--winui-control-alt-fill-disabled);
+  }
+
+  .fui-Option[aria-checked='true'][aria-disabled='true']
+    .fui-Option__checkIcon.fui-Option__checkIcon {
+    background-color: var(--winui-accent-fill-disabled);
+  }
 }
 
 /* The drop-down's reveal. WinUI does not slide or fade a ComboBox popup: it
@@ -505,6 +619,48 @@ export const selectCss = `
 @media (prefers-reduced-motion: reduce) {
   .floway-combobox-listbox {
     animation-duration: 0.01ms;
+  }
+}
+
+/* High Contrast. The dictionary collapses every pointer and selection fill in
+   the list onto Highlight with a HighlightText foreground, drops a disabled
+   item -- selected or not -- to a transparent fill with GrayText, which on the
+   drop-down is the surface's own Canvas, and gives the pill the same Highlight
+   the row is filled with, so it is the fill that carries selection there rather
+   than the bar. The field's disabled stroke is GrayText, which is what Fluent
+   already paints under forced colours; it is restated because the disabled rule
+   above outranks that atom.
+
+   A media query carries no specificity, so each rule repeats the selector it
+   answers.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L110-L127
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L162
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L211
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L2026
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L2058
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L2076-L2080
+   https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
+@media (forced-colors: active) {
+  .fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:has(.fui-Dropdown__button:disabled),
+  .fui-Combobox.fui-Combobox[data-winui-appearance='outline']:has(.fui-Combobox__input:disabled) {
+    border-color: GrayText;
+  }
+
+  .fui-Option.fui-Option:not([aria-disabled='true']):hover,
+  .fui-Option.fui-Option:not([aria-disabled='true']):active,
+  .fui-Option.fui-Option[aria-selected='true'],
+  .fui-Option.fui-Option[aria-checked='true'] {
+    background-color: Highlight;
+    color: HighlightText;
+  }
+
+  .fui-Option.fui-Option[aria-disabled='true'] {
+    background-color: Canvas;
+    color: GrayText;
+  }
+
+  .fui-Option.fui-Option[aria-selected='true']::before {
+    background-color: Highlight;
   }
 }
 `;

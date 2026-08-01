@@ -4,28 +4,20 @@ import { Trans, useTranslation } from 'react-i18next';
 import type { CatalogIndex } from './catalog-index';
 import { effectiveUpstreams, modelBadges, type ModelBadge } from './model-badges';
 import type { ControlPlaneModel } from '../../api/types';
-import { fluentComponents } from '../../fluent';
 import { Chip } from '../ui/chip';
 import { ProviderBadge } from '../upstreams/provider-badge';
 
-const { makeStyles, tokens } = fluentComponents;
-
-const useStyles = makeStyles({
-  modelValue: {
-    fontFamily: tokens.fontFamilyMonospace,
-    fontSize: '11px',
-    fontWeight: tokens.fontWeightSemibold,
-    lineHeight: '16px',
-  },
-  strongValue: { fontWeight: tokens.fontWeightSemibold },
-  tag: { color: tokens.colorNeutralForeground2 },
-  tagText: { fontSize: '12px', lineHeight: '16px' },
-});
+// A model id inside a chip is set in the monospace face at the smallest step
+// of the shared mono scale, which is one pixel under the 12px caption the chip
+// runs at, so the monospace face does not out-measure the proportional text
+// beside it. The chip's own colour, its caption size and the semibold weight
+// of a `strong` are all stated once elsewhere -- by Fluent's outline Tag, by
+// its caption ramp, and by global.css -- so nothing here restates them.
+const modelValueClassName = 'font-mono mono-size-xs';
 
 const ruleBadgeContent = (
   badge: Extract<ModelBadge, { kind: 'rule' }>,
   t: ReturnType<typeof useTranslation>['t'],
-  strongValueClassName: string,
 ): ReactNode => {
   if (badge.varies) {
     switch (badge.field) {
@@ -37,7 +29,7 @@ const ruleBadgeContent = (
     case 'serviceTier': return t('dashboard.playground.badges.ruleVaries.serviceTier');
     }
   }
-  const components = { strong: <strong className={strongValueClassName} /> };
+  const components = { strong: <strong /> };
   switch (badge.field) {
   case 'reasoning.effort': return <Trans components={components} i18nKey="dashboard.playground.badges.rules.reasoningEffort" values={{ value: String(badge.value) }} />;
   case 'reasoning.budget_tokens': return <Trans components={components} i18nKey="dashboard.playground.badges.rules.reasoningBudget" values={{ value: String(badge.value) }} />;
@@ -54,10 +46,8 @@ const ruleBadgeContent = (
 const badgeContent = (
   badge: Exclude<ModelBadge, { kind: 'limit' }>,
   t: ReturnType<typeof useTranslation>['t'],
-  modelValueClassName: string,
-  strongValueClassName: string,
 ): ReactNode => {
-  const strong = { strong: <strong className={strongValueClassName} /> };
+  const strong = { strong: <strong /> };
   switch (badge.kind) {
   case 'aliasOfModel':
     return <Trans components={{ model: <strong className={modelValueClassName} /> }} i18nKey="dashboard.playground.badges.aliasOfModel" values={{ target: badge.target }} />;
@@ -78,7 +68,7 @@ const badgeContent = (
       }}
     />;
   case 'rule':
-    return ruleBadgeContent(badge, t, strongValueClassName);
+    return ruleBadgeContent(badge, t);
   }
 };
 
@@ -99,7 +89,6 @@ export function ModelInfoBadges({ cap, catalog, model }: {
   model: ControlPlaneModel;
 }) {
   const { t } = useTranslation();
-  const styles = useStyles();
 
   return (
     <div className="flex flex-wrap items-center gap-1.5 min-w-0">
@@ -107,14 +96,14 @@ export function ModelInfoBadges({ cap, catalog, model }: {
         <ProviderBadge key={upstream.id} color={upstream.color} kind={upstream.kind} label={upstream.name} />
       ))}
       {modelBadges(model, catalog, cap).map(badge => (
-        <Chip key={badge.key} className={styles.tag} textClassName={styles.tagText}>
+        <Chip key={badge.key}>
           {badge.kind === 'limit'
             ? <Trans
-                components={{ strong: <strong className={styles.strongValue} /> }}
+                components={{ strong: <strong /> }}
                 i18nKey={`dashboard.playground.badges.${badge.limit}`}
                 values={{ value: badge.value }}
               />
-            : badgeContent(badge, t, styles.modelValue, styles.strongValue)}
+            : badgeContent(badge, t)}
         </Chip>
       ))}
     </div>

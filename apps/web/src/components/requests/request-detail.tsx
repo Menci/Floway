@@ -30,11 +30,24 @@ import 'prismjs/components/prism-json';
 
 const { MessageBar, MessageBarBody, Tab, TabList, Text, makeStyles, mergeClasses } = fluentComponents;
 
+// Every rule this pane draws separates stacked regions inside one surface --
+// section from section, header row from header row, stream event from stream
+// event -- so each takes WinUI's divider brush, which Fluent reaches through
+// `colorNeutralStroke3`. The control outline is a different brush for a
+// different job, and the two are indistinguishable in light (both #0F000000)
+// while dark states them apart (#12FFFFFF against #15FFFFFF), so only the dark
+// dictionary shows which one a rule picked.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L53
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L257
+//
+// A divider only ever separates, so the last one in each run gives up its edge:
+// the closing rule of a run is already drawn by whatever encloses it, and two
+// hairlines meeting at the same boundary read as one heavier line.
 const useStyles = makeStyles({
   sectionHeader: {
     alignItems: 'center',
     backgroundColor: 'var(--colorNeutralBackground1)',
-    borderBottom: '1px solid var(--colorNeutralStroke1)',
+    borderBottom: '1px solid var(--colorNeutralStroke3)',
     display: 'flex',
     gap: '8px',
     minHeight: '42px',
@@ -44,13 +57,16 @@ const useStyles = makeStyles({
     zIndex: 2,
   },
   sectionTitle: { lineHeight: '20px' },
-  section: { borderBottom: '1px solid var(--colorNeutralStroke1)' },
+  section: {
+    borderBottom: '1px solid var(--colorNeutralStroke3)',
+    ':last-child': { borderBottom: 'none' },
+  },
+  // The monospace ramp is stated once, on `pre` in `global.css`, where each size
+  // travels with the leading it is set with. What is left to a code block is its
+  // own surface.
   code: {
     backgroundColor: 'var(--colorNeutralBackground1)',
     color: 'var(--colorNeutralForeground1)',
-    fontFamily: 'var(--fontFamilyMonospace)',
-    fontSize: 'var(--floway-font-size-mono)',
-    lineHeight: 'var(--lineHeightBase300)',
     margin: 0,
     overflow: 'visible',
     padding: '14px 16px 18px',
@@ -58,8 +74,11 @@ const useStyles = makeStyles({
     whiteSpace: 'pre',
   },
   highlightedCode: prismTokenStyles,
-  headers: { borderCollapse: 'collapse', fontFamily: 'var(--fontFamilyMonospace)', fontSize: 'var(--floway-font-size-mono)', width: '100%' },
-  headerRow: { borderBottom: '1px solid var(--colorNeutralStroke3)' },
+  headers: { borderCollapse: 'collapse', fontFamily: 'var(--fontFamilyMonospace)', fontSize: 'var(--floway-font-size-mono)', lineHeight: 'var(--floway-line-height-mono)', width: '100%' },
+  headerRow: {
+    borderBottom: '1px solid var(--colorNeutralStroke3)',
+    ':last-child': { borderBottom: 'none' },
+  },
   headerName: { color: 'var(--colorNeutralForeground3)', fontWeight: 'var(--fontWeightRegular)', padding: '7px 14px 7px 16px', textAlign: 'left', verticalAlign: 'top', whiteSpace: 'nowrap' },
   headerValue: { color: 'var(--colorNeutralForeground1)', overflowWrap: 'anywhere', padding: '7px 16px 7px 0', verticalAlign: 'top', whiteSpace: 'normal' },
 });

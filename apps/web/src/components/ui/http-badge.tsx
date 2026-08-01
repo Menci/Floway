@@ -5,25 +5,22 @@ import { fluentComponents } from '../../fluent';
 const { Badge, makeStyles } = fluentComponents;
 
 // A method or a status is a badge like any other here, so it takes the size the
-// upstream and model badges take: a 24px pill with a 12px label. The label is
-// monospace but stays at 12 -- the pixel a monospace face gives up elsewhere is
-// given up against prose it sits inside, and a badge label has none beside it.
+// upstream and model chips take: a 24px pill carrying the 12px-on-16px Caption
+// that Badge's own reset states and that the WinUI layer runs at the regular
+// weight. What is ours is the face and the width floor; the pill's fill, stroke
+// and label colour are the tint appearance's, in both schemes.
 //
-// The floor holds a column of them to one width. GET, POST and DELETE differ by
-// four characters, and a table reads down its column rather than across its row.
+// The label is a wire token, so it is set in the monospace stack. It keeps the
+// badge's Caption size rather than stepping onto the app's mono ramp: that
+// ramp's one-pixel reduction is spent against the prose a code span sits
+// inside, and a badge label has no prose beside it.
 //
-// The padding is a compensation, not a spacing. Maple Mono's ascent and descent
-// are not symmetric about its cap band, so centring the line box leaves the
-// glyph high; half of this is how far the centred content moves down.
+// The floor is wider than any method an endpoint table lists, so the column
+// they sit in reads as one width rather than one width per method name.
 const useStyles = makeStyles({
   root: {
     fontFamily: 'var(--fontFamilyMonospace)',
-    fontSize: '12px',
-    fontWeight: 'var(--fontWeightRegular)',
-    justifyContent: 'center',
-    lineHeight: '16px',
     minWidth: '48px',
-    paddingTop: '1.5px',
   },
 });
 

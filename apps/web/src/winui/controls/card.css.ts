@@ -27,6 +27,30 @@
 // so.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L5-L26
 //
+// Disabled needs no rule of its own either, and the appearance rules below
+// carrying a doubled class over Fluent's single-class disabled atom is what
+// produces the WinUI answer. The Expander's Disabled visual state rewrites the
+// header's foreground and border and leaves its background alone, and the
+// border it names, ExpanderHeaderDisabledBorderBrush, is CardStrokeColorDefault
+// — the same stroke as at rest. So a disabled card keeps its fill and its
+// stroke, exactly as those rules paint them, while Fluent's disabled
+// foreground, which nothing here outranks, lands on the WinUI value through
+// ../theme.ts.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L12-L13
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L166-L178
+//
+// Colour is confined to `@media not (forced-colors: active)`. Fluent answers
+// forced colours on the card root with `forced-color-adjust: none` plus a
+// literal Highlight fill and HighlightText foreground for the selected and the
+// hovered or pressed interactive card, which is what WinUI's own HighContrast
+// dictionary says: ListViewItem's selected, selected-pointer-over and
+// selected-pressed backgrounds all become SystemColorHighlight there. Those
+// Fluent declarations sit on single-class atoms, so every coloured rule below
+// would outrank them and leave HighlightText on a near-transparent wash;
+// standing aside under forced colours keeps Fluent's answer whole. Geometry
+// applies in both modes.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L85-L87
+//
 // Every painted value is read through a `--winui-card-*` custom property. The
 // properties are declared on `:root`, so any ancestor can redefine them for its
 // subtree, and setting one to `initial` makes it guaranteed-invalid.
@@ -59,6 +83,7 @@ export const cardCss = `
   --winui-card-stroke: var(--winui-card-stroke-default);
   --winui-card-corner-radius: var(--winui-overlay-corner-radius);
   --winui-card-selected-fill: var(--winui-subtle-fill-secondary);
+  --winui-card-selected-fill-hover: var(--winui-subtle-fill-tertiary);
   --winui-card-focus-stroke: var(--winui-focus-stroke-outer);
   --winui-card-focus-stroke-inner: var(--winui-focus-stroke-inner);
 }
@@ -69,6 +94,7 @@ export const cardCss = `
   --winui-card-stroke: initial;
   --winui-card-corner-radius: initial;
   --winui-card-selected-fill: initial;
+  --winui-card-selected-fill-hover: initial;
   --winui-card-focus-stroke: initial;
   --winui-card-focus-stroke-inner: initial;
   /* The theme layer flattens the six elevation tokens Fluent composes at
@@ -92,84 +118,116 @@ export const cardCss = `
 
 /* WinUI gives every card-shaped surface the same OverlayCornerRadius, where
    Fluent scales the radius with the card's size; the fallback is Fluent's own
-   per-size variable, so opting out restores that scaling.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CornerRadius_themeresources.xaml#L6 */
+   per-size variable, so opting out restores that scaling. The focus ring is a
+   border on the same \`::after\`, and Fluent restates the Fluent radius on it
+   from a selector no weaker than this one, so the ring is named here too and
+   the card keeps one radius whether or not it is focused.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CornerRadius_themeresources.xaml#L6
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-card/library/src/components/Card/useCardStyles.styles.ts#L34-L38 */
 .fui-Card.fui-Card,
-.fui-Card.fui-Card::after {
+.fui-Card.fui-Card::after,
+.fui-Card.fui-Card[data-fui-focus-visible]::after,
+.fui-Card.fui-Card[data-fui-focus-within]:focus-within::after {
   border-radius: var(--winui-card-corner-radius, var(--fui-Card--border-radius));
 }
 
-/* The Expander header: the card fill, and the stroke Fluent leaves transparent
-   on a filled card. One fill for every pointer state is the point -- the rule
-   outranks Fluent's interactive hover and pressed atoms, which is how the
-   surface stops repainting under the pointer.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L5
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L9 */
-.fui-Card.fui-Card[data-winui-appearance='filled'] {
-  background-color: var(--winui-card-fill, var(--colorNeutralBackground1));
-}
+@media not (forced-colors: active) {
+  /* The Expander header: the card fill, and the stroke Fluent leaves
+     transparent on a filled card. One fill for every pointer state is the
+     point -- the rule outranks Fluent's interactive hover and pressed atoms,
+     which is how the surface stops repainting under the pointer.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L5
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L9 */
+  .fui-Card.fui-Card[data-winui-appearance='filled'] {
+    background-color: var(--winui-card-fill, var(--colorNeutralBackground1));
+  }
 
-.fui-Card.fui-Card[data-winui-appearance='filled']::after {
-  border-color: var(--winui-card-stroke, var(--colorTransparentStroke));
-}
+  .fui-Card.fui-Card[data-winui-appearance='filled']::after {
+    border-color: var(--winui-card-stroke, var(--colorTransparentStroke));
+  }
 
-/* The Expander content region, one step down the same ramp, inside the same
-   stroke.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L25-L26 */
-.fui-Card.fui-Card[data-winui-appearance='filled-alternative'] {
-  background-color: var(--winui-card-fill-alternative, var(--colorNeutralBackground2));
-}
+  /* The Expander content region, one step down the same ramp, inside the same
+     stroke.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L25-L26 */
+  .fui-Card.fui-Card[data-winui-appearance='filled-alternative'] {
+    background-color: var(--winui-card-fill-alternative, var(--colorNeutralBackground2));
+  }
 
-.fui-Card.fui-Card[data-winui-appearance='filled-alternative']::after {
-  border-color: var(--winui-card-stroke, var(--colorTransparentStroke));
-}
+  .fui-Card.fui-Card[data-winui-appearance='filled-alternative']::after {
+    border-color: var(--winui-card-stroke, var(--colorTransparentStroke));
+  }
 
-/* An outline card keeps Fluent's transparent body and takes only the card
-   stroke, which is what an Expander contributes once its fill is dropped.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L46 */
-.fui-Card.fui-Card[data-winui-appearance='outline']::after {
-  border-color: var(--winui-card-stroke, var(--colorNeutralStroke1));
-}
+  /* An outline card keeps Fluent's transparent body and takes only the card
+     stroke, which is what an Expander contributes once its fill is dropped.
+     ExpanderHeaderBorderPointerOverBrush and ...PressedBrush are that same
+     stroke, so this one rule is also the pointer answer.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L46
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L9-L11 */
+  .fui-Card.fui-Card[data-winui-appearance='outline']::after {
+    border-color: var(--winui-card-stroke, var(--colorNeutralStroke1));
+  }
 
-/* Selection. A selected ListViewItem replaces its background with
-   SubtleFillColorSecondary rather than layering over it, and states one
-   selected background whatever the item is filled with, so this rule is not
-   partitioned by appearance. Fluent does mark selection on the card root, but
-   only with the Griffel atom of its own selected fill -- one per appearance,
-   each named by a content hash -- so the hidden checkbox it renders for a
-   selectable card is the stable marker and is what this rule keys off. A card
-   that supplies a floatingAction instead is given no checkbox and keeps
-   Fluent's selected fill. Redefining the four *Selected background tokens on
-   the root would cover both sources, at the price of handing those tokens to
-   every Fluent element inside the card, which is the trade ./button.css.ts
-   declines when it states its accent steps as declarations.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L20
-   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-card/library/src/components/Card/useCardStyles.styles.ts#L476
-   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-card/library/src/components/Card/useCardSelectable.ts#L92-L95 */
-.fui-Card.fui-Card:has(> .fui-Card__checkbox:checked) {
-  background-color: var(--winui-card-selected-fill, var(--colorNeutralBackground1Selected));
-}
+  /* Selection. A selected ListViewItem replaces its background with
+     SubtleFillColorSecondary rather than layering over it, and states one
+     selected background whatever the item is filled with, so this rule is not
+     partitioned by appearance. Fluent does mark selection on the card root, but
+     only with the Griffel atom of its own selected fill -- one per appearance,
+     each named by a content hash -- so the hidden checkbox it renders for a
+     selectable card is the stable marker and is what this rule keys off. A card
+     that supplies a floatingAction instead is given no checkbox and keeps
+     Fluent's selected fill. Redefining the four *Selected background tokens on
+     the root would cover both sources, at the price of handing those tokens to
+     every Fluent element inside the card, which is the trade ./button.css.ts
+     declines when it states its accent steps as declarations.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L20
+     https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-card/library/src/components/Card/useCardStyles.styles.ts#L476
+     https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-card/library/src/components/Card/useCardSelectable.ts#L92-L95 */
+  .fui-Card.fui-Card:has(> .fui-Card__checkbox:checked) {
+    background-color: var(--winui-card-selected-fill, var(--colorNeutralBackground1Selected));
+  }
 
-/* The focus visual. A ListViewItem draws a two-ring composite: a 2px outer ring
-   in FocusStrokeColorOuter with a 1px FocusStrokeColorInner ring immediately
-   inside it. The outer ring is the width and the position Fluent's own ring
-   already has, so only its colour is restated; Fluent draws that ring as a
-   border on the same \`::after\` that carries the card border, which leaves the
-   inner ring to sit inside the outer ring's border box as an inset shadow, as
-   on every other item-shaped surface in the layer. The redefinition sits on that pseudo-element rather than on the card,
-   so the token the ring reads is rewritten where it is read and the card's
-   contents keep the value they inherit from the provider; under forced colours
-   the box-shadow is dropped by the user agent and Fluent's paired override,
-   a literal system colour, is unaffected.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L248-L252
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L29-L30
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L181-L182
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
-   https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
-.fui-Card.fui-Card[data-fui-focus-visible]::after,
-.fui-Card.fui-Card[data-fui-focus-within]:focus-within::after {
-  --colorStrokeFocus2: var(--winui-card-focus-stroke);
-  box-shadow: inset 0 0 0 1px var(--winui-card-focus-stroke-inner);
+  /* The selected wash is ListViewItem's, and unlike the Expander fill it does
+     answer the pointer: SubtleFillColorTertiary while the pointer is over a
+     selected item, and back to SubtleFillColorSecondary while it is pressed.
+     ListViewItemBackgroundSelectedDisabled is Secondary through both, and
+     Fluent hands the card's own \`disabled\` to the hidden checkbox, so
+     \`:enabled\` on it is what holds a disabled selected card at the rule
+     above.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L21-L22
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L74
+     https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-card/library/src/components/Card/useCardSelectable.ts#L108-L112 */
+  .fui-Card.fui-Card:has(> .fui-Card__checkbox:checked:enabled):hover {
+    background-color: var(--winui-card-selected-fill-hover, var(--colorNeutralBackground1Selected));
+  }
+
+  .fui-Card.fui-Card:has(> .fui-Card__checkbox:checked:enabled):active {
+    background-color: var(--winui-card-selected-fill, var(--colorNeutralBackground1Pressed));
+  }
+
+  /* The focus visual. A ListViewItem draws a two-ring composite: a 2px outer
+     ring in FocusStrokeColorOuter with a 1px FocusStrokeColorInner ring
+     immediately inside it. The outer ring is the width and the position
+     Fluent's own ring already has, so only its colour is restated; Fluent draws
+     that ring as a border on the same \`::after\` that carries the card border,
+     which leaves the inner ring to sit inside the outer ring's border box as an
+     inset shadow, as on every other item-shaped surface in the layer. The
+     redefinition sits on that pseudo-element rather than on the card, so the
+     token the ring reads is rewritten where it is read and the card's contents
+     keep the value they inherit from the provider. The border-color beside it
+     restates Fluent's own declaration verbatim, which is what lifts the ring
+     over the appearance strokes above: those name one class more than Fluent's
+     focus atom does, and would otherwise paint the card stroke over the ring.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L248-L252
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L29-L30
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L181-L182
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
+     https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-tabster/src/focus/createFocusOutlineStyle.ts#L65-L71 */
+  .fui-Card.fui-Card[data-fui-focus-visible]::after,
+  .fui-Card.fui-Card[data-fui-focus-within]:focus-within::after {
+    --colorStrokeFocus2: var(--winui-card-focus-stroke);
+    border-color: var(--colorStrokeFocus2);
+    box-shadow: inset 0 0 0 1px var(--winui-card-focus-stroke-inner);
+  }
 }
 `;

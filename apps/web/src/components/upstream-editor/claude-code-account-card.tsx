@@ -117,7 +117,7 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
     </div>}
 
     <div className="flex flex-wrap items-center gap-2 empty:hidden">
-      {quota?.representativeClaim && <Badge appearance="outline">
+      {quota?.representativeClaim && <Badge appearance="outline" size="large">
         {t('dashboard.upstreamEditor.claudeCode.representative', { claim: quota.representativeClaim })}
       </Badge>}
       {quota?.overage?.status === 'allowed' && <StatusBadge color="success">

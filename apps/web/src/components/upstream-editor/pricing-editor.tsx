@@ -30,13 +30,20 @@ import { PRICING_AXES, type BillingMetric, type ModelKind, type ModelPricing, ty
 
 const { Button, Divider, Field, List, ListItem, MessageBar, MessageBarBody, Option, Text, Toolbar, ToolbarButton, Tooltip, makeStyles } = fluentComponents;
 const usePricingStyles = makeStyles({
-  // Selection is drawn by the WinUI layer, which marks a selected row with the
-  // accent bar WinUI runs down its leading edge; a full-height border here
-  // would sit on top of it and read as an edge rather than as a marker.
+  // A rule row carries two lines -- its coordinate over a one-line summary --
+  // where WinUI's list item carries one, centred in a 40px minimum with no
+  // block padding of its own. The inset here is ours, so the second line has
+  // room and the row grows past that minimum instead of crowding it.
+  //
+  // Everything else the row is made of stays the WinUI layer's:
+  // ../../winui/controls/list.css.ts states the corner radius, the minimum
+  // width and the 16/12 content padding on `.fui-ListItem.fui-ListItem`, whose
+  // doubled class outranks anything declared here, and it draws selection as
+  // the accent bar WinUI runs down a selected row's leading edge. A border in
+  // this rule would sit on top of that bar and read as an edge rather than as
+  // a marker.
   rule: {
-    borderRadius: 'var(--borderRadiusMedium)',
-    minWidth: 0,
-    padding: '8px 10px 8px 16px',
+    paddingBlock: '8px',
   },
 });
 
@@ -231,7 +238,7 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
               <div className="flex min-w-0 items-center gap-2">
                 <Dropdown
                   aria-label={t('dashboard.upstreamEditor.models.operator')}
-                  disabled={readOnly}
+                  readOnly={readOnly}
                   className="!w-[76px] flex-none"
                   selectedOptions={[threshold?.operator ?? 'gt']}
                   value={threshold?.operator === 'gte' ? '≥' : '>'}

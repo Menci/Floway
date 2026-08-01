@@ -35,14 +35,19 @@ import { INDICATOR_DURATION_MS, INDICATOR_POSITION_SNAP, INDICATOR_REACH_MS, IND
 //
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.cpp#L2176-L2233
 
-// The bar's width and corner radius are stated outright. Its 16px length is
-// stated against a 36px item, so it is carried here as the inset it leaves at
-// each end rather than as a length, and the bar spans whatever room its item
-// gives it -- the same way every other selection indicator in the dashboard is
-// described. See the list row's in ../winui/controls/list.css.
+// The bar's width and corner radius are stated outright. Its length is not:
+// WinUI states a fixed 16px against a 36px item, and our choice throughout the
+// dashboard is a quarter inset at each end instead, so the pill holds its
+// proportion as the row height changes rather than sitting short in a tall row.
+// ../winui/controls/nav.css.ts states the same quarter inset on the category
+// and sub-item rows this component does not draw, and ../winui/controls/list.css
+// and ../winui/controls/select.css state it on their own rows, so one indicator
+// geometry reads across every list in the app. A margin percentage resolves
+// against the containing block's inline size rather than its block size, so the
+// inset is computed from the item box this component has already measured.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L217
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L220-L222
-const INDICATOR_INSET = 10;
+const INDICATOR_INSET_RATIO = 0.25;
 const INDICATOR_WIDTH = 3;
 const INDICATOR_RADIUS = 2;
 
@@ -229,7 +234,7 @@ export function NavSelectionIndicator({
       style={{
         backgroundColor: 'var(--winui-accent-fill-default)',
         borderRadius: INDICATOR_RADIUS,
-        marginBlock: INDICATOR_INSET,
+        marginBlock: geometry.height * INDICATOR_INSET_RATIO,
         marginInlineStart: inset,
         width: INDICATOR_WIDTH,
       }}

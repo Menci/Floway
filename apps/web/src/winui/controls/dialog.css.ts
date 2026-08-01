@@ -10,9 +10,10 @@
 // back out of it, which is what the negative insets below do.
 //
 // The foundation layer already remaps Fluent's neutral ramp, radii, and
-// typography, so agreements it establishes -- the 8px OverlayCornerRadius, the
-// 1px border, the 20px semibold title, the 8px button spacing -- carry no rule
-// here.
+// typography, so the agreements those establish -- the 8px OverlayCornerRadius,
+// the 20px semibold title -- carry no rule here. Fluent's own constants land on
+// two more: its 1px surface border is ContentDialogBorderWidth, and the 8px
+// grid gap it puts on the actions row is ContentDialogButtonSpacing.
 //
 // WinUI fills the content band with ContentDialogTopOverlay, which resolves to
 // LayerFillColorAltBrush -- opaque white in light, a five percent white wash in
@@ -64,6 +65,22 @@ export const dialogCss = `
 @media (max-height: 359px) {
   .fui-DialogSurface.fui-DialogSurface {
     border-width: 1px;
+  }
+}
+
+/* High contrast. WinUI's HighContrast dictionary doubles the dialog's stroke to
+   2px, because the smoke layer and the dialog collapse onto the same system
+   Window colour there and the stroke is the only thing left dividing them.
+   Forced colours collapse the same two fills the same way but leave widths
+   alone, so the doubled stroke is the one value restated. Nothing else in that
+   dictionary needs a rule: it points the content band's overlay at transparent
+   and the separator at WindowText, which is already what forced colours make of
+   the band fill and of the separator on the actions band below.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L21-L28
+   https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
+@media (forced-colors: active) {
+  .fui-DialogSurface.fui-DialogSurface {
+    border-width: 2px;
   }
 }
 
@@ -150,13 +167,14 @@ export const dialogCss = `
 }
 
 /* A lone button lands in WinUI's CloseColumn with PrimaryColumn still at star
-   width ahead of it, so it takes the right half of the band. fluent-svelte
-   reaches the same layout from a single-column grid, and that technique --
-   including its narrowing to a button, so a spinner or a wrapper element is
-   not half-width by accident -- is taken here.
+   width ahead of it and the 8px SecondSpacer between the two, so it takes half
+   of what the band leaves after that gap -- the same edge the right-hand button
+   of a pair sits on. fluent-svelte reaches the same layout from a single-column
+   grid, and that technique -- including its narrowing to a button, so a spinner
+   or a wrapper element is not half-width by accident -- is taken here.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L250-L256 */
 .fui-DialogActions > .fui-Button.fui-Button:only-child {
-  width: 50%;
+  width: calc(50% - 4px);
   justify-self: end;
 }
 
@@ -165,7 +183,7 @@ export const dialogCss = `
    breaks them into a column at 480px and that break is kept here as our own
    call for small viewports. Fluent expresses it as flex-direction, which is
    inert under the display: grid above, so it is restated as a row flow. Equal
-   columns become equal rows, and the lone button gives up its half of the band
+   columns become equal rows, and the lone button gives that half-band width up
    because no second column is left for it to yield to.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L248-L258 */
 @media (max-width: 480px) {

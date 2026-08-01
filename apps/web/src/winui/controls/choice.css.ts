@@ -11,7 +11,13 @@
 // custom properties declared on the root. We paint the indicator element
 // directly instead: the state selectors below read the input's own `:checked`,
 // `:indeterminate`, `:enabled`, and `:disabled`, which keeps a single rule
-// covering the Fluent states that share one WinUI value.
+// covering the Fluent states that share one WinUI value. Pointer-over and
+// pressed are read off the root, because WinUI enters them for the whole
+// control while the input's box stops at the indicator and its padding.
+//
+// Both dictionaries name the same brush keys per state in their Light and
+// their Default dictionary, so a state has one derivation and the `--winui-*`
+// tokens carry the light/dark split.
 //
 // Colour is confined to `@media not (forced-colors: active)`. WinUI answers
 // Windows High Contrast with a theme dictionary that maps each of these
@@ -190,7 +196,9 @@ export const choiceCss = `
 
   /* Selected box. WinUI gives Indeterminate the same accent fill and stroke as
      Checked and differs only in the glyph it draws, so both states share these
-     rules; Fluent instead leaves the indeterminate box hollow.
+     rules; Fluent instead leaves the indeterminate box hollow. Fill and stroke
+     are the same accent brush per state, so the box reads as a filled square
+     with no outline of its own.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L221
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L225
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L233
@@ -204,11 +212,52 @@ export const choiceCss = `
     color: var(--winui-text-on-accent-fill-primary);
   }
 
+  /* The selected box walks the accent ramp on pointer-over and pressed, the
+     same two steps for Checked and Indeterminate.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L222
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L226
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L234
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L238 */
+  .fui-Checkbox:hover
+    .fui-Checkbox__input:enabled:checked
+    ~ .fui-Checkbox__indicator.fui-Checkbox__indicator,
+  .fui-Checkbox:hover
+    .fui-Checkbox__input:enabled:indeterminate
+    ~ .fui-Checkbox__indicator.fui-Checkbox__indicator {
+    background-color: var(--winui-accent-fill-secondary);
+    border-color: var(--winui-accent-fill-secondary);
+  }
+
+  /* Pressed also drops the glyph one step down the on-accent ramp, which no
+     other state of the check box does.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L223
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L227
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L235
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L239
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L247
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L251 */
+  .fui-Checkbox:active
+    .fui-Checkbox__input:enabled:checked
+    ~ .fui-Checkbox__indicator.fui-Checkbox__indicator,
+  .fui-Checkbox:active
+    .fui-Checkbox__input:enabled:indeterminate
+    ~ .fui-Checkbox__indicator.fui-Checkbox__indicator {
+    background-color: var(--winui-accent-fill-tertiary);
+    border-color: var(--winui-accent-fill-tertiary);
+    color: var(--winui-text-on-accent-fill-secondary);
+  }
+
   /* Disabled. WinUI keeps the selected box accent-shaped and only desaturates
      it, and keeps the glyph on the on-accent ramp, where Fluent collapses every
-     disabled check box onto one neutral appearance.
+     disabled check box onto one neutral appearance. The stroke is the disabled
+     strong stroke whether the box is unchecked, checked or indeterminate, and
+     so is the glyph's disabled on-accent colour, so one rule states both.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L220
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L248 */
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L224
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L228
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L244
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L248
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L252 */
   .fui-Checkbox__input:disabled ~ .fui-Checkbox__indicator.fui-Checkbox__indicator {
     border-color: var(--winui-control-strong-stroke-disabled);
     color: var(--winui-text-on-accent-fill-disabled);
@@ -310,27 +359,31 @@ export const choiceCss = `
   margin-bottom: calc((20px - var(--lineHeightBase300)) / 2);
 }
 
-/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L180 */
-.fui-Radio
-  .fui-Radio__input:enabled:checked:hover
+/* Pointer-over and pressed are states of the whole control in WinUI, so they
+   are read off the root rather than off the input, whose box covers only the
+   ellipse and the padding beside it and would leave the label out of them.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L180 */
+.fui-Radio:hover
+  .fui-Radio__input:enabled:checked
   ~ .fui-Radio__indicator.fui-Radio__indicator::after {
   transform: scale(0.7);
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L181 */
-.fui-Radio
-  .fui-Radio__input:enabled:checked:hover:active
+.fui-Radio:active
+  .fui-Radio__input:enabled:checked
   ~ .fui-Radio__indicator.fui-Radio__indicator::after {
   transform: scale(0.5);
 }
 
 @media not (forced-colors: active) {
   /* WinUI holds the radio label at TextFillColorPrimary through every enabled
-     state, where Fluent walks a neutral ramp for the unselected control.
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L122-L124 */
-  .fui-Radio .fui-Radio__input:enabled ~ .fui-Radio__label.fui-Radio__label,
-  .fui-Radio .fui-Radio__input:enabled:hover ~ .fui-Radio__label.fui-Radio__label,
-  .fui-Radio .fui-Radio__input:enabled:hover:active ~ .fui-Radio__label.fui-Radio__label {
+     state, where Fluent walks a neutral ramp for the unselected control. One
+     rule covers rest, pointer-over and pressed because the three share a value;
+     the disabled label is left to Fluent, whose token for it already resolves
+     to TextFillColorDisabled.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L122-L125 */
+  .fui-Radio .fui-Radio__input:enabled ~ .fui-Radio__label.fui-Radio__label {
     color: var(--winui-text-fill-primary);
   }
 
@@ -348,16 +401,16 @@ export const choiceCss = `
   }
 
   /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L139 */
-  .fui-Radio
-    .fui-Radio__input:enabled:not(:checked):hover
+  .fui-Radio:hover
+    .fui-Radio__input:enabled:not(:checked)
     ~ .fui-Radio__indicator.fui-Radio__indicator {
     background-color: var(--winui-control-alt-fill-tertiary);
   }
 
   /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L136
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L140 */
-  .fui-Radio
-    .fui-Radio__input:enabled:not(:checked):active
+  .fui-Radio:active
+    .fui-Radio__input:enabled:not(:checked)
     ~ .fui-Radio__indicator.fui-Radio__indicator {
     background-color: var(--winui-control-alt-fill-quarternary);
     border-color: var(--winui-control-strong-stroke-disabled);
@@ -373,6 +426,26 @@ export const choiceCss = `
   .fui-Radio .fui-Radio__input:enabled:checked ~ .fui-Radio__indicator.fui-Radio__indicator {
     background-color: var(--winui-accent-fill-default);
     border-color: var(--winui-accent-fill-default);
+  }
+
+  /* The selected ellipse walks the same accent ramp the selected check box
+     does, in fill and stroke together.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L143
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L147 */
+  .fui-Radio:hover
+    .fui-Radio__input:enabled:checked
+    ~ .fui-Radio__indicator.fui-Radio__indicator {
+    background-color: var(--winui-accent-fill-secondary);
+    border-color: var(--winui-accent-fill-secondary);
+  }
+
+  /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L144
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L148 */
+  .fui-Radio:active
+    .fui-Radio__input:enabled:checked
+    ~ .fui-Radio__indicator.fui-Radio__indicator {
+    background-color: var(--winui-accent-fill-tertiary);
+    border-color: var(--winui-accent-fill-tertiary);
   }
 
   /* The dot carries the accent elevation stroke over its accent surround,

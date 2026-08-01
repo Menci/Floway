@@ -3,9 +3,17 @@
 
    The webfont, first, because a face has to be declared before anything is set
    in it. Then UnoCSS's generated utilities, which the `@unocss` directive
-   stands in for. Then the app's own custom properties and element defaults --
-   the values that are Floway's rather than Fluent's or WinUI's, and the resets
-   that make an element behave the same wherever it appears.
+   stands in for. Then the app's own custom properties, element defaults and
+   type rules -- the measures, faces and weights that are Floway's rather than
+   Fluent's or WinUI's, and the resets that make an element behave the same
+   wherever it appears.
+
+   No rule below paints a colour of its own: each one either states a measure,
+   a face or a weight, or passes the surrounding colour straight through. So
+   the document needs neither a dark-scheme nor a forced-colors block -- every
+   surface keeps whatever its own layer paints it in, in both schemes and in
+   high contrast alike, and no state a control declares for itself is outranked
+   from here.
 
    Order is load-bearing and is the order the two files this replaces were
    imported in: the utilities come after the font so a utility can override a
@@ -44,23 +52,16 @@
 
 @unocss;
 
-/* The monospace ramp. WinUI states none -- it has no code face -- so this is the
-   app's own, and each size carries the leading it is set with. Without that
-   pairing a size alone inherits whatever leading its context happens to have,
-   and one identifier rendered at 13px was measured three ways in three places:
-   13/20 in a list row, 13/16 in a detail pane, and 13/13 in a table cell, where
-   the leading had collapsed onto the size. Each step is paired with the
-   proportional leading its size sits closest to, so a mono cell lines up with
-   the ordinary text in the same row. */
 /* The inset a route's content keeps from the edge of its region. A layout that
    puts two panels side by side separates them by the same measure, so the space
    around the page and the space between its panels read as one rhythm rather
-   than two. */
-/* The inset a panel keeps from its own edge, which is the 16 both of WinUI's
+   than two.
+
+   The inset a panel keeps from its own edge is the 16 both of WinUI's
    nearest surfaces state: SettingsCard's padding
    (https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L99)
    and Expander's ContentPadding
-   (https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml).
+   (https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L86).
    Both hold a row of content rather than a whole form, but neither scales its
    inset to what it holds, and nothing in the corpus does -- so a panel takes the
    same measure whatever is inside it. It does not step down with the page inset:
@@ -77,6 +78,14 @@
   }
 }
 
+/* The monospace ramp. WinUI states none -- it has no code face -- so this is the
+   app's own, and each size carries the leading it is set with. Without that
+   pairing a size alone inherits whatever leading its context happens to have,
+   and one identifier rendered at 13px was measured three ways in three places:
+   13/20 in a list row, 13/16 in a detail pane, and 13/13 in a table cell, where
+   the leading had collapsed onto the size. Each step is paired with the
+   proportional leading its size sits closest to, so a mono cell lines up with
+   the ordinary text in the same row. */
 :root {
   --floway-font-size-mono: 13px;
   --floway-line-height-mono: 20px;
@@ -155,8 +164,23 @@ pre :where(code, kbd, samp) {
   font-family: var(--fontFamilyMonospace) !important;
 }
 
-.fui-TableHeaderCell,
-.fui-TableHeaderCell__button {
+/* A column header is told apart from the rows below it by weight. WinUI ships
+   no data grid, and the one header-shaped item it does state --
+   ListViewHeaderItem, a group caption rather than a column label -- sets no
+   weight at all, so there is nothing here to transcribe: semibold is the
+   dashboard's own choice, taken once for every table.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L9448-L9456
+
+   The weight is stated on the cell alone, which the button slot a sortable
+   header nests inside it inherits. The leading has to be stated on that button
+   instead, because Fluent's button reset pins it to `normal`, and a header that
+   wraps would otherwise sit on a different leading from the cells beside it.
+   Weight and leading are all this states, so the pointer, press, sort and focus
+   states the WinUI table layer draws are left to it. */
+.fui-TableHeaderCell {
   font-weight: var(--fontWeightSemibold) !important;
+}
+
+.fui-TableHeaderCell__button {
   line-height: var(--lineHeightBase300) !important;
 }

@@ -21,6 +21,9 @@ const useStyles = makeStyles({
   // the 12px each item pads by on either side is the whole distance between one
   // label and the next. SelectorBarItemSpacing, 8, is the gap between an item's
   // icon and its text rather than between items, and these items carry no icon.
+  // SelectorBarPadding, 0,4, is not taken either: those eight vertical pixels
+  // would stand outside the shared control-row height the item below is set to.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SelectorBar/SelectorBar.xaml#L14
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SelectorBar/SelectorBar.xaml#L29-L36
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SelectorBar/SelectorBar.xaml#L174-L178
   root: {
@@ -40,6 +43,11 @@ const useStyles = makeStyles({
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SelectorBar/SelectorBar_themeresources.xaml#L26-L32
   item: {
     alignItems: 'center',
+    // ControlCornerRadius, the radius SelectorBarItem states for itself. Every
+    // fill it can carry is transparent, so the only drawing that reads it is
+    // the focus ring below.
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SelectorBar/SelectorBar.xaml#L53
+    borderRadius: tokens.borderRadiusMedium,
     cursor: 'pointer',
     display: 'inline-flex',
     fontSize: tokens.fontSizeBase300,
@@ -47,11 +55,41 @@ const useStyles = makeStyles({
     padding: '7px 12px',
     position: 'relative',
     whiteSpace: 'nowrap',
+    // The foreground carries every pointer state, since the item's background
+    // and border are transparent in each of the six combined states. Pointer-
+    // over steps to secondary whether or not the item is the chosen one;
+    // pressed steps on to tertiary only while the item is unselected, because
+    // SelectedPressed re-states the pointer-over fill rather than the pressed
+    // one. The two pressed rules are written as an exclusive pair so that
+    // neither has to outrank the other, and the selected one is spelled out
+    // rather than left to the hover rule above: a radio is also pressed by the
+    // keyboard, with no pointer over it.
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SelectorBar/SelectorBar.xaml#L70-L96
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SelectorBar/SelectorBar.xaml#L116-L149
     '&:has(input:not(:disabled)):hover': { color: 'var(--winui-text-fill-secondary)' },
-    '&:has(input:not(:disabled)):active': { color: 'var(--winui-text-fill-tertiary)' },
+    '&:has(input:not(:disabled):not(:checked)):active': {
+      color: 'var(--winui-text-fill-tertiary)',
+    },
+    '&:has(input:checked:not(:disabled)):active': {
+      color: 'var(--winui-text-fill-secondary)',
+    },
+    // The system focus visual: a 2px FocusStrokeColorOuter ring with a 1px
+    // FocusStrokeColorInner ring nested inside it, held two pixels clear of the
+    // item by FocusVisualMargin -2 -- a negative margin grows the focus
+    // rectangle, so the outer ring is drawn around the item's bounds rather
+    // than inside them. That places the outer stroke in the two pixels outside
+    // the border edge, which is where an outline at offset zero already sits,
+    // and leaves the inner stroke the first pixel within. High Contrast is left
+    // to the forced palette: it repaints the outline on CanvasText and drops
+    // the shadow outright, which is the pair WinUI's own HighContrast
+    // dictionary states as WindowText over Window.
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SelectorBar/SelectorBar_themeresources.xaml#L34
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L472-L473
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L173-L174
     '&:has(input:focus-visible)': {
-      outline: `2px solid ${tokens.colorStrokeFocus2}`,
-      outlineOffset: '-2px',
+      boxShadow: 'inset 0 0 0 1px var(--winui-focus-stroke-inner)',
+      outline: '2px solid var(--winui-focus-stroke-outer)',
+      outlineOffset: '0',
     },
     '&:has(input:disabled)': {
       color: 'var(--winui-text-fill-disabled)',
@@ -105,6 +143,24 @@ const useStyles = makeStyles({
     // shows the mark, in the disabled accent.
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SelectorBar/SelectorBar.xaml#L164-L166
     '&:has(input:disabled)::after': { backgroundColor: 'var(--winui-accent-fill-disabled)' },
+    // WinUI states the whole control again for High Contrast, and a forced
+    // palette would otherwise answer for it: it repaints the pill's fill on the
+    // canvas, which erases the only mark the selection has, and it flattens the
+    // pointer ramp onto CanvasText, where WinUI greys it. Each rule restates
+    // the selector it overrides, because a media query carries no specificity
+    // of its own. SelectorBarItemDisabledPillFill resolves through
+    // AccentFillColorDisabledBrush, which the HighContrast dictionary re-points
+    // at Window, so a disabled chosen item keeps a pill the canvas swallows.
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SelectorBar/SelectorBar_themeresources.xaml#L36-L49
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L456
+    '@media (forced-colors: active)': {
+      '&::after': { backgroundColor: 'Highlight', forcedColorAdjust: 'none' },
+      '&:has(input:not(:disabled)):hover': { color: 'GrayText' },
+      '&:has(input:not(:disabled):not(:checked)):active': { color: 'GrayText' },
+      '&:has(input:checked:not(:disabled)):active': { color: 'GrayText' },
+      '&:has(input:disabled)': { color: 'GrayText' },
+      '&:has(input:disabled)::after': { backgroundColor: 'Canvas' },
+    },
   },
   input: {
     height: '1px',
@@ -133,10 +189,11 @@ export function ChoiceGroup({
   onChange: (value: string) => void;
   /**
    * The choice is shown but is not this operator's to make -- as distinct from
-   * disabled, which says the choice is not available at all. It reads as it
-   * does at rest, takes focus, and refuses the selection. The same distinction,
-   * and why the refusal has to cancel the click, is written down in
-   * ./fluent-form-controls.tsx for the controls Fluent ships.
+   * disabled, which says the choice is not available at all. It keeps its own
+   * appearance and its own pointer states, takes focus, and refuses the
+   * selection. The same distinction, and why the refusal has to cancel the
+   * click, is written down in ./fluent-form-controls.tsx for the controls
+   * Fluent ships.
    */
   readOnly?: boolean;
   value: string;

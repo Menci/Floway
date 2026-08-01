@@ -7,14 +7,16 @@
 // as a centred 1px band and the bar keeps its role as the indicator.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar_themeresources.xaml#L29-L30
 //
-// Both accents are handed over as token remaps rather than as painted colours.
+// Every colour is handed over as a token remap rather than as a painted slot.
 // Fluent reserves the bar's own `background-color` for its error, warning and
 // success variants and the ring's for `appearance="inverted"`, and each of
 // those is one atom deep, so a rule painting the slot would outrank the very
-// signal it is meant to leave alone. Rewriting the brand token each default
-// path reads reaches exactly the default path, and leaves the indicator's
-// forced-colors answer — which reads no token, and is already the Highlight
-// WinUI's own high-contrast dictionary names — in force.
+// signal it is meant to carry. Rewriting the token a given path reads reaches
+// that path alone: the brand default takes AccentFillColorDefault, the three
+// status variants take the SystemFill ramp, `appearance="inverted"` keeps
+// Fluent's neutrals, and the indicator's forced-colors answer — which reads no
+// token, and is already the Highlight WinUI's own high-contrast dictionary
+// names — stays in force.
 //
 // Motion is answered per control. The ring is an AnimatedVisualPlayer running a
 // Lottie composition, so its timing lives in generated animation source and not
@@ -23,9 +25,13 @@
 // indicators over a 2s loop on a 0.4,0,0.6,1 spline, the second held until
 // 0.75s — and Fluent's single sweeping segment is kept against it by choice, so
 // the two controls are not left with one transcribed motion and one borrowed
-// one.
+// one. The choice carries with it the reduced-motion form Fluent substitutes
+// for that sweep, an opacity pulse over the full width. The determinate step
+// keeps Fluent's 0.3s width transition, WinUI's counterpart being a
+// RepositionThemeAnimation over the length the indicator gained.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressRing/ProgressRing.xaml#L31-L32
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar.xaml#L94-L111
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar.xaml#L20-L24
 export const progressCss = `
 /* ProgressBarMinHeight is a floor, so it is spelled as one: Fluent's 2px medium
    rises to it and its 4px large -- a thickness WinUI never states -- is left to
@@ -51,6 +57,21 @@ export const progressCss = `
   min-height: 3px;
 }
 
+/* An indeterminate bar has no track at all: every WinUI state that runs the
+   travelling indicators -- Indeterminate and its error and paused forms --
+   takes ProgressBarTrack.Opacity to 0, so the segment crosses bare canvas. The
+   state reaches the DOM through ARIA rather than through a class, because
+   Fluent writes aria-valuenow only when a value exists (useProgressBar.js,
+   useProgressBarBase_unstable), and its absence is what indeterminate means.
+   Only the band is dropped; the box, its floor and its radius stay, since
+   WinUI hides the track rectangle and not the control.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar.xaml#L94-L99
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar.xaml#L113-L119
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar.xaml#L133-L139 */
+.fui-ProgressBar.fui-ProgressBar:not([aria-valuenow]) {
+  background-image: none;
+}
+
 /* WinUI states the bar again in its HighContrast dictionary, and that is what
    is transcribed here: a WindowColor track inside a 1px WindowTextColor border,
    under an indicator on HighlightColor -- the Highlight Fluent already paints,
@@ -72,16 +93,32 @@ export const progressCss = `
 }
 
 /* The indicator takes ProgressBarForeground through the token Fluent's own
-   brand fill reads, so the red, orange and green a caller asks for by color
-   keep carrying their meaning. The indeterminate segment is the one shape that
-   is repainted outright: Fluent fades it into its full-height track from both
-   ends, and WinUI has no such track to fade into -- the indicator crosses a 1px
-   line -- so the gradient goes and the accent shows through unmodulated. Only
-   the brand path reaches it, because a colour needs a value and a value is
-   what makes the bar determinate.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar_themeresources.xaml#L22 */
+   brand fill reads, and its three status variants take the SystemFill ramp the
+   same way: WinUI paints an errored indicator SystemFillColorCritical and a
+   paused one SystemFillColorCaution, which are the states Fluent spells
+   \`error\` and \`warning\`. Both differ from Fluent's shared red and dark
+   orange in light and part company with them in dark, where WinUI lightens the
+   pair and Fluent keeps the same primaries. WinUI's ProgressBar has no third
+   status, so \`success\` is pointed at SystemFillColorSuccess for agreement
+   with the message a Field prints beside it -- the same ramp, and the same
+   validationState that gave the bar its colour.
+
+   The indeterminate segment is the one shape that is repainted outright:
+   Fluent fades it into its full-height track from both ends, and WinUI has no
+   such track to fade into -- the indicator crosses a 1px line -- so the
+   gradient goes and the accent shows through unmodulated. Only the brand path
+   reaches it, because a colour needs a value and a value is what makes the bar
+   determinate.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar_themeresources.xaml#L22
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar_themeresources.xaml#L25-L26
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar_themeresources.xaml#L9-L10
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L280
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L76 */
 .fui-ProgressBar__bar.fui-ProgressBar__bar {
   --colorCompoundBrandBackground: var(--winui-accent-fill-default);
+  --colorPaletteDarkOrangeBackground3: var(--winui-system-fill-caution);
+  --colorPaletteGreenBackground3: var(--winui-system-fill-success);
+  --colorPaletteRedBackground3: var(--winui-system-fill-critical);
   background-image: none;
 }
 
@@ -94,9 +131,17 @@ export const progressCss = `
    closest-side radius, so a stroke of an eighth of the diameter is written as a
    quarter of the radius: exactly WinUI's 4 at Fluent's 32px medium, and the
    same weight on the sizes Fluent offers beyond the one WinUI states.
+
+   Forced colours are Fluent's answer here. WinUI names the ring's
+   high-contrast pair SystemControlHighlightAccentBrush over
+   SystemControlBackgroundBaseLowBrush; the first is the Highlight Fluent
+   already paints the arc with, and the second is a framework alias no
+   dictionary in microsoft-ui-xaml gives a high-contrast value for, so the
+   HighlightText circle Fluent leaves behind the arc stands.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressRing/ProgressRing_themeresources.xaml#L5-L6
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressRing/ProgressRing.xaml#L12-L13
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressRing/ProgressRing_themeresources.xaml#L17
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressRing/ProgressRing_themeresources.xaml#L12-L14
    https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-spinner/library/src/components/Spinner/useSpinnerStyles.styles.ts */
 .fui-Spinner__spinner.fui-Spinner__spinner {
   --colorBrandStroke1: var(--winui-accent-fill-default);

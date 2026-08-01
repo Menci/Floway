@@ -52,6 +52,19 @@
 // Fluent's knob is an SVG element, and an SVG element generates no ::before or
 // ::after box to stack a second knob in.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L510-L520
+//
+// Colour is confined to `@media not (forced-colors: active)`. WinUI answers
+// Windows High Contrast with a theme dictionary that maps each ToggleSwitch
+// brush onto a system colour, but this layer's track is drawn on pseudo-
+// elements and its knob on a blanked glyph, and forced colours reaches neither:
+// a Highlight capsule would need `forced-color-adjust: none` on the pseudo-
+// elements, which this layer chooses not to take on. Under forced colours the
+// paint below therefore drops out entirely — no capsule fill, no capsule
+// stroke, no knob fill and no blanked glyph — and Fluent's own drawing shows
+// through, which is the indicator painted Highlight when checked and GrayText
+// when disabled, carrying its circular glyph in the matching foreground.
+// Geometry, motion and the knob's travel apply in both modes.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L64-L123
 export const switchCss = `
 /* The whole control is the drag surface, not the knob: XAML lays a transparent
    Thumb across all three rows and columns, so the caption drags the switch too.
@@ -75,8 +88,6 @@ export const switchCss = `
 .fui-Switch__indicator.fui-Switch__indicator {
   align-items: center;
   align-self: center;
-  background-color: transparent;
-  border-color: transparent;
   display: flex;
   /* Fluent rings the track with eight pixels of margin, which builds a hit
      target and spaces the label in one stroke. Inline, the twelve the
@@ -199,20 +210,17 @@ export const switchCss = `
    moves and the stroke transition is here for the disabled edge alone.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L135-L142 */
 .fui-Switch__indicator.fui-Switch__indicator::before {
-  background-color: var(--winui-control-alt-fill-secondary);
-  border: 1px solid var(--winui-control-strong-stroke-default);
   transition-duration: var(--winui-control-faster-animation-duration), var(--winui-control-faster-animation-duration), var(--winui-switch-crossfade-duration);
   transition-property: background-color, border-color, opacity;
 }
 
-/* SwitchKnobBounds. Its brushes are swapped by ObjectAnimationUsingKeyFrames
-   rather than interpolated, so the accent ramp lands instantly and only the
-   opacity above carries any timing. WinUI draws its stroke in the same accent as
-   its fill, which a single filled capsule already is.
+/* SwitchKnobBounds, the accent capsule, which the toggle cross-fades in over
+   OuterBorder. Its brushes are swapped by ObjectAnimationUsingKeyFrames rather
+   than interpolated, so the accent ramp lands instantly and only the opacity
+   here carries any timing.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L143-L150
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L259-L263 */
 .fui-Switch__indicator.fui-Switch__indicator::after {
-  background-color: var(--winui-accent-fill-default);
   opacity: 0;
 }
 
@@ -222,29 +230,6 @@ export const switchCss = `
 
 .fui-Switch__input:checked ~ .fui-Switch__indicator.fui-Switch__indicator::after {
   opacity: 1;
-}
-
-/* Fluent paints the indicator itself in every checked and disabled state, at a
-   specificity the base rule above cannot reach. Left standing, that fill sits
-   between the two capsules and is what shows through the moment neither is
-   opaque -- the wash mid-cross-fade would be Fluent's brand blue instead of the
-   page. */
-.fui-Switch__input:enabled:checked:not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator,
-.fui-Switch__input:enabled:checked:not([aria-disabled='true']):hover ~ .fui-Switch__indicator.fui-Switch__indicator,
-.fui-Switch__input:enabled:checked:not([aria-disabled='true']):hover:active ~ .fui-Switch__indicator.fui-Switch__indicator,
-.fui-Switch__input:disabled:checked ~ .fui-Switch__indicator.fui-Switch__indicator,
-.fui-Switch__input[aria-disabled='true']:checked ~ .fui-Switch__indicator.fui-Switch__indicator {
-  background-color: transparent;
-}
-
-/* The knob is drawn once. Fluent renders it as an SVG glyph, and this file
-   paints the element's own background instead so the shape can be a capsule
-   rather than a circle -- the pressed state stretches it to 17x14, which no
-   glyph does. The glyph itself has to go, or it shows through as a second,
-   circular knob inside the first: \`fill\` on the SVG does not reach the path
-   that draws it, so the path is named. */
-.fui-Switch__indicator.fui-Switch__indicator > * > * {
-  fill: transparent;
 }
 
 .fui-Switch__indicator.fui-Switch__indicator > * {
@@ -280,58 +265,6 @@ export const switchCss = `
   width: calc(12 * var(--winui-switch-unit));
 }
 
-/* Fluent clamps its own switch transitions under reduced motion, but at a
-   single class, so every timing declared above outranks it. The clamp is
-   restated here at the weight those rules carry. 0.01ms rather than none for
-   the reason ./choice.css.ts records at the same construction: the transition
-   still has to complete. */
-@media (prefers-reduced-motion: reduce) {
-  .fui-Switch__indicator.fui-Switch__indicator::before,
-  .fui-Switch__indicator.fui-Switch__indicator::after,
-  .fui-Switch__indicator.fui-Switch__indicator > * {
-    transition-duration: 0.01ms;
-  }
-}
-
-/* The knob's own fill, stated per state rather than taken from the indicator's
-   colour. XAML stacks SwitchKnobOff under SwitchKnobOn and cross-fades their
-   opacities exactly as it does the two tracks, so this fill has to animate on
-   the same schedule; \`currentColor\` cannot, because it resolves at used-value
-   time and leaves background-color with no interpolable endpoints -- the knob
-   would jump the moment the indicator's colour did.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L152-L158 */
-.fui-Switch__indicator.fui-Switch__indicator > * {
-  background-color: var(--winui-text-fill-secondary);
-}
-
-.fui-Switch__input:checked ~ .fui-Switch__indicator.fui-Switch__indicator > * {
-  background-color: var(--winui-text-on-accent-fill-primary);
-}
-
-.fui-Switch__input:disabled:not(:checked) ~ .fui-Switch__indicator.fui-Switch__indicator > *,
-.fui-Switch__input[aria-disabled='true']:not(:checked) ~ .fui-Switch__indicator.fui-Switch__indicator > * {
-  background-color: var(--winui-text-fill-disabled);
-}
-
-.fui-Switch__input:disabled:checked ~ .fui-Switch__indicator.fui-Switch__indicator > *,
-.fui-Switch__input[aria-disabled='true']:checked ~ .fui-Switch__indicator.fui-Switch__indicator > * {
-  background-color: var(--winui-text-on-accent-fill-disabled);
-}
-
-/* Off: WinUI puts the whole pointer response on the track fill and holds both
-   the stroke (ToggleSwitchStrokeOff) and the knob (TextFillColorSecondary) at
-   their rest values, so the alt-fill ramp is the only thing hover and press
-   move.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L135-L141
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L151-L153 */
-.fui-Switch__input:enabled:not(:checked):not([aria-disabled='true']):hover ~ .fui-Switch__indicator.fui-Switch__indicator::before {
-  background-color: var(--winui-control-alt-fill-tertiary);
-}
-
-.fui-Switch__input:enabled:not(:checked):not([aria-disabled='true']):hover:active ~ .fui-Switch__indicator.fui-Switch__indicator::before {
-  background-color: var(--winui-control-alt-fill-quarternary);
-}
-
 /* The knob is 12x12 at rest, swells to 14x14 under the pointer and stretches to
    17x14 while pressed -- a capsule, not a circle, which is why the shape is the
    element's own background rather than a glyph. The template animates Width and
@@ -355,8 +288,14 @@ export const switchCss = `
   width: calc(14 * var(--winui-switch-unit));
 }
 
+/* Pressed states its own height as well as its width. Both are 14 under the
+   pointer, but the press is reachable without the hover that would otherwise
+   supply it: holding Space on the focused input puts the control in :active
+   with the pointer nowhere near it, and a 17x12 knob is a shape the template
+   never draws. */
 .fui-Switch:active .fui-Switch__input:enabled:not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator > *,
 .fui-Switch[data-winui-switch-dragging] .fui-Switch__input:enabled:not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator > * {
+  height: calc(14 * var(--winui-switch-unit));
   margin-inline-start: calc(2 * var(--winui-switch-unit));
   width: calc(17 * var(--winui-switch-unit));
 }
@@ -366,46 +305,157 @@ export const switchCss = `
   margin-inline-start: calc(-1 * var(--winui-switch-unit));
 }
 
-/* On: the accent fill ramp, on the capsule that carries it. */
-.fui-Switch__input:enabled:checked:not([aria-disabled='true']):hover ~ .fui-Switch__indicator.fui-Switch__indicator::after {
-  background-color: var(--winui-accent-fill-secondary);
+/* Fluent clamps its own switch transitions under reduced motion, but at a
+   single class, so every timing declared above outranks it. The clamp is
+   restated here at the weight those rules carry. 0.01ms rather than none for
+   the reason ./choice.css.ts records at the same construction: the transition
+   still has to complete. */
+@media (prefers-reduced-motion: reduce) {
+  .fui-Switch__indicator.fui-Switch__indicator::before,
+  .fui-Switch__indicator.fui-Switch__indicator::after,
+  .fui-Switch__indicator.fui-Switch__indicator > * {
+    transition-duration: 0.01ms;
+  }
 }
 
-.fui-Switch__input:enabled:checked:not([aria-disabled='true']):hover:active ~ .fui-Switch__indicator.fui-Switch__indicator::after {
-  background-color: var(--winui-accent-fill-tertiary);
-}
+@media not (forced-colors: active) {
+  /* The indicator is a frame for the two capsules and paints neither fill nor
+     stroke of its own. Fluent states both on the input's reset atom, once per
+     pointer and disabled state, at a specificity a plain doubled subject cannot
+     reach, so every one of those states is answered here.
 
-/* Disabled. Off keeps its stroke and loses its fill -- ToggleSwitchFillOffDisabled
-   is fully transparent in both dictionaries -- while on holds the disabled
-   accent; the knob follows the matching disabled foreground in each. WinUI also
-   returns the knob to its rest size, which no pointer state can reach here.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L138-L139
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L146-L158
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L357-L368 */
-.fui-Switch__input:disabled:not(:checked) ~ .fui-Switch__indicator.fui-Switch__indicator::before,
-.fui-Switch__input[aria-disabled='true']:not(:checked) ~ .fui-Switch__indicator.fui-Switch__indicator::before {
-  background-color: var(--winui-control-alt-fill-disabled);
-  border-color: var(--winui-control-strong-stroke-disabled);
-}
+     Both matter, and for the same reason. The fill is what shows through the
+     moment neither capsule is opaque -- the wash mid-cross-fade would be
+     Fluent's brand blue instead of the page -- and the stroke is a second ring
+     one pixel outside the capsule's own, which appears in that same window when
+     a drag settles back to off. */
+  .fui-Switch__indicator.fui-Switch__indicator,
+  .fui-Switch__input:enabled:not(:checked):not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator,
+  .fui-Switch__input:enabled:not(:checked):not([aria-disabled='true']):hover ~ .fui-Switch__indicator.fui-Switch__indicator,
+  .fui-Switch__input:enabled:not(:checked):not([aria-disabled='true']):hover:active ~ .fui-Switch__indicator.fui-Switch__indicator,
+  .fui-Switch__input:enabled:checked:not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator,
+  .fui-Switch__input:enabled:checked:not([aria-disabled='true']):hover ~ .fui-Switch__indicator.fui-Switch__indicator,
+  .fui-Switch__input:enabled:checked:not([aria-disabled='true']):hover:active ~ .fui-Switch__indicator.fui-Switch__indicator,
+  .fui-Switch__input:disabled:not(:checked) ~ .fui-Switch__indicator.fui-Switch__indicator,
+  .fui-Switch__input[aria-disabled='true']:not(:checked) ~ .fui-Switch__indicator.fui-Switch__indicator,
+  .fui-Switch__input:disabled:checked ~ .fui-Switch__indicator.fui-Switch__indicator,
+  .fui-Switch__input[aria-disabled='true']:checked ~ .fui-Switch__indicator.fui-Switch__indicator {
+    background-color: transparent;
+    border-color: transparent;
+  }
 
-.fui-Switch__input:disabled:checked ~ .fui-Switch__indicator.fui-Switch__indicator::after,
-.fui-Switch__input[aria-disabled='true']:checked ~ .fui-Switch__indicator.fui-Switch__indicator::after {
-  background-color: var(--winui-accent-fill-disabled);
-}
+  /* OuterBorder's rest fill and stroke.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L135
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L139 */
+  .fui-Switch__indicator.fui-Switch__indicator::before {
+    background-color: var(--winui-control-alt-fill-secondary);
+    border: 1px solid var(--winui-control-strong-stroke-default);
+  }
 
-/* Focus: Fluent already draws a 2px ring around the whole control, so its colour
-   becomes FocusStrokeColorOuter and the 1px FocusStrokeColorInner ring WinUI
-   backs it with is added inside it. Those two thicknesses are the framework
-   defaults for FocusVisualPrimaryThickness and FocusVisualSecondaryThickness.
-   What is not transcribed is the FocusVisualMargin of -7,-3,-7,-3, which
-   inflates the pair around SwitchAreaGrid: that margin is stated against a
-   template part, and the ring here belongs to the whole control, so the
-   inflation stays as Fluent draws it.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L200
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/DependencyObject/DependencyProperty.cpp#L22-L25 */
-.fui-Switch.fui-Switch[data-fui-focus-within]:focus-within::after {
-  border-color: var(--winui-focus-stroke-outer);
-  box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
+  /* WinUI draws SwitchKnobBounds' stroke in the same accent as its fill, which
+     a single filled capsule already is.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L143
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L147 */
+  .fui-Switch__indicator.fui-Switch__indicator::after {
+    background-color: var(--winui-accent-fill-default);
+  }
+
+  /* The knob is drawn once. Fluent renders it as an SVG glyph, and this file
+     paints the element's own background instead so the shape can be a capsule
+     rather than a circle -- the pressed state stretches it to 17x14, which no
+     glyph does. The glyph itself has to go, or it shows through as a second,
+     circular knob inside the first: \`fill\` on the SVG does not reach the path
+     that draws it, so the path is named. */
+  .fui-Switch__indicator.fui-Switch__indicator > * > * {
+    fill: transparent;
+  }
+
+  /* The knob's own fill, stated per state rather than taken from the
+     indicator's colour. XAML stacks SwitchKnobOff under SwitchKnobOn and
+     cross-fades their opacities exactly as it does the two tracks, so this fill
+     has to animate on the same schedule; \`currentColor\` cannot, because it
+     resolves at used-value time and leaves background-color with no
+     interpolable endpoints -- the knob would jump the moment the indicator's
+     colour did. WinUI holds each of the two knob brushes flat across rest,
+     pointer-over and pressed, so only on, off and disabled are stated.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L151-L158 */
+  .fui-Switch__indicator.fui-Switch__indicator > * {
+    background-color: var(--winui-text-fill-secondary);
+  }
+
+  .fui-Switch__input:checked ~ .fui-Switch__indicator.fui-Switch__indicator > * {
+    background-color: var(--winui-text-on-accent-fill-primary);
+  }
+
+  .fui-Switch__input:disabled:not(:checked) ~ .fui-Switch__indicator.fui-Switch__indicator > *,
+  .fui-Switch__input[aria-disabled='true']:not(:checked) ~ .fui-Switch__indicator.fui-Switch__indicator > * {
+    background-color: var(--winui-text-fill-disabled);
+  }
+
+  .fui-Switch__input:disabled:checked ~ .fui-Switch__indicator.fui-Switch__indicator > *,
+  .fui-Switch__input[aria-disabled='true']:checked ~ .fui-Switch__indicator.fui-Switch__indicator > * {
+    background-color: var(--winui-text-on-accent-fill-disabled);
+  }
+
+  /* Off: WinUI puts the whole pointer response on the track fill and holds both
+     the stroke (ToggleSwitchStrokeOff) and the knob (TextFillColorSecondary) at
+     their rest values, so the alt-fill ramp is the only thing hover and press
+     move.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L136-L137
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L140-L141 */
+  .fui-Switch__input:enabled:not(:checked):not([aria-disabled='true']):hover ~ .fui-Switch__indicator.fui-Switch__indicator::before {
+    background-color: var(--winui-control-alt-fill-tertiary);
+  }
+
+  .fui-Switch__input:enabled:not(:checked):not([aria-disabled='true']):hover:active ~ .fui-Switch__indicator.fui-Switch__indicator::before {
+    background-color: var(--winui-control-alt-fill-quarternary);
+  }
+
+  /* On: the accent fill ramp, on the capsule that carries it.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L144-L145 */
+  .fui-Switch__input:enabled:checked:not([aria-disabled='true']):hover ~ .fui-Switch__indicator.fui-Switch__indicator::after {
+    background-color: var(--winui-accent-fill-secondary);
+  }
+
+  .fui-Switch__input:enabled:checked:not([aria-disabled='true']):hover:active ~ .fui-Switch__indicator.fui-Switch__indicator::after {
+    background-color: var(--winui-accent-fill-tertiary);
+  }
+
+  /* Disabled. Off keeps its stroke and loses its fill -- ToggleSwitchFillOffDisabled
+     is fully transparent in both dictionaries -- while on holds the disabled
+     accent; the knob follows the matching disabled foreground in each. WinUI
+     also returns the knob to its rest size, which no pointer state can reach
+     here, because every size rule above is gated on the input being enabled.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L138-L139
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L146-L158
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L357-L368 */
+  .fui-Switch__input:disabled:not(:checked) ~ .fui-Switch__indicator.fui-Switch__indicator::before,
+  .fui-Switch__input[aria-disabled='true']:not(:checked) ~ .fui-Switch__indicator.fui-Switch__indicator::before {
+    background-color: var(--winui-control-alt-fill-disabled);
+    border-color: var(--winui-control-strong-stroke-disabled);
+  }
+
+  .fui-Switch__input:disabled:checked ~ .fui-Switch__indicator.fui-Switch__indicator::after,
+  .fui-Switch__input[aria-disabled='true']:checked ~ .fui-Switch__indicator.fui-Switch__indicator::after {
+    background-color: var(--winui-accent-fill-disabled);
+  }
+
+  /* Focus: Fluent already draws a 2px ring around the whole control, so its
+     colour becomes FocusStrokeColorOuter and the 1px FocusStrokeColorInner ring
+     WinUI backs it with is added inside it. Those two thicknesses are the
+     framework defaults for FocusVisualPrimaryThickness and
+     FocusVisualSecondaryThickness. What is not transcribed is the
+     FocusVisualMargin of -7,-3,-7,-3, which inflates the pair around
+     SwitchAreaGrid: that margin is stated against a template part, and the ring
+     here belongs to the whole control, so the inflation stays as Fluent draws
+     it. Under forced colours the ring keeps Fluent's Highlight, which is what
+     WinUI's own HighContrast focus visual resolves to.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L200
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/DependencyObject/DependencyProperty.cpp#L22-L25 */
+  .fui-Switch.fui-Switch[data-fui-focus-within]:focus-within::after {
+    border-color: var(--winui-focus-stroke-outer);
+    box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
+  }
 }
 `;

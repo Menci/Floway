@@ -24,14 +24,30 @@ const {
 } = fluentComponents;
 
 const useStyles = makeStyles({
-  accentText: { color: 'var(--colorBrandForeground1)' },
-  // A key that reaches no upstream is a state the column reports, not an
-  // action, so this one is resident where `useDangerActionClasses` is not.
+  // The accent half of what the upstreams column reports; the red half is the
+  // shared `useDangerTextClass`. Naming upstreams and reaching none are both
+  // states the column reports rather than actions, so both colours are
+  // resident where `useDangerActionClasses` is not. WinUI colours type with
+  // the accent text ramp rather than with the accent fill a button takes --
+  // the ramp is darkened in light and lightened in dark so it stays legible as
+  // text -- and it is the ramp Link and the toast action already run on, so a
+  // brand foreground here would put a second accent on the same screen.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L93
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L297
+  accentText: { color: 'var(--winui-accent-text-fill-primary)' },
+  // The narrow row. Its fill through the whole subtle ramp, its radius, its
+  // content margin, its focus ring, its disablement and the accent bar that
+  // marks a selection all come from ../../winui/controls/list.css.ts, which
+  // states each of them on the doubled item class; only what a ListViewItem
+  // has no counterpart for is stated here. The row stacks four lines rather
+  // than centring one, so block padding holds the stack off the edges that
+  // WinUI's 40px minimum height otherwise keeps clear. The hairline is the
+  // divider family every other row separator in the dashboard reads; a card
+  // stroke is black at 10% in both themes, which is a border around a surface
+  // rather than a line between rows and disappears against a dark page.
   mobileItem: {
-    borderBottom: '1px solid var(--colorNeutralStroke2)',
-    borderRadius: 'var(--borderRadiusMedium)',
-    padding: '10px 8px',
-    '&[aria-selected="true"]': { backgroundColor: 'var(--colorSubtleBackgroundSelected)' },
+    borderBottom: '1px solid var(--winui-divider-stroke-default)',
+    paddingBlock: '10px',
   },
 });
 

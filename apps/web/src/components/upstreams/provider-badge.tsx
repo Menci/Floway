@@ -14,7 +14,7 @@ import { badgeHueStyle, isHexColor } from '../../lib/color';
 import { Chip } from '../ui/chip';
 import { MaskedIcon } from '../ui/masked-icon';
 
-const { Tooltip, makeStyles, tokens } = fluentComponents;
+const { Tooltip, makeStyles } = fluentComponents;
 
 type ProviderBadgeKind = UpstreamProviderKind | null;
 type ProviderTone = UpstreamColorPreset | 'zinc';
@@ -28,6 +28,13 @@ const providerLabels: Record<UpstreamProviderKind, string> = {
   ollama: 'Ollama',
 };
 
+// The preset tones are our own palette. WinUI states no per-upstream identity
+// colour, so there is nothing here to transcribe: the chip's geometry, type
+// and states stay Fluent's under the WinUI layer, and these classes only
+// repaint its fill, stroke and label. Each tone states all three per scheme,
+// because a single literal would have been picked against whichever scheme its
+// author was in; every label clears 4.5:1 against its own fill, which is the
+// floor lib/color.ts holds an operator-typed hue to.
 const useStyles = makeStyles({
   amber: {
     backgroundColor: 'light-dark(#fff8f0, #4d2d0a)',
@@ -85,11 +92,18 @@ const useStyles = makeStyles({
     borderLeftColor: 'light-dark(#a8a8a8, #666666)',
     color: 'light-dark(#616161, #d6d6d6)',
   } as any,
-  // The tone classes paint the identity color; the chip supplies geometry.
-  tagText: {
-    fontSize: '12px',
-    fontWeight: tokens.fontWeightMedium,
-    lineHeight: '16px',
+  // A vendor mark is drawn as a mask over a background-color, and under forced
+  // colours a background-color is replaced by the system canvas -- the mark
+  // would paint canvas on canvas and disappear, where the one vector glyph in
+  // this set survives because a fill is forced to the system text colour.
+  // Opting the mask box out of the forcing keeps its declared `currentColor`,
+  // which it inherits from the chip, whose own forcing has already resolved it
+  // to that same text colour.
+  // https://drafts.csswg.org/css-color-adjust-1/#forced-colors-properties
+  maskedGlyph: {
+    '@media (forced-colors: active)': {
+      forcedColorAdjust: 'none',
+    },
   },
 });
 
@@ -127,7 +141,6 @@ export function ProviderBadge({ color, kind, label, size = 'small', title }: {
         style={isHexColor(color) ? badgeHueStyle(color) : undefined}
         icon={<ProviderIcon kind={kind} className={size === 'extra-small' ? 'h-3 w-3' : 'h-4 w-4'} />}
         size={size}
-        textClassName={styles.tagText}
       >
         {visibleLabel}
       </Chip>
@@ -175,8 +188,15 @@ export function ProviderIcon({
   kind: ProviderBadgeKind;
   className: string;
 }) {
+  const styles = useStyles();
   const baseClassName = `block flex-none ${className}`;
   if (kind === null) return null;
   if (kind === 'custom') return <ServerRegular className={baseClassName} />;
-  return <MaskedIcon className={className} maskSize={providerIconMaskSizes[kind]} url={providerIconUrls[kind]} />;
+  return (
+    <MaskedIcon
+      className={`${className} ${styles.maskedGlyph}`}
+      maskSize={providerIconMaskSizes[kind]}
+      url={providerIconUrls[kind]}
+    />
+  );
 }

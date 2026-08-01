@@ -13,6 +13,15 @@
 // the DataGrid inherits them. The one place a DataGrid class is the subject is
 // the selection pill, which needs `aria-selected` — an attribute only the
 // DataGrid row writes.
+//
+// Windows High Contrast is transcribed at the end rather than handed back to
+// Fluent, for the same reason ./list.css writes it out: the HighContrast
+// dictionary collapses every pointer and selection fill onto Highlight with a
+// HighlightText foreground, where Fluent's headless answer for a row is a
+// Highlight foreground on hover alone. The check box in a selection cell keeps
+// Fluent's forced-colours drawing, for the reason ./choice.css writes down for
+// every check box.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L83-L93
 export const tableCss = `
 /* Row foreground under the pointer. WinUI resolves the item's normal,
    pointer-over and pressed foregrounds to one brush, so the text never moves,
@@ -26,23 +35,21 @@ export const tableCss = `
   color: var(--winui-text-fill-primary);
 }
 
-/* Only one element in a header may paint the pointer fill. A sortable header
-   cell nests a button inside the cell, and Fluent gives both of them the same
-   interactive fill; a header row carries it too. While that token was an opaque
-   grey the inner fill simply replaced the outer, so the stack was invisible.
-   WinUI's fill is translucent, so they composite instead, and a hovered header
-   reads as a band with a darker block inside it -- which is why only sortable
-   headers show it, since only they render the button.
+/* The pointer fill inside a header. Fluent puts the hover and pressed fill on
+   the header cell, and only when the column is sortable; the header row is
+   never given the interactive ramp at all. The button slot the cell nests
+   declares \`background-color: inherit\`, so it repaints whatever the cell
+   resolved to. While that token was an opaque grey the repaint was invisible.
+   WinUI's fill is translucent, so the two composite instead, and a hovered
+   sortable header reads as a band with a darker block inside it.
 
    The cell keeps the fill, because the cell is what the pointer is over and
-   what a click acts on. The row gives it up for the same reason a
-   ListViewHeaderItem declares no pointer states at all, and the button gives it
-   up because it is the cell's own interior.
+   what a click acts on. The button gives it up in every state rather than only
+   the two the pointer names: the inherited value is wrong wherever the cell has
+   one, including the horizontal padding the button does not cover, where the
+   cell is hovered and the button is not.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L17-L25 */
-.fui-TableHeader .fui-TableRow.fui-TableRow:hover,
-.fui-TableHeader .fui-TableRow.fui-TableRow:active,
-.fui-TableHeaderCell .fui-TableHeaderCell__button.fui-TableHeaderCell__button:hover,
-.fui-TableHeaderCell .fui-TableHeaderCell__button.fui-TableHeaderCell__button:active {
+.fui-TableHeaderCell .fui-TableHeaderCell__button.fui-TableHeaderCell__button {
   background-color: var(--winui-subtle-fill-transparent);
 }
 
@@ -66,9 +73,16 @@ export const tableCss = `
    itself. Fluent's outline carries no offset, so it sits directly against the
    border box and WinUI's inner ring goes inside it as an inset shadow, as on
    every other item-shaped surface in the layer.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L29
+
+   Under forced colours the user agent drops that inset shadow and forces the
+   outline onto CanvasText, which is that mode's reading of the WindowText the
+   HighContrast dictionary states for the outer ring, so the ring keeps its
+   geometry and needs no colour of its own there.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L29-L30
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L94
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L144
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L348 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L348
+   https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
 .fui-TableRow.fui-TableRow[data-fui-focus-visible],
 .fui-TableCell.fui-TableCell[data-fui-focus-visible],
 .fui-TableSelectionCell.fui-TableSelectionCell[data-fui-focus-visible],
@@ -78,19 +92,28 @@ export const tableCss = `
 }
 
 /* Selection. The DataGrid's default selection appearance is \`brand\`, which
-   replaces the row's surface and strokes all four of its edges; WinUI stays on
-   the same subtle ramp it uses for the pointer and lets a leading accent pill
-   carry the meaning, so only the fill is restated here — the stroke colours
-   Fluent's appearance sets land on edges that carry no width, and the row keeps
-   the divider below it. Each of the three fills is stated because Fluent moves
-   a selected row under the pointer too: its interactive atoms outrank the
+   replaces the row's surface; WinUI stays on the same subtle ramp it uses for
+   the pointer and lets a leading accent pill carry the meaning, so the fill is
+   restated on all three of the states a selected row can be in -- Fluent moves
+   a selected row under the pointer too, and its interactive atoms outrank the
    appearance's.
+
+   The foreground goes with them. WinUI holds one brush across selected,
+   selected pointer-over and selected pressed, which is the same brush it holds
+   at rest; \`brand\` leaves the rest colour standing but \`neutral\` shifts it a
+   step up the Fluent ramp, so stating it here is what makes the two appearances
+   agree with WinUI and with each other.
+
+   Both appearances also colour all four edges. Three of them carry no width;
+   the bottom one is held by the divider rule above, which outranks them.
 
    Selection reaches the DOM only as \`aria-selected\`, which the DataGrid row
    writes; the appearance prop a plain Table row takes never does.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L20 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L20
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L26-L28 */
 .fui-TableBody .fui-DataGridRow.fui-DataGridRow[aria-selected='true'] {
   background-color: var(--winui-subtle-fill-secondary);
+  color: var(--winui-text-fill-primary);
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L21 */
@@ -117,5 +140,31 @@ export const tableCss = `
 .fui-TableHeaderCell.fui-TableHeaderCell[aria-sort]:hover,
 .fui-TableHeaderCell.fui-TableHeaderCell[aria-sort]:active {
   color: var(--winui-text-fill-primary);
+}
+
+/* High Contrast. Every pointer and selection fill on a ListViewItem collapses
+   onto Highlight with a HighlightText foreground, so the body row takes that in
+   all five of the states the rules above paint. Fluent states only a Highlight
+   foreground on hover, out of a single-class atom that the pinned foreground
+   above outranks, so without this the row would lose its one forced-colours
+   state rather than gain WinUI's.
+
+   The header is left to the user agent: WinUI has no sortable column header to
+   transcribe, and forcing the header cell's fill onto Canvas is what that mode
+   does with a fill nobody claims.
+
+   A media query carries no specificity, so each selector repeats the shape of
+   the rule it answers.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L83-L93
+   https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
+@media (forced-colors: active) {
+  .fui-TableBody .fui-TableRow.fui-TableRow:hover,
+  .fui-TableBody .fui-TableRow.fui-TableRow:active,
+  .fui-TableBody .fui-DataGridRow.fui-DataGridRow[aria-selected='true'],
+  .fui-TableBody .fui-DataGridRow.fui-DataGridRow[aria-selected='true']:hover,
+  .fui-TableBody .fui-DataGridRow.fui-DataGridRow[aria-selected='true']:active {
+    background-color: Highlight;
+    color: HighlightText;
+  }
 }
 `;
