@@ -41,6 +41,9 @@ export const TWO_COLUMN_FORM_CLASS = 'grid grid-cols-2 max-[680px]:grid-cols-1';
 // construction: the content grid carries its own `1,1,0,0` border, `8,0,0,0`
 // radius and layer fill, so the seam is that border rather than a gap
 // (https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L234).
-// Our navigation pane is built the same way and keeps its `0`; this token is
-// for the shells inside a page, and its measure is ours.
+// Our navigation pane also sits flush, but nothing beside it reproduces that
+// card, so the seam there goes unmarked rather than being a border --
+// ../../winui/controls/nav.css.ts states why. The `0` is all the two
+// arrangements share. This token is for the shells inside a page, and its
+// measure is ours.
 export const PANE_GAP_CLASS = 'gap-[var(--floway-page-inset)]';

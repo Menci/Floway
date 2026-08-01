@@ -135,15 +135,19 @@ export const navigationProgressCss = `
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar.xaml#L100-L111 */
 
   /* WinUI's HighContrast dictionary answers the bar with a WindowTextColor
-     border a pixel thick around indicators on HighlightColor, and that is what
-     is written here. The track it also names goes unpainted for the same reason
-     it does above. A forced palette repaints a colour it can reach, so the
-     accent has to be handed over as the system keyword WinUI itself names --
-     left as a token it would be forced to the page background and the strip
-     would vanish. \`content-box\` holds the 3px against the app's global
-     border-box so the border is added around the indicators rather than taken
-     out of them.
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar_themeresources.xaml#L12-L18 */
+     border a pixel thick and a HighlightColor foreground, and that is what is
+     written here. The border is the control's own: ProgressBarBorderBrush
+     reaches ProgressBarRoot, the outermost Border of the template, which wraps
+     the grid carrying MinHeight rather than the indicator rectangles inside
+     it. The track it also names goes unpainted for the same reason it does
+     above. A forced palette repaints a colour it can reach, so the accent has
+     to be handed over as the system keyword WinUI itself names -- left as a
+     token it would be forced to the page background and the strip would
+     vanish. \`content-box\` holds the 3px against the app's global border-box
+     so the border is added around the strip rather than taken out of it, which
+     is the nesting ProgressBarRoot states.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar_themeresources.xaml#L12-L18
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar.xaml#L155-L157 */
   @media (forced-colors: active) {
     .floway-navigation-progress {
       border: 1px solid CanvasText;

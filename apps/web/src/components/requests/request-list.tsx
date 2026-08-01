@@ -61,9 +61,11 @@ const useStyles = makeStyles({
   row: {
     backgroundColor: 'transparent',
     // The rule between rows is a divider, the family every other row separator
-    // in the dashboard reads. A card stroke is black at 10%, which is a border
-    // around a surface rather than a line between rows and disappears against a
-    // dark page.
+    // in the dashboard reads. A card stroke is black in both themes -- 10% in
+    // dark, 6% in light -- which is a border around a surface rather than a
+    // line between rows and disappears against a dark page.
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L46
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L250
     borderBottom: '1px solid var(--winui-divider-stroke-default)',
     cursor: 'pointer',
     display: 'grid',

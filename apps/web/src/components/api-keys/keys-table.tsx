@@ -43,8 +43,11 @@ const useStyles = makeStyles({
   // than centring one, so block padding holds the stack off the edges that
   // WinUI's 40px minimum height otherwise keeps clear. The hairline is the
   // divider family every other row separator in the dashboard reads; a card
-  // stroke is black at 10% in both themes, which is a border around a surface
-  // rather than a line between rows and disappears against a dark page.
+  // stroke is black in both themes -- 10% in dark, 6% in light -- which is a
+  // border around a surface rather than a line between rows and disappears
+  // against a dark page.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L46
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L250
   mobileItem: {
     borderBottom: '1px solid var(--winui-divider-stroke-default)',
     paddingBlock: '10px',
