@@ -2,6 +2,24 @@ import { fluentComponents } from '../../fluent';
 
 const { Spinner } = fluentComponents;
 
+// Fluent's own Spinner, restated as plain CSS.
+//
+// This screen is what the prerendered index.html paints, so it renders before
+// any Griffel rule exists -- the component's real styles arrive with the
+// bundle, which is the thing being waited for. Every declaration below is
+// therefore a copy of `useSpinnerStyles`, and drifting from it is a bug by
+// construction: the boot screen would stop matching the spinner the app shows a
+// moment later.
+//
+// That includes the reduced-motion treatment, which is Fluent's design and not
+// this layer's. Fluent slows the ring from 1.5s to 1.8s and freezes the tail
+// into a static conic gradient, so the arc still turns but its length stops
+// pulsing. WinUI does not do this -- ProgressRing is an AnimatedVisualPlayer
+// and consults neither UISettings.AnimationsEnabled nor the visual-state gate
+// that seeks storyboards to their end frame, so a Windows ring keeps its full
+// animation with animations off. The Fluent behaviour is kept because it is the
+// spinner this app draws.
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-spinner/library/src/components/Spinner/useSpinnerStyles.styles.ts
 export const appLoadingCriticalCss = `
   .floway-app-loading {
     box-sizing: border-box;
@@ -91,10 +109,10 @@ export const appLoadingCriticalCss = `
       forced-color-adjust: none;
     }
   }
-  @media (prefers-reduced-motion: reduce) {
+  @media screen and (prefers-reduced-motion: reduce) {
     .floway-app-loading .fui-Spinner__spinner { animation-duration: 1.8s; }
     .floway-app-loading .fui-Spinner__spinnerTail {
-      animation: none;
+      animation-iteration-count: 0;
       background-image: conic-gradient(transparent 120deg, currentcolor 360deg);
     }
     .floway-app-loading .fui-Spinner__spinnerTail::before,

@@ -11,6 +11,7 @@ import {
 import type { Route } from './+types/root';
 import { BrowserLanguageSync } from './components/browser-language-sync';
 import { DocumentTitleSync } from './components/document-title-sync';
+import { FaviconSync } from './components/favicon-sync';
 import {
   GradientBackground,
   gradientBackgroundCriticalCss,
@@ -118,6 +119,7 @@ export default function App() {
     <>
       <NavigationProgress />
       <DocumentTitleSync />
+      <FaviconSync />
       <Outlet />
     </>
   );
