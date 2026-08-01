@@ -341,6 +341,11 @@ built `apps/web/dist` via Workers Static Assets; direct SPA routes (e.g.
 `assets.run_worker_first` route list in the gitignored `wrangler.jsonc` (see
 `wrangler.example.jsonc`).
 
+`FLOWAY_DEV_WEB_PORT` moves the Vite dev server off 5174 and
+`FLOWAY_DEV_GATEWAY_ORIGIN` repoints its proxy at another gateway — a second
+worktree, or a Node-target instance running beside the Worker one. Both default
+to the pair above, so a plain `pnpm run dev` is unaffected.
+
 `dev:node` boots the Node deployment target. Configure via `FLOWAY_DB_PATH`
 (sqlite file path), `FLOWAY_FILES_DIR` (filesystem store root), `ADMIN_KEY`
 (admin secret; see below), `PORT`, and optionally `RUNTIME_LOCATION` (instance
