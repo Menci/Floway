@@ -96,7 +96,7 @@ const useStyles = makeStyles({
     transitionProperty: 'opacity',
     transitionDuration: tokens.durationFaster,
     '@media (hover: none)': { opacity: 1 },
-    '@media (prefers-reduced-motion: reduce)': { transitionDuration: '0s' },
+    '@media (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
   },
   messageRow: { '&:hover .playground-message-actions, &:focus-within .playground-message-actions': { opacity: 1 } },
   code: { fontFamily: tokens.fontFamilyMonospace, fontSize: 'var(--floway-font-size-mono)' },

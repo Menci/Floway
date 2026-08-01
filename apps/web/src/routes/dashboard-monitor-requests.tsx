@@ -1,4 +1,4 @@
-import { DismissRegular } from '@fluentui/react-icons';
+import { DismissRegular, KeyMultipleRegular } from '@fluentui/react-icons';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, redirect, useNavigate, useSearchParams } from 'react-router';
@@ -142,7 +142,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
       ) : keys.length === 0 ? (
         <Panel className="!grid">
           <EmptyState
-            action={<Link to="/dashboard/services/api-keys" className="text-fui-fg2">{t('dashboard.requests.goToApiKeys')}</Link>}
+            action={<Link to="/dashboard/services/api-keys"><Button appearance="primary" icon={<KeyMultipleRegular />}>{t('dashboard.requests.goToApiKeys')}</Button></Link>}
             description={t('dashboard.requests.noKeysDescription')}
             title={t('dashboard.requests.noKeys')}
           />

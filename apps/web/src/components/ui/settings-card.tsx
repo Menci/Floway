@@ -185,7 +185,7 @@ const useStyles = makeStyles({
     // correct orientation either way, which is what carries the state.
     // https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/animated-icon
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedIcon.cpp#L432-L444
-    '@media screen and (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
+    '@media (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
   },
   // Expander's open and close, asymmetric in duration as the source is: 333ms
   // opening, 167ms closing. CSS states one duration per transitioned property
@@ -222,13 +222,13 @@ const useStyles = makeStyles({
     transitionDuration: 'var(--winui-collapse-animation-duration)',
     transitionProperty: 'grid-template-rows',
     transitionTimingFunction: 'var(--winui-control-fast-out-slow-in-easing)',
-    '@media screen and (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
+    '@media (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
   },
   contentFrameOpen: {
     gridTemplateRows: '1fr',
     transitionDuration: 'var(--winui-expand-animation-duration)',
     transitionTimingFunction: 'var(--winui-control-fast-out-slow-in-easing)',
-    '@media screen and (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
+    '@media (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
   },
   contentClip: { minHeight: 0, overflow: 'hidden' },
   chevronOpen: {

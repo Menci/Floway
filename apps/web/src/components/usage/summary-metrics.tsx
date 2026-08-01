@@ -62,9 +62,14 @@ const useStyles = makeStyles({
       insetInlineStart: 0,
       position: 'absolute',
       width: '3px',
-      '@media (prefers-reduced-motion: no-preference)': {
-        animation: 'winui-selection-indicator-fade 83ms linear, winui-selection-indicator-grow 167ms cubic-bezier(0.167, 0.167, 0, 1)',
-      },
+      // Declared unconditionally and clamped, which is the shape ../../winui
+      // states for motion the layer owns -- Fluent ships no reduced-motion rule
+      // for this element, so there is no answer to stand aside for. Under
+      // no-preference the animation is not declared at all when the preference
+      // is set, and an animation that never exists never finishes: the 0.01ms
+      // is what keeps the completion firing.
+      animation: 'winui-selection-indicator-fade 83ms linear, winui-selection-indicator-grow 167ms cubic-bezier(0.167, 0.167, 0, 1)',
+      '@media (prefers-reduced-motion: reduce)': { animationDuration: '0.01ms' },
     },
   },
 });

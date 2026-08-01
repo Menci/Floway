@@ -60,7 +60,7 @@ const useStyles = makeStyles({
     transitionTimingFunction: bingComposerTransitionEasing,
     // Corner radius alters perceived shape, so it goes with motion rather than
     // with colour; the shadow rides along on the one duration the pair share.
-    '@media screen and (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
+    '@media (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
     // Focus tightens the corners rather than deepening the shadow: the
     // original lists `:focus` alongside `has-text` on the one rule that
     // changes the corner, and changes no shadow anywhere.
@@ -178,7 +178,7 @@ const useStyles = makeStyles({
       // the kind of motion the OS setting is about. The gradient swap beside it
       // is colour and stays, so the button still answers a press when animation
       // is off -- it just answers without travel.
-      '@media screen and (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
+      '@media (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
     },
     '&:hover::before': { backgroundImage: bingAccentGradientHover },
     '&:active::before': {

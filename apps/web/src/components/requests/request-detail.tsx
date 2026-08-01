@@ -18,7 +18,7 @@ import {
 } from './stream-render';
 import { fluentComponents } from '../../fluent';
 import { useDangerTextClass } from '../ui/danger';
-import { EmptyState, EmptyStateLine } from '../ui/empty-state';
+import { EmptyStateLine } from '../ui/empty-state';
 import { HttpMethodBadge, HttpStatusBadge } from '../ui/http-badge';
 import { prismTokenStyles } from '../ui/prism-token-styles';
 import { ScrollArea } from '../ui/scroll-area';
@@ -161,7 +161,9 @@ export function RequestDetailPanel({ collected: loadedCollected, error, record, 
   const collectKind = record ? detectCollectKind(record.meta.path) : null;
   const renderedEvents = useMemo(() => renderStreamEvents(collectKind, streamEvents), [collectKind, streamEvents]);
 
-  if (!recordId) return <EmptyState className="h-full p-8" title={t('dashboard.requests.selectPrompt')} />;
+  // An invitation standing where the detail will be, not a state with an
+  // explanation under it -- the same shape the playground's transcript uses.
+  if (!recordId) return <div className="grid h-full place-items-center p-8"><EmptyStateLine>{t('dashboard.requests.selectPrompt')}</EmptyStateLine></div>;
   if (error) return <div className="p-4"><MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar></div>;
   if (!record) return null;
 

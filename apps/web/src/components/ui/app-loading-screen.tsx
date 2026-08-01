@@ -91,7 +91,7 @@ export const appLoadingCriticalCss = `
       forced-color-adjust: none;
     }
   }
-  @media screen and (prefers-reduced-motion: reduce) {
+  @media (prefers-reduced-motion: reduce) {
     .floway-app-loading .fui-Spinner__spinner { animation-duration: 1.8s; }
     .floway-app-loading .fui-Spinner__spinnerTail {
       animation: none;
