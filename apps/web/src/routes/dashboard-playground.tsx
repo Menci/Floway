@@ -326,10 +326,11 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
           {playgroundApis.map(value => <Option key={value} value={value}>{t(`dashboard.playground.apis.${value}`)}</Option>)}
         </Dropdown>
       </Field>
-      <Field
-        hint={selectedKey && !selectedModel ? t('dashboard.playground.noModelForApi') : undefined}
-        label={t('dashboard.playground.model')}
-      >
+      {/* No hint under this one. An empty catalog already says so inside the
+          list, and when the listing failed the bar above the transcript names
+          the failure -- a third statement of it under the field would be the
+          same news a third time. */}
+      <Field label={t('dashboard.playground.model')}>
         <Combobox value={modelQuery ?? selectedModel?.display_name ?? ''} selectedOptions={selectedModel ? [selectedModel.id] : []} placeholder={t('dashboard.playground.modelPlaceholder')} onChange={event => setModelQuery(event.target.value)} onOptionSelect={(_, data) => {
           if (!data.optionValue) return;
           changeContext(() => {

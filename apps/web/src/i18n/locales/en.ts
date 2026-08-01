@@ -122,7 +122,6 @@ const en = {
         noKey: 'Create an API key before using the playground',
         noKeyOption: 'No API Keys',
         noModel: 'No model selected',
-        noModelForApi: 'No chat model on this gateway can serve the selected API',
         apis: { responses: 'Responses', chatCompletions: 'Chat Completions', messages: 'Messages' },
         settings: { title: 'Playground settings', close: 'Close Playground settings', connection: 'Connection', generation: 'Generation', customJson: 'Custom JSON' },
         actions: { newTopic: 'New topic', edit: 'Edit', delete: 'Delete', save: 'Save', image: 'Add image URL', send: 'Send', stop: 'Stop' },

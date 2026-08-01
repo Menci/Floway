@@ -113,7 +113,6 @@ const zhHansCN = {
         noKey: '请先创建 API 密钥，再使用 Playground',
         noKeyOption: '没有 API 密钥',
         noModel: '未选择模型',
-        noModelForApi: '此网关上没有能服务所选 API 的聊天模型',
         apis: { responses: 'Responses', chatCompletions: 'Chat Completions', messages: 'Messages' },
         settings: { title: 'Playground 设置', close: '关闭 Playground 设置', connection: '连接', generation: '生成', customJson: '自定义 JSON' },
         actions: { newTopic: '新话题', edit: '编辑', delete: '删除', save: '保存', image: '添加图片 URL', send: '发送', stop: '停止' },
