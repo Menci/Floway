@@ -7,6 +7,7 @@ test('readCopilotUpstreamState passes through a complete new-shape entry verbati
   const seeded = {
     knownModels: null,
     copilotToken: { token: 'tok', expiresAt: 2_000_000, baseUrl: 'https://api.individual.githubcopilot.com' },
+    quotaSnapshot: null,
   } satisfies CopilotUpstreamState;
   const round = readCopilotUpstreamState(JSON.parse(JSON.stringify(seeded)));
   assertEquals(round.copilotToken, seeded.copilotToken);
@@ -41,8 +42,8 @@ test('readCopilotUpstreamState treats a state without copilotToken key as valid'
 });
 
 test('readCopilotUpstreamState collapses null/undefined raw to empty state', () => {
-  assertEquals(readCopilotUpstreamState(null), { knownModels: null, copilotToken: null });
-  assertEquals(readCopilotUpstreamState(undefined), { knownModels: null, copilotToken: null });
+  assertEquals(readCopilotUpstreamState(null), { knownModels: null, copilotToken: null, quotaSnapshot: null });
+  assertEquals(readCopilotUpstreamState(undefined), { knownModels: null, copilotToken: null, quotaSnapshot: null });
 });
 
 test('assertCopilotUpstreamState rejects an unknown top-level key', () => {
