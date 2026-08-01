@@ -18,9 +18,14 @@ const { Text, mergeClasses } = fluentComponents;
 // different geometry from an empty list inside a panel. Every number below is
 // ours: the 12px between the text and its action, the 480px measure, and the
 // 180px a centred state fills before it starts growing its container.
+//
+// Both variants centre the block against the height they are given. Without
+// that the block is a stretched grid item, and its own rows then distribute the
+// slack between them -- the title, the line under it and the action drift to
+// opposite ends of whatever panel holds them.
 const ALIGN_CLASS = {
   center: 'grid place-items-center text-center min-h-[180px]',
-  start: 'grid justify-items-start',
+  start: 'grid items-center justify-items-start min-h-[180px]',
 } as const;
 
 const STACK_ALIGN_CLASS = {
