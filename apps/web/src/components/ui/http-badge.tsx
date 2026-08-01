@@ -4,13 +4,20 @@ import { fluentComponents } from '../../fluent';
 
 const { Badge, makeStyles } = fluentComponents;
 
+// A method or a status is a badge like any other here, so it takes the size the
+// upstream and model badges take: a 24px pill with a 12px label, and 11px where
+// the label is monospace -- a pixel down, because a monospace face at the same
+// nominal size out-measures the proportional one beside it.
+//
+// The floor holds a column of them to one width. GET, POST and DELETE differ by
+// four characters, and a table reads down its column rather than across its row.
 const useStyles = makeStyles({
   root: {
     fontFamily: 'var(--fontFamilyMonospace)',
-    fontSize: '13px',
+    fontSize: '11px',
     fontWeight: 'var(--fontWeightRegular)',
     justifyContent: 'center',
-    lineHeight: '20px',
+    lineHeight: '16px',
     minWidth: '48px',
   },
 });
@@ -23,7 +30,7 @@ function HttpBadge({ children, color }: { children: ReactNode; color: HttpBadgeC
     appearance="tint"
     className={styles.root}
     color={color}
-    size="medium"
+    size="large"
     translate="no"
   >{children}</Badge>;
 }

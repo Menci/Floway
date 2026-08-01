@@ -64,7 +64,6 @@ export function ProxyList({
                     <Badge
                       appearance="tint"
                       className="uppercase flex-none"
-                      shape="rounded"
                       size="large"
                       style={{ backgroundColor: colors.bg, color: colors.fg }}
                     >
