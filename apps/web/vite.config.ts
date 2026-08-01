@@ -8,6 +8,10 @@ import { defineConfig } from 'vite';
 // relative URLs in both dev and prod. Anything not matched falls through to
 // the Vite dev server, which serves the SPA itself.
 //
+// Both ends are overridable so a second checkout — another worktree, or a
+// Node-target instance running beside the Worker one — can claim its own pair
+// of ports without editing this file.
+//
 // This list MUST stay in sync with the same list in two other places — drift
 // is silent and only surfaces as a 404 the SPA fallback served for a real
 // gateway endpoint:
@@ -20,7 +24,8 @@ import { defineConfig } from 'vite';
 //
 // Bare data-plane paths are listed because the gateway accepts both root and
 // `/v1` forms where the upstream protocol defines them.
-const wranglerOrigin = 'http://127.0.0.1:8788';
+const wranglerOrigin = process.env.FLOWAY_DEV_GATEWAY_ORIGIN ?? 'http://127.0.0.1:8788';
+const webPort = Number(process.env.FLOWAY_DEV_WEB_PORT ?? '5174');
 const wranglerProxiedPaths = [
   '/api',
   '/auth',
@@ -51,7 +56,7 @@ export default defineConfig({
     Unocss(),
   ],
   server: {
-    port: 5174,
+    port: webPort,
     proxy: Object.fromEntries(wranglerProxiedPaths.map(p => [p, { target: wranglerOrigin, changeOrigin: true }])),
   },
   build: {
