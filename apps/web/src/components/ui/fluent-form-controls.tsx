@@ -42,6 +42,26 @@ interface ReadOnlyProp {
 // the wrapper and the native input lets the column decide.
 const MIN_WIDTH_CLASS = '!min-w-[0px] [&_input]:!min-w-[0px]';
 
+// A select is the one control that reads shorter than it is useful. Its width
+// is the width of whatever it currently shows, so a row whose answer is "Off"
+// or "30 days" ends up with a control barely wider than a button, and a column
+// of such rows has nothing to line up on. PowerToys answers this by declaring
+// one action-slot width for its whole settings surface -- 240 in source, and
+// the rows measure around 478 on screen -- and applying it per control; WinUI
+// itself states only a 64px floor that keeps the box from collapsing, and the
+// Community Toolkit's SettingsCard pushes an implicit 120 into its content
+// scope under the comment "so they neatly align".
+// https://github.com/microsoft/PowerToys/blob/d2c53bf3861ed2688a1c30aafd66ea0fc0186399/src/settings-ui/Settings.UI/SettingsXAML/App.xaml#L68
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L321-L323
+// https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L146-L170
+//
+// Here the floor is off by default and one surface turns it on, so the
+// variable rather than a second class is what carries it: the declaration
+// stays in one place and the caller sets a value instead of racing the
+// `!important` this one needs to clear Fluent's own 250px. See
+// ./settings-card.tsx, which is the only place that raises it.
+const SELECT_MIN_WIDTH_CLASS = '!min-w-[var(--floway-select-min-width,0px)] [&_input]:!min-w-[0px]';
+
 // Fluent lets the popup keep its natural height and flips it to whichever
 // side has room for that height, so a long list ends up beside the field
 // rather than under it. Restricting the fallbacks to the opposite edge keeps
@@ -193,7 +213,7 @@ export const Combobox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof 
       onOptionSelect={readOnly === true ? undefined : onOptionSelect}
       positioning={positioning ?? LISTBOX_POSITIONING}
       listbox={listboxFor(listWidth, props.freeform === true)}
-      className={mergeClasses(className, MIN_WIDTH_CLASS)}
+      className={mergeClasses(className, SELECT_MIN_WIDTH_CLASS)}
       ref={ref}
     />
   ),
@@ -208,7 +228,7 @@ export const Dropdown = forwardRef<HTMLButtonElement, Omit<ComponentProps<typeof
       onOptionSelect={readOnly === true ? undefined : onOptionSelect}
       positioning={positioning ?? LISTBOX_POSITIONING}
       listbox={listboxFor(listWidth, false)}
-      className={mergeClasses(className, MIN_WIDTH_CLASS)}
+      className={mergeClasses(className, SELECT_MIN_WIDTH_CLASS)}
       ref={ref}
     />
   ),

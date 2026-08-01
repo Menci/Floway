@@ -150,7 +150,9 @@ export function RetentionField({
     // as its widest option -- a settings row sizes its control to its
     // value. An input has no intrinsic content width, so the character
     // count is what states it, and the list is free to be wider: it hangs
-    // off the trailing edge and grows the other way.
+    // off the trailing edge and grows the other way. Where the row is an
+    // expander wide enough to afford it, ../ui/settings-card.tsx puts a floor
+    // under that measurement; the count still governs above the floor.
     input={{ size: displayValue.length + 1 }}
     listWidth="content"
     onChange={event => typeCustom(event.target.value)}

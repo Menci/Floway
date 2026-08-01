@@ -189,11 +189,35 @@ const useStyles = makeStyles({
   expanderHeader: {
     backgroundColor: 'var(--winui-card-background-fill-default)',
     ...shorthands.borderColor('var(--winui-card-stroke-default)'),
+    containerName: 'floway-settings-row',
+    containerType: 'inline-size',
     fontFamily: 'inherit',
     fontSize: 'inherit',
     paddingInlineEnd: '4px',
     textAlign: 'start',
     width: '100%',
+  },
+  // The floor under a select in this row, and only here. A select is as wide as
+  // the value it currently shows, so a row answering "Off" leaves a control the
+  // size of a button and a column of these rows has no edge to line up on. The
+  // reasoning, and what Windows does about it, is in
+  // ./fluent-form-controls.tsx, which declares the variable this raises. Only a
+  // select reads it: a switch or a button in the same slot is already the size
+  // it is meant to be.
+  //
+  // A floor that always applied would be a hard one -- `min-width` cannot
+  // yield, so it would push the row wider than its container instead of
+  // giving way -- which is why the container query is the rule rather than a
+  // guard on it. 480 is the width at which the row can afford the floor: 122
+  // of chrome (16 of leading padding, 46 for the icon and its margins, 24
+  // between text and control, the 32 chevron, 4 of trailing padding), 200 for
+  // the control, and 160 left for the label, which is a readable line rather
+  // than a squeezed one. Narrower than that and the select goes back to
+  // sizing itself, which is what a phone-width row wants anyway.
+  action: {
+    '@container floway-settings-row (min-width: 480px)': {
+      '--floway-select-min-width': '200px',
+    },
   },
   expanderHeaderOpen: { borderEndStartRadius: 0, borderEndEndRadius: 0 },
   // The content region is the quieter step of the card ramp, and the edge it
@@ -458,7 +482,7 @@ export function SettingsExpander({ action, children, defaultOpen = false, descri
           nests it too. There a routed event stops at the control that handled
           it; in the DOM the click would carry on to the header, so it is
           stopped here -- the switch throws without the row opening. */}
-      {action !== undefined && <span onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>{action}</span>}
+      {action !== undefined && <span className={styles.action} onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>{action}</span>}
       <span aria-hidden className={styles.chevron}>
         <svg className={mergeClasses(styles.chevronGlyph, open && styles.chevronOpen)} width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
           <path d="M3.15 5.65c.2-.2.5-.2.7 0L8 9.79l4.15-4.14a.5.5 0 0 1 .7.7l-4.5 4.5a.5.5 0 0 1-.7 0l-4.5-4.5a.5.5 0 0 1 0-.7Z" />
