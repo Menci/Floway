@@ -4,7 +4,7 @@ import { configureMonacoYaml } from 'monaco-yaml';
 import { useEffect, useRef } from 'react';
 
 import YamlWorker from './models-yaml.worker.ts?worker';
-import { monospaceStack } from '../../theme';
+import { monospaceStack } from '../../font-stacks';
 
 interface MonacoEnvironment {
   getWorker: (moduleId: string, label: string) => Worker;

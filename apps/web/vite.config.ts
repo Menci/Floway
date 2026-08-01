@@ -5,9 +5,11 @@ import { defineConfig, type Plugin } from 'vite';
 // Part of the app's CSS is authored in TypeScript, because its rules spend
 // values the running app spends too: the WinUI layer under src/winui
 // interpolates the token names, motion durations and opt-out selector that the
-// same modules hand to Fluent. Rendered straight into a `<style>` element that
-// text never meets Vite's CSS pipeline -- it ships unminified, unhashed, and is
-// re-sent in full with every HTML response.
+// same modules hand to Fluent, and the critical block interpolates the type
+// stack the Fluent theme object is built from. Rendered straight into a
+// `<style>` element that text never meets Vite's CSS pipeline -- it ships
+// unminified, unhashed, and the larger of the two is re-sent in full with every
+// HTML response.
 //
 // Each such module is therefore also reachable as a virtual `.css` module. The
 // TypeScript is evaluated here and its string handed to Vite, which from that
@@ -22,6 +24,7 @@ import { defineConfig, type Plugin } from 'vite';
 // invalidate the virtual sheet when one of them changes. Nothing in these
 // graphs may reach a module that expects a browser, since this runs in Node.
 const virtualStylesheets = {
+  'virtual:floway-critical.css': { exportName: 'criticalCss', module: './src/critical.css.ts' },
   'virtual:floway-winui.css': { exportName: 'winuiCss', module: './src/winui/index.ts' },
 } as const;
 

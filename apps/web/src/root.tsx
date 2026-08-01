@@ -7,24 +7,18 @@ import {
   Outlet,
   Scripts,
 } from 'react-router';
+import criticalCss from 'virtual:floway-critical.css?inline';
 import winuiStylesheet from 'virtual:floway-winui.css?url';
 
 import type { Route } from './+types/root';
 import { BrowserLanguageSync } from './components/browser-language-sync';
 import { DocumentTitleSync } from './components/document-title-sync';
-import {
-  GradientBackground,
-  gradientBackgroundCriticalCss,
-} from './components/gradient-background';
+import { GradientBackground } from './components/gradient-background';
 import { markPickerScript } from './components/logo-mark';
-import { NavigationProgress, navigationProgressCss } from './components/navigation-progress';
-import {
-  AppLoadingScreen,
-  appLoadingCriticalCss,
-} from './components/ui/app-loading-screen';
-import { ErrorShell, ErrorStack, errorShellCriticalCss } from './components/ui/error-shell';
+import { NavigationProgress } from './components/navigation-progress';
+import { AppLoadingScreen } from './components/ui/app-loading-screen';
+import { ErrorShell, ErrorStack } from './components/ui/error-shell';
 import { fluentComponents } from './fluent';
-import { fontFamilyCriticalCss } from './theme';
 import { winuiDarkTheme, winuiLightTheme } from './winui/theme';
 import './i18n';
 import '@fontsource/maple-mono/400.css';
@@ -82,25 +76,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)" />
         <Meta />
         <Links />
-        {/* What has to be true before the linked stylesheets arrive. In dev that is a
-            second-and-a-bit: global.css is served through Vite's transform
-            while this block is part of the document, so anything the first
-            paint depends on has to be here rather than in a utility class.
-            The body's own margin is the clearest case -- left to a utility it
-            is the user agent's 8px until the stylesheet lands, which reads as a
-            white border around the whole app. */}
-        <style>{`
-          html, body { height: 100%; overflow: hidden; }
-          body { margin: 0; }
-          @media (prefers-color-scheme: dark) { html { color-scheme: dark; } }
-          *, *::before, *::after { box-sizing: border-box; }
-          html body pre[class*="language-"] { border: 0; }
-          ${fontFamilyCriticalCss}
-          ${gradientBackgroundCriticalCss}
-          ${appLoadingCriticalCss}
-          ${errorShellCriticalCss}
-          ${navigationProgressCss}
-        `}</style>
+        {/* Everything the first paint depends on, inlined because it has to be
+            true before a linked stylesheet can arrive. Its rules and the
+            reasons they are here are in ./critical.css.ts. */}
+        <style>{criticalCss}</style>
         {/* The WinUI layer is linked rather than emitted through `<Links />`
             because where it sits is what it is: it has to follow the block
             above, whose spinner rules reach Fluent's own class names at the
