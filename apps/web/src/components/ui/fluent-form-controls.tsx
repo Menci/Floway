@@ -112,17 +112,28 @@ function ScrollableListbox({
     // JSX rather than createElement for the viewport, so the ref is a ref to
     // the compiler and not an ordinary prop it has to assume is read in render.
     <div className="floway-combobox-listbox-viewport" ref={viewportRef} style={{ overflowX: 'hidden', overflowY: 'scroll' }}>
-      {/* An empty list is not just a thin box: a role="listbox" owning no
-          option is the aria-required-children violation, and Fluent renders one
-          whenever a combo box with no options is opened -- it counts options
-          nowhere and gates the popup only on disabled. Every design system that
-          has taken a position on this puts a row in rather than refusing to
-          open, and Fluent ships that shape itself in useComboboxFilter's
-          noOptionsMessage. This is that row, with the one correction its own
-          version needs: the disabled prop rather than aria-disabled, so the row
-          is genuinely inert instead of merely announced as such -- Fluent's
-          useOption reads props.disabled, so aria-disabled alone leaves the row
-          selectable and eligible to become the active descendant. */}
+      {/* Fluent opens the popup whether or not there is anything in it -- it
+          counts options nowhere and gates only on disabled -- so an empty list
+          arrived as a bordered seam a few pixels tall.
+
+          Not an ARIA violation, despite appearances: 1.3 renamed the section to
+          Allowed Accessibility Child Roles and dropped the existence
+          requirement, 1.2's MUST applied only while loading, and axe files an
+          empty listbox as review-only. The reason to do something is the user
+          research rather than the spec -- screen reader users meeting an empty
+          list were more likely to read it as a bug than as an answer.
+
+          The row must be an option, though, and that is a real constraint:
+          axe treats any bare text node inside a listbox as content and
+          escalates it from review to a hard violation, so a plain div saying
+          "no results" is worse than saying nothing. Fluent ships this shape
+          itself in useComboboxFilter's noOptionsMessage; this is that row with
+          the one correction its version needs, the disabled prop rather than
+          aria-disabled. Fluent's useOption reads props.disabled, so
+          aria-disabled alone leaves the row selectable and eligible to become
+          the active descendant -- announced as inert without being inert.
+          https://w3c.github.io/aria/#mustContain
+          https://www.24a11y.com/2019/select-your-poison-part-2/ */}
       <div className="floway-combobox-listbox-content">
         {Children.toArray(children).length === 0
           ? <Option disabled value="">{t('common.noOptions')}</Option>
