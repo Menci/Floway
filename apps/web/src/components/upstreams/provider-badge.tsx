@@ -14,7 +14,7 @@ import { blendHex, readableTone } from '../../lib/color';
 import { Chip } from '../ui/chip';
 import { MaskedIcon } from '../ui/masked-icon';
 
-const { makeStyles, tokens } = fluentComponents;
+const { Tooltip, makeStyles, tokens } = fluentComponents;
 
 type ProviderBadgeKind = UpstreamProviderKind | null;
 type ProviderTone = UpstreamColorPreset | 'zinc';
@@ -143,17 +143,22 @@ export function ProviderBadge({ color, kind, label, size = 'small', title }: {
   const providerName = t(`provider.${kind ?? 'unknown'}`, providerLabel(kind));
   const visibleLabel = label ?? providerName;
 
+  // A caller-supplied title states more than the chip shows -- the kind and the
+  // upstream id behind a display name -- so it describes the badge. The default
+  // is the label itself, restored for a reader whose column clipped it, and
+  // that is the badge's name rather than an addition to it.
   return (
-    <Chip
-      className={styles[tone]}
-      style={isHexColor(color) ? customColorStyle(color) : undefined}
-      title={title ?? visibleLabel}
-      icon={<ProviderIcon kind={kind} className={size === 'extra-small' ? 'h-3 w-3' : 'h-4 w-4'} />}
-      size={size}
-      textClassName={styles.tagText}
-    >
-      {visibleLabel}
-    </Chip>
+    <Tooltip content={title ?? visibleLabel} relationship={title === undefined ? 'label' : 'description'}>
+      <Chip
+        className={styles[tone]}
+        style={isHexColor(color) ? customColorStyle(color) : undefined}
+        icon={<ProviderIcon kind={kind} className={size === 'extra-small' ? 'h-3 w-3' : 'h-4 w-4'} />}
+        size={size}
+        textClassName={styles.tagText}
+      >
+        {visibleLabel}
+      </Chip>
+    </Tooltip>
   );
 }
 

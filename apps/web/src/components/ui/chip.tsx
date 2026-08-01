@@ -1,5 +1,5 @@
 import type { TagProps } from '@fluentui/react-components';
-import type { CSSProperties, ReactElement, ReactNode } from 'react';
+import type { ComponentProps, CSSProperties, ReactElement, ReactNode } from 'react';
 
 import { fluentComponents } from '../../fluent';
 
@@ -21,18 +21,26 @@ const useStyles = makeStyles({
   },
 });
 
+// What a Tooltip hands its trigger: the ref, the pointer and focus handlers,
+// and the aria attribute tying the two together. Chip passes them straight
+// through so it can be a trigger itself -- Fluent clones the trigger element,
+// and props a component drops leave the tooltip with nothing to open on.
+type ChipTriggerProps = Omit<
+  ComponentProps<typeof Tag>,
+  'appearance' | 'children' | 'className' | 'icon' | 'primaryText' | 'shape' | 'size' | 'style'
+>;
+
 // The dashboard's one chip: a read-only Fluent Tag stating an attribute of
 // the thing it sits next to. Not dismissible, so Tag renders it as a plain
 // span rather than a button.
-export function Chip({ children, className, icon, size = 'small', style, textClassName, title }: {
+export function Chip({ children, className, icon, size = 'small', style, textClassName, ...trigger }: {
   children: ReactNode;
   className?: string;
   icon?: ReactElement;
   size?: TagProps['size'];
   style?: CSSProperties;
   textClassName?: string;
-  title?: string;
-}) {
+} & ChipTriggerProps) {
   const styles = useStyles();
 
   return (
@@ -44,7 +52,7 @@ export function Chip({ children, className, icon, size = 'small', style, textCla
       icon={icon}
       primaryText={{ className: mergeClasses(styles.text, textClassName) }}
       style={style}
-      title={title}
+      {...trigger}
     >
       {children}
     </Tag>

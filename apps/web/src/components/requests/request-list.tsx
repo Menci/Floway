@@ -26,7 +26,7 @@ import { initializeScrollArea, scrollAreaHostClassName, useOverlayScrollbarsEnab
 import { ProviderBadge } from '../upstreams/provider-badge';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 
-const { Option, Text, makeStyles, mergeClasses } = fluentComponents;
+const { Option, Text, Tooltip, makeStyles, mergeClasses } = fluentComponents;
 const ROW_HEIGHT = 84;
 
 const useStyles = makeStyles({
@@ -153,17 +153,27 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
         <Text size={300} className="truncate min-w-0 font-mono">
           {record.model ?? t('dashboard.requests.unknownModel')}
         </Text>
-        <Text size={200} className="ml-auto shrink-0 text-fui-fg3" title={dateTime(record.startedAt, locale)}>
-          {/* The narrow style, alone in the app: this is a trailing column in a
-              dense virtualized row, where "4m ago" has to fit beside the model
-              name that the row is actually about. */}
-          {relativeTime(record.startedAt, locale, { now, style: 'narrow' }) ?? shortDate(record.startedAt, locale)}
-        </Text>
+        {/* The tooltips below this point are the only ones in the app whose
+            trigger is left unfocusable. The row is an `option` under a roving
+            tabindex, and a focusable descendant of one both breaks that roving
+            stop and contradicts what an option promises assistive technology.
+            The aria relationship still carries each hint into the row's
+            announcement, which the native title it replaced did not. */}
+        <Tooltip content={dateTime(record.startedAt, locale)} relationship="description">
+          <Text size={200} className="ml-auto shrink-0 text-fui-fg3">
+            {/* The narrow style, alone in the app: this is a trailing column in a
+                dense virtualized row, where "4m ago" has to fit beside the model
+                name that the row is actually about. */}
+            {relativeTime(record.startedAt, locale, { now, style: 'narrow' }) ?? shortDate(record.startedAt, locale)}
+          </Text>
+        </Tooltip>
       </div>
       <div className="flex items-center gap-2 min-w-0">
-        <Text size={200} className="truncate min-w-0 flex-1 text-fui-fg3 font-mono" title={`${record.method} ${record.path}`}>
-          {record.path}
-        </Text>
+        <Tooltip content={`${record.method} ${record.path}`} relationship="description">
+          <Text size={200} className="truncate min-w-0 flex-1 text-fui-fg3 font-mono">
+            {record.path}
+          </Text>
+        </Tooltip>
         {record.upstream && <ProviderBadge
           color={record.upstream.color}
           kind={record.upstream.kind}
@@ -173,18 +183,28 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
         />}
       </div>
       <div className="flex items-center gap-3 min-w-0 text-fui-fg3">
-        <span className="inline-flex items-center gap-1 shrink-0" title={t('dashboard.requests.duration', { value: record.durationMs })}>
-          <TimerRegular aria-hidden="true" className="block flex-none" fontSize={18} /> <Text size={200}>{formatDuration(record.durationMs)}</Text>
-        </span>
-        <span className="inline-flex items-center gap-1 shrink-0" title={t('dashboard.requests.requestBytes', { value: record.requestBytes })}>
-          <ArrowUploadRegular aria-hidden="true" className="block flex-none" fontSize={18} /> <Text size={200}>{formatBytes(record.requestBytes, locale)}</Text>
-        </span>
-        <span className="inline-flex items-center gap-1 shrink-0" title={t('dashboard.requests.responseBytes', { value: record.responseBytes })}>
-          <ArrowDownloadRegular aria-hidden="true" className="block flex-none" fontSize={18} /> <Text size={200}>{formatBytes(record.responseBytes, locale)}</Text>
-        </span>
-        <Text size={200} className={mergeClasses('ml-auto truncate', rowError ? s.error : 'text-fui-fg3')} title={rowError ?? undefined}>
-          {rowError ?? (tokens === null ? '-' : `${formatCompactCount(tokens, locale)} tok`)}
-        </Text>
+        <Tooltip content={t('dashboard.requests.duration', { value: record.durationMs })} relationship="description">
+          <span className="inline-flex items-center gap-1 shrink-0">
+            <TimerRegular aria-hidden="true" className="block flex-none" fontSize={18} /> <Text size={200}>{formatDuration(record.durationMs)}</Text>
+          </span>
+        </Tooltip>
+        <Tooltip content={t('dashboard.requests.requestBytes', { value: record.requestBytes })} relationship="description">
+          <span className="inline-flex items-center gap-1 shrink-0">
+            <ArrowUploadRegular aria-hidden="true" className="block flex-none" fontSize={18} /> <Text size={200}>{formatBytes(record.requestBytes, locale)}</Text>
+          </span>
+        </Tooltip>
+        <Tooltip content={t('dashboard.requests.responseBytes', { value: record.responseBytes })} relationship="description">
+          <span className="inline-flex items-center gap-1 shrink-0">
+            <ArrowDownloadRegular aria-hidden="true" className="block flex-none" fontSize={18} /> <Text size={200}>{formatBytes(record.responseBytes, locale)}</Text>
+          </span>
+        </Tooltip>
+        {rowError
+          ? <Tooltip content={rowError} relationship="label">
+              <Text size={200} className={mergeClasses('ml-auto truncate', s.error)}>{rowError}</Text>
+            </Tooltip>
+          : <Text size={200} className="ml-auto truncate text-fui-fg3">
+              {tokens === null ? '-' : `${formatCompactCount(tokens, locale)} tok`}
+            </Text>}
       </div>
     </div>
   );
