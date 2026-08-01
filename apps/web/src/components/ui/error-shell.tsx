@@ -56,8 +56,12 @@ export function ErrorShell({ action, children, message, title }: PropsWithChildr
           bar can never retract. `min-h-max` keeps a long trace scrolling. */}
       <main className="floway-error-shell">
         <div className="floway-error-shell-stack">
-          <Text as="h1" size={700} weight="semibold">{title}</Text>
-          {message !== undefined && <Text as="p" className="text-fui-fg2" size={300}>{message}</Text>}
+          {/* `align` rather than a rule of our own: Fluent's Text emits a
+              text-align atom whatever the page around it says, and Griffel
+              injects at runtime, so an equal-weight rule here always loses the
+              tie. Asking the component stops the atom being emitted. */}
+          <Text align="center" as="h1" size={700} weight="semibold">{title}</Text>
+          {message !== undefined && <Text align="center" as="p" className="text-fui-fg2" size={300}>{message}</Text>}
         </div>
         {children}
         {/* After the trace, not before it: the trace is what the operator is
