@@ -5,9 +5,6 @@ const en = {
       documentTitle: '{{title}} | Floway',
     },
     common: {
-      language: 'Language',
-      english: 'English',
-      simplifiedChinese: '简体中文',
       loading: 'Loading…',
       on: 'On',
       off: 'Off',
@@ -89,8 +86,6 @@ const en = {
             'Run model conversations and inspect request behavior from the control plane',
         upstreams:
             'Manage provider routing priority, availability, model catalogs, and connection settings',
-        proxy:
-            'Manage proxy routing, transport, and gateway-level proxy configuration',
         apiKeys:
             'Create and manage API keys used by clients that call Floway',
         apiDocs:
@@ -103,8 +98,6 @@ const en = {
             'Monitor latency, throughput, and upstream performance signals',
         users:
             'Manage console users, permissions, telemetry access, and upstream scopes',
-        backupRestore:
-            'Export or restore gateway configuration and control plane data',
         unavailable: 'This view could not be loaded',
       },
       playground: {
@@ -120,7 +113,6 @@ const en = {
         emptyResponse: '(empty response)',
         noKey: 'Create an API key before using the playground',
         noKeyOption: 'No API Keys',
-        noModel: 'No model selected',
         apis: { responses: 'Responses', chatCompletions: 'Chat Completions', messages: 'Messages' },
         settings: { title: 'Playground settings', close: 'Close Playground settings', connection: 'Connection', generation: 'Generation', customJson: 'Custom JSON' },
         actions: { newTopic: 'New topic', edit: 'Edit', delete: 'Delete', save: 'Save', image: 'Add image URL', send: 'Send', stop: 'Stop' },
@@ -129,9 +121,6 @@ const en = {
           providerDefault: 'Provider default',
         },
         badges: {
-          context: 'Context <strong>{{value}}</strong>',
-          prompt: 'Prompt <strong>{{value}}</strong>',
-          output: 'Output <strong>{{value}}</strong>',
           aliasOfModel: 'Alias of <model>{{target}}</model>',
           aliasOfCount_one: 'Alias of <strong>{{count}}</strong> model',
           aliasOfCount_other: 'Alias of <strong>{{count}}</strong> models',
@@ -160,8 +149,6 @@ const en = {
         errors: {
           imageUnsupported: 'This model does not support image input.',
           imageUrl: 'Enter a valid absolute image URL.',
-          customInvalid: 'Custom JSON is not valid JSON.',
-          customObject: 'Custom JSON must be an object.',
           customReserved: 'Remove reserved fields: {{fields}}.',
         },
       },
@@ -204,7 +191,6 @@ const en = {
         },
       },
       users: {
-        loading: 'Refreshing users',
         empty: 'No users found',
         actions: {
           create: 'New user',
@@ -354,8 +340,6 @@ const en = {
           responsesRetentionHint: 'How long this key\'s Responses items stay available for a follow-up request to reference by id (off persists nothing)',
           retentionHint:
               'When enabled, model-invoking requests through this key are captured for the configured window.',
-          retentionCustom: 'Custom retention',
-          retentionPlaceholder: 'e.g. 30m, 2h, 3d, 1800',
         },
         validation: {
           nameRequired: 'Name is required.',
@@ -374,12 +358,6 @@ const en = {
           durationPlaceholder: 'e.g. 30m, 2h, 3d',
           daysPlaceholder: 'e.g. 14',
           invalid: 'Enter a valid retention window.',
-          off: 'Off',
-          '1h': '1 hour',
-          '6h': '6 hours',
-          '24h': '24 hours',
-          '7d': '7 days',
-          custom: 'Custom',
           warningDisable:
               'Saving will delete this key\'s captured requests.',
           warningShrink:
@@ -418,15 +396,12 @@ const en = {
         actions: {
           create: 'New upstream',
           refresh: 'Refresh upstreams',
-          retry: 'Retry',
-          edit: 'Edit upstream',
           delete: 'Delete upstream',
           editNamed: 'Edit {{name}}',
           deleteNamed: 'Delete {{name}}',
           toggle: 'Toggle {{name}}',
           moveUp: 'Move {{name}} up',
           moveDown: 'Move {{name}} down',
-          more: 'More actions for {{name}}',
         },
         table: {
           title: 'Routing priority',
@@ -491,7 +466,6 @@ const en = {
           title: 'Ready to save',
           description: 'Save this {{provider}} upstream to load its model catalog.',
         },
-        new: 'New upstream',
         documentTitleNew: 'New upstream',
         documentTitleEdit: 'Upstream details',
         optional: 'optional',
@@ -540,7 +514,6 @@ const en = {
         },
         fields: {
           name: 'Upstream name',
-          enabled: 'Enabled',
           baseUrl: 'Base URL',
           endpoint: 'Endpoint',
           authStyle: 'Authentication',
@@ -549,11 +522,9 @@ const en = {
           modelsPath: 'Models path',
           defaultEndpoints: 'Default LLM endpoints',
           pathOverrides: 'Path overrides',
-          modelIds: 'Model IDs',
         },
         auth: { none: 'None' },
         proxy: {
-          direct: 'Direct',
           directFetch: 'Direct (Fetch)',
           directConnect: 'Direct (TCP connect)',
           empty: 'Without a fallback entry, traffic uses direct Fetch.',
@@ -989,8 +960,6 @@ const en = {
       },
       backupRestore: {
         heading: 'Backup / Restore',
-        description:
-            'Export or restore gateway configuration and control plane data',
         export: {
           heading: 'Export',
           description:
@@ -1011,7 +980,6 @@ const en = {
           fileSelected: '{{name}} ({{size}})',
           change: 'Change',
           preview: 'Preview',
-          records: 'records',
           mode: 'Import Mode',
           modeMerge: 'Merge',
           modeMergeDesc:
@@ -1108,7 +1076,6 @@ const en = {
         empty: 'No proxies configured. Add a proxy to route outbound traffic.',
         addTitle: 'Add Proxy',
         editTitle: 'Edit Proxy',
-        cancelEdit: 'Cancel',
         form: {
           name: 'Name',
           namePlaceholder: 'My proxy',
@@ -1139,7 +1106,6 @@ const en = {
           shortId: 'Short ID (optional)',
           shortIdPlaceholder: 'hex, up to 16 chars',
           timeout: 'Dial timeout',
-          timeoutPlaceholder: 'default (10s)',
           timeoutHint: 'Seconds. Leave empty for default 10s timeout.',
         },
         validation: {
@@ -1158,7 +1124,6 @@ const en = {
           create: 'New Proxy',
           save: 'Save Proxy',
           saveSuccess: 'Proxy saved.',
-          edit: 'Edit',
           editNamed: 'Edit proxy {{name}}',
           test: 'Test',
           delete: 'Delete',
@@ -1194,7 +1159,6 @@ const en = {
           PROXY: 'Proxy',
         },
         backoff: {
-          label: '{{count}} backoff(s)',
           title: 'Backoff',
           remaining: 'resumes in {{duration}}',
           expiring: 'resuming',
@@ -1202,12 +1166,8 @@ const en = {
           failures_other: '{{count}} failures',
           reset: 'Reset',
           resetAll: 'Reset all',
-          resetting: 'Resetting…',
-          none: 'None',
         },
         timeout: {
-          default: 'default',
-          seconds: '{{n}}s',
         },
       },
     },

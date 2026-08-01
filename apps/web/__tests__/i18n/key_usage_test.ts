@@ -34,6 +34,23 @@ const PLURAL_SUFFIX = /_(zero|one|two|few|many|other)$/;
 // resources suite still guarantees both locales agree on whatever exists.
 const LITERAL_KEY = /\bt\(\s*'([a-zA-Z][a-zA-Z0-9_.]*)'/g;
 
+// The reverse direction needs a wider net than `t(...)`. A key reaches the
+// call site through whatever the source does with it -- held in a const, in a
+// table of presets, in a `labelKey` field -- so any string literal spelling a
+// key counts as a use. Template keys contribute their literal prefix, and
+// everything defined under it is reachable.
+//
+// A key is also cleared when some literal is a proper prefix of it, because a
+// call site is free to append: `t(`${prefix}Disable`)` names the key in two
+// pieces, and only the first is in the source.
+//
+// The net is deliberately loose: it under-reports, and that is the safe
+// direction for a test whose failure means "delete this". A key it wrongly
+// clears stays in the file; a key it wrongly accuses would fail a build over a
+// string that is genuinely in use.
+const ANY_STRING = /['"`]([a-zA-Z][a-zA-Z0-9_.]*)['"`]/g;
+const TEMPLATE_KEY_PREFIX = /\bt\(\s*`([a-zA-Z][a-zA-Z0-9_.]*\.)\$\{/g;
+
 describe('translation key usage', () => {
   const defined = new Set(leafKeys(resources.en.translation));
   const pluralBases = new Set([...defined].filter(key => PLURAL_SUFFIX.test(key)).map(key => key.replace(PLURAL_SUFFIX, '')));
@@ -50,6 +67,27 @@ describe('translation key usage', () => {
     // An unresolved key renders as the key itself, which reads as a broken
     // label rather than as an error, so nothing else catches this.
     expect(unresolved).toEqual([]);
+  });
+
+  it('has a consumer for every string it defines', () => {
+    const used = new Set<string>();
+    const templatePrefixes = new Set<string>();
+    for (const file of sourceFiles(SOURCE_ROOT)) {
+      const source = readFileSync(file, 'utf8');
+      for (const [, key] of source.matchAll(ANY_STRING)) used.add(key);
+      for (const [, prefix] of source.matchAll(TEMPLATE_KEY_PREFIX)) templatePrefixes.add(prefix);
+    }
+    const orphaned = [...defined].filter(key => {
+      if (used.has(key) || used.has(key.replace(PLURAL_SUFFIX, ''))) return false;
+      if ([...templatePrefixes].some(prefix => key.startsWith(prefix))) return false;
+      return ![...used].some(literal => literal.length < key.length && key.startsWith(literal));
+    });
+    // A string nothing asks for is invisible: it survives every rename and
+    // every deletion of the surface it belonged to, and both locales keep
+    // translating it. Freezing a button's label left fourteen of these behind
+    // in one afternoon, and the parity suite only caught the one that had
+    // drifted between the two files.
+    expect(orphaned).toEqual([]);
   });
 
   it('scans the source tree it claims to', () => {

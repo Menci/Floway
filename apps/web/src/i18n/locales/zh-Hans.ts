@@ -5,9 +5,6 @@ const zhHansCN = {
       documentTitle: '{{title}} | Floway',
     },
     common: {
-      language: '语言',
-      english: 'English',
-      simplifiedChinese: '简体中文',
       loading: '加载中…',
       on: '开',
       off: '关',
@@ -88,14 +85,12 @@ const zhHansCN = {
         playground: '在控制台中运行模型对话，并检查请求行为',
         upstreams:
             '管理模型提供商的路由优先级、可用状态、模型目录和连接配置',
-        proxy: '管理代理路由、传输方式和 gateway 级代理配置',
         apiKeys: '创建和管理客户端调用 Floway 时使用的 API 密钥',
         apiDocs: '阅读 Floway 网关的 API 参考和接入说明',
         requests: '查看请求记录、状态、路由结果和错误详情',
         usage: '按用户、API 密钥、模型和上游查看 token 用量与流量',
         performance: '观察延迟、吞吐和上游性能信号',
         users: '管理控制台用户、权限、观测访问和上游范围',
-        backupRestore: '导出或恢复 gateway 配置和控制平面数据',
         unavailable: '无法加载此视图',
       },
       playground: {
@@ -111,7 +106,6 @@ const zhHansCN = {
         emptyResponse: '（空响应）',
         noKey: '请先创建 API 密钥，再使用 Playground',
         noKeyOption: '没有 API 密钥',
-        noModel: '未选择模型',
         apis: { responses: 'Responses', chatCompletions: 'Chat Completions', messages: 'Messages' },
         settings: { title: 'Playground 设置', close: '关闭 Playground 设置', connection: '连接', generation: '生成', customJson: '自定义 JSON' },
         actions: { newTopic: '新话题', edit: '编辑', delete: '删除', save: '保存', image: '添加图片 URL', send: '发送', stop: '停止' },
@@ -120,9 +114,6 @@ const zhHansCN = {
           providerDefault: 'Provider 默认值',
         },
         badges: {
-          context: '上下文 <strong>{{value}}</strong>',
-          prompt: '输入 <strong>{{value}}</strong>',
-          output: '输出 <strong>{{value}}</strong>',
           aliasOfModel: '别名指向 <model>{{target}}</model>',
           aliasOfCount_other: '别名指向 <strong>{{count}}</strong> 个模型',
           aliasOfPartial: '别名指向 <strong>{{total}}</strong> 个模型中的 <strong>{{reachable}}</strong> 个',
@@ -150,8 +141,6 @@ const zhHansCN = {
         errors: {
           imageUnsupported: '当前模型不支持图片输入。',
           imageUrl: '请输入有效的绝对图片 URL。',
-          customInvalid: '自定义 JSON 格式无效。',
-          customObject: '自定义 JSON 必须是对象。',
           customReserved: '请移除保留字段：{{fields}}。',
         },
       },
@@ -194,7 +183,6 @@ const zhHansCN = {
         },
       },
       users: {
-        loading: '正在刷新用户',
         empty: '没有用户',
         actions: {
           create: '新建用户',
@@ -342,8 +330,6 @@ const zhHansCN = {
           responsesRetentionHint: '该 API 密钥的 Responses 条目可被后续请求按 id 引用的时长（关闭表示不做持久化）',
           retentionHint:
               '启用后，通过该 API 密钥发起的模型请求会在配置窗口内被记录。',
-          retentionCustom: '自定义保留时间',
-          retentionPlaceholder: '例如 30m, 2h, 3d, 1800',
         },
         validation: {
           nameRequired: '名称不能为空。',
@@ -362,12 +348,6 @@ const zhHansCN = {
           durationPlaceholder: '例如 30m、2h、3d',
           daysPlaceholder: '例如 14',
           invalid: '请输入有效的保留时长。',
-          off: '关闭',
-          '1h': '1 小时',
-          '6h': '6 小时',
-          '24h': '24 小时',
-          '7d': '7 天',
-          custom: '自定义',
           warningDisable: '保存后会删除该 API 密钥的已捕获请求。',
           warningShrink: '保存后会删除超过新窗口的已捕获请求。',
           responsesWarningDisable: '保存后会删除该 API 密钥已存储的 Responses 条目。后续请求按 id 引用时将无法找到。',
@@ -398,15 +378,12 @@ const zhHansCN = {
         actions: {
           create: '新建上游',
           refresh: '刷新上游',
-          retry: '重试',
-          edit: '编辑上游',
           delete: '删除上游',
           editNamed: '编辑 {{name}}',
           deleteNamed: '删除 {{name}}',
           toggle: '切换 {{name}} 的启用状态',
           moveUp: '上移 {{name}}',
           moveDown: '下移 {{name}}',
-          more: '{{name}} 的更多操作',
         },
         table: {
           title: '路由优先级',
@@ -470,7 +447,6 @@ const zhHansCN = {
           title: '可以保存了',
           description: '保存这个 {{provider}} 上游即可加载它的模型目录。',
         },
-        new: '新建上游',
         documentTitleNew: '新建上游',
         documentTitleEdit: '上游详情',
         optional: '可选',
@@ -516,7 +492,6 @@ const zhHansCN = {
         },
         fields: {
           name: '上游名称',
-          enabled: '启用',
           baseUrl: 'Base URL',
           endpoint: 'Endpoint',
           authStyle: '认证方式',
@@ -525,11 +500,9 @@ const zhHansCN = {
           modelsPath: '模型列表路径',
           defaultEndpoints: '默认 LLM API',
           pathOverrides: '路径覆盖',
-          modelIds: '模型 ID',
         },
         auth: { none: '无认证' },
         proxy: {
-          direct: '直连',
           directFetch: '直连（Fetch）',
           directConnect: '直连（TCP connect）',
           empty: '未配置回退出口时，流量使用直连 Fetch。',
@@ -950,7 +923,6 @@ const zhHansCN = {
       },
       backupRestore: {
         heading: '备份 / 恢复',
-        description: '导出或恢复 gateway 配置和控制平面数据',
         export: {
           heading: '导出',
           description:
@@ -970,7 +942,6 @@ const zhHansCN = {
           fileSelected: '{{name}}（{{size}}）',
           change: '更换',
           preview: '预览',
-          records: '条记录',
           mode: '导入模式',
           modeMerge: '合并',
           modeMergeDesc:
@@ -1053,7 +1024,6 @@ const zhHansCN = {
         empty: '暂无代理。添加代理后即可路由出口流量。',
         addTitle: '添加代理',
         editTitle: '编辑代理',
-        cancelEdit: '取消',
         form: {
           name: '名称',
           namePlaceholder: '我的代理',
@@ -1084,7 +1054,6 @@ const zhHansCN = {
           shortId: 'Short ID（可选）',
           shortIdPlaceholder: '十六进制，最多 16 位',
           timeout: '拨号超时',
-          timeoutPlaceholder: '默认（10 秒）',
           timeoutHint: '单位为秒。留空使用默认 10 秒超时。',
         },
         validation: {
@@ -1103,7 +1072,6 @@ const zhHansCN = {
           create: '新建代理',
           save: '保存代理',
           saveSuccess: '代理已保存。',
-          edit: '编辑',
           editNamed: '编辑代理 {{name}}',
           test: '测试',
           delete: '删除',
@@ -1139,19 +1107,14 @@ const zhHansCN = {
           PROXY: '代理',
         },
         backoff: {
-          label: '{{count}} 个退避',
           title: '退避',
           remaining: '{{duration}} 后恢复',
           expiring: '正在恢复',
           failures_other: '{{count}} 次失败',
           reset: '重置',
           resetAll: '全部重置',
-          resetting: '重置中…',
-          none: '无',
         },
         timeout: {
-          default: '默认',
-          seconds: '{{n}} 秒',
         },
       },
     },
