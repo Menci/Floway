@@ -641,16 +641,16 @@ function TooltipSection() {
       <Tooltip content="Copies the full key once; Floway never shows it again." relationship="description">
         <Button>Copy API key</Button>
       </Tooltip>
-      <Tooltip content="Above" positioning="above" relationship="label">
+      <Tooltip content="Above" positioning="above" relationship="description">
         <Button>Above</Button>
       </Tooltip>
-      <Tooltip content="After" positioning="after" relationship="label">
+      <Tooltip content="After" positioning="after" relationship="description">
         <Button>After</Button>
       </Tooltip>
-      <Tooltip content="Below, with arrow" positioning="below" relationship="label" withArrow>
+      <Tooltip content="Below, with arrow" positioning="below" relationship="description" withArrow>
         <Button>Below, arrow</Button>
       </Tooltip>
-      <Tooltip content="Still reachable while the button is disabledFocusable" relationship="label">
+      <Tooltip content="Still reachable while the button is disabledFocusable" relationship="description">
         <Button disabledFocusable>Disabled trigger</Button>
       </Tooltip>
     </Row>
