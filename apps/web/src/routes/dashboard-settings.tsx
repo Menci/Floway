@@ -1,4 +1,3 @@
-import { SaveRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
@@ -19,7 +18,6 @@ import { fluentComponents } from '../fluent';
 const {
   Button,
   Field,
-  Spinner,
   Text,
 } = fluentComponents;
 
@@ -174,7 +172,7 @@ export default function DashboardSettings() {
           )}
 
           <div className="flex justify-end pt-1">
-            <Button appearance="primary" disabled={saving} icon={saving ? <Spinner size="tiny" /> : <SaveRegular />} type="submit">
+            <Button appearance="primary" disabled={saving} type="submit">
               {t('dashboard.settings.save')}
             </Button>
           </div>

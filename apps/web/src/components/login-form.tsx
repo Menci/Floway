@@ -14,7 +14,6 @@ import { Panel } from './ui/panel';
 const {
   Button,
   Field,
-  Spinner,
 } = fluentComponents;
 
 export const loginSchema = z.object({
@@ -156,7 +155,6 @@ export function LoginForm() {
           appearance="primary"
           className="mt-3.5 !min-h-[34px] w-full text-fui-base300"
           disabled={isSubmitting}
-          icon={isSubmitting ? <Spinner size="tiny" /> : undefined}
           type="submit"
         >
           {t('auth.login.submit')}

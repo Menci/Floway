@@ -1,4 +1,3 @@
-import { PlugConnectedRegular, SaveRegular } from '@fluentui/react-icons';
 import { useCallback, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -25,7 +24,7 @@ import { fluentComponents } from '../fluent';
 import type { ProxyConfig } from '@floway-dev/proxy/proxy-config';
 import { formatProxyUri } from '@floway-dev/proxy/url';
 
-const { Button, DialogActions, DialogTitle, MessageBar, MessageBarBody, Spinner, Text } = fluentComponents;
+const { Button, DialogActions, DialogTitle, MessageBar, MessageBarBody, Text } = fluentComponents;
 
 const proxyDraftSignature = (name: string, config: ProxyConfig, urlDraft: string | null, dialTimeout: string) =>
   JSON.stringify([name, config, urlDraft, dialTimeout]);
@@ -188,8 +187,8 @@ function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
     open={open}
     actions={<DialogActions>
       <Button className="!whitespace-nowrap" disabled={saving || testing} onClick={() => onOpenChange(false)} type="button">{t('common.cancel')}</Button>
-      <Button className="!whitespace-nowrap" disabled={!canTest || saving || testing} icon={testing ? <Spinner size="tiny" /> : <PlugConnectedRegular />} onClick={() => void handleTest()} type="button">{t('dashboard.proxy.actions.test')}</Button>
-      <Button appearance="primary" className="!whitespace-nowrap" disabled={saving || testing} icon={saving ? <Spinner size="tiny" /> : <SaveRegular />} type="submit">{t('dashboard.proxy.actions.save')}</Button>
+      <Button className="!whitespace-nowrap" disabled={!canTest || saving || testing} onClick={() => void handleTest()} type="button">{t('dashboard.proxy.actions.test')}</Button>
+      <Button appearance="primary" className="!whitespace-nowrap" disabled={saving || testing} type="submit">{t('dashboard.proxy.actions.save')}</Button>
     </DialogActions>}
     onOpenChange={(_, data) => {
       if (!data.open && !saving && !testing && !draftDirty) onOpenChange(data.open);

@@ -1,4 +1,4 @@
-import { ArrowRouting24Regular, EyeOffRegular, EyeRegular, GlobeSearch24Regular, PlugConnectedRegular, SaveRegular } from '@fluentui/react-icons';
+import { ArrowRouting24Regular, EyeOffRegular, EyeRegular, GlobeSearch24Regular } from '@fluentui/react-icons';
 import type { InferResponseType } from 'hono/client';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -33,7 +33,6 @@ const {
   Field,
   Link,
   Option,
-  Spinner,
   Text,
   Tooltip,
 } = fluentComponents;
@@ -366,14 +365,12 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
         <Button
           appearance="primary"
           disabled={saving}
-          icon={saving ? <Spinner size="tiny" /> : <SaveRegular />}
           onClick={() => void handleSave()}
         >
           {t('dashboard.searchConfig.save')}
         </Button>
         <Button
           disabled={draft.provider === 'disabled' || testing}
-          icon={testing ? <Spinner size="tiny" /> : <PlugConnectedRegular />}
           onClick={() => void handleTest()}
         >
           {t('dashboard.searchConfig.test')}
