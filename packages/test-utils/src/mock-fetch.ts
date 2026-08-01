@@ -39,10 +39,12 @@ export function jsonResponse(body: unknown, status = 200): Response {
 // default body is the OpenAI-style `[DONE]` sentinel; pass arbitrary SSE
 // text when a test cares about the upstream's emitted frames. The provider
 // rejects 200 responses that are not text/event-stream as a contract
-// violation, so streaming-endpoint stubs must use this helper.
-export function sseResponse(body = 'data: [DONE]\n\n', status = 200): Response {
+// violation, so streaming-endpoint stubs must use this helper. `extraHeaders`
+// carries the response metadata a provider reads alongside the stream, such as
+// Copilot's `x-quota-snapshot-*`.
+export function sseResponse(body = 'data: [DONE]\n\n', status = 200, extraHeaders: Record<string, string> = {}): Response {
   return new Response(body, {
     status,
-    headers: { 'content-type': 'text/event-stream; charset=utf-8' },
+    headers: { 'content-type': 'text/event-stream; charset=utf-8', ...extraHeaders },
   });
 }

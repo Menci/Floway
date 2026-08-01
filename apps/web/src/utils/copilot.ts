@@ -15,12 +15,15 @@ const BASE_URL_TO_LABEL: Record<string, CopilotAccountTypeLabel> = {
   'https://api.enterprise.githubcopilot.com': 'enterprise',
 };
 
-export const copilotAccountTypeLabel = (state: CopilotUpstreamState | null | undefined): CopilotAccountTypeLabel | null => {
+// Takes the token slot rather than the whole state: the label is a pure
+// function of the per-tier host, and the rest of the state (quota snapshot,
+// …) is none of this helper's business.
+export const copilotAccountTypeLabel = (state: Pick<CopilotUpstreamState, 'copilotToken'> | null | undefined): CopilotAccountTypeLabel | null => {
   const baseUrl = state?.copilotToken?.baseUrl;
   return baseUrl ? BASE_URL_TO_LABEL[baseUrl] ?? null : null;
 };
 
 // Display label with the generic-fallback applied for callers that render
 // a non-empty string unconditionally (badge text, settings-row subtitle).
-export const copilotAccountTypeDisplay = (state: CopilotUpstreamState | null | undefined): string =>
+export const copilotAccountTypeDisplay = (state: Pick<CopilotUpstreamState, 'copilotToken'> | null | undefined): string =>
   copilotAccountTypeLabel(state) ?? COPILOT_GENERIC_LABEL;
