@@ -39,9 +39,13 @@ const ICON_COLUMN = `calc(${ICON_MARGIN_START} + ${ICON_SIZE} + ${ICON_MARGIN_EN
 // The icon column is a column the toolkit's grid declares whether or not
 // anything is in it; here the span exists only when there is an icon, so the
 // rule that indents the wrapped control has to ask whether one preceded it.
-// A marker attribute is what a sibling selector can ask about -- the class
-// Griffel mints for the icon is not a name this sheet can write down.
+// The question is put on the card, which is the one element that can see both
+// -- a Griffel selector is rooted at the class it is written on, so a slot
+// cannot reach backwards to a sibling -- and the answer travels down as a
+// custom property. Its absence is the no-icon case, which is why the reader
+// supplies the zero rather than another rule stating it.
 const ICON_MARKER = 'data-settings-card-icon';
+const ICON_COLUMN_VAR = 'var(--floway-settings-icon-column, 0px)';
 
 // SettingsCardWrapThreshold 476 and SettingsCardWrapNoIconThreshold 286. The
 // toolkit reaches them through a ControlSizeTrigger, which activates on
@@ -112,6 +116,15 @@ const useStyles = makeStyles({
     // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L109
     // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L388-L395
     [WRAPPED]: { flexWrap: 'wrap', rowGap: '8px' },
+    // Wrapped, the control moves into the HEADER's column rather than to the
+    // card's leading edge, so with the icon still shown it is indented to
+    // where the header text starts. Below the no-icon threshold the icon is
+    // gone and the indent goes with it, which is why this is the narrower of
+    // the two ranges: the two queries are disjoint, so neither has to outrank
+    // the other.
+    [WRAPPED_WITH_ICON]: {
+      [`&:has(> [${ICON_MARKER}])`]: { '--floway-settings-icon-column': ICON_COLUMN },
+    },
   },
   // A card only takes the pointer ramp when it does something when clicked.
   // The fill moves over the control's own duration; the toolkit leaves the
@@ -206,13 +219,25 @@ const useStyles = makeStyles({
   // control on the line below rather than beside it, there is nothing left for
   // the 24 to hold apart. The auto margin stays, because on an expander it is
   // what keeps the chevron against the trailing edge.
+  //
+  // The header also stops asking for its content width there. A flex line
+  // breaks on what its items would LIKE to be rather than on what they can be
+  // squeezed to, so a header wide enough to want the whole line was sending
+  // the chevron down ahead of the control -- three lines where the toolkit has
+  // two. Asking for its narrowest instead, and growing into what is left, is
+  // the column the toolkit gives it anyway: HeaderPanel sits in the star-sized
+  // one. Narrowest rather than nothing, because nothing is a line the control
+  // exactly fits into: at 100% wide it would sit beside a zero-width header on
+  // a row with no icon to push it off, and the header would then wrap a word
+  // per line.
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L200-L204
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L409-L412
   text: {
     display: 'grid',
     minWidth: 0,
     marginInlineEnd: 'auto',
     paddingInlineEnd: '24px',
-    [WRAPPED]: { paddingInlineEnd: 0 },
+    [WRAPPED]: { flexBasis: 'min-content', flexGrow: 1, paddingInlineEnd: 0 },
   },
   // SettingsCardHeaderIconMaxSize 20 with SettingsCardHeaderIconMargin 2,0,20,0.
   // The holder collapses when there is no icon, so a card without one starts
@@ -293,23 +318,16 @@ const useStyles = makeStyles({
   // row 1 and stretches, and its own content aligns Left inside that. The order
   // is what keeps an expander's chevron up on the header line -- flex fills its
   // lines in order-modified order, so a control that is 100% wide would
-  // otherwise carry the chevron down with it.
-  //
-  // The column it moves into is the HEADER's, not the card's leading edge, so
-  // with the icon still shown the control is indented to where the header text
-  // starts. Below the no-icon threshold the icon is gone and that indent goes
-  // with it, which is why the indent is the narrower of the two ranges: the
-  // two container queries are disjoint, so neither has to outrank the other.
-  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L204-L207
+  // otherwise carry the chevron down with it. The inset it starts at is the
+  // icon column, which the card measures out above.
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L313-L345
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L453-L458
   action: {
     '--floway-select-min-width': '200px',
-    [WRAPPED]: { flexBasis: '100%', order: 1 },
-    [WRAPPED_WITH_ICON]: {
-      [`[${ICON_MARKER}] ~ &`]: {
-        flexBasis: `calc(100% - ${ICON_COLUMN})`,
-        marginInlineStart: ICON_COLUMN,
-      },
+    [WRAPPED]: {
+      flexBasis: `calc(100% - ${ICON_COLUMN_VAR})`,
+      marginInlineStart: ICON_COLUMN_VAR,
+      order: 1,
     },
   },
   expanderHeaderOpen: { borderEndStartRadius: 0, borderEndEndRadius: 0 },
