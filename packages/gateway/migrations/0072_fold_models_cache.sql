@@ -8,11 +8,11 @@
 -- expensive by total time. A single D1 database processes queries one at a
 -- time, so removing the query returns that slot to everything else.
 --
--- One column rather than a field per attribute: the four values are written
--- and read as a unit, and splitting them would let a row hold a catalog with
--- no fetch stamp — a state the reader would have to reject at runtime and the
--- schema cannot express. A column also keeps each write to its own column, so
--- a catalog refresh and a credential write to the same row do not contend:
+-- One column rather than a field per attribute: the entry is read as a unit,
+-- and splitting it would let a row hold a catalog with no fetch stamp — a
+-- state the reader would have to reject at runtime and the schema cannot
+-- express. A column also keeps each write to its own column, so a catalog
+-- refresh and a credential write to the same row do not contend:
 -- saveState's CAS predicate reads state_json alone.
 
 ALTER TABLE upstreams ADD COLUMN models_cache_json TEXT NULL;
