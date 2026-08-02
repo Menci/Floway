@@ -38,16 +38,12 @@ const {
   Checkbox,
   Field,
   Link,
-  MessageBar,
-  MessageBarBody,
-  MessageBarTitle,
   Option,
   Spinner,
   Switch,
   Tab,
   TabList,
   Text,
-  Tooltip,
 } = fluentComponents;
 
 // OAuth 2.0 device flow slow_down increases the current polling interval by five seconds.
@@ -218,18 +214,11 @@ function SecretField({ name, optional, secretSet }: { name: string; optional?: b
           onChange={(_, data) => field.onChange(data.value)}
           placeholder={secretSet ? '••••••••' : 'sk-...'}
           contentAfter={
-            <Tooltip
-              content={visible ? t('dashboard.upstreamEditor.actions.hideSecret') : t('dashboard.upstreamEditor.actions.showSecret')}
-              relationship="label"
-            >
-              <Button
-                appearance="subtle"
-                aria-label={visible ? t('dashboard.upstreamEditor.actions.hideSecret') : t('dashboard.upstreamEditor.actions.showSecret')}
-                icon={visible ? <EyeOffRegular /> : <EyeRegular />}
-                onClick={() => setVisible(value => !value)}
-                size="small"
-              />
-            </Tooltip>
+            <TooltipIconButton
+              icon={visible ? <EyeOffRegular /> : <EyeRegular />}
+              label={visible ? t('dashboard.upstreamEditor.actions.hideSecret') : t('dashboard.upstreamEditor.actions.showSecret')}
+              onClick={() => setVisible(value => !value)}
+            />
           }
         />
       )}
@@ -285,12 +274,9 @@ function EndpointPicker() {
 
 function ReadyToSaveHint({ kind }: { kind: UpstreamProviderKind }) {
   const { t } = useTranslation();
-  return <MessageBar intent="info">
-    <MessageBarBody>
-      <MessageBarTitle>{t('dashboard.upstreamEditor.readyToSave.title')}</MessageBarTitle>
-      {t('dashboard.upstreamEditor.readyToSave.description', { provider: providerLabel(kind) })}
-    </MessageBarBody>
-  </MessageBar>;
+  return <OutcomeMessageBar intent="info" title={t('dashboard.upstreamEditor.readyToSave.title')}>
+    {t('dashboard.upstreamEditor.readyToSave.description', { provider: providerLabel(kind) })}
+  </OutcomeMessageBar>;
 }
 
 function CopilotConfig({ record, onPatch }: {
