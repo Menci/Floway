@@ -61,7 +61,13 @@ const LITERAL_KEY = new RegExp(`['"\`]((?:${NAMESPACES.join('|')})\\.[a-zA-Z][a-
 // clears stays in the file; a key it wrongly accuses would fail a build over a
 // string that is genuinely in use.
 const ANY_STRING = /['"`]([a-zA-Z][a-zA-Z0-9_.]*)['"`]/g;
-const TEMPLATE_KEY_PREFIX = /(?:\bt\(\s*|i18nKey=\{\s*)`([a-zA-Z][a-zA-Z0-9_.]*\.)\$\{/g;
+
+// A template key is recognised by its own shape -- rooted in a namespace, like
+// `LITERAL_KEY` -- rather than by sitting at a `t(` or `i18nKey=`. The call
+// site is free to build the key first and hand it over later, which is how
+// `dashboard.proxy.validation.timeout.${error}`, assigned to a field of a
+// validation result, came to be accused of orphaning both strings under it.
+const TEMPLATE_KEY_PREFIX = new RegExp(`\`((?:${NAMESPACES.join('|')})\\.(?:[a-zA-Z0-9_.]*\\.)?)\\$\\{`, 'g');
 
 // Both scans are evidence about call sites, so both must read code only. A
 // comment is prose: the letter `d` quoted in a sentence is not a use of
