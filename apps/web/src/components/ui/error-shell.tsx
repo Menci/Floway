@@ -3,7 +3,28 @@ import type { PropsWithChildren, ReactNode } from 'react';
 import { ScrollArea } from './scroll-area';
 import { fluentComponents } from '../../fluent';
 
-const { Text } = fluentComponents;
+const { Text, makeStyles, mergeClasses } = fluentComponents;
+
+const useStyles = makeStyles({
+  // The scrolled region is a tab stop wherever the platform's scrollbars take
+  // layout width, because that is where the scrollbar library takes the
+  // viewport over and gives it a tabindex. The frame below is drawn on the
+  // host, whose padding box is the viewport's border box exactly, so a ring
+  // outside the viewport is cut on all four sides and there is no room to open
+  // a gutter in -- a gutter would float the trace off the frame it is set in.
+  // It is drawn inward instead, the same rule ./code-block.tsx states for the
+  // same situation: a 2px FocusStrokeColorOuter outline over the outer two of
+  // an inner ring's three pixels.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
+  stack: {
+    '& :focus-visible': {
+      boxShadow: 'inset 0 0 0 3px var(--winui-focus-stroke-inner)',
+      outline: '2px solid var(--winui-focus-stroke-outer)',
+      outlineOffset: '-2px',
+    },
+  },
+});
 
 // The app's error surface: the one page that renders without the dashboard
 // around it. It states the type itself rather than taking classes from the
@@ -53,10 +74,11 @@ export function ErrorShell({ action, children, message, title }: PropsWithChildr
 // character, not from its middle. It carries no heading -- its first line names
 // the error, which is the only label it could be given.
 export function ErrorStack({ children }: PropsWithChildren) {
+  const styles = useStyles();
   return (
     <ScrollArea
       axes="horizontal"
-      className="w-full min-w-0 rounded-[var(--winui-overlay-corner-radius,8px)] border border-solid border-fui-stroke1 bg-fui-bg2 text-left"
+      className={mergeClasses('w-full min-w-0 rounded-[var(--winui-overlay-corner-radius,8px)] border border-solid border-fui-stroke1 bg-fui-bg2 text-left', styles.stack)}
     >
       <pre className="m-0 w-max min-w-full p-4 font-mono"><code>{children}</code></pre>
     </ScrollArea>
