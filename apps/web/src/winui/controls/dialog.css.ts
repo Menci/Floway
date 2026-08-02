@@ -1,46 +1,30 @@
 // Dialog, restyled from Fluent 2 Web onto WinUI 3's ContentDialog.
 //
 // The two libraries lay the same dialog out differently. Fluent puts the 24px
-// padding on the surface and separates title, content, and actions with an 8px
-// grid gap, so the actions sit inside the padding as a right-aligned flex row.
-// WinUI puts the padding on two full-bleed bands instead: a content band and a
-// CommandSpace band beneath it, divided by a 1px separator, with the buttons
-// laid out in equal star-width columns. Reproducing that means moving the
-// padding from the surface onto the body and letting the actions row break
+// padding on the surface and separates title, content and actions with a grid
+// gap. WinUI puts the padding on two full-bleed bands instead: a content band
+// and a CommandSpace band beneath it, divided by a 1px separator, with the
+// buttons laid out in equal star-width columns. Reproducing that means moving
+// the padding from the surface onto the body and letting the actions row break
 // back out of it, which is what the negative insets below do.
 //
-// The foundation layer already remaps Fluent's neutral ramp, radii, and
-// typography, so the agreements those establish -- the 8px OverlayCornerRadius,
-// the 20px semibold title -- carry no rule here. Fluent's own constants land on
-// two more: its 1px surface border is ContentDialogBorderWidth, and the 8px
-// grid gap it puts on the actions row is ContentDialogButtonSpacing.
-//
-// WinUI fills the content band with ContentDialogTopOverlay, which resolves to
-// LayerFillColorAltBrush -- opaque white in light, a five percent white wash in
-// dark. That is what makes a Windows dialog read as a light sheet over a grey
-// frame rather than as one flat grey box: the band carries the layer fill, the
-// CommandSpace beneath it shows the dialog's own background, and the separator
-// divides them.
+// WinUI fills the content band with ContentDialogTopOverlay, which is what makes
+// a Windows dialog read as a light sheet over a grey frame rather than as one
+// flat grey box: the band carries the layer fill, the CommandSpace beneath it
+// shows the dialog's own background, and the separator divides them.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L8
 export const dialogCss = `
 /* The surface is WinUI's BackgroundElement: the solid base fill rather than
-   Fluent's raised Background1, the surface stroke rather than a transparent
-   one, and BackgroundSizing="InnerBorderEdge", which ../reset.css.ts already
-   applies to everything, so the translucent border reads against the smoke
-   layer behind it instead of against its own fill. WinUI states the whole size
-   envelope on BackgroundElement -- 320 minimum width, 548 maximum, 184 minimum
-   height, 756 maximum -- where Fluent states only a maximum width. The height
-   cap is additionally bounded by the viewport, as the XAML one is bounded by
-   the window, and is exposed as one variable so the body can consume exactly
-   the same envelope. The surface never scrolls; DialogShell gives its middle
-   grid row to OverlayScrollbars.
+   Fluent's raised Background1, and the whole size envelope, where Fluent states
+   only a maximum width. The height cap is additionally bounded by the viewport,
+   as the XAML one is bounded by the window, and is exposed as one variable so
+   the body can consume exactly the same envelope. The surface never scrolls;
+   DialogShell gives its middle grid row to OverlayScrollbars.
 
    ContentDialogMaxWidth is a keyed ThemeResource that an app overrides in its
    own dictionary, so a custom property with a 548px fallback is the faithful
-   shape rather than a loosening of it -- and it is also the shape the operator
-   asked for, having ruled that each dialog may state its own size and that the
-   ones carrying accordions ought to be wider. The alias editor and the API key
-   editor set it to 720px; that number is ours and unsourced.
+   shape rather than a loosening of it. Individual dialogs -- the alias and API
+   key editors -- raise it to an unsourced 720px.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L6-L15
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L223 */
 .fui-DialogSurface.fui-DialogSurface {
@@ -56,26 +40,20 @@ export const dialogCss = `
 }
 
 /* Fluent moves overflow onto the whole surface below 360px and reserves that
-   browser scrollbar by widening three border edges to 4px. DialogShell keeps
-   the same three-band grid at every height, so neither the native scroll path
-   nor its compensating border survives; only the middle OverlayScrollbars
-   viewport contracts. The scroll path is already cancelled by the surface rule
-   above, which outranks Fluent's overflow-y at every height, so only the border
-   is restated here. */
+   browser scrollbar by widening three border edges to 4px. DialogShell keeps the
+   same three-band grid at every height, so neither survives; the scroll path is
+   already cancelled by the surface rule above, leaving only the border. */
 @media (max-height: 359px) {
   .fui-DialogSurface.fui-DialogSurface {
     border-width: 1px;
   }
 }
 
-/* High contrast. WinUI's HighContrast dictionary doubles the dialog's stroke to
-   2px, because the smoke layer and the dialog collapse onto the same system
-   Window colour there and the stroke is the only thing left dividing them.
-   Forced colours collapse the same two fills the same way but leave widths
-   alone, so the doubled stroke is the one value restated. Nothing else in that
-   dictionary needs a rule: it points the content band's overlay at transparent
-   and the separator at WindowText, which is already what forced colours make of
-   the band fill and of the separator on the actions band below.
+/* High contrast. WinUI doubles the dialog's stroke to 2px, because the smoke
+   layer and the dialog collapse onto the same system Window colour there and the
+   stroke is the only thing left dividing them. Forced colours collapse the same
+   two fills but leave widths alone, so the doubled stroke is the one value
+   restated.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L21-L28
    https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
 @media (forced-colors: active) {
@@ -85,19 +63,15 @@ export const dialogCss = `
 }
 
 /* Focus. Fluent draws its ring as an \`::after\` two pixels outside the surface
-   and blanks the surface border while it shows; WinUI's ring is a 2px outer
-   stroke with a 1px inner stroke against the control, both following the
-   control's own corner radius rather than Fluent's medium one. The surface
-   clips to round its own corner, and that clip is the outermost box of the
-   overlay, so a ring drawn outside it is a ring nobody sees: the
-   pseudo-element is pulled onto the surface's padding box instead, where the
-   pair lands whole inside the clip. The radius follows the box the ring now
-   traces -- the 8px overlay corner less the one pixel of border between the
-   two -- and the inner stroke rides inside the outer ring's border box as an
-   inset shadow, as on every other item-shaped surface in the layer. With both
-   strokes indoors the blanked border has no ring left to complete, so it takes
-   back the surface stroke it carries at rest; that declaration repeats the one
-   above because Fluent's focus atom is what blanks it.
+   and blanks the surface border while it shows. The surface clips to round its
+   own corner, and that clip is the outermost box of the overlay, so a ring drawn
+   outside it is a ring nobody sees: the pseudo-element is pulled onto the
+   surface's padding box instead, with the radius following the box the ring now
+   traces and the inner stroke riding inside the outer ring's border box as an
+   inset shadow. With both strokes indoors the blanked border has no ring left to
+   complete, so it takes back the surface stroke it carries at rest; that
+   declaration repeats the one above because Fluent's focus atom is what blanks
+   it.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L66 */
@@ -113,11 +87,10 @@ export const dialogCss = `
 }
 
 /* The body takes over the 24px ContentDialogPadding the surface gave up, and
-   drops Fluent's 8px gap: WinUI's bands abut, and the step under the title is
-   a margin on the title itself. The height cap sits here rather than on the
-   surface, less the 1px ContentDialogBorderWidth on each end, because the body
-   now fills the surface edge to edge and the surface does not clip.
-   ContentDialogMinHeight belongs to BackgroundElement and is stated there.
+   drops Fluent's gap: WinUI's bands abut, and the step under the title is a
+   margin on the title itself. The height cap sits here rather than on the
+   surface, less the 1px border on each end, because the body now fills the
+   surface edge to edge and the surface does not clip.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L18
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L228-L233 */
 .fui-DialogBody.fui-DialogBody {
@@ -180,13 +153,10 @@ export const dialogCss = `
 /* A lone button lands in WinUI's CloseColumn with PrimaryColumn still at star
    width ahead of it and the 8px SecondSpacer between the two, so it takes half
    of what the band leaves after that gap -- the same edge the right-hand button
-   of a pair sits on. fluent-svelte reaches the same edge, and its technique is
-   what is taken here: half the band, pushed to the end, and narrowed by a
-   child-combinator selector on the button's own class rather than on the button
-   element, so a spinner or a wrapper is not half-width by accident. Its footer
-   is a grid-auto-flow: column grid rather than a single-column one -- with two
-   buttons it generates two equal columns -- and it takes a flat 50% where this
-   subtracts half the 8px gap.
+   of a pair sits on. The selector names the button's own class rather than the
+   button element, so a spinner or a wrapper is not half-width by accident.
+   fluent-svelte reaches the same edge with a flat 50%, where this subtracts half
+   the gap.
    https://github.com/tropicaaal/fluent-svelte/blob/ba1813ecc0797117be0e1b24be3a3c4905111ba7/src/lib/ContentDialog/ContentDialog.scss#L56-L67
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L250-L256 */
 .fui-DialogActions > .fui-Button.fui-Button:only-child {
@@ -195,11 +165,10 @@ export const dialogCss = `
 }
 
 /* Narrow viewports. WinUI's CommandSpace declares no width trigger, so its
-   star-width buttons stay side by side however narrow the window gets; Fluent
-   breaks them into a column at 480px and that break is kept here as our own
-   call for small viewports. Fluent expresses it as flex-direction, which is
-   inert under the display: grid above, so it is restated as a row flow. Equal
-   columns become equal rows, and the lone button gives that half-band width up
+   star-width buttons stay side by side however narrow the window gets; Fluent's
+   480px break into a column is deliberately kept. Fluent expresses it as
+   flex-direction, which is inert under the display: grid above, so it is
+   restated as a row flow, and the lone button gives its half-band width up
    because no second column is left for it to yield to.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L248-L258 */
 @media (max-width: 480px) {
