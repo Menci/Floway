@@ -1,5 +1,5 @@
 import { DismissRegular } from '@fluentui/react-icons';
-import type { ReactElement, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { fluentComponents } from '../../fluent';
@@ -14,7 +14,6 @@ export function OutcomeMessageBar({
   bodyClassName,
   children,
   className,
-  icon,
   intent = 'error',
   onDismiss,
   title,
@@ -23,7 +22,6 @@ export function OutcomeMessageBar({
   bodyClassName?: string;
   children: ReactNode;
   className?: string;
-  icon?: ReactElement;
   intent?: 'error' | 'warning' | 'success' | 'info';
   onDismiss?: () => void;
   title?: string;
@@ -32,7 +30,7 @@ export function OutcomeMessageBar({
   const dismissLabel = t('common.dismiss');
 
   return (
-    <MessageBar className={className} icon={icon} intent={intent}>
+    <MessageBar className={className} intent={intent}>
       <MessageBarBody className={bodyClassName}>
         {title && <MessageBarTitle>{title}</MessageBarTitle>}
         {children}

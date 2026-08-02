@@ -322,8 +322,6 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
     </div>
     {modelsError && <OutcomeMessageBar
       bodyClassName="min-w-0 [overflow-wrap:anywhere]"
-      className="min-w-0"
-      icon={<WarningRegular />}
       intent="warning"
     >
       {modelsError === 'Upstream model listing failed'

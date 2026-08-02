@@ -1,4 +1,4 @@
-import { DeleteRegular, WarningRegular } from '@fluentui/react-icons';
+import { DeleteRegular } from '@fluentui/react-icons';
 import { useId, useMemo, useState } from 'react';
 import { Controller, useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -180,7 +180,7 @@ function DisabledModelsCombobox({ catalogAvailable, discovered }: { catalogAvail
         </span>
       </Option>)}
     </Combobox>
-    {missing.length > 0 && <MessageBar icon={<WarningRegular />} intent="warning" layout="multiline">
+    {missing.length > 0 && <MessageBar intent="warning" layout="multiline">
       <MessageBarBody className="break-words">{t('dashboard.upstreamEditor.disabledModelsMissing', { models: missing.join(', ') })}</MessageBarBody>
     </MessageBar>}
   </div>;
