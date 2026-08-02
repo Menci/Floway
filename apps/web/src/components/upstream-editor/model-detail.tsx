@@ -53,9 +53,6 @@ export function ModelDetail({
   const { t } = useTranslation();
   const monoLabel = useMonoLabelClass();
   const reasoningLabelId = useId();
-  // The detail is read-only for the same two reasons everywhere in it: the
-  // provider owns its catalog, or this row is the upstream's own listing
-  // rather than a manual entry.
   const fieldsReadOnly = readOnly || row.source !== 'manual';
   const patch = (next: Partial<UpstreamModelConfig>) => {
     if (fieldsReadOnly) return;
@@ -214,9 +211,6 @@ export function ModelDetail({
   );
 }
 
-// A section of the detail holds several controls that no single Fluent `Field`
-// can speak for, so it names itself as their group and its own heading is the
-// name.
 function ModelEditorSection({ children, description, title }: { children: React.ReactNode; description?: string; title: string }) {
   const titleId = useId();
   return <section aria-labelledby={titleId} className="grid gap-3" role="group">
@@ -292,9 +286,9 @@ const modelKindLabel = (kind: UpstreamModelConfig['kind']): string => {
   }
 };
 
-// What the editor's own controls can hold but the model cannot mean. Stated
-// once as a message key: the detail renders it on the model it belongs to, and
-// the editor's schema asks the same question of every model at submit.
+// What the editor's controls can hold but the model cannot mean, stated once
+// as a message key: the detail renders it on the model it belongs to, and the
+// submit schema asks the same question of every model.
 const editorFieldIssue = (model: UpstreamModelConfig): string | null => {
   const effort = model.chat?.reasoning?.effort;
   if (effort && (effort.supported.length === 0 || !effort.default || !effort.supported.includes(effort.default))) return 'dashboard.upstreamEditor.models.invalidEffort';

@@ -43,11 +43,9 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const [modelsError, setModelsError] = useState<string | null>(data.modelsError);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  // The colour picker never writes a malformed hex into the form -- it holds
-  // the half-typed draft itself and commits only what parses. The draft is
-  // still an edit the operator made and expects saving to keep, so the page
-  // holds the fact that one is outstanding: it is what the schema rejects on,
-  // and what the leave prompt counts as an unsaved change.
+  // The colour picker holds a half-typed draft itself and commits only what
+  // parses, so the outstanding-draft fact lives here instead: it is what the
+  // schema rejects on and what the leave prompt counts as an unsaved change.
   const [colorDraftInvalid, setColorDraftInvalid] = useState(false);
   const allowNavigation = useRef(false);
   const initialValues = valuesFromRecord(data.record);
@@ -88,15 +86,11 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     [hasUnsavedChanges],
   ));
 
-  // The blocker owns whether the navigation is held; the dialog only follows
-  // it, which is what gives a close something to change rather than an unmount
-  // to be removed by. Following alone is not enough, though: releasing the
-  // blocker on confirm commits the route change, and the route takes this
-  // surface with it part-way through the exit -- the surface is portaled to the
-  // body, where the page transition's held leaving frame does not cover it. So
-  // confirming only closes the dialog, and the blocker is released once the
-  // exit reports itself finished. A dismissal resets the blocker first, which
-  // is what tells the two apart by then.
+  // Releasing the blocker on confirm commits the route change, which takes
+  // this body-portaled surface with it part-way through its exit. So confirm
+  // only closes the dialog and the blocker is released once the exit reports
+  // itself finished; a dismissal resets the blocker first, which is what tells
+  // the two apart by then.
   const leaveDialog = useDialogInvocation<void>();
   const blocked = blocker.state === 'blocked';
   const [dialogFollowsBlocked, setDialogFollowsBlocked] = useState(blocked);
@@ -115,10 +109,8 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   }, [hasUnsavedChanges]);
 
   // The listing is reachable from two controls -- the workspace's refresh
-  // button and the custom provider's fetch switch -- so two runs can overlap
-  // and the older one lands last. `useRefresh` is what the rest of the
-  // dashboard uses for that: it aborts the superseded run at the transport,
-  // owns the in-flight flag, and aborts on unmount.
+  // button and the custom provider's fetch switch -- so runs can overlap;
+  // `useRefresh` aborts the superseded one at the transport.
   const { refresh: refreshModels, refreshing: modelsLoading } = useRefresh(useCallback(async (signal: AbortSignal) => {
     if (record.kind === 'azure') return;
     setModelsError(null);
@@ -163,12 +155,9 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     const result = data.mode === 'create'
       ? await callApi(() => api.api.upstreams.$post({ json: createBody(record, values) }))
       : await callApi(() => api.api.upstreams[':id'].$patch({ param: { id: record.id }, json: updateBody(record, values) }));
-    // `saving` means a save is in progress, not that the write returned. What
-    // follows the write is a second round trip in edit mode and a navigation in
-    // create mode -- and the create route's loader probes the provider for its
-    // catalog, so the page stays mounted and interactive for as long as that
-    // takes. Clearing the flag here left Save live across that window with a
-    // form the dirty gate no longer covers, and a second click there posts a
+    // `saving` spans more than the write: the create route's loader probes the
+    // provider for its catalog, so the page stays mounted and interactive for
+    // as long as that takes, and a Save left live across that window posts a
     // second create.
     if (result.error) { setSaving(false); setSaveError(result.error.message); return; }
     let saved: UpstreamRecord = result.data;
@@ -180,22 +169,20 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     const savedValues = valuesFromRecord(saved);
     setSavedBaseline(comparableValues(savedValues));
     reset(savedValues);
-    // The dashboard's toaster sits above the outlet, so one call serves both
-    // branches: the create branch's toast outlives the navigation that follows
-    // it instead of having to be handed across to the page that lands.
+    // The dashboard's toaster sits above the outlet, so the create branch's
+    // toast outlives the navigation that follows it.
     toasts.succeed(t('dashboard.upstreamEditor.toast.saved'));
     if (data.mode === 'create') {
       allowNavigation.current = true;
-      // Left set: the editor unmounts when the target route commits, and the
-      // button reads as busy for the whole hand-off rather than going live
-      // again a beat before the page changes underneath it.
+      // `saving` is left set: the editor unmounts when the target route
+      // commits, and the button stays busy for the whole hand-off.
       void navigate(`/dashboard/providers/upstreams/${encodeURIComponent(saved.id)}`, { replace: true });
     } else {
       setSaving(false);
     }
   }, () => {
-    // Every rejection is rendered on the control that produced it, so the
-    // page-level bar stays what it is elsewhere: where a server says no.
+    // Every field rejection renders on the control that produced it; the
+    // page-level bar is only where a server says no.
     setSaveError(null);
   })();
 

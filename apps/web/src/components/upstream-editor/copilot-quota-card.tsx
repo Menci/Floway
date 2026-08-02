@@ -28,17 +28,12 @@ interface QuotaBucket {
   barPercent: number;
 }
 
-// Every bucket the seat reports, in the upstream's own naming, sorted into the
-// three kinds a seat actually reports. A paid seat meters
-// `premium_interactions` (or `premium_models`) and reports `chat` /
-// `completions` as unlimited; a free seat meters the latter two and reports
-// `premium_interactions` as unavailable — `entitlement: 0`, which the upstream
-// pairs with `percent_remaining: 0`, so treating it as a metered bucket would
-// render a full bar on a seat that simply has no premium allotment.
+// A free seat reports `premium_interactions` as unavailable — `entitlement: 0`
+// paired with `percent_remaining: 0` — so treating it as metered would render
+// a full bar on a seat that simply has no premium allotment.
 //
-// `usedPercent` is reported as the upstream computed it, including past 100
-// when an overage-permitted bucket runs negative. Only the bar is clamped,
-// because a bar cannot be wider than itself.
+// `usedPercent` is kept as the upstream computed it, including past 100 when
+// an overage-permitted bucket runs negative; only the bar is clamped.
 const readBuckets = (quota: CopilotQuotaSnapshot | null): QuotaBucket[] =>
   Object.entries(quota?.quotas ?? {}).map(([id, detail]) => {
     const usedPercent = Math.round(100 - detail.percent_remaining);
@@ -53,11 +48,9 @@ const readBuckets = (quota: CopilotQuotaSnapshot | null): QuotaBucket[] =>
     };
   });
 
-// Only metered buckets carry information, so they are the card. A seat with
-// nothing metered still gets one row — otherwise the card would read as "no
-// quota observed" when the truth is "nothing is capped". The premium bucket is
-// the one an operator looks for, so it is the preferred stand-in; falling back
-// to the first reported bucket keeps that working if GitHub renames it.
+// A seat with nothing metered still gets one row — otherwise the card would
+// read as "no quota observed" when the truth is "nothing is capped". Falling
+// back to the first reported bucket survives GitHub renaming the premium one.
 const shownBuckets = (buckets: QuotaBucket[]): QuotaBucket[] => {
   const metered = buckets.filter(bucket => bucket.kind === 'metered');
   if (metered.length > 0) return metered;
@@ -71,11 +64,8 @@ const shownBuckets = (buckets: QuotaBucket[]): QuotaBucket[] => {
 export function CopilotQuotaCard({ record }: { record: CopilotRecord }) {
   const { t } = useTranslation();
   const locale = useLocale();
-  // The persisted snapshot is whatever source saw the seat last — the data
-  // plane harvests one from every upstream response, so it is normally current
-  // without anyone pressing anything. A manual refresh returns the same shape
-  // and is persisted server-side too; holding the reply locally just avoids
-  // re-fetching the record to display it.
+  // A manual refresh is persisted server-side too; holding the reply locally
+  // just avoids re-fetching the record to display it.
   const [refreshed, setRefreshed] = useState<CopilotQuotaSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -83,8 +73,8 @@ export function CopilotQuotaCard({ record }: { record: CopilotRecord }) {
   const buckets = shownBuckets(readBuckets(quota));
 
   // The refresh control can be pressed again while a probe is out, so the
-  // reload goes through the hook that aborts the superseded one and owns the
-  // in-flight flag rather than letting the older reply land last.
+  // reload goes through the hook that aborts the superseded one rather than
+  // letting the older reply land last.
   const { refresh: load, refreshing: loading } = useRefresh(useCallback(async (signal: AbortSignal) => {
     setError(null);
     const { data, error: failure } = await callApi(
@@ -101,10 +91,8 @@ export function CopilotQuotaCard({ record }: { record: CopilotRecord }) {
     setRefreshed(data ?? null);
   }, [record]));
 
-  // `reset_at` is an instant, but it is always a day boundary and nobody plans
-  // against its clock time, so it renders as the local calendar date it falls
-  // on -- through `shortDate`, because that date is spelled `Sep 1, 2026` in
-  // `en` and `2026年9月1日` in `zh-Hans`.
+  // `reset_at` is an instant, but always a day boundary, so it renders as the
+  // local calendar date it falls on.
   const resets = quota?.reset_at == null ? null : shortDate(quota.reset_at, locale);
 
   return <section className="grid gap-2">
@@ -121,10 +109,6 @@ export function CopilotQuotaCard({ record }: { record: CopilotRecord }) {
       <div className="flex items-baseline justify-between gap-3">
         <Text className="capitalize" size={300}>{bucket.label}</Text>
         {bucket.kind === 'metered'
-          // The percentage is the fraction divided out, and the bar below states
-          // it a third time in ink, so it reads as the gloss on the two exact
-          // numbers rather than as a second fact beside them. Ranking the two by
-          // colour is what lets the space between them separate them.
           ? <div className="flex items-baseline gap-2">
               <Text size={200} className="text-fui-fg2">
                 {t('dashboard.upstreamEditor.copilot.quota.used', {

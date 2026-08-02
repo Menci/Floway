@@ -119,9 +119,8 @@ function UpstreamColorEditor({ kind, onValidityChange }: { kind: UpstreamRecord[
   </div>} />;
 }
 
-// A section states what it holds and, when the schema refuses it, why: the
-// composite editors here -- the colour popover, a provider's own credential
-// flow -- are not one control a Fluent `Field` could speak for.
+// The composite editors here -- the colour popover, a provider's own
+// credential flow -- are not one control a Fluent `Field` could speak for.
 function EditorSection({ children, description, error, inline = false, required = false, title }: { children: React.ReactNode; description?: string; error?: string; inline?: boolean; required?: boolean; title: string }) {
   const dangerText = useDangerTextClass();
   return <section className={inline ? 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4' : 'grid gap-4'}>
@@ -131,9 +130,6 @@ function EditorSection({ children, description, error, inline = false, required 
   </section>;
 }
 
-// The sorted union of every model id this upstream can disable, which
-// `__tests__/components/upstream-editor/disabled-models_test.ts` drives
-// directly -- the export is that seam, not a second consumer.
 export const buildDisabledModelOptions = (
   discovered: readonly UpstreamModelConfig[],
   manual: readonly UpstreamModelConfig[],
@@ -254,9 +250,8 @@ function ColoCombobox({ current, onChange, value }: { current: string; onChange:
 function ModelPrefixEditor() {
   const { t } = useTranslation();
   const { control, formState: { errors }, setValue } = useFormContext<UpstreamEditorValues>();
-  // Commit through setValue so the prefix is re-checked per keystroke: the
-  // input carries the whole rule, and a prefix is wrong from the character
-  // that makes it wrong.
+  // Commit through setValue so the prefix is re-validated per keystroke: a
+  // prefix is wrong from the character that makes it wrong.
   const commit = (value: UpstreamEditorValues['modelPrefix']) => setValue('modelPrefix', value, { shouldDirty: true, shouldValidate: true });
   return <Controller control={control} name="modelPrefix" render={({ field }) => {
     const value = field.value;

@@ -89,10 +89,9 @@ export function UpstreamWorkspace({
   const [yamlError, setYamlError] = useState<string | null>(null);
   const workspaceScrollRef = useRef<HTMLDivElement>(null);
 
-  // Where the operator is, is in the URL: which tab, which model, and which
-  // side of that model. A model is named by its upstream id, the one thing
-  // about a row that survives a reload -- the row keys the table works in are
-  // rebuilt per render for the manual entries.
+  // A model is named in the URL by its upstream id, the one thing about a row
+  // that survives a reload -- the table's row keys are rebuilt per render for
+  // the manual entries.
   const tab = params.get(TAB_PARAM) === 'flags' ? 'flags' : 'models';
   const selectedUpstreamModelId = params.get(MODEL_PARAM);
   const modelView: ModelView = selectedUpstreamModelId !== null
@@ -139,10 +138,9 @@ export function UpstreamWorkspace({
               <Tab value="flags">{t('dashboard.upstreamEditor.models.flags')}</Tab>
             </TabList>
           </>
-        // Switching between the workspace's own tabs carries the models view
-        // rather than resetting it. Entering the YAML view re-serializes the
-        // manual models into the buffer, so a view reset here would discard
-        // whatever had been typed and not yet applied.
+        // The models view is carried across tab switches rather than reset:
+        // entering the YAML view re-serializes the manual models into the
+        // buffer, discarding whatever had been typed and not yet applied.
         : <TabList selectedValue={tab} onTabSelect={(_, data) => navigate({ tab: data.value as WorkspaceTab, model: null, section: 'details', view: modelView === 'yaml' ? 'yaml' : 'list' })}>
             <Tab value="models">{t('dashboard.upstreamEditor.tabs.models')}</Tab>
             <Tab value="flags">{t('dashboard.upstreamEditor.tabs.flags')}</Tab>
@@ -221,8 +219,7 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
 
   const setEnabled = (id: string, enabled: boolean) => setValue('disabledPublicModelIds', enabled ? disabled.filter(item => item !== id) : [...new Set([...disabled, id])], { shouldDirty: true });
   // Once the row the pending manual model produced exists, drop the
-  // placeholder — a one-shot handoff, not synchronised state. The selection
-  // needs no handing over: it names the model, and the model is the same one.
+  // placeholder — a one-shot handoff, not synchronised state.
   const settledManualRow = pendingManualUpstreamModelId === null
     ? undefined
     : rows.find(row => row.source === 'manual' && row.config.upstreamModelId === pendingManualUpstreamModelId);
@@ -260,11 +257,9 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
     ? null
     : { ...deleteTarget, manualIndex: deleteTarget.manualIndex };
   // Every branch below returns this in the same position under a fragment, so
-  // the tree the dialog sits in is the one thing the view switch does not
-  // change. Confirming takes the row away, and with it the detail view the
-  // dialog was opened from; a dialog hung off a branch's own root is reparented
-  // by that switch, which React answers by unmounting it -- in the same commit
-  // that asked it to close, leaving the exit no frames to run in.
+  // the view switch does not reparent it. A dialog hung off a branch's own
+  // root is unmounted by that switch in the same commit that asked it to
+  // close, leaving the exit no frames to run in.
   const deleteConfirmation = manualDeleteTarget && <ConfirmDialog
     open={deleteDialog.isOpen}
     actionLabel={t('dashboard.upstreamEditor.models.deleteConfirm')}
@@ -276,8 +271,8 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
   />;
 
   if (view === 'yaml') {
-    // Leaving YAML mode has to validate first; refusing to leave on a parse
-    // error is what keeps the operator's unsaved text on screen.
+    // Refusing to leave on a parse error is what keeps the operator's unsaved
+    // text on screen.
     const applyAndLeave = () => {
       const parsed = parseModels(yaml, { allowRerank: record.kind === 'custom' });
       if (!parsed.ok) { onYamlErrorChange(parsed.message); return; }
