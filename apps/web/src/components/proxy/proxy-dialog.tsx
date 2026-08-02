@@ -14,7 +14,7 @@ import { useOutcomeToasts } from '../ui/outcome-toast';
 import type { ProxyConfig } from '@floway-dev/proxy/proxy-config';
 import { formatProxyUri } from '@floway-dev/proxy/url';
 
-const { Button, DialogActions, DialogTitle, MessageBar, MessageBarBody, MessageBarTitle } = fluentComponents;
+const { Button, DialogActions, DialogTitle } = fluentComponents;
 
 const proxyDraftSignature = (name: string, config: ProxyConfig, urlDraft: string | null, dialTimeout: string) =>
   JSON.stringify([name, config, urlDraft, dialTimeout]);
@@ -146,8 +146,8 @@ export function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
   return <DialogShell
     open={open}
     actions={<DialogActions>
-      <Button className="!whitespace-nowrap" disabled={saving || testing} onClick={() => onOpenChange(false)} type="button">{t('common.cancel')}</Button>
-      <Button className="!whitespace-nowrap" disabled={!canTest || saving} disabledFocusable={testing} onClick={() => void handleTest()} type="button">{t('dashboard.proxy.actions.test')}</Button>
+      <Button className="!whitespace-nowrap" disabled={saving || testing} onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
+      <Button className="!whitespace-nowrap" disabled={!canTest || saving} disabledFocusable={testing} onClick={() => void handleTest()}>{t('dashboard.proxy.actions.test')}</Button>
       <Button appearance="primary" className="!whitespace-nowrap" disabled={testing} disabledFocusable={saving} type="submit">{t('dashboard.proxy.actions.save')}</Button>
     </DialogActions>}
     onOpenChange={(_, data) => {
@@ -172,7 +172,10 @@ export function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
       urlError={urlError}
       urlInput={urlInput}
     />
-    {testResult && <MessageBar intent={testResult.ok ? 'success' : 'error'}><MessageBarBody><MessageBarTitle>{testResult.ok ? t('dashboard.proxy.test.ok') : t('dashboard.proxy.test.failed', { error: testResult.error })}</MessageBarTitle>{testResult.ok && t('dashboard.proxy.test.egressIp', { ip: testResult.egress_ip })}</MessageBarBody></MessageBar>}
+    {testResult && <OutcomeMessageBar
+      intent={testResult.ok ? 'success' : 'error'}
+      title={testResult.ok ? t('dashboard.proxy.test.ok') : t('dashboard.proxy.test.failed', { error: testResult.error })}
+    >{testResult.ok && t('dashboard.proxy.test.egressIp', { ip: testResult.egress_ip })}</OutcomeMessageBar>}
     {saveError && <OutcomeMessageBar onDismiss={() => setSaveError(null)}>{saveError}</OutcomeMessageBar>}
   </DialogShell>;
 }
