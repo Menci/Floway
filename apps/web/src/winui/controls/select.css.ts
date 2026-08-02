@@ -45,15 +45,22 @@ export const selectCss = `
 
 /* Hover. WinUI moves the fill one step down the control-fill ramp and leaves
    the elevation stroke alone; Fluent does the opposite.
+
+   The pointer never leaves WinUI's Disabled visual state, and the wrapper this
+   sheet paints stays enabled while the inner control carries the disabled
+   attribute, so every state below excludes the disabled field itself. Leaving
+   that to the disabled rule further down does not hold: the disabled field is
+   named through :has, and a state written beside another :has -- the invalid
+   exclusions here -- reaches the same weight plus its pseudo-class and wins.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L33
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L55 */
-.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:hover,
-.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:hover {
+.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:hover:not(:has(.fui-Dropdown__button:disabled)),
+.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:hover:not(:has(.fui-Combobox__input:disabled)) {
   background-color: var(--winui-control-fill-secondary);
 }
 
-.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:hover:not(:has(.fui-Dropdown__button[aria-invalid='true'])),
-.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:hover:not(:has(.fui-Combobox__input[aria-invalid='true'])) {
+.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:hover:not(:has(.fui-Dropdown__button:disabled)):not(:has(.fui-Dropdown__button[aria-invalid='true'])),
+.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:hover:not(:has(.fui-Combobox__input:disabled)):not(:has(.fui-Combobox__input[aria-invalid='true'])) {
   border-color: var(--winui-control-elevation-border-color);
 }
 
@@ -117,15 +124,15 @@ export const selectCss = `
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L34
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L56 */
-.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:active,
-.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:active,
+.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:active:not(:has(.fui-Dropdown__button:disabled)),
+.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:active:not(:has(.fui-Combobox__input:disabled)),
 .fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:has(.fui-Dropdown__button[aria-expanded='true']),
 .fui-Combobox.fui-Combobox[data-winui-appearance='outline']:has(.fui-Combobox__input[aria-expanded='true']) {
   background-color: var(--winui-control-fill-tertiary);
 }
 
-.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:active:not(:has(.fui-Dropdown__button[aria-invalid='true'])),
-.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:active:not(:has(.fui-Combobox__input[aria-invalid='true'])),
+.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:active:not(:has(.fui-Dropdown__button:disabled)):not(:has(.fui-Dropdown__button[aria-invalid='true'])),
+.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:active:not(:has(.fui-Combobox__input:disabled)):not(:has(.fui-Combobox__input[aria-invalid='true'])),
 .fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:has(.fui-Dropdown__button[aria-expanded='true']),
 .fui-Combobox.fui-Combobox[data-winui-appearance='outline']:has(.fui-Combobox__input[aria-expanded='true']) {
   border-color: var(--winui-control-stroke-default);
