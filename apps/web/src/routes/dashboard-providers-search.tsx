@@ -63,6 +63,8 @@ export async function clientLoader(): Promise<LoaderData> {
 const servesChatFor = (model: ControlPlaneModel, upstreamId: string) =>
   model.kind === 'chat' && model.upstreams.some(binding => binding.id === upstreamId);
 
+// Exported for `__tests__/routes/dashboard-providers-search_test.ts`, which
+// asserts this filter against a catalog; the page is its only caller.
 export const eligibleSearchUpstreams = (upstreams: readonly UpstreamRecord[], models: readonly ControlPlaneModel[]) =>
   upstreams.filter(upstream => upstream.enabled
     && (upstream.kind === 'codex' || upstream.kind === 'custom')

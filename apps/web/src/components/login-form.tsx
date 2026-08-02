@@ -16,6 +16,8 @@ const {
   Field,
 } = fluentComponents;
 
+// The form's resolver, and the subject of
+// `__tests__/components/login-form_test.ts`, which is what the export is for.
 export const loginSchema = z.object({
   username: z
     .string()
