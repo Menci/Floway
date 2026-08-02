@@ -101,14 +101,20 @@ export const listCss = `
   }
 }
 
-/* WinUI drops ContentBorder -- fill and content together -- to 0.3, so one
-   opacity carries the whole row; the indicator is the exception, naming a
-   disabled brush of its own.
+/* On the rounded chrome path the disabled opacity lands on the item's template
+   child alone, and GetTemplateChildIfExists returns nothing for the backplate,
+   the selection indicator or the multi-select check box -- which is why each of
+   those names a disabled brush of its own. A CSS group opacity cannot spare a
+   pseudo-element or a slot, so the content is dimmed through its colour
+   instead: the row's text carries TextFillColorPrimary, so 30% of it is what
+   the animation would have produced. A descendant that states its own colour
+   keeps it, where WinUI would have faded it with the rest.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L6
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L78
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L381 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/core/elements/ListViewBaseItemChrome.cpp#L888-L916
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/core/elements/ListViewBaseItemChrome.cpp#L3290-L3312 */
 .fui-ListItem.fui-ListItem[aria-disabled='true'] {
-  opacity: 0.3;
+  color: color-mix(in srgb, var(--winui-text-fill-primary) 30%, transparent);
 }
 
 .fui-ListItem.fui-ListItem[aria-disabled='true']::before {
