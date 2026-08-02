@@ -1,4 +1,4 @@
-import { ArrowDownloadRegular, ArrowUploadRegular } from '@fluentui/react-icons';
+import { ArrowDownloadRegular, ArrowSync24Regular, ArrowUploadRegular, Document24Regular, DocumentArrowUp24Regular, Gauge24Regular } from '@fluentui/react-icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -6,13 +6,12 @@ import { requireDashboardAdmin } from './route-guards';
 import { api, callApi } from '../api/client';
 import type { BackupImportCounts } from '../api/types';
 import { BACKUP_FILE_VERSION, parseBackupFile, type BackupFile, type BackupFileData } from '../components/backup-restore/backup-file';
-import { useDropzoneStyles } from '../components/backup-restore/dropzone-styles';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
+import { Dropdown } from '../components/ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
-import { Panel } from '../components/ui/panel';
-import { SectionHeader } from '../components/ui/section-header';
+import { SettingsCard, SettingsCardButton, SettingsSection, SettingsSwitch } from '../components/ui/settings-card';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { fluentComponents } from '../fluent';
 import { formatBytes } from '../lib/format-number';
@@ -20,19 +19,26 @@ import { useLocale } from '../lib/use-locale';
 
 const {
   Button,
-  Checkbox,
-  Field,
-  mergeClasses,
-  Radio,
-  RadioGroup,
+  Option,
   Spinner,
-  Text,
 } = fluentComponents;
 
 export async function clientLoader() {
   await requireDashboardAdmin();
   return null;
 }
+
+const IMPORT_MODES = {
+  merge: {
+    labelKey: 'dashboard.backupRestore.import.modeMerge',
+    descriptionKey: 'dashboard.backupRestore.import.modeMergeDesc',
+  },
+  replace: {
+    labelKey: 'dashboard.backupRestore.import.modeReplace',
+    descriptionKey: 'dashboard.backupRestore.import.modeReplaceDesc',
+  },
+} as const;
+type ImportMode = keyof typeof IMPORT_MODES;
 
 const PREVIEW_LABEL_KEYS = [
   'users',
@@ -43,20 +49,21 @@ const PREVIEW_LABEL_KEYS = [
   'searchUsage',
   'performance',
 ] as const;
-const countRecords = (data: BackupFileData): Record<string, number> => {
+const countRecords = (data: BackupFileData): BackupImportCounts => {
   const counts: Record<string, number> = {};
   for (const key of PREVIEW_LABEL_KEYS) {
     const value = data[key];
     counts[key] = Array.isArray(value) ? value.length : 0;
   }
-  return counts;
+  return counts as BackupImportCounts;
 };
 
-// What the server says it took, in the same vocabulary as the preview the
-// operator read before pressing Import. Empty entities are dropped: a backup
-// rarely carries all seven, and naming the ones it did not carry buries the
-// ones it did.
-const importedSummary = (
+// What a file holds, in one sentence. It reads the counts before the import as
+// the preview and the counts the server reports after it as the summary, so
+// the operator is told what happened in the vocabulary they were shown.
+// Empty entities are dropped: a backup rarely carries all seven, and naming the
+// ones it did not carry buries the ones it did.
+const recordSummary = (
   counts: BackupImportCounts,
   t: ReturnType<typeof useTranslation>['t'],
 ): string => {
@@ -80,7 +87,7 @@ export default function DashboardAdminBackupRestore() {
 
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importParsedData, setImportParsedData] = useState<BackupFile | null>(null);
-  const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge');
+  const [importMode, setImportMode] = useState<ImportMode>('merge');
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
 
@@ -88,7 +95,6 @@ export default function DashboardAdminBackupRestore() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const confirmDialog = useDialogInvocation<void>();
-  const dz = useDropzoneStyles();
 
   const handleExport = useCallback(async () => {
     setExporting(true);
@@ -185,9 +191,7 @@ export default function DashboardAdminBackupRestore() {
 
   const handleDragLeave = useCallback(() => setDragOver(false), []);
 
-  const openFilePicker = useCallback(() => {
-    if (!importing) fileInputRef.current?.click();
-  }, [importing]);
+  const openFilePicker = useCallback(() => fileInputRef.current?.click(), []);
 
   const handleChangeFile = useCallback(() => {
     setImportFile(null);
@@ -220,7 +224,7 @@ export default function DashboardAdminBackupRestore() {
     setImportFile(null);
     setImportParsedData(null);
     setImporting(false);
-    const summary = importedSummary(result.data.imported, t);
+    const summary = recordSummary(result.data.imported, t);
     handle.succeed(summary
       ? t('dashboard.backupRestore.import.success', { summary })
       : t('dashboard.backupRestore.import.successEmpty'));
@@ -235,43 +239,47 @@ export default function DashboardAdminBackupRestore() {
     void doImport();
   }, [confirmDialog, doImport, importMode, importParsedData]);
 
-  const previewCounts = importParsedData ? countRecords(importParsedData.data) : null;
+  const selectedMode = IMPORT_MODES[importMode];
 
   return (
     <section className="dashboard-page max-w-[960px]">
       <DashboardPageHeader title={t('dashboard.backupRestore.heading')} />
 
-      <Panel className="!grid !gap-3">
-        <SectionHeader description={t('dashboard.backupRestore.export.description')} level={2} title={t('dashboard.backupRestore.export.heading')} />
-
-        <Checkbox
-          label={t('dashboard.backupRestore.export.includePerformance')}
-          checked={includePerformance}
-          onChange={(_, data) => setIncludePerformance(!!data.checked)}
+      <SettingsSection
+        description={t('dashboard.backupRestore.export.description')}
+        title={t('dashboard.backupRestore.export.heading')}
+      >
+        <SettingsCard
+          action={<SettingsSwitch
+            checked={includePerformance}
+            label={t('dashboard.backupRestore.export.includePerformance')}
+            onChange={setIncludePerformance}
+          />}
+          description={t('dashboard.backupRestore.export.includePerformanceHint')}
+          header={t('dashboard.backupRestore.export.includePerformance')}
+          icon={<Gauge24Regular />}
         />
-        <Text size={200} className="text-fui-fg3">
-          {t('dashboard.backupRestore.export.includePerformanceHint')}
-        </Text>
+      </SettingsSection>
 
-        {exportError && (
-          <OutcomeMessageBar onDismiss={() => setExportError(null)}>{exportError}</OutcomeMessageBar>
-        )}
+      {exportError && (
+        <OutcomeMessageBar onDismiss={() => setExportError(null)}>{exportError}</OutcomeMessageBar>
+      )}
 
-        <div>
-          <Button
-            appearance="primary"
-            disabledFocusable={exporting}
-            icon={exporting ? <Spinner size="tiny" /> : <ArrowDownloadRegular />}
-            onClick={() => void handleExport()}
-          >
-            {t('dashboard.backupRestore.export.button')}
-          </Button>
-        </div>
-      </Panel>
+      <div>
+        <Button
+          appearance="primary"
+          disabledFocusable={exporting}
+          icon={exporting ? <Spinner size="tiny" /> : <ArrowDownloadRegular />}
+          onClick={() => void handleExport()}
+        >
+          {t('dashboard.backupRestore.export.button')}
+        </Button>
+      </div>
 
-      <Panel className="!grid !gap-3">
-        <SectionHeader description={t('dashboard.backupRestore.import.description')} level={2} title={t('dashboard.backupRestore.import.heading')} />
-
+      <SettingsSection
+        description={t('dashboard.backupRestore.import.description')}
+        title={t('dashboard.backupRestore.import.heading')}
+      >
         <input
           ref={fileInputRef}
           type="file"
@@ -279,119 +287,85 @@ export default function DashboardAdminBackupRestore() {
           className="hidden"
           onChange={handleFileSelect}
         />
-        <button
-          className={mergeClasses(dz.root, dragOver && dz.active, importing && dz.disabled)}
-          disabled={importing}
-          onClick={openFilePicker}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          aria-label={t('dashboard.backupRestore.import.dropzone')}
-          type="button"
-        >
-          <ArrowUploadRegular style={{ fontSize: '28px' }} />
-          <Text size={300}>
-            {dragOver
-              ? t('dashboard.backupRestore.import.dropzoneActive')
-              : t('dashboard.backupRestore.import.dropzone')}
-          </Text>
-        </button>
 
-        {importParsedData && importFile && (
-          <>
-            <div className="flex items-center gap-[12px]">
-              <Text size={300} weight="semibold">
-                {t('dashboard.backupRestore.import.fileSelected', {
-                  name: importFile.name,
-                  size: formatBytes(importFile.size, locale),
-                })}
-              </Text>
-              <Button
-                appearance="outline"
-                disabled={importing}
-                onClick={handleChangeFile}
-                size="small"
-              >
+        {/* Before a file is chosen the row is the picker, and it accepts a drop
+            as well as a click. Once one is chosen the row reports it and hands
+            the picker to a button at the trailing edge: the standard button
+            style, which is what both the Gallery and the toolkit put in this
+            slot for an action that is not the page's primary one.
+            https://github.com/microsoft/WinUI-Gallery/blob/f4dc3eb367f4bcecac1793829d9a221e924e5bfb/WinUIGallery/Pages/SettingsPage.xaml#L88-L104
+            https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/samples/SettingsPageExample.xaml#L50-L52 */}
+        {importParsedData && importFile
+          ? <SettingsCard
+              action={<Button disabled={importing} onClick={handleChangeFile}>
                 {t('dashboard.backupRestore.import.change')}
-              </Button>
-            </div>
+              </Button>}
+              description={recordSummary(countRecords(importParsedData.data), t)}
+              header={t('dashboard.backupRestore.import.fileSelected', {
+                name: importFile.name,
+                size: formatBytes(importFile.size, locale),
+              })}
+              icon={<Document24Regular />}
+            />
+          : <SettingsCardButton
+              drag={{ onDragLeave: handleDragLeave, onDragOver: handleDragOver, onDrop: handleDrop }}
+              header={dragOver
+                ? t('dashboard.backupRestore.import.dropzoneActive')
+                : t('dashboard.backupRestore.import.dropzone')}
+              icon={<DocumentArrowUp24Regular />}
+              onClick={openFilePicker}
+              pointerOver={dragOver}
+            />}
 
-            <div>
-              <Text size={300} weight="semibold">
-                {t('dashboard.backupRestore.import.preview')}
-              </Text>
-              <div className="mt-[8px] grid gap-[10px] grid-cols-[repeat(auto-fill,minmax(140px,1fr))]">
-                {PREVIEW_LABEL_KEYS.map(key => (
-                  // One tile per counted entity. It is the Expander's content
-                  // region -- the secondary step of the card ramp -- at the
-                  // control corner rather than the overlay one, because these
-                  // sit inside a card rather than being one. Nothing here is
-                  // interactive, so the fill is the only state it has, and both
-                  // dictionaries name the same brush.
-                  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L25
-                  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L49
-                  <div
-                    key={key}
-                    className="flex flex-col items-center gap-[2px] rounded-[var(--winui-control-corner-radius)] bg-[var(--winui-card-background-fill-secondary)] p-[12px_10px] text-center"
-                  >
-                    <Text size={500} weight="semibold">
-                      {previewCounts?.[key] ?? 0}
-                    </Text>
-                    <Text size={200} className="text-fui-fg3">
-                      {t(`dashboard.backupRestore.import.previewLabel.${key}`)}
-                    </Text>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <Field label={t('dashboard.backupRestore.import.mode')}>
-              {/* Each mode carries a sentence, so the options stack: side by
-                  side the two descriptions met in the middle and the trailing
-                  radio read as part of the preceding sentence.
-
-                  The two lines are the same pair ../components/ui/settings-card.tsx
-                  builds -- the control content size at the regular weight over
-                  the caption in the secondary fill, with no gap between them.
-                  WinUI's RadioButton states the size and states no weight, so
-                  the label is body regular and the emphasis lives in the fill
-                  step rather than in a heavier face.
-                  https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L193
-                  https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L424 */}
-              <RadioGroup disabled={importing} value={importMode} onChange={(_, data) => setImportMode(data.value as 'merge' | 'replace')}>
-                <Radio label={<span className="grid"><Text block>{t('dashboard.backupRestore.import.modeMerge')}</Text><Text block size={200} className="text-fui-fg2">{t('dashboard.backupRestore.import.modeMergeDesc')}</Text></span>} value="merge" />
-                <Radio label={<span className="grid"><Text block>{t('dashboard.backupRestore.import.modeReplace')}</Text><Text block size={200} className="text-fui-fg2">{t('dashboard.backupRestore.import.modeReplaceDesc')}</Text></span>} value="replace" />
-              </RadioGroup>
-            </Field>
-
-            {importMode === 'replace' && (
-              <OutcomeMessageBar intent="warning">
-                {t('dashboard.backupRestore.import.replaceWarning')}
-              </OutcomeMessageBar>
-            )}
-
-            <div>
-              <Button
-                appearance="primary"
-                disabledFocusable={importing}
-                icon={importing ? <Spinner size="tiny" /> : <ArrowUploadRegular />}
-                onClick={handleImportClick}
-              >
-                {t('dashboard.backupRestore.import.button')}
-              </Button>
-            </div>
-          </>
-        )}
-
-        {importError && (
-          <OutcomeMessageBar
-            onDismiss={() => setImportError(null)}
-            title={t('dashboard.backupRestore.import.error')}
+        {/* Two exclusive choices, each carrying a sentence, are a picker in a
+            row rather than a stack of radios: the Gallery's own settings page
+            answers Light / Dark / Use system setting that way, with the one
+            description on the card. So the sentence the card shows is the
+            chosen mode's.
+            https://github.com/microsoft/WinUI-Gallery/blob/f4dc3eb367f4bcecac1793829d9a221e924e5bfb/WinUIGallery/Pages/SettingsPage.xaml#L46-L58 */}
+        {importParsedData && <SettingsCard
+          action={<Dropdown
+            className="!w-auto flex-none"
+            disabled={importing}
+            onOptionSelect={(_, data) => data.optionValue && setImportMode(data.optionValue as ImportMode)}
+            selectedOptions={[importMode]}
+            value={t(selectedMode.labelKey)}
           >
-            {importError}
-          </OutcomeMessageBar>
-        )}
-      </Panel>
+            {Object.entries(IMPORT_MODES).map(([value, mode]) => <Option key={value} value={value}>
+              {t(mode.labelKey)}
+            </Option>)}
+          </Dropdown>}
+          description={t(selectedMode.descriptionKey)}
+          header={t('dashboard.backupRestore.import.mode')}
+          icon={<ArrowSync24Regular />}
+        />}
+      </SettingsSection>
+
+      {importParsedData && importMode === 'replace' && (
+        <OutcomeMessageBar intent="warning">
+          {t('dashboard.backupRestore.import.replaceWarning')}
+        </OutcomeMessageBar>
+      )}
+
+      {importError && (
+        <OutcomeMessageBar
+          onDismiss={() => setImportError(null)}
+          title={t('dashboard.backupRestore.import.error')}
+        >
+          {importError}
+        </OutcomeMessageBar>
+      )}
+
+      {importParsedData && <div>
+        <Button
+          appearance="primary"
+          disabledFocusable={importing}
+          icon={importing ? <Spinner size="tiny" /> : <ArrowUploadRegular />}
+          onClick={handleImportClick}
+        >
+          {t('dashboard.backupRestore.import.button')}
+        </Button>
+      </div>}
 
       {confirmDialog.invocation && <ConfirmDialog
         open={confirmDialog.isOpen}
