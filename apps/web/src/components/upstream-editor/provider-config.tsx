@@ -90,10 +90,12 @@ function CustomConfig({ onRefreshModels, record }: { onRefreshModels: () => void
           name={'config.baseUrl' as never}
           render={({ field }) => (
             <Input
-              value={typeof field.value === 'string' ? field.value : ''}
+              name={field.name}
               onBlur={field.onBlur}
               onChange={(_, data) => field.onChange(data.value)}
               placeholder="https://api.openai.com"
+              ref={field.ref}
+              value={typeof field.value === 'string' ? field.value : ''}
             />
           )}
         />
@@ -155,10 +157,13 @@ function CustomApiPaths() {
                 <Field className="min-w-0" label={{ children: path, className: monoLabel }}>
                   <Input
                     className="!w-full font-mono"
+                    name={field.name}
+                    onBlur={field.onBlur}
+                    onChange={(_, data) => field.onChange(data.value)}
                     placeholder={`/v1${path}`}
+                    ref={field.ref}
                     size="small"
                     value={typeof field.value === 'string' ? field.value : ''}
-                    onChange={(_, data) => field.onChange(data.value)}
                   />
                 </Field>
               )}

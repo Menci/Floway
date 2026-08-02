@@ -107,6 +107,7 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
   const mirrored = useMemo(() => (readOnly ? pricingEntryDraftsFor(value) : null), [readOnly, value]);
   const drafts = mirrored ?? ownDrafts;
   const conditionsHeadingId = useId();
+  const thresholdIdPrefix = useId();
   const ratesHeadingId = useId();
 
   const selectedDraftIndex = drafts.findIndex(draft => draft.id === selectedId);
@@ -170,7 +171,7 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
 
   return <div className={`grid min-w-0 grid-cols-[240px_minmax(0,1fr)] items-stretch ${PANE_GAP_CLASS} max-[760px]:grid-cols-1`}>
     <aside className="grid h-full min-w-0 content-start gap-2 border-0 border-r border-solid border-fui-stroke1 pr-4 max-[760px]:border-b max-[760px]:border-r-0 max-[760px]:pb-4" aria-label={t('dashboard.upstreamEditor.models.pricingRules')}>
-      {!readOnly && <Toolbar aria-label={t('dashboard.upstreamEditor.models.pricingRules')} className="!justify-end !min-h-8 !p-0" size="small">
+      {!readOnly && <Toolbar className="!justify-end !min-h-8 !p-0" size="small">
         <Tooltip content={t('dashboard.upstreamEditor.models.addPricingOverride')} relationship="label">
           <ToolbarButton aria-label={t('dashboard.upstreamEditor.models.addPricingOverride')} icon={<AddRegular />} onClick={addEntry} />
         </Tooltip>
@@ -232,7 +233,11 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
               </Field>;
             }
             const threshold = thresholdCoordinate(active, axis.id);
-            return <Field className="min-w-0" key={axis.id} label={t('dashboard.upstreamEditor.models.inputTokens')} hint={t('dashboard.upstreamEditor.models.inputTokensHint')}>
+            const thresholdId = `${thresholdIdPrefix}-${axis.id}`;
+            // Two field-aware controls under one Field would both take its
+            // generated control id; the label names the one that carries the
+            // value, and the operator select speaks for itself.
+            return <Field className="min-w-0" key={axis.id} label={{ children: t('dashboard.upstreamEditor.models.inputTokens'), htmlFor: thresholdId }} hint={t('dashboard.upstreamEditor.models.inputTokensHint')}>
               <div className="flex min-w-0 items-center gap-2">
                 <Dropdown
                   aria-label={t('dashboard.upstreamEditor.models.operator')}
@@ -247,6 +252,7 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
                 </Dropdown>
                 <Input
                   className="!w-full"
+                  id={thresholdId}
                   inputMode="numeric"
                   readOnly={readOnly}
                   value={threshold?.value === undefined ? '' : String(threshold.value)}

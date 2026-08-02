@@ -330,7 +330,7 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
     </OutcomeMessageBar>}
     <Input value={search} onChange={(_, data) => setSearch(data.value)} placeholder={t('dashboard.upstreamEditor.models.search')} />
     <ScrollArea axes="horizontal" className="min-w-0">
-      <Table className="w-full min-w-[640px]">
+      <Table aria-label={t('dashboard.upstreamEditor.models.title')} className="w-full min-w-[640px]">
         <colgroup><col className="w-[80px]" /><col className="w-[25%]" /><col className="w-[88px]" /><col /><col className="w-[80px]" /><col className="w-[80px]" /></colgroup>
         <TableHeader><TableRow><TableCentredHeader>{t('dashboard.upstreamEditor.models.enabled')}</TableCentredHeader><TableHeaderCell>{t('dashboard.upstreamEditor.models.name')}</TableHeaderCell><TableCentredHeader>{t('dashboard.upstreamEditor.models.kind')}</TableCentredHeader><TableHeaderCell>{t('dashboard.upstreamEditor.models.id')}</TableHeaderCell><TableCentredHeader>{t('dashboard.upstreamEditor.models.source')}</TableCentredHeader><TableActionsHeader>{t('dashboard.upstreamEditor.models.actions')}</TableActionsHeader></TableRow></TableHeader>
         <TableBody>{filtered.map(row => {

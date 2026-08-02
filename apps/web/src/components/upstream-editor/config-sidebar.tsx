@@ -62,10 +62,12 @@ export function UpstreamConfigSidebar({
               >
                 <Input
                   aria-label={t('dashboard.upstreamEditor.fields.name')}
-                  required
-                  value={field.value}
+                  name={field.name}
                   onBlur={field.onBlur}
                   onChange={(_, data) => field.onChange(data.value)}
+                  ref={field.ref}
+                  required
+                  value={field.value}
                 />
               </Field>
             )}
@@ -251,6 +253,7 @@ function ColoCombobox({ current, onChange, value }: { current: string; onChange:
 
 function ModelPrefixEditor() {
   const { t } = useTranslation();
+  const idPrefix = useId();
   const { control, formState: { errors }, setValue } = useFormContext<UpstreamEditorValues>();
   // setValue rather than the Controller's onChange, so the prefix re-validates per keystroke.
   const commit = (value: UpstreamEditorValues['modelPrefix']) => setValue('modelPrefix', value, { shouldDirty: true, shouldValidate: true });
@@ -261,14 +264,14 @@ function ModelPrefixEditor() {
     const update = (next: string) => commit(next ? { prefix: next, addressable: value?.addressable ?? ['unprefixed'], listed: value?.listed ?? ['unprefixed'] } : null);
     return <div className="grid gap-3">
       <Field
-        validationState={errors.modelPrefix ? 'error' : 'none'}
+        validationState={errors.modelPrefix ? 'error' : undefined}
         validationMessage={errors.modelPrefix?.message ? t(errors.modelPrefix.message, { max: MODEL_PREFIX_MAX_LENGTH }) : undefined}
       >
-        <Input value={prefix} onChange={(_, data) => update(data.value)} className="font-mono" placeholder="openrouter/" />
+        <Input aria-label={t('dashboard.upstreamEditor.sections.prefix')} value={prefix} onChange={(_, data) => update(data.value)} className="font-mono" placeholder="openrouter/" />
       </Field>
       {value && !invalid && <div className="grid gap-2">
-        {(['unprefixed', 'prefixed'] as const).map(form => <div className="flex items-center justify-between gap-3" key={form}>
-          <Text size={200}>{t(`dashboard.upstreamEditor.prefix.${form}`)}</Text>
+        {(['unprefixed', 'prefixed'] as const).map(form => <div aria-labelledby={`${idPrefix}-${form}`} className="flex items-center justify-between gap-3" key={form} role="group">
+          <Text id={`${idPrefix}-${form}`} size={200}>{t(`dashboard.upstreamEditor.prefix.${form}`)}</Text>
           <div className="flex gap-2">
             <Checkbox label={t('dashboard.upstreamEditor.prefix.addressable')} checked={value.addressable.includes(form)} onChange={(_, data) => {
               const set = new Set(value.addressable); if (data.checked) set.add(form); else if (set.size > 1) set.delete(form);
