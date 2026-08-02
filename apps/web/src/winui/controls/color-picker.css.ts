@@ -148,6 +148,30 @@ export const colorPickerCss = `
     box-shadow: none;
   }
 
+  /* WinUI states Disabled in this family by swapping brushes only: it stamps no
+     glyph over the content and draws no foreground drop-shadow, so Fluent's
+     white ProhibitedFilled is dropped and the chip is washed instead with
+     AccentFillColorDisabled, the fill a disabled colour-filled WinUI surface
+     takes -- an accent Button is the same case. The wash is layered over the
+     colour the caller passed rather than replacing it, so the swatch still
+     names its colour while it reads as inert. Both rules are colour-scoped
+     together: in forced colours the wash would be a literal the system palette
+     never reaches, and the glyph is then the only disabled cue left.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L38
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L242
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L8
+     https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-swatch-picker/library/src/components/ColorSwatch/useColorSwatchStyles.styles.ts#L146-L149 */
+  .fui-ColorSwatch.fui-ColorSwatch[disabled] {
+    background-image: linear-gradient(
+      var(--winui-accent-fill-disabled),
+      var(--winui-accent-fill-disabled)
+    );
+  }
+
+  .fui-ColorSwatch__disabledIcon {
+    display: none;
+  }
+
   /* An empty swatch is a placeholder awaiting a value, which WinUI outlines
      with the strong stroke it gives an unfilled control body -- a cleared
      CheckBox is the same case -- rather than the faint stroke of a filled one.
