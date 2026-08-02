@@ -20,7 +20,20 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
   const [hasOlder, setHasOlder] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const seenRef = useRef(new Set<string>());
-  const loadingOlderRef = useRef(false);
+  // Which key's accumulation the hook holds. An older-page request outlives
+  // the key it was issued for, because switching keys re-renders this hook
+  // rather than unmounting it, so the page it brings back is answered against
+  // the generation it was issued in and a page from an earlier one is dropped
+  // whole -- not merely its rows: `setError` and `setHasOlder` would carry one
+  // key's outcome into another key's list just as wrongly, and a `hasOlder`
+  // turned off by the wrong key's short page ends the new key's pagination for
+  // as long as the route stays open.
+  const generationRef = useRef(0);
+  // The generation of the request in flight, or null when none is. Asked this
+  // way, a request left behind by another key cannot hold the new key's
+  // pagination shut, and the request that ends releases only its own claim.
+  const loadingOlderRef = useRef<number | null>(null);
+  const olderRequestRef = useRef<AbortController | null>(null);
 
   // The loader hands back a fresh `initialRecords` array on every run, and
   // selecting a record re-runs the loader. The subscription is keyed on the API
@@ -41,11 +54,12 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
     setRecords(initialRecords);
     setError(null);
     setHasOlder(true);
+    // eslint-disable-next-line react-hooks/refs -- The generation is part of the same discard: it is what tells a page still in flight that the list it was meant for is gone.
+    generationRef.current += 1;
   }
 
   useEffect(() => {
     seenRef.current = new Set(initialRecordsRef.current.map(record => record.id));
-    loadingOlderRef.current = false;
     if (!keyId) return;
 
     const token = getSessionToken();
@@ -83,18 +97,28 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
         setError('Stream disconnected');
       }
     });
-    return () => source.close();
+    return () => {
+      // The page still in flight belongs to the subscription being closed, so
+      // it goes with it. Its result would be discarded either way; aborting
+      // spares the round trip.
+      olderRequestRef.current?.abort();
+      source.close();
+    };
   }, [keyId]);
 
   const loadOlder = useCallback(async () => {
     const oldest = records.at(-1);
-    if (!keyId || !oldest || loadingOlderRef.current || !hasOlder) return;
-    loadingOlderRef.current = true;
+    const generation = generationRef.current;
+    if (!keyId || !oldest || loadingOlderRef.current === generation || !hasOlder) return;
+    loadingOlderRef.current = generation;
+    const request = new AbortController();
+    olderRequestRef.current = request;
     try {
       const result = await callApi(() => api.api.dump.keys[':keyId'].records.$get({
         param: { keyId },
         query: { before: oldest.id, limit: String(PAGE_LIMIT) },
-      }));
+      }, { init: { signal: request.signal } }));
+      if (generation !== generationRef.current) return;
       if (result.error) {
         setError(result.error.message);
         return;
@@ -105,9 +129,10 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
       if (page.length < PAGE_LIMIT) setHasOlder(false);
       if (fresh.length) setRecords(current => [...current, ...fresh]);
     } catch (error) {
+      if (generation !== generationRef.current) return;
       setError(errorMessage(error));
     } finally {
-      loadingOlderRef.current = false;
+      if (loadingOlderRef.current === generation) loadingOlderRef.current = null;
     }
   }, [hasOlder, keyId, records]);
 
