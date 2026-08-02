@@ -103,12 +103,13 @@ export const choiceCss = `
   width: 20px;
 }
 
-/* 34px is this dashboard's shared control-row height, taken so that check
-   boxes, radios, text inputs and combo boxes stand at one height in a form row.
-   WinUI states 32 unconditionally -- CheckBoxHeight, set as the check box's
-   MinHeight, and a 32px indicator band on the radio -- so both the raise to 34
-   and its scope are ours: a control that carries a label is a field and takes
-   the row height, one that does not is a mark in a cell and is only itself.
+/* 34px is this dashboard's shared control-row height, and it is the operator's
+   number: he asked that these controls stand as tall as an ordinary field so
+   they align inside a form, and named 34. WinUI states 32 unconditionally --
+   CheckBoxHeight, set as the check box's MinHeight, and a 32px indicator band
+   on the radio -- so the raise is his. Its scope is ours: a control that
+   carries a label is a field and takes the row height, one that does not is a
+   mark in a cell and is only itself.
    The centring above puts the indicator in the middle of the row.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L272
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L291
@@ -294,7 +295,7 @@ export const choiceCss = `
    dot over ControlNormalAnimationDuration on the fast-out-slow-in spline,
    which the transform transition restates. It writes no size key frame for
    the return to rest, so shipped WinUI snaps the dot back; the transition is
-   kept symmetric here because an animated return reads better on the web.
+   kept symmetric here, and nothing sources that -- it is ours.
 
    That symmetry is what makes the dot exist in both states rather than only in
    the checked one. Fluent hangs the pseudo-element's \`content\` on
