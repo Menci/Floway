@@ -10,8 +10,11 @@ export const dialogCss = `
 /* The height cap is exposed as one variable so the body can consume exactly the
    same envelope. ContentDialogMaxWidth is a keyed ThemeResource an app overrides
    in its own dictionary, so a custom property with a 548px fallback is the
-   faithful shape; the alias, API key, and user editors raise it to an unsourced
-   720px.
+   faithful shape. The alias, API key, and user editors override it to 720px:
+   that is our own width for the widest editing forms, chosen above both WinUI's
+   548px and the 600px cap Fluent's own DialogSurface applies
+   (node_modules/@fluentui/react-dialog@9.18.2/lib/components/DialogSurface/useDialogSurfaceStyles.styles.raw.js,
+   maxWidth), and derived from neither.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L6-L15
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L223 */
 .fui-DialogSurface.fui-DialogSurface {
