@@ -17,6 +17,8 @@ const numberFormats: Record<string, (value: number, locale: string) => string> =
   bytes: formatBytes,
 };
 
+export const numberFormatNames: readonly string[] = Object.keys(numberFormats);
+
 const format: FormatFunction = (value, name, language, options) => {
   const key = String((options as { interpolationkey?: string } | undefined)?.interpolationkey ?? '?');
   if (value === undefined || value === null) return value as unknown as string;

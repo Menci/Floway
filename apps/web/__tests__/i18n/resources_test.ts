@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { numberFormatNames } from '../../src/i18n/number-format';
 import { resources } from '../../src/i18n/resources';
 
 const leafKeys = (value: object, prefix = ''): string[] =>
@@ -37,6 +38,9 @@ const interpolations = (value: string): string[] =>
 const tags = (value: string): string[] =>
   [...value.matchAll(/<\/?[^>]+>/g)].map(([match]) => match).sort();
 
+const formatNames = (value: string): string[] =>
+  [...value.matchAll(/\{\{[^},]+,\s*([^}]+?)\s*\}\}/g)].map(([, name]) => name!);
+
 describe('translation resources', () => {
   it('keeps every locale structurally aligned with English', () => {
     const expected = [...new Set(leafKeys(resources.en).map(pluralBase))].sort();
@@ -63,6 +67,18 @@ describe('translation resources', () => {
       for (const [key, value] of leafStrings(resource)) {
         const reference = expected.get(key) ?? expected.get(`${pluralBase(key)}_other`) ?? '';
         expect(interpolations(value), key).toEqual(interpolations(reference));
+      }
+    }
+  });
+
+  // The formatter module throws on an unregistered name, but only for a key
+  // that actually renders, so a typo can sit in a rarely-opened dialog.
+  it('names a registered format at every interpolation that asks for one', () => {
+    for (const [language, resource] of Object.entries(resources)) {
+      for (const [key, value] of leafStrings(resource)) {
+        for (const name of formatNames(value)) {
+          expect(numberFormatNames, `${language}: ${key}`).toContain(name);
+        }
       }
     }
   });
