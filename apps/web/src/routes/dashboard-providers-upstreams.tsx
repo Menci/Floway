@@ -53,7 +53,7 @@ const {
 } = fluentComponents;
 
 interface LoaderData {
-  /** `null` when the fetch failed, which is not the same as none configured. */
+  /** `null` when the fetch failed, not the same as none configured. */
   upstreams: UpstreamRecord[] | null;
   models: ControlPlaneModel[] | null;
   loadError: string | null;
@@ -66,10 +66,8 @@ type Mutation =
   | { kind: 'delete'; id: string }
   | { kind: 'reload' };
 
-// The create menu offers every kind the gateway accepts, in the order an
-// operator is most likely to want them rather than the declaration order. A
-// kind this list does not mention still reaches the menu, at the end -- the
-// membership comes from the provider package, and only the ordering is ours.
+// Ordering only: membership comes from the provider package, and a kind this
+// list does not mention still reaches the menu, at the end.
 const PROVIDER_MENU_ORDER: readonly UpstreamProviderKind[] = [
   'custom',
   'azure',
@@ -109,15 +107,10 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   const navigate = useNavigate();
   const location = useLocation();
   const toasts = useOutcomeToasts();
-  // Seeded from the loader and owned by the page from then on, deliberately.
-  // This is the one page in the dashboard that navigates within itself: the
-  // effect below reports the missing-upstream flag and then takes it back out
-  // of the URL, and that second navigation re-runs this loader. Deriving these
-  // two from the payload the loader hands back would therefore reset them at
-  // the moment the flag is consumed, and the message the effect has just
-  // written is the thing that would go. The refetch it discards asks the same
-  // two endpoints milliseconds after the first, so what it returns is what is
-  // already drawn.
+  // Seeded from the loader and owned by the page from then on. The effect below
+  // reports the missing-upstream flag and then takes it back out of the URL,
+  // which re-runs this loader; deriving these from the loader payload would
+  // therefore wipe the message the effect has just written.
   const [data, setData] = useState(loaderData);
   const [pageError, setPageError] = useState(loaderData.loadError);
   const [mutation, setMutation] = useState<Mutation | null>(null);
@@ -126,20 +119,16 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
 
   const mutating = mutation !== null;
 
-  // The error belongs to the attempt that produced it. Opening the dialog for
-  // another upstream starts a new attempt, so the previous one's failure is
-  // cleared here rather than waiting for a dismissal that may never come.
+  // The error belongs to the attempt that produced it, so opening the dialog for
+  // another upstream clears it rather than waiting for a dismissal.
   const openDeleteDialog = (record: UpstreamRecord) => {
     setDeleteError(null);
     deleteDialog.open(record);
   };
 
-  // The flag says an upstream could not be found, which is a failure of the
-  // address the operator arrived on, not an outcome of anything they did here.
-  // It is reported once and then taken out of the URL, so a reload or a second
-  // render cannot announce it again -- the effect runs twice under StrictMode,
-  // and `announcedMissing` is what stops the second run repeating it before the
-  // navigation has landed.
+  // Reported once and then taken out of the URL, so a reload cannot announce it
+  // again. The effect runs twice under StrictMode, and `announcedMissing` stops
+  // the second run repeating it before the navigation has landed.
   const announcedMissing = useRef(false);
   useEffect(() => {
     const search = new URLSearchParams(location.search);
@@ -343,8 +332,8 @@ function UpstreamsTable({
   const upstreams = data.upstreams;
   const modelCounts = useMemo(() => buildModelCounts(upstreams ?? [], data.models), [data.models, upstreams]);
 
-  // A failed fetch is not an empty list. The bar above carries the reason; the
-  // region says nothing rather than claiming nothing is configured.
+  // A failed fetch is not an empty list: the bar above carries the reason, and
+  // the region says nothing rather than claiming nothing is configured.
   if (upstreams === null) return null;
   if (upstreams.length === 0) {
     return <ResourceListEmptyState>{t('dashboard.upstreams.empty')}</ResourceListEmptyState>;

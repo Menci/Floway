@@ -63,17 +63,14 @@ export async function clientLoader(): Promise<LoaderData> {
 const servesChatFor = (model: ControlPlaneModel, upstreamId: string) =>
   model.kind === 'chat' && model.upstreams.some(binding => binding.id === upstreamId);
 
-// Exported for `__tests__/routes/dashboard-providers-search_test.ts`, which
-// asserts this filter against a catalog; the page is its only caller.
 export const eligibleSearchUpstreams = (upstreams: readonly UpstreamRecord[], models: readonly ControlPlaneModel[]) =>
   upstreams.filter(upstream => upstream.enabled
     && (upstream.kind === 'codex' || upstream.kind === 'custom')
     && models.some(model => servesChatFor(model, upstream.id)));
 
-// A search provider is a third party the operator recognizes by its mark, so
-// each mark is shown in its owner's colors. This is the opposite call from the
-// upstream chips, where one tone per provider is itself the identity; in this
-// list nothing else in the row says who the party is.
+// Marks are shown in their owner's colors -- the opposite call from the upstream
+// chips, where one tone per provider is itself the identity; here nothing else
+// in the row says who the third party is.
 interface ProviderOption {
   value: SearchConfig['provider'];
   labelKey: string;
@@ -143,9 +140,8 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
   );
 
   const activeOption = findProviderOption(draft.provider);
-  // The tested provider is whatever the gateway echoed back, which need not be
-  // one this build knows about; an unrecognized id is shown verbatim rather
-  // than collapsed onto a familiar one.
+  // The gateway may echo back a provider this build does not know; an
+  // unrecognized id is shown verbatim rather than collapsed onto a familiar one.
   const testedOption = PROVIDER_OPTIONS.find(option => option.value === testResult?.provider);
   const testedProviderLabel = testedOption ? t(testedOption.labelKey) : testResult?.provider;
   const eligibleUpstreams = useMemo(() => eligibleSearchUpstreams(upstreams, models), [models, upstreams]);
@@ -220,13 +216,12 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
     try {
       const response = await api.api['search-config'].test.$post({ json: draft });
       // Probe failures are structured SearchTestResult bodies at HTTP 400;
-      // preserving that body keeps the upstream error code and query visible.
+      // preserving the body keeps the upstream error code and query visible.
       const result = await response.json();
       if (!('ok' in result)) throw new Error(result.error);
       setTestResult(result);
     } catch (error) {
-      // The probe never ran, so there is no result to report -- this is the
-      // Test button's own failure and belongs beside it.
+      // The probe never ran: this is the Test button's own failure, not a result.
       setTestError(t('dashboard.searchConfig.testFailed', {
         message: errorMessage(error),
       }));
@@ -328,10 +323,8 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
             </Field>
             <Field label={t('dashboard.searchConfig.passthrough.model')}>
               <Dropdown
-                // An upstream with no chat models cannot supply this value, so
-                // the picker is unusable rather than merely unsuggested. The
-                // gate belongs here and not on the upstream beside it: an
-                // upstream picker closed by its own selection cannot be used to
+                // The gate belongs here and not on the upstream picker beside
+                // it: a picker closed by its own selection cannot be used to
                 // leave that selection.
                 disabled={!draft.passthroughOpenAiSearch.enabled || modelsForSelectedUpstream.length === 0}
                 onOptionSelect={(_, data) => {
@@ -449,8 +442,8 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
   );
 }
 
-// A model's display name is often just its id; showing both would read as a
-// stutter, so the second line only appears when it carries something new.
+// A model's display name is often just its id, so the second line only appears
+// when it carries something new.
 const modelLabel = (model: ControlPlaneModel) => model.display_name ?? model.id;
 
 function DescribedOptionLabel({ description, label }: { description?: string; label: string }) {

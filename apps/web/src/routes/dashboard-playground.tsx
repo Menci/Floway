@@ -63,29 +63,24 @@ const {
   tokens,
 } = fluentComponents;
 
-// A Fluent Button paints its icon slot from a descendant rule of its own once
-// the pointer is on it -- brand-tinted on hover and while pressed, in
-// useButtonStyles -- so a colour stated on the root reaches a label and leaves
-// the glyph. A row command is a glyph and nothing else, so every state it
-// paints has to name the slot beside the root.
+// Fluent paints a Button's icon slot from a descendant rule of its own once the
+// pointer is on it, so a colour stated on the root reaches a label and leaves
+// the glyph. A row command is a glyph and nothing else.
 const ICON = `& .${buttonClassNames.icon}`;
 
-// Painting is held to a button the operator can actually press. Fluent states
-// a disabled button's foreground on a single class, which a colour stated here
-// outranks; a Button carries `:disabled` when it is disabled and
-// `aria-disabled` when it is disabled and still focusable, so both close the
-// guard.
+// Fluent states a disabled button's foreground on a single class, which a colour
+// stated here outranks. A Button carries `:disabled` when disabled and
+// `aria-disabled` when disabled and still focusable, so both close the guard.
 const ENABLED = '&:not(:disabled):not([aria-disabled="true"])';
 const HOVER = `${ENABLED}:hover`;
-// Fluent's own pair of press selectors: a press that began under the pointer,
-// and a press on the button the keyboard is on.
+// Fluent's own pair: a press that began under the pointer, and a press on the
+// button the keyboard is on.
 const PRESSED = `${ENABLED}:hover:active, ${ENABLED}:active:focus-visible`;
 
 const reachedPaint = (color: string) => ({ color, [ICON]: { color } });
 
-// `null` is a fetch that failed. An empty key list tells the operator to go
-// and create a key, which is the wrong instruction when the list is simply
-// unknown.
+// `null` is a fetch that failed, distinct from an empty list -- which would tell
+// the operator to create a key.
 interface LoaderData { keys: ApiKey[] | null; models: ControlPlaneModel[] | null; error: string | null }
 
 export async function clientLoader(): Promise<LoaderData> {
@@ -103,19 +98,11 @@ export async function clientLoader(): Promise<LoaderData> {
 
 const useStyles = makeStyles({
   toolbar: { borderBottom: `1px solid ${tokens.colorNeutralStroke1}` },
-  // The transcript's row commands are the original's icon buttons, so they
-  // take the accent foreground pair the composer's controls take: the primary
-  // step at rest and the secondary step once the button is reached for. The
-  // secondary step is held through the press, because the original states no
-  // third step for the foreground and lets the fill answer a press; in dark
-  // both steps are the same value, so there the fill answers the pointer as
-  // well.
-  //
-  // Under forced colours Fluent pairs a reached button with Highlight and
-  // clears forced-color-adjust while doing it, so a colour here paints for
-  // real rather than being substituted by the user agent. The pairing is
-  // restated for both reached states so a reach still reads as the system
-  // paints a reach.
+  // The secondary accent step is held through the press because the original
+  // states no third foreground step and lets the fill answer a press. Under
+  // forced colours Fluent pairs a reached button with Highlight and clears
+  // forced-color-adjust, so the Highlight pairing has to be restated here rather
+  // than left to the user agent's substitution.
   brandIconAction: {
     [ENABLED]: { color: bingAccentForeground },
     [HOVER]: reachedPaint(bingAccentForegroundHover),
@@ -145,9 +132,9 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const [api, setApi] = useState<PlaygroundApi>('responses');
   const [keyId, setKeyId] = useState(loaderData.keys?.[0]?.id ?? '');
   const [publicModelId, setPublicModelId] = useState('');
-  // `null` means the picker is showing its selection rather than a search
-  // term. Opening the list clears the field so the first keystroke starts a
-  // query instead of extending the selected model's display name.
+  // `null` means the picker is showing its selection rather than a search term.
+  // Opening the list clears the field so the first keystroke starts a query
+  // instead of extending the selected model's display name.
   const [modelQuery, setModelQuery] = useState<string | null>(null);
   const [messages, setMessages] = useState<PlaygroundMessage[]>([]);
   const [system, setSystem] = useState('');
@@ -186,22 +173,20 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
     const query = (modelQuery ?? '').trim().toLowerCase();
     return !query || model.id.toLowerCase().includes(query) || model.display_name.toLowerCase().includes(query);
   });
-  // What a send needs, or nothing. The composer's send affordance and the send
-  // itself read this one value, so an enabled control always has a request to
-  // make.
+  // The composer's send affordance and the send itself read this one value, so
+  // an enabled control always has a request to make.
   const sendTarget = selectedKey && selectedModel && (draft.trim() || imageUrl.trim())
     ? { apiKey: selectedKey, model: selectedModel }
     : null;
 
   const stop = useCallback(() => abortRef.current?.abort(), []);
 
-  // The picker holds an id; the catalog decides whether it still resolves.
-  // Reconciling during render keeps the two from disagreeing for a frame.
+  // Reconciled during render so the picker's id and the catalog cannot disagree
+  // for a frame.
   const resolvedPublicModelId = selectedModel?.id ?? '';
   if (resolvedPublicModelId !== publicModelId) setPublicModelId(resolvedPublicModelId);
 
-  // A model that cannot take images has no attachment to show; reconciling
-  // during render avoids painting the composer with a stale one.
+  // Reconciled during render so the composer never paints a stale attachment.
   if (!imageEnabled && (showImage || imageUrl !== '')) {
     setShowImage(false);
     setImageUrl('');
@@ -360,10 +345,8 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
           {playgroundApis.map(value => <Option key={value} value={value}>{t(`dashboard.playground.apis.${value}`)}</Option>)}
         </Dropdown>
       </Field>
-      {/* No hint under this one. An empty catalog already says so inside the
-          list, and when the listing failed the bar above the transcript names
-          the failure -- a third statement of it under the field would be the
-          same news a third time. */}
+      {/* No hint: an empty catalog says so inside the list, and a failed listing
+          is already named by the bar above the transcript. */}
       <Field label={t('dashboard.playground.model')}>
         <Combobox value={modelQuery ?? selectedModel?.display_name ?? ''} selectedOptions={selectedModel ? [selectedModel.id] : []} placeholder={t('dashboard.playground.modelPlaceholder')} onChange={event => setModelQuery(event.target.value)} onOptionSelect={(_, data) => {
           if (!data.optionValue) return;
@@ -431,11 +414,9 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
           <ScrollArea ref={scrollRef} axes="vertical" className="min-h-0 -m-1.5" contentClassName="flex min-h-full flex-col" noTabIndex viewportClassName="p-1.5">
             {loadError && <OutcomeMessageBar className="!mb-3" onDismiss={() => setLoadError(null)}>{loadError}</OutcomeMessageBar>}
             {requestError && <OutcomeMessageBar className="!mb-3" onDismiss={() => setRequestError(null)}>{requestError}</OutcomeMessageBar>}
-            {/* The transcript speaks for itself and nothing else. A missing key
-                or an unreachable model is a fact about the picker that would
-                supply it, so it is said under that picker rather than in the
-                space the conversation will occupy -- which leaves this region
-                with one line, the invitation to start. */}
+            {/* A missing key or unreachable model is a fact about the picker
+                that would supply it, so it is said under that picker rather than
+                in the space the conversation will occupy. */}
             {loaderData.keys === null || loaderData.models === null
               ? <EmptyState className="flex-1 px-6" title={t('dashboard.pages.unavailable')} />
               : messages.length === 0 && !sending
