@@ -48,7 +48,7 @@ export const fieldCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L4812 */
 .fui-Field:not(.${fieldHorizontalRootAtom}) > .fui-Field__label.fui-Field__label {
   padding-block: 0;
-  margin-bottom: 8px;
+  margin-block-end: 8px;
 }
 
 /* The header's disabled step, which Fluent does not state: its Field passes the
