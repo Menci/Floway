@@ -1,23 +1,10 @@
-// List and ListItem, restyled from the Fluent 2 Web look to WinUI 3. Fluent's
-// list is headless -- no fill, no radius, no state -- so every rule below adds
-// a state rather than replacing a Fluent value.
-//
-// Interaction states are keyed off `[tabindex]`, which useListItem gives an
-// item exactly when selection or navigation makes it interactive, so a plain
-// content row keeps the flat look Fluent gives it. See ./tokens.ts for the
-// selector convention.
-//
-// Windows High Contrast is transcribed here rather than handed back to Fluent,
-// because a headless list states none of it and forced colours would otherwise
-// flatten the row to one appearance. The check box inside the row keeps
-// Fluent's forced-colours drawing, for the reason ./choice.css writes down.
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L83-L93
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L150-L154
+// List and ListItem, restyled to WinUI 3. Fluent's list is headless -- no fill,
+// no radius, no state -- so every rule below adds a state rather than replacing
+// a Fluent value.
 export const listCss = `
-/* The item body, and the containing block for the two chrome layers this sheet
-   draws inside it: the selection indicator and the focus ring's inner stroke.
-   The rest fill is SubtleFillColorTransparent and ListViewItemForeground is
-   TextFillColorPrimary, both of which the undeclared default already paints.
+/* Also the containing block for the selection indicator and the focus ring's
+   inner stroke. Rest fill and foreground are left undeclared: Fluent's default
+   already paints SubtleFillColorTransparent over TextFillColorPrimary.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L13
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L14
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L17
@@ -33,9 +20,8 @@ export const listCss = `
   border-radius: var(--winui-control-corner-radius);
 }
 
-/* The subtle fill ramp, which only an interactive row runs. useListItem gives
-   an item a tabindex exactly when selection or navigation is on, so that
-   attribute is the hook.
+/* useListItem gives an item a tabindex exactly when selection or navigation is
+   on, so that attribute is the hook for the interactive-only fill ramp.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L18-L19
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L24-L25 */
 .fui-ListItem.fui-ListItem[tabindex]:not([aria-disabled='true']):hover {
@@ -46,9 +32,8 @@ export const listCss = `
   background-color: var(--winui-subtle-fill-tertiary);
 }
 
-/* Selection: the same ramp one step up. A disabled selected row keeps the
-   secondary rest fill, so the enabled-only guards cover it and no separate rule
-   is needed.
+/* A disabled selected row keeps the secondary rest fill, so the enabled-only
+   guards below cover it and no separate rule is needed.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L20-L22
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L74 */
 .fui-ListItem.fui-ListItem[aria-selected='true'] {
@@ -63,19 +48,14 @@ export const listCss = `
   background-color: var(--winui-subtle-fill-secondary);
 }
 
-/* The selection indicator. ListViewItem states its brush and its 1.5px corner
-   radius, and that radius fixes the width -- a full round-off is one only on a
-   3px bar.
-
-   The length departs from WinUI deliberately. The presenter sizes the bar by
-   MAX(16, itemHeight - 40), a flat 16px on this 40px row; a quarter inset at
-   each end reproduces roughly that length here while holding the bar's
-   proportion as the row height changes, rather than leaving it short in a tall
-   row.
-
-   Departure is the fade alone: WinUI registers no scale key frame on deselect
-   and destroys the rectangle once the 83ms is up, so the height snaps back
-   after the fade rather than shrinking with it.
+/* The selection indicator. ListViewItem's stated 1.5px corner radius fixes the
+   width, since a full round-off is one only on a 3px bar. The length departs
+   from WinUI deliberately: the presenter sizes the bar by MAX(16, itemHeight -
+   40), a flat 16px here, and a quarter inset at each end reproduces roughly
+   that length while holding the proportion as the row height changes. On
+   deselect WinUI registers no scale key frame and destroys the rectangle once
+   the 83ms is up, so the height snaps back after the fade rather than shrinking
+   with it.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L57
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L60
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L75
@@ -113,9 +93,9 @@ export const listCss = `
   }
 }
 
-/* Disablement. WinUI drops ContentBorder -- the row's fill and its content
-   together -- to 0.3, so one opacity carries the whole row. The selection
-   indicator is the exception: it names a disabled brush of its own.
+/* WinUI drops ContentBorder -- fill and content together -- to 0.3, so one
+   opacity carries the whole row; the indicator is the exception, naming a
+   disabled brush of its own.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L6
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L78
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L381 */
@@ -127,17 +107,13 @@ export const listCss = `
   background-color: var(--winui-accent-fill-disabled);
 }
 
-/* Focus. WinUI draws an outer 2px stroke with an inner 1px nested inside it,
-   held a pixel clear of the row's edge by FocusVisualMargin 1 -- a positive
-   margin shrinks the focus rectangle, so the ring is drawn inside the item's
-   bounds. Retinting Fluent's single outline and pulling it in by the outer
-   stroke's full reach places the primary stroke exactly.
-
-   The inner stroke rides a pseudo-element; an inset shadow on the row itself
-   would sit in the pixels the outline has to cover. Under forced colours the
-   user agent drops that shadow and forces the outline onto CanvasText, which
-   is that mode's reading of the HighContrast WindowText, so the ring needs no
-   colour of its own there.
+/* WinUI draws a 2px outer stroke with a 1px inner nested inside it, held a
+   pixel clear of the row's edge by FocusVisualMargin 1 -- a positive margin
+   shrinks the focus rectangle, so the ring sits inside the item's bounds. That
+   reach is the offset below. The inner stroke rides a pseudo-element because an
+   inset shadow on the row itself would sit in the pixels the outline has to
+   cover; under forced colours the user agent drops that shadow and forces the
+   outline onto CanvasText, so the ring needs no colour of its own there.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L29-L30
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L94
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L248
@@ -160,9 +136,8 @@ export const listCss = `
   pointer-events: none;
 }
 
-/* The selection check box, whose fills and glyph belong to ./choice.css. The
-   corner radius is the one measure ListViewItem states for its own check box,
-   a pixel wider than Fluent's indicator reset.
+/* The one measure ListViewItem states for its own check box, a pixel wider than
+   Fluent's indicator reset.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L59 */
 .fui-ListItem__checkmark .fui-Checkbox__indicator.fui-Checkbox__indicator {
   border-radius: 3px;
@@ -172,10 +147,9 @@ export const listCss = `
    walks the alt-fill ramp per state; ListViewItem names one fill for
    pointer-over, pressed and disabled alike and holds the stroke through the
    pressed state, so the box the row carries stays still while the row
-   underneath it moves.
-
-   Each selector repeats the shape of the ./choice.css rule it answers and adds
-   the checkmark slot, so it outranks that rule wherever the two sheets meet.
+   underneath it moves. Each selector repeats the shape of the ./choice.css rule
+   it answers and adds the checkmark slot, so it outranks that rule wherever the
+   two sheets meet.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L34
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L63-L65
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L72 */
@@ -201,10 +175,8 @@ export const listCss = `
 
 /* High Contrast. The selection indicator inverts with the row: its brush there
    is HighlightText, so the bar reads against the Highlight the row is now
-   filled with.
-
-   A media query carries no specificity, so each rule repeats the selector it
-   answers.
+   filled with. A media query carries no specificity, so each rule repeats the
+   selector it answers.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L83-L93
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L150-L151
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L154
