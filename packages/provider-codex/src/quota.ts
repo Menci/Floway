@@ -130,13 +130,16 @@ export const putCodexQuota = async (
   accountId: string,
   snapshot: CodexQuotaSnapshot,
 ): Promise<void> => {
-  const fresh = await getProviderRepo().upstreams.getById(upstreamId);
-  if (!fresh) throw new Error(`putCodexQuota: Codex upstream ${upstreamId} disappeared mid-request`);
-  const state = readCodexUpstreamState(fresh.state);
-  const idx = findCodexAccountIndex(state, accountId);
-  if (idx < 0) throw new Error(`putCodexQuota: Codex account ${accountId} not found in upstream ${upstreamId}`);
-  const currentQuota = state.accounts[idx].quotaSnapshot ?? {};
-  const nextQuota = { ...currentQuota, [codexQuotaActiveLimitKey(snapshot)]: { fetchedAt: Date.now(), data: snapshot } };
-  const next = replaceCodexAccount(state, idx, account => ({ ...account, quotaSnapshot: nextQuota }));
-  await getProviderRepo().upstreams.saveState(upstreamId, next, { expectedState: fresh.state });
+  // Stamped before the write so a replay against a winning sibling produces
+  // the same document rather than a later `fetchedAt`.
+  const fetchedAt = Date.now();
+  await getProviderRepo().upstreams.saveState(upstreamId, current => {
+    const state = readCodexUpstreamState(current);
+    const idx = findCodexAccountIndex(state, accountId);
+    if (idx < 0) throw new Error(`putCodexQuota: Codex account ${accountId} not found in upstream ${upstreamId}`);
+    return replaceCodexAccount(state, idx, account => ({
+      ...account,
+      quotaSnapshot: { ...account.quotaSnapshot ?? {}, [codexQuotaActiveLimitKey(snapshot)]: { fetchedAt, data: snapshot } },
+    }));
+  });
 };

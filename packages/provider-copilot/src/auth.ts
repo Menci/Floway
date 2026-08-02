@@ -141,26 +141,15 @@ async function getCopilotToken(upstreamId: string, githubToken: string, fetcher:
   return await withRetry(async () => {
     const entry = await exchangeCopilotToken(githubToken, fetcher, signal);
     inProcessTokenCache.set(upstreamId, { entry, cachedAt: Date.now() });
-    // Re-read the row after the exchange instead of keying the CAS on the
-    // snapshot taken before it. The exchange is a full api.github.com round
-    // trip, and the quota harvest writes this same state_json row on every
-    // data-plane response, so a pre-fetch `expectedState` loses on any busy
-    // upstream — leaving the persisted slot holding the expired token and
-    // sending every isolate back to the token endpoint on its own. Same
-    // rationale as the known-models save in provider.ts.
-    //
-    // Best-effort throughout: a losing CAS or transient DB error must not
-    // invalidate the freshly fetched token, which the caller is about to use
-    // to satisfy a live request.
+    // Best-effort: the caller is about to satisfy a live request with this
+    // token, so a storage failure costs the next cold isolate one extra mint
+    // rather than the request. Swallowing here also keeps such a failure out
+    // of withRetry, which would otherwise answer it by minting again.
     try {
-      const latest = await getRepo().upstreams.getById(upstreamId);
-      if (latest) {
-        await getRepo().upstreams.saveState(
-          upstreamId,
-          { ...readCopilotUpstreamState(latest.state), copilotToken: entry } satisfies CopilotUpstreamState,
-          { expectedState: latest.state },
-        );
-      }
+      await getRepo().upstreams.saveState(upstreamId, current => ({
+        ...readCopilotUpstreamState(current),
+        copilotToken: entry,
+      } satisfies CopilotUpstreamState));
     } catch (err) {
       console.warn(`Failed to persist Copilot token for ${upstreamId}:`, err);
     }

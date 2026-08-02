@@ -225,16 +225,13 @@ export const fetchCopilotUsage = (githubToken: string, fetcher: Fetcher): Promis
   fetcher('https://api.github.com/copilot_internal/user', { headers: githubHeaders(githubToken) });
 
 // Both sources land in the same slot, so whichever observed the seat most
-// recently is what the dashboard shows. The CAS is keyed on the state we just
-// read: losing it to a concurrent token mint or known-models save is expected
-// under load, and the loser's snapshot is worth no more than the winner's.
+// recently is what the dashboard shows. `fetchedAt` is stamped outside the
+// mutator: the mutator is re-run on a lost race and must return the same
+// snapshot each time.
 export const putCopilotQuota = async (upstreamId: string, snapshot: CopilotQuotaSnapshot): Promise<void> => {
-  const fresh = await getProviderRepo().upstreams.getById(upstreamId);
-  if (!fresh) throw new Error(`putCopilotQuota: Copilot upstream ${upstreamId} disappeared mid-request`);
-  const state = readCopilotUpstreamState(fresh.state);
-  await getProviderRepo().upstreams.saveState(
-    upstreamId,
-    { ...state, quotaSnapshot: { fetchedAt: Date.now(), data: snapshot } } satisfies CopilotUpstreamState,
-    { expectedState: fresh.state },
-  );
+  const fetchedAt = Date.now();
+  await getProviderRepo().upstreams.saveState(upstreamId, current => ({
+    ...readCopilotUpstreamState(current),
+    quotaSnapshot: { fetchedAt, data: snapshot },
+  } satisfies CopilotUpstreamState));
 };
