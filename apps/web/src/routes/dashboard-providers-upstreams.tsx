@@ -7,17 +7,16 @@ import {
 } from '@fluentui/react-icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, redirect, useLocation, useNavigate } from 'react-router';
+import { Link, useLocation, useNavigate } from 'react-router';
 
 import type { Route } from './+types/dashboard-providers-upstreams';
+import { requireDashboardAdmin } from './route-guards';
 import { api, callApi } from '../api/client';
 import type {
   ControlPlaneModel,
   UpstreamProviderKind,
   UpstreamRecord,
 } from '../api/types';
-import { requireAdmin } from '../auth/require-admin';
-import { getSessionToken } from '../auth/session';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
@@ -89,8 +88,7 @@ const loadPageData = async (): Promise<LoaderData> => {
 };
 
 export async function clientLoader(): Promise<LoaderData> {
-  if (!getSessionToken()) throw redirect('/');
-  if (!(await requireAdmin())) throw redirect('/dashboard/services/api-keys');
+  await requireDashboardAdmin();
   return await loadPageData();
 }
 

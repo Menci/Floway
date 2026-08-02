@@ -1,13 +1,11 @@
 import { useCallback, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
-import { redirect } from 'react-router';
 
 import type { Route } from './+types/dashboard-providers-proxy';
+import { requireDashboardAdmin } from './route-guards';
 import { api, callApi, callApiNoContent } from '../api/client';
 import type { ProxyRecord, BackoffRow } from '../api/types';
-import { requireAdmin } from '../auth/require-admin';
-import { getSessionToken } from '../auth/session';
 import { ProxyBackoffPanel } from '../components/proxy/proxy-backoff-panel';
 import { defaultsFor, parseDialTimeoutInput, parseProxyInput, proxyDraftIssues, type FormKind } from '../components/proxy/proxy-config';
 import { ProxyForm, type ProxyTestResult } from '../components/proxy/proxy-form';
@@ -48,8 +46,7 @@ const loadPageData = async (): Promise<LoaderData> => {
 };
 
 export async function clientLoader(): Promise<LoaderData> {
-  if (!getSessionToken()) throw redirect('/');
-  if (!(await requireAdmin())) throw redirect('/dashboard/services/api-keys');
+  await requireDashboardAdmin();
   return await loadPageData();
 }
 

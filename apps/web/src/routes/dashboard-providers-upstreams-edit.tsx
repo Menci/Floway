@@ -2,9 +2,8 @@ import { redirect } from 'react-router';
 
 import type { Route } from './+types/dashboard-providers-upstreams-edit';
 import { revalidateOnPathnameChange } from './revalidation';
+import { requireDashboardAdmin } from './route-guards';
 import { api, callApi } from '../api/client';
-import { requireAdmin } from '../auth/require-admin';
-import { getSessionToken } from '../auth/session';
 import { loadEditorAux, loadInitialModelCatalog } from '../components/upstream-editor/editor-data';
 import { UpstreamEditorPage } from '../components/upstream-editor/upstream-editor-page';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
@@ -12,8 +11,7 @@ import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
 export const handle = dashboardWorkspaceHandle;
 
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  if (!getSessionToken()) throw redirect('/');
-  if (!(await requireAdmin())) throw redirect('/dashboard/services/api-keys');
+  await requireDashboardAdmin();
   const [recordResult, aux] = await Promise.all([
     callApi(() => api.api.upstreams[':id'].$get({ param: { id: params.id } })),
     loadEditorAux(),

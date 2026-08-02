@@ -6,9 +6,9 @@ import { redirect, useSearchParams } from 'react-router';
 import type { Route } from './+types/dashboard-monitor-usage';
 import { useDashboardOutletContext } from './dashboard';
 import { revalidateOnPathnameChange } from './revalidation';
+import { requireDashboardSession } from './route-guards';
 import type { GlobalError } from '../api/client';
 import type { ControlPlaneModel } from '../api/types';
-import { getSessionToken } from '../auth/session';
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
@@ -42,7 +42,7 @@ type LoaderData = Awaited<ReturnType<typeof loadUsagePageData>> & {
 };
 
 export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise<LoaderData> {
-  if (!getSessionToken()) throw redirect('/');
+  requireDashboardSession();
   const user = await useAuthStore.getState().initialize();
   if (!user) throw redirect('/');
   const search = new URL(request.url).searchParams;

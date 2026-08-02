@@ -1,13 +1,11 @@
 import { ArrowDownloadRegular, ArrowUploadRegular } from '@fluentui/react-icons';
 import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { redirect } from 'react-router';
 
 import type { Route } from './+types/dashboard-admin-backup-restore';
+import { requireDashboardAdmin } from './route-guards';
 import { api, callApi } from '../api/client';
 import type { BackupImportCounts } from '../api/types';
-import { requireAdmin } from '../auth/require-admin';
-import { getSessionToken } from '../auth/session';
 import { BACKUP_FILE_VERSION, parseBackupFile, type BackupFile, type BackupFileData } from '../components/backup-restore/backup-file';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
@@ -34,8 +32,7 @@ const {
 } = fluentComponents;
 
 export async function clientLoader() {
-  if (!getSessionToken()) throw redirect('/');
-  if (!(await requireAdmin())) throw redirect('/dashboard/services/api-keys');
+  await requireDashboardAdmin();
   return null;
 }
 

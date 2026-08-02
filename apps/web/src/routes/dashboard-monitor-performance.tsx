@@ -7,8 +7,8 @@ import { redirect, useSearchParams } from 'react-router';
 
 import type { Route } from './+types/dashboard-monitor-performance';
 import { revalidateOnPathnameChange } from './revalidation';
+import { requireDashboardSession } from './route-guards';
 import { api, callApi, type GlobalError } from '../api/client';
-import { getSessionToken } from '../auth/session';
 import { ChartCalloutTable } from '../components/charts/chart-callout-table';
 import { useUnclippedChartFrame } from '../components/charts/chart-frame-styles';
 import { ChartSection } from '../components/charts/chart-section';
@@ -149,7 +149,7 @@ interface LoaderData {
 }
 
 export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise<LoaderData> {
-  if (!getSessionToken()) throw redirect('/');
+  requireDashboardSession();
   const user = await useAuthStore.getState().initialize();
   if (!user) throw redirect('/');
   const state = parsePerformanceUrlState(new URL(request.url).searchParams);

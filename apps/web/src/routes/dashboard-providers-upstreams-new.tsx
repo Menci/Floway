@@ -2,9 +2,8 @@ import { redirect } from 'react-router';
 
 import type { Route } from './+types/dashboard-providers-upstreams-new';
 import { revalidateOnPathnameChange } from './revalidation';
+import { requireDashboardAdmin } from './route-guards';
 import { api, callApi } from '../api/client';
-import { requireAdmin } from '../auth/require-admin';
-import { getSessionToken } from '../auth/session';
 import {
   loadEditorAux,
   providerDefaultName,
@@ -16,8 +15,7 @@ import { ALL_PROVIDER_KINDS } from '@floway-dev/provider';
 export const handle = dashboardWorkspaceHandle;
 
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  if (!getSessionToken()) throw redirect('/');
-  if (!(await requireAdmin())) throw redirect('/dashboard/services/api-keys');
+  await requireDashboardAdmin();
   const kind = ALL_PROVIDER_KINDS.find(candidate => candidate === params.provider);
   if (!kind) {
     throw redirect('/dashboard/providers/upstreams');

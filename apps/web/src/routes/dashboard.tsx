@@ -10,8 +10,8 @@ import {
 } from 'react-router';
 
 import type { Route } from './+types/dashboard';
+import { requireDashboardSession } from './route-guards';
 import type { AuthUser } from '../api/auth';
-import { getSessionToken } from '../auth/session';
 import { FlowayLogo } from '../components/logo';
 import { usePageFrames } from '../components/page-frames';
 import { Sidebar } from '../components/sidebar/sidebar';
@@ -30,8 +30,7 @@ export interface DashboardOutletContext {
 }
 
 export async function clientLoader() {
-  const token = getSessionToken();
-  if (!token) throw redirect('/');
+  requireDashboardSession();
   const user = await useAuthStore.getState().initialize();
   if (user) return null;
   const error = useAuthStore.getState().error;

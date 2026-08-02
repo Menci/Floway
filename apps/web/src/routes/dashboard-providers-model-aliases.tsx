@@ -1,13 +1,11 @@
 import { DeleteRegular, EditRegular, WarningRegular } from '@fluentui/react-icons';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { redirect } from 'react-router';
 
 import type { Route } from './+types/dashboard-providers-model-aliases';
+import { requireDashboardAdmin } from './route-guards';
 import { api, callApi, callApiNoContent } from '../api/client';
 import type { ControlPlaneModel, ModelAlias } from '../api/types';
-import { requireAdmin } from '../auth/require-admin';
-import { getSessionToken } from '../auth/session';
 import { AliasDialog } from '../components/model-alias/alias-dialog';
 import { mergeModelAliasesPageData } from '../components/model-alias/load-data';
 import { computeAliasWarnings } from '../components/model-alias/warnings';
@@ -46,8 +44,7 @@ const loadPageData = async (current: LoaderData['catalog'], signal?: AbortSignal
 };
 
 export async function clientLoader(): Promise<LoaderData> {
-  if (!getSessionToken()) throw redirect('/');
-  if (!(await requireAdmin())) throw redirect('/dashboard/services/api-keys');
+  await requireDashboardAdmin();
   return await loadPageData({ aliases: [], models: null });
 }
 

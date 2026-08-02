@@ -2,16 +2,14 @@ import { ArrowRouting24Regular, EyeOffRegular, EyeRegular, GlobeSearch24Regular 
 import type { InferResponseType } from 'hono/client';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { redirect } from 'react-router';
 
 import type { Route } from './+types/dashboard-providers-search';
+import { requireDashboardAdmin } from './route-guards';
 import { api, callApi } from '../api/client';
 import type { ControlPlaneModel, SearchConfig, UpstreamRecord } from '../api/types';
 import jinaIconUrl from '../assets/jina-color.svg';
 import microsoftIconUrl from '../assets/microsoft-color.svg';
 import tavilyIconUrl from '../assets/tavily-color.svg';
-import { requireAdmin } from '../auth/require-admin';
-import { getSessionToken } from '../auth/session';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Dropdown, LISTBOX_POSITIONING } from '../components/ui/fluent-form-controls';
 import { TWO_COLUMN_FORM_CLASS } from '../components/ui/layout';
@@ -45,8 +43,7 @@ interface LoaderData {
 }
 
 export async function clientLoader(): Promise<LoaderData> {
-  if (!getSessionToken()) throw redirect('/');
-  if (!(await requireAdmin())) throw redirect('/dashboard/services/api-keys');
+  await requireDashboardAdmin();
   const [configResult, upstreamsResult, modelsResult] = await Promise.all([
     callApi(() => api.api['search-config'].$get()),
     callApi(() => api.api.upstreams.$get()),

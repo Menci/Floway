@@ -8,15 +8,13 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback, useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { redirect } from 'react-router';
 import { z } from 'zod';
 
 import type { Route } from './+types/dashboard-admin-users';
 import { useDashboardOutletContext } from './dashboard';
+import { requireDashboardAdmin } from './route-guards';
 import { api, callApi } from '../api/client';
 import type { ControlPlaneModel, ControlPlaneUser, UpstreamOption } from '../api/types';
-import { requireAdmin } from '../auth/require-admin';
-import { getSessionToken } from '../auth/session';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { DialogShell } from '../components/ui/dialog-shell';
@@ -100,8 +98,7 @@ const loadPageData = async (
 const unloadedPageData: Pick<LoaderData, 'users' | 'upstreams' | 'models'> = { users: null, upstreams: null, models: null };
 
 export async function clientLoader(): Promise<LoaderData> {
-  if (!getSessionToken()) throw redirect('/');
-  if (!(await requireAdmin())) throw redirect('/dashboard/services/api-keys');
+  await requireDashboardAdmin();
   return await loadPageData(unloadedPageData);
 }
 

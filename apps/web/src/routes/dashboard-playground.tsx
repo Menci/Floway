@@ -8,13 +8,12 @@ import {
 } from '@fluentui/react-icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { redirect } from 'react-router';
 
 import type { Route } from './+types/dashboard-playground';
 import { useDashboardOutletContext } from './dashboard';
+import { requireDashboardSession } from './route-guards';
 import { api, callApi } from '../api/client';
 import type { ApiKey, ControlPlaneModel } from '../api/types';
-import { getSessionToken } from '../auth/session';
 import { indexCatalog } from '../components/models/catalog-index';
 import { ModelInfoBadges } from '../components/models/model-info-badges';
 import { effectiveUpstreamCap } from '../components/models/reachability';
@@ -90,7 +89,7 @@ const reachedPaint = (color: string) => ({ color, [ICON]: { color } });
 interface LoaderData { keys: ApiKey[] | null; models: ControlPlaneModel[] | null; error: string | null }
 
 export async function clientLoader(): Promise<LoaderData> {
-  if (!getSessionToken()) throw redirect('/');
+  requireDashboardSession();
   const [keys, models] = await Promise.all([
     callApi(() => api.api.keys.$get()),
     callApi(() => api.api.models.$get({ query: {} })),

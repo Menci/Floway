@@ -1,12 +1,12 @@
 import { DismissRegular } from '@fluentui/react-icons';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, redirect, useNavigate, useSearchParams } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 
 import type { Route } from './+types/dashboard-monitor-requests';
+import { requireDashboardSession } from './route-guards';
 import { api, callApi } from '../api/client';
 import type { ApiKey } from '../api/types';
-import { getSessionToken } from '../auth/session';
 import { RequestDetailPanel } from '../components/requests/request-detail';
 import { refreshRequestKeys } from '../components/requests/request-key-refresh';
 import { RequestListPanel } from '../components/requests/request-list';
@@ -40,7 +40,7 @@ interface LoaderData {
 }
 
 export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise<LoaderData> {
-  if (!getSessionToken()) throw redirect('/');
+  requireDashboardSession();
   const keysResult = await callApi(() => api.api.keys.$get());
   const keys = keysResult.data?.filter(key => key.dump_retention_seconds !== null) ?? [];
   const url = new URL(request.url);
