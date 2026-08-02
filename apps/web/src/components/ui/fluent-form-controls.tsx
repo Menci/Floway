@@ -58,8 +58,9 @@ const MIN_WIDTH_CLASS = '!min-w-[0px] [&_input]:!min-w-[0px]';
 // Here the floor is off by default and one surface turns it on, so the
 // variable rather than a second class is what carries it: the declaration
 // stays in one place and the caller sets a value instead of racing the
-// `!important` this one needs to clear Fluent's own 250px. See
-// ./settings-card.tsx, which is the only place that raises it.
+// `!important` this one needs to clear Fluent's own 250px. ./settings-card.tsx
+// is the only place that raises it, and states the value it raises it to and
+// whose it is.
 const SELECT_MIN_WIDTH_CLASS = '!min-w-[var(--floway-select-min-width,0px)] [&_input]:!min-w-[0px]';
 
 // Fluent lets the popup keep its natural height and flips it to whichever

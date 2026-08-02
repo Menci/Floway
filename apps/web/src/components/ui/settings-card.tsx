@@ -183,9 +183,9 @@ const useStyles = makeStyles({
     //
     // SettingsCard states that -3 itself and the default ToggleButton style
     // states it too, but the toolkit's keyed header style carries no BasedOn
-    // and so falls back to a zero margin. We give both rows the -3 placement:
-    // they are one row to the reader, and a ring that shifts three pixels
-    // between two rows of the same list reads as a defect.
+    // and so falls back to a zero margin. We give both rows the -3 placement.
+    // Nothing sources that unification -- the toolkit's own answer is the two
+    // margins it states, and taking one of them for both is ours.
     // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L138-L139
     // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml#L297
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L193
@@ -234,10 +234,11 @@ const useStyles = makeStyles({
   //
   // The 20 bounds the layout box, not the ink: a Viewbox scales its child by
   // that child's DesiredSize, which for an icon is the box the glyph is laid
-  // out in, so the literal transcription is a 20px box. The 24 cut is rendered
-  // at 24 instead, because Fluent's 24 cut carries about 20 units of ink where
-  // its 20 cut carries about 16 -- an ink-weight choice of ours rather than a
-  // size the Viewbox produces.
+  // out in, so the literal transcription is a 20px box. The operator called
+  // this icon too small at that size, so the 24 cut is rendered at 24 instead;
+  // Fluent's 24 cut carries about 20 units of ink where its 20 cut carries
+  // about 16, which is the measurement the substitution rests on. Which cut
+  // answers him is ours -- he named no size.
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L103-L106
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L398-L402
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/core/elements/Viewbox.cpp#L266-L289
@@ -286,18 +287,21 @@ const useStyles = makeStyles({
   // declares the variable this raises. Only a select reads it: a switch or a
   // button in the same slot is already the size it is meant to be.
   //
-  // Both rows take it, because a reader sees one list. The same control moves
-  // between the two -- a caller renders a card while its setting has nothing to
-  // reveal and an expander once it has -- so a floor on one of them would make
-  // a row change width for a reason that has nothing to do with its value.
+  // Both rows take it. The same control moves between the two -- a caller
+  // renders a card while its setting has nothing to reveal and an expander
+  // once it has -- so a floor on one of them would make a row change width for
+  // a reason that has nothing to do with its value. The operator scoped his
+  // own instruction to a select on an expander row; carrying it to the card
+  // row as well is ours.
   //
   // It applies at every width, as the toolkit's own does:
   // SettingsCardContentMinWidth goes into the card's content scope as an
   // implicit MinWidth on Slider, ComboBox and TextBox -- "so they neatly align"
   // -- and no visual state withdraws it. What the narrow states do instead is
   // give the control a line of its own, which is where the room for the floor
-  // comes from. The 200 is ours rather than the toolkit's 120, and is argued
-  // where the variable is declared.
+  // comes from. The 200 is the operator's, not the toolkit's 120: he asked for
+  // a soft floor, put PowerToys' measured row at roughly 478 as too wide, and
+  // named 200 or 160.
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L146-L170
   //
   // Wrapped, the control takes the row below: PART_ContentPresenter moves to
@@ -350,8 +354,8 @@ const useStyles = makeStyles({
   // sixteen from the header's edge, and twelve from whatever precedes it once
   // the card's own trailing padding of 4 is counted. Here the box sits in the
   // header row itself, inside that same 4, so the glyph reads twelve from the
-  // edge and eight from what precedes it. The construction is the toolkit's,
-  // one step tighter, and the step is ours.
+  // edge and eight from what precedes it. The construction is the toolkit's;
+  // the step in is ours and nothing sources it.
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml#L15
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml#L540-L574
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L99
@@ -405,11 +409,12 @@ const useStyles = makeStyles({
   // against the element's own border box and needs no measurement. Animating
   // the height buys one grid row and costs two things. Everything below the
   // row reflows for the length of the transition. And the closing spline goes
-  // with it: WinUI's cubic-bezier(1, 1, 0, 1) is stationary at the midpoint,
-  // so a fifth of the duration carries half the travel -- a flick of content
-  // under a static clip, the rest of the page jolting when the same curve
-  // drives a height. The close takes the fast-out-slow-in spline the open
-  // does, which over 167ms reads as prompt rather than abrupt.
+  // with it: the close runs on the fast-out-slow-in spline the open does, not
+  // on WinUI's cubic-bezier(1, 1, 0, 1), which is stationary at the midpoint
+  // and puts half the travel into a fifth of the duration. The operator
+  // reviewed the expander's curve and accepted it; the durations here are the
+  // ones he accepted, the substituted close spline is not, and nothing sources
+  // the substitution.
   //
   // The reduce branch departs from shipped WinUI, which keeps sliding: the
   // Expander authors its motion as a VisualState storyboard rather than a
