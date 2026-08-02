@@ -97,6 +97,15 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   const navigate = useNavigate();
   const location = useLocation();
   const toasts = useOutcomeToasts();
+  // Seeded from the loader and owned by the page from then on, deliberately.
+  // This is the one page in the dashboard that navigates within itself: the
+  // effect below reports the missing-upstream flag and then takes it back out
+  // of the URL, and that second navigation re-runs this loader. Deriving these
+  // two from the payload the loader hands back would therefore reset them at
+  // the moment the flag is consumed, and the message the effect has just
+  // written is the thing that would go. The refetch it discards asks the same
+  // two endpoints milliseconds after the first, so what it returns is what is
+  // already drawn.
   const [data, setData] = useState(loaderData);
   const [pageError, setPageError] = useState(loaderData.loadError);
   const [mutation, setMutation] = useState<Mutation | null>(null);
