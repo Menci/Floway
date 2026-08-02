@@ -3,32 +3,37 @@ export const flowaySessionHeader = 'x-floway-session';
 
 const sessionInvalidatedEvent = 'floway-session-invalidated';
 
-const storageAvailable = (): boolean => typeof window !== 'undefined';
+// The only thing standing between this module and `window` is the build-time
+// prerender pass, which has no DOM at all. A browser that has storage switched
+// off is a different case and is deliberately not handled: the throw it
+// produces is the correct outcome, because a session that cannot be persisted
+// is not a session this app can carry.
+const hasWindow = (): boolean => typeof window !== 'undefined';
 
 export const getSessionToken = (): string | null => {
-  if (!storageAvailable()) return null;
+  if (!hasWindow()) return null;
   return window.localStorage.getItem(flowayTokenStorageKey);
 };
 
 export const setSessionToken = (token: string): void => {
-  if (!storageAvailable()) return;
+  if (!hasWindow()) return;
   window.localStorage.setItem(flowayTokenStorageKey, token);
 };
 
 export const clearSessionToken = (): void => {
-  if (!storageAvailable()) return;
+  if (!hasWindow()) return;
   window.localStorage.removeItem(flowayTokenStorageKey);
 };
 
 export const invalidateSession = (expectedToken: string | null): void => {
   if (getSessionToken() !== expectedToken) return;
   clearSessionToken();
-  if (!storageAvailable()) return;
+  if (!hasWindow()) return;
   window.dispatchEvent(new Event(sessionInvalidatedEvent));
 };
 
 export const onSessionInvalidated = (listener: () => void): (() => void) => {
-  if (!storageAvailable()) return () => undefined;
+  if (!hasWindow()) return () => undefined;
   window.addEventListener(sessionInvalidatedEvent, listener);
   return () => window.removeEventListener(sessionInvalidatedEvent, listener);
 };
