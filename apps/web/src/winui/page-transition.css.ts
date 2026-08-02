@@ -73,7 +73,7 @@ export const pageTransitionCss = `
      its own resting style states, and the leaving one is still removed on time.
      The reload entrance is not clamped but skipped, because script starts it and
      script can ask.
-     https://github.com/w3c/wcag/blob/900ea026b967bc306a2cdbe0c586330a508d6759/guidelines/terms/21/motion-animation.html */
+     https://github.com/w3c/wcag/blob/900ea026b967bc306a2cdbe0c586330a508d6759/guidelines/terms/21/motion-animation.html#L3-L4 */
   @media (prefers-reduced-motion: reduce) {
     .floway-page-leaving { animation-duration: 0.01ms; }
     .floway-page-entering {

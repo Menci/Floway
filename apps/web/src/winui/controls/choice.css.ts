@@ -94,7 +94,10 @@ export const choiceCss = `
    just taken off. Ours draws 20, so the box is pinned to that -- ours to
    choose, since Fluent states nothing here. The cell centres it either way,
    through \`justify-content\` under the flex layout and through \`text-align\`
-   on the inline-flex radio under the native table one. */
+   on the inline-flex radio under the native table one. The 44 is Fluent's
+   TableSelectionCell CELL_WIDTH, spent by both of that cell's layouts.
+   https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-table/library/src/components/TableSelectionCell/useTableSelectionCellStyles.styles.ts#L9
+   https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-table/library/src/components/TableSelectionCell/useTableSelectionCellStyles.styles.ts#L17-L31 */
 .fui-TableSelectionCell__radioIndicator.fui-TableSelectionCell__radioIndicator {
   flex: none;
   width: 20px;

@@ -348,7 +348,7 @@ export const menuCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/dxaml/lib/MenuFlyoutSubItem_Partial.cpp#L741
    https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/dxaml/lib/LayoutTransition_partial.cpp#L423-L563
    https://www.w3.org/TR/css-backgrounds-3/#shadow-blur
-   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/tokens/src/utils/shadows.ts */
+   https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/tokens/src/utils/shadows.ts#L11 */
 @keyframes winui-menu-flyout-reveal {
   from {
     translate: 0 var(--winui-menu-reveal-offset);

@@ -179,9 +179,14 @@ export const dialogCss = `
 /* A lone button lands in WinUI's CloseColumn with PrimaryColumn still at star
    width ahead of it and the 8px SecondSpacer between the two, so it takes half
    of what the band leaves after that gap -- the same edge the right-hand button
-   of a pair sits on. fluent-svelte reaches the same layout from a single-column
-   grid, and that technique -- including its narrowing to a button, so a spinner
-   or a wrapper element is not half-width by accident -- is taken here.
+   of a pair sits on. fluent-svelte reaches the same edge, and its technique is
+   what is taken here: half the band, pushed to the end, and narrowed by a
+   child-combinator selector on the button's own class rather than on the button
+   element, so a spinner or a wrapper is not half-width by accident. Its footer
+   is a grid-auto-flow: column grid rather than a single-column one -- with two
+   buttons it generates two equal columns -- and it takes a flat 50% where this
+   subtracts half the 8px gap.
+   https://github.com/tropicaaal/fluent-svelte/blob/ba1813ecc0797117be0e1b24be3a3c4905111ba7/src/lib/ContentDialog/ContentDialog.scss#L56-L67
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L250-L256 */
 .fui-DialogActions > .fui-Button.fui-Button:only-child {
   width: calc(50% - 4px);

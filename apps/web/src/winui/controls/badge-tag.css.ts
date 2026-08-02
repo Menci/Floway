@@ -34,13 +34,24 @@
 // single citation carries both colour schemes: the values differ by theme,
 // the roles do not.
 //
-// Windows high contrast is left to Fluent and the user agent. Fluent draws
-// the chip's outline through a pseudo element there and states Highlight and
-// HighlightText for a selected chip, and forced-colors mode overrides the
-// author colours below everywhere except on that selected chip, which opts
-// out with `forced-color-adjust: none` — and there the on-accent strokes are
-// translucent, so they composite over Highlight the way they do over the
-// accent fill.
+// Windows high contrast is left to Fluent and the user agent, and the two
+// halves of this file arrive there by different routes.
+//
+// For Tag and InteractionTag, Fluent participates: it draws the chip's outline
+// through a pseudo element under forced colours, because a chip with secondary
+// text pulls a negative margin over the real border, and it states Highlight
+// and HighlightText for a selected chip with `forced-color-adjust: none`.
+// Forced colours therefore override the author colours below everywhere except
+// on that selected chip — and there the on-accent strokes are translucent, so
+// they composite over Highlight the way they do over the accent fill.
+// https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-tags/library/src/components/Tag/useTagStyles.styles.ts#L58-L72
+// https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-tags/library/src/components/Tag/useTagStyles.styles.ts#L121-L125
+// https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-tags/library/src/components/InteractionTagPrimary/useInteractionTagPrimaryStyles.styles.ts#L57-L71
+// https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-tags/library/src/components/InteractionTagPrimary/useInteractionTagPrimaryStyles.styles.ts#L194-L198
+//
+// For Badge, @fluentui/react-badge declares no forced-colors rule at all, so
+// the mode belongs entirely to the user agent and nothing here has to stand
+// aside from a Fluent answer that does not exist.
 export const badgeTagCss = `
 /* Badge weight. The InfoBadge style sets a FontSize on its value TextBlock and
    no FontWeight, so the badge reads at the same weight as the text around it

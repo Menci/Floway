@@ -25,6 +25,7 @@
 // against, and the gallery route renders both circular appearances, so a
 // selected filled chip shows WinUI's primary text over Fluent's brand fill. We
 // accept that rather than chase Griffel's hashed atoms.
+// https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-tabs/library/src/components/Tab/useTabStyles.styles.ts#L184-L189
 //
 // Focus stays Fluent's, because PivotHeaderItem draws no per-item focus visual
 // at all: UseSystemFocusVisuals is off on the style, and the only pipe the
@@ -40,6 +41,7 @@
 // atom paints label and icon with colorNeutralForegroundDisabled, which the
 // theme already re-points at TextFillColorDisabled -- the brush TabView names
 // for both slots, selected or not.
+// https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-tabs/library/src/components/Tab/useTab.ts#L97-L99
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L16
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L21
 //
@@ -98,7 +100,9 @@ export const tabsCss = `
    the selected pipe on Highlight and ButtonText; a media query carries no
    specificity, so our rules would otherwise win inside that mode and put a
    theme color where the whole contract is system colors. Standing aside hands
-   the mode back to Fluent without us naming a system color of our own. */
+   the mode back to Fluent without us naming a system color of our own.
+   https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-tabs/library/src/components/Tab/useTabStyles.styles.ts#L359-L366
+   https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-tabs/library/src/components/Tab/useTabStyles.styles.ts#L453-L463 */
 @media not (forced-colors: active) {
   /* Fluent previews a selection by growing a neutral bar in the slot the accent
      pipe will take. Every unselected Pivot state collapses SelectedPipe

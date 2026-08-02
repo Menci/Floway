@@ -8,15 +8,32 @@
 // dictionary, and the content region takes the Secondary step of that ramp
 // inside the same stroke, with the edge the two share left unstroked.
 //
-// The header itself never repaints under the pointer: WinUI resolves the
-// header's background, foreground and border to the same brush in the normal,
-// pointer-over, pressed and expanded visual states, and its dark and light
-// dictionaries carry the same entries key for key, so every colour here is a
-// theme token and no rule below is written per scheme. The chevron is the whole
-// of the control's pointer feedback, and it reacts to the header being hovered
-// or pressed rather than to being hovered itself, which is also how
-// fluent-svelte's Expander wires it. Only the HighContrast dictionary differs,
-// and it is stated in a block of its own below.
+// In the dark and light dictionaries the header slab itself never repaints
+// under the pointer. No ExpanderHeaderBackground* key exists for any state --
+// the header Grid is fed once through TemplateBinding -- and the foreground and
+// border keys the normal, pointer-over, pressed and expanded states name all
+// resolve to the same two brushes. The two dictionaries are byte-identical
+// entry for entry, so every colour here is a theme token and no rule below is
+// written per scheme. Disabled is the exception the states above do not cover:
+// it does repaint the foreground, to TextFillColorDisabled.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L4-L51
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L103-L110
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L122-L129
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L144-L151
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L185-L192
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L166
+//
+// The chevron is the whole of the control's pointer feedback, and it reacts to
+// the header being hovered or pressed rather than to being hovered itself,
+// which is also how fluent-svelte's Expander wires it.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L16
+// https://github.com/tropicaaal/fluent-svelte/blob/ba1813ecc0797117be0e1b24be3a3c4905111ba7/src/lib/Expander/Expander.scss#L89-L95
+//
+// HighContrast breaks both halves and is stated in a block of its own below:
+// there the header's foreground and border do swap to the Highlight colour
+// under the pointer, and the header's stroke is ButtonText where the content
+// region's is WindowText.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L52-L74
 //
 // Accordion and AccordionItem declare no CSS in Fluent — their style hooks only
 // stamp a class name — so nothing below targets them.
@@ -154,7 +171,7 @@ export const accordionCss = `
 
 /* Pointer feedback lives entirely on the chevron, and it answers the whole
    header row rather than the chevron alone -- the same wiring fluent-svelte's
-   Expander uses. A header that cannot be actuated is excluded, because WinUI's
+   Expander uses (linked in the module header above). A header that cannot be actuated is excluded, because WinUI's
    disabled visual state puts the chevron's rest brush back. Fluent reaches that
    state two ways: a disabled AccordionItem, which it renders with the native
    attribute, and the sole open item of a non-collapsible Accordion, which it
@@ -244,7 +261,11 @@ export const accordionCss = `
    share. Fluent insets the panel from the item instead, which a joined surface
    cannot keep. The bottom-only rounding is the shape fluent-svelte's Expander
    arrives at as well; WinUI states it through the control template rather than
-   the theme dictionary, so only the radius value is taken from XAML.
+   the theme dictionary, so only the radius value is taken from XAML. Note that
+   fluent-svelte rounds the content region unconditionally and squares only the
+   header's bottom on expansion; the panel rule here is unconditional for the
+   same reason.
+   https://github.com/tropicaaal/fluent-svelte/blob/ba1813ecc0797117be0e1b24be3a3c4905111ba7/src/lib/Expander/Expander.scss#L10-L22
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L25
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L26
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L86
