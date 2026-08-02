@@ -118,14 +118,11 @@ export function BackupFilePicker({ accepting, drop, glyph, onClick, prompt }: {
   </button>;
 }
 
-// Filled, the region reports what it is holding and keeps accepting a
-// replacement, with the command that asks for one at its trailing edge. The
-// name over what the file carries is the title-over-description pair
-// ../ui/layout.ts states the gap for.
-export function BackupFileSummary({ accepting, action, contents, drop, name }: {
+// Filled, the region reports which file it is holding and keeps accepting a
+// replacement, with the command that asks for one at its trailing edge.
+export function BackupFileSummary({ accepting, action, drop, name }: {
   accepting: boolean;
   action: ReactNode;
-  contents: string;
   drop: FileDropHandlers;
   name: string;
 }) {
@@ -134,10 +131,34 @@ export function BackupFileSummary({ accepting, action, contents, drop, name }: {
     className={mergeClasses(styles.region, accepting && styles.accepting, 'flex items-center gap-3 flex-wrap')}
     {...drop}
   >
-    <div className={mergeClasses(TIGHT_STACK_CLASS, 'min-w-0 flex-1')}>
-      <Text>{name}</Text>
-      <Text size={200} className="text-fui-fg2">{contents}</Text>
-    </div>
+    <Text className="min-w-0 flex-1">{name}</Text>
     {action}
   </div>;
+}
+
+// What the file carries, one readout per entity.
+//
+// The pair is the one ../usage/summary-metrics.tsx already reads a measured
+// value out as -- the caption at the secondary fill naming the quantity, the
+// value a step up the ramp under it, four apart. That file marks its readouts
+// as ListViewItems because each of them is a button that selects what the chart
+// plots; these are not selectable, so they take the type and none of the
+// chrome.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBlock_themeresources.xaml#L19-L22
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBlock_themeresources.xaml#L36-L39
+//
+// Every entity is listed, zeros included: a readout that disappears when it
+// reaches zero cannot answer "does this backup carry any performance data",
+// which is the question the operator is reading these to settle. The column
+// counts are ours, chosen so the row divides evenly at each width rather than
+// leaving one readout standing alone.
+export function BackupFileStats({ items }: {
+  items: { key: string; label: string; value: string }[];
+}) {
+  return <dl className="m-0 grid gap-2.5 grid-cols-7 max-[900px]:grid-cols-4 max-[560px]:grid-cols-2">
+    {items.map(item => <div className={mergeClasses(TIGHT_STACK_CLASS, 'min-w-0')} key={item.key}>
+      <dt><Text size={200} weight="semibold" className="text-fui-fg2">{item.label}</Text></dt>
+      <dd className="m-0"><Text size={500} weight="semibold">{item.value}</Text></dd>
+    </div>)}
+  </dl>;
 }

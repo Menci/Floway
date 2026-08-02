@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { requireDashboardAdmin } from './route-guards';
 import { api, callApi } from '../api/client';
 import { BACKUP_FILE_VERSION, parseBackupFile, type BackupFile, type BackupFileData } from '../components/backup-restore/backup-file';
-import { BackupFilePicker, BackupFileSummary } from '../components/backup-restore/backup-file-picker';
+import { BackupFilePicker, BackupFileStats, BackupFileSummary } from '../components/backup-restore/backup-file-picker';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
@@ -14,7 +14,7 @@ import { Panel } from '../components/ui/panel';
 import { SectionHeader } from '../components/ui/section-header';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { fluentComponents } from '../fluent';
-import { formatBytes } from '../lib/format-number';
+import { formatBytes, formatCount } from '../lib/format-number';
 import { useLocale } from '../lib/use-locale';
 
 const {
@@ -47,11 +47,10 @@ const countRecords = (data: BackupFileData): Record<string, number> => {
   return counts;
 };
 
-// What a file holds, in one sentence. It reads the counts in the chosen file as
-// the preview and the counts the server reports back as the summary, so the
-// operator is told what happened in the vocabulary they were shown beforehand.
-// Empty entities are dropped: a backup rarely carries all seven, and naming the
-// ones it did not carry buries the ones it did.
+// What the server says it took, in the same vocabulary the readouts above the
+// Import command name. Empty entities are dropped here where the readouts keep
+// them: a report of what happened has nothing to say about a table nobody
+// touched, while a preview has to be able to answer that the file carries none.
 const recordSummary = (
   counts: Record<string, number>,
   t: ReturnType<typeof useTranslation>['t'],
@@ -295,7 +294,6 @@ export default function DashboardAdminBackupRestore() {
               action={<Button disabled={importing} onClick={handleChangeFile}>
                 {t('dashboard.backupRestore.import.change')}
               </Button>}
-              contents={recordSummary(countRecords(importParsedData.data), t)}
               drop={dropHandlers}
               name={t('dashboard.backupRestore.import.fileSelected', {
                 name: importFile.name,
@@ -311,6 +309,12 @@ export default function DashboardAdminBackupRestore() {
                 ? t('dashboard.backupRestore.import.dropzoneActive')
                 : t('dashboard.backupRestore.import.dropzone')}
             />}
+
+        {importParsedData && <BackupFileStats items={PREVIEW_LABEL_KEYS.map(key => ({
+          key,
+          label: t(`dashboard.backupRestore.import.previewLabel.${key}`),
+          value: formatCount(countRecords(importParsedData.data)[key], locale),
+        }))} />}
 
         {/* Whether to clear first is one yes-or-no question, so it is one check
             box: the same deferred-commit parameter the export section carries,
