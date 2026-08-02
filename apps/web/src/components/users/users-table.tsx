@@ -15,7 +15,6 @@ const {
   Table,
   TableBody,
   TableCell,
-  TableCellLayout,
   TableHeader,
   TableHeaderCell,
   TableRow,
@@ -63,9 +62,10 @@ export function UsersTable({
             const protectedUser = user.id === 1 || user.id === actorId;
             return (
               <TableRow key={user.id}>
-                <TableCell>
-                  <TableCellLayout truncate>{user.username}</TableCellLayout>
-                </TableCell>
+                {/* The one name column that wraps instead of trimming: a
+                    username has no second line to reveal it and no tooltip, so
+                    the row grows to hold it. */}
+                <TableCell>{user.username}</TableCell>
                 <TableCell>
                   <StatusBadge color={user.isAdmin ? 'brand' : 'informative'}>
                     {t(`dashboard.users.role.${user.isAdmin ? 'admin' : 'operator'}`)}

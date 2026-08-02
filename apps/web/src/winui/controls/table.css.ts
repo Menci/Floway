@@ -101,6 +101,21 @@ export const tableCss = `
    because a ListViewItem has nothing else to mark selection with, while these
    rows carry a selection control in their first cell. */
 
+/* WinUI's text styles all wrap, and XAML's TextWrapping="Wrap" breaks inside a
+   word when the word alone overruns the line -- WrapWholeWords is the opt-in
+   that does not. A cell here holds a name its operator chose and ids a server
+   returned, so the word that overruns is the common case, and a table track
+   keeps an unbroken word as its automatic minimum size: without this the column
+   widens past the table instead of wrapping in it. A cell that trims rather
+   than wraps declares \`white-space: nowrap\`, which leaves no wrap opportunity
+   for this to take.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBlock_themeresources.xaml#L15
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/text/RichTextServices/TextFormatter/LsTextLine.cpp#L1093-L1098
+   https://drafts.csswg.org/css-text-4/#overflow-wrap-property */
+.fui-TableCell.fui-TableCell {
+  overflow-wrap: anywhere;
+}
+
 /* WinUI holds one foreground across normal, pointer-over and pressed.
    \`aria-sort\` is written exactly when the cell is sortable, which keeps this
    off the header cells that do not respond to a click.
