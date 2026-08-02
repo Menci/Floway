@@ -142,21 +142,30 @@ export const progressCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressRing/ProgressRing.xaml#L12-L13
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressRing/ProgressRing_themeresources.xaml#L17
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressRing/ProgressRing_themeresources.xaml#L12-L14
-   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-spinner/library/src/components/Spinner/useSpinnerStyles.styles.ts */
+   https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-spinner/library/src/components/Spinner/useSpinnerStyles.styles.ts#L44-L56 */
 .fui-Spinner__spinner.fui-Spinner__spinner {
   --colorBrandStroke1: var(--winui-accent-fill-default);
   --colorBrandStroke2Contrast: var(--winui-control-fill-transparent);
   --fui-Spinner--strokeWidth: 25%;
 }
 
-/* Fluent answers the motion preference by slowing the ring to 1.8s and freezing
-   the tail into a static conic gradient. WinUI answers it by doing nothing:
-   ProgressRing is an AnimatedVisualPlayer, so it reaches neither
-   UISettings.AnimationsEnabled nor the visual-state gate that seeks a storyboard
-   to its end frame, and a Windows ring keeps its full animation with animations
-   off. Each declaration below names the Fluent one it undoes.
+/* Fluent answers the motion preference by slowing the ring to 1.8s, stopping
+   the tail dead at zero iterations, swapping its conic gradient for a static
+   one and dropping the two pseudo-elements that draw the rounded ends. WinUI
+   answers it by doing nothing: ProgressRing is an AnimatedVisualPlayer, so it
+   reaches neither UISettings.AnimationsEnabled nor the visual-state gate that
+   seeks a storyboard to its end frame, and a Windows ring keeps its full
+   animation with animations off.
+
+   So each declaration below restores the value Fluent itself states outside its
+   reduce block -- 1.5s is Fluent's own base duration, not a number of ours --
+   and the block is gated on screen exactly as Fluent's is, so print keeps
+   whatever Fluent leaves it. This is the third shape ../index.ts describes for
+   answering the preference: not a transition suppressed and not an animation
+   held at rest, but one library's reduce answer undone in full.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressRing/ProgressRing.xaml#L31-L32
-   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-spinner/library/src/components/Spinner/useSpinnerStyles.styles.ts */
+   https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-spinner/library/src/components/Spinner/useSpinnerStyles.styles.ts#L58-L67
+   https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-spinner/library/src/components/Spinner/useSpinnerStyles.styles.ts#L92-L120 */
 @media screen and (prefers-reduced-motion: reduce) {
   .fui-Spinner__spinner.fui-Spinner__spinner {
     animation-duration: 1.5s;
