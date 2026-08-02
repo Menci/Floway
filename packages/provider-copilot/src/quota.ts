@@ -159,9 +159,9 @@ export const parseCopilotQuotaHeaders = (headers: Headers, now: Date): CopilotQu
 // `limited_user_quotas` (remaining) + `monthly_quotas` (entitlement) and leaves
 // `quota_snapshots` empty or absent — we do not read those, so such a body
 // projects to "nothing observed" and the header path is what fills the slot.
-// Captured legacy and current bodies for the same free SKU:
+// Captured current and legacy bodies for the same free SKU, in that order:
 // https://github.com/TopiCsarno/yapcap/blob/152ea67c3abd44776268627d58533003099da951/fixtures/copilot/copilot_user_response.json
-// https://github.com/bugwz/AIMeter/blob/main/docs/providers/copliot/demo.free.json
+// https://github.com/bugwz/AIMeter/blob/b93c15558863c3eb3fe1a0e71197c233343c9400/docs/providers/copliot/demo.free.json
 export interface CopilotUsageResponse {
   quota_reset_date_utc?: string;
   quota_snapshots?: Record<string, {
