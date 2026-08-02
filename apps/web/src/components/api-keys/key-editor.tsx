@@ -21,7 +21,7 @@ import { useOutcomeToasts } from '../ui/outcome-toast';
 import { UpstreamAccessControl } from '../upstreams/upstream-access-control';
 import { refineUpstreamAccess } from '../upstreams/upstream-access-validation';
 
-const { Button, DialogActions, DialogTitle, Field, MessageBar, MessageBarBody } = fluentComponents;
+const { Button, DialogActions, DialogTitle, Field } = fluentComponents;
 
 interface KeyFormValues { name: string; keySource: KeySource; customKey: string; upstreamOverride: boolean; upstreamIds: string[]; dumpRetention: RetentionValue; responsesRetention: Exclude<RetentionValue, null> }
 
@@ -256,7 +256,7 @@ export function KeyDialog(props: KeyDialogProps) {
             {/* Outside the row: a consequence of saving that the operator has
                 not opened the row to read is one they will not read at all. */}
             {retentionWarning !== null && (
-              <MessageBar intent="warning"><MessageBarBody>{retentionWarning}</MessageBarBody></MessageBar>
+              <OutcomeMessageBar intent="warning">{retentionWarning}</OutcomeMessageBar>
             )}
           </>
         )}
@@ -282,7 +282,7 @@ export function KeyDialog(props: KeyDialogProps) {
               onChange={field.onChange}
             />
             {responsesRetentionWarning !== null && (
-              <MessageBar intent="warning"><MessageBarBody>{responsesRetentionWarning}</MessageBarBody></MessageBar>
+              <OutcomeMessageBar intent="warning">{responsesRetentionWarning}</OutcomeMessageBar>
             )}
           </>
         )}
