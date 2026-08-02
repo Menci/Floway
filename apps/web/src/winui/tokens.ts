@@ -147,9 +147,7 @@ export const winuiTokenCss = `
   }
 }
 
-/* Subtle fills — the hover and pressed wash on otherwise chromeless surfaces
-   such as list rows and transparent buttons.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L229-L231 */
+/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L229-L231 */
 :root {
   --winui-subtle-fill-transparent: #ffffff00;
   --winui-subtle-fill-secondary: #00000009;
@@ -165,9 +163,7 @@ export const winuiTokenCss = `
   }
 }
 
-/* Card and layer fills — translucent surfaces that sit on the solid background
-   ramp rather than replacing it.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L250-L265 */
+/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L250-L265 */
 :root {
   --winui-card-background-fill-default: #ffffffb3;
   --winui-card-background-fill-secondary: #f6f6f680;
@@ -188,11 +184,8 @@ export const winuiTokenCss = `
 }
 
 /* The in-app acrylic material, taken as the flat FallbackColor the brush
-   declares for itself. WinUI blends a luminosity colour into the blurred
-   backdrop, blends the tint over that, and composites a noise texture through
-   the result; CSS has no counterpart to that graph, so a flyout XAML fills with
-   AcrylicInAppFillColorDefault takes the flat fill and reads opaque where WinUI
-   lets the page through.
+   declares: CSS has no counterpart to WinUI's luminosity/tint/noise blend, so a
+   surface filled with it reads opaque where WinUI lets the page through.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Materials/Acrylic/AcrylicBrush.cpp#L427-L470
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Materials/Acrylic/AcrylicBrush_themeresources.xaml#L96 */
 :root {
@@ -206,27 +199,17 @@ export const winuiTokenCss = `
   }
 }
 
-/* The drop shadow under a tooltip, the one overlay whose depth WinUI states in
-   code rather than in a dictionary: ApplyElevationEffect(presenter, 0, 16) under
-   an IsDropShadowMode() that returns true unconditionally in WinUI 3.
+/* The tooltip drop shadow, the one overlay whose depth WinUI states in code
+   rather than in a dictionary: ApplyElevationEffect(presenter, 0, 16), which
+   the drop shadow recipe turns into blur 8, Y offset 4 and opacity 0.14 light
+   against a flat 0.26 dark — the colors below. ./controls/tooltip.css.ts
+   writes blur 9 instead: the compositor is handed the blur plus one, and that
+   pixel pays for a caster inset on every side, which CSS cannot express.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/ToolTip_Partial.cpp#L634-L653
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/graphics/ThemeShadow.cpp#L221-L228
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/ElevationHelper.cpp#L19-L21
-
-   The recipe turns that elevation into the shadow: Elevation is min(64, 16/2) =
-   8, inside the 2..16 band where the ambient term is zero, leaving one
-   directional shadow of blur 8, Y offset 4 and opacity min(8/100 + 0.06, 0.14)
-   in light against a flat 0.26 in dark, truncated to 0x23 and 0x42 over black.
-   The compositor is handed that blur plus one, and the extra pixel pays for a
-   caster inset a pixel on every side, which CSS has no counterpart for; the rule
-   in ./controls/tooltip.css.ts writes that 9 rather than the faithful 8.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/graphics/inc/DropShadowRecipe.h#L108-L162
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/comptree/HWCompNodeWinRT.cpp#L1608-L1675
-
-   One assumption rides on it: that CompositionDropShadow's BlurRadius and the
-   CSS blur radius describe the same Gaussian. Nothing in that corpus states the
-   equivalence, so the colour and the offset are transcribed and the blur is that
-   assumption. */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/comptree/HWCompNodeWinRT.cpp#L1608-L1675 */
 :root {
   --winui-tooltip-shadow-color: #00000023;
 }
@@ -237,8 +220,7 @@ export const winuiTokenCss = `
   }
 }
 
-/* Solid backgrounds — the opaque ramp everything translucent is composited on.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L272-L279 */
+/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L272-L279 */
 :root {
   --winui-solid-background-fill-base: #f3f3f3;
   --winui-solid-background-fill-secondary: #eeeeee;
@@ -431,9 +413,8 @@ export const winuiTokenCss = `
   }
 }
 
-/* Focus strokes. WinUI draws focus as two concentric rings, an outer one in the
-   text color and an inner one in the surface color, so the visual survives on
-   any fill including accent.
+/* Focus strokes — an outer ring in the text color and an inner one in the
+   surface color, so the ring stays visible on any fill including accent.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259 */
 :root {
   --winui-focus-stroke-outer: #000000e4;
@@ -448,10 +429,9 @@ export const winuiTokenCss = `
   }
 }
 
-/* Disabled text inside a text control. TextControlForegroundDisabled resolves
-   to TemporaryTextFillColorDisabled, which is a near-neutral off by one step
-   from black and white rather than TextFillColorDisabled's pure channel, so a
-   disabled input reads slightly differently from other disabled text.
+/* TextControlForegroundDisabled resolves to TemporaryTextFillColorDisabled, a
+   near-neutral off by one channel step rather than TextFillColorDisabled's pure
+   black or white, so a disabled input reads differently from other disabled text.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L129
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L141 */
 :root {
@@ -465,11 +445,8 @@ export const winuiTokenCss = `
   }
 }
 
-/* Status fills. The two dictionaries carry genuinely different hues rather than
-   one hue at two opacities, because each is tuned for contrast against its own
-   background. Attention is the exception: it is a step of the accent ramp, and
-   not the same step the accent fills take — the unmodified accent in light,
-   Light2 in dark.
+/* Status fills. Attention is a step of the accent ramp, and not the step the
+   accent fills take — the unmodified accent in light, Light2 in dark.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L280-L291
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L369 */
 :root {
@@ -498,22 +475,16 @@ export const winuiTokenCss = `
   }
 }
 
-/* Composed strokes. WinUI outlines a control with a LinearGradientBrush mapped
-   in absolute units -- a 3px span -- so one edge reads heavier than the other
-   three regardless of the control's height, with a 2px band fading from the
-   heavy edge into the flat stroke. Each is transcribed as a border-color
-   shorthand whose three terms are the top, the sides and the bottom.
+/* Composed strokes. WinUI outlines a control with a LinearGradientBrush over an
+   absolute 3px span, transcribed here as a border-color shorthand whose terms
+   are the top, the sides and the bottom. A border-box linear-gradient behind a
+   transparent border would reproduce the brush exactly, fade band included; it
+   would also claim the border-box background layer of every control taking the
+   stroke and stop the stroke being a token the dark block can re-point.
 
-   A border-box linear-gradient behind a transparent border would reproduce the
-   brush exactly, fade band included. It is not used: it would claim the
-   border-box background layer of every control that takes the stroke, and it
-   would stop the stroke being a colour token the dark block below can re-point.
-   The fade band is what the three-term form costs.
-
-   CircleElevationBorderBrush, the third brush of the family, is not emitted: the
-   one part WinUI strokes with it is the toggle switch's on knob, whose Border
-   binds the brush without ever stating a BorderThickness, so shipped WinUI
-   paints no such outline.
+   CircleElevationBorderBrush, the third brush of the family, is not emitted:
+   its only user, the toggle switch's on knob, binds it without ever stating a
+   BorderThickness, so shipped WinUI paints no such outline.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L159
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L510 */
 
