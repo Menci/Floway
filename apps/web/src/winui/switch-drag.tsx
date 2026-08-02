@@ -93,15 +93,11 @@ export const withWinuiDrag = (components: FluentComponents): FluentComponents =>
       const element = event.currentTarget;
       const input = element.querySelector<HTMLInputElement>('.fui-Switch__input');
       const indicator = element.querySelector<HTMLElement>('.fui-Switch__indicator');
-      // A read-only switch refuses the click, so it has to refuse the drag as
-      // well -- the drag commits by issuing that same click.
       if (!input || !indicator || input.disabled || input.getAttribute('aria-disabled') === 'true') return;
       if (element.getAttribute('aria-readonly') === 'true') return;
 
-      // XAML measures the range as SwitchKnobBounds.ActualWidth minus
-      // SwitchKnob.ActualWidth, and the knob's cell is half the track at every
-      // size Fluent offers, so half the indicator is the same number without a
-      // second element to measure.
+      // XAML's range is knob-bounds width minus knob width; Fluent's knob cell is
+      // half the track at every size, so half the indicator is the same number.
       // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/src/dxaml/xcp/dxaml/lib/ToggleSwitch_Partial.cpp#L936-L952
       const travel = indicator.offsetWidth / 2;
       const gesture: Gesture = {
@@ -118,9 +114,8 @@ export const withWinuiDrag = (components: FluentComponents): FluentComponents =>
       };
       gestureRef.current = gesture;
       element.setPointerCapture(event.pointerId);
-      // Entering Dragging takes no movement at all: Thumb raises DragStarted
-      // from OnPointerPressed, and ToggleSwitch pins the knob's current
-      // translate as a local value in the same breath.
+      // Dragging is entered with no movement at all: Thumb raises DragStarted from
+      // OnPointerPressed.
       // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/src/dxaml/xcp/dxaml/lib/ToggleSwitch_Partial.cpp#L806-L816
       element.setAttribute(DRAGGING, '');
       paint(gesture);
@@ -130,8 +125,7 @@ export const withWinuiDrag = (components: FluentComponents): FluentComponents =>
       const gesture = gestureRef.current;
       if (!gesture || event.pointerId !== gesture.pointerId) return;
       const delta = (event.clientX - gesture.lastClientX) * gesture.sign;
-      // Vertical movement is deliberately ignored rather than treated as a drag,
-      // which is what leaves a vertical swipe to the scroller.
+      // Ignoring vertical movement is what leaves a vertical swipe to the scroller.
       if (delta === 0) return;
       gesture.lastClientX = event.clientX;
       gesture.excursion = Math.max(gesture.excursion, Math.abs(event.clientX - gesture.originClientX));
@@ -143,14 +137,11 @@ export const withWinuiDrag = (components: FluentComponents): FluentComponents =>
     const onPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
       const gesture = gestureRef.current;
       if (!gesture || event.pointerId !== gesture.pointerId) return;
-      // The midpoint of travel decides, inclusively in both directions, with no
-      // velocity or direction term anywhere in it.
+      // Midpoint decides, inclusive both ways, with no velocity or direction term.
       // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/src/dxaml/xcp/dxaml/lib/ToggleSwitch_Partial.cpp#L592-L605
       const midpoint = gesture.travel / 2;
       const crossed = gesture.input.checked ? gesture.offset <= midpoint : gesture.offset >= midpoint;
       const committed = gesture.moved && crossed;
-      // A gesture that stayed inside the slop is also a tap, and taps commit
-      // even when the knob never reached the midpoint.
       end(gesture, committed || gesture.excursion <= TAP_SLOP_PX, committed);
     };
 
@@ -161,13 +152,11 @@ export const withWinuiDrag = (components: FluentComponents): FluentComponents =>
     };
 
     const onClickCapture = (event: React.MouseEvent<HTMLDivElement>) => {
-      // Only the click the pointer sequence itself produced. Space on the
-      // checkbox synthesises one too, as does the toggle issued above, and both
-      // carry a zero detail where a pointer's click counts from one.
+      // Synthesised clicks -- keyboard space, and the toggle issued above -- carry a
+      // zero detail where a pointer's click counts from one.
       if (!suppressClickRef.current || event.detail === 0) return;
       suppressClickRef.current = false;
-      // Both, because stopping propagation alone still leaves the checkbox its
-      // default action.
+      // stopPropagation alone would still leave the checkbox its default action.
       event.preventDefault();
       event.stopPropagation();
     };
