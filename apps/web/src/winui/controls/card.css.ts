@@ -17,7 +17,7 @@
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L85-L87
 import { list, nested, pressedRoots } from './selectors';
 
-const selectedCard = `.fui-Card.fui-Card:has(> .fui-Card__checkbox:checked:enabled)`;
+const selectedCard = '.fui-Card.fui-Card:has(> .fui-Card__checkbox:checked:enabled)';
 
 const selectedCardPressed = pressedRoots(selectedCard, '> .fui-Card__checkbox');
 

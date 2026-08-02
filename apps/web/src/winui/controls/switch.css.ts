@@ -56,16 +56,16 @@ const pressedRoots = [
 ];
 
 const enabledKnob = `.fui-Switch__input:enabled:not([aria-disabled='true'])`
-  + ` ~ .fui-Switch__indicator.fui-Switch__indicator > *`;
+  + ' ~ .fui-Switch__indicator.fui-Switch__indicator > *';
 
 const enabledCheckedKnob = `.fui-Switch__input:enabled:checked:not([aria-disabled='true'])`
-  + ` ~ .fui-Switch__indicator.fui-Switch__indicator > *`;
+  + ' ~ .fui-Switch__indicator.fui-Switch__indicator > *';
 
 const offTrack = `.fui-Switch__input:enabled:not(:checked):not([aria-disabled='true'])`
-  + ` ~ .fui-Switch__indicator.fui-Switch__indicator::before`;
+  + ' ~ .fui-Switch__indicator.fui-Switch__indicator::before';
 
 const onTrack = `.fui-Switch__input:enabled:checked:not([aria-disabled='true'])`
-  + ` ~ .fui-Switch__indicator.fui-Switch__indicator::after`;
+  + ' ~ .fui-Switch__indicator.fui-Switch__indicator::after';
 
 export const switchCss = `
 /* ManipulationMode="System,TranslateX" claims the horizontal axis for the

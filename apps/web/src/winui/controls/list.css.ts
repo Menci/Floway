@@ -7,7 +7,7 @@ import { nested, pressedRoots, under } from './selectors';
 const checkmarkPressed = pressedRoots('.fui-ListItem__checkmark.fui-Checkbox', '.fui-Checkbox__input');
 
 const uncheckedBox = `.fui-Checkbox__input:enabled:not(:checked)${checkboxNotMixed}`
-  + ` ~ .fui-Checkbox__indicator.fui-Checkbox__indicator`;
+  + ' ~ .fui-Checkbox__indicator.fui-Checkbox__indicator';
 
 export const listCss = `
 /* Also the containing block for the selection indicator and the focus ring's

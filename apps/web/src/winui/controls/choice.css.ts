@@ -15,17 +15,13 @@
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L92-L179
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L62-L119
 
-// The tri-state check box is named by the data-winui-checked stamp
-// ../appearance.ts applies, never by :indeterminate. The browser clears that
-// property when the user activates the box, and Fluent re-asserts it only from
-// an effect keyed on the mixed flag, which does not re-run while the box stays
-// mixed -- so the property is gone for good on a box held at mixed while Fluent
-// keeps painting it. Both halves are stated here and consumed by every rule
-// that distinguishes the state, ./list.css.ts included, so no sheet can reach
-// for the property again.
-// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-checkbox/library/src/components/Checkbox/useCheckbox.tsx#L163-L169
 import { nested, pressedRoots, under } from './selectors';
 
+// The tri-state check box is named by the data-winui-checked stamp
+// ../appearance.ts applies, never by :indeterminate -- that module carries why
+// the property cannot be read. Both halves of the test are stated here and
+// consumed by every rule that distinguishes the state, ./list.css.ts included,
+// so no sheet reaches for the property again.
 export const checkboxMixed = "[data-winui-checked='mixed']";
 export const checkboxNotMixed = `:not(${checkboxMixed})`;
 
@@ -33,18 +29,18 @@ const checkboxPressed = pressedRoots('.fui-Checkbox', '.fui-Checkbox__input');
 const radioPressed = pressedRoots('.fui-Radio', '.fui-Radio__input');
 
 const uncheckedBox = `.fui-Checkbox__input:enabled:not(:checked)${checkboxNotMixed}`
-  + ` ~ .fui-Checkbox__indicator.fui-Checkbox__indicator`;
+  + ' ~ .fui-Checkbox__indicator.fui-Checkbox__indicator';
 
 const selectedBoxes = [
-  `.fui-Checkbox__input:enabled:checked ~ .fui-Checkbox__indicator.fui-Checkbox__indicator`,
+  '.fui-Checkbox__input:enabled:checked ~ .fui-Checkbox__indicator.fui-Checkbox__indicator',
   `.fui-Checkbox__input:enabled${checkboxMixed} ~ .fui-Checkbox__indicator.fui-Checkbox__indicator`,
 ];
 
-const uncheckedEllipse = `.fui-Radio__input:enabled:not(:checked)`
-  + ` ~ .fui-Radio__indicator.fui-Radio__indicator`;
+const uncheckedEllipse = '.fui-Radio__input:enabled:not(:checked)'
+  + ' ~ .fui-Radio__indicator.fui-Radio__indicator';
 
-const selectedEllipse = `.fui-Radio__input:enabled:checked`
-  + ` ~ .fui-Radio__indicator.fui-Radio__indicator`;
+const selectedEllipse = '.fui-Radio__input:enabled:checked'
+  + ' ~ .fui-Radio__indicator.fui-Radio__indicator';
 
 const selectedDot = `${selectedEllipse}::after`;
 
