@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ApiKey } from '../../../src/api/types';
-import { refreshRequestKeys } from '../../../src/components/requests/request-key-refresh';
+import { refreshRequestKeys } from '../../../src/components/requests/key-refresh';
 
 const key = (id: string): ApiKey => ({
   id,
