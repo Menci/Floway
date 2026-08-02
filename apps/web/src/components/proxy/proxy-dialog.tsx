@@ -14,7 +14,7 @@ import { useOutcomeToasts } from '../ui/outcome-toast';
 import type { ProxyConfig } from '@floway-dev/proxy/proxy-config';
 import { formatProxyUri } from '@floway-dev/proxy/url';
 
-const { Button, DialogActions, DialogTitle, MessageBar, MessageBarBody, Text } = fluentComponents;
+const { Button, DialogActions, DialogTitle, MessageBar, MessageBarBody, MessageBarTitle } = fluentComponents;
 
 const proxyDraftSignature = (name: string, config: ProxyConfig, urlDraft: string | null, dialTimeout: string) =>
   JSON.stringify([name, config, urlDraft, dialTimeout]);
@@ -172,7 +172,7 @@ export function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
       urlError={urlError}
       urlInput={urlInput}
     />
-    {testResult && <MessageBar intent={testResult.ok ? 'success' : 'error'}><MessageBarBody><div className="grid gap-1"><Text size={200} weight="semibold">{testResult.ok ? t('dashboard.proxy.test.ok') : t('dashboard.proxy.test.failed', { error: testResult.error })}</Text>{testResult.ok && <Text size={200} className="text-fui-fg3">{t('dashboard.proxy.test.egressIp', { ip: testResult.egress_ip })}</Text>}</div></MessageBarBody></MessageBar>}
+    {testResult && <MessageBar intent={testResult.ok ? 'success' : 'error'}><MessageBarBody><MessageBarTitle>{testResult.ok ? t('dashboard.proxy.test.ok') : t('dashboard.proxy.test.failed', { error: testResult.error })}</MessageBarTitle>{testResult.ok && t('dashboard.proxy.test.egressIp', { ip: testResult.egress_ip })}</MessageBarBody></MessageBar>}
     {saveError && <OutcomeMessageBar onDismiss={() => setSaveError(null)}>{saveError}</OutcomeMessageBar>}
   </DialogShell>;
 }
