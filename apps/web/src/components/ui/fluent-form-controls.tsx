@@ -19,55 +19,41 @@ const {
   useMergedRefs,
 } = fluentComponents;
 
-// Read-only, as distinct from disabled. A disabled control says the setting is
-// not available; a read-only one says the value is, and this operator is not
-// the one who sets it -- an upstream whose catalog the provider owns is the
-// case throughout. Fluent has it for a text field, where it reads exactly
-// right: the field keeps its resting look, takes focus, and refuses the edit.
-// Nothing else it ships has it, and the two that are inputs cannot: HTML
-// ignores `readonly` on a checkbox outright.
-//
-// So it is built the same way for each: the control stays enabled and keeps
-// its own appearance, `aria-readonly` states the fact, and the change is
-// refused at the source. The list of a read-only combo box still opens, which
-// is the same bargain a read-only text field makes by still taking a caret.
+// Read-only, as distinct from disabled: a disabled control says the setting is
+// not available, a read-only one says the value is but this operator does not
+// set it. Fluent has it only for a text field, and HTML ignores `readonly` on a
+// checkbox outright, so it is built the same way for each here -- the control
+// stays enabled and keeps its own appearance, `aria-readonly` states the fact,
+// and the change is refused at the source.
 interface ReadOnlyProp {
   readOnly?: boolean;
 }
 
-// Fluent sizes these controls with a minimum width, and the native input they
-// wrap contributes its own `min-width: auto`. That intrinsic floor propagates
-// up through every auto-sized grid track above the control, so a field in a
-// fluid column can push its whole layout wider than the container. Zeroing both
-// the wrapper and the native input lets the column decide.
+// Fluent's minimum width and the wrapped input's own `min-width: auto` form an
+// intrinsic floor that propagates up through every auto-sized grid track above
+// the control, so a field in a fluid column can push its whole layout wider than
+// the container. Zeroing both lets the column decide.
 const MIN_WIDTH_CLASS = '!min-w-[0px] [&_input]:!min-w-[0px]';
 
-// A select is the one control that reads shorter than it is useful. Its width
-// is the width of whatever it currently shows, so a row whose answer is "Off"
-// or "30 days" ends up with a control barely wider than a button, and a column
-// of such rows has nothing to line up on. PowerToys answers this by declaring
-// one action-slot width for its whole settings surface -- 240 in source, and
-// the rows measure around 478 on screen -- and applying it per control; WinUI
-// itself states only a 64px floor that keeps the box from collapsing, and the
-// Community Toolkit's SettingsCard pushes an implicit 120 into its content
-// scope under the comment "so they neatly align".
+// A select is only as wide as the value it currently shows, so a column of them
+// has nothing to line up on. Prior art: PowerToys declares one 240 action-slot
+// width for its whole settings surface, WinUI states only a 64px collapse floor,
+// and the Community Toolkit's SettingsCard pushes an implicit 120 into its
+// content scope.
 // https://github.com/microsoft/PowerToys/blob/d2c53bf3861ed2688a1c30aafd66ea0fc0186399/src/settings-ui/Settings.UI/SettingsXAML/App.xaml#L68
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L321-L323
 // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L146-L170
 //
-// Here the floor is off by default and one surface turns it on, so the
-// variable rather than a second class is what carries it: the declaration
-// stays in one place and the caller sets a value instead of racing the
-// `!important` this one needs to clear Fluent's own 250px. ./settings-card.tsx
-// is the only place that raises it, and states the value it raises it to and
-// whose it is.
+// Here the floor is off by default and carried by a variable rather than a
+// second class, so a caller sets a value instead of racing the `!important` this
+// one needs to clear Fluent's own 250px. ./settings-card.tsx is the only place
+// that raises it.
 const SELECT_MIN_WIDTH_CLASS = '!min-w-[var(--floway-select-min-width,0px)] [&_input]:!min-w-[0px]';
 
-// Fluent lets the popup keep its natural height and flips it to whichever
-// side has room for that height, so a long list ends up beside the field
-// rather than under it. Restricting the fallbacks to the opposite edge keeps
-// the list attached to its control, and `autoSize` then trims it to the space
-// that edge actually has instead of moving it.
+// Fluent flips the popup to whichever side has room for its natural height, so
+// a long list ends up beside the field rather than under it. Restricting the
+// fallbacks to the opposite edge keeps the list attached, and `autoSize` trims
+// it to the space that edge has instead of moving it.
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-positioning/library/src/types.ts#L244-L264
 export const LISTBOX_POSITIONING = {
   position: 'below',
@@ -77,13 +63,10 @@ export const LISTBOX_POSITIONING = {
   overflowBoundaryPadding: 8,
 } satisfies NonNullable<ComponentProps<typeof FluentCombobox>['positioning']>;
 
-// The chevron is drawn at 12px, and Fluent's default is the 20px artwork scaled
-// down to fit. Its stroke is one unit in a twenty-unit box, so at 12px it is
-// six tenths of a pixel of ink and no pixel of the glyph ever reaches full
-// strength -- measured, the darkest pixel came out 145 where a solid glyph on
-// that fill reaches 97. WinUI draws the same chevron from Segoe Fluent Icons at
-// a size the artwork was made for, which is why its arrow reads solid. The 12px
-// cut of the same icon is that: one unit of stroke in a twelve-unit box.
+// The 12px cut rather than Fluent's default 20px artwork scaled down: that
+// stroke is one unit in a twenty-unit box, so at 12px it is six tenths of a
+// pixel of ink and no pixel reaches full strength -- measured, the darkest came
+// out 145 where a solid glyph on that fill reaches 97.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ComboBox_themeresources.xaml#L582-L586
 const EXPAND_ICON = <ChevronDown12Regular />;
 
@@ -132,29 +115,19 @@ function ScrollableListbox({
       ref: mergedRef,
       style: { ...style, overflowX: 'hidden', overflowY: 'hidden' },
     },
-    // JSX rather than createElement for the viewport, so the ref is a ref to
-    // the compiler and not an ordinary prop it has to assume is read in render.
+    // JSX rather than createElement, so the ref is a ref to the compiler and not
+    // an ordinary prop it has to assume is read in render.
     <div className="floway-combobox-listbox-viewport" ref={viewportRef} style={{ overflowX: 'hidden', overflowY: 'scroll' }}>
-      {/* Fluent opens the popup whether or not there is anything in it -- it
-          counts options nowhere and gates only on disabled -- so an empty list
-          arrived as a bordered seam a few pixels tall.
+      {/* Fluent opens the popup whether or not there is anything in it, so an
+          empty list arrives as a bordered seam a few pixels tall. Screen reader
+          users meeting one are more likely to read it as a bug than an answer.
 
-          Not an ARIA violation, despite appearances: 1.3 renamed the section to
-          Allowed Accessibility Child Roles and dropped the existence
-          requirement, 1.2's MUST applied only while loading, and axe files an
-          empty listbox as review-only. The reason to do something is the user
-          research rather than the spec -- screen reader users meeting an empty
-          list were more likely to read it as a bug than as an answer.
-
-          The row must be an option, though, and that is a real constraint:
-          axe treats any bare text node inside a listbox as content and
-          escalates it from review to a hard violation, so a plain div saying
-          "no results" is worse than saying nothing. Fluent ships this shape
-          itself in useComboboxFilter's noOptionsMessage; this is that row with
-          the one correction its version needs, the disabled prop rather than
-          aria-disabled. Fluent's useOption reads props.disabled, so
-          aria-disabled alone leaves the row selectable and eligible to become
-          the active descendant -- announced as inert without being inert.
+          The row must be an option: axe escalates any bare text node inside a
+          listbox from review to a hard violation, so a plain div saying "no
+          results" is worse than saying nothing. It also needs the `disabled`
+          prop rather than `aria-disabled` -- Fluent's useOption reads
+          props.disabled, so aria-disabled alone leaves the row selectable and
+          eligible to become the active descendant.
           https://w3c.github.io/aria/#mustContain
           https://www.24a11y.com/2019/select-your-poison-part-2/ */}
       <div className="floway-combobox-listbox-content">
@@ -166,26 +139,21 @@ function ScrollableListbox({
   );
 }
 
-// What an empty list should say depends on whether the control accepts a value
-// the list does not hold. MUI and Ant Design both suppress the message outright
-// on a free-text field, having arrived at it independently, and their reasoning
-// is that an empty suggestion list is not a failure and needs no announcement.
-// That reasoning is about announcing a FAILURE: a row that states what is true
-// -- there is nothing to suggest -- announces no such thing, and it is what
-// keeps a control from changing shape as the model behind it changes.
+// MUI and Ant Design both suppress the message outright on a free-text field,
+// reasoning that an empty suggestion list is not a failure. That reasoning is
+// about announcing a failure; a row stating there is nothing to suggest
+// announces none, and it keeps the control from changing shape.
 const listboxRenderer = (freeform: boolean): ListboxRenderFunction =>
   (ListboxComponent, listboxProps) => (
     <ScrollableListbox ListboxComponent={ListboxComponent} freeform={freeform} listboxProps={listboxProps} />
   );
 
-// Fluent matches the list to the control it drops from, writing the measured
-// width straight onto the list. That is right for a field, where the two read
-// as one column, and wrong for a control that is only as wide as the value it
-// currently shows -- there the list would be pinned to the shortest thing it
-// can offer, and every longer option would truncate. `listWidth="content"`
-// keeps the measurement as a floor and lets the list grow past it, which is
-// only useful together with an `align: 'end'` positioning: the list has to hang
-// off the trailing edge and open away from it, or it would grow off the page.
+// Fluent writes the control's measured width straight onto the list, which pins
+// a narrow control's list to the shortest thing it can offer and truncates every
+// longer option. `listWidth="content"` keeps the measurement as a floor and lets
+// the list grow past it, which is only useful together with an `align: 'end'`
+// positioning: the list has to hang off the trailing edge and open away from it,
+// or it would grow off the page.
 const CONTENT_WIDTH_LISTBOX_CLASS = '!w-max !min-w-[var(--fui-match-target-size)] !max-w-[calc(100vw-16px)]';
 
 const listboxFor = (listWidth: 'target' | 'content' | undefined, freeform: boolean) => ({
@@ -235,10 +203,9 @@ export const Dropdown = forwardRef<HTMLButtonElement, Omit<ComponentProps<typeof
   ),
 );
 
-// A checkbox and a switch are both a native checkbox, which HTML gives no
-// read-only behaviour at all: the attribute is defined for it and does nothing.
-// Cancelling the click is what refuses the change, since that is the default
-// action the toggle is.
+// A checkbox and a switch are both a native checkbox, for which HTML defines
+// `readonly` and does nothing with it. Cancelling the click refuses the change,
+// since that is the default action the toggle is.
 const refuseToggle = (event: MouseEvent<HTMLInputElement>) => event.preventDefault();
 
 export const Checkbox = forwardRef<HTMLInputElement, ComponentProps<typeof FluentCheckbox> & ReadOnlyProp>(
