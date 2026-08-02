@@ -31,12 +31,10 @@ const titleKeyForPathname = (pathname: string) => {
   return dashboardTitleKeys.get(pathname) ?? 'app.title';
 };
 
-// The app's document title, and the only thing that writes one. A route `meta`
-// export cannot do this job here: runtime server rendering is off and only `/`
-// is prerendered, and that render resolves no leaf route -- the built
-// index.html carries the boot screen and no `<title>` at all. So a route's
-// `meta` would reach no static file, and at runtime it would be overwritten by
-// this effect within the same commit, in English, on a zh-Hans dashboard.
+// The only writer of the document title. A route `meta` export cannot replace
+// it: server rendering is off and the one prerendered route resolves no leaf,
+// so `meta` reaches no static file and at runtime loses to this effect anyway,
+// in English on a zh-Hans dashboard.
 export function DocumentTitleSync() {
   const location = useLocation();
   const { i18n, t } = useTranslation();
