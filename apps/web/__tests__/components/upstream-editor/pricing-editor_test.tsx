@@ -1,14 +1,11 @@
-import { cleanup, render } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { render } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 
 import { PricingEditor } from '../../../src/components/upstream-editor/pricing-editor';
 import { fluentComponents } from '../../../src/fluent';
-import '../../../src/i18n';
 import { flowayLightTheme } from '../../../src/theme';
 
 const { FluentProvider } = fluentComponents;
-
-afterEach(cleanup);
 
 describe('read-only pricing editor', () => {
   it('keeps one visible pricing rule selected', () => {

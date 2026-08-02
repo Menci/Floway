@@ -1,6 +1,6 @@
-import { cleanup, fireEvent, render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import * as React from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { fluentComponents } from '../../src/fluent';
 import { flowayLightTheme } from '../../src/theme';
@@ -37,8 +37,6 @@ const {
 
 const inProvider = (children: React.ReactNode) =>
   render(<FluentProvider theme={flowayLightTheme}>{children}</FluentProvider>);
-
-afterEach(cleanup);
 
 describe('appearance on the DOM', () => {
   it('stamps each component with its own Fluent default', () => {

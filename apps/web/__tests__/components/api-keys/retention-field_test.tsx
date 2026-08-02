@@ -1,10 +1,9 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { RetentionField, type RetentionValue } from '../../../src/components/api-keys/retention-field';
 import { fluentComponents } from '../../../src/fluent';
-import '../../../src/i18n';
 import { flowayLightTheme } from '../../../src/theme';
 
 const { FluentProvider } = fluentComponents;
@@ -53,8 +52,6 @@ const renderField = (props: Partial<FieldProps> & { value: RetentionValue }) => 
 const type = (input: HTMLInputElement, text: string) => {
   fireEvent.change(input, { target: { value: text } });
 };
-
-afterEach(cleanup);
 
 // The control resolves a preset or a typed window into the number of seconds
 // the gateway stores, and reports `invalid` rather than silently falling back

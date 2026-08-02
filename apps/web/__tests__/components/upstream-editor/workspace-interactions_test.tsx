@@ -1,16 +1,15 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { forwardRef } from 'react';
 import type { PropsWithChildren } from 'react';
 import { FormProvider, useForm } from 'react-hook-form';
 import { MemoryRouter } from 'react-router';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { UpstreamRecord } from '../../../src/api/types';
 import type { UpstreamEditorValues } from '../../../src/components/upstream-editor/editor-data';
 import { valuesFromRecord } from '../../../src/components/upstream-editor/editor-data';
 import { UpstreamWorkspace } from '../../../src/components/upstream-editor/workspace';
 import { fluentComponents } from '../../../src/fluent';
-import '../../../src/i18n';
 import { flowayLightTheme } from '../../../src/theme';
 
 vi.mock('../../../src/components/upstream-editor/models-yaml-editor', () => ({
@@ -79,8 +78,6 @@ function Harness() {
     </MemoryRouter>
   );
 }
-
-afterEach(cleanup);
 
 describe('upstream model workspace field-array transitions', () => {
   it('deletes a newly appended model and applies a shorter YAML catalog', async () => {
