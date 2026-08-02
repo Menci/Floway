@@ -20,21 +20,17 @@ import { ScrollArea } from '../ui/scroll-area';
 const { makeStyles } = fluentComponents;
 
 const chartMargins = { top: 16, right: 20, bottom: 42, left: 64 } as const;
-// A log axis emits a tick per significant digit, which crowded the sub-second
-// decade to labels 6px apart. `yAxisTickCount` is ignored on a log scale, so
-// the ticks stay as minor gridlines and only the labels thin out, to the 1/2/5
-// mantissas conventional for a labelled decade.
+// `yAxisTickCount` is ignored on a log scale, so labels thin out instead of
+// ticks: every significant digit stays a gridline, only 1/2/5 gets a label.
 const LABELLED_LOG_MANTISSAS = [1, 2, 5];
 const labelledOnLogAxis = (value: number): boolean => {
   if (!(value > 0)) return false;
   const mantissa = value / 10 ** Math.floor(Math.log10(value));
   return LABELLED_LOG_MANTISSAS.some(candidate => Math.abs(mantissa - candidate) < 0.01);
 };
-// The pointer is answered at an x position with a vertical line and a callout
-// tabulating every series there, so Fluent's per-series highlight circle would
-// contradict the table and is not painted. It loses its paint rather than its
-// box: Fluent anchors the callout to that circle's bounding rect, which
-// `visibility` leaves in place and `display` would collapse onto the origin.
+// The per-series highlight circle would contradict the callout table, so it
+// loses its paint rather than its box: Fluent anchors the callout to that
+// circle's bounding rect, which `display` would collapse onto the origin.
 //
 // The x axis draws its ticks at the plot's full height so they double as
 // gridlines, so hit testing has to pass through them or a pointer crossing one
