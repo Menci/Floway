@@ -61,8 +61,7 @@ export default function DashboardProvidersModelAliases({ loaderData }: Route.Com
   const [mutating, setMutating] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  // The error belongs to the attempt that produced it, so opening the dialog for
-  // another alias clears it rather than waiting for a dismissal.
+  // The error belongs to the attempt that produced it, not to the dialog.
   const openDeleteDialog = (target: ModelAlias) => {
     setDeleteError(null);
     deleteDialog.open(target);
