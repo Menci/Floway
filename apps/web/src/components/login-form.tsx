@@ -108,7 +108,6 @@ export function LoginForm() {
             >
               <Input
                 {...field}
-                aria-label={t('auth.login.username')}
                 autoComplete="username"
                 autoFocus
                 className="!min-h-[36px]"
@@ -132,7 +131,6 @@ export function LoginForm() {
             >
               <Input
                 {...field}
-                aria-label={t('auth.login.password')}
                 autoComplete="current-password"
                 className="!min-h-[36px]"
                 disabled={isSubmitting}
