@@ -135,7 +135,7 @@ export function UpstreamWorkspace({
       {showModelDetail
         ? <>
             <BackNavigationButton onClick={() => selectModel(null)}>{t('dashboard.upstreamEditor.models.back')}</BackNavigationButton>
-            <TabList selectedValue={modelDetailTab} onTabSelect={(_, data) => navigate({ tab, model: selectedUpstreamModelId, section: data.value as ModelDetailTab, view: 'list' })}>
+            <TabList aria-label={t('dashboard.upstreamEditor.models.sections')} selectedValue={modelDetailTab} onTabSelect={(_, data) => navigate({ tab, model: selectedUpstreamModelId, section: data.value as ModelDetailTab, view: 'list' })}>
               <Tab value="details">{t('dashboard.upstreamEditor.models.details')}</Tab>
               <Tab value="flags">{t('dashboard.upstreamEditor.models.flags')}</Tab>
             </TabList>
@@ -144,7 +144,7 @@ export function UpstreamWorkspace({
         // because entering the YAML view re-serializes the manual models into
         // the buffer: a reset here would discard whatever had been typed and
         // not yet applied.
-        : <TabList selectedValue={tab} onTabSelect={(_, data) => navigate({ tab: data.value as WorkspaceTab, model: null, section: 'details', view: modelView === 'yaml' ? 'yaml' : 'list' })}>
+        : <TabList aria-label={t('dashboard.upstreamEditor.tabs.label')} selectedValue={tab} onTabSelect={(_, data) => navigate({ tab: data.value as WorkspaceTab, model: null, section: 'details', view: modelView === 'yaml' ? 'yaml' : 'list' })}>
             <Tab value="models">{t('dashboard.upstreamEditor.tabs.models')}</Tab>
             <Tab value="flags">{t('dashboard.upstreamEditor.tabs.flags')}</Tab>
           </TabList>}

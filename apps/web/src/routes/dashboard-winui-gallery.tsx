@@ -712,32 +712,32 @@ function TabsSection() {
   return <Section id="tabs" title="Tabs">
     <Hint>Hover and tab across each list; the selected tab carries the WinUI indicator, and one tab is disabled.</Hint>
     <Row label="horizontal - sizes">
-      <TabList defaultSelectedValue="request" size="small">
+      <TabList aria-label="Small tabs" defaultSelectedValue="request" size="small">
         <Tab value="request">Request</Tab>
         <Tab value="response">Response</Tab>
         <Tab disabled value="trace">Trace</Tab>
       </TabList>
-      <TabList defaultSelectedValue="request" size="medium">
+      <TabList aria-label="Medium tabs" defaultSelectedValue="request" size="medium">
         <Tab value="request">Request</Tab>
         <Tab value="response">Response</Tab>
         <Tab disabled value="trace">Trace</Tab>
       </TabList>
-      <TabList defaultSelectedValue="request" size="large">
+      <TabList aria-label="Large tabs" defaultSelectedValue="request" size="large">
         <Tab value="request">Request</Tab>
         <Tab value="response">Response</Tab>
         <Tab disabled value="trace">Trace</Tab>
       </TabList>
     </Row>
     <Row label="subtle-circular appearance, icons, and vertical">
-      <TabList appearance="subtle-circular" defaultSelectedValue="request">
+      <TabList appearance="subtle-circular" aria-label="Subtle circular tabs with icons" defaultSelectedValue="request">
         <Tab icon={<DocumentRegular />} value="request">Request</Tab>
         <Tab icon={<ServerRegular />} value="response">Response</Tab>
       </TabList>
-      <TabList appearance="filled-circular" defaultSelectedValue="request">
+      <TabList appearance="filled-circular" aria-label="Filled circular tabs" defaultSelectedValue="request">
         <Tab value="request">Request</Tab>
         <Tab value="response">Response</Tab>
       </TabList>
-      <TabList defaultSelectedValue="usage" vertical>
+      <TabList aria-label="Vertical tabs" defaultSelectedValue="usage" vertical>
         <Tab value="usage">Usage</Tab>
         <Tab value="performance">Performance</Tab>
         <Tab disabled value="errors">Errors</Tab>

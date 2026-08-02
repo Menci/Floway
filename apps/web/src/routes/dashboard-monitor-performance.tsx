@@ -237,7 +237,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
         {/* The scrollport clips the 2px ring a focused tab paints, so it takes
             a gutter and the host removes the same distance again to keep the
             row aligned. An inward ring would land on the tab's selection pipe. */}
-        <ScrollArea axes="horizontal" className="min-w-0 -m-0.5" viewportClassName="p-0.5"><TabList selectedValue={activeBreakdown.key} onTabSelect={(_, data) => setBreakdownGroup(data.value as PerformanceGroupBy)}>
+        <ScrollArea axes="horizontal" className="min-w-0 -m-0.5" viewportClassName="p-0.5"><TabList aria-label={t('dashboard.performance.breakdown')} selectedValue={activeBreakdown.key} onTabSelect={(_, data) => setBreakdownGroup(data.value as PerformanceGroupBy)}>
           {breakdowns.map(({ key }) => <Tab key={key} value={key}>{t(`dashboard.performance.groupBy.${key}`)}</Tab>)}
         </TabList></ScrollArea>
         <PerformanceTable groupBy={activeBreakdown.key} labels={labels} rows={activeBreakdown.rows} />

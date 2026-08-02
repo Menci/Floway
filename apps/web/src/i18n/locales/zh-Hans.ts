@@ -526,7 +526,7 @@ const zhHansCN = {
           addressable: '可路由',
           listed: '模型列表可见',
         },
-        tabs: { models: '模型列表', flags: '上游特性开关' },
+        tabs: { label: '上游分区', models: '模型列表', flags: '上游特性开关' },
         flags: {
           intro:
               '不同提供商、API 和模型的上游行为可能不同。仅在兼容性需要时调整这些默认设置。',
@@ -610,6 +610,7 @@ const zhHansCN = {
         },
         models: {
           details: '模型详情',
+          sections: '模型分区',
           editAsYaml: '编辑 YAML',
           editWithUi: '使用界面编辑',
           yamlHint: '仅包含手动模型。自动发现的模型由上游解析，不在此列出。',
@@ -794,6 +795,7 @@ const zhHansCN = {
           reimport: '重新导入凭据',
           import: '导入凭据',
           credentialJson: '凭据 JSON',
+          importMethod: '凭据导入方式',
           preparing: '正在准备授权…',
           openAuthorize: '打开授权页面',
           copy: '复制授权链接',
@@ -906,6 +908,7 @@ const zhHansCN = {
         actions: { refresh: '刷新性能数据' },
         apiKeyScopeInfo: 'API 密钥维度始终只包含当前账号拥有的 API 密钥，即使你拥有全局遥测权限。其他维度仍按全局范围统计。',
         apiKeyScopeLabel: '关于 API 密钥遥测范围',
+        breakdown: '性能细分维度',
         metric: { label: '性能指标', ttft: '首 Token 时间', outputSpeed: '输出速度' },
         groupBy: { label: '分组依据', model: '按模型', upstream: '按上游', operation: '按操作', runtimeLocation: '按区域', userId: '按用户', keyId: '按 API 密钥' },
         filters: { label: '筛选', all: { model: '全部模型', upstream: '全部上游', operation: '全部操作', runtimeLocation: '全部区域', userId: '全部用户', keyId: '全部 API 密钥' }, model: '模型', upstream: '上游', operation: '操作', runtimeLocation: '区域', userId: '用户', keyId: 'API 密钥' },

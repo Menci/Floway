@@ -551,7 +551,7 @@ const en = {
           addressable: 'Addressable',
           listed: 'Listed',
         },
-        tabs: { models: 'Models', flags: 'Upstream feature flags' },
+        tabs: { label: 'Upstream sections', models: 'Models', flags: 'Upstream feature flags' },
         flags: {
           intro:
               'Upstream behavior varies by provider, API surface, and model. Adjust these defaults only when compatibility requires it.',
@@ -635,6 +635,7 @@ const en = {
         },
         models: {
           details: 'Model details',
+          sections: 'Model sections',
           editAsYaml: 'Edit as YAML',
           editWithUi: 'Edit with UI',
           yamlHint: 'Manual models only. Auto-discovered models resolve from the upstream and are not listed here.',
@@ -833,6 +834,7 @@ const en = {
           reimport: 'Re-import credential',
           import: 'Import credential',
           credentialJson: 'Credential JSON',
+          importMethod: 'Credential import method',
           preparing: 'Preparing authorization…',
           openAuthorize: 'Open authorization page',
           copy: 'Copy authorization URL',
@@ -946,6 +948,7 @@ const en = {
         actions: { refresh: 'Refresh performance' },
         apiKeyScopeInfo: 'API key dimensions always include only API keys owned by your account, even when you have global telemetry access. Other dimensions remain global.',
         apiKeyScopeLabel: 'About API key telemetry scope',
+        breakdown: 'Performance breakdown dimension',
         metric: { label: 'Performance metric', ttft: 'TTFT', outputSpeed: 'Output speed' },
         groupBy: { label: 'Group by', model: 'By Model', upstream: 'By Upstream', operation: 'By Operation', runtimeLocation: 'By Region', userId: 'By User', keyId: 'By API Key' },
         filters: { label: 'Filters', all: { model: 'All models', upstream: 'All upstreams', operation: 'All operations', runtimeLocation: 'All regions', userId: 'All users', keyId: 'All API keys' }, model: 'Model', upstream: 'Upstream', operation: 'Operation', runtimeLocation: 'Region', userId: 'User', keyId: 'API Key' },
