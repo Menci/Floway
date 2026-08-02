@@ -948,7 +948,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
   async saveModelsCacheError(id: string, error: { message: string; at: number } | null): Promise<void> {
     await this.db
       .prepare("UPDATE upstreams SET models_cache_json = json_set(models_cache_json, '$.lastError', json(?)) WHERE id = ? AND models_cache_json IS NOT NULL")
-      .bind(error === null ? 'null' : JSON.stringify(error), id)
+      .bind(JSON.stringify(error), id)
       .run();
   }
 
