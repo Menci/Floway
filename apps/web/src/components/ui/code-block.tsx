@@ -152,10 +152,14 @@ export function CodeBlock({ code, copyOutcome, disabled = false, header, languag
   const { t } = useTranslation();
   const styles = useStyles();
   const copyLabel = useCopyLabel();
-  const highlighted = useMemo(() => {
-    const grammar = Prism.languages[language] ?? Prism.languages.plain;
-    return grammar ? Prism.highlight(code, grammar, language) : escapeHtml(code);
-  }, [code, language]);
+  // An unregistered language falls back to Prism's own empty `plain` grammar,
+  // which tokenizes to a single text run and stringifies to the escaped source
+  // -- so a caller naming a grammar nobody imported gets plain text rather than
+  // an exception.
+  const highlighted = useMemo(
+    () => Prism.highlight(code, Prism.languages[language] ?? Prism.languages.plain, language),
+    [code, language],
+  );
 
   return (
     <div className={styles.root}>
@@ -182,9 +186,3 @@ export function CodeBlock({ code, copyOutcome, disabled = false, header, languag
     </div>
   );
 }
-
-const escapeHtml = (value: string) =>
-  value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');

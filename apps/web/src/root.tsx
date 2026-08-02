@@ -154,7 +154,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   return (
     <ErrorShell
       action={
-        <div className="floway-error-shell-actions">
+        <>
           {/* A reload, not a re-render: whatever failed may have left the app's
               own state or its modules in a shape a router navigation would
               keep, and the browser's own back is the one exit that does not
@@ -163,7 +163,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
             {t('common.errors.refresh')}
           </Button>
           <Button onClick={() => window.history.back()}>{t('common.errors.back')}</Button>
-        </div>
+        </>
       }
       message={stack ? undefined : details}
       title={message}

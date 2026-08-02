@@ -60,8 +60,9 @@ export function ErrorShell({ action, children, message, title }: PropsWithChildr
         {children}
         {/* After the trace, not before it: the trace is what the operator is
             here to read, and an action placed above it interrupts the sentence
-            the page is making. */}
-        {action}
+            the page is making. The row's own layout is the shell's, so the
+            caller hands over commands rather than a laid-out band. */}
+        {action !== undefined && <div className="floway-error-shell-actions">{action}</div>}
       </main>
     </ScrollArea>
   );
