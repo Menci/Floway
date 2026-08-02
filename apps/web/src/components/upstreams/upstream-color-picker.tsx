@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { KIND_DEFAULT_TONES, ProviderBadge } from './provider-badge';
@@ -41,6 +41,7 @@ export function UpstreamColorPicker({ kind, onChange, onValidityChange, value }:
 }) {
   const { t } = useTranslation();
   const dangerText = useDangerTextClass();
+  const errorId = useId();
   const [hexDraft, setHexDraft] = useState<string>(() => (isHexColor(value) ? value : DEFAULT_CUSTOM_HEX));
   const rgb = hexToRgb(hexDraft) ?? hexToRgb(DEFAULT_CUSTOM_HEX)!;
   const [hue, saturation, brightness] = rgbToHsv(rgb[0], rgb[1], rgb[2]);
@@ -112,6 +113,7 @@ export function UpstreamColorPicker({ kind, onChange, onValidityChange, value }:
 
             <div className="flex items-center gap-2">
               <Input
+                aria-describedby={draftInvalid ? errorId : undefined}
                 aria-label={t('dashboard.upstreamEditor.color.custom')}
                 className="!w-[140px] font-mono"
                 maxLength={7}
@@ -119,7 +121,7 @@ export function UpstreamColorPicker({ kind, onChange, onValidityChange, value }:
                 onChange={(_, data) => commitHex(data.value.trim())}
               />
               {draftInvalid
-                ? <Text size={200} className={dangerText}>{t('dashboard.upstreamEditor.color.invalidHex')}</Text>
+                ? <Text className={dangerText} id={errorId} role="alert" size={200}>{t('dashboard.upstreamEditor.color.invalidHex')}</Text>
                 : <ColorSwatch aria-hidden color={hexDraft} value={hexDraft} />}
             </div>
           </div>
