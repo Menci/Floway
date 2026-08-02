@@ -49,58 +49,38 @@ const buildCopilotUpstream = (overrides: Partial<UpstreamRecord> = {}): Upstream
   };
 };
 
-interface SaveStateCall {
-  newState: unknown;
-  expectedState: unknown;
-}
-
 interface CopilotTestRepo {
   copilotUpstream: UpstreamRecord;
-  saveStateCalls: SaveStateCall[];
+  savedStates: unknown[];
   setUpstreamState: (state: unknown) => void;
   getCurrentState: () => unknown;
-  setSaveStateResult: (result: { updated: boolean }) => void;
   overrideGetById: (impl: () => Promise<UpstreamRecord | null>) => void;
-  overrideSaveState: (impl: (id: string, newState: unknown, options: { expectedState: unknown }) => Promise<{ updated: boolean }>) => void;
+  overrideSaveState: (impl: (id: string, mutate: (current: unknown) => unknown) => Promise<void>) => void;
 }
 
-interface SetupOptions extends Partial<UpstreamRecord> {
-  enforceCas?: boolean;
-}
-
-const setupCopilotTest = async (initial: SetupOptions = {}): Promise<CopilotTestRepo> => {
-  const { enforceCas = false, ...recordOverrides } = initial;
+const setupCopilotTest = async (recordOverrides: Partial<UpstreamRecord> = {}): Promise<CopilotTestRepo> => {
   let upstream = buildCopilotUpstream(recordOverrides);
-  const saveStateCalls: SaveStateCall[] = [];
-  let saveResult: { updated: boolean } = { updated: true };
+  const savedStates: unknown[] = [];
   let getByIdImpl: () => Promise<UpstreamRecord | null> = async () => upstream;
-  // Real CAS would compare row-version columns, but the mock persists state
-  // inline, so JSON-shape equality on expectedState vs the row's current state
-  // matches what D1's state_json round-trip would observe.
-  const stateMatches = (expected: unknown, current: unknown): boolean =>
-    JSON.stringify(expected) === JSON.stringify(current);
-  let saveStateImpl: (id: string, newState: unknown, options: { expectedState: unknown }) => Promise<{ updated: boolean }> = async (_id, newState, options) => {
-    saveStateCalls.push({ newState, expectedState: options.expectedState });
-    if (enforceCas && !stateMatches(options.expectedState, upstream.state)) {
-      return { updated: false };
-    }
-    upstream = { ...upstream, state: newState };
-    return saveResult;
+  // Applies the mutator to the row as it stands, the way the repo does.
+  let saveStateImpl: (id: string, mutate: (current: unknown) => unknown) => Promise<void> = async (_id, mutate) => {
+    const next = mutate(upstream.state);
+    savedStates.push(next);
+    upstream = { ...upstream, state: next };
   };
   initProviderRepo(() => ({
     upstreams: {
       getById: () => getByIdImpl(),
-      saveState: (id, newState, options) => saveStateImpl(id, newState, options),
+      saveState: (id, mutate) => saveStateImpl(id, mutate),
     },
   }));
   initImageProcessor(createInMemoryImageProcessor());
   clearInProcessCopilotTokenCache();
   return {
     copilotUpstream: upstream,
-    saveStateCalls,
+    savedStates,
     setUpstreamState: state => { upstream = { ...upstream, state }; },
     getCurrentState: () => upstream.state,
-    setSaveStateResult: result => { saveResult = result; },
     overrideGetById: impl => { getByIdImpl = impl; },
     overrideSaveState: impl => { saveStateImpl = impl; },
   };
@@ -752,9 +732,9 @@ test('Copilot provider rejects a merged public model without a raw variant group
   }
 });
 
-test('Copilot provider persists merged known-models view via saveState CAS keyed on the read state', async () => {
+test('Copilot provider persists the minted token and the merged known-models view as two writes to distinct slots', async () => {
   const harness = await setupCopilotTest();
-  const { copilotUpstream, saveStateCalls } = harness;
+  const { copilotUpstream, savedStates } = harness;
 
   await withMockedFetch(
     request => {
@@ -773,31 +753,20 @@ test('Copilot provider persists merged known-models view via saveState CAS keyed
     },
   );
 
-  assertEquals(saveStateCalls.length, 2);
-  const tokenWrite = saveStateCalls.find(c => (c.newState as CopilotUpstreamState).copilotToken !== null);
-  const modelsWrite = saveStateCalls.find(c => (c.newState as CopilotUpstreamState).knownModels !== null);
-  if (!tokenWrite || !modelsWrite) throw new Error('expected one token write and one models write');
-  // Both writes ran against the same seeded row (state=null) on the first
-  // call; the token write happens first and lands a non-null state, so the
-  // models write's expectedState is whatever the token write produced.
-  assertEquals(tokenWrite.expectedState, null);
-  const tokenPersisted = tokenWrite.newState as CopilotUpstreamState;
-  assertEquals(tokenPersisted.knownModels, null);
-  assertEquals(typeof tokenPersisted.copilotToken?.token, 'string');
-  const modelsPersisted = modelsWrite.newState as CopilotUpstreamState;
-  if (!modelsPersisted.knownModels) throw new Error('expected knownModels persisted');
-  assertEquals(Object.keys(modelsPersisted.knownModels.models), ['m1']);
+  assertEquals(savedStates.length, 2);
+  const [tokenWrite, modelsWrite] = savedStates as [CopilotUpstreamState, CopilotUpstreamState];
+  // The token mint runs inside the models fetch, so it writes first and only
+  // fills its own slot.
+  assertEquals(tokenWrite.knownModels, null);
+  assertEquals(typeof tokenWrite.copilotToken?.token, 'string');
+  if (!modelsWrite.knownModels) throw new Error('expected knownModels persisted');
+  assertEquals(Object.keys(modelsWrite.knownModels.models), ['m1']);
+  // Spreading the state it was handed is what carries the token through.
+  assertEquals(modelsWrite.copilotToken?.token, tokenWrite.copilotToken?.token);
 });
 
-test('Copilot provider persists known-models even when the token-mint write advanced the row mid-call', async () => {
-  // CAS-enforcing harness: a saveState whose expectedState != the row's
-  // current state returns {updated:false} without mutating. The token-mint
-  // path inside fetchCopilotModels persists copilotToken under its own CAS
-  // before the known-models save runs, so the known-models save MUST key on
-  // the post-mint state, not the pre-fetch snapshot — otherwise its CAS
-  // deterministically loses on every token expiry and knownModels never
-  // grows.
-  const harness = await setupCopilotTest({ enforceCas: true });
+test('Copilot provider merges known-models into the row as it stands after the fetch, not into the pre-fetch snapshot', async () => {
+  const harness = await setupCopilotTest();
   const { copilotUpstream } = harness;
 
   await withMockedFetch(
@@ -806,6 +775,13 @@ test('Copilot provider persists known-models even when the token-mint write adva
       if (pre) return pre;
       const url = new URL(request.url);
       if (url.pathname === '/models') {
+        // A concurrent quota harvest lands while the catalog fetch is in
+        // flight, on top of the token the mint just persisted.
+        const current = readCopilotUpstreamState(harness.getCurrentState());
+        harness.setUpstreamState({
+          ...current,
+          quotaSnapshot: { fetchedAt: 1, data: { observed_at: '2026-08-01T00:00:00.000Z', reset_at: null, quotas: {} } },
+        } satisfies CopilotUpstreamState);
         return jsonResponse({ object: 'list', data: [{ id: 'm1', supported_endpoints: ['/v1/messages'] }] });
       }
       throw new Error(`Unhandled fetch ${request.url}`);
@@ -816,12 +792,11 @@ test('Copilot provider persists known-models even when the token-mint write adva
     },
   );
 
-  // Inspect the persisted state directly — the token-mint write lands first
-  // and a correctly-keyed known-models write must observe it AND extend it.
   const final = readCopilotUpstreamState(harness.getCurrentState());
-  if (!final.copilotToken) throw new Error('expected copilotToken to be persisted by the token-mint write');
-  if (!final.knownModels) throw new Error('expected knownModels to be persisted after the token-mint CAS advanced the row');
+  if (!final.knownModels) throw new Error('expected knownModels to be persisted');
   assertEquals(Object.keys(final.knownModels.models), ['m1']);
+  if (!final.copilotToken) throw new Error('expected the minted token to survive the known-models write');
+  assertEquals(final.quotaSnapshot?.fetchedAt, 1);
 });
 
 test('Copilot provider accumulates known-models across calls so a model dropped from the fetch still surfaces', async () => {
@@ -892,31 +867,9 @@ test('Copilot provider throws "disappeared mid-request" when the upstream row va
   );
 });
 
-test('Copilot provider accepts a losing CAS write and still returns the freshly fetched models', async () => {
-  const harness = await setupCopilotTest();
-  harness.setSaveStateResult({ updated: false });
-
-  await withMockedFetch(
-    request => {
-      const pre = copilotPreflight(request);
-      if (pre) return pre;
-      const url = new URL(request.url);
-      if (url.pathname === '/models') {
-        return jsonResponse({ object: 'list', data: [{ id: 'm1', supported_endpoints: ['/v1/messages'] }] });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const instance = createCopilotProvider(harness.copilotUpstream);
-      const result = await instance.instance.getProvidedModels(directFetcher);
-      assertEquals(result.map(m => m.id), ['m1']);
-    },
-  );
-});
-
 test('Copilot provider swallows a saveState throw so a transient persistence hiccup does not invalidate the fetched models', async () => {
   // Persistence is best-effort: the fetched models are the user-facing
-  // payload, and a DB-level error on the CAS write must not propagate out of
+  // payload, and a storage-level error on the write must not propagate out of
   // getProvidedModels. Mirrors the gateway SWR layer's persistence policy.
   const harness = await setupCopilotTest();
   harness.overrideSaveState(() => Promise.reject(new Error('D1 hiccup')));

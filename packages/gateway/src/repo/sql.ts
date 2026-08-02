@@ -52,7 +52,7 @@ import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import type { SqlBindValue, SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
 import { addDecimalStrings, canonicalPricingSelectorKey, parseBillingMetric, parseModelKind, parseNonNegativeDecimalString, parsePricingSelectorKey, type AliasSelection, type AliasTarget, type AnnouncedMetadata } from '@floway-dev/protocols/common';
 import type { ProviderModel, ProxyFallbackEntry, ModelPrefixConfig, UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
-import { normalizeModelPrefix, parsePerformanceOperation } from '@floway-dev/provider';
+import { normalizeModelPrefix, parsePerformanceOperation, UpstreamGoneError } from '@floway-dev/provider';
 
 interface ApiKeyRow {
   id: string;
@@ -857,6 +857,13 @@ class SqlWebSearchConfigRepo implements WebSearchConfigRepo {
   }
 }
 
+// Losing once is ordinary on a row this contended, losing four times in a row
+// is not — and the attempts run back-to-back with no delay, so they observe
+// much the same contention rather than independent draws. The bound is a
+// judgement call about how much immediate re-reading is worth doing before
+// declaring the row unwritable, not a derived figure.
+export const UPSTREAM_STATE_WRITE_ATTEMPTS = 4;
+
 class SqlUpstreamRepo implements UpstreamRepo {
   constructor(private db: SqlDatabase) {}
 
@@ -942,16 +949,45 @@ class SqlUpstreamRepo implements UpstreamRepo {
       .run();
   }
 
-  // `IS` (not `=`) so NULL on either side compares correctly — a row whose
-  // state_json is SQL NULL still matches when the caller passes
-  // expectedState: null. The serialized form here must equal what save()
-  // wrote for the predicate to hold on the back-to-back write path.
-  async saveState(id: string, newState: unknown, options: { expectedState: unknown }): Promise<{ updated: boolean }> {
-    const result = await this.db
-      .prepare('UPDATE upstreams SET state_json = ? WHERE id = ? AND state_json IS ?')
-      .bind(serializeStoredState(newState), id, serializeStoredState(options.expectedState))
-      .run();
-    return { updated: (result.meta.changes ?? 0) > 0 };
+  // Read-modify-write under optimistic concurrency, retried against the winner
+  // on a loss. `IS` (not `=`) so a row whose state_json is SQL NULL still
+  // matches. The predicate binds the exact text this method read rather than a
+  // re-serialized form, so the CAS holds against a row written by anything —
+  // including a migration, which has no way to reproduce the canonical
+  // encoder's output.
+  //
+  // Losing is expected, not exceptional: the same row carries values written on
+  // every data-plane response, so a rotation's read-to-write window overlaps
+  // them routinely. Retrying is what makes the loss harmless; exhausting the
+  // retries is not, because the caller's change — a rotated refresh token the
+  // vendor has already invalidated — cannot be reconstructed later, so it
+  // throws rather than returning a flag a caller can drop.
+  async saveState(id: string, mutate: (current: unknown) => unknown): Promise<void> {
+    for (let attempt = 0; attempt < UPSTREAM_STATE_WRITE_ATTEMPTS; attempt++) {
+      const row = await this.db
+        .prepare('SELECT state_json FROM upstreams WHERE id = ?')
+        .bind(id)
+        .first<{ state_json: string | null }>();
+      if (!row) throw new UpstreamGoneError(id);
+      let current: unknown = null;
+      if (row.state_json !== null) {
+        try {
+          current = JSON.parse(row.state_json) as unknown;
+        } catch (cause) {
+          throw new Error(`Malformed upstream state JSON for ${id}`, { cause });
+        }
+      }
+      const next = serializeStoredState(mutate(current));
+      // A mutator that decided there is nothing to do returns what it was
+      // given, which serializes back to the stored text.
+      if (next === row.state_json) return;
+      const result = await this.db
+        .prepare('UPDATE upstreams SET state_json = ? WHERE id = ? AND state_json IS ?')
+        .bind(next, id, row.state_json)
+        .run();
+      if ((result.meta.changes ?? 0) > 0) return;
+    }
+    throw new Error(`Upstream ${id} state write lost ${UPSTREAM_STATE_WRITE_ATTEMPTS} consecutive races`);
   }
 }
 

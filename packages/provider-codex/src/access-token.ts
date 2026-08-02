@@ -1,6 +1,6 @@
 import { CodexOAuthSessionTerminatedError, refreshCodexAccessToken } from './auth/oauth.ts';
 import { findCodexAccountIndex, readCodexUpstreamState, replaceCodexAccount, type CodexAccessTokenEntry } from './state.ts';
-import { getProviderRepo, type Fetcher } from '@floway-dev/provider';
+import { getProviderRepo, UpstreamGoneError, type Fetcher } from '@floway-dev/provider';
 
 export type { CodexAccessTokenEntry };
 
@@ -12,32 +12,44 @@ const REFRESH_SKEW_MS = 5 * 60 * 1000;
 const isAccessTokenFresh = (entry: CodexAccessTokenEntry): boolean =>
   entry.expiresAt > Date.now() + REFRESH_SKEW_MS;
 
-// A losing CAS is not an error — saveState reports it via `updated: false`,
-// and the next call re-reads state and refreshes if needed. Genuine storage
-// failures propagate so the request path surfaces them rather than silently
-// running on a stale cached token.
+// The whole change is expressed against the state the repo hands us, so a
+// write that loses its race is simply replayed against the winner's document
+// and both changes survive. Storage failures propagate so the request path
+// surfaces them rather than silently running on a stale cached token.
 const persistAccessToken = async (
   upstreamId: string,
   accountId: string,
   entry: CodexAccessTokenEntry | null,
   where: string,
 ): Promise<void> => {
-  const fresh = await getProviderRepo().upstreams.getById(upstreamId);
-  if (!fresh) {
+  // The mutator is replayed on a lost race, so the diagnostic is recorded and
+  // emitted once afterwards rather than logged from inside it.
+  let accountMissing = false;
+  try {
+    await getProviderRepo().upstreams.saveState(upstreamId, current => {
+      const state = readCodexUpstreamState(current);
+      const idx = findCodexAccountIndex(state, accountId);
+      if (idx < 0) {
+        accountMissing = true;
+        return current;
+      }
+      accountMissing = false;
+      // Invalidating an already-null slot has nothing to write — the case where
+      // a 401 retry races a concurrent refresh that already cleared the token.
+      if (entry === null && state.accounts[idx].accessToken === null) return current;
+      return replaceCodexAccount(state, idx, account => ({ ...account, accessToken: entry }));
+    });
+  } catch (err) {
+    // A minted access token is bookkeeping the next request re-derives, so an
+    // operator deleting the upstream mid-request is not worth failing that
+    // request over. Every other storage failure still propagates.
+    if (!(err instanceof UpstreamGoneError)) throw err;
     console.warn(`${where}: Codex upstream ${upstreamId} disappeared mid-request`);
     return;
   }
-  const state = readCodexUpstreamState(fresh.state);
-  const idx = findCodexAccountIndex(state, accountId);
-  if (idx < 0) {
+  if (accountMissing) {
     console.warn(`${where}: Codex account ${accountId} not found in upstream ${upstreamId}`);
-    return;
   }
-  // No-op when invalidating an already-null slot — avoids a spurious CAS write
-  // when a 401 retry races a concurrent refresh that already cleared the token.
-  if (entry === null && state.accounts[idx].accessToken === null) return;
-  const next = replaceCodexAccount(state, idx, account => ({ ...account, accessToken: entry }));
-  await getProviderRepo().upstreams.saveState(upstreamId, next, { expectedState: fresh.state });
 };
 
 export const putCodexAccessToken = async (
@@ -52,7 +64,7 @@ export const invalidateCodexAccessToken = async (
 ): Promise<void> => { await persistAccessToken(upstreamId, accountId, null, 'invalidateCodexAccessToken'); };
 
 // Reads, mints, and persists. The mint callback is responsible for routing
-// the rotated refresh_token through the upstream's CAS hook;
+// the rotated refresh_token through the upstream's persistence hook;
 // `mintCodexAccessToken` below is the standard implementation.
 //
 // Refresh-race recovery: when the mint throws `invalid_grant`, it might mean
@@ -171,14 +183,11 @@ const recoverFromRefreshRace = async (
 };
 
 // Mints a fresh access token via /oauth/token and routes the rotated
-// refresh_token through the caller's CAS hook. Awaiting the rotation
+// refresh_token through the caller's persistence hook. Awaiting the rotation
 // persistence (rather than fire-and-forget) is deliberate: under concurrent
 // rotations each call's new refresh_token must reach the hook before the
 // next attempt reads state, otherwise an unhandled rejection can swallow the
 // rotated token and the upstream eventually returns app_session_terminated.
-// A losing CAS inside the hook is fine — `expectedState` mismatched a
-// concurrent operator re-import or sibling rotation, and the already-
-// persisted newer state supersedes ours.
 export const mintCodexAccessToken = async (
   refreshToken: string,
   fetcher: Fetcher,

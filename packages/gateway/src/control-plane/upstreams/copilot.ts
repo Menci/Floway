@@ -145,10 +145,9 @@ export const copilotQuota = async (c: CtxWithJson<typeof copilotQuotaBody>) => {
     const snapshot = projectCopilotUsageResponse((await resp.json()) as CopilotUsageResponse, new Date());
     // A body that reports no buckets is "nothing observed", so it neither
     // persists nor replaces what the dashboard is already showing — the
-    // caller falls back to the stored snapshot. Persistence is otherwise
-    // best-effort and deliberately outside the caller's result: the operator
-    // asked for a reading, and a CAS loss to concurrent data-plane traffic
-    // means a fresher snapshot already won the slot.
+    // caller falls back to the stored snapshot. The reading otherwise merges
+    // into whatever state wins the row, and the catch is here only so a
+    // storage failure does not fail the operator's request.
     if (snapshot !== null && record.id !== '') {
       await putCopilotQuota(record.id, snapshot).catch((err: unknown) => {
         console.warn(`Failed to persist Copilot quota snapshot for ${record.id}:`, err);

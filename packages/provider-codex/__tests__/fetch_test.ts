@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
+import { createUpstreamStateRepoStub } from './upstream-state-repo.ts';
 import { CODEX_ORIGINATOR, CODEX_USER_AGENT } from '../src/constants.ts';
 import { callCodexAlphaSearch, callCodexResponses, callCodexResponsesCompact, type CodexCallEffects } from '../src/fetch.ts';
 import type { CodexAccessTokenEntry, CodexAccountCredential, CodexQuotaSnapshotEntryMap, CodexUpstreamState } from '../src/state.ts';
@@ -64,13 +65,9 @@ beforeEach(() => {
   vi.useRealTimers();
   currentRecord = makeRecord({ accounts: [{ ...activeAccount }] });
   initProviderRepo(() => ({
-    upstreams: {
-      getById: async () => currentRecord,
-      saveState: async (_id, newState) => {
-        currentRecord = { ...currentRecord, state: newState as CodexUpstreamState };
-        return { updated: true };
-      },
-    },
+    upstreams: createUpstreamStateRepoStub(() => currentRecord, state => {
+      currentRecord = { ...currentRecord, state: state as CodexUpstreamState };
+    }),
   }));
 });
 

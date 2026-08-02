@@ -1,6 +1,7 @@
 // Gateway-managed Claude Code credential state, persisted in
-// upstreams.state_json. Writes happen via UpstreamRepo.saveState with
-// optimistic concurrency keyed on the prior state JSON.
+// upstreams.state_json. Writes happen via UpstreamRepo.saveState, which applies
+// the caller's mutator to the stored document and retries it against the winner
+// of a concurrent write.
 //
 // The shape carries the long-lived refresh token (rotated on every refresh
 // call) plus a cached short-lived access token and the most recent
@@ -12,7 +13,7 @@
 //
 // - `oauth`: a short-lived access token plus a rotating refresh token.
 //   Every refresh call mints a new access token AND rotates the refresh
-//   token; the access-token module CASes both together.
+//   token; the access-token module commits both together.
 // - `setup-token`: a long-lived (~1 year) inference-only bearer with NO
 //   refresh token. The `accessToken` entry IS the credential — when it
 //   expires the operator must re-import. `refreshToken` is null. The

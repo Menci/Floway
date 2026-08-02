@@ -1,6 +1,6 @@
 // Gateway-managed Codex credential state, persisted in upstreams.state_json.
-// Writes happen via UpstreamRepo.saveState with optimistic concurrency keyed
-// on the prior state JSON.
+// Writes happen via UpstreamRepo.saveState, which read-modify-writes the row
+// and replays the mutator whenever a concurrent writer wins.
 
 import type { CodexQuotaSnapshot } from './quota.ts';
 
@@ -46,11 +46,9 @@ export interface CodexAccountCredential {
   // older rows so the contract is closed end-to-end.
   openaiDeviceId: string;
   // accessToken / quotaSnapshot were added after the initial schema; absent on
-  // pre-existing rows. The asserter accepts that absent-key case unchanged so
-  // we never mutate the input (which would poison CAS via the caller's
-  // `fresh.state` reference); `readCodexUpstreamState` is the boundary that
-  // normalizes absent → `null` on a shallow copy, so consumers can rely on
-  // the typed `null` slot here.
+  // pre-existing rows. The asserter accepts that absent-key case unchanged;
+  // `readCodexUpstreamState` is the boundary that normalizes absent → `null`
+  // on a shallow copy, so consumers can rely on the typed `null` slot here.
   accessToken: CodexAccessTokenEntry | null;
   quotaSnapshot: CodexQuotaSnapshotEntryMap | null;
 }
@@ -187,10 +185,8 @@ const assertCodexAccountCredential = (value: unknown, where: string): void => {
   }
   // accessToken / quotaSnapshot were added after the initial schema; absent on
   // pre-existing rows. Accept the absent-key case verbatim and only validate
-  // the shape when the key is present and non-null. Mutating the input here
-  // (e.g. defaulting to null in place) would propagate through the caller's
-  // `fresh.state` reference and poison the CAS `expectedState` — the absent →
-  // `null` normalization to satisfy the typed contract happens in
+  // the shape when the key is present and non-null; the absent → `null`
+  // normalization that satisfies the typed contract happens in
   // `readCodexUpstreamState` on a shallow copy instead.
   if (obj.accessToken !== undefined && obj.accessToken !== null) {
     assertCodexAccessTokenEntry(obj.accessToken, `${where}.accessToken`);
@@ -227,9 +223,9 @@ export function assertCodexUpstreamState(value: unknown): asserts value is Codex
 // `quotaSnapshot` key; the typed contract on `CodexAccountCredential`
 // promises `null` rather than `undefined`. Build a shallow copy of the
 // state with absent → `null` so consumers can rely on `=== null` checks
-// without seeing legacy rows escape unfilled. The original `raw` is left
-// untouched so callers (e.g. the access-token and quota modules) can still pass it
-// straight through as the CAS `expectedState`.
+// without seeing legacy rows escape unfilled. `raw` is left untouched, which
+// keeps the state-write helpers free to hand it straight back to the repo to
+// say there is nothing to write.
 export const readCodexUpstreamState = (raw: unknown): CodexUpstreamState => {
   assertCodexUpstreamState(raw);
   return {

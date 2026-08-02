@@ -106,22 +106,22 @@ export const codexOAuthRefresh = async (c: CtxWithJson<typeof codexOAuthRefreshB
     return c.json({ error: errorMessage(err) }, 400);
   }
 
-  // Persist callback shape matches `createCodexProvider` — a rotated
-  // refresh_token CAS-writes back into the account slot with the just-read
-  // state as the expected value. A losing CAS is not an error here: the
-  // sibling that won the race already persisted a newer refresh_token, and
-  // `ensureCodexAccessToken`'s `recoverFromRefreshRace` picks up the
-  // sibling's fresh access token when our mint gets `invalid_grant`.
+  // Persist callback shape matches `createCodexProvider`. The rotated
+  // refresh_token must reach storage: the upstream invalidated the previous one
+  // when it issued this one, so a write that does not land leaves the row
+  // holding a dead credential that no later request can distinguish from a
+  // revoked one. The repo re-applies this against whichever concurrent write
+  // won and throws if it cannot.
   const persistRefreshTokenRotation = async (newRefreshToken: string): Promise<void> => {
-    const fresh = await getRepo().upstreams.getById(record.id);
-    if (!fresh) return;
-    assertCodexUpstreamState(fresh.state);
-    const next: CodexUpstreamState = {
-      accounts: fresh.state.accounts.map(a => a.chatgptAccountId === account.chatgptAccountId
-        ? { ...a, refresh_token: newRefreshToken, state_updated_at: new Date().toISOString() }
-        : a),
-    };
-    await getRepo().upstreams.saveState(record.id, next, { expectedState: fresh.state });
+    const rotatedAt = new Date().toISOString();
+    await getRepo().upstreams.saveState(record.id, current => {
+      assertCodexUpstreamState(current);
+      return {
+        accounts: current.accounts.map(a => a.chatgptAccountId === account.chatgptAccountId
+          ? { ...a, refresh_token: newRefreshToken, state_updated_at: rotatedAt }
+          : a),
+      } satisfies CodexUpstreamState;
+    });
   };
 
   try {
@@ -133,18 +133,15 @@ export const codexOAuthRefresh = async (c: CtxWithJson<typeof codexOAuthRefreshB
       // Terminal flip mirrors `createCodexProvider.persistTerminalState`:
       // clear the cached access token, mark the account refresh_failed so
       // the dashboard renders the red badge and prompts a re-import.
-      // Best-effort — a losing CAS means a concurrent rotation already
-      // wrote newer state that supersedes ours.
-      const fresh = await getRepo().upstreams.getById(record.id);
-      if (fresh) {
-        assertCodexUpstreamState(fresh.state);
-        const next: CodexUpstreamState = {
-          accounts: fresh.state.accounts.map(a => a.chatgptAccountId === account.chatgptAccountId
-            ? { ...a, state: 'refresh_failed' as const, state_message: err.upstreamMessage, state_updated_at: new Date().toISOString(), accessToken: null }
+      const failedAt = new Date().toISOString();
+      await getRepo().upstreams.saveState(record.id, current => {
+        assertCodexUpstreamState(current);
+        return {
+          accounts: current.accounts.map(a => a.chatgptAccountId === account.chatgptAccountId
+            ? { ...a, state: 'refresh_failed' as const, state_message: err.upstreamMessage, state_updated_at: failedAt, accessToken: null }
             : a),
-        };
-        await getRepo().upstreams.saveState(record.id, next, { expectedState: fresh.state });
-      }
+        } satisfies CodexUpstreamState;
+      });
       return c.json({ error: `Codex refresh failed: ${err.upstreamMessage}. Re-run OAuth exchange to recover.` }, 400);
     }
     return c.json({ error: errorMessage(err) }, 502);

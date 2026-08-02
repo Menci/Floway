@@ -7,7 +7,7 @@ import {
   readClaudeCodeUpstreamState,
   replaceSoleAccount,
   type ClaudeCodeAccessTokenEntry,
-  type ClaudeCodeUpstreamState,
+  type ClaudeCodeAccountCredential,
 } from './state.ts';
 import type { Fetcher, UpstreamsRepoSlim } from '@floway-dev/provider';
 
@@ -86,12 +86,9 @@ export const ensureClaudeCodeAccessToken = async (
 };
 
 // Reads, refreshes, and persists. The rotated refresh token and the new
-// cached access token are committed together in a single CAS write. CAS
-// loss on that write is fatal: the upstream rotates on every refresh call,
-// so a sibling rotation already burned the refresh token we hold, and
-// reusing our response would be rejected as `invalid_grant`. We throw so
-// the next request re-reads state and refreshes from the live tail of the
-// rotation chain.
+// cached access token are committed together in a single state write; the
+// repo applies our change to whatever state it finds, so a quota write or a
+// sibling rotation landing in between costs us nothing.
 //
 // Refresh-race recovery: when the upstream returns `invalid_grant`, it
 // might mean either (a) the refresh token is genuinely revoked, or (b) a
@@ -133,7 +130,7 @@ const ensureClaudeCodeAccessTokenInner = async (
       return { entry: account.accessToken, freshlyMinted: false };
     }
     const message = 'Setup token expired or absent; re-import to recover';
-    await persistTerminalState(args.repo, args.upstreamId, fresh.state, state, {
+    await persistTerminalState(args.repo, args.upstreamId, account, {
       reason: 'setup_token_expired',
       message,
       oauthCode: null,
@@ -154,7 +151,7 @@ const ensureClaudeCodeAccessTokenInner = async (
         const recovered = await recoverFromRefreshRace(args, account.refreshToken);
         if (recovered) return recovered;
       }
-      await persistTerminalState(args.repo, args.upstreamId, fresh.state, state, {
+      await persistTerminalState(args.repo, args.upstreamId, account, {
         reason: 'oauth_refresh_failed',
         message: error.upstreamMessage,
         oauthCode: error.code,
@@ -170,26 +167,28 @@ const ensureClaudeCodeAccessTokenInner = async (
     refreshedAt: now,
   };
 
-  // Refresh-token rotation: CAS-write the new refresh token alongside the
-  // fresh access-token entry in a single state transition. `state` /
-  // `stateUpdatedAt` stay untouched on a successful refresh — 'active' is
-  // already what we want, and bumping the timestamp on every refresh would
-  // muddy the dashboard's "credential health changed" signal.
+  // Refresh-token rotation: the new refresh token and the fresh access-token
+  // entry land in one state transition. `state` / `stateUpdatedAt` stay
+  // untouched on a successful refresh — 'active' is already what we want, and
+  // bumping the timestamp on every refresh would muddy the dashboard's
+  // "credential health changed" signal.
+  //
+  // The two fields are set on whatever account the repo hands us rather than
+  // on the account we read before the round-trip: the upstream has already
+  // invalidated the token we rotated out, so this write must survive a
+  // concurrent quota write. A re-import that swapped the credential class in
+  // the meantime leaves nothing to rotate — the account is returned untouched,
+  // which the repo reads as "nothing to do".
   const rotatedRefreshToken = refreshed.refresh_token;
   if (typeof rotatedRefreshToken !== 'string' || rotatedRefreshToken === '') {
     throw new Error('Claude Code refresh response missing refresh_token');
   }
-  const rotated = replaceSoleAccount(state, () => ({
-    ...account,
-    refreshToken: rotatedRefreshToken,
-    accessToken: newAccessTokenEntry,
-  }));
-  const result = await args.repo.saveState(args.upstreamId, rotated, { expectedState: fresh.state });
-  if (!result.updated) {
-    throw new Error(
-      `Claude Code refresh-token rotation lost CAS for upstream ${args.upstreamId}; another rotation won`,
-    );
-  }
+  await args.repo.saveState(args.upstreamId, current =>
+    replaceSoleAccount(readClaudeCodeUpstreamState(current), stored => (
+      stored.tokenKind === 'oauth'
+        ? { ...stored, refreshToken: rotatedRefreshToken, accessToken: newAccessTokenEntry }
+        : stored
+    )));
   logInfo('claude_code_refresh_token_rotated', {
     upstream_id: args.upstreamId,
     account_uuid: account.accountUuid,
@@ -200,16 +199,14 @@ const ensureClaudeCodeAccessTokenInner = async (
 };
 
 // Terminal flip from the oauth-error path. Distinct from fetch.ts's
-// `persistTerminalAccountState`: caller already holds a fresh state read
-// (so we take it as a param rather than re-reading), the trigger is an
-// oauth-protocol code (logged as `oauth_code`, possibly null for
-// code-internal flips), and the caller has already established the
-// account is active.
+// `persistTerminalAccountState`: the caller has already read the account and
+// established that it is active, so the log's identity and `from_state` come
+// from that read instead of a second one, and the trigger is an oauth-protocol
+// code (logged as `oauth_code`, possibly null for code-internal flips).
 const persistTerminalState = async (
   repo: UpstreamsRepoSlim,
   upstreamId: string,
-  expectedState: unknown,
-  current: ClaudeCodeUpstreamState,
+  previousAccount: ClaudeCodeAccountCredential,
   fields: {
     reason: string;
     message: string;
@@ -220,15 +217,17 @@ const persistTerminalState = async (
     oauthCode: string | null;
   },
 ): Promise<void> => {
-  const previousAccount = current.accounts[0];
-  const flipped = replaceSoleAccount(current, account => ({
-    ...account,
-    state: 'refresh_failed',
-    stateMessage: fields.message,
-    stateUpdatedAt: new Date().toISOString(),
-    accessToken: null,
-  }));
-  await repo.saveState(upstreamId, flipped, { expectedState });
+  // Stamped before the write: the mutator is replayed on a lost race and must
+  // return the same document each time.
+  const flippedAt = new Date().toISOString();
+  await repo.saveState(upstreamId, current =>
+    replaceSoleAccount(readClaudeCodeUpstreamState(current), account => ({
+      ...account,
+      state: 'refresh_failed',
+      stateMessage: fields.message,
+      stateUpdatedAt: flippedAt,
+      accessToken: null,
+    })));
   logWarn('claude_code_account_state_flip', {
     upstream_id: upstreamId,
     account_uuid: previousAccount.accountUuid,
@@ -283,16 +282,15 @@ const recoverFromRefreshRace = async (
 };
 
 // Used in 401-retry: clear the cached access token without touching the
-// refresh token, so the next call mints a fresh one.
+// refresh token, so the next call mints a fresh one. An account whose slot is
+// already empty is returned untouched, which the repo reads as "nothing to do".
 export const invalidateClaudeCodeAccessToken = async (args: {
   upstreamId: string;
   repo: UpstreamsRepoSlim;
 }): Promise<void> => {
-  const fresh = await args.repo.getById(args.upstreamId);
-  if (!fresh) throw new Error(`Claude Code upstream ${args.upstreamId} disappeared mid-request`);
-  const state = readClaudeCodeUpstreamState(fresh.state);
-  const account = state.accounts[0];
-  if (account.accessToken === null) return;
-  const cleared = replaceSoleAccount(state, account => ({ ...account, accessToken: null }));
-  await args.repo.saveState(args.upstreamId, cleared, { expectedState: fresh.state });
+  await args.repo.saveState(args.upstreamId, current => {
+    const state = readClaudeCodeUpstreamState(current);
+    if (state.accounts[0].accessToken === null) return state;
+    return replaceSoleAccount(state, account => ({ ...account, accessToken: null }));
+  });
 };

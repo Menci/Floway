@@ -291,30 +291,26 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
     getProvidedModels: async fetcher => {
       const fresh = await getProviderRepo().upstreams.getById(copilot.id);
       if (!fresh) throw new Error(`Copilot upstream ${copilot.id} disappeared mid-request`);
-      const initialState = readCopilotUpstreamState(fresh.state);
-      const known = initialState.knownModels ?? emptyKnownModels();
+      const known = readCopilotUpstreamState(fresh.state).knownModels ?? emptyKnownModels();
       const response = await fetchCopilotModels(upstreamConfig, fetcher);
       const now = Date.now();
       const merged = mergeKnownModels(known, response, now);
-      // Re-read after the upstream fetch — fetchCopilotModels may have minted a
-      // new Copilot token via the auth path, which persists copilotToken under
-      // its own CAS and advances state_json. Keying this save on the pre-fetch
-      // snapshot would lose deterministically on every token mint (~each
-      // expiry), so the known-models accumulator would never grow. Persistence
-      // is best-effort either way: a losing CAS or thrown error must not
-      // invalidate the response, which the caller is about to use.
-      const latest = await getProviderRepo().upstreams.getById(copilot.id);
-      if (latest) {
-        const latestState = readCopilotUpstreamState(latest.state);
-        try {
-          await getProviderRepo().upstreams.saveState(
-            copilot.id,
-            { ...latestState, knownModels: merged } satisfies CopilotUpstreamState,
-            { expectedState: latest.state },
-          );
-        } catch (err) {
-          console.warn(`Failed to persist Copilot known-models for ${copilot.id}:`, err);
-        }
+      // The accumulator merges into whatever is stored at write time, not into
+      // the snapshot read before the fetch — fetchCopilotModels may have minted
+      // a token and written this same row on the way through. Persistence stays
+      // best-effort: the fetched catalog is what the caller is about to serve,
+      // and a storage failure only costs the next call the entries this one
+      // would have added.
+      try {
+        await getProviderRepo().upstreams.saveState(copilot.id, current => {
+          const state = readCopilotUpstreamState(current);
+          return {
+            ...state,
+            knownModels: mergeKnownModels(state.knownModels ?? emptyKnownModels(), response, now),
+          } satisfies CopilotUpstreamState;
+        });
+      } catch (err) {
+        console.warn(`Failed to persist Copilot known-models for ${copilot.id}:`, err);
       }
       return finalizeCopilotModels(projectKnownModels(merged, now), copilot.flagOverrides);
     },

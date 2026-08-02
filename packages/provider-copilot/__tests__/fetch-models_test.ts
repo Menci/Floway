@@ -28,7 +28,7 @@ const installRepoAndConfig = async () => {
   initProviderRepo(() => ({
     upstreams: {
       getById: async () => stub,
-      saveState: async () => ({ updated: true }),
+      saveState: async () => {},
     },
   }));
   clearInProcessCopilotTokenCache();

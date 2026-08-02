@@ -7,8 +7,8 @@ import {
 } from '../src/access-token.ts';
 import { ClaudeCodeOAuthSessionTerminatedError } from '../src/auth/oauth.ts';
 import type { ClaudeCodeUpstreamConfig } from '../src/config.ts';
-import type { ClaudeCodeUpstreamState } from '../src/state.ts';
-import { directFetcher, type UpstreamRecord, type UpstreamsRepoSlim } from '@floway-dev/provider';
+import type { ClaudeCodeQuotaSnapshotEntry, ClaudeCodeUpstreamState } from '../src/state.ts';
+import { directFetcher, UpstreamGoneError, type UpstreamRecord, type UpstreamsRepoSlim } from '@floway-dev/provider';
 
 const accountUuid = 'acc-uuid-1';
 const upstreamId = 'up-claude-1';
@@ -54,21 +54,32 @@ const baseAccount: ClaudeCodeUpstreamState['accounts'][number] = {
 
 const farFutureMs = Date.now() + 24 * 60 * 60 * 1000;
 
-type SaveStateSpy = ReturnType<typeof vi.fn<(id: string, newState: unknown, opts: { expectedState: unknown }) => Promise<{ updated: boolean }>>>;
+type SaveStateSpy = ReturnType<typeof vi.fn<(id: string, mutate: (current: unknown) => unknown) => Promise<void>>>;
 type GetByIdSpy = ReturnType<typeof vi.fn<(id: string) => Promise<UpstreamRecord | null>>>;
 
 let current: UpstreamRecord | null;
+// The states the stub repo actually committed, in order. A mutator that
+// returns its argument unchanged serializes back to the stored text, which the
+// live repo turns into a no-op, so this records intent-to-write rather than
+// call count.
+let writes: ClaudeCodeUpstreamState[];
 let saveStateSpy: SaveStateSpy;
 let getByIdSpy: GetByIdSpy;
 let repo: UpstreamsRepoSlim;
 
 beforeEach(() => {
   current = makeRecord({ accounts: [{ ...baseAccount }] });
-  // Mirror the live D1-backed repo's read-after-write behavior so the cache
-  // tests can rely on getById observing the just-persisted state.
-  saveStateSpy = vi.fn(async (_id, newState, _opts) => {
-    if (current) current = { ...current, state: newState as ClaudeCodeUpstreamState };
-    return { updated: true };
+  writes = [];
+  // Mirror the live D1-backed repo: read the stored state, hand it to the
+  // mutator, skip the write when the result serializes identically, and fail a
+  // write against a row that is gone. Read-after-write matters for the cache
+  // tests, which rely on getById observing the just-persisted state.
+  saveStateSpy = vi.fn(async (id, mutate) => {
+    if (!current) throw new UpstreamGoneError(id);
+    const next = mutate(current.state) as ClaudeCodeUpstreamState;
+    if (JSON.stringify(next) === JSON.stringify(current.state)) return;
+    current = { ...current, state: next };
+    writes.push(next);
   });
   getByIdSpy = vi.fn(async () => current);
   repo = { getById: getByIdSpy, saveState: saveStateSpy };
@@ -87,7 +98,7 @@ describe('ensureClaudeCodeAccessToken', () => {
     expect(saveStateSpy).not.toHaveBeenCalled();
   });
 
-  test('refreshes when no token is cached, rotates refresh_token via CAS, persists fresh access token', async () => {
+  test('refreshes when no token is cached, rotates refresh_token, persists fresh access token', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       access_token: 'at_new', token_type: 'Bearer', expires_in: 3600, refresh_token: 'rt_v2', scope: 'user:inference',
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
@@ -97,12 +108,46 @@ describe('ensureClaudeCodeAccessToken', () => {
     expect(out.entry.token).toBe('at_new');
     expect(out.entry.expiresAt).toBeGreaterThan(Date.now());
 
-    expect(saveStateSpy).toHaveBeenCalledTimes(1);
-    const [, nextState] = saveStateSpy.mock.calls[0];
-    const account = (nextState as ClaudeCodeUpstreamState).accounts[0];
+    expect(writes).toHaveLength(1);
+    const account = writes[0].accounts[0];
     expect(account.refreshToken).toBe('rt_v2');
     expect(account.accessToken?.token).toBe('at_new');
     expect(account.state).toBe('active');
+  });
+
+  test('rotation lands on the state a concurrent quota write left behind', async () => {
+    // The row also carries values written on every data-plane response, so a
+    // quota snapshot routinely lands between our read and our write. The
+    // rotation is derived from whatever the repo hands the mutator, so both
+    // changes survive.
+    const siblingQuota: ClaudeCodeQuotaSnapshotEntry = {
+      fetchedAt: 1781805000000,
+      data: {
+        status: 'allowed',
+        reset: null,
+        fallbackAvailable: null,
+        fallbackPercentage: null,
+        representativeClaim: null,
+        overage: null,
+        fiveHour: null,
+        sevenDay: null,
+        raw: { 'anthropic-ratelimit-unified-status': 'allowed' },
+      },
+    };
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      current = makeRecord({ accounts: [{ ...baseAccount, quotaSnapshot: siblingQuota }] });
+      return new Response(JSON.stringify({
+        access_token: 'at_new', token_type: 'Bearer', expires_in: 3600, refresh_token: 'rt_v2', scope: 'user:inference',
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+
+    await ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher });
+
+    expect(writes).toHaveLength(1);
+    const account = writes[0].accounts[0];
+    expect(account.refreshToken).toBe('rt_v2');
+    expect(account.accessToken?.token).toBe('at_new');
+    expect(account.quotaSnapshot).toEqual(siblingQuota);
   });
 
   test('refreshes when the cached token is within the 5-minute skew window', async () => {
@@ -124,8 +169,8 @@ describe('ensureClaudeCodeAccessToken', () => {
     await expect(ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher }))
       .rejects.toBeInstanceOf(ClaudeCodeOAuthSessionTerminatedError);
 
-    expect(saveStateSpy).toHaveBeenCalledTimes(1);
-    const persisted = saveStateSpy.mock.calls[0][1] as ClaudeCodeUpstreamState;
+    expect(writes).toHaveLength(1);
+    const persisted = writes[0];
     expect(persisted.accounts[0].state).toBe('refresh_failed');
     expect(persisted.accounts[0].stateMessage).toContain('Refresh token revoked');
     expect(persisted.accounts[0].accessToken).toBeNull();
@@ -167,19 +212,10 @@ describe('ensureClaudeCodeAccessToken', () => {
       .rejects.toBeInstanceOf(ClaudeCodeOAuthSessionTerminatedError);
 
     expect(getByIdSpy).toHaveBeenCalledTimes(1);
-    expect(saveStateSpy).toHaveBeenCalledTimes(1);
-    const persisted = saveStateSpy.mock.calls[0][1] as ClaudeCodeUpstreamState;
+    expect(writes).toHaveLength(1);
+    const persisted = writes[0];
     expect(persisted.accounts[0].state).toBe('refresh_failed');
     expect(persisted.accounts[0].stateMessage).toBe('Session ended by Anthropic');
-  });
-
-  test('CAS loss on refresh-token rotation surfaces as an error (sibling rotation already won)', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
-      access_token: 'at_new', token_type: 'Bearer', expires_in: 3600, refresh_token: 'rt_v2', scope: 'user:inference',
-    }), { status: 200, headers: { 'content-type': 'application/json' } }));
-    saveStateSpy.mockResolvedValueOnce({ updated: false });
-    await expect(ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher }))
-      .rejects.toThrow(/CAS/);
   });
 
   test('saveState storage failure propagates without rotating', async () => {
@@ -189,6 +225,7 @@ describe('ensureClaudeCodeAccessToken', () => {
     saveStateSpy.mockRejectedValueOnce(new Error('D1 boom'));
     await expect(ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher }))
       .rejects.toThrow(/D1 boom/);
+    expect(writes).toHaveLength(0);
   });
 
   test('throws when the upstream row is missing', async () => {
@@ -211,21 +248,20 @@ describe('invalidateClaudeCodeAccessToken', () => {
     const entry: ClaudeCodeAccessTokenEntry = { token: 'at_x', expiresAt: farFutureMs, refreshedAt: 'now' };
     current = makeRecord({ accounts: [{ ...baseAccount, accessToken: entry }] });
     await invalidateClaudeCodeAccessToken({ upstreamId, repo });
-    expect(saveStateSpy).toHaveBeenCalledTimes(1);
-    const persisted = saveStateSpy.mock.calls[0][1] as ClaudeCodeUpstreamState;
-    expect(persisted.accounts[0].accessToken).toBeNull();
-    expect(persisted.accounts[0].refreshToken).toBe('rt_v1');
+    expect(writes).toHaveLength(1);
+    expect(writes[0].accounts[0].accessToken).toBeNull();
+    expect(writes[0].accounts[0].refreshToken).toBe('rt_v1');
   });
 
   test('no-ops when the slot is already null', async () => {
     await invalidateClaudeCodeAccessToken({ upstreamId, repo });
-    expect(saveStateSpy).not.toHaveBeenCalled();
+    expect(writes).toHaveLength(0);
   });
 
   test('throws when the upstream disappeared', async () => {
     current = null;
     await expect(invalidateClaudeCodeAccessToken({ upstreamId, repo })).rejects.toThrow(/disappeared/);
-    expect(saveStateSpy).not.toHaveBeenCalled();
+    expect(writes).toHaveLength(0);
   });
 });
 
@@ -331,8 +367,8 @@ describe('ensureClaudeCodeAccessToken (setup-token kind)', () => {
     // No upstream call — there's nothing to refresh against.
     expect(fetchSpy).not.toHaveBeenCalled();
 
-    expect(saveStateSpy).toHaveBeenCalledTimes(1);
-    const persisted = saveStateSpy.mock.calls[0][1] as ClaudeCodeUpstreamState;
+    expect(writes).toHaveLength(1);
+    const persisted = writes[0];
     expect(persisted.accounts[0].state).toBe('refresh_failed');
     expect(persisted.accounts[0].stateMessage).toMatch(/re-import/);
     expect(persisted.accounts[0].accessToken).toBeNull();
