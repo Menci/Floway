@@ -28,12 +28,10 @@ interface QuotaBucket {
   barPercent: number;
 }
 
-// A free seat reports `premium_interactions` as unavailable — `entitlement: 0`
-// paired with `percent_remaining: 0` — so treating it as metered would render
-// a full bar on a seat that simply has no premium allotment.
-//
-// `usedPercent` is kept as the upstream computed it, including past 100 when
-// an overage-permitted bucket runs negative; only the bar is clamped.
+// A free seat reports `entitlement: 0` with `percent_remaining: 0`, which as
+// metered would render a full bar on a seat with no premium allotment.
+// `usedPercent` stays as upstream computed it, past 100 for an overage-
+// permitted bucket; only the bar is clamped.
 const readBuckets = (quota: CopilotQuotaSnapshot | null): QuotaBucket[] =>
   Object.entries(quota?.quotas ?? {}).map(([id, detail]) => {
     const usedPercent = Math.round(100 - detail.percent_remaining);
@@ -48,9 +46,9 @@ const readBuckets = (quota: CopilotQuotaSnapshot | null): QuotaBucket[] =>
     };
   });
 
-// A seat with nothing metered still gets one row — otherwise the card would
-// read as "no quota observed" when the truth is "nothing is capped". Falling
-// back to the first reported bucket survives GitHub renaming the premium one.
+// A seat with nothing metered still gets one row, so the card does not read as
+// "no quota observed" when the truth is "nothing is capped". The unnamed
+// fallback survives GitHub renaming the premium bucket.
 const shownBuckets = (buckets: QuotaBucket[]): QuotaBucket[] => {
   const metered = buckets.filter(bucket => bucket.kind === 'metered');
   if (metered.length > 0) return metered;
@@ -58,23 +56,19 @@ const shownBuckets = (buckets: QuotaBucket[]): QuotaBucket[] => {
   return standIn === undefined ? [] : [standIn];
 };
 
-// Copilot's own client derives premium-interaction usage from the on-demand
-// `copilot_internal/user` snapshot:
+// Premium-interaction usage as Copilot's own client derives it:
 // https://github.com/microsoft/vscode-copilot-chat/blob/5863f5a7088958050792b5dccbe8b46c6e13eccc/src/platform/chat/common/chatQuotaServiceImpl.ts#L83-L120
 export function CopilotQuotaCard({ record }: { record: CopilotRecord }) {
   const { t } = useTranslation();
   const locale = useLocale();
-  // A manual refresh is persisted server-side too; holding the reply locally
-  // just avoids re-fetching the record to display it.
+  // A manual refresh is persisted server-side too; the local copy only avoids
+  // re-fetching the record to display it.
   const [refreshed, setRefreshed] = useState<CopilotQuotaSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const quota = refreshed ?? record.state?.quotaSnapshot?.data ?? null;
   const buckets = shownBuckets(readBuckets(quota));
 
-  // The refresh control can be pressed again while a probe is out, so the
-  // reload goes through the hook that aborts the superseded one rather than
-  // letting the older reply land last.
   const { refresh: load, refreshing: loading } = useRefresh(useCallback(async (signal: AbortSignal) => {
     setError(null);
     const { data, error: failure } = await callApi(
@@ -91,8 +85,7 @@ export function CopilotQuotaCard({ record }: { record: CopilotRecord }) {
     setRefreshed(data ?? null);
   }, [record]));
 
-  // `reset_at` is an instant, but always a day boundary, so it renders as the
-  // local calendar date it falls on.
+  // `reset_at` is an instant, but always a day boundary.
   const resets = quota?.reset_at == null ? null : shortDate(quota.reset_at, locale);
 
   return <section className="grid gap-2">
@@ -127,10 +120,8 @@ export function CopilotQuotaCard({ record }: { record: CopilotRecord }) {
       {bucket.kind === 'metered' && <ProgressBar max={100} thickness="large" value={bucket.barPercent} />}
     </div>)}
 
-    {/* Two independent facts about the snapshot rather than one phrase, so they
-        take the row's own two ends -- the same left-label/right-value split the
-        bucket rows above use. Narrow enough and they stack, which is why the
-        reset date leads: alone on a line it is the one worth reading first. */}
+    {/* The reset date leads because a narrow row stacks these two, and alone on
+        a line it is the one worth reading first. */}
     {quota && <div className="flex flex-wrap items-baseline justify-between gap-x-3">
       {resets !== null && <Text size={200} className="text-fui-fg3">
         {t('dashboard.upstreamEditor.copilot.quota.resets', { date: resets })}
