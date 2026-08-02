@@ -50,8 +50,6 @@ const submittedField = (formData: FormData, name: string): string => {
   return value;
 };
 
-// The resolver has already run, so the form cannot reach here holding a value it
-// refuses; what comes back from the call is the only thing left to report.
 export async function clientAction({
   request,
 }: Route.ClientActionArgs): Promise<SettingsActionData> {
