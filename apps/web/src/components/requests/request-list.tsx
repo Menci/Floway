@@ -273,17 +273,17 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
       <div className="flex items-center gap-3 min-w-0 text-fui-fg3">
         <Tooltip content={t('dashboard.requests.duration', { value: record.durationMs })} relationship="description">
           <span className="inline-flex items-center gap-1 shrink-0">
-            <TimerRegular aria-hidden="true" className="block flex-none" fontSize={18} /> <Text size={200}>{formatDuration(record.durationMs)}</Text>
+            <TimerRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200}>{formatDuration(record.durationMs)}</Text>
           </span>
         </Tooltip>
         <Tooltip content={t('dashboard.requests.requestBytes', { value: record.requestBytes })} relationship="description">
           <span className="inline-flex items-center gap-1 shrink-0">
-            <ArrowUploadRegular aria-hidden="true" className="block flex-none" fontSize={18} /> <Text size={200}>{formatBytes(record.requestBytes, locale)}</Text>
+            <ArrowUploadRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200}>{formatBytes(record.requestBytes, locale)}</Text>
           </span>
         </Tooltip>
         <Tooltip content={t('dashboard.requests.responseBytes', { value: record.responseBytes })} relationship="description">
           <span className="inline-flex items-center gap-1 shrink-0">
-            <ArrowDownloadRegular aria-hidden="true" className="block flex-none" fontSize={18} /> <Text size={200}>{formatBytes(record.responseBytes, locale)}</Text>
+            <ArrowDownloadRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200}>{formatBytes(record.responseBytes, locale)}</Text>
           </span>
         </Tooltip>
         {rowError
