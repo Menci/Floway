@@ -68,9 +68,8 @@ export const eligibleSearchUpstreams = (upstreams: readonly UpstreamRecord[], mo
     && (upstream.kind === 'codex' || upstream.kind === 'custom')
     && models.some(model => servesChatFor(model, upstream.id)));
 
-// Marks are shown in their owner's colors -- the opposite call from the upstream
-// chips, where one tone per provider is itself the identity; here nothing else
-// in the row says who the third party is.
+// Marks keep their owner's colors, unlike the one-tone-per-provider upstream
+// chips: nothing else in the row says who the third party is.
 interface ProviderOption {
   value: SearchConfig['provider'];
   labelKey: string;
@@ -221,7 +220,6 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
       if (!('ok' in result)) throw new Error(result.error);
       setTestResult(result);
     } catch (error) {
-      // The probe never ran: this is the Test button's own failure, not a result.
       setTestError(t('dashboard.searchConfig.testFailed', {
         message: errorMessage(error),
       }));
@@ -442,8 +440,6 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
   );
 }
 
-// A model's display name is often just its id, so the second line only appears
-// when it carries something new.
 const modelLabel = (model: ControlPlaneModel) => model.display_name ?? model.id;
 
 function DescribedOptionLabel({ description, label }: { description?: string; label: string }) {
