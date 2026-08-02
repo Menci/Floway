@@ -36,13 +36,10 @@ export const KIND_DEFAULT_TONES: Record<UpstreamProviderKind, UpstreamColorPrese
   ollama: 'rose',
 };
 
-// The preset tones are our own palette. WinUI states no per-upstream identity
-// colour, so there is nothing here to transcribe: the chip's geometry, type
-// and states stay Fluent's under the WinUI layer, and these classes only
-// repaint its fill, stroke and label. Each tone states all three per scheme,
-// because a single literal would have been picked against whichever scheme its
-// author was in; every label clears 4.5:1 against its own fill, which is the
-// floor lib/color.ts holds an operator-typed hue to.
+// Our own palette; WinUI states no per-upstream identity colour. Each tone
+// states all three values per scheme, because a single literal would have been
+// picked against whichever scheme its author was in. Every label clears 4.5:1
+// against its own fill, the floor lib/color.ts holds an operator-typed hue to.
 const useStyles = makeStyles({
   amber: {
     backgroundColor: 'light-dark(#fff8f0, #4d2d0a)',
@@ -100,13 +97,9 @@ const useStyles = makeStyles({
     borderLeftColor: 'light-dark(#a8a8a8, #666666)',
     color: 'light-dark(#616161, #d6d6d6)',
   } as any,
-  // A vendor mark is drawn as a mask over a background-color, and under forced
-  // colours a background-color is replaced by the system canvas -- the mark
-  // would paint canvas on canvas and disappear, where the one vector glyph in
-  // this set survives because a fill is forced to the system text colour.
-  // Opting the mask box out of the forcing keeps its declared `currentColor`,
-  // which it inherits from the chip, whose own forcing has already resolved it
-  // to that same text colour.
+  // A mask over a background-color would disappear under forced colours, where
+  // the canvas replaces that fill. Opting the mask box out keeps its declared
+  // `currentColor`, already resolved to the system text colour by the chip.
   // https://drafts.csswg.org/css-color-adjust-1/#forced-colors-properties
   maskedGlyph: {
     '@media (forced-colors: active)': {
@@ -118,11 +111,9 @@ const useStyles = makeStyles({
 export const providerLabel = (kind: ProviderBadgeKind) =>
   kind === null ? 'Unknown' : providerLabels[kind];
 
-// A preset tone states a foreground per scheme; a colour the operator typed
-// states one literal for both, and that literal was picked against whichever
-// scheme they were in. The construction itself -- the tenth, the third, and a
-// label resolved against the composited fill -- lives in lib/color.ts, because
-// the proxy badge paints the same way from its own palette.
+// An operator-typed colour is one literal for both schemes, so it is composited
+// in lib/color.ts instead of taking a preset's per-scheme values; the proxy
+// badge paints the same way from its own palette.
 export function ProviderBadge({ color, kind, label, size = 'small', title }: {
   color: UpstreamColor | null;
   kind: ProviderBadgeKind;
@@ -138,10 +129,8 @@ export function ProviderBadge({ color, kind, label, size = 'small', title }: {
   const providerName = t(`provider.${kind ?? 'unknown'}`, providerLabel(kind));
   const visibleLabel = label ?? providerName;
 
-  // A caller-supplied title states more than the chip shows -- the kind and the
-  // upstream id behind a display name -- so it describes the badge. The default
-  // is the label itself, restored for a reader whose column clipped it, and
-  // that is the badge's name rather than an addition to it.
+  // A caller-supplied title states more than the chip shows, so it describes
+  // the badge; the default is the clipped label restored, which names it.
   return (
     <Tooltip content={title ?? visibleLabel} relationship={title === undefined ? 'label' : 'description'}>
       <Chip
@@ -162,13 +151,9 @@ export function ProviderBadge({ color, kind, label, size = 'small', title }: {
 // paints as a solid block.
 // https://github.com/vitejs/vite/blob/5e7fe129a4dde4f41934083b25e490059985f4e6/docs/guide/assets.md#explicit-url-imports
 //
-// Vendor marks ship in their brand colors, and several carry gradients or a
-// white knockout that only reads on the vendor's own background. The console
-// wants one iconographic voice, so each mark is painted as a silhouette in
-// the surrounding text color: inside a provider chip it picks up the identity
-// tone, in a menu it is plain foreground, and dark mode needs no inversion.
-// Masking keeps the negative space (Copilot's eyes, Ollama's outline) that a
-// flat recolor would fill in.
+// Each mark is painted as a silhouette in the surrounding text color so the
+// console keeps one iconographic voice; masking preserves negative space
+// (Copilot's eyes, Ollama's outline) that a flat recolor would fill in.
 const providerIconUrls: Record<Exclude<UpstreamProviderKind, 'custom'>, string> = {
   azure: azureIconUrl,
   copilot: githubCopilotIconUrl,
