@@ -470,16 +470,16 @@ function ModelStatus({
   return (
     <Tooltip content={detail} relationship="description">
       <span className="inline-flex items-center gap-1.5 min-w-0 w-fit max-w-full" tabIndex={0}>
-        <Text size={300} wrap={false}>
-          {count === null
-            ? t('dashboard.upstreams.models.unavailable')
-            : t('dashboard.upstreams.models.count', { count })}
-        </Text>
         {!record.enabled
           ? <ProhibitedRegular className="block flex-none text-fui-fg2" fontSize={18} aria-label={t('dashboard.upstreams.cache.disabled')} />
           : healthy
             ? <CheckmarkCircleRegular className="block flex-none text-[var(--colorPaletteGreenForeground1)]" fontSize={18} aria-label={t('dashboard.upstreams.cache.ready')} />
             : <WarningRegular className="block flex-none text-[var(--colorPaletteDarkOrangeForeground1)]" fontSize={18} aria-label={t(`dashboard.upstreams.cache.${cacheStatus}`)} />}
+        <Text size={300} wrap={false}>
+          {count === null
+            ? t('dashboard.upstreams.models.unavailable')
+            : t('dashboard.upstreams.models.count', { count })}
+        </Text>
       </span>
     </Tooltip>
   );

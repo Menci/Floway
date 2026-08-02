@@ -115,10 +115,10 @@ export function UpstreamAccessControl({
                 <TableCell><div className="inline-flex items-center gap-1"><ReorderButtons disabled={disabled || !override} downLabel={t('dashboard.upstreamAccess.moveDown')} isFirst={index <= 0} isLast={index === -1 || index >= ids.length - 1} onMove={direction => moveUpstream(row.id, direction)} upLabel={t('dashboard.upstreamAccess.moveUp')} /></div></TableCell>
                 <TableCell><ProviderBadge color={row.color} kind={row.kind} label={row.name} /></TableCell>
                 <TableCell><span className="inline-flex items-center gap-1.5 min-w-0">
+                  {!row.upstreamEnabled && <ProhibitedRegular className="block flex-none text-fui-fg2" aria-label={t('dashboard.upstreamAccess.upstreamDisabled')} />}
                   {row.modelCount === null
                     ? t('dashboard.upstreamAccess.modelCountUnknown')
                     : t('dashboard.upstreamAccess.modelCount', { count: row.modelCount })}
-                  {!row.upstreamEnabled && <ProhibitedRegular className="block flex-none text-fui-fg2" aria-label={t('dashboard.upstreamAccess.upstreamDisabled')} />}
                 </span></TableCell>
               </TableRow>;
             })}</TableBody>
