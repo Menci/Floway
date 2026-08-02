@@ -31,9 +31,8 @@ const ROW_HEIGHT = 84;
 
 const useStyles = makeStyles({
   keySelector: {
-    // The selector heads a card and reads as part of it, so it drops the field
-    // fill and three edges and takes the subtle ramp instead of a ComboBox's
-    // control fills -- pressed being the state a ComboBox holds while expanded.
+    // Heads a card, so it takes the subtle ramp instead of a ComboBox's control
+    // fills -- pressed being the state a ComboBox holds while expanded.
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L230-L231
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L26-L27
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L34
@@ -44,11 +43,9 @@ const useStyles = makeStyles({
     borderLeft: '0 !important',
     borderRadius: 'var(--winui-overlay-corner-radius) var(--winui-overlay-corner-radius) 0 0 !important',
     width: '100%',
-    // The field sits flush against the card's clip, so the ComboBox focus
-    // visual has nowhere outside the box to be drawn and is cut away. Opening a
-    // gutter would put a band of card fill above the field and undo the reading
-    // above, so the same composite is turned inward instead, keeping the two
-    // brushes in the order seen from the field's edge.
+    // The field sits flush against the card's clip, so the focus composite is
+    // turned inward rather than opening a gutter that would put a band of card
+    // fill above the field.
     // ../../winui/controls/select.css.ts
     '&:has([data-fui-focus-visible])': {
       boxShadow: 'inset 0 0 0 4px var(--winui-control-fill-default) !important',
@@ -74,11 +71,10 @@ const useStyles = makeStyles({
     // ../../winui/controls/list.css.ts
     ':hover': { backgroundColor: 'var(--winui-subtle-fill-secondary)' },
     ':active': { backgroundColor: 'var(--winui-subtle-fill-tertiary)' },
-    // WinUI's row focus visual is two concentric strokes held a pixel clear of
-    // the row's edge, which keeps the ring off the divider shared with the row
-    // above. The inner stroke rides a pseudo-element resolved against the row,
-    // which is already a containing block because the virtualizer positions
-    // every row absolutely.
+    // Two concentric strokes held a pixel clear of the row's edge, keeping the
+    // ring off the divider shared with the row above. The inner stroke's
+    // pseudo-element resolves against the row, which is a containing block only
+    // because the virtualizer positions every row absolutely.
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L29-L30
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L181-L182
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L248
@@ -97,9 +93,8 @@ const useStyles = makeStyles({
       boxShadow: 'inset 0 0 0 1px var(--winui-focus-stroke-inner)',
       pointerEvents: 'none',
     },
-    // A forced palette repaints every colour it can reach, so the fill is
-    // handed over as the system keyword and the foreground restated on the
-    // descendants, which carry colours of their own.
+    // A forced palette repaints every colour it can reach, so the foreground is
+    // restated on the descendants, which carry colours of their own.
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L83-L84
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L89-L90
     '@media (forced-colors: active)': {
@@ -203,9 +198,8 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
         <Text size={300} className="truncate min-w-0 font-mono">
           {record.model ?? t('dashboard.requests.unknownModel')}
         </Text>
-        {/* These triggers are left unfocusable: the row is an `option` under a
-            roving tabindex, and a focusable descendant breaks that stop. The
-            aria relationship still carries each hint into the announcement. */}
+        {/* These triggers stay unfocusable: the row is an `option` under a
+            roving tabindex, and a focusable descendant breaks that stop. */}
         <Tooltip content={dateTime(record.startedAt, locale)} relationship="description">
           <Text size={200} className="ml-auto shrink-0 text-fui-fg3">
             {/* The narrow style, alone in the app: a trailing column in a dense
