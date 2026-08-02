@@ -1,4 +1,5 @@
-// Button and ToggleButton, restyled from Fluent 2 Web onto WinUI 3.
+// Button and ToggleButton, restyled from Fluent 2 Web onto WinUI 3, together
+// with InfoButton, whose root is a chromeless button under a class of its own.
 //
 // The foundation layer already re-points Fluent's neutral ramps at WinUI
 // values, so this file only carries what still disagrees after that remap:
@@ -149,6 +150,26 @@ ${checkedToggle(disabledStates)} {
   padding: var(--winui-button-padding);
 }
 
+/* InfoButton exchanges its outline glyph for the filled one under the pointer
+   and holds the filled one while its popover is open, which it can do because
+   its default icons are bundled pairs carrying both weights. No WinUI button
+   template substitutes a glyph for a visual state: all three styles present a
+   single ContentPresenter, and their CommonStates storyboards move Background,
+   BorderBrush and Foreground only. The rest weight is therefore pinned for
+   every state. Each class is doubled to outrank Fluent's own state rules.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L154-L233
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L235-L296
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L297-L377
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/deprecated/react-infobutton/src/components/InfoButton/DefaultInfoButtonIcons.tsx#L11-L13
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/deprecated/react-infobutton/src/components/InfoButton/useInfoButtonStyles.styles.ts#L45-L79 */
+.fui-InfoButton.fui-InfoButton .fui-Icon-filled.fui-Icon-filled {
+  display: none;
+}
+
+.fui-InfoButton.fui-InfoButton .fui-Icon-regular.fui-Icon-regular {
+  display: inline-flex;
+}
+
 /* WinUI animates the fill alone, for the content presenter's BrushTransition
    duration; border and foreground switch instantly.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L172-L174
@@ -261,6 +282,22 @@ ${nested(chromeless([...pressedStates, ...withIcon(pressedStates)]))} {
     color: var(--winui-text-fill-secondary);
   }
 
+  /* InfoButton's root carries a class of its own, so the chromeless rules above
+     cannot reach it, and Fluent paints it from the brand ramp on hover, while
+     pressed and for as long as its popover is open. WinUI's nearest counterpart
+     is the subtle button, whose foreground is the primary text fill at rest and
+     under the pointer and the secondary fill while pressed. Token redefinition
+     rather than a colour, because Fluent's three states differ only in which
+     token they name and the glyph is the sole descendant.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L119-L121
+     https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/deprecated/react-infobutton/src/components/InfoButton/useInfoButtonStyles.styles.ts#L38-L72 */
+  .fui-InfoButton {
+    --colorNeutralForeground2: var(--winui-text-fill-primary);
+    --colorNeutralForeground2BrandHover: var(--winui-text-fill-primary);
+    --colorNeutralForeground2BrandSelected: var(--winui-text-fill-primary);
+    --colorNeutralForeground2BrandPressed: var(--winui-text-fill-secondary);
+  }
+
   /* WinUI's two concentric rings map onto Fluent's border plus outline, so
      recolouring both inputs yields the pairing. Fluent's widths are kept as the
      web idiom: the inner ring is 2px where DefaultFocusVisualSecondaryThickness
@@ -275,6 +312,30 @@ ${nested(chromeless([...pressedStates, ...withIcon(pressedStates)]))} {
     --colorStrokeFocus2: var(--winui-focus-stroke-inner);
     --colorTransparentStroke: var(--winui-focus-stroke-outer);
     border-color: var(--winui-focus-stroke-inner);
+  }
+
+  /* Fluent gives the primary appearance alone a second inset stroke in the
+     on-accent foreground, and withdraws it again on pointer-over. WinUI states
+     no focus visual on AccentButtonStyle -- it sets no FocusVisual property and
+     its storyboards move Background, BorderBrush and Foreground only -- so an
+     accent button takes the same system ring as every other one, and the ring
+     does not answer the pointer, CommonStates and FocusStates being separate
+     groups. The two terms Fluent's own base focus style states are restated
+     here through the same tokens, unconditionally so no interaction state can
+     reintroduce the third, and the Firefox width correction is carried with
+     them so the accent ring stays identical to its neighbours there too.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L235-L296
+     https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-button/library/src/components/Button/useButtonStyles.styles.ts#L105-L122
+     https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-button/library/src/components/Button/useButtonStyles.styles.ts#L473-L493
+     https://bugzilla.mozilla.org/show_bug.cgi?id=1857642 */
+  ${appearanceRoot('primary')}[data-fui-focus-visible] {
+    box-shadow: 0 0 0 var(--strokeWidthThin) var(--colorStrokeFocus2) inset;
+  }
+
+  @supports (-moz-appearance: button) {
+    ${appearanceRoot('primary')}[data-fui-focus-visible] {
+      box-shadow: 0 0 0 calc(var(--strokeWidthThin) + 0.25px) var(--colorStrokeFocus2) inset;
+    }
   }
 
   /* A checked ToggleButton is an accent button in WinUI, whatever the unchecked
