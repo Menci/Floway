@@ -11,13 +11,10 @@ const { Link } = fluentComponents;
 // anchor with an href, so a middle click still opens a tab, and defers to the
 // router on a plain click the way the sidebar's items do.
 //
-// `inline` is Fluent's name for a link inside running text, which is WinUI's
-// Hyperlink; without it the link is WinUI's HyperlinkButton. The two differ only
-// in whether they underline at rest, and the layer keys off exactly this prop.
 // `children` is optional because `Trans` supplies them by cloning the element
 // it was handed, so an interpolated link is authored without any.
-export function RouteLink({ children, inline, to }: { children?: ReactNode; inline?: boolean; to: string }) {
+export function RouteLink({ children, to }: { children?: ReactNode; to: string }) {
   const href = useHref(to);
   const handleClick = useLinkClickHandler<HTMLAnchorElement>(to, pageNavigation);
-  return <Link href={href} inline={inline} onClick={handleClick}>{children}</Link>;
+  return <Link href={href} onClick={handleClick}>{children}</Link>;
 }

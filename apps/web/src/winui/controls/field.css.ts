@@ -1,12 +1,15 @@
 // Field and InfoLabel restyled to the WinUI 3 look; neither has a WinUI
 // counterpart control, so their rules take their values from the roles they
-// stand in for. Link does have two: the inline Hyperlink and the standalone
-// HyperlinkButton, which agree on colour and differ only on the underline.
+// stand in for. Link has two candidates -- the inline Hyperlink and the
+// standalone HyperlinkButton, which agree on colour and differ on the
+// underline -- and every link in this app is the HyperlinkButton, by decision.
 //
 // The accent text ramp a Link walks appears in no theme dictionary as a
 // literal, so ../tokens.ts transcribes the ramp Windows generates for its own
 // default accent colour, at the cost of that one assumption.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L297
+
+import { focusRectStrokes } from '../focus-rect.css';
 
 // Fluent's only DOM marker for a Field's horizontal orientation is the Griffel
 // atom for `useRootStyles.horizontal`, a content hash pinned to the resolved
@@ -161,26 +164,39 @@ export const fieldCss = `
   color: var(--winui-accent-text-fill-tertiary);
 }
 
-/* Whether a hyperlink underlines. WinUI 3 ships HyperlinkUnderlineVisible as
-   False, inverting the value dxaml's generic.xaml still carries, and its two
-   hyperlink forms read that flag differently: HyperlinkButton drops the
-   underline in every state, while the inline Hyperlink keeps it at rest and
-   drops it under the pointer. Fluent is the exact inverse -- no underline at
-   rest, one on hover and press -- so the pointer states are taken away here
-   and the rest state is left to Fluent's inline prop, which stands for the
-   same distinction and already carries the underline the inline form wants.
-   Focused links are exempt because Fluent says focus with a doubled underline,
-   which stands in for WinUI's two concentric rings: those sit 3px outside the
-   control and cannot follow an inline link across a line break.
+/* No link in this app underlines, in any state. WinUI 3 ships
+   HyperlinkUnderlineVisible as False, inverting the value dxaml's generic.xaml
+   still carries, and its two hyperlink forms read that flag differently:
+   HyperlinkButton drops the underline everywhere, while the inline Hyperlink
+   keeps it at rest. Both forms are available and the app takes the
+   HyperlinkButton for all of them, so Fluent's inline prop -- which underlines
+   at rest, standing for the form this app does not use -- has nothing to say
+   here either.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Hyperlink_themeresources.xaml#L20
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/HyperlinkButton_themeresources.xaml#L62-L63
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/text/TextBlock/Hyperlink.cpp#L669-L671
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/HyperLinkButton_Partial.cpp#L207-L212
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L5926 */
-.fui-Link.fui-Link:not([data-fui-focus-visible]):hover,
-.fui-Link.fui-Link:not([data-fui-focus-visible]):active {
+.fui-Link.fui-Link,
+.fui-Link.fui-Link:hover,
+.fui-Link.fui-Link:active,
+.fui-Link.fui-Link:focus-visible {
   text-decoration-line: none;
 }
+
+/* Which leaves the focus rect to say focus, as it does for everything else
+   focusable here -- Fluent says it with a doubled underline, which this app has
+   no underline to double. A link's box is drawn tight around its text, so it
+   states the room the strokes need and takes the same width back out of its
+   margin, leaving the line it sits in as it was. */
+.fui-Link.fui-Link {
+  border-radius: var(--winui-control-corner-radius);
+  margin-inline: -5px;
+  padding-block: 1px;
+  padding-inline: 5px;
+}
+
+.fui-Link.fui-Link:focus-visible {${focusRectStrokes}}
 
 /* A disabled link. AccentTextFillColorDisabled arrives through the accent ramp
    but carries TextFillColorDisabled's neutral fade, a different neutral from
@@ -211,8 +227,9 @@ export const fieldCss = `
    https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
 @media (forced-colors: active) {
   .fui-Link.fui-Link,
-  .fui-Link.fui-Link:not([data-fui-focus-visible]):hover,
-  .fui-Link.fui-Link:not([data-fui-focus-visible]):active {
+  .fui-Link.fui-Link:hover,
+  .fui-Link.fui-Link:active,
+  .fui-Link.fui-Link:focus-visible {
     text-decoration-line: underline;
   }
 

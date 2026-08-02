@@ -19,11 +19,15 @@
 // https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L173-L174
 // https://drafts.csswg.org/css-color-adjust/#forced-colors-properties
 
-export const focusRectCss = `
-.winui-focus-rect:focus-visible,
-.winui-focus-rect-within :focus-visible {
+// The pair of strokes, for a control whose selector cannot be a class because
+// the app does not render the element that takes focus.
+export const focusRectStrokes = `
   box-shadow: inset 0 0 0 3px var(--winui-focus-stroke-inner);
   outline: 2px solid var(--winui-focus-stroke-outer);
   outline-offset: -2px;
-}
+`;
+
+export const focusRectCss = `
+.winui-focus-rect:focus-visible,
+.winui-focus-rect-within :focus-visible {${focusRectStrokes}}
 `;

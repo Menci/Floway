@@ -51,7 +51,7 @@ export function ApiDocsContent() {
     <Panel className={PANEL_SECTION_STACK_CLASS}>
       <SectionHeader
         description={<Trans
-          components={[<RouteLink inline key="api-keys" to="/dashboard/services/api-keys" />]}
+          components={[<RouteLink key="api-keys" to="/dashboard/services/api-keys" />]}
           i18nKey="dashboard.apiDocs.authentication.description"
         />}
         level={2}

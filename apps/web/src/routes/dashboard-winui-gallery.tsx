@@ -1044,9 +1044,8 @@ function TextSection() {
       <Text font="numeric">1 842 tokens</Text>
     </Row>
     <Row label="link">
-      <Link href="#button">Inline link</Link>
+      <Link href="#button">Link</Link>
       <Link appearance="subtle" href="#card">Subtle link</Link>
-      <Link inline href="#table">Inline-styled link</Link>
       <Link disabled>Disabled link</Link>
       <Link disabled disabledFocusable>Disabled, focusable link</Link>
     </Row>
