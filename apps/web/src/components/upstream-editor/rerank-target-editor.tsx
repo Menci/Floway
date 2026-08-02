@@ -8,8 +8,6 @@ import { DEFAULT_RERANK_PATHS } from '@floway-dev/protocols/rerank';
 
 const { Field, Option } = fluentComponents;
 
-// Rerank upstreams disagree on both the request dialect and the path, and the
-// pairing is per model rather than per provider, so both live on the target.
 const PROTOCOL_LABELS: Record<RerankProtocol, string> = {
   'cohere-v1': 'Cohere v1',
   'cohere-v2': 'Cohere v2',
