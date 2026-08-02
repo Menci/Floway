@@ -197,7 +197,7 @@ export function ModelDetail({
           />
         </ModelEditorSection>
 
-        {!fieldsReadOnly && <Button appearance="secondary" icon={<DeleteRegular />} onClick={onDelete}>
+        {!fieldsReadOnly && <Button icon={<DeleteRegular />} onClick={onDelete}>
           {t('dashboard.upstreamEditor.models.delete')}
         </Button>}
       </>}

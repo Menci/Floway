@@ -211,7 +211,7 @@ function ProxyFallbackEditor({ proxies, runtime }: { proxies: ProxyRecord[]; run
       </div>
       {runtime.kind === 'cloudflare' && <Controller control={control} name={`proxyFallbackList.${index}.colos`} render={({ field: item }) => <ColoCombobox current={runtime.runtimeLocation} onChange={item.onChange} value={item.value ?? []} />} />}
     </div>)}
-    <Button appearance="secondary" className="!font-fui-regular" onClick={() => append({ id: 'direct_fetch' })}>{t('dashboard.upstreamEditor.proxy.add')}</Button>
+    <Button onClick={() => append({ id: 'direct_fetch' })}>{t('dashboard.upstreamEditor.proxy.add')}</Button>
     {hint && <Text id={`${idPrefix}-hint`} size={200} className="text-fui-fg2">{hint}</Text>}
   </div>;
 }

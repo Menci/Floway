@@ -70,7 +70,6 @@ function RateInput({ label, onChange, readOnly, value }: {
       className="!w-full"
       inputMode="decimal"
       readOnly={readOnly}
-      size="medium"
       value={draft}
       onBlur={() => {
         setEditing(false);
@@ -227,7 +226,6 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
                   className="!w-full"
                   placeholder={t('dashboard.upstreamEditor.models.serviceTierPlaceholder')}
                   readOnly={readOnly}
-                  size="medium"
                   value={typeof current === 'string' ? current : ''}
                   onChange={(_, data) => patchActive(draft => withEqualityCoordinate(draft, axis.id, data.value))}
                 />
@@ -251,7 +249,6 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
                   className="!w-full"
                   inputMode="numeric"
                   readOnly={readOnly}
-                  size="medium"
                   value={threshold?.value === undefined ? '' : String(threshold.value)}
                   onChange={(_, data) => {
                     const raw = data.value.trim();

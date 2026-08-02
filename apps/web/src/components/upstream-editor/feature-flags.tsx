@@ -78,7 +78,7 @@ export function FeatureFlagsEditor({
       </div>
       <Dropdown
         aria-label={label}
-        className="w-[140px] !min-w-[140px]"
+        className="w-[140px]"
         disabled={readOnly}
         selectedOptions={[state]}
         value={stateLabel}

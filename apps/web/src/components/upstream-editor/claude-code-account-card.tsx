@@ -159,10 +159,10 @@ function EntryList({ entries }: { entries: [string, string][] }) {
   return <dl className="grid gap-1 m-0">
     {entries.map(([key, value]) => <div key={key} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-3">
       <Tooltip content={key} relationship="label">
-        <dt className="truncate font-mono mono-size-xs text-xs text-fui-fg3" tabIndex={0}>{key}</dt>
+        <dt className="truncate font-mono mono-size-xs text-fui-fg3" tabIndex={0}>{key}</dt>
       </Tooltip>
       <Tooltip content={value} relationship="label">
-        <dd className="truncate font-mono mono-size-xs text-xs text-fui-fg2 m-0" tabIndex={0}>{value}</dd>
+        <dd className="truncate font-mono mono-size-xs text-fui-fg2 m-0" tabIndex={0}>{value}</dd>
       </Tooltip>
     </div>)}
   </dl>;

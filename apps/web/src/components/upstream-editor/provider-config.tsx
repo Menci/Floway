@@ -269,8 +269,6 @@ function EndpointPicker() {
       {endpointOptions.map(([key, label]) => {
         const selected = value[key] !== undefined;
         return <Checkbox
-          id={`${idPrefix}-${key}`}
-          name={`default-endpoint-${key}`}
           key={key}
           checked={selected}
           label={{ children: label, className: monoLabel }}
@@ -503,7 +501,7 @@ function OAuthConfig({ record, onPatch }: {
       <Button appearance="primary" disabledFocusable={refreshing} icon={refreshing ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={() => void refreshCredential()}>
         {t('dashboard.upstreamEditor.oauth.refresh')}
       </Button>
-      <Button appearance="secondary" onClick={() => setOpen(value => !value)}>{open ? t('common.cancel') : t('dashboard.upstreamEditor.oauth.reimport')}</Button>
+      <Button onClick={() => setOpen(value => !value)}>{open ? t('common.cancel') : t('dashboard.upstreamEditor.oauth.reimport')}</Button>
     </div>}
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
     {open && <>

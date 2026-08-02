@@ -282,7 +282,7 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
           description={t('dashboard.upstreamEditor.models.yamlHint')}
           level={2}
           title={t('dashboard.upstreamEditor.models.yamlTitle')}
-          actions={<Button appearance="secondary" className="!min-w-[160px]" icon={<CheckmarkCircleRegular />} onClick={applyAndLeave}>
+          actions={<Button className="!min-w-[160px]" icon={<CheckmarkCircleRegular />} onClick={applyAndLeave}>
             {t('dashboard.upstreamEditor.models.editWithUi')}
           </Button>}
         />
@@ -313,7 +313,7 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
       />
       <div className="ml-auto flex flex-wrap items-center gap-2">
         {!readOnly && <Button appearance="primary" icon={<AddRegular />} onClick={() => append({ upstreamModelId: '', kind: 'chat', endpoints: { chatCompletions: {} } })}>{t('dashboard.upstreamEditor.models.add')}</Button>}
-        {!readOnly && <Button appearance="secondary" className="!min-w-[160px]" icon={<CodeRegular />} onClick={() => { onYamlChange(serializeModels(manual)); onYamlErrorChange(null); onViewChange('yaml'); }}>{t('dashboard.upstreamEditor.models.editAsYaml')}</Button>}
+        {!readOnly && <Button className="!min-w-[160px]" icon={<CodeRegular />} onClick={() => { onYamlChange(serializeModels(manual)); onYamlErrorChange(null); onViewChange('yaml'); }}>{t('dashboard.upstreamEditor.models.editAsYaml')}</Button>}
         {record.kind !== 'azure' && <>
           <ModelsCacheStatus cache={record.modelsCache} />
           <Button disabled={!autoFetchEnabled} disabledFocusable={modelsLoading} icon={modelsLoading ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={onRefreshModels}>{t('dashboard.upstreamEditor.models.refresh')}</Button>
@@ -347,9 +347,9 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
                 </button>
               </Tooltip>
             </TableCell>
-            <TableCentredCell><Text size={300}>{t(`dashboard.upstreamEditor.models.kindValue.${row.config.kind}`)}</Text></TableCentredCell>
+            <TableCentredCell>{t(`dashboard.upstreamEditor.models.kindValue.${row.config.kind}`)}</TableCentredCell>
             <TableCell className="overflow-hidden"><span className="flex items-center gap-1 min-w-0 max-w-full"><Tooltip content={id} relationship="label"><code className="block min-w-0 max-w-[calc(100%-36px)] truncate leading-[var(--lineHeightBase300)]" tabIndex={0}>{id}</code></Tooltip><TooltipIconButton className="flex-none" icon={copyOutcomeIcon(outcomeFor(id))} label={copyLabel(outcomeFor(id), t('dashboard.upstreamEditor.models.copy'))} onClick={() => copy(id, id)} /></span></TableCell>
-            <TableCentredCell><Text size={300}>{t(`dashboard.upstreamEditor.models.${row.source}`)}</Text></TableCentredCell>
+            <TableCentredCell>{t(`dashboard.upstreamEditor.models.${row.source}`)}</TableCentredCell>
             <TableCell><TableActions><TooltipIconButton icon={<EditRegular />} label={t('dashboard.upstreamEditor.models.edit')} onClick={() => onSelectUpstreamModel(row.config.upstreamModelId)} />{row.manualIndex !== null && <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.delete')} onClick={() => deleteDialog.open(row)} />}</TableActions></TableCell>
           </TableRow>;
         })}</TableBody>
