@@ -17,11 +17,8 @@ const RELATIVE_UNITS: [limitSeconds: number, perUnitSeconds: number, unit: Intl.
   [2_592_000, 86_400, 'day'],
 ];
 
-// Null past 30 days, where callers read better with an absolute date. Symmetric
-// about the reading, which is what a token expiry or rate-limit reset needs.
-//
-// `now` is an argument rather than a `Date.now()` read, so a list of rows all
-// answer to one tick of `useNow` instead of each reading the clock mid-render.
+// Null past 30 days, where callers read better with an absolute date.
+// `now` is an argument so a list of rows answers to one tick of `useNow`.
 export const relativeTime = (
   value: string | number,
   locale: string,
