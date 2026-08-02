@@ -20,34 +20,26 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
   const [hasOlder, setHasOlder] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const seenRef = useRef(new Set<string>());
-  // Which key's accumulation the hook holds. An older-page request outlives
-  // the key it was issued for, because switching keys re-renders this hook
-  // rather than unmounting it, so the page it brings back is answered against
-  // the generation it was issued in and a page from an earlier one is dropped
-  // whole -- not merely its rows: `setError` and `setHasOlder` would carry one
-  // key's outcome into another key's list just as wrongly, and a `hasOlder`
-  // turned off by the wrong key's short page ends the new key's pagination for
-  // as long as the route stays open.
+  // Switching keys re-renders this hook rather than unmounting it, so an
+  // older-page request outlives the key it was issued for; its whole outcome
+  // -- rows, `setError` and `setHasOlder` alike -- is dropped when the
+  // generation it was issued in is gone.
   const generationRef = useRef(0);
-  // The generation of the request in flight, or null when none is. Asked this
-  // way, a request left behind by another key cannot hold the new key's
-  // pagination shut, and the request that ends releases only its own claim.
+  // Generation-keyed rather than a boolean, so a request left behind by another
+  // key cannot hold the new key's pagination shut.
   const loadingOlderRef = useRef<number | null>(null);
   const olderRequestRef = useRef<AbortController | null>(null);
 
-  // The loader hands back a fresh `initialRecords` array on every run, and
-  // selecting a record re-runs the loader. The subscription is keyed on the API
-  // key alone, so the seed reaches the effect through a ref rather than through
-  // its deps; otherwise every selection would close the stream and pay for
-  // another server snapshot. The ref is written here, beside the state the
-  // same input adjusts during render, and is read only from the effect.
+  // The loader hands back a fresh `initialRecords` array on every run and
+  // selecting a record re-runs the loader, so the seed reaches the effect
+  // through a ref; listing it as a dependency would close the stream and pay
+  // for another server snapshot on every selection.
   const initialRecordsRef = useRef(initialRecords);
   // eslint-disable-next-line react-hooks/refs -- Carrying the newest render's seed to an effect that must not list it as a dependency.
   initialRecordsRef.current = initialRecords;
 
-  // Switching keys discards the previous stream's accumulation. Doing that
-  // during render rather than in the effect means the component never paints
-  // one key's records under another key's heading.
+  // Discarding during render rather than in the effect keeps the component from
+  // ever painting one key's records under another key's heading.
   const [subscribedKeyId, setSubscribedKeyId] = useState(keyId);
   if (subscribedKeyId !== keyId) {
     setSubscribedKeyId(keyId);
@@ -98,9 +90,6 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
       }
     });
     return () => {
-      // The page still in flight belongs to the subscription being closed, so
-      // it goes with it. Its result would be discarded either way; aborting
-      // spares the round trip.
       olderRequestRef.current?.abort();
       source.close();
     };
