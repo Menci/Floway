@@ -28,7 +28,7 @@ import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-cop
 import type { DumpRecord, DumpStreamEvent } from '@floway-dev/gateway/dump-types';
 import 'prismjs/components/prism-json';
 
-const { MessageBar, MessageBarBody, Tab, TabList, Text, makeStyles, mergeClasses } = fluentComponents;
+const { Tab, TabList, Text, makeStyles, mergeClasses } = fluentComponents;
 
 // Region dividers take WinUI's divider brush (`colorNeutralStroke3`), not the
 // control outline; the two only differ in the dark dictionary.
@@ -202,7 +202,7 @@ export function RequestDetailPanel({ collected: loadedCollected, error: loadedEr
       <section className={s.section}>
         <DetailSectionHeader title={t('dashboard.requests.requestBody')} copyText={requestBody.text ? requestBody.copyText : undefined} />
         <SectionBody>
-          {requestBody.decodeError && <MessageBar intent="warning" className="!m-3"><MessageBarBody>{t('dashboard.requests.decodeError', { error: requestBody.decodeError })}</MessageBarBody></MessageBar>}
+          {requestBody.decodeError && <OutcomeMessageBar className="!m-3" intent="warning">{t('dashboard.requests.decodeError', { error: requestBody.decodeError })}</OutcomeMessageBar>}
           {requestBody.text ? <CodeView body={requestBody} /> : <EmptyStateLine className="p-4">{t('dashboard.requests.noRequestBody')}</EmptyStateLine>}
         </SectionBody>
       </section>
@@ -233,11 +233,11 @@ export function RequestDetailPanel({ collected: loadedCollected, error: loadedEr
           {record.response.body.type === 'none' ? <EmptyStateLine className="p-4">{t('dashboard.requests.noResponseBody')}</EmptyStateLine> : null}
           {record.response.body.type === 'bytes' && (responseBody.text ? <CodeView body={responseBody} /> : <EmptyStateLine className="p-4">{t('dashboard.requests.emptyBody')}</EmptyStateLine>)}
           {record.response.body.type === 'stream' && streamView === 'collected' && (
-            collectKind === null ? <MessageBar intent="warning" className="!m-3"><MessageBarBody>{t('dashboard.requests.noCollector')}</MessageBarBody></MessageBar>
+            collectKind === null ? <OutcomeMessageBar className="!m-3" intent="warning">{t('dashboard.requests.noCollector')}</OutcomeMessageBar>
               : collected === null ? null
                 : <>
-                    {collected.error && <MessageBar intent="error" className="!m-3"><MessageBarBody>{collected.error}</MessageBarBody></MessageBar>}
-                    {!collected.error && collected.truncated && <MessageBar intent="warning" className="!m-3"><MessageBarBody>{t('dashboard.requests.truncatedStream')}</MessageBarBody></MessageBar>}
+                    {collected.error && <OutcomeMessageBar className="!m-3">{collected.error}</OutcomeMessageBar>}
+                    {!collected.error && collected.truncated && <OutcomeMessageBar className="!m-3" intent="warning">{t('dashboard.requests.truncatedStream')}</OutcomeMessageBar>}
                     {collected.result !== null && <CodeView body={{ text: JSON.stringify(collected.result, null, 2), copyText: '', decodeError: null, isJson: true }} />}
                   </>
           )}
