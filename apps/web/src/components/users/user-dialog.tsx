@@ -78,8 +78,7 @@ export function UserDialog(props: UserDialogProps) {
   const adminLocked = props.mode === 'edit' && (props.user.id === 1 || props.user.id === actorId);
 
   const save = async (form: UserFormValues) => {
-    // The button stays focusable while this runs, so its form can still be
-    // submitted from it; refusing here is what makes the second press inert.
+    // disabledFocusable leaves the submit button submittable while saving, so this guard is what makes the second press inert.
     if (saving) return;
     setSaving(true);
     setError(null);
