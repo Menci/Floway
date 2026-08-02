@@ -4,13 +4,9 @@ import { fluentComponents } from '../../fluent';
 
 const { Badge, makeStyles } = fluentComponents;
 
-// The label is a wire token, so it is set in the monospace stack, but it keeps
-// the badge's Caption size rather than stepping onto the app's mono ramp: that
-// ramp's one-pixel reduction is spent against the prose a code span sits inside,
-// and a badge label has none beside it.
-//
-// The width floor is wider than any method an endpoint table lists, so the
-// column reads as one width rather than one per method name.
+// Monospace, but at the badge's own Caption size: the app's mono ramp shrinks a
+// pixel to sit inside prose, and a badge label has none beside it. The width
+// floor exceeds every method name, so a column of these reads as one width.
 const useStyles = makeStyles({
   root: {
     fontFamily: 'var(--fontFamilyMonospace)',
