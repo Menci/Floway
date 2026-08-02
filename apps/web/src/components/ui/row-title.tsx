@@ -15,8 +15,12 @@ export const rowTitleClass = 'winui-focus-rect text-fui-fg1 no-underline hover:u
 
 // A `button` rather than an anchor: this one opens the row where it stands, so
 // there is no address to carry and nothing for a new tab to open.
+//
+// The leading is stated because truncation brings `overflow: hidden` with it,
+// and a button's own line box is tight enough to clip a descender. The sibling
+// cell that truncates a model id states the same step for the same reason.
 export function RowTitleButton({ children, onClick }: { children: ReactNode; onClick: () => void }) {
-  return <button className={`${rowTitleClass} block bg-transparent border-0 cursor-pointer min-w-0 max-w-full truncate p-0 text-fui-base300 text-left`} onClick={onClick} type="button">
+  return <button className={`${rowTitleClass} block bg-transparent border-0 cursor-pointer leading-[var(--lineHeightBase300)] min-w-0 max-w-full truncate p-0 text-fui-base300 text-left`} onClick={onClick} type="button">
     {children}
   </button>;
 }
