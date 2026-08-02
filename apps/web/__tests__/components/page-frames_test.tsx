@@ -3,9 +3,9 @@ import { useState } from 'react';
 import { createMemoryRouter, RouterProvider, useOutlet } from 'react-router';
 import { describe, expect, it } from 'vitest';
 
-import { renderInApp } from '../render';
 import { usePageFrames } from '../../src/components/page-frames';
 import { pageNavigation } from '../../src/lib/page-navigation';
+import { renderInApp } from '../render';
 
 // A page is held on screen while it leaves, and it is held so that what the
 // operator was looking at is what fades out. That only works while React keeps

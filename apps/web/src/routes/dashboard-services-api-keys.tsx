@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { Route } from './+types/dashboard-services-api-keys';
@@ -95,10 +95,18 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
   const agentSetupModels = selectedKey && data.models
     ? modelsForAgentSetup(data.models, selectedKey.upstream_ids, user.upstreamIds)
     : [];
-  useEffect(() => {
-    if (selectedKeyId) localStorage.setItem(selectedKeyStorageKey, selectedKeyId);
+
+  // The stored id records which key the operator picked, so it is written
+  // where the picking happens rather than mirrored off the rendered state. A
+  // mirror cannot tell a selection the operator cleared from one this page
+  // could not resolve: the loader above answers with no id whenever the key
+  // list did not arrive, and an effect watching that would erase a stored
+  // selection which the next successful load would have restored.
+  const selectKey = (id: string) => {
+    setSelectedKeyId(id);
+    if (id) localStorage.setItem(selectedKeyStorageKey, id);
     else localStorage.removeItem(selectedKeyStorageKey);
-  }, [selectedKeyId]);
+  };
 
   const toasts = useOutcomeToasts();
 
@@ -107,7 +115,10 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
     if (signal.aborted) return;
     setData(next);
     setPageError(next.error);
-    setSelectedKeyId(current => next.keys?.some(key => key.id === current) ? current : '');
+    // A key the reload no longer lists is a key that is gone -- deleted here or
+    // elsewhere -- rather than one that failed to arrive: `loadPageData` keeps
+    // the keys it already had when the request fails.
+    if (!next.keys?.some(key => key.id === selectedKeyId)) selectKey('');
   };
 
   const { refresh, refreshing } = useRefresh(reload);
@@ -158,7 +169,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
             onDelete={openDeleteDialog}
             onEdit={apiKey => editorDialog.open({ kind: 'edit', apiKey })}
             onRotate={rotateDialog.open}
-            onSelect={setSelectedKeyId}
+            onSelect={selectKey}
             clipboard={clipboard}
             selectedKeyId={selectedKey?.id ?? ''}
             upstreams={upstreams}
@@ -182,7 +193,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
           models={models}
           mode="create"
           onOpenChange={open => { if (!open) editorDialog.close(); }}
-          onSaved={async key => { await refresh(); setSelectedKeyId(key.id); }}
+          onSaved={async key => { await refresh(); selectKey(key.id); }}
           upstreams={upstreams}
           userUpstreamIds={user.upstreamIds}
         />}
