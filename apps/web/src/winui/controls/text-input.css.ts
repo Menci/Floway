@@ -1,56 +1,37 @@
-// Fluent's Input and Textarea repainted as a WinUI 3 text control. WinUI gives
-// TextBox, RichEditBox and PasswordBox one shared brush set — the TextControl*
-// keys — so a single mapping covers both Fluent components.
+// Fluent's Input and Textarea repainted as a WinUI 3 text control; WinUI's one
+// shared TextControl* brush set covers both components.
 //
-// Two differences drive the file. WinUI moves the FILL between rest, hover,
-// focus and disabled while Fluent keeps it constant and moves the STROKE
-// instead; and WinUI's rest stroke is one gradient brush whose heavy edge is
-// the bottom, which Fluent already expresses as a separate border-bottom
-// colour.
-//
-// The rest stroke needs no rule at all: Fluent paints the root's four sides
-// from colorNeutralStroke1 and overrides the bottom with
-// colorNeutralStrokeAccessible, which the foundation layer maps to
-// ControlStrokeColorDefault and ControlStrongStrokeColorDefault — precisely how
-// TextControlElevationBorderBrush resolves once its ScaleY="-1" puts the heavy
-// stop at the bottom. Any declaration on the root would also outrank Fluent's
-// focus and aria-invalid strokes.
-//
-// What is left is written as redefinition of the Fluent variables that only the
-// disagreeing states read, so Fluent's own atoms keep deciding which state
-// wins. That is what keeps a disabled field disabled under the pointer and
-// leaves the red aria-invalid stroke standing — a stroke WinUI has no
-// counterpart for, and which stands here unsettled rather than sourced.
+// WinUI moves the FILL between rest, hover, focus and disabled while Fluent
+// keeps the fill constant and moves the STROKE instead. So the rest stroke
+// needs no rule at all: Fluent's colorNeutralStroke1 plus its
+// colorNeutralStrokeAccessible bottom already resolve to what
+// TextControlElevationBorderBrush paints, and any declaration on the root would
+// outrank Fluent's focus and aria-invalid strokes. The disagreeing states are
+// written as redefinitions of the Fluent variables only those states read, so
+// Fluent's own atoms keep deciding which state wins.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L48-L56
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L155-L163
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-input/library/src/components/Input/useInputStyles.styles.ts#L186-L201
 //
 // Fill is the exception: Fluent has no atom that recolours a text control's
-// fill on hover or focus, and its disabled atom empties the fill rather than
-// recolouring it, so those three states are written as declarations. A
-// declaration cannot pick its variant the way a redefined variable does, so each
-// is narrowed by `data-winui-appearance` to the appearances whose rest fill is
-// Fluent's Background1. The `underline` appearance stays transparent and
-// `filled-darker` keeps its Background3 step, as they do at rest.
+// fill on hover or focus and its disabled atom empties the fill, so those three
+// states are declarations. A declaration cannot pick its variant the way a
+// redefined variable does, so each is narrowed by `data-winui-appearance` to
+// the appearances whose rest fill is Background1; `underline` stays transparent
+// and `filled-darker` keeps its Background3 step.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L179-L182
-// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-input/library/src/components/Input/useInputStyles.styles.ts#L186-L201
 //
 // A text control resolves Disabled over Focused over PointerOver over Normal,
-// one state at a time. Every declaration below that belongs to a state either
-// excludes the states that outrank it or says why they cannot reach it, because
-// a CSS declaration wins on selector weight rather than on that order.
+// one state at a time, while CSS wins on selector weight, so every state rule
+// below excludes the states that outrank it or says why they cannot reach it.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/native/text/Controls/TextBoxBase.cpp#L3548-L3570
 //
-// Forced colours are left to Fluent and to the user agent, which override every
-// background-color and border-color here outright; the one literal Fluent states
-// for that mode -- GrayText on the disabled stroke -- survives because the
+// Forced colours are left to Fluent and the user agent; the one literal Fluent
+// states there -- GrayText on the disabled stroke -- survives only because the
 // disabled stroke here is a redefined variable rather than a declaration.
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-input/library/src/components/Input/useInputStyles.styles.ts#L206-L208
 //
-// The rules below stop at the boundary of a subtree that opts out of the layer:
-// the playground's hand-designed chat UI is frozen and built against Fluent's
-// own control palette, so every declaration here would repaint it. See
-// ../tokens.ts for the convention.
+// Rules stop at a subtree that opts out of the layer; see ../tokens.ts.
 
 import { notOptedOut } from '../tokens';
 
@@ -60,19 +41,12 @@ const controlFillAppearances = `:is(\
 [data-winui-appearance='filled-lighter-shadow'])`;
 
 export const textInputCss = `
-/* WinUI's own padding and border carry each control past its stated 32px floor
-   to 33 for a text control and 34 for a ComboBox, using the WinUI 3 values from
-   the controls dictionary rather than the framework's legacy generic.xaml
-   (10,5,6,6 rather than 10,3,6,6, and a 1px rather than 2px border).
-
-   One shared 34 is our choice, not something WinUI states: a row mixing an Input
-   with a Combobox is the common case here, and two fields disagreeing by a pixel
-   read as a defect. 34 rather than 33 because growing a field keeps its content
-   on its neighbour's baseline where shrinking one would not. ./choice.css.ts and
-   ./switch.css.ts take the same number so a whole form row aligns.
-
-   Stated on the root rather than the inner control, because that is where
-   Fluent's own floor sits and border-box makes it the whole of the field.
+/* WinUI's padding and border carry a text control to 33 and a ComboBox to 34,
+   using the WinUI 3 controls dictionary rather than the legacy generic.xaml.
+   One shared 34 is our choice: a row mixing an Input with a Combobox is the
+   common case, and growing a field keeps its content on its neighbour's
+   baseline where shrinking one would not. ./choice.css.ts and ./switch.css.ts
+   take the same number.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources.xaml#L10-L12
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L327
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L341
@@ -93,10 +67,8 @@ export const textInputCss = `
   --colorNeutralBackground1: var(--winui-control-fill-default);
 }
 
-/* Both states that outrank PointerOver are excluded in the selector: a disabled
-   field, whose Fluent atom this declaration would otherwise outrank, and a
-   focused one, whose fill below carries less weight than the disabled exclusion
-   adds here.
+/* Excludes both states that outrank PointerOver: a disabled field, whose Fluent
+   atom this would otherwise outrank, and a focused one.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L24
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L131
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L275-L290 */
@@ -114,13 +86,12 @@ export const textInputCss = `
   background-color: var(--winui-control-fill-input-active);
 }
 
-/* A text control has no pressed state -- Pressed is the same state as Focused --
-   so the second selector spends the same colour on the strip Fluent darkens when
-   the pointer goes down inside an already-focused field. It is not a narrower
-   repetition of the first: Fluent's own rule for the combination ties the first
-   on weight, and only naming the combination outranks it. The colour is stated
-   on the strip rather than on the token Fluent reads for it, so it cannot
-   inherit into whatever a caller puts in the content slots.
+/* A text control has no pressed state -- Pressed is Focused -- so the second
+   selector respends the colour on the strip Fluent darkens when the pointer
+   goes down inside a focused field; Fluent's rule for that combination ties the
+   first selector on weight, so only naming the combination outranks it. Stated
+   on the strip rather than the token Fluent reads, so it cannot inherit into
+   whatever a caller puts in the content slots.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L57-L65
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L164-L172
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/native/text/Controls/TextBoxBase.cpp#L3551-L3555
@@ -142,9 +113,8 @@ export const textInputCss = `
   background-color: var(--winui-control-fill-disabled);
 }
 
-/* WinUI hands PointerOver the same TextControlElevationBorderBrush it uses at
-   rest, so the hover step is cancelled by pointing both Fluent hover strokes at
-   the rest pair.
+/* WinUI gives PointerOver the same brush as rest, so both Fluent hover strokes
+   point back at the rest pair.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L28
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L48-L56
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L135
