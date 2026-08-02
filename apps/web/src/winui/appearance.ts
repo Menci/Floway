@@ -4,6 +4,8 @@
 import { CheckmarkCircleFilled, ChevronDown12Regular, DismissCircleFilled, ErrorCircleFilled, InfoFilled } from '@fluentui/react-icons';
 import * as React from 'react';
 
+import { COLLAPSE_ANIMATION_MS, CONTROL_FAST_OUT_SLOW_IN_EASING, EXPAND_ANIMATION_MS } from './motion';
+
 type FluentComponents = typeof import('@fluentui/react-components');
 
 export const winuiAppearanceAttribute = 'data-winui-appearance';
@@ -263,13 +265,28 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
   // and TranslateY alone, and the template carries no opacity animation at all.
   // Fluent's Collapse fades the panel with the height, which takes the card's
   // own fill and stroke transparent mid-animation, so the fade atom is switched
-  // off and the size animation left as Fluent runs it.
+  // off.
+  //
+  // The size animation then runs on the pair of durations those storyboards
+  // state, 333ms opening and 167ms closing, read from ./motion so this and the
+  // SettingsExpander cannot drift apart. What travels is the panel's own size
+  // rather than the clipped translate WinUI animates -- the SettingsExpander's
+  // simplification too -- and on that geometry both directions take the opening
+  // KeySpline; nothing sources the substitution for the close, which upstream
+  // states as cubic-bezier(1, 1, 0, 1).
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander.xaml#L33-L90
   // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-accordion/library/src/components/AccordionPanel/useAccordionPanel.ts#L42-L48
+  // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-motion-components-preview/library/src/components/Collapse/Collapse.ts#L30-L48
   const winuiPanelMotion = <Component>(component: Component): Component => {
     const elementType = component as React.ElementType;
     const wrapped = React.forwardRef<unknown, PropCarrier>((props, ref) => React.createElement(elementType, {
-      collapseMotion: { animateOpacity: false },
+      collapseMotion: {
+        animateOpacity: false,
+        duration: EXPAND_ANIMATION_MS,
+        exitDuration: COLLAPSE_ANIMATION_MS,
+        easing: CONTROL_FAST_OUT_SLOW_IN_EASING,
+        exitEasing: CONTROL_FAST_OUT_SLOW_IN_EASING,
+      },
       ...props,
       ref,
     }));
