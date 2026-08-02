@@ -123,24 +123,24 @@ export const cardCss = `
 }
 
 /* High Contrast. Fluent strokes a selectable or interactive card in Highlight
-   before it is touched: in useCardStyles the after key of highContrastSelected
-   and highContrastInteractive is a sibling of the state it reads as, not nested
-   inside it, so the accent lands at rest. WinUI spends SystemColorHighlight on
+   before it is touched: in useCardStyles the after key of highContrastInteractive
+   is a sibling of the state it reads as, not nested inside it, so the accent
+   lands at rest. WinUI spends SystemColorHighlight on
    an item's pointer-over, pressed and selected fills alone and gives a card
    stroke SystemColorWindowText, which is CanvasText here; its HighContrast
    dictionary names no item border brush at all. So the rest stroke is the same
    one a card that answers nothing already gets from the user agent.
 
-   Every state Fluent fills with Highlight is excluded, because a stroke of the
-   same colour as the fill is the borderless item WinUI draws and CanvasText
-   would outline it; focus is excluded so Fluent's ring keeps the
+   The pointer states Fluent fills with Highlight are excluded, because a stroke
+   of the same colour as the fill is the borderless item WinUI draws and
+   CanvasText would outline it; focus is excluded so Fluent's ring keeps the
    pseudo-element.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L464
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L80-L100
    https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-card/library/src/components/Card/useCardStyles.styles.ts#L354-L386
    https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
 @media (forced-colors: active) {
-  .fui-Card.fui-Card:not([data-winui-selected='true']):not(:hover):not(:active):not([data-fui-focus-visible]):not([data-fui-focus-within]:focus-within)::after {
+  .fui-Card.fui-Card:not(:hover):not(:active):not([data-fui-focus-visible]):not([data-fui-focus-within]:focus-within)::after {
     border-color: CanvasText;
   }
 }
