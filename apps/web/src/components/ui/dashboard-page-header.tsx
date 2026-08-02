@@ -11,8 +11,6 @@ export function DashboardPageHeader({ actions, className, description, title }: 
   description?: string;
   title: string;
 }) {
-  // Centred against the whole block rather than aligned to its first line: the
-  // actions answer the page, not its title.
   return <header className={mergeClasses(HEADER_ROW_CLASS, 'gap-[18px]', className)}>
     <div className="grid gap-1.5 min-w-0">
       <Text as="h1" size={700} weight="semibold" className="m-0">
