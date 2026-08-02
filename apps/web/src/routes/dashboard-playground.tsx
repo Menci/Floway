@@ -64,17 +64,16 @@ const {
 } = fluentComponents;
 
 // Fluent paints a Button's icon slot from a descendant rule of its own once the
-// pointer is on it, so a colour stated on the root reaches a label and leaves
-// the glyph. A row command is a glyph and nothing else.
+// pointer is on it, so a colour stated on the root reaches the label and leaves
+// the glyph.
 const ICON = `& .${buttonClassNames.icon}`;
 
 // Fluent states a disabled button's foreground on a single class, which a colour
-// stated here outranks. A Button carries `:disabled` when disabled and
-// `aria-disabled` when disabled and still focusable, so both close the guard.
+// stated here outranks; a disabled button that stays focusable carries
+// `aria-disabled` rather than `:disabled`.
 const ENABLED = '&:not(:disabled):not([aria-disabled="true"])';
 const HOVER = `${ENABLED}:hover`;
-// Fluent's own pair: a press that began under the pointer, and a press on the
-// button the keyboard is on.
+// Fluent's own pair: a press that began under the pointer, and a keyboard press.
 const PRESSED = `${ENABLED}:hover:active, ${ENABLED}:active:focus-visible`;
 
 const reachedPaint = (color: string) => ({ color, [ICON]: { color } });
@@ -98,11 +97,9 @@ export async function clientLoader(): Promise<LoaderData> {
 
 const useStyles = makeStyles({
   toolbar: { borderBottom: `1px solid ${tokens.colorNeutralStroke1}` },
-  // The secondary accent step is held through the press because the original
-  // states no third foreground step and lets the fill answer a press. Under
-  // forced colours Fluent pairs a reached button with Highlight and clears
-  // forced-color-adjust, so the Highlight pairing has to be restated here rather
-  // than left to the user agent's substitution.
+  // No third foreground step exists upstream, so the hover accent is held
+  // through the press. Fluent clears forced-color-adjust on a reached button,
+  // so the forced-colours Highlight pairing has to be restated here.
   brandIconAction: {
     [ENABLED]: { color: bingAccentForeground },
     [HOVER]: reachedPaint(bingAccentForegroundHover),
@@ -132,9 +129,8 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const [api, setApi] = useState<PlaygroundApi>('responses');
   const [keyId, setKeyId] = useState(loaderData.keys?.[0]?.id ?? '');
   const [publicModelId, setPublicModelId] = useState('');
-  // `null` means the picker is showing its selection rather than a search term.
-  // Opening the list clears the field so the first keystroke starts a query
-  // instead of extending the selected model's display name.
+  // `null` shows the selection; a string is a live search term. Opening the list
+  // clears the field so the first keystroke starts a query.
   const [modelQuery, setModelQuery] = useState<string | null>(null);
   const [messages, setMessages] = useState<PlaygroundMessage[]>([]);
   const [system, setSystem] = useState('');
@@ -173,8 +169,6 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
     const query = (modelQuery ?? '').trim().toLowerCase();
     return !query || model.id.toLowerCase().includes(query) || model.display_name.toLowerCase().includes(query);
   });
-  // The composer's send affordance and the send itself read this one value, so
-  // an enabled control always has a request to make.
   const sendTarget = selectedKey && selectedModel && (draft.trim() || imageUrl.trim())
     ? { apiKey: selectedKey, model: selectedModel }
     : null;
@@ -345,8 +339,6 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
           {playgroundApis.map(value => <Option key={value} value={value}>{t(`dashboard.playground.apis.${value}`)}</Option>)}
         </Dropdown>
       </Field>
-      {/* No hint: an empty catalog says so inside the list, and a failed listing
-          is already named by the bar above the transcript. */}
       <Field label={t('dashboard.playground.model')}>
         <Combobox value={modelQuery ?? selectedModel?.display_name ?? ''} selectedOptions={selectedModel ? [selectedModel.id] : []} placeholder={t('dashboard.playground.modelPlaceholder')} onChange={event => setModelQuery(event.target.value)} onOptionSelect={(_, data) => {
           if (!data.optionValue) return;
@@ -414,9 +406,6 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
           <ScrollArea ref={scrollRef} axes="vertical" className="min-h-0 -m-1.5" contentClassName="flex min-h-full flex-col" noTabIndex viewportClassName="p-1.5">
             {loadError && <OutcomeMessageBar className="!mb-3" onDismiss={() => setLoadError(null)}>{loadError}</OutcomeMessageBar>}
             {requestError && <OutcomeMessageBar className="!mb-3" onDismiss={() => setRequestError(null)}>{requestError}</OutcomeMessageBar>}
-            {/* A missing key or unreachable model is a fact about the picker
-                that would supply it, so it is said under that picker rather than
-                in the space the conversation will occupy. */}
             {loaderData.keys === null || loaderData.models === null
               ? <EmptyState className="flex-1 px-6" title={t('dashboard.pages.unavailable')} />
               : messages.length === 0 && !sending
