@@ -10,7 +10,8 @@ export const dialogCss = `
 /* The height cap is exposed as one variable so the body can consume exactly the
    same envelope. ContentDialogMaxWidth is a keyed ThemeResource an app overrides
    in its own dictionary, so a custom property with a 548px fallback is the
-   faithful shape; the alias and API key editors raise it to an unsourced 720px.
+   faithful shape; the alias, API key, and user editors raise it to an unsourced
+   720px.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L6-L15
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L223 */
 .fui-DialogSurface.fui-DialogSurface {
