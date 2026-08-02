@@ -150,6 +150,15 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
   );
   const selectedUpstream = eligibleUpstreams.find(upstream => upstream.id === draft.passthroughOpenAiSearch.upstreamId);
   const selectedModel = modelsForSelectedUpstream.find(model => model.id === draft.passthroughOpenAiSearch.model);
+  // A stored passthrough target the catalog no longer offers is named in its own
+  // picker rather than left blank, and stays unchoosable because reselecting it
+  // cannot resolve a model. Saving keeps it until the operator picks a live one.
+  const unavailableUpstreamId = draft.passthroughOpenAiSearch.upstreamId !== '' && !selectedUpstream
+    ? draft.passthroughOpenAiSearch.upstreamId
+    : null;
+  const unavailableModelId = draft.passthroughOpenAiSearch.model !== '' && !selectedModel
+    ? draft.passthroughOpenAiSearch.model
+    : null;
 
   const setPassthroughUpstream = useCallback((upstreamId: string, preferredModel?: string) => {
     const candidates = models.filter(model => servesChatFor(model, upstreamId));
@@ -309,8 +318,11 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
                 disabled={!draft.passthroughOpenAiSearch.enabled}
                 onOptionSelect={(_, data) => data.optionValue && setPassthroughUpstream(data.optionValue)}
                 selectedOptions={[draft.passthroughOpenAiSearch.upstreamId]}
-                value={selectedUpstream?.name ?? ''}
+                value={selectedUpstream?.name ?? (unavailableUpstreamId === null ? '' : t('dashboard.searchConfig.passthrough.unavailable', { id: unavailableUpstreamId }))}
               >
+                {unavailableUpstreamId !== null && <Option disabled text={unavailableUpstreamId} value={unavailableUpstreamId}>
+                  {t('dashboard.searchConfig.passthrough.unavailable', { id: unavailableUpstreamId })}
+                </Option>}
                 {eligibleUpstreams.map(upstream => (
                   <Option key={upstream.id} text={upstream.name} value={upstream.id}>
                     <DescribedOptionLabel
@@ -333,8 +345,11 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
                   setDraft(current => ({ ...current, passthroughOpenAiSearch: { ...current.passthroughOpenAiSearch, model } }));
                 }}
                 selectedOptions={[draft.passthroughOpenAiSearch.model]}
-                value={selectedModel ? modelLabel(selectedModel) : ''}
+                value={selectedModel ? modelLabel(selectedModel) : (unavailableModelId === null ? '' : t('dashboard.searchConfig.passthrough.unavailable', { id: unavailableModelId }))}
               >
+                {unavailableModelId !== null && <Option disabled text={unavailableModelId} value={unavailableModelId}>
+                  {t('dashboard.searchConfig.passthrough.unavailable', { id: unavailableModelId })}
+                </Option>}
                 {modelsForSelectedUpstream.map(model => (
                   <Option key={model.id} text={modelLabel(model)} value={model.id}>
                     <DescribedOptionLabel
@@ -400,7 +415,7 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
                 {testResult.results.map(r => (
                   <li
                     key={r.url + r.title}
-                    className="grid gap-1 border-0 border-t border-solid border-fui-stroke1 py-3 first:border-t-0"
+                    className="grid gap-1 border-0 border-t border-solid border-fui-divider py-3 first:border-t-0"
                   >
                     <div className="flex items-baseline gap-2 flex-wrap">
                       <Link

@@ -124,7 +124,7 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
           ? <AgentConfigSnippets agent={agent} apiKey={selectedKey.key} configuration={activeDraft} clipboard={clipboard} onPlatformChange={setPlatform} platform={platform} />
           : view === 'snippets'
             ? <OutcomeMessageBar intent="info">{t('dashboard.apiKeys.agentSetup.selectKey')}</OutcomeMessageBar>
-            : <div className="border-t border-t-solid border-fui-stroke1 pt-4">
+            : <div className="border-t border-t-solid border-fui-divider pt-4">
                 <CodeBlock
                   code={command}
                   copyOutcome={clipboard.outcomeFor(`agent-setup-${agent}-${platform}`)}
@@ -178,7 +178,7 @@ function AgentConfigSnippets({ agent, apiKey, clipboard, configuration, onPlatfo
   const origin = window.location.origin;
   if (agent === 'claude') {
     const snippet = buildAgentClaudeSnippet(origin, apiKey, configuration.claudeCode);
-    return <div className="grid gap-2 border-t border-t-solid border-fui-stroke1 pt-4">
+    return <div className="grid gap-2 border-t border-t-solid border-fui-divider pt-4">
       <Text size={200} className="text-fui-fg2">{t('dashboard.apiKeys.configuration.claudeHint')}</Text>
       <CodeBlock code={snippet} copyOutcome={clipboard.outcomeFor('agent-snippet-claude')} language="json" onCopy={() => clipboard.copy(snippet, 'agent-snippet-claude')} />
     </div>;
@@ -188,7 +188,7 @@ function AgentConfigSnippets({ agent, apiKey, clipboard, configuration, onPlatfo
   const windows = codexWindowsCredentialSnippet(apiKey);
   const credential = platform === 'windows' ? windows : unix;
   const credentialTag = platform === 'windows' ? 'agent-snippet-codex-windows' : 'agent-snippet-codex-unix';
-  return <div className="grid gap-3 border-t border-t-solid border-fui-stroke1 pt-4">
+  return <div className="grid gap-3 border-t border-t-solid border-fui-divider pt-4">
     <Text size={200} className="text-fui-fg2">{t('dashboard.apiKeys.configuration.codexConfigHint')}</Text>
     <CodeBlock code={config} copyOutcome={clipboard.outcomeFor('agent-snippet-codex')} language="toml" onCopy={() => clipboard.copy(config, 'agent-snippet-codex')} />
     <Text size={200} className="text-fui-fg2">
@@ -307,7 +307,15 @@ function ModelSelect({ family, label, models, onChange, picker, value }: {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const options = useMemo(() => modelOptions(models, family, picker), [family, models, picker]);
+  const catalog = useMemo(() => modelOptions(models, family, picker), [family, models, picker]);
+  // A pin the catalog no longer serves stays in the picker, marked and not
+  // choosable: the pin is still what the setup script writes, so showing
+  // Default instead would report a configuration the operator does not have.
+  const unavailablePin = value !== null && !catalog.some(option => option.value === value) ? value : null;
+  const options = useMemo(() => (unavailablePin === null
+    ? catalog
+    : [{ value: unavailablePin, label: t('dashboard.apiKeys.agentSetup.unavailable', { id: unavailablePin }) }, ...catalog]),
+  [catalog, t, unavailablePin]);
   const selected = options.find(option => option.value === value) ?? null;
   const defaultLabel = t('dashboard.apiKeys.agentSetup.modelDefault');
   const filtered = useMemo(() => filterModelOptions(options, query), [options, query]);
@@ -331,7 +339,7 @@ function ModelSelect({ family, label, models, onChange, picker, value }: {
     >
       {defaultVisible && <Option value={MODEL_DEFAULT}>{defaultLabel}</Option>}
       {filtered.map(option => (
-        <Option key={option.value} text={option.label} value={option.value}>
+        <Option disabled={option.value === unavailablePin} key={option.value} text={option.label} value={option.value}>
           <span className="font-mono truncate">{option.label}</span>
         </Option>
       ))}
