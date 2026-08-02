@@ -182,7 +182,7 @@ export function ProxyForm({
           <Field label={t('dashboard.proxy.form.method')}>
             <Dropdown
               onOptionSelect={(_, d) =>
-                setConfig(prev => ({
+                d.optionValue !== undefined && setConfig(prev => ({
                   ...prev,
                   method: d.optionValue,
                 } as ShadowsocksProxyConfig))
@@ -220,7 +220,7 @@ export function ProxyForm({
           <Field label={t('dashboard.proxy.form.method')}>
             <Dropdown
               onOptionSelect={(_, d) =>
-                setConfig(prev => ({
+                d.optionValue !== undefined && setConfig(prev => ({
                   ...prev,
                   method: d.optionValue,
                 } as Shadowsocks2022ProxyConfig))
