@@ -4,20 +4,10 @@ import { hsvToRgb, rgbToHex } from '../lib/color';
 
 const { makeStyles } = fluentComponents;
 
-// The tile, as saturation and value against whichever hue was drawn. Both steps
-// are the fixed pink tile's own, read back off it: it already sat at a single
-// hue, so only the hue had to become a variable for the same treatment to fit
-// any mark. A cherry blossom therefore lands a few degrees from the tile this
-// replaces, and every other mark is that tile in its own colour.
-//
-// The tile carries no border: its fill against the surface behind it is what
-// states the shape, and an outline would need a third step per hue to draw an
-// edge the fill already draws.
-//
-// Under forced colours the fill is replaced by the system canvas whatever this
-// writes, so the tile stops reading as a tile -- but the artwork inside it is a
-// replaced element and keeps its own colours, which leaves the mark itself
-// intact and is the rendering we want there.
+// Saturation and value are the fixed pink tile's own steps, so that treatment
+// fits any mark once only the hue is a variable. Under forced colours the fill
+// becomes the system canvas, while the artwork inside stays a replaced element
+// with its own colours -- the mark survives, which is the rendering we want.
 // https://drafts.csswg.org/css-color-adjust-1/#forced-colors-properties
 const SURFACE_LIGHT = [0.133, 0.973] as const;
 const SURFACE_DARK = [0.652, 0.361] as const;
@@ -32,8 +22,8 @@ const paint = (hue: number) => ({
 const useMarkStyles = makeStyles({
   root: {
     alignItems: 'center',
-    // The tile takes OverlayCornerRadius rather than the control radius: it is a
-    // mark on the page, not a control on it.
+    // OverlayCornerRadius rather than the control radius: a mark on the page,
+    // not a control on it.
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CornerRadius_themeresources.xaml#L6
     borderRadius: '8px',
     display: 'inline-flex',
@@ -49,11 +39,8 @@ export function FlowayLogo() {
   const mark = currentMark();
 
   return (
-    // The wordmark takes the primary text fill in both themes. Its WinUI
-    // counterpart is the navigation pane's title, which draws in
-    // `NavigationViewItemForeground` -- `TextFillColorPrimaryBrush` in the
-    // Default (dark) and Light dictionaries alike -- so the app's own name is
-    // never a secondary step.
+    // The wordmark takes the primary text fill in both themes, as its WinUI
+    // counterpart the navigation pane title does.
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L198
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L21
     <div className="inline-flex items-center min-w-0 gap-2.5 text-fui-fg1">
