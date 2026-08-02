@@ -416,6 +416,13 @@ Run lint and test through the scripts rather than a bare `eslint` or `vitest`:
 a workspace-wide pass exhausts Node's default heap, so the scripts raise the
 ceiling — 12 GiB for `lint` and `lint:fix`, 8 GiB for `test`.
 
+`.github/workflows/verify.yaml` runs each of these on every pull request and on
+every push to `main`, one job per command, plus the generated-asset drift check
+and a web build. It generates `apps/web/.react-router/types` before the checks:
+those types are gitignored but sit in the web tsconfig's `include`, and the
+lint config is type-aware, so a fresh checkout cannot lint the dashboard until
+they exist.
+
 ## Development
 
 ```bash

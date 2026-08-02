@@ -1,0 +1,60 @@
+name: Verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Only the tip of a branch needs verifying; agents push feature branches in
+# quick succession.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        check:
+          - name: lint
+            run: pnpm run lint
+          - name: typecheck
+            run: pnpm run typecheck
+          - name: test
+            run: pnpm run test
+          - name: installers
+            run: pnpm run test:agent-setup-installers
+          - name: generated-assets
+            run: pnpm --filter @floway-dev/agent-setup run generate-assets --check
+          # `build.yaml` builds the SPA image, but only on `main` and on a
+          # schedule. Building here is what puts the bundler and the build
+          # output assertions in front of a pull request.
+          - name: build
+            run: pnpm run build:web
+    name: ${{ matrix.check.name }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      # `apps/web/.react-router/types` is generated and gitignored, yet it sits
+      # in the web tsconfig's `include`, and the workspace lint config is
+      # type-aware. Locally the types exist as a side effect of `dev` or
+      # `build`; a fresh checkout has to generate them or every route module
+      # fails to resolve `./+types/...`.
+      - name: Generate route types
+        run: pnpm --filter @floway-dev/web exec react-router typegen
+      - name: ${{ matrix.check.name }}
+        run: ${{ matrix.check.run }}
