@@ -42,9 +42,8 @@ export interface SearchUsageResponse {
 }
 
 // Decimal strings, because aggregate token totals exceed the safe integer range
-// and cost is billed to sub-cent precision. Counters stay disjoint: a sum kept
-// beside its own addends invites a recomputation that decimal strings would
-// silently turn into a concatenation rather than a type error.
+// and cost is billed to sub-cent precision. Counters stay disjoint: adding a sum
+// beside its own addends invites a `+` that concatenates instead of failing.
 export interface TokenCounters {
   requests: number;
   cost: DecimalString | null;
@@ -55,8 +54,7 @@ export interface TokenCounters {
   inputImage: DecimalString;
   outputImage: DecimalString;
 }
-// `prompt` is the whole billed prompt side and `output` folds the separately
-// metered image counter in, so no consumer re-derives either.
+// Folded: `prompt` is the whole billed prompt side, `output` includes images.
 export interface TokenSummary {
   requests: number;
   cost: DecimalString | null;
@@ -68,7 +66,6 @@ export interface TokenSummary {
   cacheCreation: DecimalString;
 }
 
-// Percentage rates stay lines so their shared 0-100 scale remains readable.
 export type ChartPlot =
   | { form: 'area'; data: ChartProps }
   | { form: 'line'; data: ChartProps };
@@ -80,8 +77,7 @@ interface ChartModelBase {
   range: UsageRange;
 }
 export type TokenChartModel = ChartModelBase & { kind: 'token'; details: Map<string, Map<string, TokenCounters>> };
-// The providers actually plotted, which is a property of the window's data
-// rather than of the current configuration.
+// Providers present in the window's data, not the current filter selection.
 export type SearchChartModel = ChartModelBase & { kind: 'search'; providers: string[] };
 export type UsageChartModel = TokenChartModel | SearchChartModel;
 
