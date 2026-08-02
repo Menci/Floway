@@ -1,17 +1,18 @@
-import { ArrowDownloadRegular, ArrowSync24Regular, ArrowUploadRegular, Document24Regular, DocumentArrowUp24Regular, Gauge24Regular } from '@fluentui/react-icons';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { ArrowDownloadRegular, ArrowUploadRegular } from '@fluentui/react-icons';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { requireDashboardAdmin } from './route-guards';
 import { api, callApi } from '../api/client';
-import type { BackupImportCounts } from '../api/types';
+import { BackupFilePicker, BackupFileSummary } from '../components/backup-restore/backup-file-picker';
 import { BACKUP_FILE_VERSION, parseBackupFile, type BackupFile, type BackupFileData } from '../components/backup-restore/backup-file';
+import { ChoiceGroup } from '../components/ui/choice-group';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
-import { Dropdown } from '../components/ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
-import { SettingsCard, SettingsCardButton, SettingsSection, SettingsSwitch } from '../components/ui/settings-card';
+import { Panel } from '../components/ui/panel';
+import { SectionHeader } from '../components/ui/section-header';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { fluentComponents } from '../fluent';
 import { formatBytes } from '../lib/format-number';
@@ -19,7 +20,8 @@ import { useLocale } from '../lib/use-locale';
 
 const {
   Button,
-  Option,
+  Checkbox,
+  Field,
   Spinner,
 } = fluentComponents;
 
@@ -49,22 +51,22 @@ const PREVIEW_LABEL_KEYS = [
   'searchUsage',
   'performance',
 ] as const;
-const countRecords = (data: BackupFileData): BackupImportCounts => {
+const countRecords = (data: BackupFileData): Record<string, number> => {
   const counts: Record<string, number> = {};
   for (const key of PREVIEW_LABEL_KEYS) {
     const value = data[key];
     counts[key] = Array.isArray(value) ? value.length : 0;
   }
-  return counts as BackupImportCounts;
+  return counts;
 };
 
-// What a file holds, in one sentence. It reads the counts before the import as
-// the preview and the counts the server reports after it as the summary, so
-// the operator is told what happened in the vocabulary they were shown.
+// What a file holds, in one sentence. It reads the counts in the chosen file as
+// the preview and the counts the server reports back as the summary, so the
+// operator is told what happened in the vocabulary they were shown beforehand.
 // Empty entities are dropped: a backup rarely carries all seven, and naming the
 // ones it did not carry buries the ones it did.
 const recordSummary = (
-  counts: BackupImportCounts,
+  counts: Record<string, number>,
   t: ReturnType<typeof useTranslation>['t'],
 ): string => {
   return PREVIEW_LABEL_KEYS
@@ -191,6 +193,11 @@ export default function DashboardAdminBackupRestore() {
 
   const handleDragLeave = useCallback(() => setDragOver(false), []);
 
+  const dropHandlers = useMemo(
+    () => ({ onDragLeave: handleDragLeave, onDragOver: handleDragOver, onDrop: handleDrop }),
+    [handleDragLeave, handleDragOver, handleDrop],
+  );
+
   const openFilePicker = useCallback(() => fileInputRef.current?.click(), []);
 
   const handleChangeFile = useCallback(() => {
@@ -239,47 +246,54 @@ export default function DashboardAdminBackupRestore() {
     void doImport();
   }, [confirmDialog, doImport, importMode, importParsedData]);
 
-  const selectedMode = IMPORT_MODES[importMode];
-
   return (
     <section className="dashboard-page max-w-[960px]">
       <DashboardPageHeader title={t('dashboard.backupRestore.heading')} />
 
-      <SettingsSection
-        description={t('dashboard.backupRestore.export.description')}
-        title={t('dashboard.backupRestore.export.heading')}
-      >
-        <SettingsCard
-          action={<SettingsSwitch
+      {/* Two operations, each framed by the panel that holds it, its parameters
+          above the command that runs them and the command against the trailing
+          edge -- the shape ./dashboard-settings.tsx already gives a page whose
+          content is a thing to be done rather than a thing to be remembered. */}
+      <Panel className="!grid !gap-[18px]">
+        <SectionHeader description={t('dashboard.backupRestore.export.description')} level={2} title={t('dashboard.backupRestore.export.heading')} />
+
+        {/* A check box rather than a switch. Microsoft's own rule for choosing
+            between the two is whether the value takes effect on its own: "Use a
+            checkbox when the user has to perform extra steps for changes to be
+            effective. For example, if the user must click a 'submit' or 'next'
+            button to apply changes, use a check box." Nothing is exported until
+            the command below is pressed, so this is a check box. The sentence
+            under it is the Field's hint, which
+            ../winui/controls/field.css.ts resolves to a WinUI text control's
+            Description presenter.
+            https://github.com/MicrosoftDocs/windows-dev-docs/blob/d084ff89ad3d6da237a8737e325a6407ddb0ee41/hub/apps/develop/ui/controls/toggles.md#L41 */}
+        <Field hint={t('dashboard.backupRestore.export.includePerformanceHint')}>
+          <Checkbox
             checked={includePerformance}
             label={t('dashboard.backupRestore.export.includePerformance')}
-            onChange={setIncludePerformance}
-          />}
-          description={t('dashboard.backupRestore.export.includePerformanceHint')}
-          header={t('dashboard.backupRestore.export.includePerformance')}
-          icon={<Gauge24Regular />}
-        />
-      </SettingsSection>
+            onChange={(_, data) => setIncludePerformance(!!data.checked)}
+          />
+        </Field>
 
-      {exportError && (
-        <OutcomeMessageBar onDismiss={() => setExportError(null)}>{exportError}</OutcomeMessageBar>
-      )}
+        {exportError && (
+          <OutcomeMessageBar onDismiss={() => setExportError(null)}>{exportError}</OutcomeMessageBar>
+        )}
 
-      <div>
-        <Button
-          appearance="primary"
-          disabledFocusable={exporting}
-          icon={exporting ? <Spinner size="tiny" /> : <ArrowDownloadRegular />}
-          onClick={() => void handleExport()}
-        >
-          {t('dashboard.backupRestore.export.button')}
-        </Button>
-      </div>
+        <div className="flex justify-end pt-1">
+          <Button
+            appearance="primary"
+            disabledFocusable={exporting}
+            icon={exporting ? <Spinner size="tiny" /> : <ArrowDownloadRegular />}
+            onClick={() => void handleExport()}
+          >
+            {t('dashboard.backupRestore.export.button')}
+          </Button>
+        </div>
+      </Panel>
 
-      <SettingsSection
-        description={t('dashboard.backupRestore.import.description')}
-        title={t('dashboard.backupRestore.import.heading')}
-      >
+      <Panel className="!grid !gap-[18px]">
+        <SectionHeader description={t('dashboard.backupRestore.import.description')} level={2} title={t('dashboard.backupRestore.import.heading')} />
+
         <input
           ref={fileInputRef}
           type="file"
@@ -288,84 +302,78 @@ export default function DashboardAdminBackupRestore() {
           onChange={handleFileSelect}
         />
 
-        {/* Before a file is chosen the row is the picker, and it accepts a drop
-            as well as a click. Once one is chosen the row reports it and hands
-            the picker to a button at the trailing edge: the standard button
-            style, which is what both the Gallery and the toolkit put in this
-            slot for an action that is not the page's primary one.
-            https://github.com/microsoft/WinUI-Gallery/blob/f4dc3eb367f4bcecac1793829d9a221e924e5bfb/WinUIGallery/Pages/SettingsPage.xaml#L88-L104
-            https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/samples/SettingsPageExample.xaml#L50-L52 */}
         {importParsedData && importFile
-          ? <SettingsCard
+          ? <BackupFileSummary
+              accepting={dragOver}
               action={<Button disabled={importing} onClick={handleChangeFile}>
                 {t('dashboard.backupRestore.import.change')}
               </Button>}
-              description={recordSummary(countRecords(importParsedData.data), t)}
-              header={t('dashboard.backupRestore.import.fileSelected', {
+              contents={recordSummary(countRecords(importParsedData.data), t)}
+              drop={dropHandlers}
+              name={t('dashboard.backupRestore.import.fileSelected', {
                 name: importFile.name,
                 size: formatBytes(importFile.size, locale),
               })}
-              icon={<Document24Regular />}
             />
-          : <SettingsCardButton
-              drag={{ onDragLeave: handleDragLeave, onDragOver: handleDragOver, onDrop: handleDrop }}
-              header={dragOver
+          : <BackupFilePicker
+              accepting={dragOver}
+              drop={dropHandlers}
+              glyph={<ArrowUploadRegular fontSize={28} />}
+              onClick={openFilePicker}
+              prompt={dragOver
                 ? t('dashboard.backupRestore.import.dropzoneActive')
                 : t('dashboard.backupRestore.import.dropzone')}
-              icon={<DocumentArrowUp24Regular />}
-              onClick={openFilePicker}
-              pointerOver={dragOver}
             />}
 
-        {/* Two exclusive choices, each carrying a sentence, are a picker in a
-            row rather than a stack of radios: the Gallery's own settings page
-            answers Light / Dark / Use system setting that way, with the one
-            description on the card. So the sentence the card shows is the
-            chosen mode's.
-            https://github.com/microsoft/WinUI-Gallery/blob/f4dc3eb367f4bcecac1793829d9a221e924e5bfb/WinUIGallery/Pages/SettingsPage.xaml#L46-L58 */}
-        {importParsedData && <SettingsCard
-          action={<Dropdown
-            className="!w-auto flex-none"
-            disabled={importing}
-            onOptionSelect={(_, data) => data.optionValue && setImportMode(data.optionValue as ImportMode)}
-            selectedOptions={[importMode]}
-            value={t(selectedMode.labelKey)}
+        {/* The mode is a parameter of the pending import, so it is a Field with
+            a control in it, like every other parameter in this app: the label
+            is the group's header and the hint is the chosen option's sentence.
+            The group itself is ../components/ui/choice-group.tsx, the app's own
+            SelectorBar, which is what a two-way choice is already spelled with
+            in the alias dialog and in the key form. */}
+        {importParsedData && <Field
+          hint={t(IMPORT_MODES[importMode].descriptionKey)}
+          label={t('dashboard.backupRestore.import.mode')}
+        >
+          <ChoiceGroup
+            ariaLabel={t('dashboard.backupRestore.import.mode')}
+            items={Object.entries(IMPORT_MODES).map(([value, mode]) => ({
+              value,
+              label: t(mode.labelKey),
+              disabled: importing,
+            }))}
+            onChange={value => setImportMode(value as ImportMode)}
+            value={importMode}
+          />
+        </Field>}
+
+        {importParsedData && importMode === 'replace' && (
+          <OutcomeMessageBar intent="warning">
+            {t('dashboard.backupRestore.import.replaceWarning')}
+          </OutcomeMessageBar>
+        )}
+
+        {importError && (
+          <OutcomeMessageBar
+            onDismiss={() => setImportError(null)}
+            title={t('dashboard.backupRestore.import.error')}
           >
-            {Object.entries(IMPORT_MODES).map(([value, mode]) => <Option key={value} value={value}>
-              {t(mode.labelKey)}
-            </Option>)}
-          </Dropdown>}
-          description={t(selectedMode.descriptionKey)}
-          header={t('dashboard.backupRestore.import.mode')}
-          icon={<ArrowSync24Regular />}
-        />}
-      </SettingsSection>
+            {importError}
+          </OutcomeMessageBar>
+        )}
 
-      {importParsedData && importMode === 'replace' && (
-        <OutcomeMessageBar intent="warning">
-          {t('dashboard.backupRestore.import.replaceWarning')}
-        </OutcomeMessageBar>
-      )}
-
-      {importError && (
-        <OutcomeMessageBar
-          onDismiss={() => setImportError(null)}
-          title={t('dashboard.backupRestore.import.error')}
-        >
-          {importError}
-        </OutcomeMessageBar>
-      )}
-
-      {importParsedData && <div>
-        <Button
-          appearance="primary"
-          disabledFocusable={importing}
-          icon={importing ? <Spinner size="tiny" /> : <ArrowUploadRegular />}
-          onClick={handleImportClick}
-        >
-          {t('dashboard.backupRestore.import.button')}
-        </Button>
-      </div>}
+        <div className="flex justify-end pt-1">
+          <Button
+            appearance="primary"
+            disabled={!importParsedData}
+            disabledFocusable={importing}
+            icon={importing ? <Spinner size="tiny" /> : <ArrowUploadRegular />}
+            onClick={handleImportClick}
+          >
+            {t('dashboard.backupRestore.import.button')}
+          </Button>
+        </div>
+      </Panel>
 
       {confirmDialog.invocation && <ConfirmDialog
         open={confirmDialog.isOpen}
