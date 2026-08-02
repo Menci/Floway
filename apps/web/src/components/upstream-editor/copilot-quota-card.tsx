@@ -116,14 +116,21 @@ export function CopilotQuotaCard({ record }: { record: CopilotRecord }) {
       <div className="flex items-baseline justify-between gap-3">
         <Text className="capitalize" size={300}>{bucket.label}</Text>
         {bucket.kind === 'metered'
-          ? <Text size={200} className="text-fui-fg2">
-              {t('dashboard.upstreamEditor.copilot.quota.used', {
-                used: formatCount(bucket.used, locale),
-                entitlement: formatCount(bucket.entitlement, locale),
-              })}
-              {' · '}
-              {t('dashboard.upstreamEditor.copilot.quota.usedPercent', { percent: bucket.usedPercent })}
-            </Text>
+          // The percentage is the fraction divided out, and the bar below states
+          // it a third time in ink, so it reads as the gloss on the two exact
+          // numbers rather than as a second fact beside them. Ranking the two by
+          // colour is what lets the space between them separate them.
+          ? <div className="flex items-baseline gap-2">
+              <Text size={200} className="text-fui-fg2">
+                {t('dashboard.upstreamEditor.copilot.quota.used', {
+                  used: formatCount(bucket.used, locale),
+                  entitlement: formatCount(bucket.entitlement, locale),
+                })}
+              </Text>
+              <Text size={200} className="text-fui-fg3">
+                {t('dashboard.upstreamEditor.copilot.quota.usedPercent', { percent: bucket.usedPercent })}
+              </Text>
+            </div>
           : <Text size={200} className="text-fui-fg3">
               {t(`dashboard.upstreamEditor.copilot.quota.${bucket.kind}`)}
             </Text>}
@@ -131,10 +138,18 @@ export function CopilotQuotaCard({ record }: { record: CopilotRecord }) {
       {bucket.kind === 'metered' && <ProgressBar max={100} thickness="large" value={bucket.barPercent} />}
     </div>)}
 
-    {quota && <Text size={200} className="text-fui-fg3">
-      {resets !== null && `${t('dashboard.upstreamEditor.copilot.quota.resets', { date: resets })} · `}
-      {t('dashboard.upstreamEditor.copilot.quota.observed', { time: dateTime(quota.observed_at, locale) })}
-    </Text>}
+    {/* Two independent facts about the snapshot rather than one phrase, so they
+        take the row's own two ends -- the same left-label/right-value split the
+        bucket rows above use. Narrow enough and they stack, which is why the
+        reset date leads: alone on a line it is the one worth reading first. */}
+    {quota && <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+      {resets !== null && <Text size={200} className="text-fui-fg3">
+        {t('dashboard.upstreamEditor.copilot.quota.resets', { date: resets })}
+      </Text>}
+      <Text size={200} className="text-fui-fg3">
+        {t('dashboard.upstreamEditor.copilot.quota.observed', { time: dateTime(quota.observed_at, locale) })}
+      </Text>
+    </div>}
 
     {!quota && !loading && <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.copilot.quota.empty')}</Text>}
 
