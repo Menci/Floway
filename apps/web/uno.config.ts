@@ -42,7 +42,12 @@ export default defineConfig({
   // graph, so a class only ships if a file here spells it out. It also applies
   // no source-level transformers: utilities must appear verbatim in the source,
   // not as variant groups.
+  //
+  // The `.css.ts` modules are excluded because their bodies are CSS text and
+  // English prose, not class attributes. Extraction is substring-based, so a
+  // word in a sentence there becomes a shipped rule -- "shrink-to-fit," in a
+  // comment shipped as `.shrink-to-fit\,{flex-shrink:1}`.
   content: {
-    filesystem: ['src/**/*.{ts,tsx}'],
+    filesystem: ['src/**/*.{ts,tsx}', '!src/**/*.css.ts'],
   },
 });
