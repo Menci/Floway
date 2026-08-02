@@ -93,11 +93,9 @@ export function UpstreamAccessControl({
       <div className="grid gap-3 min-w-0">
         {error && <Text className={dangerText} id={errorId} role="alert" size={200}>{error}</Text>}
         <ScrollArea axes="horizontal" className="min-w-0">
-          {/* Fluent's Table is already `width: 100%; table-layout: fixed`, so the
-              only thing this minimum decides is when the region starts scrolling.
-              It is the three sized columns plus enough room for a provider chip to
-              stay readable — a dialog wide enough to show that much never scrolls,
-              and a chip narrower than its column truncates on its own. */}
+          {/* Fluent's Table is already `width: 100%; table-layout: fixed`, so this
+              minimum only decides when the region starts scrolling: the three sized
+              columns plus enough room for a provider chip to stay readable. */}
           <Table aria-label={t('dashboard.upstreamAccess.tableLabel')} className="min-w-[440px]">
             <colgroup><col className="w-[80px]" /><col className="w-[96px]" /><col /><col className="w-[120px]" /></colgroup>
             <TableHeader><TableRow>
