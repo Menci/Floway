@@ -89,7 +89,8 @@ samp {
 
 /* Inline code is never a boxed token: WinUI has no inline-code chip, and a
    background plus a border plus its own foreground turns a word in a sentence
-   into a control. A `pre` block is the exception and states its own surface.
+   into a control. A `pre` states a surface only where it is a framed block --
+   ./components/ui/code-block.tsx -- not merely because it is preformatted.
 
    `:where()` contributes no specificity, so the size is marked important for the
    reason ./components/upstream-editor/mono-label.ts states -- inline code does

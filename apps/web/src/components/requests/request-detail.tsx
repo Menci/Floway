@@ -34,6 +34,20 @@ const { Tab, TabList, Text, makeStyles, mergeClasses } = fluentComponents;
 // control outline; the two only differ in the dark dictionary.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L53
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L257
+//
+// The band is the one surface here that fills: it holds still while the region
+// below it scrolls, so it has to occlude. WinUI's counterpart is ContentDialog's
+// fixed band over its scrolling content, `ContentDialogTopOverlay` =
+// LayerFillColorAlt, which is #FFFFFF in light and #0DFFFFFF over the dialog's
+// #202020 in dark -- the flat #FFFFFF/#2C2C2C that `colorNeutralBackground1`
+// already carries. WinUI seams that band with CardStrokeColorDefault; the
+// divider stands in because the card stroke is black-alpha and disappears into a
+// dark surface, which is the reading every other separator in this dashboard
+// takes.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L6-L8
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L61
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L265
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L46
 const useStyles = makeStyles({
   sectionHeader: {
     alignItems: 'center',
@@ -47,12 +61,21 @@ const useStyles = makeStyles({
     top: 0,
     zIndex: 2,
   },
+  // The seam between two sections is drawn by the body rather than by the
+  // section box, so it lands on the same pixel row as the band's own seam once a
+  // section scrolls past: `position: sticky` parks the band on its section's
+  // bottom edge, and a border on the section box would sit one row below the
+  // band's and read as a two-pixel rule for the length of that scroll.
   section: {
-    borderBottom: '1px solid var(--colorNeutralStroke3)',
-    ':last-child': { borderBottom: 'none' },
+    '&:not(:last-child) > :last-child': { borderBottom: '1px solid var(--colorNeutralStroke3)' },
   },
+  // No fill: a scrolling content region inside a surface takes the surface's
+  // own, and painting the band's fill here made band and body one slab with the
+  // seam lost inside it. WinUI fills a content region only where that region is
+  // its own framed box -- the Expander's, at CardBackgroundFillColorSecondary --
+  // and this one is the body of a section the band already heads.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L25-L26
   code: {
-    backgroundColor: 'var(--colorNeutralBackground1)',
     color: 'var(--colorNeutralForeground1)',
     margin: 0,
     overflow: 'visible',
