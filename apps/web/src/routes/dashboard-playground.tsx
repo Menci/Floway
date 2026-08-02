@@ -98,7 +98,7 @@ export async function clientLoader(): Promise<LoaderData> {
 }
 
 const useStyles = makeStyles({
-  toolbar: { borderBottom: `1px solid ${tokens.colorNeutralStroke1}` },
+  toolbar: { borderBottom: `1px solid ${tokens.colorNeutralStroke3}` },
   // No third foreground step exists upstream, so the hover accent is held
   // through the press. Fluent clears forced-color-adjust on a reached button,
   // so the forced-colours Highlight pairing has to be restated here.

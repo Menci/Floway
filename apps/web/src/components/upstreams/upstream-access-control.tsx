@@ -9,6 +9,7 @@ import { useDangerTextClass } from '../ui/danger';
 import { ReorderButtons } from '../ui/reorder-buttons';
 import { ScrollArea } from '../ui/scroll-area';
 import { SettingsExpander, SettingsSwitch } from '../ui/settings-card';
+import { TableColumns } from '../ui/table-columns';
 
 const {
   Checkbox,
@@ -93,11 +94,11 @@ export function UpstreamAccessControl({
       <div className="grid gap-3 min-w-0">
         {error && <Text className={dangerText} id={errorId} role="alert" size={200}>{error}</Text>}
         <ScrollArea axes="horizontal" className="min-w-0">
-          {/* Fluent's Table is already `width: 100%; table-layout: fixed`, so this
-              minimum only decides when the region starts scrolling: the three sized
-              columns plus enough room for a provider chip to stay readable. */}
+          {/* The minimum only decides when the region starts scrolling: the
+              three sized columns plus enough room for a provider chip to stay
+              readable. */}
           <Table aria-label={t('dashboard.upstreamAccess.tableLabel')} className="min-w-[440px]">
-            <colgroup><col className="w-[80px]" /><col className="w-[96px]" /><col /><col className="w-[120px]" /></colgroup>
+            <TableColumns widths={['80px', '96px', null, '120px']} />
             <TableHeader><TableRow>
               <TableHeaderCell>{t('dashboard.upstreamAccess.enabled')}</TableHeaderCell>
               <TableHeaderCell>{t('dashboard.upstreamAccess.order')}</TableHeaderCell>

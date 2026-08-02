@@ -8,7 +8,8 @@ import { badgeHueStyle } from '../../lib/color';
 import { Chip } from '../ui/chip';
 import { ResourceListEmptyState } from '../ui/resource-list';
 import { ScrollArea } from '../ui/scroll-area';
-import { TableActions, TableActionsHeader } from '../ui/table-actions';
+import { TABLE_ACTIONS_WIDTH, TableActions, TableActionsHeader } from '../ui/table-actions';
+import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { kindFromUri } from '@floway-dev/proxy/url-kind';
 
@@ -42,12 +43,13 @@ export function ProxyList({
 
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
-      <Table aria-label={t('dashboard.proxy.listTitle')} className="min-w-[620px]">
+      <Table aria-label={t('dashboard.proxy.listTitle')} className="min-w-[640px]">
+        <TableColumns widths={[null, null, TABLE_ACTIONS_WIDTH]} />
         <TableHeader>
           <TableRow>
             <TableHeaderCell>{t('dashboard.proxy.form.name')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.proxy.form.address')}</TableHeaderCell>
-            <TableActionsHeader className="!w-[88px]">{t('dashboard.proxy.columns.actions')}</TableActionsHeader>
+            <TableActionsHeader>{t('dashboard.proxy.columns.actions')}</TableActionsHeader>
           </TableRow>
         </TableHeader>
         <TableBody>

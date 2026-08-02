@@ -104,7 +104,7 @@ function DashboardShell({ user }: { user: AuthUser }) {
         <div className="min-h-0 max-[900px]:hidden">
           <Sidebar user={user} />
         </div>
-        <header className="hidden max-[900px]:flex items-center gap-3 border-b border-b-solid border-fui-stroke1 px-4">
+        <header className="hidden max-[900px]:flex items-center gap-3 border-b border-b-solid border-fui-divider px-4">
           <Button
             appearance="subtle"
             aria-label={t('dashboard.nav.open')}

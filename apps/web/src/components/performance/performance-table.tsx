@@ -9,6 +9,7 @@ import { useLocale } from '../../lib/use-locale';
 import { EmptyStateLine } from '../ui/empty-state';
 import { ScrollArea } from '../ui/scroll-area';
 import { useTrailingCellClass } from '../ui/table-actions';
+import { TableColumns } from '../ui/table-columns';
 
 const {
   makeStyles,
@@ -49,10 +50,10 @@ export function PerformanceTable({ groupBy, labels, rows }: { groupBy: Performan
   const sortDirection = (key: PerformanceTableSortKey) => sort.key === key ? sort.direction : undefined;
   return <section className="grid gap-2.5 min-w-0">
     <ScrollArea axes="horizontal" className="rounded-[var(--winui-overlay-corner-radius,8px)] min-w-0"><Table aria-label={t(`dashboard.performance.groupBy.${groupBy}`)} size="small" className="min-w-[570px]">
-      {/* Fluent's Table lays out `fixed`, so sizing the four measure columns to
-          their widest label leaves the rest to the name, the only column whose
-          content has no bound. */}
-      <TableHeader><TableRow><TableHeaderCell sortable sortDirection={sortDirection('group')} onClick={() => sortBy('group')}>{t(`dashboard.performance.filters.${groupBy}`)}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('requests')} onClick={() => sortBy('requests')} className={`${trailingCell} whitespace-nowrap !w-[112px]`}>{t('dashboard.performance.tables.requests')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('errors')} onClick={() => sortBy('errors')} className={`${trailingCell} whitespace-nowrap !w-[88px]`}>{t('dashboard.performance.tables.errors')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('ttft')} onClick={() => sortBy('ttft')} className={`${trailingCell} whitespace-nowrap !w-[112px]`}>{t('dashboard.performance.tables.ttftP95')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('speed')} onClick={() => sortBy('speed')} className={`${trailingCell} whitespace-nowrap !w-[160px]`}>{t('dashboard.performance.tables.speedP95')}</TableHeaderCell></TableRow></TableHeader>
+      {/* Sizing the four measure columns to their widest label leaves the rest
+          to the name, the only column whose content has no bound. */}
+      <TableColumns widths={[null, '112px', '88px', '112px', '160px']} />
+      <TableHeader><TableRow><TableHeaderCell sortable sortDirection={sortDirection('group')} onClick={() => sortBy('group')}>{t(`dashboard.performance.filters.${groupBy}`)}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('requests')} onClick={() => sortBy('requests')} className={`${trailingCell} whitespace-nowrap`}>{t('dashboard.performance.tables.requests')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('errors')} onClick={() => sortBy('errors')} className={`${trailingCell} whitespace-nowrap`}>{t('dashboard.performance.tables.errors')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('ttft')} onClick={() => sortBy('ttft')} className={`${trailingCell} whitespace-nowrap`}>{t('dashboard.performance.tables.ttftP95')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('speed')} onClick={() => sortBy('speed')} className={`${trailingCell} whitespace-nowrap`}>{t('dashboard.performance.tables.speedP95')}</TableHeaderCell></TableRow></TableHeader>
       <TableBody>{sortedRows.length ? sortedRows.map(row => <TableRow key={row.group}><TableCell><Tooltip content={row.group} relationship="description"><span className={`${styles.groupName} block overflow-hidden text-ellipsis whitespace-nowrap`} tabIndex={0}>{resolvePerformanceGroup(row.group, groupBy, labels)}</span></Tooltip></TableCell><TableCell className={`${trailingCell} tabular-nums`}>{formatCount(row.requests, locale)}</TableCell><TableCell className={`${trailingCell} tabular-nums`}>{formatCount(row.errors, locale)}</TableCell><TableCell className={`${trailingCell} tabular-nums`}>{formatDuration(row.ttftMsP95)}</TableCell><TableCell className={`${trailingCell} tabular-nums`}>{formatTokenRateFromTpot(row.tpotUsP95)}</TableCell></TableRow>) : <TableRow><TableCell colSpan={5}><EmptyStateLine>{t('dashboard.performance.empty')}</EmptyStateLine></TableCell></TableRow>}</TableBody>
     </Table></ScrollArea>
   </section>;

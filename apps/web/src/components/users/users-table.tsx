@@ -8,7 +8,8 @@ import { useLocale } from '../../lib/use-locale';
 import { ResourceListEmptyState } from '../ui/resource-list';
 import { ScrollArea } from '../ui/scroll-area';
 import { StatusBadge } from '../ui/status-badge';
-import { TableActions, TableActionsHeader } from '../ui/table-actions';
+import { TABLE_ACTIONS_WIDTH, TableActions, TableActionsHeader } from '../ui/table-actions';
+import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 
 const {
@@ -46,15 +47,14 @@ export function UsersTable({
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
       <Table aria-label={t('dashboard.users.table.label')} className="min-w-[720px]">
+        <TableColumns widths={[null, null, null, null, TABLE_ACTIONS_WIDTH]} />
         <TableHeader>
           <TableRow>
             <TableHeaderCell>{t('dashboard.users.table.username')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.users.table.role')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.users.table.upstreams')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.users.table.created')}</TableHeaderCell>
-            <TableActionsHeader className="!w-[116px]">
-              {t('dashboard.users.table.actions')}
-            </TableActionsHeader>
+            <TableActionsHeader>{t('dashboard.users.table.actions')}</TableActionsHeader>
           </TableRow>
         </TableHeader>
         <TableBody>

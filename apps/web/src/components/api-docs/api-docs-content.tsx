@@ -14,6 +14,7 @@ import { RouteLink } from '../ui/route-link';
 import { ScrollArea } from '../ui/scroll-area';
 import { SectionHeader } from '../ui/section-header';
 import { TableActionsHeader, useTrailingCellClass } from '../ui/table-actions';
+import { TableColumns } from '../ui/table-columns';
 import { useCopyToClipboard } from '../ui/use-copy-to-clipboard';
 
 const {
@@ -71,7 +72,7 @@ export function ApiDocsContent() {
           <SectionHeader level={3} title={t(`dashboard.apiDocs.groups.${group}`)} />
           <ScrollArea axes="horizontal" className="min-w-0">
             <Table aria-label={t(`dashboard.apiDocs.groups.${group}`)} className="min-w-[780px] table-fixed" size="small">
-              <colgroup><col className="w-[72px]" /><col /><col className="w-[300px]" /><col className="w-[144px]" /></colgroup>
+              <TableColumns widths={['72px', null, '300px', '144px']} />
               <TableHeader><TableRow>
                 <TableHeaderCell>{t('dashboard.apiDocs.columns.method')}</TableHeaderCell>
                 <TableHeaderCell>{t('dashboard.apiDocs.columns.endpoint')}</TableHeaderCell>
