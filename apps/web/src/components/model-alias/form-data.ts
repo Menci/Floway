@@ -41,9 +41,8 @@ export const aliasDefaults = (alias: ModelAlias | null): AliasFormValues => {
   };
 };
 
-// `sort_order` is left out in both directions: the server appends a new alias
-// after the last one and preserves an existing one's place when the field is
-// absent, and the dialog never reorders.
+// `sort_order` is left out: absent, the server appends a new alias last and
+// keeps an existing one's place.
 export const aliasBody = (values: AliasFormValues): AliasWriteBody => {
   const trimRules = (rules: AliasTarget['rules']): AliasTarget['rules'] => {
     const reasoning = rules.reasoning ? Object.fromEntries(Object.entries(rules.reasoning).filter(([, value]) => value !== undefined && value !== '')) : undefined;
