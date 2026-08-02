@@ -98,11 +98,10 @@ type ResourceListActionsProps = {
 // above the table. A second heading over the list only named the page again,
 // and the count it carried is the list itself.
 //
-// A page that only reads — the monitor views, an upstream's quota card — has no
-// create action and still wants the refresh control this states: the spinner in
-// place of the glyph, and the live region that says so to a screen reader. Such
-// a page also sits among subtle controls rather than beside a primary create
-// button, so it picks the appearance.
+// A page that only reads has no create action and still wants the refresh
+// control this states: the spinner in place of the glyph, and the live region
+// that says so to a screen reader. Such a page also sits among subtle controls
+// rather than beside a primary create button, so it picks the appearance.
 //
 // A refresh in flight leaves the control focusable while it reads disabled, so
 // a keyboard is not thrown back to the document in the middle of the action.

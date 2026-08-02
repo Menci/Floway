@@ -1,5 +1,8 @@
 import { Trans, useTranslation } from 'react-i18next';
 import { Link as RouterLink } from 'react-router';
+// The grammar the authentication sample is written in. Prism registers each as
+// a module side effect, so it is imported where the language is named.
+import 'prismjs/components/prism-bash';
 
 import { apiDocsEndpoints, apiDocsGroups, authCurlExample } from './api-docs-data';
 import { fluentComponents } from '../../fluent';

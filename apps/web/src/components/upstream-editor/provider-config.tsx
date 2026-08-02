@@ -429,9 +429,21 @@ function OAuthConfig({ record, onPatch }: {
   const [error, setError] = useState<string | null>(null);
   const flowKind = tab === 'setup' ? 'setup-token' : 'oauth';
 
+  // Two authorize-url requests can be outstanding at once -- switching tabs
+  // supersedes one legitimately, and the effect below re-fires on every
+  // `record` identity change while none has resolved. Both halves of a
+  // preparation matter: `stashPkce` writes one sessionStorage slot per
+  // (kind, flow kind), so the verifier the callback is later matched against
+  // must be the one belonging to the URL the operator actually opened. The
+  // generation makes the newest call the only one that writes either -- taken
+  // before the stash as well as before the URL, because the two are separated
+  // by a round trip and an older call could otherwise stash after a newer one.
+  const generation = useRef(0);
   const prepare = useCallback(async () => {
+    const mine = ++generation.current;
     setBusy(true); setError(null);
     const pkce = await generatePkce();
+    if (generation.current !== mine) return;
     stashPkce(record.kind, flowKind, { verifier: pkce.verifier, state: pkce.state });
     const body = { record: previewRecord(record, getValues()), challenge: pkce.challenge, state: pkce.state };
     const result = record.kind === 'codex'
@@ -439,6 +451,7 @@ function OAuthConfig({ record, onPatch }: {
       : tab === 'setup'
         ? await callApi(() => api.api.upstreams['claude-code']['setup-token']['authorize-url'].$post({ json: body }))
         : await callApi(() => api.api.upstreams['claude-code'].oauth['authorize-url'].$post({ json: body }));
+    if (generation.current !== mine) return;
     setBusy(false);
     if (result.error) { setError(result.error.message); return; }
     setAuthorizeUrl(result.data.authorize_url);

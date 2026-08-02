@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
+// The grammars this card's samples are written in. Prism registers each as a
+// module side effect, so they are imported where the languages are named.
+import 'prismjs/components/prism-bash';
+import 'prismjs/components/prism-json';
+import 'prismjs/components/prism-powershell';
+import 'prismjs/components/prism-toml';
 
 import { cloneAgentSetupConfiguration, defaultAgentSetupConfiguration, type AgentSetupConfiguration, type AgentSetupLease } from './agent-setup-contract';
 import { applyLocalAgentSetupChanges } from './agent-setup-draft';

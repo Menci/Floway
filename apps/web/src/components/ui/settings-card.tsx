@@ -287,10 +287,9 @@ const useStyles = makeStyles({
   // button in the same slot is already the size it is meant to be.
   //
   // Both rows take it, because a reader sees one list. The same control moves
-  // between the two -- ../api-keys/retention-field.tsx renders a card when the
-  // period has nothing to reveal and an expander when it has -- so a floor on
-  // one of them would make a row change width for a reason that has nothing to
-  // do with its value.
+  // between the two -- a caller renders a card while its setting has nothing to
+  // reveal and an expander once it has -- so a floor on one of them would make
+  // a row change width for a reason that has nothing to do with its value.
   //
   // It applies at every width, as the toolkit's own does:
   // SettingsCardContentMinWidth goes into the card's content scope as an

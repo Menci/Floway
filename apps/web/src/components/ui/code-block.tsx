@@ -2,10 +2,6 @@ import Prism from 'prismjs';
 import { useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import 'prismjs/components/prism-bash';
-import 'prismjs/components/prism-json';
-import 'prismjs/components/prism-powershell';
-import 'prismjs/components/prism-toml';
 
 import { prismTokenStyles } from './prism-token-styles';
 import { ScrollArea } from './scroll-area';
@@ -152,10 +148,12 @@ export function CodeBlock({ code, copyOutcome, disabled = false, header, languag
   const { t } = useTranslation();
   const styles = useStyles();
   const copyLabel = useCopyLabel();
-  // An unregistered language falls back to Prism's own empty `plain` grammar,
-  // which tokenizes to a single text run and stringifies to the escaped source
-  // -- so a caller naming a grammar nobody imported gets plain text rather than
-  // an exception.
+  // Prism registers a grammar as a module side effect, so the module that names
+  // a language is the one that imports it -- this block highlights whatever it
+  // is handed and knows no language of its own. A name nobody registered falls
+  // back to Prism's empty `plain` grammar, which tokenizes to a single text run
+  // and stringifies to the escaped source, so the sample reads as plain text
+  // rather than throwing.
   const highlighted = useMemo(
     () => Prism.highlight(code, Prism.languages[language] ?? Prism.languages.plain, language),
     [code, language],
