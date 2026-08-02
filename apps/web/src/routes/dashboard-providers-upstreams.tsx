@@ -32,6 +32,7 @@ import { fluentComponents } from '../fluent';
 import { dateTime } from '../lib/format-time';
 import { pageNavigation } from '../lib/page-navigation';
 import { useLocale } from '../lib/use-locale';
+import { ALL_PROVIDER_KINDS } from '@floway-dev/provider';
 
 const {
   Menu,
@@ -65,7 +66,11 @@ type Mutation =
   | { kind: 'delete'; id: string }
   | { kind: 'reload' };
 
-const providers: readonly UpstreamProviderKind[] = [
+// The create menu offers every kind the gateway accepts, in the order an
+// operator is most likely to want them rather than the declaration order. A
+// kind this list does not mention still reaches the menu, at the end -- the
+// membership comes from the provider package, and only the ordering is ours.
+const PROVIDER_MENU_ORDER: readonly UpstreamProviderKind[] = [
   'custom',
   'azure',
   'copilot',
@@ -73,6 +78,13 @@ const providers: readonly UpstreamProviderKind[] = [
   'claude-code',
   'ollama',
 ];
+
+const menuRank = (kind: UpstreamProviderKind) => {
+  const index = PROVIDER_MENU_ORDER.indexOf(kind);
+  return index === -1 ? PROVIDER_MENU_ORDER.length : index;
+};
+
+const providers = ALL_PROVIDER_KINDS.toSorted((a, b) => menuRank(a) - menuRank(b));
 
 const loadPageData = async (): Promise<LoaderData> => {
   const [upstreamsResult, modelsResult] = await Promise.all([
