@@ -6,6 +6,7 @@ import type { CopilotQuotaSnapshot, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { formatCount } from '../../lib/format-number';
 import { dateTime, shortDate } from '../../lib/format-time';
+import { clampPercent } from '../../lib/percent';
 import { useLocale } from '../../lib/use-locale';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { ResourceListActions } from '../ui/resource-list';
@@ -25,7 +26,7 @@ interface QuotaBucket {
   entitlement: number;
   used: number;
   usedPercent: number;
-  barPercent: number;
+  barPercent: number | null;
 }
 
 // A free seat reports `entitlement: 0` with `percent_remaining: 0`, which as
@@ -42,7 +43,7 @@ const readBuckets = (quota: CopilotQuotaSnapshot | null): QuotaBucket[] =>
       entitlement: detail.entitlement,
       used: Math.round(detail.entitlement - detail.quota_remaining),
       usedPercent,
-      barPercent: Math.min(100, Math.max(0, usedPercent)),
+      barPercent: clampPercent(usedPercent),
     };
   });
 
@@ -119,7 +120,7 @@ export function CopilotQuotaCard({ record }: { record: CopilotRecord }) {
               {t(`dashboard.upstreamEditor.copilot.quota.${bucket.kind}`)}
             </Text>}
       </div>
-      {bucket.kind === 'metered' && <ProgressBar max={100} thickness="large" value={bucket.barPercent} />}
+      {bucket.kind === 'metered' && <ProgressBar max={100} thickness="large" value={bucket.barPercent ?? undefined} />}
     </div>)}
 
     {/* The reset date leads because a narrow row stacks these two, and alone on

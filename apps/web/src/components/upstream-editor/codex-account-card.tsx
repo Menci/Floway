@@ -43,7 +43,7 @@ export function CodexAccountCard({ record }: { record: CodexRecord }) {
               {t('dashboard.upstreamEditor.codex.credits', { balance: credits.credits_balance })}
             </Badge>}
           <Tooltip content={account.chatgptAccountId} relationship="description">
-            <Text size={200} className="text-fui-fg3 font-mono" tabIndex={0}>{shortAccountId(account.chatgptAccountId)}</Text>
+            <Text size={200} className="text-fui-fg3 font-mono mono-size-xs" tabIndex={0}>{shortAccountId(account.chatgptAccountId)}</Text>
           </Tooltip>
         </div>
       </div>

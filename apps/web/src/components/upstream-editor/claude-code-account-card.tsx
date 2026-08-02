@@ -23,7 +23,7 @@ import { ProviderIcon } from '../upstreams/provider-badge';
 
 const {
   Accordion, AccordionHeader, AccordionItem, AccordionPanel, Badge, Button,
-  MessageBar, MessageBarBody, ProgressBar, Text, Tooltip,
+  MessageBar, MessageBarBody, ProgressBar, Spinner, Text, Tooltip,
 } = fluentComponents;
 
 export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
@@ -65,7 +65,7 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
           </Tooltip>}
           {subscription && <StatusBadge color="brand">{subscription}</StatusBadge>}
           <Tooltip content={account.accountUuid} relationship="description">
-            <Text size={200} className="text-fui-fg3 font-mono" tabIndex={0}>{accountUuidShort}</Text>
+            <Text size={200} className="text-fui-fg3 font-mono mono-size-xs" tabIndex={0}>{accountUuidShort}</Text>
           </Tooltip>
           {account.email === null && <Tooltip content={t('dashboard.upstreamEditor.claudeCode.noEmailScopeHint')} relationship="description">
             <Text size={200} className="text-fui-fg3" tabIndex={0}>{t('dashboard.upstreamEditor.claudeCode.noEmailScope')}</Text>
@@ -85,7 +85,7 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
       <Text size={200} className="text-fui-fg2">
         {windows.length ? t('dashboard.upstreamEditor.claudeCode.windows') : t('dashboard.upstreamEditor.claudeCode.noSnapshot')}
       </Text>
-      <Button appearance="subtle" disabledFocusable={probing} icon={<ArrowClockwiseRegular />} onClick={onRefreshQuota} size="small">
+      <Button appearance="subtle" disabledFocusable={probing} icon={probing ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={onRefreshQuota} size="small">
         {t('dashboard.upstreamEditor.claudeCode.refreshQuota')}
       </Button>
     </div>
