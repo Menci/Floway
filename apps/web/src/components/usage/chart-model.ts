@@ -3,7 +3,7 @@ import { curveMonotoneX } from 'd3-shape';
 
 import type { DisplayUsageRecord, SearchChartModel, SearchUsageResponse, TokenChartModel, TokenCounters, TokenSummary, UsageMetric, UsageRange, UsageResponse } from './types';
 import type { ControlPlaneModel, BillingMetric } from '../../api/types';
-import { decimalStringToPlottableNumber, formatDecimalQuantity, formatUsd, sumDecimalStrings } from '../../lib/decimal-display';
+import { decimalStringToPlottableNumber, formatDecimalQuantity, formatUsd, sumDecimalStrings, usdFractionDigits } from '../../lib/decimal-display';
 import { formatCompactCount, formatCount } from '../../lib/format-number';
 import type { ChartBucket } from '../charts/dashboard-time';
 import {
@@ -532,10 +532,8 @@ export const formatMetricValue = (value: number, metric: UsageMetric, locale: st
 };
 
 const formatPlottedCost = (value: number): string => {
-  if (value >= 1) return `$${value.toFixed(2)}`;
-  if (value >= 0.01) return `$${value.toFixed(3)}`;
-  if (value > 0) return `$${value.toFixed(4)}`;
-  return '$0';
+  if (value <= 0) return '$0';
+  return `$${value.toFixed(usdFractionDigits(boundary => value >= Number(boundary)))}`;
 };
 
 export const formatProvider = (provider: string): string => {

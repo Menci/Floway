@@ -49,11 +49,16 @@ export const formatDecimalQuantity = (value: DecimalString): string => {
   return fraction === '' ? grouped : `${grouped}.${fraction}`;
 };
 
+// One rate card for money, quoted in two places: the summary tile compares
+// exact decimal strings and the usage chart's axis compares plotted
+// floating-point numbers, but a figure must not read `$0.12` above the chart
+// and `$0.123` on it. The ladder is stated here as its boundaries and the
+// caller supplies the comparison its own value type supports.
+export const usdFractionDigits = (atLeast: (boundary: DecimalString) => boolean): 2 | 3 | 4 =>
+  atLeast('1') ? 2 : atLeast('0.01') ? 3 : 4;
+
 export const formatUsd = (value: DecimalString | null): string => {
   if (value === null) return '-';
   if (decimalStringIsZero(value)) return '$0';
-  const scale = compareDecimalStrings(value, '1') >= 0
-    ? 2
-    : compareDecimalStrings(value, '0.01') >= 0 ? 3 : 4;
-  return `$${toFixed(value, scale)}`;
+  return `$${toFixed(value, usdFractionDigits(boundary => compareDecimalStrings(value, boundary) >= 0))}`;
 };
