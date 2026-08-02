@@ -19,10 +19,16 @@ const { makeStyles } = fluentComponents;
 export const useUnclippedChartFrame = makeStyles({
   root: {
     overflow: 'visible',
-    // Axis labels take Caption, the step WinUI sets a chart's own annotations
-    // in and the smallest size its ramp states. Fluent's charts draw the ticks
-    // at 10px SemiBold, which is below every step WinUI has and heavier than
-    // the body text the labels sit beside.
+    // Axis labels take Caption, the smallest step WinUI's type ramp states --
+    // WinUI ships no chart, so nothing there sets an annotation size and this
+    // is the ramp's floor rather than a transcription. Fluent's charts draw
+    // the ticks at 10px SemiBold, which is below every step WinUI has and
+    // heavier than the body text the labels sit beside.
+    //
+    // The operator ruled this size to 11px. A later change moved it onto the
+    // Caption step, which currently computes to 12px, on the assertion that he
+    // had ruled again after that; no such ruling is recorded anywhere else, so
+    // the size standing here is not the one he last stated on the record.
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBlock_themeresources.xaml#L3
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBlock_themeresources.xaml#L19-L22
     '& .tick text': {
@@ -46,20 +52,20 @@ export const useUnclippedChartFrame = makeStyles({
     // flyout content padding Fluent spends on it.
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToolTip_themeresources.xaml#L50
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToolTip_themeresources.xaml#L76
-    // The surface is translucent over a blur, and that is the operator's
-    // decision rather than a reading of WinUI. WinUI fills a ToolTip with
+    // The surface is translucent, and that half is the operator's: he asked
+    // for a translucent background here because the callout is large and
+    // covers what it describes. WinUI fills a ToolTip with
     // AcrylicInAppFillColorDefaultBrush, and ../../winui/tokens.ts takes that
     // brush's flat FallbackColor because the acrylic recipe -- a luminosity
-    // blend into the blurred backdrop, a tint over it, noise composited through
-    // the result -- has no CSS counterpart. That reasoning holds for a flyout
-    // standing over a page. It does not hold here: this callout covers the
-    // plot it describes, and an opaque panel hides the very lines the reader
-    // is pointing at. So this one surface keeps a backdrop blur and a fill a
-    // step off opaque -- nearer to what acrylic looks like than the fallback
-    // is, over the one background where that matters.
+    // blend into the blurred backdrop, a tint over it, noise composited
+    // through the result -- has no CSS counterpart. That fallback is right for
+    // a flyout standing over a page and wrong for a panel standing over the
+    // lines the reader is pointing at, which is the case he was describing.
     //
-    // An audit read the pair as unsourced and removed it, leaving the callout
-    // on the flat fallback. Do not do that again.
+    // The backdrop blur under it is ours. He asked for translucency and did
+    // not ask for a blur; nothing else sources it either. It stands here
+    // because a translucent fill over a blur is nearer to acrylic than a
+    // translucent fill alone, which is a reason of ours and not a ruling.
     '& .fui-PopoverSurface': {
       backdropFilter: 'blur(8px)',
       backgroundColor: 'color-mix(in srgb, var(--winui-acrylic-in-app-fill-default) 86%, transparent)',
