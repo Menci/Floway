@@ -17,6 +17,18 @@ interface ScrollAreaProps extends PropsWithChildren {
   className?: string;
   contentClassName?: string;
   noTabIndex?: boolean;
+  /**
+   * Styles the scrollport itself -- the box that clips.
+   *
+   * This is where a gutter goes. Padding on the host is outside the clip and
+   * buys the content nothing: a shadow, a focus ring or an outline drawn by
+   * something inside the scroller is cut at the scrollport's edge however much
+   * room the host leaves around it. Padding here is inside the clip, so the
+   * content sits in from the edge that cuts and its overhang survives. The
+   * host usually pulls the same distance back out with a negative margin, so
+   * the content still lines up with the page.
+   */
+  viewportClassName?: string;
 }
 
 let nativeScrollbarSize = 0;
@@ -146,6 +158,7 @@ export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function S
   className,
   contentClassName = '',
   noTabIndex = false,
+  viewportClassName,
 }, forwardedRef) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -167,7 +180,7 @@ export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function S
       ref={hostRef}
     >
       <div
-        className="h-full w-full"
+        className={mergeClasses('h-full w-full', viewportClassName)}
         ref={viewportRef}
         style={{ overflowX: overflow.x, overflowY: overflow.y }}
       >
