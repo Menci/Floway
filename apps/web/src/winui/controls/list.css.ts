@@ -9,6 +9,11 @@ const checkmarkPressed = pressedRoots('.fui-ListItem__checkmark.fui-Checkbox', '
 const uncheckedBox = `.fui-Checkbox__input:enabled:not(:checked)${checkboxNotMixed}`
   + ' ~ .fui-Checkbox__indicator.fui-Checkbox__indicator';
 
+const interactiveRow = ".fui-ListItem[tabindex]:not([aria-disabled='true'])";
+
+const selectedBox = '.fui-ListItem__checkmark .fui-Checkbox__input:enabled:checked'
+  + ' ~ .fui-Checkbox__indicator.fui-Checkbox__indicator';
+
 export const listCss = `
 /* Also the containing block for the selection indicator and the focus ring's
    inner stroke. Rest fill and foreground are left undeclared: Fluent's default
@@ -176,6 +181,33 @@ ${nested(under(['.fui-ListItem__checkmark.fui-Checkbox:hover', ...checkmarkPress
 
 ${nested(under(checkmarkPressed, [uncheckedBox]))} {
     border-color: var(--winui-control-strong-stroke-default);
+  }
+
+  /* The selected box answers the row, not itself. WinUI builds it as a border
+     with IsHitTestVisible false and picks its fill from the ITEM visual state,
+     so the accent step arrives whenever the pointer is anywhere over the row;
+     a standalone CheckBox instead steps when the box itself is hovered, which
+     is the subject ./choice.css writes. Each rule therefore re-hangs that step
+     on the row, and outranks the choice rule it answers by naming the row as
+     well as the box. Pressed follows hover in source order because the two
+     carry the same weight and WinUI resolves PressedSelected above
+     PointerOverSelected; it also drops the glyph one step, which no other
+     state of this box does.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/core/elements/ListViewBaseItemChrome.cpp#L3832
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/core/elements/ListViewBaseItemChrome.cpp#L4628-L4655
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/core/elements/ListViewBaseItemChrome.cpp#L4763-L4775
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L61
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L67
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L68 */
+  ${interactiveRow}:hover ${selectedBox} {
+    background-color: var(--winui-accent-fill-secondary);
+    border-color: var(--winui-accent-fill-secondary);
+  }
+
+  ${interactiveRow}:active ${selectedBox} {
+    background-color: var(--winui-accent-fill-tertiary);
+    border-color: var(--winui-accent-fill-tertiary);
+    color: var(--winui-text-on-accent-fill-secondary);
   }
 }
 
