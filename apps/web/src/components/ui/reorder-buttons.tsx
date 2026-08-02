@@ -2,8 +2,7 @@ import { ArrowDownRegular, ArrowUpRegular } from '@fluentui/react-icons';
 
 import { TooltipIconButton } from './tooltip-icon-button';
 
-// A fragment rather than a container: callers place the pair in a flex row, a
-// fixed grid track, or a bare `inline-flex`, and own that choice.
+// A fragment rather than a container, so callers own the pair's layout.
 export function ReorderButtons({ disabled = false, downLabel, isFirst, isLast, onMove, upLabel }: {
   disabled?: boolean;
   downLabel: string;
