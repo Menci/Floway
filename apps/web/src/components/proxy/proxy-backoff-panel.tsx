@@ -13,7 +13,6 @@ import { useOutcomeToasts } from '../ui/outcome-toast';
 
 const { Button, Text, Tooltip } = fluentComponents;
 
-// The countdown ticks locally so the panel does not refetch once a second.
 export function ProxyBackoffPanel({ backoffs, onReset, proxyId }: {
   backoffs: readonly BackoffRow[];
   onReset: () => void;
@@ -24,8 +23,6 @@ export function ProxyBackoffPanel({ backoffs, onReset, proxyId }: {
   const toasts = useOutcomeToasts();
   const nowSeconds = useNow(1000) / 1000;
   const [resetError, setResetError] = useState<string | null>(null);
-  // Without this a second click posts a second reset while the first is in
-  // flight.
   const [resetting, setResetting] = useState(false);
 
   // `>=` keeps a row visible through its expiry second, so the countdown's last
