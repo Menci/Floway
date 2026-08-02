@@ -45,6 +45,7 @@ const {
   Table,
   TableBody,
   TableCell,
+  TableCellLayout,
   TableHeader,
   TableHeaderCell,
   TableRow,
@@ -372,7 +373,13 @@ function UpstreamsTable({
               </TableCell>
               <TableCell><ProviderBadge color={record.color} kind={record.kind} /></TableCell>
               <TableCell className="overflow-hidden">
-                <div className="grid gap-[3px] min-w-0 max-w-[520px]">
+                <TableCellLayout
+                  className="max-w-[520px]"
+                  description={<Tooltip content={upstreamSummary(record, t)} relationship="label">
+                    <Text block tabIndex={0} truncate wrap={false}>{upstreamSummary(record, t)}</Text>
+                  </Tooltip>}
+                  truncate
+                >
                   <Tooltip content={record.name} relationship="label">
                     <Link
                       {...pageNavigation}
@@ -382,12 +389,7 @@ function UpstreamsTable({
                       {record.name}
                     </Link>
                   </Tooltip>
-                  <Tooltip content={upstreamSummary(record, t)} relationship="label">
-                    <Text size={200} className="text-fui-fg3 truncate max-w-full" tabIndex={0}>
-                      {upstreamSummary(record, t)}
-                    </Text>
-                  </Tooltip>
-                </div>
+                </TableCellLayout>
               </TableCell>
               <TableCell>
                 <ModelStatus count={modelCounts.get(record.id)!} modelsAvailable={data.models !== null} record={record} />

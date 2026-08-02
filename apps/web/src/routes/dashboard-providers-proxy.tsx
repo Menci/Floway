@@ -106,6 +106,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
       <DashboardPageHeader
         actions={<ResourceListActions
           createLabel={t('dashboard.proxy.actions.create')}
+          disabled={mutating}
           onCreate={() => editorDialog.open(null)}
           onRefresh={() => void refresh()}
           refreshLabel={t('dashboard.proxy.actions.refresh')}

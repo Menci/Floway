@@ -13,6 +13,8 @@ import { useState } from 'react';
 
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Combobox, Dropdown } from '../components/ui/fluent-form-controls';
+import { PANEL_STACK_CLASS } from '../components/ui/layout';
+import { Panel } from '../components/ui/panel';
 import { SectionHeader } from '../components/ui/section-header';
 import { fluentComponents } from '../fluent';
 
@@ -120,7 +122,7 @@ const {
 function Section({ children, id, title }: { children: React.ReactNode; id: string; title: string }) {
   return <section className="grid gap-4" id={id}>
     <SectionHeader level={2} title={title} />
-    <Card className="!gap-5 !p-5">{children}</Card>
+    <Panel className={PANEL_STACK_CLASS}>{children}</Panel>
   </section>;
 }
 
@@ -386,12 +388,9 @@ function FieldSection() {
       </Field>
     </Row>
     <Row label="hint carrying a link">
-      <Field label="Proxy URI">
+      <Field hint={<>See <Link href="#nav">the proxy documentation</Link> for the accepted schemes.</>} label="Proxy URI">
         <Input defaultValue="socks5://127.0.0.1:1080" />
       </Field>
-      <Text size={200} className="text-fui-fg2">
-        See <Link href="#nav">the proxy documentation</Link> for the accepted schemes.
-      </Text>
     </Row>
   </Section>;
 }

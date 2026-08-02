@@ -403,14 +403,14 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
                     className="grid gap-1 border-0 border-t border-solid border-fui-stroke1 py-3 first:border-t-0"
                   >
                     <div className="flex items-baseline gap-2 flex-wrap">
-                      <a
+                      <Link
+                        className="font-fui-semibold"
                         href={r.url}
-                        target="_blank"
                         rel="noopener noreferrer"
-                        className="text-fui-brand1 no-underline hover:underline font-fui-semibold text-fui-base300"
+                        target="_blank"
                       >
                         {r.title}
-                      </a>
+                      </Link>
                       {r.pageAge && (
                         <Text size={100} className="text-fui-fg3">
                           {t('dashboard.searchConfig.pageAge', {
