@@ -246,6 +246,13 @@ export const useAgentSetup = (
     const loaded = createAttempt === 0 && initialResourceRef.current?.apiKeyId === apiKeyId
       ? initialResourceRef.current
       : null;
+    // The loader's lease is only good for the run that carried it. Once the
+    // lifecycle has run for another key — or for a retry — that lease has been
+    // released and its `expiresAt` is a deadline nothing is renewing, so
+    // returning to the first key must acquire a lease like any other selection
+    // rather than adopting the expired one. Discarding it here and not on the
+    // adopting pass keeps a re-entered lifecycle for the same key idempotent.
+    if (!loaded) initialResourceRef.current = null;
     setCreateError(loaded?.error ?? null);
     setSaveError(null);
     setHeartbeatError(null);
