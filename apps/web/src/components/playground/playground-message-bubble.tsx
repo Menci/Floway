@@ -6,14 +6,9 @@ import { fluentComponents } from '../../fluent';
 
 const { makeStyles, tokens } = fluentComponents;
 
-// A transcript bubble is Bing's `.text-message`, an element of its own rather
-// than a restyled Fluent surface, so every trait below is the original's own
-// declaration.
+// Bing's `.text-message` and its user half, built as an element of this app's
+// own rather than as a restyled Fluent surface.
 // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/globals.scss#L580-L594
-//
-// The halves are exclusive so a single class carries the shadow. The assistant
-// half keeps the dashboard's neutral surface: the page here is opaque where
-// Bing's was a photograph under a translucent card.
 // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/globals.scss#L617-L624
 const useStyles = makeStyles({
   bubble: {
@@ -42,6 +37,8 @@ const useStyles = makeStyles({
     // and behind a bubble is the transcript's own scrolling background.
     backgroundColor: tokens.colorNeutralBackground1,
   },
+  // The assistant half keeps the dashboard's neutral surface: the page here is
+  // opaque where Bing's was a photograph under a translucent card.
   assistant: {
     boxShadow: bingCardShadow,
   },
@@ -52,11 +49,11 @@ const useStyles = makeStyles({
   },
 });
 
-type PlaygroundMessageCardProps = PropsWithChildren<{
+type PlaygroundMessageBubbleProps = PropsWithChildren<{
   role: PlaygroundMessage['role'];
 }>;
 
-export function PlaygroundMessageCard({ children, role }: PlaygroundMessageCardProps) {
+export function PlaygroundMessageBubble({ children, role }: PlaygroundMessageBubbleProps) {
   const s = useStyles();
 
   return (

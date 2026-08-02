@@ -21,7 +21,7 @@ import { bingAccentForeground, bingAccentForegroundHover } from '../components/p
 import { PlaygroundComposer } from '../components/playground/playground-composer';
 import { PlaygroundEditDialog, type PlaygroundMessageDraft } from '../components/playground/playground-edit-dialog';
 import { PlaygroundMarkdown } from '../components/playground/playground-markdown';
-import { PlaygroundMessageCard } from '../components/playground/playground-message-card';
+import { PlaygroundMessageBubble } from '../components/playground/playground-message-bubble';
 import { streamPlaygroundText } from '../components/playground/playground-stream';
 import {
   availableModels,
@@ -419,12 +419,12 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
               {messages.map(message => (
                 <div key={message.id} className={`flex min-w-0 ${message.role === 'user' ? 'justify-end' : 'justify-start'} ${s.messageRow}`}>
                   <div className="max-w-[78%] min-w-0">
-                    <PlaygroundMessageCard role={message.role}>
+                    <PlaygroundMessageBubble role={message.role}>
                       {message.imageUrl && <a className={`block text-fui-base200 break-all mb-2 ${message.role === 'user' ? 'text-inherit' : 'text-fui-fg2'}`} href={message.imageUrl} target="_blank" rel="noopener noreferrer">{message.imageUrl}</a>}
                       {message.role === 'assistant'
                         ? <PlaygroundMarkdown content={message.text} streaming={sending && message.id === lastMessageId} />
                         : <span className="whitespace-pre-wrap break-words">{message.text}</span>}
-                    </PlaygroundMessageCard>
+                    </PlaygroundMessageBubble>
                     <div className={`playground-message-actions flex justify-end gap-1 mt-1 ${s.messageActions}`}>
                       <TooltipIconButton className={s.brandIconAction} label={t('dashboard.playground.actions.edit')} icon={<EditRegular />} onClick={() => beginEdit(message)} />
                       <TooltipIconButton className={s.brandIconAction} label={t('dashboard.playground.actions.delete')} icon={<DeleteRegular />} onClick={() => removeMessage(message.id)} />
