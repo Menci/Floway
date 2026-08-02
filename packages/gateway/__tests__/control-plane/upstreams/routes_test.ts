@@ -260,7 +260,7 @@ test('PATCH /api/upstreams preserves omitted secrets and re-warms the models cac
   // Plant a stale row so the post-PATCH read can verify the warm overwrote
   // it with the new upstream-supplied catalog rather than leaving the old
   // models in place.
-  await repo.modelsCache.put(created.id, {
+  await repo.upstreams.saveModelsCache(created.id, {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1,
     models: [{ id: 'stale-model', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
@@ -291,8 +291,8 @@ test('PATCH /api/upstreams preserves omitted secrets and re-warms the models cac
   assertEquals((updated?.config as Record<string, unknown>).apiKey, 'sk-test');
   assertEquals((updated?.config as Record<string, unknown>).endpoints, { responses: {} });
 
-  const cached = await repo.modelsCache.get(created.id);
-  assertEquals(cached?.models.map(m => m.id), ['fresh-model']);
+  const cached = updated?.modelsCache;
+  assertEquals(cached?.models.map(model => model.id), ['fresh-model']);
   assertEquals(cached!.fetchedAt > 1, true);
 });
 
@@ -412,17 +412,17 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
   await repo.upstreams.save({ ...baseRow, id: 'up_warm', name: 'Warm', sortOrder: 1 });
   await repo.upstreams.save({ ...baseRow, id: 'up_failed', name: 'Failed', sortOrder: 2 });
 
-  await repo.modelsCache.put('up_warm', {
+  await repo.upstreams.saveModelsCache('up_warm', {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [{ id: 'm1', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
   });
-  await repo.modelsCache.put('up_failed', {
+  await repo.upstreams.saveModelsCache('up_failed', {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [{ id: 'm1', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
   });
-  await repo.modelsCache.setLastError('up_failed', { message: 'boom', at: 1_700_000_500_000 });
+  await repo.upstreams.saveModelsCacheError('up_failed', { message: 'boom', at: 1_700_000_500_000 });
 
   const list = await requestApp('/api/upstreams', { headers: { 'x-floway-session': adminSession } });
   assertEquals(list.status, 200);
@@ -698,8 +698,8 @@ test('POST /api/upstreams warms the models cache before responding', async () =>
     },
   );
 
-  const cached = await repo.modelsCache.get(created.id);
-  assertEquals(cached?.models.map(m => m.id), ['warmed-on-create']);
+  const cached = (await repo.upstreams.getById(created.id))?.modelsCache;
+  assertEquals(cached?.models.map(model => model.id), ['warmed-on-create']);
 });
 
 test('PATCH /api/upstreams warms the models cache before responding', async () => {
@@ -708,9 +708,14 @@ test('PATCH /api/upstreams warms the models cache before responding', async () =
 
   const create = await requestApp('/api/upstreams', authed(adminSession, createBody()));
   const created = (await create.json()) as { id: string };
-  // Drop whatever the create-time warm landed on disk so the PATCH-time warm
-  // is the only writer in this test's window.
-  await repo.modelsCache.delete(created.id);
+  // Overwrite whatever the create-time warm landed on the row with a marker
+  // catalog, so the assertion below can only pass if the PATCH-time warm wrote
+  // over it.
+  await repo.upstreams.saveModelsCache(created.id, {
+    revision: MODEL_CATALOG_REVISION,
+    fetchedAt: 1,
+    models: [{ id: 'warmed-on-create', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
+  });
 
   await withMockedFetch(
     async request => {
@@ -730,8 +735,8 @@ test('PATCH /api/upstreams warms the models cache before responding', async () =
     },
   );
 
-  const cached = await repo.modelsCache.get(created.id);
-  assertEquals(cached?.models.map(m => m.id), ['warmed-on-update']);
+  const cached = (await repo.upstreams.getById(created.id))?.modelsCache;
+  assertEquals(cached?.models.map(model => model.id), ['warmed-on-update']);
 });
 
 test('POST /api/upstreams/list-models without an id still serves draft preview', async () => {

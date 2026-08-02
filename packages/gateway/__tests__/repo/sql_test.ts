@@ -25,18 +25,69 @@ const baseRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => 
   ...overrides,
 });
 
-test('SQL models cache round-trips the catalog revision', async () => {
-  const repo = new SqlRepo(await createSqliteTestDb());
-  await repo.upstreams.save(baseRecord());
-  await repo.modelsCache.put('up_test', {
+test('SQL upstream repo round-trips the cached catalog and its revision', async () => {
+  const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
+  await repo.save(baseRecord());
+  await repo.saveModelsCache('up_test', {
     revision: 7,
     fetchedAt: 1_700_000_000_000,
     models: [stubProviderModel({ id: 'cached-model' })],
   });
 
-  const cached = await repo.modelsCache.get('up_test');
+  const cached = (await repo.getById('up_test'))?.modelsCache;
   assertEquals(cached?.revision, 7);
+  assertEquals(cached?.fetchedAt, 1_700_000_000_000);
   assertEquals(cached?.models.map(model => model.id), ['cached-model']);
+  assertEquals(cached?.lastError, null);
+});
+
+test('SQL upstream repo saveModelsCacheError annotates a cached catalog and saveModelsCache clears it', async () => {
+  const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
+  await repo.save(baseRecord());
+  await repo.saveModelsCache('up_test', {
+    revision: 7,
+    fetchedAt: 1_700_000_000_000,
+    models: [stubProviderModel({ id: 'cached-model' })],
+  });
+
+  await repo.saveModelsCacheError('up_test', { message: 'boom', at: 1_700_000_500_000 });
+  const annotated = (await repo.getById('up_test'))?.modelsCache;
+  assertEquals(annotated?.lastError, { message: 'boom', at: 1_700_000_500_000 });
+  assertEquals(annotated?.models.map(model => model.id), ['cached-model']);
+
+  await repo.saveModelsCache('up_test', {
+    revision: 7,
+    fetchedAt: 1_700_001_000_000,
+    models: [stubProviderModel({ id: 'refreshed-model' })],
+  });
+  assertEquals((await repo.getById('up_test'))?.modelsCache?.lastError, null);
+});
+
+test('SQL upstream repo saveModelsCacheError is a no-op on a row that never cached a catalog', async () => {
+  const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
+  await repo.save(baseRecord());
+
+  await repo.saveModelsCacheError('up_test', { message: 'boom', at: 1_700_000_500_000 });
+
+  assertEquals((await repo.getById('up_test'))?.modelsCache, null);
+});
+
+test('SQL upstream repo save leaves an existing cached catalog alone', async () => {
+  const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
+  await repo.save(baseRecord());
+  await repo.saveModelsCache('up_test', {
+    revision: 7,
+    fetchedAt: 1_700_000_000_000,
+    models: [stubProviderModel({ id: 'cached-model' })],
+  });
+
+  // An operator edit carries whatever catalog the request happened to read —
+  // here, none at all. The refresh path stays the only writer.
+  await repo.save(baseRecord({ name: 'Renamed', modelsCache: null }));
+
+  const record = await repo.getById('up_test');
+  assertEquals(record?.name, 'Renamed');
+  assertEquals(record?.modelsCache?.models.map(model => model.id), ['cached-model']);
 });
 
 test('SQL upstream repo round-trips state_json on save/list/getById', async () => {

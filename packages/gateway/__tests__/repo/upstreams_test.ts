@@ -248,6 +248,10 @@ test('SQL upstream repo rejects malformed stored upstream JSON', async () => {
     updated_at: '2026-05-21T10:00:00.000Z',
     config_json: '{bad json',
     state_json: null,
+    models_json: null,
+    models_fetched_at: null,
+    models_revision: null,
+    models_last_error_json: null,
     flag_overrides: '{}',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
@@ -270,6 +274,10 @@ test('SQL upstream repo rejects malformed stored flag overrides JSON', async () 
     updated_at: '2026-05-21T10:00:00.000Z',
     config_json: '{}',
     state_json: null,
+    models_json: null,
+    models_fetched_at: null,
+    models_revision: null,
+    models_last_error_json: null,
     flag_overrides: '{bad json',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
@@ -292,6 +300,10 @@ test('SQL upstream repo rejects array-shaped flag_overrides with helpful message
     updated_at: '2026-05-21T10:00:00.000Z',
     config_json: '{}',
     state_json: null,
+    models_json: null,
+    models_fetched_at: null,
+    models_revision: null,
+    models_last_error_json: null,
     flag_overrides: '[]',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
@@ -318,6 +330,10 @@ test('SQL upstream repo rejects non-boolean value in flag_overrides with helpful
     updated_at: '2026-05-21T10:00:00.000Z',
     config_json: '{}',
     state_json: null,
+    models_json: null,
+    models_fetched_at: null,
+    models_revision: null,
+    models_last_error_json: null,
     flag_overrides: '{"x": 1}',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
@@ -344,6 +360,10 @@ test('SQL upstream repo rejects malformed stored model_prefix_json', async () =>
     updated_at: '2026-05-21T10:00:00.000Z',
     config_json: '{}',
     state_json: null,
+    models_json: null,
+    models_fetched_at: null,
+    models_revision: null,
+    models_last_error_json: null,
     flag_overrides: '{}',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
@@ -366,6 +386,10 @@ test('SQL upstream repo rejects shape-invalid model_prefix_json', async () => {
     updated_at: '2026-05-21T10:00:00.000Z',
     config_json: '{}',
     state_json: null,
+    models_json: null,
+    models_fetched_at: null,
+    models_revision: null,
+    models_last_error_json: null,
     flag_overrides: '{}',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
@@ -436,6 +460,10 @@ test('SQL upstream repo rejects an invalid stored color', async () => {
     updated_at: '2026-07-01T00:00:00.000Z',
     config_json: '{}',
     state_json: null,
+    models_json: null,
+    models_fetched_at: null,
+    models_revision: null,
+    models_last_error_json: null,
     flag_overrides: '{}',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
@@ -879,6 +907,10 @@ type FakeUpstreamRow = {
   updated_at: string;
   config_json: string;
   state_json: string | null;
+  models_json: string | null;
+  models_fetched_at: number | null;
+  models_revision: number | null;
+  models_last_error_json: string | null;
   flag_overrides: string;
   disabled_public_model_ids: string;
   proxy_fallback_list_json: string;
@@ -955,7 +987,8 @@ class FakeUpstreamsSqlDatabase implements SqlDatabase {
   upsert(binds: unknown[]): void {
     const [id, provider, name, enabled, sortOrder, createdAt, updatedAt, configJson, stateJson, flagOverrides, disabledPublicModelIds, proxyFallbackListJson, modelPrefixJson, color] = binds as [string, string, string, number, number, string, string, string, string | null, string, string, string, string | null, string | null];
     const existingIndex = this.rows.findIndex(candidate => candidate.id === id);
-    const preservedCreatedAt = existingIndex >= 0 ? this.rows[existingIndex].created_at : createdAt;
+    const existing = existingIndex >= 0 ? this.rows[existingIndex] : undefined;
+    const preservedCreatedAt = existing ? existing.created_at : createdAt;
     const row = {
       id,
       provider,
@@ -966,6 +999,12 @@ class FakeUpstreamsSqlDatabase implements SqlDatabase {
       updated_at: updatedAt,
       config_json: configJson,
       state_json: stateJson,
+      // The upsert statement names no cache column, so an existing row keeps
+      // whatever the refresh path wrote and a new row starts uncached.
+      models_json: existing?.models_json ?? null,
+      models_fetched_at: existing?.models_fetched_at ?? null,
+      models_revision: existing?.models_revision ?? null,
+      models_last_error_json: existing?.models_last_error_json ?? null,
       flag_overrides: flagOverrides,
       disabled_public_model_ids: disabledPublicModelIds,
       proxy_fallback_list_json: proxyFallbackListJson,
