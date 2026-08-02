@@ -312,28 +312,55 @@ function CopilotConfig({ record, onPatch }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<number | null>(null);
+  // Between a tick firing and its reply landing the loop holds no timer id, so
+  // clearing the timer cannot on its own end it: the reply would schedule the
+  // next tick with nothing left to cancel it. The flag is what the recursion
+  // reads after every await, and the mount branch re-arms it so StrictMode's
+  // mount/unmount/mount does not leave a live component permanently stopped.
+  const cancelled = useRef(false);
   const stop = () => { if (timer.current !== null) window.clearTimeout(timer.current); timer.current = null; };
-  useEffect(() => stop, []);
+  useEffect(() => {
+    cancelled.current = false;
+    return () => { cancelled.current = true; stop(); };
+  }, []);
 
-  const poll = async (deviceCode: string, interval: number) => {
+  const poll = async (deviceCode: string, interval: number, secondsLeft: number) => {
     const result = await callApi(() => api.api.upstreams.copilot.oauth['device-login'].poll.$post({
       json: { record: previewRecord(record, values as UpstreamEditorValues), deviceCode },
     }));
-    if (result.error) { timer.current = window.setTimeout(() => void poll(deviceCode, interval), interval * 1000); return; }
+    if (cancelled.current) return;
+    if (result.error) {
+      // Only a reply that says nothing about the device code is worth
+      // repeating: no response at all, or an unhealthy GitHub/Copilot hop. Any
+      // other status carries GitHub's verdict on the code itself, and
+      // `expired_token` and `access_denied` are terminal — polling past either
+      // one collects the same refusal for as long as the tab stays open.
+      // https://www.rfc-editor.org/rfc/rfc8628#section-3.5
+      const transient = result.error.status === 0 || result.error.status === 502;
+      // The verdict is what normally ends the loop; `secondsLeft` bounds the
+      // case where no verdict is ever reached, by spending the code's own
+      // `expires_in` one scheduled tick at a time. Whatever failure outlives it
+      // is the one the operator reads.
+      if (!transient || secondsLeft <= 0) { setBusy(false); setFlow(null); setError(result.error.message); return; }
+      timer.current = window.setTimeout(() => void poll(deviceCode, interval, secondsLeft - interval), interval * 1000);
+      return;
+    }
     if (result.data.status === 'complete') { setBusy(false); onPatch(result.data.patch, record.id !== ''); return; }
     if (result.data.status === 'slow_down') {
       const next = interval + DEVICE_FLOW_SLOW_DOWN_SECONDS;
-      timer.current = window.setTimeout(() => void poll(deviceCode, next), next * 1000);
+      timer.current = window.setTimeout(() => void poll(deviceCode, next, secondsLeft - next), next * 1000);
       return;
     }
-    timer.current = window.setTimeout(() => void poll(deviceCode, interval), interval * 1000);
+    timer.current = window.setTimeout(() => void poll(deviceCode, interval, secondsLeft - interval), interval * 1000);
   };
   const start = async () => {
     stop(); setBusy(true); setError(null);
     const result = await callApi(() => api.api.upstreams.copilot.oauth['device-login'].start.$post());
+    if (cancelled.current) return;
     if (result.error) { setBusy(false); setError(result.error.message); return; }
     setFlow(result.data);
-    timer.current = window.setTimeout(() => void poll(result.data.device_code, result.data.interval), result.data.interval * 1000);
+    const { device_code, expires_in, interval } = result.data;
+    timer.current = window.setTimeout(() => void poll(device_code, interval, expires_in - interval), interval * 1000);
   };
 
   if (config.user.login) {
