@@ -42,7 +42,7 @@ export function ProxyList({
 
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
-      <Table aria-label={t('dashboard.proxy.listTitle')} className="w-full min-w-[620px] table-fixed">
+      <Table aria-label={t('dashboard.proxy.listTitle')} className="min-w-[620px]">
         <TableHeader>
           <TableRow>
             <TableHeaderCell>{t('dashboard.proxy.form.name')}</TableHeaderCell>
