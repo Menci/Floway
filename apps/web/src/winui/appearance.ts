@@ -9,8 +9,8 @@ import { COLLAPSE_ANIMATION_MS, CONTROL_FAST_OUT_SLOW_IN_EASING, EXPAND_ANIMATIO
 type FluentComponents = typeof import('@fluentui/react-components');
 
 export const winuiAppearanceAttribute = 'data-winui-appearance';
-export const winuiIntentAttribute = 'data-winui-intent';
-export const winuiSizeAttribute = 'data-winui-size';
+const winuiIntentAttribute = 'data-winui-intent';
+const winuiSizeAttribute = 'data-winui-size';
 export const winuiCheckedAttribute = 'data-winui-checked';
 
 type SlotProps = Record<string, unknown>;
