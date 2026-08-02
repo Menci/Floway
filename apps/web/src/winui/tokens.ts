@@ -272,26 +272,22 @@ export const winuiTokenCss = `
   }
 }
 
-/* The description line's own step, and the header's disabled step beside it.
-   Neither SystemControlDescriptionTextForegroundBrush nor
-   SystemControlDisabledBaseMediumLowBrush is part of the modern ramp above --
-   both come from the legacy system-brush layer, carrying SystemBaseMediumColor
-   at 60% and SystemBaseMediumLowColor at 40%, distinct from the 62% and 77% the
-   secondary text fill carries, so neither is folded onto a neighbour.
+/* The description line's own step. SystemControlDescriptionTextForegroundBrush
+   is not part of the modern ramp above -- it comes from the legacy
+   system-brush layer, carrying SystemBaseMediumColor at 60%, distinct from the
+   62% and 77% the secondary text fill carries, so it is not folded onto a
+   neighbour. The dictionaries write these as AARRGGBB, which CSS reads as
+   RRGGBBAA, so the alpha moves to the end here.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L321-L327
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L4134
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L4136 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L4134 */
 :root {
   --winui-text-base-medium: #00000099;
-  --winui-text-base-medium-low: #66000000;
 }
 
-/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L209
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L211 */
+/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L209 */
 @media (prefers-color-scheme: dark) {
   :root {
     --winui-text-base-medium: #ffffff99;
-    --winui-text-base-medium-low: #66ffffff;
   }
 }
 

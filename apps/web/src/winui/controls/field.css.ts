@@ -48,16 +48,25 @@ export const fieldCss = `
   margin-bottom: 8px;
 }
 
-/* The header's disabled step, which the TextBox states and Fluent does not: its
-   Field passes the wrapped control's disabled state to no attribute, class or
-   atom on the label slot, so the label alone stayed at its rest colour while
-   the control beside it greyed out. :has on the wrapped control is the state
-   Fluent leaves readable.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L256-L260
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L4813 */
+/* The header's disabled step, which Fluent does not state: its Field passes the
+   wrapped control's disabled state to no attribute, class or atom on the label
+   slot, so the label alone stayed at its rest colour while the control beside
+   it greyed out. :has on the wrapped control is the state Fluent leaves
+   readable.
+
+   The modern dictionary carries a header-disabled brush for every field-shaped
+   control that states one -- ComboBox, DatePicker, TimePicker and
+   CalendarDatePicker all key it to TextFillColorDisabled -- and only TextBox
+   leaves the key to the legacy layer, so the label greys to the same step its
+   control does.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L47
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L257
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/DatePicker_themeresources.xaml#L14
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CalendarDatePicker_themeresources.xaml#L18
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L256-L260 */
 .fui-Field:has(:disabled) > .fui-Field__label.fui-Field__label,
 .fui-Field:has([aria-disabled='true']) > .fui-Field__label.fui-Field__label {
-  color: var(--winui-text-base-medium-low);
+  color: var(--winui-text-fill-disabled);
 }
 
 /* WinUI paints a description line with
