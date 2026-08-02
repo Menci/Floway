@@ -28,7 +28,7 @@ import { SectionHeader } from '../ui/section-header';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { PRICING_AXES, type BillingMetric, type ModelKind, type ModelPricing, type ModelPricingIssue } from '@floway-dev/protocols/common';
 
-const { Button, Divider, Field, List, ListItem, MessageBar, MessageBarBody, Option, Text, Toolbar, ToolbarButton, Tooltip, makeStyles } = fluentComponents;
+const { Button, Field, List, ListItem, MessageBar, MessageBarBody, Option, Text, Toolbar, ToolbarButton, Tooltip, makeStyles } = fluentComponents;
 const usePricingStyles = makeStyles({
   // WinUI centres one line in a 40px minimum with no block padding; a rule row
   // carries two. Everything else stays the WinUI layer's, whose doubled
@@ -215,7 +215,7 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
           title={t('dashboard.upstreamEditor.models.pricingConditions')}
           titleId={conditionsHeadingId}
           actions={!readOnly && selectedIndex !== baseIndex
-            ? <TooltipIconButton icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.removePricingEntry')} onClick={removeActive} />
+            ? <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.removePricingEntry')} onClick={removeActive} />
             : undefined}
         />
         <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
@@ -267,8 +267,6 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
           })}
         </div>
       </section>
-
-      <Divider />
 
       <section className="grid min-w-0 gap-3" aria-labelledby={ratesHeadingId}>
         <SectionHeader
