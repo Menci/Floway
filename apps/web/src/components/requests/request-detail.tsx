@@ -182,6 +182,9 @@ export function RequestDetailPanel({ collected: loadedCollected, error: loadedEr
   const renderedEvents = useMemo(() => renderStreamEvents(collectKind, streamEvents), [collectKind, streamEvents]);
 
   if (!recordId) return <div className="grid h-full place-items-center p-4"><EmptyStateLine>{t('dashboard.requests.selectPrompt')}</EmptyStateLine></div>;
+  // This replaces every section rather than sitting in one, so it takes the
+  // panel inset. The bars further down are inside a section body and sit at 12;
+  // that is a different placement, not a drift from this one.
   if (error) return <OutcomeMessageBar className="!m-4">{error}</OutcomeMessageBar>;
   if (!record) return null;
 
