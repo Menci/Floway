@@ -42,7 +42,6 @@ const NONE = '__floway_none__';
 // Model overrides reject NUL at the gateway boundary, so these UI-only values
 // cannot collide with an opaque model id.
 const MODEL_DEFAULT = '\u0000default';
-const NO_MODEL_MATCHES = '\u0000no-matches';
 const FIELD_GRID_CLASS = `${TWO_COLUMN_FORM_CLASS} gap-3`;
 const CLAUDE_MODEL_GRID_CLASS = 'grid gap-3 grid-cols-[repeat(5,minmax(0,1fr))] max-[1680px]:grid-cols-[repeat(3,minmax(0,1fr))] max-[1180px]:grid-cols-[repeat(2,minmax(0,1fr))] max-[680px]:grid-cols-[minmax(0,1fr)]';
 // https://code.claude.com/docs/en/settings#available-settings
@@ -316,6 +315,7 @@ function ModelSelect({ family, label, models, onChange, picker, value }: {
 
   return <Field label={label}>
     <Combobox
+      emptyMessage={t('dashboard.apiKeys.agentSetup.noModelMatches')}
       open={open}
       selectedOptions={[selected?.value ?? MODEL_DEFAULT]}
       value={open ? query : selected?.label ?? defaultLabel}
@@ -335,9 +335,6 @@ function ModelSelect({ family, label, models, onChange, picker, value }: {
           <span className="font-mono truncate">{option.label}</span>
         </Option>
       ))}
-      {!defaultVisible && filtered.length === 0 && (
-        <Option disabled value={NO_MODEL_MATCHES}>{t('dashboard.apiKeys.agentSetup.noModelMatches')}</Option>
-      )}
     </Combobox>
   </Field>;
 }

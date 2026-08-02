@@ -71,9 +71,11 @@ type ListboxRenderPropsWithRef = Omit<ListboxProps, 'as'> & {
 
 function ScrollableListbox({
   ListboxComponent,
+  emptyMessage,
   freeform,
   listboxProps,
 }: {
+  emptyMessage: string | undefined;
   freeform: boolean;
   ListboxComponent: ElementType<ListboxProps>;
   listboxProps: Omit<ListboxProps, 'as'>;
@@ -124,7 +126,7 @@ function ScrollableListbox({
           https://w3c.github.io/aria/#mustContain */}
       <div className="floway-combobox-listbox-content">
         {Children.toArray(children).length === 0
-          ? <Option disabled value="">{t(freeform ? 'common.noSuggestions' : 'common.noOptions')}</Option>
+          ? <Option disabled value="">{emptyMessage ?? t(freeform ? 'common.noSuggestions' : 'common.noOptions')}</Option>
           : children}
       </div>
     </div>,
@@ -134,9 +136,9 @@ function ScrollableListbox({
 // MUI and Ant Design suppress the message outright on a free-text field, taking
 // an empty suggestion list for a non-failure. A row stating there is nothing to
 // suggest announces no failure either, and keeps the control from changing shape.
-const listboxRenderer = (freeform: boolean): ListboxRenderFunction =>
+const listboxRenderer = (freeform: boolean, emptyMessage: string | undefined): ListboxRenderFunction =>
   (ListboxComponent, listboxProps) => (
-    <ScrollableListbox ListboxComponent={ListboxComponent} freeform={freeform} listboxProps={listboxProps} />
+    <ScrollableListbox ListboxComponent={ListboxComponent} emptyMessage={emptyMessage} freeform={freeform} listboxProps={listboxProps} />
   );
 
 // Fluent writes the control's measured width straight onto the list, truncating
@@ -146,13 +148,19 @@ const listboxRenderer = (freeform: boolean): ListboxRenderFunction =>
 // trailing edge and open away from it, or it would grow off the page.
 const CONTENT_WIDTH_LISTBOX_CLASS = '!w-max !min-w-[var(--fui-match-target-size)] !max-w-[calc(100vw-16px)]';
 
-const listboxFor = (listWidth: 'target' | 'content' | undefined, freeform: boolean) => ({
-  children: listboxRenderer(freeform),
+const listboxFor = (listWidth: 'target' | 'content' | undefined, freeform: boolean, emptyMessage: string | undefined) => ({
+  children: listboxRenderer(freeform, emptyMessage),
   ...(listWidth === 'content' ? { className: CONTENT_WIDTH_LISTBOX_CLASS } : {}),
 });
 
 interface ListWidthProp {
   listWidth?: 'target' | 'content';
+}
+
+// A caller that filters its own options says here what it wants the empty
+// result to read as, instead of adding a row of its own beside this one.
+interface EmptyMessageProp {
+  emptyMessage?: string;
 }
 
 export const Input = forwardRef<HTMLInputElement, ComponentProps<typeof FluentInput>>(
@@ -161,8 +169,8 @@ export const Input = forwardRef<HTMLInputElement, ComponentProps<typeof FluentIn
   ),
 ) as typeof FluentInput;
 
-export const Combobox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof FluentCombobox>, 'listbox'> & ListWidthProp & ReadOnlyProp>(
-  ({ className, expandIcon, listWidth, onOptionSelect, positioning, readOnly, ...props }, ref) => (
+export const Combobox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof FluentCombobox>, 'listbox'> & ListWidthProp & EmptyMessageProp & ReadOnlyProp>(
+  ({ className, emptyMessage, expandIcon, listWidth, onOptionSelect, positioning, readOnly, ...props }, ref) => (
     <FluentCombobox
       {...props}
       aria-readonly={readOnly === true ? true : undefined}
@@ -170,22 +178,22 @@ export const Combobox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof 
       input={{ readOnly, ...(typeof props.input === 'object' && props.input !== null ? props.input : {}) }}
       onOptionSelect={readOnly === true ? undefined : onOptionSelect}
       positioning={positioning ?? LISTBOX_POSITIONING}
-      listbox={listboxFor(listWidth, props.freeform === true)}
+      listbox={listboxFor(listWidth, props.freeform === true, emptyMessage)}
       className={mergeClasses(className, SELECT_MIN_WIDTH_CLASS)}
       ref={ref}
     />
   ),
 );
 
-export const Dropdown = forwardRef<HTMLButtonElement, Omit<ComponentProps<typeof FluentDropdown>, 'listbox'> & ListWidthProp & ReadOnlyProp>(
-  ({ className, expandIcon, listWidth, onOptionSelect, positioning, readOnly, ...props }, ref) => (
+export const Dropdown = forwardRef<HTMLButtonElement, Omit<ComponentProps<typeof FluentDropdown>, 'listbox'> & ListWidthProp & EmptyMessageProp & ReadOnlyProp>(
+  ({ className, emptyMessage, expandIcon, listWidth, onOptionSelect, positioning, readOnly, ...props }, ref) => (
     <FluentDropdown
       {...props}
       aria-readonly={readOnly === true ? true : undefined}
       expandIcon={expandIcon === undefined ? EXPAND_ICON : expandIcon}
       onOptionSelect={readOnly === true ? undefined : onOptionSelect}
       positioning={positioning ?? LISTBOX_POSITIONING}
-      listbox={listboxFor(listWidth, false)}
+      listbox={listboxFor(listWidth, false, emptyMessage)}
       className={mergeClasses(className, SELECT_MIN_WIDTH_CLASS)}
       ref={ref}
     />
