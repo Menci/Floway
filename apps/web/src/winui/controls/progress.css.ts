@@ -112,6 +112,19 @@ export const progressCss = `
   --colorBrandStroke1: currentColor;
 }
 
+/* WinUI's ProgressRing has no label part at all, so its label takes the app's
+   body ramp at every Spinner size rather than the subtitle2 Fluent hands the
+   medium and larger ones, which would read as a heading of the region being
+   waited on. WinUI's ramp has no 16px step for that subtitle to land on either.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressRing/ProgressRing.xaml#L16-L34
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBlock_themeresources.xaml#L4
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBlock_themeresources.xaml#L23-L25 */
+.fui-Spinner__label.fui-Spinner__label {
+  font-size: var(--fontSizeBase300);
+  font-weight: var(--fontWeightRegular);
+  line-height: var(--lineHeightBase300);
+}
+
 /* Fluent's reduce answer is undone in full, because WinUI answers the
    preference by doing nothing: ProgressRing is an AnimatedVisualPlayer, so it
    reaches neither UISettings.AnimationsEnabled nor the visual-state gate that
