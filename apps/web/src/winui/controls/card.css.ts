@@ -4,9 +4,8 @@
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L17-L19
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L264
 //
-// Three variants are deliberately unwritten. `subtle` is already covered by
-// ../theme.ts; `filled` and `filled-alternative` take no hover or pressed rule
-// because the Expander header declares no pointer-over background; disabled
+// `filled` and `filled-alternative` take no hover or pressed rule because the
+// Expander header declares no pointer-over background, and a disabled card
 // moves only the foreground, which ../theme.ts already lands.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L5-L26
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L166-L178
@@ -91,6 +90,26 @@ export const cardCss = `
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L9-L11 */
   .fui-Card.fui-Card[data-winui-appearance='outline']::after {
     border-color: var(--winui-card-stroke-default);
+  }
+
+  /* The chromeless surface. ../theme.ts already lands its rest fill through
+     colorSubtleBackground, but Fluent's disabled atom repaints the card in an
+     opaque grey and strokes it, and neither WinUI surface this file draws from
+     repaints on disable: the Expander's Disabled state carries no Background
+     keyframe and resolves its border to the same CardStrokeColorDefault the
+     enabled header uses, and the default ListViewItem style declares no border
+     at all. Restating the rest surface at the specificity the other appearances
+     already carry is what keeps the disabled card transparent and unstroked.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L17
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L234-L266
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L13
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L166-L178 */
+  .fui-Card.fui-Card[data-winui-appearance='subtle'] {
+    background-color: var(--winui-subtle-fill-transparent);
+  }
+
+  .fui-Card.fui-Card[data-winui-appearance='subtle']::after {
+    border-color: transparent;
   }
 
   /* A selectable card is a ListViewItem, not an Expander: it answers the
