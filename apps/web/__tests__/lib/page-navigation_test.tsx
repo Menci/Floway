@@ -2,14 +2,21 @@ import { act } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider, useLocation, type NavigateOptions } from 'react-router';
 import { describe, expect, it } from 'vitest';
 
-import { isPageChange, pageNavigation } from '../../src/lib/page-navigation';
+import { isPageChange, pageNavigation, useEntryRewrite } from '../../src/lib/page-navigation';
 import { renderInApp } from '../render';
+
+// The rewrite options belong to the entry the page is on, so they are taken
+// from a render of that page rather than assembled by the test.
+let rewrite: NavigateOptions = { replace: true };
 
 // What decides the page transition is the render after the commit, so this
 // reads the mark the way `page-frames.tsx` does -- through `useLocation` on a
 // committed entry -- rather than through the options object that was handed to
 // `navigate`.
-const Probe = () => <span>{isPageChange(useLocation().state) ? 'page change' : 'same page'}</span>;
+const Probe = () => {
+  rewrite = useEntryRewrite();
+  return <span>{isPageChange(useLocation().state) ? 'page change' : 'same page'}</span>;
+};
 
 const renderRouter = () => {
   const router = createMemoryRouter(
@@ -40,7 +47,7 @@ describe('page change opt-in', () => {
   it('leaves a filter rewrite of the same page unmarked', async () => {
     const { router, getByText } = renderRouter();
 
-    await navigate(router, '/upstreams?kind=copilot', { replace: true });
+    await navigate(router, '/upstreams?kind=copilot', rewrite);
 
     expect(getByText('same page')).toBeTruthy();
   });
@@ -63,10 +70,14 @@ describe('page change opt-in', () => {
     expect(getByText('page change')).toBeTruthy();
   });
 
-  // A filter rewrite replaces the history entry, and the replacement carries no
-  // state, so the mark the page was entered with is gone from the entry that
-  // remains. Going back to that page from a later one then reads as a same-page
-  // navigation and plays no transition. Recorded in `data/backlog.md`; the
-  // rewrite would have to carry the current entry's state forward.
-  it.todo('still reads a page change after the returned-to page rewrote its own query string');
+  it('still reads a page change after the returned-to page rewrote its own query string', async () => {
+    const { router, getByText } = renderRouter();
+
+    await navigate(router, '/upstreams/new', pageNavigation);
+    await navigate(router, '/upstreams/new?kind=copilot', rewrite);
+    await navigate(router, '/keys', pageNavigation);
+    await back(router);
+
+    expect(getByText('page change')).toBeTruthy();
+  });
 });

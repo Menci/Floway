@@ -23,6 +23,7 @@ import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
 import { useRefresh } from '../components/ui/use-refresh';
 import { fluentComponents } from '../fluent';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
+import { useEntryRewrite } from '../lib/page-navigation';
 import { useMediaQuery } from '../lib/use-media-query';
 import type { DumpMetadata, DumpRecord } from '@floway-dev/gateway/dump-types';
 
@@ -78,6 +79,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const rewrite = useEntryRewrite();
   // Tied to the loader payload it came from: a navigation discards it rather than showing one route's keys under another's URL.
   const [replacement, setReplacement] = useState<{ source: LoaderData; keys: ApiKey[]; keysError: string | null; recordsError: string | null } | null>(null);
   const shown = replacement?.source === loaderData
@@ -93,8 +95,8 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
     const next = new URLSearchParams();
     next.set('key', keyId);
     if (recordId) next.set('record', recordId);
-    setSearchParams(next, { replace: true });
-  }, [setSearchParams]);
+    setSearchParams(next, rewrite);
+  }, [rewrite, setSearchParams]);
 
   const reloadKeys = useCallback((signal: AbortSignal) => refreshRequestKeys({
     currentKeys: keys,
@@ -102,7 +104,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
     onNavigate: nextSelectedKeyId => {
       const next = new URLSearchParams();
       if (nextSelectedKeyId) next.set('key', nextSelectedKeyId);
-      void navigate(`/dashboard/monitor/requests${next.size ? `?${next}` : ''}`, { replace: true });
+      void navigate(`/dashboard/monitor/requests${next.size ? `?${next}` : ''}`, rewrite);
     },
     onUpdate: (nextKeys, error) => setReplacement(current => ({
       source: loaderData,
@@ -112,7 +114,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
     })),
     selectedKeyId: loaderData.selectedKeyId,
     signal,
-  }), [keys, loaderData, navigate]);
+  }), [keys, loaderData, navigate, rewrite]);
 
   const { poll } = useRefresh(reloadKeys);
   usePollWhileVisible(poll);

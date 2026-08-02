@@ -40,6 +40,7 @@ import { useRefresh } from '../components/ui/use-refresh';
 import { fluentComponents } from '../fluent';
 import { formatDuration } from '../lib/format-duration';
 import { formatCount, formatTokenRateFromTpot } from '../lib/format-number';
+import { useEntryRewrite } from '../lib/page-navigation';
 import { useLocale } from '../lib/use-locale';
 import { useAuthStore } from '../stores/auth-store';
 
@@ -89,6 +90,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const { t } = useTranslation();
   const clearAuth = useAuthStore(state => state.clear);
   const [, setSearchParams] = useSearchParams();
+  const rewrite = useEntryRewrite();
   const initialState = loaderData.state;
   const view: PerformanceView = loaderData.view;
   const [range, setRange] = useState<PerformanceRange>(initialState.range);
@@ -143,8 +145,8 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   useEffect(() => { if (error?.status === 401) clearAuth(); }, [clearAuth, error]);
 
   useEffect(() => {
-    setSearchParams(serializePerformanceUrlState({ metric, percentile, groupBy, range, filters, hidden: [...hiddenSeries] }), { replace: true });
-  }, [filters, groupBy, hiddenSeries, metric, percentile, range, setSearchParams]);
+    setSearchParams(serializePerformanceUrlState({ metric, percentile, groupBy, range, filters, hidden: [...hiddenSeries] }), rewrite);
+  }, [filters, groupBy, hiddenSeries, metric, percentile, range, rewrite, setSearchParams]);
 
   // Fluent's single-select reports a click on the already-selected option too;
   // a fresh filters object for it would refetch and move the chart's bucket

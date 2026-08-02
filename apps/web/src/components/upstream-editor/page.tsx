@@ -21,7 +21,7 @@ import { UpstreamWorkspace } from './workspace';
 import { api, callApi } from '../../api/client';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
-import { pageNavigation } from '../../lib/page-navigation';
+import { pageNavigation, useEntryRewrite } from '../../lib/page-navigation';
 import { BackNavigationButton } from '../ui/back-navigation-button';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { PANE_GAP_CLASS } from '../ui/layout';
@@ -36,6 +36,7 @@ const { Button, Spinner, Text } = fluentComponents;
 export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const rewrite = useEntryRewrite();
   const toasts = useOutcomeToasts();
   const [record, setRecord] = useState(data.record);
   const [discovered, setDiscovered] = useState(data.discovered);
@@ -97,8 +98,8 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   // blocker is re-registered against the now-clean form before this runs.
   useEffect(() => {
     if (createdUpstreamId === null) return;
-    void navigate(`/dashboard/providers/upstreams/${encodeURIComponent(createdUpstreamId)}`, { replace: true });
-  }, [createdUpstreamId, navigate]);
+    void navigate(`/dashboard/providers/upstreams/${encodeURIComponent(createdUpstreamId)}`, rewrite);
+  }, [createdUpstreamId, navigate, rewrite]);
 
   // Releasing the blocker commits the route change, which would unmount this
   // body-portaled dialog mid-exit. So confirm only closes it and the blocker is

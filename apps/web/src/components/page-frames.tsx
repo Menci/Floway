@@ -1,7 +1,9 @@
 import { useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
+  NavigationType,
   useLocation,
+  useNavigationType,
   UNSAFE_DataRouterContext,
   UNSAFE_DataRouterStateContext,
   UNSAFE_LocationContext,
@@ -81,6 +83,7 @@ export interface PageFrame {
  */
 export const usePageFrames = (outlet: ReactNode, leaveMs: number): PageFrame[] => {
   const location = useLocation();
+  const navigationType = useNavigationType();
   const contexts = useRouterContexts();
   const [current, setCurrent] = useState({ id: 0, key: location.key, node: outlet, contexts });
   const [leaving, setLeaving] = useState<{ id: number; node: ReactNode; contexts: RouterContexts } | null>(null);
@@ -89,7 +92,12 @@ export const usePageFrames = (outlet: ReactNode, leaveMs: number): PageFrame[] =
     // Derived from the location during render rather than in an effect: an
     // effect lands a frame later, and that frame would already show the new
     // page where the old one is supposed to still be.
-    const pageChange = isPageChange(location.state);
+    //
+    // A rewrite carries the entry's state forward (../lib/page-navigation.ts),
+    // so the mark alone no longer separates arriving at a page from restating
+    // its URL; what separates them is that a rewrite replaces the entry it is
+    // already on, while entering and going back push and pop.
+    const pageChange = navigationType !== NavigationType.Replace && isPageChange(location.state);
     setLeaving(pageChange ? { id: current.id, node: current.node, contexts: current.contexts } : null);
     setCurrent({ id: pageChange ? current.id + 1 : current.id, key: location.key, node: outlet, contexts });
   }

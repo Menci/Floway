@@ -20,6 +20,7 @@ import { parseModels, serializeModels } from './models-yaml';
 import type { UpstreamModelConfig, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { dateTime, relativeTime } from '../../lib/format-time';
+import { useEntryRewrite } from '../../lib/page-navigation';
 import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
 import { BackNavigationButton } from '../ui/back-navigation-button';
@@ -93,6 +94,7 @@ export function UpstreamWorkspace({
   const dangerText = useDangerTextClass();
   const { formState: { errors } } = useFormContext<UpstreamEditorValues>();
   const [params, setParams] = useSearchParams();
+  const rewrite = useEntryRewrite();
   // The YAML text is a projection of the manual models — serialized on the way
   // in, parsed back on the way out — so the only thing that has to be state is
   // an edit that has not been applied yet. Holding just that draft is what lets
@@ -134,8 +136,8 @@ export function UpstreamWorkspace({
         if (value === null) search.delete(key); else search.set(key, value);
       }
       return search;
-    }, { replace: true });
-  }, [setParams]);
+    }, rewrite);
+  }, [rewrite, setParams]);
 
   const changeModelView = (next: ModelView) => navigate({
     tab,

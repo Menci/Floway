@@ -35,7 +35,7 @@ import { useRefresh } from '../components/ui/use-refresh';
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
 import { fluentComponents } from '../fluent';
 import { dateTime } from '../lib/format-time';
-import { pageNavigation } from '../lib/page-navigation';
+import { pageNavigation, useEntryRewrite } from '../lib/page-navigation';
 import { useLocale } from '../lib/use-locale';
 import { ALL_PROVIDER_KINDS } from '@floway-dev/provider';
 
@@ -118,6 +118,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
+  const rewrite = useEntryRewrite();
   const toasts = useOutcomeToasts();
   // Seeded from the loader, then owned by the page: every refresh and every
   // optimistic mutation writes here, so the loader payload is only first paint.
@@ -147,8 +148,8 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
 
     announcedMissing.current = true;
     setPageError(t('dashboard.upstreams.errors.missing'));
-    void navigate(location.pathname, { replace: true });
-  }, [location.pathname, location.search, navigate, t]);
+    void navigate(location.pathname, rewrite);
+  }, [location.pathname, location.search, navigate, rewrite, t]);
 
   // Delete is excluded because it owns its handle: it has a success line to
   // announce, and that has to update the toast the pending line already holds.

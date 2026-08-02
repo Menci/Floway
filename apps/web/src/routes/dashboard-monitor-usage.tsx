@@ -27,6 +27,7 @@ import type { UsageMetric, UsageRange, UsageView } from '../components/usage/typ
 import { fluentComponents } from '../fluent';
 import { errorMessage } from '../lib/error-message';
 import { formatCount } from '../lib/format-number';
+import { useEntryRewrite } from '../lib/page-navigation';
 import { useLocale } from '../lib/use-locale';
 import { useAuthStore } from '../stores/auth-store';
 
@@ -74,6 +75,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const { t } = useTranslation();
   const { user } = useDashboardOutletContext();
   const [, setSearchParams] = useSearchParams();
+  const rewrite = useEntryRewrite();
   const clearAuth = useAuthStore(state => state.clear);
   const [view, setView] = useState<UsageView>(loaderData.view);
   const [range, setRange] = useState<UsageRange>(loaderData.range);
@@ -135,8 +137,8 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     if (redactKeys) next.set('redact', '1');
     for (const id of [...hiddenKeys].sort()) next.append('hideKey', id);
     for (const id of [...hiddenModels].sort()) next.append('hideModel', id);
-    setSearchParams(next, { replace: true });
-  }, [hiddenKeys, hiddenModels, metric, range, redactKeys, setSearchParams, view]);
+    setSearchParams(next, rewrite);
+  }, [hiddenKeys, hiddenModels, metric, range, redactKeys, rewrite, setSearchParams, view]);
 
   const buckets = useMemo(
     () => dashboardBuckets(loadedRange, loadedAt, locale),
