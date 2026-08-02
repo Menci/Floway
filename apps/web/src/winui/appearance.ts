@@ -181,6 +181,12 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
     return wrapped as Component;
   };
 
+  // The map covers Fluent's whole appearance-carrying surface rather than the
+  // subset the dashboard renders today, so a component reached for later
+  // arrives already stamped. CompoundButton, MenuButton, SplitButton,
+  // ToolbarRadioButton and Select are the entries nothing renders yet; a
+  // wrapper costs one allocation at module scope and nothing at all until its
+  // component is used.
   return {
     ...components,
     AccordionHeader: winuiChevron(components.AccordionHeader),
