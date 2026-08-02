@@ -64,6 +64,14 @@ const palette = {
   colorNeutralForeground3Hover: 'var(--winui-text-fill-tertiary)',
   colorNeutralForeground3Pressed: 'var(--winui-text-fill-tertiary)',
   colorNeutralForeground3Selected: 'var(--winui-text-fill-tertiary)',
+
+  // Fluent's least prominent neutral is what every field paints a placeholder
+  // with, and a WinUI placeholder is the secondary text fill. The two other
+  // consumers are the colour picker's thumb ring and its empty swatch, and
+  // ./controls/color-picker.css.ts states a stroke for both.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L35
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L48
+  colorNeutralForeground4: 'var(--winui-text-fill-secondary)',
   colorNeutralForegroundDisabled: 'var(--winui-text-fill-disabled)',
   colorNeutralForegroundInverted: 'var(--winui-text-fill-inverse)',
   colorNeutralForegroundOnBrand: 'var(--winui-text-on-accent-fill-primary)',

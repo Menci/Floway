@@ -33,8 +33,7 @@ export const selectCss = `
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L50 */
-.fui-Combobox:active .fui-Combobox__input.fui-Combobox__input:enabled::placeholder,
-.fui-Combobox__input.fui-Combobox__input:enabled[aria-expanded='true']::placeholder {
+.fui-Combobox:active .fui-Combobox__input.fui-Combobox__input:enabled::placeholder {
   color: var(--winui-text-fill-tertiary);
 }
 
@@ -124,31 +123,42 @@ export const selectCss = `
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L34
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L56 */
+/* An open drop-down is not a pressed field: ComboBox::ChangeVisualState only
+   routes CommonStates to Highlighted for an inline ComboBox, the desktop
+   template declares no Highlighted state, and its FocusedDropDown and Opened
+   states move nothing but the popup. So the field answers the pointer while the
+   list is open exactly as it does while it is closed.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L34
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L56
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L505-L528
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/ComboBox_Partial.cpp#L850-L870 */
 .fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:active:not(:has(.fui-Dropdown__button:disabled)),
-.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:active:not(:has(.fui-Combobox__input:disabled)),
-.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:has(.fui-Dropdown__button[aria-expanded='true']),
-.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:has(.fui-Combobox__input[aria-expanded='true']) {
+.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:active:not(:has(.fui-Combobox__input:disabled)) {
   background-color: var(--winui-control-fill-tertiary);
 }
 
 .fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:active:not(:has(.fui-Dropdown__button:disabled)):not(:has(.fui-Dropdown__button[aria-invalid='true'])),
-.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:active:not(:has(.fui-Combobox__input:disabled)):not(:has(.fui-Combobox__input[aria-invalid='true'])),
-.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:has(.fui-Dropdown__button[aria-expanded='true']),
-.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:has(.fui-Combobox__input[aria-expanded='true']) {
+.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:active:not(:has(.fui-Combobox__input:disabled)):not(:has(.fui-Combobox__input[aria-invalid='true'])) {
   border-color: var(--winui-control-stroke-default);
 }
 
-/* WinUI dims an open ComboBox's label whatever the field looks like, so this is not
-   tied to an appearance. A disabled field can still take :active on the root -- the
-   pointer event lands on the wrapper -- so the enabled guard keeps Fluent's disabled
-   text fill.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L42
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L43 */
+/* WinUI dims a pressed ComboBox's label whatever the field looks like, so this is
+   not tied to an appearance. A disabled field can still take :active on the root --
+   the pointer event lands on the wrapper -- so the enabled guard keeps Fluent's
+   disabled text fill.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L42 */
 .fui-Dropdown:active .fui-Dropdown__button.fui-Dropdown__button:enabled,
-.fui-Combobox:active .fui-Combobox__input.fui-Combobox__input:enabled,
-.fui-Dropdown__button.fui-Dropdown__button:enabled[aria-expanded='true'],
-.fui-Combobox__input.fui-Combobox__input:enabled[aria-expanded='true'] {
+.fui-Combobox:active .fui-Combobox__input.fui-Combobox__input:enabled {
   color: var(--winui-text-fill-secondary);
+}
+
+/* FocusStates run after CommonStates, so a field pressed from the keyboard keeps
+   the primary label a pointer press would have dimmed.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L45
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L488-L502 */
+.fui-Dropdown:has([data-fui-focus-visible]):active .fui-Dropdown__button.fui-Dropdown__button:enabled,
+.fui-Combobox:has([data-fui-focus-visible]):active .fui-Combobox__input.fui-Combobox__input:enabled {
+  color: var(--winui-text-fill-primary);
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L35
