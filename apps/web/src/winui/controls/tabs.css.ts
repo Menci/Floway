@@ -97,10 +97,9 @@ export const tabsCss = `
    them with @media (forced-colors: active) rules that keep the pending bar and
    the selected pipe on Highlight and ButtonText; a media query carries no
    specificity, so our rules would otherwise win inside that mode and put a
-   theme color where the whole contract is system colors. Gating on the
-   complementary none value hands the mode back to Fluent without us naming a
-   system color of our own. */
-@media (forced-colors: none) {
+   theme color where the whole contract is system colors. Standing aside hands
+   the mode back to Fluent without us naming a system color of our own. */
+@media not (forced-colors: active) {
   /* Fluent previews a selection by growing a neutral bar in the slot the accent
      pipe will take. Every unselected Pivot state collapses SelectedPipe
      instead, so the strip only ever shows one pipe and the preview is erased.

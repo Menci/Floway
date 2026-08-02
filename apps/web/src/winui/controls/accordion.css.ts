@@ -25,8 +25,9 @@ export const accordionCss = `
    WinUI, and Fluent's button slot resets background-color to inherit, so a fill
    placed on the header root would be repainted square by the button over the
    root's rounded corners -- the fill, the stroke and the radius belong together
-   on the button. The card fill and the card stroke are both translucent, hence
-   clipping the fill to the padding box so the stroke is not painted over.
+   on the button. The card fill and the card stroke are both translucent, so the
+   fill has to stop at the border rather than run under it; ../reset.css.ts
+   already clips every element that way.
 
    WinUI's Expander declares no size variant: one min-height and one leading
    header inset, whatever the header holds. Both are stated unconditionally
@@ -210,8 +211,8 @@ export const accordionCss = `
     border: 2px solid ButtonText;
   }
 
-  .fui-AccordionHeader__button:enabled:not([aria-disabled='true']):hover,
-  .fui-AccordionHeader__button:enabled:not([aria-disabled='true']):active {
+  .fui-AccordionHeader__button.fui-AccordionHeader__button:enabled:not([aria-disabled='true']):hover,
+  .fui-AccordionHeader__button.fui-AccordionHeader__button:enabled:not([aria-disabled='true']):active {
     color: Highlight;
     border-color: Highlight;
   }

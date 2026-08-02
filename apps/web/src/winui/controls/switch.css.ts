@@ -182,7 +182,7 @@ export const switchCss = `
   --winui-switch-travel-duration: 0s;
 }
 
-.fui-Switch[data-winui-switch-dragging].fui-Switch .fui-Switch__indicator.fui-Switch__indicator > * {
+.fui-Switch[data-winui-switch-dragging] .fui-Switch__indicator.fui-Switch__indicator > * {
   transform: translateX(var(--winui-switch-drag-x));
 }
 
