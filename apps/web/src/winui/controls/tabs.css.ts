@@ -5,11 +5,13 @@
 // foreground states through the legacy SystemControl* system-brush layer,
 // which generic.xaml resolves to opacity-scaled black and white; TabView
 // states the same four over the modern TextFillColor* resources this file
-// already transcribes. Preferring the modern layer is our own call, and the
-// two ramps differ where it shows: Pivot brightens an unselected item under
-// the pointer and dims the selected one, while TabView holds the unselected
-// item, dims it only on press, and lets selection outrank the pointer
-// entirely. The state notes below describe TabView's.
+// already transcribes. Nothing in the corpus picks between the two, and
+// nothing outside it does either: the modern layer is taken here because it is
+// the one the rest of this file already speaks, which is a reason of ours and
+// not a source. The two ramps differ where it shows: Pivot brightens an
+// unselected item under the pointer and dims the selected one, while TabView
+// holds the unselected item, dims it only on press, and lets selection outrank
+// the pointer entirely. The state notes below describe TabView's.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L47-L53
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L504-L574
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L265-L285
