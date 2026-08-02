@@ -104,9 +104,11 @@ export const navCss = `
    pseudo-element, restated at WinUI's geometry and colour.
 
    WinUI states the pill's length as a fixed 16px on its 36px left-pane row.
-   Our choice is a proportion instead -- a quarter inset at each end -- so the
-   pill keeps its proportion as the row grows rather than sitting short in a
-   tall one. ./list.css.ts and ./select.css.ts state the same quarter inset.
+   The operator asked instead that the indicator be derived from the row height
+   by a formula that hardcodes nothing and reproduces the stock length at the
+   stock row height, and he pinned the sidebar's own indicator at 20px; a
+   quarter inset at each end is that formula, and it holds the pill's
+   proportion as the row grows rather than leaving it short in a tall one.
 
    The colour is not a declaration but a token substitution, because Fluent
    grows the pill in with a keyframe -- \`0% { background: transparent }\` to

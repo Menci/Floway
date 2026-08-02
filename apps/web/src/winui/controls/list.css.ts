@@ -92,11 +92,13 @@ export const listCss = `
    corner radius, and the radius fixes the width -- a full round-off is one only
    on a 3px bar.
 
-   The length is our choice rather than a WinUI measure. The presenter sizes
-   the bar by MAX(16, itemHeight - 40), which on this 40px row is a flat 16px;
-   we take a quarter inset at each end instead -- 20px here -- so the bar holds
-   its proportion as the row height changes rather than sitting short in a tall
-   row. ./select.css.ts states the same quarter inset on a ComboBoxItem.
+   The length follows the operator's instruction rather than a WinUI measure:
+   the indicator is to be derived from the row height by a formula that
+   hardcodes nothing and reproduces the stock length at the stock row height.
+   The presenter sizes the bar by MAX(16, itemHeight - 40), which on this 40px
+   row is a flat 16px; a quarter inset at each end gives 20px here and holds
+   the bar's proportion as the row height changes rather than leaving it short
+   in a tall row.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L57
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L60
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L75

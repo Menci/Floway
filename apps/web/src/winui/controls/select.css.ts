@@ -408,10 +408,12 @@ export const selectCss = `
    active-descendant focus ring. A multiselect option gets no pill: WinUI's
    ComboBox has no multiselect form, and Fluent's checkbox there is a control of
    its own rather than a second reading of the same state.
-   WinUI states the pill as a fixed 16px on its 32px item. Our choice is to
-   state it as a proportion instead: a quarter inset at each end, which is that
-   same 16px on the 32px item this file builds and keeps the pill in proportion
-   when an Option carries multi-line content.
+   WinUI states the pill as a fixed 16px on its 32px item. The operator asked
+   that this indicator be derived from the row height by a formula that
+   hardcodes nothing and reproduces the stock length at the stock row height,
+   so it is stated as a quarter inset at each end. On this file's 32px item
+   that is exactly WinUI's 16px, which is the test his instruction sets, and it
+   keeps the pill in proportion when an Option carries multi-line content.
 
    One brush serves every state the pill appears in, disabled included, so the
    fill is declared once.

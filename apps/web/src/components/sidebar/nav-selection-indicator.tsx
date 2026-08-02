@@ -42,15 +42,13 @@ import { INDICATOR_DURATION_MS, INDICATOR_POSITION_SNAP, INDICATOR_SETTLE_EASING
 // the move a composited transform.
 
 // The bar's width and corner radius are stated outright. Its length is not:
-// WinUI states a fixed 16px against a 36px item, and our choice throughout the
-// dashboard is a quarter inset at each end instead, so the pill holds its
-// proportion as the row height changes rather than sitting short in a tall row.
-// ../winui/controls/nav.css.ts states the same quarter inset on the category
-// and sub-item rows this component does not draw, and ../winui/controls/list.css
-// and ../winui/controls/select.css state it on their own rows, so one indicator
-// geometry reads across every list in the app. A margin percentage resolves
-// against the containing block's inline size rather than its block size, so the
-// inset is computed from the item box this component has already measured.
+// WinUI states a fixed 16px against a 36px item, and the operator asked that
+// this indicator be derived from the row height by a formula that hardcodes
+// nothing and reproduces the stock length at the stock row height. A quarter
+// inset at each end is that formula, and 20px is the length he pinned for this
+// sidebar. A margin percentage resolves against the containing block's
+// inline size rather than its block size, so the inset is computed from the
+// item box this component has already measured.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L217
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L220-L222
 const INDICATOR_INSET_RATIO = 0.25;
