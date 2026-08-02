@@ -18,8 +18,6 @@ const realModelReachable = (
   cap: readonly string[] | null,
 ) => cap === null || model.upstreams.some(upstream => cap.includes(upstream.id));
 
-// A target whose id resolves to no catalog row is unreachable, as is one whose
-// every binding sits outside the cap.
 export const reachableTargets = (
   alias: ControlPlaneModel,
   catalog: CatalogIndex,
