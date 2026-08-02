@@ -26,8 +26,10 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
   // selecting a record re-runs the loader. The subscription is keyed on the API
   // key alone, so the seed reaches the effect through a ref rather than through
   // its deps; otherwise every selection would close the stream and pay for
-  // another server snapshot.
+  // another server snapshot. The ref is written here, beside the state the
+  // same input adjusts during render, and is read only from the effect.
   const initialRecordsRef = useRef(initialRecords);
+  // eslint-disable-next-line react-hooks/refs -- Carrying the newest render's seed to an effect that must not list it as a dependency.
   initialRecordsRef.current = initialRecords;
 
   // Switching keys discards the previous stream's accumulation. Doing that
