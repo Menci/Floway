@@ -1,5 +1,5 @@
 import type { TableCellProps, TableHeaderCellProps } from '@fluentui/react-components';
-import type { ReactNode } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 
 import { fluentComponents } from '../../fluent';
 
@@ -47,10 +47,27 @@ export function TableCentredCell({ className, ...props }: TableCellProps) {
   return <TableCell {...props} className={mergeClasses(styles.centred, className)} />;
 }
 
+// What a command in a selectable row has to say so that running it is not also
+// a selection. Fluent raises the selection from a plain click: `DataGridRow`
+// toggles its row from the row's own `onClick`, `ListItem` triggers its action
+// from the item's, and a button inside either one carries its click on up to
+// them -- through a portal as well, since a menu popover is a React child of
+// the trigger it was opened from. So the cluster stops the click where it was
+// handled, which is the guard ./settings-card.tsx puts on the SettingsExpander's
+// action slot for the same reason.
+//
+// The click alone. Both rows already ignore a key that came from inside them --
+// `DataGridRow` selects on Space only when the target is not interactive, and
+// `ListItem` acts on Space or Enter only when it is itself the target -- so a
+// button is activated by keyboard without selecting anything, while arrow keys
+// have to keep travelling for the focus navigation between cells and items to
+// answer them.
+export const stopRowSelection = { onClick: (event: MouseEvent<HTMLElement>) => event.stopPropagation() };
+
 // A row's commands sit against the cell's trailing edge. The row grows so that
 // it owns the full width in either formatting context: a `table-cell` gives a
 // block child the whole cell already, while a flex cell would otherwise size
 // this row to its buttons and leave `justify-end` with nothing to distribute.
 export function TableActions({ children }: { children: ReactNode }) {
-  return <div className="flex grow items-center justify-end gap-1">{children}</div>;
+  return <div className="flex grow items-center justify-end gap-1" {...stopRowSelection}>{children}</div>;
 }

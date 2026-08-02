@@ -11,7 +11,7 @@ import { useNow } from '../../lib/use-now';
 import { useDangerActionClasses, useDangerTextClass } from '../ui/danger';
 import { ResourceListEmptyState } from '../ui/resource-list';
 import { ScrollArea } from '../ui/scroll-area';
-import { TableActions, useTrailingCellClass } from '../ui/table-actions';
+import { TableActions, stopRowSelection, useTrailingCellClass } from '../ui/table-actions';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { copyOutcomeIcon, useCopyLabel, type ClipboardCopy } from '../ui/use-copy-to-clipboard';
 
@@ -111,13 +111,12 @@ export function KeysTable({
               <Tooltip content={key.key} relationship="label">
                 <code className="w-[144px] flex-none truncate" tabIndex={0}>{key.key}</code>
               </Tooltip>
-              <TooltipIconButton
-                className="flex-none"
+              <span className="flex-none" {...stopRowSelection}><TooltipIconButton
                 disabled={disabled}
                 icon={copyOutcomeIcon(clipboard.outcomeFor(copyTag))}
                 label={copyLabel(clipboard.outcomeFor(copyTag), t('dashboard.apiKeys.actions.copy'))}
                 onClick={() => clipboard.copy(key.key, copyTag)}
-              />
+              /></span>
             </span>
           );
         },
@@ -204,7 +203,7 @@ export function KeysTable({
             </Tooltip>
             <Text size={200} className="text-fui-fg3">{shortDate(key.created_at, locale)} · {lastUsed}</Text>
           </div>
-          <Menu>
+          <span {...stopRowSelection}><Menu>
             <MenuTrigger disableButtonEnhancement>
               <Button appearance="subtle" aria-label={t('dashboard.apiKeys.table.actions')} disabled={disabled} icon={<MoreHorizontalRegular />} />
             </MenuTrigger>
@@ -214,7 +213,7 @@ export function KeysTable({
               <MenuItem icon={<ArrowClockwiseRegular />} onClick={() => onRotate(key)}>{t('dashboard.apiKeys.actions.rotate')}</MenuItem>
               <MenuItem className={dangerClasses.menuItem} icon={<DeleteRegular />} onClick={() => onDelete(key)}>{t('dashboard.apiKeys.actions.delete')}</MenuItem>
             </MenuList></MenuPopover>
-          </Menu>
+          </Menu></span>
         </div>
       </ListItem>;
     })}
