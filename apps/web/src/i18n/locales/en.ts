@@ -462,7 +462,7 @@ const en = {
           reload: { pending: 'Refreshing upstreams' },
           toggle: { pending: 'Updating availability' },
           reorder: { pending: 'Updating routing priority' },
-          delete: { pending: 'Deleting upstream', success: 'Upstream {{name}} deleted.' },
+          delete: { pending: 'Deleting upstream {{name}}', success: 'Deleted upstream {{name}}' },
         },
       },
       upstreamEditor: {
@@ -843,6 +843,7 @@ const en = {
           credential: 'Import a credential before saving.',
         },
         toast: {
+          saving: 'Saving upstream {{name}}',
           saved: 'Upstream settings saved.',
         },
         leave: {
@@ -1056,8 +1057,7 @@ const en = {
         apiKeyLabel: 'API Key',
         apiKeyPlaceholder: 'Enter API key…',
         save: 'Save Search Config',
-        saving: 'Saving…',
-        saveSuccess: 'Search configuration saved.',
+        toast: { save: { pending: 'Saving the search configuration', success: 'Saved the search configuration' } },
         test: 'Test Search',
         testResults: 'Test Results',
         testBadge: { ok: 'OK', error: 'Error' },

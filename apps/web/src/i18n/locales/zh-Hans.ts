@@ -440,7 +440,7 @@ const zhHansCN = {
           reload: { pending: '正在刷新上游' },
           toggle: { pending: '正在更新可用状态' },
           reorder: { pending: '正在更新路由优先级' },
-          delete: { pending: '正在删除上游', success: '已删除上游 {{name}}。' },
+          delete: { pending: '正在删除上游 {{name}}', success: '已删除上游 {{name}}' },
         },
       },
       upstreamEditor: {
@@ -803,6 +803,7 @@ const zhHansCN = {
           credential: '请先导入凭据。',
         },
         toast: {
+          saving: '正在保存上游 {{name}}',
           saved: '上游设置已保存。',
         },
         leave: {
@@ -998,8 +999,7 @@ const zhHansCN = {
         apiKeyLabel: 'API 密钥',
         apiKeyPlaceholder: '输入 API 密钥…',
         save: '保存搜索配置',
-        saving: '保存中…',
-        saveSuccess: '搜索配置已保存。',
+        toast: { save: { pending: '正在保存搜索配置', success: '已保存搜索配置' } },
         test: '测试搜索',
         testResults: '测试结果',
         testBadge: { ok: '成功', error: '失败' },

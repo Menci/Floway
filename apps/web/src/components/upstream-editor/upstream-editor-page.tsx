@@ -152,10 +152,14 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
 
   const submitForm = () => handleSubmit(async values => {
     setSaving(true); setSaveError(null);
+    // A save is one round-trip on create and two on edit, so it announces
+    // itself while it runs. The dashboard's toaster sits above the outlet, so
+    // the create branch's toast outlives the navigation that follows it.
+    const handle = toasts.start(t('dashboard.upstreamEditor.toast.saving', { name: values.name }));
     const result = data.mode === 'create'
       ? await callApi(() => api.api.upstreams.$post({ json: createBody(record, values) }))
       : await callApi(() => api.api.upstreams[':id'].$patch({ param: { id: record.id }, json: updateBody(record, values) }));
-    if (result.error) { setSaving(false); setSaveError(result.error.message); return; }
+    if (result.error) { handle.settle(); setSaving(false); setSaveError(result.error.message); return; }
     let saved: UpstreamRecord = result.data;
     if (data.mode === 'edit') {
       const full = await callApi(() => api.api.upstreams[':id'].$get({ param: { id: record.id } }));
@@ -165,9 +169,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     const savedValues = valuesFromRecord(saved);
     setSavedBaseline(comparableValues(savedValues));
     reset(savedValues);
-    // The dashboard's toaster sits above the outlet, so the create branch's
-    // toast outlives the navigation that follows it.
-    toasts.succeed(t('dashboard.upstreamEditor.toast.saved'));
+    handle.succeed(t('dashboard.upstreamEditor.toast.saved'));
     if (data.mode === 'create') {
       allowNavigation.current = true;
       // `saving` is left set: the create route's loader probes the provider for
