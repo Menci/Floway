@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
+import { resolve } from 'node:path';
 
 import { reactRouter } from '@react-router/dev/vite';
-import { createJiti } from 'jiti';
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, runnerImport, type Plugin } from 'vite';
 
 // Part of the app's CSS is authored in TypeScript, because its rules spend
 // values the running app spends too: the WinUI layer under src/winui
@@ -19,12 +19,17 @@ import { defineConfig, type Plugin } from 'vite';
 // cacheable asset and yields its URL, `?inline` yields the minified text for a
 // sheet that has to stay in the document.
 //
-// The evaluation is jiti's rather than a second bundler's. These modules are
-// pure string-building TypeScript over relative imports, which is the shape
-// jiti is at its cheapest on, and the module registry it leaves behind names
-// every file it read -- which is exactly the watch list the dev server needs to
-// invalidate the virtual sheet when one of them changes. Nothing in these
-// graphs may reach a module that expects a browser, since this runs in Node.
+// Vite performs the evaluation itself. `runnerImport` stands up a throwaway
+// server environment, runs the module through the same resolver and transform
+// pipeline the app is built with, and tears the environment down again, so
+// there is no second toolchain to keep in agreement with this config and no
+// registry that outlives the call:
+// https://github.com/vitejs/vite/blob/v8.1.5/packages/vite/src/node/ssr/runnerImport.ts#L14-L48
+// It is also what reports the files the module read. A virtual sheet has no
+// imports of its own as far as the graph is concerned, so that list is the
+// only thing connecting an edit deep in the graph to the id that has to be
+// rebuilt. Nothing in these graphs may reach a module that expects a browser,
+// since this runs in Node.
 const virtualStylesheets = {
   'virtual:floway-critical.css': { exportName: 'criticalCss', module: './src/critical.css.ts' },
   'virtual:floway-winui.css': { exportName: 'winuiCss', module: './src/winui/index.ts' },
@@ -55,13 +60,15 @@ const typescriptStylesheets = (): Plugin => {
     async load(id) {
       const source = sourceOf(id);
       if (!id.startsWith('\0') || !source) return;
-      // A fresh registry per load is what re-evaluates the graph; jiti's
-      // on-disk transform cache survives it, so the cost is the evaluation
-      // alone.
-      const jiti = createJiti(import.meta.filename);
-      const stylesheet = await jiti.import<Record<string, string>>(source.module);
-      for (const file of Object.keys(jiti.cache)) if (!file.includes('node_modules')) this.addWatchFile(file);
-      const css = stylesheet[source.exportName]!;
+      const entry = resolve(import.meta.dirname, source.module);
+      const { module, dependencies } = await runnerImport<Record<string, string>>(entry);
+      // `dependencies` names everything the run read except the entry itself,
+      // so the entry is added separately. Registering them makes the dev
+      // server re-run this load when any of them changes, and makes the build
+      // watcher treat them as inputs.
+      this.addWatchFile(entry);
+      for (const file of dependencies) this.addWatchFile(file);
+      const css = module[source.exportName]!;
       if (this.environment.mode !== 'dev' || !/[?&]url\b/.test(id)) return css;
       const specifier = specifierOf(id);
       rendered.set(specifier, css);
