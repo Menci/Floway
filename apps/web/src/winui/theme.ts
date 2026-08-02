@@ -99,13 +99,28 @@ const radii = {
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L30-L41
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L265
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L207
+//
+// Written as a transparent layer rather than as `none`, because these tokens are
+// not only spent on their own. Fluent composes a focus ring out of a shadow
+// LIST whose first layer is the elevation: react-tabs writes
+// `box-shadow: var(--shadow4), 0 0 0 2px var(--colorStrokeFocus2)` and
+// react-button writes the same shape around `--shadow2`. `none` is valid only
+// as a whole box-shadow, so substituting it makes the list invalid at
+// computed-value time and the browser drops the entire declaration -- not a
+// flat control, a control with no focus ring at all. Measured before this
+// change, a focused `.fui-Tab` computed `box-shadow: none` and carried only
+// Fluent's `outline: 2px solid transparent` forced-colours placeholder, so a
+// keyboard reader had nothing to follow.
+//
+// A fully transparent shadow paints exactly what `none` painted and keeps the
+// list valid, so the ring survives while the elevation stays gone.
 const shadows = {
-  shadow2: 'none',
-  shadow2Brand: 'none',
-  shadow4: 'none',
-  shadow4Brand: 'none',
-  shadow8: 'none',
-  shadow8Brand: 'none',
+  shadow2: '0 0 #0000',
+  shadow2Brand: '0 0 #0000',
+  shadow4: '0 0 #0000',
+  shadow4Brand: '0 0 #0000',
+  shadow8: '0 0 #0000',
+  shadow8Brand: '0 0 #0000',
 } as const satisfies Partial<Theme>;
 
 export const winuiLightTheme: Theme = {
