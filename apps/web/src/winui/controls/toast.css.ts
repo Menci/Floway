@@ -39,6 +39,15 @@ export const toastCss = `
   --colorStatusSuccessForegroundInverted: var(--colorStatusSuccessForeground1);
   --colorStatusDangerForegroundInverted: var(--colorStatusDangerForeground1);
   --colorStatusWarningForegroundInverted: var(--colorStatusWarningForeground1);
+
+  /* TeachingTip carries no severity, so the severity glyph is answered by the
+     one control that does: InfoBar paints each severity from a SystemFillColor
+     family, which the message bar in this layer already restates. Fluent's own
+     status ramp is a second green, amber and red for the same three states.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L9-L11 */
+  --colorStatusSuccessForeground1: var(--winui-system-fill-success);
+  --colorStatusDangerForeground1: var(--winui-system-fill-critical);
+  --colorStatusWarningForeground1: var(--winui-system-fill-caution);
 }
 
 /* WinUI states the width as a range, not a number, and a fixed-position box is
