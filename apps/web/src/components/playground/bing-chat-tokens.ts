@@ -109,3 +109,21 @@ export const bingCardShadow = [
   '0px 0.3px 0.9px light-dark(rgba(0, 0, 0, 0.12), transparent)',
   '0px 1.6px 3.6px light-dark(rgba(0, 0, 0, 0.16), transparent)',
 ].join(', ');
+
+// `cib-shadow-elevation-4`, which a user bubble takes instead of the card
+// shadow. Written the same way, with the layers that do not apply to a theme
+// spelled out transparent so `light-dark()` takes only colours.
+// https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/globals.scss#L178-L179
+// https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/dark.scss#L155
+export const bingElevation4 = [
+  '0px 0.3px 0.9px light-dark(rgba(0, 0, 0, 0.12), transparent)',
+  '0px 1.6px 3.6px light-dark(rgba(0, 0, 0, 0.16), transparent)',
+  '0px 2px 4px light-dark(transparent, rgba(0, 0, 0, 0.28))',
+  '0px 0px 2px light-dark(transparent, rgba(0, 0, 0, 0.24))',
+].join(', ');
+
+// `cib-border-radius-extra-large`, the corner of a transcript bubble, as a pixel
+// constant: a rem step would move with the root size.
+// https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/globals.scss#L192
+export const bingMessageRadius = '12px';
+

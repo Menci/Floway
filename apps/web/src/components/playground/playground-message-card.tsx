@@ -1,33 +1,47 @@
 import type { PropsWithChildren } from 'react';
 
-import { bingAccentGradient, bingCardShadow, bingOnAccentForeground } from './bing-chat-tokens';
+import { bingAccentGradient, bingCardShadow, bingElevation4, bingMessageRadius, bingOnAccentForeground } from './bing-chat-tokens';
 import type { PlaygroundMessage } from './request';
 import { fluentComponents } from '../../fluent';
 
-const { Card, makeStyles } = fluentComponents;
+const { makeStyles, tokens } = fluentComponents;
 
-// A transcript bubble is Bing's `.text-message`, and it sits inside the layer's
-// `data-winui-card-restyle='off'` subtree, so every trait Bing states
-// differently is restated here.
+// A transcript bubble is Bing's `.text-message`, an element of its own rather
+// than a restyled Fluent surface, so every trait below is the original's own
+// declaration.
 // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/globals.scss#L580-L594
 //
-// `--cib-shadow-elevation-4`. The layers that do not apply to a theme are
-// written out transparent so `light-dark()` takes only colours.
-// https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/globals.scss#L178-L179
-// https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/dark.scss#L155
-const bingElevation4 = [
-  '0px 0.3px 0.9px light-dark(rgba(0, 0, 0, 0.12), transparent)',
-  '0px 1.6px 3.6px light-dark(rgba(0, 0, 0, 0.16), transparent)',
-  '0px 2px 4px light-dark(transparent, rgba(0, 0, 0, 0.28))',
-  '0px 0px 2px light-dark(transparent, rgba(0, 0, 0, 0.24))',
-].join(', ');
-
-// The halves are exclusive so that a single class carries the shadow and
-// Fluent's own `shadow4` is displaced by the `className` merge. The assistant
-// half keeps Fluent's neutral surface: the dashboard's page is opaque where
+// The halves are exclusive so a single class carries the shadow. The assistant
+// half keeps the dashboard's neutral surface: the page here is opaque where
 // Bing's was a photograph under a translucent card.
 // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/globals.scss#L617-L624
 const useStyles = makeStyles({
+  bubble: {
+    position: 'relative',
+    display: 'flex',
+    flexDirection: 'column',
+    minWidth: 0,
+    // Bing insets `.text-message-content` by 10/16/4/16 against its 24px line;
+    // the dashboard's line is 20px and the bubble carries one uniform spacing
+    // step instead, the way every other surface here is inset.
+    // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/globals.scss#L720-L731
+    gap: tokens.spacingVerticalM,
+    padding: tokens.spacingHorizontalM,
+    borderRadius: bingMessageRadius,
+    // The corner has to clip: a code block or table inside the bubble paints its
+    // own edge out to the bubble's own.
+    overflow: 'hidden',
+    overflowWrap: 'break-word',
+    // The edge is the shadow, and the transparent outline beside it is the edge
+    // in forced colors, where the shadow is gone and `outline-color` is
+    // force-adjusted:
+    // https://www.w3.org/TR/css-color-adjust-1/#forced-colors-properties
+    outline: '1px solid transparent',
+    // Both halves stand on the neutral surface, the user half with its gradient
+    // over it: an antialiased corner blends the fill with whatever is behind it,
+    // and behind a bubble is the transcript's own scrolling background.
+    backgroundColor: tokens.colorNeutralBackground1,
+  },
   assistant: {
     boxShadow: bingCardShadow,
   },
@@ -45,15 +59,9 @@ type PlaygroundMessageCardProps = PropsWithChildren<{
 export function PlaygroundMessageCard({ children, role }: PlaygroundMessageCardProps) {
   const s = useStyles();
 
-  // `--cib-border-radius-extra-large` as a pixel constant, since a rem step
-  // would move with the root size. The `::after` Fluent draws its border on
-  // needs it too, and both need to outrank the layer's doubled-class rule.
-  // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/globals.scss#L192
   return (
-    <Card
-      className={`min-w-0 break-words overflow-hidden !rounded-[12px] after:!rounded-[12px] ${role === 'user' ? s.user : s.assistant}`}
-    >
+    <div className={`${s.bubble} ${role === 'user' ? s.user : s.assistant}`}>
       {children}
-    </Card>
+    </div>
   );
 }
