@@ -24,8 +24,10 @@
 // it: as redefinition of the Fluent variables that only the disagreeing states
 // read, so Fluent's own atoms keep deciding which state wins. That is what
 // keeps a disabled field disabled under the pointer and leaves the red
-// aria-invalid stroke — an affordance WinUI's text controls do not have —
-// standing.
+// aria-invalid stroke standing. WinUI's text controls have no such affordance,
+// and no decision here does either: the operator asked whether a mis-filled
+// field really ought to carry a red box and the question is still open, so the
+// stroke stands unsettled rather than sourced.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L48-L56
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L155-L163
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-input/library/src/components/Input/useInputStyles.styles.ts#L186-L201
@@ -58,9 +60,10 @@
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-input/library/src/components/Input/useInputStyles.styles.ts#L206-L208
 //
 // The rules below stop at the boundary of a subtree that opts out of the layer:
-// the composer and transcript of the playground are designed against Fluent's
-// own control palette, and every declaration here would repaint them. See
-// ../tokens.ts for the convention.
+// the operator declared the playground's hand-designed chat UI frozen, and its
+// composer and transcript are built against Fluent's own control palette, so
+// every declaration here would repaint them. See ../tokens.ts for the
+// convention.
 
 import { notOptedOut } from '../tokens';
 

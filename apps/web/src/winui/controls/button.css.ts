@@ -34,9 +34,10 @@
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L53-L101
 //
 // The rules below stop at the boundary of a subtree that opts out of the layer:
-// the composer and transcript of the playground are designed against Fluent's
-// own control palette, and every declaration here would repaint them. See
-// ../tokens.ts for the convention.
+// the operator declared the playground's hand-designed chat UI frozen, and its
+// composer and transcript are built against Fluent's own control palette, so
+// every declaration here would repaint them. See ../tokens.ts for the
+// convention.
 
 import { notOptedOut } from '../tokens';
 

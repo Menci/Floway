@@ -5,14 +5,14 @@ const { buttonClassNames, makeStyles } = fluentComponents;
 // How danger is painted, in the two forms it takes.
 //
 // Text that reports a failure wears the colour at rest, because the colour is
-// the report. A destructive action does not: it reads as destructive when the
-// operator reaches for it, and resident red would shout from every row and
-// break the rhythm of the list it sits in. Reaching is the pointer arriving,
-// the press going down, and the keyboard landing -- and the keyboard landing
-// is Fluent's `data-fui-focus-visible`, the same signal the WinUI layer draws
-// its focus rings from, rather than `:focus`, which a click also sets and
-// which would leave the colour resident on a row the operator has already
-// finished with.
+// the report. A destructive action does not, and that is the operator's call:
+// he asked for the delete icon to go red and then settled it at hover, so the
+// colour arrives when the operator reaches for the control rather than sitting
+// on every row. Reaching is the pointer arriving, the press going down, and
+// the keyboard landing -- and the keyboard landing is Fluent's
+// `data-fui-focus-visible`, the same signal the WinUI layer draws its focus
+// rings from, rather than `:focus`, which a click also sets and which would
+// leave the colour resident on a row the operator has already finished with.
 //
 // The brush is WinUI's SystemFillColorCritical, the one a field's validation
 // message and the error message bar already read, so a single red carries
