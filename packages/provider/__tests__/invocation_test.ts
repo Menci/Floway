@@ -63,6 +63,7 @@ test('providerModelOf throws the alias-row diagnostic when the candidate names a
       name: 'Test Upstream',
       disabledPublicModelIds: [],
       modelPrefix: null,
+      modelsCache: null,
       instance: stubProvider(),
     },
     model: {

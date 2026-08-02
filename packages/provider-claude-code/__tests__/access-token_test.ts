@@ -37,6 +37,7 @@ const makeRecord = (state: ClaudeCodeUpstreamState): UpstreamRecord => ({
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  modelsCache: null,
   color: null,
 });
 

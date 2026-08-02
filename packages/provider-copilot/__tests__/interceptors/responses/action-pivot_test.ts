@@ -50,6 +50,7 @@ test('Copilot provider terminal dispatches on post-chain ctx.action (interceptor
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
+    modelsCache: null,
     color: null,
     config: {
       githubToken: `ghu_${crypto.randomUUID().replace(/-/g, '')}`,

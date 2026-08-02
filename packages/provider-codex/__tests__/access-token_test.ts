@@ -27,6 +27,7 @@ const makeRecord = (state: CodexUpstreamState): UpstreamRecord => ({
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  modelsCache: null,
   color: null,
 });
 

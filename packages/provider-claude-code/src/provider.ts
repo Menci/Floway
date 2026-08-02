@@ -106,6 +106,7 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
     name: record.name,
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,
+    modelsCache: record.modelsCache,
     instance,
   };
 };
