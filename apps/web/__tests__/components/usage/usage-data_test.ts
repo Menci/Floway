@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { metricsFromWire } from '../../../src/components/usage/usage-data';
+import { metricsFromWire } from '../../../src/components/usage/data';
 
 describe('usage response normalization', () => {
   it('indexes gateway metric rows by billing metric for chart consumers', () => {

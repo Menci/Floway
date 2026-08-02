@@ -2,8 +2,8 @@ import { AreaChart, LineChart, type CustomizedCalloutData } from '@fluentui/reac
 import { useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { UsageChartCallout } from './callout';
 import type { CalloutPoint, UsageChartModel } from './types';
-import { UsageChartCallout } from './usage-callout';
 import { fluentComponents } from '../../fluent';
 import { useLocale } from '../../lib/use-locale';
 import { chartTickValues, formatAxisDate } from '../charts/dashboard-time';
