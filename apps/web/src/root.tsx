@@ -32,7 +32,7 @@ const { Button, FluentProvider } = fluentComponents;
 // https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/rel/preload#cors-enabled_fetches
 // The version query isolates the cross-origin response from a bare-path Azure
 // CDN cache entry stored with docs.azure.cn as its sole allowed origin and no
-// `Vary: Origin` header.
+// `Vary: Origin`.
 const SEGOE_UI_VARIABLE_URL = 'https://docs.azure.cn/static/third-party/SegoeUIVariable/SegoeUI-VF.ttf?floway-vf=2.02';
 
 export const links: Route.LinksFunction = () => [
@@ -48,8 +48,6 @@ const subscribeToColorScheme = (onChange: () => void): (() => void) => {
   return () => query.removeEventListener('change', onChange);
 };
 
-// The build-time prerender has no matchMedia, so the server snapshot reports
-// light and the client corrects on hydration.
 const useSystemTheme = () => {
   const dark = useSyncExternalStore(
     subscribeToColorScheme,
@@ -70,18 +68,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="theme-color" content="#f5f5f5" media="(prefers-color-scheme: light)" />
         <meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)" />
-        {/* Only the root route is prerendered, so no leaf route's title reaches
-            this HTML; ./components/document-title-sync.tsx narrows it once the
-            bundle runs. */}
         <title>Floway</title>
         <Links />
         {/* Inlined because it has to be true before a linked stylesheet can
             arrive. See ./critical.css.ts. */}
         <style>{criticalCss}</style>
-        {/* Linked by hand rather than emitted through `<Links />`, which
-            renders ahead of anything this component writes: the WinUI layer has
-            to follow the block above, whose spinner rules reach Fluent's class
-            names at the same specificity. */}
+        {/* Linked by hand rather than through `<Links />`, which renders ahead
+            of anything this component writes: the WinUI layer has to follow the
+            block above, whose spinner rules reach Fluent's class names at the
+            same specificity. */}
         <link href={winuiStylesheet} rel="stylesheet" />
         {/* Inline so the mark and tab icon are set before anything paints. */}
         <script dangerouslySetInnerHTML={{ __html: markPickerScript }} />
@@ -112,13 +107,10 @@ export function HydrateFallback() {
   return <AppLoadingScreen label={t('common.loading')} />;
 }
 
-// The prerendered index.html carries HydrateFallback's boot screen. An error
-// boundary renders in place of the tree during hydration itself, so React finds
-// a page where it expected a spinner and rebuilds from scratch -- a hydration
-// mismatch, half-styled for as long as it lasts. Hydrating the fallback first
-// and showing the failure on the pass after keeps the exchange one React
-// handles; useSyncExternalStore returns a different value on the server pass
-// than on the client without a render that exists only to schedule another.
+// The prerendered HTML carries HydrateFallback's boot screen, so rendering the
+// error tree during hydration itself is a mismatch React recovers from by
+// rebuilding the page. Hydrating the fallback and showing the failure on the
+// next pass keeps that exchange one React handles.
 const subscribeNever = () => () => {};
 const isClient = () => true;
 const isServer = () => false;
