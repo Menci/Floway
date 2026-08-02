@@ -94,23 +94,35 @@ export const dialogCss = `
    only the minmax grid cell around ScrollArea: doubled class specificity keeps
    Griffel's runtime-injected overflow-y:auto from winning by stylesheet order.
 
-   Fluent also spends that cell's padding on a focus gutter, with an equal
-   negative margin putting the text back on the title's edge. The gutter has to
-   move inside the scrollport -- a scrollport clips at its own edge, so padding
-   outside it does not hold an overhang -- but the outset stays here, and stays
-   the same length, because WinUI lays Title and Content out in one Grid under a
-   single ContentDialogPadding: the content has no inset the title lacks, in
-   either axis. The length is FocusVisualMargin, the 3px a WinUI focus visual is
-   drawn outside the control it belongs to.
+   Fluent also spends that cell on a focus gutter -- padding, with an equal
+   negative margin putting the text back on the title's edge -- and that is
+   dropped rather than transcribed. WinUI lays Title and Content out in one Grid
+   under a single ContentDialogPadding of 24, with ContentDialogTitleMargin
+   0,0,0,12 the only region-specific offset in the template and no content
+   margin key at all, so a bare content cell has to sit on the title's edge and
+   nothing else may move it.
    https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-dialog/library/src/components/DialogContent/useDialogContentStyles.styles.ts#L16-L31
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L233-L246
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L167 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L233-L245 */
 .fui-DialogContent.fui-DialogContent {
-  --floway-dialog-focus-gutter: 3px;
   padding: 0;
-  margin: 0 calc(-1 * var(--floway-dialog-focus-gutter));
+  margin: 0;
   min-height: 0;
   overflow: hidden;
+}
+
+/* DialogShell alone re-earns the gutter, because it alone puts a scroller in
+   that cell: a scrollport clips at its own edge, so a focus visual on a control
+   at the content's edge needs room inside the scrollport, and the cell has to
+   give that room back to the title's edge by outsetting itself the same length.
+   The two halves are one compensation and neither is meaningful alone, so they
+   are written together, on the two boxes DialogShell itself supplies, and a
+   DialogContent that is not DialogShell's gets neither. The length is
+   FocusVisualMargin, the 3px a WinUI focus visual is drawn outside the control
+   it belongs to.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L167 */
+.floway-dialog-shell__content.floway-dialog-shell__content {
+  --floway-dialog-focus-gutter: 3px;
+  margin-inline: calc(-1 * var(--floway-dialog-focus-gutter));
 }
 
 /* ContentDialog presents its content with TextWrapping="Wrap", which breaks
