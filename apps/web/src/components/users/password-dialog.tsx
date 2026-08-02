@@ -41,8 +41,7 @@ export function PasswordDialog({ onOpenChange, open, onSaved, user }: {
     defaultValues: { password: '', confirmation: '' },
   });
   const save = async (values: PasswordFormValues) => {
-    // The button stays focusable while this runs, so its form can still be
-    // submitted from it; refusing here is what makes the second press inert.
+    // disabledFocusable leaves the submit button able to resubmit the form, so the guard is what makes a second press inert.
     if (saving) return;
     setSaving(true);
     setError(null);
