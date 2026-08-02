@@ -104,11 +104,11 @@ export const toastCss = `
   gap: 8px;
 }
 
-/* The action reads as a hyperlink, which WinUI colours with the accent *text*
-   ramp rather than the accent fill a button takes.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L93
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L297 */
-.fui-ToastTitle__action.fui-ToastTitle__action {
-  color: var(--winui-accent-text-fill-primary);
-}
+/* The action slot takes no colour of its own. TeachingTip's ActionButton is a
+   DefaultButtonStyle button, not a hyperlink, so the accent text ramp is the
+   wrong reference for it -- and a declaration on the slot reached nothing
+   anyway, because every element documented for it, Button and Link alike, sets
+   its own colour. The child carries the WinUI colours its own control states.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip.xaml#L10
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L5 */
 `;
