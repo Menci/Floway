@@ -1,5 +1,5 @@
 import { AddRegular, DeleteRegular, WarningRegular } from '@fluentui/react-icons';
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -59,11 +59,24 @@ function RateInput({ label, onChange, readOnly, value }: {
   value: string | undefined;
 }) {
   const [draft, setDraft] = useState(value ?? '');
-  const editing = useRef(false);
+  // Whether the operator is in this field decides whether an arriving value is
+  // theirs, so it is read while deciding what to render and is state rather
+  // than a ref.
+  const [editing, setEditing] = useState(false);
 
-  useEffect(() => {
-    if (!editing.current) setDraft(value ?? '');
-  }, [value]);
+  // The rate inputs are keyed by metric rather than by rule, so selecting
+  // another rule hands the same input a new value instead of a new instance.
+  // Adopting it during render rather than in an effect is what keeps the
+  // previously selected rule's numbers from being painted for a frame in the
+  // fields of the rule that has just been opened. A field the operator is
+  // typing in keeps its own text: the rule cannot change under a focused
+  // input, and the value arriving there is the one the typing produced -- a
+  // lone `.` reaches the model as an empty rate and must not come back as one.
+  const [adopted, setAdopted] = useState(value);
+  if (!editing && value !== adopted) {
+    setAdopted(value);
+    setDraft(value ?? '');
+  }
 
   return <Field className="min-w-0" label={label}>
     <Input
@@ -73,7 +86,7 @@ function RateInput({ label, onChange, readOnly, value }: {
       size="medium"
       value={draft}
       onBlur={() => {
-        editing.current = false;
+        setEditing(false);
         setDraft(value ?? '');
       }}
       onChange={(_, data) => {
@@ -82,7 +95,7 @@ function RateInput({ label, onChange, readOnly, value }: {
         if (data.value === '' || data.value === '.') onChange('');
         else onChange(data.value);
       }}
-      onFocus={() => { editing.current = true; }}
+      onFocus={() => setEditing(true)}
     />
   </Field>;
 }
