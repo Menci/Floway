@@ -1,40 +1,22 @@
-// WinUI 3 menu-flyout styling for Fluent v9's Menu family. Fluent paints a menu
-// item as an opaque neutral card that deepens on hover and press, with the icon
-// turning brand on hover; WinUI paints it as a transparent strip that picks up a
-// translucent subtle fill, lighter on press than on hover, and holds one text
-// brush across every state.
+// WinUI 3 menu-flyout styling for Fluent v9's Menu family.
 //
-// The source dictionary is MenuFlyout_themeresources.xaml, which states the
-// presenter, the item, the submenu item, the split item and the separator
-// together. Its item fills repeat the ListViewItem values, but the menu keys are
-// the ones transcribed here.
+// The source dictionary is MenuFlyout_themeresources.xaml. Its item fills
+// repeat the ListViewItem values, but the menu keys are the ones transcribed
+// here.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L270
-//
-// Menu and MenuTrigger render no element of their own, and MenuList declares
-// only layout, so neither appears below.
 //
 // MenuItemCheckbox, MenuItemRadio, MenuItemSwitch and MenuItemLink each add a
 // root class of their own and then run the MenuItem style hook, so every item
-// rule below reaches all five roots and their shared slot classes. Both
-// `__checkmark` and `__submenuIndicator` get geometry and nothing else from
-// Fluent, where WinUI ramps each of them apart from the label, so the two
-// ramps are written out below.
+// rule below reaches all five roots and their shared slot classes.
 export const menuCss = `
-/* Flyout surface. WinUI rounds a flyout to the overlay radius and outlines it
-   with the dedicated flyout stroke.
+/* Flyout surface.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L285
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L41
-
-   The presenter's Border is BackgroundSizing="InnerBorderEdge", which
-   ../reset.css.ts already applies to everything: the fill stops at the border so
-   the translucent stroke reads against whatever the flyout floats over.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L289
 
    The presenter's own fill is DesktopAcrylicTransparentBrush -- #00000000, a
    sentinel that hands the material to the window's DesktopAcrylicBackdrop. A
    web flyout floats over no such backdrop, so we paint the acrylic material's
-   FallbackColor, which is what WinUI shows when transparency effects are off
-   and is the same colour in the desktop and in-app families.
+   FallbackColor, which is what WinUI shows when transparency effects are off.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L40
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L264
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Materials/Acrylic/AcrylicBrush_themeresources.xaml#L95
@@ -49,10 +31,8 @@ export const menuCss = `
   padding: 2px 0;
 }
 
-/* Item at rest. Fluent gives the item its own opaque fill; WinUI leaves it
-   transparent so the flyout surface shows through, and states one foreground
-   brush that hover and press both reuse. The 4,2,4,2 margin is the item's own,
-   and it is what holds the pill off the surface edge and off its neighbours.
+/* Item at rest. The 4,2,4,2 margin is the item's own, and it is what holds the
+   pill off the surface edge and off its neighbours.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L6
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L11
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L259 */
@@ -62,10 +42,10 @@ export const menuCss = `
   margin: 2px 4px;
 }
 
-/* The trailing hint is the keyboard-accelerator text, which WinUI paints
-   secondary and holds there through hover and press. Fluent moves it on its own
-   :hover and :focus, so the item root is named as well to clear those two rules
-   by a class.
+/* The trailing hint is the keyboard-accelerator text, which WinUI holds
+   secondary through hover and press. Fluent moves it on its own :hover and
+   :focus, so the item root is named as well to clear those two rules by a
+   class.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L31-L33 */
 .fui-MenuItem .fui-MenuItem__secondaryContent.fui-MenuItem__secondaryContent {
   color: var(--winui-text-fill-secondary);
@@ -74,8 +54,6 @@ export const menuCss = `
 /* The icon takes the item's own colour instead of turning brand -- which Fluent
    does both on hover and while a submenu is open. WinUI drives IconContent from
    the same MenuFlyoutItemForeground* keys as the label, and those do not move.
-   Inheriting covers the disabled item too, whose own brush is already the
-   disabled one.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L321
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L11 */
 .fui-MenuItem:hover .fui-MenuItem__icon.fui-MenuItem__icon,
@@ -83,12 +61,9 @@ export const menuCss = `
   color: inherit;
 }
 
-/* The check glyph is a ramp of its own too, and it runs the other way: it sits
-   at the chevron's secondary brush while at rest and rises to the label's
-   primary under the pointer, where the pressed value repeats the pointer-over
-   one, so the hover rule carries both. The toggle item and the radio item state
-   the same ramp. Fluent gives the slot geometry alone, so without these the
-   glyph would sit at the item's own primary in every state.
+/* The check glyph runs its ramp the other way: secondary at rest, rising to the
+   label's primary under the pointer, where the pressed value repeats the
+   pointer-over one, so the hover rule carries both.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L488
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L420
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L429
@@ -103,11 +78,10 @@ export const menuCss = `
   color: var(--winui-text-fill-primary);
 }
 
-/* The submenu chevron is a ramp of its own as well, subordinate to the label:
-   secondary at rest, on hover and while the submenu is open, tertiary while
-   pressed. Fluent leaves it inheriting the item's foreground, so both values
-   are written here. The pressed rule steps around a disabled item so the
-   disabled group below keeps the chevron without a deeper selector.
+/* The submenu chevron is subordinate to the label: secondary at rest, on hover
+   and while the submenu is open, tertiary while pressed. The pressed rule steps
+   around a disabled item so the disabled group below keeps the chevron without
+   a deeper selector.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L26-L29 */
 .fui-MenuItem .fui-MenuItem__submenuIndicator.fui-MenuItem__submenuIndicator {
   color: var(--winui-text-fill-secondary);
@@ -118,10 +92,8 @@ export const menuCss = `
   color: var(--winui-text-fill-tertiary);
 }
 
-/* Hover and press. WinUI moves the fill along the subtle ramp -- transparent to
-   secondary to tertiary -- where Fluent walks the neutral-background ramp, and
-   tertiary is the lighter of the two, so the item lifts on press rather than
-   deepening. The foreground brush does not move in either state.
+/* Hover and press. Tertiary is the lighter of the two, so the item lifts on
+   press rather than deepening.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L7
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L12 */
 .fui-MenuItem.fui-MenuItem:hover {
@@ -137,32 +109,26 @@ export const menuCss = `
 }
 
 /* WinUI states no description line under a menu item, so this slot's foreground
-   is ours to settle. Its rest value already resolves to the WinUI tertiary brush
-   through the token table; what Fluent adds on top is a hover and a pressed step
-   whose tokens have no WinUI counterpart to map onto, so those two states would
-   paint outside the palette. We hold the rest value across all three, the way
-   WinUI holds the label and the hint still through the same two states. */
+   is ours to settle. Fluent's hover and pressed steps read tokens with no WinUI
+   counterpart and would paint outside the palette, so the rest value is held
+   across all three states, the way WinUI holds the label and the hint. */
 .fui-MenuItem:not([aria-disabled='true']):hover .fui-MenuItem__subText.fui-MenuItem__subText,
 .fui-MenuItem:not([aria-disabled='true']):hover:active .fui-MenuItem__subText.fui-MenuItem__subText {
   color: var(--winui-text-fill-tertiary);
 }
 
-/* Submenu open. A submenu trigger is held in the pointer-over fill for as long
-   as its flyout is up, and its foreground stays primary. The hook is the
-   aria-expanded attribute MenuTrigger renders unconditionally on a submenu
-   child; the rest rule would otherwise strip Fluent's own open fill and leave
-   the trigger flat. Only the fill is stated -- the rest rule already outranks
-   Fluent's single-atom open foreground.
+/* Submenu open. The hook is the aria-expanded attribute MenuTrigger renders
+   unconditionally on a submenu child; the rest rule would otherwise strip
+   Fluent's own open fill and leave the trigger flat.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L18
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L24 */
 .fui-MenuItem.fui-MenuItem[aria-expanded='true'] {
   background-color: var(--winui-subtle-fill-secondary);
 }
 
-/* Disabled. Fluent holds its opaque rest fill under the pointer; WinUI holds a
-   transparent one. The foreground has to be written here as well: Fluent states
-   it on a single atom, which the rest and hover rules above outrank, so leaving
-   it to Fluent would paint a disabled item at full strength.
+/* Disabled. The foreground has to be written here as well: Fluent states it on
+   a single atom, which the rest and hover rules above outrank, so leaving it to
+   Fluent would paint a disabled item at full strength.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L9
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L14 */
 .fui-MenuItem.fui-MenuItem[aria-disabled='true'],
@@ -173,10 +139,8 @@ export const menuCss = `
 }
 
 /* The hint, the chevron, the check glyph and the sub-text follow the item into
-   the disabled brush. The first three are matched one class deeper than the
-   rule that paints each at rest; the sub-text has no rest rule to outrank, and
-   the two rules that hold it under the pointer already step around a disabled
-   item.
+   the disabled brush, matched one class deeper than the rule that paints each
+   at rest.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L30
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L34
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L437
@@ -188,13 +152,12 @@ export const menuCss = `
   color: var(--winui-text-fill-disabled);
 }
 
-/* Focus. Fluent draws one ring on a pseudo-element; the system focus visual
-   WinUI puts on a menu item draws two concentric ones. The token Fluent's border
-   reads is re-pointed on the pseudo-element itself, where that border resolves
-   it, so the outer stroke lands without the substitution reaching any other
-   descendant of the focused item. An inset shadow on the same pseudo-element --
-   clipped to its padding box, so it sits immediately inside the 2px border --
-   supplies the inner one.
+/* Focus. WinUI's system focus visual draws two concentric rings where Fluent
+   draws one. The token is re-pointed on the pseudo-element itself, where
+   Fluent's border resolves it, so the substitution reaches no other descendant
+   of the focused item; an inset shadow on that same pseudo-element -- clipped
+   to its padding box, so it sits immediately inside the 2px border -- supplies
+   the inner ring.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L307
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L144
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L145 */
@@ -203,12 +166,9 @@ export const menuCss = `
   box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
 }
 
-/* Separator. WinUI has a stroke ramp of its own for dividers rather than
-   borrowing a neutral control stroke, and it sets the rule one pixel off its
-   neighbours and pulls it out to the presenter's edges. Fluent's own inset is
-   4px above and below and a negative inline one that cancels the 4px padding
-   its popover carries; ours carries none inline, so zero already reaches those
-   edges.
+/* Separator. WinUI sets the rule one pixel off its neighbours and pulls it out
+   to the presenter's edges; our popover carries no inline padding, so zero
+   already reaches those edges.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L5
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L254
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L258
@@ -219,22 +179,15 @@ export const menuCss = `
   margin: 1px 0;
 }
 
-/* High Contrast. WinUI collapses the item's whole subtle ramp onto Highlight
-   with a HighlightText foreground, holds an open submenu trigger at the window
-   fill with a Highlight label and chevron, and sends a disabled item to
-   GrayText. Every slot this sheet colours has to be restated here: a colour we
-   pin resolves to the forced palette's plain text entry, which would leave the
-   hint, the chevron and the check glyph reading against the Highlight the row
-   is now filled with. The sub-text has no counterpart in the dictionary, so it
-   follows the row it sits in, the only value legible over both fills.
-
-   The presenter doubles its border there; its fill and stroke, and the
-   separator's, already resolve to the Window and WindowText the dictionary
-   names.
+/* High Contrast. Every slot this sheet colours has to be restated here: a
+   colour we pin resolves to the forced palette's plain text entry, which would
+   leave the hint, the chevron and the check glyph reading against the Highlight
+   the row is now filled with. The sub-text has no counterpart in the
+   dictionary, so it follows the row it sits in, the only value legible over
+   both fills.
 
    A media query carries no specificity, so each rule repeats the selector it
-   answers -- including the pressed form of the two slots whose pointer rules
-   are written that deep.
+   answers.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L90-L97
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L101
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L107
@@ -298,16 +251,12 @@ export const menuCss = `
 /* MenuFlyout's open. WinUI reveals a menu rather than moving it: the presenter
    slides in from a fraction of its own height while a clip slides the other way
    by exactly as much, which pins the visible window to the final layout box and
-   lets only the content travel through it. A menu below its trigger starts as
-   its own lower fraction drawn at the top of the box and grows downward; one
-   above starts as its upper fraction at the bottom and grows upward. Nothing
-   fades in. 250ms on the fast-out-slow-in spline.
+   lets only the content travel through it. Nothing fades in.
 
    The fraction is 0.5 for a menu and 0.67 for a submenu. Fluent renders both
    through the same components, but it places a submenu after its trigger and a
    menu below it, so the placement attribute tells them apart: an inline
-   placement is a submenu, a block one a menu. A submenu also always grows
-   downward, which is the branch it already inherits.
+   placement is a submenu, a block one a menu.
 
    This lives here rather than in ../presence.ts because the direction cannot be
    read when a presence factory runs. createPresenceComponent calls the factory
@@ -338,11 +287,11 @@ export const menuCss = `
    final position mid-reveal. 32px is headroom over what shadow16 needs: a blur
    spreads a shadow by about its own length past the offset edge, so its key
    term, 0 8px 16px, reaches about 24px below the border box and 16px to either
-   side, and its ambient term about 2px all round.
+   side.
 
-   The close is not here. It is a bare 83ms fade with no transform, and it has
-   to hold the surface mounted while it runs, which only a presence component
-   can do -- ../presence.ts keeps it.
+   The close is not here. It is a bare 83ms fade that has to hold the surface
+   mounted while it runs, which only a presence component can do --
+   ../presence.ts keeps it.
    https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/dxaml/lib/MenuPopupThemeTransition_Partial.h#L23-L24
    https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/dxaml/lib/MenuFlyout_Partial.cpp#L253
    https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/dxaml/lib/MenuFlyoutSubItem_Partial.cpp#L741
@@ -391,9 +340,7 @@ export const menuCss = `
 }
 
 /* The reveal moves and resizes the surface, so it goes when the OS says motion
-   goes. The fade the presence component still runs on close is opacity, which
-   WCAG excludes from motion animation, and Fluent clamps it under the same
-   preference anyway. */
+   goes. The close fade is opacity, which WCAG excludes from motion animation. */
 @media (prefers-reduced-motion: reduce) {
   .fui-MenuPopover.fui-MenuPopover[data-popper-placement] {
     animation-duration: 0.01ms;
