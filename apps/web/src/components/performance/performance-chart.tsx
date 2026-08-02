@@ -11,10 +11,10 @@ import { useLocale } from '../../lib/use-locale';
 import { ChartCalloutTable } from '../charts/chart-callout-table';
 import { useUnclippedChartFrame } from '../charts/chart-frame-styles';
 import { ChartSection } from '../charts/chart-section';
-import { useChartStateStyles } from '../charts/chart-state-styles';
 import { chartTickValues, formatAxisDate, formatCalloutTitle } from '../charts/dashboard-time';
 import type { ChartSeries } from '../charts/series-legends';
 import { useElementSize } from '../charts/use-element-size';
+import { EmptyStateLine } from '../ui/empty-state';
 import { ScrollArea } from '../ui/scroll-area';
 
 const { makeStyles } = fluentComponents;
@@ -78,7 +78,6 @@ export function PerformanceChartSection({ chart, hidden, onHiddenChange, title }
 
 function PerformanceChart({ chart, hidden }: { chart: PerformanceChartModel; hidden: Set<string> }) {
   const { t } = useTranslation();
-  const stateStyles = useChartStateStyles();
   const chartStyles = usePerformanceChartStyles();
   const chartRootStyles = useUnclippedChartFrame();
   const [host, setHost] = useState<HTMLDivElement | null>(null);
@@ -99,7 +98,7 @@ function PerformanceChart({ chart, hidden }: { chart: PerformanceChartModel; hid
         title={formatCalloutTitle(props.x, labelByTime, chart.range, locale)}
       />, [chart.details, chart.range, entryByLegend, labelByTime, locale]);
   const plotHeight = Math.max(0, size.height - chartMargins.top - chartMargins.bottom);
-  return <div className={`${chartStyles.root} h-[320px] min-w-0 w-full`} ref={setHost}>{size.width < 120 ? null : visibleData.lineChartData?.length ? <LineChart styles={chartRootStyles} customDateTimeFormatter={date => formatAxisDate(date, chart.range, locale)} data={visibleData} enablePerfOptimization height={size.height} hideLegend margins={chartMargins} onRenderCalloutPerStack={callout} tickValues={chartTickValues(chart.buckets).map(bucket => bucket.date)} width={size.width} xAxistickSize={-plotHeight} yAxisTickFormat={(value: number) => labelledOnLogAxis(value) ? formatter(value) : ''} yMaxValue={values.length ? Math.max(...values) : undefined} yMinValue={values.length ? Math.min(...values) : undefined} yScaleType="log" /> : <div className={stateStyles.root}>{t('dashboard.performance.empty')}</div>}</div>;
+  return <div className={`${chartStyles.root} h-[320px] min-w-0 w-full`} ref={setHost}>{size.width < 120 ? null : visibleData.lineChartData?.length ? <LineChart styles={chartRootStyles} customDateTimeFormatter={date => formatAxisDate(date, chart.range, locale)} data={visibleData} enablePerfOptimization height={size.height} hideLegend margins={chartMargins} onRenderCalloutPerStack={callout} tickValues={chartTickValues(chart.buckets).map(bucket => bucket.date)} width={size.width} xAxistickSize={-plotHeight} yAxisTickFormat={(value: number) => labelledOnLogAxis(value) ? formatter(value) : ''} yMaxValue={values.length ? Math.max(...values) : undefined} yMinValue={values.length ? Math.min(...values) : undefined} yScaleType="log" /> : <div className="grid h-full place-items-center"><EmptyStateLine>{t('dashboard.performance.empty')}</EmptyStateLine></div>}</div>;
 }
 
 function PerformanceChartCallout({ data, details, entryByLegend, title }: {

@@ -7,9 +7,9 @@ import { UsageChartCallout } from './usage-callout';
 import { fluentComponents } from '../../fluent';
 import { useLocale } from '../../lib/use-locale';
 import { useUnclippedChartFrame } from '../charts/chart-frame-styles';
-import { useChartStateStyles } from '../charts/chart-state-styles';
 import { chartTickValues, formatAxisDate } from '../charts/dashboard-time';
 import { useElementSize } from '../charts/use-element-size';
+import { EmptyStateLine } from '../ui/empty-state';
 
 const { makeStyles } = fluentComponents;
 
@@ -53,7 +53,6 @@ const chartMargins = { top: 16, right: 20, bottom: 42, left: 54 } as const;
 
 export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: UsageChartModel; valueFormatter: (value: number) => string; visibleLegends: string[] }) {
   const { t } = useTranslation();
-  const chartStateStyles = useChartStateStyles();
   const areaBoundaryStyles = useAreaBoundaryStyles();
   const chartRootStyles = useUnclippedChartFrame();
   const [host, setHost] = useState<HTMLDivElement | null>(null);
@@ -106,7 +105,7 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
 
   return (
     <div className={`${areaBoundaryStyles.root} h-[320px] min-w-0 w-full`} ref={setHost}>
-      {!hasData ? <div className={chartStateStyles.root}>{t('dashboard.usage.empty')}</div>
+      {!hasData ? <div className="grid h-full place-items-center"><EmptyStateLine>{t('dashboard.usage.empty')}</EmptyStateLine></div>
         : chart.plot.form === 'area' ? (
           <AreaChart
             customDateTimeFormatter={dateFormatter}
