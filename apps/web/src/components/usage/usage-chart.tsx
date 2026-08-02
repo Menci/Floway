@@ -13,38 +13,24 @@ import { EmptyStateLine } from '../ui/empty-state';
 
 const { makeStyles } = fluentComponents;
 
-// WinUI ships no chart, so none of this transcribes a XAML dictionary; these
-// are our own reading rules for a plot, and they are ours to state. Every
-// value below is an alpha or a geometry, and the series hues come from a
-// single palette that both colour schemes share, so one declaration serves
-// light and dark alike.
-//
-// Series paint is also what forced colors leaves alone: the UA style sheet
-// gives `svg` `forced-color-adjust: preserve-parent-color`, and Fluent opts
-// only the axis text and gridlines back in with `forcedColorAdjust: 'auto'`.
-// Distinct hues are how a multi-series plot is read, so nothing here opts the
-// series back in either.
+// Distinct hues are how a multi-series plot is read, so the series paint is
+// deliberately left in the UA's `forced-color-adjust: preserve-parent-color`
+// for `svg`; only Fluent's axis text and gridlines opt back in.
 // https://drafts.csswg.org/css-color-adjust-1/#forced-color-adjust-prop
 const useAreaBoundaryStyles = makeStyles({
   root: {
-    // The boundary is what separates one stacked band from the next, so it is
-    // held at full strength in every state. Fluent instead fades a stacked
-    // area's own boundary to 0.3 at rest and restores it to 1 only while the
-    // callout is open, which redraws every outline in the plot on hover.
+    // Fluent fades a stacked area's own boundary to 0.3 at rest and restores it
+    // only while the callout is open, redrawing every outline in the plot on
+    // hover; the boundary separates one band from the next, so hold it at full
+    // strength in every state.
     '& path[id*="-line-"]': { opacity: '1', strokeWidth: '2px' },
-    // Fluent fills a band at 0.7, where two adjacent palette hues meet as
-    // near-solid blocks and the boundary between them stops reading. At 0.42
-    // each band stays a tint of the surface it sits on -- in either scheme --
-    // and the boundary line is the strongest mark in the plot.
+    // At Fluent's 0.7 two adjacent palette hues meet as near-solid blocks and
+    // the boundary between them stops reading; 0.42 keeps each band a tint of
+    // the surface it sits on, in either scheme.
     '& path[id*="-graph-"]': { fillOpacity: '0.42' },
-    // Both forms mark their buckets the same way. Fluent's area form draws no
-    // point until one is hovered, which leaves the bucket count invisible at
-    // rest, so every point is drawn at the radius and stroke the line form's
-    // markers take. The area form's hover and keyboard focus keep Fluent's
-    // fill inversion to colorNeutralBackground1, a token this dashboard's
-    // WinUI layer re-points per scheme; the line form has no inversion of its
-    // own and is marked by the highlight disc Fluent moves under the pointer,
-    // which keeps its own size and is excluded here.
+    // Fluent's area form draws no point until one is hovered, leaving the
+    // bucket count invisible at rest, so both forms mark their buckets alike.
+    // The highlight disc Fluent moves under the pointer keeps its own size.
     '& circle:not([id*="staticHighlightCircle"])': { r: '2px', strokeWidth: '1.5px' },
   },
 });
@@ -68,12 +54,10 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
     <UsageChartCallout chart={chart} labelByTime={labelByTime} point={point} valueFormatter={valueFormatter} />
   ), [chart, labelByTime, valueFormatter]);
 
-  // A callout can outlive the data it described: the chart keeps its own hover
-  // state across a range or view switch and asks for a callout carrying legends
-  // from the dataset that has just been replaced. Such a row no longer exists,
-  // so it is dropped rather than substituted -- a table describing the data
-  // must not name a series the data does not have -- and a callout left with no
-  // rows renders nothing.
+  // The chart keeps its own hover state across a range or view switch, so it
+  // can ask for a callout carrying legends from the dataset it just replaced.
+  // Such a row is dropped rather than substituted -- a table describing the
+  // data must not name a series the data does not have.
   const lineCallout = useCallback((data?: CustomizedCalloutData) => renderCallout(data ? {
     x: data.x,
     rows: data.values.flatMap(value => {
@@ -86,23 +70,17 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
 
   // Fluent emits each stacked band right after its own boundary line, and the
   // band's top edge is that line, so every band paints over the stroke it was
-  // meant to be capped by. The lines are moved to the end of the series group,
-  // which is the paint order the boundary rule above assumes.
+  // meant to be capped by. Moving the lines to the end of the series group is
+  // the paint order the boundary rule above assumes.
   useLayoutEffect(() => {
     if (!host || chart.plot.form !== 'area') return;
     const frame = window.requestAnimationFrame(() => {
       const lines = [...host.querySelectorAll<SVGPathElement>('path[id*="-line-"]')];
-      // Each run starts from the order the previous one left, so the order the
-      // lines are appended in has to be one the DOM cannot already be in --
-      // appending them as found reverses them, and the next run reverses them
-      // back, which flips which colour wins wherever two boundaries coincide.
-      // The series index the id carries is the order that does not move: the
-      // lowest series ends up last and stays on top however this pass finds
-      // them.
-      // Every match is a descendant of a mounted host, so each has the series
-      // group as its parent; the optional call is what the DOM type says, not a
-      // case that arises. It stays a call rather than a throw because a frame
-      // callback runs outside React, where nothing would catch one.
+      // Each run starts from the order the previous one left, so appending them
+      // as found reverses them and the next run reverses them back, flipping
+      // which colour wins wherever two boundaries coincide. Sorting by the
+      // series index the id carries is the fixed point: the lowest series ends
+      // up last and stays on top however this pass finds them.
       for (const line of lines.sort((a, b) => Number.parseInt(b.id, 10) - Number.parseInt(a.id, 10))) line.parentNode?.append(line);
     });
     return () => window.cancelAnimationFrame(frame);
