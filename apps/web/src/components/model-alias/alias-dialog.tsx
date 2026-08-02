@@ -1,6 +1,6 @@
 import { AddRegular, Eye24Regular, Info24Regular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -25,6 +25,7 @@ import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
 import { SectionHeader } from '../ui/section-header';
 import { SettingsCard, SettingsExpander, SettingsSwitch } from '../ui/settings-card';
+import { useDiscardGuard } from '../ui/use-discard-guard';
 import { MODEL_KINDS } from '@floway-dev/protocols/common';
 
 const { Button, DialogActions, DialogTitle, Field, Option, Text } = fluentComponents;
@@ -70,6 +71,8 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
   const catalog = useMemo(() => indexCatalog(models), [models]);
   const automaticMetadata = useMemo(() => computeAnnouncedMetadata(targets, kind, catalog), [catalog, kind, targets]);
   const targetIds = useMemo(() => realModelIdsOfKind(models, kind), [kind, models]);
+  const close = useCallback(() => onOpenChange(false), [onOpenChange]);
+  const { discardConfirmation, requestClose } = useDiscardGuard({ onClose: close, values });
   const aliasWarnings = computeAliasWarnings({ name: values.name.trim(), targets }, models === null ? null : catalog);
 
   const changeKind = (next: ModelKind) => {
@@ -106,13 +109,13 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
     }
   };
 
-  return <DialogShell
+  return <>{discardConfirmation}<DialogShell
     maxWidth="720px"
     open={open}
-    onOpenChange={(_, data) => !saving && onOpenChange(data.open)}
+    onOpenChange={(_, data) => { if (!data.open && !saving) requestClose(); }}
     onSubmit={() => void handleSubmit(save)()}
     title={<DialogTitle>{record ? t('dashboard.modelAliases.dialog.editTitle', { name: record.name }) : t('dashboard.modelAliases.dialog.createTitle')}</DialogTitle>}
-    actions={<DialogActions><Button disabled={saving} onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button><Button appearance="primary" disabledFocusable={saving} type="submit">{t('dashboard.modelAliases.actions.save')}</Button></DialogActions>}
+    actions={<DialogActions><Button disabled={saving} onClick={requestClose}>{t('common.cancel')}</Button><Button appearance="primary" disabledFocusable={saving} type="submit">{t('dashboard.modelAliases.actions.save')}</Button></DialogActions>}
   >
     <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
       <Controller control={control} name="name" render={({ field }) => <Field required label={t('dashboard.modelAliases.form.name')} validationMessage={errors.name?.message ? t(errors.name.message) : undefined} validationState={errors.name ? 'error' : undefined}><Input {...field} className="font-mono" disabled={saving} placeholder={t('dashboard.modelAliases.form.namePlaceholder')} /></Field>} />
@@ -149,5 +152,5 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
       icon={<Eye24Regular />}
     />
     {serverError && <OutcomeMessageBar onDismiss={() => setServerError(null)}>{serverError}</OutcomeMessageBar>}
-  </DialogShell>;
+  </DialogShell></>;
 }

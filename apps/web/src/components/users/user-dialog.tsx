@@ -1,6 +1,6 @@
 import { PersonKey24Regular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -13,6 +13,7 @@ import { Input } from '../ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
 import { SettingsCard, SettingsSwitch } from '../ui/settings-card';
+import { useDiscardGuard } from '../ui/use-discard-guard';
 import { UpstreamAccessControl } from '../upstreams/upstream-access-control';
 import { refineUpstreamAccess } from '../upstreams/upstream-access-validation';
 
@@ -76,6 +77,8 @@ export function UserDialog(props: UserDialogProps) {
     });
   const values = useWatch({ control }) as UserFormValues;
   const adminLocked = props.mode === 'edit' && (props.user.id === 1 || props.user.id === actorId);
+  const close = useCallback(() => onOpenChange(false), [onOpenChange]);
+  const { discardConfirmation, requestClose } = useDiscardGuard({ onClose: close, values });
 
   const save = async (form: UserFormValues) => {
     // disabledFocusable leaves the submit button submittable while saving, so this guard is what makes the second press inert.
@@ -116,18 +119,18 @@ export function UserDialog(props: UserDialogProps) {
   };
 
   return (
-    <DialogShell
+    <>{discardConfirmation}<DialogShell
       maxWidth="720px"
       open={props.open}
       actions={
         <DialogActions>
-          <Button disabled={saving} onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
+          <Button disabled={saving} onClick={requestClose}>{t('common.cancel')}</Button>
           <Button appearance="primary" disabledFocusable={saving} type="submit">
             {mode === 'create' ? t('dashboard.users.actions.create') : t('dashboard.users.actions.save')}
           </Button>
         </DialogActions>
       }
-      onOpenChange={(_, data) => !saving && onOpenChange(data.open)}
+      onOpenChange={(_, data) => { if (!data.open && !saving) requestClose(); }}
       onSubmit={() => void handleSubmit(save)()}
       title={<DialogTitle>{props.mode === 'create'
         ? t('dashboard.users.dialog.createTitle')
@@ -191,7 +194,7 @@ export function UserDialog(props: UserDialogProps) {
         <MessageBar intent="info"><MessageBarBody>{t('dashboard.users.createdDefaultKey')}</MessageBarBody></MessageBar>
       )}
       {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
-    </DialogShell>
+    </DialogShell></>
   );
 }
 

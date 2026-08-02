@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMemo, useState } from 'react';
-import { Controller, useForm } from 'react-hook-form';
+import { useCallback, useMemo, useState } from 'react';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 
@@ -11,6 +11,7 @@ import { DialogShell } from '../ui/dialog-shell';
 import { Input } from '../ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
+import { useDiscardGuard } from '../ui/use-discard-guard';
 
 const { Button, DialogActions, DialogTitle, Field } = fluentComponents;
 
@@ -40,7 +41,11 @@ export function PasswordDialog({ onOpenChange, open, onSaved, user }: {
     resolver: zodResolver(schema),
     defaultValues: { password: '', confirmation: '' },
   });
-  const save = async (values: PasswordFormValues) => {
+  // useWatch is typed DeepPartial, but both fields have a default.
+  const values = useWatch({ control }) as PasswordFormValues;
+  const close = useCallback(() => onOpenChange(false), [onOpenChange]);
+  const { discardConfirmation, requestClose } = useDiscardGuard({ onClose: close, values });
+  const save = async (form: PasswordFormValues) => {
     // disabledFocusable leaves the submit button able to resubmit the form, so the guard is what makes a second press inert.
     if (saving) return;
     setSaving(true);
@@ -49,7 +54,7 @@ export function PasswordDialog({ onOpenChange, open, onSaved, user }: {
       const handle = toasts.start(t('dashboard.users.toast.password.pending', { username: user.username }));
       const result = await callApi(() => api.api.users[':id'].$patch({
         param: { id: String(user.id) },
-        json: { password: values.password },
+        json: { password: form.password },
       }));
       if (result.error) {
         handle.settle();
@@ -65,15 +70,15 @@ export function PasswordDialog({ onOpenChange, open, onSaved, user }: {
   };
 
   return (
-    <DialogShell
+    <>{discardConfirmation}<DialogShell
       open={open}
       actions={<DialogActions>
-        <Button disabled={saving} onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
+        <Button disabled={saving} onClick={requestClose}>{t('common.cancel')}</Button>
         <Button appearance="primary" disabledFocusable={saving} type="submit">
           {t('dashboard.users.actions.save')}
         </Button>
       </DialogActions>}
-      onOpenChange={(_, data) => !saving && onOpenChange(data.open)}
+      onOpenChange={(_, data) => { if (!data.open && !saving) requestClose(); }}
       onSubmit={() => void handleSubmit(save)()}
       title={<DialogTitle>{t('dashboard.users.dialog.passwordTitle', { username: user.username })}</DialogTitle>}
     >
@@ -96,6 +101,6 @@ export function PasswordDialog({ onOpenChange, open, onSaved, user }: {
         </Field>
       )} />
       {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
-    </DialogShell>
+    </DialogShell></>
   );
 }

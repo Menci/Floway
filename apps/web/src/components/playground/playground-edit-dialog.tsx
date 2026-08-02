@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { PlaygroundMessage } from './request';
 import { fluentComponents } from '../../fluent';
 import { DialogShell } from '../ui/dialog-shell';
 import { Input, Textarea } from '../ui/fluent-form-controls';
+import { useDiscardGuard } from '../ui/use-discard-guard';
 
 const { Button, DialogActions, DialogTitle, Field } = fluentComponents;
 
@@ -26,17 +27,19 @@ export function PlaygroundEditDialog({ imageEnabled, message, onOpenChange, onSa
   const { t } = useTranslation();
   const [text, setText] = useState(message.text);
   const [imageUrl, setImageUrl] = useState(message.imageUrl ?? '');
+  const close = useCallback(() => onOpenChange(false), [onOpenChange]);
+  const { discardConfirmation, requestClose } = useDiscardGuard({ onClose: close, values: { imageUrl, text } });
 
   return (
-    <DialogShell
+    <>{discardConfirmation}<DialogShell
       open={open}
       actions={<DialogActions>
-        <Button onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
+        <Button onClick={requestClose}>{t('common.cancel')}</Button>
         <Button appearance="primary" disabled={!text.trim() && !imageUrl.trim()} type="submit">
           {t('dashboard.playground.actions.save')}
         </Button>
       </DialogActions>}
-      onOpenChange={(_, data) => onOpenChange(data.open)}
+      onOpenChange={(_, data) => { if (!data.open) requestClose(); }}
       onSubmit={() => onSave({ imageUrl, text })}
       title={<DialogTitle>{t('dashboard.playground.edit.title')}</DialogTitle>}
     >
@@ -48,6 +51,6 @@ export function PlaygroundEditDialog({ imageEnabled, message, onOpenChange, onSa
           <Input type="url" value={imageUrl} placeholder={t('dashboard.playground.imagePlaceholder')} onChange={(_, data) => setImageUrl(data.value)} />
         </Field>
       )}
-    </DialogShell>
+    </DialogShell></>
   );
 }

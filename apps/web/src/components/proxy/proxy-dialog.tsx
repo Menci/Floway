@@ -26,8 +26,6 @@ import type { ProxyConfig } from '@floway-dev/proxy/proxy-config';
 
 const { Button, DialogActions, DialogTitle } = fluentComponents;
 
-const proxyDraftSignature = (values: ProxyFormValues) => JSON.stringify(values);
-
 const proxyDialogDefaults = (record: ProxyRecord | null): ProxyFormValues => {
   if (record === null) {
     return {
@@ -75,7 +73,6 @@ export function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
   const toasts = useOutcomeToasts();
   const [editingId] = useState(() => record?.id ?? null);
   const [defaultValues] = useState(() => proxyDialogDefaults(record));
-  const [initialDraft] = useState(() => proxyDraftSignature(defaultValues));
   const {
     clearErrors,
     control,
@@ -94,10 +91,7 @@ export function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
   const urlInput = proxyDraftUrl(values);
   const dialTimeout = parseDialTimeoutInput(values.dialTimeout);
   const close = useCallback(() => onOpenChange(false), [onOpenChange]);
-  const { discardConfirmation, requestClose } = useDiscardGuard({
-    dirty: initialDraft !== proxyDraftSignature(values),
-    onClose: close,
-  });
+  const { discardConfirmation, requestClose } = useDiscardGuard({ onClose: close, values });
   const clearDiagnostics = useCallback(() => {
     setSaveError(null);
     setTestResult(null);
