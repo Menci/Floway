@@ -3,7 +3,7 @@ import { Trans, useTranslation } from 'react-i18next';
 import 'prismjs';
 import 'prismjs/components/prism-bash';
 
-import { apiDocsEndpoints, apiDocsGroups, authCurlExample } from './api-docs-data';
+import { apiDocsEndpoints, apiDocsGroups, authCurlExample } from './data';
 import { fluentComponents } from '../../fluent';
 import { CodeBlock } from '../ui/code-block';
 import { HttpMethodBadge } from '../ui/http-badge';

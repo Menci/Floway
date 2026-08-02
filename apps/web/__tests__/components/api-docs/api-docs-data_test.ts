@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { apiDocsEndpoints, apiDocsGroups, authCurlExample } from '../../../src/components/api-docs/api-docs-data';
+import { apiDocsEndpoints, apiDocsGroups, authCurlExample } from '../../../src/components/api-docs/data';
 import { PUBLIC_DATA_PLANE_ROUTES } from '@floway-dev/protocols/common';
 
 describe('API Docs catalog', () => {

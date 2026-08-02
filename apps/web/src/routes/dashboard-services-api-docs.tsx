@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
-import { ApiDocsContent } from '../components/api-docs/api-docs-content';
+import { ApiDocsContent } from '../components/api-docs/content';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 
 export default function DashboardServicesApiDocs() {
