@@ -17,8 +17,14 @@
 // page change may legitimately replace as well, so neither is derived from the
 // other.
 //
-// `viewTransition` asks React Router to commit the location inside
-// `document.startViewTransition`, which is what gives the outgoing view a
-// snapshot to animate out of. A browser without the API runs the callback
-// straight through and the swap is instant.
-export const pageNavigation = { viewTransition: true } as const;
+// The mark rides on the history entry rather than on the navigation call,
+// because it has to survive the trip: what reads it is the render that follows
+// the commit, and by then the call is over. It also means the browser's back
+// button is answered correctly -- returning to an entry that was reached by a
+// page change is itself a page change, and the entry remembers that.
+const PAGE_CHANGE = 'flowayPageChange';
+export const pageNavigation = { state: { [PAGE_CHANGE]: true } } as const;
+
+/** Whether the history entry a location carries was reached by a page change. */
+export const isPageChange = (state: unknown): boolean =>
+  typeof state === 'object' && state !== null && PAGE_CHANGE in state;

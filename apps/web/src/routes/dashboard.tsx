@@ -1,11 +1,11 @@
 import { NavigationRegular } from '@fluentui/react-icons';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Navigate,
-  Outlet,
   redirect,
   useMatches,
+  useOutlet,
   useOutletContext,
 } from 'react-router';
 
@@ -13,6 +13,7 @@ import type { Route } from './+types/dashboard';
 import type { AuthUser } from '../api/auth';
 import { getSessionToken } from '../auth/session';
 import { FlowayLogo } from '../components/logo';
+import { usePageFrames } from '../components/page-frames';
 import { Sidebar } from '../components/sidebar/sidebar';
 import { OutcomeToastProvider } from '../components/ui/outcome-toast';
 import { ScrollArea } from '../components/ui/scroll-area';
@@ -20,7 +21,7 @@ import { fluentComponents } from '../fluent';
 import { isDashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
 import { prefersReducedMotion } from '../lib/reduced-motion';
 import { useAuthStore } from '../stores/auth-store';
-import { PAGE_ENTER_EASING, PAGE_ENTER_MS, PAGE_ENTER_OFFSET_PX } from '../winui/motion';
+import { PAGE_ENTER_EASING, PAGE_ENTER_MS, PAGE_ENTER_OFFSET_PX, PAGE_LEAVE_MS } from '../winui/motion';
 
 const { Button, DrawerBody, OverlayDrawer } = fluentComponents;
 
@@ -42,9 +43,18 @@ export function meta({}: Route.MetaArgs) {
   return [{ title: 'Dashboard | Floway' }];
 }
 
+// The signed-in check is its own component so that everything below it can take
+// a user rather than a user-or-null. A hook cannot run behind a condition, so
+// with one component the guard would have had to sit under every hook and each
+// of them would have had to answer for a state the page never renders in.
 export default function Dashboard({}: Route.ComponentProps) {
-  const { t } = useTranslation();
   const user = useAuthStore(state => state.user);
+  if (!user) return <Navigate replace to="/" />;
+  return <DashboardShell user={user} />;
+}
+
+function DashboardShell({ user }: { user: AuthUser }) {
+  const { t } = useTranslation();
   const [navigationOpen, setNavigationOpen] = useState(false);
   // The entrance, started on the element rather than declared in the sheet.
   // ../winui/page-transition.css.ts says why it cannot be declared; this is the
@@ -58,7 +68,7 @@ export default function Dashboard({}: Route.ComponentProps) {
   // not. Nothing here goes through React state and nothing waits a turn on
   // purpose. Both were tried and both put frames between the page appearing and
   // the page moving.
-  const scrollerRef = useRef<HTMLDivElement>(null);
+  const firstFrameRef = useRef<HTMLDivElement>(null);
   const entranceStarted = useRef(false);
   useLayoutEffect(() => {
     // Once, and the guard is the point rather than a precaution. StrictMode
@@ -70,8 +80,7 @@ export default function Dashboard({}: Route.ComponentProps) {
     // invocation where the effect body does not.
     if (entranceStarted.current) return;
     if (prefersReducedMotion()) return;
-    // ScrollArea hands out its viewport; the frame is the host around it.
-    const frame = scrollerRef.current?.parentElement;
+    const frame = firstFrameRef.current;
     if (!frame) return;
     entranceStarted.current = true;
     // The offset is put on the element here rather than in the sheet, and both
@@ -89,8 +98,30 @@ export default function Dashboard({}: Route.ComponentProps) {
     );
   }, []);
   const workspace = useMatches().some(match => isDashboardWorkspaceHandle(match.handle));
-
-  if (!user) return <Navigate replace to="/" />;
+  // Memoised because `useOutlet` keys its element on the context object: a new
+  // one every render would hand back a new element every render, and the held
+  // page is one of those elements.
+  const outletContext = useMemo(() => ({ user } satisfies DashboardOutletContext), [user]);
+  const outlet = useOutlet(outletContext);
+  // The scroller belongs to the page rather than to the shell, so a held page
+  // keeps its own scroll position and its own height rule while it leaves.
+  //
+  // Only a workspace page is confined to the scroller's height. Every other
+  // page is height-by-content and scrolls; the scroller's own content box
+  // already carries the minimum that fills the viewport, and it is the one box
+  // in this chain whose parent has a height for a percentage to resolve
+  // against.
+  const page = <ScrollArea
+    axes="vertical"
+    className="h-full min-h-0"
+    contentClassName={workspace ? 'h-full' : 'min-h-full'}
+    noTabIndex
+  >
+    <div className={workspace
+      ? 'h-full min-h-0 p-[22px_var(--floway-page-inset)_var(--floway-page-inset)] max-[680px]:p-4'
+      : 'p-[22px_var(--floway-page-inset)_var(--floway-page-inset)] max-[680px]:p-4'}>{outlet}</div>
+  </ScrollArea>;
+  const frames = usePageFrames(page, PAGE_LEAVE_MS);
 
   return (
     <OutcomeToastProvider>
@@ -113,30 +144,25 @@ export default function Dashboard({}: Route.ComponentProps) {
           />
           <FlowayLogo />
         </header>
-        {/* The scroller, not the `<main>` inside it, is what the page
-            transition animates: it is the one box in this chain that is always
-            exactly the viewport's height, so the snapshot the browser takes of
-            it is bounded however long the page it holds turns out to be. See
-            ../winui/page-transition.css.ts, which also says why the entrance
-            waits for `entered` rather than being declared at mount. */}
-        <ScrollArea
-          axes="vertical"
-          className="min-h-0 floway-page-transition"
-          contentClassName={workspace ? 'h-full' : 'min-h-full'}
-          noTabIndex
-          ref={scrollerRef}
-        >
-          {/* Only a workspace page is confined to the scroller's height. Every
-              other page is height-by-content and scrolls; the scroller's own
-              content box already carries the minimum that fills the viewport,
-              and it is the one box in this chain whose parent has a height for
-              a percentage to resolve against. */}
-          <main id="dashboard-main" tabIndex={-1} className={workspace
-            ? 'h-full min-h-0 p-[22px_var(--floway-page-inset)_var(--floway-page-inset)] max-[680px]:p-4'
-            : 'p-[22px_var(--floway-page-inset)_var(--floway-page-inset)] max-[680px]:p-4'}>
-            <Outlet context={{ user } satisfies DashboardOutletContext} />
-          </main>
-        </ScrollArea>
+        {/* Two pages can be on screen at once, so the scroller is drawn per
+            page and they are stacked in one grid cell: the page that is
+            leaving under the page that is arriving. ../components/page-frames.tsx
+            says how the leaving one goes on rendering after the router has
+            moved past it, and ../winui/page-transition.css.ts states the
+            motion. A single page is the ordinary case and costs one extra
+            div. */}
+        <div className="grid grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] min-h-0">
+          {frames.map(frame => <div
+            aria-hidden={frame.leaving || undefined}
+            className={`col-start-1 row-start-1 min-h-0 ${frame.leaving ? 'floway-page-leaving' : frame.id > 0 ? 'floway-page-entering' : ''}`}
+            id={frame.leaving ? undefined : 'dashboard-main'}
+            role={frame.leaving ? undefined : 'main'}
+            inert={frame.leaving}
+            key={frame.id}
+            ref={frame.id === 0 && !frame.leaving ? firstFrameRef : undefined}
+            tabIndex={frame.leaving ? undefined : -1}
+          >{frame.node}</div>)}
+        </div>
       </div>
       <OverlayDrawer
         aria-label={t('dashboard.nav.label')}
