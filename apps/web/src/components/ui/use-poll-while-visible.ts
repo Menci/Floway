@@ -2,9 +2,8 @@ import { useEffect } from 'react';
 
 import type { RefreshControl } from './use-refresh';
 
-// Ticks are skipped while the tab is hidden, and the return to it pays for that
-// with one FOREGROUND refresh -- somebody is looking now, so a failure caused by
-// coming back is one they should see.
+// Returning to the tab refreshes in the foreground, not the background: somebody
+// is looking now, so a failure on the catch-up refresh is one they should see.
 export const usePollWhileVisible = (refresh: RefreshControl['poll'], intervalMs = 60_000): void => {
   useEffect(() => {
     const onVisibility = () => {
