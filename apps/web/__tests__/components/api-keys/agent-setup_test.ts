@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildAgentClaudeSnippet, buildAgentCodexSnippet, filterModelOptions, modelOptions } from '../../../src/components/api-keys/agent-setup-card';
+import { buildAgentClaudeSnippet, buildAgentCodexSnippet } from '../../../src/components/api-keys/agent-setup';
+import { filterModelOptions, modelOptions } from '../../../src/components/api-keys/agent-setup-models';
 import { agentSetupCommand } from '../../../src/components/api-keys/use-agent-setup';
 import { chatModel } from '../../api/model-fixture';
 

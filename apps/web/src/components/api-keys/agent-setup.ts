@@ -71,3 +71,60 @@ export const codexWindowsCredentialSnippet = (apiKey: string) => {
     `[IO.File]::WriteAllText((Join-Path $codexHome "floway-token"), ${quoted}, (New-Object Text.UTF8Encoding($false)))`,
   ].join('\n');
 };
+
+// Claude uses empty strings to suppress commit/PR attribution and false to
+// suppress session links.
+// Ref: https://code.claude.com/docs/en/settings#attribution-settings
+const claudeAttributionOptOut = { commit: '', pr: '', sessionUrl: false } as const;
+
+export const buildAgentClaudeSnippet = (
+  origin: string,
+  apiKey: string,
+  settings: AgentSetupConfiguration['claudeCode'],
+) => JSON.stringify({
+  env: {
+    ANTHROPIC_BASE_URL: origin,
+    ANTHROPIC_AUTH_TOKEN: apiKey,
+    ...(settings.model ? { ANTHROPIC_MODEL: settings.model } : {}),
+    ...(settings.defaultFableModel ? { ANTHROPIC_DEFAULT_FABLE_MODEL: settings.defaultFableModel } : {}),
+    ...(settings.defaultOpusModel ? { ANTHROPIC_DEFAULT_OPUS_MODEL: settings.defaultOpusModel } : {}),
+    ...(settings.defaultSonnetModel ? { ANTHROPIC_DEFAULT_SONNET_MODEL: settings.defaultSonnetModel } : {}),
+    ...(settings.defaultHaikuModel ? { ANTHROPIC_DEFAULT_HAIKU_MODEL: settings.defaultHaikuModel } : {}),
+    ...(settings.modelDiscovery ? { CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: '1' } : {}),
+  },
+  ...(settings.effortLevel ? { effortLevel: settings.effortLevel } : {}),
+  ...(settings.cleanupPeriodDays === null ? {} : { cleanupPeriodDays: settings.cleanupPeriodDays }),
+  ...(settings.optOutAiAttribution ? { attribution: claudeAttributionOptOut } : {}),
+}, null, 2);
+
+// JSON string literals are valid TOML basic strings, so JSON.stringify keeps
+// opaque model values lossless. https://toml.io/en/v1.0.0#string
+// x-openai-actor-authorization enables Codex-owned web search and image generation;
+// command auth also enables live model refresh:
+// https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/model-provider-info/src/lib.rs#L396-L408
+// https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/ext/web-search/src/extension.rs#L41-L46
+// https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/ext/image-generation/src/extension.rs#L38-L45
+// https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/models-manager/src/manager.rs#L413-L415
+// Apps is ChatGPT-only; standalone web search requires explicit warning suppression:
+// https://github.com/openai/codex/blob/24e9b849fad8f506971dfa0313dbdea8abd90112/codex-rs/features/src/lib.rs#L382-L384
+// https://github.com/openai/codex/blob/24e9b849fad8f506971dfa0313dbdea8abd90112/codex-rs/features/src/lib.rs#L901-L905
+// https://github.com/openai/codex/blob/24e9b849fad8f506971dfa0313dbdea8abd90112/codex-rs/features/src/lib.rs#L1393-L1439
+export const buildAgentCodexSnippet = (origin: string, config: AgentSetupConfiguration['codex']) => [
+  ...(config.model ? [`model = ${JSON.stringify(config.model)}`] : []),
+  ...(config.reasoningEffort ? [`model_reasoning_effort = ${JSON.stringify(config.reasoningEffort)}`] : []),
+  'model_provider = "floway"',
+  'suppress_unstable_features_warning = true',
+  '',
+  '[model_providers.floway]',
+  'name = "Floway"',
+  `base_url = ${JSON.stringify(`${origin}/azure-api.codex`)}`,
+  'auth = { command = "sh", args = ["-c", "cat \\"${CODEX_HOME:-$HOME/.codex}/floway-token\\""] } # Linux & macOS',
+  '# auth = { command = "powershell", args = ["-NoProfile", "-Command", "$h = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME \'.codex\' }; [IO.File]::ReadAllText((Join-Path $h \'floway-token\'))"] } # Windows: uncomment and remove the line above',
+  'wire_api = "responses"',
+  'supports_websockets = true',
+  'http_headers = { "x-openai-actor-authorization" = "1" }',
+  '',
+  '[features]',
+  'apps = false',
+  'standalone_web_search = true',
+].join('\n');

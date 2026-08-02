@@ -13,6 +13,8 @@ import 'prismjs/components/prism-toml';
 
 import {
   applyLocalAgentSetupChanges,
+  buildAgentClaudeSnippet,
+  buildAgentCodexSnippet,
   cloneAgentSetupConfiguration,
   codexUnixCredentialSnippet,
   codexWindowsCredentialSnippet,
@@ -22,7 +24,7 @@ import {
   type AgentSetupLease,
   type AgentSetupPlatform,
 } from './agent-setup';
-import { buildAgentModelOptions, rankAgentSetupModels, type ClaudePicker } from './agent-setup-models';
+import { filterModelOptions, modelOptions, rankAgentSetupModels, type ClaudePicker } from './agent-setup-models';
 import { agentSetupCommand, useAgentSetup } from './use-agent-setup';
 import type { ApiKey, ControlPlaneModel } from '../../api/types';
 import claudeIconUrl from '../../assets/claude-color.svg';
@@ -49,11 +51,6 @@ const CLAUDE_MODEL_GRID_CLASS = 'grid gap-3 grid-cols-[repeat(5,minmax(0,1fr))] 
 // cleanupPeriodDays is a numeric top-level Claude Code setting.
 // https://code.claude.com/docs/en/settings#available-settings
 const claudeCleanupPeriods = [180, 365, 99999] as const satisfies readonly NonNullable<AgentSetupConfiguration['claudeCode']['cleanupPeriodDays']>[];
-
-// Claude uses empty strings to suppress commit/PR attribution and false to
-// suppress session links.
-// Ref: https://code.claude.com/docs/en/settings#attribution-settings
-const claudeAttributionOptOut = { commit: '', pr: '', sessionUrl: false } as const;
 
 export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initialLease, models, selectedKey }: {
   initialApiKeyId: string | null;
@@ -207,58 +204,6 @@ function AgentConfigSnippets({ agent, apiKey, clipboard, configuration, onPlatfo
   </div>;
 }
 
-export const buildAgentClaudeSnippet = (
-  origin: string,
-  apiKey: string,
-  settings: AgentSetupConfiguration['claudeCode'],
-) => JSON.stringify({
-  env: {
-    ANTHROPIC_BASE_URL: origin,
-    ANTHROPIC_AUTH_TOKEN: apiKey,
-    ...(settings.model ? { ANTHROPIC_MODEL: settings.model } : {}),
-    ...(settings.defaultFableModel ? { ANTHROPIC_DEFAULT_FABLE_MODEL: settings.defaultFableModel } : {}),
-    ...(settings.defaultOpusModel ? { ANTHROPIC_DEFAULT_OPUS_MODEL: settings.defaultOpusModel } : {}),
-    ...(settings.defaultSonnetModel ? { ANTHROPIC_DEFAULT_SONNET_MODEL: settings.defaultSonnetModel } : {}),
-    ...(settings.defaultHaikuModel ? { ANTHROPIC_DEFAULT_HAIKU_MODEL: settings.defaultHaikuModel } : {}),
-    ...(settings.modelDiscovery ? { CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: '1' } : {}),
-  },
-  ...(settings.effortLevel ? { effortLevel: settings.effortLevel } : {}),
-  ...(settings.cleanupPeriodDays === null ? {} : { cleanupPeriodDays: settings.cleanupPeriodDays }),
-  ...(settings.optOutAiAttribution ? { attribution: claudeAttributionOptOut } : {}),
-}, null, 2);
-
-// JSON string literals are valid TOML basic strings, so JSON.stringify keeps
-// opaque model values lossless. https://toml.io/en/v1.0.0#string
-// x-openai-actor-authorization enables Codex-owned web search and image generation;
-// command auth also enables live model refresh:
-// https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/model-provider-info/src/lib.rs#L396-L408
-// https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/ext/web-search/src/extension.rs#L41-L46
-// https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/ext/image-generation/src/extension.rs#L38-L45
-// https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/models-manager/src/manager.rs#L413-L415
-// Apps is ChatGPT-only; standalone web search requires explicit warning suppression:
-// https://github.com/openai/codex/blob/24e9b849fad8f506971dfa0313dbdea8abd90112/codex-rs/features/src/lib.rs#L382-L384
-// https://github.com/openai/codex/blob/24e9b849fad8f506971dfa0313dbdea8abd90112/codex-rs/features/src/lib.rs#L901-L905
-// https://github.com/openai/codex/blob/24e9b849fad8f506971dfa0313dbdea8abd90112/codex-rs/features/src/lib.rs#L1393-L1439
-export const buildAgentCodexSnippet = (origin: string, config: AgentSetupConfiguration['codex']) => [
-  ...(config.model ? [`model = ${JSON.stringify(config.model)}`] : []),
-  ...(config.reasoningEffort ? [`model_reasoning_effort = ${JSON.stringify(config.reasoningEffort)}`] : []),
-  'model_provider = "floway"',
-  'suppress_unstable_features_warning = true',
-  '',
-  '[model_providers.floway]',
-  'name = "Floway"',
-  `base_url = ${JSON.stringify(`${origin}/azure-api.codex`)}`,
-  'auth = { command = "sh", args = ["-c", "cat \\"${CODEX_HOME:-$HOME/.codex}/floway-token\\""] } # Linux & macOS',
-  '# auth = { command = "powershell", args = ["-NoProfile", "-Command", "$h = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME \'.codex\' }; [IO.File]::ReadAllText((Join-Path $h \'floway-token\'))"] } # Windows: uncomment and remove the line above',
-  'wire_api = "responses"',
-  'supports_websockets = true',
-  'http_headers = { "x-openai-actor-authorization" = "1" }',
-  '',
-  '[features]',
-  'apps = false',
-  'standalone_web_search = true',
-].join('\n');
-
 function AgentTab({ icon, label, value }: { icon: string; label: string; value: Agent }) {
   return <Tab value={value}><span className="inline-flex items-center gap-2"><img alt="" className="h-4 w-4" src={icon} />{label}</span></Tab>;
 }
@@ -404,17 +349,3 @@ function ModelSelect({ family, label, models, onChange, picker, value }: {
     </Combobox>
   </Field>;
 }
-
-interface ModelOption { value: string; label: string }
-
-export const filterModelOptions = (options: readonly ModelOption[], query: string) => {
-  const needle = query.trim().toLocaleLowerCase();
-  if (!needle) return options;
-  return options.filter(option =>
-    option.label.toLocaleLowerCase().includes(needle)
-    || option.value.toLocaleLowerCase().includes(needle));
-};
-
-export const modelOptions = (models: ControlPlaneModel[], family: 'claude' | 'codex', picker: ClaudePicker) =>
-  buildAgentModelOptions(models, family === 'claude' ? { family, picker } : { family })
-    .map(option => ({ value: option.value, label: option.publicModelId }));
