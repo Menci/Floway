@@ -50,17 +50,11 @@ export const summaryMetrics: UsageMetric[][] = [
 const shortMonthDay = (date: Date, locale: string): string =>
   date.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
 
-// A bucket covers an hour span, so the label names the span rather than its
-// start. `formatRange` on an hour-only format is what makes that reading
-// locale-owned: `2 – 3 PM` under `en-US` and `14–15` under `zh-CN`, where a
-// hand-built `14:00 - 15:00` would impose a 24-hour clock on both.
-//
-// The end is placed on the start's own calendar day, wrapping past midnight,
-// because `formatRange` widens to two full datetimes the moment its endpoints
-// fall on different days -- a bucket crossing midnight would read
-// `8/2/2026, 11 PM – 8/3/2026, 12 AM` in a label that has room for two clock
-// readings. Reversed endpoints are fine: `formatRange` still prints them in
-// the order given.
+// `formatRange` on an hour-only format keeps the span reading locale-owned,
+// where a hand-built `14:00 - 15:00` would impose a 24-hour clock. The end is
+// wrapped onto the start's own calendar day because `formatRange` widens to two
+// full datetimes once its endpoints fall on different days; reversed endpoints
+// still print in the order given.
 const bucketHourRange = (date: Date, spanHours: number, locale: string): string => {
   const end = new Date(date);
   end.setHours((date.getHours() + spanHours) % 24, 0, 0, 0);
@@ -143,10 +137,9 @@ export const buildTokenChart = ({
 
 type PlottedSeries = Array<{ entry: ChartSeries; data: Array<number | null> }>;
 
-// A null is a bucket the metric was not defined in, which is not the reading
-// zero: the point is left out so the curve bridges the gap instead of dipping
-// through it. `markerSize` is per point rather than per chart because the area
-// form states its point radius once, in `pointOptions`.
+// A null bucket is not the reading zero, so its point is left out and the curve
+// bridges the gap instead of dipping through it. `markerSize` is per point
+// because the area form states its radius once, in `pointOptions`.
 const seriesPoints = (
   buckets: ChartBucket[],
   values: Array<number | null>,
@@ -190,11 +183,8 @@ export const buildSearchChart = ({
   const meta = new Map<string, { name?: string; createdAt?: string }>();
   for (const key of search.keys) meta.set(key.id, { name: key.name, createdAt: key.createdAt });
 
-  // Whichever provider recorded a search, the record is real usage and belongs
-  // on the chart. Gating on the currently configured provider would erase the
-  // history of every provider the operator has since switched away from — and
-  // hide the panel entirely once search is turned off, even though the window
-  // still holds the traffic that happened while it was on.
+  // Not gated on the configured provider: that would erase the history of every
+  // provider since switched away from, and hide the panel once search is off.
   for (const record of search.records) {
     const bucket = dashboardBucketKeyForUtcHour(range, record.hour);
     if (!bucketKeys.has(bucket)) continue;
@@ -342,9 +332,8 @@ export const summarizeUsage = (records: DisplayUsageRecord[]): TokenSummary => {
   return summarizeCounters(counters);
 };
 
-// The single derivation from disjoint counters to displayed figures. The
-// summary tiles and the chart callout both read it, so a bucket row and the
-// page total can never disagree about what "total" or "prefill" means.
+// The single derivation from disjoint counters to displayed figures, read by
+// both the summary tiles and the chart callout so they cannot disagree.
 export const summarizeCounters = (counters: TokenCounters): TokenSummary => {
   return {
     requests: counters.requests,
@@ -382,9 +371,6 @@ const emptyCounters = (): TokenCounters => {
   };
 };
 
-// Aggregate token counts routinely exceed the safe integer range, and cost is
-// billed to sub-cent precision, so both stay decimal strings until they reach a
-// chart axis or a formatted label.
 const dim = (record: DisplayUsageRecord, key: BillingMetric): DecimalString => {
   return record.metrics[key] ?? '0';
 };
@@ -466,11 +452,8 @@ export const bucketKeyForCallout = (
   return null;
 };
 
-// The exact labels stay in decimal-string arithmetic right up to the string, so
-// a count past the safe integer range is grouped digit-wise rather than rounded.
-// A compact spelling has no such exactness to keep -- `1.2M` is three
-// significant figures by construction -- so that one crosses into floating point
-// here.
+// A compact spelling is three significant figures by construction, so unlike
+// the exact labels it has no precision to keep and crosses into floating point.
 export const formatCompactDecimalCount = (value: DecimalString, locale: string): string =>
   formatCompactCount(decimalStringToPlottableNumber(value), locale);
 
@@ -509,9 +492,8 @@ export const formatSummaryMetric = (
   }
 };
 
-// Axis-side formatter: the value here is a plotted point, so it has already
-// crossed into floating point and there is no exact decimal left to preserve.
-// Summary tiles use formatUsd and formatDecimalQuantity on the decimal values.
+// Axis-side: the value is a plotted point, so no exact decimal is left to
+// preserve. Summary tiles format the decimal values instead.
 export const formatMetricValue = (value: number, metric: UsageMetric, locale: string): string => {
   const kind = metricConfig[metric].kind;
   if (kind === 'percent') return `${value.toFixed(0)}%`;

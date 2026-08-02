@@ -41,14 +41,10 @@ export interface SearchUsageResponse {
   keys: Array<{ id: string; name: string; createdAt?: string }>;
 }
 
-// Requests are a plain count; everything else is a decimal string, because
-// aggregate token totals exceed the safe integer range and cost is billed to
-// sub-cent precision.
-//
-// Disjoint per-metric counters, exactly as recorded. Nothing derived is stored
-// beside them: a sum kept next to its own addends invites a consumer to
-// recompute it, and decimal strings make that recomputation silently produce a
-// concatenation rather than a type error.
+// Decimal strings, because aggregate token totals exceed the safe integer range
+// and cost is billed to sub-cent precision. Counters stay disjoint: a sum kept
+// beside its own addends invites a recomputation that decimal strings would
+// silently turn into a concatenation rather than a type error.
 export interface TokenCounters {
   requests: number;
   cost: DecimalString | null;
@@ -59,9 +55,8 @@ export interface TokenCounters {
   inputImage: DecimalString;
   outputImage: DecimalString;
 }
-// Every figure the dashboard displays for one counter set. `prompt` is the
-// whole billed prompt side and `output` folds the separately metered image
-// counter in, so no consumer re-derives either.
+// `prompt` is the whole billed prompt side and `output` folds the separately
+// metered image counter in, so no consumer re-derives either.
 export interface TokenSummary {
   requests: number;
   cost: DecimalString | null;
@@ -73,8 +68,7 @@ export interface TokenSummary {
   cacheCreation: DecimalString;
 }
 
-// Token, request and cost figures use stacked areas; percentage rates stay
-// lines so their shared 0–100 scale remains readable.
+// Percentage rates stay lines so their shared 0-100 scale remains readable.
 export type ChartPlot =
   | { form: 'area'; data: ChartProps }
   | { form: 'line'; data: ChartProps };
@@ -86,12 +80,10 @@ interface ChartModelBase {
   range: UsageRange;
 }
 export type TokenChartModel = ChartModelBase & { kind: 'token'; details: Map<string, Map<string, TokenCounters>> };
-// A search chart names the providers whose records it actually plotted, which
-// is a property of the window's data rather than of the current configuration.
+// The providers actually plotted, which is a property of the window's data
+// rather than of the current configuration.
 export type SearchChartModel = ChartModelBase & { kind: 'search'; providers: string[] };
 export type UsageChartModel = TokenChartModel | SearchChartModel;
 
-// One hovered bucket, normalized across the two plot forms so the callout does
-// not care which component produced it.
 export interface CalloutRow { id: string; label: string; color: string; value: number }
 export interface CalloutPoint { x: Date | number | string; rows: CalloutRow[] }

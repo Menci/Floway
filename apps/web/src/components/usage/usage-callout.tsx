@@ -21,8 +21,6 @@ export function UsageChartCallout({ chart, labelByTime, point, valueFormatter }:
     .sort((a, b) => b.value - a.value);
   if (rows.length === 0) return null;
   const title = formatCalloutTitle(point.x, labelByTime, chart.range, locale);
-  // A row whose series has left the dataset is dropped, so the id is asked of
-  // the entry set rather than scanned for once per row.
   const entryIds = new Set(chart.entries.map(entry => entry.id));
   return (
     <ScrollArea axes="horizontal" className="max-w-[min(650px,calc(100vw-48px))] min-w-[220px]" contentClassName="grid gap-1">

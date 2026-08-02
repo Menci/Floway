@@ -70,9 +70,8 @@ export function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
   const structuredUrl = config.host.trim() ? formatProxyUri({ ...config, name: formName.trim() }) : '';
   const urlInput = urlDraft ?? structuredUrl;
   const dialTimeout = parseDialTimeoutInput(dialTimeoutInput);
-  // Nothing is refused until the operator asks to save: every one of these has
-  // a field of its own to say so on, and a form that reddens as it is filled in
-  // says nothing the operator did not already know.
+  // Nothing is refused until the operator asks to save: a form that reddens as
+  // it is filled in says nothing they did not already know.
   const issues = proxyDraftIssues({ config, name: formName, url: urlInput });
   const draftDirty = initialDraft !== proxyDraftSignature(formName, config, urlDraft, dialTimeoutInput);
   const clearDiagnostics = useCallback(() => {
@@ -142,9 +141,8 @@ export function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
     setTestResult(result.error ? { ok: false, error: result.error.message } : result.data);
     setTesting(false);
   }, [dialTimeout, urlInput]);
-  // Testing asks a narrower question than saving: it dials, so it needs a
-  // reachable endpoint and a timeout to dial under, and nothing else the record
-  // would carry.
+  // Testing only dials, so it needs a reachable endpoint and a timeout and
+  // nothing else the record would carry.
   const canTest = issues.url === undefined && issues.host === undefined && issues.port === undefined
     && urlError === null && dialTimeout.error === null;
 

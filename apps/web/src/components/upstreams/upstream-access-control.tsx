@@ -52,10 +52,8 @@ export function UpstreamAccessControl({
   const errorId = useId();
   const rows = useMemo(() => accessRows(available, ids, models), [available, ids, models]);
 
-  // The switch says "this scope picks its own upstreams", not "this scope
-  // reaches nothing". Opening it on an empty selection would state the second
-  // and fail validation before the operator has touched a row, so it opens on
-  // everything the scope can see and is narrowed from there.
+  // Opening on an empty selection would fail validation before the operator has
+  // touched a row, so it opens on everything the scope can see.
   const toggleOverride = useCallback((next: boolean) => {
     onChange({
       override: next,

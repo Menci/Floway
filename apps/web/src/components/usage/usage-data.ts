@@ -17,9 +17,8 @@ export const metricsFromWire = (
   metrics.map(({ metric, quantity }) => [metric, quantity]),
 );
 
-// Each half answers `null` when its fetch failed. A fetch that failed did not
-// report zero usage, and a zeroed chart beside a dismissible bar reads as a
-// quiet gateway.
+// `null` on failure: a failed fetch did not report zero usage, and a zeroed
+// chart beside a dismissible bar reads as a quiet gateway.
 const fetchUsageForView = async (view: UsageView, start: string, end: string, signal?: AbortSignal) => {
   if (view === 'all-by-user') {
     const [usageRes, searchRes] = await Promise.all([

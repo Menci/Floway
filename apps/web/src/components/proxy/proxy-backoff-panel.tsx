@@ -13,9 +13,7 @@ import { useOutcomeToasts } from '../ui/outcome-toast';
 
 const { Button, Text, Tooltip } = fluentComponents;
 
-// A proxy that has entered backoff is not routing, and the operator's first
-// question is how long that lasts. The countdown ticks locally so the panel
-// does not have to refetch once a second.
+// The countdown ticks locally so the panel does not refetch once a second.
 export function ProxyBackoffPanel({ backoffs, onReset, proxyId }: {
   backoffs: readonly BackoffRow[];
   onReset: () => void;
@@ -26,13 +24,12 @@ export function ProxyBackoffPanel({ backoffs, onReset, proxyId }: {
   const toasts = useOutcomeToasts();
   const nowSeconds = useNow(1000) / 1000;
   const [resetError, setResetError] = useState<string | null>(null);
-  // One request at a time, like every other mutation in the app: without it a
-  // second click posts a second reset while the first is still in flight.
+  // Without this a second click posts a second reset while the first is in
+  // flight.
   const [resetting, setResetting] = useState(false);
 
-  // `>=` keeps a row visible through its expiry second, so the countdown's
-  // last tick can render the expiring label instead of the row vanishing
-  // before the delta reaches zero.
+  // `>=` keeps a row visible through its expiry second, so the countdown's last
+  // tick renders instead of the row vanishing before the delta reaches zero.
   const active = backoffs
     .filter(row => row.proxy_id === proxyId && row.expires_at >= nowSeconds)
     .toSorted((left, right) => left.expires_at - right.expires_at);

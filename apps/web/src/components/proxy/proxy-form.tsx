@@ -56,9 +56,8 @@ export function ProxyForm({
 }: ProxyFormProps) {
   const { t } = useTranslation();
   const formKind = formKindFromConfig(config);
-  // A parse failure is the URL field's own, immediate, and outranks the
-  // draft's "still empty" -- there is text in it, and what is wrong is the
-  // text.
+  // A parse failure outranks the draft's "still empty": there is text in the
+  // field, and what is wrong is the text.
   const urlMessage = urlError ?? (issues.url ? t(issues.url) : null);
   const message = (field: keyof ProxyDraftIssues) => issues[field] === undefined ? undefined : t(issues[field]);
   const state = (field: keyof ProxyDraftIssues) => issues[field] === undefined ? undefined : 'error' as const;

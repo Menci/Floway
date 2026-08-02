@@ -85,8 +85,6 @@ const isValidUuid = (s: string): boolean => {
 
 export const orUndef = (v: string): string | undefined => (v === '' ? undefined : v);
 
-// Every field the proxy form can refuse, and the message it refuses with.
-//
 // The form renders these and the dialog's save button reads whether there are
 // any, so the two cannot disagree about what a complete draft is.
 export type ProxyDraftField =
@@ -181,12 +179,8 @@ export const hostPortLabel = (url: string): string => {
   }
 };
 
-// The hue a scheme's badge is painted in. Schemes that share a transport share
-// a hue -- HTTP with HTTPS, the three that tunnel a stream, the three VLESS
-// shapes. The values are Fluent's own palette anchors, so they sit in the same
-// family as the hues the dashboard picks by meaning for syntax highlighting;
-// the badge takes a tenth of the hue for its fill and a third for its stroke,
-// which is what lib/color.ts's badgeHueStyle does for every other badge.
+// Schemes sharing a transport share a hue. The values are Fluent's own palette
+// anchors; lib/color.ts's badgeHueStyle derives the fill and stroke from them.
 export const KIND_HUES: Record<string, string> = {
   HTTP: '#0f6cbd',
   HTTPS: '#0f6cbd',
