@@ -163,6 +163,15 @@ const useStyles = makeStyles({
     // work with and the glyph settles against the leading edge.
     padding: 0,
     cursor: 'pointer',
+    // The fill duration the layer's own button answers a pointer with, and the
+    // curve that rule leaves at its initial value. It carries the foreground as
+    // well as the fill, which WinUI's button does not: there the foreground is
+    // WinUI's own and only the fill has a brush transition, while here the pair
+    // is one accent step and its disc, and a glyph that snaps while the disc
+    // under it eases reads as two controls rather than one.
+    transitionProperty: 'color, background-color',
+    transitionDuration: 'var(--winui-control-faster-animation-duration)',
+    '@media (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
     // Both states are held to `:enabled`. A disabled button still matches
     // `:hover` and `:active`; the original never has to say so, because it
     // takes the pointer away from the whole bar while the bar is disabled.
