@@ -20,6 +20,7 @@ import {
   type PerformanceOverviewResponse,
   type PerformancePercentile,
   type PerformanceRange,
+  type PerformanceUrlState,
   type PerformanceView,
 } from '../components/performance/overview';
 import { PerformanceChartSection } from '../components/performance/performance-chart';
@@ -54,7 +55,7 @@ interface LoaderData {
   // eight zeroes and a table that says nobody sent a request, which is a
   // telemetry page asserting something it does not know.
   overview: PerformanceOverviewResponse | null;
-  state: ReturnType<typeof parsePerformanceUrlState>;
+  state: PerformanceUrlState;
   upstreamNames: UpstreamName[];
   view: PerformanceView;
 }
