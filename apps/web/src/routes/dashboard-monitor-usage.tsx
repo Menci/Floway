@@ -16,6 +16,7 @@ import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { ResourceListActions } from '../components/ui/resource-list';
 import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
+import { useRefresh } from '../components/ui/use-refresh';
 import { buildSearchChart, buildTokenChart, dashboardBuckets, formatMetricValue, formatProvider, summarizeUsage } from '../components/usage/chart-model';
 import { SummaryMetrics } from '../components/usage/summary-metrics';
 import type { UsageMetric, UsageRange, UsageView } from '../components/usage/types';
@@ -83,9 +84,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const [redactKeys, setRedactKeys] = useState(loaderData.redactKeys);
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(() => new Set(loaderData.hiddenKeys));
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(() => new Set(loaderData.hiddenModels));
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
-  const requestRef = useRef<AbortController | null>(null);
   // What the loader already fetched. The effect below reacts to the view and
   // the range, so what it has to answer is whether those still describe the
   // data on screen -- not whether this is the first pass through it. Asked the
@@ -102,17 +101,12 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   // A background poll must not clear a failure the operator has not read:
   // these pages reload themselves every minute, and wiping the bar on the way
   // in meant a server's own words could appear and vanish unseen.
-  const refresh = useCallback(async ({ background = false }: { background?: boolean } = {}) => {
-    requestRef.current?.abort();
-    const controller = new AbortController();
-    requestRef.current = controller;
+  const reload = useCallback(async (signal: AbortSignal, { background }: { background: boolean }) => {
     const requestedAt = Date.now();
-    setLoading(true);
     if (!background) setError(null);
-
     try {
-      const next = await loadUsagePageData(view, range, requestedAt, controller.signal);
-      if (requestRef.current !== controller) return;
+      const next = await loadUsagePageData(view, range, requestedAt, signal);
+      if (signal.aborted) return;
       setUsage(next.usage);
       setSearch(next.search);
       setModels(next.models);
@@ -120,26 +114,20 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
       setLoadedAt(requestedAt);
       setError(next.error);
     } catch (error) {
-      if (requestRef.current !== controller) return;
+      if (signal.aborted) return;
       setError({ status: 0, message: errorMessage(error) });
-    } finally {
-      if (requestRef.current === controller) {
-        requestRef.current = null;
-        setLoading(false);
-      }
     }
   }, [range, view]);
+
+  const { poll, refresh, refreshing } = useRefresh(reload);
 
   useEffect(() => {
     if (loadedFor.current.range === range && loadedFor.current.view === view) return;
     loadedFor.current = { range, view };
     void refresh();
-    return () => {
-      requestRef.current?.abort();
-    };
   }, [range, refresh, view]);
 
-  usePollWhileVisible(refresh, 60_000);
+  usePollWhileVisible(poll);
 
   // The session is gone, not the page: the gateway said so with a status, and
   // only the status says it -- a 401 body carrying its own words never matches
@@ -253,7 +241,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
           appearance="subtle"
           onRefresh={() => void refresh()}
           refreshLabel={t('dashboard.usage.actions.refresh')}
-          refreshing={loading}
+          refreshing={refreshing}
         />}
         description={t('dashboard.pages.usage')}
         title={t('dashboard.nav.usage')}

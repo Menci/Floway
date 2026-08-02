@@ -34,6 +34,7 @@ import { Panel } from '../components/ui/panel';
 import { ResourceListActions } from '../components/ui/resource-list';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
+import { useRefresh } from '../components/ui/use-refresh';
 import { fluentComponents } from '../fluent';
 import { formatDuration } from '../lib/format-duration';
 import { formatCount, formatTokenRateFromTpot } from '../lib/format-number';
@@ -100,9 +101,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set(initialState.hidden));
   const [overview, setOverview] = useState<PerformanceOverviewResponse | null>(loaderData.overview);
   const [upstreamNames] = useState(() => new Map(loaderData.upstreamNames.map(record => [record.id, record.name])));
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
-  const requestRef = useRef<AbortController | null>(null);
   // What the loader already fetched. The effect below reacts to the query the
   // page is asking -- the range, the grouping and the filters -- so what it has
   // to answer is whether that query still describes the data on screen, not
@@ -118,38 +117,33 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   // A background poll must not clear a failure the operator has not read:
   // these pages reload themselves every minute, and wiping the bar on the way
   // in meant a server's own words could appear and vanish unseen.
-  const refresh = useCallback(async ({ background = false }: { background?: boolean } = {}) => {
-    requestRef.current?.abort();
-    const controller = new AbortController();
-    requestRef.current = controller;
+  const reload = useCallback(async (signal: AbortSignal, { background }: { background: boolean }) => {
     const requestedAt = Date.now();
-    setLoading(true);
     if (!background) setError(null);
     const search = buildPerformanceQuery(view, range, groupBy, filters, requestedAt);
     const result = await callApi(() => api.api.performance.overview.$get(
       { query: Object.fromEntries(search) },
-      { init: { signal: controller.signal } },
+      { init: { signal } },
     ));
-    if (requestRef.current !== controller) return;
-    requestRef.current = null;
+    if (signal.aborted) return;
     if (result.error) setError(result.error);
     else {
       setOverview(result.data);
       setLoadedRange(range);
       setLoadedAt(requestedAt);
     }
-    setLoading(false);
   }, [filters, groupBy, range, view]);
+
+  const { poll, refresh, refreshing } = useRefresh(reload);
 
   useEffect(() => {
     const loaded = loadedFor.current;
     if (loaded.filters === filters && loaded.groupBy === groupBy && loaded.range === range) return;
     loadedFor.current = { filters, groupBy, range };
     void refresh();
-    return () => { requestRef.current?.abort(); };
   }, [filters, groupBy, range, refresh]);
 
-  usePollWhileVisible(refresh, 60_000);
+  usePollWhileVisible(poll);
 
   // The session is gone, not the page: the gateway said so with a status, and
   // only the status says it -- a 401 body carrying its own words never matches
@@ -187,7 +181,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
 
   return <section className="dashboard-page">
     <DashboardPageHeader
-      actions={<ResourceListActions appearance="subtle" onRefresh={() => void refresh()} refreshLabel={t('dashboard.performance.actions.refresh')} refreshing={loading} />}
+      actions={<ResourceListActions appearance="subtle" onRefresh={() => void refresh()} refreshLabel={t('dashboard.performance.actions.refresh')} refreshing={refreshing} />}
       description={t('dashboard.pages.performance')}
       title={t('dashboard.nav.performance')}
     />
