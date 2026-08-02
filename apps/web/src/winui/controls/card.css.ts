@@ -15,6 +15,12 @@
 // colours answer sits on single-class Fluent atoms that every coloured rule
 // here would outrank. Geometry applies in both modes.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L85-L87
+import { list, nested, pressedRoots } from './selectors';
+
+const selectedCard = `.fui-Card.fui-Card:has(> .fui-Card__checkbox:checked:enabled)`;
+
+const selectedCardPressed = pressedRoots(selectedCard, '> .fui-Card__checkbox');
+
 export const cardCss = `
 /* Both surfaces this file draws from round at ControlCornerRadius, the radius
    WinUI gives anything inline, where Fluent scales the radius with the card's
@@ -87,22 +93,20 @@ export const cardCss = `
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L21-L22
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L74
      https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-card/library/src/components/Card/useCardSelectable.ts#L108-L112 */
-  .fui-Card.fui-Card:has(> .fui-Card__checkbox:checked:enabled):hover {
+  ${selectedCard}:hover {
     background-color: var(--winui-subtle-fill-tertiary);
   }
 
-  .fui-Card.fui-Card:has(> .fui-Card__checkbox:checked:enabled):active {
+${nested(list(selectedCardPressed))} {
     background-color: var(--winui-subtle-fill-secondary);
   }
 
   /* A ListViewItem draws a 2px outer ring with a 1px inner ring immediately
-     inside it; Fluent's own ring already has the outer width and position, so
-     only its colour is restated, and the inner ring is an inset shadow. The
-     redefinition sits on the pseudo-element so the card's contents keep the
-     token value they inherit from the provider. The border-color beside it
-     restates Fluent's own declaration verbatim, which is what lifts the ring
-     over the appearance strokes above: those name one class more than Fluent's
-     focus atom does and would otherwise paint over it.
+     inside it; Fluent's own ring already has the outer width, position and
+     colour token, so only the inner ring is added, as an inset shadow. The
+     border-color beside it restates Fluent's own declaration verbatim, which is
+     what lifts the ring over the appearance strokes above: those name one class
+     more than Fluent's focus atom does and would otherwise paint over it.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L248-L252
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L29-L30
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L181-L182
@@ -111,7 +115,6 @@ export const cardCss = `
      https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-tabster/src/focus/createFocusOutlineStyle.ts#L65-L71 */
   .fui-Card.fui-Card[data-fui-focus-visible]::after,
   .fui-Card.fui-Card[data-fui-focus-within]:focus-within::after {
-    --colorStrokeFocus2: var(--winui-focus-stroke-outer);
     border-color: var(--colorStrokeFocus2);
     box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
   }

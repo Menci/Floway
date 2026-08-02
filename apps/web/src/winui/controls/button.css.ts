@@ -30,6 +30,8 @@
 // both modes.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L53-L101
 
+import { nested } from './selectors';
+
 // A suffix on a selector list attaches to its last item alone, so appending a
 // state to an already joined string silently leaves every variant but the last
 // matched in every state it has. Each variant is therefore expanded against
@@ -93,14 +95,6 @@ const chromeless = (states: readonly string[]) =>
 
 const transparentOnly = (states: readonly string[]) =>
   expand(['transparent'], states, unchecked);
-
-// Every selector nested in the forced-colours guard below is interpolated at
-// the start of a line, so the indent it would have been written with has to
-// come from here.
-const nested = (selectorList: string) => selectorList
-  .split('\n')
-  .map(line => `  ${line}`)
-  .join('\n');
 
 const checkedToggle = (states: readonly string[] = ['']) => expand(
   [`[aria-pressed='true']`, `[aria-checked='true']`],

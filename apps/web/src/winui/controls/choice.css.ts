@@ -14,6 +14,40 @@
 // Geometry applies in both modes.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L92-L179
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L62-L119
+
+// The tri-state check box is named by the data-winui-checked stamp
+// ../appearance.ts applies, never by :indeterminate. The browser clears that
+// property when the user activates the box, and Fluent re-asserts it only from
+// an effect keyed on the mixed flag, which does not re-run while the box stays
+// mixed -- so the property is gone for good on a box held at mixed while Fluent
+// keeps painting it. Both halves are stated here and consumed by every rule
+// that distinguishes the state, ./list.css.ts included, so no sheet can reach
+// for the property again.
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-checkbox/library/src/components/Checkbox/useCheckbox.tsx#L163-L169
+import { nested, pressedRoots, under } from './selectors';
+
+export const checkboxMixed = "[data-winui-checked='mixed']";
+export const checkboxNotMixed = `:not(${checkboxMixed})`;
+
+const checkboxPressed = pressedRoots('.fui-Checkbox', '.fui-Checkbox__input');
+const radioPressed = pressedRoots('.fui-Radio', '.fui-Radio__input');
+
+const uncheckedBox = `.fui-Checkbox__input:enabled:not(:checked)${checkboxNotMixed}`
+  + ` ~ .fui-Checkbox__indicator.fui-Checkbox__indicator`;
+
+const selectedBoxes = [
+  `.fui-Checkbox__input:enabled:checked ~ .fui-Checkbox__indicator.fui-Checkbox__indicator`,
+  `.fui-Checkbox__input:enabled${checkboxMixed} ~ .fui-Checkbox__indicator.fui-Checkbox__indicator`,
+];
+
+const uncheckedEllipse = `.fui-Radio__input:enabled:not(:checked)`
+  + ` ~ .fui-Radio__indicator.fui-Radio__indicator`;
+
+const selectedEllipse = `.fui-Radio__input:enabled:checked`
+  + ` ~ .fui-Radio__indicator.fui-Radio__indicator`;
+
+const selectedDot = `${selectedEllipse}::after`;
+
 export const choiceCss = `
 /* Check box geometry. Fluent's check mark is an SVG carrying literal width and
    height attributes which no font size reaches, so the glyph is sized on the
@@ -125,7 +159,7 @@ export const choiceCss = `
      ramp per state, which Fluent leaves transparent throughout.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L217-L218
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L229 */
-  .fui-Checkbox__input:enabled:not(:checked):not(:indeterminate)
+  .fui-Checkbox__input:enabled:not(:checked)${checkboxNotMixed}
     ~ .fui-Checkbox__indicator.fui-Checkbox__indicator {
     background-color: var(--winui-control-alt-fill-secondary);
     border-color: var(--winui-control-strong-stroke-default);
@@ -133,16 +167,14 @@ export const choiceCss = `
 
   /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L230 */
   .fui-Checkbox:hover
-    .fui-Checkbox__input:enabled:not(:checked):not(:indeterminate)
+    .fui-Checkbox__input:enabled:not(:checked)${checkboxNotMixed}
     ~ .fui-Checkbox__indicator.fui-Checkbox__indicator {
     background-color: var(--winui-control-alt-fill-tertiary);
   }
 
   /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L219
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L231 */
-  .fui-Checkbox:active
-    .fui-Checkbox__input:enabled:not(:checked):not(:indeterminate)
-    ~ .fui-Checkbox__indicator.fui-Checkbox__indicator {
+${nested(under(checkboxPressed, [uncheckedBox]))} {
     background-color: var(--winui-control-alt-fill-quarternary);
     border-color: var(--winui-control-strong-stroke-disabled);
   }
@@ -150,7 +182,7 @@ export const choiceCss = `
   /* The disabled cavity is the one alt-fill step that is fully transparent, so
      it is the unchecked box, not the checked one, that loses its interior.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L232 */
-  .fui-Checkbox__input:disabled:not(:checked):not(:indeterminate)
+  .fui-Checkbox__input:disabled:not(:checked)${checkboxNotMixed}
     ~ .fui-Checkbox__indicator.fui-Checkbox__indicator {
     background-color: var(--winui-control-alt-fill-disabled);
   }
@@ -167,7 +199,7 @@ export const choiceCss = `
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L245
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L249 */
   .fui-Checkbox__input:enabled:checked ~ .fui-Checkbox__indicator.fui-Checkbox__indicator,
-  .fui-Checkbox__input:enabled:indeterminate ~ .fui-Checkbox__indicator.fui-Checkbox__indicator {
+  .fui-Checkbox__input:enabled${checkboxMixed} ~ .fui-Checkbox__indicator.fui-Checkbox__indicator {
     background-color: var(--winui-accent-fill-default);
     border-color: var(--winui-accent-fill-default);
     color: var(--winui-text-on-accent-fill-primary);
@@ -183,7 +215,7 @@ export const choiceCss = `
     .fui-Checkbox__input:enabled:checked
     ~ .fui-Checkbox__indicator.fui-Checkbox__indicator,
   .fui-Checkbox:hover
-    .fui-Checkbox__input:enabled:indeterminate
+    .fui-Checkbox__input:enabled${checkboxMixed}
     ~ .fui-Checkbox__indicator.fui-Checkbox__indicator {
     background-color: var(--winui-accent-fill-secondary);
     border-color: var(--winui-accent-fill-secondary);
@@ -197,12 +229,7 @@ export const choiceCss = `
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L239
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L247
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L251 */
-  .fui-Checkbox:active
-    .fui-Checkbox__input:enabled:checked
-    ~ .fui-Checkbox__indicator.fui-Checkbox__indicator,
-  .fui-Checkbox:active
-    .fui-Checkbox__input:enabled:indeterminate
-    ~ .fui-Checkbox__indicator.fui-Checkbox__indicator {
+${nested(under(checkboxPressed, selectedBoxes))} {
     background-color: var(--winui-accent-fill-tertiary);
     border-color: var(--winui-accent-fill-tertiary);
     color: var(--winui-text-on-accent-fill-secondary);
@@ -227,7 +254,7 @@ export const choiceCss = `
   /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L236
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L240 */
   .fui-Checkbox__input:disabled:checked ~ .fui-Checkbox__indicator.fui-Checkbox__indicator,
-  .fui-Checkbox__input:disabled:indeterminate ~ .fui-Checkbox__indicator.fui-Checkbox__indicator {
+  .fui-Checkbox__input:disabled${checkboxMixed} ~ .fui-Checkbox__indicator.fui-Checkbox__indicator {
     background-color: var(--winui-accent-fill-disabled);
   }
 
@@ -332,9 +359,7 @@ export const choiceCss = `
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L181 */
-.fui-Radio:active
-  .fui-Radio__input:enabled:checked
-  ~ .fui-Radio__indicator.fui-Radio__indicator::after {
+${under(radioPressed, [selectedDot])} {
   transform: scale(0.5);
 }
 
@@ -367,9 +392,7 @@ export const choiceCss = `
 
   /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L136
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L140 */
-  .fui-Radio:active
-    .fui-Radio__input:enabled:not(:checked)
-    ~ .fui-Radio__indicator.fui-Radio__indicator {
+${nested(under(radioPressed, [uncheckedEllipse]))} {
     background-color: var(--winui-control-alt-fill-quarternary);
     border-color: var(--winui-control-strong-stroke-disabled);
   }
@@ -397,9 +420,7 @@ export const choiceCss = `
 
   /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L144
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L148 */
-  .fui-Radio:active
-    .fui-Radio__input:enabled:checked
-    ~ .fui-Radio__indicator.fui-Radio__indicator {
+${nested(under(radioPressed, [selectedEllipse]))} {
     background-color: var(--winui-accent-fill-tertiary);
     border-color: var(--winui-accent-fill-tertiary);
   }

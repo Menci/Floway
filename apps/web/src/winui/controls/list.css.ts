@@ -1,6 +1,14 @@
 // List and ListItem, restyled to WinUI 3. Fluent's list is headless -- no fill,
 // no radius, no state -- so every rule below adds a state rather than replacing
 // a Fluent value.
+import { checkboxNotMixed } from './choice.css';
+import { nested, pressedRoots, under } from './selectors';
+
+const checkmarkPressed = pressedRoots('.fui-ListItem__checkmark.fui-Checkbox', '.fui-Checkbox__input');
+
+const uncheckedBox = `.fui-Checkbox__input:enabled:not(:checked)${checkboxNotMixed}`
+  + ` ~ .fui-Checkbox__indicator.fui-Checkbox__indicator`;
+
 export const listCss = `
 /* Also the containing block for the selection indicator and the focus ring's
    inner stroke. Rest fill and foreground are left undeclared: Fluent's default
@@ -123,7 +131,6 @@ export const listCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L718
    https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
 .fui-ListItem.fui-ListItem[data-fui-focus-visible] {
-  --colorStrokeFocus2: var(--winui-focus-stroke-outer);
   outline-offset: -3px;
 }
 
@@ -154,21 +161,14 @@ export const listCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L63-L65
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L72 */
 @media not (forced-colors: active) {
-  .fui-ListItem__checkmark.fui-Checkbox:hover
-    .fui-Checkbox__input:enabled:not(:checked):not(:indeterminate)
-    ~ .fui-Checkbox__indicator.fui-Checkbox__indicator,
-  .fui-ListItem__checkmark.fui-Checkbox:active
-    .fui-Checkbox__input:enabled:not(:checked):not(:indeterminate)
-    ~ .fui-Checkbox__indicator.fui-Checkbox__indicator,
+${nested(under(['.fui-ListItem__checkmark.fui-Checkbox:hover', ...checkmarkPressed], [uncheckedBox]))},
   .fui-ListItem__checkmark
-    .fui-Checkbox__input:disabled:not(:checked):not(:indeterminate)
+    .fui-Checkbox__input:disabled:not(:checked)${checkboxNotMixed}
     ~ .fui-Checkbox__indicator.fui-Checkbox__indicator {
     background-color: var(--winui-control-alt-fill-secondary);
   }
 
-  .fui-ListItem__checkmark.fui-Checkbox:active
-    .fui-Checkbox__input:enabled:not(:checked):not(:indeterminate)
-    ~ .fui-Checkbox__indicator.fui-Checkbox__indicator {
+${nested(under(checkmarkPressed, [uncheckedBox]))} {
     border-color: var(--winui-control-strong-stroke-default);
   }
 }

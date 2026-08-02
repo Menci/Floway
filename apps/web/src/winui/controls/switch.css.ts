@@ -38,35 +38,22 @@
 // knob's travel apply in both modes.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L64-L123
 
-// The two pointer states are answered from the root, never from the input.
+import { nested, pressedRoots as pressedUnion, under } from './selectors';
+
+// The two pointer states are answered from the root, never from the input:
 // Fluent's input covers the track alone, so a label beside it is hovered
-// without the input being. A press is worse than that: the drag handler takes
-// a pointer capture on the root, which moves the hover and active chain onto
-// the root and its ancestors for the whole gesture, while Chrome's keyboard
-// activation does the opposite and sets :active on the input without
-// propagating it upwards. Neither subject alone sees both presses, so the
-// pressed subject is the union of the three, written once and shared by the
-// geometry and the paint.
+// without the input being. A drag adds itself to both, because
+// ChangeVisualState answers PointerOver and then Pressed for the whole
+// gesture, and the geometry and the paint read the same two lists.
 const hoverRoots = [
   '.fui-Switch:hover',
   '.fui-Switch[data-winui-switch-dragging]',
 ];
 
 const pressedRoots = [
-  '.fui-Switch:active',
-  '.fui-Switch:has(.fui-Switch__input:active)',
+  ...pressedUnion('.fui-Switch', '.fui-Switch__input'),
   '.fui-Switch[data-winui-switch-dragging]',
 ];
-
-const under = (roots: readonly string[], descendant: string) =>
-  roots.map(root => `${root} ${descendant}`).join(',\n');
-
-// Every selector interpolated into the forced-colours guard below starts a
-// line, so the indent it would have been written with has to come from here.
-const nested = (selectorList: string) => selectorList
-  .split('\n')
-  .map(line => `  ${line}`)
-  .join('\n');
 
 const enabledKnob = `.fui-Switch__input:enabled:not([aria-disabled='true'])`
   + ` ~ .fui-Switch__indicator.fui-Switch__indicator > *`;
@@ -243,7 +230,7 @@ export const switchCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L231-L242
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L245-L324
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/ToggleSwitch_Partial.cpp#L63-L72 */
-${under(hoverRoots, enabledKnob)} {
+${under(hoverRoots, [enabledKnob])} {
   height: calc(14 * var(--winui-switch-unit));
   margin-inline-start: calc(1.5 * var(--winui-switch-unit));
   width: calc(14 * var(--winui-switch-unit));
@@ -253,15 +240,14 @@ ${under(hoverRoots, enabledKnob)} {
    pointer, but the press is reachable without the hover that would otherwise
    supply it -- Space on the focused input, and a drag that has carried the
    pointer off the control -- and a 17x12 knob is a shape the template never
-   draws. A drag selects Pressed outright, because ChangeVisualState answers
-   Pressed for the whole gesture. */
-${under(pressedRoots, enabledKnob)} {
+   draws. */
+${under(pressedRoots, [enabledKnob])} {
   height: calc(14 * var(--winui-switch-unit));
   margin-inline-start: calc(2 * var(--winui-switch-unit));
   width: calc(17 * var(--winui-switch-unit));
 }
 
-${under(pressedRoots, enabledCheckedKnob)} {
+${under(pressedRoots, [enabledCheckedKnob])} {
   margin-inline-start: calc(-1 * var(--winui-switch-unit));
 }
 
@@ -351,21 +337,21 @@ ${under(pressedRoots, enabledCheckedKnob)} {
      stroke and the knob at their rest values.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L136-L137
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L140-L141 */
-${nested(under(hoverRoots, offTrack))} {
+${nested(under(hoverRoots, [offTrack]))} {
     background-color: var(--winui-control-alt-fill-tertiary);
   }
 
-${nested(under(pressedRoots, offTrack))} {
+${nested(under(pressedRoots, [offTrack]))} {
     background-color: var(--winui-control-alt-fill-quarternary);
   }
 
   /* On: the accent fill ramp, on the capsule that carries it.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L144-L145 */
-${nested(under(hoverRoots, onTrack))} {
+${nested(under(hoverRoots, [onTrack]))} {
     background-color: var(--winui-accent-fill-secondary);
   }
 
-${nested(under(pressedRoots, onTrack))} {
+${nested(under(pressedRoots, [onTrack]))} {
     background-color: var(--winui-accent-fill-tertiary);
   }
 
