@@ -18,12 +18,9 @@ interface ScrollAreaProps extends PropsWithChildren {
   contentClassName?: string;
   noTabIndex?: boolean;
   /**
-   * Styles the scrollport itself -- the box that clips.
-   *
-   * This is where a gutter goes. Padding on the host is outside the clip, so a
-   * shadow, focus ring or outline drawn inside the scroller is still cut at the
-   * scrollport's edge; padding here keeps the overhang. The host usually pulls
-   * the same distance back out with a negative margin.
+   * Styles the scrollport itself -- the box that clips. Padding on the host is
+   * outside the clip, so a shadow, focus ring or outline drawn inside the
+   * scroller is cut at the scrollport's edge; padding here keeps the overhang.
    */
   viewportClassName?: string;
 }
@@ -36,11 +33,6 @@ const scrollbarSizeListeners = new Set<() => void>();
 // a poor place to read a painted scrollbar's width from. It stays in the
 // document so a ResizeObserver can watch it: the answer changes under a running
 // page without necessarily resizing the window.
-//
-// Losing the document is fatal rather than recoverable: a detached element
-// reports zero for both boxes, which is exactly what a platform with overlay
-// scrollbars reports, so a quiet repair would leave a reading indistinguishable
-// from a correct one.
 const ensureScrollbarProbe = () => {
   if (typeof document === 'undefined' || !document.body) return null;
   if (scrollbarProbe) {
@@ -71,10 +63,9 @@ function updateNativeScrollbarSize() {
   scrollbarSizeListeners.forEach(listener => listener());
 }
 
-// The first ScrollArea must know the answer before React renders it. Module
-// scripts run after the document is parsed, so this normally measures
-// synchronously; the listener only covers tooling that imports the module
-// earlier than a browser would.
+// The first ScrollArea must know the answer before React renders it; the
+// listener only covers tooling that imports the module earlier than a browser
+// would.
 if (typeof document !== 'undefined') {
   if (document.body) updateNativeScrollbarSize();
   else document.addEventListener('DOMContentLoaded', updateNativeScrollbarSize, { once: true });
@@ -94,18 +85,16 @@ export const useOverlayScrollbarsEnabled = (): boolean => useSyncExternalStore(
   getServerScrollbarSize,
 ) > 0;
 
-// The library's vocabulary is its own -- there is no `auto` in it -- and
-// `scroll` here means "this axis is mine", not "reserve a bar".
+// In the library's vocabulary there is no `auto`, and `scroll` means "this axis
+// is mine", not "reserve a bar".
 const libraryOverflowFor = (axes: ScrollAxes) => ({
   x: axes === 'vertical' ? 'hidden' as const : 'scroll' as const,
   y: axes === 'horizontal' ? 'hidden' as const : 'scroll' as const,
 });
 
 // The element carries this inline from the first render, before the library has
-// initialised, so `scroll` unconditionally would hand every scroller a native
-// bar -- and a permanent reserved strip -- for that window. Native scrolling
-// asks for `auto`; the library's own path keeps the `scroll` it reads the axis
-// from.
+// initialised, so `scroll` unconditionally would hand every native scroller a
+// permanent reserved strip for that window.
 const elementOverflowFor = (axes: ScrollAxes, overlayScrollbarsEnabled: boolean) => {
   const scrollable = overlayScrollbarsEnabled ? 'scroll' as const : 'auto' as const;
   return {
