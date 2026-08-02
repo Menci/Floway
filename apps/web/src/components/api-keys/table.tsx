@@ -86,7 +86,7 @@ export function KeysTable({
           return (
             <span className="flex items-center gap-1 min-w-0">
               <Tooltip content={key.key} relationship="label">
-                <code className="w-[144px] flex-none truncate" tabIndex={0}>{key.key}</code>
+                <code className="winui-focus-rect w-[144px] flex-none truncate" tabIndex={0}>{key.key}</code>
               </Tooltip>
               <span className="flex-none" {...stopRowSelection}><TooltipIconButton
                 disabled={disabled}
@@ -104,10 +104,10 @@ export function KeysTable({
           <Tooltip content={upstreamsTitle(key, upstreamById, t)} relationship="description">
             <TableCellLayout
               truncate
-              className={
-                !key.upstream_ids ? undefined
+              className={`winui-focus-rect ${
+                !key.upstream_ids ? ''
                   : key.upstream_ids.length === 0 ? dangerText : s.accentText
-              }
+              }`}
               tabIndex={0}
             >
               {upstreamsText(key, upstreamById, t)}
@@ -119,7 +119,7 @@ export function KeysTable({
         columnId: 'created', compare: (a, b) => a.created_at.localeCompare(b.created_at),
         renderHeaderCell: () => t('dashboard.apiKeys.table.created'),
         renderCell: key => <Tooltip content={dateTime(key.created_at, locale)} relationship="description">
-          <span tabIndex={0}>{shortDate(key.created_at, locale)}</span>
+          <span className="winui-focus-rect" tabIndex={0}>{shortDate(key.created_at, locale)}</span>
         </Tooltip>,
       }),
       createTableColumn<ApiKey>({
@@ -127,7 +127,7 @@ export function KeysTable({
         renderHeaderCell: () => t('dashboard.apiKeys.table.lastUsed'),
         renderCell: key => key.last_used_at
           ? <Tooltip content={dateTime(key.last_used_at, locale)} relationship="description">
-              <span tabIndex={0}>
+              <span className="winui-focus-rect" tabIndex={0}>
                 {relativeTime(key.last_used_at, locale, { now }) ?? t('dashboard.apiKeys.table.usedOn', { date: shortDate(key.last_used_at, locale) })}
               </span>
             </Tooltip>
@@ -173,10 +173,10 @@ export function KeysTable({
           <div className="grid gap-0.5 min-w-0 flex-1">
             <Text block truncate size={300} wrap={false}>{key.name}</Text>
             <Tooltip content={key.key} relationship="label">
-              <code className="block truncate" tabIndex={0}>{key.key}</code>
+              <code className="winui-focus-rect block truncate" tabIndex={0}>{key.key}</code>
             </Tooltip>
             <Tooltip content={upstreamsTitle(key, upstreamById, t)} relationship="description">
-              <Text block truncate size={200} className="text-fui-fg2" tabIndex={0} wrap={false}>{upstreamsText(key, upstreamById, t)}</Text>
+              <Text block truncate size={200} className="winui-focus-rect text-fui-fg2" tabIndex={0} wrap={false}>{upstreamsText(key, upstreamById, t)}</Text>
             </Tooltip>
             <div className="flex flex-wrap gap-x-3 text-fui-fg3">
               <Text size={200}>{shortDate(key.created_at, locale)}</Text>
