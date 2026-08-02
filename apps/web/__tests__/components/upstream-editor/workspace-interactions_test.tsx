@@ -85,7 +85,11 @@ describe('upstream model workspace field-array transitions', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Delete model' }));
     await waitFor(() => expect(screen.getAllByLabelText('Delete manual model')).toHaveLength(2));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Edit as YAML' }));
+    // The confirmation dialog marks the rest of the document `aria-hidden`
+    // while it is open and clears that on its way out, so the toolbar behind it
+    // is unreachable by role until the exit settles. A label query does not
+    // filter hidden nodes and hid the race; a role query has to wait for it.
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit as YAML' }));
     const editor = await screen.findByLabelText('YAML models');
     fireEvent.change(editor, {
       target: {
