@@ -99,11 +99,9 @@ const checkedToggle = (states: readonly string[] = ['']) => expand(
 );
 
 export const buttonCss = `
-/* Geometry and typography. The weight is Normal rather than Fluent's semibold,
-   and the style declares neither MinWidth nor MaxWidth, so a WinUI button is
-   sized by its content instead of reserving Fluent's 96px. BackgroundSizing is
-   InnerBorderEdge, which ../reset.css.ts already applies to everything; it is
-   named here because the two rules below depart from it.
+/* Normal weight rather than Fluent's semibold, and neither MinWidth nor
+   MaxWidth, so a WinUI button is sized by its content instead of reserving
+   Fluent's 96px.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L154-L168
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L182-L190 */
 .fui-Button.fui-Button${notOptedOut} {
@@ -112,18 +110,15 @@ export const buttonCss = `
   max-width: none;
 }
 
-/* AccentButtonStyle is the one variant that states OuterBorderEdge instead,
-   and states it as a Setter rather than in a visual state, so an accent
-   button's fill runs under its stroke in every state it has.
+/* AccentButtonStyle is the one variant that states OuterBorderEdge, and states
+   it as a Setter, so an accent fill runs under its stroke in every state.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L235-L238 */
 ${appearanceRoot('primary')} {
   background-clip: border-box;
 }
 
-/* The checked visual states of a ToggleButton swap BackgroundSizing the same
-   way, so a checked toggle reads as an accent button does. CheckedDisabled
-   carries no such keyframe and keeps the template's InnerBorderEdge, which is
-   visible because the checked disabled stroke is the transparent control fill.
+/* A checked ToggleButton swaps BackgroundSizing the same way; CheckedDisabled
+   carries no such keyframe and keeps the template's InnerBorderEdge.
    ToggleButtonBorderThemeThickness stays 1 across the whole state table, where
    Fluent doubles the stroke of a checked outline toggle.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L122
@@ -140,19 +135,16 @@ ${checkedToggle(disabledStates)} {
   background-clip: padding-box;
 }
 
-/* ButtonPadding is the padding of a button that carries a label. CSS cannot
-   tell a label apart from an icon -- a label is a text node and the icon is the
-   only element child either way -- so excluding every button that has an icon
-   keeps the icon-only ones on Fluent's square, at the cost of a pixel of
-   horizontal padding and one bottom pixel on an icon-and-label button.
+/* ButtonPadding is the padding of a button that carries a label, and CSS cannot
+   tell a label apart from an icon, so excluding every button that has an icon
+   keeps the icon-only ones on Fluent's square.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L152 */
 .fui-Button.fui-Button:not(:has(> .fui-Button__icon))${notOptedOut} {
   padding: var(--winui-button-padding);
 }
 
-/* WinUI animates the fill alone, and only for the ControlFasterAnimationDuration
-   of the content presenter's BrushTransition; border and foreground switch
-   instantly.
+/* WinUI animates the fill alone, for the content presenter's BrushTransition
+   duration; border and foreground switch instantly.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L172-L174
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L606 */
 .fui-Button.fui-Button${notOptedOut} {
@@ -167,9 +159,9 @@ ${checkedToggle(disabledStates)} {
 }
 
 @media not (forced-colors: active) {
-  /* The default and outline appearances. A WinUI button's fill is translucent
-     where Fluent's Background1 is opaque; its label holds at the primary text
-     fill on hover and drops to the secondary fill only while pressed.
+  /* WinUI's fill is translucent where Fluent's Background1 is opaque, and its
+     label holds at the primary text fill on hover, dropping to the secondary
+     fill only while pressed.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L128-L139
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L30-L41 */
   .fui-Button.fui-Button${notOptedOut} {
@@ -179,11 +171,9 @@ ${checkedToggle(disabledStates)} {
     --colorNeutralBackgroundDisabled: var(--winui-control-fill-disabled);
   }
 
-  /* The elevation stroke, which the foundation already transcribes as a
-     three-term border-colour. Fluent's outline appearance has no WinUI
-     counterpart, so it is handed the default button's elevation stroke and the
-     two read as a pair. Pressed and disabled both fall back to the flat
-     ControlStrokeColorDefault.
+  /* Fluent's outline appearance has no WinUI counterpart, so it is handed the
+     default button's elevation stroke and the two read as a pair. Pressed and
+     disabled both fall back to the flat ControlStrokeColorDefault.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L136-L139
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L38-L41 */
 ${nested(neutral())} {
@@ -194,16 +184,10 @@ ${nested(neutral([...pressedStates, ...disabledStates]))} {
     border-color: var(--winui-control-stroke-default);
   }
 
-  /* The primary appearance is WinUI's AccentButtonStyle, whose interaction steps
-     are the rest accent at 90% and 80% opacity rather than separate hues, so all
-     three have to come from one colour and the rest step is stated here beside
-     them. Left to Fluent it is the product's brand fill, a different blue, which
-     in dark puts WinUI's on-accent label -- black against a light accent -- on a
-     dark brand fill.
-
-     Each step is a declaration rather than a redefinition of the brand token
-     Fluent reads, because a custom property handed to the button root reaches
-     everything inside it.
+  /* WinUI's AccentButtonStyle derives its interaction steps from the rest accent
+     at 90% and 80% opacity, so all three have to come from one colour. Left to
+     Fluent it is the product's brand fill, which in dark puts WinUI's on-accent
+     black label on a dark blue.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L103-L109
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L5-L11 */
 ${nested(appearanceRoot('primary'))} {
@@ -220,10 +204,9 @@ ${nested(expand(['primary'], pressedStates, appearanceRoot))} {
     border-color: var(--winui-control-fill-transparent);
   }
 
-  /* A disabled accent button keeps the accent-specific fill and label rather
-     than the neutral disabled ramp the rest of the family shares. The glyph is
-     named separately from the label, or the disabled label would sit on the
-     on-accent white beside an icon on the neutral disabled foreground.
+  /* A disabled accent button keeps the accent ramp rather than the shared neutral
+     one; the glyph is named separately or it would take the neutral disabled
+     foreground beside an on-accent label.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L106-L114
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L8-L16 */
 ${nested(expand(['primary'], disabledStates, appearanceRoot))} {
@@ -236,13 +219,10 @@ ${nested(expand(['primary'], withIcon(disabledStates), appearanceRoot))} {
     color: var(--winui-text-on-accent-fill-disabled);
   }
 
-  /* The subtle and transparent appearances are both WinUI's SubtleButtonStyle.
-     The foundation already re-points what subtle reads; transparent reads
-     colorTransparentBackgroundHover/Pressed, which resolve to the transparent
-     keyword in every Fluent theme and leave the variant with no pointer feedback
-     at all. Those two steps are stated as properties rather than through the
-     tokens, because the same two tokens carry Fluent's disabled transparent
-     button, which WinUI keeps at SubtleFillColorTransparent throughout.
+  /* Subtle and transparent are both WinUI's SubtleButtonStyle; transparent's
+     Fluent hover/pressed tokens resolve to the transparent keyword, so its
+     feedback is stated as properties -- those same tokens also carry Fluent's
+     disabled transparent button, which WinUI leaves at SubtleFillColorTransparent.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L115-L118
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L17-L20 */
 ${nested(transparentOnly([':hover']))} {
@@ -253,17 +233,10 @@ ${nested(transparentOnly(pressedStates))} {
     background-color: var(--winui-subtle-fill-tertiary);
   }
 
-  /* The chromeless foreground. WinUI keeps a chromeless button's label and
-     icon at the full primary text fill and dims them to the secondary fill only
-     while pressed, where Fluent runs them at the secondary fill throughout and
-     tints them toward the brand on hover.
-
-     Stated as a colour rather than as a redefinition of the token Fluent reads:
-     a button is free to hold more than a label, and a custom property handed to
-     the root would override a descendant that names its own fill, where an
-     inherited colour does not. The glyph is one such descendant -- Fluent gives
-     a chromeless button's icon the brand tint through a rule of its own -- so
-     the icon is named beside the label.
+  /* Stated as a colour rather than a redefinition of the token Fluent reads: a
+     custom property on the button root would override a descendant that names
+     its own fill, where an inherited colour does not. Fluent's brand tint on a
+     chromeless icon is one such descendant, so the glyph is named beside the label.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L119-L121
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L21-L23 */
 ${nested(chromeless(['', ':hover', ...withIcon([':hover'])]))} {
@@ -274,15 +247,11 @@ ${nested(chromeless([...pressedStates, ...withIcon(pressedStates)]))} {
     color: var(--winui-text-fill-secondary);
   }
 
-  /* The focus visual. WinUI draws two concentric rings so the indicator survives
-     on any fill including accent; Fluent builds the same two out of a border plus
-     an outline one step further out and leaves the outer one transparent, so
-     recolouring its two inputs yields WinUI's pairing. Fluent's construction and
-     ring widths are kept as the web idiom -- so the inner ring reads 2px where
-     DefaultFocusVisualSecondaryThickness is 1, and the rings sit flush against
-     the control where FocusVisualMargin -3 would push them three pixels clear.
-     The rule also has to outrank the elevation strokes above, which is why the
-     border colour is repeated here.
+  /* WinUI's two concentric rings map onto Fluent's border plus outline, so
+     recolouring both inputs yields the pairing. Fluent's widths are kept as the
+     web idiom: the inner ring is 2px where DefaultFocusVisualSecondaryThickness
+     is 1, and the rings sit flush where FocusVisualMargin -3 would clear them by
+     three pixels. The border colour is repeated to outrank the elevation strokes.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L167
@@ -295,8 +264,7 @@ ${nested(chromeless([...pressedStates, ...withIcon(pressedStates)]))} {
   }
 
   /* A checked ToggleButton is an accent button in WinUI, whatever the unchecked
-     appearance was, so every selected token converges on the accent fill and the
-     on-accent label.
+     appearance was.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L127-L151
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L11-L35 */
   .fui-ToggleButton.fui-ToggleButton${notOptedOut} {
@@ -309,14 +277,10 @@ ${nested(chromeless([...pressedStates, ...withIcon(pressedStates)]))} {
     --colorNeutralForeground2BrandSelected: var(--winui-text-on-accent-fill-primary);
   }
 
-  /* Checked hover and pressed continue the accent ramp -- 90% and 80% of the rest
-     accent, and an on-accent label that dims only while pressed. Fluent has no
-     selected variant of any of these: its checked atoms reuse the unchecked hover
-     and pressed tokens, so the redefinitions have to be gated on the checked
-     state itself rather than sitting on the root beside the block above, which
-     would repaint an unchecked toggle. The brand-tinted foreground tokens are in
-     the list because Fluent reads them for the glyph of a checked subtle or
-     transparent toggle.
+  /* Gated on the checked state rather than sitting on the root: Fluent's checked
+     atoms reuse the unchecked hover and pressed tokens, so a root redefinition
+     would repaint an unchecked toggle. The brand-tinted foregrounds are listed
+     because Fluent reads them for a checked subtle or transparent toggle's glyph.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L128-L141
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L12-L25 */
 ${nested(checkedToggle())} {
@@ -334,8 +298,7 @@ ${nested(checkedToggle())} {
     --colorNeutralForeground2BrandPressed: var(--winui-text-on-accent-fill-secondary);
   }
 
-  /* Checked chrome. The stroke is the on-accent elevation gradient, held through
-     hover and cleared to the transparent control fill under a press.
+  /* The checked stroke is the on-accent elevation gradient.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L151-L153
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L35-L37 */
 ${nested(checkedToggle())} {
@@ -346,10 +309,8 @@ ${nested(checkedToggle(pressedStates))} {
     border-color: var(--winui-control-fill-transparent);
   }
 
-  /* A disabled checked toggle keeps the accent ramp rather than falling back to
-     the neutral disabled fill, which is what Fluent's checked-disabled atoms
-     otherwise resolve to, and its glyph is named beside its label for the same
-     reason an accent button's is.
+  /* A disabled checked toggle keeps the accent ramp rather than the neutral
+     disabled fill Fluent's checked-disabled atoms otherwise resolve to.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L130
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L142
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L154 */
