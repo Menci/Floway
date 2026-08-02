@@ -19,37 +19,59 @@ export const colorPickerCss = `
 }
 
 @media not (forced-colors: active) {
-  /* Both thumbs are WinUI's colour-picker slider thumb: an elevation-stroked
-     ring with no shadow under it, held through every WinUI state.
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ColorPicker/ColorPicker.xaml#L441
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Slider_themeresources.xaml#L18 */
-  .fui-ColorArea__thumb.fui-ColorArea__thumb,
+  /* The slider thumbs are WinUI's colour-picker slider thumb: an
+     elevation-stroked disc filled with the opaque outer-thumb background and
+     carrying a 10px inner dot, held through every WinUI state. The disc never
+     samples the picked colour, which Fluent fills it with, so it stays legible
+     over the hue and alpha gradients it rides.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ColorPicker/ColorPicker.xaml#L435-L444
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Slider_themeresources.xaml#L18-L19
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ColorPicker/ColorPicker_themeresources.xaml#L5 */
   .fui-ColorSlider__thumb.fui-ColorSlider__thumb {
+    --winui-color-picker-inner-thumb-size: calc(var(--fui-Slider__thumb--size) * 10 / 18);
+
+    background-color: var(--winui-control-solid-fill-default);
     border-color: var(--winui-control-elevation-border-color);
     box-shadow: none;
   }
 
-  /* The rings the three thumbs ride in. ColorSpectrum strokes its selection
-     ellipse with SystemChromeWhiteColor, the same #FFFFFF in the Default, Light
-     and HighContrast dictionaries alike, so it reads against any picked colour;
-     the two slider thumbs back theirs with the ColorPicker's own
-     SliderOuterThumbBackground. Fluent draws all three from
+  /* ColorSpectrum's selection ellipse is a single stroke over the spectrum: the
+     elevation border above belongs to the slider thumb, a different part, and
+     the ring beneath is drawn by the rest ::before below.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ColorPicker/ColorSpectrum.xaml#L67-L69 */
+  .fui-ColorArea__thumb.fui-ColorArea__thumb {
+    border-color: transparent;
+    box-shadow: none;
+  }
+
+  /* ColorSpectrum strokes its selection ellipse with SystemChromeWhiteColor,
+     the same #FFFFFF in the Default, Light and HighContrast dictionaries alike,
+     so it reads against any picked colour. Fluent draws it from
      colorNeutralBackground1, which this layer points at a surface fill, so in
-     dark they came out one ramp step darker than WinUI and, on the spectrum, a
-     grey where WinUI is deliberately theme-invariant. WinUI additionally flips
-     the spectrum ring to ChromeBlackHigh once the picked colour is light, which
-     CSS cannot read.
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ColorPicker/ColorSpectrum.xaml#L73
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ColorPicker/ColorPicker.xaml#L441
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L24
+     dark it came out a grey where WinUI is deliberately theme-invariant. WinUI
+     additionally flips the ring to ChromeBlackHigh once the picked colour is
+     light, which CSS cannot read.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ColorPicker/ColorSpectrum.xaml#L69
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L223 */
   .fui-ColorArea__thumb.fui-ColorArea__thumb::before {
     border-color: #ffffff;
   }
 
-  .fui-ColorSlider__thumb.fui-ColorSlider__thumb::before,
-  .fui-AlphaSlider__thumb.fui-AlphaSlider__thumb::before {
+  /* The slider thumb's inner dot. Fluent gives the thumb one full-bleed ring, so
+     the dot is drawn as the ring's content box: the ring keeps the outer disc's
+     fill and the remaining centre takes ColorPickerSliderThumbBackground. The
+     dot holds ColorPickerSliderInnerThumbWidth as a share of
+     SliderHorizontalThumbWidth, so it stays in proportion to whatever size
+     Fluent lays the thumb out at.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ColorPicker/ColorPicker.xaml#L442
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ColorPicker/ColorPicker_themeresources.xaml#L33
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Slider_themeresources.xaml#L169 */
+  .fui-ColorSlider__thumb.fui-ColorSlider__thumb::before {
+    background-color: var(--winui-text-fill-primary);
     border-color: var(--winui-control-solid-fill-default);
+    border-width: calc(
+      (var(--fui-Slider__thumb--size) - var(--winui-color-picker-inner-thumb-size)) / 2
+    );
   }
 
   /* ColorSpectrum's one pointer state.
@@ -93,14 +115,27 @@ export const colorPickerCss = `
     border-color: var(--winui-control-stroke-default);
   }
 
-  /* Fluent zeroes the swatch border with the shorthand under the pointer, which
-     takes the width and the style with it, so a colour alone does not survive
-     those two states.
+  /* An unselected swatch under the pointer. WinUI keeps the accent ramp for
+     selection and gives a merely-hovered tile the neutral on-accent stroke, so
+     Fluent's accent double ring is replaced by the swatch's own 1px edge in
+     that brush -- which Fluent also has to be given back, because it zeroes the
+     border with the shorthand under the pointer and takes the width and the
+     style with it. Pressed is a superset of pointer-over in WinUI: it moves the
+     fill, not the stroke. Hovering is the weakest of the four states Fluent
+     paints on this element, so selected, disabled and focus-visible each keep
+     the ring they draw for themselves.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/GridViewItem_themeresources.xaml#L26-L29
      https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-swatch-picker/library/src/components/ColorSwatch/useColorSwatchStyles.styles.ts#L29-L36 */
-  .fui-ColorSwatch.fui-ColorSwatch:hover,
-  .fui-ColorSwatch.fui-ColorSwatch:hover:active {
+  .fui-ColorSwatch.fui-ColorSwatch:not(
+      [disabled],
+      [aria-checked='true'],
+      [aria-selected='true'],
+      [data-fui-focus-visible]
+    ):hover {
     border-width: 1px;
     border-style: solid;
+    border-color: var(--winui-control-stroke-on-accent-tertiary);
+    box-shadow: none;
   }
 
   /* A disabled control never leaves WinUI's Disabled state, and Fluent's own
@@ -116,9 +151,12 @@ export const colorPickerCss = `
   /* An empty swatch is a placeholder awaiting a value, which WinUI outlines
      with the strong stroke it gives an unfilled control body -- a cleared
      CheckBox is the same case -- rather than the faint stroke of a filled one.
+     The stroke is solid: XAML Border has no dash concept, so no shipping WinUI
+     control template can draw the dashed edge Fluent gives this swatch.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L41
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L48 */
   .fui-EmptySwatch.fui-EmptySwatch {
+    border-style: solid;
     border-color: var(--winui-control-strong-stroke-default);
   }
 
