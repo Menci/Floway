@@ -3,8 +3,6 @@ import { parse, stringify } from 'yaml';
 import { errorMessage } from '../../lib/error-message';
 import { modelsField, type UpstreamModelConfig } from '@floway-dev/provider';
 
-// Auto rows resolve live from the upstream and carry nothing to paste, so
-// only manual models reach here.
 export const serializeModels = (models: UpstreamModelConfig[]): string => stringify(models, {
   indent: 2,
   lineWidth: 0,
