@@ -1,7 +1,7 @@
 import type { WebSearchConfig, WebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { AgentSetupRepository } from '@floway-dev/agent-setup';
 import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingMetric, DecimalString, ModelKind, PricingSelector } from '@floway-dev/protocols/common';
-import type { PerformanceTelemetryContext, ProviderModel, UpstreamRecord } from '@floway-dev/provider';
+import type { PerformanceTelemetryContext, UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
 
 export interface ApiKey {
   id: string;
@@ -264,8 +264,8 @@ export interface UpstreamRepo {
   // Catalog-cache writes. They touch only the cache column, so a refresh and a
   // credential write to the same row do not contend — `saveState`'s CAS
   // predicate reads `state_json` alone.
-  saveModelsCache(id: string, cache: { revision: number; fetchedAt: number; models: ProviderModel[] }): Promise<void>;
-  saveModelsCacheError(id: string, error: { message: string; at: number } | null): Promise<void>;
+  saveModelsCache(id: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<void>;
+  saveModelsCacheError(id: string, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<void>;
 }
 
 export interface ProxyRecord {

@@ -58,7 +58,7 @@ import { bucketForTtftMs, bucketForTpotUs } from '../../src/shared/performance-h
 import { assertWebSearchProviderName, type WebSearchConfig } from '../../src/shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import { addDecimalStrings, canonicalPricingSelectorKey, canonicalizePricingSelector, type BillingMetric, type DecimalString, type PricingSelector } from '@floway-dev/protocols/common';
-import { UpstreamGoneError, type ProviderModel, type UpstreamRecord } from '@floway-dev/provider';
+import { UpstreamGoneError, type UpstreamModelsCache, type UpstreamRecord } from '@floway-dev/provider';
 
 const SEED_ADMIN_USER: User = {
   id: SEED_ADMIN_USER_ID,
@@ -600,7 +600,7 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     return Promise.resolve();
   }
 
-  saveModelsCache(id: string, cache: { revision: number; fetchedAt: number; models: ProviderModel[] }): Promise<void> {
+  saveModelsCache(id: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<void> {
     const existing = this.store.get(id);
     if (!existing) return Promise.resolve();
     existing.modelsCache = { revision: cache.revision, fetchedAt: cache.fetchedAt, models: [...cache.models], lastError: null };
@@ -609,7 +609,7 @@ class MemoryUpstreamRepo implements UpstreamRepo {
 
   // No-op on a row that has never cached a catalog: the annotation belongs to a
   // previously-successful fetch.
-  saveModelsCacheError(id: string, error: { message: string; at: number } | null): Promise<void> {
+  saveModelsCacheError(id: string, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<void> {
     const cache = this.store.get(id)?.modelsCache;
     if (!cache) return Promise.resolve();
     cache.lastError = error;

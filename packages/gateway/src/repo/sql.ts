@@ -51,7 +51,7 @@ import { assertWebSearchProviderName, type WebSearchConfig } from '../shared/web
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import type { SqlBindValue, SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
 import { addDecimalStrings, canonicalPricingSelectorKey, parseBillingMetric, parseModelKind, parseNonNegativeDecimalString, parsePricingSelectorKey, type AliasSelection, type AliasTarget, type AnnouncedMetadata } from '@floway-dev/protocols/common';
-import type { ProviderModel, ProxyFallbackEntry, ModelPrefixConfig, UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
+import type { ProxyFallbackEntry, ModelPrefixConfig, UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
 import { normalizeModelPrefix, parsePerformanceOperation, UpstreamGoneError } from '@floway-dev/provider';
 
 interface ApiKeyRow {
@@ -933,7 +933,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
   // Written only here and never by save(): an operator edit carries whatever
   // catalog the request happened to read, and folding that back in would let a
   // rename race a refresh.
-  async saveModelsCache(id: string, cache: { revision: number; fetchedAt: number; models: ProviderModel[] }): Promise<void> {
+  async saveModelsCache(id: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<void> {
     await this.db
       .prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ?')
       .bind(JSON.stringify({ ...cache, lastError: null }, modelsReplacer), id)
@@ -945,7 +945,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
   // read-modify-written: it touches one key of a document whose other keys a
   // concurrent refresh may be rewriting, and nothing compares this column's
   // text, so the encoding SQLite produces here is immaterial.
-  async saveModelsCacheError(id: string, error: { message: string; at: number } | null): Promise<void> {
+  async saveModelsCacheError(id: string, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<void> {
     await this.db
       .prepare("UPDATE upstreams SET models_cache_json = json_set(models_cache_json, '$.lastError', json(?)) WHERE id = ? AND models_cache_json IS NOT NULL")
       .bind(JSON.stringify(error), id)
