@@ -6,7 +6,7 @@ import type { Route } from './+types/dashboard-providers-model-aliases';
 import { requireDashboardAdmin } from './route-guards';
 import { api, callApi, callApiNoContent } from '../api/client';
 import type { ControlPlaneModel, ModelAlias } from '../api/types';
-import { AliasDialog } from '../components/model-alias/alias-dialog';
+import { AliasDialog } from '../components/model-alias/dialog';
 import { mergeModelAliasesPageData } from '../components/model-alias/page-data';
 import { computeAliasWarnings } from '../components/model-alias/warnings';
 import { indexCatalog } from '../components/models/catalog-index';
