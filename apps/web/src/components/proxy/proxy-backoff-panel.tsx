@@ -5,17 +5,13 @@ import { useTranslation } from 'react-i18next';
 import { api, callApi } from '../../api/client';
 import type { BackoffRow } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { formatCountdown } from '../../lib/format-duration';
+import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
 
 const { Button, Text, Tooltip } = fluentComponents;
-
-const formatCountdown = (seconds: number): string => {
-  if (seconds <= 0) return '0s';
-  const minutes = Math.floor(seconds / 60);
-  return minutes > 0 ? `${minutes}m ${seconds % 60}s` : `${seconds}s`;
-};
 
 // A proxy that has entered backoff is not routing, and the operator's first
 // question is how long that lasts. The countdown ticks locally so the panel
@@ -26,6 +22,7 @@ export function ProxyBackoffPanel({ backoffs, onReset, proxyId }: {
   proxyId: string;
 }) {
   const { t } = useTranslation();
+  const locale = useLocale();
   const toasts = useOutcomeToasts();
   const nowSeconds = useNow(1000) / 1000;
   const [resetError, setResetError] = useState<string | null>(null);
@@ -78,7 +75,7 @@ export function ProxyBackoffPanel({ backoffs, onReset, proxyId }: {
           <Text size={200} className="text-fui-fg2">
             {remaining <= 0
               ? t('dashboard.proxy.backoff.expiring')
-              : t('dashboard.proxy.backoff.remaining', { duration: formatCountdown(remaining) })}
+              : t('dashboard.proxy.backoff.remaining', { duration: formatCountdown(remaining, locale) })}
           </Text>
           <Text size={200} className="text-fui-fg3">{t('dashboard.proxy.backoff.failures', { count: row.fail_count })}</Text>
           {row.last_error && <Tooltip content={row.last_error} relationship="description">

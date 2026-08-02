@@ -36,7 +36,7 @@ import { useRefresh } from '../components/ui/use-refresh';
 import { UpstreamAccessControl } from '../components/upstreams/upstream-access-control';
 import { refineUpstreamAccess } from '../components/upstreams/upstream-access-validation';
 import { fluentComponents } from '../fluent';
-import { shortDate } from '../lib/format-time';
+import { dateTime, shortDate } from '../lib/format-time';
 import { useLocale } from '../lib/use-locale';
 import { useAuthStore } from '../stores/auth-store';
 
@@ -306,7 +306,7 @@ function UsersTable({
                     : t('dashboard.users.upstreams.count', { count: user.upstreamIds.length })}
                 </TableCell>
                 <TableCell>
-                  <Tooltip content={new Date(user.createdAt).toLocaleString()} relationship="description">
+                  <Tooltip content={dateTime(user.createdAt, locale)} relationship="description">
                     <span tabIndex={0}>
                       {shortDate(user.createdAt, locale)}
                     </span>

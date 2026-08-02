@@ -9,7 +9,6 @@ import type { ChartBucket } from '../charts/dashboard-time';
 import {
   dashboardBucketFrames,
   dashboardBucketKeyForUtcHour,
-  pad2,
 } from '../charts/dashboard-time';
 import { colorForSlot } from '../charts/palette';
 import type { ChartSeries } from '../charts/series-legends';
@@ -52,12 +51,26 @@ export const summaryMetrics: UsageMetric[][] = [
 const shortMonthDay = (date: Date, locale: string): string =>
   date.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
 
+// A bucket covers an hour span, so the label names the span rather than its
+// start. `formatRange` on an hour-only format is what makes that reading
+// locale-owned: `2 – 3 PM` under `en-US` and `14–15` under `zh-CN`, where a
+// hand-built `14:00 - 15:00` would impose a 24-hour clock on both.
+//
+// The end is placed on the start's own calendar day, wrapping past midnight,
+// because `formatRange` widens to two full datetimes the moment its endpoints
+// fall on different days -- a bucket crossing midnight would read
+// `8/2/2026, 11 PM – 8/3/2026, 12 AM` in a label that has room for two clock
+// readings. Reversed endpoints are fine: `formatRange` still prints them in
+// the order given.
+const bucketHourRange = (date: Date, spanHours: number, locale: string): string => {
+  const end = new Date(date);
+  end.setHours((date.getHours() + spanHours) % 24, 0, 0, 0);
+  return new Intl.DateTimeFormat(locale, { hour: 'numeric' }).formatRange(date, end);
+};
+
 const bucketLabel = (date: Date, range: UsageRange, locale: string): string => {
   if (range === '30d') return shortMonthDay(date, locale);
-
-  const start = date.getHours();
-  const end = range === '7d' ? (start + 4) % 24 : (start + 1) % 24;
-  const time = `${pad2(start)}:00 - ${pad2(end)}:00`;
+  const time = bucketHourRange(date, range === '7d' ? 4 : 1, locale);
   return range === '7d' ? `${shortMonthDay(date, locale)} ${time}` : time;
 };
 

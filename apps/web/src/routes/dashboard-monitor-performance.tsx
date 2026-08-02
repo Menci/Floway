@@ -491,9 +491,5 @@ const performanceBuckets = (range: PerformanceRange, now: number, locale: string
   dashboardBucketFrames(range, now).map(({ date, key }) => ({
     key,
     date,
-    label: range === 'today'
-      ? date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
-      : range === '7d'
-        ? date.toLocaleString(locale, { month: 'short', day: 'numeric', hour: '2-digit' })
-        : date.toLocaleDateString(locale, { month: 'short', day: 'numeric' }),
+    label: formatAxisDate(date, range, locale),
   }));
