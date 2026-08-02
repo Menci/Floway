@@ -1,5 +1,5 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
-import { StrictMode, useEffect, useRef, useState } from 'react';
+import { StrictMode, useCallback, useRef, useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { NavSelectionIndicator } from '../../src/components/sidebar/nav-selection-indicator';
@@ -40,7 +40,7 @@ const stubAnimations = () => {
 const stubLayout = () => {
   Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
     configurable: true,
-    value: function (this: HTMLElement): DOMRect {
+    value(this: HTMLElement): DOMRect {
       const item = this.dataset.navValue;
       const top = item === undefined ? 0 : ITEMS.indexOf(item) * ROW_HEIGHT;
       const height = item === undefined ? ROW_HEIGHT * ITEMS.length : ROW_HEIGHT;
@@ -61,10 +61,15 @@ const NavHarness = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [selectedValue, setSelectedValue] = useState(ITEMS[0]);
   // The container is this component's own element, so its ref is still empty
-  // while a child mounted in the same commit runs its layout effect.
-  const [containerReady, setContainerReady] = useState(false);
-  useEffect(() => setContainerReady(true), []);
-  return <div ref={containerRef}>
+  // while a child mounted in the same commit runs its layout effect. A callback
+  // ref answers during the commit that attaches the node, so the indicator
+  // mounts into a container it can already measure.
+  const [container, setContainer] = useState<HTMLDivElement | null>(null);
+  const attachContainer = useCallback((node: HTMLDivElement | null) => {
+    containerRef.current = node;
+    setContainer(node);
+  }, []);
+  return <div ref={attachContainer}>
     <div>
       {[...ITEMS, ...OTHER_LIST_ITEMS].map(item => <button
         aria-current={item === selectedValue ? 'page' : undefined}
@@ -73,7 +78,7 @@ const NavHarness = () => {
         onClick={() => setSelectedValue(item)}
       >{item}</button>)}
     </div>
-    {containerReady && <NavSelectionIndicator containerRef={containerRef} inset={4} otherListIs="below" selectedValue={selectedValue} />}
+    {container !== null && <NavSelectionIndicator containerRef={containerRef} inset={4} otherListIs="below" selectedValue={selectedValue} />}
   </div>;
 };
 

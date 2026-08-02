@@ -1,11 +1,10 @@
+import { NO_READING } from './no-reading';
 import {
   addDecimalStrings,
   decimalStringIsZero,
   decimalStringToNumber,
   type DecimalString,
 } from '@floway-dev/protocols/common';
-
-import { NO_READING } from './no-reading';
 
 const splitDecimal = (value: DecimalString): [integer: string, fraction: string] => {
   const [integer, fraction = ''] = value.split('.');
