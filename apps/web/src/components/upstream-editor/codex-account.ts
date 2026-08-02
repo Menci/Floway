@@ -47,8 +47,6 @@ const window = (
   ? { key, percent, resetAt: resetAt ?? null, windowMinutes: windowMinutes ?? null }
   : null;
 
-// A `ratelimited_until` in the past is a spent limit: the account is usable
-// again and the badge must not claim otherwise.
 const stillRateLimited = (until: string | undefined, now: number): string | null =>
   typeof until === 'string' && new Date(until).getTime() > now ? until : null;
 
