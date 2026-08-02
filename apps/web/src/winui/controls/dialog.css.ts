@@ -84,21 +84,32 @@ export const dialogCss = `
   }
 }
 
-/* Focus. Fluent draws its ring as an ::after inset 2px outside the surface and
-   blanks the surface border while it shows; WinUI's ring is the outer stroke
-   with the inner stroke against the control, both following the control's own
-   corner radius rather than Fluent's medium one. The ::after box is 2px larger
-   on every side than the surface it traces, so staying concentric with the
-   8px overlay corner means rounding it by that much more.
+/* Focus. Fluent draws its ring as an \`::after\` two pixels outside the surface
+   and blanks the surface border while it shows; WinUI's ring is a 2px outer
+   stroke with a 1px inner stroke against the control, both following the
+   control's own corner radius rather than Fluent's medium one. The surface
+   clips to round its own corner, and that clip is the outermost box of the
+   overlay, so a ring drawn outside it is a ring nobody sees: the
+   pseudo-element is pulled onto the surface's padding box instead, where the
+   pair lands whole inside the clip. The radius follows the box the ring now
+   traces -- the 8px overlay corner less the one pixel of border between the
+   two -- and the inner stroke rides inside the outer ring's border box as an
+   inset shadow, as on every other item-shaped surface in the layer. With both
+   strokes indoors the blanked border has no ring left to complete, so it takes
+   back the surface stroke it carries at rest; that declaration repeats the one
+   above because Fluent's focus atom is what blanks it.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L66 */
 .fui-DialogSurface.fui-DialogSurface[data-fui-focus-visible] {
   --colorStrokeFocus2: var(--winui-focus-stroke-outer);
-  border-color: var(--winui-focus-stroke-inner);
+  border-color: var(--winui-surface-stroke-default);
 }
 
 .fui-DialogSurface.fui-DialogSurface[data-fui-focus-visible]::after {
-  border-radius: calc(var(--winui-overlay-corner-radius) + 2px);
+  inset: 0;
+  border-radius: calc(var(--winui-overlay-corner-radius) - 1px);
+  box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
 }
 
 /* The body takes over the 24px ContentDialogPadding the surface gave up, and
