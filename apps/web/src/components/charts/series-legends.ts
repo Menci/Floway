@@ -1,8 +1,5 @@
-// One plotted series, as the legend and the plot each need it: `id` selects it
-// and survives a relabelling, `label` names it to the reader, and `colorSlot`
-// indexes the palette. `legend` is the disambiguated `label` Fluent keys its own
-// series by, so it exists only once a set of entries has been compared against
-// each other.
+// `legend` is the `label` disambiguated against its siblings, which is what
+// Fluent keys its own series by, so it exists only for a compared set.
 export interface SeriesLegendEntry { id: string; label: string; colorSlot: number }
 export type ChartSeries = SeriesLegendEntry & { legend: string };
 

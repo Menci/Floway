@@ -5,9 +5,8 @@ export interface DashboardBucketFrame {
   key: string;
 }
 
-// A frame is the bucket the range defines; a bucket is that frame once a chart
-// has named it for its reader. The label is locale- and page-dependent, so it is
-// added by the consumer rather than derived here.
+// A frame is the bucket the range defines; the label is locale- and
+// page-dependent, so the consumer adds it rather than deriving it here.
 export interface ChartBucket extends DashboardBucketFrame { label: string }
 
 const pad2 = (value: number) => String(value).padStart(2, '0');
@@ -72,15 +71,9 @@ export const chartTickValues = <T extends { date: Date }>(buckets: T[], desired 
   return ticks;
 };
 
-// The axis and the callout name the same bucket, so they name it the same way:
-// an abbreviated month, as `usage/plot`'s bucket labels already do. `07/31`
-// beside a callout reading `Jul 31` read as two different scales.
-//
-// One `toLocaleString` for all three ranges. `toLocaleDateString` does render
-// an `hour` -- ToDateTimeOptions only supplies defaults, it does not strip the
-// time fields -- but asking a date formatter for a time is not what the call
-// says it does, and `hour: '2-digit'` under a 12-hour clock produces `04 AM`,
-// which nobody writes.
+// The axis and the callout name the same bucket the same way, and all three
+// ranges go through `toLocaleString`: `toLocaleDateString` would render the
+// hour too, but `hour: '2-digit'` under a 12-hour clock produces `04 AM`.
 const AXIS_PARTS: Record<DashboardRange, Intl.DateTimeFormatOptions> = {
   'today': { hour: '2-digit', minute: '2-digit' },
   '7d': { month: 'short', day: 'numeric', hour: 'numeric' },

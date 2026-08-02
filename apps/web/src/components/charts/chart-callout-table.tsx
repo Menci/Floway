@@ -4,11 +4,9 @@ import { SeriesMarker } from './series-marker';
 import { fluentComponents } from '../../fluent';
 
 const { Text } = fluentComponents;
-// The header takes Caption, the size the axis labels beside it are set in. The
-// value rows sit one step under it, off the ramp: the operator ruled this size
-// himself, trying 12 and 11.5 and settling back on 11. The leadings are his
-// too -- he asked for the size to move and the leading to stay -- so they are
-// not the pairs the ramp states.
+// The header takes Caption, the size the axis labels beside it are set in; the
+// value rows sit under it, off WinUI's ramp. Both leadings are the ramp's, so
+// these size/leading pairs are deliberately not the ones the ramp states.
 const headerTextStyle = { fontSize: '12px', lineHeight: '16px' } as const;
 const bodyTextStyle = { fontSize: '11px', lineHeight: '14px' } as const;
 

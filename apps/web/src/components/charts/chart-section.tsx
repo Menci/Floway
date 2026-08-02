@@ -11,9 +11,6 @@ import { SectionHeader } from '../ui/section-header';
 
 const { InteractionTag, InteractionTagPrimary, Toolbar, ToolbarButton, Tooltip } = fluentComponents;
 
-// The header controls, the legend, and the plot frame are the same in every
-// chart the dashboard draws; only the plot itself differs, so it arrives as
-// children.
 export function ChartSection({
   children,
   controlsLabel,
@@ -60,8 +57,8 @@ export function ChartSection({
                     className={hidden.has(entry.id) ? 'line-through opacity-[0.55]' : ''}
                     icon={<SeriesMarker className="mx-[4px]" color={colorForSlot(entry.colorSlot)} />}
                     // A double-click delivers its two clicks first; both land on
-                    // this same series and cancel out, so the isolate that follows
-                    // starts from the state the reader saw.
+                    // this same series and cancel out, so the isolate that
+                    // follows starts from the state the reader saw.
                     onClick={event => { if (event.shiftKey) isolate(entry.id); else onHiddenChange(toggledSeries(hidden, entry.id)); }}
                     onDoubleClick={() => isolate(entry.id)}
                   >
