@@ -1,37 +1,22 @@
 // The router's in-flight indicator, drawn as WinUI 3's ProgressBar held in its
 // Indeterminate state.
 //
-// Nothing here is a Fluent element, so there is no Griffel atom to outrank and
-// each rule names its own class once. The strip is aria-hidden and takes no
-// pointer, and it never carries a value, so the only states it has are active
-// and idle, each of those in light, in dark and in forced colours. Determinate,
-// Error, Paused and their indeterminate variants are states of a control this
-// one never becomes, and the track those states paint is the one thing
-// Indeterminate switches off.
-//
-// This module is part of the inlined critical block, where the rest of that
-// block spells its literals out because it has to be right on the first paint
-// and ../winui/tokens.ts arrives with the linked stylesheet. The strip is the
-// one surface in the block that names `--winui-*` anyway: it is shown by a
-// router navigation and by nothing else, so it cannot be on screen until the
-// app has hydrated, which is well past the point that stylesheet lands.
+// This module is part of the inlined critical block, whose other members spell
+// their literals out because ../winui/tokens.ts only arrives with the linked
+// stylesheet. The strip may name --winui-* anyway: a router navigation is the
+// only thing that shows it, so it cannot paint before hydration.
 export const navigationProgressCss = `
-  /* The strip spans the top edge of the viewport instead of sitting in a
-     layout row, so the box is ours and only its thickness is WinUI's:
-     ProgressBarMinHeight, the floor the template gives the grid its indicators
-     fill. No rail is painted under them, because entering Indeterminate takes
-     the track's opacity to 0. Clipping stands in for the ClipRect on the inner
-     Border, which is what holds an indicator inside the control as it crosses.
-     The strip belongs to the document rather than to a Fluent surface, so it
-     stacks over the app's own content and under Fluent's portal layer at
-     1000000, so a dialog and its scrim cover it.
+  /* Only the thickness is WinUI's: ProgressBarMinHeight. No rail is painted
+     under the indicators, because entering Indeterminate takes the track's
+     opacity to 0. Clipping stands in for the ClipRect on the inner Border,
+     which holds an indicator inside the control as it crosses.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar_themeresources.xaml#L29
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar.xaml#L94-L99
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar.xaml#L156
 
-     Arriving and leaving is ours: the template states no fade between showing a
-     ProgressBar and hiding one, so rather than invent a number the strip takes
-     the duration and the easing every WinUI control shares for a fast change.
+     The template states no fade between showing a ProgressBar and hiding one,
+     so rather than invent a number the strip takes the duration and easing
+     every WinUI control shares for a fast change.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L602-L606 */
   .floway-navigation-progress {
     height: 3px;
@@ -42,23 +27,18 @@ export const navigationProgressCss = `
     position: fixed;
     transition: opacity var(--winui-control-fast-animation-duration)
       var(--winui-control-fast-out-slow-in-easing);
-    /* Above Fluent's portal mount, which sits at 1000000 and carries every
-       dialog, drawer, popover and their scrims. A route can be loading while one
-       of those is open -- a dialog's own action navigates -- and the strip is
-       the only report that it is. */
+    /* Above Fluent's portal mount at 1000000, which carries every dialog,
+       drawer, popover and their scrims: a dialog's own action can navigate,
+       and the strip is the only report that it is loading. */
     z-index: 1000001;
   }
 
   .floway-navigation-progress[data-active='true'] { opacity: 1; }
 
   /* Both indicators are ProgressBarForeground, which is
-     AccentFillColorDefaultBrush in either theme dictionary, so the accent step
-     the tokens flip between carries the whole colour answer and no rule below
-     is stated twice. ProgressBarCornerRadius is 1.5 and reaches each indicator
-     as its rectangle's radius. They are left aligned and sized as fractions of
-     the control -- 40% and 60% -- and the storyboard's own first frame puts the
-     pair off the left edge, so a strip that has never run is empty rather than
-     showing two bars parked at its start.
+     AccentFillColorDefaultBrush in either theme dictionary;
+     ProgressBarCornerRadius is 1.5, and the pair is left aligned at 40% and
+     60% of the control.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar_themeresources.xaml#L6
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar_themeresources.xaml#L22
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar_themeresources.xaml#L31
@@ -84,26 +64,17 @@ export const navigationProgressCss = `
     width: 60%;
   }
 
-  /* The Indeterminate storyboard, transcribed whole: one 2s loop over two
-     indicators, the second held at its start until 0.75s so the pair crosses
-     staggered. Every offset in the source is a multiple of the indicator's own
-     width, which is what lets each one be written as a percentage of the
-     element rather than of the strip. XAML hangs a KeySpline on the frame it
+  /* The Indeterminate storyboard: one 2s loop over two indicators, the second
+     held at its start until 0.75s. XAML hangs a KeySpline on the frame it
      interpolates into and CSS hangs a timing function on the frame it
      interpolates out of, so the shared 0.4, 0, 0.6, 1 spline sits one keyframe
-     earlier here than it reads there; the flat runs at either end need no
-     curve, since both of their frames carry the same offset.
+     earlier here than it reads there.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar.xaml#L100-L111
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar.cpp#L223-L230 */
-  /* Paused rather than unanimated when the strip is idle, and that is what
-     makes the fade out a fade. Hung on the active state, the animation was
-     REMOVED the instant the strip went idle and each indicator snapped back to
-     the offset its own rule stated -- off the left edge -- so the strip emptied
-     in one frame and the opacity underneath it was easing nothing. Paused, they
-     hold the position they had reached and go out with the strip that carries
-     them. A paused animation costs nothing while it waits, and resuming where
-     it stopped is right for an indicator that means "still working" rather than
-     "starting over". */
+  /* Paused rather than unanimated while idle, which is what makes the fade out
+     a fade: an animation hung on the active state is removed when that state
+     goes, snapping each indicator back off the left edge in one frame with
+     nothing left for the opacity underneath to ease. */
   .floway-navigation-progress[data-active='true']::before,
   .floway-navigation-progress[data-active='true']::after {
     animation-play-state: running;
@@ -125,39 +96,20 @@ export const navigationProgressCss = `
     100% { transform: translateX(166%); }
   }
 
-  /* Nothing here answers a reduced-motion preference, and that is the
-     operator's ruling. He was asked whether the sweep should stop when the OS
-     asks for less motion and said to keep it, on the grounds that the sweep
-     indicates a state rather than carrying a transition. The fade that brings
-     the strip in and out is the transition, and it stays too on the same
-     ruling; it is over in 83ms.
+  /* No reduced-motion variant, deliberately: the sweep indicates a state rather
+     than carrying a transition, and the strip has nothing else to state it with
+     -- a route load reports no progress, so there is no determinate width to
+     fall back on. WinUI lands in the same place, stating one storyboard and no
+     quieter variant. */
 
-     The strip has nothing else to say the state with. There is no determinate
-     width to fall back on, since a route load states no progress, and a bar
-     that holds still reports a navigation in flight no more than an empty bar
-     does. WinUI lands in the same place by construction rather than by
-     decision: its indeterminate ProgressBar states one storyboard and no
-     quieter variant, and ProgressBar is an AnimatedVisualPlayer, so it reaches
-     neither UISettings.AnimationsEnabled nor the visual-state gate that seeks
-     a storyboard to its end frame.
-
-     A reader who asked for less motion still gets a 3px strip sweeping at the
-     top of the window for as long as a route is loading. That is the cost of
-     reporting the state at all, and it is the cost the ruling accepts.
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar.xaml#L100-L111 */
-
-  /* WinUI's HighContrast dictionary answers the bar with a WindowTextColor
-     border a pixel thick and a HighlightColor foreground, and that is what is
-     written here. The border is the control's own: ProgressBarBorderBrush
-     reaches ProgressBarRoot, the outermost Border of the template, which wraps
-     the grid carrying MinHeight rather than the indicator rectangles inside
-     it. The track it also names goes unpainted for the same reason it does
-     above. A forced palette repaints a colour it can reach, so the accent has
-     to be handed over as the system keyword WinUI itself names -- left as a
-     token it would be forced to the page background and the strip would
-     vanish. \`content-box\` holds the 3px against the app's global border-box
-     so the border is added around the strip rather than taken out of it, which
-     is the nesting ProgressBarRoot states.
+  /* WinUI's HighContrast dictionary answers the bar with a 1px WindowTextColor
+     border and a HighlightColor foreground. The border is ProgressBarBorderBrush
+     on ProgressBarRoot, the outermost Border, so content-box holds the 3px
+     against the app's global border-box and the border is added around the
+     strip rather than taken out of it. A forced palette repaints a colour it
+     can reach, so the accent has to be handed over as the system keyword WinUI
+     itself names -- left as a token it would be forced to the page background
+     and the strip would vanish.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar_themeresources.xaml#L12-L18
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar.xaml#L155-L157 */
   @media (forced-colors: active) {
