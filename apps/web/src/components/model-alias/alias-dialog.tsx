@@ -138,7 +138,7 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
       revealOn={errors.announcedMetadata !== undefined}
       toggledOn={values.manualMetadata}
     >
-      <MetadataEditor disabled={saving || !values.manualMetadata} kind={kind} value={values.manualMetadata ? values.announcedMetadata : automaticMetadata} onChange={value => setValue('announcedMetadata', value, { shouldValidate: true })} />
+      <MetadataEditor disabled={saving} kind={kind} readOnly={!values.manualMetadata} value={values.manualMetadata ? values.announcedMetadata : automaticMetadata} onChange={value => setValue('announcedMetadata', value, { shouldValidate: true })} />
     </SettingsExpander>}
     {aliasWarnings.length > 0 && <OutcomeMessageBar intent="warning">{aliasWarnings.map(warning => <Text block key={warning.type}>{t(`dashboard.modelAliases.warnings.${warning.key}`, warning.values)}</Text>)}</OutcomeMessageBar>}
     <SettingsCard
