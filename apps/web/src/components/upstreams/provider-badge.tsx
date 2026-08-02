@@ -2,7 +2,6 @@ import type { TagProps } from '@fluentui/react-components';
 import { ServerRegular } from '@fluentui/react-icons';
 import { useTranslation } from 'react-i18next';
 
-import { KIND_DEFAULT_TONES } from './upstream-paint';
 import type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind } from '../../api/types';
 import azureIconUrl from '../../assets/azure-color.svg?no-inline';
 import claudeIconUrl from '../../assets/claude-color.svg?no-inline';
@@ -26,6 +25,15 @@ const providerLabels: Record<UpstreamProviderKind, string> = {
   codex: 'Codex',
   'claude-code': 'Claude Code',
   ollama: 'Ollama',
+};
+
+export const KIND_DEFAULT_TONES: Record<UpstreamProviderKind, UpstreamColorPreset> = {
+  custom: 'amber',
+  azure: 'emerald',
+  copilot: 'cyan',
+  codex: 'violet',
+  'claude-code': 'orange',
+  ollama: 'rose',
 };
 
 // The preset tones are our own palette. WinUI states no per-upstream identity

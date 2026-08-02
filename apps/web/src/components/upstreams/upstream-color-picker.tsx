@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { ProviderBadge } from './provider-badge';
-import { KIND_DEFAULT_TONES } from './upstream-paint';
+import { KIND_DEFAULT_TONES, ProviderBadge } from './provider-badge';
 import type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { HEX_RE, hexToRgb, hsvToRgb, isHexColor, rgbToHex, rgbToHsv } from '../../lib/color';
