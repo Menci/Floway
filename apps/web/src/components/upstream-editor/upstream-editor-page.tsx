@@ -43,9 +43,9 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const [modelsError, setModelsError] = useState<string | null>(data.modelsError);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  // The colour picker holds a half-typed draft itself and commits only what
-  // parses, so the outstanding-draft fact lives here instead: it is what the
-  // schema rejects on and what the leave prompt counts as an unsaved change.
+  // The colour picker commits only what parses, so the outstanding-draft fact
+  // lives here: it is what the schema rejects on and what the leave prompt
+  // counts as an unsaved change.
   const [colorDraftInvalid, setColorDraftInvalid] = useState(false);
   const allowNavigation = useRef(false);
   const initialValues = valuesFromRecord(data.record);
@@ -66,8 +66,8 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     if (values.modelPrefix && !modelPrefixIsValid(values.modelPrefix.prefix)) ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.prefixInvalid', path: ['modelPrefix'] });
     if (values.modelPrefix?.addressable.length === 0) ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.validation.prefix', path: ['modelPrefix'] });
     if (!modelsAreValid(values.manualModels)) ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.validation.models', path: ['manualModels'] });
-    // A credential is a create-time gate only: an upstream that already exists
-    // keeps the one it was created with, and the editor never sends it back.
+    // An upstream that already exists keeps the credential it was created
+    // with, and the editor never sends it back.
     if (data.mode !== 'create') return;
     if (record.kind === 'copilot' && !values.config.githubToken) ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.validation.copilot', path: ['config'] });
     if ((record.kind === 'codex' || record.kind === 'claude-code') && values.config.accounts.length === 0) ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.validation.credential', path: ['config'] });
@@ -86,11 +86,9 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     [hasUnsavedChanges],
   ));
 
-  // Releasing the blocker on confirm commits the route change, which takes
-  // this body-portaled surface with it part-way through its exit. So confirm
-  // only closes the dialog and the blocker is released once the exit reports
-  // itself finished; a dismissal resets the blocker first, which is what tells
-  // the two apart by then.
+  // Releasing the blocker commits the route change, which would unmount this
+  // body-portaled dialog mid-exit. So confirm only closes it and the blocker is
+  // released from the exit; a dismissal resets the blocker before that.
   const leaveDialog = useDialogInvocation<void>();
   const blocked = blocker.state === 'blocked';
   const [dialogFollowsBlocked, setDialogFollowsBlocked] = useState(blocked);
@@ -108,9 +106,8 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     return () => window.removeEventListener('beforeunload', handler);
   }, [hasUnsavedChanges]);
 
-  // The listing is reachable from two controls -- the workspace's refresh
-  // button and the custom provider's fetch switch -- so runs can overlap;
-  // `useRefresh` aborts the superseded one at the transport.
+  // The workspace's refresh button and the custom provider's fetch switch both
+  // reach this, so runs can overlap; `useRefresh` aborts the superseded one.
   const { refresh: refreshModels, refreshing: modelsLoading } = useRefresh(useCallback(async (signal: AbortSignal) => {
     if (record.kind === 'azure') return;
     setModelsError(null);
@@ -155,10 +152,6 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     const result = data.mode === 'create'
       ? await callApi(() => api.api.upstreams.$post({ json: createBody(record, values) }))
       : await callApi(() => api.api.upstreams[':id'].$patch({ param: { id: record.id }, json: updateBody(record, values) }));
-    // `saving` spans more than the write: the create route's loader probes the
-    // provider for its catalog, so the page stays mounted and interactive for
-    // as long as that takes, and a Save left live across that window posts a
-    // second create.
     if (result.error) { setSaving(false); setSaveError(result.error.message); return; }
     let saved: UpstreamRecord = result.data;
     if (data.mode === 'edit') {
@@ -174,14 +167,15 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     toasts.succeed(t('dashboard.upstreamEditor.toast.saved'));
     if (data.mode === 'create') {
       allowNavigation.current = true;
-      // `saving` is left set: the editor unmounts when the target route
-      // commits, and the button stays busy for the whole hand-off.
+      // `saving` is left set: the create route's loader probes the provider for
+      // its catalog, so the page stays mounted and interactive across the
+      // hand-off, and a Save left live there posts a second create.
       void navigate(`/dashboard/providers/upstreams/${encodeURIComponent(saved.id)}`, { replace: true });
     } else {
       setSaving(false);
     }
   }, () => {
-    // Every field rejection renders on the control that produced it; the
+    // Field rejections render on the control that produced them; the
     // page-level bar is only where a server says no.
     setSaveError(null);
   })();
@@ -190,21 +184,18 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
 
   return <FormProvider {...form}>
     {/* A column rather than a row template: the error bar is only sometimes
-        there, and a template that names a row for it leaves an empty one and a
-        gap under everything else when it is not. */}
+        there, and a named row for it leaves an empty one and a gap when it
+        is not. */}
     <div className="flex flex-col gap-[14px] h-full min-h-0">
       <header className="flex items-center gap-3 min-w-0">
         <BackNavigationButton onClick={leave}>{t('dashboard.upstreamEditor.actions.back')}</BackNavigationButton>
         {hasUnsavedChanges && <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.unsaved')}</Text>}
-        {/* Save is the same flag the unsaved hint reads: with nothing to send
-            it would post an identical payload, so it says so rather than doing
-            it. An invalid colour draft counts as a change, which keeps the
-            button live for the one press that surfaces the field's own error.
-            Only in edit mode, where the baseline is the saved record. A create
-            form opens on a prefilled blueprint and is therefore clean at first
-            render, but "not dirty" there does not mean "nothing to send" -- and
-            the credential gates are submit-time schema issues, so Save is the
-            only thing that can raise them. */}
+        {/* Disabled on a clean form only in edit mode: a create form opens on a
+            prefilled blueprint and is clean at first render, yet still has
+            something to send, and its credential gates are submit-time schema
+            issues that only Save can raise. An invalid colour draft counts as a
+            change, keeping the button live for the press that surfaces the
+            field's own error. */}
         <div className="ml-auto flex items-center gap-2">
           <Button appearance="primary" disabled={data.mode === 'edit' && !hasUnsavedChanges} disabledFocusable={saving} icon={saving ? <Spinner size="tiny" /> : <SaveRegular />} onClick={() => void submitForm()}>{t('dashboard.upstreamEditor.actions.save')}</Button>
         </div>
