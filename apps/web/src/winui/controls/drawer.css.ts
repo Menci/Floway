@@ -33,6 +33,9 @@ export const drawerCss = `
    start edge of the content card. Nothing this drawer sits beside is that card.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L127
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L392 */
+.fui-InlineDrawer.fui-InlineDrawer {
+  border: none;
+}
 
 /* WinUI strokes all four sides of a flyout; only the page-facing edge is
    painted here, because a viewport-anchored drawer's other three run along the
