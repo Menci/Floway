@@ -87,7 +87,6 @@ function ScrollableListbox({
     children,
     className,
     ref: fluentRef,
-    style,
     ...rootProps
   } = listboxProps as ListboxRenderPropsWithRef;
   const { t } = useTranslation();
@@ -106,7 +105,6 @@ function ScrollableListbox({
       className: mergeClasses(className, scrollAreaHostClassName, 'floway-combobox-listbox'),
       ...(overlayScrollbarsEnabled ? { 'data-overlayscrollbars-initialize': '' } : {}),
       ref: mergedRef,
-      style: { ...style, overflowX: 'hidden', overflowY: 'hidden' },
     },
     // JSX rather than createElement, so the ref is a ref to the compiler and not
     // an ordinary prop it has to assume is read in render.

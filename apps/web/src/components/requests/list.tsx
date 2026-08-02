@@ -34,29 +34,29 @@ const useStyles = makeStyles({
   keySelector: {
     // Heads a card, so it takes the subtle ramp instead of a ComboBox's control
     // fills -- pressed being the state a ComboBox holds while expanded.
+    // ../../winui/controls/select.css.ts
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L230-L231
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L26-L27
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L34
-    backgroundColor: 'transparent !important',
-    borderTop: '0 !important',
-    borderRight: '0 !important',
+    '--floway-select-fill': 'transparent',
+    '--floway-select-fill-hover': 'var(--colorSubtleBackgroundHover)',
+    '--floway-select-fill-pressed': 'var(--colorSubtleBackgroundPressed)',
     // The three other edges are gone, so the one that remains is not a
     // ComboBox's outline any more -- it is the seam between a fixed band and the
     // list scrolling below it, which is the divider the rows below read.
-    borderBottom: '1px solid var(--winui-divider-stroke-default) !important',
-    borderLeft: '0 !important',
-    borderRadius: 'var(--winui-overlay-corner-radius) var(--winui-overlay-corner-radius) 0 0 !important',
-    width: '100%',
+    '--floway-select-border-width': '0 0 1px',
+    '--floway-select-stroke': 'var(--winui-divider-stroke-default)',
+    '--floway-select-radius': 'var(--winui-overlay-corner-radius) var(--winui-overlay-corner-radius) 0 0',
     // The field sits flush against the card's clip, so the focus composite is
     // turned inward rather than opening a gutter that would put a band of card
     // fill above the field.
-    // ../../winui/controls/select.css.ts
-    '&:has([data-fui-focus-visible])': {
-      boxShadow: 'inset 0 0 0 4px var(--winui-control-fill-default) !important',
-      outlineOffset: '-2px !important',
+    '--floway-select-focus-shadow': 'inset 0 0 0 4px var(--winui-control-fill-default)',
+    '--floway-select-focus-offset': '-2px',
+    width: '100%',
+    '&:has(.fui-Dropdown__button[aria-expanded="true"])': {
+      '--floway-select-fill': 'var(--colorSubtleBackgroundPressed)',
+      '--floway-select-fill-hover': 'var(--colorSubtleBackgroundPressed)',
     },
-    '&:hover': { backgroundColor: 'var(--colorSubtleBackgroundHover) !important' },
-    '&:active, &:has(.fui-Dropdown__button[aria-expanded="true"])': { backgroundColor: 'var(--colorSubtleBackgroundPressed) !important' },
     '& .fui-Dropdown__button': { paddingInlineStart: '16px' },
   },
   list: { outlineStyle: 'none' },

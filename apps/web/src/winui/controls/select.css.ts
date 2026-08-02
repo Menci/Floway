@@ -18,11 +18,30 @@ export const selectCss = `
    carries the evidence and the reasoning for the whole layer. Taking the red out
    of the token keeps it off every edge Fluent's invalid atom reaches.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L32
-   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Dropdown/useDropdownStyles.styles.ts#L180-L184 */
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Dropdown/useDropdownStyles.styles.ts#L180-L184
+
+   Every rule here selects the field through a doubled class, which no Griffel
+   rule can outweigh, so a surface that has to restate the faceplate says so
+   through the --floway-select-* seam instead: the fill and its hover and
+   pressed steps, the stroke every enabled state draws, the border width and
+   radius, and the focus composite's shadow and outline offset.
+
+   The width and the radius are stated here for the seam to reach; both are
+   WinUI's own ComboBox values, and both are what Fluent's outline root already
+   computes.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L331
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L365
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L382
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Dropdown/useDropdownStyles.styles.ts#L23
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Dropdown/useDropdownStyles.styles.ts#L148
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Combobox/useComboboxStyles.styles.ts#L30
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Combobox/useComboboxStyles.styles.ts#L121 */
 .fui-Dropdown.fui-Dropdown,
 .fui-Combobox.fui-Combobox {
   --colorPaletteRedBorder2: var(--colorNeutralStroke1);
-  background-color: var(--winui-control-fill-default);
+  background-color: var(--floway-select-fill, var(--winui-control-fill-default));
+  border-radius: var(--floway-select-radius, var(--winui-control-corner-radius));
+  border-width: var(--floway-select-border-width, 1px);
 }
 
 /* The one stroke WinUI keeps through rest and focus. Two Fluent rules have to be
@@ -38,7 +57,7 @@ export const selectCss = `
 .fui-Dropdown.fui-Dropdown:focus-within,
 .fui-Combobox.fui-Combobox:not(:focus-within),
 .fui-Combobox.fui-Combobox:focus-within {
-  border-color: var(--winui-control-elevation-border-color);
+  border-color: var(--floway-select-stroke, var(--winui-control-elevation-border-color));
 }
 
 /* The pressed and disabled placeholder steps must be stated because the rest
@@ -73,8 +92,8 @@ export const selectCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L55 */
 .fui-Dropdown.fui-Dropdown:hover:not(:has(.fui-Dropdown__button:disabled)),
 .fui-Combobox.fui-Combobox:hover:not(:has(.fui-Combobox__input:disabled)) {
-  background-color: var(--winui-control-fill-secondary);
-  border-color: var(--winui-control-elevation-border-color);
+  background-color: var(--floway-select-fill-hover, var(--winui-control-fill-secondary));
+  border-color: var(--floway-select-stroke, var(--winui-control-elevation-border-color));
 }
 
 /* Keyboard focus. WinUI lights a detached highlight border inset by -4px plus
@@ -96,9 +115,9 @@ export const selectCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L328 */
 .fui-Dropdown.fui-Dropdown:has([data-fui-focus-visible]),
 .fui-Combobox.fui-Combobox:has([data-fui-focus-visible]) {
-  box-shadow: 0 0 0 2px var(--winui-control-fill-default);
+  box-shadow: var(--floway-select-focus-shadow, 0 0 0 2px var(--winui-control-fill-default));
   outline: 2px solid var(--winui-focus-stroke-outer);
-  outline-offset: 2px;
+  outline-offset: var(--floway-select-focus-offset, 2px);
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L324
@@ -142,8 +161,8 @@ export const selectCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/ComboBox_Partial.cpp#L850-L870 */
 .fui-Dropdown.fui-Dropdown:active:not(:has(.fui-Dropdown__button:disabled)),
 .fui-Combobox.fui-Combobox:active:not(:has(.fui-Combobox__input:disabled)) {
-  background-color: var(--winui-control-fill-tertiary);
-  border-color: var(--winui-control-stroke-default);
+  background-color: var(--floway-select-fill-pressed, var(--winui-control-fill-tertiary));
+  border-color: var(--floway-select-stroke, var(--winui-control-stroke-default));
 }
 
 /* A disabled field can still take :active on the root -- the pointer event lands
@@ -246,9 +265,7 @@ export const selectCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Materials/Acrylic/AcrylicBrush_themeresources.xaml#L96
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L332
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L590 */
-.fui-Listbox.fui-Listbox,
-.fui-Dropdown__listbox.fui-Dropdown__listbox,
-.fui-Combobox__listbox.fui-Combobox__listbox {
+.fui-Listbox.fui-Listbox {
   background-color: var(--winui-acrylic-in-app-fill-default);
   border-color: var(--winui-surface-stroke-flyout);
   border-radius: var(--winui-overlay-corner-radius);
