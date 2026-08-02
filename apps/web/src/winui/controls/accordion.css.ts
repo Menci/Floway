@@ -120,7 +120,8 @@ export const accordionCss = `
 }
 
 /* Pointer feedback lives entirely on the chevron and answers the whole header
-   row rather than the chevron alone. A header that cannot be actuated is
+   row rather than the chevron alone, which is how fluent-svelte's Expander
+   wires it too. A header that cannot be actuated is
    excluded, because WinUI's disabled visual state puts the chevron's rest brush
    back. Fluent reaches that state two ways: a disabled AccordionItem, rendered
    with the native attribute, and the sole open item of a non-collapsible
@@ -128,7 +129,8 @@ export const accordionCss = `
    ungrayed. Both stop the toggle, so both drop the feedback.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L12
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L16
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L166-L184 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L166-L184
+   https://github.com/tropicaaal/fluent-svelte/blob/ba1813ecc0797117be0e1b24be3a3c4905111ba7/src/lib/Expander/Expander.scss#L89-L95 */
 .fui-AccordionHeader__button:enabled:not([aria-disabled='true']):hover .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
   background-color: var(--winui-subtle-fill-secondary);
 }
