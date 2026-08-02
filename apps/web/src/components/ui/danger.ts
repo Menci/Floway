@@ -2,19 +2,8 @@ import { fluentComponents } from '../../fluent';
 
 const { buttonClassNames, makeStyles } = fluentComponents;
 
-// How danger is painted, in the two forms it takes.
-//
-// Text that reports a failure wears the colour at rest, because the colour is
-// the report. A destructive action takes it only when reached, so the colour
-// does not sit on every row. Reaching is the pointer arriving, the press going
-// down, and the keyboard landing -- the last of those being Fluent's
-// `data-fui-focus-visible` rather than `:focus`, which a click also sets and
-// which would leave the colour resident on a row already finished with.
-//
-// The brush is WinUI's SystemFillColorCritical, which a field's validation
-// message and the error message bar already read, so one red carries "wrong, or
-// destructive" across the dashboard instead of Fluent's web red standing beside
-// WinUI's.
+// WinUI's SystemFillColorCritical, the same brush the validation message and
+// the error message bar read.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L282
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L78
 //
@@ -23,26 +12,24 @@ const { buttonClassNames, makeStyles } = fluentComponents;
 // class does not outrank.
 const RED = 'var(--winui-system-fill-critical) !important';
 
-// Left alone, the declarations above would outrank Fluent's forced-colours
-// pairing of a reached surface with Highlight: on a menu item the user agent
-// would substitute the forced text colour for our red and lose the Highlight
-// step, and on a button, whose hover state clears forced-color-adjust, the red
-// itself would land on the system's own hover fill.
+// Without this the declarations above outrank Fluent's forced-colours pairing
+// of a reached surface with Highlight, dropping the Highlight step on a menu
+// item and landing red on the system hover fill of a button.
 const FORCED = 'Highlight !important';
 
 // A Fluent Button paints its icon slot from a descendant rule of its own, so a
-// colour on the root reaches the label and leaves the glyph -- and this class is
-// worn on icon-only buttons. A menu item's icon needs no counterpart:
-// ../../winui/controls/menu.css.ts already hands it the item's own colour.
+// colour on the root reaches the label and leaves the glyph. A menu item needs
+// no counterpart: ../../winui/controls/menu.css.ts already hands its icon the
+// item's own colour.
 const ICON = `& .${buttonClassNames.icon}`;
 
-// Without the guard the warning colour also paints an action the operator is
-// not allowed to press. Both element kinds take the same pair of negations: a
-// Button carries `:disabled` when disabled and `aria-disabled` when disabled and
-// still focusable, and a menu item, being a `div`, carries only `aria-disabled`.
+// A Button carries `:disabled` when disabled and `aria-disabled` when disabled
+// and still focusable; a menu item, being a `div`, carries only `aria-disabled`.
 const ENABLED = '&:not(:disabled):not([aria-disabled="true"])';
 const HOVER = `${ENABLED}:hover`;
 const PRESSED = `${ENABLED}:active`;
+// Not `:focus`, which a click also sets, leaving the colour resident after the
+// pointer has moved on.
 const KEYBOARD = `${ENABLED}[data-fui-focus-visible]`;
 
 const buttonPaint = { color: RED, [ICON]: { color: RED } };
@@ -73,8 +60,6 @@ const useStyles = makeStyles({
 
 export const useDangerActionClasses = (): ReturnType<typeof useStyles> => useStyles();
 
-// Every failure report in the dashboard shares this declaration. A surface that
-// indexes red by severity name alongside its siblings keeps its own scale.
 const useTextStyles = makeStyles({
   danger: { color: 'var(--winui-system-fill-critical)' },
 });
