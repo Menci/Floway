@@ -1,5 +1,5 @@
 import { AreaChart, LineChart, type CustomizedCalloutData } from '@fluentui/react-charts';
-import { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { CalloutPoint, UsageChartModel } from './types';
@@ -56,8 +56,8 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
   const chartStateStyles = useChartStateStyles();
   const areaBoundaryStyles = useAreaBoundaryStyles();
   const chartRootStyles = useUnclippedChartFrame();
-  const hostRef = useRef<HTMLDivElement>(null);
-  const size = useElementSize(hostRef);
+  const [host, setHost] = useState<HTMLDivElement | null>(null);
+  const size = useElementSize(host);
   const locale = useLocale();
   const entryByLegend = useMemo(() => new Map(chart.entries.map(entry => [entry.legend, entry])), [chart.entries]);
   const labelByTime = useMemo(() => new Map(chart.buckets.map(bucket => [bucket.date.getTime(), bucket.label])), [chart.buckets]);
@@ -90,7 +90,6 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
   // meant to be capped by. The lines are moved to the end of the series group,
   // which is the paint order the boundary rule above assumes.
   useLayoutEffect(() => {
-    const host = hostRef.current;
     if (!host || chart.plot.form !== 'area') return;
     const frame = window.requestAnimationFrame(() => {
       const lines = [...host.querySelectorAll<SVGPathElement>('path[id*="-line-"]')];
@@ -101,12 +100,12 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
       }
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [chart.plot.data, chart.plot.form, size.height, size.width]);
+  }, [chart.plot.data, chart.plot.form, host, size.height, size.width]);
 
-  if (size.width < 120) return <div className="h-[320px] min-w-0 w-full" ref={hostRef} />;
+  if (size.width < 120) return <div className="h-[320px] min-w-0 w-full" ref={setHost} />;
 
   return (
-    <div className={`${areaBoundaryStyles.root} h-[320px] min-w-0 w-full`} ref={hostRef}>
+    <div className={`${areaBoundaryStyles.root} h-[320px] min-w-0 w-full`} ref={setHost}>
       {!hasData ? <div className={chartStateStyles.root}>{t('dashboard.usage.empty')}</div>
         : chart.plot.form === 'area' ? (
           <AreaChart
