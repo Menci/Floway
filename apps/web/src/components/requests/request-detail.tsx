@@ -134,11 +134,11 @@ function DetailSectionHeader({ title, detail, actions, copyText }: { title: stri
 }
 
 function SectionBody({ children }: PropsWithChildren) {
-  return <ScrollArea axes="horizontal" className="min-w-0" contentClassName="min-w-full w-max" noTabIndex>{children}</ScrollArea>;
+  return <ScrollArea axes="horizontal" className="min-w-0" contentClassName="min-w-full w-max">{children}</ScrollArea>;
 }
 
 function HeaderSectionBody({ children }: PropsWithChildren) {
-  return <ScrollArea axes="horizontal" className="min-w-0" contentClassName="min-w-full" noTabIndex>{children}</ScrollArea>;
+  return <ScrollArea axes="horizontal" className="min-w-0" contentClassName="min-w-full">{children}</ScrollArea>;
 }
 
 export function RequestDetailPanel({ collected: loadedCollected, error: loadedError, record: loadedRecord, recordId: selectedRecordId, retainLastRecord }: {
