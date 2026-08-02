@@ -141,16 +141,16 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
 
     const wrapped = React.forwardRef<unknown, PropCarrier>((props, ref) => {
       const drawsCheckbox = (props.type ?? 'checkbox') === 'checkbox' && props.checkboxIndicator !== null;
-      const stampedSlotProps = drawsCheckbox
-        ? {
-          checkboxIndicator: {
-            ...resolveSlotProps(props.checkboxIndicator),
-            [winuiCheckedAttribute]: String(props.checked ?? false),
-          },
-        }
-        : {};
+      const checkboxIndicator = {
+        ...resolveSlotProps(props.checkboxIndicator),
+        [winuiCheckedAttribute]: String(props.checked ?? false),
+      };
 
-      return React.createElement(elementType, { ...props, ...stampedSlotProps, ref });
+      return React.createElement(elementType, {
+        ...props,
+        ...(drawsCheckbox ? { checkboxIndicator } : {}),
+        ref,
+      });
     });
 
     wrapped.displayName = (component as { displayName?: string }).displayName;
