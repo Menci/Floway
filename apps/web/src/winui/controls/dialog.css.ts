@@ -1,30 +1,16 @@
 // Dialog, restyled from Fluent 2 Web onto WinUI 3's ContentDialog.
 //
-// The two libraries lay the same dialog out differently. Fluent puts the 24px
-// padding on the surface and separates title, content and actions with a grid
-// gap. WinUI puts the padding on two full-bleed bands instead: a content band
-// and a CommandSpace band beneath it, divided by a 1px separator, with the
-// buttons laid out in equal star-width columns. Reproducing that means moving
-// the padding from the surface onto the body and letting the actions row break
-// back out of it, which is what the negative insets below do.
-//
-// WinUI fills the content band with ContentDialogTopOverlay, which is what makes
-// a Windows dialog read as a light sheet over a grey frame rather than as one
-// flat grey box: the band carries the layer fill, the CommandSpace beneath it
-// shows the dialog's own background, and the separator divides them.
+// Fluent puts the 24px padding on the surface; WinUI puts it on two full-bleed
+// bands -- a content band carrying the layer fill and a CommandSpace showing the
+// dialog's own background, divided by a 1px separator. Reaching that means the
+// padding moves onto the body and the actions row breaks back out of it, which
+// is what the negative insets below do.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L8
 export const dialogCss = `
-/* The surface is WinUI's BackgroundElement: the solid base fill rather than
-   Fluent's raised Background1, and the whole size envelope, where Fluent states
-   only a maximum width. The height cap is additionally bounded by the viewport,
-   as the XAML one is bounded by the window, and is exposed as one variable so
-   the body can consume exactly the same envelope. The surface never scrolls;
-   DialogShell gives its middle grid row to OverlayScrollbars.
-
-   ContentDialogMaxWidth is a keyed ThemeResource that an app overrides in its
-   own dictionary, so a custom property with a 548px fallback is the faithful
-   shape rather than a loosening of it. Individual dialogs -- the alias and API
-   key editors -- raise it to an unsourced 720px.
+/* The height cap is exposed as one variable so the body can consume exactly the
+   same envelope. ContentDialogMaxWidth is a keyed ThemeResource an app overrides
+   in its own dictionary, so a custom property with a 548px fallback is the
+   faithful shape; the alias and API key editors raise it to an unsourced 720px.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L6-L15
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L223 */
 .fui-DialogSurface.fui-DialogSurface {
@@ -39,21 +25,18 @@ export const dialogCss = `
   overflow: hidden;
 }
 
-/* Fluent moves overflow onto the whole surface below 360px and reserves that
-   browser scrollbar by widening three border edges to 4px. DialogShell keeps the
-   same three-band grid at every height, so neither survives; the scroll path is
-   already cancelled by the surface rule above, leaving only the border. */
+/* Fluent moves overflow onto the whole surface here and widens three border
+   edges to 4px to reserve the browser scrollbar. DialogShell keeps its
+   three-band grid at every height, so only the border needs restating. */
 @media (max-height: 359px) {
   .fui-DialogSurface.fui-DialogSurface {
     border-width: 1px;
   }
 }
 
-/* High contrast. WinUI doubles the dialog's stroke to 2px, because the smoke
-   layer and the dialog collapse onto the same system Window colour there and the
-   stroke is the only thing left dividing them. Forced colours collapse the same
-   two fills but leave widths alone, so the doubled stroke is the one value
-   restated.
+/* WinUI doubles the stroke to 2px because the smoke layer and the dialog
+   collapse onto the same system Window colour; forced colours collapse the same
+   two fills but leave widths alone.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L21-L28
    https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
 @media (forced-colors: active) {
@@ -62,16 +45,10 @@ export const dialogCss = `
   }
 }
 
-/* Focus. Fluent draws its ring as an \`::after\` two pixels outside the surface
-   and blanks the surface border while it shows. The surface clips to round its
-   own corner, and that clip is the outermost box of the overlay, so a ring drawn
-   outside it is a ring nobody sees: the pseudo-element is pulled onto the
-   surface's padding box instead, with the radius following the box the ring now
-   traces and the inner stroke riding inside the outer ring's border box as an
-   inset shadow. With both strokes indoors the blanked border has no ring left to
-   complete, so it takes back the surface stroke it carries at rest; that
-   declaration repeats the one above because Fluent's focus atom is what blanks
-   it.
+/* Fluent draws its focus ring two pixels outside the surface and blanks the
+   surface border while it shows. The surface clip is the outermost box of the
+   overlay, so a ring outside it is invisible: both strokes move indoors, and the
+   blanked border takes back its rest stroke.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L66 */
@@ -88,9 +65,8 @@ export const dialogCss = `
 
 /* The body takes over the 24px ContentDialogPadding the surface gave up, and
    drops Fluent's gap: WinUI's bands abut, and the step under the title is a
-   margin on the title itself. The height cap sits here rather than on the
-   surface, less the 1px border on each end, because the body now fills the
-   surface edge to edge and the surface does not clip.
+   margin on the title itself. The cap sits here, less the 1px border on each
+   end, because the body fills the surface edge to edge.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L18
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L228-L233 */
 .fui-DialogBody.fui-DialogBody {
@@ -104,8 +80,8 @@ export const dialogCss = `
   overflow: hidden;
 }
 
-/* The form is a semantic wrapper around Fluent's grid root. It must transmit
-   the surface envelope without becoming a fourth sizing or scroll owner. */
+/* The form must transmit the surface envelope without becoming a fourth sizing
+   or scroll owner. */
 .floway-dialog-shell__form {
   margin: 0;
   max-height: inherit;
@@ -127,12 +103,11 @@ export const dialogCss = `
   margin-bottom: 12px;
 }
 
-/* CommandSpace. It spans the dialog whatever the actions' position prop says,
-   breaks out of the body's padding through matching negative insets so it
-   reaches the surface edge, and restates the separator as a top border,
-   because the band above it is not a single element on this side. The buttons
-   take equal star-width columns and stretch, where Fluent sizes them to their
-   content.
+/* CommandSpace spans the dialog whatever the actions' position prop says, breaks
+   out of the body's padding through matching negative insets, and restates the
+   separator as a top border because the band above it is not a single element on
+   this side. The buttons take equal star-width columns, where Fluent sizes them
+   to their content.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L248-L258
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L10-L19 */
 .fui-DialogActions.fui-DialogActions {
@@ -152,24 +127,19 @@ export const dialogCss = `
 
 /* A lone button lands in WinUI's CloseColumn with PrimaryColumn still at star
    width ahead of it and the 8px SecondSpacer between the two, so it takes half
-   of what the band leaves after that gap -- the same edge the right-hand button
-   of a pair sits on. The selector names the button's own class rather than the
-   button element, so a spinner or a wrapper is not half-width by accident.
-   fluent-svelte reaches the same edge with a flat 50%, where this subtracts half
-   the gap.
-   https://github.com/tropicaaal/fluent-svelte/blob/ba1813ecc0797117be0e1b24be3a3c4905111ba7/src/lib/ContentDialog/ContentDialog.scss#L56-L67
+   of what the band leaves after that gap. The selector names the button's own
+   class rather than the element, so a spinner or a wrapper is not half-width by
+   accident.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L250-L256 */
 .fui-DialogActions > .fui-Button.fui-Button:only-child {
   width: calc(50% - 4px);
   justify-self: end;
 }
 
-/* Narrow viewports. WinUI's CommandSpace declares no width trigger, so its
-   star-width buttons stay side by side however narrow the window gets; Fluent's
-   480px break into a column is deliberately kept. Fluent expresses it as
-   flex-direction, which is inert under the display: grid above, so it is
-   restated as a row flow, and the lone button gives its half-band width up
-   because no second column is left for it to yield to.
+/* WinUI's CommandSpace declares no width trigger, so its star-width buttons stay
+   side by side however narrow the window gets; Fluent's 480px break into a
+   column is deliberately kept. Fluent expresses it as flex-direction, inert
+   under the display: grid above, so it is restated as a row flow.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L248-L258 */
 @media (max-width: 480px) {
   .fui-DialogActions.fui-DialogActions {
