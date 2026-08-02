@@ -446,12 +446,6 @@ const en = {
           copilot: 'GitHub Copilot account',
           noAccount: 'No account connected',
         },
-        busy: {
-          reload: 'Refreshing upstreams',
-          toggle: 'Updating availability',
-          reorder: 'Updating routing priority',
-          delete: 'Deleting upstream',
-        },
         errors: {
           missing: 'That upstream no longer exists.',
           models: 'Model counts are unavailable: {{message}}',
@@ -465,7 +459,10 @@ const en = {
           message: 'Delete upstream {{name}}? This cannot be undone.',
         },
         toast: {
-          deleted: 'Upstream {{name}} deleted.',
+          reload: { pending: 'Refreshing upstreams' },
+          toggle: { pending: 'Updating availability' },
+          reorder: { pending: 'Updating routing priority' },
+          delete: { pending: 'Deleting upstream', success: 'Upstream {{name}} deleted.' },
         },
       },
       upstreamEditor: {

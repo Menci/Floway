@@ -136,7 +136,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   const mutationKind = mutation?.kind ?? null;
   useEffect(() => {
     if (!mutationKind) return;
-    const handle = toasts.start(t(`dashboard.upstreams.busy.${mutationKind}`));
+    const handle = toasts.start(t(`dashboard.upstreams.toast.${mutationKind}.pending`));
     return () => handle.settle();
   }, [mutationKind, t, toasts]);
 
@@ -227,7 +227,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     deleteDialog.close();
     await reload();
     setMutation(null);
-    toasts.succeed(t('dashboard.upstreams.toast.deleted', { name: record.name }));
+    toasts.succeed(t('dashboard.upstreams.toast.delete.success', { name: record.name }));
   };
 
   return (

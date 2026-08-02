@@ -424,12 +424,6 @@ const zhHansCN = {
           copilot: 'GitHub Copilot 账号',
           noAccount: '尚未连接账号',
         },
-        busy: {
-          reload: '正在刷新上游',
-          toggle: '正在更新可用状态',
-          reorder: '正在更新路由优先级',
-          delete: '正在删除上游',
-        },
         errors: {
           missing: '该上游已不存在。',
           models: '模型数量不可用：{{message}}',
@@ -443,7 +437,10 @@ const zhHansCN = {
           message: '删除上游 {{name}}？此操作无法撤销。',
         },
         toast: {
-          deleted: '已删除上游 {{name}}。',
+          reload: { pending: '正在刷新上游' },
+          toggle: { pending: '正在更新可用状态' },
+          reorder: { pending: '正在更新路由优先级' },
+          delete: { pending: '正在删除上游', success: '已删除上游 {{name}}。' },
         },
       },
       upstreamEditor: {
