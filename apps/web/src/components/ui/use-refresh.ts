@@ -1,15 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-// Overlapping reloads are aborted rather than ignored, so a superseded request
-// stops at the transport instead of running to completion and landing last.
-//
-// `reload` threads the signal into its calls (`$get(query, { init: { signal }
-// })`) and, after awaiting, must return without writing state if it aborted.
-// Unmounting aborts too. It also receives whether anybody asked for the run: a
-// background run must not clear a failure nobody has read yet.
+// `reload` must thread the signal into its calls and, after awaiting, return
+// without writing state if it aborted. It also receives whether anybody asked
+// for the run: a background run must not clear a failure nobody has read yet.
 export interface RefreshControl {
   refresh: () => Promise<void>;
-  /** The same run, told who asked for it; see ./use-poll-while-visible.ts. */
   poll: (options: { background: boolean }) => Promise<void>;
   refreshing: boolean;
 }
