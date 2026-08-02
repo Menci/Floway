@@ -1,17 +1,19 @@
 import { useId, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { DragEventHandler, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { SectionHeader } from './section-header';
 import { fluentComponents } from '../../fluent';
 
 const { Switch, Text, makeStyles, mergeClasses, shorthands } = fluentComponents;
 
 // The row the Windows Settings app is built out of: an icon, a header, a
-// description, and a control at the trailing edge -- and a variant of the same
-// row that also opens to reveal more.
+// description, and a control at the trailing edge -- the variant of the same
+// row that also opens to reveal more, and the variant that is itself the
+// button. Plus the section those rows are grouped into.
 //
-// This pair is the Community Toolkit's SettingsCard and SettingsExpander rather
-// than anything in microsoft-ui-xaml, so the metrics below come from
+// This family is the Community Toolkit's SettingsCard and SettingsExpander
+// rather than anything in microsoft-ui-xaml, so the metrics below come from
 // CommunityToolkit/Windows at commit c076d3dd722e43204ffbeb16057090f8498c8166,
 // components/SettingsControls/. The brushes are named there and resolved here
 // through the WinUI vocabulary the layer already carries.
@@ -58,6 +60,32 @@ const ICON_COLUMN_VAR = 'var(--floway-settings-icon-column, 0px)';
 const WRAPPED = '@container floway-settings-row (width < 476px)';
 const WRAPPED_WITH_ICON = '@container floway-settings-row (286px <= width < 476px)';
 const WRAPPED_NO_ICON = '@container floway-settings-row (width < 286px)';
+
+// The card's PointerOver visual state: the secondary control fill under the
+// elevation stroke.
+//
+// ControlElevationBorderBrush is a gradient with one heavier edge, which the
+// vocabulary carries as --winui-control-elevation-border-color, a three-value
+// border-color shorthand. Griffel will not take a shorthand beside the
+// longhands this rule needs, so the two stops it is composed of are named
+// directly -- and the arrangement is restated per theme, because the light
+// dictionary flips the gradient (ScaleY="-1") and the dark one does not: the
+// heavier ControlStrokeColorSecondary edge sits at the bottom in light and at
+// the top in dark.
+// https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L10-L11
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L382-L390
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L186-L191
+const POINTER_OVER = {
+  backgroundColor: 'var(--winui-control-fill-secondary)',
+  borderTopColor: 'var(--winui-control-stroke-default)',
+  borderRightColor: 'var(--winui-control-stroke-default)',
+  borderBottomColor: 'var(--winui-control-stroke-secondary)',
+  borderLeftColor: 'var(--winui-control-stroke-default)',
+  '@media (prefers-color-scheme: dark)': {
+    borderTopColor: 'var(--winui-control-stroke-secondary)',
+    borderBottomColor: 'var(--winui-control-stroke-default)',
+  },
+} as const;
 
 const useStyles = makeStyles({
   // The box the two thresholds above are measured against. A size container
@@ -142,27 +170,7 @@ const useStyles = makeStyles({
     transitionDuration: 'var(--winui-control-faster-animation-duration)',
     transitionProperty: 'background-color',
     '@media (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
-    '&:hover': {
-      backgroundColor: 'var(--winui-control-fill-secondary)',
-      // ControlElevationBorderBrush is a gradient with one heavier edge, which
-      // the vocabulary carries as --winui-control-elevation-border-color, a
-      // three-value border-color shorthand. Griffel will not take a shorthand
-      // beside the longhands this rule needs, so the two stops it is composed
-      // of are named directly -- and the arrangement is restated per theme,
-      // because the light dictionary flips the gradient (ScaleY="-1") and the
-      // dark one does not: the heavier ControlStrokeColorSecondary edge sits
-      // at the bottom in light and at the top in dark.
-      // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L382-L390
-      // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L186-L191
-      borderTopColor: 'var(--winui-control-stroke-default)',
-      borderRightColor: 'var(--winui-control-stroke-default)',
-      borderBottomColor: 'var(--winui-control-stroke-secondary)',
-      borderLeftColor: 'var(--winui-control-stroke-default)',
-      '@media (prefers-color-scheme: dark)': {
-        borderTopColor: 'var(--winui-control-stroke-secondary)',
-        borderBottomColor: 'var(--winui-control-stroke-default)',
-      },
-    },
+    '&:hover': POINTER_OVER,
     '&:active': {
       backgroundColor: 'var(--winui-control-fill-tertiary)',
       ...shorthands.borderColor('var(--winui-control-stroke-default)'),
@@ -320,7 +328,46 @@ const useStyles = makeStyles({
       order: 1,
     },
   },
+  // The same state, asserted rather than matched. A card that accepts a drop
+  // has to answer while a drag is over it, and during an HTML drag operation
+  // the user agent matches no `:hover` on anything -- so the row states the
+  // visual it already has for "the pointer is on me and I will respond" rather
+  // than acquiring a second one for the drag.
+  // https://html.spec.whatwg.org/multipage/dnd.html#drag-and-drop-processing-model
+  pointerOver: POINTER_OVER,
   expanderHeaderOpen: { borderEndStartRadius: 0, borderEndEndRadius: 0 },
+  // The chrome a `button` element brings with it and the card does not want.
+  // The expander header states the same reset alongside the padding only it
+  // needs, so the two rules overlap rather than one deriving from the other.
+  cardButton: {
+    fontFamily: 'inherit',
+    fontSize: 'inherit',
+    textAlign: 'start',
+    width: '100%',
+  },
+  // PART_ActionIconPresenterHolder: a 13px glyph held 14 clear of whatever
+  // precedes it, shown only while the card is the button. The toolkit's own
+  // default is the Segoe Fluent chevron E974, assigned in the constructor
+  // rather than in the dependency property's metadata; a caller that wants a
+  // different one sets ActionIcon, and one that wants none clears
+  // IsActionIconVisible. Neither of those is offered here -- the chevron is
+  // the only mark this app's clickable rows carry -- so the glyph is stated
+  // once, as the path the expander's own chevron is drawn from turned a
+  // quarter.
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L107-L108
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L459-L466
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.cs#L66-L72
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.cs#L254-L266
+  actionIcon: {
+    alignItems: 'center',
+    display: 'flex',
+    flexGrow: 0,
+    flexShrink: 0,
+    flexBasis: 'auto',
+    justifyContent: 'center',
+    marginInlineStart: '14px',
+    '& svg': { height: '13px', width: '13px' },
+  },
   // The content region is the quieter step of the card ramp, and the edge it
   // shares with the header above is suppressed rather than drawn twice.
   content: {
@@ -524,6 +571,68 @@ export function SettingsCard({ action, description, header, icon }: {
       <CardText description={description} header={header} icon={icon} />
       {action !== undefined && <span className={styles.action}>{action}</span>}
     </div>
+  </div>;
+}
+
+// The row when the row is itself the button. IsClickEnabled turns the card
+// into the ButtonBase it already derives from, opens the pointer ramp the
+// non-clickable row never wires up, and reveals the trailing action glyph.
+// The toolkit means it for a row that navigates somewhere or opens something,
+// which is what a picker is.
+// https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.Properties.cs#L57-L61
+// https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.cs#L117-L128
+// https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/samples/SettingsCard.md#L20
+export function SettingsCardButton({ description, drag, header, icon, onClick, pointerOver = false }: {
+  description?: string;
+  /**
+   * The drop handlers, when the row also accepts what it would otherwise have
+   * been clicked to choose. `pointerOver` is what draws the accepting state.
+   */
+  drag?: {
+    onDragLeave: DragEventHandler;
+    onDragOver: DragEventHandler;
+    onDrop: DragEventHandler;
+  };
+  header: ReactNode;
+  icon?: ReactNode;
+  onClick: () => void;
+  pointerOver?: boolean;
+}) {
+  const styles = useStyles();
+  return <div className={styles.row}>
+    <button
+      className={mergeClasses(styles.card, styles.interactive, styles.cardButton, pointerOver && styles.pointerOver)}
+      onClick={onClick}
+      type="button"
+      {...drag}
+    >
+      <CardText description={description} header={header} icon={icon} />
+      <span aria-hidden className={styles.actionIcon}>
+        <svg viewBox="0 0 16 16" fill="currentColor">
+          <path d="M5.65 3.15c.2-.2.5-.2.7 0l4.5 4.5c.2.2.2.5 0 .7l-4.5 4.5a.5.5 0 0 1-.7-.7L9.79 8 5.65 3.85a.5.5 0 0 1 0-.7Z" />
+        </svg>
+      </span>
+    </button>
+  </div>;
+}
+
+// The group a settings page is read in: a heading, then the rows it names.
+// The heading is BodyStrong with 30 above it and 6 below, and the rows sit 4
+// apart -- the Gallery's SettingsSectionHeaderTextBlockStyle over the spacing
+// its settings StackPanel states, which the toolkit's own sample page repeats
+// verbatim. The 30 is not taken: the page grid these sections sit in already
+// separates its children, and one rhythm for a page beats two.
+// https://github.com/microsoft/WinUI-Gallery/blob/f4dc3eb367f4bcecac1793829d9a221e924e5bfb/WinUIGallery/Pages/SettingsPage.xaml#L13-L21
+// https://github.com/microsoft/WinUI-Gallery/blob/f4dc3eb367f4bcecac1793829d9a221e924e5bfb/WinUIGallery/Pages/SettingsPage.xaml#L35-L41
+// https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/samples/SettingsPageExample.xaml#L17-L24
+export function SettingsSection({ children, description, title }: {
+  children: ReactNode;
+  description?: ReactNode;
+  title: ReactNode;
+}) {
+  return <div className="grid gap-[6px]">
+    <SectionHeader description={description} level={4} title={title} />
+    <div className="grid gap-[4px]">{children}</div>
   </div>;
 }
 
