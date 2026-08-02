@@ -355,7 +355,7 @@ function UpstreamsTable({
 
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
-      <Table aria-label={t('dashboard.upstreams.table.title')} className="min-w-[900px] table-fixed">
+      <Table aria-label={t('dashboard.upstreams.table.title')} className="min-w-[900px]">
         <TableColumns widths={['120px', '140px', '300px', '140px', '90px', TABLE_ACTIONS_WIDTH]} />
         <TableHeader>
           <TableRow>

@@ -897,7 +897,7 @@ function TableSection() {
   return <Section id="table" title="Table">
     <Hint>Hover a row and tab through the selection cells; the second row is selected and the last one is disabled.</Hint>
     <Row label="selectable rows, sortable header">
-      <Table className="!w-full" sortable>
+      <Table sortable>
         <TableHeader>
           <TableRow>
             <TableSelectionCell checked="mixed" />
@@ -922,7 +922,7 @@ function TableSection() {
       </Table>
     </Row>
     <Row label="row appearances and sizes">
-      <Table className="!w-full" size="extra-small">
+      <Table size="extra-small">
         <TableBody>
           <TableRow appearance="none"><TableCell>none</TableCell><TableCell>extra-small row height</TableCell></TableRow>
           <TableRow appearance="neutral"><TableCell>neutral</TableCell><TableCell>gpt-5-codex</TableCell></TableRow>

@@ -71,7 +71,7 @@ export function ApiDocsContent() {
         return <section className={SECTION_STACK_CLASS} key={group}>
           <SectionHeader level={3} title={t(`dashboard.apiDocs.groups.${group}`)} />
           <ScrollArea axes="horizontal" className="min-w-0">
-            <Table aria-label={t(`dashboard.apiDocs.groups.${group}`)} className="min-w-[780px] table-fixed" size="small">
+            <Table aria-label={t(`dashboard.apiDocs.groups.${group}`)} className="min-w-[780px]" size="small">
               <TableColumns widths={['72px', null, '300px', '144px']} />
               <TableHeader><TableRow>
                 <TableHeaderCell>{t('dashboard.apiDocs.columns.method')}</TableHeaderCell>
