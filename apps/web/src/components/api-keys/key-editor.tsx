@@ -3,7 +3,6 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router';
 import { z } from 'zod';
 
 import { keyWriteBody, type KeySource } from './key-source';
@@ -12,12 +11,12 @@ import { RetentionField, parsedRetention, type RetentionValue } from './retentio
 import { api, callApi } from '../../api/client';
 import type { ApiKey, ControlPlaneModel, UpstreamOption } from '../../api/types';
 import { fluentComponents } from '../../fluent';
-import { pageNavigation } from '../../lib/page-navigation';
 import { DialogShell } from '../ui/dialog-shell';
 import { Input } from '../ui/fluent-form-controls';
 import { OpenLinkLabel } from '../ui/open-link-label';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
+import { RouteLink } from '../ui/route-link';
 import { UpstreamAccessControl } from '../upstreams/upstream-access-control';
 import { refineUpstreamAccess } from '../upstreams/upstream-access-validation';
 
@@ -248,9 +247,9 @@ export function KeyDialog(props: KeyDialogProps) {
               onChange={field.onChange}
             >
               {apiKey !== null && field.value !== null && field.value !== 'invalid'
-                ? <Link {...pageNavigation} className="text-fui-brand1 no-underline hover:underline" to={`/dashboard/monitor/requests?key=${encodeURIComponent(apiKey.id)}`}>
+                ? <RouteLink to={`/dashboard/monitor/requests?key=${encodeURIComponent(apiKey.id)}`}>
                     <OpenLinkLabel>{t('dashboard.apiKeys.form.viewCapturedRequests')}</OpenLinkLabel>
-                  </Link>
+                  </RouteLink>
                 : undefined}
             </RetentionField>
             {/* Outside the row: a consequence of saving that the operator has

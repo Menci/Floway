@@ -1,17 +1,16 @@
 import { Trans, useTranslation } from 'react-i18next';
-import { Link as RouterLink } from 'react-router';
 // Prism grammars register themselves onto Prism as a module side effect, so `prismjs` must import first.
 import 'prismjs';
 import 'prismjs/components/prism-bash';
 
 import { apiDocsEndpoints, apiDocsGroups, authCurlExample } from './api-docs-data';
 import { fluentComponents } from '../../fluent';
-import { pageNavigation } from '../../lib/page-navigation';
 import { CodeBlock } from '../ui/code-block';
 import { HttpMethodBadge } from '../ui/http-badge';
 import { SECTION_STACK_CLASS } from '../ui/layout';
 import { OpenLinkLabel } from '../ui/open-link-label';
 import { Panel } from '../ui/panel';
+import { RouteLink } from '../ui/route-link';
 import { ScrollArea } from '../ui/scroll-area';
 import { SectionHeader } from '../ui/section-header';
 import { TableActionsHeader, useTrailingCellClass } from '../ui/table-actions';
@@ -49,7 +48,7 @@ export function ApiDocsContent() {
     <Panel className={PANEL_STACK_CLASS}>
       <SectionHeader
         description={<Trans
-          components={[<RouterLink {...pageNavigation} className="text-fui-brand1 no-underline hover:underline" key="api-keys" to="/dashboard/services/api-keys" />]}
+          components={[<RouteLink inline key="api-keys" to="/dashboard/services/api-keys" />]}
           i18nKey="dashboard.apiDocs.authentication.description"
         />}
         level={2}

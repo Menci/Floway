@@ -1,7 +1,7 @@
 import { DismissRegular } from '@fluentui/react-icons';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useNavigate, useSearchParams } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 
 import type { Route } from './+types/dashboard-monitor-requests';
 import { requireDashboardSession } from './route-guards';
@@ -18,9 +18,9 @@ import { PANE_GAP_CLASS } from '../components/ui/layout';
 import { OpenLinkLabel } from '../components/ui/open-link-label';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
+import { RouteLink } from '../components/ui/route-link';
 import { fluentComponents } from '../fluent';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
-import { pageNavigation } from '../lib/page-navigation';
 import { useMediaQuery } from '../lib/use-media-query';
 import type { DumpMetadata, DumpRecord } from '@floway-dev/gateway/dump-types';
 
@@ -135,9 +135,9 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
       ) : keys.length === 0 ? (
         <Panel className="!grid">
           <EmptyState
-            action={<Link {...pageNavigation} className="text-fui-brand1 no-underline hover:underline" to="/dashboard/services/api-keys">
+            action={<RouteLink to="/dashboard/services/api-keys">
               <OpenLinkLabel>{t('dashboard.requests.apiKeysLink')}</OpenLinkLabel>
-            </Link>}
+            </RouteLink>}
             align="start"
             description={t('dashboard.requests.noKeysDescription')}
             title={t('dashboard.requests.noKeys')}
