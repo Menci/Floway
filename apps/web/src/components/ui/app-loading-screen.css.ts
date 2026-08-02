@@ -1,14 +1,11 @@
-// The boot screen's ring, restated as plain CSS: this screen is painted by the
-// prerendered index.html, before any Griffel rule exists. It matches the ring
-// the app shows a moment later -- Fluent's Spinner as
-// ../../winui/controls/progress.css.ts restyles it into WinUI's ProgressRing --
-// with geometry and motion copied from `useSpinnerStyles` at medium. Every
-// colour is spent through the same Fluent custom property that layer rewrites,
-// and the literal beside it is that value written out for the frames before.
+// Plain CSS because the prerendered index.html paints this screen before any
+// Griffel rule exists; it restates the medium Spinner that ../../winui/controls/progress.css.ts
+// later restyles into WinUI's ProgressRing. Each colour goes through the Fluent
+// custom property that layer rewrites, with the literal beside it covering the
+// frames before.
 //
-// Deliberately no reduced-motion branch, unlike Fluent: WinUI's ProgressRing is
-// an AnimatedVisualPlayer and keeps its full animation with animations off, so
-// ../../winui/controls/progress.css.ts undoes Fluent's.
+// No reduced-motion branch, unlike Fluent: WinUI's ProgressRing is an
+// AnimatedVisualPlayer and keeps its animation with animations off.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressRing/ProgressRing.xaml#L31-L32
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-spinner/library/src/components/Spinner/useSpinnerStyles.styles.ts
 export const appLoadingCss = `
@@ -29,11 +26,10 @@ export const appLoadingCss = `
     min-width: min-content;
     overflow: hidden;
   }
-  /* ProgressRingStrokeThickness is 4 on WinUI's 32-square ring. Fluent carries
-     the width into a radial-gradient stop, where a percentage resolves against
-     the closest-side radius, so a stroke of an eighth of the diameter is
-     written as a quarter of the radius. WinUI leaves the circle behind the arc
-     transparent, so the arc's accent is the whole of the ring.
+  /* WinUI's ProgressRingStrokeThickness is 4 on a 32-square ring, but Fluent
+     carries the width into a radial-gradient stop where a percentage resolves
+     against the closest-side radius, so an eighth of the diameter is written as
+     a quarter. The circle behind the arc stays transparent.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressRing/ProgressRing_themeresources.xaml#L5-L6
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressRing/ProgressRing_themeresources.xaml#L17
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressRing/ProgressRing.xaml#L12-L13
@@ -78,10 +74,9 @@ export const appLoadingCss = `
   .floway-app-loading .fui-Spinner__spinnerTail::after {
     animation-name: floway-app-loading-tail-after;
   }
-  /* The label is ours: WinUI's ProgressRing carries no label slot, so the ramp
-     is the one a Windows app would set a sentence in -- BodyTextBlockStyle,
-     14px Normal -- rather than the subtitle2 Fluent gives a medium Spinner,
-     which reads as a heading over a boot screen that has none.
+  /* WinUI's ProgressRing has no label slot, so the label takes
+     BodyTextBlockStyle rather than the subtitle2 Fluent gives a medium Spinner,
+     which would read as a heading over a boot screen that has none.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBlock_themeresources.xaml#L4
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBlock_themeresources.xaml#L23-L25 */
   .floway-app-loading .fui-Spinner__label {
@@ -91,8 +86,7 @@ export const appLoadingCss = `
     font-weight: var(--fontWeightRegular, 400);
     line-height: var(--lineHeightBase300, 20px);
   }
-  /* The dark dictionary's literals for the same two tokens; both halves are the
-     ramp steps ../../winui/tokens.ts transcribes.
+  /* Dark-dictionary literals for the same two tokens.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L329-L331
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L5-L9 */
   @media (prefers-color-scheme: dark) {
@@ -120,8 +114,7 @@ export const appLoadingCss = `
     0%, 100% { transform: rotate(0deg); }
     50% { transform: rotate(225deg); }
   }
-  /* The arc on Highlight, which is the accent WinUI's own HighContrast
-     dictionary names for it.
+  /* Highlight is the accent WinUI's HighContrast dictionary names for the arc.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressRing/ProgressRing_themeresources.xaml#L12-L15 */
   @media screen and (forced-colors: active) {
     .floway-app-loading .fui-Spinner__spinner {
