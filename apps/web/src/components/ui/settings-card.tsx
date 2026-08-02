@@ -201,19 +201,6 @@ const useStyles = makeStyles({
       outlineWidth: '2px',
     },
   },
-  // Pressing a clickable card drops its header and its header icon to the
-  // secondary text fill. The description is painted from that same fill at
-  // rest, so it does not move even though the toolkit repaints it here too.
-  //
-  // The expander header does not take this. Its own
-  // ExpanderHeaderForegroundPressed is the primary fill, and the SettingsCard
-  // the toolkit puts inside that header is IsClickEnabled="False", so the
-  // card's pressed foreground never runs there.
-  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L24-L25
-  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L236-L267
-  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml#L87-L96
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L6-L8
-  clickable: { '&:active': { color: 'var(--winui-text-fill-secondary)' } },
   // The 24 the header keeps between itself and the control is HeaderPanel's own
   // trailing margin, and the wrapped states set that margin to 0: with the
   // control on the line below rather than beside it, there is nothing left for
@@ -521,22 +508,19 @@ export function SettingsSwitch({ checked, disabled, label, onChange }: {
   </span>;
 }
 
-export function SettingsCard({ action, description, header, icon, onClick }: {
+export function SettingsCard({ action, description, header, icon }: {
   action?: ReactNode;
   description?: string;
   header: ReactNode;
   icon?: ReactNode;
-  onClick?: () => void;
 }) {
   const styles = useStyles();
-  const className = mergeClasses(styles.card, onClick !== undefined && styles.interactive, onClick !== undefined && styles.clickable);
-  const content = <>
-    <CardText description={description} header={header} icon={icon} />
-    {action !== undefined && <span className={styles.action}>{action}</span>}
-  </>;
-  return <div className={styles.row}>{onClick
-    ? <div className={className} onClick={onClick} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }} role="button" tabIndex={0}>{content}</div>
-    : <div className={className}>{content}</div>}</div>;
+  return <div className={styles.row}>
+    <div className={styles.card}>
+      <CardText description={description} header={header} icon={icon} />
+      {action !== undefined && <span className={styles.action}>{action}</span>}
+    </div>
+  </div>;
 }
 
 // The disclosure and the trailing control are independent: the switch can be
