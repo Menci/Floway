@@ -85,8 +85,6 @@ const isValidUuid = (s: string): boolean => {
 
 export const orUndef = (v: string): string | undefined => (v === '' ? undefined : v);
 
-// The form renders these and the dialog's save button reads whether there are
-// any, so the two cannot disagree about what a complete draft is.
 export type ProxyDraftField =
   | 'name' | 'url' | 'host' | 'port'
   | 'uuid' | 'secret' | 'path' | 'serverName' | 'publicKey';
@@ -179,8 +177,7 @@ export const hostPortLabel = (url: string): string => {
   }
 };
 
-// Schemes sharing a transport share a hue. The values are Fluent's own palette
-// anchors; lib/color.ts's badgeHueStyle derives the fill and stroke from them.
+// Schemes sharing a transport share a hue; the values are Fluent's palette anchors.
 export const KIND_HUES: Record<string, string> = {
   HTTP: '#0f6cbd',
   HTTPS: '#0f6cbd',
