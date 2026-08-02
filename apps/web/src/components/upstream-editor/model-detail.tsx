@@ -16,7 +16,7 @@ import type {
 import { fluentComponents } from '../../fluent';
 import { ChoiceGroup } from '../ui/choice-group';
 import { Checkbox, Combobox, Dropdown, Input, Switch } from '../ui/fluent-form-controls';
-import { PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
+import { PANE_GAP_CLASS, SECTION_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { SectionHeader } from '../ui/section-header';
 import { modelsField, type UpstreamChatModelConfig } from '@floway-dev/provider';
 
@@ -207,7 +207,7 @@ export function ModelDetail({
 
 function ModelEditorSection({ children, description, title }: { children: React.ReactNode; description?: string; title: string }) {
   const titleId = useId();
-  return <section aria-labelledby={titleId} className="grid gap-3" role="group">
+  return <section aria-labelledby={titleId} className={SECTION_STACK_CLASS} role="group">
     <SectionHeader description={description} level={3} title={title} titleId={titleId} />
     {children}
   </section>;

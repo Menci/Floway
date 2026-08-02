@@ -25,7 +25,7 @@ import type {
 import { fluentComponents } from '../../fluent';
 import { errorMessage } from '../../lib/error-message';
 import { Dropdown, Input, Textarea } from '../ui/fluent-form-controls';
-import { TWO_COLUMN_FORM_CLASS } from '../ui/layout';
+import { SECTION_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SecretInput } from '../ui/secret-input';
 import { SectionHeader } from '../ui/section-header';
@@ -143,7 +143,7 @@ function CustomApiPaths() {
       <div
         aria-describedby={`${idPrefix}-hint`}
         aria-labelledby={`${idPrefix}-label`}
-        className="grid gap-1.5"
+        className={SECTION_STACK_CLASS}
         role="group"
       >
         <SectionHeader level={3} title={t('dashboard.upstreamEditor.fields.pathOverrides')} titleId={`${idPrefix}-label`} />
@@ -257,7 +257,7 @@ function EndpointPicker() {
   const config = useWatch({ control, name: 'config' });
   const customConfig = config as Extract<UpstreamRecord, { kind: 'custom' }>['config'];
   const value = customConfig.endpoints;
-  return <div className="grid gap-1.5" role="group" aria-labelledby={`${idPrefix}-label`}>
+  return <div className={SECTION_STACK_CLASS} role="group" aria-labelledby={`${idPrefix}-label`}>
     <SectionHeader level={3} title={t('dashboard.upstreamEditor.fields.defaultEndpoints')} titleId={`${idPrefix}-label`} />
     <div className="grid gap-1">
       {endpointOptions.map(([key, label]) => {

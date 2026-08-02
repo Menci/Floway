@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import { fluentComponents } from '../../fluent';
 import { Dropdown } from '../ui/fluent-form-controls';
+import { SECTION_STACK_CLASS } from '../ui/layout';
 import { SectionHeader } from '../ui/section-header';
 import { OPTIONAL_FLAG_IDS, type FlagDefaults, type FlagId, type FlagOverrides } from '@floway-dev/provider/flags';
 
@@ -53,6 +54,9 @@ export function FeatureFlagsEditor({
     flags: OPTIONAL_FLAG_IDS.filter(flagId => flagGroupById[flagId] === id),
   }));
 
+  // Deliberately not `SettingsCard`: a flag row is a rule with a multi-line
+  // Markdown description and a bare divider, and that primitive's card chrome
+  // and single-line description are too ornate for a list of them.
   const renderFlag = (flagId: FlagId) => {
     const state = flagId in value ? (value[flagId] ? 'on' : 'off') : 'inherit';
     const inheritedState = inheritedValue(flagId) ? 'on' : 'off';
@@ -99,7 +103,7 @@ export function FeatureFlagsEditor({
 
   return <div className="grid gap-5 min-w-0">
     {groupedFlags.map(group => (
-      <section className="grid gap-2" key={group.id}>
+      <section className={SECTION_STACK_CLASS} key={group.id}>
         <SectionHeader level={3} title={t(`dashboard.upstreamEditor.flags.groups.${group.id}`)} />
         <div>
           {group.flags.map(renderFlag)}

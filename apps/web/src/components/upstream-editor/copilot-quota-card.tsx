@@ -8,6 +8,7 @@ import { formatCount } from '../../lib/format-number';
 import { dateTime, shortDate } from '../../lib/format-time';
 import { clampPercent } from '../../lib/percent';
 import { useLocale } from '../../lib/use-locale';
+import { SECTION_STACK_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { ResourceListActions } from '../ui/resource-list';
 import { SectionHeader } from '../ui/section-header';
@@ -91,7 +92,7 @@ export function CopilotQuotaCard({ record }: { record: CopilotRecord }) {
   // `reset_at` is an instant, but always a day boundary.
   const resets = quota?.reset_at == null ? null : shortDate(quota.reset_at, locale);
 
-  return <section className="grid gap-2">
+  return <section className={SECTION_STACK_CLASS}>
     <SectionHeader level={3} title={t('dashboard.upstreamEditor.copilot.quota.title')} actions={
       <ResourceListActions
         appearance="subtle"
