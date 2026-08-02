@@ -24,16 +24,24 @@ export const pageTransitionCss = `
   :root { view-transition-name: none; }
 
   /* A reload has no outgoing frame, so the pair below never runs and the
-     entrance is stated here instead: same travel, same curve, and no wait,
-     because the 150 the incoming leg is normally held for is the time the
-     outgoing one takes to leave and there is nothing to leave. The navigation
-     pane arrives with the document and does not animate -- it is outside the
-     frame, and on a reload it is the fixed thing the page comes back into.
-     Fully opaque throughout, as the source states it: WinUI shows the arriving
-     frame whole and travels it, rather than fading it up. */
+     entrance is stated on the frame itself -- as the same declaration, because
+     it is the same leg. The hold in front of it belongs to the arriving frame's
+     own storyboard rather than to the departing one: NavigatingTo registers
+     opacity 0 at 0 and 1 at 150 as DISCRETE key frames, and the travel likewise
+     sits at 140 through 150 before it splines. So a cold start shows nothing for
+     150, then the frame whole and already moving. The navigation pane is outside
+     the frame and arrives with the document, which is what the hold gives it:
+     the pane is on screen before the page comes back into it.
+
+     The wait is also what keeps this smooth. The frame mounts into the busiest
+     moment the app has -- hydration, the scroller's own setup, the first
+     charts -- and an animation starting there loses its opening frames to that
+     work. Starting after it means nothing is being painted while the main
+     thread is still busy. */
   .floway-page-transition {
     animation: floway-page-enter var(--winui-page-enter-duration)
-      var(--winui-page-enter-easing) both;
+      var(--winui-page-enter-easing) var(--winui-page-leave-duration) forwards;
+    opacity: 0;
     view-transition-name: floway-page;
   }
 
@@ -78,7 +86,10 @@ export const pageTransitionCss = `
      the opacity its own resting style states.
      https://github.com/w3c/wcag/blob/900ea026b967bc306a2cdbe0c586330a508d6759/guidelines/terms/21/motion-animation.html */
   @media (prefers-reduced-motion: reduce) {
-    .floway-page-transition { animation-duration: 0.01ms; }
+    .floway-page-transition {
+      animation-delay: 0.01ms;
+      animation-duration: 0.01ms;
+    }
     ::view-transition-old(floway-page) { animation-duration: 0.01ms; }
     ::view-transition-new(floway-page) {
       animation-delay: 0.01ms;
