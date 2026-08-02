@@ -56,9 +56,7 @@ export function ChartSection({
                   <InteractionTagPrimary
                     className={hidden.has(entry.id) ? 'line-through opacity-[0.55]' : ''}
                     icon={<SeriesMarker className="mx-[4px]" color={colorForSlot(entry.colorSlot)} />}
-                    // A double-click delivers its two clicks first; both land on
-                    // this same series and cancel out, so the isolate that
-                    // follows starts from the state the reader saw.
+                    // A double-click's two clicks land on this same series and cancel out, so the isolate that follows starts from the state the reader saw.
                     onClick={event => { if (event.shiftKey) isolate(entry.id); else onHiddenChange(toggledSeries(hidden, entry.id)); }}
                     onDoubleClick={() => isolate(entry.id)}
                   >
