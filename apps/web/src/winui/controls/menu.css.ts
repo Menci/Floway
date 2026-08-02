@@ -62,19 +62,6 @@ export const menuCss = `
   margin: 2px 4px;
 }
 
-/* WinUI's split item carries that margin once, on the grid that holds both
-   halves and the divider between them, so the pair reads as a single pill.
-   Fluent builds the same shape out of two MenuItems inside a group, and each of
-   them would otherwise take the margin for itself and pull the halves apart.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L504 */
-.fui-MenuSplitGroup.fui-MenuSplitGroup {
-  margin: 2px 4px;
-}
-
-.fui-MenuSplitGroup .fui-MenuItem.fui-MenuItem {
-  margin: 0;
-}
-
 /* The trailing hint is the keyboard-accelerator text, which WinUI paints
    secondary and holds there through hover and press. Fluent moves it on its own
    :hover and :focus, so the item root is named as well to clear those two rules
