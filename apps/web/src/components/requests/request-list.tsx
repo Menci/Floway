@@ -39,7 +39,10 @@ const useStyles = makeStyles({
     backgroundColor: 'transparent !important',
     borderTop: '0 !important',
     borderRight: '0 !important',
-    borderBottom: '1px solid var(--colorNeutralStroke1) !important',
+    // The three other edges are gone, so the one that remains is not a
+    // ComboBox's outline any more -- it is the seam between a fixed band and the
+    // list scrolling below it, which is the divider the rows below read.
+    borderBottom: '1px solid var(--winui-divider-stroke-default) !important',
     borderLeft: '0 !important',
     borderRadius: 'var(--winui-overlay-corner-radius) var(--winui-overlay-corner-radius) 0 0 !important',
     width: '100%',
