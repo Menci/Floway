@@ -66,6 +66,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta charSet="utf-8" />
         <meta name="darkreader-lock" content="true" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {/* A deployed instance is one operator's console, not a public site. */}
+        <meta name="robots" content="noindex" />
         <meta name="theme-color" content="#f5f5f5" media="(prefers-color-scheme: light)" />
         <meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)" />
         <title>Floway</title>
