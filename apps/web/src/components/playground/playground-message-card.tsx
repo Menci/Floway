@@ -6,19 +6,13 @@ import { fluentComponents } from '../../fluent';
 
 const { Card, makeStyles } = fluentComponents;
 
-// A transcript bubble is Bing's `.text-message`. It sits inside the layer's
-// `data-winui-card-restyle='off'` subtree, so this Card paints Fluent's own
-// values and every trait Bing states differently is restated here.
+// A transcript bubble is Bing's `.text-message`, and it sits inside the layer's
+// `data-winui-card-restyle='off'` subtree, so every trait Bing states
+// differently is restated here.
 // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/globals.scss#L580-L594
-// The bubble takes no click, selection or focus behaviour, matching Bing: what
-// `.text-message:hover` reveals is the feedback bar above the bubble, not a
-// repaint of it.
-// https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/globals.scss#L714-L718
 //
-// `--cib-shadow-elevation-4`, the user bubble's shadow. In dark it stays a drop
-// shadow where the card shadow beside it becomes a ring; both themes are
-// written out with the inapplicable layers transparent, `light-dark()` taking
-// only colours.
+// `--cib-shadow-elevation-4`. The layers that do not apply to a theme are
+// written out transparent so `light-dark()` takes only colours.
 // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/globals.scss#L178-L179
 // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/dark.scss#L155
 const bingElevation4 = [
