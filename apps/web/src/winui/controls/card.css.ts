@@ -46,6 +46,25 @@ export const cardCss = `
   border-radius: var(--winui-control-corner-radius);
 }
 
+/* A card's stroke is drawn as an absolutely positioned overlay carrying no
+   stacking order of its own, so it sits at the foot of the positioned layer and
+   anything positioned inside the card paints over it -- a sticky band spanning
+   the card erased the three edges it reached. The card is also only relative,
+   not a stacking context, so those numbers were competing with the whole
+   document rather than with their own card.
+
+   Both are stated here: the card contains its contents' stacking order, and its
+   own boundary is the last thing it draws. The number means nothing outside the
+   card, which is the point -- content inside cannot reach it, and cannot reach
+   anything outside either. */
+.fui-Card.fui-Card {
+  isolation: isolate;
+}
+
+.fui-Card.fui-Card::after {
+  z-index: 99;
+}
+
 @media not (forced-colors: active) {
   /* WinUI holds an item's foreground still through every pointer and selection
      state: ListViewItemForeground and its PointerOver, Pressed, Selected,
