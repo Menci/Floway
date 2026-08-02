@@ -20,48 +20,25 @@ import { ScrollArea } from '../ui/scroll-area';
 const { makeStyles } = fluentComponents;
 
 const chartMargins = { top: 16, right: 20, bottom: 42, left: 64 } as const;
-// A log axis emits a tick per significant digit, so the sub-second decade alone
-// printed 400ms/500ms/600ms/700ms/800ms/900ms/1.0s into the height of two
-// labels — measured at 6px apart. `yAxisTickCount` is ignored on a log scale,
-// so the ticks stay (they are the minor gridlines a log axis is read against)
-// and only the labels thin out, to the 1/2/5 mantissas that are the convention
-// for a labelled decade.
+// A log axis emits a tick per significant digit, which crowded the sub-second
+// decade to labels 6px apart. `yAxisTickCount` is ignored on a log scale, so
+// the ticks stay as minor gridlines and only the labels thin out, to the 1/2/5
+// mantissas conventional for a labelled decade.
 const LABELLED_LOG_MANTISSAS = [1, 2, 5];
 const labelledOnLogAxis = (value: number): boolean => {
   if (!(value > 0)) return false;
   const mantissa = value / 10 ** Math.floor(Math.log10(value));
   return LABELLED_LOG_MANTISSAS.some(candidate => Math.abs(mantissa - candidate) < 0.01);
 };
-// WinUI ships no chart, so the marks inside the plot are read against Fluent's
-// line chart rather than transcribed from a dictionary. What this layer settles
-// is how large a data point is drawn and which of Fluent's hover affordances
-// answers the pointer.
+// The pointer is answered at an x position with a vertical line and a callout
+// tabulating every series there, so Fluent's per-series highlight circle would
+// contradict the table and is not painted. It loses its paint rather than its
+// box: Fluent anchors the callout to that circle's bounding rect, which
+// `visibility` leaves in place and `display` would collapse onto the origin.
 //
-// A series here carries `mode: 'lines+markers'` over a monotone curve, which
-// puts Fluent on its curve branch: the line is a single path, every point is a
-// marker circle whose fill and stroke are both the series colour, and one
-// highlight circle per series is parked offscreen and moved under the pointer.
-// Radius and stroke width together give the dot its diameter -- 2px of radius
-// inside a 1.5px stroke reads as 5.5px beside the 2px line -- and they hold in
-// every state, because the pointer is answered at an x position rather than at
-// one series' point.
-//
-// That answer is the vertical line plus a callout, and the callout is a table
-// of every series at that x. Fluent's highlight circle singles one of them out,
-// which would contradict the table standing next to it, so it is not painted.
-// It has to lose its paint rather than its box: Fluent anchors the callout to
-// this circle's bounding rect, which `visibility` leaves in place and `display`
-// would collapse onto the plot's origin. A hidden element also takes no pointer
-// input, so the markers and the line underneath keep theirs.
-//
-// The x axis draws its ticks at the plot's full height so that they double as
-// gridlines, which lays a full-height stroke across every series. Hit testing
-// has to pass through those strokes, or a pointer crossing one leaves the
-// series beneath it unanswered.
-//
-// No rule here states a colour, so both colour schemes and a forced palette are
-// left to Fluent, which paints the marks in the series colours the chart
-// palette hands it.
+// The x axis draws its ticks at the plot's full height so they double as
+// gridlines, so hit testing has to pass through them or a pointer crossing one
+// leaves the series beneath unanswered.
 const usePerformanceChartStyles = makeStyles({
   root: {
     '& .fui-cart__xAxis line': { pointerEvents: 'none' },
@@ -108,11 +85,9 @@ function PerformanceChartCallout({ data, details, entryByLegend, title }: {
   title: string;
 }) {
   const { t } = useTranslation();
-  // A callout can outlive the data it described: the chart keeps its own hover
-  // state across a range or metric switch and asks for a callout carrying
-  // legends from the dataset that has just been replaced. Such a row no longer
-  // exists, so it is dropped rather than substituted -- a table describing the
-  // data must not name a series the data does not have.
+  // The chart keeps its hover state across a range or metric switch and can ask
+  // for a callout carrying legends from the replaced dataset; such a row is
+  // dropped rather than substituted.
   const rows = data.values
     .filter(item => item.y > 0)
     .toSorted((left, right) => right.y - left.y)
