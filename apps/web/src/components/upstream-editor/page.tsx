@@ -15,7 +15,7 @@ import {
   valuesFromRecord,
   type UpstreamEditorLoaderData,
   type UpstreamEditorValues,
-} from './editor-data';
+} from './data';
 import { modelsAreValid } from './model-detail';
 import { UpstreamWorkspace } from './workspace';
 import { api, callApi } from '../../api/client';

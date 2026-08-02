@@ -7,8 +7,8 @@ import { api, callApi } from '../api/client';
 import {
   loadEditorAux,
   providerDefaultName,
-} from '../components/upstream-editor/editor-data';
-import { UpstreamEditorPage } from '../components/upstream-editor/upstream-editor-page';
+} from '../components/upstream-editor/data';
+import { UpstreamEditorPage } from '../components/upstream-editor/page';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
 import { ALL_PROVIDER_KINDS } from '@floway-dev/provider';
 

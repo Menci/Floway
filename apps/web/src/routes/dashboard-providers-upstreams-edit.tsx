@@ -4,8 +4,8 @@ import type { Route } from './+types/dashboard-providers-upstreams-edit';
 import { revalidateOnPathnameChange } from './revalidation';
 import { requireDashboardAdmin } from './route-guards';
 import { api, callApi } from '../api/client';
-import { loadEditorAux, loadInitialModelCatalog } from '../components/upstream-editor/editor-data';
-import { UpstreamEditorPage } from '../components/upstream-editor/upstream-editor-page';
+import { loadEditorAux, loadInitialModelCatalog } from '../components/upstream-editor/data';
+import { UpstreamEditorPage } from '../components/upstream-editor/page';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
 
 export const handle = dashboardWorkspaceHandle;

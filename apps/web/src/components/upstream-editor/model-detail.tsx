@@ -2,8 +2,8 @@ import { DeleteRegular } from '@fluentui/react-icons';
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import type { ModelRow } from './editor-data';
-import { publicModelId } from './editor-data';
+import type { ModelRow } from './data';
+import { publicModelId } from './data';
 import { FeatureFlagsEditor } from './feature-flags';
 import { useMonoLabelClass } from './mono-label';
 import { PricingEditor } from './pricing-editor';

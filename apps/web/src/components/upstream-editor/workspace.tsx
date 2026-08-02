@@ -12,8 +12,8 @@ import { Controller, useFieldArray, useFormContext, useWatch } from 'react-hook-
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router';
 
-import type { ModelRow, UpstreamEditorValues } from './editor-data';
-import { canFetchModelCatalog, publicModelId } from './editor-data';
+import type { ModelRow, UpstreamEditorValues } from './data';
+import { canFetchModelCatalog, publicModelId } from './data';
 import { FeatureFlagsEditor } from './feature-flags';
 import { ModelDetail } from './model-detail';
 import { parseModels, serializeModels } from './models-yaml';

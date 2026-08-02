@@ -3,8 +3,8 @@ import { useId, useMemo, useState } from 'react';
 import { Controller, useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
-import type { RuntimeInfo, UpstreamEditorValues } from './editor-data';
-import { modelPrefixIsValid, publicModelId } from './editor-data';
+import type { RuntimeInfo, UpstreamEditorValues } from './data';
+import { modelPrefixIsValid, publicModelId } from './data';
 import { ApiPathsSection, ProviderConfigSection } from './provider-config';
 import type { ProxyRecord, UpstreamModelConfig, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';

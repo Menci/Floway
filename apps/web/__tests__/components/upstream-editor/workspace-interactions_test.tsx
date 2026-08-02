@@ -6,8 +6,8 @@ import { MemoryRouter } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { UpstreamRecord } from '../../../src/api/types';
-import type { UpstreamEditorValues } from '../../../src/components/upstream-editor/editor-data';
-import { valuesFromRecord } from '../../../src/components/upstream-editor/editor-data';
+import type { UpstreamEditorValues } from '../../../src/components/upstream-editor/data';
+import { valuesFromRecord } from '../../../src/components/upstream-editor/data';
 import { UpstreamWorkspace } from '../../../src/components/upstream-editor/workspace';
 import { i18n } from '../../../src/i18n';
 import { renderInApp } from '../../render';

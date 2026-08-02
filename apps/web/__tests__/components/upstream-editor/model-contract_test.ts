@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { discoveredModelsFromResponse } from '../../../src/components/upstream-editor/editor-data';
+import { discoveredModelsFromResponse } from '../../../src/components/upstream-editor/data';
 import { modelsAreValid } from '../../../src/components/upstream-editor/model-detail';
 
 describe('custom discovered model projection', () => {
