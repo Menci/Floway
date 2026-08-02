@@ -52,9 +52,9 @@ const LITERAL_KEY = new RegExp(`['"\`]((?:${NAMESPACES.join('|')})\\.[a-zA-Z][a-
 // key counts as a use. Template keys contribute their literal prefix, and
 // everything defined under it is reachable.
 //
-// A key is also cleared when some literal is a proper prefix of it, because a
-// call site is free to append: `t(`${prefix}Disable`)` names the key in two
-// pieces, and only the first is in the source.
+// A key is also cleared when a key-shaped literal is a proper prefix of it,
+// because a call site is free to append: `t(`${prefix}Disable`)` names the key
+// in two pieces, and only the first is in the source.
 //
 // The net is deliberately loose: it under-reports, and that is the safe
 // direction for a test whose failure means "delete this". A key it wrongly
@@ -62,6 +62,24 @@ const LITERAL_KEY = new RegExp(`['"\`]((?:${NAMESPACES.join('|')})\\.[a-zA-Z][a-
 // string that is genuinely in use.
 const ANY_STRING = /['"`]([a-zA-Z][a-zA-Z0-9_.]*)['"`]/g;
 const TEMPLATE_KEY_PREFIX = /(?:\bt\(\s*|i18nKey=\{\s*)`([a-zA-Z][a-zA-Z0-9_.]*\.)\$\{/g;
+
+// Both scans are evidence about call sites, so both must read code only. A
+// comment is prose: the letter `d` quoted in a sentence is not a use of
+// `dashboard.*`. Tokenizing the file rather than regexing it is also what keeps
+// a quote inside a comment, or a delimiter inside a string, from being read as
+// the other kind of thing.
+const STRING_OR_COMMENT = /\/\/[^\n]*|\/\*[\s\S]*?\*\/|'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"|`(?:[^`\\]|\\.)*`/g;
+
+const withoutComments = (source: string) =>
+  source.replace(STRING_OR_COMMENT, token => (token.startsWith('//') || token.startsWith('/*') ? ' ' : token));
+
+// A literal clears a longer key only when the literal is itself shaped like a
+// key -- rooted in a namespace, carrying a separator. Without that test any
+// literal at all could clear one, and five one-word literals (`common`, `auth`,
+// `provider`, `app`, and a bare `d`) between them cleared 1044 of the 1063
+// defined keys: the suite reported no orphans because it had no way to report
+// one.
+const KEY_STEM = new RegExp(`^(?:${NAMESPACES.join('|')})\\.`);
 
 describe('translation key usage', () => {
   const defined = new Set(leafKeys(resources.en.translation));
@@ -71,7 +89,7 @@ describe('translation key usage', () => {
   it('has a string behind every literal key the dashboard asks for', () => {
     const unresolved: string[] = [];
     for (const file of sourceFiles(SOURCE_ROOT)) {
-      const source = readFileSync(file, 'utf8');
+      const source = withoutComments(readFileSync(file, 'utf8'));
       for (const [, key] of source.matchAll(LITERAL_KEY)) {
         // A literal that names no leaf but prefixes one is a stem the call site
         // completes -- `t(`${prefix}Disable`)` passes the stem and appends.
@@ -88,14 +106,15 @@ describe('translation key usage', () => {
     const used = new Set<string>();
     const templatePrefixes = new Set<string>();
     for (const file of sourceFiles(SOURCE_ROOT)) {
-      const source = readFileSync(file, 'utf8');
+      const source = withoutComments(readFileSync(file, 'utf8'));
       for (const [, key] of source.matchAll(ANY_STRING)) used.add(key);
       for (const [, prefix] of source.matchAll(TEMPLATE_KEY_PREFIX)) templatePrefixes.add(prefix);
     }
     const orphaned = [...defined].filter(key => {
       if (used.has(key) || used.has(key.replace(PLURAL_SUFFIX, ''))) return false;
       if ([...templatePrefixes].some(prefix => key.startsWith(prefix))) return false;
-      return ![...used].some(literal => literal.length < key.length && key.startsWith(literal));
+      return ![...used].some(literal =>
+        KEY_STEM.test(literal) && literal.length < key.length && key.startsWith(literal));
     });
     // A string nothing asks for is invisible: it survives every rename and
     // every deletion of the surface it belonged to, and both locales keep

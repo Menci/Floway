@@ -107,14 +107,14 @@ export const buttonCss = `
 /* Geometry and typography. The weight is Normal rather than Fluent's semibold,
    and the style declares neither MinWidth nor MaxWidth, so a WinUI button is
    sized by its content instead of reserving Fluent's 96px.
-   BackgroundSizing is InnerBorderEdge, which is background-clip: padding-box on
-   the web: the fill stops at the border rather than running underneath it, so a
-   translucent border reads against the surface behind the control and not
-   against its own fill.
+   BackgroundSizing is InnerBorderEdge, which ../reset.css.ts already applies to
+   everything: the fill stops at the border rather than running underneath it,
+   so a translucent border reads against the surface behind the control and not
+   against its own fill. It is named here because the two rules below depart
+   from it.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L154-L168
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L182-L190 */
 .fui-Button.fui-Button${notOptedOut} {
-  background-clip: padding-box;
   font-weight: var(--fontWeightRegular);
   min-width: auto;
   max-width: none;

@@ -3,7 +3,7 @@ import { createElement, useCallback, useState } from 'react';
 import type { ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { copyToClipboard } from '../../lib/copy-to-clipboard';
+import { copyToClipboard } from './copy-to-clipboard';
 
 const COPIED_MS = 1500;
 const FAILED_MS = 2000;
