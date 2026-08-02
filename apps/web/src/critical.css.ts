@@ -8,6 +8,11 @@ import { baseFontStack } from './font-stacks';
 // loading screen and the error shell see no `--fontFamilyBase` unless it is
 // published at the document root.
 //
+// The colour scheme is declared on the same condition ./root.tsx picks the
+// Fluent theme from, and on no other: the dashboard follows the system and
+// offers no override, so one query switches both the theme and the user agent
+// surfaces -- scrollbars, native controls, the canvas behind the first paint.
+//
 // ../vite.config.ts serves this module as `virtual:floway-critical.css` and
 // evaluates this graph in Node, so nothing here may reach a browser module.
 const documentCss = `

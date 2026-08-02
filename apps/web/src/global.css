@@ -15,7 +15,10 @@
    Microsoft's own AS8075 -- 1.0 s against 3.4 s from China Telecom in Nanjing.
 
    TrueType is the only container upstream; there is no woff2 of the variable
-   face. Declaring no font-variation-settings is deliberate: the face carries an
+   face on this host, and it costs less than it looks -- the CDN gzips it to
+   1.05 MB against the 949 KB woff2 on microsoft.design, which answers a large
+   share of mainland requests with a Cloudflare challenge instead of the font.
+   Declaring no font-variation-settings is deliberate: the face carries an
    `opsz` axis over 5-36, so the initial `font-optical-sizing: auto` drives it
    from the used font size continuously rather than at two pinned stops. */
 @font-face {
@@ -56,7 +59,9 @@
 
    Each size carries its leading, because a size alone inherits whatever leading
    its context happens to have: one 13px identifier was measured 13/20 in a list
-   row, 13/16 in a detail pane and 13/13 in a table cell. */
+   row, 13/16 in a detail pane and 13/13 in a table cell. Each step is paired
+   with the proportional leading its size sits closest to, so a mono cell lines
+   up with the ordinary text in the same row. */
 :root {
   --floway-font-size-mono: 13px;
   --floway-line-height-mono: 20px;
