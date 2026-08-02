@@ -70,7 +70,7 @@ export function ApiDocsContent() {
               <TableBody>{endpoints.map(endpoint => <TableRow key={`${endpoint.method} ${endpoint.path}`}>
                 <TableCell><HttpMethodBadge method={endpoint.method} /></TableCell>
                 <TableCell><code translate="no">{endpoint.path}</code></TableCell>
-                <TableCell><Text size={300}>{t(`dashboard.apiDocs.endpointNames.${endpoint.name}`)}</Text></TableCell>
+                <TableCell>{t(`dashboard.apiDocs.endpointNames.${endpoint.name}`)}</TableCell>
                 <TableCell className={trailingCell}><Link href={endpoint.docs} target="_blank"><OpenLinkLabel>{t('dashboard.apiDocs.docsLink')}</OpenLinkLabel></Link></TableCell>
               </TableRow>)}</TableBody>
             </Table>
