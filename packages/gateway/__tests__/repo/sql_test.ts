@@ -61,7 +61,7 @@ test('SQL upstream repo saveState applies the mutator to the stored state', asyn
 // `state_json` lands an out-of-band write before returning, so the CAS that
 // follows it is guaranteed to lose. Without this the retry path is unreachable
 // from a single-threaded test.
-const withWriterRacingTheFirstRead = (db: SqlDatabase, race: () => void): SqlDatabase => {
+const withWriterRacingTheFirstRead = (db: SqlDatabase, race: () => Promise<unknown>): SqlDatabase => {
   let raced = false;
   const wrapStatement = (statement: SqlPreparedStatement, racing: boolean): SqlPreparedStatement => ({
     bind: (...values) => wrapStatement(statement.bind(...values), racing),
@@ -71,7 +71,7 @@ const withWriterRacingTheFirstRead = (db: SqlDatabase, race: () => void): SqlDat
       const row = await statement.first<T>();
       if (racing && !raced) {
         raced = true;
-        race();
+        await race();
       }
       return row;
     },
@@ -90,11 +90,10 @@ test('SQL upstream repo saveState re-applies the mutator against the write that 
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db).upstreams;
   await repo.save(baseRecord());
-  const racing = new SqlRepo(withWriterRacingTheFirstRead(db, () => {
+  const racing = new SqlRepo(withWriterRacingTheFirstRead(db, () =>
     db.prepare('UPDATE upstreams SET state_json = ? WHERE id = ?')
       .bind(JSON.stringify({ accounts: [{ ...goodAccount, state_message: 'written by a sibling' }] }), 'up_test')
-      .run();
-  })).upstreams;
+      .run())).upstreams;
 
   const seen: string[] = [];
   await racing.saveState('up_test', current => {

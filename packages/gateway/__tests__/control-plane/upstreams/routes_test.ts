@@ -2201,8 +2201,7 @@ test('GET /api/upstreams/:id returns the full record with fresh Codex quota for 
   state.accounts[0].quotaSnapshot = {
     premium: { fetchedAt: Date.now(), data: quota },
   };
-  const saved = await repo.upstreams.saveState(created.id, state, { expectedState: stored.state });
-  assertEquals(saved.updated, true);
+  await repo.upstreams.saveState(created.id, () => state);
 
   const resp = await requestApp(`/api/upstreams/${created.id}`, { headers: { 'x-floway-session': adminSession } });
   assertEquals(resp.status, 200);
@@ -2298,8 +2297,7 @@ test('POST /api/upstreams/copilot/quota leaves the stored snapshot alone when th
   };
   await repo.upstreams.saveState(
     copilotUpstream.id,
-    { ...(stored.state as Record<string, unknown>), quotaSnapshot: harvested },
-    { expectedState: stored.state },
+    current => ({ ...(current as Record<string, unknown>), quotaSnapshot: harvested }),
   );
 
   const envelope = envelopeFromRecord(await getRecord(repo, copilotUpstream.id));
