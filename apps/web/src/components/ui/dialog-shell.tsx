@@ -10,11 +10,19 @@ const { Dialog, DialogBody, DialogContent, DialogSurface, mergeClasses } = fluen
 // of the page, and it can only do that while the surface is still mounted. A
 // shell hard-coded to `open` is closed by being unmounted, which removes the
 // surface in the same commit and leaves the exit no frames to run in.
-export function DialogShell({ actions, children, maxWidth, onOpenChange, onSubmit, open, surfaceClassName, title }: {
+export function DialogShell({ actions, children, maxWidth, onExited, onOpenChange, onSubmit, open, surfaceClassName, title }: {
   actions: ReactNode;
   children: ReactNode;
   /** Overrides ContentDialogMaxWidth for a dialog whose content needs the room. */
   maxWidth?: string;
+  /**
+   * Runs once the surface has finished animating out. A caller whose
+   * confirmation destroys the tree the dialog lives in -- a sign-out, a held
+   * navigation released -- does the deed here rather than on confirm: closing
+   * and destroying in one handler is one React commit, and the exit never gets
+   * to start.
+   */
+  onExited?: () => void;
   onOpenChange: DialogProps['onOpenChange'];
   onSubmit?: () => void;
   open: boolean;
@@ -22,7 +30,11 @@ export function DialogShell({ actions, children, maxWidth, onOpenChange, onSubmi
   title: ReactNode;
 }) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      surfaceMotion={{ onMotionFinish: (_, data) => { if (data.direction === 'exit') onExited?.(); } }}
+    >
       <DialogSurface
         className={mergeClasses('floway-dialog-shell !m-auto', surfaceClassName)}
         style={maxWidth === undefined ? undefined : { '--floway-dialog-max-width': `min(${maxWidth}, calc(100vw - 32px))` } as CSSProperties}

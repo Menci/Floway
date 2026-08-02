@@ -184,6 +184,13 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
   const logout = useAuthStore(state => state.logout);
   const styles = useStyles();
   const logoutDialog = useDialogInvocation<void>();
+  // Signing out clears the session, the route redirects to the login page, and
+  // this sidebar goes with it -- so the confirmation only closes the dialog,
+  // and the sign-out itself waits for the exit to finish. Closing and signing
+  // out in one handler is one React batch, and the redirect commits before the
+  // exit has a frame. The exit runs on a dismissal too, which is what this
+  // records: only a confirmed one signs out.
+  const signOutConfirmed = useRef(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const footerRef = useRef<HTMLDivElement>(null);
   // Color icons carry hardcoded gradient ids, so two mounted drawers would
@@ -209,6 +216,7 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
       density="medium"
       onNavItemSelect={(_, data) => {
         if (data.value === 'logout') {
+          signOutConfirmed.current = false;
           logoutDialog.open();
         }
       }}
@@ -278,7 +286,8 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
       actionIntent="primary"
       key={logoutDialog.invocation.key}
       message={t('dashboard.logout.message')}
-      onConfirm={() => void logout()}
+      onConfirm={() => { signOutConfirmed.current = true; logoutDialog.close(); }}
+      onExited={() => { if (signOutConfirmed.current) void logout(); }}
       onOpenChange={open => { if (!open) logoutDialog.close(); }}
       title={t('dashboard.logout.title')}
     />}

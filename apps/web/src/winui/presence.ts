@@ -97,14 +97,17 @@ export const withWinuiMotion = (components: FluentComponents): FluentComponents 
   });
 
   // A caller that states its own motion keeps it, the same way a caller that
-  // states its own appearance does.
+  // states its own appearance does. Anything else it puts on the slot rides
+  // along with ours -- `onMotionFinish` above all, which is how a caller whose
+  // confirmation takes the overlay's own tree with it learns that the exit has
+  // finished and the work can now be done.
   const runMotion = <Component>(component: Component, slot: string, Motion: React.ElementType): Component => {
     const elementType = component as React.ElementType;
     const render = (_: unknown, motionProps: MotionSlotProps) => React.createElement(Motion, motionProps);
 
     const wrapped = React.forwardRef<unknown, MotionCarrier>((props, ref) => React.createElement(elementType, {
       ...props,
-      [slot]: props[slot] ?? { children: render },
+      [slot]: { children: render, ...(props[slot] as MotionCarrier | null | undefined) },
       ref,
     }));
 

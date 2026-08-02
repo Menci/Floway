@@ -69,6 +69,7 @@ export function ConfirmDialog({
   onCancel,
   onConfirm,
   onDismissError,
+  onExited,
   onOpenChange,
   open,
   title,
@@ -88,6 +89,8 @@ export function ConfirmDialog({
   onCancel?: () => void;
   onConfirm: () => void;
   onDismissError?: () => void;
+  /** See DialogShell: the deed a confirmation does to its own tree goes here. */
+  onExited?: () => void;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   title: string;
@@ -98,6 +101,7 @@ export function ConfirmDialog({
   return (
     <DialogShell
       open={open}
+      onExited={onExited}
       actions={<DialogActions>
         <Button
           className="!whitespace-nowrap"
