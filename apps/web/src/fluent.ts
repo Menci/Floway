@@ -6,6 +6,7 @@ import * as fluentNamespace from '@fluentui/react-components';
 
 import { withWinuiAppearance } from './winui/appearance';
 import { withWinuiMotion } from './winui/presence';
+import { withWinuiProgressIndeterminate } from './winui/progress-indeterminate';
 import { withWinuiDrag } from './winui/switch-drag';
 
 type FluentComponents = typeof import('@fluentui/react-components');
@@ -28,4 +29,6 @@ const normalizedNamespace = resolvedNamespace as FluentComponents;
 
 // The app's only value import of Fluent, so it is the one place the appearance
 // stamping, motion substitution and Switch drag gesture reach every instance.
-export const fluentComponents = withWinuiDrag(withWinuiMotion(withWinuiAppearance(normalizedNamespace)));
+export const fluentComponents = withWinuiDrag(
+  withWinuiProgressIndeterminate(withWinuiMotion(withWinuiAppearance(normalizedNamespace))),
+);

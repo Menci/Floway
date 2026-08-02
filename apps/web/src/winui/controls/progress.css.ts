@@ -5,8 +5,11 @@
 // variants and the ring's for `appearance="inverted"`, each one atom deep, so a
 // rule painting the slot would outrank the very signal it is meant to carry.
 //
-// Motion is left to Fluent for both controls; the bar's indeterminate
-// storyboard is transcribable and simply not spent.
+// Motion is left to Fluent for the ring; the bar's indeterminate storyboard is
+// transcribed here, since Fluent's own is a Web Animations API animation of a
+// shape WinUI does not have.
+import { progressIndeterminateCss } from '../progress-indeterminate.css';
+
 export const progressCss = `
 /* WinUI states the control's 3 minimum height and its track's 1 separately, so
    the track is a centred hairline band inside a box the indicator fills, and
@@ -38,14 +41,42 @@ export const progressCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar.xaml#L94-L99 */
 .fui-ProgressBar.fui-ProgressBar:not([aria-valuenow]) {
   background-image: none;
+  position: relative;
 }
+
+/* The two travelling indicators. Fluent renders one segment, so the second is
+   a pseudo element on the root, painted ProgressBarForeground like the first --
+   AccentFillColorDefaultBrush in either theme dictionary, which is where the
+   bar arrives through the token remap below. The cap Fluent puts on the
+   segment is released in both its forms, 33 per cent and the 100 per cent it
+   becomes under a reduced-motion preference: the widths belong to the
+   storyboard, and WinUI states no quieter variant of it.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar.xaml#L164-L172
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar_themeresources.xaml#L6 */
+.fui-ProgressBar:not([aria-valuenow]) .fui-ProgressBar__bar.fui-ProgressBar__bar {
+  max-width: none;
+}
+
+.fui-ProgressBar.fui-ProgressBar:not([aria-valuenow])::after {
+  background-color: var(--winui-accent-fill-default);
+  border-radius: inherit;
+  content: '';
+  inset: 0 auto 0 0;
+  position: absolute;
+}
+${progressIndeterminateCss(
+  '.fui-ProgressBar:not([aria-valuenow]) .fui-ProgressBar__bar.fui-ProgressBar__bar',
+  '.fui-ProgressBar.fui-ProgressBar:not([aria-valuenow])::after',
+)}
 
 /* High contrast. The band is dropped too, because a forced-colors palette
    repaints background colours but not gradients and ours would otherwise
    survive as our own stroke colour over the system track. content-box keeps the
    3px floor as the track's own height against the app's global border-box. A
    media query adds no specificity, so each declaration is restated at the same
-   weight as the rule above it.
+   weight as the rule above it. The second indicator has to name Highlight
+   itself, the colour HighContrast gives ProgressBarForeground and the one
+   Fluent's own forced-colors rule hands the first.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar_themeresources.xaml#L12-L18 */
 @media (forced-colors: active) {
   .fui-ProgressBar.fui-ProgressBar {
@@ -53,6 +84,10 @@ export const progressCss = `
     background-image: none;
     border: 1px solid CanvasText;
     box-sizing: content-box;
+  }
+
+  .fui-ProgressBar.fui-ProgressBar:not([aria-valuenow])::after {
+    background-color: Highlight;
   }
 }
 
