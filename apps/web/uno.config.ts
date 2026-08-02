@@ -6,7 +6,6 @@ export default defineConfig({
   ],
   theme: {
     fontFamily: {
-      mono: 'var(--fontFamilyMonospace)',
       sans: 'var(--fontFamilyBase)',
     },
     fontSize: {
@@ -38,6 +37,12 @@ export default defineConfig({
     ['font-fui-regular', { 'font-weight': 'var(--fontWeightRegular)' }],
     ['font-fui-semibold', { 'font-weight': 'var(--fontWeightSemibold)' }],
   ],
+  // `font-mono` is global.css's, not a utility: the class also has to reach the
+  // form controls and code elements inside it, and it has to outrank Griffel's
+  // atomic rules on those, which takes a selector list and `!important` that a
+  // theme value cannot express. Generating the single-declaration version here
+  // as well would only add a rule that is always overridden.
+  blocklist: ['font-mono'],
   // The PostCSS integration reads these globs itself and never sees the module
   // graph, so a class only ships if a file here spells it out. It also applies
   // no source-level transformers: utilities must appear verbatim in the source,
