@@ -108,10 +108,20 @@ describe('multipart body rendering', () => {
     expect(rendered.text).not.toContain('[binary,');
   });
 
-  // `renderMultipart` reads the wire with `TextDecoder('latin1')`, which the
-  // Encoding Standard defines as windows-1252 -- not byte-transparent over
-  // 0x80-0x9F. A PNG's leading 0x89 comes back as U+2030, `btoa` rejects it,
-  // and the whole multipart render is abandoned for the raw base64 blob.
-  // Recorded in `data/backlog.md`.
-  it.todo('stands in for a binary part whose bytes fall in the windows-1252 hole');
+  // A PNG signature leads with 0x89, inside the 0x80-0x9F range where the
+  // windows-1252 decoder the Encoding Standard resolves latin1 to
+  // (https://encoding.spec.whatwg.org/#names-and-labels) is not byte-transparent.
+  // Reading the wire through any text encoding loses those bytes and abandons
+  // the whole multipart render, so every PNG upload arrives as a raw blob.
+  const png = bytes(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A);
+  const pngWire = multipart([jsonPart, part('content-disposition: form-data; name="file"\r\ncontent-type: image/png', png)]);
+
+  it('round-trips a PNG signature rather than losing it to the encoding', () => {
+    const rendered = render(pngWire);
+
+    expect(rendered.text).toContain('{"id":1}');
+    expect(rendered.text).toContain('[binary, 8 bytes, content-type=image/png]');
+    expect(rendered.text).toContain(base64(png));
+    expect(rendered.decodeError).toBeNull();
+  });
 });

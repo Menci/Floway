@@ -53,9 +53,13 @@ const renderMultipart = (base64: string, contentType: string): string | null => 
   if (!boundary) return null;
 
   try {
-    const binary = atob(base64);
-    const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
-    const wire = new TextDecoder('latin1').decode(bytes);
+    // The wire stays the binary string atob returns, one code unit per byte, so
+    // slicing it and encoding a part back with btoa round-trips. Decoding it
+    // through a text encoding first does not: the Encoding Standard resolves
+    // latin1 to windows-1252 (https://encoding.spec.whatwg.org/#names-and-labels),
+    // which maps 0x80-0x9F -- a PNG signature leads with 0x89 -- to code points
+    // above 255 that btoa then rejects.
+    const wire = atob(base64);
     const chunks = wire.split(`--${boundary}`);
     if (chunks.length < 3) return null;
 
