@@ -1,5 +1,5 @@
 import { NavigationRegular } from '@fluentui/react-icons';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Navigate,
@@ -44,6 +44,17 @@ export default function Dashboard({}: Route.ComponentProps) {
   const { t } = useTranslation();
   const user = useAuthStore(state => state.user);
   const [navigationOpen, setNavigationOpen] = useState(false);
+  // Two frames, not one: the first callback still runs inside the commit that
+  // mounted this tree, so the animation would be declared in the same style
+  // recalculation the frame is. The second runs after the browser has painted
+  // once, which is the earliest moment an animation declared here starts from
+  // where it is drawn.
+  const [entered, setEntered] = useState(false);
+  useEffect(() => {
+    let inner = 0;
+    const outer = requestAnimationFrame(() => { inner = requestAnimationFrame(() => setEntered(true)); });
+    return () => { cancelAnimationFrame(outer); cancelAnimationFrame(inner); };
+  }, []);
   const workspace = useMatches().some(match => isDashboardWorkspaceHandle(match.handle));
 
   if (!user) return <Navigate replace to="/" />;
@@ -73,10 +84,11 @@ export default function Dashboard({}: Route.ComponentProps) {
             transition animates: it is the one box in this chain that is always
             exactly the viewport's height, so the snapshot the browser takes of
             it is bounded however long the page it holds turns out to be. See
-            ../winui/page-transition.css.ts. */}
+            ../winui/page-transition.css.ts, which also says why the entrance
+            waits for `entered` rather than being declared at mount. */}
         <ScrollArea
           axes="vertical"
-          className="min-h-0 floway-page-transition"
+          className={`min-h-0 floway-page-transition ${entered ? 'floway-page-entrance-playing' : 'floway-page-entrance-held'}`}
           contentClassName={workspace ? 'h-full' : 'min-h-full'}
           noTabIndex
         >

@@ -24,26 +24,29 @@ export const pageTransitionCss = `
   :root { view-transition-name: none; }
 
   /* A reload has no outgoing frame, so the pair below never runs and the
-     entrance is stated on the frame itself -- as the same declaration, because
-     it is the same leg. The hold in front of it belongs to the arriving frame's
-     own storyboard rather than to the departing one: NavigatingTo registers
-     opacity 0 at 0 and 1 at 150 as DISCRETE key frames, and the travel likewise
-     sits at 140 through 150 before it splines. So a cold start shows nothing for
-     150, then the frame whole and already moving. The navigation pane is outside
-     the frame and arrives with the document, which is what the hold gives it:
-     the pane is on screen before the page comes back into it.
+     entrance is stated on the frame itself. No wait in front of it: the 150 the
+     incoming leg is held for during a navigation is the time the outgoing one
+     takes to leave, and there is nothing to leave here -- Settings starts its
+     first page moving at once. The navigation pane arrives with the document
+     and does not animate; it is the fixed thing the page comes into.
 
-     The wait is also what keeps this smooth. The frame mounts into the busiest
-     moment the app has -- hydration, the scroller's own setup, the first
-     charts -- and an animation starting there loses its opening frames to that
-     work. Starting after it means nothing is being painted while the main
-     thread is still busy. */
-  .floway-page-transition {
-    animation: floway-page-enter var(--winui-page-enter-duration)
-      var(--winui-page-enter-easing) var(--winui-page-leave-duration) forwards;
-    opacity: 0;
-    view-transition-name: floway-page;
+     The two classes are a start gate rather than a state machine. A CSS
+     animation takes its start time from the frame its style was recalculated
+     in, not from the frame it is first painted in, and the frame mounts into
+     the busiest moment the app has -- hydration, the scroller's own setup, the
+     first charts. Declared at mount, the animation was already 84ms along when
+     it first reached the screen, which is most of the way home on this curve
+     and reads as a jump. So the frame is held at the offset until ../../routes
+     /dashboard.tsx has seen a painted frame go by, and only then is the
+     animation declared, on a frame that can paint it. */
+  .floway-page-entrance-held {
+    translate: 0 var(--winui-page-enter-offset);
   }
+  .floway-page-entrance-playing {
+    animation: floway-page-enter var(--winui-page-enter-duration)
+      var(--winui-page-enter-easing) forwards;
+  }
+  .floway-page-transition { view-transition-name: floway-page; }
 
   /* The group would animate the frame's box between the two snapshots. Both
      are the viewport, so there is nothing to travel -- but a scrollbar
@@ -86,10 +89,7 @@ export const pageTransitionCss = `
      the opacity its own resting style states.
      https://github.com/w3c/wcag/blob/900ea026b967bc306a2cdbe0c586330a508d6759/guidelines/terms/21/motion-animation.html */
   @media (prefers-reduced-motion: reduce) {
-    .floway-page-transition {
-      animation-delay: 0.01ms;
-      animation-duration: 0.01ms;
-    }
+    .floway-page-entrance-playing { animation-duration: 0.01ms; }
     ::view-transition-old(floway-page) { animation-duration: 0.01ms; }
     ::view-transition-new(floway-page) {
       animation-delay: 0.01ms;
