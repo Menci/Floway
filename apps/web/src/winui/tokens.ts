@@ -418,6 +418,22 @@ export const winuiTokenCss = `
   --winui-overlay-corner-radius: 8px;
 }
 
+/* Focus visual. XAML draws two concentric strokes with no gap -- a primary
+   outer band with a secondary inner one riding its inner edge -- and both
+   widths are FrameworkElement defaults rather than theme resources, so a
+   control overrides them only where it wants a different ring. How deep a ring
+   reaches into an element follows from the pair, so it is derived rather than
+   restated.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/DependencyObject/DependencyProperty.cpp#L22-L25
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L173-L174 */
+:root {
+  --winui-focus-visual-primary-thickness: 2px;
+  --winui-focus-visual-secondary-thickness: 1px;
+  --winui-focus-visual-depth: calc(
+    var(--winui-focus-visual-primary-thickness) + var(--winui-focus-visual-secondary-thickness)
+  );
+}
+
 /* Control alt fills — the interior of a control whose body is a cavity rather
    than a surface. The ramp runs the opposite way to the control fills, so it
    darkens on light and lightens on dark, and the disabled step is fully

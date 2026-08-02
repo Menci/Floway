@@ -1,7 +1,7 @@
-// XAML draws one focus visual for every focusable element: a 2px
+// XAML draws one focus visual for every focusable element: a primary
 // FocusStrokeColorOuter band with FocusStrokeColorInner riding its inner edge,
-// which is why the outline carries the outer colour and the inset shadow's
-// third pixel carries the inner one.
+// which is why the outline carries the outer colour and the last pixel of the
+// inset shadow's depth carries the inner one.
 //
 // Both strokes are drawn inside the element's own box. Everything that wears
 // this sits in a host that clips what leaves it -- a table cell, a card, a
@@ -22,9 +22,9 @@
 // The pair of strokes, for a control whose selector cannot be a class because
 // the app does not render the element that takes focus.
 export const focusRectStrokes = `
-  box-shadow: inset 0 0 0 3px var(--winui-focus-stroke-inner);
-  outline: 2px solid var(--winui-focus-stroke-outer);
-  outline-offset: -2px;
+  box-shadow: inset 0 0 0 var(--winui-focus-visual-depth) var(--winui-focus-stroke-inner);
+  outline: var(--winui-focus-visual-primary-thickness) solid var(--winui-focus-stroke-outer);
+  outline-offset: calc(-1 * var(--winui-focus-visual-primary-thickness));
 `;
 
 export const focusRectCss = `

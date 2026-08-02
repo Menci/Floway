@@ -46,11 +46,11 @@ export const tableCss = `
 
    Both strokes are drawn inside the element's bounds: every table here sits in
    a rounded clipping host that would cut an offsetless outline, so pulling it
-   in by the outer stroke's 2px seats the pair inside the clip, with the inner
-   stroke riding the third pixel of the inset shadow. Insetting the host instead
-   is wrong at both ends -- the performance table has to meet its host's rounded
-   border, and a gutter in the API key table would stop the row's fill short of
-   the card edge.
+   in by the primary thickness seats the pair inside the clip, with the inner
+   stroke riding the remainder of the focus visual's depth. Insetting the host
+   instead is wrong at both ends -- the performance table has to meet its host's
+   rounded border, and a gutter in the API key table would stop the row's fill
+   short of the card edge.
 
    Under forced colours the user agent drops the inset shadow and forces the
    outline onto CanvasText, so no colour is needed there.
@@ -67,9 +67,9 @@ export const tableCss = `
 .fui-TableCell.fui-TableCell[data-fui-focus-visible],
 .fui-TableSelectionCell.fui-TableSelectionCell[data-fui-focus-visible],
 .fui-TableHeaderCell.fui-TableHeaderCell[data-fui-focus-within]:focus-within {
-  box-shadow: inset 0 0 0 3px var(--winui-focus-stroke-inner);
+  box-shadow: inset 0 0 0 var(--winui-focus-visual-depth) var(--winui-focus-stroke-inner);
   outline-color: var(--winui-focus-stroke-outer);
-  outline-offset: -2px;
+  outline-offset: calc(-1 * var(--winui-focus-visual-primary-thickness));
 }
 
 /* Fluent's selected-row appearance replaces the row's surface; WinUI stays on

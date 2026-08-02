@@ -163,25 +163,22 @@ export const navCss = `
   --colorNeutralForeground2: var(--winui-text-fill-disabled);
 }
 
-/* Focus. WinUI's system focus visual is two concentric strokes with no gap, a
-   2px outer and a 1px inner inset by the outer thickness. Fluent draws the
-   outer one as an outline inside the border box, so only its colour is
-   restated; the inner is an inset shadow three pixels deep, of which the
-   outline covers the outer two -- a shadow rather than the two-pseudo-element
-   construction used elsewhere, because this item's ::after is spoken for by the
-   selection indicator above.
+/* Focus. Fluent draws the outer stroke as an outline inside the border box, so
+   only its colour is restated; the inner one is an inset shadow the full depth
+   of the focus visual, of which the outline covers everything but the last
+   pixel -- a shadow rather than the two-pseudo-element construction used
+   elsewhere, because this item's ::after is spoken for by the selection
+   indicator above.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L429
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources.xaml#L15-L16
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L250-L252
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L173-L174
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L446-L452
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/inc/FocusRectNudging.h#L388 */
 .fui-NavItem.fui-NavItem[data-fui-focus-visible],
 .fui-NavSubItem.fui-NavSubItem[data-fui-focus-visible],
 .fui-NavCategoryItem.fui-NavCategoryItem[data-fui-focus-visible] {
   box-shadow:
-    inset 0 0 0 var(--strokeWidthThicker) var(--winui-focus-stroke-inner);
+    inset 0 0 0 var(--winui-focus-visual-depth) var(--winui-focus-stroke-inner);
 }
 
 /* A selected item's icon keeps the primary text fill instead of Fluent's brand

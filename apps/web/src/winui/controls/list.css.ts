@@ -11,6 +11,13 @@ const uncheckedBox = `.fui-Checkbox__input:enabled:not(:checked)${checkboxNotMix
 
 const interactiveRow = ".fui-ListItem[tabindex]:not([aria-disabled='true'])";
 
+// ListViewItem sets FocusVisualMargin 1, and a positive margin shrinks the
+// focus rectangle, so the ring starts a pixel inside the row and its inner
+// stroke starts one primary thickness further in. That distance places the
+// outline, the inner stroke's box, and the radius that box has to carry.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L248
+const innerStrokeInset = 'calc(1px + var(--winui-focus-visual-primary-thickness))';
+
 const selectedBox = '.fui-ListItem__checkmark .fui-Checkbox__input:enabled:checked'
   + ' ~ .fui-Checkbox__indicator.fui-Checkbox__indicator';
 
@@ -126,31 +133,26 @@ export const listCss = `
   background-color: var(--winui-accent-fill-disabled);
 }
 
-/* WinUI draws a 2px outer stroke with a 1px inner nested inside it, held a
-   pixel clear of the row's edge by FocusVisualMargin 1 -- a positive margin
-   shrinks the focus rectangle, so the ring sits inside the item's bounds. That
-   reach is the offset below. The inner stroke rides a pseudo-element because an
-   inset shadow on the row itself would sit in the pixels the outline has to
-   cover; under forced colours the user agent drops that shadow and forces the
-   outline onto CanvasText, so the ring needs no colour of its own there.
+/* The inner stroke rides a pseudo-element because an inset shadow on the row
+   itself would sit in the pixels the outline has to cover; under forced colours
+   the user agent drops that shadow and forces the outline onto CanvasText, so
+   the ring needs no colour of its own there. The pseudo-element is a rounded
+   rectangle inset inside the row, so it carries the row's radius less that
+   inset.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L29-L30
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L94
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L248
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L250
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L252
-   https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L173-L174
    https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L718
    https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
 .fui-ListItem.fui-ListItem[data-fui-focus-visible] {
-  outline-offset: -3px;
+  outline-offset: calc(-1 * ${innerStrokeInset});
 }
 
 .fui-ListItem.fui-ListItem[data-fui-focus-visible]::after {
   content: '';
   position: absolute;
-  inset: 3px;
-  border-radius: 1px;
-  box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
+  inset: ${innerStrokeInset};
+  border-radius: calc(var(--winui-control-corner-radius) - ${innerStrokeInset});
+  box-shadow: inset 0 0 0 var(--winui-focus-visual-secondary-thickness) var(--winui-focus-stroke-inner);
   pointer-events: none;
 }
 

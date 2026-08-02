@@ -135,7 +135,7 @@ ${subtleChip} .fui-Tab[aria-selected='true']:enabled:active {
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L587 */
 .fui-TabList[aria-orientation='horizontal'] > .fui-Tab.fui-Tab::after {
   bottom: 2px;
-  height: var(--strokeWidthThicker);
+  height: 3px;
 }
 
 /* Pivot collapses every unselected pipe rather than moving one, so it states no
