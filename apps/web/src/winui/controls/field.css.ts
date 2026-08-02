@@ -35,11 +35,29 @@ export const fieldCss = `
    scales both with the field size. Fluent's horizontal orientation has no WinUI
    header to transcribe and relies on the label's vertical padding to align it
    with the control's first text line, so the horizontal root atom is negated.
+   The header's own colour is left on the modern text ramp rather than taken
+   from TextControlHeaderForeground: that key is on the legacy system-brush
+   layer at BaseHigh, a pure black no other label in this layer wears, and a
+   Field label sitting darker than the CheckBox label beside it would read as a
+   defect rather than as WinUI.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L175
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L335 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L335
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L4812 */
 .fui-Field:not(.${fieldHorizontalRootAtom}) > .fui-Field__label.fui-Field__label {
   padding-block: 0;
   margin-bottom: 8px;
+}
+
+/* The header's disabled step, which the TextBox states and Fluent does not: its
+   Field passes the wrapped control's disabled state to no attribute, class or
+   atom on the label slot, so the label alone stayed at its rest colour while
+   the control beside it greyed out. :has on the wrapped control is the state
+   Fluent leaves readable.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L256-L260
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L4813 */
+.fui-Field:has(:disabled) > .fui-Field__label.fui-Field__label,
+.fui-Field:has([aria-disabled='true']) > .fui-Field__label.fui-Field__label {
+  color: var(--winui-text-base-medium-low);
 }
 
 /* WinUI paints a description line with
@@ -70,6 +88,15 @@ export const fieldCss = `
    glyph alone leaves the words hanging off the field's leading edge. */
 .fui-Field__validationMessage.fui-Field__validationMessage {
   padding-inline-start: 0;
+}
+
+/* The required marker has no WinUI counterpart -- a TextBox header states none
+   -- so it is answered as an internal invariant instead: every other signal in
+   this column was re-expressed in a WinUI SystemFill role, and leaving this one
+   on Fluent's own red put two different reds in the same column of a form.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L282 */
+.fui-Field__label .fui-Label__required.fui-Label__required {
+  color: var(--winui-system-fill-critical);
 }
 
 /* Invalid is the one validation state Fluent writes into the DOM, as

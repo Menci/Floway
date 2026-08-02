@@ -107,11 +107,12 @@ export const menuCss = `
   color: var(--winui-text-fill-primary);
 }
 
-/* WinUI has no description line under a menu item, and Fluent's hover and
-   pressed steps read tokens outside the WinUI palette, so the rest value is held
-   across all three states. */
-.fui-MenuItem:not([aria-disabled='true']):hover .fui-MenuItem__subText.fui-MenuItem__subText,
-.fui-MenuItem:not([aria-disabled='true']):hover:active .fui-MenuItem__subText.fui-MenuItem__subText {
+/* WinUI has no description line under a menu item, and Fluent's hover, pressed
+   and submenu-open steps all read tokens outside the WinUI palette, so the rest
+   value is held across every enabled state -- named as the absence of a state
+   rather than as a list, so a Fluent atom on a state nobody enumerated cannot
+   take it back. */
+.fui-MenuItem:not([aria-disabled='true']) .fui-MenuItem__subText.fui-MenuItem__subText {
   color: var(--winui-text-fill-tertiary);
 }
 
@@ -209,7 +210,8 @@ export const menuCss = `
     color: Highlight;
   }
 
-  .fui-MenuItem[aria-expanded='true'] .fui-MenuItem__submenuIndicator.fui-MenuItem__submenuIndicator {
+  .fui-MenuItem[aria-expanded='true'] .fui-MenuItem__submenuIndicator.fui-MenuItem__submenuIndicator,
+  .fui-MenuItem[aria-expanded='true'] .fui-MenuItem__subText.fui-MenuItem__subText {
     color: Highlight;
   }
 
