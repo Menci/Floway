@@ -160,7 +160,7 @@ export const colorPickerCss = `
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L38
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L242
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L8
-     https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-swatch-picker/library/src/components/ColorSwatch/useColorSwatchStyles.styles.ts#L146-L149 */
+     https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-swatch-picker/library/src/components/ColorSwatch/useColorSwatchStyles.styles.ts#L154-L156 */
   .fui-ColorSwatch.fui-ColorSwatch[disabled] {
     background-image: linear-gradient(
       var(--winui-accent-fill-disabled),
@@ -168,7 +168,13 @@ export const colorPickerCss = `
     );
   }
 
-  .fui-ColorSwatch__disabledIcon {
+  /* The glyph is addressed by position because Fluent declares a class name for
+     the slot and then never merges it in, so the span carries only Griffel
+     hashes. It is rendered last, after the caller's own icon slot when there is
+     one.
+     https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-swatch-picker/library/src/components/ColorSwatch/useColorSwatchStyles.styles.ts#L202-L210
+     https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-swatch-picker/library/src/components/ColorSwatch/renderColorSwatch.tsx#L16-L18 */
+  .fui-ColorSwatch[disabled] > span:last-child {
     display: none;
   }
 
