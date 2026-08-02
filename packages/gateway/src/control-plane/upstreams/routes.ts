@@ -274,8 +274,10 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
 
   const record = { ...upstream, config: config.value };
   await getRepo().upstreams.save(record);
-  await warmModelsCache(record, c);
-  return c.json(await serializeForResponse(record, knownProxyIds), 201);
+  // Answer with the catalog status this warm produced, not the one the record
+  // was built with — the dashboard re-seeds its draft from this body.
+  const modelsCache = await warmModelsCache(record, c);
+  return c.json(await serializeForResponse({ ...record, modelsCache }, knownProxyIds), 201);
 };
 
 export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '/:id'>) => {
@@ -329,8 +331,8 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   next = { ...next, config: config.value };
 
   await getRepo().upstreams.save(next);
-  await warmModelsCache(next, c);
-  return c.json(await serializeForResponse(next, knownProxyIds));
+  const modelsCache = await warmModelsCache(next, c);
+  return c.json(await serializeForResponse({ ...next, modelsCache }, knownProxyIds));
 };
 
 export const deleteUpstream = async (c: AuthedContext<'/:id'>) => {

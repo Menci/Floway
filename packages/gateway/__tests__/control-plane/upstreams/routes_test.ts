@@ -694,12 +694,16 @@ test('POST /api/upstreams warms the models cache before responding', async () =>
     async () => {
       const resp = await requestApp('/api/upstreams', authed(adminSession, createBody()));
       assertEquals(resp.status, 201);
-      return (await resp.json()) as { id: string };
+      return (await resp.json()) as { id: string; modelsCache: { fetchedAt: number | null; lastError: unknown } };
     },
   );
 
   const cached = (await repo.upstreams.getById(created.id))?.modelsCache;
   assertEquals(cached?.models.map(model => model.id), ['warmed-on-create']);
+  // The dashboard re-seeds its draft from this body, so it has to carry the
+  // freshness the warm just produced rather than the record's pre-warm one.
+  assertEquals(created.modelsCache.fetchedAt, cached?.fetchedAt ?? null);
+  assertEquals(created.modelsCache.lastError, null);
 });
 
 test('PATCH /api/upstreams warms the models cache before responding', async () => {
@@ -716,8 +720,11 @@ test('PATCH /api/upstreams warms the models cache before responding', async () =
     fetchedAt: 1,
     models: [{ id: 'warmed-on-create', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
   });
+  // …and annotate it with an error the successful PATCH-time warm must clear,
+  // so the response body cannot pass by echoing the pre-warm row.
+  await repo.upstreams.saveModelsCacheError(created.id, { message: 'stale failure', at: 1 });
 
-  await withMockedFetch(
+  const patched = await withMockedFetch(
     async request => {
       const url = new URL(request.url);
       if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') {
@@ -732,11 +739,14 @@ test('PATCH /api/upstreams warms the models cache before responding', async () =
         body: JSON.stringify({ name: 'Renamed' }),
       });
       assertEquals(patch.status, 200);
+      return (await patch.json()) as { modelsCache: { fetchedAt: number | null; lastError: unknown } };
     },
   );
 
   const cached = (await repo.upstreams.getById(created.id))?.modelsCache;
   assertEquals(cached?.models.map(model => model.id), ['warmed-on-update']);
+  assertEquals(patched.modelsCache.fetchedAt, cached?.fetchedAt ?? null);
+  assertEquals(patched.modelsCache.lastError, null);
 });
 
 test('POST /api/upstreams/list-models without an id still serves draft preview', async () => {

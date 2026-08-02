@@ -130,6 +130,24 @@ describe('fetchUpstreamModelsCached', () => {
     expect((await storedCache(repo))?.models.map(m => m.id)).toEqual(['fresh']);
   });
 
+  // The instance carries the row as it was read at request start, and a
+  // request reaches this function once per alias target resolved. Without the
+  // write-back the second resolution would still see the stale snapshot and
+  // refetch, which the repo read used to prevent.
+  test('a fetch updates the instance so a later call in the same request is a cache hit', async () => {
+    const repo = await setupRepo();
+    const cache = await seedCache(repo, { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now() - 25 * 60 * 60_000, models: [aModel('stale')] });
+    const fetchFn = vi.fn(async () => [aModel('fresh')]);
+    const instance = stubInstance(fetchFn, cache);
+
+    const first = await fetchUpstreamModelsCached(instance, { scheduler: () => {}, fetcher: directFetcher });
+    const second = await fetchUpstreamModelsCached(instance, { scheduler: () => {}, fetcher: directFetcher });
+
+    expect(first.map(m => m.id)).toEqual(['fresh']);
+    expect(second.map(m => m.id)).toEqual(['fresh']);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
   test('force=true: bypasses cache and blocks on fetch', async () => {
     const repo = await setupRepo();
     const cache = await seedCache(repo, { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now() - 1000, models: [aModel('stored')] });

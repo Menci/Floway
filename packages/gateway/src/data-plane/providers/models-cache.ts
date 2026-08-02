@@ -56,7 +56,14 @@ const runFetch = async (
 ): Promise<ProviderModel[]> => {
   try {
     const models = [...await instance.instance.getProvidedModels(fetcher)];
-    await getRepo().upstreams.saveModelsCache(key, { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now(), models });
+    const entry = { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now(), models, lastError: null };
+    await getRepo().upstreams.saveModelsCache(key, entry);
+    // The instance carries the row as it was read at request start, and a
+    // request reaches this function more than once — once per alias target
+    // resolved. Writing the entry back keeps every later read in the request
+    // seeing what was just persisted, which is what re-querying the row used
+    // to give us.
+    instance.modelsCache = entry;
     return models;
   } catch (err) {
     // A no-op on an upstream with no cached catalog: a brand-new upstream that
