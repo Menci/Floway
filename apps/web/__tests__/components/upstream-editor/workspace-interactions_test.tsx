@@ -79,17 +79,22 @@ function Harness() {
 // through the resources keeps a copy edit from failing this suite as though the
 // workspace had broken.
 const models = (key: string) => i18n.t(`dashboard.upstreamEditor.models.${key}`);
+// A row's delete command names the model it acts on, so the count queries match
+// the command by its stem rather than by a whole label they would have to build
+// a name for.
+const deleteCommandStem = i18n.t('dashboard.upstreamEditor.models.deleteNamed', { name: '\u0000' }).split('\u0000')[0]!;
+const deleteCommands = () => screen.getAllByLabelText(new RegExp(`^${deleteCommandStem}`));
 
 describe('upstream model workspace field-array transitions', () => {
   it('deletes a newly appended model and applies a shorter YAML catalog', async () => {
     renderInApp(<Harness />);
-    expect(screen.getAllByLabelText(models('delete'))).toHaveLength(2);
+    expect(deleteCommands()).toHaveLength(2);
 
     fireEvent.click(screen.getByRole('button', { name: models('add') }));
-    expect(screen.getAllByLabelText(models('delete'))).toHaveLength(3);
-    fireEvent.click(screen.getAllByLabelText(models('delete'))[2]!);
+    expect(deleteCommands()).toHaveLength(3);
+    fireEvent.click(deleteCommands()[2]!);
     fireEvent.click(await screen.findByRole('button', { name: models('deleteConfirm') }));
-    await waitFor(() => expect(screen.getAllByLabelText(models('delete'))).toHaveLength(2));
+    await waitFor(() => expect(deleteCommands()).toHaveLength(2));
 
     // The confirmation dialog marks the rest of the document `aria-hidden`
     // while it is open and clears that on its way out, so the toolbar behind it
@@ -103,6 +108,6 @@ describe('upstream model workspace field-array transitions', () => {
       },
     });
     fireEvent.click(screen.getByRole('button', { name: models('editWithUi') }));
-    await waitFor(() => expect(screen.getAllByLabelText(models('delete'))).toHaveLength(1));
+    await waitFor(() => expect(deleteCommands()).toHaveLength(1));
   });
 });

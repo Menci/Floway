@@ -199,9 +199,7 @@ const zhHansCN = {
         empty: '没有用户',
         actions: {
           create: '新建用户',
-          edit: '编辑用户',
           editNamed: '编辑用户 {{name}}',
-          resetPassword: '重置密码',
           resetPasswordNamed: '重置用户 {{name}} 的密码',
           delete: '删除用户',
           deleteNamed: '删除用户 {{name}}',
@@ -652,7 +650,6 @@ const zhHansCN = {
           kindValue: { chat: '对话', embedding: '嵌入', image: '图像', transcription: '转录', rerank: '重排' },
           actions: '操作',
           copy: '复制模型 ID',
-          edit: '编辑模型',
           editNamed: '编辑模型 {{name}}',
           back: '返回模型列表',
           identity: '标识',

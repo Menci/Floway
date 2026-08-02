@@ -208,9 +208,7 @@ const en = {
         empty: 'No users found',
         actions: {
           create: 'New user',
-          edit: 'Edit user',
           editNamed: 'Edit user {{name}}',
-          resetPassword: 'Reset password',
           resetPasswordNamed: 'Reset the password of user {{name}}',
           delete: 'Delete user',
           deleteNamed: 'Delete user {{name}}',
@@ -679,7 +677,6 @@ const en = {
           kindValue: { chat: 'Chat', embedding: 'Embedding', image: 'Image', transcription: 'Transcription', rerank: 'Rerank' },
           actions: 'Actions',
           copy: 'Copy model ID',
-          edit: 'Edit model',
           editNamed: 'Edit model {{name}}',
           back: 'Back to models',
           identity: 'Identity',
