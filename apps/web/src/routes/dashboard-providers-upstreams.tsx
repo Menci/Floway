@@ -66,8 +66,6 @@ type Mutation =
   | { kind: 'delete'; id: string }
   | { kind: 'reload' };
 
-// Ordering only: membership comes from the provider package, and a kind this
-// list does not mention still reaches the menu, at the end.
 const PROVIDER_MENU_ORDER: readonly UpstreamProviderKind[] = [
   'custom',
   'azure',
@@ -107,10 +105,9 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   const navigate = useNavigate();
   const location = useLocation();
   const toasts = useOutcomeToasts();
-  // Seeded from the loader and owned by the page from then on. The effect below
-  // reports the missing-upstream flag and then takes it back out of the URL,
-  // which re-runs this loader; deriving these from the loader payload would
-  // therefore wipe the message the effect has just written.
+  // Seeded from the loader, then owned by the page: the effect below strips the
+  // missing-upstream flag from the URL, which re-runs the loader, so deriving
+  // from the loader payload would wipe the message the effect just wrote.
   const [data, setData] = useState(loaderData);
   const [pageError, setPageError] = useState(loaderData.loadError);
   const [mutation, setMutation] = useState<Mutation | null>(null);
@@ -119,16 +116,13 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
 
   const mutating = mutation !== null;
 
-  // The error belongs to the attempt that produced it, so opening the dialog for
-  // another upstream clears it rather than waiting for a dismissal.
   const openDeleteDialog = (record: UpstreamRecord) => {
     setDeleteError(null);
     deleteDialog.open(record);
   };
 
-  // Reported once and then taken out of the URL, so a reload cannot announce it
-  // again. The effect runs twice under StrictMode, and `announcedMissing` stops
-  // the second run repeating it before the navigation has landed.
+  // The effect runs twice under StrictMode, so the ref stops the second run
+  // repeating the message before the URL-stripping navigation has landed.
   const announcedMissing = useRef(false);
   useEffect(() => {
     const search = new URLSearchParams(location.search);
@@ -332,8 +326,7 @@ function UpstreamsTable({
   const upstreams = data.upstreams;
   const modelCounts = useMemo(() => buildModelCounts(upstreams ?? [], data.models), [data.models, upstreams]);
 
-  // A failed fetch is not an empty list: the bar above carries the reason, and
-  // the region says nothing rather than claiming nothing is configured.
+  // A failed fetch is not an empty list: the message bar carries the reason.
   if (upstreams === null) return null;
   if (upstreams.length === 0) {
     return <ResourceListEmptyState>{t('dashboard.upstreams.empty')}</ResourceListEmptyState>;
