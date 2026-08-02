@@ -18,11 +18,10 @@ import { indexCatalog } from '../components/models/catalog-index';
 import { ModelInfoBadges } from '../components/models/info-badges';
 import { effectiveUpstreamCap } from '../components/models/reachability';
 import { bingAccentForeground, bingAccentForegroundHover } from '../components/playground/bing-chat-tokens';
-import { PlaygroundComposer } from '../components/playground/playground-composer';
-import { PlaygroundEditDialog, type PlaygroundMessageDraft } from '../components/playground/playground-edit-dialog';
-import { PlaygroundMarkdown } from '../components/playground/playground-markdown';
-import { PlaygroundMessageBubble } from '../components/playground/playground-message-bubble';
-import { streamPlaygroundText } from '../components/playground/playground-stream';
+import { PlaygroundComposer } from '../components/playground/composer';
+import { PlaygroundEditDialog, type PlaygroundMessageDraft } from '../components/playground/edit-dialog';
+import { PlaygroundMarkdown } from '../components/playground/markdown';
+import { PlaygroundMessageBubble } from '../components/playground/message-bubble';
 import {
   availableModels,
   createWireFetch,
@@ -34,6 +33,7 @@ import {
   type PlaygroundApi,
   type PlaygroundMessage,
 } from '../components/playground/request';
+import { streamPlaygroundText } from '../components/playground/stream';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyState, EmptyStateLine } from '../components/ui/empty-state';
 import { Combobox, Dropdown, Textarea } from '../components/ui/fluent-form-controls';

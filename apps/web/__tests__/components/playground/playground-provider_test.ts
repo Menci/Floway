@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { streamPlaygroundText } from '../../../src/components/playground/playground-stream';
 import { createWireFetch } from '../../../src/components/playground/request';
+import { streamPlaygroundText } from '../../../src/components/playground/stream';
 
 afterEach(() => vi.unstubAllGlobals());
 
