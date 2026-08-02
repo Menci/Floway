@@ -120,9 +120,6 @@ export function KeyDialog(props: KeyDialogProps) {
     seconds: preset.seconds,
     label: t(`dashboard.apiKeys.retention.presets.${preset.labelKey}`),
   }));
-  // The expiration sweep enforces both retentions, so shortening either strands
-  // what already sits outside the new window -- including Responses ids a
-  // client still holds and will ask for back.
   const retentionWarning = retentionWarningText(
     apiKey?.dump_retention_seconds ?? null,
     values.dumpRetention,
@@ -137,8 +134,8 @@ export function KeyDialog(props: KeyDialogProps) {
   );
 
   const save = async (values: KeyFormValues) => {
-    // The button stays focusable while this runs, so its form can still be
-    // submitted from it; refusing here is what makes the second press inert.
+    // The submit button stays focusable while this runs, so refusing here is
+    // what makes a second press inert.
     if (saving) return;
     setSaving(true);
     setError(null);
@@ -256,9 +253,8 @@ export function KeyDialog(props: KeyDialogProps) {
                   </Link>
                 : undefined}
             </RetentionField>
-            {/* Outside the row rather than behind its disclosure: a
-                consequence of saving that the operator has not opened the row
-                to read is one they will not read at all. */}
+            {/* Outside the row: a consequence of saving that the operator has
+                not opened the row to read is one they will not read at all. */}
             {retentionWarning !== null && (
               <MessageBar intent="warning"><MessageBarBody>{retentionWarning}</MessageBarBody></MessageBar>
             )}
