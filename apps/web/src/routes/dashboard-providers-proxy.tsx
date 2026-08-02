@@ -51,8 +51,6 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
   const [mutating, setMutating] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  // The error belongs to the attempt that produced it, so opening the dialog for
-  // another proxy clears it rather than waiting for a dismissal.
   const openDeleteDialog = (target: ProxyRecord) => {
     setDeleteError(null);
     deleteDialog.open(target);
