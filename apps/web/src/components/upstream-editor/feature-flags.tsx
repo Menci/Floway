@@ -57,6 +57,10 @@ export function FeatureFlagsEditor({
   // Deliberately not `SettingsCard`: a flag row is a rule with a multi-line
   // Markdown description and a bare divider, and that primitive's card chrome
   // and single-line description are too ornate for a list of them.
+  // Deliberately not `SettingsCard`: a flag row runs a multi-paragraph inline-
+  // markdown description, and the card's own bordered, rounded, hover-lit
+  // surface reads as a control for a list this long. These rows carry a rule
+  // between them and nothing else.
   const renderFlag = (flagId: FlagId) => {
     const state = flagId in value ? (value[flagId] ? 'on' : 'off') : 'inherit';
     const inheritedState = inheritedValue(flagId) ? 'on' : 'off';
@@ -83,7 +87,7 @@ export function FeatureFlagsEditor({
       <Dropdown
         aria-label={label}
         className="w-[140px]"
-        disabled={readOnly}
+        readOnly={readOnly}
         selectedOptions={[state]}
         value={stateLabel}
         onOptionSelect={(_, data) => {
