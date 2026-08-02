@@ -47,18 +47,11 @@ const countRecords = (data: BackupFileData): Record<string, number> => {
   return counts;
 };
 
-// What the server says it took, written as a sentence rather than assembled as
-// one. Each entity carries its own singular and plural, and `Intl.ListFormat`
-// supplies the conjunction and the separators the reader's language actually
-// uses -- "a, b, and c" against "a、b和c" -- neither of which a join can spell.
-// The figures are grouped before they are handed over, because i18next
-// interpolates a value as `String(value)` and would otherwise print 18309.
-//
-// Empty entities are dropped here where the readouts above the Import command
-// keep them: a report of what happened has nothing to say about a table nobody
-// touched, while a preview has to be able to answer that the file carries none.
-// Exported for `__tests__/routes/dashboard-admin-backup-restore_test.ts`, which
-// pins the sentence against both locales; the page is its only other caller.
+// `Intl.ListFormat` supplies the conjunction and the separators the reader's
+// language actually uses -- "a, b, and c" against "a、b和c" -- neither of which
+// a join can spell. The figures are grouped before they are handed over,
+// because i18next interpolates a value as `String(value)` and would otherwise
+// print 18309.
 export const recordSummary = (
   counts: Record<string, number>,
   t: ReturnType<typeof useTranslation>['t'],
@@ -125,11 +118,9 @@ export default function DashboardAdminBackupRestore() {
     handle.succeed(t('dashboard.backupRestore.export.success', { name: anchor.download }));
   }, [includePerformance, t, toasts]);
 
-  // A second file dropped while the first is still being read would otherwise
-  // leave two reads racing, and the later-finishing one would win whichever
-  // file the operator dropped last. The read in flight is aborted instead --
-  // `abort()` raises neither `load` nor `error`, so the losing read reaches no
-  // state at all -- and an unmount takes the pending read with it.
+  // Without aborting, a second file dropped mid-read leaves two reads racing and
+  // the later-finishing one wins. `abort()` raises neither `load` nor `error`,
+  // so the losing read reaches no state at all.
   const readerRef = useRef<FileReader | null>(null);
   useEffect(() => () => readerRef.current?.abort(), []);
 
@@ -245,22 +236,12 @@ export default function DashboardAdminBackupRestore() {
     <section className="dashboard-page max-w-[960px]">
       <DashboardPageHeader description={t('dashboard.pages.backupRestore')} title={t('dashboard.backupRestore.heading')} />
 
-      {/* Two operations, each framed by the panel that holds it, its parameters
-          above the command that runs them and the command against the trailing
-          edge -- the shape ./dashboard-settings.tsx already gives a page whose
-          content is a thing to be done rather than a thing to be remembered. */}
       <Panel className="!grid !gap-[18px]">
         <SectionHeader description={t('dashboard.backupRestore.export.description')} level={2} title={t('dashboard.backupRestore.export.heading')} />
 
-        {/* A check box rather than a switch. Microsoft's own rule for choosing
-            between the two is whether the value takes effect on its own: "Use a
-            checkbox when the user has to perform extra steps for changes to be
-            effective. For example, if the user must click a 'submit' or 'next'
-            button to apply changes, use a check box." Nothing is exported until
-            the command below is pressed, so this is a check box. The sentence
-            under it is the Field's hint, which
-            ../winui/controls/field.css.ts resolves to a WinUI text control's
-            Description presenter.
+        {/* A check box rather than a switch, because nothing is exported until
+            the command below is pressed: "Use a checkbox when the user has to
+            perform extra steps for changes to be effective."
             https://github.com/MicrosoftDocs/windows-dev-docs/blob/d084ff89ad3d6da237a8737e325a6407ddb0ee41/hub/apps/develop/ui/controls/toggles.md#L41 */}
         <Field hint={t('dashboard.backupRestore.export.includePerformanceHint')}>
           <Checkbox
@@ -325,12 +306,6 @@ export default function DashboardAdminBackupRestore() {
           value: formatCount(countRecords(importParsedData.data)[key], locale),
         }))} />}
 
-        {/* Whether to clear first is one yes-or-no question, so it is one check
-            box: the same deferred-commit parameter the export section carries,
-            worded as the statement its check mark makes true, with the
-            consequence in the Field's hint. Unchecked is the merge the gateway
-            takes by default.
-            https://learn.microsoft.com/en-us/windows/apps/design/controls/checkbox */}
         {importParsedData && <Field hint={t('dashboard.backupRestore.import.replaceHint')}>
           <Checkbox
             checked={replaceExisting}
