@@ -289,6 +289,17 @@ const config: Linter.Config[] = [
       }, {
         selector: 'ImportDeclaration[importKind!="type"][source.value=/^@floway-dev\\u002Fagent-setup($|\\u002F)/]',
         message: 'apps/web must not runtime-import @floway-dev/agent-setup. It carries the gateway-side route factories and persistence contract; the dashboard derives its configuration type from the RPC client.',
+      }, {
+        // Griffel injects its sheet after the utility sheet, and `Text`'s root
+        // states white-space, overflow and text-overflow while `Link`'s states
+        // the latter two as `inherit`, all at one class of specificity, so the
+        // utility silently loses.
+        selector: 'JSXOpeningElement[name.name=/^(Text|Link)$/] > JSXAttribute[name.name="className"] Literal[value=/(^|\\s)(truncate|text-ellipsis|overflow-hidden|whitespace-(no)?wrap)(\\s|$)/]',
+        message: 'This utility is dead on Text and Link: their Griffel roots already state white-space, overflow and text-overflow. Use the component\'s own props — `block truncate wrap={false}` trims — or put the box on the plain element around it.',
+      }, {
+        // `truncate` contributes `text-overflow: ellipsis` and nothing else.
+        selector: 'JSXOpeningElement[name.name="Text"]:has(JSXAttribute[name.name="truncate"]):not(:has(JSXAttribute[name.name="wrap"]))',
+        message: 'Fluent\'s `truncate` only adds the ellipsis. The single line and the clip come from `wrap={false}`, and the clip needs a block display, so a Text that trims states all three.',
       }],
     },
   },
