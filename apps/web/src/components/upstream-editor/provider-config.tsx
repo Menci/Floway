@@ -125,9 +125,6 @@ function CustomConfig({ onRefreshModels, record }: { onRefreshModels: () => void
           }}
         />
       )} />
-      {/* The path only answers a question the switch has asked. Off, there is
-          nothing to fetch and the field would be configuring a call that is not
-          made. */}
       {fetchesCatalog && (
         <Field label={t('dashboard.upstreamEditor.fields.catalogPath')}>
           <Controller control={control} name={'config.modelsFetch.endpoint' as never} render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="/v1/models" ref={field.ref} value={typeof field.value === 'string' ? field.value : ''} />} />
@@ -288,9 +285,6 @@ function EndpointPicker() {
   </div>;
 }
 
-// An upstream that has just been authorised but not yet saved has no id, and
-// the catalog endpoint keys off one — so the panel says what the next step is
-// rather than leaving an empty model list to be interpreted.
 function ReadyToSaveHint({ kind }: { kind: UpstreamProviderKind }) {
   const { t } = useTranslation();
   return <MessageBar intent="info">
@@ -312,10 +306,8 @@ function CopilotConfig({ record, onPatch }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<number | null>(null);
-  // Between a tick firing and its reply landing the loop holds no timer id, so
-  // clearing the timer cannot on its own end it: the reply would schedule the
-  // next tick with nothing left to cancel it. The flag is what the recursion
-  // reads after every await.
+  // A tick that has already fired holds no timer id, so clearing the timer
+  // cannot end the loop on its own; the recursion reads this after every await.
   const cancelled = useRef(false);
   const stop = () => { if (timer.current !== null) window.clearTimeout(timer.current); timer.current = null; };
 
@@ -326,16 +318,10 @@ function CopilotConfig({ record, onPatch }: {
     if (cancelled.current) return;
     if (result.error) {
       // Only a reply that says nothing about the device code is worth
-      // repeating: no response at all, or an unhealthy GitHub/Copilot hop. Any
-      // other status carries GitHub's verdict on the code itself, and
-      // `expired_token` and `access_denied` are terminal — polling past either
-      // one collects the same refusal for as long as the tab stays open.
+      // repeating; any other status carries GitHub's verdict on the code, and
+      // `expired_token` and `access_denied` are terminal.
       // https://www.rfc-editor.org/rfc/rfc8628#section-3.5
       const transient = result.error.status === 0 || result.error.status === 502;
-      // The verdict is what normally ends the loop; `secondsLeft` bounds the
-      // case where no verdict is ever reached, by spending the code's own
-      // `expires_in` one scheduled tick at a time. Whatever failure outlives it
-      // is the one the operator reads.
       if (!transient || secondsLeft <= 0) { setBusy(false); setFlow(null); setError(result.error.message); return; }
       timer.current = window.setTimeout(() => void pollRef.current(deviceCode, interval, secondsLeft - interval), interval * 1000);
       return;
@@ -349,21 +335,16 @@ function CopilotConfig({ record, onPatch }: {
     timer.current = window.setTimeout(() => void pollRef.current(deviceCode, interval, secondsLeft - interval), interval * 1000);
   };
 
-  // A flow runs for as long as its code lives — a quarter of an hour — and the
-  // record and the form behind it go on being edited meanwhile, plausibly
-  // because the first attempts failed through the wrong proxy. Every tick
-  // therefore enters the newest closure rather than the one the flow started
-  // in, so the request the loop sends is the upstream as it now reads.
+  // A flow outlives the render that armed it — its code lives a quarter of an
+  // hour, and the form goes on being edited meanwhile — so every tick must
+  // enter the newest closure and send the upstream as it now reads.
   const pollRef = useRef(poll);
   // eslint-disable-next-line react-hooks/refs -- Carrying the newest render's request body to a loop that outlives the render that armed it.
   pollRef.current = poll;
 
-  // The loop belongs to the flow, not to the click that opened one: the panel
-  // draws the code, the link and the spinner from `flow` alone, so a teardown
-  // that only stopped the loop would leave a remount showing a live code with
-  // nothing polling it. Arming from `flow` means the tick is re-scheduled
-  // wherever that state is still on screen, and the same effect still stops
-  // the loop when the panel goes away.
+  // Armed from `flow`, not from the click that opened one: the panel draws the
+  // code, the link and the spinner from `flow` alone, so a remount must
+  // re-schedule the tick rather than show a live code with nothing polling it.
   useEffect(() => {
     cancelled.current = false;
     if (flow) timer.current = window.setTimeout(() => void pollRef.current(flow.device_code, flow.interval, flow.expires_in - flow.interval), flow.interval * 1000);
@@ -422,8 +403,6 @@ function OAuthConfig({ record, onPatch }: {
   const [open, setOpen] = useState(!hasAccount);
   const [probing, setProbing] = useState(false);
 
-  // Quota probes make an upstream call only on operator request; the gateway
-  // persists the resulting snapshot once the upstream exists.
   const probeQuota = async () => {
     setProbing(true);
     setError(null);
@@ -444,15 +423,12 @@ function OAuthConfig({ record, onPatch }: {
   const [error, setError] = useState<string | null>(null);
   const flowKind = tab === 'setup' ? 'setup-token' : 'oauth';
 
-  // Two authorize-url requests can be outstanding at once -- switching tabs
-  // supersedes one legitimately, and the effect below re-fires on every
-  // `record` identity change while none has resolved. Both halves of a
-  // preparation matter: `stashPkce` writes one sessionStorage slot per
-  // (kind, flow kind), so the verifier the callback is later matched against
-  // must be the one belonging to the URL the operator actually opened. The
-  // generation makes the newest call the only one that writes either -- taken
-  // before the stash as well as before the URL, because the two are separated
-  // by a round trip and an older call could otherwise stash after a newer one.
+  // Two authorize-url requests can be outstanding at once — a tab switch
+  // supersedes one, and the effect below re-fires on every `record` identity
+  // change. `stashPkce` writes one sessionStorage slot per (kind, flow kind),
+  // so the verifier must belong to the URL the operator actually opened: the
+  // generation is taken before the stash as well as before the URL, because a
+  // round trip separates them and an older call could otherwise stash last.
   const generation = useRef(0);
   const prepare = useCallback(async () => {
     const mine = ++generation.current;
