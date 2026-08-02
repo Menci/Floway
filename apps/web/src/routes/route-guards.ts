@@ -6,9 +6,8 @@ import { getSessionToken } from '../auth/session';
 // The one dashboard page every signed-in account can open.
 const OPERATOR_LANDING = '/dashboard/services/api-keys';
 
-// React Router runs matched loaders in parallel, so a child page cannot lean on
-// the layout route's gate: without one of its own it would fire its API calls
-// while that gate was still resolving.
+// React Router runs matched loaders in parallel, so a child page's own gate is
+// not redundant with the layout route's.
 export const requireDashboardSession = (): void => {
   if (!getSessionToken()) throw redirect('/');
 };
