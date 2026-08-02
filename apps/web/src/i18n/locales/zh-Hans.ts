@@ -22,8 +22,8 @@ const zhHansCN = {
         back: '返回',
         title: '错误',
         unexpectedTitle: '出现错误',
-        unexpectedDescription: '发生了意外错误。',
-        notFound: '找不到请求的页面。',
+        unexpectedDescription: '发生了意外错误',
+        notFound: '找不到请求的页面',
       },
     },
     auth: {

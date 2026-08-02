@@ -22,8 +22,8 @@ const en = {
         back: 'Back',
         title: 'Error',
         unexpectedTitle: 'Something went wrong',
-        unexpectedDescription: 'An unexpected error occurred.',
-        notFound: 'The requested page could not be found.',
+        unexpectedDescription: 'An unexpected error occurred',
+        notFound: 'The requested page could not be found',
       },
     },
     auth: {
