@@ -131,8 +131,7 @@ export const colorPickerCss = `
 
   /* A swatch is a colour chip on a surface, which is what WinUI's colour
      preview is, and WinUI strokes that preview with ColorPickerBorderBrush;
-     the swatch's transparent default border takes the same value. Image
-     swatches build their rest border identically and are restated with them.
+     the swatch's transparent default border takes the same value.
      The hover, pressed and selected states blank the border outright and are
      unaffected; a disabled swatch holds the rest border, as a disabled WinUI
      control body holds ControlStrokeColorDefault. A colour swatch always
@@ -141,8 +140,7 @@ export const colorPickerCss = `
      would step outside the vocabulary the rest of the picker is drawn in.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ColorPicker/ColorPicker_themeresources.xaml#L11
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L243 */
-  .fui-ColorSwatch.fui-ColorSwatch,
-  .fui-ImageSwatch.fui-ImageSwatch {
+  .fui-ColorSwatch.fui-ColorSwatch {
     border-color: var(--winui-control-stroke-default);
   }
 
@@ -162,9 +160,9 @@ export const colorPickerCss = `
      unselected pair already renders WinUI's focus visual -- 2px of outer
      stroke over 1px of inner. WinUI states both placements for a collection
      item, inset by 1 for a ListViewItem and pushed out by 3 for a
-     GridViewItem, so the inset construction Fluent chose is left alone. Image
-     swatches share the construction and the selected widths. The selected
-     swatch widens both rings to 3px over 2px, wider than WinUI's visual, and
+     GridViewItem, so the inset construction Fluent chose is left alone. The
+     selected swatch widens both rings to 3px over 2px, wider than WinUI's
+     visual, and
      stays there because WinUI has no selected-swatch state to measure it
      against; it is addressed through the ARIA state SwatchPicker writes,
      rendering each swatch as a gridcell carrying aria-selected when the picker
@@ -173,17 +171,14 @@ export const colorPickerCss = `
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L248-L252
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/GridViewItem_themeresources.xaml#L149-L153
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259 */
-  .fui-ColorSwatch.fui-ColorSwatch[data-fui-focus-visible],
-  .fui-ImageSwatch.fui-ImageSwatch[data-fui-focus-visible] {
+  .fui-ColorSwatch.fui-ColorSwatch[data-fui-focus-visible] {
     box-shadow:
       inset 0 0 0 var(--strokeWidthThick) var(--winui-focus-stroke-outer),
       inset 0 0 0 var(--strokeWidthThicker) var(--winui-focus-stroke-inner);
   }
 
   .fui-ColorSwatch.fui-ColorSwatch[aria-checked='true'][data-fui-focus-visible],
-  .fui-ColorSwatch.fui-ColorSwatch[aria-selected='true'][data-fui-focus-visible],
-  .fui-ImageSwatch.fui-ImageSwatch[aria-checked='true'][data-fui-focus-visible],
-  .fui-ImageSwatch.fui-ImageSwatch[aria-selected='true'][data-fui-focus-visible] {
+  .fui-ColorSwatch.fui-ColorSwatch[aria-selected='true'][data-fui-focus-visible] {
     box-shadow:
       inset 0 0 0 var(--strokeWidthThicker) var(--winui-focus-stroke-outer),
       inset 0 0 0 5px var(--winui-focus-stroke-inner);
