@@ -1,102 +1,48 @@
 // The WinUI 3 color vocabulary, transcribed from the shipping theme resource
-// dictionaries so later components can name a WinUI fill or stroke directly
-// instead of approximating it with a Fluent v9 token. In WinUI the dictionary
-// keyed "Default" is the dark theme and "Light" is the light one; here the
-// unqualified block is light and the dark values live under
-// `prefers-color-scheme: dark`.
+// dictionaries. In WinUI the dictionary keyed "Default" is the dark theme and
+// "Light" is the light one; here the unqualified block is light and the dark
+// values live under `prefers-color-scheme: dark`.
 //
 // XAML writes colors as #AARRGGBB while CSS writes #RRGGBBAA, so every value
 // below is the XAML literal with its leading alpha byte moved to the end. Six
 // digit XAML literals are already opaque and carry over unchanged.
 //
-// Two families cannot be a plain literal transcription and say so at their own
-// block: the accent ramp, which Windows generates per machine from the user's
-// chosen accent and which therefore appears in no dictionary, and the composed
-// strokes, which restate a LinearGradientBrush as a per-side border colour, or
-// as inset box-shadows where the outlined part has no border box.
-//
 // ---------------------------------------------------------------------------
 // Selector convention for the whole WinUI override layer
 // ---------------------------------------------------------------------------
 //
-// Every rule in `controls/` takes the form
-//
-//     .fui-X.fui-X { … }
-//
-// repeating the class of the element the rule is about — its subject, the
-// rightmost compound of the selector. Context to the left of the subject stays
-// single-classed and uses whatever combinator the relationship needs:
+// Every rule in `controls/` repeats the class of its subject — the rightmost
+// compound. Context to the left stays single-classed:
 //
 //     .fui-DialogActions.fui-DialogActions { … }          /* about DialogActions */
 //     .fui-DialogActions > .fui-Button.fui-Button { … }   /* about the button in it */
 //     .fui-MenuList .fui-MenuItem.fui-MenuItem { … }      /* about the item in a list */
 //
 // The doubling is a specificity device and nothing else, so it applies once, to
-// the subject. That puts the subject at exactly one class above Griffel's
-// single-class atoms, which is what makes the layer win regardless of
-// stylesheet order.
-//
-// It wins against every single-class atom, not only Fluent's. Griffel emits one
-// class per declaration whoever calls it, so an app component that restyles a
-// Fluent element this layer already paints is outranked by the same margin
-// Fluent is, and has to escalate to !important to take the declaration back.
-// That is the price of not resting the layer on injection order, and it is paid
-// outside the layer: there is no !important anywhere in this directory and 31 in
-// the components around it -- ../components/requests/request-list.tsx,
-// ../components/usage/summary-metrics.tsx, ../components/ui/danger.ts,
-// ../components/ui/confirm-dialog.tsx, ../components/ui/fluent-form-controls.tsx,
-// ../components/upstream-editor/mono-label.ts, ../components/sidebar/sidebar.tsx
-// and ../routes/dashboard-monitor-performance.tsx. A component that needs one
-// declaration back should say at the declaration which rule here it is taking it
-// from, the way ../components/ui/danger.ts does.
+// the subject. That puts the subject exactly one class above Griffel's
+// single-class atoms, which is what makes the layer win regardless of stylesheet
+// order. It outranks every single-class atom, not only Fluent's, so an app
+// component restyling an element this layer paints has to escalate to
+// !important; there is none anywhere in this directory, and one outside it
+// should say at the declaration which rule here it is taking back, the way
+// ../components/ui/danger.ts does.
 //
 // The rejected alternative was to scope each rule under an ancestor
-// `.fui-FluentProvider`. It works today, and it works on portalled surfaces
-// too, because a portal mount node created under document.body carries the
-// provider root's full className:
+// `.fui-FluentProvider`. It reaches portalled surfaces only while Fluent's
+// `applyStylesToPortals` keeps its default — any consumer may set it to false,
+// at which point every ancestor-scoped rule silently stops applying to dialogs,
+// popovers, menus and tooltips. The layer should not rest on a prop we do not
+// own.
 //
-//   useFluentProviderStyles.styles.js:30
-//     state.root.className = mergeClasses(fluentProviderClassNames.root, state.themeClassName, …)
-//   useFluentProvider.js:28
-//     const { applyStylesToPortals = true, … }
-//   useFluentProviderContextValues.js:31
-//     themeClassName: applyStylesToPortals ? root.className : themeClassName
-//   usePortalMountNode.js:201
-//     className: mergeClasses(themeClassName, classes.root, options.className)
-//
-// That reach is conditional: it survives only while `applyStylesToPortals`
-// keeps its default. The prop belongs to Fluent's API and any consumer may set
-// it to false, at which point a mount node keeps the theme class alone and
-// every ancestor-scoped rule silently stops applying to dialogs, popovers,
-// menus and tooltips. We do not want the layer resting on a prop we do not own.
-//
-// The self-doubled form also reads better. A nested FluentProvider — a themed
-// subtree, a preview pane — adds another ancestor that matches, so the ancestor
-// form gains a second matching path and no new meaning, while the doubled form
-// is unaffected either way. And when a rule genuinely needs a combinator, the
-// ancestor form leaves two prefixes in front of the subject and pushes the
-// subject's own weight to three classes for no reason; the doubled form keeps
-// the selector's leftmost compound meaningful, so a reader can tell which
-// element a rule paints by looking at its end.
-//
-// A `[class*='fui-FluentProvider']` ancestor prefix would repair the reach,
-// since it also matches the bare theme class, but it buys that back at the
-// price of a substring match in front of every rule in the layer, for a
-// specificity floor the doubled subject already provides.
-//
-// Two kinds of subject cannot take that form, and both are deliberate. A rule
-// about an element Fluent does not render — the OverlayScrollbars parts, and
-// the `.floway-*` elements our own wrappers add — has no `fui-` class to
-// double, so it names the class it has and doubles nothing; those elements
-// carry no Griffel atoms either, so there is no specificity to beat. A rule
-// about an unclassed descendant of a Fluent element — a slot Fluent renders as
-// a bare child — keeps the doubled Fluent subject in front of it and reaches
-// the child with a combinator.
+// Two kinds of subject cannot take the doubled form, and both are deliberate. A
+// rule about an element Fluent does not render — the OverlayScrollbars parts,
+// the `.floway-*` elements our own wrappers add — has no `fui-` class to double
+// and no Griffel atoms to beat. A rule about an unclassed descendant keeps the
+// doubled Fluent subject in front of it and reaches the child with a combinator.
 //
 // Every `controls/*.css.ts` module is one TypeScript template literal, so a
 // backtick anywhere inside it -- including inside a comment, where prose wants
-// to quote a property name -- terminates the string. It fails at typecheck
-// rather than silently, but it fails after the fact; write property names bare
+// to quote a property name -- terminates the string. Write property names bare
 // in these files.
 //
 // ---------------------------------------------------------------------------
@@ -108,11 +54,10 @@
 // Surfaces designed against Fluent's own palette and elevations live under it —
 // the playground transcript and composer above all.
 //
-// Two mechanisms carry it, and which one a rule needs depends on what the rule
-// spends. A rule that reads a `--winui-*` custom property goes through an
-// indirection declared on `:root` and reset to `initial` under the attribute,
-// with the Fluent value as the `var()` fallback; a rule that cannot be
-// expressed as a value — geometry, a new declaration Fluent does not make —
+// Two mechanisms carry it. A rule that reads a `--winui-*` custom property goes
+// through an indirection declared on `:root` and reset to `initial` under the
+// attribute, with the Fluent value as the `var()` fallback; a rule that cannot
+// be expressed as a value — geometry, a new declaration Fluent does not make —
 // excludes the subtree in its selector with
 // `:not([data-winui-card-restyle='off'] *)`.
 //
@@ -120,38 +65,23 @@
 // plus the files that name the selector: ./reset.css.ts, and
 // ./controls/{button,card,scrollbar,text-input,toolbar}.css.ts. Every geometry,
 // glyph size and inset the other control files state still applies inside an
-// opted-out subtree — a Combobox placed in one would take Fluent's height from
-// text-input.css.ts's guarded rule and WinUI's insets from select.css.ts's
-// unguarded ones. Nothing in the app is in that position today; a control newly
-// placed under the attribute has to be added to the guard deliberately.
+// opted-out subtree, so a control newly placed under the attribute has to be
+// added to the guard deliberately.
 //
-// The attribute cannot reach a portalled surface: a tooltip, a dialog or a menu
-// mounts under the provider root rather than under the element that opened it,
-// so neither inheritance nor a descendant selector connects the two. Anything
-// the layer restyles on a portalled surface therefore reaches every instance of
-// it in the app, and a portalled surface that must not be restyled cannot be
-// restyled at all.
+// The attribute cannot reach a portalled surface: a tooltip, dialog or menu
+// mounts under the provider root rather than under the element that opened it.
+// A portalled surface that must not be restyled cannot be restyled at all.
 //
-// The trade the doubled form accepts is that a rule matches a Fluent element
-// anywhere in the document, including outside any provider. Fluent's classes
-// are only ever emitted by Fluent's own components, so in practice that set and
-// "everything under a provider" are the same elements.
-//
-// The `--winui-*` custom properties below follow from the same reasoning and
-// are declared on `:root`, every one of them. They switch on
-// `prefers-color-scheme`, never on the provider's `theme` prop, so the provider
-// element is not the scope they belong to; the document root is the widest one
-// there is, and inherits into every node — mount nodes included, under either
-// setting of the prop. No value here reads a Fluent theme variable, so nothing
-// forces a narrower scope: the layer's vocabulary is independent of where
-// Fluent chooses to declare its theme.
+// The `--winui-*` custom properties below are declared on `:root`, every one of
+// them. They switch on `prefers-color-scheme`, never on the provider's `theme`
+// prop, and no value here reads a Fluent theme variable, so nothing forces a
+// narrower scope than the document root — which inherits into mount nodes under
+// either setting of that prop.
 
 import { COLLAPSE_ANIMATION_MS, CONTROL_FASTER_ANIMATION_MS, CONTROL_FAST_ANIMATION_MS, CONTROL_FAST_OUT_SLOW_IN_EASING, CONTROL_NORMAL_ANIMATION_MS, EXPAND_ANIMATION_MS, PAGE_ENTER_EASING, PAGE_ENTER_MS, PAGE_ENTER_OFFSET_PX, PAGE_LEAVE_EASING, PAGE_LEAVE_MS, REPOSITION_ANIMATION_MS, REPOSITION_EASING } from './motion';
 
-// The selector half of the opt-out documented above: appended to a rule's
-// subject compound, it stops the rule at the boundary of an opted-out subtree.
-// Rules that spend a token instead go through a `:root` indirection reset to
-// `initial` there, and need nothing from here.
+// The selector half of the opt-out documented above. Rules that spend a token
+// instead go through a `:root` indirection reset to `initial` there.
 export const notOptedOut = `:not([data-winui-card-restyle='off'] *)`;
 
 export const winuiTokenCss = `
@@ -202,9 +132,9 @@ export const winuiTokenCss = `
   }
 }
 
-/* The control strong fill — the scroll bar thumb, and the panning indicator we
-   have no counterpart for. It sits in the fill block of the dictionaries rather
-   than with the strokes above, so it carries its own permalinks.
+/* The control strong fill — the scroll bar thumb. It sits in the fill block of
+   the dictionaries rather than with the strokes above, so it carries its own
+   permalink.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L226 */
 :root {
   --winui-control-strong-fill-default: #00000072;
@@ -258,15 +188,11 @@ export const winuiTokenCss = `
 }
 
 /* The in-app acrylic material, taken as the flat FallbackColor the brush
-   declares for itself. Both appearances are WinUI's own -- one AcrylicBrush
-   cross-fades between the acrylic recipe and its FallbackColor as system
-   policy turns transparency effects off -- and we take the fallback. A blurred
-   backdrop is reachable on the web through backdrop-filter, but the recipe
-   over it is not: WinUI blends a luminosity colour into the blurred backdrop
-   to flatten its contrast, blends the tint over that, and composites a noise
-   texture through the result, and CSS has no counterpart to that graph. So a
-   flyout that XAML fills with AcrylicInAppFillColorDefault takes the flat
-   fill, and reads opaque where WinUI lets the page through.
+   declares for itself. WinUI blends a luminosity colour into the blurred
+   backdrop, blends the tint over that, and composites a noise texture through
+   the result; CSS has no counterpart to that graph, so a flyout XAML fills with
+   AcrylicInAppFillColorDefault takes the flat fill and reads opaque where WinUI
+   lets the page through.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Materials/Acrylic/AcrylicBrush.cpp#L427-L470
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Materials/Acrylic/AcrylicBrush_themeresources.xaml#L96 */
 :root {
@@ -280,34 +206,27 @@ export const winuiTokenCss = `
   }
 }
 
-/* The drop shadow under a tooltip, which is the one overlay whose depth WinUI
-   states in code rather than in a dictionary. ToolTip applies
-   ApplyElevationEffect(presenter, 0, 16) under IsDropShadowMode(), which
-   returns true unconditionally in WinUI 3, so 16 is the live elevation where a
-   flyout's is the 32 of s_elevationBaseDepth.
+/* The drop shadow under a tooltip, the one overlay whose depth WinUI states in
+   code rather than in a dictionary: ApplyElevationEffect(presenter, 0, 16) under
+   an IsDropShadowMode() that returns true unconditionally in WinUI 3.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/ToolTip_Partial.cpp#L634-L653
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/graphics/ThemeShadow.cpp#L221-L228
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/ElevationHelper.cpp#L19-L21
 
-   The recipe turns that elevation into the shadow itself: Elevation is
-   min(64, 16/2) = 8, which falls inside the 2..16 band where the ambient term
-   is zero, leaving one directional shadow of blur 8, Y offset Elevation * 0.5
-   = 4 and opacity min(8/100 + 0.06, 0.14) in light against a flat 0.26 in
-   dark, truncated to a byte as 0x23 and 0x42 over pure black. The compositor
-   is handed that blur radius plus one, and the extra pixel pays for a caster
-   inset a pixel on every side -- the dummy rounded rectangle is sized two
-   smaller and offset one in -- which CSS has no counterpart for, since a CSS
-   shadow is cast by the element itself. The recipe's 8 is therefore the
-   faithful blur; the rule spending this token in ./controls/tooltip.css.ts
-   writes 9 -- the pre-inset radius the compositor is handed rather than the
-   one it is handed it for. Nothing sources that pixel; it is ours.
+   The recipe turns that elevation into the shadow: Elevation is min(64, 16/2) =
+   8, inside the 2..16 band where the ambient term is zero, leaving one
+   directional shadow of blur 8, Y offset 4 and opacity min(8/100 + 0.06, 0.14)
+   in light against a flat 0.26 in dark, truncated to 0x23 and 0x42 over black.
+   The compositor is handed that blur plus one, and the extra pixel pays for a
+   caster inset a pixel on every side, which CSS has no counterpart for; the rule
+   in ./controls/tooltip.css.ts writes that 9 rather than the faithful 8.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/graphics/inc/DropShadowRecipe.h#L108-L162
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/comptree/HWCompNodeWinRT.cpp#L1608-L1675
 
-   Sourced, but not from a dictionary, and it carries one assumption: that
-   CompositionDropShadow's BlurRadius and the CSS blur radius describe the same
-   Gaussian. Nothing in that corpus states the equivalence, so the colour and
-   the offset are transcribed and the blur is that assumption. */
+   One assumption rides on it: that CompositionDropShadow's BlurRadius and the
+   CSS blur radius describe the same Gaussian. Nothing in that corpus states the
+   equivalence, so the colour and the offset are transcribed and the blur is that
+   assumption. */
 :root {
   --winui-tooltip-shadow-color: #00000023;
 }
@@ -357,9 +276,9 @@ export const winuiTokenCss = `
   }
 }
 
-/* Text fills — the foreground ramp WinUI paints on any neutral surface.
-   Inverse is the one that flips: it is the fill for text sitting on a surface
-   from the opposite theme, so it carries the other dictionary's primary.
+/* Text fills. Inverse is the one that flips: it is the fill for text sitting on
+   a surface from the opposite theme, so it carries the other dictionary's
+   primary.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L209-L213 */
 :root {
   --winui-text-fill-primary: #000000e4;
@@ -381,11 +300,10 @@ export const winuiTokenCss = `
 }
 
 /* The description line's own step. SystemControlDescriptionTextForegroundBrush
-   is not part of the modern ramp above: it comes from the framework's legacy
-   system-brush layer, aliasing SystemControlPageTextBaseMediumBrush, which
-   carries SystemBaseMediumColor -- black or white at 60%. That is its own
-   value, distinct from the 62% and 77% the secondary text fill carries, so it
-   is named here rather than folded onto a neighbour.
+   is not part of the modern ramp above -- it comes from the legacy system-brush
+   layer and carries SystemBaseMediumColor, black or white at 60%, distinct from
+   the 62% and 77% the secondary text fill carries, so it is not folded onto a
+   neighbour.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L321-L327
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L4134 */
 :root {
@@ -406,19 +324,12 @@ export const winuiTokenCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L125-L127
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L329-L331
 
-   The ramp itself is not in any dictionary, and cannot be: Windows generates
-   its seven steps per machine from the accent the user picked, and hands them
-   to XAML as SystemAccentColor with Light1-3 and Dark1-3. A browser cannot read
+   The ramp itself is in no dictionary and cannot be: Windows generates its seven
+   steps per machine from the accent the user picked, and a browser cannot read
    them. The values below are the ramp Windows 11 generates for its own default,
-   #0078D4, which is the one assumption in this file -- a user who picked a
-   different accent sees Floway in Windows' default blue rather than in theirs.
-
-   They are sourced from the Windows runtime rather than from a theme
-   dictionary, and cross-checked two ways: winaccent documents the generated
-   ramp for that default, and states independently that dark-mode UI takes
-   accent_light_2 while light-mode takes accent_dark_1 -- which is what
-   AccentFillColorDefaultBrush resolves to in each theme dictionary here. The
-   generation algorithm changed between Windows 10 and 11; these are the 11 ones.
+   #0078D4 -- the one assumption in this file, since a user who picked a
+   different accent sees Windows' default blue rather than theirs. The generation
+   algorithm changed between Windows 10 and 11; these are the 11 ones.
    https://valer100.github.io/winaccent/colors/accent-color-and-shades/
    https://learn.microsoft.com/en-us/uwp/api/windows.ui.viewmanagement.uicolortype */
 :root {
@@ -499,9 +410,8 @@ export const winuiTokenCss = `
 }
 
 /* Control alt fills — the interior of a control whose body is a cavity rather
-   than a surface: the unchecked check box and radio button, and the off track
-   of a toggle switch. The ramp runs the opposite way to the control fills, so
-   it darkens on light and lightens on dark, and the disabled step is fully
+   than a surface. The ramp runs the opposite way to the control fills, so it
+   darkens on light and lightens on dark, and the disabled step is fully
    transparent in both dictionaries rather than a faint wash.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L233-L237 */
 :root {
@@ -523,7 +433,7 @@ export const winuiTokenCss = `
 
 /* Focus strokes. WinUI draws focus as two concentric rings, an outer one in the
    text color and an inner one in the surface color, so the visual survives on
-   any fill including accent. Both flip with the theme.
+   any fill including accent.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259 */
 :root {
   --winui-focus-stroke-outer: #000000e4;
@@ -555,15 +465,11 @@ export const winuiTokenCss = `
   }
 }
 
-/* Status fills — the colour of a validation or severity glyph, and the wash a
-   severity puts behind a whole bar. These are the only opaque hues in the
-   vocabulary besides the background ramp, and the two dictionaries carry
-   genuinely different hues rather than one hue at two opacities, because each
-   is tuned for contrast against its own background.
-
-   Attention is the exception: it is a step of the accent ramp rather than a
-   literal, and not the same step the accent fills take — the unmodified accent
-   in light, Light2 in dark.
+/* Status fills. The two dictionaries carry genuinely different hues rather than
+   one hue at two opacities, because each is tuned for contrast against its own
+   background. Attention is the exception: it is a step of the accent ramp, and
+   not the same step the accent fills take — the unmodified accent in light,
+   Light2 in dark.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L280-L291
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L369 */
 :root {
@@ -593,23 +499,21 @@ export const winuiTokenCss = `
 }
 
 /* Composed strokes. WinUI outlines a control with a LinearGradientBrush mapped
-   in absolute units -- a 3px span for ControlElevationBorderBrush and
-   AccentControlElevationBorderBrush -- so one edge reads heavier than the other
-   three regardless of how tall the control is, with a 2px band fading from the
+   in absolute units -- a 3px span -- so one edge reads heavier than the other
+   three regardless of the control's height, with a 2px band fading from the
    heavy edge into the flat stroke. Each is transcribed as a border-color
    shorthand whose three terms are the top, the sides and the bottom.
 
-   A border-box linear-gradient behind a transparent border reproduces the
-   brush exactly, fade band included. We do not spend one: it would claim the
+   A border-box linear-gradient behind a transparent border would reproduce the
+   brush exactly, fade band included. It is not used: it would claim the
    border-box background layer of every control that takes the stroke, and it
-   would stop the stroke being a colour token the dark block below can
-   re-point. The fade band is what the three-term form costs.
+   would stop the stroke being a colour token the dark block below can re-point.
+   The fade band is what the three-term form costs.
 
-   CircleElevationBorderBrush, the third brush of the family, is not emitted.
-   The one part WinUI strokes with it is the toggle switch's on knob, and that
-   Border binds the brush without ever stating a BorderThickness, which
-   defaults to zero -- so shipped WinUI paints no such outline and there is
-   nothing to carry.
+   CircleElevationBorderBrush, the third brush of the family, is not emitted: the
+   one part WinUI strokes with it is the toggle switch's on knob, whose Border
+   binds the brush without ever stating a BorderThickness, so shipped WinUI
+   paints no such outline.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L159
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L510 */
 
@@ -646,8 +550,7 @@ export const winuiTokenCss = `
 }
 
 /* Motion. The values are declared in ./motion.ts, because the presence
-   animations and the measured indicators need them as numbers, and a custom
-   property is a string the Web Animations API will not resolve. */
+   animations and the measured indicators need them as numbers. */
 :root {
   --winui-control-normal-animation-duration: ${CONTROL_NORMAL_ANIMATION_MS}ms;
   --winui-control-fast-animation-duration: ${CONTROL_FAST_ANIMATION_MS}ms;
@@ -676,28 +579,24 @@ export const winuiTokenCss = `
    Fluent's own value.
 
    TextControlThemePadding is 10,5,6,6, stated in the controls dictionary
-   alongside a 1px border -- both of which override the framework's legacy
-   generic.xaml, where the same keys read 10,3,6,6 and 2. XAML template-binds
-   that single thickness to two elements, the text-bearing ScrollViewer and the
-   placeholder TextBlock behind it. Its vertical half is absorbed here by the
-   control's derived height, because Fluent centres the content rather than
-   padding it; its horizontal half is left on the 12px spacingHorizontalM that
-   Fluent's input slot already carries, rather than restated as WinUI's 10 and
-   6. The height the pair determines is derived at the rule that spends it in
+   alongside a 1px border, both overriding the framework's legacy generic.xaml.
+   Its vertical half is absorbed here by the control's derived height, because
+   Fluent centres the content rather than padding it; its horizontal half is left
+   on the 12px spacingHorizontalM that Fluent's input slot already carries. The
+   height the pair determines is derived at the rule that spends it in
    ./controls/text-input.css.ts, where one shared row height is taken instead.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources.xaml#L10-L12
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L173-L175
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L192-L194
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L337-L338
 
-   Type and spacing stay Fluent's, for two different reasons. WinUI does state
-   a shared type ramp, but it gives font size and weight only and leaves
-   leading to LineStackingStrategy, which has no CSS counterpart, so the
-   matched size and line-height pairs of Fluent's ramp are spent instead; at
-   the size in use the two agree, fontSizeBase300 and BodyTextBlockFontSize
-   both being 14. Spacing has no shared ramp to lift: WinUI states each step as
-   a per-control thickness, of which ButtonPadding above is one, so a step no
-   control declares takes a Fluent spacing token.
+   Type and spacing stay Fluent's, for two different reasons. WinUI's shared type
+   ramp gives font size and weight only and leaves leading to
+   LineStackingStrategy, which has no CSS counterpart, so Fluent's matched
+   size/line-height pairs are spent instead; at the size in use the two agree.
+   Spacing has no shared ramp to lift: WinUI states each step as a per-control
+   thickness, of which ButtonPadding above is one, so a step no control declares
+   takes a Fluent spacing token.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBlock_themeresources.xaml#L3-L9
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBlock_themeresources.xaml#L10-L51 */
 `;
