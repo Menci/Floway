@@ -42,6 +42,9 @@ const isBindingArray = (arr: readonly unknown[]): arr is ReadonlyArray<Record<st
     e => typeof e === 'object' && e !== null && typeof (e as Record<string, unknown>).binding === 'string',
   );
 
+const isStringArray = (arr: readonly unknown[]): arr is readonly string[] =>
+  arr.length > 0 && arr.every(e => typeof e === 'string');
+
 const compare = (expected: unknown, actual: unknown, path: string, out: Mismatch[]): void => {
   if (isPlaceholder(expected)) {
     if (typeof actual !== 'string' || actual.length === 0 || isPlaceholder(actual)) {
@@ -79,6 +82,31 @@ const compare = (expected: unknown, actual: unknown, path: string, out: Mismatch
         if (typeof name !== 'string') continue;
         if (!expectedNames.has(name)) {
           out.push({ path: `${path}[binding=${name}]`, reason: 'binding present in wrangler.jsonc but not in the example' });
+        }
+      }
+      return;
+    }
+    // String lists — `run_worker_first`, `compatibility_flags`, `crons`,
+    // `new_sqlite_classes` — are sets, not sequences. Cloudflare states that
+    // "the order in which the patterns are listed is not significant" for
+    // `run_worker_first`:
+    // https://developers.cloudflare.com/workers/static-assets/routing/worker-script/
+    // Comparing them by position would fail a contributor's config for
+    // carrying the same entries in a different order, and would say so as an
+    // index mismatch rather than as the missing or extra entry.
+    if (isStringArray(expected)) {
+      const actualStrings = new Set(actual.filter((v): v is string => typeof v === 'string'));
+      for (const value of expected) {
+        if (!actualStrings.has(value)) out.push({ path, reason: `entry ${fmt(value)} missing` });
+      }
+      const expectedStrings = new Set(expected);
+      for (const value of actual) {
+        if (typeof value !== 'string') {
+          out.push({ path, reason: `expected a string entry, got ${fmt(value)}` });
+          continue;
+        }
+        if (!expectedStrings.has(value)) {
+          out.push({ path, reason: `entry ${fmt(value)} present in wrangler.jsonc but not in the example` });
         }
       }
       return;
