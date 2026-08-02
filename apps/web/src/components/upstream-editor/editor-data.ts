@@ -40,8 +40,7 @@ export type UpstreamEditorLoaderData = UpstreamEditorLoaderDataBase & (
   | { mode: 'edit' }
 );
 
-// `manualIndex` is the row's position in the form's manual array when it has
-// one; `hasAuto` says the upstream also lists the model, which is what makes
+// `hasAuto` says the upstream also lists the model, which is what makes
 // switching the row back to `auto` possible.
 export interface ModelRow {
   key: string;
@@ -204,9 +203,6 @@ export const createBody = (record: UpstreamRecord, values: UpstreamEditorValues)
     ...((record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code')
       ? { state: values.state }
       : {}),
-    // TypeScript cannot prove a structurally assembled object satisfies the
-    // wire contract's discriminated union; only that correlation is asserted,
-    // field names, method and path stay checked against the route.
   } as CreateUpstreamBody;
 };
 
