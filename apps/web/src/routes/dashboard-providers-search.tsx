@@ -220,13 +220,11 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
       if (!('ok' in result)) throw new Error(result.error);
       setTestResult(result);
     } catch (error) {
-      setTestError(t('dashboard.searchConfig.testFailed', {
-        message: errorMessage(error),
-      }));
+      setTestError(errorMessage(error));
     } finally {
       setTesting(false);
     }
-  }, [draft, t]);
+  }, [draft]);
 
   return (
     <section className="dashboard-page max-w-[960px]">
@@ -373,7 +371,7 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
         <OutcomeMessageBar onDismiss={() => setSaveError(null)}>{saveError}</OutcomeMessageBar>
       )}
       {testError && (
-        <OutcomeMessageBar onDismiss={() => setTestError(null)}>{testError}</OutcomeMessageBar>
+        <OutcomeMessageBar onDismiss={() => setTestError(null)} title={t('dashboard.searchConfig.testFailed')}>{testError}</OutcomeMessageBar>
       )}
 
       {testResult && (

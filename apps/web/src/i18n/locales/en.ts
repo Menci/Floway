@@ -1064,7 +1064,7 @@ const en = {
         testedQuery: 'Query: {{query}}',
         testSuccess:
             'Connection test successful - {{count}} results returned.',
-        testFailed: 'Test failed: {{message}}',
+        testFailed: 'Test failed',
         pageAge: '{{age}} ago',
       },
       modelAliases: {
@@ -1150,7 +1150,7 @@ const en = {
         test: {
           ok: 'Connection OK',
           egressIp: 'Egress IP: {{ip}}',
-          failed: 'Test failed: {{error}}',
+          failed: 'Test failed',
         },
         toast: {
           save: { pending: 'Saving proxy {{name}}', success: 'Saved proxy {{name}}' },

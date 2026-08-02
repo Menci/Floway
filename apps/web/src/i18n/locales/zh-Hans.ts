@@ -1005,7 +1005,7 @@ const zhHansCN = {
         testedProvider: '提供商：{{provider}}',
         testedQuery: '查询：{{query}}',
         testSuccess: '连接测试成功，返回 {{count}} 条结果。',
-        testFailed: '测试失败：{{message}}',
+        testFailed: '测试失败',
         pageAge: '{{age}} 前',
       },
       modelAliases: {
@@ -1087,7 +1087,7 @@ const zhHansCN = {
         test: {
           ok: '连接成功',
           egressIp: '出口 IP：{{ip}}',
-          failed: '测试失败：{{error}}',
+          failed: '测试失败',
         },
         toast: {
           save: { pending: '正在保存代理 {{name}}', success: '已保存代理 {{name}}' },

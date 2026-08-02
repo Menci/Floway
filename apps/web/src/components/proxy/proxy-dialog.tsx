@@ -175,8 +175,8 @@ export function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
     {testResult && <OutcomeMessageBar
       intent={testResult.ok ? 'success' : 'error'}
       onDismiss={() => setTestResult(null)}
-      title={testResult.ok ? t('dashboard.proxy.test.ok') : t('dashboard.proxy.test.failed', { error: testResult.error })}
-    >{testResult.ok && t('dashboard.proxy.test.egressIp', { ip: testResult.egress_ip })}</OutcomeMessageBar>}
+      title={testResult.ok ? t('dashboard.proxy.test.ok') : t('dashboard.proxy.test.failed')}
+    >{testResult.ok ? t('dashboard.proxy.test.egressIp', { ip: testResult.egress_ip }) : testResult.error}</OutcomeMessageBar>}
     {saveError && <OutcomeMessageBar onDismiss={() => setSaveError(null)}>{saveError}</OutcomeMessageBar>}
   </DialogShell>;
 }
