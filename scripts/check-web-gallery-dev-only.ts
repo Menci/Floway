@@ -16,7 +16,7 @@ import { resolve } from 'node:path';
 const clientDir = resolve(import.meta.dirname, '../apps/web/dist/client');
 const assetsDir = resolve(clientDir, 'assets');
 
-const GALLERY_MODULE = /\/routes\/dashboard-winui-gallery\.tsx$/;
+const GALLERY_MODULE = '/routes/dashboard-winui-gallery.tsx';
 // Rolldown emits a few helper chunks with no sourcemap, and a build with
 // sourcemaps off would have none at all. The gallery's toaster id is a string
 // literal, so it survives minification and stands in for the module list.
@@ -25,7 +25,7 @@ const GALLERY_CODE = 'winui-gallery-toaster';
 const containsGallery = async (name: string): Promise<boolean> => {
   const map = await readFile(resolve(assetsDir, `${name}.map`), 'utf8').catch(() => undefined);
   if (map === undefined) return (await readFile(resolve(assetsDir, name), 'utf8')).includes(GALLERY_CODE);
-  return (JSON.parse(map) as { sources: string[] }).sources.some(source => GALLERY_MODULE.test(source));
+  return (JSON.parse(map) as { sources: string[] }).sources.some(source => source.endsWith(GALLERY_MODULE));
 };
 
 const assets = (await readdir(assetsDir)).filter(name => name.endsWith('.js'));

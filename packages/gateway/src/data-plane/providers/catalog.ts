@@ -170,7 +170,7 @@ const collectProviderModels = async (
 // last one that was ever true for it.
 export const storedCatalogSize = (record: UpstreamRecord): number | null => {
   const cache = record.modelsCache;
-  if (!cache || cache.revision !== MODEL_CATALOG_REVISION) return null;
+  if (cache?.revision !== MODEL_CATALOG_REVISION) return null;
   const disabled = new Set(record.disabledPublicModelIds);
   const surfacedForms = record.modelPrefix?.listed.length ?? 1;
   return cache.models.filter(model => model.id && !disabled.has(model.id)).length * surfacedForms;
