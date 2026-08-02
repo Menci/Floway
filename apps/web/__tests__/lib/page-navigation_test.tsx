@@ -1,21 +1,22 @@
 import { act } from '@testing-library/react';
-import { createMemoryRouter, RouterProvider, useLocation, type NavigateOptions } from 'react-router';
+import { createMemoryRouter, RouterProvider, useLocation, useNavigate, type NavigateOptions } from 'react-router';
 import { describe, expect, it } from 'vitest';
 
 import { isPageChange, pageNavigation, useEntryRewrite } from '../../src/lib/page-navigation';
 import { renderInApp } from '../render';
 
-// The rewrite options belong to the entry the page is on, so they are taken
-// from a render of that page rather than assembled by the test.
-let rewrite: NavigateOptions = { replace: true };
-
 // What decides the page transition is the render after the commit, so this
 // reads the mark the way `page-frames.tsx` does -- through `useLocation` on a
 // committed entry -- rather than through the options object that was handed to
-// `navigate`.
+// `navigate`. The rewrite is issued from the page too, since the options it
+// goes out with are the ones the entry it is on produces.
 const Probe = () => {
-  rewrite = useEntryRewrite();
-  return <span>{isPageChange(useLocation().state) ? 'page change' : 'same page'}</span>;
+  const navigate = useNavigate();
+  const rewrite = useEntryRewrite();
+  return <>
+    <span>{isPageChange(useLocation().state) ? 'page change' : 'same page'}</span>
+    <button onClick={() => void navigate('?kind=copilot', rewrite)} type="button">rewrite</button>
+  </>;
 };
 
 const renderRouter = () => {
@@ -45,9 +46,9 @@ describe('page change opt-in', () => {
   });
 
   it('leaves a filter rewrite of the same page unmarked', async () => {
-    const { router, getByText } = renderRouter();
+    const { getByRole, getByText } = renderRouter();
 
-    await navigate(router, '/upstreams?kind=copilot', rewrite);
+    await act(async () => { getByRole('button').click(); });
 
     expect(getByText('same page')).toBeTruthy();
   });
@@ -71,10 +72,10 @@ describe('page change opt-in', () => {
   });
 
   it('still reads a page change after the returned-to page rewrote its own query string', async () => {
-    const { router, getByText } = renderRouter();
+    const { router, getByRole, getByText } = renderRouter();
 
     await navigate(router, '/upstreams/new', pageNavigation);
-    await navigate(router, '/upstreams/new?kind=copilot', rewrite);
+    await act(async () => { getByRole('button').click(); });
     await navigate(router, '/keys', pageNavigation);
     await back(router);
 
