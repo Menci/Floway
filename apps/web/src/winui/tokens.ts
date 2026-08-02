@@ -322,6 +322,7 @@ export const winuiTokenCss = `
   --winui-accent-text-fill-primary: var(--winui-system-accent-dark-2);
   --winui-accent-text-fill-secondary: var(--winui-system-accent-dark-3);
   --winui-accent-text-fill-tertiary: var(--winui-system-accent-dark-1);
+  --winui-accent-tint-amount: 8%;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -330,7 +331,25 @@ export const winuiTokenCss = `
     --winui-accent-text-fill-primary: var(--winui-system-accent-light-3);
     --winui-accent-text-fill-secondary: var(--winui-system-accent-light-3);
     --winui-accent-text-fill-tertiary: var(--winui-system-accent-light-2);
+    --winui-accent-tint-amount: 12%;
   }
+}
+
+/* A departure of ours. Fluent carries a second brand ramp for surfaces that
+   wear the brand as a wash rather than as a fill -- a tint badge, a selected
+   tab chip -- and WinUI states no tinted-accent surface to map it onto. Left
+   unmapped it stays Microsoft's fixed blue beside the accent the operator
+   picked; mapped onto the accent fills it turns every washed surface into a
+   solid pill. So the wash is derived: the accent laid over the page at the
+   weight Fluent's own second ramp sits at over its background, which is 8% in
+   light and 12% in dark, with the label taking the accent text fill WinUI
+   already uses for accent-coloured text on a neutral surface.
+   https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/tokens/src/global/colors.ts */
+:root {
+  --winui-accent-tint-fill-default: color-mix(in srgb, var(--winui-accent-base) var(--winui-accent-tint-amount), var(--winui-solid-background-fill-base));
+  --winui-accent-tint-fill-secondary: color-mix(in srgb, var(--winui-accent-base) calc(var(--winui-accent-tint-amount) * 1.5), var(--winui-solid-background-fill-base));
+  --winui-accent-tint-fill-tertiary: color-mix(in srgb, var(--winui-accent-base) calc(var(--winui-accent-tint-amount) * 2), var(--winui-solid-background-fill-base));
+  --winui-accent-tint-stroke: color-mix(in srgb, var(--winui-accent-base) calc(var(--winui-accent-tint-amount) * 3.75), var(--winui-solid-background-fill-base));
 }
 
 /* The selection highlight behind selected text. Both dictionaries key it to

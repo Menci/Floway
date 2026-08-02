@@ -89,11 +89,13 @@ const palette = {
   // picker's swatch grid wear Fluent blue beside WinUI accent, and let a dark
   // filled badge pair black on-accent text with Fluent's dark brand fill.
   //
-  // Stroke2 is the odd one out: its consumers -- a tinted chip's outline and
-  // the divider between the two halves of a brand InteractionTag -- are strokes
-  // ON the accent surface rather than around a neutral one, which is the role
-  // SplitButton fills with ControlStrokeColorOnAccentTertiary for its own
-  // checked divider.
+  // The second ramp is the wash rather than the fill, so it lands on the derived
+  // accent tint in ../tokens.ts and not on the accent fills: mapping it onto
+  // those turns a tinted badge into a solid pill, and leaving it unmapped keeps
+  // Microsoft blue beside the accent the operator picked. Stroke2 is that
+  // surface's own outline, so it takes the tint's heavier step rather than an
+  // on-accent stroke, which would be painting a stroke meant for accent-filled
+  // ground onto a nearly-neutral one.
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L36-L38
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L103-L105
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L11-L13
@@ -104,12 +106,12 @@ const palette = {
   colorBrandBackgroundHover: 'var(--winui-accent-fill-secondary)',
   colorBrandBackgroundPressed: 'var(--winui-accent-fill-tertiary)',
   colorBrandBackgroundSelected: 'var(--winui-accent-fill-default)',
-  colorBrandBackground2: 'var(--winui-accent-fill-default)',
-  colorBrandBackground2Hover: 'var(--winui-accent-fill-secondary)',
-  colorBrandBackground2Pressed: 'var(--winui-accent-fill-tertiary)',
-  colorBrandForeground2: 'var(--winui-text-on-accent-fill-primary)',
+  colorBrandBackground2: 'var(--winui-accent-tint-fill-default)',
+  colorBrandBackground2Hover: 'var(--winui-accent-tint-fill-secondary)',
+  colorBrandBackground2Pressed: 'var(--winui-accent-tint-fill-tertiary)',
+  colorBrandForeground2: 'var(--winui-accent-text-fill-primary)',
   colorBrandStroke1: 'var(--winui-accent-fill-default)',
-  colorBrandStroke2: 'var(--winui-control-stroke-on-accent-tertiary)',
+  colorBrandStroke2: 'var(--winui-accent-tint-stroke)',
   colorCompoundBrandStroke: 'var(--winui-accent-fill-default)',
   colorCompoundBrandStrokeHover: 'var(--winui-accent-fill-secondary)',
   colorCompoundBrandStrokePressed: 'var(--winui-accent-fill-tertiary)',
