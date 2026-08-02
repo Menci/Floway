@@ -14,6 +14,7 @@ import { useState } from 'react';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Combobox, Dropdown } from '../components/ui/fluent-form-controls';
 import { PANEL_STACK_CLASS } from '../components/ui/layout';
+import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { SectionHeader } from '../components/ui/section-header';
 import { fluentComponents } from '../fluent';
@@ -404,7 +405,7 @@ function CardSection() {
       {cardAppearances.map(appearance => <StateLabel key={appearance} state={appearance}>
         <Card appearance={appearance} className="w-[220px]">
           <CardHeader
-            description={<Text size={200} className="text-fui-fg2">12 models · 2 aliases</Text>}
+            description={<Text size={200} className="text-fui-fg2">12 models, 2 aliases</Text>}
             header={<Text weight="semibold">Copilot (work)</Text>}
             image={<ServerRegular fontSize={24} />}
           />
@@ -661,7 +662,7 @@ function DrawerSection() {
           >Request detail</DrawerHeaderTitle>
         </DrawerHeader>
         <DrawerBody>
-          <Text>POST /v1/chat/completions · gpt-5-codex · 1 842 prompt tokens</Text>
+          <Text>POST /v1/chat/completions, gpt-5-codex, 1 842 prompt tokens</Text>
         </DrawerBody>
       </OverlayDrawer>
     </Row>
@@ -812,6 +813,12 @@ function MessageBarSection() {
         </MessageBarBody>
         <MessageBarActions><Button size="small">Re-authenticate</Button></MessageBarActions>
       </MessageBar>
+    </Row>
+    <Row label="several messages">
+      <OutcomeMessageBar className="!w-full" intent="warning">
+        <>No pricing rule matches gpt-5-codex, so its requests are recorded without a cost.</>
+        <>Two rules select the same coordinate; the later one never applies.</>
+      </OutcomeMessageBar>
     </Row>
   </Section>;
 }

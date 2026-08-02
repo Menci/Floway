@@ -174,6 +174,24 @@ export const messageBarCss = `
   margin-block-end: 18px;
 }
 
+/* A body of several messages is the same vertical orientation reached by another
+   route, so it takes the same InfoBarPanelVerticalOrientationPadding terms. The
+   gap is the leading 4 of InfoBarMessageVerticalOrientationMargin, which
+   ArrangeOverride adds between children and not before the first, so a bar of one
+   message is untouched. Wrapping is restored because the root's nowrap belongs to
+   the horizontal orientation this content is no longer in.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L80
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L84 */
+.fui-MessageBar:has([data-winui-message-lines]) .fui-MessageBarBody.fui-MessageBarBody {
+  padding-block: 14px 18px;
+}
+
+[data-winui-message-lines] {
+  display: grid;
+  gap: 4px;
+  white-space: normal;
+}
+
 /* Forced colours. WinUI's HighContrast dictionary drops the severity fill and
    doubles the stroke; the user agent's forced adjustment already lands the
    colours, leaving only the thickness to state. It cannot reach the badge:

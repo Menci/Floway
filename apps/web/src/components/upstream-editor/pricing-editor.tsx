@@ -24,11 +24,12 @@ import { fluentComponents } from '../../fluent';
 import { EmptyState } from '../ui/empty-state';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
 import { PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
+import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SectionHeader } from '../ui/section-header';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { PRICING_AXES, type BillingMetric, type ModelKind, type ModelPricing, type ModelPricingIssue } from '@floway-dev/protocols/common';
 
-const { Button, Field, List, ListItem, MessageBar, MessageBarBody, Option, Text, Toolbar, ToolbarButton, Tooltip, makeStyles } = fluentComponents;
+const { Button, Field, List, ListItem, Option, Text, Toolbar, ToolbarButton, Tooltip, makeStyles } = fluentComponents;
 const usePricingStyles = makeStyles({
   // WinUI centres one line in a 40px minimum with no block padding; a rule row
   // carries two. Everything else stays the WinUI layer's, whose doubled
@@ -286,13 +287,9 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
         </div>
       </section>
 
-      {activeIssues.length > 0 && <MessageBar intent="error">
-        <MessageBarBody>
-          <ul className="m-0 grid gap-1 pl-4">
-            {activeIssues.map((issue, index) => <li key={`${issue.code}-${index}`}>{issueMessage(issue)}</li>)}
-          </ul>
-        </MessageBarBody>
-      </MessageBar>}
+      {activeIssues.length > 0 && <OutcomeMessageBar>
+        {activeIssues.map((issue, index) => <Text key={`${issue.code}-${index}`}>{issueMessage(issue)}</Text>)}
+      </OutcomeMessageBar>}
     </div>}
   </div>;
 }

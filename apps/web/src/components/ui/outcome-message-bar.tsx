@@ -1,17 +1,29 @@
 import { DismissRegular } from '@fluentui/react-icons';
-import type { ReactNode } from 'react';
+import { Children, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { fluentComponents } from '../../fluent';
 
 const { Button, MessageBar, MessageBarActions, MessageBarBody, MessageBarTitle, Tooltip } = fluentComponents;
 
+// WinUI lays an InfoBar's text out vertically as soon as one of its parts is
+// taller than InfoBarMinHeight, which is the case a body of several messages is
+// always in; Fluent's own reflow watches inline overflow alone and so never
+// reaches its multiline layout here. This marker is what the vertical-orientation
+// geometry in `winui/controls/message-bar.css.ts` is addressed by, and it appears
+// only from the second message on, matching the panel's own arrange.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBarPanel.cpp#L69
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBarPanel.cpp#L107-L111
+const MessageBarLines = ({ children }: { children: ReactNode }) => {
+  const lines = Children.toArray(children);
+
+  return lines.length > 1 ? <div data-winui-message-lines="">{lines}</div> : lines;
+};
+
 // Nothing dismisses this on a timer: it carries a server's own words, which may
-// need to be read twice or copied. Both class names are needed — the container
-// states the spacing, the body says where a long unbreakable token may wrap.
+// need to be read twice or copied.
 export function OutcomeMessageBar({
   action,
-  bodyClassName,
   children,
   className,
   intent = 'error',
@@ -19,7 +31,6 @@ export function OutcomeMessageBar({
   title,
 }: {
   action?: ReactNode;
-  bodyClassName?: string;
   children: ReactNode;
   className?: string;
   intent?: 'error' | 'warning' | 'success' | 'info';
@@ -31,9 +42,9 @@ export function OutcomeMessageBar({
 
   return (
     <MessageBar className={className} intent={intent}>
-      <MessageBarBody className={bodyClassName}>
+      <MessageBarBody>
         {title && <MessageBarTitle>{title}</MessageBarTitle>}
-        {children}
+        <MessageBarLines>{children}</MessageBarLines>
       </MessageBarBody>
       {(action ?? onDismiss) && <MessageBarActions
         containerAction={onDismiss && <Tooltip content={dismissLabel} relationship="label">

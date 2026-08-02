@@ -140,7 +140,7 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
     >
       <MetadataEditor disabled={saving} kind={kind} readOnly={!values.manualMetadata} value={values.manualMetadata ? values.announcedMetadata : automaticMetadata} onChange={value => setValue('announcedMetadata', value, { shouldValidate: true })} />
     </SettingsExpander>}
-    {aliasWarnings.length > 0 && <OutcomeMessageBar intent="warning">{aliasWarnings.map(warning => <Text block key={warning.type}>{t(`dashboard.modelAliases.warnings.${warning.key}`, warning.values)}</Text>)}</OutcomeMessageBar>}
+    {aliasWarnings.length > 0 && <OutcomeMessageBar intent="warning">{aliasWarnings.map(warning => <Text key={warning.type}>{t(`dashboard.modelAliases.warnings.${warning.key}`, warning.values)}</Text>)}</OutcomeMessageBar>}
     <SettingsCard
       action={<SettingsSwitch checked={values.visible} disabled={saving} label={t('dashboard.modelAliases.form.visible')} onChange={checked => setValue('visible', checked)} />}
       description={t('dashboard.modelAliases.form.visibleHint')}
