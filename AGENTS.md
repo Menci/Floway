@@ -56,6 +56,53 @@
 - Keep this file aligned with real architecture. When something changes,
   rewrite the relevant section; do not accrete contradictory notes.
 
+## Working Rules
+
+Earned from this project's history. Each exists because the same mistake was
+made more than once. A defect seen twice means the first fix was wrong in kind,
+not that it was incomplete.
+
+- **Fix the class, and make the recurrence structurally impossible.** Correcting
+  the reported instance is the start. Ask what would have to be true for this
+  defect to be unable to happen again, and build that: one source of truth
+  instead of two that can disagree, a shared implementation instead of parallel
+  ones, a derived value instead of a hardcoded one, a gate where the invariant
+  can be checked. "I fixed every current occurrence" is a weaker answer than
+  "this can no longer be got wrong", and the difference is the task.
+- **Parity with what you replace is the default specification.** When rewriting
+  a surface, everything the old one did is required unless it was explicitly
+  dropped. Behaviour that quietly disappears in a rewrite is a regression, not a
+  simplification. This is the converse of the removed-concepts rule above and
+  does not follow from it: the old *names* must go, the old *behaviour* must not.
+- **Decisions decay silently, so record them with the context they were made
+  in.** Which question, which screen, which alternative was rejected. Over a
+  long branch a locally-scoped instruction gets applied globally and a deliberate
+  exception gets "cleaned up" by a later pass, and neither is detectable from
+  the decision alone. When a later pass wants to change something a decision
+  covers, surface it rather than rationalising the deviation. Never cite an
+  earlier comment as the authority for a change — a comment is not a source, and
+  a comment justified by another comment is a circle.
+- **A report is literally true and exactly scoped.** Reproduce the stated
+  scenario before theorising; substituting a more convenient cause has been
+  wrong every time it was tried here. Scope is exact in both directions — an
+  instruction about one case is not a rule about the system. When an instruction
+  refers to existing state ("like the other one", "same as before"), go read
+  that state rather than assuming what it is.
+- **When a fix degrades across iterations, revert and reconsider.** Iterative
+  patching against a wrong model leaves dead scaffolding behind even after the
+  real fix lands. By the third patch, rebuilding from the specification is
+  cheaper than the fourth. A fix that turned out to be on the wrong path is
+  deleted, not left in.
+- **Match an audit's granularity to the thing being audited**, and enumerate the
+  whole population — per file, per component, per rule, per call site. A small
+  number of workers against a large set is a sampled audit, and a sampled audit
+  is not an audit.
+- **Under concurrent work, prefer the untidy failure to the destructive one.**
+  Stage only paths you name; `git add -A`, `checkout`, `reset` and `stash` can
+  destroy another worker's in-flight edits, while interleaved commits are merely
+  untidy. Never kill processes by pattern. Do not rewrite a commit others have
+  built on.
+
 ## Pull Requests
 
 Open a Pull Request only when the human explicitly includes PR work in the
