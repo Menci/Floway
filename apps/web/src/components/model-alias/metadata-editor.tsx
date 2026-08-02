@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
-import { announcedMetadataIssues, type AnnouncedMetadataField } from './validation';
+import type { AnnouncedMetadataField, AnnouncedMetadataIssues } from './validation';
 import type { AnnouncedMetadata, ModelKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { Dropdown, Input, Switch } from '../ui/fluent-form-controls';
@@ -11,8 +11,9 @@ const { Field, Option } = fluentComponents;
 
 const numberValue = (value: string) => value === '' ? undefined : Number(value);
 
-export function MetadataEditor({ disabled, kind, onChange, readOnly, value }: {
+export function MetadataEditor({ disabled, issues, kind, onChange, readOnly, value }: {
   disabled: boolean;
+  issues: AnnouncedMetadataIssues;
   kind: ModelKind;
   onChange: (value: AnnouncedMetadata) => void;
   readOnly: boolean;
@@ -32,7 +33,6 @@ export function MetadataEditor({ disabled, kind, onChange, readOnly, value }: {
   };
   const effort = value.chat?.reasoning?.effort;
   const budget = value.chat?.reasoning?.budget_tokens;
-  const issues = announcedMetadataIssues(value);
   const issueProps = (field: AnnouncedMetadataField) => issues[field] === undefined
     ? {}
     : { validationMessage: t(issues[field]), validationState: 'error' as const };

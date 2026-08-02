@@ -1,8 +1,9 @@
-import type { Dispatch, SetStateAction } from 'react';
+import type { FieldErrors } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
-import { DEFAULT_DIAL_TIMEOUT_SECONDS, FORM_KIND_LABELS, KIND_OPTIONS, SS2022_METHOD_OPTIONS, SS_METHOD_OPTIONS, formKindFromConfig, orUndef, proxyUrlPlaceholder, type DialTimeoutResult, type ProxyDraftIssues } from './proxy-config';
+import { DEFAULT_DIAL_TIMEOUT_SECONDS, FORM_KIND_LABELS, KIND_OPTIONS, PROXY_CONFIG_ISSUE_FIELDS, SS2022_METHOD_OPTIONS, SS_METHOD_OPTIONS, formKindFromConfig, orUndef, proxyUrlPlaceholder, type ProxyConfigIssueField, type ProxyFormValues } from './proxy-config';
 import { fluentComponents } from '../../fluent';
+import { issuesFromErrors, useIssueText } from '../../lib/form-issues';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
 import { SecretInput } from '../ui/secret-input';
 import type {
@@ -25,45 +26,43 @@ export type ProxyTestResult =
 
 export interface ProxyFormProps {
   config: ProxyConfig;
-  dialTimeoutError: DialTimeoutResult['error'];
   dialTimeoutInput: string;
+  errors: FieldErrors<ProxyFormValues>;
   formName: string;
-  issues: ProxyDraftIssues;
-  onConfigChange: Dispatch<SetStateAction<ProxyConfig>>;
+  onConfigChange: (update: (previous: ProxyConfig) => ProxyConfig) => void;
   onDialTimeoutChange: (value: string) => void;
   onKindChange: (_: unknown, data: { optionValue?: string }) => void;
   onNameChange: (value: string) => void;
   onPortChange: (value: string) => void;
   onUrlChange: (value: string) => void;
-  urlError: string | null;
   urlInput: string;
 }
 
 export function ProxyForm({
   config,
-  dialTimeoutError,
   dialTimeoutInput,
+  errors,
   formName,
-  issues,
   onConfigChange: setConfig,
   onDialTimeoutChange,
   onKindChange,
   onNameChange,
   onPortChange,
   onUrlChange,
-  urlError,
   urlInput,
 }: ProxyFormProps) {
   const { t } = useTranslation();
+  const issueText = useIssueText();
   const formKind = formKindFromConfig(config);
-  // A parse failure outranks the draft's "still empty": there is text in the
-  // field, and what is wrong is the text.
-  const urlMessage = urlError ?? (issues.url ? t(issues.url) : null);
-  const message = (field: keyof ProxyDraftIssues) => issues[field] === undefined ? undefined : t(issues[field]);
-  const state = (field: keyof ProxyDraftIssues) => issues[field] === undefined ? undefined : 'error' as const;
+  const configIssues = issuesFromErrors(errors.config, PROXY_CONFIG_ISSUE_FIELDS);
+  const message = (field: ProxyConfigIssueField) => issueText(configIssues[field]);
+  const state = (field: ProxyConfigIssueField) => configIssues[field] === undefined ? undefined : 'error' as const;
+  const nameMessage = issueText(errors.name?.message);
+  const urlMessage = issueText(errors.url?.message);
+  const dialTimeoutMessage = issueText(errors.dialTimeout?.message);
   return (
     <div className="grid gap-4 min-w-0">
-      <Field label={t('dashboard.proxy.form.name')} validationMessage={message('name')} validationState={state('name')}>
+      <Field label={t('dashboard.proxy.form.name')} validationMessage={nameMessage} validationState={nameMessage ? 'error' : undefined}>
         <Input
           onChange={(_, d) => onNameChange(d.value)}
           placeholder={t('dashboard.proxy.form.namePlaceholder')}
@@ -73,7 +72,7 @@ export function ProxyForm({
 
       <Field
         label={t('dashboard.proxy.form.url')}
-        validationMessage={urlMessage ?? undefined}
+        validationMessage={urlMessage}
         validationState={urlMessage ? 'error' : undefined}
       >
         <Input
@@ -201,8 +200,8 @@ export function ProxyForm({
           </Field>
           <Field
             label={t('dashboard.proxy.form.passwordLabel')}
-            validationMessage={message('secret')}
-            validationState={state('secret')}
+            validationMessage={message('password')}
+            validationState={state('password')}
           >
             <SecretInput
               onChange={(_, d) =>
@@ -241,8 +240,8 @@ export function ProxyForm({
           </Field>
           <Field
             label={t('dashboard.proxy.form.psk')}
-            validationMessage={message('secret')}
-            validationState={state('secret')}
+            validationMessage={message('passwordBase64')}
+            validationState={state('passwordBase64')}
           >
             <SecretInput
               onChange={(_, d) =>
@@ -263,8 +262,8 @@ export function ProxyForm({
         <div className="grid grid-cols-1 gap-[12px]">
           <Field
             label={t('dashboard.proxy.form.passwordLabel')}
-            validationMessage={message('secret')}
-            validationState={state('secret')}
+            validationMessage={message('password')}
+            validationState={state('password')}
           >
             <SecretInput
               onChange={(_, d) =>
@@ -439,8 +438,8 @@ export function ProxyForm({
       <Field
         hint={t('dashboard.proxy.form.timeoutHint')}
         label={t('dashboard.proxy.form.timeout')}
-        validationMessage={dialTimeoutError ? t(`dashboard.proxy.validation.timeout.${dialTimeoutError}`) : undefined}
-        validationState={dialTimeoutError ? 'error' : undefined}
+        validationMessage={dialTimeoutMessage}
+        validationState={dialTimeoutMessage ? 'error' : undefined}
       >
         <Input
           inputMode="numeric"

@@ -1,7 +1,7 @@
 import { errorMessage } from '../../lib/error-message';
 import { DEFAULT_DIAL_DEADLINE_MS } from '@floway-dev/proxy/constants';
 import type { ProxyConfig } from '@floway-dev/proxy/proxy-config';
-import { parseProxyUri } from '@floway-dev/proxy/url';
+import { formatProxyUri, parseProxyUri } from '@floway-dev/proxy/url';
 
 export type FormKind =
   | 'http' | 'https'
@@ -85,38 +85,69 @@ const isValidUuid = (s: string): boolean => {
 
 export const orUndef = (v: string): string | undefined => (v === '' ? undefined : v);
 
-export type ProxyDraftField =
-  | 'name' | 'url' | 'host' | 'port'
-  | 'uuid' | 'secret' | 'path' | 'serverName' | 'publicKey';
+export interface ProxyFormValues {
+  config: ProxyConfig;
+  dialTimeout: string;
+  name: string;
+  // Null until the operator types a URL; the field then shows the URI the
+  // structured inputs build.
+  url: string | null;
+}
 
-export type ProxyDraftIssues = Partial<Record<ProxyDraftField, string>>;
+// The structured inputs and the URI field are two views of one proxy, so the URI
+// the form validates and submits is whichever of them the operator last touched.
+export const proxyDraftUrl = (values: ProxyFormValues): string =>
+  values.url ?? (values.config.host.trim()
+    ? formatProxyUri({ ...values.config, name: values.name.trim() })
+    : '');
 
-export const proxyDraftIssues = (draft: { config: ProxyConfig; name: string; url: string }): ProxyDraftIssues => {
-  const { config } = draft;
+// Every issue sits at the path its value occupies in the form, so a scoped
+// react-hook-form revalidation reaches it.
+export const PROXY_CONFIG_ISSUE_FIELDS = [
+  'host', 'port', 'uuid', 'password', 'passwordBase64', 'path', 'serverName', 'publicKey',
+] as const;
+
+export type ProxyConfigIssueField = typeof PROXY_CONFIG_ISSUE_FIELDS[number];
+
+export interface ProxyDraftIssues {
+  config: Partial<Record<ProxyConfigIssueField, string>>;
+  dialTimeout?: string;
+  name?: string;
+  url?: string;
+}
+
+export const proxyDraftIssues = (values: ProxyFormValues): ProxyDraftIssues => {
+  const { config } = values;
   const required = 'dashboard.proxy.validation.required';
-  const issues: ProxyDraftIssues = {};
-  if (!draft.name.trim()) issues.name = 'dashboard.proxy.validation.nameRequired';
-  if (!draft.url.trim()) issues.url = 'dashboard.proxy.validation.urlRequired';
-  if (!config.host.trim()) issues.host = 'dashboard.proxy.validation.hostRequired';
-  if (!isValidPort(config.port)) issues.port = 'dashboard.proxy.validation.portInvalid';
+  const issues: ProxyDraftIssues = { config: {} };
+  const url = proxyDraftUrl(values).trim();
+  if (!values.name.trim()) issues.name = 'dashboard.proxy.validation.nameRequired';
+  // A parse failure outranks the draft's "still empty": there is text in the
+  // field, and what is wrong is the text.
+  if (!url) issues.url = 'dashboard.proxy.validation.urlRequired';
+  else issues.url = parseProxyInput(url).error ?? undefined;
+  if (!config.host.trim()) issues.config.host = 'dashboard.proxy.validation.hostRequired';
+  if (!isValidPort(config.port)) issues.config.port = 'dashboard.proxy.validation.portInvalid';
   switch (config.kind) {
   case 'http': case 'socks5': break;
-  case 'ss': if (config.password === '') issues.secret = required; break;
-  case 'ss2022': if (config.passwordBase64 === '') issues.secret = required; break;
-  case 'trojan': if (config.password === '') issues.secret = required; break;
+  case 'ss': if (config.password === '') issues.config.password = required; break;
+  case 'ss2022': if (config.passwordBase64 === '') issues.config.passwordBase64 = required; break;
+  case 'trojan': if (config.password === '') issues.config.password = required; break;
   case 'vless-tcp':
-    if (!isValidUuid(config.uuid)) issues.uuid = 'dashboard.proxy.validation.uuidInvalid';
+    if (!isValidUuid(config.uuid)) issues.config.uuid = 'dashboard.proxy.validation.uuidInvalid';
     break;
   case 'vless-ws':
-    if (!isValidUuid(config.uuid)) issues.uuid = 'dashboard.proxy.validation.uuidInvalid';
-    if (config.path === '') issues.path = required;
+    if (!isValidUuid(config.uuid)) issues.config.uuid = 'dashboard.proxy.validation.uuidInvalid';
+    if (config.path === '') issues.config.path = required;
     break;
   case 'reality':
-    if (!isValidUuid(config.uuid)) issues.uuid = 'dashboard.proxy.validation.uuidInvalid';
-    if (config.serverName === '') issues.serverName = required;
-    if (config.publicKey === '') issues.publicKey = required;
+    if (!isValidUuid(config.uuid)) issues.config.uuid = 'dashboard.proxy.validation.uuidInvalid';
+    if (config.serverName === '') issues.config.serverName = required;
+    if (config.publicKey === '') issues.config.publicKey = required;
     break;
   }
+  const timeout = parseDialTimeoutInput(values.dialTimeout);
+  if (timeout.error) issues.dialTimeout = `dashboard.proxy.validation.timeout.${timeout.error}`;
   return issues;
 };
 

@@ -15,12 +15,15 @@ export const targetIssue = (target: AliasTarget): string | null => {
   return null;
 };
 
-export type AnnouncedMetadataField =
-  | 'max_context_window_tokens'
-  | 'max_prompt_tokens'
-  | 'max_output_tokens'
-  | 'budgetMin'
-  | 'budgetMax';
+export const ANNOUNCED_METADATA_FIELDS = [
+  'max_context_window_tokens',
+  'max_prompt_tokens',
+  'max_output_tokens',
+  'budgetMin',
+  'budgetMax',
+] as const;
+
+export type AnnouncedMetadataField = typeof ANNOUNCED_METADATA_FIELDS[number];
 
 export type AnnouncedMetadataIssues = Partial<Record<AnnouncedMetadataField, string>>;
 

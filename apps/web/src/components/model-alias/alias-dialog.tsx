@@ -9,11 +9,12 @@ import { computeAnnouncedMetadata } from './announced-metadata';
 import { aliasBody, aliasDefaults, blankTarget, metadataForKind, type AliasFormValues } from './form-data';
 import { MetadataEditor } from './metadata-editor';
 import { AliasTargetRow } from './target-row';
-import { announcedMetadataIssues, targetIssue } from './validation';
+import { announcedMetadataIssues, targetIssue, ANNOUNCED_METADATA_FIELDS } from './validation';
 import { computeAliasWarnings, realModelIdsOfKind } from './warnings';
 import { api, callApi } from '../../api/client';
 import type { ControlPlaneModel, ModelAlias, ModelKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { issuesFromErrors } from '../../lib/form-issues';
 import { indexCatalog } from '../models/catalog-index';
 import { ChoiceGroup } from '../ui/choice-group';
 import { useDangerTextClass } from '../ui/danger';
@@ -138,7 +139,7 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
       revealOn={errors.announcedMetadata !== undefined}
       toggledOn={values.manualMetadata}
     >
-      <MetadataEditor disabled={saving} kind={kind} readOnly={!values.manualMetadata} value={values.manualMetadata ? values.announcedMetadata : automaticMetadata} onChange={value => setValue('announcedMetadata', value, { shouldValidate: true })} />
+      <MetadataEditor disabled={saving} issues={issuesFromErrors(errors.announcedMetadata, ANNOUNCED_METADATA_FIELDS)} kind={kind} readOnly={!values.manualMetadata} value={values.manualMetadata ? values.announcedMetadata : automaticMetadata} onChange={value => setValue('announcedMetadata', value, { shouldValidate: true })} />
     </SettingsExpander>}
     {aliasWarnings.length > 0 && <OutcomeMessageBar intent="warning">{aliasWarnings.map(warning => <Text key={warning.type}>{t(`dashboard.modelAliases.warnings.${warning.key}`, warning.values)}</Text>)}</OutcomeMessageBar>}
     <SettingsCard
