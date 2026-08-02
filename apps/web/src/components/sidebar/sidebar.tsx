@@ -44,28 +44,15 @@ const {
 } = fluentComponents;
 
 const useStyles = makeStyles({
-  // Geometry only. The fill ramp comes from the WinUI layer, which rests an
-  // item on the transparent subtle fill and steps it toward the material on
-  // pointer; a local fill here would have to win with `!important` and would
-  // then be the one thing in the dashboard that does not follow that ramp.
-  // Selection is drawn by NavSelectionIndicator rather than by a pseudo-element
-  // per item, because WinUI animates the pill between the item leaving
-  // selection and the one taking it, which needs one element that outlives both.
+  // Geometry only: the fill ramp comes from the WinUI layer, and selection is
+  // drawn by NavSelectionIndicator, which needs one element outliving both the
+  // item leaving selection and the one taking it.
   //
-  // 36px is a floor rather than a fixed height, which is how WinUI states it: a
-  // label that needs two lines -- a long translation, or a reader who has scaled
-  // the text up -- lengthens the row instead of being cut by it. The vertical
-  // pair is what centres a 20px line in that 36.
-  //
-  // The horizontal box is read off the left-pane template. Its icon column is
-  // CompactPaneLength less 8, so 40, and it centres a 16px icon box in that,
-  // leaving 12px between the fill's leading edge and the icon; the label then
-  // begins at that 40 plus the content presenter's own 4, so at 44. The icon
-  // slot here is Fluent's, a 20px box holding the 20px cut of each glyph, so
-  // the gap that carries the label to the same 44 is 12 rather than 16. The
-  // trailing inset is the content grid's own 14; the further 8 the content
-  // presenter adds inside it separates the label from the info-badge column,
-  // which these rows do not have.
+  // 36px is a floor rather than a fixed height, so a two-line label lengthens
+  // the row instead of being cut. The horizontal box is read off the left-pane
+  // template, whose 40px icon column plus the presenter's 4 puts the label at
+  // 44; Fluent's icon slot is 20px wide, so the gap that carries the label to
+  // that 44 is 12 rather than 16.
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L208
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L217
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L219
@@ -87,13 +74,8 @@ const useStyles = makeStyles({
   },
 });
 
-// The pill sits flush against the inside of the item's leading edge: WinUI
-// hangs it off the left of the presenter's content root with no margin of its
-// own. Marking the selected item within its own fill rather than alongside it
-// is what keeps the marker and the fill reading as one object. Nothing has to
-// be held back for the item's rounded corners -- the pill is centred and inset
-// by a quarter of the row at each end, so it never reaches the height the curve
-// occupies.
+// WinUI hangs the pill off the leading edge of the presenter's content root
+// with no margin of its own.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L220-L222
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L600-L603
 const NAV_INDICATOR_INSET = 0;
@@ -184,12 +166,10 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
   const logout = useAuthStore(state => state.logout);
   const styles = useStyles();
   const logoutDialog = useDialogInvocation<void>();
-  // Signing out clears the session, the route redirects to the login page, and
-  // this sidebar goes with it -- so the confirmation only closes the dialog,
-  // and the sign-out itself waits for the exit to finish. Closing and signing
-  // out in one handler is one React batch, and the redirect commits before the
-  // exit has a frame. The exit runs on a dismissal too, which is what this
-  // records: only a confirmed one signs out.
+  // Signing out redirects away and takes this sidebar with it, so it has to
+  // wait for the dialog's exit; doing both in one handler batches the redirect
+  // in before the exit gets a frame. The exit also runs on a dismissal, so only
+  // a confirmed one signs out.
   const signOutConfirmed = useRef(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const footerRef = useRef<HTMLDivElement>(null);
@@ -202,11 +182,8 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
     .find(item => path === item.to || path.startsWith(`${item.to}/`))?.to
     ?? (path.startsWith('/dashboard/settings') ? '/dashboard/settings' : '');
   const selectedValue = valueForPath(pathname);
-  // A route resolves its loaders before it is committed, so between the click
-  // and the new page the item the pointer left carries no state at all. Holding
-  // it pressed for that window says the click landed. React Router drops the
-  // pending location the moment the navigation settles either way, so a
-  // navigation that fails and stays put releases it on its own.
+  // A route commits only after its loaders resolve, so holding the item pressed
+  // for that window is what says the click landed.
   const pendingValue = navigation.location ? valueForPath(navigation.location.pathname) : '';
 
   return <>
@@ -258,13 +235,10 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
           </div>
         </ScrollArea>
       </NavDrawerBody>
-      {/* No rule above these. NavigationView does own a separator for this
-          seam, but it is authored collapsed and UpdatePaneLayout reveals it
-          only once the menu and the footer compete for the pane's height — an
-          overflow affordance, not a grouping rule. Whether the body's own
-          scroller has overflowed is not read back here, so the seam is left
-          unmarked either way and the footer group is set apart by being
-          bottom-anchored alone.
+      {/* No rule above these. NavigationView's separator for this seam is
+          authored collapsed and revealed only when the menu and the footer
+          compete for the pane's height, which is an overflow affordance rather
+          than a grouping rule.
           https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L375
           https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.cpp#L1585-L1626 */}
       <NavDrawerFooter className="!bg-transparent !gap-y-1 !px-[10px] !py-3">
