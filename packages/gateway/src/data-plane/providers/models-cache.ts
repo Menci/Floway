@@ -6,7 +6,7 @@ import type { Fetcher, Provider, ProviderModel } from '@floway-dev/provider';
 // upstream call. Past SOFT but within HARD, the stored row is still served
 // while a background revalidate refreshes it. Past HARD a fresh fetch is
 // required and blocks the caller; a failed background revalidate within
-// HARD leaves the row in place and only annotates `models_last_error_json`,
+// HARD leaves the row in place and only annotates the entry's `lastError`,
 // which is also the rationale for treating SOFT/HARD as a single SWR window
 // rather than introducing a separate fail-back tier.
 const SOFT_MS = 10 * 60 * 1000;
