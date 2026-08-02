@@ -124,6 +124,12 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   const [data, setData] = useState(loaderData);
   const [pageError, setPageError] = useState(loaderData.loadError);
   const [mutation, setMutation] = useState<Mutation | null>(null);
+  // The switch answers the pointer at once; the models column does not follow
+  // it. That column reads the catalog listing, which still describes the
+  // upstream as it was, so moving the flag into the record would have the
+  // column derive a live count for an upstream the listing has not been told
+  // about yet -- a warning beside a zero, for as long as the round trip takes.
+  const [pendingEnabled, setPendingEnabled] = useState<{ id: string; enabled: boolean } | null>(null);
   const deleteDialog = useDialogInvocation<UpstreamRecord>();
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
@@ -173,25 +179,21 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   };
 
   const setEnabled = async (record: UpstreamRecord, enabled: boolean) => {
-    const snapshot = data.upstreams;
-    if (snapshot === null) return;
+    if (data.upstreams === null) return;
     setMutation({ kind: 'toggle', id: record.id, name: record.name });
     setPageError(null);
-    setData(current => ({
-      ...current,
-      upstreams: (current.upstreams ?? []).map(candidate =>
-        candidate.id === record.id ? { ...candidate, enabled } : candidate),
-    }));
+    setPendingEnabled({ id: record.id, enabled });
 
     const result = await patchUpstream(record.id, { enabled });
     if (result.error) {
-      setData(current => ({ ...current, upstreams: snapshot }));
       setPageError(t('dashboard.upstreams.errors.toggle', { message: result.error.message }));
+      setPendingEnabled(null);
       setMutation(null);
       return;
     }
 
     await reload();
+    setPendingEnabled(null);
     setMutation(null);
   };
 
@@ -307,6 +309,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
           onEdit={record => void navigate(`/dashboard/providers/upstreams/${encodeURIComponent(record.id)}`, pageNavigation)}
           onMove={(record, direction) => void move(record, direction)}
           onToggle={(record, enabled) => void setEnabled(record, enabled)}
+          pendingEnabled={pendingEnabled}
         />
       </ResourceListPanel>
 
@@ -334,6 +337,7 @@ function UpstreamsTable({
   onEdit,
   onMove,
   onToggle,
+  pendingEnabled,
 }: {
   busy: boolean;
   data: LoaderData;
@@ -342,6 +346,7 @@ function UpstreamsTable({
   onEdit: (record: UpstreamRecord) => void;
   onMove: (record: UpstreamRecord, direction: -1 | 1) => void;
   onToggle: (record: UpstreamRecord, enabled: boolean) => void;
+  pendingEnabled: { id: string; enabled: boolean } | null;
 }) {
   const { t } = useTranslation();
   const upstreams = data.upstreams;
@@ -410,7 +415,7 @@ function UpstreamsTable({
               <TableCentredCell>
                 <Switch
                   aria-label={t('dashboard.upstreams.actions.toggle', { name: record.name })}
-                  checked={record.enabled}
+                  checked={pendingEnabled?.id === record.id ? pendingEnabled.enabled : record.enabled}
                   disabled={busy}
                   onChange={(_, detail) => onToggle(record, detail.checked)}
                 />
