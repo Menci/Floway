@@ -215,10 +215,14 @@ const useStyles = makeStyles({
   },
   // A floor under a select, whose width otherwise tracks the value it currently
   // shows, leaving a column of rows with no edge to line up on. Only a select
-  // reads the variable; ./fluent-form-controls.tsx declares it. Both row kinds
-  // take the floor, because the same control moves between card and expander as
-  // its setting gains something to reveal, and a floor on one of them would
-  // change a row's width for a reason unrelated to its value.
+  // reads the variable; ./fluent-form-controls.tsx declares it.
+  //
+  // One component, one floor: a card and an expander are the same row, and
+  // whether a row happens to be expandable says nothing about the control the
+  // floor sizes. The API keys retention row is the case that settles it -- the
+  // same row renders as a card or as an expander depending on its own value and
+  // on whether the key exists yet, so a floor scoped to one form would move
+  // that row's width for a reason unrelated to what the row says.
   //
   // It applies at every width, as SettingsCardContentMinWidth does -- the
   // narrow states give the control a line of its own, which is where the room

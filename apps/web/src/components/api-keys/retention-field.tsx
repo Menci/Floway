@@ -137,7 +137,7 @@ export function RetentionField({
     disabled={disabled}
     freeform
     // An input has no intrinsic content width, so the character count sizes the
-    // row; ../ui/settings-card.tsx puts a floor under it on wide expander rows.
+    // row; ../ui/settings-card.tsx puts a floor under it, on either row form.
     input={{ size: displayValue.length + 1 }}
     listWidth="content"
     onChange={event => typeCustom(event.target.value)}
