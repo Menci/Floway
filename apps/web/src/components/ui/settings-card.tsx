@@ -52,6 +52,12 @@ const useStyles = makeStyles({
     borderRadius: 'var(--winui-control-corner-radius)',
     boxSizing: 'border-box',
     color: 'var(--winui-text-fill-primary)',
+    // Named as a container so the trailing control can ask how much room the
+    // row has before it takes a floor. The row's own inline size never depends
+    // on its contents -- it is a block filling the list it sits in -- so
+    // declaring the containment states what was already true.
+    containerName: 'floway-settings-row',
+    containerType: 'inline-size',
     display: 'flex',
     minHeight: '68px',
     padding: '16px',
@@ -189,21 +195,24 @@ const useStyles = makeStyles({
   expanderHeader: {
     backgroundColor: 'var(--winui-card-background-fill-default)',
     ...shorthands.borderColor('var(--winui-card-stroke-default)'),
-    containerName: 'floway-settings-row',
-    containerType: 'inline-size',
     fontFamily: 'inherit',
     fontSize: 'inherit',
     paddingInlineEnd: '4px',
     textAlign: 'start',
     width: '100%',
   },
-  // The floor under a select in this row, and only here. A select is as wide as
-  // the value it currently shows, so a row answering "Off" leaves a control the
-  // size of a button and a column of these rows has no edge to line up on. The
-  // reasoning, and what Windows does about it, is in
-  // ./fluent-form-controls.tsx, which declares the variable this raises. Only a
-  // select reads it: a switch or a button in the same slot is already the size
-  // it is meant to be.
+  // The floor under a select in a settings row. A select is as wide as the value
+  // it currently shows, so a row answering "Off" leaves a control the size of a
+  // button and a column of these rows has no edge to line up on. The reasoning,
+  // and what Windows does about it, is in ./fluent-form-controls.tsx, which
+  // declares the variable this raises. Only a select reads it: a switch or a
+  // button in the same slot is already the size it is meant to be.
+  //
+  // Both rows take it, because a reader sees one list. The same control moves
+  // between the two -- ../api-keys/retention-field.tsx renders a card when the
+  // period has nothing to reveal and an expander when it has -- so a floor on
+  // one of them would make a row change width for a reason that has nothing to
+  // do with its value.
   //
   // A floor that always applied would be a hard one -- `min-width` cannot
   // yield, so it would push the row wider than its container instead of
@@ -416,7 +425,7 @@ export function SettingsCard({ action, description, header, icon, onClick }: {
   const className = mergeClasses(styles.card, onClick !== undefined && styles.interactive, onClick !== undefined && styles.clickable);
   const content = <>
     <CardText description={description} header={header} icon={icon} />
-    {action}
+    {action !== undefined && <span className={styles.action}>{action}</span>}
   </>;
   return onClick
     ? <div className={className} onClick={onClick} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }} role="button" tabIndex={0}>{content}</div>
