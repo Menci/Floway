@@ -4,9 +4,8 @@ import { curveMonotoneX } from 'd3-shape';
 import { colorForSlot } from './palette';
 import type { ChartSeries } from './series-legends';
 
-// A line form marks each point, because a sparse series over a wide range is
-// otherwise a line whose readings cannot be pointed at. An area form states its
-// point radius in `pointOptions` instead, so markers here would size it twice.
+// An area form sets its point radius through `pointOptions`, so markers here
+// would size points twice.
 export const areaSeries = (entry: ChartSeries, data: LineChartPoints['data']): LineChartPoints => ({
   legend: entry.legend,
   color: colorForSlot(entry.colorSlot),
