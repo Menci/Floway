@@ -6,12 +6,8 @@ import { fluentComponents } from '../../fluent';
 const { Text, makeStyles, mergeClasses } = fluentComponents;
 
 const useStyles = makeStyles({
-  // The frame below is drawn on the host, whose padding box is the viewport's
-  // border box exactly, so a ring outside the viewport is cut on all four sides
-  // and a gutter would float the trace off its frame. It is drawn inward
-  // instead, as ./code-block.tsx does for the same situation: a 2px
-  // FocusStrokeColorOuter outline over the outer two of an inner ring's three
-  // pixels.
+  // The host's padding box is the viewport's border box exactly, so the ring is
+  // drawn inward: outside it would be cut on all four sides.
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
   stack: {
@@ -23,10 +19,6 @@ const useStyles = makeStyles({
   },
 });
 
-// The app's error surface: the one page that renders without the dashboard
-// around it. It states the type itself rather than taking classes from the
-// boundary, so the heading and the line under it land on the same ramp a page
-// header uses instead of falling to the user agent's `2em` bold.
 export function ErrorShell({ action, children, message, title }: PropsWithChildren<{
   action?: ReactNode;
   /** Omitted when a trace is shown: the trace's first line is this sentence. */
@@ -35,10 +27,9 @@ export function ErrorShell({ action, children, message, title }: PropsWithChildr
 }>) {
   return (
     <ScrollArea axes="vertical" className="floway-error-shell-viewport" contentClassName="h-full">
-      {/* Filling the scroller rather than the window: its viewport is shorter
-          than the window whenever a scrollbar takes width, so a child measured
-          against the window is permanently taller than its container and the bar
-          can never retract. */}
+      {/* Fills the scroller, not the window: the viewport is shorter than the
+          window whenever a scrollbar takes width, so a window-measured child
+          never lets the bar retract. */}
       <main className="floway-error-shell">
         <div className="floway-error-shell-stack">
           {/* `align` rather than a rule of our own: Fluent's Text emits a
@@ -54,9 +45,6 @@ export function ErrorShell({ action, children, message, title }: PropsWithChildr
   );
 }
 
-// The trace scrolls on its own so a long line cannot widen the page under it,
-// and is left-aligned against the centred page above. It carries no heading --
-// its first line names the error.
 export function ErrorStack({ children }: PropsWithChildren) {
   const styles = useStyles();
   return (
