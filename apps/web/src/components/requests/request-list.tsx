@@ -307,13 +307,14 @@ export function RequestListPanel(props: RequestListProps) {
   const now = useNow(30_000);
   const selectedKey = props.apiKeys.find(key => key.id === props.selectedKeyId)!;
 
+  const { onRecordChange, records } = props;
   const selectByIndex = useCallback((index: number) => {
-    const record = props.records[index];
+    const record = records[index];
     if (!record) return;
-    props.onRecordChange(record.id);
+    onRecordChange(record.id);
     listRef?.scrollToRow({ align: 'smart', index });
     window.requestAnimationFrame(() => listRef?.element?.querySelector<HTMLElement>(`[data-record-index="${index}"]`)?.focus());
-  }, [listRef, props]);
+  }, [listRef, onRecordChange, records]);
 
   useLayoutEffect(() => {
     const host = scrollHostRef.current;
@@ -324,11 +325,11 @@ export function RequestListPanel(props: RequestListProps) {
 
   const rowProps = useMemo<RowProps>(() => ({
     now,
-    onSelect: props.onRecordChange,
-    records: props.records,
+    onSelect: onRecordChange,
+    records,
     selectedId: props.selectedRecordId,
     selectByIndex,
-  }), [now, props.onRecordChange, props.records, props.selectedRecordId, selectByIndex]);
+  }), [now, onRecordChange, records, props.selectedRecordId, selectByIndex]);
 
   return (
     <div className="h-full min-h-0 flex flex-col">
