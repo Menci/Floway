@@ -212,9 +212,16 @@ const useStyles = makeStyles({
       inset: 0,
       borderRadius: 'inherit',
       backgroundColor: bingAccentWashResting,
-      // The wash takes the layer's pointer fill duration while the press keeps
-      // the original's own timing. The original steps this swap rather than
-      // easing it. Under the OS motion setting both collapse.
+      // Two departures from the capture, both about this button's pointer
+      // feedback. Balanced writes its wash under the gradient, where the
+      // opaque fill hides it -- followed literally, the composer's primary
+      // button would darken on neither hover nor press; the wash sits above
+      // the gradient here, the order Creative and Precise write.
+      // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/dark.scss#L268-L300
+      // Its alpha is then interpolated over the layer's own button fill
+      // duration, where the capture swaps an uninterpolatable background value
+      // and snaps. The press keeps the original's timing, and under the OS
+      // motion setting both collapse.
       transitionProperty: 'transform, background-color',
       transitionDuration: `${bingComposerTransitionDuration}, var(--winui-control-faster-animation-duration)`,
       transitionTimingFunction: `${bingComposerTransitionEasing}, ease`,
