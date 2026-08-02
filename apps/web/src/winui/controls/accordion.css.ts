@@ -72,25 +72,16 @@ export const accordionCss = `
 /* Fluent computes the chevron's rotation itself, but only while it is the one
    creating the glyph, and the runtime chokepoint now supplies a 12px cut in
    place of the 20px artwork Fluent scales down -- see ../index.ts. So the turn
-   is stated below, unconditionally and clamped under reduce.
-
-   167ms is WinUI's own: the chevron is an AnimatedIcon, so its timing lives in
-   the generated visual source, where the NormalOffToNormalOn and
-   NormalOnToNormalOff segments each spend ten frames of a 60fps composition
-   turning.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L280-L282
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedChevronUpDownSmallVisualSource.cpp#L104
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedChevronUpDownSmallVisualSource.cpp#L352
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedChevronUpDownSmallVisualSource.cpp#L428-L440
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedChevronUpDownSmallVisualSource.cpp#L789-L796 */
+   is stated below, unconditionally and clamped under reduce, on the shared
+   AnimatedIcon timing declared in ../motion.ts. */
 .fui-AccordionHeader__button[aria-expanded='true'] .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
   rotate: 180deg;
 }
 
 .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
   transition-property: rotate;
-  transition-duration: 167ms;
-  transition-timing-function: cubic-bezier(0.167, 0.167, 0, 1);
+  transition-duration: var(--winui-chevron-turn-duration);
+  transition-timing-function: var(--winui-chevron-turn-easing);
 }
 
 @media (prefers-reduced-motion: reduce) {

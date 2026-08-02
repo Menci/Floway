@@ -5,6 +5,8 @@
 import * as React from 'react';
 
 import {
+  CHEVRON_TURN_EASING,
+  CHEVRON_TURN_MS,
   CONTROL_FASTER_ANIMATION_MS,
   CONTROL_FAST_ANIMATION_MS,
   CONTROL_FAST_OUT_SLOW_IN_EASING,
@@ -116,6 +118,19 @@ export const withWinuiMotion = (components: FluentComponents): FluentComponents 
     };
   });
 
+  // A nav category's chevron is the same AnimatedIcon as the Expander's, so it
+  // turns on the same timing rather than Fluent's Rotate variant at
+  // durationFast on curveEasyEase. The angles are Fluent's, and only the
+  // rotation is animated -- the WinUI icon keeps its opacity throughout, which
+  // is what Fluent's own `animateOpacity: false` already expresses.
+  // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-nav/library/src/components/NavCategoryItem/useNavCategoryItem.tsx#L18-L24
+  const chevronCollapsed = { rotate: '0deg' };
+  const chevronExpanded = { rotate: '180deg' };
+  const ChevronTurnMotion = components.createPresenceComponent({
+    enter: { keyframes: [chevronCollapsed, chevronExpanded], duration: CHEVRON_TURN_MS, easing: CHEVRON_TURN_EASING },
+    exit: { keyframes: [chevronExpanded, chevronCollapsed], duration: CHEVRON_TURN_MS, easing: CHEVRON_TURN_EASING },
+  });
+
   // Slot props from the caller are spread last, so a caller that states its own
   // motion keeps it and anything else -- `onMotionFinish` above all -- rides
   // along with ours.
@@ -143,6 +158,7 @@ export const withWinuiMotion = (components: FluentComponents): FluentComponents 
     Dialog: runMotion(components.Dialog, 'surfaceMotion', DialogSurfaceMotion),
     DialogSurface: runMotion(components.DialogSurface, 'backdropMotion', DialogBackdropMotion),
     Menu: runMotion(components.Menu, 'surfaceMotion', MenuSurfaceMotion),
+    NavCategoryItem: runMotion(components.NavCategoryItem, 'expandIconMotion', ChevronTurnMotion),
     OverlayDrawer: runMotion(components.OverlayDrawer, 'surfaceMotion', DrawerSurfaceMotion),
   };
 };

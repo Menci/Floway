@@ -24,6 +24,24 @@ export const PANE_SLIDE_EASING = 'cubic-bezier(0.1, 0.9, 0.2, 1)';
 export const EXPAND_ANIMATION_MS = 333;
 export const COLLAPSE_ANIMATION_MS = 167;
 
+// The expand chevron of Expander and of NavigationViewItem is one and the same
+// AnimatedIcon, so both turn on the timing baked into its generated visual
+// source: a 260-frame composition lasting c_durationTicks of 100ns, in which
+// the segments that turn -- NormalOffToNormalOn and NormalOnToNormalOff --
+// each spend ten frames rotating, on the one spline they share.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L280-L282
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L617-L619
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedChevronUpDownSmallVisualSource.cpp#L104
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedChevronUpDownSmallVisualSource.cpp#L350-L353
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedChevronUpDownSmallVisualSource.cpp#L423-L440
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedChevronUpDownSmallVisualSource.cpp#L781
+const CHEVRON_VISUAL_MS = 43333333 / 10000;
+const CHEVRON_VISUAL_FRAMES = 260;
+const CHEVRON_TURN_FRAMES = 10;
+
+export const CHEVRON_TURN_MS = Math.round((CHEVRON_VISUAL_MS * CHEVRON_TURN_FRAMES) / CHEVRON_VISUAL_FRAMES);
+export const CHEVRON_TURN_EASING = 'cubic-bezier(0.167, 0.167, 0, 1)';
+
 // RepositionThemeAnimation. Its timing lives in the PVL table of the OS visual
 // style (TAS_REPOSITION / TA_REPOSITION_TARGET) and appears in no source file;
 // these are decoded from aero.msstyles, byte-identical across the Windows 8.1,

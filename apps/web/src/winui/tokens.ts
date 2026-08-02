@@ -60,7 +60,7 @@
 // narrower scope than the document root — which inherits into mount nodes under
 // either setting of that prop, portalled surfaces included.
 
-import { COLLAPSE_ANIMATION_MS, CONTROL_FASTER_ANIMATION_MS, CONTROL_FAST_ANIMATION_MS, CONTROL_FAST_OUT_SLOW_IN_EASING, CONTROL_NORMAL_ANIMATION_MS, EXPAND_ANIMATION_MS, PAGE_ENTER_EASING, PAGE_ENTER_MS, PAGE_ENTER_OFFSET_PX, PAGE_LEAVE_EASING, PAGE_LEAVE_MS, REPOSITION_ANIMATION_MS, REPOSITION_EASING } from './motion';
+import { CHEVRON_TURN_EASING, CHEVRON_TURN_MS, COLLAPSE_ANIMATION_MS, CONTROL_FASTER_ANIMATION_MS, CONTROL_FAST_ANIMATION_MS, CONTROL_FAST_OUT_SLOW_IN_EASING, CONTROL_NORMAL_ANIMATION_MS, EXPAND_ANIMATION_MS, PAGE_ENTER_EASING, PAGE_ENTER_MS, PAGE_ENTER_OFFSET_PX, PAGE_LEAVE_EASING, PAGE_LEAVE_MS, REPOSITION_ANIMATION_MS, REPOSITION_EASING } from './motion';
 
 export const winuiTokenCss = `
 /* Control fills — the body of a button, combo box, or check box.
@@ -572,6 +572,8 @@ export const winuiTokenCss = `
   --winui-control-fast-out-slow-in-easing: ${CONTROL_FAST_OUT_SLOW_IN_EASING};
   --winui-expand-animation-duration: ${EXPAND_ANIMATION_MS}ms;
   --winui-collapse-animation-duration: ${COLLAPSE_ANIMATION_MS}ms;
+  --winui-chevron-turn-duration: ${CHEVRON_TURN_MS}ms;
+  --winui-chevron-turn-easing: ${CHEVRON_TURN_EASING};
   --winui-reposition-animation-duration: ${REPOSITION_ANIMATION_MS}ms;
   --winui-reposition-easing: ${REPOSITION_EASING};
   --winui-page-leave-duration: ${PAGE_LEAVE_MS}ms;
