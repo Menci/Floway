@@ -315,14 +315,9 @@ function CopilotConfig({ record, onPatch }: {
   // Between a tick firing and its reply landing the loop holds no timer id, so
   // clearing the timer cannot on its own end it: the reply would schedule the
   // next tick with nothing left to cancel it. The flag is what the recursion
-  // reads after every await, and the mount branch re-arms it so StrictMode's
-  // mount/unmount/mount does not leave a live component permanently stopped.
+  // reads after every await.
   const cancelled = useRef(false);
   const stop = () => { if (timer.current !== null) window.clearTimeout(timer.current); timer.current = null; };
-  useEffect(() => {
-    cancelled.current = false;
-    return () => { cancelled.current = true; stop(); };
-  }, []);
 
   const poll = async (deviceCode: string, interval: number, secondsLeft: number) => {
     const result = await callApi(() => api.api.upstreams.copilot.oauth['device-login'].poll.$post({
@@ -342,25 +337,45 @@ function CopilotConfig({ record, onPatch }: {
       // `expires_in` one scheduled tick at a time. Whatever failure outlives it
       // is the one the operator reads.
       if (!transient || secondsLeft <= 0) { setBusy(false); setFlow(null); setError(result.error.message); return; }
-      timer.current = window.setTimeout(() => void poll(deviceCode, interval, secondsLeft - interval), interval * 1000);
+      timer.current = window.setTimeout(() => void pollRef.current(deviceCode, interval, secondsLeft - interval), interval * 1000);
       return;
     }
     if (result.data.status === 'complete') { setBusy(false); onPatch(result.data.patch, record.id !== ''); return; }
     if (result.data.status === 'slow_down') {
       const next = interval + DEVICE_FLOW_SLOW_DOWN_SECONDS;
-      timer.current = window.setTimeout(() => void poll(deviceCode, next, secondsLeft - next), next * 1000);
+      timer.current = window.setTimeout(() => void pollRef.current(deviceCode, next, secondsLeft - next), next * 1000);
       return;
     }
-    timer.current = window.setTimeout(() => void poll(deviceCode, interval, secondsLeft - interval), interval * 1000);
+    timer.current = window.setTimeout(() => void pollRef.current(deviceCode, interval, secondsLeft - interval), interval * 1000);
   };
+
+  // A flow runs for as long as its code lives — a quarter of an hour — and the
+  // record and the form behind it go on being edited meanwhile, plausibly
+  // because the first attempts failed through the wrong proxy. Every tick
+  // therefore enters the newest closure rather than the one the flow started
+  // in, so the request the loop sends is the upstream as it now reads.
+  const pollRef = useRef(poll);
+  // eslint-disable-next-line react-hooks/refs -- Carrying the newest render's request body to a loop that outlives the render that armed it.
+  pollRef.current = poll;
+
+  // The loop belongs to the flow, not to the click that opened one: the panel
+  // draws the code, the link and the spinner from `flow` alone, so a teardown
+  // that only stopped the loop would leave a remount showing a live code with
+  // nothing polling it. Arming from `flow` means the tick is re-scheduled
+  // wherever that state is still on screen, and the same effect still stops
+  // the loop when the panel goes away.
+  useEffect(() => {
+    cancelled.current = false;
+    if (flow) timer.current = window.setTimeout(() => void pollRef.current(flow.device_code, flow.interval, flow.expires_in - flow.interval), flow.interval * 1000);
+    return () => { cancelled.current = true; stop(); };
+  }, [flow]);
+
   const start = async () => {
     stop(); setBusy(true); setError(null);
     const result = await callApi(() => api.api.upstreams.copilot.oauth['device-login'].start.$post());
     if (cancelled.current) return;
     if (result.error) { setBusy(false); setError(result.error.message); return; }
     setFlow(result.data);
-    const { device_code, expires_in, interval } = result.data;
-    timer.current = window.setTimeout(() => void poll(device_code, interval, expires_in - interval), interval * 1000);
   };
 
   if (config.user.login) {
