@@ -270,11 +270,11 @@ export interface UpstreamRepo {
   deleteAll(): Promise<void>;
   // Upstream state write with optimistic concurrency, used both by the
   // gateway's own token-rotation work and by the operator-triggered OAuth
-  // refresh / probe routes. Returns updated:true only if the row's
-  // state_json equals the serialized form of options.expectedState at write
-  // time. On updated:false the caller re-reads and decides whether to retry
-  // or drop the update.
-  saveState(id: string, newState: unknown, options: { expectedState: unknown }): Promise<{ updated: boolean }>;
+  // refresh / probe routes. The repo reads, applies `mutate`, and writes under
+  // a CAS, retrying against the winner when it loses; exhausting the retries
+  // throws. See UpstreamsRepoSlim in @floway-dev/provider for why the change
+  // is a function.
+  saveState(id: string, mutate: (current: unknown) => unknown): Promise<void>;
 }
 
 export interface ProxyRecord {
