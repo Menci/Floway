@@ -20,8 +20,7 @@ import { UserDialog } from '../components/users/user-dialog';
 import { UsersTable } from '../components/users/users-table';
 import { useAuthStore } from '../stores/auth-store';
 
-// `null` is a fetch that failed, not an empty deployment: a gateway certainly
-// has at least one user.
+// `null` is a failed fetch, not an empty deployment: a gateway always has a user.
 interface LoaderData {
   users: ControlPlaneUser[] | null;
   upstreams: UpstreamOption[] | null;
@@ -64,8 +63,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
   const passwordDialog = useDialogInvocation<ControlPlaneUser>();
   const deleteDialog = useDialogInvocation<ControlPlaneUser>();
 
-  // The error belongs to the attempt that produced it, so opening the dialog for
-  // another user clears it rather than waiting for a dismissal.
+  // The error belongs to its attempt, so opening another user's dialog clears it.
   const openDeleteDialog = (target: ControlPlaneUser) => {
     setDeleteError(null);
     deleteDialog.open(target);
