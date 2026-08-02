@@ -167,6 +167,18 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
             selectedRecordId={selectedRecordId}
           />
         </Panel>
+        {/* The surface outlives the selection that opened it: closing drops
+            `record` from the URL at once, because that is where the selection
+            lives and where the Back button reads it, and Fluent then slides the
+            surface out over the next half second. So the panel retains the
+            record it was drawing, and Fluent's own `unmountOnClose` ends the
+            retention at the end of the slide -- the motion's completion is what
+            unmounts the surface, so no duration is restated here to drift from
+            it. What is retained is a picture of a record nothing can act on any
+            more, so for as long as there is no selection it is `inert`: out of
+            the tab order and out of the accessibility tree while it leaves. The
+            attribute goes on an element of ours because Fluent passes only the
+            native props on its own allowlist through to a slot's DOM node. */}
         <OverlayDrawer onOpenChange={(_, data) => { if (!data.open) updateSelection(selectedKeyId); }} open={selectedRecordId !== null} position="end" size="full">
           <DrawerHeader>
             <DrawerHeaderTitle action={<Button appearance="subtle" aria-label={t('dashboard.requests.closeDetails')} icon={<DismissRegular />} onClick={() => updateSelection(selectedKeyId)} />}>
@@ -174,13 +186,15 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
             </DrawerHeaderTitle>
           </DrawerHeader>
           <DrawerBody className="!p-0 min-h-0">
-            <RequestDetailPanel collected={loaderData.collected} error={loaderData.recordError} record={loaderData.record} recordId={selectedRecordId} />
+            <div className="h-full min-h-0" inert={selectedRecordId === null}>
+              <RequestDetailPanel collected={loaderData.collected} error={loaderData.recordError} record={loaderData.record} recordId={selectedRecordId} retainLastRecord />
+            </div>
           </DrawerBody>
         </OverlayDrawer>
       </> : (
         <div className={`h-full min-h-0 min-w-0 grid grid-cols-[minmax(0,1fr)_420px] ${PANE_GAP_CLASS}`}>
           <Panel className="!block overflow-hidden min-w-0 h-full" padding="flush">
-            <RequestDetailPanel collected={loaderData.collected} error={loaderData.recordError} record={loaderData.record} recordId={selectedRecordId} />
+            <RequestDetailPanel collected={loaderData.collected} error={loaderData.recordError} record={loaderData.record} recordId={selectedRecordId} retainLastRecord={false} />
           </Panel>
           <Panel className="!block overflow-hidden min-w-0 h-full" padding="flush">
             <RequestListPanel

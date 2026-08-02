@@ -153,24 +153,44 @@ function HeaderSectionBody({ children }: PropsWithChildren) {
   return <ScrollArea axes="horizontal" className="min-w-0" contentClassName="min-w-full" noTabIndex>{children}</ScrollArea>;
 }
 
-export function RequestDetailPanel({ collected: loadedCollected, error, record, recordId }: {
+export function RequestDetailPanel({ collected: loadedCollected, error: loadedError, record: loadedRecord, recordId: selectedRecordId, retainLastRecord }: {
   collected: CollectedStream | null;
   error: string | null;
   record: DumpRecord | null;
   recordId: string | null;
+  /**
+   * Whether the surface this panel is drawn on outlives the selection that
+   * filled it. A drawer's does: the record leaves the URL the moment its close
+   * is requested, and the surface then takes the whole of its slide to go. A
+   * panel standing in the page does not, and passes `false`.
+   */
+  retainLastRecord: boolean;
 }) {
   const { t } = useTranslation();
   const s = useStyles();
   const dangerText = useDangerTextClass();
   const [streamView, setStreamView] = useState<'collected' | 'events'>('collected');
-  const [collected, setCollected] = useState(loadedCollected);
 
-  const [shownRecordId, setShownRecordId] = useState(recordId);
-  if (shownRecordId !== recordId) {
-    setShownRecordId(recordId);
-    setCollected(loadedCollected);
+  // What the panel draws. Normally its props; while a retaining surface is
+  // still on screen with nothing selected, the last record it drew, so what
+  // slides away is the record the operator was reading rather than the
+  // invitation to pick one. Deriving that during render rather than in an
+  // effect is what keeps the swap out of the first frame of the leave.
+  const [shown, setShown] = useState({ collected: loadedCollected, error: loadedError, record: loadedRecord, recordId: selectedRecordId });
+  const incoming = retainLastRecord && selectedRecordId === null
+    ? shown
+    : { collected: loadedCollected, error: loadedError, record: loadedRecord, recordId: selectedRecordId };
+  if (shown.recordId !== incoming.recordId) {
+    setShown(incoming);
     setStreamView('collected');
+  } else if (shown.record !== incoming.record || shown.error !== incoming.error) {
+    // A reload of the same record refreshes what is on screen, but keeps the
+    // stream it collected and the tab that is showing it: those are what the
+    // reader is looking at, and collecting the same events again only rebuilds
+    // an equal value.
+    setShown({ ...incoming, collected: shown.collected });
   }
+  const { collected, error, record, recordId } = shown;
 
   const requestBody = record ? renderBody(record.request.body, contentTypeOf(record.request.headers)) : EMPTY_BODY;
   const responseBody = record?.response.body.type === 'bytes' ? renderBody(record.response.body.body, contentTypeOf(record.response.headers)) : EMPTY_BODY;
