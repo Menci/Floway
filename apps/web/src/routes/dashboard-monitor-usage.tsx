@@ -1,10 +1,11 @@
 import { EyeOffRegular, EyeRegular } from '@fluentui/react-icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { redirect, useSearchParams, type ShouldRevalidateFunctionArgs } from 'react-router';
+import { redirect, useSearchParams } from 'react-router';
 
 import type { Route } from './+types/dashboard-monitor-usage';
 import { useDashboardOutletContext } from './dashboard';
+import { revalidateOnPathnameChange } from './revalidation';
 import type { GlobalError } from '../api/client';
 import type { ControlPlaneModel } from '../api/types';
 import { getSessionToken } from '../auth/session';
@@ -68,8 +69,7 @@ export function meta({}: Route.MetaArgs) {
   return [{ title: 'Usage | Floway' }];
 }
 
-export const shouldRevalidate = ({ currentUrl, defaultShouldRevalidate, nextUrl }: ShouldRevalidateFunctionArgs) =>
-  currentUrl.pathname === nextUrl.pathname ? false : defaultShouldRevalidate;
+export const shouldRevalidate = revalidateOnPathnameChange;
 
 export default function DashboardMonitorUsage({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();

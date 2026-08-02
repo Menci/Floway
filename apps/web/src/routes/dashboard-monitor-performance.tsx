@@ -3,9 +3,10 @@ import { InfoRegular } from '@fluentui/react-icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
-import { redirect, useSearchParams, type ShouldRevalidateFunctionArgs } from 'react-router';
+import { redirect, useSearchParams } from 'react-router';
 
 import type { Route } from './+types/dashboard-monitor-performance';
+import { revalidateOnPathnameChange } from './revalidation';
 import { api, callApi, type GlobalError } from '../api/client';
 import { getSessionToken } from '../auth/session';
 import { ChartCalloutTable } from '../components/charts/chart-callout-table';
@@ -174,8 +175,7 @@ export function meta({}: Route.MetaArgs) {
   return [{ title: 'Performance | Floway' }];
 }
 
-export const shouldRevalidate = ({ currentUrl, defaultShouldRevalidate, nextUrl }: ShouldRevalidateFunctionArgs) =>
-  currentUrl.pathname === nextUrl.pathname ? false : defaultShouldRevalidate;
+export const shouldRevalidate = revalidateOnPathnameChange;
 
 export default function DashboardMonitorPerformance({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();

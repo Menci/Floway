@@ -1,6 +1,7 @@
 import { redirect } from 'react-router';
 
 import type { Route } from './+types/dashboard-providers-upstreams-new';
+import { revalidateOnPathnameChange } from './revalidation';
 import { api, callApi } from '../api/client';
 import { requireAdmin } from '../auth/require-admin';
 import { getSessionToken } from '../auth/session';
@@ -38,6 +39,8 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
 export function meta({}: Route.MetaArgs) {
   return [{ title: 'New Upstream | Floway' }];
 }
+
+export const shouldRevalidate = revalidateOnPathnameChange;
 
 export default function DashboardProvidersUpstreamsNew({ loaderData }: Route.ComponentProps) {
   return <UpstreamEditorPage data={loaderData} />;
