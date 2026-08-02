@@ -1,5 +1,4 @@
-// Button and ToggleButton, restyled from Fluent 2 Web onto WinUI 3, together
-// with InfoButton, whose root is a chromeless button under a class of its own.
+// Button and ToggleButton, restyled from Fluent 2 Web onto WinUI 3.
 //
 // The foundation layer already re-points Fluent's neutral ramps at WinUI
 // values, so this file only carries what still disagrees after that remap:
@@ -150,26 +149,6 @@ ${checkedToggle(disabledStates)} {
   padding: var(--winui-button-padding);
 }
 
-/* InfoButton exchanges its outline glyph for the filled one under the pointer
-   and holds the filled one while its popover is open, which it can do because
-   its default icons are bundled pairs carrying both weights. No WinUI button
-   template substitutes a glyph for a visual state: all three styles present a
-   single ContentPresenter, and their CommonStates storyboards move Background,
-   BorderBrush and Foreground only. The rest weight is therefore pinned for
-   every state. Each class is doubled to outrank Fluent's own state rules.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L154-L233
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L235-L296
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L297-L377
-   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/deprecated/react-infobutton/src/components/InfoButton/DefaultInfoButtonIcons.tsx#L11-L13
-   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/deprecated/react-infobutton/src/components/InfoButton/useInfoButtonStyles.styles.ts#L45-L79 */
-.fui-InfoButton.fui-InfoButton .fui-Icon-filled.fui-Icon-filled {
-  display: none;
-}
-
-.fui-InfoButton.fui-InfoButton .fui-Icon-regular.fui-Icon-regular {
-  display: inline-flex;
-}
-
 /* WinUI animates the fill alone, for the content presenter's BrushTransition
    duration; border and foreground switch instantly.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L172-L174
@@ -280,22 +259,6 @@ ${nested(chromeless([restState, ...hoverStates, ...withIcon(hoverStates)]))} {
 
 ${nested(chromeless([...pressedStates, ...withIcon(pressedStates)]))} {
     color: var(--winui-text-fill-secondary);
-  }
-
-  /* InfoButton's root carries a class of its own, so the chromeless rules above
-     cannot reach it, and Fluent paints it from the brand ramp on hover, while
-     pressed and for as long as its popover is open. WinUI's nearest counterpart
-     is the subtle button, whose foreground is the primary text fill at rest and
-     under the pointer and the secondary fill while pressed. Token redefinition
-     rather than a colour, because Fluent's three states differ only in which
-     token they name and the glyph is the sole descendant.
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L119-L121
-     https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/deprecated/react-infobutton/src/components/InfoButton/useInfoButtonStyles.styles.ts#L38-L72 */
-  .fui-InfoButton {
-    --colorNeutralForeground2: var(--winui-text-fill-primary);
-    --colorNeutralForeground2BrandHover: var(--winui-text-fill-primary);
-    --colorNeutralForeground2BrandSelected: var(--winui-text-fill-primary);
-    --colorNeutralForeground2BrandPressed: var(--winui-text-fill-secondary);
   }
 
   /* WinUI's two concentric rings map onto Fluent's border plus outline, so
