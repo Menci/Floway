@@ -40,12 +40,12 @@
 export const popoverCss = `
 /* The surface. WinUI gives a flyout the overlay corner rather than the control
    corner, and outlines it with the flyout stroke where Fluent draws a
-   transparent hairline. The fill is clipped to the padding box because the
-   template's Border sizes its background to the inner border edge, which keeps
-   the translucent stroke from compositing over the fill beneath it. WinUI's
-   flyout has one fill, so it is stated for every appearance -- the doubled
-   class name outranks the atoms Fluent composes for its inverted and brand
-   surfaces, which have no WinUI counterpart.
+   transparent hairline. The template's Border sizes its background to the inner
+   border edge, which ../reset.css.ts already applies to everything and which
+   keeps the translucent stroke from compositing over the fill beneath it.
+   WinUI's flyout has one fill, so it is stated for every appearance -- the
+   doubled class name outranks the atoms Fluent composes for its inverted and
+   brand surfaces, which have no WinUI counterpart.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/FlyoutPresenter_themeresources.xaml#L39
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/FlyoutPresenter_themeresources.xaml#L6
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/FlyoutPresenter_themeresources.xaml#L16
@@ -53,7 +53,6 @@ export const popoverCss = `
 .fui-PopoverSurface.fui-PopoverSurface {
   border-radius: var(--winui-overlay-corner-radius);
   border-color: var(--winui-surface-stroke-flyout);
-  background-clip: padding-box;
   background-color: var(--winui-acrylic-in-app-fill-default);
 }
 

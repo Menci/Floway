@@ -25,8 +25,8 @@
 export const dialogCss = `
 /* The surface is WinUI's BackgroundElement: the solid base fill rather than
    Fluent's raised Background1, the surface stroke rather than a transparent
-   one, and BackgroundSizing="InnerBorderEdge", which is background-clip:
-   padding-box on the web, so the translucent border reads against the smoke
+   one, and BackgroundSizing="InnerBorderEdge", which ../reset.css.ts already
+   applies to everything, so the translucent border reads against the smoke
    layer behind it instead of against its own fill. WinUI states the whole size
    envelope on BackgroundElement -- 320 minimum width, 548 maximum, 184 minimum
    height, 756 maximum -- where Fluent states only a maximum width. The height
@@ -47,7 +47,6 @@ export const dialogCss = `
   padding: 0;
   background-color: var(--winui-solid-background-fill-base);
   border-color: var(--winui-surface-stroke-default);
-  background-clip: padding-box;
   min-width: 320px;
   max-width: var(--floway-dialog-max-width, 548px);
   min-height: 184px;

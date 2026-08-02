@@ -25,9 +25,9 @@ export const menuCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L285
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L41
 
-   The presenter's Border is BackgroundSizing="InnerBorderEdge", which is
-   background-clip: padding-box on the web: the fill stops at the border so the
-   translucent stroke reads against whatever the flyout floats over.
+   The presenter's Border is BackgroundSizing="InnerBorderEdge", which
+   ../reset.css.ts already applies to everything: the fill stops at the border so
+   the translucent stroke reads against whatever the flyout floats over.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L289
 
    The presenter's own fill is DesktopAcrylicTransparentBrush -- #00000000, a
@@ -43,7 +43,6 @@ export const menuCss = `
    instead, as the margin the item rule below carries.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L255 */
 .fui-MenuPopover.fui-MenuPopover {
-  background-clip: padding-box;
   background-color: var(--winui-acrylic-in-app-fill-default);
   border-radius: var(--winui-overlay-corner-radius);
   border-color: var(--winui-surface-stroke-flyout);

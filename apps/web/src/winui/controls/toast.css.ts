@@ -81,7 +81,6 @@ export const toastCss = `
   border-radius: var(--winui-overlay-corner-radius);
   border-color: var(--winui-surface-stroke-default);
   background-color: var(--winui-solid-background-fill-tertiary);
-  background-clip: padding-box;
   box-shadow: var(--shadow16);
 }
 

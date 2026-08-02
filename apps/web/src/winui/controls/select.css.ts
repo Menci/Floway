@@ -287,9 +287,10 @@ export const selectCss = `
    transparency effects are off -- because the flyout surfaces in this layer do
    no backdrop compositing. Fluent's flat white is a full step brighter than
    either reading of the drop-down WinUI draws.
-   BackgroundSizing is InnerBorderEdge, which is background-clip: padding-box on
-   the web: the fill stops at the border so the translucent stroke reads against
-   whatever the drop-down floats over, as on every other flyout in the layer.
+   BackgroundSizing is InnerBorderEdge, which ../reset.css.ts already applies to
+   everything: the fill stops at the border so the translucent stroke reads
+   against whatever the drop-down floats over, as on every other flyout in the
+   layer.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L63
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L64
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Materials/Acrylic/AcrylicBrush_themeresources.xaml#L96
@@ -298,7 +299,6 @@ export const selectCss = `
 .fui-Listbox.fui-Listbox,
 .fui-Dropdown__listbox.fui-Dropdown__listbox,
 .fui-Combobox__listbox.fui-Combobox__listbox {
-  background-clip: padding-box;
   background-color: var(--winui-acrylic-in-app-fill-default);
   border-color: var(--winui-surface-stroke-flyout);
   border-radius: var(--winui-overlay-corner-radius);

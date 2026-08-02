@@ -41,7 +41,6 @@ export const accordionCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CornerRadius_themeresources.xaml#L5 */
 .fui-AccordionHeader__button.fui-AccordionHeader__button {
   background-color: var(--winui-card-background-fill-default);
-  background-clip: padding-box;
   border: 1px solid var(--winui-card-stroke-default);
   border-radius: var(--winui-control-corner-radius);
   min-height: 48px;
@@ -249,7 +248,6 @@ export const accordionCss = `
   margin: 0;
   padding: 16px;
   background-color: var(--winui-card-background-fill-secondary);
-  background-clip: padding-box;
   border: 1px solid var(--winui-card-stroke-default);
   border-block-start: none;
   border-end-start-radius: var(--winui-control-corner-radius);
