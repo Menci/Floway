@@ -1,4 +1,5 @@
 import type { CatalogIndex } from './catalog-index';
+import { indexCatalog } from './catalog-index';
 import type { ControlPlaneModel } from '../../api/types';
 
 export const effectiveUpstreamCap = (
@@ -39,3 +40,16 @@ export const isModelReachable = (
 ): boolean => model.aliasedFrom === undefined
   ? realModelReachable(model, cap)
   : reachableTargets(model, catalog, cap).length > 0;
+
+// Reachability is asked of a whole catalog more often than of a single row, and
+// the index every such pass needs is derived from that same catalog — so the
+// callers hand over the catalog and the cap, and narrowing to a kind is the one
+// thing they still say for themselves.
+export const reachableModels = (
+  catalog: readonly ControlPlaneModel[],
+  cap: readonly string[] | null,
+  accept: (model: ControlPlaneModel) => boolean = () => true,
+): ControlPlaneModel[] => {
+  const index = indexCatalog(catalog);
+  return catalog.filter(model => accept(model) && isModelReachable(model, index, cap));
+};
