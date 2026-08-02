@@ -11,11 +11,90 @@
 // Colour is confined to `@media not (forced-colors: active)`: an accent-filled
 // indicator under forced colours would need `forced-color-adjust: none`, which
 // this layer chooses not to take on, so forced colours keeps Fluent's drawing.
-// Geometry applies in both modes.
+// The box geometry applies in both modes; the check box's two marks do not,
+// because they are painted as a currentColor fill through a mask and a forced
+// palette would flatten them, so forced colours keeps drawing Fluent's own
+// glyph.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L92-L179
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L62-L119
 
 import { nested, pressedRoots, under } from './selectors';
+
+// The check box's marks. WinUI does not draw a font character: the template's
+// CheckGlyph is an AnimatedIcon over AnimatedAcceptVisualSource, and both the
+// check and the indeterminate dash are open, round-capped polylines stroked at
+// four units. CheckBoxGlyphSize of 12 sizes only the FontIconSource fallback,
+// so it is not the shipped mark's measure -- the check is 10.6 x 7.6 and the
+// dash 8.5 x 1.3 in the 20px box, both at the same 1.23px stroke.
+//
+// The two marks and their boxes are generated from the upstream coordinates so
+// the drawn size cannot drift from the path. Each sprite is placed on its own
+// origin, so a mark's box is its widest coordinate on each axis plus half the
+// stroke, mirrored; that keeps the box centred where XAML centres the sprite.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L602-L609
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedAcceptVisualSource.cpp#L358-L386
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedAcceptVisualSource.cpp#L560-L571
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedAcceptVisualSource.cpp#L755-L770
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedAcceptVisualSource.cpp#L1283-L1293
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedAcceptVisualSource.cpp#L1855-L1858
+const BOX_PX = 20;
+const COMPOSITION_VIEWPORT = 48;
+const GLYPH_SPRITE_SCALE = 0.7;
+const GLYPH_CONTAINER_SCALE = 1.05;
+const GLYPH_STROKE = 4;
+
+const CHECK_POINTS = [[-15.172, 0.016], [-5, 10.188], [15.337, -10.337]] as const;
+const DASH_POINTS = [[-11.75, -0.125], [11.875, -0.125]] as const;
+
+// Four decimals is far below what a device pixel can carry and keeps binary
+// floating point noise out of the sheet.
+const exact = (value: number) => Number(value.toFixed(4));
+
+// AnimatedIcon scales the composition uniformly onto the box it is arranged in.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedIcon.cpp#L115-L119
+const glyphPx = (units: number) =>
+  `${exact(units * GLYPH_SPRITE_SCALE * GLYPH_CONTAINER_SCALE * BOX_PX / COMPOSITION_VIEWPORT)}px`;
+
+const glyphMark = (points: readonly (readonly [number, number])[]) => {
+  const half = (axis: 0 | 1) => Math.max(...points.map(point => Math.abs(point[axis]))) + GLYPH_STROKE / 2;
+  const [halfWidth, halfHeight] = [half(0), half(1)];
+  const path = points.map(([x, y], index) => `${index === 0 ? 'M' : 'L'} ${x} ${y}`).join(' ');
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg'`
+    + ` viewBox='${-halfWidth} ${-halfHeight} ${halfWidth * 2} ${halfHeight * 2}'>`
+    + `<path d='${path}' fill='none' stroke='white' stroke-width='${GLYPH_STROKE}'`
+    + ` stroke-linecap='round' stroke-linejoin='round'/></svg>`;
+  return {
+    width: glyphPx(halfWidth * 2),
+    height: glyphPx(halfHeight * 2),
+    image: `url("data:image/svg+xml,${svg.replaceAll('<', '%3C').replaceAll('>', '%3E')}")`,
+  };
+};
+
+const check = glyphMark(CHECK_POINTS);
+const dash = glyphMark(DASH_POINTS);
+
+// The template offsets the whole glyph one pixel down, which the four
+// indeterminate states then take back; the check's own sprite sits a unit above
+// the composition centre, where the dash's sits on it.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L604
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L505
+const CHECK_SPRITE_ORIGIN_Y = 23;
+const checkOffset = `${exact(1 - (COMPOSITION_VIEWPORT / 2 - CHECK_SPRITE_ORIGIN_Y)
+  * GLYPH_CONTAINER_SCALE * BOX_PX / COMPOSITION_VIEWPORT)}px`;
+
+// AnimatedIcon plays the marker-bounded slice of the composition, whose ticks
+// are hundreds of nanoseconds, at one to one. The check draws on over TrimEnd
+// and erases over TrimStart, so the two directions carry their own durations
+// and easings rather than one being the reverse of the other.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedIcon.cpp#L420-L451
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedAcceptVisualSource.cpp#L1945-L1952
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedAcceptVisualSource.cpp#L1930-L1933
+const COMPOSITION_MS = 26666666 / 10000;
+const CHECK_ON_MS = `${exact((0.2128125 - 0.0940625) * COMPOSITION_MS)}ms`;
+const CHECK_OFF_MS = `${exact(0.0253125 * COMPOSITION_MS)}ms`;
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedAcceptVisualSource.cpp#L1471-L1479
+const CHECK_ON_EASING = 'cubic-bezier(0.55, 0, 0, 1)';
+const CHECK_OFF_EASING = 'cubic-bezier(0.167, 0.167, 0.833, 0.833)';
 
 // The tri-state check box is named by the data-winui-checked stamp
 // ../appearance.ts applies, never by :indeterminate -- that module carries why
@@ -45,9 +124,7 @@ const selectedEllipse = '.fui-Radio__input:enabled:checked'
 const selectedDot = `${selectedEllipse}::after`;
 
 export const choiceCss = `
-/* Check box geometry. Fluent's check mark is an SVG carrying literal width and
-   height attributes which no font size reaches, so the glyph is sized on the
-   element itself. The corner radius has to be stated: Fluent's indicator reset
+/* Check box geometry. The corner radius has to be stated: Fluent's indicator reset
    reads \`borderRadiusSmall\`, which the theme layer leaves on Fluent's own 2px
    because no WinUI radius is that small -- and stating it means naming the
    square shape, since \`shape="circular"\` reads the same property.
@@ -65,6 +142,13 @@ export const choiceCss = `
   margin: 0;
 }
 
+/* Fluent's mark is an SVG carrying literal width and height attributes which no
+   font size reaches, and it picks a different drawing per size -- a 12 unit one
+   at medium and a 16 unit one at large, whose ink is a fifth wider inside the
+   same box. Only forced colours still renders it, where the layer's own marks
+   below do not apply, so the one measure WinUI states for a glyph slot pins
+   both sizes to one footprint there.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L271 */
 .fui-Checkbox__indicator.fui-Checkbox__indicator > svg {
   width: 12px;
   height: 12px;
@@ -83,10 +167,16 @@ export const choiceCss = `
 }
 
 /* With the indicator margins gone, Fluent's block padding is the last thing
-   holding the root taller than what it draws. */
+   holding the root taller than what it draws. The block margins go the same way:
+   Fluent pulls the label in by half the difference between its indicator and the
+   line box, sized for a 16px indicator at medium and a 20px one at large, so at
+   our single 20px box the pull resolves to zero and the two sizes stop
+   disagreeing. */
 .fui-Checkbox__label.fui-Checkbox__label,
 .fui-Radio__label.fui-Radio__label {
   padding: 0;
+  margin-top: calc((20px - var(--lineHeightBase300)) / 2);
+  margin-bottom: calc((20px - var(--lineHeightBase300)) / 2);
 }
 
 /* Fluent gives the radio in a table's selection cell no width of its own and
@@ -254,6 +344,88 @@ ${nested(under(checkboxPressed, selectedBoxes))} {
     background-color: var(--winui-accent-fill-disabled);
   }
 
+  /* The two marks. Fluent mounts its glyph only while the box is selected, so
+     the check is drawn on a pseudo-element that is always present and the
+     indeterminate dash on a second one, which is what lets the check carry the
+     motion below and the dash arrive without any. Fluent's own glyph is hidden
+     rather than restyled: no rule can reach the path inside it.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L604-L609 */
+  .fui-Checkbox__indicator.fui-Checkbox__indicator > svg {
+    display: none;
+  }
+
+  /* WinUI holds the mark at the primary on-accent colour through the unchecked
+     states too, which is what the box shows while a check retracts.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L65-L67 */
+  .fui-Checkbox__indicator.fui-Checkbox__indicator {
+    color: var(--winui-text-on-accent-fill-primary);
+  }
+
+  .fui-Checkbox__indicator.fui-Checkbox__indicator::before,
+  .fui-Checkbox__indicator.fui-Checkbox__indicator::after {
+    content: '';
+    background-color: currentColor;
+    mask-repeat: no-repeat;
+    mask-size: 100% 100%;
+  }
+
+  /* The check draws on left to right. WinUI trims the path by arc length, and
+     this mark's two arms are close enough to equal slopes that the share of its
+     width each arm spans matches its share of the length to within a fifth of a
+     percent, so a wipe across the box tracks the trim.
+     A departure on the way out: one interpolated property cannot also erase from
+     the other end, so the retraction runs tip first where WinUI retracts from
+     the tail. It was preferred to a keyframe pair, which would play the erase on
+     every unchecked box at first paint.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedAcceptVisualSource.cpp#L534-L552 */
+  .fui-Checkbox__indicator.fui-Checkbox__indicator::before {
+    width: ${check.width};
+    height: ${check.height};
+    clip-path: inset(0 100% 0 0);
+    mask-image: ${check.image};
+    transform: translateY(${checkOffset});
+    transition-duration: ${CHECK_OFF_MS};
+    transition-property: clip-path;
+    transition-timing-function: ${CHECK_OFF_EASING};
+  }
+
+  .fui-Checkbox__input:checked ~ .fui-Checkbox__indicator.fui-Checkbox__indicator::before {
+    clip-path: inset(0 0 0 0);
+    transition-duration: ${CHECK_ON_MS};
+    transition-timing-function: ${CHECK_ON_EASING};
+  }
+
+  /* The indeterminate states name single frames rather than a transition pair,
+     so AnimatedIcon cuts into and out of them. Swapping which mark is generated
+     is that cut: a box that was not rendered has no earlier value to run from.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedAcceptVisualSource.cpp#L1981-L1983
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedIcon.cpp#L356-L362 */
+  .fui-Checkbox__indicator.fui-Checkbox__indicator::after {
+    display: none;
+    width: ${dash.width};
+    height: ${dash.height};
+    mask-image: ${dash.image};
+  }
+
+  .fui-Checkbox__input${checkboxMixed} ~ .fui-Checkbox__indicator.fui-Checkbox__indicator::before {
+    display: none;
+  }
+
+  .fui-Checkbox__input${checkboxMixed} ~ .fui-Checkbox__indicator.fui-Checkbox__indicator::after {
+    display: block;
+  }
+
+  /* AnimatedIcon cuts to the destination frame when animations are off, so the
+     preference lands on the same path the framework already takes. 0.01ms rather
+     than none, for the reason the radio dot below states.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedIcon.cpp#L435-L444 */
+  @media (prefers-reduced-motion: reduce) {
+    .fui-Checkbox__indicator.fui-Checkbox__indicator::before,
+    .fui-Checkbox__input:checked ~ .fui-Checkbox__indicator.fui-Checkbox__indicator::before {
+      transition-duration: 0.01ms;
+    }
+  }
+
   /* Focus ring colours. WinUI's focus visual is two concentric rings -- an
      outer one in the text colour and an inner one in the surface colour -- so
      it stays legible over any fill, where Fluent draws a single accent-adjacent
@@ -336,13 +508,6 @@ ${nested(under(checkboxPressed, selectedBoxes))} {
    that stretch intact. */
 .fui-Radio__input.fui-Radio__input {
   min-width: calc(20px + 2 * var(--spacingHorizontalS));
-}
-
-/* Neutralizes Fluent's 2px pull, which assumes a 16px ellipse; at 20px it
-   resolves to zero. */
-.fui-Radio__label.fui-Radio__label {
-  margin-top: calc((20px - var(--lineHeightBase300)) / 2);
-  margin-bottom: calc((20px - var(--lineHeightBase300)) / 2);
 }
 
 /* Read off the root: pointer-over and pressed are states of the whole control
