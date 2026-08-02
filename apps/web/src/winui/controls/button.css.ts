@@ -201,7 +201,14 @@ ${nested(neutral([...pressedStates, ...disabledStates]))} {
      Fluent it is the product's brand fill, which in dark puts WinUI's on-accent
      black label on a dark blue.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L103-L109
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L5-L11 */
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L5-L11
+
+     The pressed step also drops the label to the on-accent secondary fill, and
+     that one is stated as a property: Fluent restates
+     colorNeutralForegroundOnBrand inside the primary appearance's own pressed
+     atom, so redefining the token on the root leaves the atom in charge.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L109
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L11 */
 ${nested(appearanceRoot('primary'))} {
     background-color: var(--winui-accent-fill-default);
     border-color: var(--winui-accent-control-elevation-border-color);
@@ -309,6 +316,15 @@ ${nested(checkedToggle())} {
     --colorNeutralForeground1Pressed: var(--winui-text-on-accent-fill-secondary);
     --colorNeutralForeground2Pressed: var(--winui-text-on-accent-fill-secondary);
     --colorNeutralForeground2BrandPressed: var(--winui-text-on-accent-fill-secondary);
+  }
+
+  /* The same pressed foreground as the accent button, and stated the same way:
+     a checked primary toggle reads colorNeutralForegroundOnBrand from its own
+     appearance atom, which the redefinitions above do not name.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L141
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L25 */
+${nested(checkedToggle(pressedStates))} {
+    color: var(--winui-text-on-accent-fill-secondary);
   }
 
   /* The checked stroke is the on-accent elevation gradient.
