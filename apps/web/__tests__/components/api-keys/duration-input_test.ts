@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatDurationInput, parseDuration } from '../../src/lib/duration-input';
+import { formatDurationInput, parseDuration } from '../../../src/components/api-keys/duration-input';
 
 describe('parseDuration', () => {
   it('parses seconds with the s suffix', () => {

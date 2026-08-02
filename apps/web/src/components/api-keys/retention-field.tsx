@@ -3,10 +3,10 @@ import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { fluentComponents } from '../../fluent';
-import { formatDurationInput, parseDuration } from '../../lib/duration-input';
 import { useDangerTextClass } from '../ui/danger';
 import { Combobox, LISTBOX_POSITIONING } from '../ui/fluent-form-controls';
 import { SettingsCard, SettingsExpander } from '../ui/settings-card';
+import { formatDurationInput, parseDuration } from './duration-input';
 
 const { Option, Text } = fluentComponents;
 
