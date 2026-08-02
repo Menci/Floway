@@ -14,8 +14,8 @@ import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
 import { SettingsCard, SettingsSwitch } from '../ui/settings-card';
 import { useDiscardGuard } from '../ui/use-discard-guard';
-import { UpstreamAccessControl } from '../upstreams/upstream-access-control';
-import { refineUpstreamAccess } from '../upstreams/upstream-access-validation';
+import { UpstreamAccessControl } from '../upstreams/access-control';
+import { refineUpstreamAccess } from '../upstreams/access-validation';
 
 const {
   Button,

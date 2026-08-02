@@ -17,8 +17,8 @@ import { OpenLinkLabel } from '../ui/open-link-label';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
 import { RouteLink } from '../ui/route-link';
-import { UpstreamAccessControl } from '../upstreams/upstream-access-control';
-import { refineUpstreamAccess } from '../upstreams/upstream-access-validation';
+import { UpstreamAccessControl } from '../upstreams/access-control';
+import { refineUpstreamAccess } from '../upstreams/access-validation';
 
 const { Button, DialogActions, DialogTitle, Field } = fluentComponents;
 
