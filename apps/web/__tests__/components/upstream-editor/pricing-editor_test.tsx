@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { PricingEditor } from '../../../src/components/upstream-editor/pricing-editor';
+import { i18n } from '../../../src/i18n';
 import { renderInApp } from '../../render';
 
 describe('read-only pricing editor', () => {
@@ -21,6 +22,6 @@ describe('read-only pricing editor', () => {
 
     const selected = view.container.querySelectorAll('[aria-selected="true"]');
     expect(selected).toHaveLength(1);
-    expect(selected[0]?.textContent).toContain('Base');
+    expect(selected[0]?.textContent).toContain(i18n.t('dashboard.upstreamEditor.models.pricingBase'));
   });
 });

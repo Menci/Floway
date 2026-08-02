@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { RetentionField, type RetentionValue } from '../../../src/components/api-keys/retention-field';
+import { i18n } from '../../../src/i18n';
 import { renderInApp } from '../../render';
 
 const DUMP_PRESETS = [
@@ -87,7 +88,7 @@ describe('retention field', () => {
       type(input, text);
       expect(onChange).toHaveBeenLastCalledWith('invalid');
     }
-    expect(screen.getByRole('alert').textContent).toBe('Enter a valid retention window.');
+    expect(screen.getByRole('alert').textContent).toBe(i18n.t('dashboard.apiKeys.retention.invalid'));
   });
 
   it('reads a days-unit window in whole days', () => {

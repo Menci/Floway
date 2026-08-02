@@ -9,6 +9,7 @@ import type { UpstreamRecord } from '../../../src/api/types';
 import type { UpstreamEditorValues } from '../../../src/components/upstream-editor/editor-data';
 import { valuesFromRecord } from '../../../src/components/upstream-editor/editor-data';
 import { UpstreamWorkspace } from '../../../src/components/upstream-editor/workspace';
+import { i18n } from '../../../src/i18n';
 import { renderInApp } from '../../render';
 
 vi.mock('../../../src/components/upstream-editor/models-yaml-editor', () => ({
@@ -74,29 +75,34 @@ function Harness() {
   );
 }
 
+// The subject here is the field array, not the wording. Resolving the queries
+// through the resources keeps a copy edit from failing this suite as though the
+// workspace had broken.
+const models = (key: string) => i18n.t(`dashboard.upstreamEditor.models.${key}`);
+
 describe('upstream model workspace field-array transitions', () => {
   it('deletes a newly appended model and applies a shorter YAML catalog', async () => {
     renderInApp(<Harness />);
-    expect(screen.getAllByLabelText('Delete manual model')).toHaveLength(2);
+    expect(screen.getAllByLabelText(models('delete'))).toHaveLength(2);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
-    expect(screen.getAllByLabelText('Delete manual model')).toHaveLength(3);
-    fireEvent.click(screen.getAllByLabelText('Delete manual model')[2]!);
-    fireEvent.click(await screen.findByRole('button', { name: 'Delete model' }));
-    await waitFor(() => expect(screen.getAllByLabelText('Delete manual model')).toHaveLength(2));
+    fireEvent.click(screen.getByRole('button', { name: models('add') }));
+    expect(screen.getAllByLabelText(models('delete'))).toHaveLength(3);
+    fireEvent.click(screen.getAllByLabelText(models('delete'))[2]!);
+    fireEvent.click(await screen.findByRole('button', { name: models('deleteConfirm') }));
+    await waitFor(() => expect(screen.getAllByLabelText(models('delete'))).toHaveLength(2));
 
     // The confirmation dialog marks the rest of the document `aria-hidden`
     // while it is open and clears that on its way out, so the toolbar behind it
     // is unreachable by role until the exit settles. A label query does not
     // filter hidden nodes and hid the race; a role query has to wait for it.
-    fireEvent.click(await screen.findByRole('button', { name: 'Edit as YAML' }));
+    fireEvent.click(await screen.findByRole('button', { name: models('editAsYaml') }));
     const editor = await screen.findByLabelText('YAML models');
     fireEvent.change(editor, {
       target: {
         value: '- upstreamModelId: replacement\n  publicModelId: replacement\n  kind: chat\n  endpoints:\n    responses: {}\n',
       },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Edit with UI' }));
-    await waitFor(() => expect(screen.getAllByLabelText('Delete manual model')).toHaveLength(1));
+    fireEvent.click(screen.getByRole('button', { name: models('editWithUi') }));
+    await waitFor(() => expect(screen.getAllByLabelText(models('delete'))).toHaveLength(1));
   });
 });
