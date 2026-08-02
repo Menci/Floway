@@ -26,6 +26,7 @@ import { ContentLoadingScreen } from '../ui/app-loading-screen';
 import { BackNavigationButton } from '../ui/back-navigation-button';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { useDangerTextClass } from '../ui/danger';
+import { EmptyStateLine } from '../ui/empty-state';
 import { Input } from '../ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { ScrollArea } from '../ui/scroll-area';
@@ -37,6 +38,7 @@ import { useDialogInvocation } from '../ui/use-dialog-invocation';
 
 const {
   Button,
+  Link,
   Spinner,
   Switch,
   Tab,
@@ -277,7 +279,7 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
       onViewChange('list');
     };
     return <><div className="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] h-full min-h-[480px] min-w-0">
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-5 py-4">
+      <div className="px-5 py-4">
         <SectionHeader
           description={t('dashboard.upstreamEditor.models.yamlHint')}
           level={2}
@@ -305,21 +307,19 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
   }} record={record} upstreamFlags={upstreamFlags} />{deleteConfirmation}</>;
 
   return <><div className="grid grid-cols-[minmax(0,1fr)] gap-4 min-w-0">
-    <div className="flex flex-wrap items-center gap-3">
-      <SectionHeader
-        description={t('dashboard.upstreamEditor.models.summary', { total: rows.length, manual: manual.length, auto: rows.length - manual.length })}
-        level={2}
-        title={t('dashboard.upstreamEditor.models.title')}
-      />
-      <div className="ml-auto flex flex-wrap items-center gap-2">
+    <SectionHeader
+      description={t('dashboard.upstreamEditor.models.summary', { total: rows.length, manual: manual.length, auto: rows.length - manual.length })}
+      level={2}
+      title={t('dashboard.upstreamEditor.models.title')}
+      actions={<>
         {!readOnly && <Button appearance="primary" icon={<AddRegular />} onClick={() => append({ upstreamModelId: '', kind: 'chat', endpoints: { chatCompletions: {} } })}>{t('dashboard.upstreamEditor.models.add')}</Button>}
         {!readOnly && <Button className="!min-w-[160px]" icon={<CodeRegular />} onClick={() => { onYamlChange(serializeModels(manual)); onYamlErrorChange(null); onViewChange('yaml'); }}>{t('dashboard.upstreamEditor.models.editAsYaml')}</Button>}
         {record.kind !== 'azure' && <>
           <ModelsCacheStatus cache={record.modelsCache} />
           <Button disabled={!autoFetchEnabled} disabledFocusable={modelsLoading} icon={modelsLoading ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={onRefreshModels}>{t('dashboard.upstreamEditor.models.refresh')}</Button>
         </>}
-      </div>
-    </div>
+      </>}
+    />
     {modelsError && <OutcomeMessageBar
       bodyClassName="min-w-0 [overflow-wrap:anywhere]"
       intent="warning"
@@ -333,18 +333,18 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
       <Table aria-label={t('dashboard.upstreamEditor.models.title')} className="w-full min-w-[640px]">
         <colgroup><col className="w-[80px]" /><col className="w-[25%]" /><col className="w-[88px]" /><col /><col className="w-[80px]" /><col className="w-[80px]" /></colgroup>
         <TableHeader><TableRow><TableCentredHeader>{t('dashboard.upstreamEditor.models.enabled')}</TableCentredHeader><TableHeaderCell>{t('dashboard.upstreamEditor.models.name')}</TableHeaderCell><TableCentredHeader>{t('dashboard.upstreamEditor.models.kind')}</TableCentredHeader><TableHeaderCell>{t('dashboard.upstreamEditor.models.id')}</TableHeaderCell><TableCentredHeader>{t('dashboard.upstreamEditor.models.source')}</TableCentredHeader><TableActionsHeader>{t('dashboard.upstreamEditor.models.actions')}</TableActionsHeader></TableRow></TableHeader>
-        <TableBody>{filtered.map(row => {
+        <TableBody>{filtered.length === 0 ? <TableRow><TableCell colSpan={6}><EmptyStateLine>{t('dashboard.upstreamEditor.models.noMatches')}</EmptyStateLine></TableCell></TableRow> : filtered.map(row => {
           const id = publicModelId(row.config); return <TableRow className="h-14" key={row.key}>
             <TableCentredCell><Switch aria-label={t('dashboard.upstreamEditor.models.enabledFor', { name: row.config.display_name ?? id })} checked={!disabled.includes(id)} onChange={(_, data) => setEnabled(id, data.checked)} /></TableCentredCell>
             <TableCell className="overflow-hidden">
               <Tooltip content={row.config.display_name ?? id} relationship="label">
-                <button
-                  className="block bg-transparent border-0 cursor-pointer min-w-0 max-w-full truncate p-0 text-fui-base300 text-fui-fg1 text-left hover:underline"
+                <Link
+                  appearance="subtle"
+                  className="block min-w-0 max-w-full truncate text-left"
                   onClick={() => onSelectUpstreamModel(row.config.upstreamModelId)}
-                  type="button"
                 >
                   {row.config.display_name ?? id}
-                </button>
+                </Link>
               </Tooltip>
             </TableCell>
             <TableCentredCell>{t(`dashboard.upstreamEditor.models.kindValue.${row.config.kind}`)}</TableCentredCell>

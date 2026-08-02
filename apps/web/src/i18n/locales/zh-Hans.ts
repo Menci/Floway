@@ -625,6 +625,7 @@ const zhHansCN = {
           listingFailed: '无法从上游获取模型列表。',
           listingFailedWithDetail: '无法从上游获取模型列表：{{message}}',
           search: '搜索模型名称或 ID',
+          noMatches: '没有匹配此搜索的模型。',
           enabled: '启用',
           enabledFor: '启用 {{name}}',
           name: '模型名称',

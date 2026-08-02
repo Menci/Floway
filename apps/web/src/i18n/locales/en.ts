@@ -651,6 +651,7 @@ const en = {
           listingFailedWithDetail:
               'Could not fetch the model list from the upstream: {{message}}',
           search: 'Search model name or ID',
+          noMatches: 'No model matches this search.',
           enabled: 'Enabled',
           enabledFor: 'Enable {{name}}',
           name: 'Model name',
