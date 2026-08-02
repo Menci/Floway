@@ -71,6 +71,9 @@ export function FeatureFlagsEditor({
       : t(`dashboard.upstreamEditor.flags.${state}`);
     const label = t(`dashboard.upstreamEditor.flags.entries.${flagId}.label`);
     const description = t(`dashboard.upstreamEditor.flags.entries.${flagId}.description`);
+    // A rule-separated row rather than a SettingsCard: a flag list runs long,
+    // and the card's border, radius and 68px floor per row are more surface than
+    // this reads well with.
     return <section className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-0 border-t border-solid border-fui-stroke1 py-3 first:border-t-0" key={flagId}>
       <div className="grid gap-1 min-w-0">
         <Text weight="semibold">
