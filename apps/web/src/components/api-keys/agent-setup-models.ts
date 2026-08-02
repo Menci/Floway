@@ -24,8 +24,8 @@ const claudeOrder = (picker: ClaudePicker): readonly ClaudeTier[] => picker === 
 
 interface CodexModelParts { version: string; variantRank: number }
 
-// GPT-5.6 capability tiers precede the plain model, while the smaller variants
-// follow it. Refs: https://openai.com/index/gpt-5-6/
+// Rank 3 is reserved for the plain model: capability tiers precede it, smaller
+// variants follow. https://openai.com/index/gpt-5-6/
 // https://platform.openai.com/docs/models
 const CODEX_VARIANT_RANK: Record<string, number> = { sol: 0, terra: 1, luna: 2, mini: 4, nano: 5 };
 const codexModelParts = (id: string): CodexModelParts | null => {
@@ -74,13 +74,10 @@ export const rankAgentSetupModels = (
 
 const ONE_MILLION_CONTEXT_TOKENS = 1_000_000;
 
-// Claude Code selects the one-million-token window through a `[1m]` suffix.
-// The documentation names only the opus and sonnet pinned-model variables, but
-// the shipped CLI keys every later decision on the model string rather than on
-// which variable supplied it, and the suffix's whole wire effect is to add the
-// `context-1m-2025-08-07` beta behind a test carrying no family condition. So
-// every picker is offered the window its model reports.
-// https://code.claude.com/docs/en/model-config
+// The docs name the `[1m]` suffix only for the pinned opus and sonnet
+// variables, but its whole wire effect is a `context-1m-2025-08-07` beta added
+// behind a test with no family condition, so every picker is offered the window
+// its model reports. https://code.claude.com/docs/en/model-config
 const claudeModelOverride = (model: ControlPlaneModel): string => {
   const contextWindow = model.limits.max_context_window_tokens
     ?? (model.limits.max_prompt_tokens ?? 0) + (model.limits.max_output_tokens ?? 0);
