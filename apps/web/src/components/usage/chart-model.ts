@@ -1,5 +1,4 @@
 import type { ChartProps } from '@fluentui/react-charts';
-import { curveMonotoneX } from 'd3-shape';
 
 import type { DisplayUsageRecord, SearchChartModel, SearchUsageResponse, TokenChartModel, TokenCounters, TokenSummary, UsageMetric, UsageRange, UsageResponse } from './types';
 import type { ControlPlaneModel, BillingMetric } from '../../api/types';
@@ -10,9 +9,9 @@ import {
   dashboardBucketFrames,
   dashboardBucketKeyForUtcHour,
 } from '../charts/dashboard-time';
-import { colorForSlot } from '../charts/palette';
 import type { ChartSeries } from '../charts/series-legends';
 import { withUniqueSeriesLegends } from '../charts/series-legends';
+import { areaSeries, lineSeries } from '../charts/series-plot';
 import type { DecimalString } from '@floway-dev/protocols/common';
 
 export const metricConfig: Record<
@@ -162,23 +161,13 @@ const seriesPoints = (
 
 const lineChartData = (buckets: ChartBucket[], series: PlottedSeries): ChartProps => ({
   chartTitle: '',
-  lineChartData: series.map(({ entry, data }) => ({
-    legend: entry.legend,
-    color: colorForSlot(entry.colorSlot),
-    lineOptions: { strokeWidth: 2, curve: curveMonotoneX, mode: 'lines+markers' },
-    data: seriesPoints(buckets, data, { markerSize: 4 }),
-  })),
+  lineChartData: series.map(({ entry, data }) => lineSeries(entry, seriesPoints(buckets, data, { markerSize: 4 }))),
 });
 
 const areaChartData = (buckets: ChartBucket[], series: PlottedSeries): ChartProps => ({
   chartTitle: '',
   pointOptions: { r: 2, strokeWidth: 1.25 },
-  lineChartData: series.map(({ entry, data }) => ({
-    legend: entry.legend,
-    color: colorForSlot(entry.colorSlot),
-    lineOptions: { strokeWidth: 2, curve: curveMonotoneX },
-    data: seriesPoints(buckets, data),
-  })),
+  lineChartData: series.map(({ entry, data }) => areaSeries(entry, seriesPoints(buckets, data))),
 });
 
 export const buildSearchChart = ({
