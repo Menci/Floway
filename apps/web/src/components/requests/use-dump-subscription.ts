@@ -22,6 +22,14 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
   const seenRef = useRef(new Set<string>());
   const loadingOlderRef = useRef(false);
 
+  // The loader hands back a fresh `initialRecords` array on every run, and
+  // selecting a record re-runs the loader. The subscription is keyed on the API
+  // key alone, so the seed reaches the effect through a ref rather than through
+  // its deps; otherwise every selection would close the stream and pay for
+  // another server snapshot.
+  const initialRecordsRef = useRef(initialRecords);
+  initialRecordsRef.current = initialRecords;
+
   // Switching keys discards the previous stream's accumulation. Doing that
   // during render rather than in the effect means the component never paints
   // one key's records under another key's heading.
@@ -34,7 +42,7 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
   }
 
   useEffect(() => {
-    seenRef.current = new Set(initialRecords.map(record => record.id));
+    seenRef.current = new Set(initialRecordsRef.current.map(record => record.id));
     loadingOlderRef.current = false;
     if (!keyId) return;
 
@@ -74,7 +82,7 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
       }
     });
     return () => source.close();
-  }, [initialRecords, keyId]);
+  }, [keyId]);
 
   const loadOlder = useCallback(async () => {
     const oldest = records.at(-1);
