@@ -13,7 +13,7 @@ import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router';
 
 import type { ModelRow, UpstreamEditorValues } from './data';
-import { canFetchModelCatalog, publicModelId } from './data';
+import { canFetchModelCatalog, manualModelsSupported, publicModelId } from './data';
 import { FeatureFlagsEditor } from './feature-flags';
 import { ModelDetail } from './model-detail';
 import { parseModels, serializeModels } from './models-yaml';
@@ -56,6 +56,11 @@ const {
 
 type ModelView = 'list' | 'detail' | 'yaml';
 type WorkspaceTab = 'models' | 'flags';
+/** An edit typed into the YAML view and not yet applied, with whatever the last apply said about it. */
+interface YamlDraft {
+  text: string;
+  error: string | null;
+}
 interface WorkspaceLocation {
   tab: WorkspaceTab;
   model: string | null;
@@ -88,19 +93,32 @@ export function UpstreamWorkspace({
   const dangerText = useDangerTextClass();
   const { formState: { errors } } = useFormContext<UpstreamEditorValues>();
   const [params, setParams] = useSearchParams();
-  const [yaml, setYaml] = useState('');
-  const [yamlError, setYamlError] = useState<string | null>(null);
+  // The YAML text is a projection of the manual models — serialized on the way
+  // in, parsed back on the way out — so the only thing that has to be state is
+  // an edit that has not been applied yet. Holding just that draft is what lets
+  // every entrance into the view show the same text: there is nothing for a
+  // link, a reload or the button to remember to seed.
+  const [yamlDraft, setYamlDraft] = useState<YamlDraft | null>(null);
   const workspaceScrollRef = useRef<HTMLDivElement>(null);
 
   // A model is named in the URL by its upstream id: row keys are rebuilt per
   // render for manual entries and do not survive a reload.
   const tab = params.get(TAB_PARAM) === 'flags' ? 'flags' : 'models';
   const selectedUpstreamModelId = params.get(MODEL_PARAM);
+  // A provider-owned catalog has no manual models to write, so its editor is
+  // not addressable either — a typed `?view=yaml` lands on the list rather than
+  // on an editable buffer the upstream would never store.
+  const editableCatalog = manualModelsSupported(record.kind);
   const modelView: ModelView = selectedUpstreamModelId !== null
     ? 'detail'
-    : params.get(VIEW_PARAM) === 'yaml' ? 'yaml' : 'list';
+    : params.get(VIEW_PARAM) === 'yaml' && editableCatalog ? 'yaml' : 'list';
   const modelDetailTab: ModelDetailTab = params.get(SECTION_PARAM) === 'flags' ? 'flags' : 'details';
   const showModelDetail = modelView === 'detail';
+
+  // The draft lives exactly as long as the view it belongs to, and the view is
+  // the URL rather than any mounted component. Leaving drops it, so re-entering
+  // projects the models again instead of resurrecting an abandoned edit.
+  if (modelView !== 'yaml' && yamlDraft !== null) setYamlDraft(null);
 
   // Replace rather than push: moving around inside one editor is not a place
   // the back button should have to walk out of a step at a time.
@@ -129,7 +147,7 @@ export function UpstreamWorkspace({
   useLayoutEffect(() => {
     workspaceScrollRef.current?.scrollTo({ left: 0, top: 0 });
   }, [modelDetailTab, modelView, tab]);
-  const modelsWorkspace = <ModelsWorkspace detailSection={modelDetailTab} onSelectUpstreamModel={selectModel} selectedUpstreamModelId={selectedUpstreamModelId} discovered={discovered} modelsLoading={modelsLoading} modelsError={modelsError} onRefreshModels={onRefreshModels} onViewChange={changeModelView} record={record} view={modelView} yaml={yaml} yamlError={yamlError} onYamlChange={setYaml} onYamlErrorChange={setYamlError} />;
+  const modelsWorkspace = <ModelsWorkspace detailSection={modelDetailTab} onSelectUpstreamModel={selectModel} selectedUpstreamModelId={selectedUpstreamModelId} discovered={discovered} modelsLoading={modelsLoading} modelsError={modelsError} onRefreshModels={onRefreshModels} onViewChange={changeModelView} readOnly={!editableCatalog} record={record} view={modelView} yamlDraft={yamlDraft} onYamlDraftChange={setYamlDraft} />;
   return <section className="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] h-full min-h-0 min-w-0 max-[1050px]:h-auto">
     <div className="flex items-center gap-2 border-0 border-b border-solid border-fui-divider px-5 pt-2">
       {showModelDetail
@@ -141,9 +159,9 @@ export function UpstreamWorkspace({
             </TabList>
           </>
         // The models view is carried across tab switches rather than reset,
-        // because entering the YAML view re-serializes the manual models into
-        // the buffer: a reset here would discard whatever had been typed and
-        // not yet applied.
+        // because the YAML draft belongs to the view's presence in the URL: a
+        // reset here would leave the view and discard whatever had been typed
+        // and not yet applied.
         : <TabList aria-label={t('dashboard.upstreamEditor.tabs.label')} selectedValue={tab} onTabSelect={(_, data) => navigate({ tab: data.value as WorkspaceTab, model: null, section: 'details', view: modelView === 'yaml' ? 'yaml' : 'list' })}>
             <Tab value="models">{t('dashboard.upstreamEditor.tabs.models')}</Tab>
             <Tab value="flags">{t('dashboard.upstreamEditor.tabs.flags')}</Tab>
@@ -167,7 +185,7 @@ export function UpstreamWorkspace({
   </section>;
 }
 
-function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading, onRefreshModels, onSelectUpstreamModel, onViewChange, onYamlChange, onYamlErrorChange, record, selectedUpstreamModelId, view, yaml, yamlError }: {
+function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading, onRefreshModels, onSelectUpstreamModel, onViewChange, onYamlDraftChange, readOnly, record, selectedUpstreamModelId, view, yamlDraft }: {
   detailSection: ModelDetailTab;
   discovered: UpstreamModelConfig[];
   modelsError: string | null;
@@ -175,13 +193,12 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
   onRefreshModels: () => void;
   onSelectUpstreamModel: (id: string | null) => void;
   onViewChange: (view: ModelView) => void;
-  onYamlChange: (value: string) => void;
-  onYamlErrorChange: (value: string | null) => void;
+  onYamlDraftChange: (draft: YamlDraft) => void;
+  readOnly: boolean;
   record: UpstreamRecord;
   selectedUpstreamModelId: string | null;
   view: ModelView;
-  yaml: string;
-  yamlError: string | null;
+  yamlDraft: YamlDraft | null;
 }) {
   const { t } = useTranslation();
   const { control, setValue } = useFormContext<UpstreamEditorValues>();
@@ -196,7 +213,6 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
   const [search, setSearch] = useState('');
   const { copy, outcomeFor } = useCopyToClipboard();
   const copyLabel = useCopyLabel();
-  const readOnly = record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code';
   const autoFetchEnabled = record.kind !== 'custom'
     || (config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).modelsFetch.enabled;
   const canFetch = canFetchModelCatalog(record, config);
@@ -273,11 +289,13 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
   />;
 
   if (view === 'yaml') {
+    const text = yamlDraft?.text ?? serializeModels(manual);
+    // A failed apply keeps the text as the draft, so the message stays attached
+    // to the buffer that produced it.
     const applyAndLeave = () => {
-      const parsed = parseModels(yaml, { allowRerank: record.kind === 'custom' });
-      if (!parsed.ok) { onYamlErrorChange(parsed.message); return; }
+      const parsed = parseModels(text, { allowRerank: record.kind === 'custom' });
+      if (!parsed.ok) { onYamlDraftChange({ text, error: parsed.message }); return; }
       replace(parsed.models);
-      onYamlErrorChange(null);
       onViewChange('list');
     };
     return <><div className="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] h-full min-h-[480px] min-w-0">
@@ -293,10 +311,10 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
       </div>
       <div className="h-full min-h-0 overflow-hidden border-0 border-y border-solid border-fui-divider">
         <Suspense fallback={<ContentLoadingScreen label={t('common.loading')} />}>
-          <ModelsYamlEditor value={yaml} onChange={value => { onYamlChange(value); onYamlErrorChange(null); }} />
+          <ModelsYamlEditor value={text} onChange={value => onYamlDraftChange({ text: value, error: null })} />
         </Suspense>
       </div>
-      {yamlError && <div className="px-5 py-3"><OutcomeMessageBar>{yamlError}</OutcomeMessageBar></div>}
+      {yamlDraft?.error && <div className="px-5 py-3"><OutcomeMessageBar>{yamlDraft.error}</OutcomeMessageBar></div>}
     </div>{deleteConfirmation}</>;
   }
 
@@ -315,7 +333,7 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
       title={t('dashboard.upstreamEditor.models.title')}
       actions={<>
         {!readOnly && <Button appearance="primary" icon={<AddRegular />} onClick={() => append({ upstreamModelId: '', kind: 'chat', endpoints: { chatCompletions: {} } })}>{t('dashboard.upstreamEditor.models.add')}</Button>}
-        {!readOnly && <Button className="!min-w-[160px]" icon={<CodeRegular />} onClick={() => { onYamlChange(serializeModels(manual)); onYamlErrorChange(null); onViewChange('yaml'); }}>{t('dashboard.upstreamEditor.models.editAsYaml')}</Button>}
+        {!readOnly && <Button className="!min-w-[160px]" icon={<CodeRegular />} onClick={() => onViewChange('yaml')}>{t('dashboard.upstreamEditor.models.editAsYaml')}</Button>}
         {record.kind !== 'azure' && <>
           <ModelsCacheStatus cache={record.modelsCache} />
           <Button disabled={!canFetch} disabledFocusable={modelsLoading} icon={modelsLoading ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={onRefreshModels}>{t('dashboard.upstreamEditor.models.refresh')}</Button>

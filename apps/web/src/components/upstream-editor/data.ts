@@ -108,6 +108,12 @@ export const canFetchModelCatalog = (record: UpstreamRecord, config: UpstreamEdi
   }
 };
 
+// Manual entries exist only for the kinds whose stored config carries a model
+// list. For the rest the catalog is the provider's, and the editor can only
+// enable and disable what it lists.
+export const manualModelsSupported = (kind: UpstreamProviderKind): boolean =>
+  kind === 'custom' || kind === 'azure' || kind === 'ollama';
+
 export interface ModelCatalogFetch {
   /** Null when nothing was listed, which leaves whatever the caller already shows. */
   discovered: UpstreamModelConfig[] | null;
