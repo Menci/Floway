@@ -88,6 +88,11 @@ history, and anything defensive.
 Never claim a conformance you did not verify. An uncited assertion about WinUI
 or Fluent is worse than no comment, because the next reader builds on it.
 
+**A comment inside a `.css.ts` module must not contain a backtick.** Those files
+hold their CSS in a template literal, so one backtick in a comment terminates
+the literal and the whole file stops parsing — the failure is the module, not
+the rule. Write property and prop names bare.
+
 ## Keep a working instance up
 
 Review here happens by looking, continuously, so a dead dev server is a stalled
