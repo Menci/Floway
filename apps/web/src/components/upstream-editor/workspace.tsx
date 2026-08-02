@@ -255,6 +255,12 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
   const manualDeleteTarget = deleteTarget?.manualIndex == null
     ? null
     : { ...deleteTarget, manualIndex: deleteTarget.manualIndex };
+  // Every branch below returns this in the same position under a fragment, so
+  // the tree the dialog sits in is the one thing the view switch does not
+  // change. Confirming takes the row away, and with it the detail view the
+  // dialog was opened from; a dialog hung off a branch's own root is reparented
+  // by that switch, which React answers by unmounting it -- in the same commit
+  // that asked it to close, leaving the exit no frames to run in.
   const deleteConfirmation = manualDeleteTarget && <ConfirmDialog
     open={deleteDialog.isOpen}
     actionLabel={t('dashboard.upstreamEditor.models.deleteConfirm')}
@@ -275,7 +281,7 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
       onYamlErrorChange(null);
       onViewChange('list');
     };
-    return <div className="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] h-full min-h-[480px] min-w-0">
+    return <><div className="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] h-full min-h-[480px] min-w-0">
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-5 py-4">
         <SectionHeader
           description={t('dashboard.upstreamEditor.models.yamlHint')}
@@ -292,7 +298,7 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
         </Suspense>
       </div>
       {yamlError && <div className="px-5 py-3"><OutcomeMessageBar>{yamlError}</OutcomeMessageBar></div>}
-    </div>;
+    </div>{deleteConfirmation}</>;
   }
 
   if (view === 'detail' && activeDetailRow) return <><ModelDetail section={detailSection} row={activeDetailRow} readOnly={readOnly} onDelete={() => deleteDialog.open(activeDetailRow)} onSourceChange={source => setModelSource(activeDetailRow, source)} onChange={value => {
@@ -303,7 +309,7 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
     });
   }} record={record} upstreamFlags={upstreamFlags} />{deleteConfirmation}</>;
 
-  return <div className="grid grid-cols-[minmax(0,1fr)] gap-4 min-w-0">
+  return <><div className="grid grid-cols-[minmax(0,1fr)] gap-4 min-w-0">
     <div className="flex flex-wrap items-center gap-3">
       <SectionHeader
         description={t('dashboard.upstreamEditor.models.summary', { total: rows.length, manual: manual.length, auto: rows.length - manual.length })}
@@ -356,8 +362,7 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
         })}</TableBody>
       </Table>
     </ScrollArea>
-    {deleteConfirmation}
-  </div>;
+  </div>{deleteConfirmation}</>;
 }
 
 function ModelsCacheStatus({ cache }: { cache: UpstreamRecord['modelsCache'] }) {
