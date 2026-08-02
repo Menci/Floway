@@ -70,7 +70,7 @@ export function FeatureFlagsEditor({
         </Text>
         <div className="grid gap-1">
           {description.split('\n').map((line, i) => (
-            <Text key={i} size={200} className="text-fui-fg2 leading-[1.4]">
+            <Text key={i} size={200} className="text-fui-fg2">
               <InlineMarkdown>{line}</InlineMarkdown>
             </Text>
           ))}
