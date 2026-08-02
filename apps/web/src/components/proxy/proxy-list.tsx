@@ -59,7 +59,7 @@ export function ProxyList({
               <TableRow key={proxy.id}>
                 <TableCell className="overflow-hidden">
                   <div className="flex items-center gap-2 min-w-0">
-                    <Chip className="uppercase flex-none" style={badgeHueStyle(hue)}>
+                    <Chip className="flex-none" style={badgeHueStyle(hue)}>
                       {t(`dashboard.proxy.kind.${kind}` as never, kind)}
                     </Chip>
                     <Tooltip content={proxy.name} relationship="label">
