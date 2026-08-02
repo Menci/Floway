@@ -1,33 +1,24 @@
-// WinUI 3 styling for Fluent v9's Nav family. The drawer shell around these --
-// fill, outline, header and footer geometry -- belongs to ./drawer.css.
+// NavItem, NavSubItem and NavCategoryItem share one Fluent root reset
+// (sharedNavStyles.styles: useRootDefaultClassName), so rules below name all
+// three and siblings stay in step.
 //
-// NavItem, NavSubItem and NavCategoryItem all render Fluent's one shared root
-// reset (sharedNavStyles.styles: useRootDefaultClassName), so the foreground
-// and fill rules below name all three and siblings stay in step.
-//
-// Several rows below substitute a Fluent token rather than declare the property
-// the token feeds. Those values are painted from a keyframe stop, which
-// outranks every normal rule in the cascade, so the variable that stop reads is
-// the one place left where the colour can still be chosen. See ./tokens.ts for
-// the selector convention.
+// Rows that substitute a Fluent token rather than declare the property it feeds
+// do so because the value is painted from a keyframe stop, which outranks every
+// normal rule; the variable that stop reads is the one remaining input. See
+// ./tokens.ts for the selector convention.
 export const navCss = `
-/* The pane's inline-end edge carries no seam. WinUI's hairline at this boundary
-   is drawn by the content side -- ContentGrid is a card and the seam is that
-   card's start edge. The dashboard's content region is not a card, so there is
-   no edge for the seam to belong to, and drawing one on the pane instead would
-   be inventing a boundary WinUI states nowhere.
+/* No seam on the pane's inline-end edge: WinUI draws that hairline from the
+   content side, as the start edge of the ContentGrid card, and the dashboard's
+   content region is not a card.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L290
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L234 */
 .fui-NavDrawer.fui-InlineDrawer {
   border-inline-end-style: none;
 }
 
-/* Item foreground. The press state drops to the secondary fill, which WinUI
-   states for a selected item as well, so the sidebar's pending row -- held
-   pressed for the length of a navigation -- is included in it. The substitution
-   is made on the token rather than on \`color\` because the icon slot's
-   de-selection keyframe reads the same token for its 0% stop; declaring
-   \`color\` alone would leave that keyframe starting from Fluent's grey.
+/* Item foreground. The pending row -- held pressed for the length of a
+   navigation -- takes the press state's secondary fill, which WinUI also states
+   for a selected item.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L21
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L23
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L31 */
@@ -44,9 +35,8 @@ export const navCss = `
   --colorNeutralForeground2: var(--winui-text-fill-secondary);
 }
 
-/* The item fill. Selection is the same ramp held one step in, so a selected
-   item and a hovered one read alike -- which is why the indicator, not the
-   fill, is what carries selection here.
+/* Item fill. Selection reads the same as hover here -- WinUI holds the ramp one
+   step in for both -- so the indicator, not the fill, carries selection.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L9-L20 */
 .fui-NavItem.fui-NavItem,
 .fui-NavSubItem.fui-NavSubItem,
@@ -64,9 +54,8 @@ export const navCss = `
 }
 
 /* Selection does not change the weight. NavigationViewItem states Normal for
-   every state it has; Fluent bolds the selected label, which puts a second
-   signal on a state the indicator already carries and shifts the label's width
-   as it lands.
+   every state; Fluent's bolded selected label doubles a signal the indicator
+   already carries and shifts the label's width as it lands.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L641 */
 .fui-NavItem.fui-NavItem[aria-current='page'],
 .fui-NavSubItem.fui-NavSubItem[aria-current='page'],
@@ -74,24 +63,15 @@ export const navCss = `
   font-weight: var(--fontWeightRegular);
 }
 
-/* A NavItem's own indicator is cleared outright: WinUI's animates between the
-   item losing selection and the one taking it, which a per-item
-   pseudo-element cannot do, so the sidebar draws a measured one and this stops
-   the two from both showing. A category row is never the source or destination
-   of that animation and a sub-item is rendered nowhere the measured indicator
-   is drawn, so both keep a pseudo-element at WinUI's geometry and colour.
+/* A NavItem's own indicator is cleared because WinUI's animates between the
+   item losing selection and the one taking it, which a per-item pseudo-element
+   cannot do; the sidebar draws a measured one instead. A category row is never
+   an endpoint of that animation and a sub-item is rendered nowhere the measured
+   indicator is drawn, so both keep a pseudo-element.
 
-   WinUI states the pill's length as a fixed 16px on its 36px left-pane row.
-   The quarter inset at each end reproduces that at the stock row height while
-   holding the pill's proportion as the row grows, rather than leaving it short
-   in a tall one; the sidebar's own measured indicator is pinned at 20px to
-   match.
-
-   The colour is a token substitution rather than a declaration, because Fluent
-   grows the pill in with a keyframe filled in both directions. An animation
-   outranks every normal rule, so a \`background-color\` of ours would be
-   overridden by the 100% stop for as long as the item stays selected; the
-   variable that stop reads is the only input left.
+   WinUI states the pill as a fixed 16px on its 36px left-pane row. The quarter
+   inset reproduces that at the stock height while holding the proportion as the
+   row grows; the measured indicator is pinned at 20px to match.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L217
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L220-L222
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L48 */
@@ -125,13 +105,10 @@ export const navCss = `
 }
 
 /* WinUI leaves a disabled item on the transparent fill rather than dimming it,
-   so the foreground below carries the whole disabled reading. A disabled item
-   that is also the selected one keeps the standing wash selection puts under
-   it, so a pane whose current page has been disabled still says which page one
-   is on. Both the native and the ARIA form are named because an item renders
-   as a button or as an anchor depending on whether it was given an href, and
-   each pair must come after the pointer states it has to settle, since a
-   disabled element still matches :hover.
+   so the foreground below carries the whole disabled reading; a disabled
+   selected item keeps its wash, so the pane still says which page one is on.
+   Both pairs must come after the pointer states they settle, since a disabled
+   element still matches :hover.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L12
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L20 */
 .fui-NavItem.fui-NavItem:disabled,
@@ -165,26 +142,20 @@ export const navCss = `
   --colorNeutralForeground2: var(--winui-text-fill-disabled);
 }
 
-/* Focus. WinUI's system focus visual is two concentric strokes with no gap: a
-   2px outer and a 1px inner inset by exactly the outer thickness, both within
-   the item's own bounds.
-
-   Fluent draws the outer stroke only, as an outline offset fully inside the
-   border box, so the colour is restated on the token and the offset left
-   alone. The inner stroke is painted as an inset shadow three pixels deep, of
-   which the outline covers the outer two -- a shadow rather than the
-   two-pseudo-element construction used elsewhere, because the item's ::after is
-   spoken for by the selection indicator above. Forced colours are left to
-   Fluent and the user agent: the outline colour is one they substitute and the
-   shadow is a property they drop.
+/* Focus. WinUI's system focus visual is two concentric strokes with no gap, a
+   2px outer and a 1px inner inset by the outer thickness. Fluent draws the
+   outer one as an outline inside the border box, so only its colour is
+   restated; the inner is an inset shadow three pixels deep, of which the
+   outline covers the outer two -- a shadow rather than the two-pseudo-element
+   construction used elsewhere, because this item's ::after is spoken for by the
+   selection indicator above.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L429
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources.xaml#L15-L16
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L250-L252
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L173-L174
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L446-L452
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/inc/FocusRectNudging.h#L388
-   https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/inc/FocusRectNudging.h#L388 */
 .fui-NavItem.fui-NavItem[data-fui-focus-visible],
 .fui-NavSubItem.fui-NavSubItem[data-fui-focus-visible],
 .fui-NavCategoryItem.fui-NavCategoryItem[data-fui-focus-visible] {
@@ -194,12 +165,9 @@ export const navCss = `
 }
 
 /* A selected item's icon keeps the primary text fill instead of Fluent's brand
-   tint, and follows the label through the remaining states. The colour is
-   reached only through the 100% stop of the icon slot's selection keyframe, and
-   a keyframe outranks every normal rule, so the token is the one place each of
-   those states can be chosen -- without them the icon of a selected item would
-   sit at full strength while its label moved. Only the two families that pair a
-   selected state with an icon read it.
+   tint and follows the label through the remaining states; without that it
+   would sit at full strength while the label moved. Only the two families that
+   pair a selected state with an icon read this token.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L29
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L31
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L32 */
@@ -232,12 +200,11 @@ export const navCss = `
   line-height: var(--lineHeightBase300);
 }
 
-/* The hairline separating the footer from the scrolling item list. Fluent
-   generates it as a ::before on the footer, and only while the drawer body is
-   scrollable -- the same condition NavigationView reveals its own pane
-   separator under. Naming the pseudo-element retints the card stroke
-   ./drawer.css gives every drawer footer without bringing the seam into
-   existence.
+/* The hairline separating the footer from the scrolling item list. Naming
+   Fluent's ::before retints the card stroke ./drawer.css gives every drawer
+   footer without bringing a seam into existence, and inherits Fluent's
+   condition for it -- shown only while the drawer body is scrollable, the same
+   condition NavigationView reveals its pane separator under.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L375
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.cpp#L1585-L1626
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L46 */
