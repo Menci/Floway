@@ -16,14 +16,13 @@ import { api, callApi } from '../api/client';
 import type { ApiKey, ControlPlaneModel } from '../api/types';
 import { indexCatalog } from '../components/models/catalog-index';
 import { ModelInfoBadges } from '../components/models/info-badges';
-import { effectiveUpstreamCap } from '../components/models/reachability';
+import { effectiveUpstreamCap, reachableModels } from '../components/models/reachability';
 import { bingAccentForeground, bingAccentForegroundHover } from '../components/playground/bing-chat-tokens';
 import { PlaygroundComposer } from '../components/playground/composer';
 import { PlaygroundEditDialog, type PlaygroundMessageDraft } from '../components/playground/edit-dialog';
 import { PlaygroundMarkdown } from '../components/playground/markdown';
 import { PlaygroundMessageBubble } from '../components/playground/message-bubble';
 import {
-  availableModels,
   createWireFetch,
   defaultMaxOutputTokens,
   generationOptions,
@@ -165,7 +164,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   );
   const catalog = useMemo(() => indexCatalog(loaderData.models), [loaderData.models]);
   const models = useMemo(
-    () => availableModels(loaderData.models ?? [], cap),
+    () => reachableModels(loaderData.models ?? [], cap, model => model.kind === 'chat'),
     [cap, loaderData.models],
   );
   const selectedModel = models.find(model => model.id === publicModelId) ?? models[0] ?? null;

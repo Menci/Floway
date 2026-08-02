@@ -1,25 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  availableModels,
   defaultMaxOutputTokens,
   generationOptions,
   mergeWireBody,
   parseCustomJson,
   supportsImageInput,
 } from '../../../src/components/playground/request';
-import { aliasModel, chatModel } from '../../api/model-fixture';
-
-describe('playground reachability', () => {
-  it('keeps every reachable chat model available across source protocols', () => {
-    const real = chatModel('real', { upstreams: ['a'],  endpoints: { responses: {} } });
-    const alias = aliasModel('alias', ['real'], { endpoints: { responses: {} } });
-    const chatOnly = chatModel('chat', { upstreams: ['a'],  endpoints: { chatCompletions: {} } });
-    expect(availableModels([real, alias, chatOnly], ['a']).map(m => m.id))
-      .toEqual(['real', 'alias', 'chat']);
-    expect(availableModels([real, alias], ['b'])).toEqual([]);
-  });
-});
 
 describe('custom JSON', () => {
   it('rejects invalid, non-object and reserved fields', () => {

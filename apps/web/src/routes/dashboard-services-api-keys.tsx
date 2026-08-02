@@ -9,9 +9,9 @@ import type { ApiKey, ControlPlaneModel, UpstreamOption } from '../api/types';
 import type { AgentSetupLease } from '../components/api-keys/agent-setup';
 import { AgentSetupCard } from '../components/api-keys/agent-setup-card';
 import { KeyDialog } from '../components/api-keys/editor';
-import { modelsForAgentSetup } from '../components/api-keys/model-reachability';
 import { RotateKeyDialog } from '../components/api-keys/rotate-dialog';
 import { KeysTable } from '../components/api-keys/table';
+import { effectiveUpstreamCap, reachableModels } from '../components/models/reachability';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
@@ -90,7 +90,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
 
   const selectedKey = data.keys?.find(key => key.id === selectedKeyId) ?? null;
   const agentSetupModels = selectedKey && data.models
-    ? modelsForAgentSetup(data.models, selectedKey.upstream_ids, user.upstreamIds)
+    ? reachableModels(data.models, effectiveUpstreamCap(selectedKey.upstream_ids, user.upstreamIds))
     : [];
 
   // Written where the picking happens rather than mirrored off rendered state:

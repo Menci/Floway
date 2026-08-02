@@ -1,6 +1,5 @@
 
 import type { ControlPlaneModel } from '../../api/types';
-import { reachableModels } from '../models/reachability';
 import { MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/messages';
 
 export type PlaygroundApi = 'responses' | 'chatCompletions' | 'messages';
@@ -13,11 +12,6 @@ export interface PlaygroundMessage {
 }
 
 export const playgroundApis: PlaygroundApi[] = ['responses', 'chatCompletions', 'messages'];
-
-export const availableModels = (
-  catalog: readonly ControlPlaneModel[],
-  cap: readonly string[] | null,
-): ControlPlaneModel[] => reachableModels(catalog, cap, model => model.kind === 'chat');
 
 export const supportsImageInput = (model: ControlPlaneModel | null): boolean => {
   const modalities = model?.chat?.modalities?.input;
