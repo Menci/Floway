@@ -70,8 +70,7 @@ export function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
   const structuredUrl = config.host.trim() ? formatProxyUri({ ...config, name: formName.trim() }) : '';
   const urlInput = urlDraft ?? structuredUrl;
   const dialTimeout = parseDialTimeoutInput(dialTimeoutInput);
-  // Nothing is refused until the operator asks to save: a form that reddens as
-  // it is filled in says nothing they did not already know.
+  // Withheld until save: a form that reddens as it is filled in says nothing the operator did not know.
   const issues = proxyDraftIssues({ config, name: formName, url: urlInput });
   const draftDirty = initialDraft !== proxyDraftSignature(formName, config, urlDraft, dialTimeoutInput);
   const clearDiagnostics = useCallback(() => {
@@ -108,8 +107,7 @@ export function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
   const handleSave = useCallback(async () => {
     setShowValidation(true);
     setSaveError(null);
-    // The button stays focusable while saving, so the form can still be
-    // submitted from it; this is what makes the second press do nothing.
+    // The submit button stays focusable while saving, so a second press re-enters here.
     if (saving) return;
     if (Object.keys(proxyDraftIssues({ config, name: formName, url: urlInput })).length > 0
       || urlError !== null || dialTimeout.error !== null) return;
@@ -141,8 +139,7 @@ export function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
     setTestResult(result.error ? { ok: false, error: result.error.message } : result.data);
     setTesting(false);
   }, [dialTimeout, urlInput]);
-  // Testing only dials, so it needs a reachable endpoint and a timeout and
-  // nothing else the record would carry.
+  // Testing only dials: it needs a reachable endpoint and a timeout, nothing else the record carries.
   const canTest = issues.url === undefined && issues.host === undefined && issues.port === undefined
     && urlError === null && dialTimeout.error === null;
 
