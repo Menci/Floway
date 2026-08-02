@@ -110,7 +110,6 @@ export function LoginForm() {
                 {...field}
                 autoComplete="username"
                 autoFocus
-                className="!min-h-[36px]"
                 disabled={isSubmitting}
                 placeholder={t('auth.login.usernamePlaceholder')}
               />
@@ -132,7 +131,6 @@ export function LoginForm() {
               <Input
                 {...field}
                 autoComplete="current-password"
-                className="!min-h-[36px]"
                 disabled={isSubmitting}
                 placeholder={t('auth.login.passwordPlaceholder')}
                 type="password"
@@ -141,6 +139,9 @@ export function LoginForm() {
           )}
         />
 
+        {/* Button derives 33px from its padding and line box, one short of the
+            34px row the fields above take from winui/controls/text-input.css.ts,
+            so this full-width submit states the row to sit flush under them. */}
         <Button
           appearance="primary"
           className="mt-3.5 !min-h-[34px] w-full"
