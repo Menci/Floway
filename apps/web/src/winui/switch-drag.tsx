@@ -3,13 +3,13 @@
 // listens to its DragStarted / DragDelta / DragCompleted; there is no
 // manipulation and no inertia, so the whole gesture is reproducible from
 // pointer events.
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/src/dxaml/xcp/dxaml/lib/ToggleSwitch_Partial.cpp#L245-L250
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/ToggleSwitch_Partial.cpp#L245-L250
 //
 // The knob follows the pointer 1:1 and is clamped only where it is written, not
 // where it is accumulated, so a drag that overshoots the end and comes back
 // leaves the decision reading from the unclamped total. That is why the offset
 // below is kept raw and clamped at paint time.
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/src/dxaml/xcp/dxaml/lib/ToggleSwitch_Partial.cpp#L452-L458
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/ToggleSwitch_Partial.cpp#L452-L458
 import * as React from 'react';
 
 import { CONTROL_FASTER_ANIMATION_MS } from './motion';
@@ -98,7 +98,7 @@ export const withWinuiDrag = (components: FluentComponents): FluentComponents =>
 
       // XAML's range is knob-bounds width minus knob width; Fluent's knob cell is
       // half the track at every size, so half the indicator is the same number.
-      // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/src/dxaml/xcp/dxaml/lib/ToggleSwitch_Partial.cpp#L936-L952
+      // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/ToggleSwitch_Partial.cpp#L936-L952
       const travel = indicator.offsetWidth / 2;
       const gesture: Gesture = {
         excursion: 0,
@@ -116,7 +116,7 @@ export const withWinuiDrag = (components: FluentComponents): FluentComponents =>
       element.setPointerCapture(event.pointerId);
       // Dragging is entered with no movement at all: Thumb raises DragStarted from
       // OnPointerPressed.
-      // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/src/dxaml/xcp/dxaml/lib/ToggleSwitch_Partial.cpp#L806-L816
+      // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/ToggleSwitch_Partial.cpp#L806-L816
       element.setAttribute(DRAGGING, '');
       paint(gesture);
     };
@@ -138,7 +138,7 @@ export const withWinuiDrag = (components: FluentComponents): FluentComponents =>
       const gesture = gestureRef.current;
       if (!gesture || event.pointerId !== gesture.pointerId) return;
       // Midpoint decides, inclusive both ways, with no velocity or direction term.
-      // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/src/dxaml/xcp/dxaml/lib/ToggleSwitch_Partial.cpp#L592-L605
+      // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/ToggleSwitch_Partial.cpp#L592-L605
       const midpoint = gesture.travel / 2;
       const crossed = gesture.input.checked ? gesture.offset <= midpoint : gesture.offset >= midpoint;
       const committed = gesture.moved && crossed;

@@ -56,7 +56,7 @@ export const LISTBOX_POSITIONING = {
 // stroke is one unit in a twenty-unit box, so at 12px no pixel reaches full
 // strength -- measured, the darkest came out 145 where a solid glyph on that
 // fill reaches 97.
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ComboBox_themeresources.xaml#L582-L586
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L582-L586
 const EXPAND_ICON = <ChevronDown12Regular />;
 
 type ListboxRenderFunction = (

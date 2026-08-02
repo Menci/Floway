@@ -1,7 +1,7 @@
 // Fluent's motion slot forbids `as`, so the animating component cannot be
 // swapped by naming it; the slot's render function is the seam every wrapper
 // below goes through.
-// https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-motion/library/src/slots/presenceMotionSlot.ts#L13-L19
+// https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-motion/library/src/slots/presenceMotionSlot.tsx#L13-L19
 import * as React from 'react';
 
 import {
