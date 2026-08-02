@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 // The grammars this card's samples are written in. Prism registers each as a
-// module side effect, so they are imported where the languages are named.
+// module side effect, so they are imported where the languages are named --
+// and a grammar registers itself onto Prism, so the module naming one has to
+// name Prism too. ESM evaluates in source order, and nothing else here reaches
+// `prismjs` before these run.
+import 'prismjs';
 import 'prismjs/components/prism-bash';
 import 'prismjs/components/prism-json';
 import 'prismjs/components/prism-powershell';

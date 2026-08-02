@@ -1,7 +1,11 @@
 import { Trans, useTranslation } from 'react-i18next';
 import { Link as RouterLink } from 'react-router';
 // The grammar the authentication sample is written in. Prism registers each as
-// a module side effect, so it is imported where the language is named.
+// a module side effect, so it is imported where the language is named -- and a
+// grammar registers itself onto Prism, so the module naming one has to name
+// Prism too. ESM evaluates in source order, and nothing else here reaches
+// `prismjs` before this runs.
+import 'prismjs';
 import 'prismjs/components/prism-bash';
 
 import { apiDocsEndpoints, apiDocsGroups, authCurlExample } from './api-docs-data';
