@@ -36,15 +36,20 @@ describe('Agent Setup', () => {
     ]);
   });
 
-  it('searches model ids without adding a delisted stored value', () => {
+  it('searches the label case-insensitively and the value the label does not spell', () => {
     const options = modelOptions([
       model('claude-opus-4.6', 1_000_000),
       model('gpt-5.6', 400_000),
-    ], 'codex', 'default');
+    ], 'claude', 'default');
 
     expect(filterModelOptions(options, 'OPUS').map(option => option.label))
       .toEqual(['claude-opus-4.6']);
-    expect(options.some(option => option.value === 'gpt-5-retired')).toBe(false);
+    // The label stays the public model id while the value carries the [1m]
+    // context override, so a search for the override has only the value to
+    // match against.
+    expect(filterModelOptions(options, '[1m]').map(option => option.value))
+      .toEqual(['claude-opus-4.6[1m]']);
+    expect(filterModelOptions(options, 'sonnet')).toEqual([]);
   });
 
   it('renders selected Codex model and reasoning effort', () => {

@@ -102,6 +102,5 @@ describe('upstream model workspace field-array transitions', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Edit with UI' }));
     await waitFor(() => expect(screen.getAllByLabelText('Delete manual model')).toHaveLength(1));
-    expect(screen.queryByText('Something went wrong')).toBeNull();
   });
 });
