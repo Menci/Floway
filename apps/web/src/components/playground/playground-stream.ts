@@ -58,8 +58,6 @@ const bodyFor = ({ api, model, system, messages, options }: PlaygroundRequest): 
   };
 };
 
-// Nothing but text is rendered here, so an unrecognized event is simply not
-// text.
 const textDelta = (api: PlaygroundApi, event: unknown): string => {
   if (api === 'chatCompletions') {
     const chunk = event as ChatCompletionsStreamEvent;
