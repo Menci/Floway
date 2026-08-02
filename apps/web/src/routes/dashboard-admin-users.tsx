@@ -15,9 +15,9 @@ import { Panel } from '../components/ui/panel';
 import { ResourceListActions, ResourceListPanel } from '../components/ui/resource-list';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { useRefresh } from '../components/ui/use-refresh';
+import { UserDialog } from '../components/users/dialog';
 import { PasswordDialog } from '../components/users/password-dialog';
-import { UserDialog } from '../components/users/user-dialog';
-import { UsersTable } from '../components/users/users-table';
+import { UsersTable } from '../components/users/table';
 import { useAuthStore } from '../stores/auth-store';
 
 // `null` is a failed fetch, not an empty deployment: a gateway always has a user.
