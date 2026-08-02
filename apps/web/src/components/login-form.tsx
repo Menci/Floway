@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { Trans, useTranslation } from 'react-i18next';
 import { useFetcher } from 'react-router';
@@ -48,7 +48,11 @@ export function LoginForm() {
   // The fetcher keeps its last response for as long as it lives, so a bar read
   // straight off it has no state a dismiss could clear. The rejection is taken
   // into state as each response arrives — during render rather than in an
-  // effect, so the bar and the response it reports are painted together.
+  // effect, so the bar and the response it reports are painted together. This
+  // is also where the response is split: the gateway refusing the credentials
+  // belongs to the field that holds them, and everything else -- a network
+  // failure, a gateway fault -- belongs to the attempt and has nowhere but the
+  // bar.
   const [serverError, setServerError] = useState<string | null>(null);
   const [credentialError, setCredentialError] = useState<string | null>(null);
   const [reportedResponse, setReportedResponse] = useState(fetcher.data);
@@ -62,7 +66,6 @@ export function LoginForm() {
   const {
     control,
     handleSubmit,
-    setError,
     formState: { errors },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -71,12 +74,6 @@ export function LoginForm() {
       password: '',
     },
   });
-
-  useEffect(() => {
-    if (fetcher.data?.ok === false) {
-      setError('password', { type: 'server', message: fetcher.data.error });
-    }
-  }, [fetcher.data, setError]);
 
   const onSubmit = (values: LoginFormValues) => {
     // See the note at the submit button: it stays focusable while in flight,
