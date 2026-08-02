@@ -1,5 +1,5 @@
 import { act } from '@testing-library/react';
-import { createMemoryRouter, RouterProvider, useLocation } from 'react-router';
+import { createMemoryRouter, RouterProvider, useLocation, type NavigateOptions } from 'react-router';
 import { describe, expect, it } from 'vitest';
 
 import { isPageChange, pageNavigation } from '../../src/lib/page-navigation';
@@ -19,10 +19,13 @@ const renderRouter = () => {
   return { router, ...renderInApp(<RouterProvider router={router} />) };
 };
 
-const navigate = async (
-  router: ReturnType<typeof renderRouter>['router'],
-  ...args: Parameters<ReturnType<typeof renderRouter>['router']['navigate']>
-) => { await act(async () => { await router.navigate(...args); }); };
+type Router = ReturnType<typeof renderRouter>['router'];
+
+const navigate = async (router: Router, to: string, options?: NavigateOptions) => {
+  await act(async () => { await router.navigate(to, options); });
+};
+
+const back = async (router: Router) => { await act(async () => { await router.navigate(-1); }); };
 
 describe('page change opt-in', () => {
   it('marks a navigation that asked for the transition', async () => {
@@ -55,7 +58,7 @@ describe('page change opt-in', () => {
 
     await navigate(router, '/upstreams/new', pageNavigation);
     await navigate(router, '/keys', pageNavigation);
-    await navigate(router, -1);
+    await back(router);
 
     expect(getByText('page change')).toBeTruthy();
   });
