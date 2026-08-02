@@ -41,5 +41,8 @@ export function SectionHeader({ actions, description, level, title, titleId, tru
       </div>;
 
   if (actions === undefined) return block;
-  return <div className={mergeClasses(HEADER_ROW_CLASS, 'gap-3')}>{block}{actions}</div>;
+  return <div className={mergeClasses(HEADER_ROW_CLASS, 'gap-3')}>
+    {block}
+    <div className="flex items-center gap-2 flex-none">{actions}</div>
+  </div>;
 }

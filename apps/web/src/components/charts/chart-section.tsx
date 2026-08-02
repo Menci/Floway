@@ -35,7 +35,7 @@ export function ChartSection({
   return (
     <section className="grid gap-3 min-w-0">
       <SectionHeader level={2} title={title} actions={
-        <Toolbar aria-label={controlsLabel} className="flex-none !p-0" size="small">
+        <Toolbar aria-label={controlsLabel} className="!p-0" size="small">
           <Tooltip content={t('dashboard.charts.series.all')} relationship="label">
             <ToolbarButton aria-label={t('dashboard.charts.series.all')} icon={<SelectAllOnRegular />} onClick={() => onHiddenChange(new Set())} />
           </Tooltip>

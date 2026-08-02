@@ -93,17 +93,15 @@ export function ModelDetail({
   return (
     <div className="grid gap-3 min-w-0">
       <SectionHeader level={2} truncate title={row.config.display_name ?? publicModelId(row.config)} actions={
-        <div className="flex-none">
-          <ChoiceGroup
-            ariaLabel={t('dashboard.upstreamEditor.models.source')}
-            items={[
-              { value: 'auto', label: t('dashboard.upstreamEditor.models.auto'), disabled: readOnly || !row.hasAuto },
-              { value: 'manual', label: t('dashboard.upstreamEditor.models.manual'), disabled: readOnly },
-            ]}
-            onChange={value => onSourceChange(value as 'auto' | 'manual')}
-            value={row.source}
-          />
-        </div>
+        <ChoiceGroup
+          ariaLabel={t('dashboard.upstreamEditor.models.source')}
+          items={[
+            { value: 'auto', label: t('dashboard.upstreamEditor.models.auto'), disabled: readOnly || !row.hasAuto },
+            { value: 'manual', label: t('dashboard.upstreamEditor.models.manual'), disabled: readOnly },
+          ]}
+          onChange={value => onSourceChange(value as 'auto' | 'manual')}
+          value={row.source}
+        />
       } />
 
       {section === 'flags' ? <FeatureFlagsEditor
