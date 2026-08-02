@@ -92,11 +92,11 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
     if (!host || chart.plot.form !== 'area') return;
     const frame = window.requestAnimationFrame(() => {
       const lines = [...host.querySelectorAll<SVGPathElement>('path[id*="-line-"]')];
-      for (const line of lines.toReversed()) {
-        const parent = line.parentNode;
-        if (!parent) throw new Error('Area chart line is detached from its series');
-        parent.append(line);
-      }
+      // Every match is a descendant of a mounted host, so each has the series
+      // group as its parent; the optional call is what the DOM type says, not a
+      // case that arises. It stays a call rather than a throw because a frame
+      // callback runs outside React, where nothing would catch one.
+      for (const line of lines.toReversed()) line.parentNode?.append(line);
     });
     return () => window.cancelAnimationFrame(frame);
   }, [chart.plot.data, chart.plot.form, host, size.height, size.width]);

@@ -1,5 +1,5 @@
 import { ArrowDownloadRegular, ArrowUploadRegular } from '@fluentui/react-icons';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { requireDashboardAdmin } from './route-guards';
@@ -122,12 +122,23 @@ export default function DashboardAdminBackupRestore() {
     handle.succeed(t('dashboard.backupRestore.export.success', { name: anchor.download }));
   }, [includePerformance, t, toasts]);
 
+  // A second file dropped while the first is still being read would otherwise
+  // leave two reads racing, and the later-finishing one would win whichever
+  // file the operator dropped last. The read in flight is aborted instead --
+  // `abort()` raises neither `load` nor `error`, so the losing read reaches no
+  // state at all -- and an unmount takes the pending read with it.
+  const readerRef = useRef<FileReader | null>(null);
+  useEffect(() => () => readerRef.current?.abort(), []);
+
   const handleFile = useCallback(
     (file: File) => {
       setImportError(null);
+      readerRef.current?.abort();
 
       const reader = new FileReader();
+      readerRef.current = reader;
       reader.onload = () => {
+        readerRef.current = null;
         const result = parseBackupFile(reader.result as string);
         if (!result.ok) {
           setImportError(t('dashboard.backupRestore.import.errorInvalidFile', { message: result.message }));
@@ -139,6 +150,7 @@ export default function DashboardAdminBackupRestore() {
         setImportParsedData(result.payload);
       };
       reader.onerror = () => {
+        readerRef.current = null;
         setImportError(t('dashboard.backupRestore.import.errorReadFile'));
       };
       reader.readAsText(file);
@@ -374,7 +386,6 @@ export default function DashboardAdminBackupRestore() {
         actionLabel={t('dashboard.backupRestore.import.button')}
         actionIntent="primary"
         busy={importing}
-        cancelLabel={t('common.cancel')}
         key={confirmDialog.invocation.key}
         message={t('dashboard.backupRestore.confirmMessage')}
         onConfirm={() => {
