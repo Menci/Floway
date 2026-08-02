@@ -17,9 +17,15 @@
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L85-L87
 import { list, nested, pressedRoots } from './selectors';
 
-const selectedCard = '.fui-Card.fui-Card:has(> .fui-Card__checkbox:checked:enabled)';
+const enabledCard = ".fui-Card.fui-Card:not([aria-disabled='true'])";
+
+const selectedCard = `${enabledCard}[data-winui-selected='true']`;
+
+const unselectedCard = `${enabledCard}[data-winui-selected='false']`;
 
 const selectedCardPressed = pressedRoots(selectedCard, '> .fui-Card__checkbox');
+
+const unselectedCardPressed = pressedRoots(unselectedCard, '> .fui-Card__checkbox');
 
 export const cardCss = `
 /* Both surfaces this file draws from round at ControlCornerRadius, the radius
@@ -70,29 +76,30 @@ export const cardCss = `
     border-color: var(--winui-card-stroke-default);
   }
 
-  /* A selected ListViewItem replaces its background and states one selected
-     background whatever the item is filled with, so this rule is not
-     partitioned by appearance. Fluent marks selection on the root only through
-     a content-hashed Griffel atom, so the hidden checkbox it renders for a
-     selectable card is the stable marker keyed off here. A card that supplies a
-     floatingAction instead gets no checkbox and keeps Fluent's selected fill;
-     covering it would mean redefining the four *Selected tokens on the root,
-     handing them to every Fluent element inside the card.
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L20
-     https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-card/library/src/components/Card/useCardStyles.styles.ts#L476
-     https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-card/library/src/components/Card/useCardSelectable.ts#L92-L95 */
-  .fui-Card.fui-Card:has(> .fui-Card__checkbox:checked) {
+  /* A selectable card is a ListViewItem, not an Expander: it answers the
+     pointer whether or not it is selected, and it states one selected
+     background whatever the item is filled with, so none of these rules is
+     partitioned by appearance. The stamp ../appearance.ts writes is the marker,
+     because Fluent's own selected state reaches the DOM only as a
+     content-hashed atom and, on a card that supplies a floatingAction, as
+     nothing at all. Every rule names the state it answers rather than relying
+     on the one after it, and the disabled row is excluded from the pointer
+     steps outright: ListViewItemBackgroundSelectedDisabled is the Secondary
+     rest fill through hover and press alike.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L18-L22
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L74 */
+  ${unselectedCard}:hover {
     background-color: var(--winui-subtle-fill-secondary);
   }
 
-  /* Unlike the Expander fill, the selected wash answers the pointer: Tertiary
-     hovered, Secondary pressed. ListViewItemBackgroundSelectedDisabled is
-     Secondary through both, and Fluent hands the card's disabled state to the
-     hidden checkbox, so :enabled on it is what holds a disabled selected card
-     at the rule above.
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L21-L22
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L74
-     https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-card/library/src/components/Card/useCardSelectable.ts#L108-L112 */
+${nested(list(unselectedCardPressed))} {
+    background-color: var(--winui-subtle-fill-tertiary);
+  }
+
+  .fui-Card.fui-Card[data-winui-selected='true'] {
+    background-color: var(--winui-subtle-fill-secondary);
+  }
+
   ${selectedCard}:hover {
     background-color: var(--winui-subtle-fill-tertiary);
   }
