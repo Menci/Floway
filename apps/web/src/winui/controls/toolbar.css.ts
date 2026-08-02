@@ -71,6 +71,6 @@ export const toolbarCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SplitButton/SplitButton_themeresources.xaml#L104-L119
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SplitButton/SplitButton_themeresources.xaml#L113 */
 .fui-Toolbar .fui-Button.fui-Button${notOptedOut} {
-  font-size: 12px;
+  font-size: var(--fontSizeBase200);
 }
 `;

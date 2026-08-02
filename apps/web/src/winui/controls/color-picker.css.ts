@@ -181,7 +181,7 @@ export const colorPickerCss = `
   .fui-ColorSwatch.fui-ColorSwatch[aria-selected='true'][data-fui-focus-visible] {
     box-shadow:
       inset 0 0 0 var(--strokeWidthThicker) var(--winui-focus-stroke-outer),
-      inset 0 0 0 5px var(--winui-focus-stroke-inner);
+      inset 0 0 0 calc(var(--strokeWidthThicker) + var(--strokeWidthThick)) var(--winui-focus-stroke-inner);
   }
 }
 `;
