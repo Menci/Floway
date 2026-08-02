@@ -1,6 +1,3 @@
-// HSV coordinates: hue in [0, 360), saturation/value in [0, 1]. HEX is
-// the canonical wire form (`#RRGGBB`, upper-or-lower case accepted).
-
 import { UPSTREAM_COLOR_HEX_REGEX } from '@floway-dev/provider/model';
 import type { UpstreamColor } from '@floway-dev/provider/model';
 
@@ -50,7 +47,6 @@ export const rgbToHsv = (r: number, g: number, b: number): [number, number, numb
   return [h, s, v];
 };
 
-// WCAG 2.x relative luminance and contrast, over sRGB.
 // https://www.w3.org/TR/WCAG21/#dfn-relative-luminance
 const relativeLuminance = ([r, g, b]: [number, number, number]): number => {
   const channel = (value: number) => {
@@ -78,11 +74,10 @@ const BLACK: [number, number, number] = [0, 0, 0];
 const WHITE: [number, number, number] = [255, 255, 255];
 
 /**
- * The nearest tone of `hex` that reads as text on `surface`. Hue carries the
- * upstream's identity, so hue is held fixed; value moves first because it costs
+ * The nearest tone of `hex` that reads as text on `surface`. Hue is held fixed
+ * because it carries the upstream's identity; value moves first because it costs
  * the least recognition, and saturation gives way only where value alone cannot
- * arrive: a fully saturated blue reads 1.24:1 over a washed dark card at full
- * value and cannot brighten further, its channels already at their limit.
+ * reach the floor.
  */
 export const readableTone = (hex: string, surface: string): string => {
   const rgb = hexToRgb(hex);
@@ -104,20 +99,17 @@ export const readableTone = (hex: string, surface: string): string => {
       if (contrastRatio(candidate, surfaceRgb) >= TEXT_CONTRAST_FLOOR) return rgbToHex(...candidate);
     }
   }
-  // The saturation ladder stops short of zero unless the colour's saturation is
-  // a multiple of a tenth, so a mid surface can exhaust it. The extreme always
-  // clears: a surface's ratios against black and white multiply to exactly 21,
-  // so the larger is never below sqrt(21), about 4.58.
+  // Reachable: the saturation ladder stops short of zero unless the saturation is
+  // a multiple of a tenth. The extreme always clears -- a surface's ratios against
+  // black and white multiply to exactly 21, so the larger is never below 4.58.
   return rgbToHex(...(darken ? BLACK : WHITE));
 };
 
 export const isHexColor = (color: UpstreamColor | null): color is `#${string}` => color?.startsWith('#') === true;
 
-// A badge's surface is a range -- card, dialog, washed and selected rows -- and
-// its label is one literal per scheme, so each is resolved against the end of
-// that range hardest for it: in light the selected request row (Fluent brand
-// 160, #EBF3FC); in dark a card washed by SubtleFillColorSecondary (#ffffff0f
-// over #373737, giving #434343).
+// The hardest end of each scheme's badge-surface range: in light the selected
+// request row (Fluent brand 160); in dark a card washed by
+// SubtleFillColorSecondary (#ffffff0f over #373737).
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L26
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L56
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L71
@@ -132,9 +124,9 @@ const BADGE_STROKE_ALPHA = 0.35;
 /**
  * A badge painted in an arbitrary hue. The label is resolved against the fill
  * rather than the surface under it, because the wash moves the reading by enough
- * to change the answer. Fill and stroke need no light-dark pair: they are
- * fractions of the hue and composite over whatever is beneath, following that
- * surface's pointer and selection states on their own.
+ * to change the answer. Fill and stroke need no light-dark pair: as fractions of
+ * the hue they composite over whatever is beneath, following that surface's
+ * pointer and selection states on their own.
  */
 export const badgeHueStyle = (hue: string): Record<string, string> => {
   const label = (surface: string) => readableTone(hue, blendHex(hue, BADGE_FILL_ALPHA, surface));
