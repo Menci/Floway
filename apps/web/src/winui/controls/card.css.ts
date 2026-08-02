@@ -1,6 +1,6 @@
 // Card restyled from Fluent 2 Web onto WinUI 3. WinUI has no Card control: the
 // fill ramp and stroke come from the Expander header and content region, the
-// chromeless surface, selected state and focus ring from ListViewItem.
+// chromeless surface and focus ring from ListViewItem.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L17-L19
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L264
 //
@@ -12,22 +12,8 @@
 //
 // Colour stays inside `@media not (forced-colors: active)`: WinUI's own forced
 // colours answer sits on single-class Fluent atoms that every coloured rule
-// here would outrank, and the two languages agree on the affordance those
-// atoms carry -- an item filled with SystemColorHighlight under the pointer and
-// when selected. Geometry applies in both modes. The one forced-colours rule at
-// the foot of this file is where they disagree.
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L85-L87
-import { list, nested, pressedRoots } from './selectors';
-
-const enabledCard = ".fui-Card.fui-Card:not([aria-disabled='true'])";
-
-const selectedCard = `${enabledCard}[data-winui-selected='true']`;
-
-const unselectedCard = `${enabledCard}[data-winui-selected='false']`;
-
-const selectedCardPressed = pressedRoots(selectedCard, '> .fui-Card__checkbox');
-
-const unselectedCardPressed = pressedRoots(unselectedCard, '> .fui-Card__checkbox');
+// here would outrank. Geometry applies in both modes. The one forced-colours
+// rule at the foot of this file is where the two languages disagree.
 
 export const cardCss = `
 /* Both surfaces this file draws from round at ControlCornerRadius, the radius
@@ -66,23 +52,6 @@ export const cardCss = `
 }
 
 @media not (forced-colors: active) {
-  /* WinUI holds an item's foreground still through every pointer and selection
-     state: ListViewItemForeground and its PointerOver, Pressed, Selected,
-     SelectedPointerOver and SelectedPressed siblings are one brush,
-     TextFillColorPrimaryBrush. Fluent instead drops an interactive
-     filled-alternative card from colorNeutralForeground1 to
-     colorNeutralForeground2Hover on hover, which is a move between ramps rather
-     than within one, so mapping the sibling tokens in ../theme.ts cannot reach
-     it. Stating the fill once on the enabled card outranks every appearance's
-     hover atom; the disabled card is excluded because its own foreground is a
-     single-class atom that ../theme.ts already lands.
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L23-L28
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L175-L180
-     https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-card/library/src/components/Card/useCardStyles.styles.ts#L225-L242 */
-  ${enabledCard} {
-    color: var(--winui-text-fill-primary);
-  }
-
   /* The Expander header. The doubled class outranks Fluent's hover and pressed
      atoms, which is how the surface stops repainting under the pointer.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L5
@@ -132,38 +101,6 @@ export const cardCss = `
 
   .fui-Card.fui-Card[data-winui-appearance='subtle']::after {
     border-color: transparent;
-  }
-
-  /* A selectable card is a ListViewItem, not an Expander: it answers the
-     pointer whether or not it is selected, and it states one selected
-     background whatever the item is filled with, so none of these rules is
-     partitioned by appearance. The stamp ../appearance.ts writes is the marker,
-     because Fluent's own selected state reaches the DOM only as a
-     content-hashed atom and, on a card that supplies a floatingAction, as
-     nothing at all. Every rule names the state it answers rather than relying
-     on the one after it, and the disabled row is excluded from the pointer
-     steps outright: ListViewItemBackgroundSelectedDisabled is the Secondary
-     rest fill through hover and press alike.
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L18-L22
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L74 */
-  ${unselectedCard}:hover {
-    background-color: var(--winui-subtle-fill-secondary);
-  }
-
-${nested(list(unselectedCardPressed))} {
-    background-color: var(--winui-subtle-fill-tertiary);
-  }
-
-  .fui-Card.fui-Card[data-winui-selected='true'] {
-    background-color: var(--winui-subtle-fill-secondary);
-  }
-
-  ${selectedCard}:hover {
-    background-color: var(--winui-subtle-fill-tertiary);
-  }
-
-${nested(list(selectedCardPressed))} {
-    background-color: var(--winui-subtle-fill-secondary);
   }
 
   /* A ListViewItem draws a 2px outer ring with a 1px inner ring immediately

@@ -13,7 +13,6 @@ export const winuiIntentAttribute = 'data-winui-intent';
 export const winuiSizeAttribute = 'data-winui-size';
 export const winuiShapeAttribute = 'data-winui-shape';
 export const winuiCheckedAttribute = 'data-winui-checked';
-export const winuiSelectedAttribute = 'data-winui-selected';
 
 type SlotProps = Record<string, unknown>;
 type PropCarrier = Record<string, unknown>;
@@ -24,11 +23,6 @@ interface CheckedCarrier {
   checked?: CheckedState;
   defaultChecked?: CheckedState;
   onChange?: (ev: React.ChangeEvent<HTMLInputElement>, data: { checked: CheckedState }) => void;
-}
-interface SelectableCarrier {
-  selected?: boolean;
-  defaultSelected?: boolean;
-  onSelectionChange?: (ev: React.SyntheticEvent, data: { selected: boolean }) => void;
 }
 
 // Where the root is not the primary slot, `getPartitionedNativeProps` forwards a
@@ -173,46 +167,6 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
     return wrapped as Component;
   };
 
-  // A selectable card's only DOM trace is the hidden check box Fluent renders
-  // for it, and a card that supplies a floatingAction gets no check box at all,
-  // so selection is invisible to a selector on exactly the shape that has no
-  // other affordance. The resolved pair is stamped instead: whether the card is
-  // selectable, and whether it is selected. Fluent's own resolution is mirrored
-  // -- the prop wins where it is given, otherwise the last value its
-  // onSelectionChange reported, seeded from defaultSelected -- and the handler
-  // is only attached when the card is selectable already, because Fluent reads
-  // its presence as the selectable switch.
-  // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-card/library/src/components/Card/useCardSelectable.ts#L23-L27
-  // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-card/library/src/components/Card/useCardSelectable.ts#L92-L95
-  const stampSelectedState = <Component>(component: Component): Component => {
-    const elementType = component as React.ElementType;
-
-    const wrapped = React.forwardRef<unknown, SelectableCarrier>((props, ref) => {
-      const [uncontrolled, setUncontrolled] = React.useState(props.defaultSelected ?? false);
-      const selectable = props.selected !== undefined
-        || props.defaultSelected !== undefined
-        || props.onSelectionChange !== undefined;
-
-      if (!selectable) {
-        return React.createElement(elementType, { ...props, ref });
-      }
-
-      return React.createElement(elementType, {
-        ...props,
-        [winuiSelectedAttribute]: String(props.selected ?? uncontrolled),
-        onSelectionChange: (ev: React.SyntheticEvent, data: { selected: boolean }) => {
-          setUncontrolled(data.selected);
-          props.onSelectionChange?.(ev, data);
-        },
-        ref,
-      });
-    });
-
-    wrapped.displayName = (component as { displayName?: string }).displayName;
-
-    return wrapped as Component;
-  };
-
   // Every InfoBar severity is a circle in WinUI, where Fluent reaches for a
   // diamond for `error` and a triangle for `warning`. The intent is stamped
   // alongside because Fluent settles it in JavaScript.
@@ -315,7 +269,7 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
     Select: stamp(components.Select, appearance('outline', rootAndPrimary)),
     Combobox: stamp(components.Combobox, appearance('outline', rootAndPrimary)),
     Dropdown: stamp(components.Dropdown, appearance('outline', rootAndPrimary)),
-    Card: stampSelectedState(stamp(components.Card, appearance('filled', rootIsPrimary))),
+    Card: stamp(components.Card, appearance('filled', rootIsPrimary)),
     TableRow: stamp(components.TableRow, appearance('none', rootIsPrimary)),
     TabList: stamp(components.TabList, appearance('transparent', rootIsPrimary)),
     Checkbox: stampCheckedState(stamp(components.Checkbox, shape('square', rootAndPrimary))),
