@@ -23,6 +23,7 @@ import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { ReorderButtons } from '../components/ui/reorder-buttons';
 import { ResourceListActions, ResourceListEmptyState, ResourceListPanel } from '../components/ui/resource-list';
+import { useRowTitleClass } from '../components/ui/row-title';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { TableActions, TableActionsHeader, TableCentredCell, TableCentredHeader } from '../components/ui/table-actions';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
@@ -331,6 +332,7 @@ function UpstreamsTable({
   onToggle: (record: UpstreamRecord, enabled: boolean) => void;
 }) {
   const { t } = useTranslation();
+  const rowTitle = useRowTitleClass();
   const upstreams = data.upstreams;
   const modelCounts = useMemo(() => buildModelCounts(upstreams ?? [], data.models), [data.models, upstreams]);
 
@@ -383,7 +385,7 @@ function UpstreamsTable({
                   <Tooltip content={record.name} relationship="label">
                     <Link
                       {...pageNavigation}
-                      className="text-fui-fg1 no-underline hover:underline truncate"
+                      className={`${rowTitle} truncate`}
                       to={`/dashboard/providers/upstreams/${encodeURIComponent(record.id)}`}
                     >
                       {record.name}

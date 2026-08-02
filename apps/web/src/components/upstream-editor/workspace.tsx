@@ -29,6 +29,7 @@ import { useDangerTextClass } from '../ui/danger';
 import { EmptyStateLine } from '../ui/empty-state';
 import { Input } from '../ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
+import { RowTitleButton } from '../ui/row-title';
 import { ScrollArea } from '../ui/scroll-area';
 import { SectionHeader } from '../ui/section-header';
 import { TableActions, TableActionsHeader, TableCentredCell, TableCentredHeader } from '../ui/table-actions';
@@ -38,7 +39,6 @@ import { useDialogInvocation } from '../ui/use-dialog-invocation';
 
 const {
   Button,
-  Link,
   Spinner,
   Switch,
   Tab,
@@ -338,13 +338,9 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
             <TableCentredCell><Switch aria-label={t('dashboard.upstreamEditor.models.enabledFor', { name: row.config.display_name ?? id })} checked={!disabled.includes(id)} onChange={(_, data) => setEnabled(id, data.checked)} /></TableCentredCell>
             <TableCell className="overflow-hidden">
               <Tooltip content={row.config.display_name ?? id} relationship="label">
-                <Link
-                  appearance="subtle"
-                  className="block min-w-0 max-w-full truncate text-left"
-                  onClick={() => onSelectUpstreamModel(row.config.upstreamModelId)}
-                >
+                <RowTitleButton onClick={() => onSelectUpstreamModel(row.config.upstreamModelId)}>
                   {row.config.display_name ?? id}
-                </Link>
+                </RowTitleButton>
               </Tooltip>
             </TableCell>
             <TableCentredCell>{t(`dashboard.upstreamEditor.models.kindValue.${row.config.kind}`)}</TableCentredCell>
