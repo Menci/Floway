@@ -23,28 +23,26 @@ export const pageTransitionCss = `
      Its indicator has its own animation and is not this one's business. */
   :root { view-transition-name: none; }
 
-  /* A reload has no outgoing frame, so the pair below never runs and the
-     entrance is stated on the frame itself. No wait in front of it: the 150 the
-     incoming leg is held for during a navigation is the time the outgoing one
-     takes to leave, and there is nothing to leave here -- Settings starts its
-     first page moving at once. The navigation pane arrives with the document
-     and does not animate; it is the fixed thing the page comes into.
+  /* A reload has no outgoing frame, so the pair below never runs and the frame
+     plays the incoming leg on its own. No wait in front of it, and no hold: the
+     first frame the reader sees is the animation's own first frame. The
+     navigation pane arrives with the document and does not animate; it is the
+     fixed thing the page comes into.
 
-     The two classes are a start gate rather than a state machine. A CSS
-     animation takes its start time from the frame its style was recalculated
-     in, not from the frame it is first painted in, and the frame mounts into
-     the busiest moment the app has -- hydration, the scroller's own setup, the
-     first charts. Declared at mount, the animation was already 84ms along when
-     it first reached the screen, which is most of the way home on this curve
-     and reads as a jump. So the frame is held at the offset until ../../routes
-     /dashboard.tsx has seen a painted frame go by, and only then is the
-     animation declared, on a frame that can paint it. */
-  .floway-page-entrance-held {
+     Only the resting position is stated here. The animation itself is started
+     from ../../routes/dashboard.tsx, on the element, because a CSS animation
+     takes its start time from the frame its style was recalculated in rather
+     than the frame it is first painted in -- and this frame's style is
+     recalculated in the middle of hydration, so by the time it reached the
+     screen the animation had already run 84ms of its 300 and arrived most of
+     the way home. Starting it from script lets it start on a frame that paints.
+
+     A forwards fill is what holds the end state against this rule afterwards:
+     an animation's fill outranks the declaration it is filling over. The class
+     is added by that same script rather than written in the markup, so nothing
+     holds the frame down unless the thing that lifts it already exists. */
+  .floway-page-entrance {
     translate: 0 var(--winui-page-enter-offset);
-  }
-  .floway-page-entrance-playing {
-    animation: floway-page-enter var(--winui-page-enter-duration)
-      var(--winui-page-enter-easing) forwards;
   }
   .floway-page-transition { view-transition-name: floway-page; }
 
@@ -89,7 +87,6 @@ export const pageTransitionCss = `
      the opacity its own resting style states.
      https://github.com/w3c/wcag/blob/900ea026b967bc306a2cdbe0c586330a508d6759/guidelines/terms/21/motion-animation.html */
   @media (prefers-reduced-motion: reduce) {
-    .floway-page-entrance-playing { animation-duration: 0.01ms; }
     ::view-transition-old(floway-page) { animation-duration: 0.01ms; }
     ::view-transition-new(floway-page) {
       animation-delay: 0.01ms;

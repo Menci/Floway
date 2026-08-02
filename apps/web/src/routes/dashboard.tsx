@@ -1,5 +1,5 @@
 import { NavigationRegular } from '@fluentui/react-icons';
-import { useEffect, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Navigate,
@@ -18,7 +18,9 @@ import { OutcomeToastProvider } from '../components/ui/outcome-toast';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { fluentComponents } from '../fluent';
 import { isDashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
+import { prefersReducedMotion } from '../lib/reduced-motion';
 import { useAuthStore } from '../stores/auth-store';
+import { PAGE_ENTER_EASING, PAGE_ENTER_MS, PAGE_ENTER_OFFSET_PX } from '../winui/motion';
 
 const { Button, DrawerBody, OverlayDrawer } = fluentComponents;
 
@@ -44,16 +46,37 @@ export default function Dashboard({}: Route.ComponentProps) {
   const { t } = useTranslation();
   const user = useAuthStore(state => state.user);
   const [navigationOpen, setNavigationOpen] = useState(false);
-  // Two frames, not one: the first callback still runs inside the commit that
-  // mounted this tree, so the animation would be declared in the same style
-  // recalculation the frame is. The second runs after the browser has painted
-  // once, which is the earliest moment an animation declared here starts from
-  // where it is drawn.
-  const [entered, setEntered] = useState(false);
-  useEffect(() => {
-    let inner = 0;
-    const outer = requestAnimationFrame(() => { inner = requestAnimationFrame(() => setEntered(true)); });
-    return () => { cancelAnimationFrame(outer); cancelAnimationFrame(inner); };
+  // The entrance, started on the element rather than declared in the sheet.
+  // ../winui/page-transition.css.ts says why it cannot be declared; this is the
+  // other half, and the whole of it is where the call sits.
+  //
+  // A layout effect runs after the frame is in the document and before anything
+  // is painted, and an animation created there is pending until the next time
+  // the browser updates animations -- which is the frame that paints the frame.
+  // So its first painted pixel is its own first key frame, whether that frame
+  // comes one tick later or seventy: the wait moves, the starting position does
+  // not. Nothing here goes through React state and nothing waits a turn on
+  // purpose. Both were tried and both put frames between the page appearing and
+  // the page moving.
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (prefersReducedMotion()) return;
+    // ScrollArea hands out its viewport; the frame is the host around it.
+    const frame = scrollerRef.current?.parentElement;
+    if (!frame) return;
+    // The offset is put on the element here rather than in the sheet, and both
+    // halves happen in this one synchronous block so no frame is painted
+    // between them. A pending animation applies no fill, so something has to
+    // hold the frame at its first key frame until the animation starts -- and
+    // if that something were a class in the markup, a reader whose browser
+    // never ran this effect, or who asked for less motion, would be left
+    // looking at a page parked 140 below where it belongs. Nothing holds it
+    // unless the thing that releases it has already been created.
+    frame.classList.add('floway-page-entrance');
+    frame.animate(
+      [{ translate: `0 ${PAGE_ENTER_OFFSET_PX}px` }, { translate: 'none' }],
+      { duration: PAGE_ENTER_MS, easing: PAGE_ENTER_EASING, fill: 'forwards' },
+    );
   }, []);
   const workspace = useMatches().some(match => isDashboardWorkspaceHandle(match.handle));
 
@@ -88,9 +111,10 @@ export default function Dashboard({}: Route.ComponentProps) {
             waits for `entered` rather than being declared at mount. */}
         <ScrollArea
           axes="vertical"
-          className={`min-h-0 floway-page-transition ${entered ? 'floway-page-entrance-playing' : 'floway-page-entrance-held'}`}
+          className="min-h-0 floway-page-transition"
           contentClassName={workspace ? 'h-full' : 'min-h-full'}
           noTabIndex
+          ref={scrollerRef}
         >
           {/* Only a workspace page is confined to the scroller's height. Every
               other page is height-by-content and scrolls; the scroller's own
