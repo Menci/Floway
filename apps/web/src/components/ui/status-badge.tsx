@@ -5,11 +5,7 @@ import { fluentComponents } from '../../fluent';
 
 const { Badge } = fluentComponents;
 
-/**
- * `large` is the size every badge in the dashboard is: a 24px box around a 12px
- * label. Fluent's `medium` default has an empty size rule and so leaves the 20px
- * box its root reset states.
- */
+/** Fluent's `medium` default has an empty size rule, leaving the 20px root reset box, so every dashboard badge is `large`. */
 export function StatusBadge({ children, className, color }: {
   children: ReactNode;
   className?: string;
