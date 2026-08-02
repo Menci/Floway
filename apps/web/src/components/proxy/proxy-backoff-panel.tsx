@@ -72,8 +72,8 @@ export function ProxyBackoffPanel({ backoffs, onReset, proxyId }: {
               : t('dashboard.proxy.backoff.remaining', { duration: formatCountdown(remaining, locale) })}
           </Text>
           <Text size={200} className="text-fui-fg3">{t('dashboard.proxy.backoff.failures', { count: row.fail_count })}</Text>
-          {row.last_error && <Tooltip content={row.last_error} relationship="description">
-            <Text size={200} className="max-w-[220px] truncate text-fui-fg3">{row.last_error}</Text>
+          {row.last_error && <Tooltip content={row.last_error} relationship="label">
+            <Text size={200} className="max-w-[220px] truncate text-fui-fg3" tabIndex={0}>{row.last_error}</Text>
           </Tooltip>}
           <Button appearance="subtle" disabledFocusable={resetting} onClick={() => void reset(row.upstream_id)} size="small">
             {t('dashboard.proxy.backoff.reset')}
