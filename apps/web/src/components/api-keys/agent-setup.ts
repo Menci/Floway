@@ -72,9 +72,8 @@ export const codexWindowsCredentialSnippet = (apiKey: string) => {
   ].join('\n');
 };
 
-// Claude uses empty strings to suppress commit/PR attribution and false to
-// suppress session links.
-// Ref: https://code.claude.com/docs/en/settings#attribution-settings
+// Empty strings suppress commit/PR attribution; false suppresses session links.
+// https://code.claude.com/docs/en/settings#attribution-settings
 const claudeAttributionOptOut = { commit: '', pr: '', sessionUrl: false } as const;
 
 export const buildAgentClaudeSnippet = (
