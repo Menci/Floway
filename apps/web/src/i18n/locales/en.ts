@@ -972,7 +972,7 @@ const en = {
         export: {
           heading: 'Export',
           description:
-              'Download API keys, server secrets, upstreams, proxies, search configuration, and usage data. Treat the file like a database backup.',
+              'Download users, API keys, server secrets, configurations, and usage data. Treat the file like a database backup.',
           includePerformance: 'Include Performance Telemetry',
           includePerformanceHint:
               'When enabled, the export will include recorded performance metrics alongside configuration data. Performance data can significantly increase file size.',
@@ -988,13 +988,9 @@ const en = {
           dropzoneActive: 'Release to load the file',
           fileSelected: '{{name}} ({{size}})',
           change: 'Change',
-          mode: 'Import Mode',
-          modeMerge: 'Merge',
-          modeMergeDesc:
-              'Add imported records alongside existing data. Existing records with matching identifiers are overwritten.',
-          modeReplace: 'Replace',
-          modeReplaceDesc:
-              'Clear all existing data before importing the backup file.',
+          replace: 'Replace existing data',
+          replaceHint:
+              'Clear all existing data before importing the backup file. Left unchecked, imported records are added alongside existing data and existing records with matching identifiers are overwritten.',
           replaceWarning:
               'Replace mode will permanently delete all existing data before importing. This action cannot be undone.',
           button: 'Import Data',

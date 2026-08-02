@@ -933,7 +933,7 @@ const zhHansCN = {
         export: {
           heading: '导出',
           description:
-              '下载 API 密钥、服务端密钥、上游、代理、搜索配置和用量数据。请像数据库备份一样妥善保管。',
+              '下载用户、API 密钥、服务端密钥、各项配置和用量数据。请像数据库备份一样妥善保管。',
           includePerformance: '包含性能遥测数据',
           includePerformanceHint:
               '启用后，导出文件将包含已记录的性能指标以及配置数据。性能数据可能会显著增加文件大小。',
@@ -948,12 +948,9 @@ const zhHansCN = {
           dropzoneActive: '释放文件以加载',
           fileSelected: '{{name}}（{{size}}）',
           change: '更换',
-          mode: '导入模式',
-          modeMerge: '合并',
-          modeMergeDesc:
-              '将导入的记录添加到现有数据中。标识符匹配的已有记录会被覆盖。',
-          modeReplace: '替换',
-          modeReplaceDesc: '在导入备份文件之前清除所有现有数据。',
+          replace: '替换现有数据',
+          replaceHint:
+              '在导入备份文件之前清除所有现有数据。不勾选时，导入的记录会添加到现有数据中，标识符匹配的已有记录会被覆盖。',
           replaceWarning:
               '替换模式将永久删除所有现有数据后再导入。此操作无法撤销。',
           button: '导入数据',

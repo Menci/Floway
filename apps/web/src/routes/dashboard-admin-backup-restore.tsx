@@ -6,7 +6,6 @@ import { requireDashboardAdmin } from './route-guards';
 import { api, callApi } from '../api/client';
 import { BACKUP_FILE_VERSION, parseBackupFile, type BackupFile, type BackupFileData } from '../components/backup-restore/backup-file';
 import { BackupFilePicker, BackupFileSummary } from '../components/backup-restore/backup-file-picker';
-import { ChoiceGroup } from '../components/ui/choice-group';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
@@ -29,18 +28,6 @@ export async function clientLoader() {
   await requireDashboardAdmin();
   return null;
 }
-
-const IMPORT_MODES = {
-  merge: {
-    labelKey: 'dashboard.backupRestore.import.modeMerge',
-    descriptionKey: 'dashboard.backupRestore.import.modeMergeDesc',
-  },
-  replace: {
-    labelKey: 'dashboard.backupRestore.import.modeReplace',
-    descriptionKey: 'dashboard.backupRestore.import.modeReplaceDesc',
-  },
-} as const;
-type ImportMode = keyof typeof IMPORT_MODES;
 
 const PREVIEW_LABEL_KEYS = [
   'users',
@@ -89,7 +76,7 @@ export default function DashboardAdminBackupRestore() {
 
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importParsedData, setImportParsedData] = useState<BackupFile | null>(null);
-  const [importMode, setImportMode] = useState<ImportMode>('merge');
+  const [replaceExisting, setReplaceExisting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
 
@@ -216,7 +203,7 @@ export default function DashboardAdminBackupRestore() {
     const result = await callApi(() => api.api.import.$post({
       json: {
         version: BACKUP_FILE_VERSION,
-        mode: importMode,
+        mode: replaceExisting ? 'replace' : 'merge',
         data: importParsedData.data,
       },
     }));
@@ -235,16 +222,16 @@ export default function DashboardAdminBackupRestore() {
     handle.succeed(summary
       ? t('dashboard.backupRestore.import.success', { summary })
       : t('dashboard.backupRestore.import.successEmpty'));
-  }, [importMode, importParsedData, t, toasts]);
+  }, [importParsedData, replaceExisting, t, toasts]);
 
   const handleImportClick = useCallback(() => {
     if (!importParsedData) return;
-    if (importMode === 'replace') {
+    if (replaceExisting) {
       confirmDialog.open();
       return;
     }
     void doImport();
-  }, [confirmDialog, doImport, importMode, importParsedData]);
+  }, [confirmDialog, doImport, importParsedData, replaceExisting]);
 
   return (
     <section className="dashboard-page max-w-[960px]">
@@ -279,7 +266,7 @@ export default function DashboardAdminBackupRestore() {
           <OutcomeMessageBar onDismiss={() => setExportError(null)}>{exportError}</OutcomeMessageBar>
         )}
 
-        <div className="flex justify-end pt-1">
+        <div className="pt-1">
           <Button
             appearance="primary"
             disabledFocusable={exporting}
@@ -325,29 +312,22 @@ export default function DashboardAdminBackupRestore() {
                 : t('dashboard.backupRestore.import.dropzone')}
             />}
 
-        {/* The mode is a parameter of the pending import, so it is a Field with
-            a control in it, like every other parameter in this app: the label
-            is the group's header and the hint is the chosen option's sentence.
-            The group itself is ../components/ui/choice-group.tsx, the app's own
-            SelectorBar, which is what a two-way choice is already spelled with
-            in the alias dialog and in the key form. */}
-        {importParsedData && <Field
-          hint={t(IMPORT_MODES[importMode].descriptionKey)}
-          label={t('dashboard.backupRestore.import.mode')}
-        >
-          <ChoiceGroup
-            ariaLabel={t('dashboard.backupRestore.import.mode')}
-            items={Object.entries(IMPORT_MODES).map(([value, mode]) => ({
-              value,
-              label: t(mode.labelKey),
-              disabled: importing,
-            }))}
-            onChange={value => setImportMode(value as ImportMode)}
-            value={importMode}
+        {/* Whether to clear first is one yes-or-no question, so it is one check
+            box: the same deferred-commit parameter the export section carries,
+            worded as the statement its check mark makes true, with the
+            consequence in the Field's hint. Unchecked is the merge the gateway
+            takes by default.
+            https://learn.microsoft.com/en-us/windows/apps/design/controls/checkbox */}
+        {importParsedData && <Field hint={t('dashboard.backupRestore.import.replaceHint')}>
+          <Checkbox
+            checked={replaceExisting}
+            disabled={importing}
+            label={t('dashboard.backupRestore.import.replace')}
+            onChange={(_, data) => setReplaceExisting(!!data.checked)}
           />
         </Field>}
 
-        {importParsedData && importMode === 'replace' && (
+        {importParsedData && replaceExisting && (
           <OutcomeMessageBar intent="warning">
             {t('dashboard.backupRestore.import.replaceWarning')}
           </OutcomeMessageBar>
@@ -362,7 +342,7 @@ export default function DashboardAdminBackupRestore() {
           </OutcomeMessageBar>
         )}
 
-        <div className="flex justify-end pt-1">
+        <div className="pt-1">
           <Button
             appearance="primary"
             disabled={!importParsedData}
