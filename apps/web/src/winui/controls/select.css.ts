@@ -1,8 +1,10 @@
 // WinUI 3 ComboBox styling for Fluent v9's Dropdown, Combobox, Listbox and
-// Option. Only `[data-winui-appearance='outline']` is addressed -- Fluent's
-// underline, filled-lighter and filled-darker fields have no WinUI
-// counterpart and are left as Fluent draws them. The Dropdown button's root
-// and the Combobox root share border and fill, so they are addressed as one
+// Option. The field's paint is addressed on `[data-winui-appearance='outline']`
+// alone -- Fluent's underline, filled-lighter and filled-darker fills have no
+// WinUI counterpart and are left as Fluent draws them -- while the focus visual
+// is stated on all four, because WinUI's ComboBox has a single look and answers
+// the keyboard the same way whatever its fill. The Dropdown button's root and
+// the Combobox root share border and fill, so they are addressed as one
 // selector list throughout.
 //
 // Windows High Contrast is transcribed for the drop-down list at the end of
@@ -68,11 +70,9 @@ export const selectCss = `
 /* Keyboard focus. WinUI lights a detached highlight border inset by -4px plus
    the accent pill on the faceplate's leading edge. An outline at 2px offset
    reproduces that border -- the ring is carried by an outline rather than by
-   the ::after this appearance frees below -- except at the corner, where an
-   outline takes the field's radius plus its offset and so lands a pixel tighter
-   than WinUI's fixed 7px. The shadow fills the two offset pixels with
-   HighlightBackground, which coincides with the stroke in light and parts from
-   it in dark.
+   the ::after freed below -- except at the corner, where an outline takes the
+   field's radius plus its offset and so lands a pixel tighter than WinUI's
+   fixed 7px.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L37
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L38
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L338
@@ -82,19 +82,27 @@ export const selectCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L473-L476
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L504
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L328 */
+.fui-Dropdown.fui-Dropdown:has([data-fui-focus-visible]),
+.fui-Combobox.fui-Combobox:has([data-fui-focus-visible]) {
+  outline: 2px solid var(--winui-focus-stroke-outer);
+  outline-offset: 2px;
+}
+
+/* The shadow fills the two offset pixels with HighlightBackground, which
+   coincides with the stroke in light and parts from it in dark. It restates the
+   field's own fill, so it is stated only where this sheet paints that fill.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L32 */
 .fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:has([data-fui-focus-visible]),
 .fui-Combobox.fui-Combobox[data-winui-appearance='outline']:has([data-fui-focus-visible]) {
   box-shadow: 0 0 0 2px var(--winui-control-fill-default);
-  outline: 2px solid var(--winui-focus-stroke-outer);
-  outline-offset: 2px;
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L324
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L325
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L346
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L572 */
-.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:has([data-fui-focus-visible])::before,
-.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:has([data-fui-focus-visible])::before {
+.fui-Dropdown.fui-Dropdown:has([data-fui-focus-visible])::before,
+.fui-Combobox.fui-Combobox:has([data-fui-focus-visible])::before {
   background-color: var(--winui-accent-fill-default);
   border-radius: 1.5px;
   content: '';
@@ -108,9 +116,13 @@ export const selectCss = `
 }
 
 /* Fluent's brand underline is the affordance the ring above replaces, so the
-   pseudo-element drawing it is dropped on the appearance WinUI paints. */
-.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']::after,
-.fui-Combobox.fui-Combobox[data-winui-appearance='outline']::after {
+   pseudo-element drawing it is dropped. It goes on every appearance, not only
+   the one this sheet fills: WinUI's ComboBox has a single look, its Focused
+   state moves fill, stroke and foreground alone, and no template part anywhere
+   in the control draws an accent bar along the bottom edge.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L473-L487 */
+.fui-Dropdown.fui-Dropdown::after,
+.fui-Combobox.fui-Combobox::after {
   content: none;
 }
 

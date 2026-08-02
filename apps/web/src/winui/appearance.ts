@@ -258,11 +258,31 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
     return wrapped as Component;
   };
 
+  // WinUI's Expander slides its content region open and never touches its
+  // opacity: all four expand storyboards animate ExpanderContent's Visibility
+  // and TranslateY alone, and the template carries no opacity animation at all.
+  // Fluent's Collapse fades the panel with the height, which takes the card's
+  // own fill and stroke transparent mid-animation, so the fade atom is switched
+  // off and the size animation left as Fluent runs it.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander.xaml#L33-L90
+  // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-accordion/library/src/components/AccordionPanel/useAccordionPanel.ts#L42-L48
+  const winuiPanelMotion = <Component>(component: Component): Component => {
+    const elementType = component as React.ElementType;
+    const wrapped = React.forwardRef<unknown, PropCarrier>((props, ref) => React.createElement(elementType, {
+      collapseMotion: { animateOpacity: false },
+      ...props,
+      ref,
+    }));
+    wrapped.displayName = (component as { displayName?: string }).displayName;
+    return wrapped as Component;
+  };
+
   // The map covers Fluent's whole appearance-carrying surface, not just the
   // subset the dashboard renders today, so a later component arrives stamped.
   return {
     ...components,
     AccordionHeader: winuiChevron(components.AccordionHeader),
+    AccordionPanel: winuiPanelMotion(components.AccordionPanel),
     MessageBar: stampIntent(components.MessageBar),
     Button: stamp(components.Button, appearance('secondary', rootIsPrimary)),
     ToggleButton: stamp(components.ToggleButton, appearance('secondary', rootIsPrimary)),

@@ -61,6 +61,21 @@ export const navCss = `
   background-color: var(--winui-subtle-fill-secondary);
 }
 
+/* The fill switches rather than ramps. Every state in the presenter's
+   PointerStates group is a bare VisualState.Setters block, and neither
+   NavigationView dictionary declares a BrushTransition on an item -- WinUI says
+   so where it wants one, as Button's ContentPresenter does at 83ms, which
+   ./button.css.ts transcribes. Fluent's shared item reset ramps background over
+   durationFaster, so the property is taken out of the transition here; with
+   nothing left to ramp, there is no reduced-motion clamp to write.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L455-L496
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L172-L175 */
+.fui-NavItem.fui-NavItem,
+.fui-NavSubItem.fui-NavSubItem,
+.fui-NavCategoryItem.fui-NavCategoryItem {
+  transition-property: none;
+}
+
 /* Selection does not change the weight. NavigationViewItem states Normal for
    every state; Fluent's bolded selected label doubles a signal the indicator
    already carries and shifts the label's width as it lands.
