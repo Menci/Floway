@@ -78,7 +78,6 @@ describe('credential lookup', () => {
     const lookup = findCredential(record({ accounts: [credential({ accountUuid: 'someone-else' })] }));
     expect(lookup).toEqual({ kind: 'uuid-mismatch', expectedAccountUuid: ACCOUNT_UUID });
   });
-
 });
 
 describe('quota windows', () => {

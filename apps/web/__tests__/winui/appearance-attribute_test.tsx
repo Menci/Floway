@@ -274,6 +274,6 @@ describe('the card surface', () => {
 
     const stamped = [...view.container.querySelectorAll(`[${winuiAppearanceAttribute}]`)];
 
-    expect(stamped.map(element => element.className.split(' ')[0])).toEqual(['fui-Card']);
+    expect(stamped).toEqual([view.container.querySelector('.fui-Card')]);
   });
 });

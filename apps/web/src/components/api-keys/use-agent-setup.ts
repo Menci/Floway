@@ -168,25 +168,27 @@ export const useAgentSetup = (
     }, { init: { signal } }));
     if (lifecycle !== lifecycleRef.current) return;
     if (result.error) {
-      const status = rawStatus(result.error.raw);
-      if (status === 'missing') { markTerminated(); return; }
-      if (status === 'revision-conflict') {
-        const current = leaseFromRaw({ ...(result.error.raw as object), status: 'ok' });
-        if (!current) {
-          setSaveError('Received an unexpected conflict response from the server.');
+      // The setup routes discriminate their 409 bodies on `status`; a 400
+      // carries only a message, so the discriminant is read where it exists.
+      const failure = result.error.raw;
+      if (failure && 'status' in failure) {
+        if (failure.status === 'missing') { markTerminated(); return; }
+        if (failure.status === 'revision-conflict') {
+          // The conflict body rides the current lease along under the same
+          // projection the 200 uses, so rebasing is a relabel.
+          const current: AgentSetupLease = { ...failure, status: 'ok' };
+          adoptLease(current);
+          if (generationRef.current === sentGeneration
+            && configurationsEqual(current.configuration, sentConfiguration)) {
+            confirmedRef.current = sentGeneration;
+            setConfirmedGeneration(sentGeneration);
+            setSaveError(null);
+            return;
+          }
+          clearTimer(debounceTimerRef);
+          enqueue(runSaveRef.current);
           return;
         }
-        adoptLease(current);
-        if (generationRef.current === sentGeneration
-          && configurationsEqual(current.configuration, sentConfiguration)) {
-          confirmedRef.current = sentGeneration;
-          setConfirmedGeneration(sentGeneration);
-          setSaveError(null);
-          return;
-        }
-        clearTimer(debounceTimerRef);
-        enqueue(runSaveRef.current);
-        return;
       }
       setSaveError(result.error.message);
       if (isRetryableStatus(result.error.status)) scheduleSaveRetry();
@@ -211,7 +213,8 @@ export const useAgentSetup = (
     }, { init: { signal } }));
     if (lifecycle !== lifecycleRef.current) return;
     if (result.error) {
-      if (rawStatus(result.error.raw) === 'missing') { markTerminated(); return; }
+      const failure = result.error.raw;
+      if (failure && 'status' in failure && failure.status === 'missing') { markTerminated(); return; }
       setHeartbeatError(result.error.message);
       if (isRetryableStatus(result.error.status)) scheduleHeartbeat(RETRY_DELAY_MS);
       return;
@@ -269,7 +272,8 @@ export const useAgentSetup = (
       }, { init: { signal } }));
       if (lifecycle !== lifecycleRef.current) return;
       if (result.error) {
-        if (rawStatus(result.error.raw) === 'no-selectable-key') setNoSelectableKey(true);
+        const failure = result.error.raw;
+        if (failure && 'status' in failure && failure.status === 'no-selectable-key') setNoSelectableKey(true);
         else setCreateError(result.error.message);
         return;
       }

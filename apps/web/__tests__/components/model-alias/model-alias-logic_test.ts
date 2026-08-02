@@ -71,7 +71,8 @@ describe('model alias warnings', () => {
   it('warns when pinned rules exceed advertised capabilities', () => {
     const catalog = chatModel('reasoner', { chat: { reasoning: { effort: { supported: ['low'], default: 'low' }, budget_tokens: { min: 100, max: 1000 } } } });
     const warnings = computeRuleWarnings({ reasoning: { effort: 'high', budget_tokens: 5000, adaptive: true } }, catalog);
-    expect(warnings.map(warning => warning.key)).toEqual(expect.arrayContaining(['unsupportedEffort', 'adaptiveBudgetConflict', 'budgetAbove', 'notAdvertisedAdaptive']));
+    expect(warnings.map(warning => warning.key).toSorted())
+      .toEqual(['adaptiveBudgetConflict', 'budgetAbove', 'notAdvertisedAdaptive', 'unsupportedEffort']);
   });
 });
 

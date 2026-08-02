@@ -14,7 +14,7 @@ describe('proxy URL editing', () => {
   });
 
   it('keeps parse errors and protocol-specific examples available to the form', () => {
-    expect(parseProxyInput('not a proxy').error).toBeTruthy();
+    expect(parseProxyInput('not a proxy').error).toBe('malformed proxy URI: not a proxy');
     expect(proxyUrlPlaceholder(defaultsFor('reality', { host: '', port: 0, name: '' }))).toContain('security=reality');
   });
 });

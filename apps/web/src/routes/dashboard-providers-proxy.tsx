@@ -5,7 +5,7 @@ import { redirect } from 'react-router';
 
 import type { Route } from './+types/dashboard-providers-proxy';
 import { api, callApi, callApiNoContent } from '../api/client';
-import type { ProxyConflictBody, ProxyRecord, BackoffRow } from '../api/types';
+import type { ProxyRecord, BackoffRow } from '../api/types';
 import { requireAdmin } from '../auth/require-admin';
 import { getSessionToken } from '../auth/session';
 import { ProxyBackoffPanel } from '../components/proxy/proxy-backoff-panel';
