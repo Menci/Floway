@@ -1,12 +1,9 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { RetentionField, type RetentionValue } from '../../../src/components/api-keys/retention-field';
-import { fluentComponents } from '../../../src/fluent';
-import { flowayLightTheme } from '../../../src/theme';
-
-const { FluentProvider } = fluentComponents;
+import { renderInApp } from '../../render';
 
 const DUMP_PRESETS = [
   { seconds: 3600, label: '1 hour' },
@@ -45,7 +42,7 @@ const renderField = (props: Partial<FieldProps> & { value: RetentionValue }) => 
     );
   }
 
-  render(<FluentProvider theme={flowayLightTheme}><Host /></FluentProvider>);
+  renderInApp(<Host />);
   return { input: screen.getByRole('combobox') as HTMLInputElement, onChange };
 };
 

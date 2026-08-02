@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { forwardRef } from 'react';
 import type { PropsWithChildren } from 'react';
 import { FormProvider, useForm } from 'react-hook-form';
@@ -9,8 +9,7 @@ import type { UpstreamRecord } from '../../../src/api/types';
 import type { UpstreamEditorValues } from '../../../src/components/upstream-editor/editor-data';
 import { valuesFromRecord } from '../../../src/components/upstream-editor/editor-data';
 import { UpstreamWorkspace } from '../../../src/components/upstream-editor/workspace';
-import { fluentComponents } from '../../../src/fluent';
-import { flowayLightTheme } from '../../../src/theme';
+import { renderInApp } from '../../render';
 
 vi.mock('../../../src/components/upstream-editor/models-yaml-editor', () => ({
   default: ({ onChange, value }: { onChange: (value: string) => void; value: string }) => (
@@ -21,8 +20,6 @@ vi.mock('../../../src/components/upstream-editor/models-yaml-editor', () => ({
 vi.mock('../../../src/components/ui/scroll-area', () => ({
   ScrollArea: forwardRef<HTMLDivElement, PropsWithChildren>(({ children }, ref) => <div ref={ref}>{children}</div>),
 }));
-
-const { FluentProvider } = fluentComponents;
 
 const model = (id: string) => ({
   upstreamModelId: id,
@@ -64,24 +61,22 @@ function Harness() {
     // The workspace reads which tab and which model it is on out of the search,
     // so it needs a router to read one from.
     <MemoryRouter>
-      <FluentProvider theme={flowayLightTheme}>
-        <FormProvider {...form}>
-          <UpstreamWorkspace
-            discovered={[]}
-            modelsLoading={false}
-            modelsError={null}
-            onRefreshModels={vi.fn()}
-            record={record}
-          />
-        </FormProvider>
-      </FluentProvider>
+      <FormProvider {...form}>
+        <UpstreamWorkspace
+          discovered={[]}
+          modelsLoading={false}
+          modelsError={null}
+          onRefreshModels={vi.fn()}
+          record={record}
+        />
+      </FormProvider>
     </MemoryRouter>
   );
 }
 
 describe('upstream model workspace field-array transitions', () => {
   it('deletes a newly appended model and applies a shorter YAML catalog', async () => {
-    render(<Harness />);
+    renderInApp(<Harness />);
     expect(screen.getAllByLabelText('Delete manual model')).toHaveLength(2);
 
     fireEvent.click(screen.getByRole('button', { name: 'Add' }));

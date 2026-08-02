@@ -1,10 +1,10 @@
-import { fireEvent, render } from '@testing-library/react';
+import { fireEvent } from '@testing-library/react';
 import * as React from 'react';
 import { describe, expect, it } from 'vitest';
 
 import { fluentComponents } from '../../src/fluent';
-import { flowayLightTheme } from '../../src/theme';
 import { winuiAppearanceAttribute } from '../../src/winui/appearance';
+import { renderInApp } from '../render';
 
 const {
   Button,
@@ -15,7 +15,6 @@ const {
   Combobox,
   CompoundButton,
   Dropdown,
-  FluentProvider,
   Input,
   Link,
   Menu,
@@ -35,12 +34,9 @@ const {
   Tooltip,
 } = fluentComponents;
 
-const inProvider = (children: React.ReactNode) =>
-  render(<FluentProvider theme={flowayLightTheme}>{children}</FluentProvider>);
-
 describe('appearance on the DOM', () => {
   it('stamps each component with its own Fluent default', () => {
-    const view = inProvider(
+    const view = renderInApp(
       <>
         <Button>default button</Button>
         <ToggleButton>default toggle</ToggleButton>
@@ -58,13 +54,13 @@ describe('appearance on the DOM', () => {
   });
 
   it('stamps the explicit appearance when one is given', () => {
-    const view = inProvider(<Button appearance="primary">accent</Button>);
+    const view = renderInApp(<Button appearance="primary">accent</Button>);
 
     expect(view.container.querySelector('button')?.getAttribute(winuiAppearanceAttribute)).toBe('primary');
   });
 
   it('distinguishes the borderless appearances from the default one', () => {
-    const view = inProvider(
+    const view = renderInApp(
       <>
         <Button appearance="subtle">subtle</Button>
         <Button appearance="transparent">transparent</Button>
@@ -81,7 +77,7 @@ describe('appearance on the DOM', () => {
 
 describe('components whose root is not their primary slot', () => {
   it('reaches the root as well as the inner control', () => {
-    const view = inProvider(
+    const view = renderInApp(
       <>
         <Input aria-label="input" />
         <Textarea aria-label="textarea" />
@@ -107,20 +103,20 @@ describe('components whose root is not their primary slot', () => {
   });
 
   it('keeps the underline appearance nameable', () => {
-    const view = inProvider(<Input appearance="underline" aria-label="input" />);
+    const view = renderInApp(<Input appearance="underline" aria-label="input" />);
 
     expect(view.container.querySelector('.fui-Input')?.getAttribute(winuiAppearanceAttribute)).toBe('underline');
   });
 
   it('accepts a root slot given as shorthand rather than as a props object', () => {
-    const view = inProvider(<Input root="shorthand" aria-label="input" />);
+    const view = renderInApp(<Input root="shorthand" aria-label="input" />);
 
     expect(view.container.querySelector('.fui-Input')?.getAttribute(winuiAppearanceAttribute)).toBe('outline');
     expect(view.container.querySelector('input')).not.toBeNull();
   });
 
   it('merges into a root slot given as a props object', () => {
-    const view = inProvider(<Input root={{ className: 'own-root-class' }} aria-label="input" />);
+    const view = renderInApp(<Input root={{ className: 'own-root-class' }} aria-label="input" />);
 
     const root = view.container.querySelector('.own-root-class');
 
@@ -133,7 +129,7 @@ describe('what the wrappers must not break', () => {
     const buttonRef = React.createRef<HTMLButtonElement>();
     const inputRef = React.createRef<HTMLInputElement>();
 
-    inProvider(
+    renderInApp(
       <>
         <Button ref={buttonRef}>ref</Button>
         <Input aria-label="input" ref={inputRef} />
@@ -154,7 +150,7 @@ describe('what the wrappers must not break', () => {
   });
 
   it('still works as a cloned trigger child', () => {
-    const view = inProvider(
+    const view = renderInApp(
       <Menu>
         <MenuTrigger disableButtonEnhancement>
           <Tooltip content="tip" relationship="label">
@@ -182,7 +178,7 @@ describe('what the wrappers must not break', () => {
 
 describe('the rest of the button family', () => {
   it('stamps every component that renders a Fluent button root', () => {
-    const view = inProvider(
+    const view = renderInApp(
       <>
         <CompoundButton secondaryContent="secondary">compound</CompoundButton>
         <MenuButton>menu</MenuButton>
@@ -206,7 +202,7 @@ describe('the rest of the button family', () => {
   });
 
   it('stamps both buttons a SplitButton renders from its own slots', () => {
-    const view = inProvider(<SplitButton appearance="primary">split</SplitButton>);
+    const view = renderInApp(<SplitButton appearance="primary">split</SplitButton>);
 
     const stamped = [...view.container.querySelectorAll('button')].map(element =>
       element.getAttribute(winuiAppearanceAttribute));
@@ -215,7 +211,7 @@ describe('the rest of the button family', () => {
   });
 
   it('leaves a suppressed SplitButton slot suppressed', () => {
-    const view = inProvider(<SplitButton menuButton={null}>split</SplitButton>);
+    const view = renderInApp(<SplitButton menuButton={null}>split</SplitButton>);
 
     expect(view.container.querySelectorAll('button')).toHaveLength(1);
   });
@@ -223,7 +219,7 @@ describe('the rest of the button family', () => {
 
 describe('the checked axis the WinUI rules read', () => {
   it('exposes a checked ToggleButton as aria-pressed alongside its stamp', () => {
-    const view = inProvider(<ToggleButton checked>checked</ToggleButton>);
+    const view = renderInApp(<ToggleButton checked>checked</ToggleButton>);
 
     const toggle = view.container.querySelector('button');
 
@@ -232,7 +228,7 @@ describe('the checked axis the WinUI rules read', () => {
   });
 
   it('exposes a checked toolbar radio button as aria-checked instead', () => {
-    const view = inProvider(
+    const view = renderInApp(
       <Toolbar checkedValues={{ radio: ['one'] }}>
         <ToolbarRadioGroup>
           <ToolbarRadioButton name="radio" value="one">
@@ -252,7 +248,7 @@ describe('the checked axis the WinUI rules read', () => {
 
 describe('the card surface', () => {
   it('stamps the appearance the WinUI card rules are partitioned by', () => {
-    const view = inProvider(
+    const view = renderInApp(
       <>
         <Card>default card</Card>
         <Card appearance="filled-alternative">alternative card</Card>
@@ -268,7 +264,7 @@ describe('the card surface', () => {
   });
 
   it('leaves the card parts that have no appearance unstamped', () => {
-    const view = inProvider(
+    const view = renderInApp(
       <Card>
         <CardPreview>preview</CardPreview>
         <CardHeader header="header" />

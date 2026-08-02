@@ -1,20 +1,16 @@
-import { render } from '@testing-library/react';
-import * as React from 'react';
 import { describe, expect, it } from 'vitest';
 
 import { fluentComponents } from '../../src/fluent';
 import { fieldHorizontalRootAtom } from '../../src/winui/controls/field.css';
-import { winuiLightTheme } from '../../src/winui/theme';
+import { renderInApp } from '../render';
 
-const { Field, FluentProvider, Input } = fluentComponents;
+const { Field, Input } = fluentComponents;
 
 const renderField = (orientation: 'horizontal' | 'vertical') =>
-  render(
-    <FluentProvider theme={winuiLightTheme}>
-      <Field label="label" orientation={orientation}>
-        <Input />
-      </Field>
-    </FluentProvider>,
+  renderInApp(
+    <Field label="label" orientation={orientation}>
+      <Input />
+    </Field>,
   ).container.querySelector('.fui-Field');
 
 // The WinUI label rule narrows itself to vertical Fields by negating the
