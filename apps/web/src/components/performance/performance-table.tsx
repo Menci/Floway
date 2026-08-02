@@ -8,6 +8,7 @@ import { formatCount, formatTokenRateFromTpot } from '../../lib/format-number';
 import { useLocale } from '../../lib/use-locale';
 import { EmptyStateLine } from '../ui/empty-state';
 import { ScrollArea } from '../ui/scroll-area';
+import { useTrailingCellClass } from '../ui/table-actions';
 
 const {
   makeStyles,
@@ -15,10 +16,6 @@ const {
 } = fluentComponents;
 
 const usePerformanceTableStyles = makeStyles({
-  numericHeader: {
-    whiteSpace: 'nowrap',
-    '& .fui-TableHeaderCell__button': { justifyContent: 'flex-end', whiteSpace: 'nowrap' },
-  },
   // Both WinUI strokes are drawn inside the name's own box because the cell
   // clips whatever leaves it.
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55
@@ -36,6 +33,7 @@ export function PerformanceTable({ groupBy, labels, rows }: { groupBy: Performan
   const { t } = useTranslation();
   const locale = useLocale();
   const styles = usePerformanceTableStyles();
+  const trailingCell = useTrailingCellClass();
   const [sort, setSort] = useState<{ direction: 'ascending' | 'descending'; key: PerformanceTableSortKey }>({ direction: 'descending', key: 'requests' });
   const sortBy = (key: PerformanceTableSortKey) => setSort(current => current.key === key
     ? { key, direction: current.direction === 'ascending' ? 'descending' : 'ascending' }
@@ -54,8 +52,8 @@ export function PerformanceTable({ groupBy, labels, rows }: { groupBy: Performan
       {/* Fluent's Table lays out `fixed`, so sizing the four measure columns to
           their widest label leaves the rest to the name, the only column whose
           content has no bound. */}
-      <TableHeader><TableRow><TableHeaderCell sortable sortDirection={sortDirection('group')} onClick={() => sortBy('group')}>{t(`dashboard.performance.filters.${groupBy}`)}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('requests')} onClick={() => sortBy('requests')} className={`${styles.numericHeader} text-right !w-[112px]`}>{t('dashboard.performance.tables.requests')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('errors')} onClick={() => sortBy('errors')} className={`${styles.numericHeader} text-right !w-[88px]`}>{t('dashboard.performance.tables.errors')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('ttft')} onClick={() => sortBy('ttft')} className={`${styles.numericHeader} text-right !w-[112px]`}>{t('dashboard.performance.tables.ttftP95')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('speed')} onClick={() => sortBy('speed')} className={`${styles.numericHeader} text-right !w-[160px]`}>{t('dashboard.performance.tables.speedP95')}</TableHeaderCell></TableRow></TableHeader>
-      <TableBody>{sortedRows.length ? sortedRows.map(row => <TableRow key={row.group}><TableCell><Tooltip content={row.group} relationship="description"><span className={`${styles.groupName} block overflow-hidden text-ellipsis whitespace-nowrap`} tabIndex={0}>{resolvePerformanceGroup(row.group, groupBy, labels)}</span></Tooltip></TableCell><TableCell className="text-right tabular-nums">{formatCount(row.requests, locale)}</TableCell><TableCell className="text-right tabular-nums">{formatCount(row.errors, locale)}</TableCell><TableCell className="text-right tabular-nums">{formatDuration(row.ttftMsP95)}</TableCell><TableCell className="text-right tabular-nums">{formatTokenRateFromTpot(row.tpotUsP95)}</TableCell></TableRow>) : <TableRow><TableCell colSpan={5}><EmptyStateLine>{t('dashboard.performance.empty')}</EmptyStateLine></TableCell></TableRow>}</TableBody>
+      <TableHeader><TableRow><TableHeaderCell sortable sortDirection={sortDirection('group')} onClick={() => sortBy('group')}>{t(`dashboard.performance.filters.${groupBy}`)}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('requests')} onClick={() => sortBy('requests')} className={`${trailingCell} whitespace-nowrap !w-[112px]`}>{t('dashboard.performance.tables.requests')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('errors')} onClick={() => sortBy('errors')} className={`${trailingCell} whitespace-nowrap !w-[88px]`}>{t('dashboard.performance.tables.errors')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('ttft')} onClick={() => sortBy('ttft')} className={`${trailingCell} whitespace-nowrap !w-[112px]`}>{t('dashboard.performance.tables.ttftP95')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('speed')} onClick={() => sortBy('speed')} className={`${trailingCell} whitespace-nowrap !w-[160px]`}>{t('dashboard.performance.tables.speedP95')}</TableHeaderCell></TableRow></TableHeader>
+      <TableBody>{sortedRows.length ? sortedRows.map(row => <TableRow key={row.group}><TableCell><Tooltip content={row.group} relationship="description"><span className={`${styles.groupName} block overflow-hidden text-ellipsis whitespace-nowrap`} tabIndex={0}>{resolvePerformanceGroup(row.group, groupBy, labels)}</span></Tooltip></TableCell><TableCell className={`${trailingCell} tabular-nums`}>{formatCount(row.requests, locale)}</TableCell><TableCell className={`${trailingCell} tabular-nums`}>{formatCount(row.errors, locale)}</TableCell><TableCell className={`${trailingCell} tabular-nums`}>{formatDuration(row.ttftMsP95)}</TableCell><TableCell className={`${trailingCell} tabular-nums`}>{formatTokenRateFromTpot(row.tpotUsP95)}</TableCell></TableRow>) : <TableRow><TableCell colSpan={5}><EmptyStateLine>{t('dashboard.performance.empty')}</EmptyStateLine></TableCell></TableRow>}</TableBody>
     </Table></ScrollArea>
   </section>;
 }
