@@ -1,4 +1,4 @@
-import { PlugDisconnectedRegular, ShieldKeyhole24Regular } from '@fluentui/react-icons';
+import { ProhibitedRegular, ShieldKeyhole24Regular } from '@fluentui/react-icons';
 import { useCallback, useId, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -118,7 +118,7 @@ export function UpstreamAccessControl({
                   {row.modelCount === null
                     ? t('dashboard.upstreamAccess.modelCountUnknown')
                     : t('dashboard.upstreamAccess.modelCount', { count: row.modelCount })}
-                  {!row.upstreamEnabled && <PlugDisconnectedRegular className="block flex-none text-fui-fg2" aria-label={t('dashboard.upstreamAccess.upstreamDisabled')} />}
+                  {!row.upstreamEnabled && <ProhibitedRegular className="block flex-none text-fui-fg2" aria-label={t('dashboard.upstreamAccess.upstreamDisabled')} />}
                 </span></TableCell>
               </TableRow>;
             })}</TableBody>

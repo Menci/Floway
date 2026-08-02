@@ -3,7 +3,7 @@ import {
   ChevronDownRegular,
   DeleteRegular,
   EditRegular,
-  PlugDisconnectedRegular,
+  ProhibitedRegular,
   WarningRegular,
 } from '@fluentui/react-icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -476,7 +476,7 @@ function ModelStatus({
             : t('dashboard.upstreams.models.count', { count })}
         </Text>
         {!record.enabled
-          ? <PlugDisconnectedRegular className="block flex-none text-fui-fg2" fontSize={18} aria-label={t('dashboard.upstreams.cache.disabled')} />
+          ? <ProhibitedRegular className="block flex-none text-fui-fg2" fontSize={18} aria-label={t('dashboard.upstreams.cache.disabled')} />
           : healthy
             ? <CheckmarkCircleRegular className="block flex-none text-[var(--colorPaletteGreenForeground1)]" fontSize={18} aria-label={t('dashboard.upstreams.cache.ready')} />
             : <WarningRegular className="block flex-none text-[var(--colorPaletteDarkOrangeForeground1)]" fontSize={18} aria-label={t(`dashboard.upstreams.cache.${cacheStatus}`)} />}
