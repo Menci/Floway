@@ -12,16 +12,11 @@
 // Forced colours want the same geometry and get no branch of their own: the
 // border box then carries the forced border colour, which is the band a high
 // contrast theme draws a control's edge with.
-//
-// :where() holds each row at the universal selector's weight, so anything
-// stating a background-clip of its own wins whatever order the sheets are
-// injected in.
-import { notOptedOut } from './tokens';
 
 export const winuiResetCss = `
-*:where(${notOptedOut}),
-*:where(${notOptedOut})::before,
-*:where(${notOptedOut})::after {
+*,
+*::before,
+*::after {
   background-clip: padding-box;
 }
 `;

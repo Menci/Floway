@@ -26,7 +26,7 @@ export const messageBarCss = `
 .fui-MessageBar.fui-MessageBar {
   min-height: 48px;
   padding-inline-start: 16px;
-  border-color: var(--winui-card-stroke, var(--colorNeutralStroke1));
+  border-color: var(--winui-card-stroke-default);
   /* Without this, the grid item's automatic minimum size is the whole message
      on one line: the bar overflows its track, widens everything beside it, and
      Fluent's auto layout never observes a width small enough to reflow. */

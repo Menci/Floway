@@ -78,7 +78,14 @@ const HOVER = `${ENABLED}:hover`;
 // Fluent's own pair: a press that began under the pointer, and a keyboard press.
 const PRESSED = `${ENABLED}:hover:active, ${ENABLED}:active:focus-visible`;
 
-const reachedPaint = (color: string) => ({ color, [ICON]: { color } });
+// Important because ../winui/controls/button.css.ts states a subtle button's
+// rest foreground as TextFillColorPrimary and its pressed one as
+// TextFillColorSecondary, both on a doubled class name that a single Griffel
+// class does not outrank. The transcript's actions belong to Bing's palette, so
+// they take those two rules back.
+const takenBack = (color: string) => `${color} !important`;
+
+const reachedPaint = (color: string) => ({ color: takenBack(color), [ICON]: { color: takenBack(color) } });
 
 // `null` is a fetch that failed, distinct from an empty list -- which would tell
 // the operator to create a key.
@@ -103,7 +110,7 @@ const useStyles = makeStyles({
   // through the press. Fluent clears forced-color-adjust on a reached button,
   // so the forced-colours Highlight pairing has to be restated here.
   brandIconAction: {
-    [ENABLED]: { color: bingAccentForeground },
+    [ENABLED]: { color: takenBack(bingAccentForeground) },
     [HOVER]: reachedPaint(bingAccentForegroundHover),
     [PRESSED]: reachedPaint(bingAccentForegroundHover),
     '@media (forced-colors: active)': {
@@ -408,7 +415,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
               : messages.length === 0 && !sending
                 ? <div className="flex flex-1 items-center justify-center px-6"><EmptyStateLine>{t('dashboard.playground.empty')}</EmptyStateLine></div>
                 : null}
-            <div className="mt-auto grid gap-3" data-winui-card-restyle="off">
+            <div className="mt-auto grid gap-3">
               {messages.map(message => (
                 <div key={message.id} className={`flex min-w-0 ${message.role === 'user' ? 'justify-end' : 'justify-start'} ${s.messageRow}`}>
                   <div className="max-w-[78%] min-w-0">
@@ -427,34 +434,32 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
               ))}
             </div>
           </ScrollArea>
-          <div data-winui-card-restyle="off">
-            <PlaygroundComposer
-              canSend={sendTarget !== null}
-              cancelLabel={t('common.cancel')}
-              draft={draft}
-              imageEnabled={imageEnabled}
-              imageLabel={t('dashboard.playground.actions.image')}
-              imagePlaceholder={t('dashboard.playground.imagePlaceholder')}
-              imageUnsupportedLabel={t('dashboard.playground.errors.imageUnsupported')}
-              imageUrl={imageUrl}
-              newTopicDisabled={!messages.length && !sending}
-              newTopicLabel={t('dashboard.playground.actions.newTopic')}
-              placeholder={t('dashboard.playground.messagePlaceholder')}
-              sendLabel={t('dashboard.playground.actions.send')}
-              sending={sending}
-              showImage={showImage}
-              stopLabel={t('dashboard.playground.actions.stop')}
-              onDraftChange={setDraft}
-              onImageUrlChange={setImageUrl}
-              onNewTopic={clearMessages}
-              onSend={() => void send()}
-              onStop={stop}
-              onToggleImage={() => {
-                if (showImage) setImageUrl('');
-                setShowImage(value => !value);
-              }}
-            />
-          </div>
+          <PlaygroundComposer
+            canSend={sendTarget !== null}
+            cancelLabel={t('common.cancel')}
+            draft={draft}
+            imageEnabled={imageEnabled}
+            imageLabel={t('dashboard.playground.actions.image')}
+            imagePlaceholder={t('dashboard.playground.imagePlaceholder')}
+            imageUnsupportedLabel={t('dashboard.playground.errors.imageUnsupported')}
+            imageUrl={imageUrl}
+            newTopicDisabled={!messages.length && !sending}
+            newTopicLabel={t('dashboard.playground.actions.newTopic')}
+            placeholder={t('dashboard.playground.messagePlaceholder')}
+            sendLabel={t('dashboard.playground.actions.send')}
+            sending={sending}
+            showImage={showImage}
+            stopLabel={t('dashboard.playground.actions.stop')}
+            onDraftChange={setDraft}
+            onImageUrlChange={setImageUrl}
+            onNewTopic={clearMessages}
+            onSend={() => void send()}
+            onStop={stop}
+            onToggleImage={() => {
+              if (showImage) setImageUrl('');
+              setShowImage(value => !value);
+            }}
+          />
         </div>
 
         {narrow ? <OverlayDrawer onOpenChange={(_, data) => setSettingsOpen(data.open)} open={settingsOpen} position="end" size="medium">

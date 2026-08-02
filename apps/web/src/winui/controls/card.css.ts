@@ -15,53 +15,7 @@
 // colours answer sits on single-class Fluent atoms that every coloured rule
 // here would outrank. Geometry applies in both modes.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L85-L87
-//
-// Painted values go through `--winui-card-*` so `[data-winui-card-restyle=off]`
-// (../tokens.ts) can set each to `initial` and let the var() fallback name the
-// Fluent value the rule displaced — token indirection rather than the layer's
-// `notOptedOut` subject compound, because `:root` reaches the opted-out element
-// itself and not only its subtree.
-// https://drafts.csswg.org/css-variables/#guaranteed-invalid
-//
-// The focus visual instead redefines a Fluent token through a fallback-less
-// `var()`, which under the opt-out computes to the provider's inherited value.
-// Naming a fallback there would be a cycle.
-// https://drafts.csswg.org/css-variables/#invalid-at-computed-value-time
 export const cardCss = `
-:root {
-  --winui-card-fill: var(--winui-card-background-fill-default);
-  --winui-card-fill-alternative: var(--winui-card-background-fill-secondary);
-  --winui-card-stroke: var(--winui-card-stroke-default);
-  --winui-card-corner-radius: var(--winui-control-corner-radius);
-  --winui-card-selected-fill: var(--winui-subtle-fill-secondary);
-  --winui-card-selected-fill-hover: var(--winui-subtle-fill-tertiary);
-  --winui-card-focus-stroke: var(--winui-focus-stroke-outer);
-  --winui-card-focus-stroke-inner: var(--winui-focus-stroke-inner);
-}
-
-[data-winui-card-restyle='off'] {
-  --winui-card-fill: initial;
-  --winui-card-fill-alternative: initial;
-  --winui-card-stroke: initial;
-  --winui-card-corner-radius: initial;
-  --winui-card-selected-fill: initial;
-  --winui-card-selected-fill-hover: initial;
-  --winui-card-focus-stroke: initial;
-  --winui-card-focus-stroke-inner: initial;
-  /* The theme layer flattens the six elevation tokens Fluent composes, because
-     WinUI carries depth on inline surfaces with a stroke instead of a shadow.
-     An opted-out subtree is Fluent territory, so the whole set is recomposed
-     over Fluent's own shadow colours.
-     https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/tokens/src/utils/shadows.ts#L8-L10
-     https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-card/library/src/components/Card/useCardStyles.styles.ts#L178-L180 */
-  --shadow2: 0 0 2px var(--colorNeutralShadowAmbient), 0 1px 2px var(--colorNeutralShadowKey);
-  --shadow4: 0 0 2px var(--colorNeutralShadowAmbient), 0 2px 4px var(--colorNeutralShadowKey);
-  --shadow8: 0 0 2px var(--colorNeutralShadowAmbient), 0 4px 8px var(--colorNeutralShadowKey);
-  --shadow2Brand: 0 0 2px var(--colorBrandShadowAmbient), 0 1px 2px var(--colorBrandShadowKey);
-  --shadow4Brand: 0 0 2px var(--colorBrandShadowAmbient), 0 2px 4px var(--colorBrandShadowKey);
-  --shadow8Brand: 0 0 2px var(--colorBrandShadowAmbient), 0 4px 8px var(--colorBrandShadowKey);
-}
-
 /* Both surfaces this file draws from round at ControlCornerRadius, the radius
    WinUI gives anything inline, where Fluent scales the radius with the card's
    size. The focus ring is a border on the same pseudo-element and Fluent
@@ -75,7 +29,7 @@ export const cardCss = `
 .fui-Card.fui-Card::after,
 .fui-Card.fui-Card[data-fui-focus-visible]::after,
 .fui-Card.fui-Card[data-fui-focus-within]:focus-within::after {
-  border-radius: var(--winui-card-corner-radius, var(--fui-Card--border-radius));
+  border-radius: var(--winui-control-corner-radius);
 }
 
 @media not (forced-colors: active) {
@@ -84,21 +38,21 @@ export const cardCss = `
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L5
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L9 */
   .fui-Card.fui-Card[data-winui-appearance='filled'] {
-    background-color: var(--winui-card-fill, var(--colorNeutralBackground1));
+    background-color: var(--winui-card-background-fill-default);
   }
 
   .fui-Card.fui-Card[data-winui-appearance='filled']::after {
-    border-color: var(--winui-card-stroke, var(--colorTransparentStroke));
+    border-color: var(--winui-card-stroke-default);
   }
 
   /* The Expander content region, one step down the same ramp.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L25-L26 */
   .fui-Card.fui-Card[data-winui-appearance='filled-alternative'] {
-    background-color: var(--winui-card-fill-alternative, var(--colorNeutralBackground2));
+    background-color: var(--winui-card-background-fill-secondary);
   }
 
   .fui-Card.fui-Card[data-winui-appearance='filled-alternative']::after {
-    border-color: var(--winui-card-stroke, var(--colorTransparentStroke));
+    border-color: var(--winui-card-stroke-default);
   }
 
   /* An outline card takes only the card stroke, which is what an Expander
@@ -107,7 +61,7 @@ export const cardCss = `
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L46
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L9-L11 */
   .fui-Card.fui-Card[data-winui-appearance='outline']::after {
-    border-color: var(--winui-card-stroke, var(--colorNeutralStroke1));
+    border-color: var(--winui-card-stroke-default);
   }
 
   /* A selected ListViewItem replaces its background and states one selected
@@ -122,7 +76,7 @@ export const cardCss = `
      https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-card/library/src/components/Card/useCardStyles.styles.ts#L476
      https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-card/library/src/components/Card/useCardSelectable.ts#L92-L95 */
   .fui-Card.fui-Card:has(> .fui-Card__checkbox:checked) {
-    background-color: var(--winui-card-selected-fill, var(--colorNeutralBackground1Selected));
+    background-color: var(--winui-subtle-fill-secondary);
   }
 
   /* Unlike the Expander fill, the selected wash answers the pointer: Tertiary
@@ -134,11 +88,11 @@ export const cardCss = `
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L74
      https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-card/library/src/components/Card/useCardSelectable.ts#L108-L112 */
   .fui-Card.fui-Card:has(> .fui-Card__checkbox:checked:enabled):hover {
-    background-color: var(--winui-card-selected-fill-hover, var(--colorNeutralBackground1Selected));
+    background-color: var(--winui-subtle-fill-tertiary);
   }
 
   .fui-Card.fui-Card:has(> .fui-Card__checkbox:checked:enabled):active {
-    background-color: var(--winui-card-selected-fill, var(--colorNeutralBackground1Pressed));
+    background-color: var(--winui-subtle-fill-secondary);
   }
 
   /* A ListViewItem draws a 2px outer ring with a 1px inner ring immediately
@@ -157,9 +111,9 @@ export const cardCss = `
      https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-tabster/src/focus/createFocusOutlineStyle.ts#L65-L71 */
   .fui-Card.fui-Card[data-fui-focus-visible]::after,
   .fui-Card.fui-Card[data-fui-focus-within]:focus-within::after {
-    --colorStrokeFocus2: var(--winui-card-focus-stroke);
+    --colorStrokeFocus2: var(--winui-focus-stroke-outer);
     border-color: var(--colorStrokeFocus2);
-    box-shadow: inset 0 0 0 1px var(--winui-card-focus-stroke-inner);
+    box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
   }
 }
 `;

@@ -57,8 +57,7 @@ const radii = {
 } as const satisfies Partial<Theme>;
 
 // WinUI draws no drop shadow on inline surfaces, so the ambient elevations are
-// zeroed and only the overlay depths (16, 28, 64) are left alone. A subtree that
-// opts out of the layer gets all six back in ./controls/card.css.ts.
+// zeroed and only the overlay depths (16, 28, 64) are left alone.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L30-L41
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L265
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L207

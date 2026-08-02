@@ -126,4 +126,3 @@ export const bingElevation4 = [
 // constant: a rem step would move with the root size.
 // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/globals.scss#L192
 export const bingMessageRadius = '12px';
-

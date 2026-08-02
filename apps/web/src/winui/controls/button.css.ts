@@ -29,11 +29,6 @@
 // adjust is off. Geometry, background sizing and the fill transition apply in
 // both modes.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L53-L101
-//
-// The rules below stop at the boundary of a subtree that opts out of the layer;
-// see ../tokens.ts for the convention.
-
-import { notOptedOut } from '../tokens';
 
 // A suffix on a selector list attaches to its last item alone, so appending a
 // state to an already joined string silently leaves every variant but the last
@@ -65,7 +60,7 @@ const withIcon = (states: readonly string[]) =>
   states.map(state => `${state} .fui-Button__icon`);
 
 const appearanceRoot = (appearance: string) =>
-  `.fui-Button.fui-Button[data-winui-appearance='${appearance}']${notOptedOut}`;
+  `.fui-Button.fui-Button[data-winui-appearance='${appearance}']`;
 
 // The appearances that carry a neutral fill and the elevation stroke.
 const neutral = (states: readonly string[] = ['']) =>
@@ -95,7 +90,7 @@ const nested = (selectorList: string) => selectorList
 const checkedToggle = (states: readonly string[] = ['']) => expand(
   [`[aria-pressed='true']`, `[aria-checked='true']`],
   states,
-  flag => `.fui-ToggleButton.fui-ToggleButton${flag}${notOptedOut}`,
+  flag => `.fui-ToggleButton.fui-ToggleButton${flag}`,
 );
 
 export const buttonCss = `
@@ -104,7 +99,7 @@ export const buttonCss = `
    Fluent's 96px.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L154-L168
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L182-L190 */
-.fui-Button.fui-Button${notOptedOut} {
+.fui-Button.fui-Button {
   font-weight: var(--fontWeightRegular);
   min-width: auto;
   max-width: none;
@@ -141,7 +136,7 @@ ${checkedToggle(disabledStates)} {
    through even 5px padding around a 20px glyph, which holds on its own once the
    width reservation above is released.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L152 */
-.fui-Button.fui-Button:not(:has(> .fui-Button__icon))${notOptedOut} {
+.fui-Button.fui-Button:not(:has(> .fui-Button__icon)) {
   padding: var(--winui-button-padding);
 }
 
@@ -149,13 +144,13 @@ ${checkedToggle(disabledStates)} {
    duration; border and foreground switch instantly.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L172-L174
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L606 */
-.fui-Button.fui-Button${notOptedOut} {
+.fui-Button.fui-Button {
   transition-property: background-color;
   transition-duration: var(--winui-control-faster-animation-duration);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fui-Button.fui-Button${notOptedOut} {
+  .fui-Button.fui-Button {
     transition-duration: 0.01ms;
   }
 }
@@ -166,7 +161,7 @@ ${checkedToggle(disabledStates)} {
      fill only while pressed.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L128-L139
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L30-L41 */
-  .fui-Button.fui-Button${notOptedOut} {
+  .fui-Button.fui-Button {
     --colorNeutralBackground1: var(--winui-control-fill-default);
     --colorNeutralForeground1Hover: var(--winui-text-fill-primary);
     --colorNeutralForeground1Pressed: var(--winui-text-fill-secondary);
@@ -259,7 +254,7 @@ ${nested(chromeless([...pressedStates, ...withIcon(pressedStates)]))} {
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L167
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/DependencyObject/DependencyProperty.cpp#L24-L25
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/math/math.cpp#L1374-L1381 */
-  .fui-Button.fui-Button[data-winui-appearance][data-fui-focus-visible]${notOptedOut} {
+  .fui-Button.fui-Button[data-winui-appearance][data-fui-focus-visible] {
     --colorStrokeFocus2: var(--winui-focus-stroke-inner);
     --colorTransparentStroke: var(--winui-focus-stroke-outer);
     border-color: var(--winui-focus-stroke-inner);
@@ -269,7 +264,7 @@ ${nested(chromeless([...pressedStates, ...withIcon(pressedStates)]))} {
      appearance was.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L127-L151
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L11-L35 */
-  .fui-ToggleButton.fui-ToggleButton${notOptedOut} {
+  .fui-ToggleButton.fui-ToggleButton {
     --colorNeutralBackground1Selected: var(--winui-accent-fill-default);
     --colorSubtleBackgroundSelected: var(--winui-accent-fill-default);
     --colorTransparentBackgroundSelected: var(--winui-accent-fill-default);

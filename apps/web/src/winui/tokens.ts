@@ -46,43 +46,21 @@
 // in these files.
 //
 // ---------------------------------------------------------------------------
-// Opting a subtree out of the restyle
+// Scope
 // ---------------------------------------------------------------------------
 //
-// `data-winui-card-restyle='off'` on an element withdraws from it, and from
-// everything below it, the part of the layer that opted into the attribute.
-// Surfaces designed against Fluent's own palette and elevations live under it —
-// the playground transcript and composer above all.
-//
-// Two mechanisms carry it. A rule that reads a `--winui-*` custom property goes
-// through an indirection declared on `:root` and reset to `initial` under the
-// attribute, with the Fluent value as the `var()` fallback; a rule that cannot
-// be expressed as a value — geometry, a new declaration Fluent does not make —
-// excludes the subtree in its selector with
-// `:not([data-winui-card-restyle='off'] *)`.
-//
-// Its reach is exactly the token indirections ./controls/card.css.ts declares
-// plus the files that name the selector: ./reset.css.ts, and
-// ./controls/{button,card,scrollbar,text-input,toolbar}.css.ts. Every geometry,
-// glyph size and inset the other control files state still applies inside an
-// opted-out subtree, so a control newly placed under the attribute has to be
-// added to the guard deliberately.
-//
-// The attribute cannot reach a portalled surface: a tooltip, dialog or menu
-// mounts under the provider root rather than under the element that opened it.
-// A portalled surface that must not be restyled cannot be restyled at all.
+// The layer restyles every Fluent control the dashboard renders; a surface that
+// must not read as WinUI is built as its own element instead, and calls no
+// Fluent component at all. There is no third state and nothing withdraws from
+// the layer, so a rule here never has to name where it does not apply.
 //
 // The `--winui-*` custom properties below are declared on `:root`, every one of
 // them. They switch on `prefers-color-scheme`, never on the provider's `theme`
 // prop, and no value here reads a Fluent theme variable, so nothing forces a
 // narrower scope than the document root — which inherits into mount nodes under
-// either setting of that prop.
+// either setting of that prop, portalled surfaces included.
 
 import { COLLAPSE_ANIMATION_MS, CONTROL_FASTER_ANIMATION_MS, CONTROL_FAST_ANIMATION_MS, CONTROL_FAST_OUT_SLOW_IN_EASING, CONTROL_NORMAL_ANIMATION_MS, EXPAND_ANIMATION_MS, PAGE_ENTER_EASING, PAGE_ENTER_MS, PAGE_ENTER_OFFSET_PX, PAGE_LEAVE_EASING, PAGE_LEAVE_MS, REPOSITION_ANIMATION_MS, REPOSITION_EASING } from './motion';
-
-// The selector half of the opt-out documented above. Rules that spend a token
-// instead go through a `:root` indirection reset to `initial` there.
-export const notOptedOut = `:not([data-winui-card-restyle='off'] *)`;
 
 export const winuiTokenCss = `
 /* Control fills — the body of a button, combo box, or check box.

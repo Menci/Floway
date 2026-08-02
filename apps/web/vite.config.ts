@@ -8,12 +8,11 @@ import { wranglerProxiedPaths } from './gateway-paths';
 
 // Part of the app's CSS is authored in TypeScript, because its rules spend
 // values the running app spends too: the WinUI layer under src/winui
-// interpolates the token names, motion durations and opt-out selector that the
-// same modules hand to Fluent, and the critical block interpolates the type
-// stack the Fluent theme object is built from. Rendered straight into a
-// `<style>` element that text never meets Vite's CSS pipeline -- it ships
-// unminified, unhashed, and the larger of the two is re-sent in full with every
-// HTML response.
+// interpolates the token names and motion durations that the same modules hand
+// to Fluent, and the critical block interpolates the type stack the Fluent
+// theme object is built from. Rendered straight into a `<style>` element that
+// text never meets Vite's CSS pipeline -- it ships unminified, unhashed, and
+// the larger of the two is re-sent in full with every HTML response.
 //
 // Each such module is therefore also reachable as a virtual `.css` module. The
 // TypeScript is evaluated here and its string handed to Vite, which from that

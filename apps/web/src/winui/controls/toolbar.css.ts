@@ -15,7 +15,6 @@
 // items; that line is ours, not one WinUI draws.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L19126-L19134
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L26
-import { notOptedOut } from '../tokens';
 
 export const toolbarCss = `
 /* A command bar item's label runs at 12, two steps below the 14 Fluent's button
@@ -30,7 +29,7 @@ export const toolbarCss = `
    to 28, further from the 40px command bar row than Fluent's 32 already is.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L19402-L19406
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SplitButton/SplitButton_themeresources.xaml#L104-L119 */
-.fui-Toolbar .fui-Button.fui-Button${notOptedOut} {
+.fui-Toolbar .fui-Button.fui-Button {
   font-size: var(--fontSizeBase200);
 }
 `;

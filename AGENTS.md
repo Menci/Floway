@@ -358,10 +358,11 @@ writes nothing a selector can name, so `appearance.ts` stamps the resolved
 value back onto the DOM as `data-winui-*`; `presence.ts` replaces the entrance
 and exit motion of the overlays whose WinUI counterpart states its own
 keyframes. Both wrap Fluent at `fluent.ts`, the app's only value import of
-`@fluentui/react-components`. The selector convention, the `--winui-*` scoping
-rules and the `data-winui-card-restyle="off"` subtree opt-out — which the
-hand-designed playground transcript and composer rely on — are documented in
-`tokens.ts`.
+`@fluentui/react-components`. The selector convention and the `--winui-*`
+scoping rules are documented in `tokens.ts`. The layer restyles every Fluent
+control the dashboard renders and nothing withdraws from it: a surface that must
+not read as WinUI — the playground's transcript bubbles, pinned to Bing's 2023
+chat design — is built as its own element and calls no Fluent component.
 
 React Router client loaders are resource barriers: authentication and every
 initial route resource resolve before the target location and component tree

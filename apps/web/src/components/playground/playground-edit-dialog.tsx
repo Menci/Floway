@@ -15,10 +15,7 @@ export interface PlaygroundMessageDraft {
 
 // Editing a transcript entry asks the one question the rest of the console asks
 // through a dialog -- fill a short form, then cancel or commit -- so it is that
-// dialog. Inline it could not be: the transcript is pinned to Bing's design and
-// withdraws from the WinUI restyle for its whole subtree, which a descendant
-// cannot rejoin, leaving every control in an inline editor a bare Fluent one.
-// See ../../winui/tokens.ts on the opt-out, which a portalled surface escapes.
+// dialog rather than an editor opened inside the bubble.
 export function PlaygroundEditDialog({ imageEnabled, message, onOpenChange, onSave, open }: {
   imageEnabled: boolean;
   message: PlaygroundMessage;
