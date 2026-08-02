@@ -8,14 +8,19 @@
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L265-L285
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L12-L21
 //
-// The foreground ramp is the inline strip's alone. Fluent's circular
-// appearances are a chip, a shape WinUI's tab surfaces do not have: they fill
-// with Fluent's brand ramp and set `color: inherit` so the label reads on that
-// fill, and a WinUI neutral ramp landing on top of it put near-black text on
-// mid-blue. The strip is named through the stamp ../appearance.ts writes for
-// TabList, and the chip keeps Fluent's fill and its own on-fill foreground
-// together.
+// The foreground ramp is the inline strip's alone, because Fluent's circular
+// appearances set color: inherit on the label so it reads on the chip's fill.
+// The strip is named through the stamp ../appearance.ts writes for TabList.
+// The chip shape has no WinUI counterpart and is kept, but its fill follows
+// WinUI: a tab surface is transparent in every state, selected included, in
+// both SelectorBarItem and PivotHeaderItem. So subtle-circular loses Fluent's
+// tinted-accent fill and rejoins the ramp, carrying selection on the accent
+// ring Fluent already draws through colorCompoundBrandStroke. filled-circular
+// keeps its fill: a solid accent under an on-accent label is what WinUI states
+// for an accent-intent control, and theme.ts maps both halves of that pair.
 // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-tabs/library/src/components/Tab/useTabStyles.styles.ts#L184-L189
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SelectorBar/SelectorBar_themeresources.xaml#L21-L25
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L40-L46
 //
 // Focus stays Fluent's: PivotHeaderItem draws no per-item focus visual, and
 // transcribing that silence would leave the strip looking unfocusable.
@@ -32,6 +37,7 @@
 // Rules run rest → hover → pressed → selected, and each selected step repeats
 // the interaction pseudo-classes it has to outweigh.
 const inlineStrip = ".fui-TabList:not([data-winui-appearance$='-circular'])";
+const subtleChip = ".fui-TabList[data-winui-appearance='subtle-circular']";
 
 export const tabsCss = `
 /* TabViewItemHeaderForegroundPointerOver resolves to the same
@@ -50,13 +56,9 @@ ${inlineStrip} .fui-Tab:enabled:active .fui-Tab__icon.fui-Tab__icon {
   color: var(--winui-text-fill-tertiary);
 }
 
-/* The label keeps its weight: PivotHeaderItem sets FontWeight once as a style
-   setter, which no visual state can reach.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L14
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L478 */
+/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L14 */
 ${inlineStrip} .fui-Tab[aria-selected='true'] .fui-Tab__content.fui-Tab__content {
   color: var(--winui-text-fill-primary);
-  font-weight: var(--fontWeightRegular);
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L19 */
@@ -72,6 +74,20 @@ ${inlineStrip} .fui-Tab[aria-selected='true']:enabled:hover .fui-Tab__content.fu
 ${inlineStrip} .fui-Tab[aria-selected='true']:enabled:hover .fui-Tab__icon.fui-Tab__icon,
 ${inlineStrip} .fui-Tab[aria-selected='true']:enabled:active .fui-Tab__content.fui-Tab__content,
 ${inlineStrip} .fui-Tab[aria-selected='true']:enabled:active .fui-Tab__icon.fui-Tab__icon {
+  color: var(--winui-text-fill-primary);
+}
+
+/* The subtle chip drops Fluent's tinted-accent fill in all three of its
+   selected states and takes the selected foreground the inline strip already
+   uses; the label and icon inherit it through the circular base. Selection
+   still outranks the pointer, as above.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SelectorBar/SelectorBar_themeresources.xaml#L21-L25
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SelectorBar/SelectorBar_themeresources.xaml#L18
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L19 */
+${subtleChip} .fui-Tab[aria-selected='true'],
+${subtleChip} .fui-Tab[aria-selected='true']:enabled:hover,
+${subtleChip} .fui-Tab[aria-selected='true']:enabled:active {
+  background-color: transparent;
   color: var(--winui-text-fill-primary);
 }
 
@@ -134,9 +150,14 @@ ${inlineStrip} .fui-Tab[aria-selected='true']:enabled:active .fui-Tab__icon.fui-
   }
 }
 
-/* The placeholder holds the width the label would take once selected, so it
-   follows the selected label back to regular weight rather than padding every
-   tab by the semibold delta. */
+/* Selection does not move the label's weight, in any appearance: Pivot states
+   FontWeight once as a style setter that no visual state can reach, and
+   SelectorBarItem pins it to Normal. The placeholder holds the width the label
+   would take once selected, so it follows the label back to regular weight
+   rather than padding every tab by the semibold delta.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L478
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SelectorBar/SelectorBar.xaml#L58 */
+.fui-Tab[aria-selected='true'] .fui-Tab__content.fui-Tab__content,
 .fui-Tab__content--reserved-space.fui-Tab__content--reserved-space {
   font-weight: var(--fontWeightRegular);
 }
