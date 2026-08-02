@@ -16,8 +16,6 @@ const {
   Field,
 } = fluentComponents;
 
-// The form's resolver, and the subject of
-// `__tests__/components/login-form_test.ts`, which is what the export is for.
 export const loginSchema = z.object({
   username: z
     .string()
@@ -46,13 +44,9 @@ export function LoginForm() {
   const fetcher = useFetcher<LoginActionData>();
   const isSubmitting = fetcher.state !== 'idle';
   // The fetcher keeps its last response for as long as it lives, so a bar read
-  // straight off it has no state a dismiss could clear. The rejection is taken
-  // into state as each response arrives — during render rather than in an
-  // effect, so the bar and the response it reports are painted together. This
-  // is also where the response is split: the gateway refusing the credentials
-  // belongs to the field that holds them, and everything else -- a network
-  // failure, a gateway fault -- belongs to the attempt and has nowhere but the
-  // bar.
+  // straight off it has no state a dismiss could clear. Each response is taken
+  // into state during render rather than in an effect, so the bar and the
+  // response it reports are painted together.
   const [serverError, setServerError] = useState<string | null>(null);
   const [credentialError, setCredentialError] = useState<string | null>(null);
   const [reportedResponse, setReportedResponse] = useState(fetcher.data);
@@ -76,8 +70,8 @@ export function LoginForm() {
   });
 
   const onSubmit = (values: LoginFormValues) => {
-    // See the note at the submit button: it stays focusable while in flight,
-    // which leaves the form's own submission path open.
+    // The submit button stays focusable while in flight (disabledFocusable),
+    // so the form's own submission path stays open.
     if (isSubmitting) return;
     void fetcher.submit(
       {
@@ -93,15 +87,12 @@ export function LoginForm() {
 
   return (
     <Panel className="w-[min(440px,100%)]">
-      {/* The mark alone, at the size the dashboard wears it. A heading under it
-          would name the page the mark has already named. */}
       <header className="grid justify-items-center">
         <FlowayLogo />
       </header>
 
-      {/* 12px from the mark to the first field. The form's first Field carries
-          12px of its own above its label, so the gap states none and lets that
-          be the whole of it -- stating 12 here would read as 24 on screen. */}
+      {/* The first Field carries 12px of its own above its label, so no gap is
+          stated from the mark to it -- stating 12 here would read as 24. */}
       <form
         className="mx-auto grid w-full max-w-full gap-5"
         onSubmit={event => void handleSubmit(onSubmit)(event)}
@@ -161,8 +152,6 @@ export function LoginForm() {
           {t('auth.login.submit')}
         </Button>
 
-        {/* A step quieter than the form it explains, and with the leading that
-            step is set with rather than the one it inherited from a larger. */}
         <p className="m-0 text-center text-fui-base200 leading-[var(--lineHeightBase300)] text-fui-fg2">
           <Trans
             i18nKey="auth.adminKeyHint"
