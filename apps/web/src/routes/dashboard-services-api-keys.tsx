@@ -5,14 +5,13 @@ import type { Route } from './+types/dashboard-services-api-keys';
 import { useDashboardOutletContext } from './dashboard';
 import { requireDashboardSession } from './route-guards';
 import { api, callApi } from '../api/client';
-import type { ApiKey } from '../api/types';
+import type { ApiKey, ControlPlaneModel, UpstreamOption } from '../api/types';
 import { AgentSetupCard } from '../components/api-keys/agent-setup-card';
 import type { AgentSetupLease } from '../components/api-keys/agent-setup';
 import { KeyDialog } from '../components/api-keys/key-editor';
 import { KeysTable } from '../components/api-keys/keys-table';
 import { modelsForAgentSetup } from '../components/api-keys/model-reachability';
 import { RotateKeyDialog } from '../components/api-keys/rotate-key-dialog';
-import type { ApiKeysPageData } from '../components/api-keys/types';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
@@ -25,6 +24,17 @@ import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { useRefresh } from '../components/ui/use-refresh';
 
 const selectedKeyStorageKey = 'floway-agent-setup-selected-key';
+
+// `null` is a fetch that failed, distinct from a deployment that genuinely
+// holds no keys: an empty table invites an operator to create a second copy of
+// a key they already have.
+interface ApiKeysPageData {
+  keys: ApiKey[] | null;
+  upstreams: UpstreamOption[] | null;
+  models: ControlPlaneModel[] | null;
+  error: string | null;
+}
+
 interface LoaderData extends ApiKeysPageData {
   selectedKeyId: string;
   setupError: string | null;

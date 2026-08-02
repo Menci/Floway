@@ -7,7 +7,7 @@ import { requireDashboardAdmin } from './route-guards';
 import { api, callApi, callApiNoContent } from '../api/client';
 import type { ControlPlaneModel, ModelAlias } from '../api/types';
 import { AliasDialog } from '../components/model-alias/alias-dialog';
-import { mergeModelAliasesPageData } from '../components/model-alias/load-data';
+import { mergeModelAliasesPageData } from '../components/model-alias/page-data';
 import { computeAliasWarnings } from '../components/model-alias/warnings';
 import { indexCatalog } from '../components/models/catalog-index';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
@@ -35,11 +35,11 @@ const loadPageData = async (current: LoaderData['catalog'], signal?: AbortSignal
     callApi(() => api.api.aliases.$get(undefined, { init: { signal } })),
     callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } }, { init: { signal } })),
   ]);
-  const catalog = mergeModelAliasesPageData(current, aliasResult, modelResult);
+  const merged = mergeModelAliasesPageData(current, aliasResult, modelResult);
   return {
-    catalog: { aliases: catalog.aliases, models: catalog.models },
-    error: aliasResult.error?.message ?? null,
-    modelsError: modelResult.error?.message ?? null,
+    catalog: { aliases: merged.aliases, models: merged.models },
+    error: merged.aliasError,
+    modelsError: merged.modelsError,
   };
 };
 
