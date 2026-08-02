@@ -197,13 +197,15 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
                 {groupByValues.filter(value => value !== 'userId' || view === 'all-by-user').map(value => <Option key={value} value={value}>{t(`dashboard.performance.groupBy.${value}`)}</Option>)}
               </Dropdown>
               {groupBy === 'keyId' && (
+                // The 34px form-row height this Dropdown carries has no Button
+                // size to meet it -- Fluent's icon-only squares are 24, 32 and
+                // 40 -- so the row keeps the default 32 and stays 2px short
+                // rather than reaching past the field it annotates.
                 <Tooltip content={t('dashboard.performance.apiKeyScopeInfo')} relationship="description">
                   <Button
                     appearance="subtle"
                     aria-label={t('dashboard.performance.apiKeyScopeLabel')}
-                    className="!min-w-[36px]"
-                    icon={<InfoRegular fontSize={22} />}
-                    size="large"
+                    icon={<InfoRegular />}
                   />
                 </Tooltip>
               )}
