@@ -8,13 +8,11 @@
 // belongs to ./drawer.css, which the sidebar's inline NavDrawer already picks
 // up through its InlineDrawer class.
 //
-// NavItem, NavSubItem, NavCategoryItem and AppItem all render Fluent's one
-// shared root reset (sharedNavStyles.styles: useRootDefaultClassName), so the
-// foreground and fill rules below name all four and siblings in one list stay
-// in step. AppItem is the one of the four Fluent gives no selected state, so
-// selection, its indicator and the tokens a selected item reads are stated for
-// the other three; the icon tokens narrow further to the two that pair a
-// selected state with an icon slot.
+// NavItem, NavSubItem and NavCategoryItem all render Fluent's one shared root
+// reset (sharedNavStyles.styles: useRootDefaultClassName), so the foreground
+// and fill rules below name all three and siblings stay in step. The icon
+// tokens narrow further to the two that pair a selected state with an icon
+// slot.
 //
 // Several rows below substitute a Fluent token rather than declare the property
 // the token feeds. That is not a style choice: those values are painted from a
@@ -49,16 +47,14 @@ export const navCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L31 */
 .fui-NavItem.fui-NavItem,
 .fui-NavSubItem.fui-NavSubItem,
-.fui-NavCategoryItem.fui-NavCategoryItem,
-.fui-AppItem.fui-AppItem {
+.fui-NavCategoryItem.fui-NavCategoryItem {
   --colorNeutralForeground2: var(--winui-text-fill-primary);
 }
 
 .fui-NavItem.fui-NavItem:active,
 .fui-NavItem.fui-NavItem[data-nav-pending],
 .fui-NavSubItem.fui-NavSubItem:active,
-.fui-NavCategoryItem.fui-NavCategoryItem:active,
-.fui-AppItem.fui-AppItem:active {
+.fui-NavCategoryItem.fui-NavCategoryItem:active {
   --colorNeutralForeground2: var(--winui-text-fill-secondary);
 }
 
@@ -66,16 +62,11 @@ export const navCss = `
    fill and steps it toward the material on pointer, where Fluent steps it away
    from one. Selection is the same ramp held one step in, so a selected item and
    a hovered one read alike until the indicator distinguishes them -- which is
-   why the indicator, not the fill, is what carries selection here. AppItem
-   joins the list as a pane row drawn from the same template: WinUI states no
-   brush of its own for it, and on Fluent's neutral background 4 it would be the
-   one opaque slab in a transparent pane. It takes only the states it has, which
-   are the unselected ones.
+   why the indicator, not the fill, is what carries selection here.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L9-L20 */
 .fui-NavItem.fui-NavItem,
 .fui-NavSubItem.fui-NavSubItem,
-.fui-NavCategoryItem.fui-NavCategoryItem,
-.fui-AppItem.fui-AppItem {
+.fui-NavCategoryItem.fui-NavCategoryItem {
   background-color: var(--winui-subtle-fill-transparent);
 }
 
@@ -84,8 +75,7 @@ export const navCss = `
 .fui-NavSubItem.fui-NavSubItem:hover,
 .fui-NavSubItem.fui-NavSubItem[aria-current='page'],
 .fui-NavCategoryItem.fui-NavCategoryItem:hover,
-.fui-NavCategoryItem.fui-NavCategoryItem[aria-current='page'],
-.fui-AppItem.fui-AppItem:hover {
+.fui-NavCategoryItem.fui-NavCategoryItem[aria-current='page'] {
   background-color: var(--winui-subtle-fill-secondary);
 }
 
@@ -148,8 +138,7 @@ export const navCss = `
 .fui-NavSubItem.fui-NavSubItem:active,
 .fui-NavSubItem.fui-NavSubItem[aria-current='page']:hover,
 .fui-NavCategoryItem.fui-NavCategoryItem:active,
-.fui-NavCategoryItem.fui-NavCategoryItem[aria-current='page']:hover,
-.fui-AppItem.fui-AppItem:active {
+.fui-NavCategoryItem.fui-NavCategoryItem[aria-current='page']:hover {
   background-color: var(--winui-subtle-fill-tertiary);
 }
 
@@ -174,9 +163,7 @@ export const navCss = `
 .fui-NavSubItem.fui-NavSubItem:disabled,
 .fui-NavSubItem.fui-NavSubItem[aria-disabled='true'],
 .fui-NavCategoryItem.fui-NavCategoryItem:disabled,
-.fui-NavCategoryItem.fui-NavCategoryItem[aria-disabled='true'],
-.fui-AppItem.fui-AppItem:disabled,
-.fui-AppItem.fui-AppItem[aria-disabled='true'] {
+.fui-NavCategoryItem.fui-NavCategoryItem[aria-disabled='true'] {
   background-color: var(--winui-subtle-fill-transparent);
 }
 
@@ -199,9 +186,7 @@ export const navCss = `
 .fui-NavSubItem.fui-NavSubItem:disabled,
 .fui-NavSubItem.fui-NavSubItem[aria-disabled='true'],
 .fui-NavCategoryItem.fui-NavCategoryItem:disabled,
-.fui-NavCategoryItem.fui-NavCategoryItem[aria-disabled='true'],
-.fui-AppItem.fui-AppItem:disabled,
-.fui-AppItem.fui-AppItem[aria-disabled='true'] {
+.fui-NavCategoryItem.fui-NavCategoryItem[aria-disabled='true'] {
   --colorNeutralForeground2: var(--winui-text-fill-disabled);
 }
 
@@ -233,8 +218,7 @@ export const navCss = `
    https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
 .fui-NavItem.fui-NavItem[data-fui-focus-visible],
 .fui-NavSubItem.fui-NavSubItem[data-fui-focus-visible],
-.fui-NavCategoryItem.fui-NavCategoryItem[data-fui-focus-visible],
-.fui-AppItem.fui-AppItem[data-fui-focus-visible] {
+.fui-NavCategoryItem.fui-NavCategoryItem[data-fui-focus-visible] {
   --colorStrokeFocus2: var(--winui-focus-stroke-outer);
   box-shadow:
     inset 0 0 0 var(--strokeWidthThicker) var(--winui-focus-stroke-inner);
