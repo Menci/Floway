@@ -1,11 +1,7 @@
-// Table and DataGrid restyled from Fluent 2 Web onto WinUI 3, whose closest
-// counterpart to a row is the ListViewItem.
-//
 // DataGrid components each call the matching Table style hook and then only
 // append their own class name, so the rules below name the Table classes and
 // the DataGrid inherits them. A DataGrid class is the subject only where
 // `aria-selected` is needed — an attribute only the DataGrid row writes.
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L83-L93
 export const tableCss = `
 /* WinUI resolves the item's normal, pointer-over and pressed foregrounds to one
    brush, so only the two moving states are pinned back to Fluent's rest value.
@@ -18,57 +14,50 @@ export const tableCss = `
 
 /* WinUI states no weight for any header-shaped item, so semibold is the
    dashboard's own choice.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L9448-L9456
-
-   The leading has to be stated on the nested button instead of inherited,
-   because Fluent's button reset pins it to normal, and a header that wraps
-   would otherwise sit on a different leading from the cells beside it. */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L9448-L9456 */
 .fui-TableHeaderCell.fui-TableHeaderCell {
   font-weight: var(--fontWeightSemibold);
 }
 
+/* Stated on the nested button rather than inherited, because Fluent's button
+   reset pins the leading to normal and a header that wraps would otherwise sit
+   on a different leading from the cells beside it. */
 .fui-TableHeaderCell__button.fui-TableHeaderCell__button {
   line-height: var(--lineHeightBase300);
 }
 
-/* The header cell's button slot declares \`background-color: inherit\`. That
-   repaint was invisible while the cell's hover fill was an opaque grey; WinUI's
-   fill is translucent, so the two composite and a hovered sortable header reads
-   as a band with a darker block inside it. The cell keeps the fill and the
-   button gives it up in every state, not just the two the pointer names: the
-   inherited value is wrong wherever the cell has one, including the horizontal
-   padding the button does not cover.
+/* The button slot declares \`background-color: inherit\`, and WinUI's cell fill
+   is translucent, so the two composite into a band with a darker block inside
+   it. The button gives the fill up in every state, not just the two the pointer
+   names: the inherited value is wrong wherever the cell has one, including the
+   horizontal padding the button does not cover.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L17-L25 */
 .fui-TableHeaderCell .fui-TableHeaderCell__button.fui-TableHeaderCell__button {
   background-color: var(--winui-subtle-fill-transparent);
 }
 
-/* The edge itself is Fluent's, since a ListView draws no separator and a table
-   without one is unreadable. Only the colour is stated, so the sizes that
-   declare no bottom edge keep none.
+/* The edge itself is Fluent's, since a ListView draws no separator. Only the
+   colour is stated, so the sizes that declare no bottom edge keep none.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L143
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L347 */
 .fui-TableRow.fui-TableRow {
   border-bottom-color: var(--winui-divider-stroke-default);
 }
 
-/* Only the ring's own colour is restated rather than Fluent's focus-stroke
-   token, so a Button, Link or Menu trigger inside a cell keeps the ring it
-   draws outside the table.
+/* The ring's own colour is restated rather than Fluent's focus-stroke token, so
+   a Button, Link or Menu trigger inside a cell keeps the ring it draws outside
+   the table.
 
-   Both strokes are drawn inside the element's bounds. Fluent's outline carries
-   no offset, which would seat it against the border box, and every table in the
-   dashboard sits in a rounded clipping host that would cut a header cell's top
-   edge and a body row's left and right. Pulling the outline in by the outer
-   stroke's 2px seats the pair inside that clip, with the inner stroke riding
-   the third pixel of an inset shadow whose outer two the outline covers.
-   Insetting the host instead is wrong at both ends -- the performance table has
-   to meet its host's rounded border, and a gutter in the API key table would
-   stop the row's fill short of the card edge.
+   Both strokes are drawn inside the element's bounds: every table here sits in
+   a rounded clipping host that would cut an offsetless outline, so pulling it
+   in by the outer stroke's 2px seats the pair inside the clip, with the inner
+   stroke riding the third pixel of the inset shadow. Insetting the host instead
+   is wrong at both ends -- the performance table has to meet its host's rounded
+   border, and a gutter in the API key table would stop the row's fill short of
+   the card edge.
 
-   Under forced colours the user agent drops that inset shadow and forces the
-   outline onto CanvasText, which is the mode's reading of the WindowText the
-   HighContrast dictionary states, so no colour is needed there.
+   Under forced colours the user agent drops the inset shadow and forces the
+   outline onto CanvasText, so no colour is needed there.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L29-L30
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L94
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L248
@@ -91,9 +80,6 @@ export const tableCss = `
    surface; WinUI stays on the subtle ramp it uses for the pointer. The fill and
    foreground are restated on all three states a selected row can be in, since
    Fluent's interactive atoms outrank the appearance's.
-
-   Selection reaches the DOM only as \`aria-selected\`, which the DataGrid row
-   writes; the appearance prop a plain Table row takes never does.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L20
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L26-L28 */
 .fui-TableBody .fui-DataGridRow.fui-DataGridRow[aria-selected='true'] {
@@ -125,11 +111,10 @@ export const tableCss = `
 }
 
 /* Every pointer and selection fill on a ListViewItem collapses onto Highlight
-   with a HighlightText foreground. Fluent states only a Highlight foreground on
-   hover, out of a single-class atom that the pinned foreground above outranks,
-   so without this the row would lose its one forced-colours state rather than
-   gain WinUI's. The header needs no answer: forced colours repaints every
-   \`color\` it reaches, so its rest and hovered values both land on CanvasText.
+   with a HighlightText foreground. Fluent's own answer is a single-class atom
+   that the pinned foreground above outranks, so without this the row would lose
+   its one forced-colours state rather than gain WinUI's. The header needs none:
+   forced colours repaints every \`color\` it reaches onto CanvasText.
 
    A media query carries no specificity, so each selector repeats the shape of
    the rule it answers.
