@@ -4,14 +4,9 @@ import { appLoadingCss } from './components/ui/app-loading-screen.css';
 import { errorShellCss } from './components/ui/error-shell.css';
 import { baseFontStack } from './font-stacks';
 
-// What has to be true before the linked stylesheets arrive -- in dev, a
-// second-and-a-bit, since global.css is served through Vite's transform. Left to
-// a utility class the body margin is the user agent's 8px until then, which
-// reads as a white border around the whole app.
-//
 // Fluent scopes its tokens to the FluentProvider element, so `<body>`, the
-// loading screen and the error shell see no `--fontFamilyBase`; publishing the
-// stack at the document root keeps `baseFontStack` the only copy of it.
+// loading screen and the error shell see no `--fontFamilyBase` unless it is
+// published at the document root.
 //
 // ../vite.config.ts serves this module as `virtual:floway-critical.css` and
 // evaluates this graph in Node, so nothing here may reach a browser module.
