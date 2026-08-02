@@ -99,9 +99,14 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   ));
 
   // The blocker owns whether the navigation is held; the dialog only follows
-  // it. Following rather than rendering on `blocker.state` directly is what
-  // keeps the surface mounted once the blocker has resolved, which is the only
-  // way it gets to play its exit.
+  // it, which is what gives a close something to change rather than an unmount
+  // to be removed by. Following alone is not enough, though: releasing the
+  // blocker on confirm commits the route change, and the route takes this
+  // surface with it part-way through the exit -- the surface is portaled to the
+  // body, where the page transition's held leaving frame does not cover it. So
+  // confirming only closes the dialog, and the blocker is released once the
+  // exit reports itself finished. A dismissal resets the blocker first, which
+  // is what tells the two apart by then.
   const leaveDialog = useDialogInvocation<void>();
   const blocked = blocker.state === 'blocked';
   const [dialogFollowsBlocked, setDialogFollowsBlocked] = useState(blocked);
@@ -268,7 +273,8 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       key={leaveDialog.invocation.key}
       message={t('dashboard.upstreamEditor.leave.message')}
       onCancel={() => blocker.state === 'blocked' && blocker.reset()}
-      onConfirm={() => blocker.state === 'blocked' && blocker.proceed()}
+      onConfirm={() => leaveDialog.close()}
+      onExited={() => { if (blocker.state === 'blocked') blocker.proceed(); }}
       onOpenChange={open => { if (!open && blocker.state === 'blocked') blocker.reset(); }}
       title={t('dashboard.upstreamEditor.leave.title')}
     />}
