@@ -127,13 +127,16 @@ export const badgeTagCss = `
    with it: AccentButtonForegroundPressed is TextOnAccentFillColorSecondary,
    where Fluent holds the on-accent primary through the press. This sits after
    the focus visual because WinUI's Pressed visual state is entered over the
-   focused one and repaints the border either way.
+   focused one and repaints the border either way. The press excludes a
+   disabled chip: WinUI cannot leave Disabled for a pointer state, and a rule
+   settling that by source order alone breaks the moment either selector gains
+   a component.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L109
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L113 */
-.fui-Tag.fui-Tag[aria-pressed='true']:active,
-.fui-Tag.fui-Tag[aria-selected='true']:active,
-.fui-InteractionTagPrimary.fui-InteractionTagPrimary[aria-pressed='true']:active,
-:where(.fui-InteractionTagPrimary[aria-pressed='true']) + .fui-InteractionTagSecondary.fui-InteractionTagSecondary:active {
+.fui-Tag.fui-Tag[aria-pressed='true']:active:not(:disabled),
+.fui-Tag.fui-Tag[aria-selected='true']:active:not(:disabled),
+.fui-InteractionTagPrimary.fui-InteractionTagPrimary[aria-pressed='true']:active:not(:disabled),
+:where(.fui-InteractionTagPrimary[aria-pressed='true']) + .fui-InteractionTagSecondary.fui-InteractionTagSecondary:active:not(:disabled) {
   border-color: var(--winui-control-fill-transparent);
   color: var(--winui-text-on-accent-fill-secondary);
 }

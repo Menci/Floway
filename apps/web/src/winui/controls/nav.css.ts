@@ -6,6 +6,14 @@
 // do so because the value is painted from a keyframe stop, which outranks every
 // normal rule; the variable that stop reads is the one remaining input. See
 // ./tokens.ts for the selector convention.
+//
+// WinUI's VisualStateManager never leaves Disabled, so no pointer state is
+// reachable from it. In CSS a state pseudo-class only adds weight, so a
+// selected item's pointer rule would outrank a plain disabled rule; the
+// pointer states therefore exclude both disabled spellings themselves rather
+// than being settled by the disabled rules that follow them.
+const notDisabled = ":not(:disabled):not([aria-disabled='true'])";
+
 export const navCss = `
 /* No seam on the pane's inline-end edge: WinUI draws that hairline from the
    content side, as the start edge of the ContentGrid card, and the dashboard's
@@ -28,10 +36,10 @@ export const navCss = `
   --colorNeutralForeground2: var(--winui-text-fill-primary);
 }
 
-.fui-NavItem.fui-NavItem:active,
-.fui-NavItem.fui-NavItem[data-nav-pending],
-.fui-NavSubItem.fui-NavSubItem:active,
-.fui-NavCategoryItem.fui-NavCategoryItem:active {
+.fui-NavItem.fui-NavItem:active${notDisabled},
+.fui-NavItem.fui-NavItem[data-nav-pending]${notDisabled},
+.fui-NavSubItem.fui-NavSubItem:active${notDisabled},
+.fui-NavCategoryItem.fui-NavCategoryItem:active${notDisabled} {
   --colorNeutralForeground2: var(--winui-text-fill-secondary);
 }
 
@@ -44,11 +52,11 @@ export const navCss = `
   background-color: var(--winui-subtle-fill-transparent);
 }
 
-.fui-NavItem.fui-NavItem:hover,
+.fui-NavItem.fui-NavItem:hover${notDisabled},
 .fui-NavItem.fui-NavItem[aria-current='page'],
-.fui-NavSubItem.fui-NavSubItem:hover,
+.fui-NavSubItem.fui-NavSubItem:hover${notDisabled},
 .fui-NavSubItem.fui-NavSubItem[aria-current='page'],
-.fui-NavCategoryItem.fui-NavCategoryItem:hover,
+.fui-NavCategoryItem.fui-NavCategoryItem:hover${notDisabled},
 .fui-NavCategoryItem.fui-NavCategoryItem[aria-current='page'] {
   background-color: var(--winui-subtle-fill-secondary);
 }
@@ -88,27 +96,25 @@ export const navCss = `
   width: 3px;
 }
 
-.fui-NavItem.fui-NavItem:active,
-.fui-NavItem.fui-NavItem[data-nav-pending],
-.fui-NavItem.fui-NavItem[aria-current='page']:hover,
-.fui-NavSubItem.fui-NavSubItem:active,
-.fui-NavSubItem.fui-NavSubItem[aria-current='page']:hover,
-.fui-NavCategoryItem.fui-NavCategoryItem:active,
-.fui-NavCategoryItem.fui-NavCategoryItem[aria-current='page']:hover {
+.fui-NavItem.fui-NavItem:active${notDisabled},
+.fui-NavItem.fui-NavItem[data-nav-pending]${notDisabled},
+.fui-NavItem.fui-NavItem[aria-current='page']:hover${notDisabled},
+.fui-NavSubItem.fui-NavSubItem:active${notDisabled},
+.fui-NavSubItem.fui-NavSubItem[aria-current='page']:hover${notDisabled},
+.fui-NavCategoryItem.fui-NavCategoryItem:active${notDisabled},
+.fui-NavCategoryItem.fui-NavCategoryItem[aria-current='page']:hover${notDisabled} {
   background-color: var(--winui-subtle-fill-tertiary);
 }
 
-.fui-NavItem.fui-NavItem[aria-current='page']:active,
-.fui-NavSubItem.fui-NavSubItem[aria-current='page']:active,
-.fui-NavCategoryItem.fui-NavCategoryItem[aria-current='page']:active {
+.fui-NavItem.fui-NavItem[aria-current='page']:active${notDisabled},
+.fui-NavSubItem.fui-NavSubItem[aria-current='page']:active${notDisabled},
+.fui-NavCategoryItem.fui-NavCategoryItem[aria-current='page']:active${notDisabled} {
   background-color: var(--winui-subtle-fill-secondary);
 }
 
 /* WinUI leaves a disabled item on the transparent fill rather than dimming it,
    so the foreground below carries the whole disabled reading; a disabled
    selected item keeps its wash, so the pane still says which page one is on.
-   Both pairs must come after the pointer states they settle, since a disabled
-   element still matches :hover.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L12
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L20 */
 .fui-NavItem.fui-NavItem:disabled,
@@ -176,9 +182,9 @@ export const navCss = `
   --colorNeutralForeground2BrandSelected: var(--winui-text-fill-primary);
 }
 
-.fui-NavItem.fui-NavItem:active,
-.fui-NavItem.fui-NavItem[data-nav-pending],
-.fui-NavCategoryItem.fui-NavCategoryItem:active {
+.fui-NavItem.fui-NavItem:active${notDisabled},
+.fui-NavItem.fui-NavItem[data-nav-pending]${notDisabled},
+.fui-NavCategoryItem.fui-NavCategoryItem:active${notDisabled} {
   --colorNeutralForeground2BrandSelected: var(--winui-text-fill-secondary);
 }
 
