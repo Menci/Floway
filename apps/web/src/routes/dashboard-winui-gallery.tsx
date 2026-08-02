@@ -522,9 +522,9 @@ function PopoverSection() {
           <Text block>An alias exposes one public model id and resolves it across upstream candidates.</Text>
         </PopoverSurface>
       </Popover>
-      <Popover size="large" withArrow>
+      <Popover size="large">
         <PopoverTrigger disableButtonEnhancement>
-          <Button>Large, with arrow</Button>
+          <Button>Large</Button>
         </PopoverTrigger>
         <PopoverSurface>
           <Text block weight="semibold">Proxy</Text>
@@ -634,8 +634,8 @@ function TooltipSection() {
       <Tooltip content="After" positioning="after" relationship="description">
         <Button>After</Button>
       </Tooltip>
-      <Tooltip content="Below, with arrow" positioning="below" relationship="description" withArrow>
-        <Button>Below, arrow</Button>
+      <Tooltip content="Below" positioning="below" relationship="description">
+        <Button>Below</Button>
       </Tooltip>
       <Tooltip content="Still reachable while the button is disabledFocusable" relationship="description">
         <Button disabledFocusable>Disabled trigger</Button>

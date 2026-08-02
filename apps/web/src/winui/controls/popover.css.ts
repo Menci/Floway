@@ -1,10 +1,5 @@
 // WinUI 3 FlyoutPresenter styling for Fluent v9's PopoverSurface.
 //
-// The arrow needs no fill rule of its own: Fluent gives it
-// `background-color: inherit` and the surface is its parent. Its stroke comes
-// from ../flyout-arrow.css, which every flyout beak shares.
-// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-positioning/library/src/createArrowStyles.ts#L76-L77
-//
 // FlyoutContentPadding is deliberately not restated: `size` is composed into
 // hashed padding atoms and PopoverSurface is not one of the components
 // `winui/appearance.ts` stamps, so stating the padding would flatten all three
