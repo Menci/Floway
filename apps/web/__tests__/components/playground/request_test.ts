@@ -7,6 +7,7 @@ import {
   parseCustomJson,
   supportsImageInput,
 } from '../../../src/components/playground/request';
+import { chatModel } from '../../api/model-fixture';
 
 describe('custom JSON', () => {
   it('rejects invalid, non-object and reserved fields', () => {
