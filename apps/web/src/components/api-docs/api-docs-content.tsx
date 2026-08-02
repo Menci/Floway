@@ -1,7 +1,6 @@
 import { Trans, useTranslation } from 'react-i18next';
 import { Link as RouterLink } from 'react-router';
-// Prism grammars register themselves onto Prism as a module side effect, so
-// `prismjs` must be named first and ESM source order is what guarantees it.
+// Prism grammars register themselves onto Prism as a module side effect, so `prismjs` must import first.
 import 'prismjs';
 import 'prismjs/components/prism-bash';
 
