@@ -9,6 +9,10 @@
 // controls/button.css.ts.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L255-L256
 //
+// Forced colours want the same geometry and get no branch of their own: the
+// border box then carries the forced border colour, which is the band a high
+// contrast theme draws a control's edge with.
+//
 // :where() holds each row at the universal selector's weight, so anything
 // stating a background-clip of its own wins whatever order the sheets are
 // injected in.

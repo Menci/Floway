@@ -137,7 +137,9 @@ ${checkedToggle(disabledStates)} {
 
 /* ButtonPadding is the padding of a button that carries a label, and CSS cannot
    tell a label apart from an icon, so excluding every button that has an icon
-   keeps the icon-only ones on Fluent's square.
+   keeps the icon-only ones on Fluent's square -- Fluent reaches its 32px square
+   through even 5px padding around a 20px glyph, which holds on its own once the
+   width reservation above is released.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L152 */
 .fui-Button.fui-Button:not(:has(> .fui-Button__icon))${notOptedOut} {
   padding: var(--winui-button-padding);

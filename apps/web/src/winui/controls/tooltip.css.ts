@@ -5,7 +5,8 @@
 // `state.arrowClassName`, Griffel atoms with no stable class to name.
 //
 // The corner radius and the 12px content size are already true through theme.ts
-// and Fluent respectively, so neither is restated.
+// and Fluent respectively, and BackgroundSizing is InnerBorderEdge, which
+// reset.css.ts already applies to everything, so none of the three is restated.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToolTip_themeresources.xaml#L43-L52
 //
 // Line height is unsourceable -- WinUI's template declares none and takes the

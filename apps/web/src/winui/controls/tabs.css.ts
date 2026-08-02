@@ -107,7 +107,10 @@ export const tabsCss = `
 /* Pivot floats the pipe clear of the header's bottom edge with a 2px margin
    where Fluent sits it flush, and states its thickness once as 3px. Horizontal
    only: Fluent's vertical strip reuses the bottom inset as the far edge of a
-   left-edge bar, and there is no vertical Pivot to transcribe.
+   left-edge bar, and there is no vertical Pivot to transcribe. Unscoped by tab
+   size: Pivot has a single header size, so the one float and the one thickness
+   cover Fluent's three, and only the small strip moves, since Fluent's medium
+   and large already resolve to the same 3px.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L587 */
 .fui-TabList[aria-orientation='horizontal'] > .fui-Tab.fui-Tab::after {
   bottom: 2px;

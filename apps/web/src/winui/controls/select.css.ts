@@ -59,11 +59,12 @@ export const selectCss = `
 
 /* Keyboard focus. WinUI lights a detached highlight border inset by -4px plus
    the accent pill on the faceplate's leading edge. An outline at 2px offset
-   reproduces that border -- and is what remains once ::after is spent below --
-   except at the corner, where an outline takes the field's radius plus its
-   offset and so lands a pixel tighter than WinUI's fixed 7px. The shadow fills
-   the two offset pixels with HighlightBackground, which coincides with the
-   stroke in light and parts from it in dark.
+   reproduces that border -- the ring is carried by an outline rather than by
+   the ::after this appearance frees below -- except at the corner, where an
+   outline takes the field's radius plus its offset and so lands a pixel tighter
+   than WinUI's fixed 7px. The shadow fills the two offset pixels with
+   HighlightBackground, which coincides with the stroke in light and parts from
+   it in dark.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L37
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L38
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L338
@@ -98,6 +99,8 @@ export const selectCss = `
   width: 3px;
 }
 
+/* Fluent's brand underline is the affordance the ring above replaces, so the
+   pseudo-element drawing it is dropped on the appearance WinUI paints. */
 .fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']::after,
 .fui-Combobox.fui-Combobox[data-winui-appearance='outline']::after {
   content: none;

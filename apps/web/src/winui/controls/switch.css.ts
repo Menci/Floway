@@ -193,7 +193,10 @@ export const switchCss = `
 
 /* The knob swells to 14x14 under the pointer and stretches to 17x14 while
    pressed -- a capsule, not a circle, which is why the shape is the element's
-   own background rather than a glyph.
+   own background rather than a glyph. The template animates Width and Height
+   themselves rather than a scale, so the margins stated with each size are what
+   keep the growth centred on the track's leading edge until the press pushes it
+   3px along, mirrored to a negative one once the knob has travelled.
 
    The state is taken from the root rather than from the input. Fluent's input
    is visually hidden and a pixel wide, so it never sees the pointer -- the

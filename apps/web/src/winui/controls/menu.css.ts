@@ -178,6 +178,10 @@ export const menuCss = `
    dictionary, so it follows the row it sits in, the only value legible over
    both fills.
 
+   The presenter's doubled border is WinUI's own; its fill and stroke, and the
+   separator's, are left unstated because they already resolve to the Window and
+   WindowText the dictionary names.
+
    A media query carries no specificity, so each rule repeats the selector it
    answers.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L90-L97

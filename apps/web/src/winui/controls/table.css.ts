@@ -114,7 +114,9 @@ export const tableCss = `
    with a HighlightText foreground. Fluent's own answer is a single-class atom
    that the pinned foreground above outranks, so without this the row would lose
    its one forced-colours state rather than gain WinUI's. The header needs none:
-   forced colours repaints every \`color\` it reaches onto CanvasText.
+   forced colours repaints every \`color\` it reaches onto CanvasText, and the
+   check box in a selection cell keeps Fluent's drawing, for the reason
+   ./choice.css.ts writes down for every check box.
 
    A media query carries no specificity, so each selector repeats the shape of
    the rule it answers.
