@@ -102,12 +102,18 @@ export const fieldCss = `
   padding-inline-start: 0;
 }
 
-/* The required marker has no WinUI counterpart -- a TextBox header states none
-   -- so it is answered as an internal invariant instead: every other signal in
-   this column was re-expressed in a WinUI SystemFill role, and leaving this one
-   on Fluent's own red put two different reds in the same column of a form.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L282 */
-.fui-Field__label .fui-Label__required.fui-Label__required {
+/* The required marker has no WinUI counterpart -- a TextBox header states none,
+   and neither the CheckBox nor the RadioButton template carries a marker part
+   beside its bare ContentPresenter -- so it is answered as an internal
+   invariant instead: every other signal in this column was re-expressed in a
+   WinUI SystemFill role, and leaving this one on Fluent's own red put two
+   different reds in the same column of a form. Stated on the Label slot rather
+   than under a Field, because Checkbox and Radio render their own label outside
+   the Field label and every marker in the app is this same affordance.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L282
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L598-L613
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L366-L379 */
+.fui-Label__required.fui-Label__required {
   color: var(--winui-system-fill-critical);
 }
 
