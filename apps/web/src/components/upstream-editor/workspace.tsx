@@ -335,7 +335,7 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
         <TableHeader><TableRow><TableCentredHeader>{t('dashboard.upstreamEditor.models.enabled')}</TableCentredHeader><TableHeaderCell>{t('dashboard.upstreamEditor.models.name')}</TableHeaderCell><TableCentredHeader>{t('dashboard.upstreamEditor.models.kind')}</TableCentredHeader><TableHeaderCell>{t('dashboard.upstreamEditor.models.id')}</TableHeaderCell><TableCentredHeader>{t('dashboard.upstreamEditor.models.source')}</TableCentredHeader><TableActionsHeader>{t('dashboard.upstreamEditor.models.actions')}</TableActionsHeader></TableRow></TableHeader>
         <TableBody>{filtered.map(row => {
           const id = publicModelId(row.config); return <TableRow className="h-14" key={row.key}>
-            <TableCentredCell><Switch checked={!disabled.includes(id)} onChange={(_, data) => setEnabled(id, data.checked)} /></TableCentredCell>
+            <TableCentredCell><Switch aria-label={t('dashboard.upstreamEditor.models.enabledFor', { name: row.config.display_name ?? id })} checked={!disabled.includes(id)} onChange={(_, data) => setEnabled(id, data.checked)} /></TableCentredCell>
             <TableCell className="overflow-hidden">
               <Tooltip content={row.config.display_name ?? id} relationship="label">
                 <button

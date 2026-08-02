@@ -57,6 +57,7 @@ export function ResourceListPanel({ className, rowHeight = DEFAULT_ROW_HEIGHT, s
 
 type ResourceListActionsProps = {
   appearance?: 'subtle';
+  createDisabled?: boolean;
   disabled?: boolean;
   onRefresh: () => void;
   refreshLabel: string;
@@ -68,10 +69,13 @@ type ResourceListActionsProps = {
 );
 
 // A refresh in flight leaves the control focusable while it reads disabled, so
-// a keyboard is not thrown back to the document mid-action.
+// a keyboard is not thrown back to the document mid-action. `disabled` gates
+// the whole group; `createDisabled` gates only the create button, so a page
+// whose data failed to load can withhold create and still offer the refresh
+// that recovers from it.
 export function ResourceListActions(props: ResourceListActionsProps) {
-  const { appearance, createLabel, createTrailingIcon, disabled = false, onRefresh, refreshLabel, refreshing = false } = props;
-  const busy = disabled || refreshing;
+  const { appearance, createDisabled = false, createLabel, createTrailingIcon, disabled = false, onRefresh, refreshLabel, refreshing = false } = props;
+  const busy = disabled || createDisabled || refreshing;
   const createButton = createLabel !== undefined && (
     <Button
       appearance="primary"

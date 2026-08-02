@@ -38,7 +38,7 @@ export async function clientAction({
 
 export default function Home() {
   return (
-    <ScrollArea axes="vertical" className="h-[100dvh]" contentClassName="h-full">
+    <ScrollArea axes="vertical" className="h-[100dvh]" contentClassName="h-full" noTabIndex>
       <main className="grid h-full min-h-max place-items-center p-6 max-[520px]:p-4">
         <LoginForm />
       </main>

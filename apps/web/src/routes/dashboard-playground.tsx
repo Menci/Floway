@@ -427,7 +427,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
                         </div>
                       ) : (
                         <>
-                          {message.imageUrl && <a className={`block text-fui-base200 break-all mb-2 ${message.role === 'user' ? 'text-inherit' : 'text-fui-fg2'}`} href={message.imageUrl} target="_blank" rel="noreferrer">{message.imageUrl}</a>}
+                          {message.imageUrl && <a className={`block text-fui-base200 break-all mb-2 ${message.role === 'user' ? 'text-inherit' : 'text-fui-fg2'}`} href={message.imageUrl} target="_blank" rel="noopener noreferrer">{message.imageUrl}</a>}
                           {message.role === 'assistant'
                             ? <PlaygroundMarkdown content={message.text} streaming={sending && message.id === lastMessageId} />
                             : <span className="whitespace-pre-wrap break-words">{message.text}</span>}

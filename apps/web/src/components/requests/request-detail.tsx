@@ -47,7 +47,6 @@ const useStyles = makeStyles({
     top: 0,
     zIndex: 2,
   },
-  sectionTitle: { lineHeight: '20px' },
   section: {
     borderBottom: '1px solid var(--colorNeutralStroke3)',
     ':last-child': { borderBottom: 'none' },
@@ -75,7 +74,7 @@ function CopyButton({ text }: { text: string }) {
   const { t } = useTranslation();
   const { copy, outcomeFor } = useCopyToClipboard();
   const copyLabel = useCopyLabel();
-  const label = copyLabel(outcomeFor(), t('dashboard.requests.copy'));
+  const label = copyLabel(outcomeFor(), t('common.copy.action'));
   return (
     <TooltipIconButton
       icon={copyOutcomeIcon(outcomeFor())}
@@ -128,9 +127,12 @@ function HeaderTable({ headers }: { headers: Array<[string, string]> }) {
   );
 }
 
+// Deliberately not `SectionHeader`: this bar is sticky and holds a fixed
+// height, which that primitive's narrow-viewport rule would stack away, and it
+// carries a detail slot beside the title that the primitive has no prop for.
 function DetailSectionHeader({ title, detail, actions, copyText }: { title: string; detail?: ReactNode; actions?: ReactNode; copyText?: string }) {
   const s = useStyles();
-  return <header className={s.sectionHeader}><div className="flex items-center gap-3 min-w-0"><Text as="h3" size={400} weight="semibold" className={mergeClasses('m-0', s.sectionTitle)}>{title}</Text>{detail}</div>{(actions !== undefined || copyText !== undefined) && <div className="ml-auto flex items-center gap-1">{actions}{copyText !== undefined && <CopyButton text={copyText} />}</div>}</header>;
+  return <header className={s.sectionHeader}><div className="flex items-center gap-3 min-w-0"><Text as="h3" size={400} weight="semibold" className="m-0">{title}</Text>{detail}</div>{(actions !== undefined || copyText !== undefined) && <div className="ml-auto flex items-center gap-1">{actions}{copyText !== undefined && <CopyButton text={copyText} />}</div>}</header>;
 }
 
 function SectionBody({ children }: PropsWithChildren) {
@@ -179,7 +181,7 @@ export function RequestDetailPanel({ collected: loadedCollected, error: loadedEr
   const collectKind = record ? detectCollectKind(record.meta.path) : null;
   const renderedEvents = useMemo(() => renderStreamEvents(collectKind, streamEvents), [collectKind, streamEvents]);
 
-  if (!recordId) return <div className="grid h-full place-items-center p-8"><EmptyStateLine>{t('dashboard.requests.selectPrompt')}</EmptyStateLine></div>;
+  if (!recordId) return <div className="grid h-full place-items-center p-4"><EmptyStateLine>{t('dashboard.requests.selectPrompt')}</EmptyStateLine></div>;
   if (error) return <OutcomeMessageBar className="!m-4">{error}</OutcomeMessageBar>;
   if (!record) return null;
 
@@ -216,7 +218,7 @@ export function RequestDetailPanel({ collected: loadedCollected, error: loadedEr
         <DetailSectionHeader
           title={t('dashboard.requests.responseBody')}
           actions={record.response.body.type === 'stream' ? (
-            <TabList selectedValue={streamView} onTabSelect={(_, data) => setStreamView(data.value as 'collected' | 'events')} size="small">
+            <TabList aria-label={t('dashboard.requests.streamView')} selectedValue={streamView} onTabSelect={(_, data) => setStreamView(data.value as 'collected' | 'events')} size="small">
               <Tab value="collected">{t('dashboard.requests.collected')}</Tab>
               <Tab value="events">{t('dashboard.requests.events', { count: streamEvents.length })}</Tab>
             </TabList>

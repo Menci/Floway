@@ -71,7 +71,7 @@ export function ApiDocsContent() {
                 <TableCell><HttpMethodBadge method={endpoint.method} /></TableCell>
                 <TableCell><code translate="no">{endpoint.path}</code></TableCell>
                 <TableCell>{t(`dashboard.apiDocs.endpointNames.${endpoint.name}`)}</TableCell>
-                <TableCell className={trailingCell}><Link href={endpoint.docs} target="_blank"><OpenLinkLabel>{t('dashboard.apiDocs.docsLink')}</OpenLinkLabel></Link></TableCell>
+                <TableCell className={trailingCell}><Link href={endpoint.docs} target="_blank" rel="noopener noreferrer"><OpenLinkLabel>{t('dashboard.apiDocs.docsLink')}</OpenLinkLabel></Link></TableCell>
               </TableRow>)}</TableBody>
             </Table>
           </ScrollArea>

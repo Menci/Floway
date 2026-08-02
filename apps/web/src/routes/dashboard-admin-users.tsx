@@ -114,8 +114,9 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
     <section className="dashboard-page">
       <DashboardPageHeader
         actions={<ResourceListActions
+          createDisabled={!loaded}
           createLabel={t('dashboard.users.actions.create')}
-          disabled={deleting || !loaded}
+          disabled={deleting}
           onCreate={() => editorDialog.open({ kind: 'create' })}
           onRefresh={() => void refresh()}
           refreshLabel={t('dashboard.users.actions.refresh')}

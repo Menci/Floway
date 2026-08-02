@@ -66,7 +66,7 @@ export function UpstreamColorPicker({ kind, onChange, onValidityChange, value }:
 
   return (
     <div className="grid gap-1.5">
-      <Popover positioning={{ position: 'below', align: 'start' }}>
+      <Popover positioning={{ position: 'below', align: 'start' }} trapFocus>
         <PopoverTrigger disableButtonEnhancement>
           <Button
             appearance="transparent"

@@ -139,8 +139,9 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
     <section className="dashboard-page">
       <DashboardPageHeader
         actions={<ResourceListActions
+          createDisabled={!loaded}
           createLabel={t('dashboard.apiKeys.actions.create')}
-          disabled={deletingKey || !loaded}
+          disabled={deletingKey}
           onCreate={() => editorDialog.open({ kind: 'create' })}
           onRefresh={() => void refresh()}
           refreshLabel={t('dashboard.apiKeys.actions.refresh')}
