@@ -200,7 +200,7 @@ function AgentConfigSnippets({ agent, apiKey, clipboard, configuration, onPlatfo
 }
 
 function AgentTab({ icon, label, value }: { icon: string; label: string; value: Agent }) {
-  return <Tab value={value}><span className="inline-flex items-center gap-2"><img alt="" className="h-4 w-4" src={icon} />{label}</span></Tab>;
+  return <Tab value={value} icon={<img alt="" className="h-4 w-4" src={icon} />}>{label}</Tab>;
 }
 
 function AgentConfigurationFields({ agent, configuration, models, onChange }: {
