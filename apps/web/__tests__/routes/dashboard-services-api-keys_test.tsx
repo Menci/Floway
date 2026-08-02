@@ -2,8 +2,8 @@ import { act } from '@testing-library/react';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
 
-import DashboardServicesApiKeys from '../../src/routes/dashboard-services-api-keys';
 import { OutcomeToastProvider } from '../../src/components/ui/outcome-toast';
+import DashboardServicesApiKeys from '../../src/routes/dashboard-services-api-keys';
 import { stubLocalStorage } from '../local-storage-stub';
 import { renderInApp } from '../render';
 

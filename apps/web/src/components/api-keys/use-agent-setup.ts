@@ -293,12 +293,22 @@ export const useAgentSetup = (
     return cleanup;
   }, [abortRequests, adoptLease, apiKeyId, createAttempt, request, scheduleHeartbeat]);
 
+  // The debounce is restarted by an edit, and only by an edit. The lease and
+  // the draft are read here as presence -- what the save sends is whatever
+  // `draftRef` and `leaseRef` hold when the timer fires -- so watching the
+  // objects themselves would restart the window on every heartbeat, each of
+  // which adopts a freshly issued lease, and an edit made just before one
+  // would wait another full window for a reason that has nothing to do with
+  // what was typed. The generation counters are what say that an edit
+  // happened.
+  const hasLease = lease !== null;
+  const hasDraft = draft !== null;
   useEffect(() => {
-    if (!lease || !draft || generation === confirmedGeneration || terminated) return;
+    if (!hasLease || !hasDraft || generation === confirmedGeneration || terminated) return;
     clearTimer(debounceTimerRef);
     debounceTimerRef.current = setTimeout(() => enqueue(runSaveRef.current), SAVE_DEBOUNCE_MS);
     return () => clearTimer(debounceTimerRef);
-  }, [confirmedGeneration, draft, enqueue, generation, lease, terminated]);
+  }, [confirmedGeneration, enqueue, generation, hasDraft, hasLease, terminated]);
 
   useEffect(() => {
     const onVisibility = () => {

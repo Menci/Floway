@@ -177,4 +177,32 @@ describe('Agent Setup lease lifecycle', () => {
     await settle();
     expect(putCalls).toBe(2);
   });
+
+  it('does not defer a pending save when a heartbeat lands inside the debounce', async () => {
+    const operations: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      operations.push(String(input).endsWith('/heartbeat') ? 'heartbeat' : init?.method ?? 'GET');
+      return json(lease());
+    }));
+    mount('key-1');
+    await settle();
+    operations.length = 0;
+
+    // Edit with 200ms of the debounce window left before the heartbeat falls
+    // due. The heartbeat adopts a freshly issued lease, and the save is timed
+    // by the edit rather than by that.
+    await act(async () => vi.advanceTimersByTime(59_800));
+    await settle();
+    await act(async () => current().updateDraft(configuration => ({
+      ...configuration,
+      codex: { ...configuration.codex, model: 'gpt-debounced' },
+    })));
+    await act(async () => vi.advanceTimersByTime(200));
+    await settle();
+    expect(operations).toEqual(['heartbeat']);
+
+    await act(async () => vi.advanceTimersByTime(200));
+    await settle();
+    expect(operations).toEqual(['heartbeat', 'PUT']);
+  });
 });
