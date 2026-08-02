@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
+import { effectiveUpstreams, modelBadges, type ModelBadge } from './badges';
 import type { CatalogIndex } from './catalog-index';
-import { effectiveUpstreams, modelBadges, type ModelBadge } from './model-badges';
 import type { ControlPlaneModel } from '../../api/types';
 import { Chip } from '../ui/chip';
 import { ProviderBadge } from '../upstreams/provider-badge';

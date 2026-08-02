@@ -15,7 +15,7 @@ import { requireDashboardSession } from './route-guards';
 import { api, callApi } from '../api/client';
 import type { ApiKey, ControlPlaneModel } from '../api/types';
 import { indexCatalog } from '../components/models/catalog-index';
-import { ModelInfoBadges } from '../components/models/model-info-badges';
+import { ModelInfoBadges } from '../components/models/info-badges';
 import { effectiveUpstreamCap } from '../components/models/reachability';
 import { bingAccentForeground, bingAccentForegroundHover } from '../components/playground/bing-chat-tokens';
 import { PlaygroundComposer } from '../components/playground/playground-composer';

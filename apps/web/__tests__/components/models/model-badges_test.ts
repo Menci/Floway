@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import type { AliasTarget } from '../../../src/api/types';
+import { effectiveUpstreams, modelBadges } from '../../../src/components/models/badges';
 import { indexCatalog } from '../../../src/components/models/catalog-index';
-import { effectiveUpstreams, modelBadges } from '../../../src/components/models/model-badges';
 import { chatModel } from '../../api/model-fixture';
 
 describe('model badges', () => {
