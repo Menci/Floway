@@ -1,7 +1,7 @@
 import type { WebSearchConfig, WebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { AgentSetupRepository } from '@floway-dev/agent-setup';
 import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingMetric, DecimalString, ModelKind, PricingSelector } from '@floway-dev/protocols/common';
-import type { PerformanceTelemetryContext, ProviderModel, UpstreamRecord } from '@floway-dev/provider';
+import type { PerformanceTelemetryContext, UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
 
 export interface ApiKey {
   id: string;
@@ -243,20 +243,6 @@ export interface PerformanceRepo {
   deleteAll(): Promise<void>;
 }
 
-export interface ModelsCacheRow {
-  revision: number;
-  fetchedAt: number;
-  models: ProviderModel[];
-  lastError: { message: string; at: number } | null;
-}
-
-export interface ModelsCacheRepo {
-  get(upstreamId: string): Promise<ModelsCacheRow | null>;
-  put(upstreamId: string, row: { revision: number; fetchedAt: number; models: ProviderModel[] }): Promise<void>;
-  setLastError(upstreamId: string, error: { message: string; at: number } | null): Promise<void>;
-  delete(upstreamId: string): Promise<void>;
-}
-
 export interface WebSearchConfigRepo {
   get(): Promise<unknown>;
   save(config: WebSearchConfig): Promise<void>;
@@ -270,11 +256,16 @@ export interface UpstreamRepo {
   deleteAll(): Promise<void>;
   // Upstream state write with optimistic concurrency, used both by the
   // gateway's own token-rotation work and by the operator-triggered OAuth
-  // refresh / probe routes. Returns updated:true only if the row's
-  // state_json equals the serialized form of options.expectedState at write
-  // time. On updated:false the caller re-reads and decides whether to retry
-  // or drop the update.
-  saveState(id: string, newState: unknown, options: { expectedState: unknown }): Promise<{ updated: boolean }>;
+  // refresh / probe routes. The repo reads, applies `mutate`, and writes under
+  // a CAS, retrying against the winner when it loses; exhausting the retries
+  // throws. See UpstreamsRepoSlim in @floway-dev/provider for why the change
+  // is a function.
+  saveState(id: string, mutate: (current: unknown) => unknown): Promise<void>;
+  // Catalog-cache writes. They touch only the cache column, so a refresh and a
+  // credential write to the same row do not contend — `saveState`'s CAS
+  // predicate reads `state_json` alone.
+  saveModelsCache(id: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<void>;
+  saveModelsCacheError(id: string, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<void>;
 }
 
 export interface ProxyRecord {
@@ -453,7 +444,6 @@ export interface Repo {
   usage: UsageRepo;
   webSearchUsage: WebSearchUsageRepo;
   performance: PerformanceRepo;
-  modelsCache: ModelsCacheRepo;
   webSearchConfig: WebSearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;

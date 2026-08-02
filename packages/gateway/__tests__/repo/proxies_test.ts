@@ -31,6 +31,7 @@ const upstreamFixture = (id: string, proxyFallbackList: ProxyFallbackEntry[]): U
   disabledPublicModelIds: [],
   proxyFallbackList,
   modelPrefix: null,
+  modelsCache: null,
   color: null,
 });
 

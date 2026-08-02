@@ -44,9 +44,25 @@ test('Copilot GPT and Gemini threshold entries apply whole-request rates', () =>
   assertEquals(priceRequest(pricingForCopilotPublicModelId('gemini-3.1-pro-preview'), { inputTokens: 200001 }).rates, published({ input_tokens: '4', input_cache_read_tokens: '0.4', output_tokens: '18' }));
 });
 
+test('Copilot Grok 4.5 long-context band starts at the 200k prompt itself', () => {
+  const pricing = pricingForCopilotPublicModelId('grok-4.5');
+  const short = published({ input_tokens: '2', input_cache_read_tokens: '0.3', output_tokens: '6' });
+  assertEquals(priceRequest(pricing, { inputTokens: 199999 }).rates, short);
+  assertEquals(priceRequest(pricing, { inputTokens: 200000 }).rates, published({ input_tokens: '4', input_cache_read_tokens: '0.6', output_tokens: '12' }));
+});
+
+test('Copilot Gemini 3.6 Flash prices long prompts at its single base rate', () => {
+  const pricing = pricingForCopilotPublicModelId('gemini-3.6-flash');
+  const base = published({ input_tokens: '1.5', input_cache_read_tokens: '0.15', output_tokens: '7.5' });
+  assertEquals(priceRequest(pricing, { inputTokens: 0 }).rates, base);
+  assertEquals(priceRequest(pricing, { inputTokens: 936000 }).rates, base);
+});
+
 test('Copilot pricing resolves exact and regex model families', () => {
   assertEquals(priceRequest(pricingForCopilotPublicModelId('gpt-5.4'), { inputTokens: 0 }).rates, published({ input_tokens: '2.5', input_cache_read_tokens: '0.25', output_tokens: '15' }));
   assertEquals(priceRequest(pricingForCopilotPublicModelId('gpt-5.3-codex'), { inputTokens: 0 }).rates, published({ input_tokens: '1.75', input_cache_read_tokens: '0.175', output_tokens: '14' }));
   assertEquals(priceRequest(pricingForCopilotPublicModelId('text-embedding-3-small'), { inputTokens: 0 }).rates, published({ input_tokens: '0.02', output_tokens: '0' }));
   assertEquals(pricingForCopilotPublicModelId('totally-made-up-model'), null);
+  // Copilot's hidden compaction model has no vendor SKU to price against.
+  assertEquals(pricingForCopilotPublicModelId('trajectory-compaction'), null);
 });

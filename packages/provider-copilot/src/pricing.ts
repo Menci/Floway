@@ -86,6 +86,19 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
     tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.4', output_tokens: '18' }, { inputTokens: { operator: 'gt', value: 200000 } }),
   )],
   ['gemini-3.5-flash', tokenBasePricing({ input_tokens: '1.5', input_cache_read_tokens: '0.15', output_tokens: '9' })],
+  // Gemini 3.6 Flash keeps 3.5 Flash's input rate and cuts output to $7.50. It
+  // is one of the Gemini 3 models Google excludes from the >200k tier: the
+  // Vertex table lists identical rates in both columns.
+  // https://cloud.google.com/vertex-ai/generative-ai/pricing
+  ['gemini-3.6-flash', tokenBasePricing({ input_tokens: '1.5', input_cache_read_tokens: '0.15', output_tokens: '7.5' })],
+  // xAI reprices the whole request at 2× once the prompt reaches 200k tokens.
+  // Cached-read is xAI's own published $0.30/$0.60; Copilot's catalog and
+  // LiteLLM both carry $0.50/$1.00 for that metric, which the vendor contradicts.
+  // https://web.archive.org/web/20260801110442/https://docs.x.ai/developers/pricing
+  ['grok-4.5', modelPricing(
+    tokenPricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.3', output_tokens: '6' }),
+    tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.6', output_tokens: '12' }, { inputTokens: { operator: 'gte', value: 200000 } }),
+  )],
   [/^grok-code-fast/, tokenBasePricing({ input_tokens: '0.2', output_tokens: '1.5' })],
   ['goldeneye', tokenBasePricing({ input_tokens: '1.25', input_cache_read_tokens: '0.125', output_tokens: '10' })],
   ['raptor-mini', tokenBasePricing({ input_tokens: '0.25', input_cache_read_tokens: '0.025', output_tokens: '2' })],

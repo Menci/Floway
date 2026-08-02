@@ -26,40 +26,45 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
   // without re-resolving.
   const enabledFlags = resolveEffectiveFlags([CODEX_DEFAULT_FLAGS, record.flagOverrides]);
 
-  // Re-read upstream state on every request rather than capturing the record's
-  // state at construction. Refresh-token rotation, terminal-state transitions,
-  // and operator re-imports must all be visible to the next in-flight call.
-  // Throw rather than guess when the active credential is missing — a row that
-  // has lost its credential by id has been hand-edited, and silently using the
-  // wrong refresh_token would be worse than failing loudly.
-  const readActiveAccount = async () => {
-    const fresh = await getProviderRepo().upstreams.getById(record.id);
-    if (!fresh) throw new Error(`Codex upstream ${record.id} disappeared mid-request`);
-    assertCodexUpstreamState(fresh.state);
-    const state = fresh.state;
-    const accountIndex = findCodexAccountIndex(state, accountIdentity.chatgptAccountId);
+  // Locate the pool's active credential inside a state document. Throw rather
+  // than guess when it is missing — a row that has lost its credential by id
+  // has been hand-edited, and silently using the wrong refresh_token would be
+  // worse than failing loudly.
+  const locateActiveAccount = (raw: unknown) => {
+    assertCodexUpstreamState(raw);
+    const accountIndex = findCodexAccountIndex(raw, accountIdentity.chatgptAccountId);
     if (accountIndex < 0) {
       throw new Error(`Codex upstream ${record.id} state has no credential for account ${accountIdentity.chatgptAccountId}`);
     }
-    return { state, accountIndex, account: state.accounts[accountIndex]! };
+    return { state: raw, accountIndex, account: raw.accounts[accountIndex]! };
+  };
+
+  // Re-read upstream state on every request rather than capturing the record's
+  // state at construction. Refresh-token rotation, terminal-state transitions,
+  // and operator re-imports must all be visible to the next in-flight call.
+  const readActiveAccount = async () => {
+    const fresh = await getProviderRepo().upstreams.getById(record.id);
+    if (!fresh) throw new Error(`Codex upstream ${record.id} disappeared mid-request`);
+    return locateActiveAccount(fresh.state);
   };
 
   const persistRefreshTokenRotation = async (newRefreshToken: string): Promise<void> => {
-    const { state, accountIndex } = await readActiveAccount();
-    const next = replaceCodexAccount(state, accountIndex, account => ({ ...account, refresh_token: newRefreshToken, state_updated_at: new Date().toISOString() }));
-    // CAS write keyed on the just-read state. A losing CAS means a concurrent
-    // operator re-import (or another isolate's rotation) already advanced the
-    // row; their write supersedes ours and no retry is needed.
-    await getProviderRepo().upstreams.saveState(record.id, next, { expectedState: state });
+    const rotatedAt = new Date().toISOString();
+    await getProviderRepo().upstreams.saveState(record.id, current => {
+      const { state, accountIndex } = locateActiveAccount(current);
+      return replaceCodexAccount(state, accountIndex, account => ({ ...account, refresh_token: newRefreshToken, state_updated_at: rotatedAt }));
+    });
   };
 
   const persistTerminalState = async (newState: 'session_terminated' | 'refresh_failed', message: string): Promise<void> => {
-    const { state, accountIndex } = await readActiveAccount();
-    // Clear any cached access token on the terminal flip — once the credential
-    // is dead the cached token is dead too, and leaving it would confuse the
-    // dashboard's status panel.
-    const next = replaceCodexAccount(state, accountIndex, account => ({ ...account, state: newState, state_message: message, state_updated_at: new Date().toISOString(), accessToken: null }));
-    await getProviderRepo().upstreams.saveState(record.id, next, { expectedState: state });
+    const flippedAt = new Date().toISOString();
+    await getProviderRepo().upstreams.saveState(record.id, current => {
+      const { state, accountIndex } = locateActiveAccount(current);
+      // Clear any cached access token on the terminal flip — once the credential
+      // is dead the cached token is dead too, and leaving it would confuse the
+      // dashboard's status panel.
+      return replaceCodexAccount(state, accountIndex, account => ({ ...account, state: newState, state_message: message, state_updated_at: flippedAt, accessToken: null }));
+    });
   };
 
   const effects: CodexCallEffects = { persistRefreshTokenRotation, persistTerminalState };
@@ -157,6 +162,7 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
     name: record.name,
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,
+    modelsCache: record.modelsCache,
     instance,
   };
 };

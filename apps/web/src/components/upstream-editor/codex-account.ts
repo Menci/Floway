@@ -47,8 +47,8 @@ const window = (
   ? { key, percent, resetAt: resetAt ?? null, windowMinutes: windowMinutes ?? null }
   : null;
 
-// A `ratelimited_until` in the past is a spent limit, not a live one — the
-// account is usable again and the badge must not claim otherwise.
+// A `ratelimited_until` in the past is a spent limit: the account is usable
+// again and the badge must not claim otherwise.
 const stillRateLimited = (until: string | undefined, now: number): string | null =>
   typeof until === 'string' && new Date(until).getTime() > now ? until : null;
 
@@ -66,7 +66,6 @@ export const quotaEntries = (quota: CodexQuotaSnapshotMap | null | undefined, no
       ].filter((entry): entry is QuotaWindow => entry !== null),
     }));
 
-// The freshest limit observation carries the freshest account-wide credits.
 export const latestCredits = (quota: CodexQuotaSnapshotMap | null | undefined): CodexQuotaSnapshot | null => {
   let newest: CodexQuotaSnapshot | null = null;
   let newestObservedAt = Number.NEGATIVE_INFINITY;
@@ -81,8 +80,6 @@ export const latestCredits = (quota: CodexQuotaSnapshotMap | null | undefined): 
   return newest;
 };
 
-// Every danger reason may name what went wrong, so the card reads one field
-// for the line under the badge rather than a field per reason.
 export type AccountStatus =
   | { tone: 'danger'; reason: 'account-id-mismatch' | 'session-terminated' | 'refresh-failed'; detail?: string }
   | { tone: 'danger'; reason: 'rate-limited'; until: string; detail?: string }

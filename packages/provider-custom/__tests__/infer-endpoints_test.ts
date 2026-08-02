@@ -116,6 +116,7 @@ test('Custom provider projects gpt-image-* models with kind=image and both image
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
+    modelsCache: null,
     color: null,
   };
   await withMockedFetch(

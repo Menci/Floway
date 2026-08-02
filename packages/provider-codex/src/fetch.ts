@@ -22,10 +22,10 @@ export type ProviderCompactionResult =
   | { ok: true; result: ResponsesCompactionResult; modelKey: string }
   | { ok: false; response: Response; modelKey: string };
 
-// Hooks for repo-side state transitions, applied with optimistic concurrency.
-// Refresh-token rotations and terminal-state transitions go through the repo;
-// access-token and quota persistence are handled inside their own helpers
-// (also state_json writes via the same CAS hook).
+// Hooks for repo-side state transitions. Refresh-token rotations and
+// terminal-state transitions go through the repo; access-token and quota
+// persistence are handled inside their own helpers, which write the same
+// state_json row the same way.
 export interface CodexCallEffects {
   persistRefreshTokenRotation(newRefreshToken: string): Promise<void>;
   persistTerminalState(state: 'session_terminated' | 'refresh_failed', message: string): Promise<void>;
@@ -370,15 +370,14 @@ const dispatchCodexHttpCall = async (
 };
 
 // Force-mint a fresh access token after a 401, persisting it best-effort.
-// `ensureCodexAccessToken`'s read-then-maybe-mint is bypassed: if the
-// invalidate's CAS lost to a sibling write (a concurrent quota putCodexQuota,
-// refresh-token rotation, or operator re-import all touch the same state_json
-// row), the broken token still sits in the slot and a re-read would hand it
-// back as fresh — Codex tokens carry multi-day expiresAt — sending us into
-// an immediate second 401 with `alreadyRetried` already flipped. Minting
-// unconditionally and persisting best-effort sidesteps that window; a CAS
-// loss on persist is fine because the next request will re-mint if its read
-// still sees the dead token.
+// `ensureCodexAccessToken`'s read-then-maybe-mint is bypassed because a
+// re-read can still observe the token we just invalidated: a sibling that
+// minted before our 401 lands its `putCodexAccessToken` after our
+// invalidation, restoring the broken token, and Codex tokens carry multi-day
+// expiresAt so the freshness gate hands it straight back — sending us into an
+// immediate second 401 with `alreadyRetried` already flipped. Minting
+// unconditionally sidesteps that window, and persisting best-effort is enough
+// because the next request re-mints if its read still sees the dead token.
 const refreshAccessTokenForRetry = async (opts: CodexBackendCallBase): Promise<{ ok: true; accessToken: string } | { ok: false; response: Response }> => {
   await invalidateCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId);
   try {
@@ -523,8 +522,8 @@ const ensureSseContentType = (response: Response): Response => {
 
 // Hand best-effort writes to waitUntil so workerd does not cancel them when
 // the streaming response returns; the swallow guards against recoverable
-// noise (CAS losses on access-token / quota state_json rows, transient
-// storage errors) tripping the request.
+// noise (transient storage errors, a state_json write that lost every one of
+// its retries) tripping the request.
 const registerBackgroundWrite = (opts: CodexBackendCallBase, write: Promise<void>): void => {
   opts.call.waitUntil(write.catch(() => {}));
 };

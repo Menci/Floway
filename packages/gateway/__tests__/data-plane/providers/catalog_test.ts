@@ -201,6 +201,7 @@ test('disabledPublicModelIds hides models from the catalog and routing, per upst
     disabledPublicModelIds: over.disabledPublicModelIds,
     proxyFallbackList: [],
     modelPrefix: null,
+    modelsCache: null,
     color: null,
   });
 

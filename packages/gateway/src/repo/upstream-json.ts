@@ -1,7 +1,8 @@
-// Canonical JSON encoding for upstream rows. saveState's optimistic-concurrency
-// CAS (UPDATE ... WHERE state_json IS ?) and the in-memory repo's CAS fallback
-// compare serialized forms, so key order must be stable. config_json shares
-// the encoder for symmetry.
+// Canonical JSON encoding for upstream rows. Key order is sorted recursively so
+// a row's stored text is a function of its data alone: two writes of the same
+// object produce the same bytes, which is what lets `saveState` recognize a
+// mutator that changed nothing and skip the write. config_json shares the
+// encoder for symmetry.
 
 const canonicalize = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(canonicalize);

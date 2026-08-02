@@ -16,6 +16,7 @@ const upstreamRecord = () => ({
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  modelsCache: null,
   color: null,
   config: {
     baseUrl: 'https://custom.example.com',

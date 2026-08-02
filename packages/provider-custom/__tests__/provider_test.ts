@@ -25,6 +25,7 @@ const buildCustomUpstream = (options: BuildOptions = {}): UpstreamRecord => ({
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  modelsCache: null,
   color: null,
   config: {
     baseUrl: 'https://custom.example.com',

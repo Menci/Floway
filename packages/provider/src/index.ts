@@ -35,6 +35,7 @@ export type {
   ProxyFallbackEntry,
   UpstreamColor,
   UpstreamColorPreset,
+  UpstreamModelsCache,
   UpstreamProviderKind,
   UpstreamRecord,
 } from './model.ts';
@@ -64,7 +65,7 @@ export type { ProviderStreamParser } from './streaming.ts';
 export { streamingProviderCall } from './streaming.ts';
 
 export type { ProviderRepo, UpstreamsRepoSlim } from './repo.ts';
-export { getProviderRepo, initProviderRepo } from './repo.ts';
+export { getProviderRepo, initProviderRepo, UpstreamGoneError } from './repo.ts';
 
 export {
   ProviderModelsUnavailableError,

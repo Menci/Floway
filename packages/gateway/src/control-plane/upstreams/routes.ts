@@ -61,26 +61,24 @@ const pruneDeletedProxyEntries = (
   knownProxyIds: ReadonlySet<string>,
 ): ProxyFallbackEntry[] => entries.filter(entry => isDirectFallbackId(entry.id) || knownProxyIds.has(entry.id));
 
-// These projections need repository/provider I/O, which serialize.ts excludes
-// so it stays a pure persisted-record transform. The optional baseSerialize
-// override lets callers swap in upstreamRecordToFullJson to round-trip
-// unredacted secrets instead of the redacted default.
+// Response-only projections, which serialize.ts excludes so it stays a pure
+// persisted-record transform: the Codex quota because it needs provider I/O,
+// the models-cache freshness because a dump must not carry the catalog. The
+// optional baseSerialize override lets callers swap in upstreamRecordToFullJson
+// to round-trip unredacted secrets instead of the redacted default.
 const serializeForResponse = async (
   record: UpstreamRecord,
   knownProxyIds: ReadonlySet<string>,
   baseSerialize: (r: UpstreamRecord) => SerializedUpstreamRecord = upstreamRecordToJson,
 ): Promise<UpstreamWithCacheResponse> => {
-  const [cacheRow, codexQuota] = await Promise.all([
-    getRepo().modelsCache.get(record.id),
-    codexQuotaForResponse(record),
-  ]);
+  const codexQuota = await codexQuotaForResponse(record);
   const serialized = baseSerialize(record);
   return {
     ...serialized,
     proxy_fallback_list: pruneDeletedProxyEntries(serialized.proxy_fallback_list, knownProxyIds),
     modelsCache: {
-      fetchedAt: cacheRow?.fetchedAt ?? null,
-      lastError: cacheRow?.lastError ?? null,
+      fetchedAt: record.modelsCache?.fetchedAt ?? null,
+      lastError: record.modelsCache?.lastError ?? null,
     },
     ...codexQuota,
   };
@@ -252,6 +250,9 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
     color: body.color ?? null,
     config: body.config,
     state: stateFromBody,
+    // Operator edits never carry the catalog cache; the repo leaves the
+    // column to the refresh path.
+    modelsCache: null,
   };
 
   const config = normalizeConfig(upstream);
@@ -275,8 +276,10 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
 
   const record = { ...upstream, config: config.value };
   await getRepo().upstreams.save(record);
-  await warmModelsCache(record, c);
-  return c.json(await serializeForResponse(record, knownProxyIds), 201);
+  // Answer with the catalog status this warm produced, not the one the record
+  // was built with — the dashboard re-seeds its draft from this body.
+  const modelsCache = await warmModelsCache(record, c);
+  return c.json(await serializeForResponse({ ...record, modelsCache }, knownProxyIds), 201);
 };
 
 export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '/:id'>) => {
@@ -330,8 +333,8 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   next = { ...next, config: config.value };
 
   await getRepo().upstreams.save(next);
-  await warmModelsCache(next, c);
-  return c.json(await serializeForResponse(next, knownProxyIds));
+  const modelsCache = await warmModelsCache(next, c);
+  return c.json(await serializeForResponse({ ...next, modelsCache }, knownProxyIds));
 };
 
 export const deleteUpstream = async (c: AuthedContext<'/:id'>) => {

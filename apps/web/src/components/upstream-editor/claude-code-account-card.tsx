@@ -33,7 +33,6 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
 }) {
   const { t } = useTranslation();
   const locale = useLocale();
-  // The access token expiry countdown re-evaluates on its own.
   const now = useNow(WALL_CLOCK_REFRESH_MS);
   const account = record.config.accounts[0];
   const lookup = findCredential(record);

@@ -15,7 +15,6 @@ const { Badge, ProgressBar, Text, Tooltip } = fluentComponents;
 
 export function CodexAccountCard({ record }: { record: CodexRecord }) {
   const { t } = useTranslation();
-  // `ratelimited_until` runs out on its own, so the badge re-evaluates too.
   const now = useNow(WALL_CLOCK_REFRESH_MS);
   const locale = useLocale();
   const account = record.config.accounts[0];

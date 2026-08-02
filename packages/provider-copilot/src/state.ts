@@ -1,6 +1,8 @@
 // Gateway-managed Copilot upstream state, persisted in upstreams.state_json.
-// Writes happen via UpstreamRepo.saveState with optimistic concurrency keyed
-// on the prior state JSON.
+// The three slots below are written by three independent paths, so each write
+// goes through UpstreamRepo.saveState as a mutator that spreads the state it
+// is handed and replaces its own slot — that is what keeps a sibling path's
+// concurrent write intact.
 
 import type { CopilotKnownModels } from './known-models.ts';
 import type { CopilotQuotaSnapshot } from './quota.ts';

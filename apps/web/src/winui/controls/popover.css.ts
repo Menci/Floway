@@ -1,23 +1,9 @@
-// WinUI 3 FlyoutPresenter styling for Fluent v9's PopoverSurface. Fluent paints
-// the surface as a Fluent 2 Web card — control-sized corners, a transparent
-// hairline, an ambient plus key drop shadow — while WinUI paints a flyout: the
-// larger overlay corner, a real flyout stroke, and a fill that stops at the
-// inner border edge so the translucent stroke reads at its own strength.
+// WinUI 3 FlyoutPresenter styling for Fluent v9's PopoverSurface.
 //
-// The unit has one addressable element. `Popover` renders no DOM of its own and
-// `PopoverTrigger` clones its child, so `.fui-PopoverSurface` is the whole
-// surface; the arrow is rendered from `state.arrowClassName`, which is Griffel
-// atoms with no stable class to name. The arrow still takes the WinUI fill,
-// because Fluent gives it `background-color: inherit` and the surface is its
-// parent; only its own hairline stays Fluent's.
+// The arrow has no stable class -- it is rendered from `state.arrowClassName`,
+// hashed Griffel atoms -- but takes the WinUI fill anyway, because Fluent gives
+// it `background-color: inherit` and the surface is its parent.
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-positioning/library/src/createArrowStyles.ts#L76-L77
-//
-// Fluent declares no interactive state for the surface -- no hover, pressed,
-// selected, disabled or focus atom -- and WinUI's DefaultFlyoutPresenterStyle
-// declares no VisualStateGroup and leaves IsTabStop False, so the state table
-// is the theme rows alone: light and dark, which the `--winui-*` fills below
-// carry per scheme, and high contrast, which is restated at the end of this
-// sheet.
 //
 // Two WinUI rows are diagnosed and deliberately left out. FlyoutContentPadding
 // is 16,15,16,17 against Fluent's flat 12/16/20px, but `size` is composed into
@@ -33,17 +19,11 @@
 //
 // FlyoutPresenterBackground is AcrylicInAppFillColorDefaultBrush in both the
 // dark and the light dictionary, taken as the flat colour that brush declares
-// for itself where there is no acrylic to composite. The foreground stays
-// Fluent's.
+// for itself where there is no acrylic to composite.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/FlyoutPresenter_themeresources.xaml#L5
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/FlyoutPresenter_themeresources.xaml#L15
 export const popoverCss = `
-/* The surface. WinUI gives a flyout the overlay corner rather than the control
-   corner, and outlines it with the flyout stroke where Fluent draws a
-   transparent hairline. The template's Border sizes its background to the inner
-   border edge, which ../reset.css.ts already applies to everything and which
-   keeps the translucent stroke from compositing over the fill beneath it.
-   WinUI's flyout has one fill, so it is stated for every appearance -- the
+/* WinUI's flyout has one fill, so it is stated for every appearance -- the
    doubled class name outranks the atoms Fluent composes for its inverted and
    brand surfaces, which have no WinUI counterpart.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/FlyoutPresenter_themeresources.xaml#L39

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, test, vi } from 'vitest';
 
 import type { ResponsesBoundaryCtx } from '../../../src/interceptors/responses/types.ts';
+import { createUpstreamStateRepoStub } from '../../upstream-state-repo.ts';
 import type { Interceptor } from '@floway-dev/interceptor';
 import { initProviderRepo, type ProviderResponsesResult, type UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
@@ -48,15 +49,13 @@ const baseRecord: UpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  modelsCache: null,
   color: null,
 };
 
 beforeEach(() => {
   initProviderRepo(() => ({
-    upstreams: {
-      getById: async () => baseRecord,
-      saveState: async () => ({ updated: true }),
-    },
+    upstreams: createUpstreamStateRepoStub(() => baseRecord, () => {}),
   }));
 });
 

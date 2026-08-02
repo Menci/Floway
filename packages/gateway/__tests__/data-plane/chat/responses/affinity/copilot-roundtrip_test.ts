@@ -29,6 +29,7 @@ const upstream: UpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  modelsCache: null,
   color: null,
   config: {
     githubToken: 'ghu_test',
@@ -63,7 +64,7 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
   initProviderRepo(() => ({
     upstreams: {
       getById: async () => upstream,
-      saveState: async () => ({ updated: true }),
+      saveState: async () => {},
     },
   }));
   clearInProcessCopilotTokenCache();
@@ -81,6 +82,7 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
       name: 'Other',
       disabledPublicModelIds: [],
       modelPrefix: null,
+      modelsCache: null,
       instance: stubProvider(),
     },
     model: { id: 'gpt-test', endpoints: { responses: {} } },

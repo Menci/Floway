@@ -19,6 +19,7 @@ const saveAzureImages = async (repo: InMemoryRepo): Promise<void> => {
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
+    modelsCache: null,
     color: null,
     config: {
       endpoint: 'https://example.openai.azure.com/openai/v1',

@@ -2,7 +2,7 @@ import type { AudioTranscriptionRequest } from './audio.ts';
 import type { FlagDefaults } from './flags.ts';
 import type { ImagesEditsRequest } from './images.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
-import type { ProviderModel, UpstreamProviderKind, UpstreamRecord } from './model.ts';
+import type { ProviderModel, UpstreamModelsCache, UpstreamProviderKind, UpstreamRecord } from './model.ts';
 import type { Fetcher } from './options.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame, RerankTarget } from '@floway-dev/protocols/common';
@@ -32,6 +32,10 @@ export interface Provider {
   // record so registry helpers — routing and listing — read it from the
   // instance instead of re-fetching the row. `null` keeps the bare-id behavior.
   modelPrefix: ModelPrefixConfig | null;
+  // The row's cached catalog, mirrored for the same reason: the SWR layer
+  // reads it from the instance instead of paying a second round trip that the
+  // row read already covered.
+  modelsCache: UpstreamModelsCache | null;
   instance: ProviderInstance;
 }
 

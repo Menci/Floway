@@ -24,10 +24,8 @@ import type {
   AgentSetupRenewal,
   AgentSetupRepository,
   BackoffRow,
-  ModelsCacheRow,
   ModelAliasesRepo,
   ModelAliasRecord,
-  ModelsCacheRepo,
   PerformanceDimensions,
   PerformanceRepo,
   PerformanceTelemetryRecord,
@@ -60,7 +58,7 @@ import { bucketForTtftMs, bucketForTpotUs } from '../../src/shared/performance-h
 import { assertWebSearchProviderName, type WebSearchConfig } from '../../src/shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import { addDecimalStrings, canonicalPricingSelectorKey, canonicalizePricingSelector, type BillingMetric, type DecimalString, type PricingSelector } from '@floway-dev/protocols/common';
-import type { ProviderModel, UpstreamRecord } from '@floway-dev/provider';
+import { UpstreamGoneError, type UpstreamModelsCache, type UpstreamRecord } from '@floway-dev/provider';
 
 const SEED_ADMIN_USER: User = {
   id: SEED_ADMIN_USER_ID,
@@ -543,33 +541,6 @@ class MemoryPerformanceRepo implements PerformanceRepo {
   }
 }
 
-class MemoryModelsCacheRepo implements ModelsCacheRepo {
-  private rows = new Map<string, ModelsCacheRow>();
-
-  get(upstreamId: string): Promise<ModelsCacheRow | null> {
-    const row = this.rows.get(upstreamId);
-    return Promise.resolve(row ? { ...row, models: [...row.models] } : null);
-  }
-
-  put(upstreamId: string, row: { revision: number; fetchedAt: number; models: ProviderModel[] }): Promise<void> {
-    this.rows.set(upstreamId, { revision: row.revision, fetchedAt: row.fetchedAt, models: [...row.models], lastError: null });
-    return Promise.resolve();
-  }
-
-  setLastError(upstreamId: string, error: { message: string; at: number } | null): Promise<void> {
-    // No-op when no row exists: lastError annotates a previously-successful fetch.
-    const existing = this.rows.get(upstreamId);
-    if (!existing) return Promise.resolve();
-    this.rows.set(upstreamId, { ...existing, lastError: error });
-    return Promise.resolve();
-  }
-
-  delete(upstreamId: string): Promise<void> {
-    this.rows.delete(upstreamId);
-    return Promise.resolve();
-  }
-}
-
 class MemoryWebSearchConfigRepo implements WebSearchConfigRepo {
   private config: unknown | null = null;
 
@@ -595,9 +566,14 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     return Promise.resolve(found ? cloneUpstreamRecord(found) : null);
   }
 
+  // Mirrors the SQL INSERT/UPDATE column list, which omits the cache column:
+  // an existing row keeps whatever the refresh path last wrote there, and a new
+  // row starts uncached whatever the caller's record carried.
   save(upstream: UpstreamRecord): Promise<void> {
     const existing = this.store.get(upstream.id);
-    const preserved = existing ? { ...upstream, createdAt: existing.createdAt } : upstream;
+    const preserved = existing
+      ? { ...upstream, createdAt: existing.createdAt, modelsCache: existing.modelsCache }
+      : { ...upstream, modelsCache: null };
     this.store.set(preserved.id, cloneUpstreamRecord(preserved));
     return Promise.resolve();
   }
@@ -611,14 +587,33 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     return Promise.resolve();
   }
 
-  saveState(id: string, newState: unknown, options: { expectedState: unknown }): Promise<{ updated: boolean }> {
+  // No retry loop: this store is single-threaded, so the mutator always sees
+  // the current state and the write always lands. Serialization still round-
+  // trips through the canonical encoder so a mutator that returns its argument
+  // unchanged is a no-op here too.
+  saveState(id: string, mutate: (current: unknown) => unknown): Promise<void> {
     const existing = this.store.get(id);
-    if (!existing) return Promise.resolve({ updated: false });
-    if (serializeStoredState(existing.state) !== serializeStoredState(options.expectedState)) {
-      return Promise.resolve({ updated: false });
-    }
-    existing.state = newState === undefined ? null : structuredClone(newState);
-    return Promise.resolve({ updated: true });
+    if (!existing) throw new UpstreamGoneError(id);
+    const next = mutate(existing.state);
+    const serialized = serializeStoredState(next);
+    existing.state = serialized === null ? null : (JSON.parse(serialized) as unknown);
+    return Promise.resolve();
+  }
+
+  saveModelsCache(id: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<void> {
+    const existing = this.store.get(id);
+    if (!existing) return Promise.resolve();
+    existing.modelsCache = { revision: cache.revision, fetchedAt: cache.fetchedAt, models: [...cache.models], lastError: null };
+    return Promise.resolve();
+  }
+
+  // No-op on a row that has never cached a catalog: the annotation belongs to a
+  // previously-successful fetch.
+  saveModelsCacheError(id: string, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<void> {
+    const cache = this.store.get(id)?.modelsCache;
+    if (!cache) return Promise.resolve();
+    cache.lastError = error;
+    return Promise.resolve();
   }
 }
 
@@ -626,6 +621,7 @@ const cloneUpstreamRecord = (upstream: UpstreamRecord): UpstreamRecord => ({
   ...upstream,
   config: structuredClone(upstream.config),
   state: upstream.state === null || upstream.state === undefined ? null : structuredClone(upstream.state),
+  modelsCache: upstream.modelsCache === null ? null : { ...upstream.modelsCache, models: [...upstream.modelsCache.models] },
   flagOverrides: normalizeFlagOverrides(upstream.flagOverrides),
   disabledPublicModelIds: normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds),
   proxyFallbackList: normalizeProxyFallbackList(upstream.proxyFallbackList),
@@ -1259,7 +1255,6 @@ export class InMemoryRepo implements Repo {
   usage: UsageRepo;
   webSearchUsage: WebSearchUsageRepo;
   performance: PerformanceRepo;
-  modelsCache: ModelsCacheRepo;
   webSearchConfig: WebSearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
@@ -1279,7 +1274,6 @@ export class InMemoryRepo implements Repo {
     this.usage = new MemoryUsageRepo();
     this.webSearchUsage = new MemoryWebSearchUsageRepo();
     this.performance = new MemoryPerformanceRepo();
-    this.modelsCache = new MemoryModelsCacheRepo();
     this.webSearchConfig = new MemoryWebSearchConfigRepo();
     this.upstreams = new MemoryUpstreamRepo();
     this.proxies = new MemoryProxyRepo(this.upstreams);

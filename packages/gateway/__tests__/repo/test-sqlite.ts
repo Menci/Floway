@@ -11,11 +11,15 @@ type SqlJsDatabase = {
   exec(sql: string, params?: unknown[]): Array<{ columns: string[]; values: unknown[][] }>;
 };
 
+// Lets a test that drove the migrations itself — seeding rows between two of
+// them — read the result back through the production repository.
+export const wrapSqlJsDatabase = (db: SqlJsDatabase): SqlDatabase => new SqlJsSqlDatabase(db);
+
 export const createSqliteTestDb = async (): Promise<SqlDatabase> => {
   const SQL = await initSqlJs();
   const db = new SQL.Database() as SqlJsDatabase;
   for (const [, sql] of migrationSqlByFilename) db.run(sql);
-  return new SqlJsSqlDatabase(db);
+  return wrapSqlJsDatabase(db);
 };
 
 // sql.js binds through JavaScript and happily takes values neither deployment

@@ -133,6 +133,7 @@ const makeCandidate = (overrides: {
       name: upstream,
       disabledPublicModelIds: [],
       modelPrefix: null,
+      modelsCache: null,
       instance: provider,
     },
     // Default keeps stubInternalModel's three-endpoint map intact; tests that

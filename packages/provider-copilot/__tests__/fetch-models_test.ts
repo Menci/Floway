@@ -21,13 +21,14 @@ const installRepoAndConfig = async () => {
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
+    modelsCache: null,
     color: null,
     config: { githubToken, user: { id: 1, login: 't', name: null, avatar_url: '' } },
   };
   initProviderRepo(() => ({
     upstreams: {
       getById: async () => stub,
-      saveState: async () => ({ updated: true }),
+      saveState: async () => {},
     },
   }));
   clearInProcessCopilotTokenCache();

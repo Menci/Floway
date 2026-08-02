@@ -1,8 +1,9 @@
 import { test } from 'vitest';
 
+import { MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
 import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
 import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, setupAppTest } from '../../test-utils/app.ts';
-import { assertEquals } from '@floway-dev/test-utils';
+import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
 test('listModelProviders creates enabled provider instances with upstream row ids', async () => {
   const { githubAccount, repo } = await setupAppTest();
@@ -30,6 +31,7 @@ test('listModelProviders creates enabled provider instances with upstream row id
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
+    modelsCache: null,
     color: null,
     state: null,
   });
@@ -83,4 +85,24 @@ test('listModelProviders silently drops deleted upstreams from a whitelist', asy
 
   const providers = await listModelProviders(['up_ghost', 'up_a']);
   assertEquals(providers.map(p => p.upstreamId), ['up_a']);
+});
+
+test('listModelProviders carries each row cached catalog onto its instance', async () => {
+  // The SWR layer reads the catalog off the instance instead of paying a
+  // second round trip, so the row read has to bring it along.
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_cached', name: 'Cached', sortOrder: 10 }));
+  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_cold', name: 'Cold', sortOrder: 20 }));
+  await repo.upstreams.saveModelsCache('up_cached', {
+    revision: MODEL_CATALOG_REVISION,
+    fetchedAt: 1_700_000_000_000,
+    models: [stubProviderModel({ id: 'cached-model' })],
+  });
+
+  const providers = await listModelProviders(null);
+  const byId = Object.fromEntries(providers.map(provider => [provider.upstreamId, provider]));
+  assertEquals(byId.up_cached.modelsCache?.revision, MODEL_CATALOG_REVISION);
+  assertEquals(byId.up_cached.modelsCache?.models.map(model => model.id), ['cached-model']);
+  assertEquals(byId.up_cold.modelsCache, null);
 });

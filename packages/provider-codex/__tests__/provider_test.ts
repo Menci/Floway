@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
+import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstream-state-repo.ts';
 import { createCodexProvider } from '../src/provider.ts';
 import type { CodexAccessTokenEntry, CodexUpstreamState } from '../src/state.ts';
 import { directFetcher, initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
@@ -23,6 +24,7 @@ const baseRecord: UpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  modelsCache: null,
   color: null,
 };
 
@@ -31,15 +33,15 @@ const recordWithAccessToken = (entry: CodexAccessTokenEntry = freshAccessToken):
   state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'active', state_updated_at: '2026-01-01T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555', accessToken: entry, quotaSnapshot: null }] },
 });
 
-let saveStateSpy: ReturnType<typeof vi.fn<(id: string, newState: unknown, options: { expectedState: unknown }) => Promise<{ updated: boolean }>>>;
-let getByIdSpy: ReturnType<typeof vi.fn<(id: string) => Promise<UpstreamRecord | null>>>;
+let current: UpstreamRecord | null;
+let repo: UpstreamStateRepoStub;
 
 beforeEach(() => {
-  saveStateSpy = vi.fn<(id: string, newState: unknown, options: { expectedState: unknown }) => Promise<{ updated: boolean }>>(async () => ({ updated: true }));
-  getByIdSpy = vi.fn<(id: string) => Promise<UpstreamRecord | null>>(async () => recordWithAccessToken());
-  initProviderRepo(() => ({
-    upstreams: { getById: getByIdSpy, saveState: saveStateSpy },
-  }));
+  current = recordWithAccessToken();
+  repo = createUpstreamStateRepoStub(() => current, state => {
+    current = { ...current!, state: state as CodexUpstreamState };
+  });
+  initProviderRepo(() => ({ upstreams: repo }));
 });
 
 afterEach(() => vi.restoreAllMocks());
@@ -90,7 +92,7 @@ describe('createCodexProvider', () => {
   });
 
   test('getProvidedModels mints an access token when none is cached, then fetches the catalog', async () => {
-    getByIdSpy.mockImplementation(async () => baseRecord);
+    current = baseRecord;
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
       const url = typeof input === 'string' ? input : (input instanceof URL ? input.href : (input as Request).url);
       if (url.includes('/oauth/token')) return oauthTokenResponse();
@@ -103,13 +105,14 @@ describe('createCodexProvider', () => {
     const urls = fetchSpy.mock.calls.map(c => typeof c[0] === 'string' ? c[0] : (c[0] as URL | Request).toString());
     expect(urls.some(u => u.includes('/oauth/token'))).toBe(true);
     expect(urls.some(u => u.includes('/codex/models'))).toBe(true);
-    // Mint persists twice via CAS: once for the rotated refresh_token from the
-    // OAuth response, once for the freshly minted access token in the same
-    // account slot. Both writes must land for the next caller to see a usable
-    // credential pair.
-    const persistedStates = saveStateSpy.mock.calls.map(c => c[1] as CodexUpstreamState);
-    expect(persistedStates.some(s => s.accounts[0].refresh_token === 'rt_v2')).toBe(true);
-    expect(persistedStates.some(s => s.accounts[0].accessToken?.token === 'at_minted')).toBe(true);
+    // A mint writes twice into the same account slot: the rotated
+    // refresh_token from the OAuth response, then the freshly minted access
+    // token. Both changes must survive for the next caller to see a usable
+    // credential pair, which is what the second write applying on top of the
+    // first proves.
+    const account = (current!.state as CodexUpstreamState).accounts[0];
+    expect(account.refresh_token).toBe('rt_v2');
+    expect(account.accessToken?.token).toBe('at_minted');
   });
 
   test('getProvidedModels propagates catalog fetch failures', async () => {
@@ -119,7 +122,7 @@ describe('createCodexProvider', () => {
   });
 
   test('getProvidedModels propagates OAuth refresh failures', async () => {
-    getByIdSpy.mockImplementation(async () => baseRecord);
+    current = baseRecord;
     vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
       const url = typeof input === 'string' ? input : (input instanceof URL ? input.href : (input as Request).url);
       if (url.includes('/oauth/token')) return new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 400, headers: new Headers({ 'content-type': 'application/json' }) });
@@ -178,7 +181,7 @@ describe('createCodexProvider', () => {
   });
 
   test('callResponses re-reads state per request (operator re-import takes effect)', async () => {
-    getByIdSpy.mockResolvedValueOnce({ ...baseRecord, state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'session_terminated', state_updated_at: '2026-01-02T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555', accessToken: null, quotaSnapshot: null }] } as CodexUpstreamState });
+    repo.getById.mockResolvedValueOnce({ ...baseRecord, state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'session_terminated', state_updated_at: '2026-01-02T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555', accessToken: null, quotaSnapshot: null }] } as CodexUpstreamState });
     const instance = createCodexProvider(baseRecord);
     const result = await instance.instance.callResponses(
       stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { responses: {} } }),

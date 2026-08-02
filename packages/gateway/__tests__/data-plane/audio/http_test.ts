@@ -25,6 +25,7 @@ const registerAudioModel = async (
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
+    modelsCache: null,
     color: null,
     config: {
       baseUrl: 'https://audio.example.com',

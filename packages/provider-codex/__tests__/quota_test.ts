@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
+import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstream-state-repo.ts';
 import {
   CODEX_QUOTA_UNKNOWN_ACTIVE_LIMIT,
   codexQuotaActiveLimitKey,
@@ -29,6 +30,7 @@ const makeRecord = (state: CodexUpstreamState): UpstreamRecord => ({
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  modelsCache: null,
   color: null,
 });
 
@@ -43,19 +45,14 @@ const baseAccount = {
 };
 
 let current: UpstreamRecord | null;
-let saveStateSpy: ReturnType<typeof vi.fn<(id: string, newState: unknown, opts: { expectedState: unknown }) => Promise<{ updated: boolean }>>>;
-let getByIdSpy: ReturnType<typeof vi.fn<(id: string) => Promise<UpstreamRecord | null>>>;
+let repo: UpstreamStateRepoStub;
 
 beforeEach(() => {
   current = makeRecord({ accounts: [{ ...baseAccount }] });
-  saveStateSpy = vi.fn(async (_id, newState, _opts) => {
-    if (current) current = { ...current, state: newState as CodexUpstreamState };
-    return { updated: true };
+  repo = createUpstreamStateRepoStub(() => current, state => {
+    current = { ...current!, state: state as CodexUpstreamState };
   });
-  getByIdSpy = vi.fn(async () => current);
-  initProviderRepo(() => ({
-    upstreams: { getById: getByIdSpy, saveState: saveStateSpy },
-  }));
+  initProviderRepo(() => ({ upstreams: repo }));
 });
 
 afterEach(() => vi.restoreAllMocks());
@@ -167,16 +164,15 @@ describe('getCodexQuota', () => {
 });
 
 describe('putCodexQuota', () => {
-  test('persists the snapshot under its active limit via saveState', async () => {
+  test('persists the snapshot under its active limit, leaving the rest of the credential alone', async () => {
     const snap: CodexQuotaSnapshot = { observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'premium', primary_used_percent: 42 };
     await putCodexQuota(upstreamId, accountId, snap);
-    expect(saveStateSpy).toHaveBeenCalledTimes(1);
-    const [id, nextState, opts] = saveStateSpy.mock.calls[0];
-    expect(id).toBe(upstreamId);
-    const written = (nextState as CodexUpstreamState).accounts[0].quotaSnapshot;
+    expect(repo.saveState).toHaveBeenCalledTimes(1);
+    expect(repo.saveState.mock.calls[0][0]).toBe(upstreamId);
+    const written = (current!.state as CodexUpstreamState).accounts[0].quotaSnapshot;
     expect(written?.premium?.data).toEqual(snap);
     expect(typeof written?.premium?.fetchedAt).toBe('number');
-    expect(opts.expectedState).toEqual({ accounts: [{ ...baseAccount }] });
+    expect({ ...(current!.state as CodexUpstreamState).accounts[0], quotaSnapshot: null }).toEqual({ ...baseAccount });
   });
 
   test('preserves other active-limit buckets and replaces the matching bucket', async () => {
@@ -205,13 +201,13 @@ describe('putCodexQuota', () => {
 
   test('throws when the upstream disappeared mid-flight', async () => {
     current = null;
-    await expect(putCodexQuota(upstreamId, accountId, { observed_at: 'now' })).rejects.toThrow(/disappeared mid-request/);
-    expect(saveStateSpy).not.toHaveBeenCalled();
+    await expect(putCodexQuota(upstreamId, accountId, { observed_at: 'now' })).rejects.toThrow(/disappeared/);
+    expect(repo.writes).toEqual([]);
   });
 
   test('throws when the requested account is not in the pool', async () => {
     await expect(putCodexQuota(upstreamId, 'acc_other', { observed_at: 'now' })).rejects.toThrow(/not found in upstream/);
-    expect(saveStateSpy).not.toHaveBeenCalled();
+    expect(repo.writes).toEqual([]);
   });
 });
 
