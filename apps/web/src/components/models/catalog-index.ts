@@ -1,7 +1,6 @@
 import type { ControlPlaneModel } from '../../api/types';
 
-// Built once and passed down: every catalog lookup happens inside a loop over
-// another collection, so a per-call scan would be quadratic.
+// Built once and passed down: lookups happen inside loops over other collections, so a per-call scan would be quadratic.
 export type CatalogIndex = ReadonlyMap<string, ControlPlaneModel>;
 
 export const indexCatalog = (
