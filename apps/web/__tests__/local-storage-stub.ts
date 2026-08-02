@@ -7,7 +7,7 @@ import { afterEach, beforeEach } from 'vitest';
 //
 // The returned map is the backing store, so a suite that needs a seeded session
 // can register its own `beforeEach` after this call and write into it.
-export const useLocalStorageStub = (): Map<string, string> => {
+export const stubLocalStorage = (): Map<string, string> => {
   const values = new Map<string, string>();
   const original = Object.getOwnPropertyDescriptor(window, 'localStorage');
 

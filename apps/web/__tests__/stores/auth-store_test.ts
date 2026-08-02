@@ -19,13 +19,13 @@ vi.mock('../../src/api/client', async importOriginal => ({
 import { authFetch } from '../../src/api/client';
 import { getSessionToken, setSessionToken } from '../../src/auth/session';
 import { useAuthStore } from '../../src/stores/auth-store';
-import { useLocalStorageStub } from '../local-storage-stub';
+import { stubLocalStorage } from '../local-storage-stub';
 
 const oldUser = { id: 1, username: 'old', isAdmin: true, upstreamIds: null };
 const newUser = { id: 2, username: 'new', isAdmin: true, upstreamIds: null };
 
 describe('auth store request ownership', () => {
-  useLocalStorageStub();
+  stubLocalStorage();
 
   beforeEach(() => {
     mocks.getCurrentSession.mockReset();

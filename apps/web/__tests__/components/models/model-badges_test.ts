@@ -7,7 +7,8 @@ import { chatModel } from '../../api/model-fixture';
 
 describe('model badges', () => {
   it('abbreviates the token limits the catalog advertises', () => {
-    expect(modelBadges(chatModel('m', { upstreams: ['a'], 
+    expect(modelBadges(chatModel('m', {
+      upstreams: ['a'],
       limits: { max_context_window_tokens: 1_000_000, max_prompt_tokens: 1_500, max_output_tokens: 64_000 },
     }), indexCatalog([]), null)).toEqual([
       { key: 'limit:context', kind: 'limit', limit: 'context', value: '1M' },
@@ -20,7 +21,8 @@ describe('model badges', () => {
   it('names the sole reachable target and drops the selection strategy with it', () => {
     const real = chatModel('real', { upstreams: ['a'] });
     const capped = chatModel('capped', { upstreams: ['b'] });
-    const alias = chatModel('alias', { upstreams: [], 
+    const alias = chatModel('alias', {
+      upstreams: [],
       aliasedFrom: {
         selection: 'random',
         targets: [{ target_model_id: 'real', rules: {} }, { target_model_id: 'capped', rules: {} }],
@@ -37,7 +39,8 @@ describe('model badges', () => {
 
   it('counts a target the catalog cannot resolve as out of reach', () => {
     const real = chatModel('real', { upstreams: ['a'] });
-    const alias = chatModel('alias', { upstreams: [], 
+    const alias = chatModel('alias', {
+      upstreams: [],
       aliasedFrom: {
         selection: 'first-available',
         targets: [{ target_model_id: 'real', rules: {} }, { target_model_id: 'withdrawn', rules: {} }],
@@ -46,7 +49,8 @@ describe('model badges', () => {
     expect(modelBadges(alias, indexCatalog([real, alias]), null)).toContainEqual(
       { key: 'aliasOf', kind: 'aliasOfModel', target: 'real' },
     );
-    const unreachable = chatModel('unreachable', { upstreams: [], 
+    const unreachable = chatModel('unreachable', {
+      upstreams: [],
       aliasedFrom: {
         selection: 'random',
         targets: [{ target_model_id: 'withdrawn', rules: {} }],
@@ -97,7 +101,8 @@ describe('model badges', () => {
   it('lifts an alias row onto the in-cap bindings of its reachable targets', () => {
     const real = chatModel('real', { upstreams: ['a', 'b'] });
     const other = chatModel('other', { upstreams: ['b'] });
-    const alias = chatModel('alias', { upstreams: [], 
+    const alias = chatModel('alias', {
+      upstreams: [],
       aliasedFrom: {
         selection: 'random',
         targets: [{ target_model_id: 'real', rules: {} }, { target_model_id: 'other', rules: {} }],

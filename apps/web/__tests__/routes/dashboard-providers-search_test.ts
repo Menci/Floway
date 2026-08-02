@@ -4,9 +4,9 @@ import type { ControlPlaneModel, UpstreamRecord } from '../../src/api/types';
 import { setSessionToken } from '../../src/auth/session';
 import { clientLoader, eligibleSearchUpstreams } from '../../src/routes/dashboard-providers-search';
 import { useAuthStore } from '../../src/stores/auth-store';
-import { useLocalStorageStub } from '../local-storage-stub';
+import { stubLocalStorage } from '../local-storage-stub';
 
-useLocalStorageStub();
+stubLocalStorage();
 
 afterEach(() => {
   useAuthStore.getState().clear();
