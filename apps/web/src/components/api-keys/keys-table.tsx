@@ -2,8 +2,7 @@ import { ArrowClockwiseRegular, DeleteRegular, EditRegular, MoreHorizontalRegula
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import type { UpstreamOption } from './types';
-import type { ApiKey } from '../../api/types';
+import type { ApiKey, UpstreamOption } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
