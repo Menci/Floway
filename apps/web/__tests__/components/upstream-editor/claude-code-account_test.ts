@@ -8,11 +8,11 @@ import type {
 import {
   accountStatus,
   actionableDisabledReason,
-  formatSubscription,
   findCredential,
   quotaWindows,
   rawEntries,
   readProbeSnapshot,
+  subscriptionLabel,
 } from '../../../src/components/upstream-editor/claude-code-account';
 
 type ClaudeCodeRecord = Extract<UpstreamRecord, { kind: 'claude-code' }>;
@@ -60,16 +60,11 @@ const record = (state: ClaudeCodeRecord['state']): ClaudeCodeRecord => ({
 } as unknown as ClaudeCodeRecord);
 
 describe('claude code subscription label', () => {
-  it('appends the usage multiplier only for max plans', () => {
-    expect(formatSubscription('max', 'default_claude_max_20x')).toBe('Max · default_claude_max_20x');
-    expect(formatSubscription('max', 'default_claude_max_5x')).toBe('Max · default_claude_max_5x');
-    expect(formatSubscription('pro', 'default_claude_max_20x')).toBe('Pro · default_claude_max_20x');
-  });
-
-  it('keeps the plan name when the tier is unknown or absent', () => {
-    expect(formatSubscription('max', null)).toBe('Max');
-    expect(formatSubscription('max', 'tier_anthropic_added_later')).toBe('Max · tier_anthropic_added_later');
-    expect(formatSubscription(null, null)).toBeNull();
+  it('names the plan and leaves the rate-limit tier to its own badge', () => {
+    expect(subscriptionLabel('max')).toBe('Max');
+    expect(subscriptionLabel('pro')).toBe('Pro');
+    expect(subscriptionLabel('enterprise')).toBe('Enterprise');
+    expect(subscriptionLabel(null)).toBeNull();
   });
 });
 

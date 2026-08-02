@@ -7,10 +7,10 @@ import {
   actionableDisabledReason,
   type ClaudeCodeRecord,
   findCredential,
-  formatSubscription,
   quotaWindows,
   rawEntries,
   readProbeSnapshot,
+  subscriptionLabel,
 } from './claude-code-account';
 import { quotaBarColor, WALL_CLOCK_REFRESH_MS } from './subscription-account-quota';
 import { fluentComponents } from '../../fluent';
@@ -44,7 +44,7 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
   const disabledReason = actionableDisabledReason(credential);
 
   const accountUuidShort = shortAccountId(account.accountUuid);
-  const subscription = formatSubscription(account.subscriptionType, account.rateLimitTier);
+  const subscription = subscriptionLabel(account.subscriptionType);
   const headerRawEntries = rawEntries(quota?.raw);
   const probeExtraEntries = rawEntries(probe?.extras);
   const accessTokenExpiresAt = credential?.accessToken?.expiresAt ?? null;
@@ -64,6 +64,7 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
             </span>
           </Tooltip>}
           {subscription && <StatusBadge color="brand">{subscription}</StatusBadge>}
+          {account.rateLimitTier && <Badge appearance="outline" size="large">{account.rateLimitTier}</Badge>}
           <Tooltip content={account.accountUuid} relationship="description">
             <Text size={200} className="text-fui-fg3 font-mono mono-size-xs" tabIndex={0}>{accountUuidShort}</Text>
           </Tooltip>
@@ -95,22 +96,21 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
         const percent = clampPercent(row.percent);
         return <div key={row.key} className="grid gap-1">
           <div className="flex items-baseline justify-between gap-3">
-            <Text size={200}>
-              {t(`dashboard.upstreamEditor.claudeCode.window.${row.key}`)}
-              <Tooltip content={t('dashboard.upstreamEditor.claudeCode.fetchedAt', { time: dateTime(row.fetchedAt, locale) })} relationship="description">
-                <span className="ml-1.5 text-fui-fg3 uppercase text-[10px] tracking-wide" tabIndex={0}>
-                  {t(`dashboard.upstreamEditor.claudeCode.source.${row.source}`)}
-                </span>
-              </Tooltip>
-            </Text>
-            <Text size={200} className="text-fui-fg2">
-              {percentText(percent)}{row.status ? ` · ${row.status}` : ''}
-            </Text>
+            <Text size={200}>{t(`dashboard.upstreamEditor.claudeCode.window.${row.key}`)}</Text>
+            <div className="flex items-baseline gap-2">
+              <Text size={200} className="text-fui-fg2">{percentText(percent)}</Text>
+              {row.status && <Text size={200} className="text-fui-fg3">{row.status}</Text>}
+            </div>
           </div>
           <ProgressBar color={quotaBarColor(percent)} max={100} thickness="large" value={percent ?? undefined} />
-          {row.resetAt && <Text size={200} className="text-fui-fg3">
-            {t('dashboard.upstreamEditor.claudeCode.resetsAt', { time: dateTime(row.resetAt, locale) })}
-          </Text>}
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+            {row.resetAt && <Text size={200} className="text-fui-fg3">
+              {t('dashboard.upstreamEditor.claudeCode.resetsAt', { time: dateTime(row.resetAt, locale) })}
+            </Text>}
+            <Text size={200} className="text-fui-fg3">
+              {t('dashboard.upstreamEditor.claudeCode.observed', { time: dateTime(row.fetchedAt, locale) })}
+            </Text>
+          </div>
         </div>;
       })}
     </div>}
@@ -131,12 +131,12 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
     </div>
 
     {(headerRawEntries.length > 0 || probeExtraEntries.length > 0) && <Accordion collapsible>
-      {headerRawEntries.length > 0 && <AccordionItem value="headers">
-        <AccordionHeader>{t('dashboard.upstreamEditor.claudeCode.rawHeaders', { count: headerRawEntries.length })}</AccordionHeader>
+      {headerRawEntries.length > 0 && <AccordionItem value="rate-limit">
+        <AccordionHeader>{t('dashboard.upstreamEditor.claudeCode.rawRateLimit', { count: headerRawEntries.length })}</AccordionHeader>
         <AccordionPanel><EntryList entries={headerRawEntries} /></AccordionPanel>
       </AccordionItem>}
-      {probeExtraEntries.length > 0 && <AccordionItem value="probe">
-        <AccordionHeader>{t('dashboard.upstreamEditor.claudeCode.rawProbe', { count: probeExtraEntries.length })}</AccordionHeader>
+      {probeExtraEntries.length > 0 && <AccordionItem value="usage">
+        <AccordionHeader>{t('dashboard.upstreamEditor.claudeCode.rawUsage', { count: probeExtraEntries.length })}</AccordionHeader>
         <AccordionPanel><EntryList entries={probeExtraEntries} /></AccordionPanel>
       </AccordionItem>}
     </Accordion>}
@@ -147,9 +147,6 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
       </Text>}
       {accessTokenExpiresAt !== null && <Text size={200} className="text-fui-fg3">
         {t('dashboard.upstreamEditor.claudeCode.tokenExpires', { time: relativeTime(accessTokenExpiresAt, locale, { now }) ?? dateTime(accessTokenExpiresAt, locale) })}
-      </Text>}
-      {probe && <Text size={200} className="text-fui-fg3">
-        {t('dashboard.upstreamEditor.claudeCode.probeFetched', { time: dateTime(probe.fetchedAt, locale) })}
       </Text>}
     </div>
   </section>;

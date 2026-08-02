@@ -11,14 +11,10 @@ import type {
 
 export type ClaudeCodeRecord = Extract<UpstreamRecord, { kind: 'claude-code' }>;
 
-export const formatSubscription = (
+export const subscriptionLabel = (
   subscriptionType: 'pro' | 'max' | 'team' | 'enterprise' | null | undefined,
-  rateLimitTier: string | null | undefined,
-): string | null => {
-  if (!subscriptionType) return null;
-  const base = { pro: 'Pro', max: 'Max', team: 'Team', enterprise: 'Enterprise' }[subscriptionType];
-  return rateLimitTier ? `${base} · ${rateLimitTier}` : base;
-};
+): string | null =>
+  subscriptionType ? { pro: 'Pro', max: 'Max', team: 'Team', enterprise: 'Enterprise' }[subscriptionType] : null;
 
 export type CredentialLookup =
   | { kind: 'present'; credential: ClaudeCodeAccountCredentialSummary }

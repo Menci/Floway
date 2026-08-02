@@ -17,15 +17,12 @@ export interface ClaudeCodeAccountIdentity {
   // 'pro', 'max', 'team', 'enterprise', or null for personal accounts /
   // organization_type values we do not yet recognize. Matches the official
   // CLI's persisted `subscriptionType` field in ~/.claude/.credentials.json.
-  // Captured for dashboard display; the dashboard combines it with
-  // rateLimitTier below to render "Max 5×" / "Max 20×" etc.
   subscriptionType: 'pro' | 'max' | 'team' | 'enterprise' | null;
   // Raw `organization.rate_limit_tier` string passed through verbatim — e.g.
   // 'default_claude_max_5x' / 'default_claude_max_20x' / 'default_claude_pro'.
   // Null for personal accounts (no organization block) and for tokens that
   // hit the 403-fallback path. Not enum-cast so a new Anthropic tier does
-  // not break ingest; the dashboard's friendly-label map handles known
-  // values and passes unknown values through verbatim.
+  // not break ingest.
   rateLimitTier: string | null;
 }
 
