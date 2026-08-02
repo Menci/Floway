@@ -19,35 +19,24 @@ const {
   useMergedRefs,
 } = fluentComponents;
 
-// Read-only, as distinct from disabled: a disabled control says the setting is
-// not available, a read-only one says the value is but this operator does not
-// set it. Fluent has it only for a text field, and HTML ignores `readonly` on a
-// checkbox outright, so it is built the same way for each here -- the control
-// stays enabled and keeps its own appearance, `aria-readonly` states the fact,
-// and the change is refused at the source.
+// Read-only, as distinct from disabled: the setting is available, this operator
+// just does not set it. Fluent offers it only on a text field, so every control
+// here stays enabled and keeps its own appearance, states `aria-readonly`, and
+// refuses the change at the source.
 interface ReadOnlyProp {
   readOnly?: boolean;
 }
 
 // Fluent's minimum width and the wrapped input's own `min-width: auto` form an
 // intrinsic floor that propagates up through every auto-sized grid track above
-// the control, so a field in a fluid column can push its whole layout wider than
-// the container. Zeroing both lets the column decide.
+// the control, so a field in a fluid column can push its layout wider than the
+// container. Zeroing both lets the column decide.
 const MIN_WIDTH_CLASS = '!min-w-[0px] [&_input]:!min-w-[0px]';
 
 // A select is only as wide as the value it currently shows, so a column of them
-// has nothing to line up on. Prior art: PowerToys declares one 240 action-slot
-// width for its whole settings surface, WinUI states only a 64px collapse floor,
-// and the Community Toolkit's SettingsCard pushes an implicit 120 into its
-// content scope.
-// https://github.com/microsoft/PowerToys/blob/d2c53bf3861ed2688a1c30aafd66ea0fc0186399/src/settings-ui/Settings.UI/SettingsXAML/App.xaml#L68
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L321-L323
-// https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L146-L170
-//
-// Here the floor is off by default and carried by a variable rather than a
-// second class, so a caller sets a value instead of racing the `!important` this
-// one needs to clear Fluent's own 250px. ./settings-card.tsx is the only place
-// that raises it.
+// has nothing to line up on. The floor is off by default and carried by a
+// variable rather than a second class, so a caller sets a value instead of
+// racing the `!important` this one needs to clear Fluent's own 250px.
 const SELECT_MIN_WIDTH_CLASS = '!min-w-[var(--floway-select-min-width,0px)] [&_input]:!min-w-[0px]';
 
 // Fluent flips the popup to whichever side has room for its natural height, so
@@ -64,9 +53,9 @@ export const LISTBOX_POSITIONING = {
 } satisfies NonNullable<ComponentProps<typeof FluentCombobox>['positioning']>;
 
 // The 12px cut rather than Fluent's default 20px artwork scaled down: that
-// stroke is one unit in a twenty-unit box, so at 12px it is six tenths of a
-// pixel of ink and no pixel reaches full strength -- measured, the darkest came
-// out 145 where a solid glyph on that fill reaches 97.
+// stroke is one unit in a twenty-unit box, so at 12px no pixel reaches full
+// strength -- measured, the darkest came out 145 where a solid glyph on that
+// fill reaches 97.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ComboBox_themeresources.xaml#L582-L586
 const EXPAND_ICON = <ChevronDown12Regular />;
 
@@ -119,17 +108,13 @@ function ScrollableListbox({
     // an ordinary prop it has to assume is read in render.
     <div className="floway-combobox-listbox-viewport" ref={viewportRef} style={{ overflowX: 'hidden', overflowY: 'scroll' }}>
       {/* Fluent opens the popup whether or not there is anything in it, so an
-          empty list arrives as a bordered seam a few pixels tall. Screen reader
-          users meeting one are more likely to read it as a bug than an answer.
-
-          The row must be an option: axe escalates any bare text node inside a
-          listbox from review to a hard violation, so a plain div saying "no
-          results" is worse than saying nothing. It also needs the `disabled`
-          prop rather than `aria-disabled` -- Fluent's useOption reads
-          props.disabled, so aria-disabled alone leaves the row selectable and
-          eligible to become the active descendant.
-          https://w3c.github.io/aria/#mustContain
-          https://www.24a11y.com/2019/select-your-poison-part-2/ */}
+          empty list would arrive as a bordered seam a few pixels tall. The row
+          must be an option: axe escalates a bare text node inside a listbox from
+          review to a hard violation. It also needs the `disabled` prop rather
+          than `aria-disabled` -- Fluent's useOption reads props.disabled, so
+          aria-disabled alone leaves the row selectable and eligible to become
+          the active descendant.
+          https://w3c.github.io/aria/#mustContain */}
       <div className="floway-combobox-listbox-content">
         {Children.toArray(children).length === 0
           ? <Option disabled value="">{t(freeform ? 'common.noSuggestions' : 'common.noOptions')}</Option>
@@ -139,21 +124,19 @@ function ScrollableListbox({
   );
 }
 
-// MUI and Ant Design both suppress the message outright on a free-text field,
-// reasoning that an empty suggestion list is not a failure. That reasoning is
-// about announcing a failure; a row stating there is nothing to suggest
-// announces none, and it keeps the control from changing shape.
+// MUI and Ant Design suppress the message outright on a free-text field, taking
+// an empty suggestion list for a non-failure. A row stating there is nothing to
+// suggest announces no failure either, and keeps the control from changing shape.
 const listboxRenderer = (freeform: boolean): ListboxRenderFunction =>
   (ListboxComponent, listboxProps) => (
     <ScrollableListbox ListboxComponent={ListboxComponent} freeform={freeform} listboxProps={listboxProps} />
   );
 
-// Fluent writes the control's measured width straight onto the list, which pins
-// a narrow control's list to the shortest thing it can offer and truncates every
-// longer option. `listWidth="content"` keeps the measurement as a floor and lets
-// the list grow past it, which is only useful together with an `align: 'end'`
-// positioning: the list has to hang off the trailing edge and open away from it,
-// or it would grow off the page.
+// Fluent writes the control's measured width straight onto the list, truncating
+// every option longer than a narrow control. `listWidth="content"` keeps the
+// measurement as a floor and lets the list grow past it, which is only usable
+// together with an `align: 'end'` positioning -- the list has to hang off the
+// trailing edge and open away from it, or it would grow off the page.
 const CONTENT_WIDTH_LISTBOX_CLASS = '!w-max !min-w-[var(--fui-match-target-size)] !max-w-[calc(100vw-16px)]';
 
 const listboxFor = (listWidth: 'target' | 'content' | undefined, freeform: boolean) => ({
@@ -162,7 +145,6 @@ const listboxFor = (listWidth: 'target' | 'content' | undefined, freeform: boole
 });
 
 interface ListWidthProp {
-  /** Whether the list is pinned to the control's width or free to exceed it. */
   listWidth?: 'target' | 'content';
 }
 
@@ -203,7 +185,7 @@ export const Dropdown = forwardRef<HTMLButtonElement, Omit<ComponentProps<typeof
   ),
 );
 
-// A checkbox and a switch are both a native checkbox, for which HTML defines
+// A checkbox and a switch are both a native checkbox, on which HTML accepts
 // `readonly` and does nothing with it. Cancelling the click refuses the change,
 // since that is the default action the toggle is.
 const refuseToggle = (event: MouseEvent<HTMLInputElement>) => event.preventDefault();
