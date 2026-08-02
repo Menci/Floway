@@ -91,9 +91,17 @@ export const drawerCss = `
    inset shadow because it has to sit inside the outer ring's own border box --
    the drawer's own border exists on one side only, so it cannot carry it. The
    two thicknesses are the framework defaults, which this corpus states only
-   where ListViewItem restates them. Forced colours are left to Fluent and the
-   user agent: Fluent states Highlight for the ring itself there, and the inner
-   ring is a box shadow, a property forced colours drop.
+   where ListViewItem restates them.
+
+   Fluent puts that pseudo-element two pixels outside the drawer, and the
+   drawer clips: it is the outermost box of the overlay, and with square
+   corners nothing of a ring drawn outside it survives at all. The
+   pseudo-element is pulled onto the drawer's padding box instead, so the pair
+   is drawn inward and lands whole inside the clip.
+
+   Forced colours are left to Fluent and the user agent: Fluent states
+   Highlight for the ring itself there, and the inner ring is a box shadow, a
+   property forced colours drop.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L251-L253
    https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
@@ -102,6 +110,7 @@ export const drawerCss = `
 }
 
 .fui-OverlayDrawer.fui-OverlayDrawer[data-fui-focus-visible]::after {
+  inset: 0;
   box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
 }
 
