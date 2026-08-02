@@ -76,8 +76,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  // Tied to the loader payload it came from, so a navigation discards it rather
-  // than showing one route's keys under another's URL.
+  // Tied to the loader payload it came from: a navigation discards it rather than showing one route's keys under another's URL.
   const [replacement, setReplacement] = useState<{ source: LoaderData; keys: ApiKey[]; keysError: string | null; recordsError: string | null } | null>(null);
   const shown = replacement?.source === loaderData
     ? replacement
@@ -122,8 +121,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
     };
   }, [keys, loaderData, navigate]);
 
-  // One bar reports whichever of the three sources failed, so a dismissal clears
-  // all three.
+  // One bar reports whichever of the three sources failed, so a dismissal clears all three.
   const dismissListError = () => {
     subscription.dismissError();
     setReplacement({ ...shown, keysError: null, recordsError: null });
