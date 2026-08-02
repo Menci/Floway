@@ -47,7 +47,7 @@ export const badgeTagCss = `
   --colorNeutralBackgroundDisabled: var(--winui-control-fill-disabled);
   --colorNeutralForeground2: var(--winui-text-fill-primary);
   --colorNeutralStrokeDisabled: var(--winui-control-stroke-default);
-  border-color: var(--winui-control-elevation-border-color);
+  border-color: var(--winui-control-stroke-default);
 }
 
 /* Button flattens its stroke to ControlStrokeColorDefault under a press and
@@ -108,7 +108,7 @@ export const badgeTagCss = `
 .fui-Tag.fui-Tag[aria-selected='true'],
 .fui-InteractionTagPrimary.fui-InteractionTagPrimary[aria-pressed='true'],
 :where(.fui-InteractionTagPrimary[aria-pressed='true']) + .fui-InteractionTagSecondary.fui-InteractionTagSecondary {
-  border-color: var(--winui-accent-control-elevation-border-color);
+  border-color: var(--winui-accent-fill-default);
 }
 
 /* A plain Tag is a span, so Fluent ships it no pointer atoms at all and there is
