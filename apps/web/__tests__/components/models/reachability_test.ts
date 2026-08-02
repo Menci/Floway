@@ -1,19 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ControlPlaneModel } from '../../../src/api/types';
 import { indexCatalog } from '../../../src/components/models/catalog-index';
 import { effectiveUpstreamCap, isModelReachable } from '../../../src/components/models/reachability';
-
-const model = (id: string, upstreamId: string): ControlPlaneModel => ({
-  id,
-  object: 'model',
-  type: 'model',
-  display_name: id,
-  kind: 'chat',
-  limits: {},
-  endpoints: { responses: {} },
-  upstreams: [{ id: upstreamId, name: upstreamId, kind: 'custom', color: null }],
-});
+import { aliasModel, chatModel } from '../../api/model-fixture';
 
 describe('model reachability', () => {
   it('intersects API-key and owner upstream caps', () => {
@@ -23,15 +12,8 @@ describe('model reachability', () => {
   });
 
   it('resolves alias targets through the effective cap', () => {
-    const real = model('real', 'u1');
-    const alias: ControlPlaneModel = {
-      ...model('alias', 'ignored'),
-      upstreams: [],
-      aliasedFrom: {
-        selection: 'first-available',
-        targets: [{ target_model_id: real.id, rules: {} }],
-      },
-    };
+    const real = chatModel('real', { upstreams: ['u1'] });
+    const alias = aliasModel('alias', [real.id]);
     const catalog = indexCatalog([real, alias]);
     expect(isModelReachable(alias, catalog, ['u1'])).toBe(true);
     expect(isModelReachable(alias, catalog, ['u2'])).toBe(false);

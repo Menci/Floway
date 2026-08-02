@@ -9,15 +9,15 @@ import { errorMessage } from '../lib/error-message';
 import { errorMessageFromPayload } from '../lib/error-payload';
 import type { AppType } from '@floway-dev/gateway/app-type';
 
-export interface GlobalError {
+export interface GlobalError<TRaw = unknown> {
   status: number;
   message: string;
-  raw?: unknown;
+  raw?: TRaw;
 }
 
-export type ApiResult<T> =
+export type ApiResult<T, TRaw = unknown> =
   | { data: T; error?: undefined }
-  | { data?: undefined; error: GlobalError };
+  | { data?: undefined; error: GlobalError<TRaw> };
 
 export const authFetch = async (
   input: RequestInfo | URL,
@@ -49,11 +49,24 @@ type SuccessfulJson<TResponse extends Response> = TResponse extends {
     : never
   : never;
 
+// The mirror of SuccessfulJson over the non-2xx members of the same union. The
+// gateway declares its failure bodies as precisely as its success bodies, so a
+// caller that reads a conflict payload reads it at the type the route states
+// instead of asserting a shape onto `unknown`.
+type FailedJson<TResponse extends Response> = TResponse extends {
+  status: infer Status;
+  json(): Promise<infer Body>;
+}
+  ? Status extends number
+    ? `${Status}` extends `2${string}` ? never : Body
+    : never
+  : never;
+
 // Everything up to the body: the network, the 401 path and a failed status all
 // resolve here, so the two callers below differ only in whether they parse.
-const requestResponse = async (
+const requestResponse = async <TRaw>(
   fn: () => Promise<Response>,
-): Promise<ApiResult<Response>> => {
+): Promise<ApiResult<Response, TRaw>> => {
   let response: Response;
   try {
     response = await fn();
@@ -78,7 +91,9 @@ const requestResponse = async (
       error: {
         status: response.status,
         message: errorMessageFromPayload(body) ?? `HTTP ${response.status}`,
-        raw: body,
+        // The one place the parsed body is named: the route union says what a
+        // failure carries, and this is where an untyped parse result adopts it.
+        raw: body as TRaw,
       },
     };
   }
@@ -86,8 +101,8 @@ const requestResponse = async (
   return { data: response };
 };
 
-const callResponse = async <T>(fn: () => Promise<Response>): Promise<ApiResult<T>> => {
-  const result = await requestResponse(fn);
+const callResponse = async <T, TRaw>(fn: () => Promise<Response>): Promise<ApiResult<T, TRaw>> => {
+  const result = await requestResponse<TRaw>(fn);
   if (result.error) return result;
 
   try {
@@ -104,13 +119,15 @@ const callResponse = async <T>(fn: () => Promise<Response>): Promise<ApiResult<T
 
 export const callApi = <TResponse extends Response>(
   fn: () => Promise<TResponse>,
-): Promise<ApiResult<SuccessfulJson<TResponse>>> =>
-  callResponse<SuccessfulJson<TResponse>>(fn);
+): Promise<ApiResult<SuccessfulJson<TResponse>, FailedJson<TResponse>>> =>
+  callResponse<SuccessfulJson<TResponse>, FailedJson<TResponse>>(fn);
 
 // A 204 carries no body at all, so success is the absence of an error and
 // nothing is parsed. Asking for the JSON would turn one into a parse failure.
 // https://www.rfc-editor.org/rfc/rfc9110#section-15.3.5
-export const callApiNoContent = async (fn: () => Promise<Response>): Promise<ApiResult<void>> => {
-  const { error } = await requestResponse(fn);
+export const callApiNoContent = async <TResponse extends Response>(
+  fn: () => Promise<TResponse>,
+): Promise<ApiResult<void, FailedJson<TResponse>>> => {
+  const { error } = await requestResponse<FailedJson<TResponse>>(fn);
   return error ? { error } : { data: undefined };
 };

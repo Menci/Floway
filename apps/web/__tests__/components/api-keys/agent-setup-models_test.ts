@@ -1,18 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ControlPlaneModel } from '../../../src/api/types';
 import { buildAgentModelOptions, rankAgentSetupModels } from '../../../src/components/api-keys/agent-setup-models';
+import { chatModel } from '../../api/model-fixture';
 
-const model = (id: string, context = 200_000, kind: ControlPlaneModel['kind'] = 'chat'): ControlPlaneModel => ({
-  id,
-  object: 'model',
-  type: 'model',
-  display_name: id,
-  kind,
-  limits: { max_context_window_tokens: context },
-  endpoints: kind === 'chat' ? { responses: {} } : { embeddings: {} },
-  upstreams: [],
-});
+const model = (id: string, contextWindow = 200_000) => chatModel(id, { contextWindow });
 
 describe('Agent Setup model ranking', () => {
   it('uses segment-aware Claude tiers and retains the full chat catalog', () => {
@@ -21,7 +12,7 @@ describe('Agent Setup model ranking', () => {
       model('vendor/claude-opus-4-8'),
       model('claude-sonnet-4-5'),
       model('gpt-4o'),
-      model('embedding', 0, 'embedding'),
+      chatModel('embedding', { kind: 'embedding', endpoints: { embeddings: {} } }),
     ], { family: 'claude', picker: 'default' }).map(entry => entry.id)).toEqual([
       'vendor/claude-opus-4-8',
       'claude-sonnet-4-5',

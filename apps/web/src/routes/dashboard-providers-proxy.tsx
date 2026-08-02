@@ -267,13 +267,14 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
     setMutating(false);
     if (result.error) {
       handle.settle();
-      const raw = result.error.raw as ProxyConflictBody | undefined;
-      if (
-        raw?.referencing_upstream_ids &&
-        raw.referencing_upstream_ids.length > 0
-      ) {
+      const raw = result.error.raw;
+      // Only the 409 member of the delete route's failure union names the
+      // upstreams still pointing at this proxy; every other failure states its
+      // own message and nothing to enumerate.
+      const referencing = raw && 'referencing_upstream_ids' in raw ? raw.referencing_upstream_ids : [];
+      if (referencing.length > 0) {
         setDeleteError(
-          `${t('dashboard.proxy.delete.conflict')} ${t('dashboard.proxy.delete.conflictWithIds', { ids: raw.referencing_upstream_ids.join(', ') })}`,
+          `${t('dashboard.proxy.delete.conflict')} ${t('dashboard.proxy.delete.conflictWithIds', { ids: referencing.join(', ') })}`,
         );
       } else {
         setDeleteError(result.error.message);

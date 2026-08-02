@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ControlPlaneModel } from '../../../src/api/types';
 import {
   availableModels,
   defaultMaxOutputTokens,
@@ -9,22 +8,13 @@ import {
   parseCustomJson,
   supportsImageInput,
 } from '../../../src/components/playground/playground-logic';
-
-const model = (id: string, upstreams: string[], extra: Partial<ControlPlaneModel> = {}): ControlPlaneModel => ({
-  id, object: 'model', type: 'model', display_name: id, kind: 'chat', limits: {},
-  endpoints: { responses: {}, chatCompletions: {}, messages: {} },
-  upstreams: upstreams.map(upstream => ({ id: upstream, name: upstream, kind: 'custom', color: null })),
-  ...extra,
-});
+import { aliasModel, chatModel } from '../../api/model-fixture';
 
 describe('playground reachability', () => {
   it('keeps every reachable chat model available across source protocols', () => {
-    const real = model('real', ['a'], { endpoints: { responses: {} } });
-    const alias = model('alias', [], {
-      endpoints: { responses: {} },
-      aliasedFrom: { selection: 'first-available', targets: [{ target_model_id: 'real', rules: {} }] },
-    });
-    const chatOnly = model('chat', ['a'], { endpoints: { chatCompletions: {} } });
+    const real = chatModel('real', { upstreams: ['a'],  endpoints: { responses: {} } });
+    const alias = aliasModel('alias', ['real'], { endpoints: { responses: {} } });
+    const chatOnly = chatModel('chat', { upstreams: ['a'],  endpoints: { chatCompletions: {} } });
     expect(availableModels([real, alias, chatOnly], ['a']).map(m => m.id))
       .toEqual(['real', 'alias', 'chat']);
     expect(availableModels([real, alias], ['b'])).toEqual([]);
@@ -62,8 +52,8 @@ describe('generation and capabilities', () => {
   });
 
   it('reads image and output limits conservatively', () => {
-    expect(supportsImageInput(model('unknown', []))).toBe(true);
-    expect(supportsImageInput(model('text', [], { chat: { modalities: { input: ['text'], output: ['text'] } } }))).toBe(false);
-    expect(defaultMaxOutputTokens(model('limited', [], { limits: { max_output_tokens: 2048 } }))).toBe(2048);
+    expect(supportsImageInput(chatModel('unknown', { upstreams: [] }))).toBe(true);
+    expect(supportsImageInput(chatModel('text', { upstreams: [],  chat: { modalities: { input: ['text'], output: ['text'] } } }))).toBe(false);
+    expect(defaultMaxOutputTokens(chatModel('limited', { upstreams: [],  limits: { max_output_tokens: 2048 } }))).toBe(2048);
   });
 });

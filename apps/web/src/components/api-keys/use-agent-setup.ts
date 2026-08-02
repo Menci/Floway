@@ -18,15 +18,6 @@ const clearTimer = (timer: { current: ReturnType<typeof setTimeout> | null }) =>
   timer.current = null;
 };
 
-const rawStatus = (raw: unknown) => raw && typeof raw === 'object' && typeof (raw as { status?: unknown }).status === 'string'
-  ? (raw as { status: string }).status : null;
-const leaseFromRaw = (raw: unknown): AgentSetupLease | null => {
-  if (!raw || typeof raw !== 'object') return null;
-  const lease = raw as Partial<AgentSetupLease>;
-  return lease.status === 'ok' && typeof lease.token === 'string' && typeof lease.configurationRevision === 'number'
-    && typeof lease.expiresAt === 'number' && lease.configuration && lease.scripts
-    ? lease as AgentSetupLease : null;
-};
 const isRetryableStatus = (status: number) =>
   status === 0 || status === 408 || status === 429 || status >= 500;
 const configurationsEqual = (left: unknown, right: unknown): boolean => {
