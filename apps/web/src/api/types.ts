@@ -5,7 +5,6 @@ import type { InferRequestType, InferResponseType } from 'hono/client';
 import type { api } from './client';
 import type { SerializedBackoffRow, SerializedProxyRecord } from '@floway-dev/gateway/control-plane/proxies/serialize';
 import type {
-  AliasRules,
   AliasSelection,
   AliasTarget,
   AnnouncedMetadata,
@@ -13,48 +12,30 @@ import type {
   ChatAliasRules,
   ChatModelInfo,
   ModelAlias,
-  ModelEndpointKey,
   ModelEndpoints,
   ModelKind,
   ModelPricing,
-  PublicModel,
   PublicModelLimits,
 } from '@floway-dev/protocols/common';
 import type { UpstreamModelConfig } from '@floway-dev/provider';
 import type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind } from '@floway-dev/provider/model';
-import type { AddressableForm, ModelPrefixConfig } from '@floway-dev/provider/model-prefix';
 
-export type { BillingMetric, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing };
-export type { AddressableForm, ModelPrefixConfig };
+export type { BillingMetric, ModelEndpoints, ModelKind, ModelPricing };
 export type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind };
 export type { UpstreamModelConfig };
 export type {
-  AliasRules, AliasSelection, AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ModelAlias,
-  PublicModel, PublicModelLimits,
+  AliasSelection, AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ModelAlias,
+  PublicModelLimits,
 };
 export type {
-  AzureUpstreamConfig,
-  ClaudeCodeAccessTokenSummary,
   ClaudeCodeAccountCredentialSummary,
   ClaudeCodeQuotaSnapshotData,
   ClaudeCodeQuotaWindow,
-  ClaudeCodeUpstreamConfig,
-  ClaudeCodeUpstreamState,
   CodexAccountCredentialState,
   CodexQuotaSnapshot,
   CodexQuotaSnapshotMap,
-  CodexUpstreamConfig,
-  CodexUpstreamState,
-  CopilotUpstreamConfig,
-  CopilotUpstreamState,
-  CopilotUser,
-  CustomModelsFetch,
   CustomRawModel,
-  CustomUpstreamConfig,
   ListUpstreamModelsResponse,
-  ListedUpstreamModel,
-  OllamaUpstreamConfig,
-  ProxyFallbackEntry,
   UpstreamRecord,
 } from '@floway-dev/gateway/control-plane/upstreams/types';
 

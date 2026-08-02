@@ -21,7 +21,7 @@ import snowflakeUrl from '../assets/emoji-snowflake.svg?no-inline';
 // weighted by alpha x saturation x value so that outlines and highlights --
 // which carry little colour -- cannot outvote the petals. The heaviest bin's
 // weighted mean is the colour, and its hue is what is recorded here.
-export const MARKS = [
+const MARKS = [
   { hue: 346, url: cherryBlossomUrl },
   { hue: 272, url: blossomUrl },
   { hue: 315, url: hibiscusUrl },

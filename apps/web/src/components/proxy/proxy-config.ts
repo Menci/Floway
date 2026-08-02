@@ -75,10 +75,10 @@ export const formKindFromConfig = (c: ProxyConfig): FormKind => {
   return c.kind;
 };
 
-export const isValidPort = (n: number): boolean =>
+const isValidPort = (n: number): boolean =>
   Number.isInteger(n) && n >= 1 && n <= 65535;
 
-export const isValidUuid = (s: string): boolean => {
+const isValidUuid = (s: string): boolean => {
   const hex = s.replace(/-/g, '');
   return hex.length === 32 && /^[0-9a-fA-F]+$/.test(hex);
 };
