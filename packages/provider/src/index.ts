@@ -35,6 +35,7 @@ export type {
   ProxyFallbackEntry,
   UpstreamColor,
   UpstreamColorPreset,
+  UpstreamModelsCache,
   UpstreamProviderKind,
   UpstreamRecord,
 } from './model.ts';

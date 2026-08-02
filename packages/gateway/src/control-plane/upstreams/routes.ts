@@ -68,17 +68,14 @@ const serializeForResponse = async (
   knownProxyIds: ReadonlySet<string>,
   baseSerialize: (r: UpstreamRecord) => SerializedUpstreamRecord = upstreamRecordToJson,
 ): Promise<UpstreamWithCacheResponse> => {
-  const [cacheRow, codexQuota] = await Promise.all([
-    getRepo().modelsCache.get(record.id),
-    codexQuotaForResponse(record),
-  ]);
+  const codexQuota = await codexQuotaForResponse(record);
   const serialized = baseSerialize(record);
   return {
     ...serialized,
     proxy_fallback_list: pruneDeletedProxyEntries(serialized.proxy_fallback_list, knownProxyIds),
     modelsCache: {
-      fetchedAt: cacheRow?.fetchedAt ?? null,
-      lastError: cacheRow?.lastError ?? null,
+      fetchedAt: record.modelsCache?.fetchedAt ?? null,
+      lastError: record.modelsCache?.lastError ?? null,
     },
     ...codexQuota,
   };
@@ -251,6 +248,9 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
     color: body.color ?? null,
     config: body.config,
     state: stateFromBody,
+    // Operator edits never carry the catalog cache; the repo leaves the
+    // columns to the refresh path.
+    modelsCache: null,
   };
 
   const config = normalizeConfig(upstream);

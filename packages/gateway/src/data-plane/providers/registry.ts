@@ -16,8 +16,13 @@ const providersByKind: Record<UpstreamProviderKind, ProviderModule> = {
   ollama: ollamaProviderModule,
 };
 
-export const createProvider = (record: UpstreamRecord): Provider =>
-  providersByKind[record.kind].create(record);
+// The cached catalog is mirrored onto the instance here rather than inside each
+// provider module: it is gateway-owned bookkeeping about the upstream, not
+// something a vendor package produces or reads.
+export const createProvider = (record: UpstreamRecord): Provider => ({
+  ...providersByKind[record.kind].create(record),
+  modelsCache: record.modelsCache,
+});
 
 export const flagDefaultsForKind = (kind: UpstreamProviderKind): FlagDefaults =>
   providersByKind[kind].defaultFlags;

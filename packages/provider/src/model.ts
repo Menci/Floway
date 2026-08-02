@@ -70,6 +70,17 @@ export interface ProxyFallbackEntry {
   colos?: string[];
 }
 
+// A cached projection of one upstream's catalog, stored on the upstream row.
+// `revision` is the catalog contract version the entry was written under, so a
+// deploy that changes the projection invalidates older entries; `lastError`
+// annotates a previously-successful entry whose refresh failed.
+export interface UpstreamModelsCache {
+  revision: number;
+  fetchedAt: number;
+  models: ProviderModel[];
+  lastError: { message: string; at: number } | null;
+}
+
 // One upstream's persisted record. `config` is a per-provider opaque payload;
 // `state` is gateway-managed runtime data.
 export interface UpstreamRecord {
@@ -84,6 +95,11 @@ export interface UpstreamRecord {
   // Gateway-written state that can change without an operator editing config;
   // null when a provider has no runtime state.
   state: unknown;
+  // The upstream's cached catalog, read on the same round trip as the row
+  // rather than through a second query. Null until the first successful fetch.
+  // Written only by the catalog refresh path — an operator save leaves it
+  // alone.
+  modelsCache: UpstreamModelsCache | null;
   flagOverrides: FlagOverrides;
   // Model ids the operator switched off for this upstream, matched against the
   // provider-emitted id before any model prefix is applied — so one entry hides

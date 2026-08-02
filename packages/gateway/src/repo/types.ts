@@ -243,19 +243,7 @@ export interface PerformanceRepo {
   deleteAll(): Promise<void>;
 }
 
-export interface ModelsCacheRow {
-  revision: number;
-  fetchedAt: number;
-  models: ProviderModel[];
-  lastError: { message: string; at: number } | null;
-}
 
-export interface ModelsCacheRepo {
-  get(upstreamId: string): Promise<ModelsCacheRow | null>;
-  put(upstreamId: string, row: { revision: number; fetchedAt: number; models: ProviderModel[] }): Promise<void>;
-  setLastError(upstreamId: string, error: { message: string; at: number } | null): Promise<void>;
-  delete(upstreamId: string): Promise<void>;
-}
 
 export interface WebSearchConfigRepo {
   get(): Promise<unknown>;
@@ -275,6 +263,11 @@ export interface UpstreamRepo {
   // time. On updated:false the caller re-reads and decides whether to retry
   // or drop the update.
   saveState(id: string, newState: unknown, options: { expectedState: unknown }): Promise<{ updated: boolean }>;
+  // Catalog-cache writes. Each touches only its own columns, so a refresh and a
+  // credential write to the same row do not contend — the credential CAS
+  // predicate reads `state_json` alone.
+  saveModelsCache(id: string, cache: { revision: number; fetchedAt: number; models: ProviderModel[] }): Promise<void>;
+  saveModelsCacheError(id: string, error: { message: string; at: number } | null): Promise<void>;
 }
 
 export interface ProxyRecord {
@@ -453,7 +446,6 @@ export interface Repo {
   usage: UsageRepo;
   webSearchUsage: WebSearchUsageRepo;
   performance: PerformanceRepo;
-  modelsCache: ModelsCacheRepo;
   webSearchConfig: WebSearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;

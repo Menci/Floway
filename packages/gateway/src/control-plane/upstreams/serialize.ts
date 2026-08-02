@@ -228,6 +228,7 @@ export const blueprintUpstreamRecord = (kind: UpstreamProviderKind): UpstreamRec
     proxyFallbackList: [] as ProxyFallbackEntry[],
     modelPrefix: null,
     color: null,
+    modelsCache: null,
   };
   switch (kind) {
   case 'copilot':

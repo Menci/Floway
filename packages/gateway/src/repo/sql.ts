@@ -16,10 +16,8 @@ import type {
   AgentSetupRenewal,
   AgentSetupRepository,
   BackoffRow,
-  ModelsCacheRow,
   ModelAliasesRepo,
   ModelAliasRecord,
-  ModelsCacheRepo,
   PerformanceBucketRow,
   PerformanceDimensions,
   PerformanceMetric,
@@ -53,7 +51,7 @@ import { assertWebSearchProviderName, type WebSearchConfig } from '../shared/web
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import type { SqlBindValue, SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
 import { addDecimalStrings, canonicalPricingSelectorKey, parseBillingMetric, parseModelKind, parseNonNegativeDecimalString, parsePricingSelectorKey, type AliasSelection, type AliasTarget, type AnnouncedMetadata } from '@floway-dev/protocols/common';
-import type { ProviderModel, ProxyFallbackEntry, ModelPrefixConfig, UpstreamRecord } from '@floway-dev/provider';
+import type { ProviderModel, ProxyFallbackEntry, ModelPrefixConfig, UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
 import { normalizeModelPrefix, parsePerformanceOperation } from '@floway-dev/provider';
 
 interface ApiKeyRow {
@@ -817,50 +815,6 @@ const modelsReplacer = (_key: string, value: unknown): unknown =>
 const modelsReviver = (key: string, value: unknown): unknown =>
   key === 'enabledFlags' && Array.isArray(value) ? new Set(value) : value;
 
-class SqlModelsCacheRepo implements ModelsCacheRepo {
-  constructor(private db: SqlDatabase) {}
-
-  async get(upstreamId: string): Promise<ModelsCacheRow | null> {
-    const row = await this.db
-      .prepare('SELECT revision, fetched_at, models_json, last_error_json FROM models_cache WHERE upstream_id = ?')
-      .bind(upstreamId)
-      .first<{ revision: number; fetched_at: number; models_json: string; last_error_json: string | null }>();
-    if (!row) return null;
-    return {
-      revision: row.revision,
-      fetchedAt: row.fetched_at,
-      models: JSON.parse(row.models_json, modelsReviver) as ProviderModel[],
-      lastError: row.last_error_json ? JSON.parse(row.last_error_json) as { message: string; at: number } : null,
-    };
-  }
-
-  async put(upstreamId: string, row: { revision: number; fetchedAt: number; models: ProviderModel[] }): Promise<void> {
-    await this.db
-      .prepare(
-        `INSERT INTO models_cache (upstream_id, revision, fetched_at, models_json, last_error_json) VALUES (?, ?, ?, ?, NULL)
-         ON CONFLICT (upstream_id) DO UPDATE SET
-           revision = excluded.revision,
-           fetched_at = excluded.fetched_at,
-           models_json = excluded.models_json,
-           last_error_json = NULL`,
-      )
-      .bind(upstreamId, row.revision, row.fetchedAt, JSON.stringify(row.models, modelsReplacer))
-      .run();
-  }
-
-  async setLastError(upstreamId: string, error: { message: string; at: number } | null): Promise<void> {
-    // lastError annotates a previously-successful fetch, so we do not insert a stub row here.
-    await this.db
-      .prepare('UPDATE models_cache SET last_error_json = ? WHERE upstream_id = ?')
-      .bind(error === null ? null : JSON.stringify(error), upstreamId)
-      .run();
-  }
-
-  async delete(upstreamId: string): Promise<void> {
-    await this.db.prepare('DELETE FROM models_cache WHERE upstream_id = ?').bind(upstreamId).run();
-  }
-}
-
 class SqlWebSearchConfigRepo implements WebSearchConfigRepo {
   constructor(private db: SqlDatabase) {}
 
@@ -908,14 +862,14 @@ class SqlUpstreamRepo implements UpstreamRepo {
 
   async list(): Promise<UpstreamRecord[]> {
     const { results } = await this.db
-      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, color FROM upstreams ORDER BY sort_order, created_at')
+      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, models_json, models_fetched_at, models_revision, models_last_error_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, color FROM upstreams ORDER BY sort_order, created_at')
       .all<UpstreamRow>();
     return results.map(toUpstreamRecord);
   }
 
   async getById(id: string): Promise<UpstreamRecord | null> {
     const row = await this.db
-      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, color FROM upstreams WHERE id = ?')
+      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, models_json, models_fetched_at, models_revision, models_last_error_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, color FROM upstreams WHERE id = ?')
       .bind(id)
       .first<UpstreamRow>();
     return row ? toUpstreamRecord(row) : null;
@@ -973,6 +927,25 @@ class SqlUpstreamRepo implements UpstreamRepo {
   // state_json is SQL NULL still matches when the caller passes
   // expectedState: null. The serialized form here must equal what save()
   // wrote for the predicate to hold on the back-to-back write path.
+  // Written only here and never by save(): an operator edit carries whatever
+  // catalog the request happened to read, and folding that back in would let a
+  // rename race a refresh.
+  async saveModelsCache(id: string, cache: { revision: number; fetchedAt: number; models: ProviderModel[] }): Promise<void> {
+    await this.db
+      .prepare('UPDATE upstreams SET models_json = ?, models_fetched_at = ?, models_revision = ?, models_last_error_json = NULL WHERE id = ?')
+      .bind(JSON.stringify(cache.models, modelsReplacer), cache.fetchedAt, cache.revision, id)
+      .run();
+  }
+
+  // Annotates a previously-successful entry; an upstream that has never cached
+  // a catalog has nothing to annotate, so the row's other columns stay null.
+  async saveModelsCacheError(id: string, error: { message: string; at: number } | null): Promise<void> {
+    await this.db
+      .prepare('UPDATE upstreams SET models_last_error_json = ? WHERE id = ? AND models_json IS NOT NULL')
+      .bind(error === null ? null : JSON.stringify(error), id)
+      .run();
+  }
+
   async saveState(id: string, newState: unknown, options: { expectedState: unknown }): Promise<{ updated: boolean }> {
     const result = await this.db
       .prepare('UPDATE upstreams SET state_json = ? WHERE id = ? AND state_json IS ?')
@@ -992,6 +965,10 @@ interface UpstreamRow {
   updated_at: string;
   config_json: string;
   state_json: string | null;
+  models_json: string | null;
+  models_fetched_at: number | null;
+  models_revision: number | null;
+  models_last_error_json: string | null;
   flag_overrides: string;
   disabled_public_model_ids: string;
   proxy_fallback_list_json: string;
@@ -1018,6 +995,7 @@ const toUpstreamRecord = (row: UpstreamRow): UpstreamRecord => {
   return {
     id: row.id,
     kind: parseUpstreamKind(row.id, row.provider),
+    modelsCache: parseModelsCache(row),
     name: row.name,
     enabled: row.enabled !== 0,
     sortOrder: row.sort_order,
@@ -1030,6 +1008,30 @@ const toUpstreamRecord = (row: UpstreamRow): UpstreamRecord => {
     proxyFallbackList: parseProxyFallbackList(row.id, row.proxy_fallback_list_json),
     modelPrefix: parseModelPrefix(row.id, row.model_prefix_json),
     color: parseUpstreamColor(row.id, row.color),
+  };
+};
+
+// A row that has never cached a catalog carries nulls in all four columns; a
+// partially-populated set means the row was written by something other than
+// saveModelsCache, which is a bug rather than a state to tolerate.
+const parseModelsCache = (row: UpstreamRow): UpstreamModelsCache | null => {
+  if (row.models_json === null) return null;
+  if (row.models_fetched_at === null || row.models_revision === null) {
+    throw new Error(`Upstream ${row.id} has a cached catalog without its fetch stamp`);
+  }
+  let models: ProviderModel[];
+  try {
+    models = JSON.parse(row.models_json, modelsReviver) as ProviderModel[];
+  } catch (cause) {
+    throw new Error(`Malformed upstream models cache JSON for ${row.id}`, { cause });
+  }
+  return {
+    revision: row.models_revision,
+    fetchedAt: row.models_fetched_at,
+    models,
+    lastError: row.models_last_error_json === null
+      ? null
+      : JSON.parse(row.models_last_error_json) as { message: string; at: number },
   };
 };
 
@@ -1633,7 +1635,6 @@ export class SqlRepo implements Repo {
   usage: UsageRepo;
   webSearchUsage: WebSearchUsageRepo;
   performance: PerformanceRepo;
-  modelsCache: ModelsCacheRepo;
   webSearchConfig: WebSearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
@@ -1652,7 +1653,6 @@ export class SqlRepo implements Repo {
     this.usage = new SqlUsageRepo(db);
     this.webSearchUsage = new SqlWebSearchUsageRepo(db);
     this.performance = new SqlPerformanceRepo(db);
-    this.modelsCache = new SqlModelsCacheRepo(db);
     this.webSearchConfig = new SqlWebSearchConfigRepo(db);
     this.upstreams = new SqlUpstreamRepo(db);
     this.proxies = new SqlProxyRepo(db);

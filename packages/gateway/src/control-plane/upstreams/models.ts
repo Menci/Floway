@@ -65,6 +65,9 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
     color: null,
     config: record.config,
     state: record.state,
+    // A draft is built from the request envelope and lists models live, so it
+    // never carries a cached catalog.
+    modelsCache: null,
   };
 
   let fetcher: Fetcher;

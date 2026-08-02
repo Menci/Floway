@@ -56,13 +56,13 @@ const runFetch = async (
 ): Promise<ProviderModel[]> => {
   try {
     const models = [...await instance.instance.getProvidedModels(fetcher)];
-    await getRepo().modelsCache.put(key, { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now(), models });
+    await getRepo().upstreams.saveModelsCache(key, { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now(), models });
     return models;
   } catch (err) {
-    // `setLastError` is a no-op when no stored row exists; a brand-new
-    // upstream that fails its first fetch surfaces the error to the
-    // caller with nothing persisted.
-    await getRepo().modelsCache.setLastError(key, { message: errorMessage(err), at: Date.now() });
+    // A no-op on an upstream with no cached catalog: a brand-new upstream that
+    // fails its first fetch surfaces the error to the caller with nothing
+    // persisted.
+    await getRepo().upstreams.saveModelsCacheError(key, { message: errorMessage(err), at: Date.now() });
     throw err;
   }
 };
@@ -79,8 +79,9 @@ export const fetchUpstreamModelsCached = async (
     return await memoInFlight(key, () => runFetch(instance, fetcher, key));
   }
 
-  const stored = await getRepo().modelsCache.get(key);
-  const cached = stored?.revision === MODEL_CATALOG_REVISION ? stored : null;
+  // Read off the instance rather than queried: the row that produced this
+  // provider carried its catalog, so the SWR check costs nothing.
+  const cached = instance.modelsCache?.revision === MODEL_CATALOG_REVISION ? instance.modelsCache : null;
 
   if (cached && now - cached.fetchedAt < SOFT_MS) {
     return cached.models;
