@@ -93,15 +93,48 @@ export const dialogCss = `
 /* Fluent normally makes DialogContent the browser-scroll viewport. Here it is
    only the minmax grid cell around ScrollArea: doubled class specificity keeps
    Griffel's runtime-injected overflow-y:auto from winning by stylesheet order.
-   https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-dialog/library/src/components/DialogContent/useDialogContentStyles.styles.ts#L16-L31 */
+
+   Fluent also spends that cell's padding on a focus gutter, with an equal
+   negative margin putting the text back on the title's edge. The gutter has to
+   move inside the scrollport -- a scrollport clips at its own edge, so padding
+   outside it does not hold an overhang -- but the outset stays here, and stays
+   the same length, because WinUI lays Title and Content out in one Grid under a
+   single ContentDialogPadding: the content has no inset the title lacks, in
+   either axis. The length is FocusVisualMargin, the 3px a WinUI focus visual is
+   drawn outside the control it belongs to.
+   https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-dialog/library/src/components/DialogContent/useDialogContentStyles.styles.ts#L16-L31
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L233-L246
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L167 */
 .fui-DialogContent.fui-DialogContent {
+  --floway-dialog-focus-gutter: 3px;
+  padding: 0;
+  margin: 0 calc(-1 * var(--floway-dialog-focus-gutter));
   min-height: 0;
   overflow: hidden;
 }
 
-/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L17 */
+/* ContentDialog presents its content with TextWrapping="Wrap", which breaks
+   inside a word rather than letting an over-long one out of the dialog; the
+   messages here name user-chosen upstreams, aliases and keys, and carry server
+   text. 'anywhere' rather than 'break-word' because the content is a grid whose
+   items would otherwise keep the unbroken word as their automatic minimum size
+   and overflow the scrollport instead of wrapping in it.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L246
+   https://drafts.csswg.org/css-text-4/#overflow-wrap-property */
+.floway-dialog-shell__scrollport {
+  padding-inline: var(--floway-dialog-focus-gutter);
+  overflow-wrap: anywhere;
+}
+
+/* ContentDialogTitleMargin, and the Title presenter's TextWrapping="Wrap" --
+   several titles interpolate a user-chosen alias, key or username. Its
+   MaxLines="2" is not transcribed: XAML clips the rest with nothing to reveal
+   it, and the surface here can afford the line.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L17
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L241 */
 .fui-DialogTitle.fui-DialogTitle {
   margin-bottom: 12px;
+  overflow-wrap: anywhere;
 }
 
 /* CommandSpace spans the dialog whatever the actions' position prop says, breaks

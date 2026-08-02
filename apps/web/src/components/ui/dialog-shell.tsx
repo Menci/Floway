@@ -46,14 +46,8 @@ export function DialogShell({ actions, children, maxWidth, onExited, onOpenChang
         >
           <DialogBody className="floway-dialog-shell__body">
             {title}
-            <DialogContent className="floway-dialog-shell__content !p-0">
-              {/* A full-width control reaches 3px past its border box for its
-                  focus outline, and the scrollport, its host and DialogContent
-                  all clip on the identical rect. The gutter goes on the
-                  scrollport, the innermost, so the other two have nothing left
-                  to cut; pulling it back out with a negative margin only pushes
-                  the content under DialogContent's own clip. */}
-              <ScrollArea axes="vertical" className="floway-dialog-shell__scroller h-full min-h-0" contentClassName="grid gap-4" viewportClassName="px-[3px]">
+            <DialogContent className="floway-dialog-shell__content">
+              <ScrollArea axes="vertical" className="floway-dialog-shell__scroller h-full min-h-0" contentClassName="grid gap-4" viewportClassName="floway-dialog-shell__scrollport">
                 {children}
               </ScrollArea>
             </DialogContent>
