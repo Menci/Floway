@@ -1079,7 +1079,6 @@ const zhHansCN = {
         actions: {
           create: '新建代理',
           save: '保存代理',
-          saveSuccess: '代理已保存。',
           editNamed: '编辑代理 {{name}}',
           test: '测试',
           delete: '删除',
@@ -1092,7 +1091,7 @@ const zhHansCN = {
           failed: '测试失败：{{error}}',
         },
         toast: {
-          save: { pending: '正在保存代理 {{name}}' },
+          save: { pending: '正在保存代理 {{name}}', success: '已保存代理 {{name}}' },
           delete: { pending: '正在删除代理 {{name}}', success: '已删除代理 {{name}}' },
           backoff: { pending: '正在重置退避', success: '退避已重置。' },
         },

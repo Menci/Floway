@@ -1142,7 +1142,6 @@ const en = {
         actions: {
           create: 'New proxy',
           save: 'Save proxy',
-          saveSuccess: 'Proxy saved.',
           editNamed: 'Edit proxy {{name}}',
           test: 'Test',
           delete: 'Delete',
@@ -1155,7 +1154,7 @@ const en = {
           failed: 'Test failed: {{error}}',
         },
         toast: {
-          save: { pending: 'Saving proxy {{name}}' },
+          save: { pending: 'Saving proxy {{name}}', success: 'Saved proxy {{name}}' },
           delete: { pending: 'Deleting proxy {{name}}', success: 'Deleted proxy {{name}}' },
           backoff: { pending: 'Resetting backoff', success: 'Backoff reset.' },
         },

@@ -124,7 +124,7 @@ export function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
       return;
     }
     onOpenChange(false);
-    handle.succeed(t('dashboard.proxy.actions.saveSuccess'));
+    handle.succeed(t('dashboard.proxy.toast.save.success', { name: body.name }));
     await onSaved();
   }, [config, dialTimeout.error, dialTimeout.value, editingId, formName, onOpenChange, onSaved, saving, t, toasts, urlError, urlInput]);
   const handleTest = useCallback(async () => {
@@ -174,6 +174,7 @@ export function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
     />
     {testResult && <OutcomeMessageBar
       intent={testResult.ok ? 'success' : 'error'}
+      onDismiss={() => setTestResult(null)}
       title={testResult.ok ? t('dashboard.proxy.test.ok') : t('dashboard.proxy.test.failed', { error: testResult.error })}
     >{testResult.ok && t('dashboard.proxy.test.egressIp', { ip: testResult.egress_ip })}</OutcomeMessageBar>}
     {saveError && <OutcomeMessageBar onDismiss={() => setSaveError(null)}>{saveError}</OutcomeMessageBar>}

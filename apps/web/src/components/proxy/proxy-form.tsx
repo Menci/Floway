@@ -117,7 +117,9 @@ export function ProxyForm({
         >
           <Input
             inputMode="numeric"
+            min={1}
             onChange={(_, d) => onPortChange(d.value)}
+            type="number"
             value={String(config.port)}
           />
         </Field>
@@ -286,19 +288,18 @@ export function ProxyForm({
               value={(config as TrojanProxyConfig).sni ?? ''}
             />
           </Field>
-          <Field label={t('dashboard.proxy.form.allowInsecure')}>
-            <Switch
-              checked={
-                (config as TrojanProxyConfig).allowInsecure ?? false
-              }
-              onChange={(_, d) =>
-                setConfig(prev => ({
-                  ...prev,
-                  allowInsecure: d.checked ? true : undefined,
-                } as TrojanProxyConfig))
-              }
-            />
-          </Field>
+          <Switch
+            checked={
+              (config as TrojanProxyConfig).allowInsecure ?? false
+            }
+            label={t('dashboard.proxy.form.allowInsecure')}
+            onChange={(_, d) =>
+              setConfig(prev => ({
+                ...prev,
+                allowInsecure: d.checked ? true : undefined,
+              } as TrojanProxyConfig))
+            }
+          />
         </div>
       )}
 

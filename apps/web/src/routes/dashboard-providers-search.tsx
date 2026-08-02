@@ -196,7 +196,7 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
   const handleSave = useCallback(async () => {
     setSaving(true);
     setSaveError(null);
-    const handle = toasts.start(t('dashboard.searchConfig.saving'));
+    const handle = toasts.start(t('dashboard.searchConfig.toast.save.pending'));
     const result = await callApi(() =>
       api.api['search-config'].$put({ json: draft }));
     setSaving(false);
@@ -205,7 +205,7 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
       setSaveError(result.error.message);
       return;
     }
-    handle.succeed(t('dashboard.searchConfig.saveSuccess'));
+    handle.succeed(t('dashboard.searchConfig.toast.save.success'));
   }, [draft, t, toasts]);
 
   const handleTest = useCallback(async () => {
