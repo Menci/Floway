@@ -1,6 +1,7 @@
-// Field, InfoLabel and Link restyled to the WinUI 3 look. None of the three has
-// a WinUI counterpart control, so the rules below take their values from the
-// roles they stand in for.
+// Field and InfoLabel restyled to the WinUI 3 look; neither has a WinUI
+// counterpart control, so their rules take their values from the roles they
+// stand in for. Link does have two: the inline Hyperlink and the standalone
+// HyperlinkButton, which agree on colour and differ only on the underline.
 //
 // The accent text ramp a Link walks appears in no theme dictionary as a
 // literal, so ../tokens.ts transcribes the ramp Windows generates for its own
@@ -124,6 +125,24 @@ export const fieldCss = `
   color: var(--winui-accent-text-fill-tertiary);
 }
 
+/* Whether a hyperlink underlines. WinUI 3 ships HyperlinkUnderlineVisible as
+   False, inverting the value dxaml's generic.xaml still carries, and its two
+   hyperlink forms read that flag differently: HyperlinkButton drops the
+   underline in every state, while the inline Hyperlink keeps it at rest and
+   drops it under the pointer. Fluent is the exact inverse -- no underline at
+   rest, one on hover and press -- so the pointer states are taken away here
+   and the rest state is left to Fluent's inline prop, which stands for the
+   same distinction and already carries the underline the inline form wants.
+   Focused links are exempt because Fluent says focus with a doubled underline.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Hyperlink_themeresources.xaml#L20
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/text/TextBlock/Hyperlink.cpp#L669-L671
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/HyperLinkButton_Partial.cpp#L207-L212
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L5926 */
+.fui-Link.fui-Link:not([data-fui-focus-visible]):hover,
+.fui-Link.fui-Link:not([data-fui-focus-visible]):active {
+  text-decoration-line: none;
+}
+
 /* A focused link. WinUI's two concentric rings 3px outside the control cannot
    follow an inline link across a line break, so Fluent's doubled underline
    stays and only its stroke takes WinUI's outer focus colour. Unscoped because
@@ -150,10 +169,12 @@ export const fieldCss = `
 }
 
 /* WinUI's HighContrast dictionary takes the hyperlink off the accent ramp onto
-   system colours. All four steps are named rather than left to the user agent
-   because Fluent renders an href-less Link as a <button>, which would take
-   ButtonText instead of the hyperlink colour. A media query adds no
-   specificity, so each selector repeats the one it overrides.
+   system colours, and is the one theme where both hyperlink forms draw the
+   underline unconditionally, so the rule above is undone here. All four colour
+   steps are named rather than left to the user agent because Fluent renders an
+   href-less Link as a <button>, which would take ButtonText instead of the
+   hyperlink colour. A media query adds no specificity, so each selector
+   repeats the one it overrides.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/HyperlinkButton_themeresources.xaml#L34-L38
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L2083
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L2097
@@ -161,6 +182,12 @@ export const fieldCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L2026
    https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
 @media (forced-colors: active) {
+  .fui-Link.fui-Link,
+  .fui-Link.fui-Link:not([data-fui-focus-visible]):hover,
+  .fui-Link.fui-Link:not([data-fui-focus-visible]):active {
+    text-decoration-line: underline;
+  }
+
   .fui-Link.fui-Link[data-winui-appearance='default']:not([aria-disabled='true']) {
     color: LinkText;
   }
