@@ -1,20 +1,11 @@
-// Colour math the dashboard needs outside a component: the HSV / RGB / HEX
-// conversions the upstream colour picker edits in, and the WCAG contrast the
-// provider badge resolves an operator-chosen hue against. Kept here so the math
-// is unit-testable without rendering.
-//
-// `badgeHueStyle` is the only caller of `blendHex` and `readableTone`. They
-// stay exported for the unit tests, which pin the empirical reasoning written
-// down at `readableTone` directly rather than through a rendered badge.
-//
 // HSV coordinates: hue in [0, 360), saturation/value in [0, 1]. HEX is
 // the canonical wire form (`#RRGGBB`, upper-or-lower case accepted).
 
 import { UPSTREAM_COLOR_HEX_REGEX } from '@floway-dev/provider/model';
 import type { UpstreamColor } from '@floway-dev/provider/model';
 
-// Alias for the canonical wire regex so the picker validates hex against
-// the same rule the control-plane schema enforces.
+// Aliased so the picker validates hex against the same rule the control-plane
+// schema enforces.
 export const HEX_RE = UPSTREAM_COLOR_HEX_REGEX;
 
 export const hsvToRgb = (h: number, s: number, v: number): [number, number, number] => {
@@ -60,6 +51,7 @@ export const rgbToHsv = (r: number, g: number, b: number): [number, number, numb
 };
 
 // WCAG 2.x relative luminance and contrast, over sRGB.
+// https://www.w3.org/TR/WCAG21/#dfn-relative-luminance
 const relativeLuminance = ([r, g, b]: [number, number, number]): number => {
   const channel = (value: number) => {
     const s = value / 255;
@@ -73,7 +65,6 @@ const contrastRatio = (a: [number, number, number], b: [number, number, number])
   return x > y ? x / y : y / x;
 };
 
-/** `hex` at `alpha` composited over `backdrop`, both opaque, as a new hex. */
 export const blendHex = (hex: string, alpha: number, backdrop: string): string => {
   const top = hexToRgb(hex);
   const bottom = hexToRgb(backdrop);
@@ -87,21 +78,11 @@ const BLACK: [number, number, number] = [0, 0, 0];
 const WHITE: [number, number, number] = [255, 255, 255];
 
 /**
- * The nearest tone of `hex` that reads as text on `surface`, found by moving
- * HSV value toward or away from the surface and only then desaturating.
- *
- * A colour a person picked for an upstream is an identity, not a foreground:
- * it is chosen against whichever scheme that person happened to be in, and the
- * same literal then has to label a chip on a near-white card and on a near-black
- * one. Hue is what carries the identity, so hue is what this holds fixed; value
- * moves first because it costs the least recognition, and saturation gives way
- * only where value alone cannot get there.
- *
- * Which hues those are depends on the direction. Darkening always works — every
- * hue reaches black — so on a light surface value alone suffices, a saturated
- * yellow included. Brightening does not: a fully saturated blue reads 1.24:1 on
- * its own chip over a washed dark card at full value, and cannot be made lighter
- * without losing saturation, because its channels are already at their limit.
+ * The nearest tone of `hex` that reads as text on `surface`. Hue carries the
+ * upstream's identity, so hue is held fixed; value moves first because it costs
+ * the least recognition, and saturation gives way only where value alone cannot
+ * arrive: a fully saturated blue reads 1.24:1 over a washed dark card at full
+ * value and cannot brighten further, its channels already at their limit.
  */
 export const readableTone = (hex: string, surface: string): string => {
   const rgb = hexToRgb(hex);
@@ -110,11 +91,9 @@ export const readableTone = (hex: string, surface: string): string => {
   if (contrastRatio(rgb, surfaceRgb) >= TEXT_CONTRAST_FLOOR) return hex;
 
   const [h, s, v] = rgbToHsv(...rgb);
-  // Which way to move is decided by which extreme actually clears the floor,
-  // not by whether the surface is light. A mid surface can be too dark for
-  // black and too light for white; between luminance 0.183 and 0.5 white misses
-  // the floor while black clears it, so a lightness test would search the one
-  // direction that cannot arrive.
+  // Which extreme actually clears the floor, not whether the surface is light:
+  // between luminance 0.183 and 0.5 white misses the floor while black clears
+  // it, so a lightness test would search the direction that cannot arrive.
   const darken = contrastRatio(BLACK, surfaceRgb) > contrastRatio(WHITE, surfaceRgb);
   const STEPS = 100;
 
@@ -125,40 +104,20 @@ export const readableTone = (hex: string, surface: string): string => {
       if (contrastRatio(candidate, surfaceRgb) >= TEXT_CONTRAST_FLOOR) return rgbToHex(...candidate);
     }
   }
-  // The saturation ladder steps by a tenth, so unless the colour's own
-  // saturation is a multiple of a tenth the last rung stops short of zero and
-  // still carries a trace of hue. That trace only costs anything on a mid
-  // surface, where the extreme that wins is itself barely over the floor and
-  // the rung misses. The extreme is the answer there, and it always clears: the
-  // two ratios a surface gives black and white multiply to exactly 21, so the
-  // larger of them is never below sqrt(21), or about 4.58. No surface exists
-  // that neither extreme reads on.
+  // The saturation ladder stops short of zero unless the colour's saturation is
+  // a multiple of a tenth, so a mid surface can exhaust it. The extreme always
+  // clears: a surface's ratios against black and white multiply to exactly 21,
+  // so the larger is never below sqrt(21), about 4.58.
   return rgbToHex(...(darken ? BLACK : WHITE));
 };
 
-/** Whether an upstream's colour is a literal rather than one of the named tones. */
 export const isHexColor = (color: UpstreamColor | null): color is `#${string}` => color?.startsWith('#') === true;
 
-// The surface a badge's own fill composites over, which is what its label has
-// to read against. A badge sits on a card, in a dialog, and inside table and
-// list rows, so that surface is a range rather than one colour: a row washes
-// itself with WinUI's subtle pointer fills, and the request list marks its
-// selected row with Fluent's brand tint. The label is one literal per scheme,
-// so it is resolved against the end of the range that is hardest for it -- the
-// darkest surface in light, the lightest in dark -- and every other state then
-// reads with more contrast than the floor rather than less.
-//
-// In light the label is dark, and the darkest surface under it is the selected
-// request row: Fluent's brand 160, #EBF3FC. Next darkest is a white card washed
-// by SubtleFillColorSecondary -- #00000009 over white, or #F6F6F6 -- which is
-// lighter than that.
-//
-// In dark the label is light, and the lightest surface under it is a washed
-// card: CardBackgroundFillColorDefault #ffffff0d over
-// SolidBackgroundFillColorQuarternary #2c2c2c composites to #373737, and
-// SubtleFillColorSecondary #ffffff0f over that gives #434343. The dialog body
-// (#2B2B2B) and the selected request row (Fluent's brand 20, #082338) both sit
-// below it.
+// A badge's surface is a range -- card, dialog, washed and selected rows -- and
+// its label is one literal per scheme, so each is resolved against the end of
+// that range hardest for it: in light the selected request row (Fluent brand
+// 160, #EBF3FC); in dark a card washed by SubtleFillColorSecondary (#ffffff0f
+// over #373737, giving #434343).
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L26
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L56
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L71
@@ -171,18 +130,11 @@ const BADGE_FILL_ALPHA = 0.1;
 const BADGE_STROKE_ALPHA = 0.35;
 
 /**
- * A badge painted in an arbitrary hue: the hue at a tenth for the fill, at a
- * third for the stroke, and a label resolved against the fill rather than the
- * surface under it, because the wash moves the reading by enough to change the
- * answer.
- *
- * The fill and stroke need no light-dark pair -- they are fractions of the hue
- * and composite over whichever surface is beneath, so they follow the pointer
- * and selection states of that surface on their own. The label does: one
- * literal would be picked against one scheme and used in both, and one per
- * scheme cannot follow those states, which is why each is resolved against the
- * surface hardest for it. A forced palette repaints all three, so none of this
- * survives into high contrast, and none of it needs to.
+ * A badge painted in an arbitrary hue. The label is resolved against the fill
+ * rather than the surface under it, because the wash moves the reading by enough
+ * to change the answer. Fill and stroke need no light-dark pair: they are
+ * fractions of the hue and composite over whatever is beneath, following that
+ * surface's pointer and selection states on their own.
  */
 export const badgeHueStyle = (hue: string): Record<string, string> => {
   const label = (surface: string) => readableTone(hue, blendHex(hue, BADGE_FILL_ALPHA, surface));
