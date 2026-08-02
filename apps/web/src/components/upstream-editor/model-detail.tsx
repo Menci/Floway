@@ -66,8 +66,7 @@ export function ModelDetail({
     kind,
     endpoints: defaultEndpointsForKind(kind, row.config.endpoints),
     chat: kind === 'chat' ? row.config.chat : undefined,
-    // A rerank model is invalid without a target, so switching to the kind
-    // seeds the default protocol rather than leaving the config unsavable.
+    // A rerank model without a target cannot be saved.
     rerankTarget: kind === 'rerank' ? row.config.rerankTarget ?? { protocol: 'cohere-v2' } : undefined,
     ...(kind === 'image' ? { limits: undefined } : {}),
   });
@@ -117,11 +116,8 @@ export function ModelDetail({
         {validationError && <MessageBar intent="error"><MessageBarBody>{validationError}</MessageBarBody></MessageBar>}
 
         <ModelEditorSection title={t('dashboard.upstreamEditor.models.identity')}>
-          {/* Column count follows the room there is rather than the viewport:
-              this sits beside a 380px sidebar, so the width here and the width
-              a media query can see are two different numbers. Four fields fit
-              on one line when they can, and fall to two and then one as the
-              track minimum stops being met. */}
+          {/* This sits beside a 380px sidebar, so the available width and the
+              width a media query can see are two different numbers. */}
           <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4">
             <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.displayName')}>
               <Input className="!w-full" placeholder={t('dashboard.upstreamEditor.models.displayNamePlaceholder')} readOnly={fieldsReadOnly} value={row.config.display_name ?? ''} onChange={(_, data) => patch({ display_name: data.value || undefined })} />
@@ -142,8 +138,6 @@ export function ModelDetail({
           </div>
         </ModelEditorSection>
 
-        {/* Embedding, transcription, and rerank each address exactly one
-          endpoint, so there is nothing for the operator to choose. */}
         {ENDPOINT_CHOICE_KINDS.has(row.config.kind) && <ModelEditorSection title={t('dashboard.upstreamEditor.models.endpoints')}>
           <div className={`${TWO_COLUMN_FORM_CLASS} gap-2`}>
             {modelEndpointOptions(row.config.kind).map(([key, label]) => <Checkbox
@@ -286,9 +280,6 @@ const modelKindLabel = (kind: UpstreamModelConfig['kind']): string => {
   }
 };
 
-// What the editor's controls can hold but the model cannot mean, stated once
-// as a message key: the detail renders it on the model it belongs to, and the
-// submit schema asks the same question of every model.
 const editorFieldIssue = (model: UpstreamModelConfig): string | null => {
   const effort = model.chat?.reasoning?.effort;
   if (effort && (effort.supported.length === 0 || !effort.default || !effort.supported.includes(effort.default))) return 'dashboard.upstreamEditor.models.invalidEffort';
