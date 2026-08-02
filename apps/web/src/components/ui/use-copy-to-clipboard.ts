@@ -16,13 +16,9 @@ const COPY_OUTCOME_ICON = {
   failed: DismissRegular,
 } as const;
 
-// Rendered rather than returned as a component, because most copy buttons sit
-// inline inside a row's JSX with nowhere to bind a name.
 export const copyOutcomeIcon = (outcome: CopyOutcome): ReactElement =>
   createElement(COPY_OUTCOME_ICON[outcome]);
 
-// Only the resting label belongs to the call site, so that one is asked for
-// and the two outcome labels are not.
 const COPY_OUTCOME_LABEL_KEY = {
   copied: 'common.copy.copied',
   failed: 'common.copy.failed',
