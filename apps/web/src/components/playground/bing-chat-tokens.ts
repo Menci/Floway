@@ -27,21 +27,28 @@
 // Hover and active are the base gradient under a flat black wash, so the
 // button darkens as it is pressed.
 //
-// The wash is layered above the gradient here, and Balanced's own entry
-// layers it below. A background list paints first layer topmost, so a wash
-// written second sits under an opaque fill and paints nothing, which would
-// leave hover and active pixel-identical to rest. Creative and Precise,
-// declared in the same block from the same shape, write the wash first; that
-// is the order taken here, so hover and active read as the states they are
-// named for:
+// The three entries are one gradient and two alphas, and that is the shape
+// they are published in, because it is the only shape that can be eased.
+// `background-image` has a discrete animation type, so a rule that swaps one
+// composed gradient for another steps however it is transitioned, while
+// `background-color` animates by computed value and a wash painted over the
+// fill moves through its alpha:
+// https://www.w3.org/TR/css-backgrounds-3/#propdef-background-image
+// https://www.w3.org/TR/css-backgrounds-3/#propdef-background-color
+//
+// The wash sits above the gradient, and Balanced's own entry writes it below.
+// A background list paints its first layer topmost, so a wash written second
+// sits under an opaque fill and paints nothing, which would leave hover and
+// active pixel-identical to rest. Creative and Precise, declared in the same
+// block from the same shape, write the wash first; that is the order taken
+// here, so hover and active read as the states they are named for:
 // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/dark.scss#L268-L300
-const ACCENT_GRADIENT = 'linear-gradient(130deg, #2870EA 20%, #1B4AEF 77.5%)';
-const wash = (alpha: number) =>
-  `linear-gradient(0deg, rgba(0, 0, 0, ${alpha}), rgba(0, 0, 0, ${alpha})), ${ACCENT_GRADIENT}`;
+const wash = (alpha: number) => `rgba(0, 0, 0, ${alpha})`;
 
-export const bingAccentGradient = ACCENT_GRADIENT;
-export const bingAccentGradientHover = wash(0.1);
-export const bingAccentGradientActive = wash(0.2);
+export const bingAccentGradient = 'linear-gradient(130deg, #2870EA 20%, #1B4AEF 77.5%)';
+export const bingAccentWashResting = wash(0);
+export const bingAccentWashHover = wash(0.1);
+export const bingAccentWashActive = wash(0.2);
 
 // `cib-color-foreground-accent-balanced-{primary,secondary}`. Dark resolves
 // both steps to the same value, so an accent glyph does not change colour on
@@ -89,9 +96,18 @@ export const bingComposerRadiusFilled = '10px';
 // bar would grow downward into a strip holding nothing.
 
 // `static.motion.duration.fast` and `easingFunction.motionIn` — the duration
-// and easing the bar declares beside its own `transition-property`.
+// and easing the bar declares beside its own `transition-property`, and the
+// pair the compose button's fill declares beside its.
 export const bingComposerTransitionDuration = '187ms';
 export const bingComposerTransitionEasing = 'cubic-bezier(0, 0, 0, 1)';
+
+// `cib-action-bar`'s `.button-compose:active::before`. That pseudo-element
+// lists `transform` alone in its `transition-property`, so the press is the
+// one state change the original animates on this button; hover and active
+// restate its `background` and step. Search `.button-compose::before` in the
+// decompressed bundle for the rule and the two swaps beside it — the same
+// capture the accent above is read out of.
+export const bingComposePressScale = 'scale3d(0.971, 0.9583, 1)';
 
 // The bar's geometry is a function of its line, not a set of loose numbers:
 // Bing's `13px 11px` sums to 24px, exactly the Body2 line it sits around, so

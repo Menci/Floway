@@ -9,8 +9,9 @@ import {
   bingAccentForeground,
   bingAccentForegroundHover,
   bingAccentGradient,
-  bingAccentGradientActive,
-  bingAccentGradientHover,
+  bingAccentWashActive,
+  bingAccentWashHover,
+  bingAccentWashResting,
   bingCardShadow,
   bingComposerFontSize,
   bingComposerFontWeight,
@@ -27,6 +28,7 @@ import {
   bingComposerTransitionDuration,
   bingComposerTransitionEasing,
   bingComposeButtonSize,
+  bingComposePressScale,
   bingOnAccentForeground,
 } from './bing-chat-tokens';
 import broomUrl from '../../assets/broom.svg';
@@ -178,10 +180,18 @@ const useStyles = makeStyles({
       cursor: 'not-allowed',
     },
   },
-  // The paint is a pseudo-element filling a clipping button, as the original
-  // has it. That is what keeps the button unlifted, and it is also what the
-  // press animation acts on: the fill scales down inside the clip while the
-  // label it sits behind holds still.
+  // The paint is a pair of pseudo-elements filling a clipping button, as the
+  // original has it. That is what keeps the button unlifted, and it is also
+  // what the press animation acts on: the fill scales down inside the clip
+  // while the label it sits behind holds still.
+  //
+  // The original states the whole fill as one `background` and restates it per
+  // state, so the one property that carries hover and active is the one that
+  // cannot be interpolated; it transitions the press alone and lets the
+  // pointer step. The two are split here instead -- `::before` holds the
+  // gradient, which is the same in every state, and `::after` holds the black
+  // wash, whose alpha is the whole of what hover and active change. Both take
+  // the press scale, so the fill stays one shape while it runs.
   newTopicButton: {
     position: 'relative',
     height: bingComposeButtonSize,
@@ -200,23 +210,33 @@ const useStyles = makeStyles({
       inset: 0,
       borderRadius: 'inherit',
       backgroundImage: bingAccentGradient,
-      // Both of the things the fill changes are transitioned. The press scales
-      // it and the pointer swaps its gradient, and animating one while the
-      // other cuts leaves the button answering a hover instantly and a press
-      // over time.
-      transitionProperty: 'transform, background-image',
+      transitionProperty: 'transform',
       transitionDuration: bingComposerTransitionDuration,
       transitionTimingFunction: bingComposerTransitionEasing,
-      // The press scales the fill, which alters its perceived size, so it is
-      // the kind of motion the OS setting is about. The gradient swap beside it
-      // is colour and stays, so the button still answers a press when animation
-      // is off -- it just answers without travel.
+      // The press alters the fill's perceived size, so it is the kind of
+      // motion the OS setting is about, and it is answered without travel.
       '@media (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
     },
-    '&:enabled:hover::before': { backgroundImage: bingAccentGradientHover },
-    '&:enabled:active::before': {
-      backgroundImage: bingAccentGradientActive,
-      transform: 'scale3d(0.971, 0.9583, 1)',
+    '&::after': {
+      content: '""',
+      position: 'absolute',
+      inset: 0,
+      borderRadius: 'inherit',
+      backgroundColor: bingAccentWashResting,
+      // The wash takes the fill duration every button in the layer answers a
+      // pointer with, and the curve that rule leaves at its initial value; the
+      // press keeps the original's own timing beside it. Under the OS setting
+      // both collapse, as the layer's button fill does.
+      transitionProperty: 'transform, background-color',
+      transitionDuration: `${bingComposerTransitionDuration}, var(--winui-control-faster-animation-duration)`,
+      transitionTimingFunction: `${bingComposerTransitionEasing}, ease`,
+      '@media (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
+    },
+    '&:enabled:hover::after': { backgroundColor: bingAccentWashHover },
+    '&:enabled:active::before': { transform: bingComposePressScale },
+    '&:enabled:active::after': {
+      backgroundColor: bingAccentWashActive,
+      transform: bingComposePressScale,
     },
     // The resting outline is transparent, so it takes the focus ring's slot
     // without painting; the original hands the slot back at focus as a 2px ring
@@ -227,14 +247,16 @@ const useStyles = makeStyles({
     // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/globals.scss#L121
     // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/dark.scss#L107
     '&:focus-visible': { outline: '2px solid light-dark(#111111, #FAF9F8)' },
-    // Held to `:enabled` above, so a disabled button neither brightens under
-    // the pointer nor scales when it is pressed on.
+    // Held to `:enabled` above, so a disabled button neither darkens under the
+    // pointer nor scales when it is pressed on.
     '&:disabled': { opacity: 0.5, cursor: 'not-allowed' },
   },
-  // Above the fill, which is absolutely positioned and would otherwise paint
-  // over the label and the broom.
+  // Above both fill layers, which are absolutely positioned siblings of this
+  // one; the wash is generated after it and would otherwise paint over the
+  // label and the broom as well as over the gradient.
   newTopicContent: {
     position: 'relative',
+    zIndex: 1,
     display: 'flex',
     alignItems: 'center',
     gap: '6px',
