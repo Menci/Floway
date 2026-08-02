@@ -183,7 +183,7 @@ function DisabledModelsCombobox({ catalogAvailable, discovered }: { catalogAvail
       </Option>)}
     </Combobox>
     {missing.length > 0 && <MessageBar intent="warning" layout="multiline">
-      <MessageBarBody className="break-words">{t('dashboard.upstreamEditor.disabledModelsMissing', { models: missing.join(', ') })}</MessageBarBody>
+      <MessageBarBody>{t('dashboard.upstreamEditor.disabledModelsMissing', { models: missing.join(', ') })}</MessageBarBody>
     </MessageBar>}
   </div>;
 }
