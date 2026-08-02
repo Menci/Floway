@@ -5,11 +5,12 @@ import {
   EditRegular,
   WarningRegular,
 } from '@fluentui/react-icons';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation, useNavigate } from 'react-router';
 
 import type { Route } from './+types/dashboard-providers-upstreams';
+import { revalidateOnPathnameChange } from './revalidation';
 import { requireDashboardAdmin } from './route-guards';
 import { api, callApi } from '../api/client';
 import type {
@@ -25,9 +26,11 @@ import { ReorderButtons } from '../components/ui/reorder-buttons';
 import { ResourceListActions, ResourceListEmptyState, ResourceListPanel } from '../components/ui/resource-list';
 import { useRowTitleClass } from '../components/ui/row-title';
 import { ScrollArea } from '../components/ui/scroll-area';
-import { TableActions, TableActionsHeader, TableCentredCell, TableCentredHeader } from '../components/ui/table-actions';
+import { TABLE_ACTIONS_WIDTH, TableActions, TableActionsHeader, TableCentredCell, TableCentredHeader } from '../components/ui/table-actions';
+import { TableColumns } from '../components/ui/table-columns';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
+import { useRefresh } from '../components/ui/use-refresh';
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
 import { fluentComponents } from '../fluent';
 import { dateTime } from '../lib/format-time';
@@ -67,8 +70,7 @@ interface LoaderData {
 type Mutation =
   | { kind: 'toggle'; id: string; name: string }
   | { kind: 'reorder'; id: string; name: string }
-  | { kind: 'delete'; id: string; name: string }
-  | { kind: 'reload' };
+  | { kind: 'delete'; id: string; name: string };
 
 const PROVIDER_MENU_ORDER: readonly UpstreamProviderKind[] = [
   'custom',
@@ -86,10 +88,13 @@ const menuRank = (kind: UpstreamProviderKind) => {
 
 const providers = ALL_PROVIDER_KINDS.toSorted((a, b) => menuRank(a) - menuRank(b));
 
-const loadPageData = async (): Promise<LoaderData> => {
+const loadPageData = async (signal?: AbortSignal): Promise<LoaderData> => {
   const [upstreamsResult, modelsResult] = await Promise.all([
-    callApi(() => api.api.upstreams.$get()),
-    callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } })),
+    callApi(() => api.api.upstreams.$get(undefined, { init: { signal } })),
+    callApi(() => api.api.models.$get(
+      { query: { aliases: 'false', include_unlisted: 'true' } },
+      { init: { signal } },
+    )),
   ]);
   return {
     upstreams: upstreamsResult.data?.sort(compareUpstreams) ?? null,
@@ -104,21 +109,22 @@ export async function clientLoader(): Promise<LoaderData> {
   return await loadPageData();
 }
 
+// The page strips the missing-upstream flag from the search after announcing
+// it, and that navigation must not refetch what the loader already delivered.
+export const shouldRevalidate = revalidateOnPathnameChange;
+
 export default function DashboardProvidersUpstreams({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const toasts = useOutcomeToasts();
-  // Seeded from the loader, then owned by the page: the effect below strips the
-  // missing-upstream flag from the URL, which re-runs the loader, so deriving
-  // from the loader payload would wipe the message the effect just wrote.
+  // Seeded from the loader, then owned by the page: every refresh and every
+  // optimistic mutation writes here, so the loader payload is only first paint.
   const [data, setData] = useState(loaderData);
   const [pageError, setPageError] = useState(loaderData.loadError);
   const [mutation, setMutation] = useState<Mutation | null>(null);
   const deleteDialog = useDialogInvocation<UpstreamRecord>();
   const [deleteError, setDeleteError] = useState<string | null>(null);
-
-  const mutating = mutation !== null;
 
   const openDeleteDialog = (record: UpstreamRecord) => {
     setDeleteError(null);
@@ -140,25 +146,29 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   // Delete is excluded because it owns its handle: it has a success line to
   // announce, and that has to update the toast the pending line already holds.
   const mutationKind = mutation?.kind ?? null;
-  const mutationName = mutation !== null && mutation.kind !== 'reload' ? mutation.name : null;
+  const mutationName = mutation?.name ?? null;
   useEffect(() => {
     if (!mutationKind || mutationKind === 'delete') return;
     const handle = toasts.start(t(`dashboard.upstreams.toast.${mutationKind}.pending`, { name: mutationName }));
     return () => handle.settle();
   }, [mutationKind, mutationName, t, toasts]);
 
-  const reload = async (): Promise<LoaderData> => {
-    const next = await loadPageData();
+  const { refresh: reload, refreshing } = useRefresh(useCallback(async (signal: AbortSignal) => {
+    const next = await loadPageData(signal);
+    if (signal.aborted) return;
     setData(next);
     setPageError(next.loadError);
-    return next;
-  };
+  }, []));
 
-  const handleReload = async () => {
-    setMutation({ kind: 'reload' });
+  // Row controls stay locked through the resync a mutation ends with, and
+  // through a refresh the operator asked for on its own.
+  const busy = mutation !== null || refreshing;
+
+  const handleRefresh = async () => {
     setPageError(null);
+    const handle = toasts.start(t('dashboard.upstreams.toast.reload.pending'));
     await reload();
-    setMutation(null);
+    handle.settle();
   };
 
   const setEnabled = async (record: UpstreamRecord, enabled: boolean) => {
@@ -206,13 +216,14 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     const error = first.error ?? second.error;
     if (error) {
       setData(current => ({ ...current, upstreams: snapshot }));
-      const synced = await reload();
-      setPageError(
+      await reload();
+      // The resync has already written its own outcome into the page error, so
+      // the updater reads it to decide whether the list on screen is trustworthy.
+      setPageError(syncError =>
         t('dashboard.upstreams.errors.reorder', {
           message: error.message,
-          sync: synced.loadError ? t('dashboard.upstreams.errors.syncFailed') : '',
-        }),
-      );
+          sync: syncError ? t('dashboard.upstreams.errors.syncFailed') : '',
+        }));
       setMutation(null);
       return;
     }
@@ -267,10 +278,10 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
               </MenuPopover>
             </Menu>
           )}
-          disabled={mutating}
-          onRefresh={() => void handleReload()}
+          disabled={busy}
+          onRefresh={() => void handleRefresh()}
           refreshLabel={t('dashboard.upstreams.actions.refresh')}
-          refreshing={mutation?.kind === 'reload'}
+          refreshing={refreshing}
         />}
         description={t('dashboard.pages.upstreams')}
         title={t('dashboard.nav.upstreams')}
@@ -289,7 +300,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
       <ResourceListPanel rowHeight="56px">
         <UpstreamsTable
           data={data}
-          mutating={mutating}
+          busy={busy}
           mutation={mutation}
           onDelete={openDeleteDialog}
           onEdit={record => void navigate(`/dashboard/providers/upstreams/${encodeURIComponent(record.id)}`, pageNavigation)}
@@ -315,16 +326,16 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
 }
 
 function UpstreamsTable({
+  busy,
   data,
-  mutating,
   mutation,
   onDelete,
   onEdit,
   onMove,
   onToggle,
 }: {
+  busy: boolean;
   data: LoaderData;
-  mutating: boolean;
   mutation: Mutation | null;
   onDelete: (record: UpstreamRecord) => void;
   onEdit: (record: UpstreamRecord) => void;
@@ -344,8 +355,8 @@ function UpstreamsTable({
 
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
-      <Table aria-label={t('dashboard.upstreams.table.title')} className="min-w-[860px] table-fixed">
-        <colgroup><col className="w-[120px]" /><col className="w-[140px]" /><col className="w-[300px]" /><col className="w-[140px]" /><col className="w-[90px]" /><col className="w-[70px]" /></colgroup>
+      <Table aria-label={t('dashboard.upstreams.table.title')} className="min-w-[900px] table-fixed">
+        <TableColumns widths={['120px', '140px', '300px', '140px', '90px', TABLE_ACTIONS_WIDTH]} />
         <TableHeader>
           <TableRow>
             <TableHeaderCell>{t('dashboard.upstreams.table.priority')}</TableHeaderCell>
@@ -364,7 +375,7 @@ function UpstreamsTable({
                 <div className="inline-flex items-center gap-1">
                   <Text className="text-fui-fg3 min-w-[22px] text-center">{index + 1}</Text>
                   <ReorderButtons
-                    disabled={mutating}
+                    disabled={busy}
                     downLabel={t('dashboard.upstreams.actions.moveDown', { name: record.name })}
                     isFirst={index === 0}
                     isLast={index === upstreams.length - 1}
@@ -400,21 +411,21 @@ function UpstreamsTable({
                 <Switch
                   aria-label={t('dashboard.upstreams.actions.toggle', { name: record.name })}
                   checked={record.enabled}
-                  disabled={mutating}
+                  disabled={busy}
                   onChange={(_, detail) => onToggle(record, detail.checked)}
                 />
               </TableCentredCell>
               <TableCell>
                 <TableActions>
                   <TooltipIconButton
-                    disabled={mutating}
+                    disabled={busy}
                     icon={<EditRegular />}
                     label={t('dashboard.upstreams.actions.editNamed', { name: record.name })}
                     onClick={() => onEdit(record)}
                   />
                   <TooltipIconButton
                     danger
-                    disabled={mutating && !deleting}
+                    disabled={busy && !deleting}
                     disabledFocusable={deleting}
                     icon={deleting ? <Spinner size="tiny" /> : <DeleteRegular />}
                     label={t('dashboard.upstreams.actions.deleteNamed', { name: record.name })}

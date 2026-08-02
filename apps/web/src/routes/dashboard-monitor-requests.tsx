@@ -1,5 +1,5 @@
 import { DismissRegular } from '@fluentui/react-icons';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router';
 
@@ -19,6 +19,8 @@ import { OpenLinkLabel } from '../components/ui/open-link-label';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { RouteLink } from '../components/ui/route-link';
+import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
+import { useRefresh } from '../components/ui/use-refresh';
 import { fluentComponents } from '../fluent';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
 import { useMediaQuery } from '../lib/use-media-query';
@@ -94,32 +96,26 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
     setSearchParams(next, { replace: true });
   }, [setSearchParams]);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    const refresh = () => refreshRequestKeys({
-      currentKeys: keys,
-      load: signal => callApi(() => api.api.keys.$get(undefined, { init: { signal } })),
-      onNavigate: nextSelectedKeyId => {
-        const next = new URLSearchParams();
-        if (nextSelectedKeyId) next.set('key', nextSelectedKeyId);
-        void navigate(`/dashboard/monitor/requests${next.size ? `?${next}` : ''}`, { replace: true });
-      },
-      onUpdate: (nextKeys, error) => setReplacement(current => ({
-        source: loaderData,
-        keys: nextKeys,
-        keysError: error,
-        recordsError: current?.source === loaderData ? current.recordsError : loaderData.recordsError,
-      })),
-      selectedKeyId: loaderData.selectedKeyId,
-      signal: controller.signal,
-    });
-    const onFocus = () => { void refresh(); };
-    window.addEventListener('focus', onFocus);
-    return () => {
-      controller.abort();
-      window.removeEventListener('focus', onFocus);
-    };
-  }, [keys, loaderData, navigate]);
+  const reloadKeys = useCallback((signal: AbortSignal) => refreshRequestKeys({
+    currentKeys: keys,
+    load: keySignal => callApi(() => api.api.keys.$get(undefined, { init: { signal: keySignal } })),
+    onNavigate: nextSelectedKeyId => {
+      const next = new URLSearchParams();
+      if (nextSelectedKeyId) next.set('key', nextSelectedKeyId);
+      void navigate(`/dashboard/monitor/requests${next.size ? `?${next}` : ''}`, { replace: true });
+    },
+    onUpdate: (nextKeys, error) => setReplacement(current => ({
+      source: loaderData,
+      keys: nextKeys,
+      keysError: error,
+      recordsError: current?.source === loaderData ? current.recordsError : loaderData.recordsError,
+    })),
+    selectedKeyId: loaderData.selectedKeyId,
+    signal,
+  }), [keys, loaderData, navigate]);
+
+  const { poll } = useRefresh(reloadKeys);
+  usePollWhileVisible(poll);
 
   // One bar reports whichever of the three sources failed, so a dismissal clears all three.
   const dismissListError = () => {
