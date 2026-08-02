@@ -86,7 +86,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
     const refreshed = await refreshAuth();
     if (!refreshed) {
       const error = useAuthStore.getState().error;
-      if (error) setPageError(error);
+      if (error) setPageError(error.message);
     }
   };
 

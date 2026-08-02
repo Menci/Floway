@@ -59,9 +59,8 @@ describe('auth store request ownership', () => {
 
     await useAuthStore.getState().refresh();
 
-    expect(useAuthStore.getState().status).toBe('authenticated');
     expect(useAuthStore.getState().user).toEqual(newUser);
-    expect(useAuthStore.getState().error).toBe('Unavailable');
+    expect(useAuthStore.getState().error).toEqual({ status: 503, message: 'Unavailable' });
   });
 
   it('does not let a stale 401 clear a newer token', async () => {

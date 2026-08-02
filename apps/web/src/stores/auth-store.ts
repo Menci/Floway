@@ -2,16 +2,13 @@ import { create } from 'zustand';
 import type { StoreApi } from 'zustand';
 
 import { getCurrentSession, type AuthUser, type LoginResponse } from '../api/auth';
-import { api } from '../api/client';
+import { api, type GlobalError } from '../api/client';
 import { clearSessionToken, getSessionToken, onSessionInvalidated } from '../auth/session';
 
-type AuthStatus = 'idle' | 'loading' | 'authenticated' | 'unauthenticated' | 'error';
-
 interface AuthStore {
-  status: AuthStatus;
   token: string | null;
   user: AuthUser | null;
-  error: string | null;
+  error: GlobalError | null;
   clear: () => void;
   logout: () => Promise<void>;
   initialize: () => Promise<AuthUser | null>;
@@ -37,12 +34,15 @@ const loadSession = (
   }
 
   const state = get();
-  if (!force && state.status === 'authenticated' && state.token === token && state.user) {
+  // The in-flight check comes first: a pending request keeps the previous user
+  // in place when the token is unchanged, so the cached-session fast path below
+  // would otherwise resolve a caller from an identity the request may replace.
+  if (sessionRequest?.token === token) return sessionRequest.promise;
+  if (!force && state.token === token && state.user) {
     return Promise.resolve(state.user);
   }
-  if (sessionRequest?.token === token) return sessionRequest.promise;
 
-  set({ status: 'loading', token, user: state.token === token ? state.user : null, error: null });
+  set({ token, user: state.token === token ? state.user : null, error: null });
   const requestId = {};
   const promise = getCurrentSession().then(result => {
     if (sessionRequest?.id !== requestId || getSessionToken() !== token) {
@@ -51,7 +51,7 @@ const loadSession = (
     }
     sessionRequest = null;
     if (result.data) {
-      set({ status: 'authenticated', token, user: result.data.user, error: null });
+      set({ token, user: result.data.user, error: null });
       return result.data.user;
     }
     if (result.error.status === 401) {
@@ -59,8 +59,7 @@ const loadSession = (
       return null;
     }
     const current = get();
-    const user = current.token === token ? current.user : null;
-    set({ status: user ? 'authenticated' : 'error', token, user, error: result.error.message });
+    set({ token, user: current.token === token ? current.user : null, error: result.error });
     return null;
   });
   sessionRequest = { id: requestId, token, promise };
@@ -68,7 +67,6 @@ const loadSession = (
 };
 
 export const useAuthStore = create<AuthStore>((set, get) => ({
-  status: 'idle',
   token: null,
   user: null,
   error: null,
@@ -77,7 +75,6 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     sessionRequest = null;
     clearSessionToken();
     set({
-      status: 'unauthenticated',
       token: null,
       user: null,
       error: null,
@@ -103,7 +100,6 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   primeFromLogin: session => {
     sessionRequest = null;
     set({
-      status: 'authenticated',
       token: session.token,
       user: session.user,
       error: null,

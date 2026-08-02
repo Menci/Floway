@@ -34,7 +34,7 @@ export async function clientLoader() {
   const user = await useAuthStore.getState().initialize();
   if (user) return null;
   const error = useAuthStore.getState().error;
-  if (error) throw new Error(error);
+  if (error) throw new Error(error.message, { cause: error });
   throw redirect('/');
 }
 
