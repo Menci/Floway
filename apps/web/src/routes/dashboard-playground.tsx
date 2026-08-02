@@ -433,7 +433,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
               />
             )}
           </div>
-          <ScrollArea ref={scrollRef} axes="vertical" className="min-h-0 -mx-1.5" contentClassName="flex min-h-full flex-col" noTabIndex viewportClassName="px-1.5">
+          <ScrollArea ref={scrollRef} axes="vertical" className="min-h-0 -m-1.5" contentClassName="flex min-h-full flex-col" noTabIndex viewportClassName="p-1.5">
             {loadError && <OutcomeMessageBar className="!mb-3" onDismiss={() => setLoadError(null)}>{loadError}</OutcomeMessageBar>}
             {requestError && <OutcomeMessageBar className="!mb-3" onDismiss={() => setRequestError(null)}>{requestError}</OutcomeMessageBar>}
             {/* The transcript speaks for itself and nothing else. A missing key

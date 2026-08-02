@@ -48,7 +48,7 @@ export function UpstreamConfigSidebar({
 }) {
   const { t } = useTranslation();
   const { control, formState: { errors } } = useFormContext<UpstreamEditorValues>();
-  return <ScrollArea axes="vertical" className="h-full min-h-0 max-[1050px]:h-auto" noTabIndex>
+  return <ScrollArea axes="vertical" className="h-full min-h-0 max-[1050px]:h-auto" noTabIndex viewportClassName="scroll-py-1">
     <div className="p-[18px_20px_28px]">
       <aside className="grid gap-7">
         <EditorSection required title={t('dashboard.upstreamEditor.fields.name')}>

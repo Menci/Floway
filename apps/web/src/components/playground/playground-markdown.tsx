@@ -126,10 +126,22 @@ const useStyles = makeStyles({
     margin: `${tokens.spacingVerticalM} 0`,
     paddingLeft: tokens.spacingHorizontalM,
   },
+  // Chrome makes an overflowing scroller focusable when nothing inside it can
+  // take focus, and a markdown table holds nothing that can, so this box is a
+  // tab stop. Its ring is drawn inward for the same reason ../ui/code-block.tsx
+  // draws its own that way: the table has to meet the message's text column, so
+  // there is no room outside the box to put a ring in, and the box that clips is
+  // the scrollport itself -- a gutter could only go on the host, which is
+  // outside the clip and buys the ring nothing.
   tableScroll: {
     minWidth: 0,
     marginTop: tokens.spacingVerticalM,
     marginBottom: tokens.spacingVerticalM,
+    '& :focus-visible': {
+      boxShadow: 'inset 0 0 0 3px var(--winui-focus-stroke-inner)',
+      outline: '2px solid var(--winui-focus-stroke-outer)',
+      outlineOffset: '-2px',
+    },
   },
   table: {
     borderCollapse: 'collapse',
