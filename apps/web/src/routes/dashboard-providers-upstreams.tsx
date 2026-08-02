@@ -351,8 +351,9 @@ function UpstreamsTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {upstreams.map((record, index) => (
-            <TableRow key={record.id}>
+          {upstreams.map((record, index) => {
+            const deleting = mutation?.kind === 'delete' && mutation.id === record.id;
+            return <TableRow key={record.id}>
               <TableCell>
                 <div className="inline-flex items-center gap-1">
                   <Text className="text-fui-fg3 min-w-[22px] text-center">{index + 1}</Text>
@@ -406,15 +407,16 @@ function UpstreamsTable({
                   />
                   <TooltipIconButton
                     danger
-                    disabled={mutating}
-                    icon={mutation?.kind === 'delete' && mutation.id === record.id ? <Spinner size="tiny" /> : <DeleteRegular />}
+                    disabled={mutating && !deleting}
+                    disabledFocusable={deleting}
+                    icon={deleting ? <Spinner size="tiny" /> : <DeleteRegular />}
                     label={t('dashboard.upstreams.actions.deleteNamed', { name: record.name })}
                     onClick={() => onDelete(record)}
                   />
                 </TableActions>
               </TableCell>
-            </TableRow>
-          ))}
+            </TableRow>;
+          })}
         </TableBody>
       </Table>
     </ScrollArea>
