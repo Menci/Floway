@@ -63,6 +63,35 @@ export const dialogCss = `
   box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
 }
 
+/* The default close action is a bare button carrying Fluent's reset and no
+   fui-Button class, so nothing in ../controls/button.css.ts reaches it and the
+   reset itself declares only inherited colours with no pointer branch -- the
+   glyph answered neither hover nor press. A close glyph inside a WinUI surface
+   is TeachingTip's AlternateCloseButton: the subtle fill ramp under a
+   foreground that holds primary until the press. A call site that passes a real
+   Button is excluded, since that button already carries its own ramp.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip_themeresources.xaml#L12-L19
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-dialog/library/src/components/DialogTitle/useDialogTitleStyles.styles.ts#L36-L52 */
+.fui-DialogTitle__action > button:not(.fui-Button) {
+  border-radius: var(--winui-control-corner-radius);
+  background-color: var(--winui-subtle-fill-transparent);
+}
+
+.fui-DialogTitle__action > button:not(.fui-Button):hover {
+  background-color: var(--winui-subtle-fill-secondary);
+}
+
+.fui-DialogTitle__action > button:not(.fui-Button):active {
+  background-color: var(--winui-subtle-fill-tertiary);
+  color: var(--winui-text-fill-secondary);
+}
+
+/* The surface's second focus stroke, on the dialog's other focusable part.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L259 */
+.fui-DialogTitle__action > button:not(.fui-Button)[data-fui-focus-visible]::after {
+  box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
+}
+
 /* The body takes over the 24px ContentDialogPadding the surface gave up, and
    drops Fluent's gap: WinUI's bands abut, and the step under the title is a
    margin on the title itself. The cap sits here, less the 1px border on each

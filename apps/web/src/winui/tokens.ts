@@ -161,6 +161,14 @@ export const winuiTokenCss = `
   }
 }
 
+/* The light-dismiss layer behind a modal surface. One value serves both
+   schemes: the Default and Light dictionaries state the same colour.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L59
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L263 */
+:root {
+  --winui-smoke-fill-default: #0000004d;
+}
+
 /* The in-app acrylic material, taken as the flat FallbackColor the brush
    declares: CSS has no counterpart to WinUI's luminosity/tint/noise blend, so a
    surface filled with it reads opaque where WinUI lets the page through.

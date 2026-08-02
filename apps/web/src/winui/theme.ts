@@ -23,6 +23,12 @@ const palette = {
   colorSubtleBackgroundPressed: 'var(--winui-subtle-fill-tertiary)',
   colorSubtleBackgroundSelected: 'var(--winui-subtle-fill-secondary)',
 
+  // Every modal surface Fluent dims behind reads one overlay token, and WinUI
+  // states one smoke for all of them and the same value in both schemes, where
+  // Fluent's darkens with the theme.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L7
+  colorBackgroundOverlay: 'var(--winui-smoke-fill-default)',
+
   // ControlElevationBorderBrush is a gradient and a Fluent token carries one
   // stop, so all three states resolve to its dominant Default stop; the edge
   // highlight is drawn from --winui-control-elevation-border-color instead.
