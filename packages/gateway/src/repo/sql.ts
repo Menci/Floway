@@ -923,10 +923,6 @@ class SqlUpstreamRepo implements UpstreamRepo {
     await this.db.prepare('DELETE FROM upstreams').run();
   }
 
-  // `IS` (not `=`) so NULL on either side compares correctly — a row whose
-  // state_json is SQL NULL still matches when the caller passes
-  // expectedState: null. The serialized form here must equal what save()
-  // wrote for the predicate to hold on the back-to-back write path.
   // Written only here and never by save(): an operator edit carries whatever
   // catalog the request happened to read, and folding that back in would let a
   // rename race a refresh.
@@ -946,6 +942,10 @@ class SqlUpstreamRepo implements UpstreamRepo {
       .run();
   }
 
+  // `IS` (not `=`) so NULL on either side compares correctly — a row whose
+  // state_json is SQL NULL still matches when the caller passes
+  // expectedState: null. The serialized form here must equal what save()
+  // wrote for the predicate to hold on the back-to-back write path.
   async saveState(id: string, newState: unknown, options: { expectedState: unknown }): Promise<{ updated: boolean }> {
     const result = await this.db
       .prepare('UPDATE upstreams SET state_json = ? WHERE id = ? AND state_json IS ?')

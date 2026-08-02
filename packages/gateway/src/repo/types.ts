@@ -243,8 +243,6 @@ export interface PerformanceRepo {
   deleteAll(): Promise<void>;
 }
 
-
-
 export interface WebSearchConfigRepo {
   get(): Promise<unknown>;
   save(config: WebSearchConfig): Promise<void>;

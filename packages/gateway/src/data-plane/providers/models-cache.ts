@@ -6,8 +6,8 @@ import type { Fetcher, Provider, ProviderModel } from '@floway-dev/provider';
 // upstream call. Past SOFT but within HARD, the stored row is still served
 // while a background revalidate refreshes it. Past HARD a fresh fetch is
 // required and blocks the caller; a failed background revalidate within
-// HARD leaves the row in place and only annotates `last_error_json`, which
-// is also the rationale for treating SOFT/HARD as a single SWR window
+// HARD leaves the row in place and only annotates `models_last_error_json`,
+// which is also the rationale for treating SOFT/HARD as a single SWR window
 // rather than introducing a separate fail-back tier.
 const SOFT_MS = 10 * 60 * 1000;
 const HARD_MS = 24 * 60 * 60 * 1000;
@@ -91,8 +91,8 @@ export const fetchUpstreamModelsCached = async (
     // Joining L1 here means a second request arriving mid-flight does
     // not enqueue a second background task. The trailing `.catch` is the
     // sink for the background branch only — `runFetch` already persists
-    // the failure via `setLastError` before rethrowing, so the SWR caller
-    // who got `cached.models` does not need to learn about it.
+    // the failure via `saveModelsCacheError` before rethrowing, so the SWR
+    // caller who got `cached.models` does not need to learn about it.
     scheduler(memoInFlight(key, () => runFetch(instance, fetcher, key)).catch(() => {}));
     return cached.models;
   }
