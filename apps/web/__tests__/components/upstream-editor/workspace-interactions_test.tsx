@@ -81,8 +81,9 @@ function Harness() {
 const models = (key: string) => i18n.t(`dashboard.upstreamEditor.models.${key}`);
 // A row's delete command names the model it acts on, so the count queries match
 // the command by its stem rather than by a whole label they would have to build
-// a name for.
-const deleteCommandStem = i18n.t('dashboard.upstreamEditor.models.deleteNamed', { name: '\u0000' }).split('\u0000')[0]!;
+// a name for. A just-appended model has no name yet, and an accessible name is
+// trimmed, so the stem is matched without its trailing separator.
+const deleteCommandStem = i18n.t('dashboard.upstreamEditor.models.deleteNamed', { name: '\u0000' }).split('\u0000')[0]!.trimEnd();
 const deleteCommands = () => screen.getAllByLabelText(new RegExp(`^${deleteCommandStem}`));
 
 describe('upstream model workspace field-array transitions', () => {
