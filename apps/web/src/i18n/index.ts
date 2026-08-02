@@ -5,8 +5,8 @@ import {
   defaultLanguage,
   htmlLanguageFor,
   supportedLanguages,
-} from './i18n/languages';
-import { resources } from './i18n/resources';
+} from './languages';
+import { resources } from './resources';
 
 void i18n.use(initReactI18next).init({
   resources,
@@ -18,7 +18,7 @@ void i18n.use(initReactI18next).init({
   },
 });
 
-void i18n.on('languageChanged', language => {
+i18n.on('languageChanged', language => {
   if (typeof window !== 'undefined') {
     window.document.documentElement.lang = htmlLanguageFor(language);
   }
