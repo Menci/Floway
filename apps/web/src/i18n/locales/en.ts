@@ -994,7 +994,7 @@ const en = {
           replaceHint:
               'Clear all existing data before importing the backup file. Left unchecked, imported records are added alongside existing data and existing records with matching identifiers are overwritten.',
           replaceWarning:
-              'Replace mode will permanently delete all existing data before importing. This action cannot be undone.',
+              'All existing data is permanently deleted before the import runs. This cannot be undone.',
           button: 'Import Data',
           pending: 'Importing the backup file',
           success: 'Imported {{summary}}.',
