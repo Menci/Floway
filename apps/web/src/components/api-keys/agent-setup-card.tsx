@@ -308,17 +308,11 @@ function ModelSelect({ family, label, models, onChange, picker, value }: {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const catalog = useMemo(() => modelOptions(models, family, picker), [family, models, picker]);
-  // A pin the catalog no longer serves stays in the picker, marked and not
-  // choosable: the pin is still what the setup script writes, so showing
-  // Default instead would report a configuration the operator does not have.
-  const unavailablePin = value !== null && !catalog.some(option => option.value === value) ? value : null;
-  const options = useMemo(() => (unavailablePin === null
-    ? catalog
-    : [{ value: unavailablePin, label: t('dashboard.apiKeys.agentSetup.unavailable', { id: unavailablePin }) }, ...catalog]),
-  [catalog, t, unavailablePin]);
-  const selected = options.find(option => option.value === value) ?? null;
+  // A pin the catalog no longer serves resolves to Default: the picker offers
+  // what this gateway can serve today, and nothing else is choosable in it.
+  const selected = catalog.find(option => option.value === value) ?? null;
   const defaultLabel = t('dashboard.apiKeys.agentSetup.modelDefault');
-  const filtered = useMemo(() => filterModelOptions(options, query), [options, query]);
+  const filtered = useMemo(() => filterModelOptions(catalog, query), [catalog, query]);
   const defaultVisible = query === '' || defaultLabel.toLocaleLowerCase().includes(query.toLocaleLowerCase());
 
   return <Field label={label}>
@@ -332,14 +326,14 @@ function ModelSelect({ family, label, models, onChange, picker, value }: {
       onOpenChange={(_, data) => { setOpen(data.open); setQuery(''); }}
       onOptionSelect={(_, data) => {
         if (data.optionValue === MODEL_DEFAULT) onChange(null);
-        else if (typeof data.optionValue === 'string' && options.some(option => option.value === data.optionValue)) onChange(data.optionValue);
+        else if (typeof data.optionValue === 'string' && catalog.some(option => option.value === data.optionValue)) onChange(data.optionValue);
         setOpen(false);
         setQuery('');
       }}
     >
       {defaultVisible && <Option value={MODEL_DEFAULT}>{defaultLabel}</Option>}
       {filtered.map(option => (
-        <Option disabled={option.value === unavailablePin} key={option.value} text={option.label} value={option.value}>
+        <Option key={option.value} text={option.label} value={option.value}>
           <span className="font-mono truncate">{option.label}</span>
         </Option>
       ))}
