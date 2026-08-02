@@ -198,12 +198,14 @@ export const switchCss = `
    keep the growth centred on the track's leading edge until the press pushes it
    3px along, mirrored to a negative one once the knob has travelled.
 
-   The state is taken from the root rather than from the input. Fluent's input
-   is visually hidden and a pixel wide, so it never sees the pointer -- the
-   track does -- and keyed off the input these rules never fired at all. A drag
-   selects the same geometry outright, because ChangeVisualState answers Pressed
-   for the whole gesture and :active alone would not survive the pointer leaving
-   the control.
+   Pointer state is taken from the root, here and in every per-state rule
+   below. The drag calls setPointerCapture on the root at pointerdown, and the
+   engine then retargets the hover chain to the capture target, so from that
+   moment the input matches neither :hover nor :hover:active however hard it is
+   pressed -- keyed off the input a pressed rule paints the rest value, one step
+   back up the ramp from hover. A drag also selects Pressed outright, because
+   ChangeVisualState answers Pressed for the whole gesture and :active alone
+   would not survive the pointer leaving the control.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L231-L242
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L245-L324
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/ToggleSwitch_Partial.cpp#L63-L72 */
@@ -317,21 +319,23 @@ export const switchCss = `
      stroke and the knob at their rest values.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L136-L137
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L140-L141 */
-  .fui-Switch__input:enabled:not(:checked):not([aria-disabled='true']):hover ~ .fui-Switch__indicator.fui-Switch__indicator::before {
+  .fui-Switch:hover .fui-Switch__input:enabled:not(:checked):not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator::before {
     background-color: var(--winui-control-alt-fill-tertiary);
   }
 
-  .fui-Switch__input:enabled:not(:checked):not([aria-disabled='true']):hover:active ~ .fui-Switch__indicator.fui-Switch__indicator::before {
+  .fui-Switch:active .fui-Switch__input:enabled:not(:checked):not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator::before,
+  .fui-Switch[data-winui-switch-dragging] .fui-Switch__input:enabled:not(:checked):not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator::before {
     background-color: var(--winui-control-alt-fill-quarternary);
   }
 
   /* On: the accent fill ramp, on the capsule that carries it.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L144-L145 */
-  .fui-Switch__input:enabled:checked:not([aria-disabled='true']):hover ~ .fui-Switch__indicator.fui-Switch__indicator::after {
+  .fui-Switch:hover .fui-Switch__input:enabled:checked:not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator::after {
     background-color: var(--winui-accent-fill-secondary);
   }
 
-  .fui-Switch__input:enabled:checked:not([aria-disabled='true']):hover:active ~ .fui-Switch__indicator.fui-Switch__indicator::after {
+  .fui-Switch:active .fui-Switch__input:enabled:checked:not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator::after,
+  .fui-Switch[data-winui-switch-dragging] .fui-Switch__input:enabled:checked:not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator::after {
     background-color: var(--winui-accent-fill-tertiary);
   }
 
