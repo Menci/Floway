@@ -110,18 +110,23 @@ export const winuiTokenCss = `
   }
 }
 
-/* The control strong fill — the scroll bar thumb. It sits in the fill block of
-   the dictionaries rather than with the strokes above, so it carries its own
-   permalink.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L226 */
+/* The control strong fill -- the scroll bar thumb -- and the control solid
+   fill, the opaque backing a slider thumb rides on. Both sit in the fill block
+   of the dictionaries rather than with the strokes above, so they carry their
+   own permalinks.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L226
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L228 */
 :root {
   --winui-control-strong-fill-default: #00000072;
+  --winui-control-solid-fill-default: #ffffff;
 }
 
-/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L22 */
+/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L22
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L24 */
 @media (prefers-color-scheme: dark) {
   :root {
     --winui-control-strong-fill-default: #ffffff8b;
+    --winui-control-solid-fill-default: #454545;
   }
 }
 

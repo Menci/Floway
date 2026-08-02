@@ -13,10 +13,15 @@
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/core/elements/shape.cpp#L861-L870
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/core/elements/framework.cpp#L2211-L2214
 //
-// The expanded track takes the layer fill: AcrylicInAppFillColorDefaultBrush's
-// declared flat FallbackColor is opaque, and a track sits over the content it
-// scrolls.
+// The expanded track takes the acrylic in-app fill WinUI names for it, through
+// the flat FallbackColor that brush declares -- the same substitution every
+// other acrylic surface in this layer makes.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Materials/Acrylic/AcrylicBrush_themeresources.xaml#L96
+//
+// WinUI's increase and decrease buttons are deliberately dropped.
+// OverlayScrollbars renders a track and a handle and no button parts, and a
+// chevron synthesized on the rail would answer no click, so the strip would
+// grow two affordances that do nothing.
 //
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ScrollBar_themeresources.xaml#L26-L30
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ScrollBar_themeresources.xaml#L37-L38
@@ -91,7 +96,7 @@ ${host} .os-scrollbar .os-scrollbar-track {
 }
 
 ${host} .os-scrollbar:hover .os-scrollbar-track {
-  background-color: var(--winui-layer-fill-default);
+  background-color: var(--winui-acrylic-in-app-fill-default);
   transition-delay: 400ms;
 }
 

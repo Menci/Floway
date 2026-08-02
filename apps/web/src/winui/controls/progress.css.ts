@@ -87,7 +87,6 @@ export const progressCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressRing/ProgressRing_themeresources.xaml#L12-L14
    https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-spinner/library/src/components/Spinner/useSpinnerStyles.styles.ts#L44-L56 */
 .fui-Spinner__spinner.fui-Spinner__spinner {
-  --colorBrandStroke1: var(--winui-accent-fill-default);
   --colorBrandStroke2Contrast: var(--winui-control-fill-transparent);
   --fui-Spinner--strokeWidth: 25%;
 }
