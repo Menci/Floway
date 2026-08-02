@@ -10,7 +10,7 @@ overrides:
 
 patchedDependencies:
   '@fluentui/react-charts@9.3.22':
-    hash: c89af62c7f810394493af81d3c38b9b4bd88c709f3b03dcbf871c8a43ba79454
+    hash: 2acede5ce622e3530c27cdfe04ea4552d3b44609a4456ef6f082eca73cfa6d87
     path: patches/@fluentui__react-charts@9.3.22.patch
   '@reclaimprotocol/tls@0.1.2':
     hash: 8ed07af54e914cbcc2cea19ce7109635092cbbe35b9d2ad1bf55e3dfef1b8fd6
@@ -150,7 +150,7 @@ importers:
         version: link:../../packages/proxy
       '@fluentui/react-charts':
         specifier: ^9.3.22
-        version: 9.3.22(patch_hash=c89af62c7f810394493af81d3c38b9b4bd88c709f3b03dcbf871c8a43ba79454)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)
+        version: 9.3.22(patch_hash=2acede5ce622e3530c27cdfe04ea4552d3b44609a4456ef6f082eca73cfa6d87)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)
       '@fluentui/react-components':
         specifier: ^9.74.4
         version: 9.74.4(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)
@@ -5699,7 +5699,7 @@ snapshots:
     transitivePeerDependencies:
       - scheduler
 
-  '@fluentui/react-charts@9.3.22(patch_hash=c89af62c7f810394493af81d3c38b9b4bd88c709f3b03dcbf871c8a43ba79454)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)':
+  '@fluentui/react-charts@9.3.22(patch_hash=2acede5ce622e3530c27cdfe04ea4552d3b44609a4456ef6f082eca73cfa6d87)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)':
     dependencies:
       '@fluentui/chart-utilities': 1.1.39
       '@fluentui/react-button': 9.10.1(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)

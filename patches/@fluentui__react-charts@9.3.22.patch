@@ -30,9 +30,18 @@ index 1000ec66f9f2447b572ced78f9b106da400a6edc..e357bd63ab058cb245612e73481be022
          });
      }
 diff --git a/lib/components/CommonComponents/CartesianChart.js b/lib/components/CommonComponents/CartesianChart.js
-index 1ac969766a34f8da2957812edd55b935d9de8985..86baf193dcb8609104ddbfe5e3ce58180b44e041 100644
+index 1ac969766a34f8da2957812edd55b935d9de8985..8df3a2da2dbdaeb16f4d55968b4eee36a14253f6 100644
 --- a/lib/components/CommonComponents/CartesianChart.js
 +++ b/lib/components/CommonComponents/CartesianChart.js
+@@ -56,7 +56,7 @@ const DEFAULT_MARGIN_NO_TICKS = 20;
+         axis: 'horizontal'
+     });
+     // ComponentdidMount and Componentwillunmount logic
+-    React.useEffect(()=>{
++    React.useLayoutEffect(()=>{
+         _fitParentContainer();
+         if (props.showYAxisLables) {
+             const maxYAxisLabelLength = calculateMaxYAxisLabelLength(classes.yAxis);
 @@ -544,6 +544,7 @@ const DEFAULT_MARGIN_NO_TICKS = 20;
          ...focusAttributes,
          ...arrowAttributes
@@ -213,6 +222,31 @@ index 3eb0732414a7275dd80bfb99600e29fe7e5fd591..10d39cf46a0de9a10cb982aaa446f270
                  ...eventAnnotationProps,
                  scale: props.xScale,
                  chartYTop: margins.top + eventLabelHeight,
+diff --git a/lib/utilities/utilities.js b/lib/utilities/utilities.js
+index 0b5acb8f82a4655b3d6d59eafe123567738cb08d..a43c04ad7bde922589d25c0fc98d6b4119c66f4f 100644
+--- a/lib/utilities/utilities.js
++++ b/lib/utilities/utilities.js
+@@ -323,7 +323,10 @@ export function getDateFormatLevel(date, useUTC) {
+     ]).range([
+         domainNRangeValues.rStartValue,
+         domainNRangeValues.rEndValue
+-    ]).nice();
++    ]);
++    if (!tickParams.tickValues) {
++        xAxisScale.nice();
++    }
+     let tickCount = xAxisCount !== null && xAxisCount !== void 0 ? xAxisCount : 6;
+     let lowestFormatLevel = 100;
+     let highestFormatLevel = -1;
+@@ -1115,7 +1118,7 @@ export const wrapContent = (content, id, maxWidth)=>{
+             ...tickValues,
+             lDate
+         ]);
+-        if (hasMarkersMode || chartType === 7) {
++        if ((hasMarkersMode || chartType === 7) && tickValues.length === 0) {
+             const xPadding = getDomainPaddingForMarkers(sDate.getTime(), lDate.getTime());
+             sDate = new Date(sDate.getTime() - xPadding.start);
+             lDate = new Date(lDate.getTime() + xPadding.end);
 diff --git a/lib-commonjs/components/AreaChart/AreaChart.js b/lib-commonjs/components/AreaChart/AreaChart.js
 index 5204125c8498f697d3673b3017ec7e6cbbbe960e..2cd00a86ba8480e8b7f591a94458c0a240ceecb0 100644
 --- a/lib-commonjs/components/AreaChart/AreaChart.js
@@ -244,58 +278,19 @@ index 5204125c8498f697d3673b3017ec7e6cbbbe960e..2cd00a86ba8480e8b7f591a94458c0a2
              }
          });
      }
-diff --git a/lib/utilities/utilities.js b/lib/utilities/utilities.js
---- a/lib/utilities/utilities.js
-+++ b/lib/utilities/utilities.js
-@@ -320,7 +320,10 @@ export function createDateXAxis(xAxisParams, tickParams, culture, options, timeF
-     xAxisScale.domain([
-         domainNRangeValues.dStartValue,
-         domainNRangeValues.dEndValue
-     ]).range([
-         domainNRangeValues.rStartValue,
-         domainNRangeValues.rEndValue
--    ]).nice();
-+    ]);
-+    if (!tickParams.tickValues) {
-+        xAxisScale.nice();
-+    }
-@@ -1115,7 +1118,7 @@ export function domainRangeOfDateForAreaLineScatterVerticalBarCharts(points, mar
-             ...tickValues,
-             lDate
-         ]);
--        if (hasMarkersMode || chartType === 7) {
-+        if ((hasMarkersMode || chartType === 7) && tickValues.length === 0) {
-             const xPadding = getDomainPaddingForMarkers(sDate.getTime(), lDate.getTime());
-             sDate = new Date(sDate.getTime() - xPadding.start);
-             lDate = new Date(lDate.getTime() + xPadding.end);
-diff --git a/lib-commonjs/utilities/utilities.js b/lib-commonjs/utilities/utilities.js
---- a/lib-commonjs/utilities/utilities.js
-+++ b/lib-commonjs/utilities/utilities.js
-@@ -564,7 +564,10 @@ function createDateXAxis(xAxisParams, tickParams, culture, options, timeFormatLo
-     xAxisScale.domain([
-         domainNRangeValues.dStartValue,
-         domainNRangeValues.dEndValue
-     ]).range([
-         domainNRangeValues.rStartValue,
-         domainNRangeValues.rEndValue
--    ]).nice();
-+    ]);
-+    if (!tickParams.tickValues) {
-+        xAxisScale.nice();
-+    }
-@@ -1240,7 +1243,7 @@ function domainRangeOfDateForAreaLineScatterVerticalBarCharts(points, margins, w
-             ...tickValues,
-             lDate
-         ]);
--        if (hasMarkersMode || chartType === 7) {
-+        if ((hasMarkersMode || chartType === 7) && tickValues.length === 0) {
-             const xPadding = getDomainPaddingForMarkers(sDate.getTime(), lDate.getTime());
-             sDate = new Date(sDate.getTime() - xPadding.start);
-             lDate = new Date(lDate.getTime() + xPadding.end);
 diff --git a/lib-commonjs/components/CommonComponents/CartesianChart.js b/lib-commonjs/components/CommonComponents/CartesianChart.js
-index bcf76c184cfe345e19d58fb199b478c4005539b1..cc75e74609f9bd24c7836a7410f2f049e1ef0b1f 100644
+index bcf76c184cfe345e19d58fb199b478c4005539b1..23086786d556cd8b080437a32d2a504c48e04273 100644
 --- a/lib-commonjs/components/CommonComponents/CartesianChart.js
 +++ b/lib-commonjs/components/CommonComponents/CartesianChart.js
+@@ -64,7 +64,7 @@ const CartesianChart = /*#__PURE__*/ _react.forwardRef(({ hideTickOverlap = true
+         axis: 'horizontal'
+     });
+     // ComponentdidMount and Componentwillunmount logic
+-    _react.useEffect(()=>{
++    _react.useLayoutEffect(()=>{
+         _fitParentContainer();
+         if (props.showYAxisLables) {
+             const maxYAxisLabelLength = calculateMaxYAxisLabelLength(classes.yAxis);
 @@ -552,6 +552,7 @@ const CartesianChart = /*#__PURE__*/ _react.forwardRef(({ hideTickOverlap = true
          ...focusAttributes,
          ...arrowAttributes
@@ -476,3 +471,28 @@ index 9aa30c4008883b4910888cfeb3c4b2d9858f8efd..e150f6e6fd49341c6cfb0bbcaf7d24bb
                  ...eventAnnotationProps,
                  scale: props.xScale,
                  chartYTop: margins.top + eventLabelHeight,
+diff --git a/lib-commonjs/utilities/utilities.js b/lib-commonjs/utilities/utilities.js
+index 5c6ff58f9d48df22a503c82b4917824813927d8f..990b9a9f2944ddd0cf3654e631f13b79f55fda0e 100644
+--- a/lib-commonjs/utilities/utilities.js
++++ b/lib-commonjs/utilities/utilities.js
+@@ -567,7 +567,10 @@ function createDateXAxis(xAxisParams, tickParams, culture, options, timeFormatLo
+     ]).range([
+         domainNRangeValues.rStartValue,
+         domainNRangeValues.rEndValue
+-    ]).nice();
++    ]);
++    if (!tickParams.tickValues) {
++        xAxisScale.nice();
++    }
+     let tickCount = xAxisCount !== null && xAxisCount !== void 0 ? xAxisCount : 6;
+     let lowestFormatLevel = 100;
+     let highestFormatLevel = -1;
+@@ -1240,7 +1243,7 @@ function domainRangeOfDateForAreaLineScatterVerticalBarCharts(points, margins, w
+             ...tickValues,
+             lDate
+         ]);
+-        if (hasMarkersMode || chartType === 7) {
++        if ((hasMarkersMode || chartType === 7) && tickValues.length === 0) {
+             const xPadding = getDomainPaddingForMarkers(sDate.getTime(), lDate.getTime());
+             sDate = new Date(sDate.getTime() - xPadding.start);
+             lDate = new Date(lDate.getTime() + xPadding.end);
