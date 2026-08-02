@@ -23,28 +23,16 @@ const {
 } = fluentComponents;
 
 const useStyles = makeStyles({
-  // The accent half of what the upstreams column reports; the red half is the
-  // shared `useDangerTextClass`. Naming upstreams and reaching none are both
-  // states the column reports rather than actions, so both colours are
-  // resident where `useDangerActionClasses` is not. WinUI colours type with
-  // the accent text ramp rather than with the accent fill a button takes --
-  // the ramp is darkened in light and lightened in dark so it stays legible as
-  // text -- and it is the ramp Link and the toast action already run on, so a
-  // brand foreground here would put a second accent on the same screen.
+  // WinUI colours type with the accent text ramp rather than with the accent
+  // fill a button takes, and it is the ramp Link and the toast action already
+  // run on.
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L93
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L297
   accentText: { color: 'var(--winui-accent-text-fill-primary)' },
-  // The narrow row. Its fill through the whole subtle ramp, its radius, its
-  // content margin, its focus ring, its disablement and the accent bar that
-  // marks a selection all come from ../../winui/controls/list.css.ts, which
-  // states each of them on the doubled item class; only what a ListViewItem
-  // has no counterpart for is stated here. The row stacks four lines rather
-  // than centring one, so block padding holds the stack off the edges that
-  // WinUI's 40px minimum height otherwise keeps clear. The hairline is the
-  // divider family every other row separator in the dashboard reads; a card
-  // stroke is black in both themes -- 10% in dark, 6% in light -- which is a
-  // border around a surface rather than a line between rows and disappears
-  // against a dark page.
+  // Only what ../../winui/controls/list.css.ts has no ListViewItem counterpart
+  // for: the row stacks four lines rather than centring one, and the separator
+  // is a divider rather than a card stroke, which is black in both themes and
+  // disappears against a dark page.
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L46
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L250
   mobileItem: {
@@ -100,10 +88,8 @@ export function KeysTable({
       }),
       createTableColumn<ApiKey>({
         columnId: 'key', renderHeaderCell: () => t('dashboard.apiKeys.table.key'),
-        // Copying belongs beside the thing being copied, not at the far end of
-        // the row: the key is the only cell an operator reaches for by value,
-        // and it is elided, so the button is what makes the whole of it
-        // reachable.
+        // The key cell is elided, so the copy button is what makes the whole
+        // value reachable and belongs beside it.
         renderCell: key => {
           const copyTag = `key-${key.id}`;
           return (

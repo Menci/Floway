@@ -74,15 +74,12 @@ export const rankAgentSetupModels = (
 
 const ONE_MILLION_CONTEXT_TOKENS = 1_000_000;
 
-// Claude Code selects the one-million-token window through a `[1m]` suffix. Its
-// documentation names only the opus and sonnet pinned-model variables, but the
-// shipped CLI reads all four through one identity cast and keys every later
-// decision on the model string rather than on which variable supplied it: the
-// suffix's whole wire effect is to add the `context-1m-2025-08-07` beta and go
-// out stripped, behind a test that carries no family condition. Anthropic's own
-// model table marks Haiku as suffix-capable, and its Bedrock and Vertex wizards
-// pin all four tiers alike. So the omission is the document's, and every picker
-// is offered the window its model reports.
+// Claude Code selects the one-million-token window through a `[1m]` suffix.
+// The documentation names only the opus and sonnet pinned-model variables, but
+// the shipped CLI keys every later decision on the model string rather than on
+// which variable supplied it, and the suffix's whole wire effect is to add the
+// `context-1m-2025-08-07` beta behind a test carrying no family condition. So
+// every picker is offered the window its model reports.
 // https://code.claude.com/docs/en/model-config
 const claudeModelOverride = (model: ControlPlaneModel): string => {
   const contextWindow = model.limits.max_context_window_tokens

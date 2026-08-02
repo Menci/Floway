@@ -16,10 +16,9 @@ const SECONDS_PER_DAY = 24 * 60 * 60;
 // distinguishes them, so the caller says which one this control emits.
 export type RetentionValue = number | null | 'invalid';
 
-// The sentinel is a state of the editor, not a value the gateway has a name
-// for, so it is dropped at the point a form turns its draft into a request. A
-// form that submits one has already been let through by a rule that should
-// have refused it, and says so rather than inventing a period.
+// The sentinel is a state of the editor, so a form that submits one was let
+// through by a rule that should have refused it; throwing says so rather than
+// inventing a period.
 export const parsedRetention = <T extends number | null>(value: T | 'invalid'): T => {
   if (value === 'invalid') throw new TypeError('Unparseable retention reached the request body');
   return value;
@@ -58,14 +57,9 @@ const editorStateFor = (
     : '',
 });
 
-// A settings row whose trailing control is the period itself, so the row needs
-// no label of its own -- the header already names what is being retained.
-//
-// The list holds off and the presets, and a period outside them is typed into
-// the same control rather than into a second field beside it. That is what a
-// freeform combobox is for, and it also keeps the control inside the 240 a
-// settings row gives its action, where a two-column pair of fields had to take
-// half the dialog.
+// A freeform combobox rather than a list plus a second field: a period outside
+// the presets is typed into the same control, which keeps it inside the 240 a
+// settings row gives its action.
 // https://github.com/microsoft/PowerToys/blob/70e0fc22952c79c6e12dce4096f4b0692ded9d90/src/settings-ui/Settings.UI/SettingsXAML/App.xaml#L68
 export function RetentionField({
   children,
@@ -131,9 +125,8 @@ export function RetentionField({
     onChange(parsed);
   };
 
-  // The sentinel the control emits is the whole of the rule: re-parsing the
-  // draft here would state the same condition a second time and let the two
-  // disagree.
+  // Re-parsing the draft here would state the same condition twice and let the
+  // two disagree.
   const invalid = value === 'invalid';
   const displayValue = choice === 'off'
     ? offLabel
@@ -146,13 +139,9 @@ export function RetentionField({
     className="!w-auto flex-none"
     disabled={disabled}
     freeform
-    // The row's action is as wide as what it currently reads, not as wide
-    // as its widest option -- a settings row sizes its control to its
-    // value. An input has no intrinsic content width, so the character
-    // count is what states it, and the list is free to be wider: it hangs
-    // off the trailing edge and grows the other way. Where the row is an
-    // expander wide enough to afford it, ../ui/settings-card.tsx puts a floor
-    // under that measurement; the count still governs above the floor.
+    // A settings row sizes its control to its current value, and an input has
+    // no intrinsic content width, so the character count states it;
+    // ../ui/settings-card.tsx puts a floor under that on wide expander rows.
     input={{ size: displayValue.length + 1 }}
     listWidth="content"
     onChange={event => typeCustom(event.target.value)}
@@ -166,10 +155,8 @@ export function RetentionField({
     {presets.map(preset => <Option key={preset.seconds} value={`seconds:${preset.seconds}`}>{preset.label}</Option>)}
   </Combobox>;
 
-  // A period on its own is a plain row. What a row opens to reveal is whatever
-  // else the period brought with it -- for the captured requests, the way to go
-  // and read them -- so the row grows a disclosure exactly when there is
-  // something behind it.
+  // The row grows a disclosure exactly when the period brought something else
+  // with it, such as the way to go and read the captured requests.
   return <>
     {children === undefined
       ? <SettingsCard action={action} description={description} header={label} icon={icon} />

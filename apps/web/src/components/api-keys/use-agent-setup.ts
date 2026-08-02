@@ -246,12 +246,10 @@ export const useAgentSetup = (
     const loaded = createAttempt === 0 && initialResourceRef.current?.apiKeyId === apiKeyId
       ? initialResourceRef.current
       : null;
-    // The loader's lease is only good for the run that carried it. Once the
-    // lifecycle has run for another key — or for a retry — that lease has been
-    // released and its `expiresAt` is a deadline nothing is renewing, so
-    // returning to the first key must acquire a lease like any other selection
-    // rather than adopting the expired one. Discarding it here and not on the
-    // adopting pass keeps a re-entered lifecycle for the same key idempotent.
+    // The loader's lease is released once the lifecycle has run for another key
+    // or for a retry, so returning to the first key must acquire a fresh one.
+    // Discarding here rather than on the adopting pass keeps a re-entered
+    // lifecycle for the same key idempotent.
     if (!loaded) initialResourceRef.current = null;
     setCreateError(loaded?.error ?? null);
     setSaveError(null);
@@ -293,14 +291,10 @@ export const useAgentSetup = (
     return cleanup;
   }, [abortRequests, adoptLease, apiKeyId, createAttempt, request, scheduleHeartbeat]);
 
-  // The debounce is restarted by an edit, and only by an edit. The lease and
-  // the draft are read here as presence -- what the save sends is whatever
-  // `draftRef` and `leaseRef` hold when the timer fires -- so watching the
-  // objects themselves would restart the window on every heartbeat, each of
-  // which adopts a freshly issued lease, and an edit made just before one
-  // would wait another full window for a reason that has nothing to do with
-  // what was typed. The generation counters are what say that an edit
-  // happened.
+  // Only an edit may restart the debounce, so the lease and the draft are read
+  // as presence and the generation counters carry the edit: watching the
+  // objects would restart the window on every heartbeat, which adopts a freshly
+  // issued lease.
   const hasLease = lease !== null;
   const hasDraft = draft !== null;
   useEffect(() => {

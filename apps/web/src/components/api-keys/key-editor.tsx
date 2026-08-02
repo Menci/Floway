@@ -91,10 +91,6 @@ export function KeyDialog(props: KeyDialogProps) {
           }
           for (const field of ['dumpRetention', 'responsesRetention'] as const) {
             if (value[field] === 'invalid') {
-              // The retention row already says so, on itself, from the moment
-              // the draft stops parsing; this is the same rule refusing the
-              // submit, and it names the same string rather than a second
-              // wording of it.
               ctx.addIssue({
                 code: 'custom',
                 message: 'dashboard.apiKeys.retention.invalid',
@@ -124,10 +120,9 @@ export function KeyDialog(props: KeyDialogProps) {
     seconds: preset.seconds,
     label: t(`dashboard.apiKeys.retention.presets.${preset.labelKey}`),
   }));
-  // Both retentions are enforced by the same expiration sweep, so shortening
-  // either one strands what already sits outside the new window. The Responses
-  // side is worth saying out loud twice over: a client holds those ids and asks
-  // for them back.
+  // The expiration sweep enforces both retentions, so shortening either strands
+  // what already sits outside the new window -- including Responses ids a
+  // client still holds and will ask for back.
   const retentionWarning = retentionWarningText(
     apiKey?.dump_retention_seconds ?? null,
     values.dumpRetention,
@@ -261,9 +256,9 @@ export function KeyDialog(props: KeyDialogProps) {
                   </Link>
                 : undefined}
             </RetentionField>
-            {/* Outside the row rather than behind its disclosure: this is what
-                saving is about to do, and a consequence the operator has not
-                opened the row to read is one they will not read at all. */}
+            {/* Outside the row rather than behind its disclosure: a
+                consequence of saving that the operator has not opened the row
+                to read is one they will not read at all. */}
             {retentionWarning !== null && (
               <MessageBar intent="warning"><MessageBarBody>{retentionWarning}</MessageBarBody></MessageBar>
             )}
