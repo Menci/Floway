@@ -35,6 +35,11 @@ const labelledOnLogAxis = (value: number): boolean => {
 // The x axis draws its ticks at the plot's full height so they double as
 // gridlines, so hit testing has to pass through them or a pointer crossing one
 // leaves the series beneath unanswered.
+//
+// Radius and stroke width together give a marker its diameter -- 2px of radius
+// inside a 1.5px stroke reads as 5.5px beside the 2px line -- and they hold in
+// every state, because the pointer is answered at an x position rather than at
+// one series' point.
 const usePerformanceChartStyles = makeStyles({
   root: {
     '& .fui-cart__xAxis line': { pointerEvents: 'none' },

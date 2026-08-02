@@ -108,12 +108,17 @@ function ScrollableListbox({
     // an ordinary prop it has to assume is read in render.
     <div className="floway-combobox-listbox-viewport" ref={viewportRef} style={{ overflowX: 'hidden', overflowY: 'scroll' }}>
       {/* Fluent opens the popup whether or not there is anything in it, so an
-          empty list would arrive as a bordered seam a few pixels tall. The row
-          must be an option: axe escalates a bare text node inside a listbox from
-          review to a hard violation. It also needs the `disabled` prop rather
-          than `aria-disabled` -- Fluent's useOption reads props.disabled, so
-          aria-disabled alone leaves the row selectable and eligible to become
-          the active descendant.
+          empty list would arrive as a bordered seam a few pixels tall. Filling
+          it is not an ARIA obligation, despite appearances: 1.3 renamed the
+          section to Allowed Accessibility Child Roles and dropped the existence
+          requirement, 1.2's MUST applied only while loading, and axe files an
+          empty listbox as review-only. The row must be an option: axe escalates
+          a bare text node inside a listbox from review to a hard violation.
+          Fluent ships this shape itself in useComboboxFilter's
+          noOptionsMessage; this is that row with the one correction its version
+          needs, the `disabled` prop rather than `aria-disabled` -- Fluent's
+          useOption reads props.disabled, so aria-disabled alone leaves the row
+          selectable and eligible to become the active descendant.
           https://w3c.github.io/aria/#mustContain */}
       <div className="floway-combobox-listbox-content">
         {Children.toArray(children).length === 0

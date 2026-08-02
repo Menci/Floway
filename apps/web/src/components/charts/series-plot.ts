@@ -4,8 +4,10 @@ import { curveMonotoneX } from 'd3-shape';
 import { colorForSlot } from './palette';
 import type { ChartSeries } from './series-legends';
 
-// An area form sets its point radius through `pointOptions`, so markers here
-// would size points twice.
+// The stroke every plot in this dashboard draws a series with: 2px, on a
+// monotone curve so a bucket-to-bucket run reads as one movement rather than as
+// a chain of segments. An area form sets its point radius through
+// `pointOptions`, so markers here would size points twice.
 export const areaSeries = (entry: ChartSeries, data: LineChartPoints['data']): LineChartPoints => ({
   legend: entry.legend,
   color: colorForSlot(entry.colorSlot),

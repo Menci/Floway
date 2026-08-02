@@ -4,7 +4,9 @@
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L3-L56
 export const errorShellCss = `
   /* 24px is ContentDialogPadding; the measure and the inset are ours, since a
-     page that has to hold a stack trace is not a 548px dialog.
+     page that has to hold a stack trace is not a 548px dialog. The shell's own
+     min-height of max-content is what keeps a long trace scrolling, where the
+     full height beside it would clamp the shell to the viewport.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L18 */
   .floway-error-shell {
     display: grid;

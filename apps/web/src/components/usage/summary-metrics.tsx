@@ -45,7 +45,10 @@ const useStyles = makeStyles({
     // The bar is declared on every tile and carries its state in its values;
     // gating `content` on [aria-pressed] left the departure nothing to animate.
     // Departure is the fade alone -- WinUI registers no scale key frame on
-    // deselect -- hence the delayed zero-duration scale.
+    // deselect -- hence the delayed zero-duration scale. Its length is the
+    // quarter inset the rest of the layer uses -- see winui/controls/list.css.ts,
+    // where the choice between that and the presenter's stepped formula is
+    // written down.
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L60
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L75-L77
     // https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/core/core/elements/ListViewBaseItemChrome.cpp#L1750-L1758
