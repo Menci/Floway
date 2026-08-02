@@ -38,10 +38,9 @@ export async function clientLoader() {
   throw redirect('/');
 }
 
-// The signed-in check is its own component so that everything below it can take
-// a user rather than a user-or-null. A hook cannot run behind a condition, so
-// with one component the guard would have had to sit under every hook and each
-// of them would have had to answer for a state the page never renders in.
+// The signed-in check is its own component so everything below it takes a user
+// rather than a user-or-null: a hook cannot run behind a condition, so one
+// component would put the guard under every hook.
 export default function Dashboard({}: Route.ComponentProps) {
   const user = useAuthStore(state => state.user);
   if (!user) return <Navigate replace to="/" />;
@@ -51,41 +50,29 @@ export default function Dashboard({}: Route.ComponentProps) {
 function DashboardShell({ user }: { user: AuthUser }) {
   const { t } = useTranslation();
   const [navigationOpen, setNavigationOpen] = useState(false);
-  // The entrance, started on the element rather than declared in the sheet.
-  // ../winui/page-transition.css.ts says why it cannot be declared; this is the
-  // other half, and the whole of it is where the call sits.
-  //
-  // A layout effect runs after the frame is in the document and before anything
-  // is painted, and an animation created there is pending until the next time
-  // the browser updates animations -- which is the frame that paints the frame.
-  // So its first painted pixel is its own first key frame, whether that frame
-  // comes one tick later or seventy: the wait moves, the starting position does
-  // not. Nothing here goes through React state and nothing waits a turn on
-  // purpose. Both were tried and both put frames between the page appearing and
-  // the page moving.
+  // The entrance is started on the element rather than declared in the sheet;
+  // ../winui/page-transition.css.ts says why it cannot be declared. An animation
+  // created in a layout effect stays pending until the frame that paints, so its
+  // first painted pixel is its own first key frame however late that frame is.
+  // React state and a deliberate one-turn wait were both tried, and both put
+  // frames between the page appearing and the page moving.
   const firstFrameRef = useRef<HTMLDivElement>(null);
   const entranceStarted = useRef(false);
   useLayoutEffect(() => {
-    // Once, and the guard is the point rather than a precaution. StrictMode
-    // runs a layout effect twice in development to prove it cleans up after
-    // itself, and this one has nothing to clean up -- it hands the browser an
-    // animation and forgets it. Run again, it hands over a second animation
-    // that starts from the offset the first has already left, which is a page
-    // that rises, drops back and rises again. A ref survives the double
-    // invocation where the effect body does not.
+    // StrictMode runs a layout effect twice in development, and this one has
+    // nothing to clean up: a second animation starts from an offset the first
+    // has already left, so the page rises, drops back and rises again. A ref
+    // survives the double invocation where the effect body does not.
     if (entranceStarted.current) return;
     if (prefersReducedMotion()) return;
     const frame = firstFrameRef.current;
     if (!frame) return;
     entranceStarted.current = true;
-    // The offset is put on the element here rather than in the sheet, and both
-    // halves happen in this one synchronous block so no frame is painted
-    // between them. A pending animation applies no fill, so something has to
-    // hold the frame at its first key frame until the animation starts -- and
-    // if that something were a class in the markup, a reader whose browser
-    // never ran this effect, or who asked for less motion, would be left
-    // looking at a page parked 140 below where it belongs. Nothing holds it
-    // unless the thing that releases it has already been created.
+    // A pending animation applies no fill, so the class has to hold the frame at
+    // its first key frame until the animation starts -- and both halves happen in
+    // this one synchronous block so nothing paints between them. Declared in the
+    // markup instead, the class would park the page below where it belongs for
+    // anyone whose browser never ran this effect or who asked for less motion.
     frame.classList.add('floway-page-entrance');
     frame.animate(
       [{ translate: `0 ${PAGE_ENTER_OFFSET_PX}px` }, { translate: 'none' }],
@@ -93,19 +80,15 @@ function DashboardShell({ user }: { user: AuthUser }) {
     );
   }, []);
   const workspace = useMatches().some(match => isDashboardWorkspaceHandle(match.handle));
-  // Memoised because `useOutlet` keys its element on the context object: a new
-  // one every render would hand back a new element every render, and the held
-  // page is one of those elements.
+  // `useOutlet` keys its element on the context object, and the held page is one
+  // of those elements: a new context every render remounts it.
   const outletContext = useMemo(() => ({ user } satisfies DashboardOutletContext), [user]);
   const outlet = useOutlet(outletContext);
   // The scroller belongs to the page rather than to the shell, so a held page
-  // keeps its own scroll position and its own height rule while it leaves.
-  //
-  // Only a workspace page is confined to the scroller's height. Every other
-  // page is height-by-content and scrolls; the scroller's own content box
-  // already carries the minimum that fills the viewport, and it is the one box
-  // in this chain whose parent has a height for a percentage to resolve
-  // against.
+  // keeps its own scroll position and height rule while it leaves. Only a
+  // workspace page is confined to the scroller's height; the scroller's content
+  // box is the one box in this chain whose parent has a height for a percentage
+  // to resolve against.
   const page = <ScrollArea
     axes="vertical"
     className="h-full min-h-0"
@@ -139,13 +122,10 @@ function DashboardShell({ user }: { user: AuthUser }) {
           />
           <FlowayLogo />
         </header>
-        {/* Two pages can be on screen at once, so the scroller is drawn per
-            page and they are stacked in one grid cell: the page that is
-            leaving under the page that is arriving. ../components/page-frames.tsx
-            says how the leaving one goes on rendering after the router has
-            moved past it, and ../winui/page-transition.css.ts states the
-            motion. A single page is the ordinary case and costs one extra
-            div. */}
+        {/* Two pages can be on screen at once, stacked in one grid cell: the
+            leaving page under the arriving one. ../components/page-frames.tsx
+            keeps the leaving one rendering after the router has moved past
+            it. */}
         <div className="grid grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] min-h-0">
           {frames.map(frame => <div
             aria-hidden={frame.leaving || undefined}

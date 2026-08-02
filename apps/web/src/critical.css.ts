@@ -4,28 +4,17 @@ import { appLoadingCss } from './components/ui/app-loading-screen.css';
 import { errorShellCss } from './components/ui/error-shell.css';
 import { baseFontStack } from './font-stacks';
 
-// What has to be true before the linked stylesheets arrive. In dev that is a
-// second-and-a-bit: global.css is served through Vite's transform while this
-// block is part of the document, so anything the first paint depends on has to
-// be here rather than in a utility class. The body's own margin is the clearest
-// case -- left to a utility it is the user agent's 8px until the stylesheet
-// lands, which reads as a white border around the whole app.
+// What has to be true before the linked stylesheets arrive -- in dev, a
+// second-and-a-bit, since global.css is served through Vite's transform. Left to
+// a utility class the body margin is the user agent's 8px until then, which
+// reads as a white border around the whole app.
 //
-// The colour scheme is declared on the same condition ../root.tsx picks the
-// Fluent theme from, and on no other: the dashboard follows the system and
-// offers no override, so one query switches both the theme and the user agent
-// surfaces -- scrollbars, native controls, the canvas behind the first paint.
+// Fluent scopes its tokens to the FluentProvider element, so `<body>`, the
+// loading screen and the error shell see no `--fontFamilyBase`; publishing the
+// stack at the document root keeps `baseFontStack` the only copy of it.
 //
-// Fluent scopes its tokens to the FluentProvider element, so anything rendered
-// outside it -- `<body>`, the loading screen, the error shell -- sees no
-// `--fontFamilyBase` at all. Publishing the stack at the document root and
-// applying it to the body puts every surface on one typeface while
-// `baseFontStack` stays the only copy of it.
-//
-// ../vite.config.ts serves this module as `virtual:floway-critical.css`, which
-// is how the text ../root.tsx inlines gets minified. Nothing here may reach a
-// module that runs in the browser: that build step evaluates this graph in
-// Node.
+// ../vite.config.ts serves this module as `virtual:floway-critical.css` and
+// evaluates this graph in Node, so nothing here may reach a browser module.
 const documentCss = `
 html, body { height: 100%; overflow: hidden; }
 body { margin: 0; }
