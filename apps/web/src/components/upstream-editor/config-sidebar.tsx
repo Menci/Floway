@@ -119,8 +119,7 @@ function UpstreamColorEditor({ kind, onValidityChange }: { kind: UpstreamRecord[
   </div>} />;
 }
 
-// The composite editors here -- the colour popover, a provider's own
-// credential flow -- are not one control a Fluent `Field` could speak for.
+// The composite editors here -- colour popover, provider credential flow -- are not one control a Fluent `Field` could speak for.
 function EditorSection({ children, description, error, inline = false, required = false, title }: { children: React.ReactNode; description?: string; error?: string; inline?: boolean; required?: boolean; title: string }) {
   const dangerText = useDangerTextClass();
   return <section className={inline ? 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4' : 'grid gap-4'}>
@@ -250,8 +249,7 @@ function ColoCombobox({ current, onChange, value }: { current: string; onChange:
 function ModelPrefixEditor() {
   const { t } = useTranslation();
   const { control, formState: { errors }, setValue } = useFormContext<UpstreamEditorValues>();
-  // Commit through setValue so the prefix is re-validated per keystroke: a
-  // prefix is wrong from the character that makes it wrong.
+  // setValue rather than the Controller's onChange, so the prefix re-validates per keystroke.
   const commit = (value: UpstreamEditorValues['modelPrefix']) => setValue('modelPrefix', value, { shouldDirty: true, shouldValidate: true });
   return <Controller control={control} name="modelPrefix" render={({ field }) => {
     const value = field.value;
