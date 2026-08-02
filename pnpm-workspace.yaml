@@ -12,6 +12,35 @@ onlyBuiltDependencies:
   - unrs-resolver
   - workerd
 
+# The @fluentui/react-charts patch carries four fixes, all in code the package
+# ships prebuilt, so none of them can be reached from a prop:
+#
+#   - CartesianChart measures its parent in an effect and publishes the result
+#     as state. Under `useEffect` that lands after paint, so a reload shows one
+#     frame of a zero-width chart; `useLayoutEffect` puts it before. The `width`
+#     prop is only a change-detector, not a dimension, so an app-side
+#     ResizeObserver cannot close the gap.
+#   - AreaChart sizes its transparent hover target from that same measurement,
+#     and `containerHeight - margins.top` is negative until it arrives. A
+#     negative `width`/`height` on an SVG `rect` is an error, so the values are
+#     clamped at zero.
+#   - LineChart pushes two elements into `pointsForLine` without a key.
+#   - The date axis rounds its domain outward twice — unconditionally through
+#     d3's `nice()`, and again by 10% per side in markers mode — so the first
+#     and last of the `tickValues` we pass land inside the plot instead of at
+#     its ends, and the series stops short of both edges. That is the defect
+#     reported upstream as microsoft/fluentui#35533 ("chart do not occupy the
+#     entire width of the canvas"), closed pointing at `xMinValue`/`xMaxValue`,
+#     which the date axis never reads — they exist only on the numeric sibling.
+#     There is no supported way to ask for the domain we want
+#     (microsoft/fluentui#32474: "We don't provide support to customize the
+#     domain currently"), so both roundings are gated on the caller not having
+#     supplied ticks.
+#
+# https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/charts/react-charts/library/src/utilities/utilities.ts#L463-L468
+# https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/charts/react-charts/library/src/utilities/utilities.ts#L2232-L2265
+# https://github.com/d3/d3/blob/ca958d45217b4c15332d971b935451a6d4c978f4/docs/d3-scale/time.md#L111-L124
+# https://www.w3.org/TR/SVG2/shapes.html#RectElement
 patchedDependencies:
   '@fluentui/react-charts@9.3.22': patches/@fluentui__react-charts@9.3.22.patch
   '@reclaimprotocol/tls@0.1.2': patches/@reclaimprotocol__tls@0.1.2.patch

@@ -1,18 +1,10 @@
 diff --git a/lib/components/AreaChart/AreaChart.js b/lib/components/AreaChart/AreaChart.js
-index 1000ec66f9f2447b572ced78f9b106da400a6edc..e357bd63ab058cb245612e73481be022a48988e8 100644
+index 1000ec66f9f2447b572ced78f9b106da400a6edc..6cdc4a36c694f159ea6b109a62ba465b6931b7af 100644
 --- a/lib/components/AreaChart/AreaChart.js
 +++ b/lib/components/AreaChart/AreaChart.js
-@@ -908,15 +908,22 @@ export const AreaChart = /*#__PURE__*/ React.forwardRef((props, forwardedRef)=>{
-                 const ticks = _xAxisRectScale.ticks();
-                 const width1 = _xAxisRectScale(ticks[ticks.length - 1]);
+@@ -910,8 +910,8 @@ export const AreaChart = /*#__PURE__*/ React.forwardRef((props, forwardedRef)=>{
                  const rectHeight = props.containerHeight - _margins.top;
--                return /*#__PURE__*/ React.createElement(React.Fragment, null, /*#__PURE__*/ React.createElement("g", null, /*#__PURE__*/ React.createElement("rect", {
-+                return /*#__PURE__*/ React.createElement(React.Fragment, {
-+                    key: "area-chart-content"
-+                }, /*#__PURE__*/ React.createElement("g", {
-+                    key: "area-chart-hit-target"
-+                }, /*#__PURE__*/ React.createElement("rect", {
-+                    key: "area-chart-hit-rect",
+                 return /*#__PURE__*/ React.createElement(React.Fragment, null, /*#__PURE__*/ React.createElement("g", null, /*#__PURE__*/ React.createElement("rect", {
                      id: _rectId,
 -                    width: width1,
 -                    height: rectHeight,
@@ -21,16 +13,8 @@ index 1000ec66f9f2447b572ced78f9b106da400a6edc..e357bd63ab058cb245612e73481be022
                      fill: 'transparent',
                      onMouseMove: (event)=>_onRectMouseMove(event),
                      onMouseOut: _onRectMouseOut,
-                     onMouseOver: (event)=>_onRectMouseMove(event)
--                })), /*#__PURE__*/ React.createElement("g", null, _chart));
-+                })), /*#__PURE__*/ React.createElement("g", {
-+                    key: "area-chart-series"
-+                }, _chart));
-             }
-         });
-     }
 diff --git a/lib/components/CommonComponents/CartesianChart.js b/lib/components/CommonComponents/CartesianChart.js
-index 1ac969766a34f8da2957812edd55b935d9de8985..8df3a2da2dbdaeb16f4d55968b4eee36a14253f6 100644
+index 1ac969766a34f8da2957812edd55b935d9de8985..fe60b9e60cf2214c59d290ada5a4f5bd331bfd9a 100644
 --- a/lib/components/CommonComponents/CartesianChart.js
 +++ b/lib/components/CommonComponents/CartesianChart.js
 @@ -56,7 +56,7 @@ const DEFAULT_MARGIN_NO_TICKS = 20;
@@ -42,102 +26,8 @@ index 1ac969766a34f8da2957812edd55b935d9de8985..8df3a2da2dbdaeb16f4d55968b4eee36
          _fitParentContainer();
          if (props.showYAxisLables) {
              const maxYAxisLabelLength = calculateMaxYAxisLabelLength(classes.yAxis);
-@@ -544,6 +544,7 @@ const DEFAULT_MARGIN_NO_TICKS = 20;
-         ...focusAttributes,
-         ...arrowAttributes
-     }, _isFirstRender.current, /*#__PURE__*/ React.createElement("svg", {
-+        key: "cartesian-chart-svg",
-         width: svgDimensions.width,
-         height: svgDimensions.height,
-         role: "region",
-@@ -554,6 +555,7 @@ const DEFAULT_MARGIN_NO_TICKS = 20;
-         className: classes.chart,
-         ...getSecureProps(svgProps)
-     }, /*#__PURE__*/ React.createElement("g", {
-+        key: "cartesian-x-axis",
-         ref: (e)=>{
-             xAxisElement.current = e;
-         },
-@@ -562,6 +564,7 @@ const DEFAULT_MARGIN_NO_TICKS = 20;
-         transform: `translate(0, ${svgDimensions.height - margins.bottom - _removalValueForTextTuncate})`,
-         className: classes.xAxis
-     }), props.xAxisTitle !== undefined && props.xAxisTitle !== '' && /*#__PURE__*/ React.createElement(SVGTooltipText, {
-+        key: "cartesian-x-axis-title",
-         ...commonSvgToolTipProps,
-         content: props.xAxisTitle,
-         textProps: {
-@@ -588,6 +591,7 @@ const DEFAULT_MARGIN_NO_TICKS = 20;
-         const textAnchor = titleXAnchor === 'left' ? 'start' : titleXAnchor === 'right' ? 'end' : 'middle';
-         const dominantBaseline = titleYAnchor === 'top' ? 'hanging' : titleYAnchor === 'bottom' ? 'alphabetic' : titleYAnchor === 'middle' ? 'central' : 'auto';
-         return /*#__PURE__*/ React.createElement(SVGTooltipText, {
-+            key: "cartesian-x-axis-annotation",
-             ...commonSvgToolTipProps,
-             content: props.xAxisAnnotation,
-             textProps: {
-@@ -602,13 +606,17 @@ const DEFAULT_MARGIN_NO_TICKS = 20;
-             maxWidth: xAxisTitleMaxWidth
-         });
-     })(), /*#__PURE__*/ React.createElement("g", {
-+        key: "cartesian-y-axis",
-         ref: (e)=>{
-             yAxisElement.current = e;
-         },
-         id: `yAxisGElement${idForGraph}`,
-         transform: `translate(${_useRtl ? svgDimensions.width - margins.right : margins.left}, 0)`,
-         className: classes.yAxis
--    }), props.secondaryYScaleOptions && /*#__PURE__*/ React.createElement("g", null, /*#__PURE__*/ React.createElement("g", {
-+    }), props.secondaryYScaleOptions && /*#__PURE__*/ React.createElement("g", {
-+        key: "cartesian-secondary-y-axis-layer"
-+    }, /*#__PURE__*/ React.createElement("g", {
-+        key: "cartesian-secondary-y-axis",
-         ref: (e)=>{
-             yAxisElementSecondary.current = e;
-         },
-@@ -616,6 +624,7 @@ const DEFAULT_MARGIN_NO_TICKS = 20;
-         transform: `translate(${_useRtl ? margins.left : svgDimensions.width - margins.right}, 0)`,
-         className: classes.yAxis
-     }), props.secondaryYAxistitle !== undefined && props.secondaryYAxistitle !== '' && /*#__PURE__*/ React.createElement(SVGTooltipText, {
-+        key: "cartesian-secondary-y-axis-title",
-         ...commonSvgToolTipProps,
-         content: props.secondaryYAxistitle,
-         textProps: {
-@@ -627,6 +636,7 @@ const DEFAULT_MARGIN_NO_TICKS = 20;
-         },
-         maxWidth: yAxisTitleMaxHeight
-     })), children, props.yAxisTitle !== undefined && props.yAxisTitle !== '' && /*#__PURE__*/ React.createElement(SVGTooltipText, {
-+        key: "cartesian-y-axis-title",
-         ...commonSvgToolTipProps,
-         content: props.yAxisTitle,
-         textProps: {
-@@ -638,6 +648,7 @@ const DEFAULT_MARGIN_NO_TICKS = 20;
-         },
-         maxWidth: yAxisTitleMaxHeight
-     }), props.yAxisAnnotation !== undefined && props.yAxisAnnotation !== '' && (props.secondaryYAxistitle === undefined || props.secondaryYAxistitle === '') && /*#__PURE__*/ React.createElement(SVGTooltipText, {
-+        key: "cartesian-y-axis-annotation",
-         ...commonSvgToolTipProps,
-         content: props.yAxisAnnotation,
-         textProps: {
-@@ -650,15 +661,18 @@ const DEFAULT_MARGIN_NO_TICKS = 20;
-         },
-         maxWidth: yAxisTitleMaxHeight
-     })), hasAnnotations && annotationContext && /*#__PURE__*/ React.createElement(ChartAnnotationLayer, {
-+        key: "cartesian-annotations",
-         annotations: annotations,
-         context: annotationContext,
-         className: classes.annotationLayer
-     })), !props.hideLegend && /*#__PURE__*/ React.createElement("div", {
-+        key: "cartesian-legend",
-         ref: (e)=>{
-             legendContainer = e;
-         },
-         className: classes.legendContainer
-     }, props.legendBars), callout && /*#__PURE__*/ React.createElement(React.Suspense, {
-+        key: "cartesian-callout",
-         fallback: /*#__PURE__*/ React.createElement("div", null, "Loading...")
-     }, callout));
- });
 diff --git a/lib/components/LineChart/LineChart.js b/lib/components/LineChart/LineChart.js
-index 3eb0732414a7275dd80bfb99600e29fe7e5fd591..10d39cf46a0de9a10cb982aaa446f270998857ab 100644
+index 3eb0732414a7275dd80bfb99600e29fe7e5fd591..f0801a6d245336633257db6e46415ff510b6d0c5 100644
 --- a/lib/components/LineChart/LineChart.js
 +++ b/lib/components/LineChart/LineChart.js
 @@ -441,7 +441,9 @@ const PATH_MULTIPLY_SIZE = 2.5;
@@ -162,66 +52,6 @@ index 3eb0732414a7275dd80bfb99600e29fe7e5fd591..10d39cf46a0de9a10cb982aaa446f270
                              id: circleId,
                              key: circleId,
                              r: calculateMarkerRadius({
-@@ -710,7 +714,9 @@ const PATH_MULTIPLY_SIZE = 2.5;
-                             var _points_i_data_j_text;
-                             pointsForLine.push(/*#__PURE__*/ React.createElement(React.Fragment, {
-                                 key: `${lastCircleId}_container`
--                            }, ((_points_i_lineOptions17 = _points[i].lineOptions) === null || _points_i_lineOptions17 === void 0 ? void 0 : (_points_i_lineOptions_mode5 = _points_i_lineOptions17.mode) === null || _points_i_lineOptions_mode5 === void 0 ? void 0 : _points_i_lineOptions_mode5.includes('markers')) || lastSupportsTextMode ? /*#__PURE__*/ React.createElement(React.Fragment, null, /*#__PURE__*/ React.createElement("circle", {
-+                            }, ((_points_i_lineOptions17 = _points[i].lineOptions) === null || _points_i_lineOptions17 === void 0 ? void 0 : (_points_i_lineOptions_mode5 = _points_i_lineOptions17.mode) === null || _points_i_lineOptions_mode5 === void 0 ? void 0 : _points_i_lineOptions_mode5.includes('markers')) || lastSupportsTextMode ? /*#__PURE__*/ React.createElement(React.Fragment, {
-+                                key: `${lastCircleId}_marker`
-+                            }, /*#__PURE__*/ React.createElement("circle", {
-                                 id: lastCircleId,
-                                 key: lastCircleId,
-                                 r: calculateMarkerRadius({
-@@ -883,7 +889,11 @@ const PATH_MULTIPLY_SIZE = 2.5;
-                 key: `line_${i}`,
-                 role: "region",
-                 "aria-label": `${legendVal}, line ${i + 1} of ${_points.length} with ${_points[i].data.length} data points.`
--            }, bordersForLine, linesForLine, pointsForLine));
-+            }, React.Children.toArray([
-+                ...bordersForLine,
-+                ...linesForLine,
-+                ...pointsForLine
-+            ])));
-         }
-         return lines;
-     }
-@@ -1299,7 +1309,12 @@ const PATH_MULTIPLY_SIZE = 2.5;
-             _xAxisScale = props.xScale;
-             _yScalePrimary = props.yScalePrimary;
-             _yScaleSecondary = props.yScaleSecondary;
--            return /*#__PURE__*/ React.createElement(React.Fragment, null, /*#__PURE__*/ React.createElement("g", null, /*#__PURE__*/ React.createElement("line", {
-+            return /*#__PURE__*/ React.createElement(React.Fragment, {
-+                key: "line-chart-content"
-+            }, /*#__PURE__*/ React.createElement("g", {
-+                key: "line-chart-layer"
-+            }, /*#__PURE__*/ React.createElement("line", {
-+                key: "line-chart-hover-line",
-                 x1: 0,
-                 y1: 0,
-                 x2: 0,
-@@ -1309,11 +1324,20 @@ const PATH_MULTIPLY_SIZE = 2.5;
-                 visibility: 'hidden',
-                 strokeDasharray: '5,5'
-             }), props.optimizeLargeData ? /*#__PURE__*/ React.createElement("rect", {
-+                key: "line-chart-hit-target",
-                 id: _rectId,
-                 width: props.containerWidth,
-                 height: props.containerHeight,
-                 fill: 'transparent'
--            }) : /*#__PURE__*/ React.createElement(React.Fragment, null), /*#__PURE__*/ React.createElement("g", null, _renderedColorFillBars, lines), eventAnnotationProps && /*#__PURE__*/ React.createElement(EventsAnnotation, {
-+            }) : /*#__PURE__*/ React.createElement(React.Fragment, {
-+                key: "line-chart-no-hit-target"
-+            }), /*#__PURE__*/ React.createElement("g", {
-+                key: "line-chart-series"
-+            }, React.Children.toArray([
-+                ..._renderedColorFillBars,
-+                ...lines
-+            ])), eventAnnotationProps && /*#__PURE__*/ React.createElement(EventsAnnotation, {
-+                key: "line-chart-events",
-                 ...eventAnnotationProps,
-                 scale: props.xScale,
-                 chartYTop: margins.top + eventLabelHeight,
 diff --git a/lib/utilities/utilities.js b/lib/utilities/utilities.js
 index 0b5acb8f82a4655b3d6d59eafe123567738cb08d..a43c04ad7bde922589d25c0fc98d6b4119c66f4f 100644
 --- a/lib/utilities/utilities.js
@@ -248,20 +78,12 @@ index 0b5acb8f82a4655b3d6d59eafe123567738cb08d..a43c04ad7bde922589d25c0fc98d6b41
              sDate = new Date(sDate.getTime() - xPadding.start);
              lDate = new Date(lDate.getTime() + xPadding.end);
 diff --git a/lib-commonjs/components/AreaChart/AreaChart.js b/lib-commonjs/components/AreaChart/AreaChart.js
-index 5204125c8498f697d3673b3017ec7e6cbbbe960e..2cd00a86ba8480e8b7f591a94458c0a240ceecb0 100644
+index 5204125c8498f697d3673b3017ec7e6cbbbe960e..d44cf7a974d14d42e79528051f049fedee2e5ea8 100644
 --- a/lib-commonjs/components/AreaChart/AreaChart.js
 +++ b/lib-commonjs/components/AreaChart/AreaChart.js
-@@ -914,15 +914,22 @@ const AreaChart = /*#__PURE__*/ _react.forwardRef((props, forwardedRef)=>{
-                 const ticks = _xAxisRectScale.ticks();
-                 const width1 = _xAxisRectScale(ticks[ticks.length - 1]);
+@@ -916,8 +916,8 @@ const AreaChart = /*#__PURE__*/ _react.forwardRef((props, forwardedRef)=>{
                  const rectHeight = props.containerHeight - _margins.top;
--                return /*#__PURE__*/ _react.createElement(_react.Fragment, null, /*#__PURE__*/ _react.createElement("g", null, /*#__PURE__*/ _react.createElement("rect", {
-+                return /*#__PURE__*/ _react.createElement(_react.Fragment, {
-+                    key: "area-chart-content"
-+                }, /*#__PURE__*/ _react.createElement("g", {
-+                    key: "area-chart-hit-target"
-+                }, /*#__PURE__*/ _react.createElement("rect", {
-+                    key: "area-chart-hit-rect",
+                 return /*#__PURE__*/ _react.createElement(_react.Fragment, null, /*#__PURE__*/ _react.createElement("g", null, /*#__PURE__*/ _react.createElement("rect", {
                      id: _rectId,
 -                    width: width1,
 -                    height: rectHeight,
@@ -270,16 +92,8 @@ index 5204125c8498f697d3673b3017ec7e6cbbbe960e..2cd00a86ba8480e8b7f591a94458c0a2
                      fill: 'transparent',
                      onMouseMove: (event)=>_onRectMouseMove(event),
                      onMouseOut: _onRectMouseOut,
-                     onMouseOver: (event)=>_onRectMouseMove(event)
--                })), /*#__PURE__*/ _react.createElement("g", null, _chart));
-+                })), /*#__PURE__*/ _react.createElement("g", {
-+                    key: "area-chart-series"
-+                }, _chart));
-             }
-         });
-     }
 diff --git a/lib-commonjs/components/CommonComponents/CartesianChart.js b/lib-commonjs/components/CommonComponents/CartesianChart.js
-index bcf76c184cfe345e19d58fb199b478c4005539b1..23086786d556cd8b080437a32d2a504c48e04273 100644
+index bcf76c184cfe345e19d58fb199b478c4005539b1..d6873b1f11fd056ed5e648f842ddd1c0ef688a69 100644
 --- a/lib-commonjs/components/CommonComponents/CartesianChart.js
 +++ b/lib-commonjs/components/CommonComponents/CartesianChart.js
 @@ -64,7 +64,7 @@ const CartesianChart = /*#__PURE__*/ _react.forwardRef(({ hideTickOverlap = true
@@ -291,102 +105,8 @@ index bcf76c184cfe345e19d58fb199b478c4005539b1..23086786d556cd8b080437a32d2a504c
          _fitParentContainer();
          if (props.showYAxisLables) {
              const maxYAxisLabelLength = calculateMaxYAxisLabelLength(classes.yAxis);
-@@ -552,6 +552,7 @@ const CartesianChart = /*#__PURE__*/ _react.forwardRef(({ hideTickOverlap = true
-         ...focusAttributes,
-         ...arrowAttributes
-     }, _isFirstRender.current, /*#__PURE__*/ _react.createElement("svg", {
-+        key: "cartesian-chart-svg",
-         width: svgDimensions.width,
-         height: svgDimensions.height,
-         role: "region",
-@@ -562,6 +563,7 @@ const CartesianChart = /*#__PURE__*/ _react.forwardRef(({ hideTickOverlap = true
-         className: classes.chart,
-         ...(0, _index.getSecureProps)(svgProps)
-     }, /*#__PURE__*/ _react.createElement("g", {
-+        key: "cartesian-x-axis",
-         ref: (e)=>{
-             xAxisElement.current = e;
-         },
-@@ -570,6 +572,7 @@ const CartesianChart = /*#__PURE__*/ _react.forwardRef(({ hideTickOverlap = true
-         transform: `translate(0, ${svgDimensions.height - margins.bottom - _removalValueForTextTuncate})`,
-         className: classes.xAxis
-     }), props.xAxisTitle !== undefined && props.xAxisTitle !== '' && /*#__PURE__*/ _react.createElement(_SVGTooltipText.SVGTooltipText, {
-+        key: "cartesian-x-axis-title",
-         ...commonSvgToolTipProps,
-         content: props.xAxisTitle,
-         textProps: {
-@@ -596,6 +599,7 @@ const CartesianChart = /*#__PURE__*/ _react.forwardRef(({ hideTickOverlap = true
-         const textAnchor = titleXAnchor === 'left' ? 'start' : titleXAnchor === 'right' ? 'end' : 'middle';
-         const dominantBaseline = titleYAnchor === 'top' ? 'hanging' : titleYAnchor === 'bottom' ? 'alphabetic' : titleYAnchor === 'middle' ? 'central' : 'auto';
-         return /*#__PURE__*/ _react.createElement(_SVGTooltipText.SVGTooltipText, {
-+            key: "cartesian-x-axis-annotation",
-             ...commonSvgToolTipProps,
-             content: props.xAxisAnnotation,
-             textProps: {
-@@ -610,13 +614,17 @@ const CartesianChart = /*#__PURE__*/ _react.forwardRef(({ hideTickOverlap = true
-             maxWidth: xAxisTitleMaxWidth
-         });
-     })(), /*#__PURE__*/ _react.createElement("g", {
-+        key: "cartesian-y-axis",
-         ref: (e)=>{
-             yAxisElement.current = e;
-         },
-         id: `yAxisGElement${idForGraph}`,
-         transform: `translate(${_useRtl ? svgDimensions.width - margins.right : margins.left}, 0)`,
-         className: classes.yAxis
--    }), props.secondaryYScaleOptions && /*#__PURE__*/ _react.createElement("g", null, /*#__PURE__*/ _react.createElement("g", {
-+    }), props.secondaryYScaleOptions && /*#__PURE__*/ _react.createElement("g", {
-+        key: "cartesian-secondary-y-axis-layer"
-+    }, /*#__PURE__*/ _react.createElement("g", {
-+        key: "cartesian-secondary-y-axis",
-         ref: (e)=>{
-             yAxisElementSecondary.current = e;
-         },
-@@ -624,6 +632,7 @@ const CartesianChart = /*#__PURE__*/ _react.forwardRef(({ hideTickOverlap = true
-         transform: `translate(${_useRtl ? margins.left : svgDimensions.width - margins.right}, 0)`,
-         className: classes.yAxis
-     }), props.secondaryYAxistitle !== undefined && props.secondaryYAxistitle !== '' && /*#__PURE__*/ _react.createElement(_SVGTooltipText.SVGTooltipText, {
-+        key: "cartesian-secondary-y-axis-title",
-         ...commonSvgToolTipProps,
-         content: props.secondaryYAxistitle,
-         textProps: {
-@@ -635,6 +644,7 @@ const CartesianChart = /*#__PURE__*/ _react.forwardRef(({ hideTickOverlap = true
-         },
-         maxWidth: yAxisTitleMaxHeight
-     })), children, props.yAxisTitle !== undefined && props.yAxisTitle !== '' && /*#__PURE__*/ _react.createElement(_SVGTooltipText.SVGTooltipText, {
-+        key: "cartesian-y-axis-title",
-         ...commonSvgToolTipProps,
-         content: props.yAxisTitle,
-         textProps: {
-@@ -646,6 +656,7 @@ const CartesianChart = /*#__PURE__*/ _react.forwardRef(({ hideTickOverlap = true
-         },
-         maxWidth: yAxisTitleMaxHeight
-     }), props.yAxisAnnotation !== undefined && props.yAxisAnnotation !== '' && (props.secondaryYAxistitle === undefined || props.secondaryYAxistitle === '') && /*#__PURE__*/ _react.createElement(_SVGTooltipText.SVGTooltipText, {
-+        key: "cartesian-y-axis-annotation",
-         ...commonSvgToolTipProps,
-         content: props.yAxisAnnotation,
-         textProps: {
-@@ -658,15 +669,18 @@ const CartesianChart = /*#__PURE__*/ _react.forwardRef(({ hideTickOverlap = true
-         },
-         maxWidth: yAxisTitleMaxHeight
-     })), hasAnnotations && annotationContext && /*#__PURE__*/ _react.createElement(_ChartAnnotationLayer.ChartAnnotationLayer, {
-+        key: "cartesian-annotations",
-         annotations: annotations,
-         context: annotationContext,
-         className: classes.annotationLayer
-     })), !props.hideLegend && /*#__PURE__*/ _react.createElement("div", {
-+        key: "cartesian-legend",
-         ref: (e)=>{
-             legendContainer = e;
-         },
-         className: classes.legendContainer
-     }, props.legendBars), callout && /*#__PURE__*/ _react.createElement(_react.Suspense, {
-+        key: "cartesian-callout",
-         fallback: /*#__PURE__*/ _react.createElement("div", null, "Loading...")
-     }, callout));
- });
 diff --git a/lib-commonjs/components/LineChart/LineChart.js b/lib-commonjs/components/LineChart/LineChart.js
-index 9aa30c4008883b4910888cfeb3c4b2d9858f8efd..e150f6e6fd49341c6cfb0bbcaf7d24bb685f94a9 100644
+index 9aa30c4008883b4910888cfeb3c4b2d9858f8efd..fc40aaa95726cfe022afdc1410a0c55d85e463bf 100644
 --- a/lib-commonjs/components/LineChart/LineChart.js
 +++ b/lib-commonjs/components/LineChart/LineChart.js
 @@ -446,7 +446,9 @@ const LineChart = /*#__PURE__*/ _react.forwardRef(({ isCalloutForStack = true, .
@@ -411,66 +131,6 @@ index 9aa30c4008883b4910888cfeb3c4b2d9858f8efd..e150f6e6fd49341c6cfb0bbcaf7d24bb
                              id: circleId,
                              key: circleId,
                              r: (0, _index1.calculateMarkerRadius)({
-@@ -715,7 +719,9 @@ const LineChart = /*#__PURE__*/ _react.forwardRef(({ isCalloutForStack = true, .
-                             var _points_i_data_j_text;
-                             pointsForLine.push(/*#__PURE__*/ _react.createElement(_react.Fragment, {
-                                 key: `${lastCircleId}_container`
--                            }, ((_points_i_lineOptions17 = _points[i].lineOptions) === null || _points_i_lineOptions17 === void 0 ? void 0 : (_points_i_lineOptions_mode5 = _points_i_lineOptions17.mode) === null || _points_i_lineOptions_mode5 === void 0 ? void 0 : _points_i_lineOptions_mode5.includes('markers')) || lastSupportsTextMode ? /*#__PURE__*/ _react.createElement(_react.Fragment, null, /*#__PURE__*/ _react.createElement("circle", {
-+                            }, ((_points_i_lineOptions17 = _points[i].lineOptions) === null || _points_i_lineOptions17 === void 0 ? void 0 : (_points_i_lineOptions_mode5 = _points_i_lineOptions17.mode) === null || _points_i_lineOptions_mode5 === void 0 ? void 0 : _points_i_lineOptions_mode5.includes('markers')) || lastSupportsTextMode ? /*#__PURE__*/ _react.createElement(_react.Fragment, {
-+                                key: `${lastCircleId}_marker`
-+                            }, /*#__PURE__*/ _react.createElement("circle", {
-                                 id: lastCircleId,
-                                 key: lastCircleId,
-                                 r: (0, _index1.calculateMarkerRadius)({
-@@ -888,7 +894,11 @@ const LineChart = /*#__PURE__*/ _react.forwardRef(({ isCalloutForStack = true, .
-                 key: `line_${i}`,
-                 role: "region",
-                 "aria-label": `${legendVal}, line ${i + 1} of ${_points.length} with ${_points[i].data.length} data points.`
--            }, bordersForLine, linesForLine, pointsForLine));
-+            }, _react.Children.toArray([
-+                ...bordersForLine,
-+                ...linesForLine,
-+                ...pointsForLine
-+            ])));
-         }
-         return lines;
-     }
-@@ -1304,7 +1314,12 @@ const LineChart = /*#__PURE__*/ _react.forwardRef(({ isCalloutForStack = true, .
-             _xAxisScale = props.xScale;
-             _yScalePrimary = props.yScalePrimary;
-             _yScaleSecondary = props.yScaleSecondary;
--            return /*#__PURE__*/ _react.createElement(_react.Fragment, null, /*#__PURE__*/ _react.createElement("g", null, /*#__PURE__*/ _react.createElement("line", {
-+            return /*#__PURE__*/ _react.createElement(_react.Fragment, {
-+                key: "line-chart-content"
-+            }, /*#__PURE__*/ _react.createElement("g", {
-+                key: "line-chart-layer"
-+            }, /*#__PURE__*/ _react.createElement("line", {
-+                key: "line-chart-hover-line",
-                 x1: 0,
-                 y1: 0,
-                 x2: 0,
-@@ -1314,11 +1329,20 @@ const LineChart = /*#__PURE__*/ _react.forwardRef(({ isCalloutForStack = true, .
-                 visibility: 'hidden',
-                 strokeDasharray: '5,5'
-             }), props.optimizeLargeData ? /*#__PURE__*/ _react.createElement("rect", {
-+                key: "line-chart-hit-target",
-                 id: _rectId,
-                 width: props.containerWidth,
-                 height: props.containerHeight,
-                 fill: 'transparent'
--            }) : /*#__PURE__*/ _react.createElement(_react.Fragment, null), /*#__PURE__*/ _react.createElement("g", null, _renderedColorFillBars, lines), eventAnnotationProps && /*#__PURE__*/ _react.createElement(_EventAnnotation.EventsAnnotation, {
-+            }) : /*#__PURE__*/ _react.createElement(_react.Fragment, {
-+                key: "line-chart-no-hit-target"
-+            }), /*#__PURE__*/ _react.createElement("g", {
-+                key: "line-chart-series"
-+            }, _react.Children.toArray([
-+                ..._renderedColorFillBars,
-+                ...lines
-+            ])), eventAnnotationProps && /*#__PURE__*/ _react.createElement(_EventAnnotation.EventsAnnotation, {
-+                key: "line-chart-events",
-                 ...eventAnnotationProps,
-                 scale: props.xScale,
-                 chartYTop: margins.top + eventLabelHeight,
 diff --git a/lib-commonjs/utilities/utilities.js b/lib-commonjs/utilities/utilities.js
 index 5c6ff58f9d48df22a503c82b4917824813927d8f..990b9a9f2944ddd0cf3654e631f13b79f55fda0e 100644
 --- a/lib-commonjs/utilities/utilities.js
