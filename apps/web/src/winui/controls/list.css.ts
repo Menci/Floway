@@ -151,19 +151,6 @@ export const listCss = `
   }
 }
 
-/* The same arrival as key frames. The metric strip in
-   ../../components/usage/summary-metrics.tsx gates its own copy of this bar on
-   [aria-pressed], so its pseudo-element comes into being with the selection and
-   has no rest values to transition from; an animation is what it can run. The
-   shape is stated once, here, beside the control it belongs to. */
-@keyframes winui-selection-indicator-fade {
-  from { opacity: 0; }
-}
-
-@keyframes winui-selection-indicator-grow {
-  from { scale: 1 0; }
-}
-
 /* Disablement. Fluent only softens the cursor; WinUI drops ContentBorder -- the
    row's fill and its content together -- to 0.3, so one opacity on the item
    carries the whole row.

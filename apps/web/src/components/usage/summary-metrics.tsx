@@ -41,6 +41,7 @@ const { Text, ToggleButton, makeStyles, mergeClasses } = fluentComponents;
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L29-L30
 const useStyles = makeStyles({
   tile: {
+    position: 'relative',
     '&[aria-pressed="true"]': {
       backgroundColor: 'var(--winui-subtle-fill-secondary)',
       borderTopColor: 'transparent !important',
@@ -48,7 +49,6 @@ const useStyles = makeStyles({
       borderBottomColor: 'transparent !important',
       borderLeftColor: 'transparent !important',
       color: 'var(--winui-text-fill-primary)',
-      position: 'relative',
     },
     '&[aria-pressed="true"]:hover': {
       backgroundColor: 'var(--winui-subtle-fill-tertiary)',
@@ -71,26 +71,43 @@ const useStyles = makeStyles({
     // states, so one declaration carries it. Its length is the quarter inset the
     // rest of the layer uses -- see winui/controls/list.css.ts, where the choice
     // between that and the presenter's stepped formula is written down.
+    //
+    // The bar lives on every tile and carries its state in its values, which is
+    // the same shape winui/controls/list.css.ts states for the row it copies.
+    // Gating `content` on [aria-pressed] instead put the box into being with
+    // the selection and took it out of being with the deselection, and a
+    // property has nothing to run between when the box is absent on one side of
+    // the change: the arrival did animate, but the departure was `content` `""`
+    // -> `none` in a single frame, whatever was declared for it. Departure is
+    // the fade alone, so the height snaps back once the 83ms is up -- WinUI
+    // registers no scale key frame on deselect -- and the delayed zero-duration
+    // scale below is what states that.
+    //
+    // Declared unconditionally and clamped, which is the shape ../../winui
+    // states for motion the layer owns -- Fluent ships no reduced-motion rule
+    // for this element, so there is no answer to stand aside for.
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L60
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L75-L77
     // https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/core/core/elements/ListViewBaseItemChrome.cpp#L1750-L1758
     // https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/dxaml/lib/ListViewBaseItemPresenter_Partial.cpp#L945-L982
-    '&[aria-pressed="true"]::after': {
+    '&::after': {
       backgroundColor: 'var(--winui-accent-fill-default)',
       borderRadius: '1.5px',
       content: '""',
       insetBlock: '25%',
       insetInlineStart: 0,
+      opacity: 0,
       position: 'absolute',
+      scale: '1 0',
+      transition: 'opacity 83ms linear, scale 0s linear 83ms',
       width: '3px',
-      // Declared unconditionally and clamped, which is the shape ../../winui
-      // states for motion the layer owns -- Fluent ships no reduced-motion rule
-      // for this element, so there is no answer to stand aside for. Under
-      // no-preference the animation is not declared at all when the preference
-      // is set, and an animation that never exists never finishes: the 0.01ms
-      // is what keeps the completion firing.
-      animation: 'winui-selection-indicator-fade 83ms linear, winui-selection-indicator-grow 167ms cubic-bezier(0.167, 0.167, 0, 1)',
-      '@media (prefers-reduced-motion: reduce)': { animationDuration: '0.01ms' },
+      '@media (prefers-reduced-motion: reduce)': { transitionDelay: '0s', transitionDuration: '0.01ms' },
+    },
+    '&[aria-pressed="true"]::after': {
+      opacity: 1,
+      scale: '1 1',
+      transition: 'opacity 83ms linear, scale 167ms cubic-bezier(0.167, 0.167, 0, 1)',
+      '@media (prefers-reduced-motion: reduce)': { transitionDelay: '0s', transitionDuration: '0.01ms' },
     },
     // Under a forced palette Fluent paints a checked toggle Highlight against
     // HighlightText and sets forced-color-adjust: none, which would hand every
