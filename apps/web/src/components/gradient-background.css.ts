@@ -1,8 +1,10 @@
 // A WinUI 3 window paints this area with Mica, which samples the desktop
 // wallpaper; the web can reach neither the wallpaper nor that recipe, so a
 // fixed top-centre highlight falling into a vertical ramp stands in for it.
-// The stops are ours and unsourced -- light carries a blue cast and dark runs
-// a step deeper at the foot than any page fill WinUI states.
+// The stops are ours: light carries a blue cast, and dark runs between the two
+// page fills WinUI states, from the base at the top to the secondary at the
+// foot -- the same one-step fall the light ramp makes, spelled in the palette
+// rather than past it.
 //
 // The literals are spelled out rather than taken from `--winui-*`:
 // ../critical.css.ts inlines this block into the document head so the canvas is
@@ -26,7 +28,7 @@ export const gradientBackgroundCss = `
     .floway-gradient-background {
       background-image:
         radial-gradient(circle at 50% 0%, #2d2d2d 0%, #242424 38%, transparent 68%),
-        linear-gradient(180deg, #1f1f1f 0%, #171717 100%);
+        linear-gradient(180deg, #202020 0%, #1c1c1c 100%);
     }
   }
 `;
