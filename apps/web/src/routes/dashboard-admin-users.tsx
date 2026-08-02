@@ -429,6 +429,7 @@ function UserDialog(props: UserDialogProps) {
 
   return (
     <DialogShell
+      maxWidth="720px"
       open={props.open}
       actions={
         <DialogActions>
