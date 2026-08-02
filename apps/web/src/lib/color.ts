@@ -132,8 +132,9 @@ export const badgeHueStyle = (hue: string): Record<string, string> => {
   const label = (surface: string) => readableTone(hue, blendHex(hue, BADGE_FILL_ALPHA, surface));
   return {
     '--floway-badge-hue': hue,
+    '--floway-chip-stroke': `color-mix(in srgb, var(--floway-badge-hue) ${BADGE_STROKE_ALPHA * 100}%, transparent)`,
     backgroundColor: `color-mix(in srgb, var(--floway-badge-hue) ${BADGE_FILL_ALPHA * 100}%, transparent)`,
-    borderColor: `color-mix(in srgb, var(--floway-badge-hue) ${BADGE_STROKE_ALPHA * 100}%, transparent)`,
+    borderColor: 'var(--floway-chip-stroke)',
     color: `light-dark(${label(HARDEST_BADGE_SURFACE.light)}, ${label(HARDEST_BADGE_SURFACE.dark)})`,
   };
 };

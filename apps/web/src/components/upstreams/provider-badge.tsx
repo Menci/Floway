@@ -38,61 +38,53 @@ export const KIND_DEFAULT_TONES: Record<UpstreamProviderKind, UpstreamColorPrese
 // WinUI states no per-upstream identity colour, so this palette is ours. Every
 // label clears 4.5:1 against its own fill — the floor lib/color.ts holds an
 // operator-typed hue to.
+//
+// The stroke is published under a name the WinUI layer reads, because the layer
+// flattens a chip's stroke under a press the way Button does and an identity
+// colour has to outlive that. Naming it is also what keeps the two from
+// competing: a shorthand and a longhand for the same edge resolve by which
+// sheet was written last, which is not a thing either side can see.
 const useStyles = makeStyles({
   amber: {
     backgroundColor: 'light-dark(#fff8f0, #4d2d0a)',
-    borderTopColor: 'light-dark(#d69b52, #8f642d)',
-    borderRightColor: 'light-dark(#d69b52, #8f642d)',
-    borderBottomColor: 'light-dark(#d69b52, #8f642d)',
-    borderLeftColor: 'light-dark(#d69b52, #8f642d)',
+    '--floway-chip-stroke': 'light-dark(#d69b52, #8f642d)',
+    borderColor: 'var(--floway-chip-stroke)',
     color: 'light-dark(#8a4b00, #f5c778)',
   } as any,
   emerald: {
     backgroundColor: 'light-dark(#f0faf5, #103d30)',
-    borderTopColor: 'light-dark(#5da98b, #397c65)',
-    borderRightColor: 'light-dark(#5da98b, #397c65)',
-    borderBottomColor: 'light-dark(#5da98b, #397c65)',
-    borderLeftColor: 'light-dark(#5da98b, #397c65)',
+    '--floway-chip-stroke': 'light-dark(#5da98b, #397c65)',
+    borderColor: 'var(--floway-chip-stroke)',
     color: 'light-dark(#0f6c4f, #7cd9b2)',
   } as any,
   cyan: {
     backgroundColor: 'light-dark(#eff9fb, #103b42)',
-    borderTopColor: 'light-dark(#58aeb8, #347b84)',
-    borderRightColor: 'light-dark(#58aeb8, #347b84)',
-    borderBottomColor: 'light-dark(#58aeb8, #347b84)',
-    borderLeftColor: 'light-dark(#58aeb8, #347b84)',
+    '--floway-chip-stroke': 'light-dark(#58aeb8, #347b84)',
+    borderColor: 'var(--floway-chip-stroke)',
     color: 'light-dark(#006b75, #79d7df)',
   } as any,
   violet: {
     backgroundColor: 'light-dark(#f7f3ff, #342453)',
-    borderTopColor: 'light-dark(#9a7bc2, #705b94)',
-    borderRightColor: 'light-dark(#9a7bc2, #705b94)',
-    borderBottomColor: 'light-dark(#9a7bc2, #705b94)',
-    borderLeftColor: 'light-dark(#9a7bc2, #705b94)',
+    '--floway-chip-stroke': 'light-dark(#9a7bc2, #705b94)',
+    borderColor: 'var(--floway-chip-stroke)',
     color: 'light-dark(#5b2e91, #cbb6f4)',
   } as any,
   rose: {
     backgroundColor: 'light-dark(#fff3f5, #4b202b)',
-    borderTopColor: 'light-dark(#cf7187, #8a4b5a)',
-    borderRightColor: 'light-dark(#cf7187, #8a4b5a)',
-    borderBottomColor: 'light-dark(#cf7187, #8a4b5a)',
-    borderLeftColor: 'light-dark(#cf7187, #8a4b5a)',
+    '--floway-chip-stroke': 'light-dark(#cf7187, #8a4b5a)',
+    borderColor: 'var(--floway-chip-stroke)',
     color: 'light-dark(#9f1d35, #f2a1b4)',
   } as any,
   orange: {
     backgroundColor: 'light-dark(#fff4ef, #4b291d)',
-    borderTopColor: 'light-dark(#d17e60, #8d5944)',
-    borderRightColor: 'light-dark(#d17e60, #8d5944)',
-    borderBottomColor: 'light-dark(#d17e60, #8d5944)',
-    borderLeftColor: 'light-dark(#d17e60, #8d5944)',
+    '--floway-chip-stroke': 'light-dark(#d17e60, #8d5944)',
+    borderColor: 'var(--floway-chip-stroke)',
     color: 'light-dark(#b14f2f, #f3ad8f)',
   } as any,
   zinc: {
     backgroundColor: 'light-dark(#f5f5f5, #303030)',
-    borderTopColor: 'light-dark(#a8a8a8, #666666)',
-    borderRightColor: 'light-dark(#a8a8a8, #666666)',
-    borderBottomColor: 'light-dark(#a8a8a8, #666666)',
-    borderLeftColor: 'light-dark(#a8a8a8, #666666)',
+    '--floway-chip-stroke': 'light-dark(#a8a8a8, #666666)',
+    borderColor: 'var(--floway-chip-stroke)',
     color: 'light-dark(#616161, #d6d6d6)',
   } as any,
   // A mask over a background-color disappears under forced colours; opting the

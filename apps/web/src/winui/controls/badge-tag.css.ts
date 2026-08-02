@@ -54,6 +54,10 @@ export const badgeTagCss = `
    because Fluent's own filled chip is borderless and its outline chip carries
    one flat neutral stroke through every state, so neither half of the ramp
    arrives on its own.
+
+   A chip that carries an identity colour publishes it as --floway-chip-stroke
+   and keeps it through both steps: the flattening says pressed, and a chip whose
+   edge is the only thing naming its provider has nothing left to say it with.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L129-L132 */
 .fui-Tag.fui-Tag:active,
 .fui-Tag.fui-Tag[disabled],
@@ -61,7 +65,7 @@ export const badgeTagCss = `
 .fui-InteractionTagPrimary.fui-InteractionTagPrimary[disabled],
 .fui-InteractionTagSecondary.fui-InteractionTagSecondary:active,
 .fui-InteractionTagSecondary.fui-InteractionTagSecondary[disabled] {
-  border-color: var(--winui-control-stroke-default);
+  border-color: var(--floway-chip-stroke, var(--winui-control-stroke-default));
 }
 
 /* The pressable halves take Button's interaction ramp: the label holds at the
