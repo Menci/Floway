@@ -11,7 +11,7 @@ import {
   type PerformancePercentile,
   type PerformanceRange,
 } from './performance-data';
-import type { ChartBucket } from '../charts/dashboard-time';
+import { dashboardBucketFrames, formatAxisDate, type ChartBucket } from '../charts/dashboard-time';
 import { colorForSlot } from '../charts/palette';
 import { withUniqueSeriesLegends, type ChartSeries } from '../charts/series-legends';
 
@@ -76,3 +76,10 @@ export const buildPerformanceChart = (
     },
   };
 };
+
+export const performanceBuckets = (range: PerformanceRange, now: number, locale: string): ChartBucket[] =>
+  dashboardBucketFrames(range, now).map(({ date, key }) => ({
+    key,
+    date,
+    label: formatAxisDate(date, range, locale),
+  }));
