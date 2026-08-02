@@ -1,6 +1,5 @@
 // WinUI 3 styling for Fluent v9's Drawer family — both the OverlayDrawer and
-// the InlineDrawer the sidebar's NavDrawer renders, plus the header and footer
-// separators the two flavours share. WinUI's full-height pane is
+// the InlineDrawer the sidebar's NavDrawer renders. WinUI's full-height pane is
 // NavigationView's, and it states two surfaces rather than one: the pane that
 // overlays the content carries AcrylicInAppFillColorDefaultBrush, while the
 // pane that sits beside it is transparent and shows the page it is part of.
@@ -8,10 +7,7 @@
 //
 // The overlaying pane's fill is the brush FlyoutPresenter also carries, so the
 // overlay drawer takes that surface whole: the acrylic brush's flat fallback
-// from ../tokens.ts for the fill, the flyout stroke for the outline. The header
-// and footer scroll separators take their colour from ContentDialog's
-// separator, which is the bottom edge of its scrolling content band and the
-// one hairline in the corpus dividing scrolling content from a fixed band.
+// from ../tokens.ts for the fill, the flyout stroke for the outline.
 export const drawerCss = `
 /* Foreground, in place of Fluent's neutral one. Both flavours take WinUI's
    default text brush, which resolves to the primary text fill.
@@ -113,30 +109,12 @@ export const drawerCss = `
    composes each production body around an explicit ScrollArea, so the parent
    must remain a clipped layout cell; otherwise a one-pixel rounding overflow
    can expose a second native scrollbar beside the OverlayScrollbars viewport.
+   Fluent reads the header's and footer's scroll separators off that same
+   element, so a body that never scrolls never carries them either: the scroll,
+   and anything that belongs to it, is the ScrollArea's.
    https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-drawer/library/src/components/DrawerBody/useDrawerBodyStyles.styles.ts#L15-L28 */
 .fui-DrawerBody.fui-DrawerBody {
   min-height: 0;
   overflow: hidden;
-}
-
-/* The hairline that appears once the body scrolls takes the colour of
-   ContentDialog's separator -- a card stroke rather than a neutral one -- and
-   fades on WinUI's normal control timing instead of Fluent's. WinUI hangs that
-   stroke on the bottom edge of the scrolling content band, so the footer's
-   hairline is the one with a counterpart and the header's is the same stroke
-   read from the other side. Header and footer share one style module,
-   differing only in which pseudo-element carries it, so both are named to keep
-   the two hairlines one colour. Fluent generates the pseudo-element only while
-   the body is scrollable, so naming it unconditionally restyles it without
-   bringing it into existence.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L10
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L19
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L233
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L602-L603 */
-.fui-DrawerHeader.fui-DrawerHeader::after,
-.fui-DrawerFooter.fui-DrawerFooter::before {
-  background-color: var(--winui-card-stroke-default);
-  transition-duration: var(--winui-control-normal-animation-duration);
-  transition-timing-function: var(--winui-control-fast-out-slow-in-easing);
 }
 `;
