@@ -16,9 +16,6 @@ const SECONDS_PER_DAY = 24 * 60 * 60;
 // distinguishes them, so the caller says which one this control emits.
 export type RetentionValue = number | null | 'invalid';
 
-// The sentinel is a state of the editor, so a form that submits one was let
-// through by a rule that should have refused it; throwing says so rather than
-// inventing a period.
 export const parsedRetention = <T extends number | null>(value: T | 'invalid'): T => {
   if (value === 'invalid') throw new TypeError('Unparseable retention reached the request body');
   return value;
@@ -57,9 +54,8 @@ const editorStateFor = (
     : '',
 });
 
-// A freeform combobox rather than a list plus a second field: a period outside
-// the presets is typed into the same control, which keeps it inside the 240 a
-// settings row gives its action.
+// Freeform combobox rather than a list plus a second field, so an off-preset
+// period stays inside the 240 a settings row gives its action.
 // https://github.com/microsoft/PowerToys/blob/70e0fc22952c79c6e12dce4096f4b0692ded9d90/src/settings-ui/Settings.UI/SettingsXAML/App.xaml#L68
 export function RetentionField({
   children,
@@ -125,8 +121,6 @@ export function RetentionField({
     onChange(parsed);
   };
 
-  // Re-parsing the draft here would state the same condition twice and let the
-  // two disagree.
   const invalid = value === 'invalid';
   const displayValue = choice === 'off'
     ? offLabel
@@ -139,9 +133,8 @@ export function RetentionField({
     className="!w-auto flex-none"
     disabled={disabled}
     freeform
-    // A settings row sizes its control to its current value, and an input has
-    // no intrinsic content width, so the character count states it;
-    // ../ui/settings-card.tsx puts a floor under that on wide expander rows.
+    // An input has no intrinsic content width, so the character count sizes the
+    // row; ../ui/settings-card.tsx puts a floor under it on wide expander rows.
     input={{ size: displayValue.length + 1 }}
     listWidth="content"
     onChange={event => typeCustom(event.target.value)}
@@ -155,8 +148,6 @@ export function RetentionField({
     {presets.map(preset => <Option key={preset.seconds} value={`seconds:${preset.seconds}`}>{preset.label}</Option>)}
   </Combobox>;
 
-  // The row grows a disclosure exactly when the period brought something else
-  // with it, such as the way to go and read the captured requests.
   return <>
     {children === undefined
       ? <SettingsCard action={action} description={description} header={label} icon={icon} />
