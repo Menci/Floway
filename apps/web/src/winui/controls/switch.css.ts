@@ -1,24 +1,17 @@
 // Switch restyled as WinUI 3's ToggleSwitch. Fluent's medium track already
-// matches WinUI's OuterBorder — 40x20, fully round, 1px stroke, knob travel of
-// 20px — so the track box carries over untouched and only the knob's shape and
-// the paint of both parts are restated here.
-//
-// WinUI's knob is a 12x12 rectangle centered in a left-aligned 20x20 cell,
-// while Fluent's is a circle glyph filling the track height. We keep Fluent's
-// element and its translate, blank the glyph, and paint the knob as the
-// element's own box.
-//
+// matches WinUI's OuterBorder, so the track box carries over untouched and only
+// the knob's shape and the paint of both parts are restated here. WinUI's knob
+// is a 12x12 rectangle in a left-aligned 20x20 cell where Fluent's is a circle
+// glyph filling the track height, so we keep Fluent's element and its
+// translate, blank the glyph, and paint the knob as the element's own box.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L507-L521
 //
-// The track is two stacked capsules, not one. XAML draws OuterBorder — the off
-// fill and its stroke — under SwitchKnobBounds, which carries the accent fill at
-// Opacity="0", and toggling cross-fades their opacities. That is why the track
-// washes out towards the page behind it half way through: for a moment neither
-// capsule is fully opaque. A single element interpolating one background-color
-// travels straight between the two fills and cannot show it, so the two
-// capsules are reproduced as the indicator's two pseudo-elements. Fluent draws
-// on neither of them — its focus ring is ::after on the root — and the
-// indicator's own fill and stroke are handed over to them.
+// The track is two stacked capsules, not one. XAML draws OuterBorder under
+// SwitchKnobBounds, which carries the accent fill at Opacity="0", and toggling
+// cross-fades their opacities -- which is why the track washes out towards the
+// page half way through. A single element interpolating one background-color
+// travels straight between the two fills and cannot show that, so the two
+// capsules are reproduced as the indicator's two pseudo-elements.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L507-L508
 //
 // Knob sizes and gaps are written as multiples of a unit the size sets, so
@@ -30,40 +23,29 @@
 // the track's outer edge and then reduced by the 1px border the content box is
 // inset by.
 //
-// The knob is also the one subject in the layer that the doubling convention
-// cannot be applied to. Fluent renders it as the indicator's only child and
-// gives it no class of its own, addressing it as `> *` from the indicator's
-// reset class; every knob rule here therefore doubles the indicator instead,
-// which puts the pair one class above that reset atom exactly as a doubled
-// subject would.
+// The knob is the one subject the doubling convention cannot be applied to.
+// Fluent gives it no class of its own, addressing it as `> *` from the
+// indicator's reset class; every knob rule here therefore doubles the indicator
+// instead, which puts the pair one class above that reset atom exactly as a
+// doubled subject would.
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-switch/library/src/components/Switch/useSwitchStyles.styles.ts#L74-L82
 //
 // XAML centres each knob inside the 20x20 cell minus its own margin, so the
 // 12x12 off knob (Margin="-1,0,0,0") sits at -1 + (21 - 12) / 2 = 3.5px and the
 // on knob (Margin="0,0,1,0") at (19 - 12) / 2 = 3.5px within a cell that
-// translates by 20px — a leading gap of 3.5px against a trailing 4.5px. The two
-// knobs share that offset, so one translated element carries both positions.
-//
-// Their cross-fade it does not carry. XAML stacks SwitchKnobOff under
-// SwitchKnobOn and toggles the pair's opacities exactly as it does the two
-// track capsules, so the accent capsule shows through the knob half way; the
-// one element interpolates its fill from the off colour to the on colour and
-// stays opaque throughout. The two-capsule construction is not available here:
-// Fluent's knob is an SVG element, and an SVG element generates no ::before or
-// ::after box to stack a second knob in.
+// translates by 20px. The two knobs share that offset, so one translated
+// element carries both positions. It does not carry their cross-fade: Fluent's
+// knob is an SVG element, and an SVG element generates no ::before or ::after
+// box to stack a second knob in.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L510-L520
 //
-// Colour is confined to `@media not (forced-colors: active)`. WinUI answers
-// Windows High Contrast with a theme dictionary that maps each ToggleSwitch
-// brush onto a system colour, but this layer's track is drawn on pseudo-
-// elements and its knob on a blanked glyph, and forced colours reaches neither:
-// a Highlight capsule would need `forced-color-adjust: none` on the pseudo-
-// elements, which this layer chooses not to take on. Under forced colours the
-// paint below therefore drops out entirely — no capsule fill, no capsule
-// stroke, no knob fill and no blanked glyph — and Fluent's own drawing shows
-// through, which is the indicator painted Highlight when checked and GrayText
-// when disabled, carrying its circular glyph in the matching foreground.
-// Geometry, motion and the knob's travel apply in both modes.
+// Colour is confined to `@media not (forced-colors: active)`. This layer's
+// track is drawn on pseudo-elements and its knob on a blanked glyph, and forced
+// colours reaches neither: a Highlight capsule would need
+// `forced-color-adjust: none` on the pseudo-elements, which this layer chooses
+// not to take on. Under forced colours the paint below therefore drops out
+// entirely and Fluent's own drawing shows through. Geometry, motion and the
+// knob's travel apply in both modes.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L64-L123
 export const switchCss = `
 /* The whole control is the drag surface, not the knob: XAML lays a transparent
@@ -77,27 +59,18 @@ export const switchCss = `
   touch-action: pan-y;
 }
 
-/* The knob is centered in the track by laying the indicator out as a flex row.
-   The indicator itself paints nothing and animates nothing: the fill and stroke
+/* The indicator itself paints nothing and animates nothing: the fill and stroke
    belong to the two capsules below it and the knob paints its own.
-
-   Size and gap animate over ControlFasterAnimationDuration on the
-   ControlFastOutSlowInKeySpline; the travel is a RepositionThemeAnimation, on
-   the timing ../motion.ts transcribes from the OS.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L602-L606 */
 .fui-Switch__indicator.fui-Switch__indicator {
   align-items: center;
   align-self: center;
   display: flex;
-  /* Fluent rings the track with eight pixels of margin, which builds a hit
-     target and spaces the label in one stroke. Inline, the twelve the
-     template's gap column states takes over, declared on the root because that
-     is the only form which survives the label moving to either side.
-
-     Block-wise WinUI states ten above and ten below the 20px track, making the
-     switch body 40px tall. The dashboard drops that and runs the switch at the
-     one control-row height its forms share; that is the operator's decision
-     about this app's form rows, not a reading of the template.
+  /* Fluent's own eight-pixel ring is dropped: inline, the twelve the template's
+     gap column states takes over, declared on the root because that is the only
+     form which survives the label moving to either side. Block-wise WinUI's 40px
+     body is deliberately dropped too, so the switch runs at the one control-row
+     height this app's forms share.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L186-L187
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L495-L501 */
   margin: 0;
@@ -110,20 +83,18 @@ export const switchCss = `
   gap: 12px;
 }
 
-/* Fluent pads the label eight pixels block-wise and eight inline, trimmed to
-   four on the side facing the track. Inline that is superseded by the 12px gap
-   the root declares; block-wise it is the last thing holding the root taller
-   than the track, and it goes with the indicator's block margin, on the same
-   choice of the operator's stated at the rule above. */
+/* Fluent's label padding is the last thing holding the root taller than the
+   track, so it goes with the indicator's block margin, on the same choice of
+   row height stated at the rule above. */
 .fui-Switch__label.fui-Switch__label {
   padding: 0;
 }
 
 /* A switch that carries a label is a field standing beside inputs and combo
-   boxes, so it takes the row height those share; one that does not is a control
-   in a cell, and is only itself. Both the 34 and the gate are the operator's
-   choice for this app's forms -- WinUI states 40 for every switch, labelled or
-   not. ./text-input.css.ts is where the 34 is written down. */
+   boxes, so it takes the row height those share; one that does not is only
+   itself. Both the 34 and the gate are this app's choice -- WinUI states 40 for
+   every switch, labelled or not. ./text-input.css.ts is where the 34 is written
+   down. */
 .fui-Switch.fui-Switch:has(> .fui-Switch__label) {
   min-height: 34px;
 }
@@ -133,17 +104,10 @@ export const switchCss = `
    opacities it touches.
 
    Turning off does not fade at all. OnToOffTransition carries GeneratedDuration
-   0 and a storyboard holding nothing but the RepositionThemeAnimation, and the
-   Off state is empty, so leaving On stops the On storyboard and every opacity it
-   was holding reverts to the element's own value in one tick. The knob is still
-   sliding while the colour has already arrived.
-
-   Measuring the shipped control against a 60fps capture agrees on both halves:
-   turning on takes 84 +/- 3ms across five toggles with five or six intermediate
-   frames each, and turning off completes inside a single frame, with the
-   pointer-state ramp that starts alongside it not yet advanced one quantisation
-   step. So one duration is declared here and it is the on direction's; the off
-   direction is what remains when nothing animates.
+   0 and the Off state is empty, so leaving On reverts every opacity in one
+   tick; a 60fps capture of the shipped control confirms both halves. So one
+   duration is declared here and it is the on direction's; the off direction is
+   what remains when nothing animates.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L418-L439
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L442 */
 .fui-Switch__indicator.fui-Switch__indicator {
@@ -161,21 +125,15 @@ export const switchCss = `
   --winui-switch-crossfade-duration: var(--winui-control-faster-animation-duration);
 }
 
-/* Dragging. The knob is glued to the pointer -- XAML writes KnobTranslateTransform.X
-   on every DragDelta with no storyboard behind it -- so the travel transition is
-   switched off for the length of the gesture and the position comes in as a
-   custom property the drag writes.
-
-   Nothing about the fill moves either. Entering the empty Dragging state would
-   let the On storyboard's opacities revert, and OnToDraggingTransition re-asserts
-   them at KeyTime 0 to stop exactly that; the control holds the appearance of
-   the state it started from until the pointer is released. Here that falls out
-   for free, because the checkbox does not flip until the gesture commits.
+/* Dragging. The knob is glued to the pointer -- XAML writes
+   KnobTranslateTransform.X on every DragDelta with no storyboard behind it --
+   so the travel transition is switched off for the length of the gesture and
+   the position comes in as a custom property the drag writes.
 
    Settling out of a drag does fade, in both directions. That is the one place
    the off direction is not instant: DraggingToOffTransition carries the same
-   four 83ms opacity keyframes DraggingToOnTransition does, where OnToOffTransition
-   -- the click path -- carries none.
+   four 83ms opacity keyframes DraggingToOnTransition does, where
+   OnToOffTransition -- the click path -- carries none.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L391-L403
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L404-L417 */
 .fui-Switch[data-winui-switch-dragging] .fui-Switch__indicator.fui-Switch__indicator {
@@ -204,20 +162,18 @@ export const switchCss = `
   transition-timing-function: linear;
 }
 
-/* OuterBorder. Its fill and stroke are the ones that respond to the pointer,
-   over ControlFasterAnimationDuration on LinearColorKeyFrames -- WinUI holds the
-   stroke at ToggleSwitchStrokeOff across hover and press, so only the fill ramp
-   moves and the stroke transition is here for the disabled edge alone.
+/* OuterBorder. WinUI holds the stroke at ToggleSwitchStrokeOff across hover and
+   press, so only the fill ramp moves and the stroke transition is here for the
+   disabled edge alone.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L135-L142 */
 .fui-Switch__indicator.fui-Switch__indicator::before {
   transition-duration: var(--winui-control-faster-animation-duration), var(--winui-control-faster-animation-duration), var(--winui-switch-crossfade-duration);
   transition-property: background-color, border-color, opacity;
 }
 
-/* SwitchKnobBounds, the accent capsule, which the toggle cross-fades in over
-   OuterBorder. Its brushes are swapped by ObjectAnimationUsingKeyFrames rather
-   than interpolated, so the accent ramp lands instantly and only the opacity
-   here carries any timing.
+/* SwitchKnobBounds, the accent capsule. Its brushes are swapped by
+   ObjectAnimationUsingKeyFrames rather than interpolated, so the accent ramp
+   lands instantly and only the opacity here carries any timing.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L143-L150
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L259-L263 */
 .fui-Switch__indicator.fui-Switch__indicator::after {
@@ -240,24 +196,15 @@ export const switchCss = `
      positioned sibling, which would put the accent one over the knob. */
   position: relative;
   z-index: 1;
-  /* Three animations, not one. The size and the margin are the template's own
-     keyframes: ControlFasterAnimationDuration on the fast-out-slow-in spline,
-     stated outright for Width and Height in the PointerOver and Pressed states.
-
-     The travel is the template's second animation. Toggling states
-     KnobTranslateTransform with Duration="0" and hands the movement to a
-     RepositionThemeAnimation, whose timing the OS supplies rather than the
-     template -- transcribed in ../motion.ts, where it is sourced.
-
-     The fill is the third. It stands in for the cross-fade of the two knobs
-     XAML stacks the same way it stacks the two tracks, so it runs on that
-     cross-fade's asymmetric duration -- see the header for what an
-     interpolating fill does and does not carry of it.
+  /* Three animations, not one: size and margin on the template's own keyframes,
+     travel on the RepositionThemeAnimation timing the OS supplies (transcribed
+     in ../motion.ts), and the fill standing in for the cross-fade of the two
+     stacked knobs, on that cross-fade's asymmetric duration.
 
      Travel and size run 4.4x apart, and that ratio is the control's whole
-     character: the knob crosses the track deliberately while its swell under the
-     pointer, and the colour under it, are accents that have already finished.
-     Matching their durations, tried here first, reads as the knob lunging.
+     character: the knob crosses the track deliberately while its swell under
+     the pointer is an accent that has already finished. Matching their
+     durations, tried here first, reads as the knob lunging.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L443-L446 */
   transition-duration: var(--winui-control-faster-animation-duration), var(--winui-control-faster-animation-duration), var(--winui-control-faster-animation-duration), var(--winui-switch-travel-duration), var(--winui-switch-crossfade-duration);
   transition-property: width, height, margin-inline-start, transform, background-color;
@@ -265,12 +212,9 @@ export const switchCss = `
   width: calc(12 * var(--winui-switch-unit));
 }
 
-/* The knob is 12x12 at rest, swells to 14x14 under the pointer and stretches to
-   17x14 while pressed -- a capsule, not a circle, which is why the shape is the
-   element's own background rather than a glyph. The template animates Width and
-   Height themselves rather than a scale, over ControlFasterAnimationDuration on
-   the fast-out-slow-in spline, and the margins keep the growth centred on the
-   track's leading edge until the press pushes it 3px along.
+/* The knob swells to 14x14 under the pointer and stretches to 17x14 while
+   pressed -- a capsule, not a circle, which is why the shape is the element's
+   own background rather than a glyph.
 
    The state is taken from the root rather than from the input. Fluent's input
    is visually hidden and a pixel wide, so it never sees the pointer -- the
@@ -306,10 +250,9 @@ export const switchCss = `
 }
 
 /* Fluent clamps its own switch transitions under reduced motion, but at a
-   single class, so every timing declared above outranks it. The clamp is
-   restated here at the weight those rules carry. 0.01ms rather than none for
-   the reason ./choice.css.ts records at the same construction: the transition
-   still has to complete. */
+   single class, so every timing declared above outranks it. 0.01ms rather than
+   none for the reason ./choice.css.ts records: the transition still has to
+   complete. */
 @media (prefers-reduced-motion: reduce) {
   .fui-Switch__indicator.fui-Switch__indicator::before,
   .fui-Switch__indicator.fui-Switch__indicator::after,
@@ -319,16 +262,13 @@ export const switchCss = `
 }
 
 @media not (forced-colors: active) {
-  /* The indicator is a frame for the two capsules and paints neither fill nor
-     stroke of its own. Fluent states both on the input's reset atom, once per
-     pointer and disabled state, at a specificity a plain doubled subject cannot
-     reach, so every one of those states is answered here.
-
-     Both matter, and for the same reason. The fill is what shows through the
-     moment neither capsule is opaque -- the wash mid-cross-fade would be
-     Fluent's brand blue instead of the page -- and the stroke is a second ring
-     one pixel outside the capsule's own, which appears in that same window when
-     a drag settles back to off. */
+  /* The indicator paints neither fill nor stroke of its own. Fluent states both
+     on the input's reset atom, once per pointer and disabled state, at a
+     specificity a plain doubled subject cannot reach, so every one of those
+     states is answered here. Both matter: the fill is what shows through the
+     moment neither capsule is opaque, and the stroke is a second ring one pixel
+     outside the capsule's own, which appears in that same window when a drag
+     settles back to off. */
   .fui-Switch__indicator.fui-Switch__indicator,
   .fui-Switch__input:enabled:not(:checked):not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator,
   .fui-Switch__input:enabled:not(:checked):not([aria-disabled='true']):hover ~ .fui-Switch__indicator.fui-Switch__indicator,
@@ -360,24 +300,18 @@ export const switchCss = `
     background-color: var(--winui-accent-fill-default);
   }
 
-  /* The knob is drawn once. Fluent renders it as an SVG glyph, and this file
-     paints the element's own background instead so the shape can be a capsule
-     rather than a circle -- the pressed state stretches it to 17x14, which no
-     glyph does. The glyph itself has to go, or it shows through as a second,
-     circular knob inside the first: \`fill\` on the SVG does not reach the path
+  /* Fluent's glyph has to go, or it shows through as a second, circular knob
+     inside the one this file paints. \`fill\` on the SVG does not reach the path
      that draws it, so the path is named. */
   .fui-Switch__indicator.fui-Switch__indicator > * > * {
     fill: transparent;
   }
 
   /* The knob's own fill, stated per state rather than taken from the
-     indicator's colour. XAML stacks SwitchKnobOff under SwitchKnobOn and
-     cross-fades their opacities exactly as it does the two tracks, so this fill
-     has to animate on the same schedule; \`currentColor\` cannot, because it
-     resolves at used-value time and leaves background-color with no
-     interpolable endpoints -- the knob would jump the moment the indicator's
-     colour did. WinUI holds each of the two knob brushes flat across rest,
-     pointer-over and pressed, so only on, off and disabled are stated.
+     indicator's colour. It has to animate on the cross-fade's schedule, and
+     \`currentColor\` cannot: it resolves at used-value time and leaves
+     background-color with no interpolable endpoints, so the knob would jump the
+     moment the indicator's colour did.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L151-L158 */
   .fui-Switch__indicator.fui-Switch__indicator > * {
     background-color: var(--winui-text-fill-secondary);
@@ -397,10 +331,8 @@ export const switchCss = `
     background-color: var(--winui-text-on-accent-fill-disabled);
   }
 
-  /* Off: WinUI puts the whole pointer response on the track fill and holds both
-     the stroke (ToggleSwitchStrokeOff) and the knob (TextFillColorSecondary) at
-     their rest values, so the alt-fill ramp is the only thing hover and press
-     move.
+  /* Off: WinUI puts the whole pointer response on the track fill and holds the
+     stroke and the knob at their rest values.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L136-L137
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L140-L141 */
   .fui-Switch__input:enabled:not(:checked):not([aria-disabled='true']):hover ~ .fui-Switch__indicator.fui-Switch__indicator::before {
@@ -421,11 +353,9 @@ export const switchCss = `
     background-color: var(--winui-accent-fill-tertiary);
   }
 
-  /* Disabled. Off keeps its stroke and loses its fill -- ToggleSwitchFillOffDisabled
-     is fully transparent in both dictionaries -- while on holds the disabled
-     accent; the knob follows the matching disabled foreground in each. WinUI
-     also returns the knob to its rest size, which no pointer state can reach
-     here, because every size rule above is gated on the input being enabled.
+  /* Disabled. WinUI returns the knob to its rest size, which no pointer state
+     can reach here, because every size rule above is gated on the input being
+     enabled.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L138-L139
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L146-L158
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L357-L368 */
@@ -441,15 +371,11 @@ export const switchCss = `
   }
 
   /* Focus: Fluent already draws a 2px ring around the whole control, so its
-     colour becomes FocusStrokeColorOuter and the 1px FocusStrokeColorInner ring
-     WinUI backs it with is added inside it. Those two thicknesses are the
-     framework defaults for FocusVisualPrimaryThickness and
-     FocusVisualSecondaryThickness. What is not transcribed is the
-     FocusVisualMargin of -7,-3,-7,-3, which inflates the pair around
-     SwitchAreaGrid: that margin is stated against a template part, and the ring
-     here belongs to the whole control, so the inflation stays as Fluent draws
-     it. Under forced colours the ring keeps Fluent's Highlight, which is what
-     WinUI's own HighContrast focus visual resolves to.
+     colour becomes FocusStrokeColorOuter and the 1px inner ring is added inside
+     it. What is not transcribed is the FocusVisualMargin of -7,-3,-7,-3, which
+     inflates the pair around SwitchAreaGrid: that margin is stated against a
+     template part, and the ring here belongs to the whole control, so the
+     inflation stays as Fluent draws it.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L200
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/DependencyObject/DependencyProperty.cpp#L22-L25 */
