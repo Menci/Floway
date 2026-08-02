@@ -99,9 +99,21 @@ export const messageBarCss = `
 }
 
 /* InfoBarPanelMargin, the thickness 0,0,16,0.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L78 */
+
+   The wrap is a departure: WinUI wraps both TextBlocks WrapWholeWords, which
+   never splits a word, so a token longer than the line overflows the panel.
+   These bars carry a server's own words -- URLs, ids, response bodies with no
+   space in them -- and the panel is a grid item, so that overflow both hides
+   the text and widens the track it sits in. 'anywhere' rather than
+   'break-word': only 'anywhere' lowers the min-content contribution, which is
+   what stops the widening.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L78
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar.xaml#L114
+   https://drafts.csswg.org/css-text-4/#overflow-wrap-property */
 .fui-MessageBarBody.fui-MessageBarBody {
   padding-inline-end: 16px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* The leading 12px of InfoBarMessageHorizontalOrientationMargin replaces the

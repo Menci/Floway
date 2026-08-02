@@ -320,10 +320,7 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
         </>}
       </>}
     />
-    {modelsError && <OutcomeMessageBar
-      bodyClassName="min-w-0 [overflow-wrap:anywhere]"
-      intent="warning"
-    >
+    {modelsError && <OutcomeMessageBar intent="warning">
       {modelsError === 'Upstream model listing failed'
         ? t('dashboard.upstreamEditor.models.listingFailed')
         : t('dashboard.upstreamEditor.models.listingFailedWithDetail', { message: modelsError })}
