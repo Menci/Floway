@@ -34,10 +34,8 @@ export const authFetch = async (
   return response;
 };
 
-// hc types the request — path, method and body come from the gateway's own
-// route definitions, so a control-plane change breaks typecheck here instead
-// of at runtime. It does not unwrap the response; callApi below still owns the
-// { error } envelope, non-JSON bodies and the single 401 path.
+// hc types the request only; callApi below still owns the { error } envelope,
+// non-JSON bodies and the single 401 path.
 export const api = hc<AppType>('/', { fetch: authFetch });
 
 type SuccessfulJson<TResponse extends Response> = TResponse extends {
@@ -49,10 +47,9 @@ type SuccessfulJson<TResponse extends Response> = TResponse extends {
     : never
   : never;
 
-// The mirror of SuccessfulJson over the non-2xx members of the same union. The
-// gateway declares its failure bodies as precisely as its success bodies, so a
-// caller that reads a conflict payload reads it at the type the route states
-// instead of asserting a shape onto `unknown`.
+// The gateway declares its failure bodies as precisely as its success bodies, so
+// a caller reads a conflict payload at the type the route states rather than
+// asserting a shape onto `unknown`.
 type FailedJson<TResponse extends Response> = TResponse extends {
   status: infer Status;
   json(): Promise<infer Body>;
@@ -62,8 +59,8 @@ type FailedJson<TResponse extends Response> = TResponse extends {
     : never
   : never;
 
-// Everything up to the body: the network, the 401 path and a failed status all
-// resolve here, so the two callers below differ only in whether they parse.
+// The network, the 401 path and a failed status all resolve here, so the two
+// callers below differ only in whether they parse.
 const requestResponse = async <TRaw>(
   fn: () => Promise<Response>,
 ): Promise<ApiResult<Response, TRaw>> => {
@@ -91,8 +88,8 @@ const requestResponse = async <TRaw>(
       error: {
         status: response.status,
         message: errorMessageFromPayload(body) ?? `HTTP ${response.status}`,
-        // The one place the parsed body is named: the route union says what a
-        // failure carries, and this is where an untyped parse result adopts it.
+        // The route union says what a failure carries; this is where an untyped
+        // parse result adopts it.
         raw: body as TRaw,
       },
     };

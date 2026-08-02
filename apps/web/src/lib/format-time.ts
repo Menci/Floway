@@ -17,10 +17,8 @@ const RELATIVE_UNITS: [limitSeconds: number, perUnitSeconds: number, unit: Intl.
   [2_592_000, 86_400, 'day'],
 ];
 
-// Null past the coarsest unit we express relatively (30 days), where callers
-// read better with an absolute date than with "2 months ago". Symmetric about
-// the reading: a timestamp in the future is as expressible as one in the past,
-// which is what a token expiry or a rate-limit reset needs.
+// Null past 30 days, where callers read better with an absolute date. Symmetric
+// about the reading, which is what a token expiry or rate-limit reset needs.
 //
 // `now` is an argument rather than a `Date.now()` read, so a list of rows all
 // answer to one tick of `useNow` instead of each reading the clock mid-render.

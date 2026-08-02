@@ -25,9 +25,8 @@ import { useRefresh } from '../components/ui/use-refresh';
 
 const selectedKeyStorageKey = 'floway-agent-setup-selected-key';
 
-// `null` is a fetch that failed, distinct from a deployment that genuinely
-// holds no keys: an empty table invites an operator to create a second copy of
-// a key they already have.
+// `null` is a fetch that failed, distinct from a deployment that genuinely holds
+// no keys: an empty table invites a second copy of a key that already exists.
 interface ApiKeysPageData {
   keys: ApiKey[] | null;
   upstreams: UpstreamOption[] | null;
@@ -75,9 +74,8 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
   const { user } = useDashboardOutletContext();
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  // The error belongs to the attempt that produced it. Opening the dialog for
-  // another key starts a new attempt, so the previous one's failure is cleared
-  // here rather than waiting for a dismissal that may never come.
+  // The error belongs to the attempt that produced it, so opening the dialog for
+  // another key clears it rather than waiting for a dismissal.
   const openDeleteDialog = (target: ApiKey) => {
     setDeleteError(null);
     deleteDialog.open(target);
@@ -96,12 +94,9 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
     ? modelsForAgentSetup(data.models, selectedKey.upstream_ids, user.upstreamIds)
     : [];
 
-  // The stored id records which key the operator picked, so it is written
-  // where the picking happens rather than mirrored off the rendered state. A
-  // mirror cannot tell a selection the operator cleared from one this page
-  // could not resolve: the loader above answers with no id whenever the key
-  // list did not arrive, and an effect watching that would erase a stored
-  // selection which the next successful load would have restored.
+  // Written where the picking happens rather than mirrored off rendered state:
+  // the loader answers with no id whenever the key list did not arrive, so an
+  // effect watching that would erase a selection the next load would restore.
   const selectKey = (id: string) => {
     setSelectedKeyId(id);
     if (id) localStorage.setItem(selectedKeyStorageKey, id);
@@ -115,9 +110,8 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
     if (signal.aborted) return;
     setData(next);
     setPageError(next.error);
-    // A key the reload no longer lists is a key that is gone -- deleted here or
-    // elsewhere -- rather than one that failed to arrive: `loadPageData` keeps
-    // the keys it already had when the request fails.
+    // A key the reload no longer lists is gone rather than merely unfetched:
+    // `loadPageData` keeps the keys it already had when the request fails.
     if (!next.keys?.some(key => key.id === selectedKeyId)) selectKey('');
   };
 

@@ -27,8 +27,6 @@ if (!resolvedNamespace?.FluentProvider) {
 
 const normalizedNamespace = resolvedNamespace as FluentComponents;
 
-// This is the app's only value import of Fluent — everything else imports types
-// — so it is also the one place where the appearance stamping, the motion
-// substitution and the gesture Fluent's Switch has no counterpart for can be
-// applied to every rendered instance at once.
+// The app's only value import of Fluent, so it is the one place the appearance
+// stamping, motion substitution and Switch drag gesture reach every instance.
 export const fluentComponents = withWinuiDrag(withWinuiMotion(withWinuiAppearance(normalizedNamespace)));

@@ -1,9 +1,8 @@
 const decimals = (value: number, maximumFractionDigits: number, locale: string): string =>
   new Intl.NumberFormat(locale, { maximumFractionDigits }).format(value);
 
-// Binary units, one fraction digit below ten of a unit and none above, and two
-// at the top of the ladder where the whole range a backup or a response body
-// occupies has to fit in three significant figures.
+// Binary units, one fraction digit below ten of a unit and none above; two at the
+// top of the ladder so the whole range fits in three significant figures.
 export const formatBytes = (value: number, locale: string): string => {
   if (value < 1024) return `${value} B`;
   if (value < 1024 ** 2) return `${decimals(value / 1024, value < 10 * 1024 ? 1 : 0, locale)} KB`;
@@ -11,19 +10,16 @@ export const formatBytes = (value: number, locale: string): string => {
   return `${decimals(value / 1024 ** 3, 2, locale)} GB`;
 };
 
-// `Intl` rather than a hand-rolled thousands ladder: the compact spelling of a
-// number is locale-owned, and zh-Hans groups by 万, not by K.
+// `Intl` rather than a hand-rolled thousands ladder: zh-Hans groups by 万, not K.
 export const formatCompactCount = (value: number, locale: string): string =>
   new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(value);
 
-// Clamped at zero: a counter is a tally of things that happened, so a negative
-// reading is an arithmetic artifact rather than a quantity, and printing it
-// would invite the reader to interpret it.
+// Clamped at zero: a negative tally is an arithmetic artifact, not a quantity.
 export const formatCount = (value: number, locale: string): string =>
   Math.max(0, Math.round(value)).toLocaleString(locale);
 
-// Three significant figures across the whole plausible range, so a column of
-// rates stays the same width and stays comparable digit by digit.
+// Three significant figures across the range, so a column of rates stays the same
+// width and stays comparable digit by digit.
 export const formatTokenRate = (tokensPerSecond: number | null): string => {
   if (tokensPerSecond === null || !Number.isFinite(tokensPerSecond) || tokensPerSecond <= 0) return '-';
   if (tokensPerSecond >= 100) return `${Math.round(tokensPerSecond)} tok/s`;

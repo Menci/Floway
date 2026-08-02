@@ -51,9 +51,8 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
   const [mutating, setMutating] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  // The error belongs to the attempt that produced it. Opening the dialog for
-  // another proxy starts a new attempt, so the previous one's failure is
-  // cleared here rather than waiting for a dismissal that may never come.
+  // The error belongs to the attempt that produced it, so opening the dialog for
+  // another proxy clears it rather than waiting for a dismissal.
   const openDeleteDialog = (target: ProxyRecord) => {
     setDeleteError(null);
     deleteDialog.open(target);
@@ -65,8 +64,8 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
       callApi(() => api.api.proxies.$get(undefined, { init: { signal } })),
       callApi(() => api.api.proxies.backoffs.$get(undefined, { init: { signal } })),
     ]);
-    // The two lists are set together or not at all: a torn pair shows proxies
-    // from one round trip beside backoffs from another.
+    // Set together or not at all: a torn pair shows proxies from one round trip
+    // beside backoffs from another.
     if (signal.aborted) return;
     if (proxiesRes.data) setProxies(proxiesRes.data);
     if (backoffsRes.data) setBackoffs(backoffsRes.data);
@@ -87,8 +86,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
       handle.settle();
       const raw = result.error.raw;
       // Only the 409 member of the delete route's failure union names the
-      // upstreams still pointing at this proxy; every other failure states its
-      // own message and nothing to enumerate.
+      // upstreams still pointing at this proxy.
       const referencing = raw && 'referencing_upstream_ids' in raw ? raw.referencing_upstream_ids : [];
       if (referencing.length > 0) {
         setDeleteError(

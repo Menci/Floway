@@ -76,9 +76,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  // What the page shows, which starts as what the loader returned and is
-  // replaced by a key refresh or by the operator dismissing a failure. It is
-  // tied to the payload it came from, so a navigation that loads a new one
+  // Tied to the loader payload it came from, so a navigation that loads a new one
   // discards it rather than showing one route's keys under another's URL.
   const [replacement, setReplacement] = useState<{ source: LoaderData; keys: ApiKey[]; keysError: string | null; recordsError: string | null } | null>(null);
   const shown = replacement?.source === loaderData
@@ -124,9 +122,8 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
     };
   }, [keys, loaderData, navigate]);
 
-  // The list's bar reports whichever of the three streams failed, so clearing
-  // it has to clear all three: what the operator dismissed is the message, not
-  // one of the sources behind it.
+  // The bar reports whichever of the three streams failed, so a dismissal clears
+  // all three: what was dismissed is the message, not one source behind it.
   const dismissListError = () => {
     subscription.dismissError();
     setReplacement({ ...shown, keysError: null, recordsError: null });

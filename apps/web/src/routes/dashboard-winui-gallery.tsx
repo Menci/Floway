@@ -124,10 +124,8 @@ function Section({ children, id, title }: { children: React.ReactNode; id: strin
   </section>;
 }
 
-// Each variant occupies one row, and each row holds the states that props can
-// force. States that only the pointer or the keyboard can reach are named by a
-// `Hint` next to the row rather than mocked up with a look-alike, so nothing on
-// this page claims to show a state it is not actually in.
+// States only the pointer or keyboard can reach are named by a `Hint` beside the
+// row rather than mocked up, so nothing here claims a state it is not in.
 function Row({ children, label }: { children: React.ReactNode; label: string }) {
   return <div className="grid gap-2">
     <Text size={200} weight="semibold" className="text-fui-fg2 uppercase tracking-wide">{label}</Text>

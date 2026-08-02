@@ -1,7 +1,6 @@
-// The gateway's failure body, and the same shape from a data-plane upstream
-// relayed through it: `{ error: "..." }` or `{ error: { message: "..." } }`.
-// Distinct from `errorMessage`, which narrows a thrown value -- this reads a
-// payload that has already been decoded off the wire.
+// The gateway's failure body, and the same shape relayed from a data-plane
+// upstream: `{ error: "..." }` or `{ error: { message: "..." } }`. Distinct from
+// `errorMessage`, which narrows a thrown value rather than a decoded payload.
 export const errorMessageFromPayload = (payload: unknown): string | null => {
   if (!payload || typeof payload !== 'object') return null;
 

@@ -1,47 +1,23 @@
-/* The app's global stylesheet: everything that is true of the document rather
-   than of a component. Three things live here and nothing else does.
+/* No rule below paints a colour of its own, so the document needs neither a
+   dark-scheme nor a forced-colors block.
 
-   The webfont, first, because a face has to be declared before anything is set
-   in it. Then UnoCSS's generated utilities, which the `@unocss` directive
-   stands in for. Then the app's own custom properties, element defaults and
-   type rules -- the measures, faces and weights that are Floway's rather than
-   Fluent's or WinUI's, and the resets that make an element behave the same
-   wherever it appears.
+   Order is load-bearing: the utilities come after the font so a utility can
+   override a face, and before the app's own rules so those can override a
+   utility. The WinUI layer arrives later still, as the stylesheet ../root.tsx
+   links by hand, and Griffel later than that at runtime. */
 
-   No rule below paints a colour of its own: each one either states a measure,
-   a face or a weight, or passes the surrounding colour straight through. So
-   the document needs neither a dark-scheme nor a forced-colors block -- every
-   surface keeps whatever its own layer paints it in, in both schemes and in
-   high contrast alike, and no state a control declares for itself is outranked
-   from here.
-
-   Order is load-bearing and is the order the two files this replaces were
-   imported in: the utilities come after the font so a utility can override a
-   face, and before the app's own rules so those can override a utility. The
-   WinUI layer arrives later still, as the stylesheet ../root.tsx links by
-   hand, and Griffel later than that at runtime. */
-
-/* Segoe UI Variable is the typeface Fluent's type ramp is drawn for. Without a
-   webfont only Windows 11 renders the dashboard as designed; everyone else
-   falls back through the stack to Helvetica or Roboto.
-
-   Microsoft publishes the variable face from Learn's static tree, and mirrors
-   it byte-for-byte at the same path on Azure China. We point at the mirror:
-   learn.microsoft.com is fronted by Akamai, which maps mainland clients onto
-   European and US edges, while this host stays on Microsoft's own AS8075.
-   Measured from China Telecom in Nanjing that is 1.0 s against 3.4 s; from
-   Tokyo and Hong Kong the two are within noise of each other.
+/* Segoe UI Variable is the typeface Fluent's type ramp is drawn for.
    https://learn.microsoft.com/en-us/typography/font-list/segoe-ui-variable
 
-   TrueType is the only container upstream — there is no woff2 of the variable
-   face. It costs less than it looks: the CDN gzips it to 1.05 MB against the
-   949 KB woff2 on microsoft.design, and that host answers a large share of
-   mainland requests with a Cloudflare challenge instead of the font.
+   Microsoft mirrors Learn's static tree byte-for-byte on Azure China, and we
+   point at the mirror: learn.microsoft.com is fronted by Akamai, which maps
+   mainland clients onto European and US edges, while this host stays on
+   Microsoft's own AS8075 -- 1.0 s against 3.4 s from China Telecom in Nanjing.
 
-   Declaring no font-variation-settings is deliberate. The face carries an
+   TrueType is the only container upstream; there is no woff2 of the variable
+   face. Declaring no font-variation-settings is deliberate: the face carries an
    `opsz` axis over 5-36, so the initial `font-optical-sizing: auto` drives it
-   from the used font size and the ramp gets Small, Text and Display
-   continuously rather than at two pinned stops. */
+   from the used font size continuously rather than at two pinned stops. */
 @font-face {
   font-family: 'Segoe UI Variable Web';
   src: url('https://docs.azure.cn/static/third-party/SegoeUIVariable/SegoeUI-VF.ttf?floway-vf=2.02') format('truetype');
@@ -52,22 +28,15 @@
 
 @unocss;
 
-/* The inset a route's content keeps from the edge of its region, and the same
-   measure separates two panels laid side by side so the space around the page
-   and the space between its panels are one number rather than two. Neither the
-   28 nor its 16 at the narrow step transcribes anything, and nothing else
-   sources them: both are ours.
-
-   The inset a panel keeps from its own edge is the 16 both of WinUI's
-   nearest surfaces state: SettingsCard's padding
+/* The 28 and its 16 at the narrow step transcribe nothing and are ours. The
+   panel inset is the 16 both of WinUI's nearest surfaces state: SettingsCard's
+   padding
    (https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L99)
    and Expander's ContentPadding
    (https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L86).
-   Both hold a row of content rather than a whole form, but neither scales its
-   inset to what it holds, and nothing in the corpus does -- so a panel takes the
-   same measure whatever is inside it. It does not step down with the page inset:
-   16 is already the tightest measure WinUI states, and a narrower window is a
-   reason to give the page less margin, not to crowd what is inside the panel. */
+   Neither scales its inset to what it holds, so a panel takes the same measure
+   whatever is inside it, and it does not step down with the page inset: 16 is
+   already the tightest measure WinUI states. */
 :root {
   --floway-page-inset: 28px;
   --floway-panel-inset: 16px;
@@ -79,22 +48,15 @@
   }
 }
 
-/* The monospace ramp. WinUI states none -- it has no code face -- so nothing
-   here transcribes. The rule the steps follow is the operator's: monospace
+/* The monospace ramp. WinUI states none, so nothing here transcribes: monospace
    runs one pixel under whatever the same position would be set at were it not
-   monospace. He first put it as a flat 12px and then corrected it to that
-   relative form, which is why these are a ladder rather than a single value --
-   a custom property cannot say "one less than whatever this element inherits",
-   so the subtraction is precomputed against each step of the type ramp: 14
-   becomes 13, 12 becomes 11, 10 becomes 9, 18 becomes 17.
+   monospace. A custom property cannot say "one less than whatever this element
+   inherits", so the subtraction is precomputed against each step of the type
+   ramp -- 14 becomes 13, 12 becomes 11, 10 becomes 9, 18 becomes 17.
 
-   Each size carries the leading it is set with, which is ours. Without that
-   pairing a size alone inherits whatever leading its context happens to have,
-   and one identifier rendered at 13px was measured three ways in three places:
-   13/20 in a list row, 13/16 in a detail pane, and 13/13 in a table cell, where
-   the leading had collapsed onto the size. Each step is paired with the
-   proportional leading its size sits closest to, so a mono cell lines up with
-   the ordinary text in the same row. */
+   Each size carries its leading, because a size alone inherits whatever leading
+   its context happens to have: one 13px identifier was measured 13/20 in a list
+   row, 13/16 in a detail pane and 13/13 in a table cell. */
 :root {
   --floway-font-size-mono: 13px;
   --floway-line-height-mono: 20px;
@@ -120,34 +82,25 @@ samp {
   font-family: var(--fontFamilyMonospace, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
 }
 
-/* Code set inside prose is the same text, in a different face. It takes its
-   colour and its surface from whatever it sits in, and the operator's pixel off
-   its size -- stated relatively here, against whatever the surrounding prose is
-   set at, which is the form the ramp above can only precompute. It is never a
-   boxed token: WinUI has no inline-code chip, and a background plus a border
-   plus its own foreground turns a word in a sentence into a control.
-   A `pre` block is the exception and states its own surface.
+/* Inline code is never a boxed token: WinUI has no inline-code chip, and a
+   background plus a border plus its own foreground turns a word in a sentence
+   into a control. A `pre` block is the exception and states its own surface.
 
-   `:where()` contributes no specificity, so the size is marked important for
-   the reason ./components/upstream-editor/mono-label.ts states: this layer
-   writes its control rules with doubled class selectors, and those outrank a
-   Griffel atom, which a bare zero-specificity rule does not. Inline code does
-   receive Griffel classes -- ./components/ui/code-block.tsx and
-   ./components/requests/request-detail.tsx both render it inside styled
-   subtrees. The other two declarations need no such flag, because nothing
-   states a colour or a surface for these elements to lose to.
+   `:where()` contributes no specificity, so the size is marked important for the
+   reason ./components/upstream-editor/mono-label.ts states -- inline code does
+   receive Griffel atoms, which a bare zero-specificity rule loses to. The other
+   two declarations need no flag: nothing states a colour or surface for these
+   elements to lose to.
 
-   The reduction lands once, never twice: the rules below hand `font-size:
-   inherit` to code nested in a `pre` or in a `.font-mono` subtree, so a
-   compound control does not step down again per level. */
+   The rules below hand `font-size: inherit` to code nested in a `pre` or a
+   `.font-mono` subtree, so a compound control does not step down per level. */
 :where(code, kbd, samp) {
   font-size: calc(1em - 1px) !important;
   background-color: transparent;
   color: inherit;
 }
 
-/* Strong text is semibold. WinUI's BodyStrong is the 600 weight, and the
-   dashboard's own headings stop there too; the 700 a browser gives `strong` by
+/* WinUI's BodyStrong is the 600 weight; the 700 a browser gives `strong` by
    default is heavier than anything the type ramp uses. */
 :where(strong, b) {
   font-weight: var(--fontWeightSemibold);

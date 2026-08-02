@@ -1,6 +1,5 @@
-// The two type stacks, held apart from ./theme.ts because both the Fluent theme
-// object and ./critical.css.ts spend them and the latter is evaluated at build
-// time, where nothing that reaches @fluentui/react-components can be loaded.
+// Held apart from ./theme.ts because ./critical.css.ts also spends them and is
+// evaluated at build time, where @fluentui/react-components cannot be loaded.
 export const baseFontStack = "'Segoe UI Variable Web', 'Segoe UI Variable Text', 'Segoe UI Variable Display', 'Segoe UI Variable Small', 'Segoe UI', system-ui, sans-serif";
 
 // The upstream web release has no NF-flavoured WOFF2, so every browser uses

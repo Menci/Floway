@@ -50,10 +50,8 @@ const submittedField = (formData: FormData, name: string): string => {
   return value;
 };
 
-// The schema is the resolver's, and the resolver has already run: the form
-// cannot reach here holding a value it refuses. What is left for the action is
-// the call, and what comes back from it is the only thing this page has to
-// report that a field could not.
+// The resolver has already run, so the form cannot reach here holding a value it
+// refuses; what comes back from the call is the only thing left to report.
 export async function clientAction({
   request,
 }: Route.ClientActionArgs): Promise<SettingsActionData> {
@@ -87,11 +85,10 @@ export default function DashboardSettings() {
     },
   });
 
-  // A dismissal names the result it dismissed rather than clearing a copy of
-  // it, so the next submission's failure appears on its own account. What the
-  // gateway said is prose, not a message key -- running it through `t` would
-  // have i18next read the first colon in it as a namespace separator and hand
-  // back the tail.
+  // A dismissal names the result it dismissed rather than clearing a copy, so the
+  // next submission's failure appears on its own account. The gateway's message
+  // is prose, not a message key: `t` would read its first colon as a namespace
+  // separator and hand back the tail.
   const error = fetcher.data && !fetcher.data.ok && fetcher.data !== dismissed
     ? fetcher.data.error
     : null;
@@ -103,9 +100,8 @@ export default function DashboardSettings() {
   }, [fetcher.data, reset, t, toasts]);
 
   const submit = (values: PasswordFormValues) => {
-    // `disabledFocusable` keeps the button in the tab order by leaving the
-    // native disabled attribute off, so a second Enter still submits the form.
-    // Refusing here is what actually makes the button inert.
+    // `disabledFocusable` leaves the native disabled attribute off, so a second
+    // Enter still submits; refusing here is what makes the button inert.
     if (saving) return;
     void fetcher.submit(values, { method: 'post' });
   };

@@ -3,11 +3,9 @@ export const flowaySessionHeader = 'x-floway-session';
 
 const sessionInvalidatedEvent = 'floway-session-invalidated';
 
-// The only thing standing between this module and `window` is the build-time
-// prerender pass, which has no DOM at all. A browser that has storage switched
-// off is a different case and is deliberately not handled: the throw it
-// produces is the correct outcome, because a session that cannot be persisted
-// is not a session this app can carry.
+// Guards the build-time prerender pass, which has no DOM. A browser with storage
+// switched off is deliberately not handled: the throw is the correct outcome,
+// because a session that cannot be persisted is not one this app can carry.
 const hasWindow = (): boolean => typeof window !== 'undefined';
 
 export const getSessionToken = (): string | null => {

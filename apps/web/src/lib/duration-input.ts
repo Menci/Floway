@@ -1,7 +1,6 @@
-// Parse a human-typed retention window. Accepts a plain integer (seconds), or
-// an integer followed by `s`/`m`/`h`/`d`. Returns the equivalent number of
-// seconds, or null when the input does not parse or resolves to zero — the
-// parser is the boundary, so callers don't need to re-check positivity.
+// Accepts a plain integer (seconds) or an integer followed by `s`/`m`/`h`/`d`.
+// Null when the input does not parse or resolves to zero — the parser is the
+// boundary, so callers don't re-check positivity.
 export const parseDuration = (input: string): number | null => {
   const trimmed = input.trim();
   let seconds: number;
@@ -16,8 +15,8 @@ export const parseDuration = (input: string): number | null => {
   return seconds > 0 ? seconds : null;
 };
 
-// The inverse: the shortest spelling of a window that `parseDuration` reads
-// back unchanged, so the field can be reopened on a value it emitted.
+// The shortest spelling `parseDuration` reads back unchanged, so the field can be
+// reopened on a value it emitted.
 export const formatDurationInput = (seconds: number): string => {
   if (seconds % 86400 === 0) return `${seconds / 86400}d`;
   if (seconds % 3600 === 0) return `${seconds / 3600}h`;
