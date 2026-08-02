@@ -1,6 +1,5 @@
-// The official SDK keeps five-hour, seven-day, Sonnet, Opus, and overage
-// windows separate, so each displayed window comes wholly from its newest
-// snapshot rather than merging fields across header and probe sources:
+// Each window comes wholly from its newest snapshot; fields are never merged
+// across header and probe sources, because the SDK keeps the windows separate:
 // https://github.com/anthropics/claude-agent-sdk-python/blob/f8b9ec923982082a02c485924e0f60367949c3a1/src/claude_agent_sdk/types.py#L1270-L1300
 
 import { HEAVY_USAGE_THRESHOLD_PERCENT, heaviestPercent } from './subscription-account-quota';
@@ -129,16 +128,14 @@ export const accountStatus = (lookup: CredentialLookup, windows: WindowRow[]): A
   const { credential } = lookup;
   if (credential.state === 'session_terminated') return { tone: 'danger', reason: 'session-terminated', detail: credential.stateMessage };
   if (credential.state === 'refresh_failed') return { tone: 'danger', reason: 'refresh-failed', detail: credential.stateMessage };
-  // `rejected` on the primary status means a limit was hit; overage is a
-  // separate optional window in the SDK contract linked above.
+  // `rejected` on the primary status means a limit was hit; overage is a separate optional window.
   if (credential.quotaSnapshot?.data.status === 'rejected') return { tone: 'danger', reason: 'exhausted' };
   const heaviest = heaviestPercent(windows.map(row => row.percent));
   if (heaviest !== null && heaviest >= HEAVY_USAGE_THRESHOLD_PERCENT) return { tone: 'warning', reason: 'heavy', percent: Math.round(heaviest) };
   return { tone: 'success', reason: 'active' };
 };
 
-// The SDK fixture pairs rejected optional overage with `out_of_credits`;
-// primary status remains the account-limit signal:
+// Rejected optional overage pairs with `out_of_credits`, which is not actionable:
 // https://github.com/anthropics/claude-agent-sdk-python/blob/f8b9ec923982082a02c485924e0f60367949c3a1/tests/test_rate_limit_event_repro.py#L48-L68
 export const actionableDisabledReason = (credential: ClaudeCodeAccountCredentialSummary | null): string | null => {
   const reason = credential?.quotaSnapshot?.data.overage?.disabledReason ?? null;
