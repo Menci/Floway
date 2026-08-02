@@ -71,6 +71,19 @@ export const drawerCss = `
   box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
 }
 
+/* SplitView's light dismiss layer stays hit-testable but is painted only in the
+   OverlayVisible state, which LightDismissOverlayMode Auto -- the default --
+   resolves to on Xbox alone; everywhere else the layer keeps the template's
+   Transparent fill. The overlaying navigation pane opts in through this class,
+   while the drawers that stand in for ContentDialog keep Fluent's dimmed
+   backdrop.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SplitView/SplitView_themeresources.xaml#L723
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SplitView/SplitView_themeresources.xaml#L684-L693
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/controls/LightDismissOverlay/inc/LightDismissOverlayHelper.h#L12-L26 */
+.floway-drawer-light-dismiss.floway-drawer-light-dismiss {
+  background-color: transparent;
+}
+
 /* Fluent makes every DrawerBody an unconditional browser scroll owner. Bodies
    here compose around an explicit ScrollArea, so the parent must stay a clipped
    layout cell; otherwise a one-pixel rounding overflow exposes a second native

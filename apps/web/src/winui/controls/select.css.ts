@@ -1,9 +1,8 @@
 // WinUI 3 ComboBox styling for Fluent v9's Dropdown, Combobox, Listbox and
-// Option. The field's paint is addressed on `[data-winui-appearance='outline']`
-// alone -- Fluent's underline, filled-lighter and filled-darker fills have no
-// WinUI counterpart and are left as Fluent draws them -- while the focus visual
-// is stated on all four, because WinUI's ComboBox has a single look and answers
-// the keyboard the same way whatever its fill. The Dropdown button's root and
+// Option. WinUI carries one ComboBox style and no variant beside it, and
+// ../../components/ui/fluent-form-controls.tsx withholds Fluent's appearance
+// prop for that reason, so outline is the only fill either control renders and
+// every rule below addresses the field itself. The Dropdown button's root and
 // the Combobox root share border and fill, so they are addressed as one
 // selector list throughout.
 //
@@ -11,24 +10,35 @@
 // this sheet because Fluent states no option table there; the multiselect
 // check box keeps Fluent's forced-colours drawing for the reason
 // ./choice.css.ts writes down for every check box.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L358-L359
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L110-L136
 export const selectCss = `
-/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L32
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L54 */
-.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline'],
-.fui-Combobox.fui-Combobox[data-winui-appearance='outline'] {
-  background-color: var(--winui-control-fill-default);
-  border-color: var(--winui-control-elevation-border-color);
-}
-
-/* A rejected value does not recolour the field; ./text-input.css.ts carries the
-   evidence and the reasoning for the whole layer. The rules here therefore run
-   over an invalid field like any other, and the appearances this sheet leaves
-   to Fluent take the neutral stroke through the token its invalid atom reads.
-   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Dropdown/useDropdownStyles.styles.ts#L153-L160 */
+/* The rest fill, and the neutralisation of the token Fluent paints a rejected
+   value with: WinUI does not recolour the field for one, and ./text-input.css.ts
+   carries the evidence and the reasoning for the whole layer. Taking the red out
+   of the token keeps it off every edge Fluent's invalid atom reaches.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L32
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Dropdown/useDropdownStyles.styles.ts#L180-L184 */
 .fui-Dropdown.fui-Dropdown,
 .fui-Combobox.fui-Combobox {
   --colorPaletteRedBorder2: var(--colorNeutralStroke1);
+  background-color: var(--winui-control-fill-default);
+}
+
+/* The one stroke WinUI keeps through rest and focus. Two Fluent rules have to be
+   cleared: the atom that swaps the border to its pressed stroke while focus is
+   inside, where WinUI's Focused state leaves it, and the invalid atom above,
+   which is neutralised in colour but would still flatten all four edges onto one
+   value -- its :not(:focus-within) weighs the same as a doubled subject and is
+   injected after this sheet. Naming the focus state on each side is what carries
+   this rule over both.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L54
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L473-L487 */
+.fui-Dropdown.fui-Dropdown:not(:focus-within),
+.fui-Dropdown.fui-Dropdown:focus-within,
+.fui-Combobox.fui-Combobox:not(:focus-within),
+.fui-Combobox.fui-Combobox:focus-within {
+  border-color: var(--winui-control-elevation-border-color);
 }
 
 /* The pressed and disabled placeholder steps must be stated because the rest
@@ -61,8 +71,8 @@ export const selectCss = `
    plus its own pseudo-class and wins.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L33
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L55 */
-.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:hover:not(:has(.fui-Dropdown__button:disabled)),
-.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:hover:not(:has(.fui-Combobox__input:disabled)) {
+.fui-Dropdown.fui-Dropdown:hover:not(:has(.fui-Dropdown__button:disabled)),
+.fui-Combobox.fui-Combobox:hover:not(:has(.fui-Combobox__input:disabled)) {
   background-color: var(--winui-control-fill-secondary);
   border-color: var(--winui-control-elevation-border-color);
 }
@@ -72,7 +82,9 @@ export const selectCss = `
    reproduces that border -- the ring is carried by an outline rather than by
    the ::after freed below -- except at the corner, where an outline takes the
    field's radius plus its offset and so lands a pixel tighter than WinUI's
-   fixed 7px.
+   fixed 7px. The shadow fills the two offset pixels with HighlightBackground,
+   which coincides with the stroke in light and parts from it in dark.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L32
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L37
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L38
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L338
@@ -84,17 +96,9 @@ export const selectCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L328 */
 .fui-Dropdown.fui-Dropdown:has([data-fui-focus-visible]),
 .fui-Combobox.fui-Combobox:has([data-fui-focus-visible]) {
+  box-shadow: 0 0 0 2px var(--winui-control-fill-default);
   outline: 2px solid var(--winui-focus-stroke-outer);
   outline-offset: 2px;
-}
-
-/* The shadow fills the two offset pixels with HighlightBackground, which
-   coincides with the stroke in light and parts from it in dark. It restates the
-   field's own fill, so it is stated only where this sheet paints that fill.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L32 */
-.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:has([data-fui-focus-visible]),
-.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:has([data-fui-focus-visible]) {
-  box-shadow: 0 0 0 2px var(--winui-control-fill-default);
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L324
@@ -116,22 +120,13 @@ export const selectCss = `
 }
 
 /* Fluent's brand underline is the affordance the ring above replaces, so the
-   pseudo-element drawing it is dropped. It goes on every appearance, not only
-   the one this sheet fills: WinUI's ComboBox has a single look, its Focused
-   state moves fill, stroke and foreground alone, and no template part anywhere
-   in the control draws an accent bar along the bottom edge.
+   pseudo-element drawing it is dropped: WinUI's Focused state moves fill,
+   stroke and foreground alone, and no template part anywhere in the control
+   draws an accent bar along the bottom edge.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L473-L487 */
 .fui-Dropdown.fui-Dropdown::after,
 .fui-Combobox.fui-Combobox::after {
   content: none;
-}
-
-/* Fluent swaps the field border to its pressed stroke while focus is inside, where
-   WinUI's Focused state leaves it, so the rest stroke is restated.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L473-L487 */
-.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:focus-within,
-.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:focus-within {
-  border-color: var(--winui-control-elevation-border-color);
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L34
@@ -145,16 +140,14 @@ export const selectCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L56
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L505-L528
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/ComboBox_Partial.cpp#L850-L870 */
-.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:active:not(:has(.fui-Dropdown__button:disabled)),
-.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:active:not(:has(.fui-Combobox__input:disabled)) {
+.fui-Dropdown.fui-Dropdown:active:not(:has(.fui-Dropdown__button:disabled)),
+.fui-Combobox.fui-Combobox:active:not(:has(.fui-Combobox__input:disabled)) {
   background-color: var(--winui-control-fill-tertiary);
   border-color: var(--winui-control-stroke-default);
 }
 
-/* WinUI dims a pressed ComboBox's label whatever the field looks like, so this is
-   not tied to an appearance. A disabled field can still take :active on the root --
-   the pointer event lands on the wrapper -- so the enabled guard keeps Fluent's
-   disabled text fill.
+/* A disabled field can still take :active on the root -- the pointer event lands
+   on the wrapper -- so the enabled guard keeps Fluent's disabled text fill.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L42 */
 .fui-Dropdown:active .fui-Dropdown__button.fui-Dropdown__button:enabled,
 .fui-Combobox:active .fui-Combobox__input.fui-Combobox__input:enabled {
@@ -172,8 +165,8 @@ export const selectCss = `
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L35
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L57 */
-.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:has(.fui-Dropdown__button:disabled),
-.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:has(.fui-Combobox__input:disabled) {
+.fui-Dropdown.fui-Dropdown:has(.fui-Dropdown__button:disabled),
+.fui-Combobox.fui-Combobox:has(.fui-Combobox__input:disabled) {
   background-color: var(--winui-control-fill-disabled);
   border-color: var(--winui-control-stroke-default);
 }
@@ -555,8 +548,8 @@ export const selectCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L2076-L2080
    https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
 @media (forced-colors: active) {
-  .fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:has(.fui-Dropdown__button:disabled),
-  .fui-Combobox.fui-Combobox[data-winui-appearance='outline']:has(.fui-Combobox__input:disabled) {
+  .fui-Dropdown.fui-Dropdown:has(.fui-Dropdown__button:disabled),
+  .fui-Combobox.fui-Combobox:has(.fui-Combobox__input:disabled) {
     border-color: GrayText;
   }
 

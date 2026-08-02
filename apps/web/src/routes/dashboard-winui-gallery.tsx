@@ -320,16 +320,7 @@ function SelectSection() {
         </Field>
       </StateLabel>
     </Row>
-    <Row label="dropdown - appearances and multiselect">
-      <Dropdown appearance="underline" placeholder="underline">
-        <Option text="gpt-5-codex" value="gpt-5-codex">gpt-5-codex</Option>
-      </Dropdown>
-      <Dropdown appearance="filled-darker" placeholder="filled-darker">
-        <Option text="gpt-5-codex" value="gpt-5-codex">gpt-5-codex</Option>
-      </Dropdown>
-      <Dropdown appearance="filled-lighter" placeholder="filled-lighter">
-        <Option text="gpt-5-codex" value="gpt-5-codex">gpt-5-codex</Option>
-      </Dropdown>
+    <Row label="dropdown - multiselect">
       <Dropdown multiselect defaultSelectedOptions={['chat', 'responses']} placeholder="Endpoints">
         <Option text="Chat Completions" value="chat">Chat Completions</Option>
         <Option text="Responses" value="responses">Responses</Option>

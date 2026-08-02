@@ -9,6 +9,8 @@ import {
   CONTROL_FAST_ANIMATION_MS,
   CONTROL_FAST_OUT_SLOW_IN_EASING,
   CONTROL_NORMAL_ANIMATION_MS,
+  PANE_SLIDE_EASING,
+  PANE_SLIDE_MS,
 } from './motion';
 
 type FluentComponents = typeof import('@fluentui/react-components');
@@ -21,6 +23,23 @@ type MotionCarrier = Record<string, unknown>;
 // motion ends.
 const fadeIn = { keyframes: [{ opacity: 0 }, { opacity: 1 }], duration: CONTROL_FASTER_ANIMATION_MS, easing: 'linear', fill: 'both' as const };
 const fadeOut = { keyframes: [{ opacity: 1 }, { opacity: 0 }], duration: CONTROL_FASTER_ANIMATION_MS, easing: 'linear', fill: 'both' as const };
+
+// Fluent parameterises a drawer's motion by its edge and the reading direction,
+// and keeps the drawer's own extent in a custom property, which is what the
+// closed offset is measured in.
+// https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-drawer/library/src/shared/drawerMotions.ts#L9-L11
+// https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-drawer/library/src/shared/useDrawerBaseStyles.styles.ts#L11-L13
+type DrawerMotionParams = {
+  dir: 'ltr' | 'rtl';
+  position: 'start' | 'end' | 'bottom';
+};
+
+const DRAWER_SIZE_VAR = '--fui-Drawer--size';
+
+// https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-drawer/library/src/shared/drawerMotions.ts#L24-L46
+const closedDrawerTransform = ({ dir, position }: DrawerMotionParams): string => (position === 'bottom'
+  ? `translate3d(0, var(${DRAWER_SIZE_VAR}), 0)`
+  : `translate3d(calc(var(${DRAWER_SIZE_VAR}) * ${(position === 'start') === (dir === 'ltr') ? -1 : 1}), 0, 0)`);
 
 export const withWinuiMotion = (components: FluentComponents): FluentComponents => {
   // ContentDialog settles down from 1.05 rather than growing in from below 1,
@@ -73,6 +92,30 @@ export const withWinuiMotion = (components: FluentComponents): FluentComponents 
     exit: fadeOut,
   });
 
+  // A drawer is SplitView's overlaying pane, which only travels: WinUI puts no
+  // opacity and no shadow key frame on the pane itself, and NavigationView's
+  // depth comes from a separate ShadowCaster element on the same spline, which
+  // this layer does not transcribe -- see the tooltip note in ./tokens.ts for
+  // how far WinUI depth is carried here. Fluent instead fades the surface in
+  // and ramps shadow64 alongside the slide over a size-dependent duration, and
+  // since it is the only shadow the drawer has, dropping the term leaves the
+  // open surface flat. One duration serves both directions; WinUI's own close
+  // is shorter than its open.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L96-L107
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SplitView/SplitView_themeresources.xaml#L185-L190
+  // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-drawer/library/src/shared/drawerMotions.ts#L14-L19
+  // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-drawer/library/src/shared/drawerMotions.ts#L85-L116
+  // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-drawer/library/src/components/OverlayDrawer/useOverlayDrawerStyles.styles.ts#L20-L26
+  const DrawerSurfaceMotion = components.createPresenceComponent<DrawerMotionParams>(params => {
+    const closed = { transform: closedDrawerTransform(params) };
+    const open = { transform: 'translate3d(0, 0, 0)' };
+
+    return {
+      enter: { keyframes: [closed, open], duration: PANE_SLIDE_MS, easing: PANE_SLIDE_EASING },
+      exit: { keyframes: [open, closed], duration: PANE_SLIDE_MS, easing: PANE_SLIDE_EASING },
+    };
+  });
+
   // Slot props from the caller are spread last, so a caller that states its own
   // motion keeps it and anything else -- `onMotionFinish` above all -- rides
   // along with ours.
@@ -100,5 +143,6 @@ export const withWinuiMotion = (components: FluentComponents): FluentComponents 
     Dialog: runMotion(components.Dialog, 'surfaceMotion', DialogSurfaceMotion),
     DialogSurface: runMotion(components.DialogSurface, 'backdropMotion', DialogBackdropMotion),
     Menu: runMotion(components.Menu, 'surfaceMotion', MenuSurfaceMotion),
+    OverlayDrawer: runMotion(components.OverlayDrawer, 'surfaceMotion', DrawerSurfaceMotion),
   };
 };

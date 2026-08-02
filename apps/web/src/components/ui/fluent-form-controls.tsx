@@ -169,7 +169,15 @@ export const Input = forwardRef<HTMLInputElement, ComponentProps<typeof FluentIn
   ),
 ) as typeof FluentInput;
 
-export const Combobox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof FluentCombobox>, 'listbox'> & ListWidthProp & EmptyMessageProp & ReadOnlyProp>(
+// WinUI carries one ComboBox style and no variant beside it, so Fluent's
+// underline, filled-darker and filled-lighter fills have nothing to be faithful
+// to and ../../winui/controls/select.css.ts restyles none of them. Withholding
+// the prop leaves Fluent's own outline default as the only thing either control
+// can render.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L358-L359
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Combobox/useCombobox.tsx#L216
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Dropdown/useDropdown.tsx#L165
+export const Combobox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof FluentCombobox>, 'appearance' | 'listbox'> & ListWidthProp & EmptyMessageProp & ReadOnlyProp>(
   ({ className, emptyMessage, expandIcon, listWidth, onOptionSelect, positioning, readOnly, ...props }, ref) => (
     <FluentCombobox
       {...props}
@@ -185,7 +193,7 @@ export const Combobox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof 
   ),
 );
 
-export const Dropdown = forwardRef<HTMLButtonElement, Omit<ComponentProps<typeof FluentDropdown>, 'listbox'> & ListWidthProp & EmptyMessageProp & ReadOnlyProp>(
+export const Dropdown = forwardRef<HTMLButtonElement, Omit<ComponentProps<typeof FluentDropdown>, 'appearance' | 'listbox'> & ListWidthProp & EmptyMessageProp & ReadOnlyProp>(
   ({ className, emptyMessage, expandIcon, listWidth, onOptionSelect, positioning, readOnly, ...props }, ref) => (
     <FluentDropdown
       {...props}
