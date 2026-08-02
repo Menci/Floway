@@ -27,8 +27,6 @@ export async function clientAction({
       ok: false,
       values: { username },
       error: result.error.message || 'auth.login.genericError',
-      // A 401 is about what was typed and belongs on the field; anything else is
-      // about the attempt and goes to the bar.
       credentials: result.error.status === 401,
     };
   }
