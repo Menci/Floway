@@ -37,10 +37,8 @@ const useStyles = makeStyles({
     '& > :first-child': { marginTop: 0 },
     '& > :last-child': { marginBottom: 0 },
     '& p': { marginTop: tokens.spacingVerticalS, marginBottom: tokens.spacingVerticalS },
-    // A heading is sized off Fluent's ramp and weighted at the top of it.
-    // Semibold is where the dashboard's type stops -- global.css clamps
-    // `strong` there for the same reason -- so the 700 a browser gives a
-    // heading by default would be heavier than anything else on the page.
+    // Semibold is where the dashboard's type stops, so the 700 a browser gives
+    // a heading by default would outweigh anything else on the page.
     '& h1, & h2, & h3, & h4, & h5, & h6': { fontWeight: tokens.fontWeightSemibold },
     '& h1': {
       fontSize: tokens.fontSizeBase600,
@@ -67,10 +65,8 @@ const useStyles = makeStyles({
     },
     '& li': { marginTop: tokens.spacingVerticalXXS, marginBottom: tokens.spacingVerticalXXS },
     '& li > p': { marginTop: 0, marginBottom: 0 },
-    // The rule between blocks is a divider, and WinUI names one brush for it.
-    // Fluent's colorNeutralStroke2 is the card outline, which in dark is black
-    // and disappears into the surface it is drawn on; the divider is a white
-    // wash there and the same hairline in light.
+    // The divider brush, not Fluent's colorNeutralStroke2: that is the card
+    // outline, which in dark is black and disappears into its own surface.
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L53
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L257
     '& hr': {
@@ -80,17 +76,11 @@ const useStyles = makeStyles({
       marginBottom: tokens.spacingVerticalL,
     },
   },
-  // A link walks the accent TEXT ramp a WinUI Hyperlink walks -- primary at
-  // rest, secondary under the pointer, tertiary while pressed -- which is the
-  // ramp the dashboard's own Link spends, so one link colour appears on
-  // screen. Dark states primary and secondary as the same accent shade, so
-  // hover moves no colour there; that is WinUI's table, not an omission.
-  // The underline is WinUI's too: HyperlinkUnderlineVisible is True, and the
-  // hyperlink keeps the decoration through pointer-over and pressed, so it is
-  // stated once for every state instead of arriving on hover.
-  // Nothing here can disable a link, so the ramp's disabled step has no
-  // outlet, and forced colors are left to the UA, which replaces an author
-  // foreground and outline with the system link and focus colours.
+  // The accent TEXT ramp a WinUI Hyperlink walks -- primary at rest, secondary
+  // under the pointer, tertiary while pressed. Dark states primary and
+  // secondary as the same shade in WinUI's own table, so hover moves no colour
+  // there. HyperlinkUnderlineVisible is True and the decoration is kept through
+  // every state rather than arriving on hover.
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/HyperlinkButton_themeresources.xaml#L5-L7
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L297-L299
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L93-L95
@@ -101,10 +91,9 @@ const useStyles = makeStyles({
     textDecorationLine: 'underline',
     '&:hover': { color: 'var(--winui-accent-text-fill-secondary)' },
     '&:active': { color: 'var(--winui-accent-text-fill-tertiary)' },
-    // The focus visual. WinUI draws two concentric rings so the indicator
-    // survives on any surface: the 1px FocusStrokeColorInner against the
-    // element and the contrasting 2px FocusStrokeColorOuter around it. A
-    // hyperlink's focus rectangle is rounded at 4px.
+    // WinUI draws two concentric rings so the indicator survives on any
+    // surface: 1px FocusStrokeColorInner against the element, contrasting 2px
+    // FocusStrokeColorOuter around it, rounded at 4px for a hyperlink.
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L195
@@ -115,9 +104,8 @@ const useStyles = makeStyles({
       outlineOffset: '1px',
     },
   },
-  // A quotation's leading bar is an accent surface, so it takes
-  // AccentFillColorDefault rather than Fluent's brand stroke -- the same fill
-  // every other accent marker in the app is drawn with.
+  // An accent surface, so AccentFillColorDefault rather than Fluent's brand
+  // stroke -- the fill every other accent marker in the app is drawn with.
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L329
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L125
   blockquote: {
@@ -128,11 +116,8 @@ const useStyles = makeStyles({
   },
   // Chrome makes an overflowing scroller focusable when nothing inside it can
   // take focus, and a markdown table holds nothing that can, so this box is a
-  // tab stop. Its ring is drawn inward for the same reason ../ui/code-block.tsx
-  // draws its own that way: the table has to meet the message's text column, so
-  // there is no room outside the box to put a ring in, and the box that clips is
-  // the scrollport itself -- a gutter could only go on the host, which is
-  // outside the clip and buys the ring nothing.
+  // tab stop. The ring is drawn inward because the scrollport is the box that
+  // clips, leaving no room outside it for a ring.
   tableScroll: {
     minWidth: 0,
     marginTop: tokens.spacingVerticalM,
@@ -147,31 +132,25 @@ const useStyles = makeStyles({
     borderCollapse: 'collapse',
     minWidth: '100%',
   },
-  // The grid between cells is the divider the horizontal rule above spends.
-  // Keeping all four edges rather than the single horizontal rule a list draws
-  // is ours: a table in an answer arrives without column widths or alignment,
-  // and the vertical edges are what hold its columns apart.
+  // All four edges, not just the horizontal rule: a table in an answer arrives
+  // without column widths or alignment, and the vertical edges hold its columns
+  // apart.
   tableCell: {
     border: '1px solid var(--winui-divider-stroke-default)',
     padding: `${tokens.spacingVerticalS} ${tokens.spacingHorizontalM}`,
     textAlign: 'left',
     verticalAlign: 'top',
   },
-  // A header row says header by weight alone. WinUI gives a ListViewHeaderItem
-  // a transparent background in every dictionary, and the dashboard's own
-  // tables carry no header fill either.
+  // Weight alone: WinUI gives a ListViewHeaderItem a transparent background in
+  // every dictionary, and the dashboard's own tables carry no header fill.
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L631
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L9451
   tableHeader: {
     fontWeight: tokens.fontWeightSemibold,
   },
-  // A fenced block is the one place code states its own surface. It takes the
-  // page canvas rather than a card fill because that is the neutral that steps
-  // away from the message card in both themes -- lighter than the card in
-  // dark would be a card fill's job, and a card fill is white on a white card
-  // in light. Its edge is the control stroke rather than the card outline for
-  // the same reason the rule above is a divider: the card outline is black in
-  // dark and would leave the block edgeless there.
+  // The page canvas rather than a card fill, because it is the neutral that
+  // steps away from the message card in both themes; the edge is the control
+  // stroke, the card outline being black in dark and so edgeless there.
   codeBlock: {
     backgroundColor: tokens.colorNeutralBackground3,
     border: `1px solid ${tokens.colorNeutralStroke1}`,
@@ -196,11 +175,9 @@ type MarkdownCodeProps = ComponentProps<'code'> & { streaming: boolean };
 
 function MarkdownCode({ children, className, streaming, ...props }: MarkdownCodeProps) {
   const match = /language-([\w-]+)/.exec(className ?? '');
-  // Code set inside a sentence is the same text in a different face: it takes
-  // its colour and its surface from the prose around it and states neither.
-  // WinUI has no inline-code chip, and a fill plus a border plus its own
-  // foreground would turn a word in a sentence into a control. The face and
-  // the pixel it comes down by are the document's, in global.css.
+  // Inline code takes its colour and surface from the prose around it: WinUI
+  // has no inline-code chip, and a fill plus border plus foreground would turn
+  // a word in a sentence into a control. Its face is global.css's.
   if (!match) return <code {...props}>{children}</code>;
 
   const language = match[1]!;

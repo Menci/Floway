@@ -40,21 +40,18 @@ const { Button, Tooltip, makeStyles, tokens } = fluentComponents;
 const useStyles = makeStyles({
   inputShell: {
     position: 'relative',
-    // A column, as the original's container is. The field's label is an
-    // `inline-grid`, which is only ever a flex item there and so is blockified
-    // before it can sit on a line box; left inside a block it keeps its inline
-    // level, and the line box under it reserves descender space that appears
-    // and disappears with the field's own baseline — the bar grew by 5px for
-    // as long as a response was streaming and snapped back when it finished.
+    // A column, as the original's container is: the field's label is an
+    // `inline-grid`, only ever a flex item there and so blockified. Left inside
+    // a block it keeps its inline level and the line box under it reserves
+    // descender space, which grew the bar by 5px while a response streamed.
     display: 'flex',
     flexDirection: 'column',
     backgroundColor: tokens.colorNeutralBackground1,
-    // The edge is the shadow. In dark that shadow is the ring, so a border here
-    // would be a second one. The transparent outline beside it is the
-    // original's, and it is the edge in forced colors: the shadow is gone there
-    // while `outline-color` is force-adjusted, so the one declaration that
-    // paints in neither theme is the only one that paints under the system's
-    // palette. https://www.w3.org/TR/css-color-adjust-1/#forced-colors-properties
+    // The edge is the shadow, which in dark is itself the ring, so a border
+    // would be a second one. The transparent outline beside it is the edge in
+    // forced colors, where the shadow is gone and `outline-color` is
+    // force-adjusted:
+    // https://www.w3.org/TR/css-color-adjust-1/#forced-colors-properties
     border: 0,
     outline: '1px solid transparent',
     boxShadow: bingCardShadow,
@@ -64,28 +61,25 @@ const useStyles = makeStyles({
     transitionProperty: 'box-shadow, border-radius',
     transitionDuration: bingComposerTransitionDuration,
     transitionTimingFunction: bingComposerTransitionEasing,
-    // Corner radius alters perceived shape, so it goes with motion rather than
-    // with colour; the shadow rides along on the one duration the pair share.
+    // Corner radius alters perceived shape, so it is held to the motion
+    // setting rather than to colour.
     '@media (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
-    // Pointer, focus and content all tighten the corners rather than deepening
-    // the shadow: the original lists hover, `:focus` and `has-text` together on
-    // the one rule that changes the corner, and changes no shadow anywhere.
+    // The original lists hover, `:focus` and `has-text` on the one rule that
+    // changes the corner, and changes no shadow anywhere.
     '&:hover, &:focus-within, &[data-has-text="true"]': { borderRadius: bingComposerRadiusFilled },
   },
-  // Bing grew the field with no script at all. The label is an `inline-grid`
-  // whose `::after` mirrors the field's text — same wrap, same metrics, hidden
-  // — and both share one grid cell, so the mirror's height is the row's height
-  // and the field is stretched to it. The trailing space in the content is what
-  // reserves room for a just-typed newline.
+  // Bing grew the field with no script: the `::after` mirrors the field's text
+  // in the same grid cell, so the mirror's height is the row's height and the
+  // field stretches to it. The trailing space reserves room for a just-typed
+  // newline.
   textInput: {
     position: 'relative',
     display: 'inline-grid',
     width: '100%',
     maxHeight: bingComposerMaxHeight,
-    // The mirror is hidden but still occupies its full, uncapped height. Bing
-    // never had to clip it because the shipped desktop path set no ceiling at
-    // all; capping the field without clipping the mirror lets it spill out of
-    // the bar and draw a second edge down the page.
+    // The mirror is hidden but still occupies its full, uncapped height, so
+    // capping the field without clipping it lets it spill out of the bar and
+    // draw a second edge down the page.
     overflow: 'hidden',
     '&::after': {
       content: 'attr(data-input) " "',
@@ -118,19 +112,17 @@ const useStyles = makeStyles({
     resize: 'none',
     padding: 0,
     margin: 0,
-    // The original's own placeholder step is `foreground-neutral-secondary`,
-    // which its dark dictionary resolves to the same value as the body
-    // foreground beside it -- a placeholder there is indistinguishable from
-    // typed text. The tertiary text fill is dimmer than the body in both
-    // themes, which is what a placeholder has to be.
+    // The original's `foreground-neutral-secondary` resolves in dark to the
+    // body foreground beside it, making a placeholder indistinguishable from
+    // typed text; the tertiary text fill is dimmer than the body in both themes.
     '&::placeholder': { color: tokens.colorNeutralForeground3 },
     '&:disabled': {
       color: tokens.colorNeutralForegroundDisabled,
       cursor: 'not-allowed',
     },
   },
-  // Pinned to the bar's top edge rather than laid out beside the field, so the
-  // controls hold their place as the bar grows downward.
+  // Pinned to the bar's top edge so the controls hold their place as the bar
+  // grows downward.
   composerRow: { gap: bingComposerColumnGap },
   controlsRight: {
     position: 'absolute',
@@ -140,41 +132,33 @@ const useStyles = makeStyles({
     padding: bingComposerGutterPadding,
     zIndex: 2,
   },
-  // The subtle fill pair -- secondary under the pointer, tertiary while the
-  // button is held -- is what every icon button in the original answers with.
-  // The action bar's own two are the one place it states neither, and a control
-  // that dims when it is disabled and does nothing when it is pressed reads as
-  // inert, so the pair is taken here:
+  // The subtle fill pair every icon button in the original answers with. The
+  // action bar's own two state neither, and a control that dims when disabled
+  // and does nothing when pressed reads as inert, so the pair is taken here:
   // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/globals.scss#L66-L67
   // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/dark.scss#L58-L59
-  //
-  // They are the original's fills rather than the layer's neutral hover. This
-  // bar sits on SolidBackgroundFillColorQuarternary, which is plain white in
-  // light; WinUI's hover fill is a translucent near-white, and over white it
-  // moves three values out of 255.
+  // They are the original's fills rather than the layer's neutral hover, which
+  // is a translucent near-white and moves three values out of 255 over the
+  // plain white this bar sits on.
   imageButton: {
     height: bingComposerButtonSize,
     width: bingComposerButtonSize,
     color: bingAccentForeground,
     backgroundColor: 'transparent',
     border: 0,
-    // A button carries the browser's own `1px 6px`, which leaves a content box
-    // narrower than the glyph inside it. Centring then has nothing symmetric to
-    // work with and the glyph settles against the leading edge.
+    // A button carries the browser's own `1px 6px`, leaving a content box
+    // narrower than the glyph, which then settles against the leading edge.
     padding: 0,
     cursor: 'pointer',
-    // The fill duration the layer's own button answers a pointer with, and the
-    // curve that rule leaves at its initial value. It carries the foreground as
-    // well as the fill, which WinUI's button does not: there the foreground is
-    // WinUI's own and only the fill has a brush transition, while here the pair
-    // is one accent step and its disc, and a glyph that snaps while the disc
-    // under it eases reads as two controls rather than one.
+    // The layer's own pointer fill duration, carrying the foreground as well as
+    // the fill, which WinUI's button does not: here the pair is one accent step
+    // and its disc, and a glyph that snaps under an easing disc reads as two
+    // controls.
     transitionProperty: 'color, background-color',
     transitionDuration: 'var(--winui-control-faster-animation-duration)',
     '@media (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
-    // Both states are held to `:enabled`. A disabled button still matches
-    // `:hover` and `:active`; the original never has to say so, because it
-    // takes the pointer away from the whole bar while the bar is disabled.
+    // A disabled button still matches `:hover` and `:active`; the original
+    // never has to say so, because it takes the pointer away from the whole bar.
     '&:enabled:hover': {
       color: bingAccentForegroundHover,
       backgroundColor: 'light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.06))',
@@ -182,25 +166,21 @@ const useStyles = makeStyles({
     '&:enabled:active': {
       backgroundColor: 'light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.1))',
     },
-    // Focus is the user agent's ring, as it is in the original: nothing here
-    // writes an outline for the ring to lose to.
+    // Focus is the user agent's ring, as in the original: nothing here writes
+    // an outline for the ring to lose to.
     '&:disabled': {
       color: tokens.colorNeutralForegroundDisabled,
       cursor: 'not-allowed',
     },
   },
-  // The paint is a pair of pseudo-elements filling a clipping button, as the
-  // original has it. That is what keeps the button unlifted, and it is also
-  // what the press animation acts on: the fill scales down inside the clip
-  // while the label it sits behind holds still.
+  // A pair of pseudo-elements filling a clipping button, as the original has
+  // it: the fill scales down inside the clip while the label holds still.
   //
-  // The original states the whole fill as one `background` and restates it per
-  // state, so the one property that carries hover and active is the one that
-  // cannot be interpolated; it transitions the press alone and lets the
-  // pointer step. The two are split here instead -- `::before` holds the
-  // gradient, which is the same in every state, and `::after` holds the black
-  // wash, whose alpha is the whole of what hover and active change. Both take
-  // the press scale, so the fill stays one shape while it runs.
+  // The original states the whole fill as one uninterpolatable `background` and
+  // lets the pointer step. It is split here -- `::before` holds the gradient,
+  // the same in every state, and `::after` the black wash, whose alpha is all
+  // hover and active change. Both take the press scale, so the fill stays one
+  // shape while it runs.
   newTopicButton: {
     position: 'relative',
     height: bingComposeButtonSize,
@@ -222,8 +202,8 @@ const useStyles = makeStyles({
       transitionProperty: 'transform',
       transitionDuration: bingComposerTransitionDuration,
       transitionTimingFunction: bingComposerTransitionEasing,
-      // The press alters the fill's perceived size, so it is the kind of
-      // motion the OS setting is about, and it is answered without travel.
+      // The press alters the fill's perceived size, so the OS motion setting
+      // applies and it is answered without travel.
       '@media (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
     },
     '&::after': {
@@ -232,12 +212,9 @@ const useStyles = makeStyles({
       inset: 0,
       borderRadius: 'inherit',
       backgroundColor: bingAccentWashResting,
-      // The wash takes the fill duration every button in the layer answers a
-      // pointer with, and the curve that rule leaves at its initial value; the
-      // press keeps the original's own timing beside it. The original steps
-      // this swap rather than easing it, so easing it is a second departure of
-      // ours inside the frozen composer, and it is unruled. Under the OS
-      // setting both collapse, as the layer's button fill does.
+      // The wash takes the layer's pointer fill duration while the press keeps
+      // the original's own timing. The original steps this swap rather than
+      // easing it. Under the OS motion setting both collapse.
       transitionProperty: 'transform, background-color',
       transitionDuration: `${bingComposerTransitionDuration}, var(--winui-control-faster-animation-duration)`,
       transitionTimingFunction: `${bingComposerTransitionEasing}, ease`,
@@ -249,22 +226,19 @@ const useStyles = makeStyles({
       backgroundColor: bingAccentWashActive,
       transform: bingComposePressScale,
     },
-    // The resting outline is transparent, so it takes the focus ring's slot
-    // without painting; the original hands the slot back at focus as a 2px ring
-    // in the focus stroke colour, and without that the button answers a tab
-    // with nothing at all. The same declaration is the button's forced-colors
-    // edge, which is the state its gradient does not survive: `background-image`
-    // computes to `none` unless it holds a `url()`.
+    // The resting outline is transparent, taking the focus ring's slot without
+    // painting; the original hands it back at focus as a 2px ring. The same
+    // declaration is the forced-colors edge, the one state the gradient does
+    // not survive -- `background-image` computes to `none` without a `url()`.
     // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/globals.scss#L121
     // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/dark.scss#L107
     '&:focus-visible': { outline: '2px solid light-dark(#111111, #FAF9F8)' },
-    // Held to `:enabled` above, so a disabled button neither darkens under the
-    // pointer nor scales when it is pressed on.
+    // Held to `:enabled` above, so a disabled button neither darkens nor
+    // scales.
     '&:disabled': { opacity: 0.5, cursor: 'not-allowed' },
   },
-  // Above both fill layers, which are absolutely positioned siblings of this
-  // one; the wash is generated after it and would otherwise paint over the
-  // label and the broom as well as over the gradient.
+  // Above both fill layers: the wash is generated after this one and would
+  // otherwise paint over the label as well as over the gradient.
   newTopicContent: {
     position: 'relative',
     zIndex: 1,
@@ -272,11 +246,9 @@ const useStyles = makeStyles({
     alignItems: 'center',
     gap: '6px',
   },
-  // The asset fills itself with `currentColor`, which an `<img>` throws away --
-  // an external document takes no colour from the page. Drawn as a mask over
-  // the button's own foreground the intent holds, and it holds in forced colors
-  // too, where the button's `color` is force-adjusted and an image's pixels are
-  // not.
+  // The asset fills itself with `currentColor`, which an `<img>` throws away.
+  // A mask over the button's foreground keeps it, and keeps it in forced colors
+  // too, where `color` is force-adjusted and an image's pixels are not.
   broomIcon: {
     display: 'block',
     backgroundColor: 'currentColor',

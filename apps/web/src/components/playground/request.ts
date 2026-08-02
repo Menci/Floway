@@ -136,9 +136,9 @@ export const createWireFetch = (custom: Record<string, unknown>, api?: Playgroun
   };
 };
 
-// Wire-native generation options per protocol. Naming them the way each
-// protocol names them keeps reasoning effort and the Messages token cap
-// visible on the request instead of behind a client abstraction.
+// Options are named the way each protocol names them, keeping reasoning effort
+// and the Messages token cap visible on the request rather than behind a client
+// abstraction.
 export const generationOptions = (
   api: PlaygroundApi,
   reasoningEffort: string | undefined,

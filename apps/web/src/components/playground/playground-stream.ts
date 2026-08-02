@@ -58,8 +58,8 @@ const bodyFor = ({ api, model, system, messages, options }: PlaygroundRequest): 
   };
 };
 
-// Each protocol names its text delta differently; nothing else in the stream
-// is rendered here, so an unrecognized event is simply not text.
+// Nothing but text is rendered here, so an unrecognized event is simply not
+// text.
 const textDelta = (api: PlaygroundApi, event: unknown): string => {
   if (api === 'chatCompletions') {
     const chunk = event as ChatCompletionsStreamEvent;
@@ -82,10 +82,8 @@ const streamFailureMessage = (api: PlaygroundApi, payload: unknown): string | nu
   return event.response.error?.message ?? 'Response failed';
 };
 
-// Streams assistant text for whichever chat protocol the playground is
-// pointed at. The gateway owns these codecs, so the wire shapes come from
-// @floway-dev/protocols rather than a third-party client that would hide the
-// fields this gateway exists to carry.
+// Wire shapes come from @floway-dev/protocols rather than a third-party client,
+// which would hide the fields this gateway exists to carry.
 export const streamPlaygroundText = async function* (request: PlaygroundRequest): AsyncGenerator<string> {
   const { api, apiKey, signal, fetchImpl } = request;
   const response = await fetchImpl(PATH_BY_API[api], {
