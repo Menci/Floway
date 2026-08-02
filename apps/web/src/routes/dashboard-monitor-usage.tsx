@@ -65,10 +65,6 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   };
 }
 
-export function meta({}: Route.MetaArgs) {
-  return [{ title: 'Usage | Floway' }];
-}
-
 export const shouldRevalidate = revalidateOnPathnameChange;
 
 export default function DashboardMonitorUsage({ loaderData }: Route.ComponentProps) {

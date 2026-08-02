@@ -40,13 +40,6 @@ export async function clientAction({
   throw redirect('/dashboard/playground');
 }
 
-export function meta({}: Route.MetaArgs) {
-  return [
-    { title: 'Sign in | Floway' },
-    { name: 'description', content: 'Sign in to the Floway control plane.' },
-  ];
-}
-
 export default function Home() {
   return (
     <ScrollArea axes="vertical" className="h-[100dvh]" contentClassName="h-full">

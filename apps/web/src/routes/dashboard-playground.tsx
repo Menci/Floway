@@ -101,10 +101,6 @@ export async function clientLoader(): Promise<LoaderData> {
   };
 }
 
-export function meta({}: Route.MetaArgs) {
-  return [{ title: 'Playground | Floway' }];
-}
-
 const useStyles = makeStyles({
   toolbar: { borderBottom: `1px solid ${tokens.colorNeutralStroke1}` },
   // The transcript's row commands are the original's icon buttons, so they

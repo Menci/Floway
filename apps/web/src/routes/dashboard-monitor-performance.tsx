@@ -171,10 +171,6 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   };
 }
 
-export function meta({}: Route.MetaArgs) {
-  return [{ title: 'Performance | Floway' }];
-}
-
 export const shouldRevalidate = revalidateOnPathnameChange;
 
 export default function DashboardMonitorPerformance({ loaderData }: Route.ComponentProps) {

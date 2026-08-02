@@ -34,10 +34,6 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   return { ...aux, mode: 'create' as const, record, discovered: [], modelsError: null };
 }
 
-export function meta({}: Route.MetaArgs) {
-  return [{ title: 'New Upstream | Floway' }];
-}
-
 export const shouldRevalidate = revalidateOnPathnameChange;
 
 export default function DashboardProvidersUpstreamsNew({ loaderData }: Route.ComponentProps) {

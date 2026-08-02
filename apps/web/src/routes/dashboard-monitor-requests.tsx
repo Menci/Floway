@@ -72,10 +72,6 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   };
 }
 
-export function meta({}: Route.MetaArgs) {
-  return [{ title: 'Requests | Floway' }];
-}
-
 export default function DashboardMonitorRequests({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();

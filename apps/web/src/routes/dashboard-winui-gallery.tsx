@@ -11,7 +11,6 @@ import {
 } from '@fluentui/react-icons';
 import { useState } from 'react';
 
-import type { Route } from './+types/dashboard-winui-gallery';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Combobox, Dropdown } from '../components/ui/fluent-form-controls';
 import { SectionHeader } from '../components/ui/section-header';
@@ -117,10 +116,6 @@ const {
   useId: useFluentId,
   useToastController,
 } = fluentComponents;
-
-export function meta({}: Route.MetaArgs) {
-  return [{ title: 'WinUI gallery | Floway' }];
-}
 
 function Section({ children, id, title }: { children: React.ReactNode; id: string; title: string }) {
   return <section className="grid gap-4" id={id}>

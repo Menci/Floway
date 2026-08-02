@@ -28,10 +28,6 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   };
 }
 
-export function meta({}: Route.MetaArgs) {
-  return [{ title: 'Edit Upstream | Floway' }];
-}
-
 export const shouldRevalidate = revalidateOnPathnameChange;
 
 export default function DashboardProvidersUpstreamsEdit({ loaderData }: Route.ComponentProps) {

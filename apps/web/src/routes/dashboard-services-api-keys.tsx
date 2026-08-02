@@ -60,10 +60,6 @@ export async function clientLoader(): Promise<LoaderData> {
   return { ...data, selectedKeyId, setupError: setup.error?.message ?? null, setupLease: setup.data ?? null };
 }
 
-export function meta({}: Route.MetaArgs) {
-  return [{ title: 'API Keys | Floway' }];
-}
-
 export default function DashboardServicesApiKeys({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
   const { user } = useDashboardOutletContext();

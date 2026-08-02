@@ -48,10 +48,6 @@ export async function clientLoader(): Promise<LoaderData> {
   return await loadPageData({ aliases: [], models: null });
 }
 
-export function meta({}: Route.MetaArgs) {
-  return [{ title: 'Model Aliases | Floway' }];
-}
-
 export default function DashboardProvidersModelAliases({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
   const toasts = useOutcomeToasts();

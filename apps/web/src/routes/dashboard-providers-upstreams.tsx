@@ -92,10 +92,6 @@ export async function clientLoader(): Promise<LoaderData> {
   return await loadPageData();
 }
 
-export function meta({}: Route.MetaArgs) {
-  return [{ title: 'Upstreams | Floway' }];
-}
-
 export default function DashboardProvidersUpstreams({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();

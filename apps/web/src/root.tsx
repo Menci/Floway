@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import {
   isRouteErrorResponse,
   Links,
-  Meta,
   Outlet,
   Scripts,
 } from 'react-router';
@@ -74,7 +73,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="theme-color" content="#f5f5f5" media="(prefers-color-scheme: light)" />
         <meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)" />
-        <Meta />
         <Links />
         {/* Everything the first paint depends on, inlined because it has to be
             true before a linked stylesheet can arrive. Its rules and the

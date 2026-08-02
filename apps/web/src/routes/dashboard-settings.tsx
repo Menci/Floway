@@ -67,10 +67,6 @@ export async function clientAction({
   return { ok: true };
 }
 
-export function meta({}: Route.MetaArgs) {
-  return [{ title: 'Settings | Floway' }];
-}
-
 export default function DashboardSettings() {
   const { t } = useTranslation();
   const fetcher = useFetcher<SettingsActionData>();

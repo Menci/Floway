@@ -50,10 +50,6 @@ export async function clientLoader(): Promise<LoaderData> {
   return await loadPageData();
 }
 
-export function meta({}: Route.MetaArgs) {
-  return [{ title: 'Proxy | Floway' }];
-}
-
 const proxyDialogDraft = (record: ProxyRecord | null) => {
   if (record === null) {
     const config = defaultsFor('http', { host: '', port: 0, name: '' });

@@ -2,7 +2,6 @@ import { ArrowDownloadRegular, ArrowUploadRegular } from '@fluentui/react-icons'
 import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import type { Route } from './+types/dashboard-admin-backup-restore';
 import { requireDashboardAdmin } from './route-guards';
 import { api, callApi } from '../api/client';
 import type { BackupImportCounts } from '../api/types';
@@ -34,10 +33,6 @@ const {
 export async function clientLoader() {
   await requireDashboardAdmin();
   return null;
-}
-
-export function meta({}: Route.MetaArgs) {
-  return [{ title: 'Backup and Restore | Floway' }];
 }
 
 // A drop target has no counterpart in either library, so it is composed from

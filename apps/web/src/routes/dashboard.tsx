@@ -38,10 +38,6 @@ export async function clientLoader() {
   throw redirect('/');
 }
 
-export function meta({}: Route.MetaArgs) {
-  return [{ title: 'Dashboard | Floway' }];
-}
-
 // The signed-in check is its own component so that everything below it can take
 // a user rather than a user-or-null. A hook cannot run behind a condition, so
 // with one component the guard would have had to sit under every hook and each

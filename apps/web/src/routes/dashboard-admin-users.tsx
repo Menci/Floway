@@ -102,10 +102,6 @@ export async function clientLoader(): Promise<LoaderData> {
   return await loadPageData(unloadedPageData);
 }
 
-export function meta({}: Route.MetaArgs) {
-  return [{ title: 'Users | Floway' }];
-}
-
 export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
   const { user: actor } = useDashboardOutletContext();

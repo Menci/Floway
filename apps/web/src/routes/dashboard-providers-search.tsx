@@ -58,10 +58,6 @@ export async function clientLoader(): Promise<LoaderData> {
   };
 }
 
-export function meta({}: Route.MetaArgs) {
-  return [{ title: 'Provider Search | Floway' }];
-}
-
 // Search passthrough sends a chat completion to the upstream it names, so the
 // model it picks has to be one that upstream actually serves on that endpoint.
 const servesChatFor = (model: ControlPlaneModel, upstreamId: string) =>
