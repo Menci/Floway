@@ -26,6 +26,7 @@ import { fluentComponents } from '../../fluent';
 import { errorMessage } from '../../lib/error-message';
 import { Dropdown, Input, Textarea } from '../ui/fluent-form-controls';
 import { SECTION_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
+import { OpenLinkLabel } from '../ui/open-link-label';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SecretInput } from '../ui/secret-input';
 import { SectionHeader } from '../ui/section-header';
@@ -90,6 +91,7 @@ function CustomConfig({ onRefreshModels, record }: { onRefreshModels: () => void
           name={'config.baseUrl' as never}
           render={({ field }) => (
             <Input
+              className="font-mono"
               name={field.name}
               onBlur={field.onBlur}
               onChange={(_, data) => field.onChange(data.value)}
@@ -361,7 +363,7 @@ function CopilotConfig({ record, onPatch }: {
       <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.copilot.deviceCode')}</Text>
       <code className="mono-display tracking-[0.25em] text-fui-fg1">{flow.user_code}</code>
       <Link href={flow.verification_uri} target="_blank" rel="noopener noreferrer">{flow.verification_uri}</Link>
-      <span className="inline-flex items-center gap-2 text-xs text-fui-fg2"><Spinner size="tiny" />{t('dashboard.upstreamEditor.copilot.waiting')}</span>
+      <Spinner label={t('dashboard.upstreamEditor.copilot.waiting')} labelPosition="after" size="tiny" />
     </>}
   </div>;
 }
@@ -499,9 +501,9 @@ function OAuthConfig({ record, onPatch }: {
       <TabList selectedValue={tab} onTabSelect={(_, data) => { setTab(String(data.value)); setAuthorizeUrl(null); }}>
         {record.kind === 'codex' ? <><Tab value="json">auth.json</Tab><Tab value="oauth">OAuth</Tab></> : <><Tab value="oauth">OAuth</Tab><Tab value="setup">Setup Token</Tab><Tab value="json">credentials.json</Tab></>}
       </TabList>
-      {tab === 'json' ? <Field label={t('dashboard.upstreamEditor.oauth.credentialJson')}><Textarea rows={8} value={json} onChange={(_, data) => setJson(data.value)} className="font-mono" /></Field> : <div className="grid gap-3">
-        {busy && !authorizeUrl ? <Spinner label={t('dashboard.upstreamEditor.oauth.preparing')} /> : authorizeUrl && <div className="flex items-center gap-2 min-w-0"><Link href={authorizeUrl} target="_blank" rel="noopener noreferrer" className="truncate">{t('dashboard.upstreamEditor.oauth.openAuthorize')}</Link><TooltipIconButton icon={copyOutcomeIcon(outcomeFor())} label={copyLabel(outcomeFor(), t('dashboard.upstreamEditor.oauth.copy'))} onClick={() => copy(authorizeUrl)} /></div>}
-        <Field label={t('dashboard.upstreamEditor.oauth.callback')}><Textarea rows={3} value={callback} onChange={(_, data) => setCallback(data.value)} className="font-mono" /></Field>
+      {tab === 'json' ? <Field label={t('dashboard.upstreamEditor.oauth.credentialJson')}><Textarea className="font-mono" resize="vertical" rows={8} value={json} onChange={(_, data) => setJson(data.value)} /></Field> : <div className="grid gap-3">
+        {busy && !authorizeUrl ? <Spinner label={t('dashboard.upstreamEditor.oauth.preparing')} /> : authorizeUrl && <div className="flex items-center gap-2 min-w-0"><Link href={authorizeUrl} target="_blank" rel="noopener noreferrer" className="truncate"><OpenLinkLabel>{t('dashboard.upstreamEditor.oauth.openAuthorize')}</OpenLinkLabel></Link><TooltipIconButton icon={copyOutcomeIcon(outcomeFor())} label={copyLabel(outcomeFor(), t('dashboard.upstreamEditor.oauth.copy'))} onClick={() => copy(authorizeUrl)} /></div>}
+        <Field label={t('dashboard.upstreamEditor.oauth.callback')}><Textarea className="font-mono" resize="vertical" rows={3} value={callback} onChange={(_, data) => setCallback(data.value)} /></Field>
       </div>}
       <Button appearance="primary" disabledFocusable={busy} icon={busy ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />} onClick={() => void submit()}>{hasAccount ? t('dashboard.upstreamEditor.oauth.reimport') : t('dashboard.upstreamEditor.oauth.import')}</Button>
     </>}
