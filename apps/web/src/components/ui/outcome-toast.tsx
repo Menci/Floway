@@ -5,13 +5,11 @@ import { fluentComponents } from '../../fluent';
 
 const { Spinner, Toast, Toaster, ToastTitle, useToastController } = fluentComponents;
 
-// Success only. A failure carries a server's own words and belongs in a surface
-// that is dismissed by hand, next to the thing that failed.
+// Success only: a failure carries the server's own words and belongs in a hand-dismissed surface next to what failed.
 
 const TOAST_DISMISS_MS = 3000;
 
 interface OutcomeHandle {
-  /** Replaces the pending toast with a success one that dismisses itself. */
   succeed: (message: string) => void;
   /** Drops the pending toast. For a failure, which is reported in place. */
   settle: () => void;
@@ -20,7 +18,6 @@ interface OutcomeHandle {
 export interface OutcomeToasts {
   /** Announces work in flight; the toast stays until the handle settles it. */
   start: (pending: string) => OutcomeHandle;
-  /** Announces a finished action that had no visible in-flight phase. */
   succeed: (message: string) => void;
 }
 
@@ -31,8 +28,7 @@ export function OutcomeToastProvider({ children }: PropsWithChildren) {
   const sequence = useRef(0);
   const { dispatchToast, dismissToast, updateToast } = useToastController(toasterId);
 
-  // Clicking a toast takes it back, rather than waiting out a timeout or aiming
-  // at a close button it does not have.
+  // Clicking dismisses: Fluent's Toast ships no close button, and waiting out the timeout is the only other exit.
   const toastFor = useCallback((toastId: string, message: string, pending: boolean) => (
     <Toast className="cursor-pointer" onClick={() => dismissToast(toastId)}>
       <ToastTitle media={pending ? <Spinner size="tiny" /> : undefined}>{message}</ToastTitle>
