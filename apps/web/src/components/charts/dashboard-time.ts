@@ -5,8 +5,7 @@ export interface DashboardBucketFrame {
   key: string;
 }
 
-// A frame is the bucket the range defines; the label is locale- and
-// page-dependent, so the consumer adds it rather than deriving it here.
+// The label is locale- and page-dependent, so the consumer supplies it.
 export interface ChartBucket extends DashboardBucketFrame { label: string }
 
 const pad2 = (value: number) => String(value).padStart(2, '0');
@@ -71,9 +70,8 @@ export const chartTickValues = <T extends { date: Date }>(buckets: T[], desired 
   return ticks;
 };
 
-// The axis and the callout name the same bucket the same way, and all three
-// ranges go through `toLocaleString`: `toLocaleDateString` would render the
-// hour too, but `hour: '2-digit'` under a 12-hour clock produces `04 AM`.
+// All three ranges go through `toLocaleString`: `toLocaleDateString` renders
+// the hour too, but `hour: '2-digit'` under a 12-hour clock produces `04 AM`.
 const AXIS_PARTS: Record<DashboardRange, Intl.DateTimeFormatOptions> = {
   'today': { hour: '2-digit', minute: '2-digit' },
   '7d': { month: 'short', day: 'numeric', hour: 'numeric' },
