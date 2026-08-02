@@ -19,16 +19,22 @@
 // the version this app resolves — in @fluentui/react-field 9.5.3 this atom is
 // `grid-template-rows: auto auto auto 1fr` — and exported so a suite can render
 // a horizontal Field and fail the moment a Fluent bump rehashes it.
-// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-field/library/src/components/Field/useFieldStyles.styles.ts#L29-L32
+// https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-field/library/src/components/Field/useFieldStyles.styles.ts#L29-L32
 export const fieldHorizontalRootAtom = 'f1645dqt';
 
 // The success validation state marks nothing on the Field root or the message:
 // its only DOM trace is the Griffel atom Fluent puts on the message glyph for
-// the success colour, which no other variant carries. Pinned and exported on
-// the same terms as the horizontal root atom above -- in
+// the success colour, which no other variant carries. In
 // @fluentui/react-field 9.5.3 this atom is
 // `color: var(--colorPaletteGreenForeground1)`.
-// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-field/library/src/components/Field/useFieldStyles.styles.ts#L110-L119
+//
+// It is the more fragile of the two pins and the only one no suite renders. A
+// Griffel atom hashes the property and the value together, so this one rehashes
+// on a rename of the palette token as well as on a change of the colour, while
+// the horizontal atom hashes a geometry Fluent has no reason to restate. When
+// it rehashes, the rule below stops matching and a success message silently
+// falls back to the neutral message colour.
+// https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-field/library/src/components/Field/useFieldStyles.styles.ts#L117-L119
 export const fieldSuccessIconAtom = 'ffmvakt';
 
 export const fieldCss = `
