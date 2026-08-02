@@ -137,9 +137,10 @@ export function UpstreamWorkspace({
               <Tab value="flags">{t('dashboard.upstreamEditor.models.flags')}</Tab>
             </TabList>
           </>
-        // The models view is carried across tab switches: re-entering the YAML
-        // view re-serializes the manual models, discarding whatever had been
-        // typed and not yet applied.
+        // The models view is carried across tab switches rather than reset,
+        // because entering the YAML view re-serializes the manual models into
+        // the buffer: a reset here would discard whatever had been typed and
+        // not yet applied.
         : <TabList selectedValue={tab} onTabSelect={(_, data) => navigate({ tab: data.value as WorkspaceTab, model: null, section: 'details', view: modelView === 'yaml' ? 'yaml' : 'list' })}>
             <Tab value="models">{t('dashboard.upstreamEditor.tabs.models')}</Tab>
             <Tab value="flags">{t('dashboard.upstreamEditor.tabs.flags')}</Tab>

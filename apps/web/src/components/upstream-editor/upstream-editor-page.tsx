@@ -88,7 +88,10 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
 
   // Releasing the blocker commits the route change, which would unmount this
   // body-portaled dialog mid-exit. So confirm only closes it and the blocker is
-  // released from the exit; a dismissal resets the blocker before that.
+  // released from the exit; a dismissal resets the blocker before that. The
+  // blocker owns whether the navigation is held and the dialog only follows it,
+  // which is what gives a close something to change rather than an unmount to
+  // be removed by.
   const leaveDialog = useDialogInvocation<void>();
   const blocked = blocker.state === 'blocked';
   const [dialogFollowsBlocked, setDialogFollowsBlocked] = useState(blocked);

@@ -129,6 +129,9 @@ function EditorSection({ children, description, error, inline = false, required 
   </section>;
 }
 
+// The sorted union of every model id this upstream can disable, which
+// `__tests__/components/upstream-editor/disabled-models_test.ts` drives
+// directly -- the export is that seam, not a second consumer.
 export const buildDisabledModelOptions = (
   discovered: readonly UpstreamModelConfig[],
   manual: readonly UpstreamModelConfig[],

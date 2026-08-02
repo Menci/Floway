@@ -62,7 +62,9 @@ export function CopilotQuotaCard({ record }: { record: CopilotRecord }) {
   const { t } = useTranslation();
   const locale = useLocale();
   // A manual refresh is persisted server-side too; the local copy only avoids
-  // re-fetching the record to display it.
+  // re-fetching the record to display it. The persisted snapshot is whatever
+  // source saw the seat last -- the data plane harvests one from every upstream
+  // response, so it is normally current without anyone pressing anything.
   const [refreshed, setRefreshed] = useState<CopilotQuotaSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
 
