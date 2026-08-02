@@ -1,8 +1,7 @@
 import type { z } from 'zod';
 
-// The switch that opens the picker and the picker itself are one control, so
-// the rule that an opened picker must name at least one upstream belongs to the
-// control rather than to each form that mounts it.
+// The switch and the picker it opens are one control, so this rule belongs to
+// the control rather than to each form that mounts it.
 export interface UpstreamAccessValues {
   upstreamOverride: boolean;
   upstreamIds: string[];
