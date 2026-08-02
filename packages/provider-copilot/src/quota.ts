@@ -148,8 +148,44 @@ export const parseCopilotQuotaHeaders = (headers: Headers, now: Date): CopilotQu
 // `quota_remaining?` / `unlimited?` on `CopilotUserResponseQuotaSnapshotsChat`).
 // The captures we have carry every field, so the SDK is the only source for the
 // optionality; it is a generated declaration file rather than a runtime schema,
-// and the interfaces are marked `@experimental`. We declare only what we
-// project — a field we do not read has no business being here.
+// and the interfaces are marked `@experimental`.
+//
+// The interface declares only what we project, but the body carries a good deal
+// more, and the rest is enumerated here so the next feature that wants one of
+// these can see it is already on the wire. From the 2026-07-08 capture linked
+// below, at the top level: `access_type_sku` and `copilot_plan` (the seat's SKU
+// and plan), `token_based_billing` (the AI-Credits vs. premium-interactions
+// discriminator), `quota_reset_date` (the date-only form of
+// `quota_reset_date_utc`), `endpoints` (the same per-tier host map the token
+// exchange returns), the seat's identity and org metadata (`login`,
+// `assigned_date`, `analytics_tracking_id`, `is_staff`, `organization_list`,
+// `organization_login_list`), and the entitlement flags (`chat_enabled`,
+// `cli_enabled`, `cli_remote_control_enabled`, `cloud_session_storage_enabled`,
+// `copilotignore_enabled`, `editor_preview_features_enabled`, `is_mcp_enabled`,
+// `can_upgrade_plan`, `can_signup_for_limited`, `restricted_telemetry`). Inside
+// each bucket: `quota_id`, `remaining` (the integer form of `quota_remaining`),
+// `quota_reset_at`, `timestamp_utc` (per bucket rather than per snapshot), and
+// a per-bucket `token_based_billing`. `has_quota` is also there and is the one
+// omission with a reason of its own — see `CopilotQuotaDetail` above.
+//
+// Two further per-bucket fields are on the wire without appearing in any
+// capture we hold: `overage_entitlement` (the overage cap, which VS Code reads
+// only off `premium_interactions`) and `credits_used` (AI-Credits consumed).
+// Microsoft declares both on the body it `JSON.parse`s straight out of this
+// endpoint, so this is a declaration of GitHub's shape rather than a client-side
+// reshape:
+// https://github.com/microsoft/vscode/blob/9afe2783a7239c915d5fc6d1bd9c842f9ca06c2e/src/vs/base/common/defaultAccount.ts#L8-L20
+// `overage_entitlement` landed 2026-06-11 (microsoft/vscode#321023) and
+// `credits_used` on 2026-07-08 at 19:59Z (microsoft/vscode#325002) — the capture
+// below was taken that same day at 12:01Z, hours early, on a seat with no
+// overage to report. Neither field appears in `@github/copilot-sdk@1.0.8`, which
+// conversely declares a `codex_agent_enabled` no capture carries: both of our
+// secondary sources for this endpoint lag the wire, in opposite directions.
+//
+// Nothing consumes any of it yet, and the header path cannot supply any of it,
+// so projecting one today would mean a field that silently blanks out whenever
+// the passive path wins the race. Widen this interface and
+// `projectCopilotUsageResponse` together when something needs them.
 //
 // Two body shapes are live at once, split by GitHub's 2026-06-01 AI-Credits
 // change. A seat on the current shape reports `quota_snapshots` whatever its
