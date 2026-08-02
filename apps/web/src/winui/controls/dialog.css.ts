@@ -54,7 +54,6 @@ export const dialogCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L66 */
 .fui-DialogSurface.fui-DialogSurface[data-fui-focus-visible] {
-  --colorStrokeFocus2: var(--winui-focus-stroke-outer);
   border-color: var(--winui-surface-stroke-default);
 }
 

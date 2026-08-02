@@ -165,7 +165,6 @@ export const navCss = `
 .fui-NavItem.fui-NavItem[data-fui-focus-visible],
 .fui-NavSubItem.fui-NavSubItem[data-fui-focus-visible],
 .fui-NavCategoryItem.fui-NavCategoryItem[data-fui-focus-visible] {
-  --colorStrokeFocus2: var(--winui-focus-stroke-outer);
   box-shadow:
     inset 0 0 0 var(--strokeWidthThicker) var(--winui-focus-stroke-inner);
 }

@@ -119,7 +119,6 @@ export const badgeTagCss = `
 .fui-Tag.fui-Tag[data-fui-focus-visible],
 .fui-InteractionTagPrimary.fui-InteractionTagPrimary[data-fui-focus-visible],
 .fui-InteractionTagSecondary.fui-InteractionTagSecondary[data-fui-focus-visible] {
-  --colorStrokeFocus2: var(--winui-focus-stroke-outer);
   border-color: var(--winui-focus-stroke-inner);
 }
 

@@ -133,25 +133,17 @@ export const fieldCss = `
    rest, one on hover and press -- so the pointer states are taken away here
    and the rest state is left to Fluent's inline prop, which stands for the
    same distinction and already carries the underline the inline form wants.
-   Focused links are exempt because Fluent says focus with a doubled underline.
+   Focused links are exempt because Fluent says focus with a doubled underline,
+   which stands in for WinUI's two concentric rings: those sit 3px outside the
+   control and cannot follow an inline link across a line break.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Hyperlink_themeresources.xaml#L20
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/HyperlinkButton_themeresources.xaml#L62-L63
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/text/TextBlock/Hyperlink.cpp#L669-L671
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/HyperLinkButton_Partial.cpp#L207-L212
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L5926 */
 .fui-Link.fui-Link:not([data-fui-focus-visible]):hover,
 .fui-Link.fui-Link:not([data-fui-focus-visible]):active {
   text-decoration-line: none;
-}
-
-/* A focused link. WinUI's two concentric rings 3px outside the control cannot
-   follow an inline link across a line break, so Fluent's doubled underline
-   stays and only its stroke takes WinUI's outer focus colour. Unscoped because
-   every appearance shares one focus visual in both systems.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/HyperlinkButton_themeresources.xaml#L62-L63
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258 */
-.fui-Link.fui-Link[data-fui-focus-visible] {
-  --colorStrokeFocus2: var(--winui-focus-stroke-outer);
 }
 
 /* A disabled link. AccentTextFillColorDisabled arrives through the accent ramp

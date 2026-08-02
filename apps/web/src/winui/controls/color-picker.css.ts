@@ -72,24 +72,5 @@ export const colorPickerCss = `
   .fui-EmptySwatch.fui-EmptySwatch {
     border-color: var(--winui-control-strong-stroke-default);
   }
-
-  /* box-shadow is atomic, so the whole list is restated to move the two
-     colours; the widths come back unchanged because Fluent's pairs already
-     render WinUI's ring visuals. The selected swatch is addressed through the
-     ARIA state SwatchPicker writes, which is aria-selected on a grid and
-     aria-checked otherwise.
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259 */
-  .fui-ColorSwatch.fui-ColorSwatch[data-fui-focus-visible] {
-    box-shadow:
-      inset 0 0 0 var(--strokeWidthThick) var(--winui-focus-stroke-outer),
-      inset 0 0 0 var(--strokeWidthThicker) var(--winui-focus-stroke-inner);
-  }
-
-  .fui-ColorSwatch.fui-ColorSwatch[aria-checked='true'][data-fui-focus-visible],
-  .fui-ColorSwatch.fui-ColorSwatch[aria-selected='true'][data-fui-focus-visible] {
-    box-shadow:
-      inset 0 0 0 var(--strokeWidthThicker) var(--winui-focus-stroke-outer),
-      inset 0 0 0 calc(var(--strokeWidthThicker) + var(--strokeWidthThick)) var(--winui-focus-stroke-inner);
-  }
 }
 `;

@@ -76,7 +76,6 @@ export const toastCss = `
 }
 
 .fui-ToastContainer.fui-ToastContainer[data-fui-focus-visible] {
-  --colorStrokeFocus2: var(--winui-focus-stroke-outer);
   outline-offset: 1px;
   box-shadow: 0 0 0 1px var(--winui-focus-stroke-inner);
 }

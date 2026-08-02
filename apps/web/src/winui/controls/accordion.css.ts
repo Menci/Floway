@@ -183,7 +183,6 @@ export const accordionCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
    https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
 .fui-AccordionHeader__button.fui-AccordionHeader__button[data-fui-focus-visible] {
-  --colorStrokeFocus2: var(--winui-focus-stroke-outer);
   box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
 }
 

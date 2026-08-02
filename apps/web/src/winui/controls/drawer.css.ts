@@ -56,18 +56,13 @@ export const drawerCss = `
   }
 }
 
-/* Retinting --colorStrokeFocus2 gives Fluent's single outline WinUI's outer
-   focus stroke. The inner ring of WinUI's two-ring composite has to sit inside
-   that outer ring's own border box, which the drawer's one-sided border cannot
-   provide, so it is an inset shadow. Fluent draws its pseudo-element two pixels
-   outside the drawer, and the drawer clips with square corners, so the
-   pseudo-element is pulled onto the padding box and the pair drawn inward.
+/* The inner ring of WinUI's two-ring composite has to sit inside the outer
+   ring's own border box, which the drawer's one-sided border cannot provide, so
+   it is an inset shadow. Fluent draws its pseudo-element two pixels outside the
+   drawer, and the drawer clips with square corners, so the pseudo-element is
+   pulled onto the padding box and the pair drawn inward.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L251-L253 */
-.fui-OverlayDrawer.fui-OverlayDrawer[data-fui-focus-visible] {
-  --colorStrokeFocus2: var(--winui-focus-stroke-outer);
-}
-
 .fui-OverlayDrawer.fui-OverlayDrawer[data-fui-focus-visible]::after {
   inset: 0;
   box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);

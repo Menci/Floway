@@ -21,6 +21,7 @@ const palette = {
   colorSubtleBackground: 'var(--winui-subtle-fill-transparent)',
   colorSubtleBackgroundHover: 'var(--winui-subtle-fill-secondary)',
   colorSubtleBackgroundPressed: 'var(--winui-subtle-fill-tertiary)',
+  colorSubtleBackgroundSelected: 'var(--winui-subtle-fill-secondary)',
 
   // ControlElevationBorderBrush is a gradient and a Fluent token carries one
   // stop, so all three states resolve to its dominant Default stop; the edge
@@ -37,12 +38,38 @@ const palette = {
   colorNeutralStrokeAccessible: 'var(--winui-control-strong-stroke-default)',
   colorNeutralStrokeDisabled: 'var(--winui-control-strong-stroke-disabled)',
 
+  // A neutral foreground and its Hover/Pressed/Selected siblings resolve to one
+  // WinUI brush: ListViewItem states TextFillColorPrimaryBrush for every pointer
+  // and selection state, and a control whose own template does move the
+  // foreground says so in ./controls/*.css.ts. Fluent's stock steps are a
+  // separate grey ramp, so leaving a sibling unmapped is what lets a control
+  // repaint under the pointer with a colour the layer never chose.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L23-L28
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L175-L180
   colorNeutralForeground1: 'var(--winui-text-fill-primary)',
+  colorNeutralForeground1Hover: 'var(--winui-text-fill-primary)',
+  colorNeutralForeground1Pressed: 'var(--winui-text-fill-primary)',
+  colorNeutralForeground1Selected: 'var(--winui-text-fill-primary)',
   colorNeutralForeground2: 'var(--winui-text-fill-secondary)',
+  colorNeutralForeground2Hover: 'var(--winui-text-fill-secondary)',
+  colorNeutralForeground2Pressed: 'var(--winui-text-fill-secondary)',
+  colorNeutralForeground2Selected: 'var(--winui-text-fill-secondary)',
   colorNeutralForeground3: 'var(--winui-text-fill-tertiary)',
+  colorNeutralForeground3Hover: 'var(--winui-text-fill-tertiary)',
+  colorNeutralForeground3Pressed: 'var(--winui-text-fill-tertiary)',
+  colorNeutralForeground3Selected: 'var(--winui-text-fill-tertiary)',
   colorNeutralForegroundDisabled: 'var(--winui-text-fill-disabled)',
   colorNeutralForegroundInverted: 'var(--winui-text-fill-inverse)',
   colorNeutralForegroundOnBrand: 'var(--winui-text-on-accent-fill-primary)',
+
+  // WinUI's focus visual is two concentric strokes, and Fluent spends one token
+  // per stroke in the same roles, so the pair is stated here rather than at each
+  // focusable control. A control whose Fluent ring needs the strokes swapped or
+  // repositioned still says that locally.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
+  colorStrokeFocus1: 'var(--winui-focus-stroke-inner)',
+  colorStrokeFocus2: 'var(--winui-focus-stroke-outer)',
 } as const satisfies Partial<Theme>;
 
 // Fluent's small step keeps its own 2px: WinUI declares no shared radius below
