@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { Route } from './+types/dashboard-services-api-keys';
@@ -72,12 +72,6 @@ export async function clientLoader(): Promise<LoaderData> {
 export default function DashboardServicesApiKeys({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
   const { user } = useDashboardOutletContext();
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-
-  const openDeleteDialog = (target: ApiKey) => {
-    setDeleteError(null);
-    deleteDialog.open(target);
-  };
   const [data, setData] = useState<ApiKeysPageData>(loaderData);
   const [selectedKeyId, setSelectedKeyId] = useState(loaderData.selectedKeyId);
   const [pageError, setPageError] = useState(loaderData.error);
@@ -85,6 +79,13 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
   const rotateDialog = useDialogInvocation<ApiKey>();
   const deleteDialog = useDialogInvocation<ApiKey>();
   const [deletingKey, setDeletingKey] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // The error belongs to the attempt that produced it, not to the dialog.
+  const openDeleteDialog = (target: ApiKey) => {
+    setDeleteError(null);
+    deleteDialog.open(target);
+  };
   const clipboard = useCopyToClipboard();
 
   const selectedKey = data.keys?.find(key => key.id === selectedKeyId) ?? null;
@@ -103,7 +104,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
 
   const toasts = useOutcomeToasts();
 
-  const reload = async (signal: AbortSignal) => {
+  const reload = useCallback(async (signal: AbortSignal) => {
     const next = await loadPageData(data, signal);
     if (signal.aborted) return;
     setData(next);
@@ -111,7 +112,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
     // A key the reload no longer lists is gone rather than merely unfetched:
     // `loadPageData` keeps the keys it already had when the request fails.
     if (!next.keys?.some(key => key.id === selectedKeyId)) selectKey('');
-  };
+  }, [data, selectedKeyId]);
 
   const { refresh, refreshing } = useRefresh(reload);
 
@@ -168,7 +169,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
           />
         </ResourceListPanel>
 
-        <Panel className="!grid !gap-[14px] min-w-0">
+        <Panel className="min-w-0">
           <AgentSetupCard
             initialApiKeyId={loaderData.selectedKeyId || null}
             initialError={loaderData.setupError}
@@ -212,13 +213,13 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
           actionLabel={t('dashboard.apiKeys.actions.delete')}
           busy={deletingKey}
           error={deleteError}
-          onDismissError={() => setDeleteError(null)}
+          key={deleteDialog.invocation.key}
           message={t('dashboard.apiKeys.delete.message', {
             name: deleteDialog.invocation.value.name,
           })}
           onConfirm={() => void deleteKey(deleteDialog.invocation!.value)}
+          onDismissError={() => setDeleteError(null)}
           onOpenChange={open => { if (!open) deleteDialog.close(); }}
-          key={deleteDialog.invocation.key}
           title={t('dashboard.apiKeys.delete.title')}
         />}
       </>}

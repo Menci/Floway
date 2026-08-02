@@ -21,6 +21,7 @@ import { SecretInput } from '../components/ui/secret-input';
 import { SectionHeader } from '../components/ui/section-header';
 import { SettingsExpander, SettingsSwitch } from '../components/ui/settings-card';
 import { StatusBadge } from '../components/ui/status-badge';
+import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { fluentComponents } from '../fluent';
 import { errorMessage } from '../lib/error-message';
 
@@ -32,7 +33,6 @@ const {
   Link,
   Option,
   Text,
-  Tooltip,
 } = fluentComponents;
 
 interface LoaderData {
@@ -271,7 +271,11 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
         <div className="grid gap-3">
           <Field label={t('dashboard.searchConfig.apiKeyLabel')}>
             <SecretInput
-              contentAfter={<Tooltip content={secretVisible ? t('dashboard.upstreamEditor.actions.hideSecret') : t('dashboard.upstreamEditor.actions.showSecret')} relationship="label"><Button appearance="subtle" aria-label={secretVisible ? t('dashboard.upstreamEditor.actions.hideSecret') : t('dashboard.upstreamEditor.actions.showSecret')} icon={secretVisible ? <EyeOffRegular /> : <EyeRegular />} onClick={() => setSecretVisible(value => !value)} size="small" /></Tooltip>}
+              contentAfter={<TooltipIconButton
+                icon={secretVisible ? <EyeOffRegular /> : <EyeRegular />}
+                label={secretVisible ? t('dashboard.upstreamEditor.actions.hideSecret') : t('dashboard.upstreamEditor.actions.showSecret')}
+                onClick={() => setSecretVisible(value => !value)}
+              />}
               disabled={draft.provider === 'disabled'}
               onChange={handleApiKeyChange}
               placeholder={t('dashboard.searchConfig.apiKeyPlaceholder')}
@@ -376,7 +380,7 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
         <Panel className="!grid !gap-[14px]">
           <SectionHeader level={2} title={t('dashboard.searchConfig.testResults')} />
 
-          <div className="flex items-center gap-[8px] flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
             <StatusBadge color={testResult.ok ? 'success' : 'danger'}>
               {testResult.ok ? t('dashboard.searchConfig.testBadge.ok') : t('dashboard.searchConfig.testBadge.error')}
             </StatusBadge>
@@ -398,12 +402,12 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
                     key={r.url + r.title}
                     className="grid gap-1 border-0 border-t border-solid border-fui-stroke1 py-3 first:border-t-0"
                   >
-                    <div className="flex items-baseline gap-[8px] flex-wrap">
+                    <div className="flex items-baseline gap-2 flex-wrap">
                       <a
                         href={r.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-fui-brand1 no-underline hover:underline font-semibold text-[14px]"
+                        className="text-fui-brand1 no-underline hover:underline font-fui-semibold text-fui-base300"
                       >
                         {r.title}
                       </a>
@@ -415,11 +419,7 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
                         </Text>
                       )}
                     </div>
-                    <Text
-                      size={100}
-                      className="text-fui-fg3"
-                      style={{ wordBreak: 'break-all' }}
-                    >
+                    <Text size={100} className="text-fui-fg3 break-all">
                       {r.url}
                     </Text>
                     <Text size={200} className="text-fui-fg2">

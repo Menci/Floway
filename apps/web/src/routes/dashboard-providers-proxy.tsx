@@ -112,7 +112,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
           refreshing={refreshing}
         />}
         description={t('dashboard.proxy.description')}
-        title={t('dashboard.proxy.heading')}
+        title={t('dashboard.nav.proxy')}
       />
 
       {loadError && (
@@ -132,24 +132,18 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
         record={editorDialog.invocation.value}
       />}
 
-      {deleteDialog.invocation && (
-        <ConfirmDialog
-          open={deleteDialog.isOpen}
-          actionLabel={t('dashboard.proxy.actions.delete')}
-          busy={mutating}
-          error={deleteError}
-          key={deleteDialog.invocation.key}
-          message={t('dashboard.proxy.delete.message', {
-            name: deleteDialog.invocation.value.name,
-          })}
-          onConfirm={() => void handleDeleteConfirm(deleteDialog.invocation!.value)}
-          onDismissError={() => setDeleteError(null)}
-          onOpenChange={open => {
-            if (!open) deleteDialog.close();
-          }}
-          title={t('dashboard.proxy.delete.title')}
-        />
-      )}
+      {deleteDialog.invocation && <ConfirmDialog
+        open={deleteDialog.isOpen}
+        actionLabel={t('dashboard.proxy.actions.delete')}
+        busy={mutating}
+        error={deleteError}
+        key={deleteDialog.invocation.key}
+        message={t('dashboard.proxy.delete.message', { name: deleteDialog.invocation.value.name })}
+        onConfirm={() => void handleDeleteConfirm(deleteDialog.invocation!.value)}
+        onDismissError={() => setDeleteError(null)}
+        onOpenChange={open => { if (!open) deleteDialog.close(); }}
+        title={t('dashboard.proxy.delete.title')}
+      />}
     </section>
   );
 }

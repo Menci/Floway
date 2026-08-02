@@ -12,6 +12,7 @@ import type { ControlPlaneModel } from '../api/types';
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
+import { HEADER_ROW_CLASS } from '../components/ui/layout';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { ResourceListActions } from '../components/ui/resource-list';
@@ -241,7 +242,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
       {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error.message}</OutcomeMessageBar>}
 
       <Panel className="!grid !gap-[18px] min-w-0">
-        <div className="flex items-center gap-3 justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
+        <div className={`${HEADER_ROW_CLASS} gap-3`}>
           <div className="flex items-center flex-wrap gap-2.5 min-w-0">
             {canSwitchView && (
               <ChoiceGroup
@@ -311,7 +312,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
       </Panel>
 
       {showSearch && (
-        <Panel className="!grid !gap-[18px] min-w-0">
+        <Panel className="min-w-0">
           {searchChart === null ? (
             <EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine>
           ) : (
