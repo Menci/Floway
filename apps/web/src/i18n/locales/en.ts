@@ -748,12 +748,16 @@ const en = {
         },
         copilot: {
           quota: {
-            title: 'Premium quota',
+            title: 'Quota',
             load: 'Load',
             refresh: 'Refresh',
-            used: '{{used}} of {{entitlement}} premium interactions used',
-            resets: 'Resets {{date}}',
-            unmetered: 'This account reports no premium interaction quota.',
+            used: '{{used}} / {{entitlement}}',
+            usedPercent: '{{percent}}% used',
+            unlimited: 'Unlimited',
+            unavailable: 'Not included in this plan',
+            resets: 'Resets on {{date}}',
+            observed: 'Observed {{time}}',
+            empty: 'No quota observed yet. One arrives with the first request this upstream serves, or refresh to fetch one now.',
           },
           description:
               'Connect a GitHub Copilot subscription using GitHub device authorization.',
