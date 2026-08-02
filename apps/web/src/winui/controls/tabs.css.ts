@@ -8,10 +8,13 @@
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L265-L285
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L12-L21
 //
-// Fluent's appearance variants carry no class or attribute to select them by,
-// so the ramp also outranks the `color: inherit` the circular appearances set:
-// a selected filled chip shows WinUI's primary text over Fluent's brand fill,
-// accepted rather than chasing hashed atoms.
+// The foreground ramp is the inline strip's alone. Fluent's circular
+// appearances are a chip, a shape WinUI's tab surfaces do not have: they fill
+// with Fluent's brand ramp and set `color: inherit` so the label reads on that
+// fill, and a WinUI neutral ramp landing on top of it put near-black text on
+// mid-blue. The strip is named through the stamp ../appearance.ts writes for
+// TabList, and the chip keeps Fluent's fill and its own on-fill foreground
+// together.
 // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-tabs/library/src/components/Tab/useTabStyles.styles.ts#L184-L189
 //
 // Focus stays Fluent's: PivotHeaderItem draws no per-item focus visual, and
@@ -28,20 +31,22 @@
 //
 // Rules run rest → hover → pressed → selected, and each selected step repeats
 // the interaction pseudo-classes it has to outweigh.
+const inlineStrip = ".fui-TabList:not([data-winui-appearance$='-circular'])";
+
 export const tabsCss = `
 /* TabViewItemHeaderForegroundPointerOver resolves to the same
    TextFillColorSecondary as rest, so the pointer alone carries the state.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L15
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L20 */
-.fui-Tab:enabled:hover .fui-Tab__content.fui-Tab__content,
-.fui-Tab:enabled:hover .fui-Tab__icon.fui-Tab__icon {
+${inlineStrip} .fui-Tab:enabled:hover .fui-Tab__content.fui-Tab__content,
+${inlineStrip} .fui-Tab:enabled:hover .fui-Tab__icon.fui-Tab__icon {
   color: var(--winui-text-fill-secondary);
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L13
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L18 */
-.fui-Tab:enabled:active .fui-Tab__content.fui-Tab__content,
-.fui-Tab:enabled:active .fui-Tab__icon.fui-Tab__icon {
+${inlineStrip} .fui-Tab:enabled:active .fui-Tab__content.fui-Tab__content,
+${inlineStrip} .fui-Tab:enabled:active .fui-Tab__icon.fui-Tab__icon {
   color: var(--winui-text-fill-tertiary);
 }
 
@@ -49,13 +54,13 @@ export const tabsCss = `
    setter, which no visual state can reach.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L14
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L478 */
-.fui-Tab[aria-selected='true'] .fui-Tab__content.fui-Tab__content {
+${inlineStrip} .fui-Tab[aria-selected='true'] .fui-Tab__content.fui-Tab__content {
   color: var(--winui-text-fill-primary);
   font-weight: var(--fontWeightRegular);
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L19 */
-.fui-Tab[aria-selected='true'] .fui-Tab__icon.fui-Tab__icon {
+${inlineStrip} .fui-Tab[aria-selected='true'] .fui-Tab__icon.fui-Tab__icon {
   color: var(--winui-text-fill-primary);
 }
 
@@ -63,10 +68,10 @@ export const tabsCss = `
    Fluent moves it in both, hence these two combinations.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView.xaml#L354-L372
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView.xaml#L373-L391 */
-.fui-Tab[aria-selected='true']:enabled:hover .fui-Tab__content.fui-Tab__content,
-.fui-Tab[aria-selected='true']:enabled:hover .fui-Tab__icon.fui-Tab__icon,
-.fui-Tab[aria-selected='true']:enabled:active .fui-Tab__content.fui-Tab__content,
-.fui-Tab[aria-selected='true']:enabled:active .fui-Tab__icon.fui-Tab__icon {
+${inlineStrip} .fui-Tab[aria-selected='true']:enabled:hover .fui-Tab__content.fui-Tab__content,
+${inlineStrip} .fui-Tab[aria-selected='true']:enabled:hover .fui-Tab__icon.fui-Tab__icon,
+${inlineStrip} .fui-Tab[aria-selected='true']:enabled:active .fui-Tab__content.fui-Tab__content,
+${inlineStrip} .fui-Tab[aria-selected='true']:enabled:active .fui-Tab__icon.fui-Tab__icon {
   color: var(--winui-text-fill-primary);
 }
 

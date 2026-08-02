@@ -66,6 +66,11 @@ const splitButtonSlots = ['primaryActionButton', 'menuButton'] as const;
 // second, independent selection signal beside aria-selected.
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-card/library/src/components/Card/useCard.ts#L54
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-table/library/src/components/TableRow/useTableRow.ts#L21
+//
+// A Tab reads its appearance from TabList's context and never carries it
+// itself, so the strip is what gets stamped and the tab rules select through
+// it.
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-tabs/library/src/components/TabList/useTabList.tsx#L20
 export const withWinuiAppearance = (components: FluentComponents): FluentComponents => {
   // Only a props object can take one more prop by merging; Fluent's own
   // normalization folds the other shorthand forms into `{ children: value }`.
@@ -275,6 +280,7 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
     Dropdown: stamp(components.Dropdown, appearance('outline', rootAndPrimary)),
     Card: stampSelectedState(stamp(components.Card, appearance('filled', rootIsPrimary))),
     TableRow: stamp(components.TableRow, appearance('none', rootIsPrimary)),
+    TabList: stamp(components.TabList, appearance('transparent', rootIsPrimary)),
     Checkbox: stampCheckedState(stamp(components.Checkbox, shape('square', rootAndPrimary))),
     TableSelectionCell: stampSelectionCellCheckedState(components.TableSelectionCell),
     Switch: stamp(components.Switch, size('medium', rootAndPrimary)),
