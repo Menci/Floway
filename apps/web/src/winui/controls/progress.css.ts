@@ -86,8 +86,20 @@ export const progressCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressRing/ProgressRing_themeresources.xaml#L5-L6
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressRing/ProgressRing_themeresources.xaml#L12-L14
    https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-spinner/library/src/components/Spinner/useSpinnerStyles.styles.ts#L44-L56 */
+
+/* Two track colours are dissolved rather than one: WinUI has a single
+   appearance and gives its ring ControlFillColorTransparentBrush in the light
+   and the dark dictionary alike, so the ring Fluent draws behind the arc for
+   appearance=inverted is as absent from WinUI as the default one. That variant
+   writes its own colour in a second token instead of overriding the first, so
+   it is emptied where it is written; the alpha stroke is a track colour only
+   here, since the tail inside this element paints from currentcolor.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressRing/ProgressRing_themeresources.xaml#L6
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressRing/ProgressRing_themeresources.xaml#L10
+   https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-spinner/library/src/components/Spinner/useSpinnerStyles.styles.ts#L123-L126 */
 .fui-Spinner__spinner.fui-Spinner__spinner {
   --colorBrandStroke2Contrast: var(--winui-control-fill-transparent);
+  --colorNeutralStrokeAlpha2: var(--winui-control-fill-transparent);
   --fui-Spinner--strokeWidth: 25%;
 }
 
