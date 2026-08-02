@@ -168,14 +168,10 @@ export const useAgentSetup = (
     }, { init: { signal } }));
     if (lifecycle !== lifecycleRef.current) return;
     if (result.error) {
-      // The setup routes discriminate their 409 bodies on `status`; a 400
-      // carries only a message, so the discriminant is read where it exists.
       const failure = result.error.raw;
       if (failure && 'status' in failure) {
         if (failure.status === 'missing') { markTerminated(); return; }
         if (failure.status === 'revision-conflict') {
-          // The conflict body rides the current lease along under the same
-          // projection the 200 uses, so rebasing is a relabel.
           const current: AgentSetupLease = { ...failure, status: 'ok' };
           adoptLease(current);
           if (generationRef.current === sentGeneration
@@ -246,8 +242,6 @@ export const useAgentSetup = (
     const loaded = createAttempt === 0 && initialResourceRef.current?.apiKeyId === apiKeyId
       ? initialResourceRef.current
       : null;
-    // The loader's lease is released once the lifecycle has run for another key
-    // or for a retry, so returning to the first key must acquire a fresh one.
     // Discarding here rather than on the adopting pass keeps a re-entered
     // lifecycle for the same key idempotent.
     if (!loaded) initialResourceRef.current = null;
@@ -291,10 +285,8 @@ export const useAgentSetup = (
     return cleanup;
   }, [abortRequests, adoptLease, apiKeyId, createAttempt, request, scheduleHeartbeat]);
 
-  // Only an edit may restart the debounce, so the lease and the draft are read
-  // as presence and the generation counters carry the edit: watching the
-  // objects would restart the window on every heartbeat, which adopts a freshly
-  // issued lease.
+  // Watching the lease and the draft objects would restart the debounce window
+  // on every heartbeat, which adopts a freshly issued lease; only an edit may.
   const hasLease = lease !== null;
   const hasDraft = draft !== null;
   useEffect(() => {
@@ -350,8 +342,6 @@ export const useAgentSetup = (
     setCreateAttempt(value => value + 1);
   }, [abortRequests, apiKeyId]);
 
-  // One bar reports whichever of the three failed, so clearing it clears all
-  // three; each is written again the next time the operation behind it fails.
   const dismissError = useCallback(() => {
     setSaveError(null);
     setHeartbeatError(null);
