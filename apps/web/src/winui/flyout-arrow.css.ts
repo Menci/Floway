@@ -7,8 +7,10 @@
 //
 // The beak carries no `fui-*` class, only Griffel atoms, so the border atom is
 // pinned by name and the rule is written once for every arrow rather than per
-// surface. Redefining colorTransparentStroke on the surface instead would hand
-// a visible border to every Fluent element inside it.
+// surface; the name is doubled because Fluent's own declaration on that atom
+// would otherwise tie it and win on stylesheet order. Redefining
+// colorTransparentStroke on the surface instead would hand a visible border to
+// every Fluent element inside it.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L255
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/FlyoutPresenter_themeresources.xaml#L6
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ToolTip/ToolTip_themeresources.xaml#L9
@@ -16,7 +18,7 @@
 export const positioningArrowBorderAtom = 'f1kc0wz4';
 
 export const flyoutArrowCss = `
-.${positioningArrowBorderAtom}::before {
+.${positioningArrowBorderAtom}.${positioningArrowBorderAtom}::before {
   border-color: var(--winui-surface-stroke-flyout);
 }
 `;
