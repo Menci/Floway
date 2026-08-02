@@ -70,9 +70,20 @@ export const tableCss = `
    outside the table. The ring takes WinUI's outer focus stroke, the only one
    of its two strokes a single ring can carry; the header cell keys its ring
    off the focus landing anywhere inside it, the other three off the element
-   itself. Fluent's outline carries no offset, so it sits directly against the
-   border box and WinUI's inner ring goes inside it as an inset shadow, as on
-   every other item-shaped surface in the layer.
+   itself.
+
+   Both strokes are drawn inside the element's own bounds. Fluent's outline
+   carries no offset of its own, which would seat it against the border box,
+   and a table has none to spare there: every table in the dashboard sits in a
+   rounded clipping host, so a header cell would lose the ring's top edge and a
+   body row -- which runs the host's full width -- its left and right. Pulling
+   the outline in by the outer stroke's own 2px seats the pair inside that
+   clip, and the inner stroke rides the third pixel of an inset shadow whose
+   outer two the outline covers. WinUI reads the same way: a ListViewItem's
+   focus rectangle is its bounds shrunk by FocusVisualMargin, never grown.
+   Insetting the host instead is wrong at both ends -- the performance table
+   has to meet its host's rounded border, and a gutter in the API key table
+   would stop the row's own fill short of the card edge.
 
    Under forced colours the user agent drops that inset shadow and forces the
    outline onto CanvasText, which is that mode's reading of the WindowText the
@@ -80,15 +91,20 @@ export const tableCss = `
    geometry and needs no colour of its own there.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L29-L30
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L94
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L248
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L250
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L252
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L144
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L348
+   https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L173-L174
    https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
 .fui-TableRow.fui-TableRow[data-fui-focus-visible],
 .fui-TableCell.fui-TableCell[data-fui-focus-visible],
 .fui-TableSelectionCell.fui-TableSelectionCell[data-fui-focus-visible],
 .fui-TableHeaderCell.fui-TableHeaderCell[data-fui-focus-within]:focus-within {
-  box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
+  box-shadow: inset 0 0 0 3px var(--winui-focus-stroke-inner);
   outline-color: var(--winui-focus-stroke-outer);
+  outline-offset: -2px;
 }
 
 /* Selection. The DataGrid's default selection appearance is \`brand\`, which
