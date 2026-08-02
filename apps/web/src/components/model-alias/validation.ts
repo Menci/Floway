@@ -1,9 +1,5 @@
 import type { AliasTarget, AnnouncedMetadata } from '../../api/types';
 
-// Each rule is read twice -- by the editor that renders the message on its
-// control, and by the dialog's schema that refuses the submit -- so that no
-// rule can block a save without saying why.
-
 const isTokenCount = (value: unknown): boolean =>
   typeof value === 'number' && Number.isInteger(value) && value >= 0;
 
@@ -36,8 +32,7 @@ export const announcedMetadataIssues = (metadata: AnnouncedMetadata): AnnouncedM
   const budget = metadata.chat?.reasoning?.budget_tokens;
   if (budget?.min !== undefined && !isTokenCount(budget.min)) issues.budgetMin = 'dashboard.modelAliases.validation.metadataNumber';
   if (budget?.max !== undefined && !isTokenCount(budget.max)) issues.budgetMax = 'dashboard.modelAliases.validation.metadataNumber';
-  // The ordering rule waits for both ends to be readable rather than piling
-  // onto a field already reporting the wrong kind of value.
+  // Report the ordering only once both ends are readable numbers.
   if (issues.budgetMax === undefined && issues.budgetMin === undefined && budget?.min !== undefined && budget.max !== undefined && budget.max < budget.min) {
     issues.budgetMax = 'dashboard.modelAliases.validation.metadataRange';
   }
