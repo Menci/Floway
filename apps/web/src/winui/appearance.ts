@@ -1,9 +1,6 @@
-// Fluent v9 keeps `appearance` off the DOM — the variants exist only as hashed
-// Griffel atoms composed in JavaScript, so no CSS selector can name one. These
-// wrappers put the resolved value back as `data-winui-*` so
-// `winui/controls/*.css.ts` can address exactly one variant. A toggle's checked
-// state needs no stamp: Fluent already writes `aria-pressed`/`aria-checked`.
-// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-button/library/src/utils/useToggleState.ts#L49
+// Fluent v9 resolves `appearance` into hashed Griffel atoms and keeps it off the
+// DOM, so no CSS selector can name a variant. These wrappers put the resolved
+// value back as `data-winui-*` for `winui/controls/*.css.ts` to address.
 import { CheckmarkCircleFilled, ChevronDown12Regular, DismissCircleFilled, ErrorCircleFilled, InfoFilled } from '@fluentui/react-icons';
 import * as React from 'react';
 
@@ -19,13 +16,10 @@ type PropCarrier = Record<string, unknown>;
 type MessageBarIntent = 'error' | 'warning' | 'success' | 'info';
 interface IntentCarrier { intent?: MessageBarIntent; icon?: React.ReactNode }
 
-// A top-level prop does not always reach the element that carries the WinUI
-// trait. Where the root is not the primary slot, `getPartitionedNativeProps`
-// forwards everything but `style` and `className` to the primary slot, so a
-// top-level `data-*` lands on the inner `<input>`/`<textarea>`/`<select>` and
-// never on the `.fui-*` root; those name `root` and get stamped twice.
-// SplitButton's root is a plain `<div>` whose two `.fui-Button` elements come
-// from Fluent's own unwrapped Button and MenuButton, unreachable any other way.
+// Where the root is not the primary slot, `getPartitionedNativeProps` forwards a
+// top-level `data-*` to the inner `<input>`/`<textarea>`/`<select>` instead of
+// the `.fui-*` root, so those name `root` and get stamped twice. SplitButton's
+// root is a plain `<div>` whose `.fui-Button` children are unreachable otherwise.
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-utilities/src/utils/getNativeElementProps.ts#L86-L118
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-button/library/src/components/SplitButton/useSplitButton.ts#L32-L57
 const rootIsPrimary: readonly string[] = [];
@@ -33,9 +27,8 @@ const rootAndPrimary = ['root'] as const;
 const splitButtonSlots = ['primaryActionButton', 'menuButton'] as const;
 
 // Each fallback below is Fluent's own default for that component, read from its
-// state hook — they do not agree, so none may be assumed. The three Toolbar
-// buttons delegate a base hook that carries no default and name `subtle`
-// themselves.
+// state hook — they do not agree, so none may be assumed. The Toolbar buttons
+// delegate a base hook carrying no default and name `subtle` themselves.
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-button/library/src/components/Button/useButton.ts#L20
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-button/library/src/components/ToggleButton/useToggleButton.ts#L19
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-button/library/src/components/CompoundButton/useCompoundButton.ts#L21
@@ -49,22 +42,19 @@ const splitButtonSlots = ['primaryActionButton', 'menuButton'] as const;
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Combobox/useCombobox.tsx#L216
 //
 // Input, Textarea and Select spell their default as
-// `overrides.inputDefaultAppearance ?? 'outline'`, and that context is reachable
-// only through `@fluentui/react-shared-contexts`, which `react-components` does
-// not re-export — so `outline` is the value this app can resolve.
+// `overrides.inputDefaultAppearance ?? 'outline'`, whose context
+// `react-components` does not re-export — so `outline` is what this app resolves.
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-input/library/src/components/Input/useInput.ts#L21
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-textarea/library/src/components/Textarea/useTextarea.ts#L21
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-select/library/src/components/Select/useSelect.ts#L21
 //
-// Card defaults to `filled`; its three companions declare no appearance at all
-// and are left unwrapped.
+// Card defaults to `filled`; its companions declare no appearance and stay
+// unwrapped.
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-card/library/src/components/Card/useCard.ts#L54
 export const withWinuiAppearance = (components: FluentComponents): FluentComponents => {
-  // A slot arrives as a props object, a string, a number, an iterable or a JSX
-  // element, and only the first can take one more prop by merging. Fluent's own
-  // normalization folds the other four into `{ children: value }`. `null` is
-  // left alone: it is how a caller suppresses an optional slot, and merging into
-  // it would render the slot back.
+  // Only a props object can take one more prop by merging; Fluent's own
+  // normalization folds the other shorthand forms into `{ children: value }`.
+  // `null` is left alone — merging into it would render a suppressed slot back.
   // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-utilities/src/compose/slot.ts#L82-L93
   const resolveSlotProps = components.slot.resolveShorthand as (value: unknown) => SlotProps | undefined;
 
@@ -97,11 +87,9 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
   const shape = (fallback: string, slots?: readonly string[]) =>
     ({ prop: 'shape', attribute: winuiShapeAttribute, fallback, slots });
 
-  // Every InfoBar severity is a circle in WinUI. Fluent reaches for a diamond
-  // for `error` and a triangle for `warning`, so those two are replaced with
-  // their circular counterparts and the agreeing pair is restated so the whole
-  // map reads in one place. The intent is stamped alongside because Fluent
-  // settles it in JavaScript and writes nothing a selector could name.
+  // Every InfoBar severity is a circle in WinUI, where Fluent reaches for a
+  // diamond for `error` and a triangle for `warning`. The intent is stamped
+  // alongside because Fluent settles it in JavaScript.
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L70-L74
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar.xaml#L107-L110
   // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-message-bar/library/src/components/MessageBar/getIntentIcon.tsx#L7-L19
@@ -127,12 +115,10 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
     return wrapped as Component;
   };
 
-  // Expander puts its chevron at the end of the header row and points it down
-  // when collapsed, where Fluent leads with it and points it right. Fluent also
-  // hands the 20px chevron artwork to a 12px box, which is what makes the arrow
-  // read thin -- WinUI states 12 for this glyph and the icon set has a 12px cut.
-  // Fluent only rotates the chevron it supplies itself, so once the children are
-  // ours the turn belongs to ./controls/accordion.css.
+  // WinUI ends the header row with the chevron, points it down when collapsed,
+  // and states 12 for the glyph where Fluent leads with it, points it right, and
+  // hands 20px artwork to a 12px box. Fluent only rotates a chevron it supplies
+  // itself, so with ours the turn belongs to ./controls/accordion.css.
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L82-L85
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L280-L281
   // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-accordion/library/src/components/AccordionHeader/useAccordionHeader.tsx#L42-L50
@@ -148,10 +134,8 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
     return wrapped as Component;
   };
 
-  // The map covers Fluent's whole appearance-carrying surface rather than the
-  // subset the dashboard renders today, so a component reached for later arrives
-  // already stamped. A wrapper costs one allocation at module scope and nothing
-  // at all until its component is used.
+  // The map covers Fluent's whole appearance-carrying surface, not just the
+  // subset the dashboard renders today, so a later component arrives stamped.
   return {
     ...components,
     AccordionHeader: winuiChevron(components.AccordionHeader),
