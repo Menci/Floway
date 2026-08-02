@@ -381,7 +381,7 @@ const en = {
           codexWindowsAuthHint: 'Windows PowerShell: store the same provider token without changing the official account login.',
         },
         agentSetup: {
-          agent: 'Agent', accessMethod: 'Connection method', setupTab: 'Setup script', snippetsTab: 'Config snippet', platform: 'Platform', commandPending: 'Preparing setup command…', modelSelection: 'Model selection', miscSettings: 'Miscellaneous settings', selectKey: 'Select an API key above to prepare a setup command.', noKey: 'Create an API key to use Agent Setup.', expired: 'This setup link has expired. Retry to create a fresh link.', retry: 'Retry', expires: 'The setup link stays alive while this page is visible and expires after you leave.', defaultModel: 'Default model', fableModel: 'Fable model', opusModel: 'Opus model', sonnetModel: 'Sonnet model', haikuModel: 'Haiku model', reasoningEffort: 'Reasoning effort', modelDefault: 'Default', noModelMatches: 'No matching models', modelDiscovery: 'Gateway model discovery', modelDiscoveryHint: 'Let Claude Code discover available models from this Floway gateway.', cleanupRetention: 'Cleanup retention', cleanupRetentionHint: 'Set how long Claude Code retains local session data before cleanup.', cleanupDays: '{{count}} days', optOutAiAttribution: 'Opt out of Claude Code AI attribution', optOutAiAttributionHint: 'Remove Claude Code attribution ("Co-Authored-By") from commits and pull requests, and hide session links.', unavailable: '{{id}} (unavailable)',
+          agent: 'Agent', accessMethod: 'Connection method', setupTab: 'Setup script', snippetsTab: 'Config snippet', platform: 'Platform', commandPending: 'Preparing setup command…', modelSelection: 'Model selection', miscSettings: 'Miscellaneous settings', selectKey: 'Select an API key above to prepare a setup command.', noKey: 'Create an API key to use Agent Setup.', expired: 'This setup link has expired. Retry to create a fresh link.', retry: 'Retry', expires: 'The setup link stays alive while this page is visible and expires after you leave.', defaultModel: 'Default model', fableModel: 'Fable model', opusModel: 'Opus model', sonnetModel: 'Sonnet model', haikuModel: 'Haiku model', reasoningEffort: 'Reasoning effort', modelDefault: 'Default', noModelMatches: 'No matching models', modelDiscovery: 'Gateway model discovery', modelDiscoveryHint: 'Let Claude Code discover available models from this Floway gateway.', cleanupRetention: 'Cleanup retention', cleanupRetentionHint: 'Set how long Claude Code retains local session data before cleanup.', cleanupDays: '{{count}} days', optOutAiAttribution: 'Opt out of Claude Code AI attribution', optOutAiAttributionHint: 'Remove Claude Code attribution ("Co-Authored-By") from commits and pull requests, and hide session links.',
         },
         rotate: {
           title: 'Rotate API Key',
@@ -1059,7 +1059,7 @@ const en = {
         description: 'Create virtual model IDs that route to one or more target models with optional locked request rules',
         listTitle: 'Aliases', empty: 'No aliases configured. Create one to expose a virtual model ID.',
         columns: { alias: 'Alias', kind: 'Kind', targets: 'Targets', selection: 'Selection', visibility: 'Models list', actions: 'Actions' },
-        actions: { create: 'New alias', refresh: 'Refresh aliases', save: 'Save', saving: 'Saving…', delete: 'Delete', deleting: 'Deleting…', addTarget: 'Add target', editNamed: 'Edit alias {{name}}', deleteNamed: 'Delete alias {{name}}' },
+        actions: { create: 'New alias', refresh: 'Refresh aliases', save: 'Save', delete: 'Delete', addTarget: 'Add target', editNamed: 'Edit alias {{name}}', deleteNamed: 'Delete alias {{name}}' },
         dialog: { createTitle: 'Create alias', editTitle: 'Edit alias: {{name}}' },
         form: { name: 'Alias ID', namePlaceholder: 'my-alias-id', displayName: 'Display name', displayPlaceholder: 'Optional display name', kind: 'Kind', selection: 'Selection', visible: 'Visible in /v1/models', visibleHint: 'A hidden alias stays out of the listing but can still be requested by name.' },
         kind: { chat: 'Chat', embedding: 'Embedding', image: 'Image', rerank: 'Rerank', transcription: 'Transcription' },
@@ -1072,7 +1072,7 @@ const en = {
         validation: { nameRequired: 'Enter an alias ID.', duplicate: 'An alias with this ID already exists.', targetRequired: 'Enter a target model ID.', budget: 'Reasoning budget must be a non-negative integer.', adaptiveBudget: 'Adaptive reasoning cannot be combined with a fixed budget.', metadataNumber: 'Enter a whole number of tokens, zero or greater.', metadataRange: 'Maximum budget must be greater than or equal to minimum budget.' },
         delete: { title: 'Delete alias', message: 'Delete alias {{name}}? This cannot be undone.' },
         toast: { save: { pending: 'Saving alias {{name}}', success: 'Saved alias {{name}}' }, delete: { pending: 'Deleting alias {{name}}', success: 'Deleted alias {{name}}' } },
-        errors: { load: 'Could not load aliases.', message: 'Could not complete the alias operation: {{message}}', models: 'Model catalog unavailable: {{message}}' },
+        errors: { message: 'Could not complete the alias operation: {{message}}', models: 'Model catalog unavailable: {{message}}' },
       },
       proxy: {
         heading: 'Proxy',

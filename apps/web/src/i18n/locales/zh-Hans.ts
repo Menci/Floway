@@ -365,7 +365,7 @@ const zhHansCN = {
           codexAuthHint: 'Linux 和 macOS：仅在 CODEX_HOME 下保存 Floway provider token。',
           codexWindowsAuthHint: 'Windows PowerShell：保存相同 token，不修改官方账号登录。',
         },
-        agentSetup: { agent: 'Agent', accessMethod: '接入方式', setupTab: '自动配置脚本', snippetsTab: '配置文件片段', platform: '操作系统', commandPending: '正在准备安装命令…', modelSelection: '模型选择', miscSettings: '杂项设置', selectKey: '请先在上方选择 API 密钥。', noKey: '请先创建 API 密钥。', expired: '此安装链接已过期，请重试生成新链接。', retry: '重试', expires: '页面可见时链接会自动续期，离开后即过期。', defaultModel: '默认模型', fableModel: 'Fable 模型', opusModel: 'Opus 模型', sonnetModel: 'Sonnet 模型', haikuModel: 'Haiku 模型', reasoningEffort: '思考强度', modelDefault: '默认', noModelMatches: '没有匹配的模型', modelDiscovery: 'Gateway 模型发现', modelDiscoveryHint: '允许 Claude Code 从此 Floway gateway 发现可用模型。', cleanupRetention: '清理保留期', cleanupRetentionHint: '设置 Claude Code 本地会话数据的清理保留期。', cleanupDays: '{{count}} 天', optOutAiAttribution: '停用 Claude Code AI 归属标记', optOutAiAttributionHint: '移除提交和 Pull Request 中的 Claude Code 归属信息（"Co-Authored-By"），并隐藏会话链接。', unavailable: '{{id}}（不可用）' },
+        agentSetup: { agent: 'Agent', accessMethod: '接入方式', setupTab: '自动配置脚本', snippetsTab: '配置文件片段', platform: '操作系统', commandPending: '正在准备安装命令…', modelSelection: '模型选择', miscSettings: '杂项设置', selectKey: '请先在上方选择 API 密钥。', noKey: '请先创建 API 密钥。', expired: '此安装链接已过期，请重试生成新链接。', retry: '重试', expires: '页面可见时链接会自动续期，离开后即过期。', defaultModel: '默认模型', fableModel: 'Fable 模型', opusModel: 'Opus 模型', sonnetModel: 'Sonnet 模型', haikuModel: 'Haiku 模型', reasoningEffort: '思考强度', modelDefault: '默认', noModelMatches: '没有匹配的模型', modelDiscovery: 'Gateway 模型发现', modelDiscoveryHint: '允许 Claude Code 从此 Floway gateway 发现可用模型。', cleanupRetention: '清理保留期', cleanupRetentionHint: '设置 Claude Code 本地会话数据的清理保留期。', cleanupDays: '{{count}} 天', optOutAiAttribution: '停用 Claude Code AI 归属标记', optOutAiAttributionHint: '移除提交和 Pull Request 中的 Claude Code 归属信息（"Co-Authored-By"），并隐藏会话链接。' },
         rotate: {
           title: '轮换 API 密钥',
           message: '为 {{name}} 选择替换 API 密钥。轮换后旧 API 密钥会立即停止工作。',
@@ -1008,7 +1008,7 @@ const zhHansCN = {
       modelAliases: {
         heading: '模型别名', description: '创建虚拟模型 ID，将请求路由到一个或多个目标模型，并可锁定请求规则', listTitle: '别名', empty: '尚未配置别名。创建别名以公开虚拟模型 ID。',
         columns: { alias: '别名', kind: '类型', targets: '目标', selection: '选择策略', visibility: '模型列表', actions: '操作' },
-        actions: { create: '新建别名', refresh: '刷新别名', save: '保存', saving: '保存中…', delete: '删除', deleting: '删除中…', addTarget: '添加目标', editNamed: '编辑别名 {{name}}', deleteNamed: '删除别名 {{name}}' },
+        actions: { create: '新建别名', refresh: '刷新别名', save: '保存', delete: '删除', addTarget: '添加目标', editNamed: '编辑别名 {{name}}', deleteNamed: '删除别名 {{name}}' },
         dialog: { createTitle: '创建别名', editTitle: '编辑别名：{{name}}' },
         form: { name: '别名 ID', namePlaceholder: 'my-alias-id', displayName: '显示名称', displayPlaceholder: '可选显示名称', kind: '类型', selection: '选择策略', visible: '在 /v1/models 中可见', visibleHint: '关闭只是不在列表中展示，别名仍然可以按名称请求。' },
         kind: { 'chat': '对话', 'embedding': '嵌入', 'image': '图像', 'rerank': '重排', 'transcription': '转录' }, selection: { first: '首个可用', random: '随机' }, visibility: { visible: '可见', hidden: '隐藏' },
@@ -1019,7 +1019,7 @@ const zhHansCN = {
         validation: { nameRequired: '请输入别名 ID。', duplicate: '已存在使用此 ID 的别名。', targetRequired: '请输入目标模型 ID。', budget: '思考预算必须是非负整数。', adaptiveBudget: '自适应思考不能与固定预算同时使用。', metadataNumber: '请输入 0 或更大的整数 token 数。', metadataRange: '最大预算必须大于或等于最小预算。' },
         delete: { title: '删除别名', message: '删除别名 {{name}}？此操作无法撤销。' },
         toast: { save: { pending: '正在保存别名 {{name}}', success: '已保存别名 {{name}}' }, delete: { pending: '正在删除别名 {{name}}', success: '已删除别名 {{name}}' } },
-        errors: { load: '无法加载别名。', message: '无法完成别名操作：{{message}}', models: '模型目录不可用：{{message}}' },
+        errors: { message: '无法完成别名操作：{{message}}', models: '模型目录不可用：{{message}}' },
       },
       proxy: {
         heading: '代理',
