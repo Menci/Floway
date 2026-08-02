@@ -149,6 +149,20 @@ export const progressCss = `
   --fui-Spinner--strokeWidth: 25%;
 }
 
+/* A ring standing on the page is accent. A ring standing inside a button is
+   that button's, and takes its foreground: WinUI states the ring's Foreground
+   as a Style setter rather than as a fixed brush, which is precisely an
+   instance-overridable default, and a host that paints its own content sets
+   it. currentColor is that override written once for every appearance at
+   once -- white on the accent-filled button, the neutral foreground on a
+   secondary one, the disabled foreground while the host is disabled -- where
+   naming a brush would be right for one appearance and wrong for the rest.
+   The track needs nothing: it is already the transparent WinUI states.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressRing/ProgressRing.xaml#L4-L5 */
+.fui-Button .fui-Spinner__spinner.fui-Spinner__spinner {
+  --colorBrandStroke1: currentColor;
+}
+
 /* Fluent answers the motion preference by slowing the ring to 1.8s, stopping
    the tail dead at zero iterations, swapping its conic gradient for a static
    one and dropping the two pseudo-elements that draw the rounded ends. WinUI
