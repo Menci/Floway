@@ -408,24 +408,6 @@ function CardSection() {
         </Card>
       </StateLabel>)}
     </Row>
-    <Row label="selection">
-      <StateLabel state="unselected">
-        <Card className="w-[220px]" selected={false} onSelectionChange={() => {}}>
-          <CardHeader header={<Text weight="semibold">Azure AI Foundry</Text>} />
-        </Card>
-      </StateLabel>
-      <StateLabel state="selected">
-        <Card className="w-[220px]" selected onSelectionChange={() => {}}>
-          <CardHeader header={<Text weight="semibold">Azure AI Foundry</Text>} />
-        </Card>
-      </StateLabel>
-      <StateLabel state="focusable content">
-        <Card className="w-[220px]" focusMode="tab-exit">
-          <CardHeader header={<Text weight="semibold">Ollama (local)</Text>} />
-          <Button appearance="subtle" size="small">Refresh models</Button>
-        </Card>
-      </StateLabel>
-    </Row>
     <Row label="sizes and orientation">
       <Card className="w-[200px]" size="small"><Text>Small</Text></Card>
       <Card className="w-[200px]" size="medium"><Text>Medium</Text></Card>

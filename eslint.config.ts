@@ -305,6 +305,23 @@ const config: Linter.Config[] = [
         selector: 'JSXOpeningElement:not([name.name=/^(TableRow|ListItem)$/]):has(JSXAttribute[name.name="tabIndex"] > JSXExpressionContainer > Literal[value=0]):not(:has(JSXAttribute[name.name="className"] :matches(Literal[value=/winui-focus-rect/], TemplateElement[value.raw=/winui-focus-rect/])))',
         message: 'An element made focusable needs the WinUI focus rect: add `winui-focus-rect` to its className, or `winui-focus-rect-within` to a host whose focusable element the app does not render itself.',
       }, {
+        // A Fluent Card that takes any of these props, or a `focusMode`, or a
+        // selection, becomes interactive — and an interactive Card flattens
+        // every descendant `Text` to its own foreground through a two-class
+        // selector no utility can outrank. So a card's secondary line silently
+        // stops being secondary, while a `span` beside it carrying the same
+        // utility stays dimmed: two spellings of the same intent, two results.
+        //
+        // CSS cannot un-set that; any counter-declaration has to name a colour,
+        // which flattens to a different one. Undoing it properly means putting
+        // Fluent's whole sheet in a lower cascade layer, which is a change to
+        // how this app injects every Fluent style — far past what a clickable
+        // card is worth. A card that answers the pointer is built as the app's
+        // own button surface instead; `SettingsCard` is that shape.
+        // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-card/library/src/components/Card/useCardStyles.styles.ts
+        selector: 'JSXOpeningElement[name.name="Card"] > JSXAttribute[name.name=/^(focusMode|selected|onSelectionChange|onClick|onDoubleClick|onMouseUp|onMouseDown|onPointerUp|onPointerDown|onTouchStart|onTouchEnd|onDragStart|onDragEnd)$/]',
+        message: 'This prop makes the Card interactive, and an interactive Card repaints every descendant Text to its own foreground — a secondary line stops reading as secondary, and no className can win it back. Build a clickable surface as the app\'s own button (see SettingsCard) instead.',
+      }, {
         // `truncate` contributes `text-overflow: ellipsis` and nothing else.
         selector: 'JSXOpeningElement[name.name="Text"]:has(JSXAttribute[name.name="truncate"]):not(:has(JSXAttribute[name.name="wrap"]))',
         message: 'Fluent\'s `truncate` only adds the ellipsis. The single line and the clip come from `wrap={false}`, and the clip needs a block display, so a Text that trims states all three.',
