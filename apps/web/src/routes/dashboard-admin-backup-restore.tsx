@@ -234,7 +234,7 @@ export default function DashboardAdminBackupRestore() {
 
   return (
     <section className="dashboard-page max-w-[960px]">
-      <DashboardPageHeader description={t('dashboard.pages.backupRestore')} title={t('dashboard.backupRestore.heading')} />
+      <DashboardPageHeader description={t('dashboard.pages.backupRestore')} title={t('dashboard.nav.backupRestore')} />
 
       <Panel className="!grid !gap-[18px]">
         <SectionHeader description={t('dashboard.backupRestore.export.description')} level={2} title={t('dashboard.backupRestore.export.heading')} />

@@ -133,9 +133,11 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     void navigate(location.pathname, { replace: true });
   }, [location.pathname, location.search, navigate, t]);
 
+  // Delete is excluded because it owns its handle: it has a success line to
+  // announce, and that has to update the toast the pending line already holds.
   const mutationKind = mutation?.kind ?? null;
   useEffect(() => {
-    if (!mutationKind) return;
+    if (!mutationKind || mutationKind === 'delete') return;
     const handle = toasts.start(t(`dashboard.upstreams.toast.${mutationKind}.pending`));
     return () => handle.settle();
   }, [mutationKind, t, toasts]);
@@ -217,9 +219,11 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   const deleteUpstream = async (record: UpstreamRecord) => {
     setMutation({ kind: 'delete', id: record.id });
     setDeleteError(null);
+    const handle = toasts.start(t('dashboard.upstreams.toast.delete.pending'));
     const result = await callApi(() =>
       api.api.upstreams[':id'].$delete({ param: { id: record.id } }));
     if (result.error) {
+      handle.settle();
       setDeleteError(t('dashboard.upstreams.errors.delete', { message: result.error.message }));
       setMutation(null);
       return;
@@ -227,7 +231,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     deleteDialog.close();
     await reload();
     setMutation(null);
-    toasts.succeed(t('dashboard.upstreams.toast.delete.success', { name: record.name }));
+    handle.succeed(t('dashboard.upstreams.toast.delete.success', { name: record.name }));
   };
 
   return (
@@ -245,7 +249,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
                     <MenuItem
                       icon={{
                         children: <ProviderIcon kind={kind} className="h-5 w-5" />,
-                        className: '!self-center',
+                        className: 'self-center',
                       }}
                       key={kind}
                       onClick={() => void navigate(`/dashboard/providers/upstreams/new/${kind}`, pageNavigation)}
@@ -294,10 +298,10 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
         actionLabel={t('dashboard.upstreams.actions.delete')}
         busy={mutation?.kind === 'delete'}
         error={deleteError}
-        onDismissError={() => setDeleteError(null)}
         key={deleteDialog.invocation.key}
         message={t('dashboard.upstreams.delete.message', { name: deleteDialog.invocation.value.name })}
         onConfirm={() => void deleteUpstream(deleteDialog.invocation!.value)}
+        onDismissError={() => setDeleteError(null)}
         onOpenChange={open => { if (!open) deleteDialog.close(); }}
         title={t('dashboard.upstreams.delete.title')}
       />}
@@ -351,7 +355,7 @@ function UpstreamsTable({
             <TableRow key={record.id}>
               <TableCell>
                 <div className="inline-flex items-center gap-1">
-                  <Text size={300} className="text-fui-fg3 min-w-[22px] text-center">{index + 1}</Text>
+                  <Text className="text-fui-fg3 min-w-[22px] text-center">{index + 1}</Text>
                   <ReorderButtons
                     disabled={mutating}
                     downLabel={t('dashboard.upstreams.actions.moveDown', { name: record.name })}
@@ -443,7 +447,7 @@ function ModelStatus({
 
   return (
     <Tooltip content={detail} relationship="description">
-      <span className="inline-flex items-center gap-1.5 min-w-0 w-fit max-w-full">
+      <span className="inline-flex items-center gap-1.5 min-w-0 w-fit max-w-full" tabIndex={0}>
         <Text size={300} className="whitespace-nowrap">
           {modelsAvailable
             ? t('dashboard.upstreams.models.count', { count })

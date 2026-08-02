@@ -927,7 +927,6 @@ const zhHansCN = {
         },
       },
       backupRestore: {
-        heading: '备份 / 恢复',
         export: {
           heading: '导出',
           description:
@@ -1010,7 +1009,7 @@ const zhHansCN = {
         pageAge: '{{age}} 前',
       },
       modelAliases: {
-        heading: '模型别名', description: '创建虚拟模型 ID，将请求路由到一个或多个目标模型，并可锁定请求规则', listTitle: '别名', empty: '尚未配置别名。创建别名以公开虚拟模型 ID。',
+        description: '创建虚拟模型 ID，将请求路由到一个或多个目标模型，并可锁定请求规则', listTitle: '别名', empty: '尚未配置别名。创建别名以公开虚拟模型 ID。',
         columns: { alias: '别名', kind: '类型', targets: '目标', selection: '选择策略', visibility: '模型列表', actions: '操作' },
         actions: { create: '新建别名', refresh: '刷新别名', save: '保存', delete: '删除', addTarget: '添加目标', editNamed: '编辑别名 {{name}}', deleteNamed: '删除别名 {{name}}' },
         dialog: { createTitle: '创建别名', editTitle: '编辑别名：{{name}}' },
@@ -1026,7 +1025,6 @@ const zhHansCN = {
         errors: { message: '无法完成别名操作：{{message}}', models: '模型目录不可用：{{message}}' },
       },
       proxy: {
-        heading: '代理',
         description: '上游回退列表引用的出口代理',
         listTitle: '代理列表',
         columns: { actions: '操作' },

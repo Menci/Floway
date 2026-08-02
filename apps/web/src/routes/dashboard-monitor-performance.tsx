@@ -183,13 +183,12 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     />
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error.message}</OutcomeMessageBar>}
     {overview === null || chart === null || labels === null || activeBreakdown === undefined ? <Panel><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel> : <>
-      <Panel className="!grid min-w-0">
+      <Panel className="!grid !gap-3 min-w-0">
         <div className="flex items-end gap-3 min-w-0 flex-wrap">
           <Field className="w-[160px] flex-none" label={t('dashboard.performance.groupBy.label')}>
             <div className="flex items-center gap-2">
               <Dropdown
-                aria-label={t('dashboard.performance.groupBy.label')}
-                className="!min-w-0 flex-1"
+                className="flex-1"
                 selectedOptions={[groupBy]}
                 value={t(`dashboard.performance.groupBy.${groupBy}`)}
                 onOptionSelect={(_, data) => data.optionValue !== undefined && changeGroupBy(data.optionValue as PerformanceGroupBy)}
@@ -201,7 +200,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
                   <Button
                     appearance="subtle"
                     aria-label={t('dashboard.performance.apiKeyScopeLabel')}
-                    className="!min-w-[36px] !text-fui-base500"
+                    className="!min-w-[36px]"
                     icon={<InfoRegular fontSize={22} />}
                     size="large"
                   />
@@ -228,7 +227,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
           ]} onChange={value => setRange(value as PerformanceRange)} value={range} />
         </div>
       </Panel>
-      <Panel className="!grid !gap-[18px] min-w-0">
+      <Panel className="min-w-0">
         <PerformanceChartSection chart={chart} hidden={hiddenSeries} onHiddenChange={setHiddenSeries} title={t('dashboard.performance.chartTitle', { metric: t(`dashboard.performance.metric.${metric === 'ttft' ? 'ttft' : 'outputSpeed'}`), group: t(`dashboard.performance.groupBy.${groupBy}`), percentile })} />
       </Panel>
       <Panel className="!grid !gap-3 min-w-0">
@@ -265,8 +264,7 @@ function PerformanceFilterFields({ filters, groupBy, labels, onChange, overview,
       return key !== groupBy;
     }).map(({ key, values }) => <Field className="min-w-[150px] flex-[1_1_150px]" key={key} label={t(`dashboard.performance.filters.${key}`)}>
       <Dropdown
-        aria-label={t(`dashboard.performance.filters.${key}`)}
-        className="!min-w-0 w-full"
+        className="w-full"
         selectedOptions={[filters[key]]}
         value={filters[key] === '' ? t(`dashboard.performance.filters.all.${key}`) : values.find(item => item.value === filters[key])?.label ?? filters[key]}
         onOptionSelect={(_, data) => data.optionValue !== undefined && onChange(key, data.optionValue)}

@@ -967,7 +967,6 @@ const en = {
         },
       },
       backupRestore: {
-        heading: 'Backup / Restore',
         export: {
           heading: 'Export',
           description:
@@ -1069,7 +1068,6 @@ const en = {
         pageAge: '{{age}} ago',
       },
       modelAliases: {
-        heading: 'Model Aliases',
         description: 'Create virtual model IDs that route to one or more target models with optional locked request rules',
         listTitle: 'Aliases', empty: 'No aliases configured. Create one to expose a virtual model ID.',
         columns: { alias: 'Alias', kind: 'Kind', targets: 'Targets', selection: 'Selection', visibility: 'Models list', actions: 'Actions' },
@@ -1089,7 +1087,6 @@ const en = {
         errors: { message: 'Could not complete the alias operation: {{message}}', models: 'Model catalog unavailable: {{message}}' },
       },
       proxy: {
-        heading: 'Proxy',
         description:
             'Outbound proxies referenced by per-upstream fallback lists',
         listTitle: 'Proxies',

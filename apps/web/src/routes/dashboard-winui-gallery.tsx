@@ -132,7 +132,7 @@ function Row({ children, label }: { children: React.ReactNode; label: string }) 
 }
 
 function Hint({ children }: { children: React.ReactNode }) {
-  return <Text size={200} className="text-fui-fg2 italic">{children}</Text>;
+  return <Text italic size={200} className="text-fui-fg2">{children}</Text>;
 }
 
 function StateLabel({ children, state }: { children: React.ReactNode; state: string }) {
@@ -378,9 +378,9 @@ function FieldSection() {
       </StateLabel>
     </Row>
     <Row label="disabled and sizes">
-      <Field label="Small" size="small"><Input defaultValue="4096" size="small" /></Field>
+      <Field label="Small" size="small"><Input defaultValue="4096" /></Field>
       <Field label="Medium" size="medium"><Input defaultValue="4096" /></Field>
-      <Field label="Large" size="large"><Input defaultValue="4096" size="large" /></Field>
+      <Field label="Large" size="large"><Input defaultValue="4096" /></Field>
       <Field hint="Managed by the provider." label="Disabled">
         <Input defaultValue="4096" disabled />
       </Field>
@@ -522,8 +522,8 @@ function PopoverSection() {
           <Button>Medium</Button>
         </PopoverTrigger>
         <PopoverSurface>
-          <Text weight="semibold">Model alias</Text>
-          <Text>An alias exposes one public model id and resolves it across upstream candidates.</Text>
+          <Text block weight="semibold">Model alias</Text>
+          <Text block>An alias exposes one public model id and resolves it across upstream candidates.</Text>
         </PopoverSurface>
       </Popover>
       <Popover size="large" withArrow>
@@ -531,8 +531,8 @@ function PopoverSection() {
           <Button>Large, with arrow</Button>
         </PopoverTrigger>
         <PopoverSurface>
-          <Text weight="semibold">Proxy</Text>
-          <Text>Requests to this upstream are dialled through the selected proxy.</Text>
+          <Text block weight="semibold">Proxy</Text>
+          <Text block>Requests to this upstream are dialled through the selected proxy.</Text>
         </PopoverSurface>
       </Popover>
       <Popover appearance="brand">
@@ -776,7 +776,7 @@ function AccordionSection() {
           <AccordionPanel><Text>4 upstreams online.</Text></AccordionPanel>
         </AccordionItem>
         <AccordionItem value="b">
-          <AccordionHeader size="large" expandIconPosition="end">Large header, icon at the end</AccordionHeader>
+          <AccordionHeader size="large">Large header</AccordionHeader>
           <AccordionPanel><Text>12 models addressable.</Text></AccordionPanel>
         </AccordionItem>
       </Accordion>
