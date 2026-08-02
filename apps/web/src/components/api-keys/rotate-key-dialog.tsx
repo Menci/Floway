@@ -61,19 +61,20 @@ export function RotateKeyDialog({
     <DialogShell
       open={open}
       onOpenChange={(_, data) => !saving && onOpenChange(data.open)}
+      onSubmit={() => void rotate()}
       title={<DialogTitle>{t('dashboard.apiKeys.rotate.title')}</DialogTitle>}
       actions={
         <DialogActions>
           <Button disabled={saving} onClick={() => onOpenChange(false)}>
             {t('common.cancel')}
           </Button>
-          <Button appearance="primary" disabledFocusable={saving} onClick={() => void rotate()}>
+          <Button appearance="primary" disabledFocusable={saving} type="submit">
             {t('dashboard.apiKeys.actions.rotate')}
           </Button>
         </DialogActions>
       }
     >
-      <Text size={200} className="text-fui-fg2 leading-[1.35] m-0">
+      <Text size={200} className="text-fui-fg2 leading-[1.35]">
         {t('dashboard.apiKeys.rotate.message', { name: snapName })}
       </Text>
       <KeySourceControl

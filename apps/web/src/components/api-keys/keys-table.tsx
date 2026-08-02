@@ -171,12 +171,12 @@ export function KeysTable({
       return <ListItem checkmark={null} className={s.mobileItem} disabledSelection={disabled} key={key.id} value={key.id}>
         <div className="flex items-start gap-2 min-w-0 w-full">
           <div className="grid gap-0.5 min-w-0 flex-1">
-            <Text truncate size={300}>{key.name}</Text>
+            <Text truncate size={300} wrap={false}>{key.name}</Text>
             <Tooltip content={key.key} relationship="label">
               <code className="block truncate" tabIndex={0}>{key.key}</code>
             </Tooltip>
             <Tooltip content={upstreamsTitle(key, upstreamById, t)} relationship="description">
-              <Text truncate size={200} className="text-fui-fg2" tabIndex={0}>{upstreamsText(key, upstreamById, t)}</Text>
+              <Text truncate size={200} className="text-fui-fg2" tabIndex={0} wrap={false}>{upstreamsText(key, upstreamById, t)}</Text>
             </Tooltip>
             <Text size={200} className="text-fui-fg3">{shortDate(key.created_at, locale)} · {lastUsed}</Text>
           </div>
@@ -185,7 +185,7 @@ export function KeysTable({
               <Button appearance="subtle" aria-label={t('dashboard.apiKeys.table.actions')} disabled={disabled} icon={<MoreHorizontalRegular />} />
             </MenuTrigger>
             <MenuPopover><MenuList>
-              <MenuItem icon={copyOutcomeIcon(clipboard.outcomeFor(copyTag))} onClick={() => clipboard.copy(key.key, copyTag)}>{t('dashboard.apiKeys.actions.copy')}</MenuItem>
+              <MenuItem icon={copyOutcomeIcon(clipboard.outcomeFor(copyTag))} onClick={() => clipboard.copy(key.key, copyTag)}>{copyLabel(clipboard.outcomeFor(copyTag), t('dashboard.apiKeys.actions.copy'))}</MenuItem>
               <MenuItem icon={<EditRegular />} onClick={() => onEdit(key)}>{t('dashboard.apiKeys.actions.edit')}</MenuItem>
               <MenuItem icon={<ArrowClockwiseRegular />} onClick={() => onRotate(key)}>{t('dashboard.apiKeys.actions.rotate')}</MenuItem>
               <MenuItem className={dangerClasses.menuItem} icon={<DeleteRegular />} onClick={() => onDelete(key)}>{t('dashboard.apiKeys.actions.delete')}</MenuItem>
