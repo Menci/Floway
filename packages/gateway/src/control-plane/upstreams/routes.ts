@@ -59,10 +59,11 @@ const pruneDeletedProxyEntries = (
   knownProxyIds: ReadonlySet<string>,
 ): ProxyFallbackEntry[] => entries.filter(entry => isDirectFallbackId(entry.id) || knownProxyIds.has(entry.id));
 
-// These projections need repository/provider I/O, which serialize.ts excludes
-// so it stays a pure persisted-record transform. The optional baseSerialize
-// override lets callers swap in upstreamRecordToFullJson to round-trip
-// unredacted secrets instead of the redacted default.
+// Response-only projections, which serialize.ts excludes so it stays a pure
+// persisted-record transform: the Codex quota because it needs provider I/O,
+// the models-cache freshness because a dump must not carry the catalog. The
+// optional baseSerialize override lets callers swap in upstreamRecordToFullJson
+// to round-trip unredacted secrets instead of the redacted default.
 const serializeForResponse = async (
   record: UpstreamRecord,
   knownProxyIds: ReadonlySet<string>,
