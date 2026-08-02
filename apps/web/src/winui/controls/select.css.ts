@@ -289,11 +289,22 @@ export const selectCss = `
   width: 100%;
 }
 
+/* The drop-down's own inset, which WinUI states in two places that add rather
+   than collapse: the items presenter carries ComboBoxDropdownContentMargin, and
+   every item's layout root carries a margin of its own. So the inline inset is
+   the item's alone, the space between two items is twice the item's block
+   margin, and each end of the list is the presenter's plus the item's. A CSS
+   gap is the space between two items rather than each item's own margin, so it
+   takes the doubled figure while the ends keep the sum.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L339
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L592
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L614 */
 .floway-combobox-listbox-content {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 4px;
+  gap: 4px;
+  padding-block: 6px;
+  padding-inline: 5px;
 }
 
 /* List items. The radius is ComboBoxItemCornerRadius, stated for this item alone
