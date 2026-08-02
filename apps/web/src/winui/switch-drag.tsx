@@ -1,10 +1,8 @@
 // Drag support for the Switch, which Fluent does not have and WinUI's
-// ToggleSwitch does.
-//
-// XAML puts a transparent Thumb over the whole control and listens to its
-// DragStarted / DragDelta / DragCompleted. It is plain pointer plumbing: no
-// manipulation, no inertia -- DragCompletedEventArgs carries a displacement and
-// nothing else -- so the whole gesture is reproducible from pointer events.
+// ToggleSwitch does. XAML puts a transparent Thumb over the whole control and
+// listens to its DragStarted / DragDelta / DragCompleted; there is no
+// manipulation and no inertia, so the whole gesture is reproducible from
+// pointer events.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/src/dxaml/xcp/dxaml/lib/ToggleSwitch_Partial.cpp#L245-L250
 //
 // The knob follows the pointer 1:1 and is clamped only where it is written, not
@@ -24,13 +22,11 @@ const DRAGGING = 'data-winui-switch-dragging';
 const SETTLING = 'data-winui-switch-settling';
 
 // XAML defers "was that a tap or a drag" to the OS gesture recognizer, whose
-// slop is not expressed anywhere in the corpus, and the web has no equivalent to
-// consult -- a click follows every pointer sequence that starts and ends on the
-// same element, however far it travelled in between. This stands in for that
-// recognizer: below it the gesture is also a tap and the click is allowed to
-// toggle, which is what makes a press that drifts a pixel still work; above it
-// the click is suppressed, so a drag that wanders out and returns leaves the
-// switch alone rather than toggling it.
+// slop is not expressed anywhere in the corpus, and the web has no equivalent:
+// a click follows every pointer sequence that starts and ends on the same
+// element, however far it travelled. This stands in for that recognizer -- below
+// it the gesture is a tap and the click toggles, above it the click is
+// suppressed so a drag that wanders out and returns leaves the switch alone.
 const TAP_SLOP_PX = 4;
 
 interface Gesture {
@@ -72,10 +68,7 @@ export const withWinuiDrag = (components: FluentComponents): FluentComponents =>
     //
     // The toggle is always issued here rather than left to the browser, because
     // capturing the pointer redirects the click that follows to the capture
-    // target -- the root -- where it no longer reaches the checkbox at all. So
-    // the native click is suppressed unconditionally and this decides, which is
-    // also closer to XAML: there the drag path and the tap path are separate
-    // commits and only one of them fires for a given gesture.
+    // target -- the root -- where it no longer reaches the checkbox at all.
     const end = (gesture: Gesture, toggle: boolean, fromDrag: boolean) => {
       gestureRef.current = null;
       gesture.root.removeAttribute(DRAGGING);
@@ -125,9 +118,9 @@ export const withWinuiDrag = (components: FluentComponents): FluentComponents =>
       };
       gestureRef.current = gesture;
       element.setPointerCapture(event.pointerId);
-      // Entering Dragging takes no movement at all: Thumb raises DragStarted from
-      // OnPointerPressed, and ToggleSwitch pins the knob's current translate as a
-      // local value in the same breath so leaving the On state cannot revert it.
+      // Entering Dragging takes no movement at all: Thumb raises DragStarted
+      // from OnPointerPressed, and ToggleSwitch pins the knob's current
+      // translate as a local value in the same breath.
       // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/src/dxaml/xcp/dxaml/lib/ToggleSwitch_Partial.cpp#L806-L816
       element.setAttribute(DRAGGING, '');
       paint(gesture);
@@ -157,8 +150,7 @@ export const withWinuiDrag = (components: FluentComponents): FluentComponents =>
       const crossed = gesture.input.checked ? gesture.offset <= midpoint : gesture.offset >= midpoint;
       const committed = gesture.moved && crossed;
       // A gesture that stayed inside the slop is also a tap, and taps commit
-      // even when the knob never reached the midpoint -- which is what leaves a
-      // press that drifts a pixel working like a press.
+      // even when the knob never reached the midpoint.
       end(gesture, committed || gesture.excursion <= TAP_SLOP_PX, committed);
     };
 
