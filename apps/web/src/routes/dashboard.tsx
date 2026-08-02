@@ -59,11 +59,21 @@ export default function Dashboard({}: Route.ComponentProps) {
   // purpose. Both were tried and both put frames between the page appearing and
   // the page moving.
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const entranceStarted = useRef(false);
   useLayoutEffect(() => {
+    // Once, and the guard is the point rather than a precaution. StrictMode
+    // runs a layout effect twice in development to prove it cleans up after
+    // itself, and this one has nothing to clean up -- it hands the browser an
+    // animation and forgets it. Run again, it hands over a second animation
+    // that starts from the offset the first has already left, which is a page
+    // that rises, drops back and rises again. A ref survives the double
+    // invocation where the effect body does not.
+    if (entranceStarted.current) return;
     if (prefersReducedMotion()) return;
     // ScrollArea hands out its viewport; the frame is the host around it.
     const frame = scrollerRef.current?.parentElement;
     if (!frame) return;
+    entranceStarted.current = true;
     // The offset is put on the element here rather than in the sheet, and both
     // halves happen in this one synchronous block so no frame is painted
     // between them. A pending animation applies no fill, so something has to
