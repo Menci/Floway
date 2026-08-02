@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
+import { createUpstreamStateRepoStub } from './upstream-state-repo.ts';
 import { CODEX_ORIGINATOR, CODEX_USER_AGENT } from '../src/constants.ts';
 import { callCodexAlphaSearch, callCodexResponses, callCodexResponsesCompact, type CodexCallEffects } from '../src/fetch.ts';
 import type { CodexAccessTokenEntry, CodexAccountCredential, CodexQuotaSnapshotEntryMap, CodexUpstreamState } from '../src/state.ts';
-import { createUpstreamStateRepoStub } from './upstream-state-repo.ts';
 import type { ResponsesResult } from '@floway-dev/protocols/responses';
 import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 import { noopUpstreamCallOptions, stubProviderModel } from '@floway-dev/test-utils';

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
+import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstream-state-repo.ts';
 import {
   CODEX_QUOTA_UNKNOWN_ACTIVE_LIMIT,
   codexQuotaActiveLimitKey,
@@ -10,7 +11,6 @@ import {
   type CodexQuotaSnapshot,
 } from '../src/quota.ts';
 import type { CodexQuotaSnapshotEntryMap, CodexUpstreamState } from '../src/state.ts';
-import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstream-state-repo.ts';
 import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 
 const accountId = 'acc_1';

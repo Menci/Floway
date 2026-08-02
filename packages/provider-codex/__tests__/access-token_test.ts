@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
+import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstream-state-repo.ts';
 import {
   ensureCodexAccessToken,
   invalidateCodexAccessToken,
@@ -8,7 +9,6 @@ import {
 } from '../src/access-token.ts';
 import { CodexOAuthSessionTerminatedError } from '../src/auth/oauth.ts';
 import type { CodexUpstreamState } from '../src/state.ts';
-import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstream-state-repo.ts';
 import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 
 const accountId = 'acc_1';
