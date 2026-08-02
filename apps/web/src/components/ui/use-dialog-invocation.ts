@@ -5,10 +5,8 @@ export interface DialogInvocation<Value> {
   value: Value;
 }
 
-// The invocation outlives the closing: an unmounted surface cannot play the
-// exit its motion declares, so the value is kept after `close` and `isOpen` is
-// what the dialog is given. A clean form on reopen then rests on the monotonic
-// key rather than on the unmount.
+// The value is kept after `close` because an unmounted surface cannot play the
+// exit its motion declares; the monotonic key is what resets a reopened form.
 export interface DialogControl<Value> {
   close: () => void;
   invocation: DialogInvocation<Value> | null;
@@ -25,7 +23,5 @@ export const useDialogInvocation = <Value>(): DialogControl<Value> => {
     setIsOpen(true);
   }, []);
   const close = useCallback(() => setIsOpen(false), []);
-  // Memoised so a caller can depend on the invocation itself rather than on
-  // its parts: the identity then changes exactly when the dialog does.
   return useMemo(() => ({ close, invocation, isOpen, open }), [close, invocation, isOpen, open]);
 };
