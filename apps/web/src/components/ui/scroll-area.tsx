@@ -20,13 +20,10 @@ interface ScrollAreaProps extends PropsWithChildren {
   /**
    * Styles the scrollport itself -- the box that clips.
    *
-   * This is where a gutter goes. Padding on the host is outside the clip and
-   * buys the content nothing: a shadow, a focus ring or an outline drawn by
-   * something inside the scroller is cut at the scrollport's edge however much
-   * room the host leaves around it. Padding here is inside the clip, so the
-   * content sits in from the edge that cuts and its overhang survives. The
-   * host usually pulls the same distance back out with a negative margin, so
-   * the content still lines up with the page.
+   * This is where a gutter goes. Padding on the host is outside the clip, so a
+   * shadow, focus ring or outline drawn inside the scroller is still cut at the
+   * scrollport's edge; padding here keeps the overhang. The host usually pulls
+   * the same distance back out with a negative margin.
    */
   viewportClassName?: string;
 }
@@ -35,24 +32,15 @@ let nativeScrollbarSize = 0;
 let scrollbarProbe: HTMLDivElement | null = null;
 const scrollbarSizeListeners = new Set<() => void>();
 
-// Whether the platform's scrollbars take layout width, measured rather than
-// assumed: a 500px box overflowed by a 1000px child gives the bar's width as
-// the difference between its border box and its content box.
+// The probe is parked off-page rather than hidden, because an unpainted box is
+// a poor place to read a painted scrollbar's width from. It stays in the
+// document so a ResizeObserver can watch it: the answer changes under a running
+// page without necessarily resizing the window.
 //
-// The probe is parked off-page rather than hidden, because a box that is not
-// painted is a poor place to read a painted scrollbar's width from. It stays in
-// the document so a ResizeObserver can watch it: the answer changes under a
-// running page -- a system setting, or DevTools switching between a desktop and
-// a device viewport -- and not every such change resizes the window, so the
-// element itself is the only reliable signal.
-//
-// Losing the document is fatal rather than recoverable. React renders this
-// app's whole document, so anything parked in `<body>` lives in a tree React
-// reconciles, and a detached element reports the same width for both of its
-// boxes -- zero, which is exactly what a platform with overlay scrollbars
-// reports. Repairing that quietly would restore the feature while leaving
-// whatever removed the node in place, and the reading it produces in the
-// meantime is indistinguishable from a correct one. So it throws.
+// Losing the document is fatal rather than recoverable: a detached element
+// reports zero for both boxes, which is exactly what a platform with overlay
+// scrollbars reports, so a quiet repair would leave a reading indistinguishable
+// from a correct one.
 const ensureScrollbarProbe = () => {
   if (typeof document === 'undefined' || !document.body) return null;
   if (scrollbarProbe) {
@@ -106,21 +94,18 @@ export const useOverlayScrollbarsEnabled = (): boolean => useSyncExternalStore(
   getServerScrollbarSize,
 ) > 0;
 
-// What the library is asked to take over. Its vocabulary is its own -- there is
-// no `auto` in it -- and `scroll` here means "this axis is mine", not "reserve a
-// bar".
+// The library's vocabulary is its own -- there is no `auto` in it -- and
+// `scroll` here means "this axis is mine", not "reserve a bar".
 const libraryOverflowFor = (axes: ScrollAxes) => ({
   x: axes === 'vertical' ? 'hidden' as const : 'scroll' as const,
   y: axes === 'horizontal' ? 'hidden' as const : 'scroll' as const,
 });
 
-// What the element itself carries, inline, from the first render. `scroll`
-// reserves the bar's width whether or not there is anything to scroll, so on a
-// platform whose bars take layout width it is a permanent strip of missing
-// content -- and the element carries this before the library has initialised,
-// so writing it unconditionally hands every scroller a native bar for that
-// window. Native scrolling asks for `auto`; the library's own path keeps
-// `scroll`, which is what it reads the axis from.
+// The element carries this inline from the first render, before the library has
+// initialised, so `scroll` unconditionally would hand every scroller a native
+// bar -- and a permanent reserved strip -- for that window. Native scrolling
+// asks for `auto`; the library's own path keeps the `scroll` it reads the axis
+// from.
 const elementOverflowFor = (axes: ScrollAxes, overlayScrollbarsEnabled: boolean) => {
   const scrollable = overlayScrollbarsEnabled ? 'scroll' as const : 'auto' as const;
   return {
