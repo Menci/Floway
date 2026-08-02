@@ -42,9 +42,10 @@ describe('API keys table selection', () => {
     const onSelect = vi.fn();
     const view = renderTable(onSelect);
 
-    for (const label of ['actions.edit', 'actions.rotate', 'actions.delete', 'actions.copy'] as const) {
-      await clickButton(view, i18n.t(`dashboard.apiKeys.${label}`));
+    for (const label of ['actions.editNamed', 'actions.rotateNamed', 'actions.deleteNamed'] as const) {
+      await clickButton(view, i18n.t(`dashboard.apiKeys.${label}`, { name: 'Second key' }));
     }
+    await clickButton(view, i18n.t('dashboard.apiKeys.actions.copy'));
 
     expect(onSelect).not.toHaveBeenCalled();
   });

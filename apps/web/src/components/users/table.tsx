@@ -88,20 +88,20 @@ export function UsersTable({
                     <TooltipIconButton
                       disabled={disabled}
                       icon={<EditRegular />}
-                      label={t('dashboard.users.actions.edit')}
+                      label={t('dashboard.users.actions.editNamed', { name: user.username })}
                       onClick={() => onEdit(user)}
                     />
                     <TooltipIconButton
                       disabled={disabled}
                       icon={<KeyRegular />}
-                      label={t('dashboard.users.actions.resetPassword')}
+                      label={t('dashboard.users.actions.resetPasswordNamed', { name: user.username })}
                       onClick={() => onResetPassword(user)}
                     />
                     <TooltipIconButton
                       danger
                       disabled={disabled || protectedUser}
                       icon={<DeleteRegular />}
-                      label={t('dashboard.users.actions.delete')}
+                      label={t('dashboard.users.actions.deleteNamed', { name: user.username })}
                       onClick={() => onDelete(user)}
                     />
                   </TableActions>
