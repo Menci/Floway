@@ -13,7 +13,12 @@ export const copyToClipboard = async (text: string): Promise<boolean> => {
   try {
     await navigator.clipboard.writeText(text);
     return true;
-  } catch {
+  } catch (error) {
+    // The boolean is the caller's contract and it does render the failure, but
+    // "Copy failed" does not say whether the page lacks the permissions-policy
+    // grant, the document was not focused, or the user refused the prompt --
+    // which is the first thing anybody reporting this would be asked.
+    console.warn('Copying to the clipboard failed.', error);
     return false;
   }
 };
