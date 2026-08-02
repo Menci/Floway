@@ -64,9 +64,7 @@ export function UsersTable({
             return (
               <TableRow key={user.id}>
                 <TableCell>
-                  <TableCellLayout>
-                    <span className="truncate">{user.username}</span>
-                  </TableCellLayout>
+                  <TableCellLayout truncate>{user.username}</TableCellLayout>
                 </TableCell>
                 <TableCell>
                   <StatusBadge color={user.isAdmin ? 'brand' : 'informative'}>
