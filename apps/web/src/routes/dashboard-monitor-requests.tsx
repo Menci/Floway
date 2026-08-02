@@ -76,8 +76,8 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  // Tied to the loader payload it came from, so a navigation that loads a new one
-  // discards it rather than showing one route's keys under another's URL.
+  // Tied to the loader payload it came from, so a navigation discards it rather
+  // than showing one route's keys under another's URL.
   const [replacement, setReplacement] = useState<{ source: LoaderData; keys: ApiKey[]; keysError: string | null; recordsError: string | null } | null>(null);
   const shown = replacement?.source === loaderData
     ? replacement
@@ -122,8 +122,8 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
     };
   }, [keys, loaderData, navigate]);
 
-  // The bar reports whichever of the three streams failed, so a dismissal clears
-  // all three: what was dismissed is the message, not one source behind it.
+  // One bar reports whichever of the three sources failed, so a dismissal clears
+  // all three.
   const dismissListError = () => {
     subscription.dismissError();
     setReplacement({ ...shown, keysError: null, recordsError: null });
@@ -160,18 +160,12 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
             selectedRecordId={selectedRecordId}
           />
         </Panel>
-        {/* The surface outlives the selection that opened it: closing drops
-            `record` from the URL at once, because that is where the selection
-            lives and where the Back button reads it, and Fluent then slides the
-            surface out over the next half second. So the panel retains the
-            record it was drawing, and Fluent's own `unmountOnClose` ends the
-            retention at the end of the slide -- the motion's completion is what
-            unmounts the surface, so no duration is restated here to drift from
-            it. What is retained is a picture of a record nothing can act on any
-            more, so for as long as there is no selection it is `inert`: out of
-            the tab order and out of the accessibility tree while it leaves. The
-            attribute goes on an element of ours because Fluent passes only the
-            native props on its own allowlist through to a slot's DOM node. */}
+        {/* Closing drops `record` from the URL at once, while Fluent slides the
+            surface out, so the panel retains the record it was drawing until
+            `unmountOnClose` fires. The retained record is no longer actionable,
+            so it leaves `inert`; that attribute sits on an element of ours
+            because Fluent forwards only its own allowlisted native props to a
+            slot's DOM node. */}
         <OverlayDrawer onOpenChange={(_, data) => { if (!data.open) updateSelection(selectedKeyId); }} open={selectedRecordId !== null} position="end" size="full">
           <DrawerHeader>
             <DrawerHeaderTitle action={<Button appearance="subtle" aria-label={t('dashboard.requests.closeDetails')} icon={<DismissRegular />} onClick={() => updateSelection(selectedKeyId)} />}>
