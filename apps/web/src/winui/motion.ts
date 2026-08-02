@@ -62,6 +62,11 @@ export const REPOSITION_EASING = 'cubic-bezier(0.1, 0.9, 0.2, 1)';
 // anchored at the leading edge it grows out of what it is leaving, and
 // anchored at the trailing edge it contracts into what it has reached.
 //
+// Both indicators in a selection change play exactly those three. The one
+// losing the selection adds a fourth and nothing else: an opacity held at one
+// through the snap on a single-frame step, then carried to zero over the rest
+// on the settle curve below.
+//
 // Composition attaches an easing to the keyframe it interpolates *into*, where
 // CSS attaches it to the keyframe it interpolates *from*, so the two curves sit
 // one keyframe earlier at their use than they read in the source.
@@ -71,8 +76,6 @@ export const REPOSITION_EASING = 'cubic-bezier(0.1, 0.9, 0.2, 1)';
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.cpp#L1990-L1993
 export const INDICATOR_DURATION_MS = 600;
 export const INDICATOR_POSITION_SNAP = 0.333;
-export const INDICATOR_REACH_MS = Math.round(INDICATOR_DURATION_MS * INDICATOR_POSITION_SNAP);
-export const INDICATOR_SETTLE_MS = INDICATOR_DURATION_MS - INDICATOR_REACH_MS;
 export const INDICATOR_STRETCH_EASING = 'cubic-bezier(0.9, 0.1, 1, 0.2)';
 export const INDICATOR_SETTLE_EASING = 'cubic-bezier(0.1, 0.9, 0.2, 1)';
 

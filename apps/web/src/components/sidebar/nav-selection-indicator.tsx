@@ -2,38 +2,44 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 
 import { prefersReducedMotion } from '../../lib/reduced-motion';
-import { INDICATOR_DURATION_MS, INDICATOR_POSITION_SNAP, INDICATOR_REACH_MS, INDICATOR_SETTLE_EASING, INDICATOR_SETTLE_MS, INDICATOR_STRETCH_EASING } from '../../winui/motion';
+import { INDICATOR_DURATION_MS, INDICATOR_POSITION_SNAP, INDICATOR_SETTLE_EASING, INDICATOR_STRETCH_EASING } from '../../winui/motion';
 
 // WinUI's NavigationView does not move one indicator between items. It keeps a
 // separate indicator per item and, on a selection change, plays a matched pair
-// of composition animations: the one losing selection stretches toward the
-// destination and fades, the one taking it stretches in from the source. Within
-// a single list the two are superimposed and read as one bar, which is why one
-// element reproduces them there.
+// of composition animations. Both halves run the same offset, scale and anchor
+// keyframes over the same 600ms, each against its own item, so the pair draws
+// one rectangle twice; the only thing the outgoing half adds is an opacity that
+// holds through the first third and falls away over the rest. Within a single
+// list the two are superimposed and the opaque incoming half covers the fading
+// outgoing one, which is why one element reproduces them there.
 //
 // The drawer is two lists, though -- a scrolling body and a pinned footer --
-// and a selection crossing between them has no single element that can span
-// both. Playing WinUI's pair there puts one bar in each list and shows them
-// moving at once, which reads as two things rather than one. The two halves are
-// sequenced instead, and between them they run exactly the
-// animation a move within one list runs. The list losing the selection reaches
-// its bar out toward the other one for as long as a move spends reaching, then
-// drops it; the list taking the selection waits that out and settles a bar in
-// from the edge facing where the selection came from, for as long as a move
-// spends settling. Played together instead they land in the same instant and
-// read as one switch rather than as a handover.
-//
-// Only the settle, not the stretch before it. The stretch exists to cross the
-// gap between two items, and a crossing has no gap to cross inside either list;
-// starting the arriving bar already extended toward where the selection came
-// from, and letting it contract, is that same animation with the phase it has
-// no distance for left out.
-//
-// The offset and the scale are separate animations there and stay separate
-// here, because they carry different easings and only a nested element can give
-// two transforms their own timing.
-//
+// and each indicator is clipped to its own item, so neither half can draw where
+// the other one is. Each list plays its half on its own item over the same
+// 600ms, starting together. The list losing the selection stretches toward the
+// list taking it, settles back to its resting length and fades away across that
+// settle. The list taking it holds its bar invisible for as long as the offset
+// leg would have it drawn in the other list, then shows it at the snap already
+// extended toward where the selection came from and lets it contract. Within
+// one list superimposition is what hides the outgoing half; across two it is
+// the fade.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.cpp#L2176-L2233
+//
+// The offset, the scale and the anchor change are three animations on nested
+// elements, because they carry different easings and only a nested element can
+// give two transforms their own timing. The anchor change is a transform and
+// not a transform-origin: a transform-origin animation cannot run on the
+// compositor, so it advances only when the main thread does, while the two
+// transforms advance without it -- and the instant all three are written to
+// step at is the snap, which is where a route commit lands. Measured with the
+// main thread held across the snap, the bar was drawn anchored at the edge it
+// was leaving for as long as the main thread was behind, off by its own inset,
+// in both engines. So the track steps the offset and clips the bar to the item,
+// and a nested element carries the mirror of that step: zero through the first
+// third, the offset the track has just given up at the snap, and back to zero
+// over the settle. The two steps cancel frame for frame, which holds the bar at
+// the edge it has reached without its origin moving, and leaves every leg of
+// the move a composited transform.
 
 // The bar's width and corner radius are stated outright. Its length is not:
 // WinUI states a fixed 16px against a 36px item, and our choice throughout the
@@ -81,57 +87,43 @@ export function NavSelectionIndicator({
   selectedValue: string;
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
+  const anchorRef = useRef<HTMLDivElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
   const previousRef = useRef<Geometry | null>(null);
   const ranFor = useRef<string | undefined>(undefined);
+  const handedOver = useRef(false);
   const [geometry, setGeometry] = useState<Geometry | null>(null);
 
   useLayoutEffect(() => {
-    // The wait is for a hand-over and for nothing else: the other list is
-    // reaching its own bar out in this same commit, and waiting that out is
-    // what separates the two. So it is keyed on the selection having MOVED,
-    // rather than on this list not having held it before -- which is also true
-    // on a fresh load, where nobody is reaching and the page the reader asked
-    // for would sit unmarked for the length of a reach. Running again on the
-    // same selection is not a move either, which is what a StrictMode double
-    // pass is.
+    // A bar with no position in this list to travel from was either handed over
+    // by the other list or is the first one this list has drawn, and only the
+    // hand-over animates. So the question is whether the selection MOVED,
+    // rather than whether this list held it before -- which is also true on a
+    // fresh load, where nobody handed anything over and WinUI plays nothing for
+    // an initial selection. Running again on the same selection is not a move
+    // either, which is what a StrictMode double pass is.
     //
     // Every commit records the selection it saw, whether or not this list holds
-    // it. A list only ever waits for a hand-over on the commit that brings it
-    // the bar, and on that commit it did not hold the selection before -- so
-    // recording only the selections a list holds is recording exactly the
-    // commits that cannot ask the question. The footer holds one item and would
-    // never have recorded anything else.
-    const moved = ranFor.current !== undefined && ranFor.current !== selectedValue;
+    // it. A list only ever takes a hand-over on a commit that did not find it
+    // holding the selection before -- so recording only the selections a list
+    // holds is recording exactly the commits that cannot ask the question. The
+    // footer holds one item and would never have recorded anything else.
+    handedOver.current = ranFor.current !== undefined && ranFor.current !== selectedValue;
     ranFor.current = selectedValue;
     const container = containerRef.current;
     const item = container?.querySelector<HTMLElement>(`[data-nav-value="${CSS.escape(selectedValue)}"]`);
-    // A bar that has to leave is not cleared here; the effect below reaches it
+    // A bar that has to leave is not cleared here; the effect below plays it
     // out first.
     if (!container || !item) return;
-    const next = geometryOf(container, item);
-    // Under reduced motion the other list has nothing to reach out with and
-    // lets its bar go in this same commit, so there is nothing to wait for and
-    // waiting would leave the reader with no marker at all.
-    if (previousRef.current || !moved || prefersReducedMotion()) {
-      setGeometry(next);
-      return;
-    }
-    const handover = window.setTimeout(() => setGeometry(next), INDICATOR_REACH_MS);
-    return () => window.clearTimeout(handover);
+    setGeometry(geometryOf(container, item));
   }, [containerRef, selectedValue]);
 
-  // Leaving for the other list. The bar stays long enough to reach after the
-  // selection before it goes, which is the half of WinUI's pair that plays on
-  // this side.
-  //
-  // WinUI also fades its outgoing indicator, holding it opaque through the
-  // reach and easing it away across the settle that follows, so that it can
-  // travel over the scroll area without painting where nothing should. Here the
-  // bar is clipped to the item it sits in, and the settle belongs to the other
-  // list, so the bar is dropped at the instant WinUI's fade would begin and
-  // there is no window left for it to fade in.
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.cpp#L2197-L2204
+  // Leaving for the other list, which is WinUI's outgoing half on this list's
+  // own item. Its offset leg is the one that cannot be taken literally: it
+  // carries the bar to an item in the other list, and this bar is clipped to
+  // the item it sits in. So the stretch reaches by the item's own length, the
+  // clip takes the rest, and the settle brings the bar back to its resting
+  // length in the item it is leaving rather than in the one it cannot reach.
   useEffect(() => {
     const container = containerRef.current;
     if (!geometry || container?.querySelector(`[data-nav-value="${CSS.escape(selectedValue)}"]`)) return;
@@ -147,17 +139,16 @@ export function NavSelectionIndicator({
       return;
     }
     bar.style.transformOrigin = otherListIs === 'below' ? 'top' : 'bottom';
-    // The reach is over when the reach says so. A timer of the same length
-    // starts at the call and the animation starts at the next frame, and the
-    // stretch's easing puts most of its travel in its last few frames, so the
-    // frames a timer cuts off are the ones carrying the motion -- one frame on
-    // a quiet commit, several when a route commit is contending for them.
-    const reach = bar.animate(
-      [{ transform: 'scaleY(1)' }, { transform: `scaleY(${geometry.height / bar.offsetHeight + 1})` }],
-      { duration: INDICATOR_REACH_MS, easing: INDICATOR_STRETCH_EASING, fill: 'forwards' },
-    );
-    reach.addEventListener('finish', drop);
-    return () => reach.cancel();
+    // The bar goes when the animation says so, not when a timer of the same
+    // length does: the timer starts at the call and the animation starts at the
+    // next frame, so the frames a timer cuts off are the ones the fade ends on.
+    const leave = bar.animate([
+      { opacity: 1, transform: 'scaleY(1)', easing: INDICATOR_STRETCH_EASING },
+      { opacity: 1, transform: `scaleY(${geometry.height / bar.offsetHeight + 1})`, offset: INDICATOR_POSITION_SNAP, easing: INDICATOR_SETTLE_EASING },
+      { opacity: 0, transform: 'scaleY(1)' },
+    ], { duration: INDICATOR_DURATION_MS, fill: 'forwards' });
+    leave.addEventListener('finish', drop);
+    return () => leave.cancel();
   }, [containerRef, geometry, otherListIs, selectedValue]);
 
   // The item can move without the selection changing -- a group appearing above
@@ -187,14 +178,17 @@ export function NavSelectionIndicator({
 
   useEffect(() => {
     const track = trackRef.current;
+    const anchor = anchorRef.current;
     const bar = barRef.current;
     const previous = previousRef.current;
     previousRef.current = geometry;
-    if (!track || !bar || !geometry) return;
+    if (!track || !anchor || !bar || !geometry) return;
     if (prefersReducedMotion()) return;
+    if (!previous && !handedOver.current) return;
 
-    // Arriving from the other list: there is no position in this one to travel
-    // from, so the reach is the item's own length toward where it came from.
+    // Taking the hand-over: there is no position in this list to travel from,
+    // so the reach is the item's own length toward where the selection came
+    // from.
     const distance = previous
       ? geometry.top - previous.top
       : (otherListIs === 'below' ? geometry.height : -geometry.height);
@@ -206,41 +200,38 @@ export function NavSelectionIndicator({
     // room the item leaves it, which the layout has already worked out, so it
     // is read back off the bar rather than recomputed from the inset.
     const peak = Math.abs(distance) / bar.offsetHeight + 1;
+    // The bar grows out of what it is leaving, so it is anchored at the edge
+    // facing there -- and stays anchored there for the whole move. What changes
+    // is the offset underneath it.
+    bar.style.transformOrigin = distance > 0 ? 'top' : 'bottom';
 
-    if (previous) {
-      track.animate([
-        { transform: `translateY(${previous.top - geometry.top}px)`, easing: 'steps(1, end)' },
-        { transform: 'translateY(0px)', offset: INDICATOR_POSITION_SNAP },
-        { transform: 'translateY(0px)' },
-      ], { duration: INDICATOR_DURATION_MS });
-    }
-
-    bar.animate(previous
-      ? [
-          { transform: 'scaleY(1)', easing: INDICATOR_STRETCH_EASING },
-          { transform: `scaleY(${peak})`, offset: INDICATOR_POSITION_SNAP, easing: INDICATOR_SETTLE_EASING },
-          { transform: 'scaleY(1)' },
-        ]
-      : [
-          { transform: `scaleY(${peak})`, easing: INDICATOR_SETTLE_EASING },
-          { transform: 'scaleY(1)' },
-        ],
-    { duration: previous ? INDICATOR_DURATION_MS : INDICATOR_SETTLE_MS });
-
-    // The origin flips at the snap, which is what keeps the bar from
-    // overshooting. Anchored at the leading edge it grows out of the item it is
-    // leaving; at the snap the anchor moves to the trailing edge, so the bar is
-    // held at the item it has reached and contracts back into it.
-    const leadingEdge = distance > 0 ? 'top' : 'bottom';
-    const trailingEdge = distance > 0 ? 'bottom' : 'top';
-    if (previous) {
+    if (!previous) {
       bar.animate([
-        { transformOrigin: leadingEdge, easing: 'steps(1, end)' },
-        { transformOrigin: trailingEdge, offset: INDICATOR_POSITION_SNAP },
-        { transformOrigin: trailingEdge },
+        { opacity: 0, transform: 'scaleY(1)', easing: 'steps(1, end)' },
+        { opacity: 1, transform: `scaleY(${peak})`, offset: INDICATOR_POSITION_SNAP, easing: INDICATOR_SETTLE_EASING },
+        { opacity: 1, transform: 'scaleY(1)' },
       ], { duration: INDICATOR_DURATION_MS });
+      return;
     }
-    bar.style.transformOrigin = previous ? trailingEdge : leadingEdge;
+
+    const travelled = `translateY(${previous.top - geometry.top}px)`;
+    track.animate([
+      { transform: travelled, easing: 'steps(1, end)' },
+      { transform: 'translateY(0px)', offset: INDICATOR_POSITION_SNAP },
+      { transform: 'translateY(0px)' },
+    ], { duration: INDICATOR_DURATION_MS });
+
+    anchor.animate([
+      { transform: 'translateY(0px)', easing: 'steps(1, end)' },
+      { transform: travelled, offset: INDICATOR_POSITION_SNAP, easing: INDICATOR_SETTLE_EASING },
+      { transform: 'translateY(0px)' },
+    ], { duration: INDICATOR_DURATION_MS });
+
+    bar.animate([
+      { transform: 'scaleY(1)', easing: INDICATOR_STRETCH_EASING },
+      { transform: `scaleY(${peak})`, offset: INDICATOR_POSITION_SNAP, easing: INDICATOR_SETTLE_EASING },
+      { transform: 'scaleY(1)' },
+    ], { duration: INDICATOR_DURATION_MS });
   }, [geometry, otherListIs]);
 
   if (!geometry) return null;
@@ -266,15 +257,17 @@ export function NavSelectionIndicator({
       width: geometry.width,
     }}
   >
-    <div
-      ref={barRef}
-      style={{
-        backgroundColor: 'var(--winui-accent-fill-default)',
-        borderRadius: INDICATOR_RADIUS,
-        marginBlock: geometry.height * INDICATOR_INSET_RATIO,
-        marginInlineStart: inset,
-        width: INDICATOR_WIDTH,
-      }}
-    />
+    <div ref={anchorRef} style={{ display: 'flex' }}>
+      <div
+        ref={barRef}
+        style={{
+          backgroundColor: 'var(--winui-accent-fill-default)',
+          borderRadius: INDICATOR_RADIUS,
+          marginBlock: geometry.height * INDICATOR_INSET_RATIO,
+          marginInlineStart: inset,
+          width: INDICATOR_WIDTH,
+        }}
+      />
+    </div>
   </div>;
 }
