@@ -1,7 +1,3 @@
-// DataGrid components each call the matching Table style hook and then only
-// append their own class name, so the rules below name the Table classes and
-// the DataGrid inherits them. A DataGrid class is the subject only where
-// `aria-selected` is needed — an attribute only the DataGrid row writes.
 export const tableCss = `
 /* WinUI resolves the item's normal, pointer-over and pressed foregrounds to one
    brush, so only the two moving states are pinned back to Fluent's rest value.
@@ -76,24 +72,30 @@ export const tableCss = `
   outline-offset: -2px;
 }
 
-/* The DataGrid's default \`brand\` selection appearance replaces the row's
-   surface; WinUI stays on the subtle ramp it uses for the pointer. The fill and
-   foreground are restated on all three states a selected row can be in, since
-   Fluent's interactive atoms outrank the appearance's.
+/* Fluent's selected-row appearance replaces the row's surface; WinUI stays on
+   the subtle ramp it uses for the pointer. The fill and foreground are restated
+   on all three states a selected row can be in, since Fluent's interactive
+   atoms outrank the appearance's.
+
+   A row can be marked selected two independent ways -- aria-selected, which a
+   DataGrid row also carries, and the appearance prop, which reaches the DOM
+   only through the stamp ../appearance.ts writes -- and Fluent paints a brand
+   or neutral appearance from its own ramps either way. Both are named here, in
+   an :is so the rules keep the weight they had.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L20
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L26-L28 */
-.fui-TableBody .fui-DataGridRow.fui-DataGridRow[aria-selected='true'] {
+.fui-TableBody .fui-TableRow.fui-TableRow:is([aria-selected='true'], [data-winui-appearance='brand'], [data-winui-appearance='neutral']) {
   background-color: var(--winui-subtle-fill-secondary);
   color: var(--winui-text-fill-primary);
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L21 */
-.fui-TableBody .fui-DataGridRow.fui-DataGridRow[aria-selected='true']:hover {
+.fui-TableBody .fui-TableRow.fui-TableRow:is([aria-selected='true'], [data-winui-appearance='brand'], [data-winui-appearance='neutral']):hover {
   background-color: var(--winui-subtle-fill-tertiary);
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L22 */
-.fui-TableBody .fui-DataGridRow.fui-DataGridRow[aria-selected='true']:active {
+.fui-TableBody .fui-TableRow.fui-TableRow:is([aria-selected='true'], [data-winui-appearance='brand'], [data-winui-appearance='neutral']):active {
   background-color: var(--winui-subtle-fill-secondary);
 }
 
@@ -140,9 +142,9 @@ export const tableCss = `
 @media (forced-colors: active) {
   .fui-TableBody .fui-TableRow.fui-TableRow:hover,
   .fui-TableBody .fui-TableRow.fui-TableRow:active,
-  .fui-TableBody .fui-DataGridRow.fui-DataGridRow[aria-selected='true'],
-  .fui-TableBody .fui-DataGridRow.fui-DataGridRow[aria-selected='true']:hover,
-  .fui-TableBody .fui-DataGridRow.fui-DataGridRow[aria-selected='true']:active {
+  .fui-TableBody .fui-TableRow.fui-TableRow:is([aria-selected='true'], [data-winui-appearance='brand'], [data-winui-appearance='neutral']),
+  .fui-TableBody .fui-TableRow.fui-TableRow:is([aria-selected='true'], [data-winui-appearance='brand'], [data-winui-appearance='neutral']):hover,
+  .fui-TableBody .fui-TableRow.fui-TableRow:is([aria-selected='true'], [data-winui-appearance='brand'], [data-winui-appearance='neutral']):active {
     background-color: Highlight;
     color: HighlightText;
   }

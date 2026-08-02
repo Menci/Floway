@@ -62,8 +62,10 @@ const splitButtonSlots = ['primaryActionButton', 'menuButton'] as const;
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-select/library/src/components/Select/useSelect.tsx#L21
 //
 // Card defaults to `filled`; its companions declare no appearance and stay
-// unwrapped.
+// unwrapped. TableRow defaults to `none`, and its selected appearances are a
+// second, independent selection signal beside aria-selected.
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-card/library/src/components/Card/useCard.ts#L54
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-table/library/src/components/TableRow/useTableRow.ts#L21
 export const withWinuiAppearance = (components: FluentComponents): FluentComponents => {
   // Only a props object can take one more prop by merging; Fluent's own
   // normalization folds the other shorthand forms into `{ children: value }`.
@@ -272,6 +274,7 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
     Combobox: stamp(components.Combobox, appearance('outline', rootAndPrimary)),
     Dropdown: stamp(components.Dropdown, appearance('outline', rootAndPrimary)),
     Card: stampSelectedState(stamp(components.Card, appearance('filled', rootIsPrimary))),
+    TableRow: stamp(components.TableRow, appearance('none', rootIsPrimary)),
     Checkbox: stampCheckedState(stamp(components.Checkbox, shape('square', rootAndPrimary))),
     TableSelectionCell: stampSelectionCellCheckedState(components.TableSelectionCell),
     Switch: stamp(components.Switch, size('medium', rootAndPrimary)),
