@@ -293,6 +293,14 @@ export const choiceCss = `
    the return to rest, so shipped WinUI snaps the dot back; the transition is
    kept symmetric here because an animated return reads better on the web.
 
+   That symmetry is what makes the dot exist in both states rather than only in
+   the checked one. Fluent hangs the pseudo-element's \`content\` on
+   \`:checked\`, so selecting and deselecting created and destroyed the box and
+   there was never a value on both sides for the transition to run between --
+   it went 0.6 to nothing in a single frame, whatever duration was declared.
+   The box is generated unconditionally here and rests at scale 0; the checked
+   state carries only the value.
+
    WinUI top-aligns the radio's 32px indicator band while centring the check
    box's, so the two templates part company once a label wraps. The indicator
    is centred here for both, which is what the shared control row above asks
@@ -313,10 +321,15 @@ export const choiceCss = `
 .fui-Radio__indicator.fui-Radio__indicator::after {
   width: 20px;
   height: 20px;
-  transform: scale(0.6);
+  content: '';
+  transform: scale(0);
   transition-duration: var(--winui-control-normal-animation-duration);
   transition-property: transform;
   transition-timing-function: var(--winui-control-fast-out-slow-in-easing);
+}
+
+.fui-Radio__input:checked ~ .fui-Radio__indicator.fui-Radio__indicator::after {
+  transform: scale(0.6);
 }
 
 /* The dot grows and shrinks, which alters its perceived size, so it is motion
