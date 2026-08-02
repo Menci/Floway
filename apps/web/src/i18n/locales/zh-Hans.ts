@@ -586,17 +586,17 @@ const zhHansCN = {
                   '部分上游不支持同时开启“强制工具调用”和思考模式，会直接拒绝此类请求。\n开启此开关后，当调用方通过 `tool_choice` 强制指定某个工具时，Floway 会在转发请求时**关闭思考模式**。',
             },
             'demote-interleaved-system-to-user': {
-              label: '改写行内 system 角色',
+              label: '改写行内 system 角色为 user',
               description:
                   '部分上游只允许在对话开头使用 `system` 角色，不接受穿插在 `user` 或 `assistant` 消息之间的行内 `system` 消息（如 DeepSeek-R1）。\n开启此开关后，对话开头连续的 `system` 消息会保留，而后续穿插的 `system` 角色会被改写为 `user`。消息内容保持不变。\n对于 Messages API 上游，由于系统提示词只能放在顶层 `system` 字段中，此开关被视为开启。',
             },
             'demote-developer-to-system': {
-              label: '改写 developer 角色',
+              label: '改写 developer 角色为 system',
               description:
                   'OpenAI 的新版 API 规范中包含了 `developer` 这一角色（`role`），但部分上游并不支持。\n开启此开关，以在请求上游时，把 `developer` 改写为 `system`。\n例如，Codex 的系统提示词会使用 `developer` 角色，但 DeepSeek 不支持，此时就应开启。',
             },
             'promote-system-to-developer': {
-              label: '将 system 角色提升为 developer',
+              label: '改写 system 角色为 developer',
               description:
                   '对拒绝 system 角色但接受 developer 角色的上游，将 `system` 角色消息改写为 `developer`。',
             },
