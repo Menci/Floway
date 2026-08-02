@@ -143,7 +143,7 @@ export function LoginForm() {
 
         <Button
           appearance="primary"
-          className="mt-3.5 !min-h-[34px] w-full text-fui-base300"
+          className="mt-3.5 !min-h-[34px] w-full"
           disabledFocusable={isSubmitting}
           type="submit"
         >
