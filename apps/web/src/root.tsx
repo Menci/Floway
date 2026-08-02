@@ -73,6 +73,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="theme-color" content="#f5f5f5" media="(prefers-color-scheme: light)" />
         <meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)" />
+        {/* The product name, so the document is never untitled. Only the root
+            route is prerendered, so no leaf route's title reaches this HTML;
+            ./components/document-title-sync.tsx narrows it to the current page
+            once the bundle runs, and until then a tab reads the name rather
+            than the URL. */}
+        <title>Floway</title>
         <Links />
         {/* Everything the first paint depends on, inlined because it has to be
             true before a linked stylesheet can arrive. Its rules and the
