@@ -195,7 +195,7 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
       <div className="flex items-center gap-2 min-w-0">
         <StatusIcon aria-hidden="true" className={`${s[severity]} block flex-none`} fontSize={22} />
         <span className="sr-only">{t(`dashboard.requests.status.${severity}`)}</span>
-        <Text size={300} className="truncate min-w-0 font-mono">
+        <Text size={300} className="min-w-0 font-mono" truncate wrap={false}>
           {record.model ?? t('dashboard.requests.unknownModel')}
         </Text>
         {/* These triggers stay unfocusable: the row is an `option` under a
@@ -210,7 +210,7 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
       </div>
       <div className="flex items-center gap-2 min-w-0">
         <Tooltip content={`${record.method} ${record.path}`} relationship="description">
-          <Text size={200} className="truncate min-w-0 flex-1 text-fui-fg3 font-mono">
+          <Text size={200} className="min-w-0 flex-1 text-fui-fg3 font-mono" truncate wrap={false}>
             {record.path}
           </Text>
         </Tooltip>
@@ -240,9 +240,9 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
         </Tooltip>
         {rowError
           ? <Tooltip content={rowError} relationship="label">
-              <Text size={200} className={mergeClasses('ml-auto truncate', s.error)}>{rowError}</Text>
+              <Text size={200} className={mergeClasses('ml-auto', s.error)} truncate wrap={false}>{rowError}</Text>
             </Tooltip>
-          : <Text size={200} className="ml-auto truncate text-fui-fg3">
+          : <Text size={200} className="ml-auto text-fui-fg3" truncate wrap={false}>
               {tokens === null ? '-' : `${formatCompactCount(tokens, locale)} tok`}
             </Text>}
       </div>

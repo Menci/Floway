@@ -447,7 +447,7 @@ function DescribedOptionLabel({ description, label }: { description?: string; la
     <span className="grid gap-0.5 min-w-0">
       <span className="truncate">{label}</span>
       {description && (
-        <Text size={100} className="text-fui-fg3 truncate">
+        <Text block size={100} className="text-fui-fg3" truncate wrap={false}>
           {description}
         </Text>
       )}

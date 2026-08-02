@@ -502,7 +502,7 @@ function OAuthConfig({ record, onPatch }: {
         {record.kind === 'codex' ? <><Tab value="json">auth.json</Tab><Tab value="oauth">OAuth</Tab></> : <><Tab value="oauth">OAuth</Tab><Tab value="setup">Setup Token</Tab><Tab value="json">credentials.json</Tab></>}
       </TabList>
       {tab === 'json' ? <Field label={t('dashboard.upstreamEditor.oauth.credentialJson')}><Textarea className="font-mono" resize="vertical" rows={8} value={json} onChange={(_, data) => setJson(data.value)} /></Field> : <div className="grid gap-3">
-        {busy && !authorizeUrl ? <Spinner label={t('dashboard.upstreamEditor.oauth.preparing')} /> : authorizeUrl && <div className="flex items-center gap-2 min-w-0"><Link href={authorizeUrl} target="_blank" rel="noopener noreferrer" className="truncate"><OpenLinkLabel>{t('dashboard.upstreamEditor.oauth.openAuthorize')}</OpenLinkLabel></Link><TooltipIconButton icon={copyOutcomeIcon(outcomeFor())} label={copyLabel(outcomeFor(), t('dashboard.upstreamEditor.oauth.copy'))} onClick={() => copy(authorizeUrl)} /></div>}
+        {busy && !authorizeUrl ? <Spinner label={t('dashboard.upstreamEditor.oauth.preparing')} /> : authorizeUrl && <div className="flex items-center gap-2 min-w-0"><Link href={authorizeUrl} target="_blank" rel="noopener noreferrer"><OpenLinkLabel>{t('dashboard.upstreamEditor.oauth.openAuthorize')}</OpenLinkLabel></Link><TooltipIconButton icon={copyOutcomeIcon(outcomeFor())} label={copyLabel(outcomeFor(), t('dashboard.upstreamEditor.oauth.copy'))} onClick={() => copy(authorizeUrl)} /></div>}
         <Field label={t('dashboard.upstreamEditor.oauth.callback')}><Textarea className="font-mono" resize="vertical" rows={3} value={callback} onChange={(_, data) => setCallback(data.value)} /></Field>
       </div>}
       <Button appearance="primary" disabledFocusable={busy} icon={busy ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />} onClick={() => void submit()}>{hasAccount ? t('dashboard.upstreamEditor.oauth.reimport') : t('dashboard.upstreamEditor.oauth.import')}</Button>
@@ -513,6 +513,6 @@ function OAuthConfig({ record, onPatch }: {
 function AccountSummary({ kind, subtitle, title }: { kind: UpstreamProviderKind; subtitle: string; title: string }) {
   return <div className="flex items-center gap-3 min-w-0">
     <ProviderIcon kind={kind} className="h-8 w-8" />
-    <div className="grid gap-0.5 min-w-0"><Text weight="semibold" truncate>{title}</Text><Text size={200} className="text-fui-fg2" truncate>{subtitle}</Text></div>
+    <div className="grid gap-0.5 min-w-0"><Text block weight="semibold" truncate wrap={false}>{title}</Text><Text block size={200} className="text-fui-fg2" truncate wrap={false}>{subtitle}</Text></div>
   </div>;
 }

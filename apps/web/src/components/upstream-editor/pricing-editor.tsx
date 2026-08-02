@@ -193,11 +193,11 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
             <span className="grid min-w-0 gap-0.5 text-left">
               <span className="flex min-w-0 items-center gap-2">
                 <Tooltip content={displayLabel} relationship="label">
-                  <Text truncate size={300} weight="semibold" tabIndex={0}>{displayLabel}</Text>
+                  <Text block truncate size={300} weight="semibold" tabIndex={0} wrap={false}>{displayLabel}</Text>
                 </Tooltip>
                 {issues.some(issue => issueAffectsEntry(issue, index)) && <WarningRegular aria-label={t('dashboard.upstreamEditor.models.pricingErrors')} fontSize={16} />}
               </span>
-              <Text truncate size={200} className="text-fui-fg2">
+              <Text block truncate size={200} className="text-fui-fg2" wrap={false}>
                 {index === baseIndex
                   ? t('dashboard.upstreamEditor.models.basePricingSummary')
                   : t('dashboard.upstreamEditor.models.overridePricingSummary')}

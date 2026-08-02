@@ -171,12 +171,12 @@ export function KeysTable({
       return <ListItem checkmark={null} className={s.mobileItem} disabledSelection={disabled} key={key.id} value={key.id}>
         <div className="flex items-start gap-2 min-w-0 w-full">
           <div className="grid gap-0.5 min-w-0 flex-1">
-            <Text truncate size={300} wrap={false}>{key.name}</Text>
+            <Text block truncate size={300} wrap={false}>{key.name}</Text>
             <Tooltip content={key.key} relationship="label">
               <code className="block truncate" tabIndex={0}>{key.key}</code>
             </Tooltip>
             <Tooltip content={upstreamsTitle(key, upstreamById, t)} relationship="description">
-              <Text truncate size={200} className="text-fui-fg2" tabIndex={0} wrap={false}>{upstreamsText(key, upstreamById, t)}</Text>
+              <Text block truncate size={200} className="text-fui-fg2" tabIndex={0} wrap={false}>{upstreamsText(key, upstreamById, t)}</Text>
             </Tooltip>
             <div className="flex flex-wrap gap-x-3 text-fui-fg3">
               <Text size={200}>{shortDate(key.created_at, locale)}</Text>

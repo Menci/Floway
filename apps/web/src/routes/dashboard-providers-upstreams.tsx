@@ -457,7 +457,7 @@ function ModelStatus({
   return (
     <Tooltip content={detail} relationship="description">
       <span className="inline-flex items-center gap-1.5 min-w-0 w-fit max-w-full" tabIndex={0}>
-        <Text size={300} className="whitespace-nowrap">
+        <Text size={300} wrap={false}>
           {modelsAvailable
             ? t('dashboard.upstreams.models.count', { count })
             : t('dashboard.upstreams.models.unavailable')}

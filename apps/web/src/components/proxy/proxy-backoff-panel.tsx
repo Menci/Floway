@@ -64,7 +64,7 @@ export function ProxyBackoffPanel({ backoffs, onReset, proxyId }: {
         const remaining = row.expires_at - nowSeconds;
         return <li className="flex items-center gap-3 rounded-md bg-fui-bg2 px-3 py-2" key={`${row.proxy_id}:${row.upstream_id}`}>
           <Tooltip content={row.upstream_id} relationship="label">
-            <Text size={200} className="min-w-0 flex-1 truncate font-mono mono-size-xs" tabIndex={0}>{row.upstream_id}</Text>
+            <Text block size={200} className="min-w-0 flex-1 font-mono mono-size-xs" tabIndex={0} truncate wrap={false}>{row.upstream_id}</Text>
           </Tooltip>
           <Text size={200} className="text-fui-fg2">
             {remaining <= 0
@@ -73,7 +73,7 @@ export function ProxyBackoffPanel({ backoffs, onReset, proxyId }: {
           </Text>
           <Text size={200} className="text-fui-fg3">{t('dashboard.proxy.backoff.failures', { count: row.fail_count })}</Text>
           {row.last_error && <Tooltip content={row.last_error} relationship="label">
-            <Text size={200} className="max-w-[220px] truncate text-fui-fg3" tabIndex={0}>{row.last_error}</Text>
+            <Text block size={200} className="max-w-[220px] text-fui-fg3" tabIndex={0} truncate wrap={false}>{row.last_error}</Text>
           </Tooltip>}
           <Button appearance="subtle" disabledFocusable={resetting} onClick={() => void reset(row.upstream_id)} size="small">
             {t('dashboard.proxy.backoff.reset')}

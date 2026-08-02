@@ -24,6 +24,8 @@ export function SectionHeader({ actions, description, level, title, titleId, tru
   titleId?: string;
   truncate?: boolean;
 }) {
+  // Fluent's `truncate` contributes the ellipsis alone; the clip and the single
+  // line come from `wrap={false}`, so a title that trims needs both.
   const heading = <Text
     as={(`h${level}`) as 'h2'}
     className={description === undefined ? 'm-0 min-w-0' : 'm-0'}
@@ -31,6 +33,7 @@ export function SectionHeader({ actions, description, level, title, titleId, tru
     size={TITLE_SIZE[level]}
     truncate={truncate}
     weight="semibold"
+    wrap={!truncate}
   >{title}</Text>;
 
   const block = description === undefined

@@ -34,7 +34,7 @@ export function CodexAccountCard({ record }: { record: CodexRecord }) {
     <div className="flex items-start gap-3">
       <ProviderIcon kind="codex" className="h-8 w-8 shrink-0" />
       <div className="grid gap-1 min-w-0 flex-1">
-        <Text weight="semibold" truncate>{account.email}</Text>
+        <Text block weight="semibold" truncate wrap={false}>{account.email}</Text>
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge color="brand">{account.planType}</StatusBadge>
           {credits?.credits_has_credits === false
@@ -57,7 +57,7 @@ export function CodexAccountCard({ record }: { record: CodexRecord }) {
       : entries.map(entry => <section className="grid gap-3 border-0 border-t border-solid border-fui-stroke1 py-3 first:border-t-0" key={entry.key}>
           <div className="flex items-baseline justify-between gap-3 min-w-0">
             <Tooltip content={entry.label} relationship="label">
-              <Text truncate weight="semibold" tabIndex={0}>{entry.label}</Text>
+              <Text block truncate weight="semibold" tabIndex={0} wrap={false}>{entry.label}</Text>
             </Tooltip>
             <Text size={200} className="text-fui-fg3 shrink-0 uppercase tracking-wide">{t('dashboard.upstreamEditor.codex.activeLimit')}</Text>
           </div>
