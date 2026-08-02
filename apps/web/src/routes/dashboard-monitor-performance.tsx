@@ -214,7 +214,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
         <div className="grid gap-2.5 grid-cols-8 max-[1150px]:grid-cols-4 max-[620px]:grid-cols-2">
           {summaryCards.map(([label, value]) => <div className="grid gap-1 min-w-0 px-2 py-1" key={label}>
             <Text size={200} weight="semibold" className="text-fui-fg2">{t(`dashboard.performance.summary.${label}`)}</Text>
-            <Text size={500} weight="semibold" className="tabular-nums overflow-wrap-anywhere">{value}</Text>
+            <Text size={500} weight="semibold" className="tabular-nums [overflow-wrap:anywhere]">{value}</Text>
           </div>)}
         </div>
         <div className="flex items-center justify-between gap-4 min-w-0 flex-wrap">

@@ -118,7 +118,7 @@ function SummaryMetricButton({
     >
       <span className="grid gap-1 min-w-0">
         <Text size={200} weight="semibold" className="text-fui-fg2">{label}</Text>
-        <Text size={500} weight="semibold" className="overflow-wrap-anywhere">{value}</Text>
+        <Text size={500} weight="semibold" className="[overflow-wrap:anywhere]">{value}</Text>
       </span>
     </ToggleButton>
   );
