@@ -92,11 +92,18 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
     if (!host || chart.plot.form !== 'area') return;
     const frame = window.requestAnimationFrame(() => {
       const lines = [...host.querySelectorAll<SVGPathElement>('path[id*="-line-"]')];
+      // Each run starts from the order the previous one left, so the order the
+      // lines are appended in has to be one the DOM cannot already be in --
+      // appending them as found reverses them, and the next run reverses them
+      // back, which flips which colour wins wherever two boundaries coincide.
+      // The series index the id carries is the order that does not move: the
+      // lowest series ends up last and stays on top however this pass finds
+      // them.
       // Every match is a descendant of a mounted host, so each has the series
       // group as its parent; the optional call is what the DOM type says, not a
       // case that arises. It stays a call rather than a throw because a frame
       // callback runs outside React, where nothing would catch one.
-      for (const line of lines.toReversed()) line.parentNode?.append(line);
+      for (const line of lines.sort((a, b) => Number.parseInt(b.id, 10) - Number.parseInt(a.id, 10))) line.parentNode?.append(line);
     });
     return () => window.cancelAnimationFrame(frame);
   }, [chart.plot.data, chart.plot.form, host, size.height, size.width]);
