@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { NO_READING } from '../../src/lib/no-reading';
 import { clampPercent, percentText } from '../../src/lib/percent';
 
 describe('percentages', () => {
@@ -20,7 +21,7 @@ describe('percentages', () => {
   it('reports an unusable reading as unknown rather than as zero', () => {
     expect(clampPercent(Number.NaN)).toBeNull();
     expect(clampPercent(Number.POSITIVE_INFINITY)).toBeNull();
-    expect(percentText(null)).toBe('—');
+    expect(percentText(null)).toBe(NO_READING);
     expect(percentText(0)).toBe('0%');
     expect(percentText(100)).toBe('100%');
   });

@@ -4,6 +4,7 @@ import type { DisplayUsageRecord, SearchChartModel, SearchUsageResponse, TokenCh
 import type { ControlPlaneModel, BillingMetric } from '../../api/types';
 import { decimalStringToPlottableNumber, formatDecimalQuantity, formatUsd, sumDecimalStrings, usdFractionDigits } from '../../lib/decimal-display';
 import { formatCompactCount, formatCount } from '../../lib/format-number';
+import { NO_READING } from '../../lib/no-reading';
 import type { ChartBucket } from '../charts/dashboard-time';
 import {
   dashboardBucketFrames,
@@ -455,7 +456,7 @@ export const formatCompactDecimalCount = (value: DecimalString, locale: string):
 
 export const formatRatePercent = (numerator: DecimalString, denominator: DecimalString): string => {
   const total = decimalStringToPlottableNumber(denominator);
-  if (total <= 0) return '-';
+  if (total <= 0) return NO_READING;
   return `${((decimalStringToPlottableNumber(numerator) / total) * 100).toFixed(1)}%`;
 };
 

@@ -5,6 +5,8 @@ import {
   type DecimalString,
 } from '@floway-dev/protocols/common';
 
+import { NO_READING } from './no-reading';
+
 const splitDecimal = (value: DecimalString): [integer: string, fraction: string] => {
   const [integer, fraction = ''] = value.split('.');
   if (integer === undefined || integer.startsWith('-')) throw new TypeError(`Expected a canonical non-negative decimal: ${JSON.stringify(value)}`);
@@ -55,7 +57,7 @@ export const usdFractionDigits = (atLeast: (boundary: DecimalString) => boolean)
   atLeast('1') ? 2 : atLeast('0.01') ? 3 : 4;
 
 export const formatUsd = (value: DecimalString | null): string => {
-  if (value === null) return '-';
+  if (value === null) return NO_READING;
   if (decimalStringIsZero(value)) return '$0';
   return `$${toFixed(value, usdFractionDigits(boundary => compareDecimalStrings(value, boundary) >= 0))}`;
 };

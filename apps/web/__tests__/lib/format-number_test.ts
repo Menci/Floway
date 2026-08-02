@@ -7,6 +7,7 @@ import {
   formatTokenRate,
   formatTokenRateFromTpot,
 } from '../../src/lib/format-number';
+import { NO_READING } from '../../src/lib/no-reading';
 
 describe('byte sizes', () => {
   it('stays in bytes up to the first kilobyte', () => {
@@ -61,18 +62,18 @@ describe('token rates', () => {
   });
 
   it('reports no rate rather than a zero one', () => {
-    expect(formatTokenRate(null)).toBe('-');
-    expect(formatTokenRate(0)).toBe('-');
-    expect(formatTokenRate(-1)).toBe('-');
-    expect(formatTokenRate(Number.NaN)).toBe('-');
-    expect(formatTokenRate(Number.POSITIVE_INFINITY)).toBe('-');
+    expect(formatTokenRate(null)).toBe(NO_READING);
+    expect(formatTokenRate(0)).toBe(NO_READING);
+    expect(formatTokenRate(-1)).toBe(NO_READING);
+    expect(formatTokenRate(Number.NaN)).toBe(NO_READING);
+    expect(formatTokenRate(Number.POSITIVE_INFINITY)).toBe(NO_READING);
   });
 
   it('inverts a time per output token into a rate', () => {
     expect(formatTokenRateFromTpot(10_000)).toBe('100 tok/s');
     expect(formatTokenRateFromTpot(50_000)).toBe('20.0 tok/s');
-    expect(formatTokenRateFromTpot(null)).toBe('-');
-    expect(formatTokenRateFromTpot(0)).toBe('-');
-    expect(formatTokenRateFromTpot(-10)).toBe('-');
+    expect(formatTokenRateFromTpot(null)).toBe(NO_READING);
+    expect(formatTokenRateFromTpot(0)).toBe(NO_READING);
+    expect(formatTokenRateFromTpot(-10)).toBe(NO_READING);
   });
 });

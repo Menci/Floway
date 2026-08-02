@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { decimalStringToPlottableNumber, formatDecimalQuantity, formatUsd, sumDecimalStrings } from '../../src/lib/decimal-display';
+import { NO_READING } from '../../src/lib/no-reading';
 
 describe('decimal display', () => {
   it('aggregates and formats without binary floating-point rounding', () => {
@@ -9,7 +10,7 @@ describe('decimal display', () => {
     expect(formatUsd('1.005')).toBe('$1.01');
     expect(formatUsd('0.0105')).toBe('$0.011');
     expect(formatUsd('0.00005')).toBe('$0.0001');
-    expect(formatUsd(null)).toBe('-');
+    expect(formatUsd(null)).toBe(NO_READING);
   });
 
   it('rejects decimal values a numeric chart axis cannot represent', () => {

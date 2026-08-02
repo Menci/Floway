@@ -1,13 +1,15 @@
+import { NO_READING } from './no-reading';
+
 const toDate = (value: string | number): Date => new Date(value);
 
 export const shortDate = (value: string | number | null | undefined, locale: string): string =>
   value === null || value === undefined
-    ? ''
+    ? NO_READING
     : new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(toDate(value));
 
 export const dateTime = (value: string | number | null | undefined, locale: string): string =>
   value === null || value === undefined
-    ? ''
+    ? NO_READING
     : new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'medium' }).format(toDate(value));
 
 const RELATIVE_UNITS: [limitSeconds: number, perUnitSeconds: number, unit: Intl.RelativeTimeFormatUnit][] = [

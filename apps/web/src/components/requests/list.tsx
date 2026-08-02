@@ -17,6 +17,7 @@ import { fluentComponents } from '../../fluent';
 import { formatDuration } from '../../lib/format-duration';
 import { formatBytes, formatCompactCount } from '../../lib/format-number';
 import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
+import { NO_READING } from '../../lib/no-reading';
 import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
 import { EmptyState } from '../ui/empty-state';
@@ -246,7 +247,7 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
               <Text size={200} className={mergeClasses('ml-auto', s.error)} truncate wrap={false}>{rowError}</Text>
             </Tooltip>
           : <Text size={200} className="ml-auto text-fui-fg3" truncate wrap={false}>
-              {tokens === null ? '-' : `${formatCompactCount(tokens, locale)} tok`}
+              {tokens === null ? NO_READING : `${formatCompactCount(tokens, locale)} tok`}
             </Text>}
       </div>
     </div>

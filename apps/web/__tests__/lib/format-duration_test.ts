@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { formatCountdown, formatDuration } from '../../src/lib/format-duration';
+import { NO_READING } from '../../src/lib/no-reading';
 
 describe('latency durations', () => {
   it('promotes a unit only once the reading reaches it', () => {
@@ -12,9 +13,9 @@ describe('latency durations', () => {
   });
 
   it('reports no reading rather than a zero one', () => {
-    expect(formatDuration(null)).toBe('-');
-    expect(formatDuration(Number.NaN)).toBe('-');
-    expect(formatDuration(Number.POSITIVE_INFINITY)).toBe('-');
+    expect(formatDuration(null)).toBe(NO_READING);
+    expect(formatDuration(Number.NaN)).toBe(NO_READING);
+    expect(formatDuration(Number.POSITIVE_INFINITY)).toBe(NO_READING);
   });
 
   // A latency ladder is the same everywhere, so the unit suffixes are literal

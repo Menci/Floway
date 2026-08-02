@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { dateTime, relativeTime, shortDate } from '../../src/lib/format-time';
+import { NO_READING } from '../../src/lib/no-reading';
 
 // A fixed instant, read as both an ISO string and an epoch reading. The
 // rendered wording depends on the machine's zone, so what is asserted about
@@ -10,11 +11,11 @@ const INSTANT_ISO = '2024-01-15T12:00:00.000Z';
 const INSTANT_EPOCH = Date.parse(INSTANT_ISO);
 
 describe('absolute timestamps', () => {
-  it('renders nothing at all for an absent timestamp', () => {
-    expect(shortDate(null, 'en')).toBe('');
-    expect(shortDate(undefined, 'en')).toBe('');
-    expect(dateTime(null, 'en')).toBe('');
-    expect(dateTime(undefined, 'en')).toBe('');
+  it('writes the shared no-reading dash for an absent timestamp', () => {
+    expect(shortDate(null, 'en')).toBe(NO_READING);
+    expect(shortDate(undefined, 'en')).toBe(NO_READING);
+    expect(dateTime(null, 'en')).toBe(NO_READING);
+    expect(dateTime(undefined, 'en')).toBe(NO_READING);
   });
 
   it('reads an epoch reading and an ISO string as the same instant', () => {

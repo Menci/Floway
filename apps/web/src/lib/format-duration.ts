@@ -1,7 +1,9 @@
+import { NO_READING } from './no-reading';
+
 // A latency percentile is an instrument reading, so it keeps an SI-style ladder
 // every locale spells the same way.
 export const formatDuration = (ms: number | null): string => {
-  if (ms === null || !Number.isFinite(ms)) return '-';
+  if (ms === null || !Number.isFinite(ms)) return NO_READING;
   if (ms >= 60_000) return `${(ms / 60_000).toFixed(1)}m`;
   if (ms >= 1_000) return `${(ms / 1_000).toFixed(1)}s`;
   return `${Math.round(ms)}ms`;
