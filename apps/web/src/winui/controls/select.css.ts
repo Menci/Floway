@@ -231,7 +231,14 @@ export const selectCss = `
    buttons inside a text control, so the pair reads as one. Its geometry stays
    Fluent's apart from the trailing inset it inherits with that place, set
    below.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L45 */
+
+   Fluent renders both slots by default and hides them with display:none until
+   the field is clearable, so these selectors match on every non-multiselect
+   Dropdown and Combobox in the app and paint on none of them. They are kept
+   for the day a field asks for the affordance rather than because anything
+   shows one today.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L45
+   https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-combobox/library/src/components/Dropdown/useDropdown.tsx#L98-L113 */
 .fui-Dropdown__clearButton.fui-Dropdown__clearButton,
 .fui-Combobox__clearIcon.fui-Combobox__clearIcon {
   color: var(--winui-text-fill-secondary);
