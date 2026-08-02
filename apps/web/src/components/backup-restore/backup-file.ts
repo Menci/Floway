@@ -5,8 +5,7 @@ import type { api } from '../../api/client';
 import { errorMessage } from '../../lib/error-message';
 
 // Annotated with the gateway's own literal so a bump there fails this
-// assignment rather than silently leaving the dashboard rejecting every backup
-// file the current deployment writes.
+// assignment instead of silently rejecting every backup the deployment writes.
 export const BACKUP_FILE_VERSION: InferResponseType<typeof api.api.export.$get, 200>['version'] = 18;
 
 const backupFileSchema = z.object({
@@ -40,10 +39,8 @@ export type ParsedBackupFile =
   | { ok: true; payload: BackupFile }
   | { ok: false; message: string };
 
-// A rejected file is nearly always an export from another version or another
-// product, and which field disagreed is the whole diagnosis. Every issue is
-// reported, addressed by its path, rather than collapsed into "not a valid
-// backup file".
+// A rejected file is nearly always an export from another version or product,
+// so every issue is reported by path rather than collapsed into one message.
 const issueList = (error: z.ZodError): string => error.issues
   .map(issue => (issue.path.length > 0 ? `${issue.path.join('.')}: ${issue.message}` : issue.message))
   .join('; ');
