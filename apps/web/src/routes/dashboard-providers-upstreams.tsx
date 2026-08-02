@@ -385,7 +385,7 @@ function UpstreamsTable({
                   <Tooltip content={record.name} relationship="label">
                     <Link
                       {...pageNavigation}
-                      className={`${rowTitle} truncate`}
+                      className={rowTitle}
                       to={`/dashboard/providers/upstreams/${encodeURIComponent(record.id)}`}
                     >
                       {record.name}
