@@ -118,6 +118,7 @@ const en = {
         apis: { responses: 'Responses', chatCompletions: 'Chat Completions', messages: 'Messages' },
         settings: { title: 'Playground settings', close: 'Close Playground settings', connection: 'Connection', generation: 'Generation', customJson: 'Custom JSON' },
         actions: { newTopic: 'New topic', edit: 'Edit', delete: 'Delete', save: 'Save', image: 'Add image URL', send: 'Send', stop: 'Stop' },
+        edit: { title: 'Edit message', message: 'Message', imageUrl: 'Image URL' },
         generation: {
           reasoningEffort: 'Reasoning effort',
           providerDefault: 'Provider default',

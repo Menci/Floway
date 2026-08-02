@@ -19,6 +19,7 @@ import { ModelInfoBadges } from '../components/models/model-info-badges';
 import { effectiveUpstreamCap } from '../components/models/reachability';
 import { bingAccentForeground, bingAccentForegroundHover } from '../components/playground/bing-chat-tokens';
 import { PlaygroundComposer } from '../components/playground/playground-composer';
+import { PlaygroundEditDialog, type PlaygroundMessageDraft } from '../components/playground/playground-edit-dialog';
 import { PlaygroundMarkdown } from '../components/playground/playground-markdown';
 import { PlaygroundMessageCard } from '../components/playground/playground-message-card';
 import { streamPlaygroundText } from '../components/playground/playground-stream';
@@ -35,13 +36,14 @@ import {
 } from '../components/playground/request';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyState, EmptyStateLine } from '../components/ui/empty-state';
-import { Combobox, Dropdown, Input, Textarea } from '../components/ui/fluent-form-controls';
+import { Combobox, Dropdown, Textarea } from '../components/ui/fluent-form-controls';
 import { PANE_GAP_CLASS } from '../components/ui/layout';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { SectionHeader } from '../components/ui/section-header';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
+import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { fluentComponents } from '../fluent';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
 import { errorMessage } from '../lib/error-message';
@@ -143,10 +145,8 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const [customDraft, setCustomDraft] = useState('{}');
   const [customError, setCustomError] = useState<string | null>(null);
   const [reasoningEffort, setReasoningEffort] = useState('');
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editText, setEditText] = useState('');
-  const [editImage, setEditImage] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const editDialog = useDialogInvocation<PlaygroundMessage>();
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const narrow = useMediaQuery('(max-width: 1100px)');
@@ -284,32 +284,30 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const clearMessages = () => {
     stop();
     setMessages([]);
-    setEditingId(null);
+    editDialog.close();
     setRequestError(null);
   };
 
   const beginEdit = (message: PlaygroundMessage) => {
     stop();
-    setEditingId(message.id);
-    setEditText(message.text);
-    setEditImage(message.imageUrl ?? '');
+    editDialog.open(message);
   };
 
-  const saveEdit = (id: string) => {
+  const saveEdit = (id: string, draft: PlaygroundMessageDraft) => {
     setMessages(current => {
       const index = current.findIndex(message => message.id === id);
       if (index < 0) return current;
       return current.slice(0, index + 1).map(message => message.id === id
-        ? { ...message, text: editText.trim(), ...(message.role === 'user' && editImage.trim() ? { imageUrl: editImage.trim() } : { imageUrl: undefined }) }
+        ? { ...message, text: draft.text.trim(), ...(message.role === 'user' && draft.imageUrl.trim() ? { imageUrl: draft.imageUrl.trim() } : { imageUrl: undefined }) }
         : message);
     });
-    setEditingId(null);
+    editDialog.close();
   };
 
   const removeMessage = (id: string) => {
     stop();
     setMessages(current => current.slice(0, current.findIndex(message => message.id === id)));
-    setEditingId(null);
+    editDialog.close();
   };
 
   const lastMessageId = messages.length === 0 ? null : messages[messages.length - 1]!.id;
@@ -345,7 +343,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
             setPublicModelId(data.optionValue!);
             setModelQuery(null);
             setMessages([]);
-            setEditingId(null);
+            editDialog.close();
           });
         }} onOpenChange={(_, data) => setModelQuery(data.open ? '' : null)}>
           {matchingModels.map(model => <Option key={model.id} value={model.id} text={model.display_name}><div className="min-w-0 grid gap-1"><div className="truncate leading-[var(--lineHeightBase300)]">{model.display_name}</div><div className="text-fui-fg2 truncate font-mono">{model.id}</div></div></Option>)}
@@ -415,23 +413,10 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
                 <div key={message.id} className={`flex min-w-0 ${message.role === 'user' ? 'justify-end' : 'justify-start'} ${s.messageRow}`}>
                   <div className="max-w-[78%] min-w-0">
                     <PlaygroundMessageCard role={message.role}>
-                      {editingId === message.id ? (
-                        <div className="grid gap-2">
-                          <Textarea aria-label={t('dashboard.playground.actions.edit')} resize="vertical" rows={3} value={editText} onChange={(_, data) => setEditText(data.value)} />
-                          {message.role === 'user' && imageEnabled && <Input aria-label={t('dashboard.playground.actions.image')} type="url" value={editImage} placeholder={t('dashboard.playground.imagePlaceholder')} onChange={(_, data) => setEditImage(data.value)} />}
-                          <div className="flex justify-end gap-2">
-                            <Button size="small" onClick={() => setEditingId(null)}>{t('common.cancel')}</Button>
-                            <Button size="small" appearance="primary" disabled={!editText.trim() && !editImage.trim()} onClick={() => saveEdit(message.id)}>{t('dashboard.playground.actions.save')}</Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          {message.imageUrl && <a className={`block text-fui-base200 break-all mb-2 ${message.role === 'user' ? 'text-inherit' : 'text-fui-fg2'}`} href={message.imageUrl} target="_blank" rel="noopener noreferrer">{message.imageUrl}</a>}
-                          {message.role === 'assistant'
-                            ? <PlaygroundMarkdown content={message.text} streaming={sending && message.id === lastMessageId} />
-                            : <span className="whitespace-pre-wrap break-words">{message.text}</span>}
-                        </>
-                      )}
+                      {message.imageUrl && <a className={`block text-fui-base200 break-all mb-2 ${message.role === 'user' ? 'text-inherit' : 'text-fui-fg2'}`} href={message.imageUrl} target="_blank" rel="noopener noreferrer">{message.imageUrl}</a>}
+                      {message.role === 'assistant'
+                        ? <PlaygroundMarkdown content={message.text} streaming={sending && message.id === lastMessageId} />
+                        : <span className="whitespace-pre-wrap break-words">{message.text}</span>}
                     </PlaygroundMessageCard>
                     <div className={`playground-message-actions flex justify-end gap-1 mt-1 ${s.messageActions}`}>
                       <TooltipIconButton className={s.brandIconAction} label={t('dashboard.playground.actions.edit')} icon={<EditRegular />} onClick={() => beginEdit(message)} />
@@ -477,6 +462,15 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
           <DrawerBody className="!p-0 min-h-0">{settingsContent}</DrawerBody>
         </OverlayDrawer> : <Panel className="min-h-0 min-w-0 overflow-hidden" padding="flush">{settingsContent}</Panel>}
       </section>
+
+      {editDialog.invocation && <PlaygroundEditDialog
+        key={editDialog.invocation.key}
+        imageEnabled={imageEnabled}
+        message={editDialog.invocation.value}
+        open={editDialog.isOpen}
+        onOpenChange={open => { if (!open) editDialog.close(); }}
+        onSave={draft => saveEdit(editDialog.invocation!.value.id, draft)}
+      />}
     </>
   );
 }
