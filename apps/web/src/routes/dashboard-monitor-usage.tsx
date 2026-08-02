@@ -85,26 +85,17 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(() => new Set(loaderData.hiddenKeys));
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(() => new Set(loaderData.hiddenModels));
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
-  // What is on screen, as the run that put it there recorded it. The effect
-  // below reacts to the view and the range, so what it has to answer is
-  // whether those still describe the data on screen -- not whether this is the
-  // first pass through it. Asked the second way, with a "have I mounted yet"
-  // flag, StrictMode's development double invocation is indistinguishable from
-  // a real change: the first pass sets the flag, the second finds it set and
-  // refetches. Every visit then paid a duplicate round of requests and
-  // overwrote the `loadedAt` the chart buckets are computed from, in the one
-  // build anybody measures in. Recording the query the fetch asked for rather
-  // than the one it brought back is the same mistake in the other direction:
-  // a run torn down before it answered would be remembered as the data on
-  // screen and never re-issued.
+  // The query the data on screen came from, recorded once it answered. A "have
+  // I mounted yet" flag instead would refetch on StrictMode's double
+  // invocation; recording the requested query instead would strand a run torn
+  // down before it answered.
   const loadedFor = useRef({ range: loaderData.range, view: loaderData.view });
 
   const canSwitchView = user.isAdmin;
   const locale = useLocale();
 
-  // A background poll must not clear a failure the operator has not read:
-  // these pages reload themselves every minute, and wiping the bar on the way
-  // in meant a server's own words could appear and vanish unseen.
+  // A background poll must not clear a failure the operator has not read: these
+  // pages reload themselves every minute.
   const reload = useCallback(async (signal: AbortSignal, { background }: { background: boolean }) => {
     const requestedAt = Date.now();
     if (!background) setError(null);
@@ -133,9 +124,6 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
 
   usePollWhileVisible(poll);
 
-  // The session is gone, not the page: the gateway said so with a status, and
-  // only the status says it -- a 401 body carrying its own words never matches
-  // a message comparison.
   useEffect(() => {
     if (error?.status === 401) clearAuth();
   }, [clearAuth, error]);
@@ -224,10 +212,9 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     [buckets, hiddenKeys, loadedRange, redactKeys, search],
   );
 
-  // The panel follows the data, not the switch: recorded search traffic stays
-  // visible after the operator turns search off or moves to another provider.
-  // An unavailable half still gets its panel, because "no search traffic" is
-  // not something a failed fetch establishes.
+  // Recorded search traffic stays visible after the operator turns search off.
+  // An unavailable half still gets its panel: "no search traffic" is not
+  // something a failed fetch establishes.
   const showSearch = searchChart === null || searchChart.entries.length > 0;
   const chartTitle =
     view === 'all-by-user'
