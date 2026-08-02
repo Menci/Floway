@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ChartBucket } from '../../../src/components/charts/dashboard-time';
-import { buildSearchChart, buildTokenChart, summarizeCounters, summarizeUsage } from '../../../src/components/usage/chart-model';
+import { buildSearchChart, buildTokenChart, summarizeCounters, summarizeUsage } from '../../../src/components/usage/plot';
 import type { ChartPlot, DisplayUsageRecord } from '../../../src/components/usage/types';
 
 // Narrow a plot to the form the assertion is about, failing loudly rather than

@@ -1,4 +1,4 @@
-import type { PlaygroundApi, PlaygroundMessage } from './playground-logic';
+import type { PlaygroundApi, PlaygroundMessage } from './request';
 import { errorMessageFromPayload } from '../../lib/error-payload';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { parseSSEStream } from '@floway-dev/protocols/common';

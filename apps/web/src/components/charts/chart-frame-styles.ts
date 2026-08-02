@@ -25,10 +25,9 @@ export const useUnclippedChartFrame = makeStyles({
     // the ticks at 10px SemiBold, which is below every step WinUI has and
     // heavier than the body text the labels sit beside.
     //
-    // The operator ruled this size to 11px. A later change moved it onto the
-    // Caption step, which currently computes to 12px, on the assertion that he
-    // had ruled again after that; no such ruling is recorded anywhere else, so
-    // the size standing here is not the one he last stated on the record.
+    // The callout's own body text is set a half step under this and says why
+    // at its rule; the two sizes are separate decisions and neither follows
+    // from the other.
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBlock_themeresources.xaml#L3
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBlock_themeresources.xaml#L19-L22
     '& .tick text': {

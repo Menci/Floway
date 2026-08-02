@@ -3,7 +3,7 @@ import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import type { PerformanceChartModel, PerformanceChartPointDetails } from './performance-chart-model';
+import type { PerformancePlot, PerformanceChartPointDetails } from './plot';
 import { fluentComponents } from '../../fluent';
 import { formatDuration } from '../../lib/format-duration';
 import { formatTokenRate } from '../../lib/format-number';
@@ -69,14 +69,14 @@ const usePerformanceChartStyles = makeStyles({
     '& circle[id*="staticHighlightCircle"]': { visibility: 'hidden' },
   },
 });
-export function PerformanceChartSection({ chart, hidden, onHiddenChange, title }: { chart: PerformanceChartModel; hidden: Set<string>; onHiddenChange: (next: Set<string>) => void; title: string }) {
+export function PerformanceChartSection({ chart, hidden, onHiddenChange, title }: { chart: PerformancePlot; hidden: Set<string>; onHiddenChange: (next: Set<string>) => void; title: string }) {
   const { t } = useTranslation();
   return <ChartSection controlsLabel={t('dashboard.performance.series.label')} emptyText={t('dashboard.performance.empty')} entries={chart.entries} hidden={hidden} onHiddenChange={onHiddenChange} title={title}>
     <PerformanceChart chart={chart} hidden={hidden} />
   </ChartSection>;
 }
 
-function PerformanceChart({ chart, hidden }: { chart: PerformanceChartModel; hidden: Set<string> }) {
+function PerformanceChart({ chart, hidden }: { chart: PerformancePlot; hidden: Set<string> }) {
   const { t } = useTranslation();
   const chartStyles = usePerformanceChartStyles();
   const chartRootStyles = useUnclippedChartFrame();

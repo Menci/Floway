@@ -17,7 +17,7 @@ import { Panel } from '../components/ui/panel';
 import { ResourceListActions } from '../components/ui/resource-list';
 import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
 import { useRefresh } from '../components/ui/use-refresh';
-import { buildSearchChart, buildTokenChart, dashboardBuckets, formatMetricValue, formatProvider, summarizeUsage } from '../components/usage/chart-model';
+import { buildSearchChart, buildTokenChart, dashboardBuckets, formatMetricValue, formatProvider, summarizeUsage } from '../components/usage/plot';
 import { SummaryMetrics } from '../components/usage/summary-metrics';
 import type { UsageMetric, UsageRange, UsageView } from '../components/usage/types';
 import { UsageChartSection } from '../components/usage/usage-chart-section';

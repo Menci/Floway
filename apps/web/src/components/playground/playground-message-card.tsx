@@ -1,7 +1,7 @@
 import type { PropsWithChildren } from 'react';
 
 import { bingAccentGradient, bingCardShadow, bingOnAccentForeground } from './bing-chat-tokens';
-import type { PlaygroundMessage } from './playground-logic';
+import type { PlaygroundMessage } from './request';
 import { fluentComponents } from '../../fluent';
 
 const { Card, makeStyles } = fluentComponents;

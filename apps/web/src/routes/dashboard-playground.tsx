@@ -19,6 +19,9 @@ import { ModelInfoBadges } from '../components/models/model-info-badges';
 import { effectiveUpstreamCap } from '../components/models/reachability';
 import { bingAccentForeground, bingAccentForegroundHover } from '../components/playground/bing-chat-tokens';
 import { PlaygroundComposer } from '../components/playground/playground-composer';
+import { PlaygroundMarkdown } from '../components/playground/playground-markdown';
+import { PlaygroundMessageCard } from '../components/playground/playground-message-card';
+import { streamPlaygroundText } from '../components/playground/playground-stream';
 import {
   availableModels,
   createWireFetch,
@@ -29,10 +32,7 @@ import {
   supportsImageInput,
   type PlaygroundApi,
   type PlaygroundMessage,
-} from '../components/playground/playground-logic';
-import { PlaygroundMarkdown } from '../components/playground/playground-markdown';
-import { PlaygroundMessageCard } from '../components/playground/playground-message-card';
-import { streamPlaygroundText } from '../components/playground/playground-stream';
+} from '../components/playground/request';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyState, EmptyStateLine } from '../components/ui/empty-state';
 import { Combobox, Dropdown, Input, Textarea } from '../components/ui/fluent-form-controls';

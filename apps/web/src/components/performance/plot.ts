@@ -9,13 +9,13 @@ import {
   type PerformanceLabels,
   type PerformancePercentile,
   type PerformanceRange,
-} from './performance-data';
+} from './overview';
 import { dashboardBucketFrames, formatAxisDate, type ChartBucket } from '../charts/dashboard-time';
 import { withUniqueSeriesLegends, type ChartSeries } from '../charts/series-legends';
 import { lineSeries } from '../charts/series-plot';
 
 export interface PerformanceChartPointDetails { outputSpeed: number | null; ttft: number | null }
-export interface PerformanceChartModel {
+export interface PerformancePlot {
   data: ChartProps;
   details: Map<number, Map<string, PerformanceChartPointDetails>>;
   entries: ChartSeries[];
@@ -32,7 +32,7 @@ export const buildPerformanceChart = (
   labels: PerformanceLabels,
   buckets: ChartBucket[],
   range: PerformanceRange,
-): PerformanceChartModel => {
+): PerformancePlot => {
   const groups = [...new Set(records.map(record => record.group))].sort();
   const entries = withUniqueSeriesLegends(groups.map((group, colorSlot) => ({
     id: group,

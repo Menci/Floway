@@ -73,7 +73,7 @@ export const chartTickValues = <T extends { date: Date }>(buckets: T[], desired 
 };
 
 // The axis and the callout name the same bucket, so they name it the same way:
-// an abbreviated month, as `chart-model`'s bucket labels already do. `07/31`
+// an abbreviated month, as `usage/plot`'s bucket labels already do. `07/31`
 // beside a callout reading `Jul 31` read as two different scales.
 //
 // One `toLocaleString` for all three ranges. `toLocaleDateString` does render

@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
-import { formatSummaryMetric, metricConfig, summaryMetrics } from './chart-model';
+import { formatSummaryMetric, metricConfig, summaryMetrics } from './plot';
 import type { TokenSummary, UsageMetric } from './types';
 import { fluentComponents } from '../../fluent';
 import { useLocale } from '../../lib/use-locale';

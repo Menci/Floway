@@ -7,8 +7,6 @@ import type { Route } from './+types/dashboard-monitor-performance';
 import { revalidateOnPathnameChange } from './revalidation';
 import { requireDashboardSession } from './route-guards';
 import { api, callApi, type GlobalError } from '../api/client';
-import { PerformanceChartSection } from '../components/performance/performance-chart';
-import { buildPerformanceChart, performanceBuckets } from '../components/performance/performance-chart-model';
 import {
   buildPerformanceQuery,
   clearGroupedFilter,
@@ -23,8 +21,10 @@ import {
   type PerformancePercentile,
   type PerformanceRange,
   type PerformanceView,
-} from '../components/performance/performance-data';
+} from '../components/performance/overview';
+import { PerformanceChartSection } from '../components/performance/performance-chart';
 import { PerformanceTable } from '../components/performance/performance-table';
+import { buildPerformanceChart, performanceBuckets } from '../components/performance/plot';
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildPerformanceChart } from '../../../src/components/performance/performance-chart-model';
-import { buildPerformanceQuery, clearGroupedFilter, parsePerformanceUrlState, performanceLabels, performanceValue, serializePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewResponse } from '../../../src/components/performance/performance-data';
+import { buildPerformanceQuery, clearGroupedFilter, parsePerformanceUrlState, performanceLabels, performanceValue, serializePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewResponse } from '../../../src/components/performance/overview';
+import { buildPerformanceChart } from '../../../src/components/performance/plot';
 
 const emptyOverview = (): PerformanceOverviewResponse => ({
   series: [],

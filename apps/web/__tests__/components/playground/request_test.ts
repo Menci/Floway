@@ -7,7 +7,7 @@ import {
   mergeWireBody,
   parseCustomJson,
   supportsImageInput,
-} from '../../../src/components/playground/playground-logic';
+} from '../../../src/components/playground/request';
 import { aliasModel, chatModel } from '../../api/model-fixture';
 
 describe('playground reachability', () => {

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { resolvePerformanceGroup, type PerformanceDisplayRecord, type PerformanceGroupBy, type PerformanceLabels } from './performance-data';
+import { resolvePerformanceGroup, type PerformanceDisplayRecord, type PerformanceGroupBy, type PerformanceLabels } from './overview';
 import { fluentComponents } from '../../fluent';
 import { formatDuration } from '../../lib/format-duration';
 import { formatCount, formatTokenRateFromTpot } from '../../lib/format-number';
