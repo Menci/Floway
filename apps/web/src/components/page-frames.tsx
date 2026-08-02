@@ -68,6 +68,15 @@ const useRouterContexts = () => ({
 // Read where the page is still current. Every render passes through here, so
 // the values a page is holding when it is replaced are the ones it was drawn
 // with.
+//
+// Every frame goes through this, the current one included, and that is what
+// makes the frame's element type the same before and after it starts leaving.
+// React reconciles by type at a position: a page rendered bare while current
+// and wrapped once it leaves is a different type under the same key, so the
+// whole page would unmount and mount again on the way out -- losing exactly
+// the state the frame is being held on screen to show. For the current page
+// the providers hand back the values that are already in scope, so it is the
+// tree it would be without them.
 function FrozenRoute({ contexts, children }: { contexts: RouterContexts; children: ReactNode }) {
   return <UNSAFE_DataRouterContext.Provider value={contexts.dataRouter}>
     <UNSAFE_DataRouterStateContext.Provider value={contexts.dataRouterState}>
@@ -135,7 +144,7 @@ export const usePageFrames = (outlet: ReactNode, leaveMs: number): PageFrame[] =
     return () => window.clearTimeout(done);
   }, [leaving, leaveMs]);
 
-  const frames: PageFrame[] = [{ id: current.id, node: outlet, leaving: false }];
+  const frames: PageFrame[] = [{ id: current.id, node: <FrozenRoute contexts={contexts}>{outlet}</FrozenRoute>, leaving: false }];
   if (leaving) frames.unshift({ id: leaving.id, node: <FrozenRoute contexts={leaving.contexts}>{leaving.node}</FrozenRoute>, leaving: true });
   return frames;
 };
