@@ -6,8 +6,8 @@ import type { CalloutPoint, UsageChartModel } from './types';
 import { UsageChartCallout } from './usage-callout';
 import { fluentComponents } from '../../fluent';
 import { useLocale } from '../../lib/use-locale';
-import { useUnclippedChartFrame } from '../charts/chart-frame-styles';
 import { chartTickValues, formatAxisDate } from '../charts/dashboard-time';
+import { useUnclippedChartFrame } from '../charts/frame-styles';
 import { useElementSize } from '../charts/use-element-size';
 import { EmptyStateLine } from '../ui/empty-state';
 

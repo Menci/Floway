@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 
 import type { UsageChartModel } from './types';
 import { UsageChart } from './usage-chart';
-import { ChartSection } from '../charts/chart-section';
+import { ChartSection } from '../charts/section';
 
 export function UsageChartSection({
   chart,

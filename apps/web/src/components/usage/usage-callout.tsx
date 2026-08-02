@@ -5,7 +5,7 @@ import type { CalloutPoint, UsageChartModel } from './types';
 import { formatUsd, sumDecimalStrings } from '../../lib/decimal-display';
 import { formatCount } from '../../lib/format-number';
 import { useLocale } from '../../lib/use-locale';
-import { ChartCalloutTable } from '../charts/chart-callout-table';
+import { ChartCalloutTable } from '../charts/callout-table';
 import { formatCalloutTitle } from '../charts/dashboard-time';
 import { ScrollArea } from '../ui/scroll-area';
 
