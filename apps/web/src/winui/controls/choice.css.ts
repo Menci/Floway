@@ -1,37 +1,26 @@
 // Checkbox and Radio, restyled from the Fluent 2 Web look to WinUI 3.
 //
-// Two shape changes drive most of what follows. WinUI's check box and radio
-// ellipse are both 20px rather than Fluent's 16px, and WinUI paints the
-// selected state as a filled accent shape carrying a light glyph, where Fluent
-// leaves the box hollow and tints the glyph itself. Border and glyph therefore
-// swap roles on selection, so the checked and indeterminate rules restate
-// background, border, and glyph colour together rather than adjusting one.
+// WinUI paints the selected state as a filled accent shape carrying a light
+// glyph, where Fluent leaves the box hollow and tints the glyph itself. Border
+// and glyph swap roles on selection, so the checked and indeterminate rules
+// restate background, border and glyph together rather than adjusting one.
+// The indicator element is painted directly rather than through Fluent's
+// `--fui-Checkbox__indicator--*` custom properties, so one rule can cover the
+// Fluent states sharing a single WinUI value.
 //
-// Fluent drives its indicator colours through `--fui-Checkbox__indicator--*`
-// custom properties declared on the root. We paint the indicator element
-// directly instead, so that one rule can cover the Fluent states sharing a
-// single WinUI value. Pointer-over and pressed are read off the root, because
-// WinUI enters them for the whole control while the input's box stops at the
-// indicator and its padding.
-//
-// Colour is confined to `@media not (forced-colors: active)`: drawing an
-// accent-filled indicator under forced colours would need
-// `forced-color-adjust: none` on the indicator, which this layer chooses not to
-// take on, so forced colours keeps Fluent's drawing. Geometry, the focus ring's
-// stand-off included, applies in both modes.
+// Colour is confined to `@media not (forced-colors: active)`: an accent-filled
+// indicator under forced colours would need `forced-color-adjust: none`, which
+// this layer chooses not to take on, so forced colours keeps Fluent's drawing.
+// Geometry applies in both modes.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L92-L179
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L62-L119
 export const choiceCss = `
-/* Check box geometry. WinUI draws one box at CheckBoxSize with a
-   CheckBoxGlyphSize glyph inside it and has no second size, so both Fluent
-   sizes are pulled onto those two numbers. Fluent's check mark is an SVG
-   carrying literal width and height attributes which no font size reaches, so
-   the glyph is sized on the element itself.
-
-   The corner radius has to be stated: Fluent's indicator reset reads
-   \`borderRadiusSmall\`, which the theme layer leaves on Fluent's own 2px
-   because no WinUI radius is that small. Stating it means naming the square
-   shape, since \`shape="circular"\` reads the same property.
+/* Check box geometry. Fluent's check mark is an SVG carrying literal width and
+   height attributes which no font size reaches, so the glyph is sized on the
+   element itself. The corner radius has to be stated: Fluent's indicator reset
+   reads \`borderRadiusSmall\`, which the theme layer leaves on Fluent's own 2px
+   because no WinUI radius is that small -- and stating it means naming the
+   square shape, since \`shape="circular"\` reads the same property.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L270-L271
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L294
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L603
@@ -39,8 +28,8 @@ export const choiceCss = `
 .fui-Checkbox__indicator.fui-Checkbox__indicator {
   width: 20px;
   height: 20px;
-  /* WinUI centres the check box's 20px grid in the control, where Fluent pins
-     it to the top so that it meets the first line of a label that wraps.
+  /* WinUI centres the box in the control, where Fluent pins it to the top so
+     it meets the first line of a wrapping label.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L602 */
   align-self: center;
   margin: 0;
@@ -51,11 +40,10 @@ export const choiceCss = `
   height: 12px;
 }
 
-/* Fluent puts twelve pixels between indicator and label, through an eight-pixel
-   margin on the indicator plus label padding. WinUI states eight, as the
-   label's own offset rather than a surround on the indicator, so the margin goes
-   and the root spaces its own children instead -- which also holds when the
-   label is placed before, after or above the indicator.
+/* WinUI states eight pixels as the label's own offset rather than a surround on
+   the indicator, so Fluent's indicator margin goes and the root spaces its own
+   children -- which also holds when the label sits before, after or above the
+   indicator.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L274
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L187 */
 .fui-Checkbox.fui-Checkbox,
@@ -64,20 +52,16 @@ export const choiceCss = `
   gap: 8px;
 }
 
-/* Fluent pads the label block-wise to the height the margins above used to
-   give the control. With those gone it is the last thing holding the root
-   taller than what it draws, so it goes too and the root centres its children
-   against the indicator instead. */
+/* With the indicator margins gone, Fluent's block padding is the last thing
+   holding the root taller than what it draws. */
 .fui-Checkbox__label.fui-Checkbox__label,
 .fui-Radio__label.fui-Radio__label {
   padding: 0;
 }
 
-/* Fluent gives the radio it puts in a table's selection cell no width of its
-   own: the radio grows to fill the cell and centres an indicator whose
-   intrinsic footprint is Fluent's 16px box plus the 8px margins this file has
-   just taken off. Ours draws 20, so the box is pinned to that; the cell centres
-   it either way, under both of the layouts it can take.
+/* Fluent gives the radio in a table's selection cell no width of its own and
+   relies on the intrinsic footprint of a 16px box plus the 8px margins removed
+   above. Ours draws 20, so the box is pinned to that.
    https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-table/library/src/components/TableSelectionCell/useTableSelectionCellStyles.styles.ts#L9
    https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-table/library/src/components/TableSelectionCell/useTableSelectionCellStyles.styles.ts#L17-L31 */
 .fui-TableSelectionCell__radioIndicator.fui-TableSelectionCell__radioIndicator {
@@ -86,10 +70,9 @@ export const choiceCss = `
 }
 
 /* 34px is this dashboard's shared control-row height, deliberately two pixels
-   over the 32 WinUI states, so that these controls stand as tall as an ordinary
-   field and align inside a form. A control that carries a label is a field and
-   takes the row height; one that does not is a mark in a cell and is only
-   itself.
+   over the 32 WinUI states, so these controls stand as tall as an ordinary field
+   and align inside a form. A control carrying a label is a field and takes the
+   row height; one without is a mark in a cell and is only itself.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L272
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L291
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L370 */
@@ -102,9 +85,7 @@ export const choiceCss = `
   border-radius: var(--winui-control-corner-radius);
 }
 
-/* The input is the hit target, and follows the box off Fluent's 16px
-   geometry. It is positioned, so it can stay larger than what is drawn without
-   the control claiming the difference. */
+/* The input is the hit target, wider than the drawn box. */
 .fui-Checkbox__input.fui-Checkbox__input {
   width: calc(20px + 2 * var(--spacingHorizontalS));
 }
@@ -334,17 +315,15 @@ export const choiceCss = `
   min-width: calc(20px + 2 * var(--spacingHorizontalS));
 }
 
-/* Fluent pulls the label 2px into the row so a 20px line box does not outgrow
-   its 16px ellipse. At a 20px ellipse the two agree, so this resolves to
-   zero. */
+/* Neutralizes Fluent's 2px pull, which assumes a 16px ellipse; at 20px it
+   resolves to zero. */
 .fui-Radio__label.fui-Radio__label {
   margin-top: calc((20px - var(--lineHeightBase300)) / 2);
   margin-bottom: calc((20px - var(--lineHeightBase300)) / 2);
 }
 
-/* Pointer-over and pressed are states of the whole control in WinUI, so they
-   are read off the root rather than off the input, whose box covers only the
-   ellipse and the padding beside it and would leave the label out of them.
+/* Read off the root: pointer-over and pressed are states of the whole control
+   in WinUI, while the input's box covers only the ellipse.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L180 */
 .fui-Radio:hover
   .fui-Radio__input:enabled:checked
@@ -360,20 +339,16 @@ export const choiceCss = `
 }
 
 @media not (forced-colors: active) {
-  /* WinUI holds the radio label at TextFillColorPrimary through every enabled
-     state, where Fluent walks a neutral ramp for the unselected control. One
-     rule covers rest, pointer-over and pressed because the three share a value;
-     the disabled label is left to Fluent, whose token for it already resolves
-     to TextFillColorDisabled.
+  /* WinUI holds the label at TextFillColorPrimary through every enabled state;
+     the disabled label is left to Fluent, whose token already resolves to
+     TextFillColorDisabled.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L122-L125 */
   .fui-Radio .fui-Radio__input:enabled ~ .fui-Radio__label.fui-Radio__label {
     color: var(--winui-text-fill-primary);
   }
 
-  /* Unselected ellipse. The outline holds ControlStrongStrokeColorDefault
-     across rest and pointer-over, then drops to the disabled strong stroke
-     while pressed, while the interior washes one step further down the
-     alt-fill ramp per state where Fluent leaves it transparent.
+  /* Unselected ellipse; WinUI washes the interior down the alt-fill ramp per
+     state where Fluent leaves it transparent.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L134-L135
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L138 */
   .fui-Radio
@@ -399,9 +374,9 @@ export const choiceCss = `
     border-color: var(--winui-control-strong-stroke-disabled);
   }
 
-  /* Selected ellipse. WinUI fills the ellipse with accent and lays the dot on
-     top in the on-accent foreground; Fluent leaves the ellipse hollow and paints
-     the dot in the accent colour, so the two swap roles.
+  /* Selected ellipse. WinUI fills it with accent and lays the dot on top in the
+     on-accent foreground, where Fluent keeps the ellipse hollow and paints the
+     dot accent.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L142
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L146 */
   .fui-Radio .fui-Radio__input:enabled:checked ~ .fui-Radio__indicator.fui-Radio__indicator {
