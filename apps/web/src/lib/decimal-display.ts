@@ -49,10 +49,8 @@ export const formatDecimalQuantity = (value: DecimalString): string => {
   return fraction === '' ? grouped : `${grouped}.${fraction}`;
 };
 
-// The summary tile compares exact decimal strings and the usage chart's axis
-// compares plotted floats, but a figure must not read `$0.12` above the chart and
-// `$0.123` on it. The ladder is stated as boundaries and the caller supplies the
-// comparison its own value type supports.
+// Callers hold different value types — the summary tile exact decimal strings, the
+// usage chart's axis plotted floats — and must still agree on the digit count.
 export const usdFractionDigits = (atLeast: (boundary: DecimalString) => boolean): 2 | 3 | 4 =>
   atLeast('1') ? 2 : atLeast('0.01') ? 3 : 4;
 
