@@ -1,7 +1,7 @@
 import { DeleteRegular, EditRegular } from '@fluentui/react-icons';
 import { useTranslation } from 'react-i18next';
 
-import { hostPortLabel, KIND_HUES } from './proxy-config';
+import { hostPortLabel, KIND_HUES } from './config';
 import type { ProxyRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { badgeHueStyle } from '../../lib/color';

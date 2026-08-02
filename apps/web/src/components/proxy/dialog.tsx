@@ -4,7 +4,7 @@ import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 
-import { ProxyBackoffPanel } from './proxy-backoff-panel';
+import { ProxyBackoffPanel } from './backoff-panel';
 import {
   defaultsFor,
   parseDialTimeoutInput,
@@ -13,8 +13,8 @@ import {
   proxyDraftUrl,
   type FormKind,
   type ProxyFormValues,
-} from './proxy-config';
-import { ProxyForm, type ProxyTestResult } from './proxy-form';
+} from './config';
+import { ProxyForm, type ProxyTestResult } from './form';
 import { api, callApi } from '../../api/client';
 import type { ProxyRecord, BackoffRow } from '../../api/types';
 import { fluentComponents } from '../../fluent';

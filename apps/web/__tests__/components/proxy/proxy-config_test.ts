@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { defaultsFor, parseDialTimeoutInput, parseProxyInput, proxyUrlPlaceholder } from '../../../src/components/proxy/proxy-config';
+import { defaultsFor, parseDialTimeoutInput, parseProxyInput, proxyUrlPlaceholder } from '../../../src/components/proxy/config';
 
 describe('proxy URL editing', () => {
   it('parses a complete URI into the structured form', () => {
