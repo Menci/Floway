@@ -611,14 +611,17 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     return Promise.resolve();
   }
 
-  saveState(id: string, newState: unknown, options: { expectedState: unknown }): Promise<{ updated: boolean }> {
+  // No retry loop: this store is single-threaded, so the mutator always sees
+  // the current state and the write always lands. Serialization still round-
+  // trips through the canonical encoder so a mutator that returns its argument
+  // unchanged is a no-op here too.
+  saveState(id: string, mutate: (current: unknown) => unknown): Promise<void> {
     const existing = this.store.get(id);
-    if (!existing) return Promise.resolve({ updated: false });
-    if (serializeStoredState(existing.state) !== serializeStoredState(options.expectedState)) {
-      return Promise.resolve({ updated: false });
-    }
-    existing.state = newState === undefined ? null : structuredClone(newState);
-    return Promise.resolve({ updated: true });
+    if (!existing) throw new Error(`Upstream ${id} disappeared before its state could be written`);
+    const next = mutate(existing.state);
+    const serialized = serializeStoredState(next);
+    existing.state = serialized === null ? null : (JSON.parse(serialized) as unknown);
+    return Promise.resolve();
   }
 }
 
