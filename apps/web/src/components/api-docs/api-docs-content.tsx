@@ -30,7 +30,9 @@ const {
 } = fluentComponents;
 
 // `SECTION_STACK_CLASS` restated so it beats `Card`'s own display and gap.
-const PANEL_STACK_CLASS = '!grid !gap-2';
+// Named apart from the exported `PANEL_STACK_CLASS`, which every other panel in
+// the tree takes and which states a wider step than these two do.
+const PANEL_SECTION_STACK_CLASS = '!grid !gap-2';
 
 // WinUI separates one settings section from the next by 30 of header margin
 // over a 4 stack spacing, and leaves only 6 + 4 under the header, so the two
@@ -45,7 +47,7 @@ export function ApiDocsContent() {
   const authExample = authCurlExample(window.location.origin);
 
   return <>
-    <Panel className={PANEL_STACK_CLASS}>
+    <Panel className={PANEL_SECTION_STACK_CLASS}>
       <SectionHeader
         description={<Trans
           components={[<RouteLink inline key="api-keys" to="/dashboard/services/api-keys" />]}
@@ -61,7 +63,7 @@ export function ApiDocsContent() {
       <CodeBlock code={authExample} copyOutcome={outcomeFor('auth')} language="bash" onCopy={() => copy(authExample, 'auth')} />
     </Panel>
 
-    <Panel className={PANEL_STACK_CLASS}>
+    <Panel className={PANEL_SECTION_STACK_CLASS}>
       <SectionHeader description={t('dashboard.apiDocs.endpointsDescription')} level={2} title={t('dashboard.apiDocs.endpointsTitle')} />
       <div className={ENDPOINT_GROUP_GAP}>{apiDocsGroups.map(group => {
         const endpoints = apiDocsEndpoints.filter(endpoint => endpoint.group === group);
