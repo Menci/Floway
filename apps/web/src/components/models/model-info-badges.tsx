@@ -68,11 +68,6 @@ const badgeContent = (
   }
 };
 
-// Tag rather than Badge: these are attributes of the selected model, and a
-// non-dismissible Tag renders as a plain span, so the row states facts without
-// offering an interaction it does not have.
-// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-tags/stories/src/Tag/TagDescription.md
-// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-badge/stories/src/Badge/BadgeDescription.md
 export function ModelInfoBadges({ cap, catalog, model }: {
   cap: readonly string[] | null;
   catalog: CatalogIndex;
