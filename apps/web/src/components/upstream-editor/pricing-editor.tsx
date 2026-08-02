@@ -23,7 +23,7 @@ import {
 import { fluentComponents } from '../../fluent';
 import { EmptyState } from '../ui/empty-state';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
-import { PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
+import { CONTROL_ROW_CLASS, PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SectionHeader } from '../ui/section-header';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
@@ -172,7 +172,7 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
 
   return <div className={`grid min-w-0 grid-cols-[240px_minmax(0,1fr)] items-stretch ${PANE_GAP_CLASS} max-[760px]:grid-cols-1`}>
     <aside className="grid h-full min-w-0 content-start gap-2 border-0 border-r border-solid border-fui-divider pr-4 max-[760px]:border-b max-[760px]:border-r-0 max-[760px]:pb-4" aria-label={t('dashboard.upstreamEditor.models.pricingRules')}>
-      {!readOnly && <Toolbar className="!justify-end !min-h-8 !p-0" size="small">
+      {!readOnly && <Toolbar className={`!justify-end !p-0 ${CONTROL_ROW_CLASS}`} size="small">
         <Tooltip content={t('dashboard.upstreamEditor.models.addPricingOverride')} relationship="label">
           <ToolbarButton aria-label={t('dashboard.upstreamEditor.models.addPricingOverride')} icon={<AddRegular />} onClick={addEntry} />
         </Tooltip>

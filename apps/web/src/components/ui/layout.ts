@@ -32,3 +32,17 @@ export const TWO_COLUMN_FORM_CLASS = 'grid grid-cols-2 max-[680px]:grid-cols-1';
 // Reads the page inset rather than stating a number, so the 680px step-down
 // comes with the token and a shell needs no breakpoint of its own.
 export const PANE_GAP_CLASS = 'gap-[var(--floway-page-inset)]';
+
+// 34px is the control-row height every field takes from
+// ../../winui/controls/text-input.css.ts, and ../../winui/controls/choice.css.ts
+// and ../../winui/controls/switch.css.ts follow it. Fluent's Button derives 33
+// from its padding and line box and its icon-only square steps 24, 32 and 40, so
+// nothing Fluent offers meets that row: a button or a toolbar standing in one
+// states the height here rather than at the call site.
+export const CONTROL_ROW_CLASS = '!min-h-[34px]';
+
+// A list of labelled checkbox rows. Each row already stands 34px tall from
+// ../../winui/controls/choice.css.ts, so the rows step at the 4px
+// TIGHT_STACK_CLASS states rather than at a field-to-field distance, and a
+// second column keeps the 8px of the form grid the list sits in.
+export const CHECKBOX_LIST_CLASS = 'gap-x-2 gap-y-1';

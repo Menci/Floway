@@ -30,7 +30,7 @@ import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
 import { Dropdown } from '../components/ui/fluent-form-controls';
-import { PANEL_STACK_CLASS } from '../components/ui/layout';
+import { CONTROL_ROW_CLASS, PANEL_STACK_CLASS } from '../components/ui/layout';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { ResourceListActions } from '../components/ui/resource-list';
@@ -197,14 +197,11 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
                 {groupByValues.filter(value => value !== 'userId' || view === 'all-by-user').map(value => <Option key={value} value={value}>{t(`dashboard.performance.groupBy.${value}`)}</Option>)}
               </Dropdown>
               {groupBy === 'keyId' && (
-                // The 34px form-row height this Dropdown carries has no Button
-                // size to meet it -- Fluent's icon-only squares are 24, 32 and
-                // 40 -- so the row keeps the default 32 and stays 2px short
-                // rather than reaching past the field it annotates.
                 <Tooltip content={t('dashboard.performance.apiKeyScopeInfo')} relationship="description">
                   <Button
                     appearance="subtle"
                     aria-label={t('dashboard.performance.apiKeyScopeLabel')}
+                    className={CONTROL_ROW_CLASS}
                     icon={<InfoRegular />}
                   />
                 </Tooltip>

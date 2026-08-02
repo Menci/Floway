@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { fluentComponents } from '../fluent';
 import { FlowayLogo } from './logo';
 import { Input } from './ui/fluent-form-controls';
+import { CONTROL_ROW_CLASS } from './ui/layout';
 import { OutcomeMessageBar } from './ui/outcome-message-bar';
 import { Panel } from './ui/panel';
 
@@ -139,12 +140,10 @@ export function LoginForm() {
           )}
         />
 
-        {/* Button derives 33px from its padding and line box, one short of the
-            34px row the fields above take from winui/controls/text-input.css.ts,
-            so this full-width submit states the row to sit flush under them. */}
+        {/* Full width so the submit sits flush under the fields above it. */}
         <Button
           appearance="primary"
-          className="mt-3.5 !min-h-[34px] w-full"
+          className={`mt-3.5 w-full ${CONTROL_ROW_CLASS}`}
           disabledFocusable={isSubmitting}
           type="submit"
         >

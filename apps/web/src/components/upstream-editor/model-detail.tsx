@@ -16,7 +16,7 @@ import type {
 import { fluentComponents } from '../../fluent';
 import { ChoiceGroup } from '../ui/choice-group';
 import { Checkbox, Combobox, Dropdown, Input, Switch } from '../ui/fluent-form-controls';
-import { PANE_GAP_CLASS, SECTION_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
+import { CHECKBOX_LIST_CLASS, PANE_GAP_CLASS, SECTION_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { SectionHeader } from '../ui/section-header';
 import { modelsField, type UpstreamChatModelConfig } from '@floway-dev/provider';
 
@@ -137,7 +137,7 @@ export function ModelDetail({
         </ModelEditorSection>
 
         {ENDPOINT_CHOICE_KINDS.has(row.config.kind) && <ModelEditorSection title={t('dashboard.upstreamEditor.models.endpoints')}>
-          <div className={`${TWO_COLUMN_FORM_CLASS} gap-2`}>
+          <div className={`${TWO_COLUMN_FORM_CLASS} ${CHECKBOX_LIST_CLASS}`}>
             {modelEndpointOptions(row.config.kind).map(([key, label]) => <Checkbox
               checked={key in row.config.endpoints}
               readOnly={fieldsReadOnly}

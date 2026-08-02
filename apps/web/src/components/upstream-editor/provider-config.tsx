@@ -25,7 +25,7 @@ import type {
 import { fluentComponents } from '../../fluent';
 import { errorMessage } from '../../lib/error-message';
 import { Dropdown, Input, Textarea } from '../ui/fluent-form-controls';
-import { SECTION_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
+import { CHECKBOX_LIST_CLASS, SECTION_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OpenLinkLabel } from '../ui/open-link-label';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SecretInput } from '../ui/secret-input';
@@ -164,7 +164,6 @@ function CustomApiPaths() {
                     onChange={(_, data) => field.onChange(data.value)}
                     placeholder={`/v1${path}`}
                     ref={field.ref}
-                    size="small"
                     value={typeof field.value === 'string' ? field.value : ''}
                   />
                 </Field>
@@ -261,7 +260,7 @@ function EndpointPicker() {
   const value = customConfig.endpoints;
   return <div className={SECTION_STACK_CLASS} role="group" aria-labelledby={`${idPrefix}-label`}>
     <SectionHeader level={3} title={t('dashboard.upstreamEditor.fields.defaultEndpoints')} titleId={`${idPrefix}-label`} />
-    <div className="grid gap-1">
+    <div className={`grid ${CHECKBOX_LIST_CLASS}`}>
       {endpointOptions.map(([key, label]) => {
         const selected = value[key] !== undefined;
         return <Checkbox
