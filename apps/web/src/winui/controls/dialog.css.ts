@@ -37,9 +37,10 @@ export const dialogCss = `
 
    ContentDialogMaxWidth is a keyed ThemeResource that an app overrides in its
    own dictionary, so a custom property with a 548px fallback is the faithful
-   shape rather than a loosening of it. The alias editor and the API key editor
-   set it to 720px, because both carry settings rows laid out for a full-width
-   settings page.
+   shape rather than a loosening of it -- and it is also the shape the operator
+   asked for, having ruled that each dialog may state its own size and that the
+   ones carrying accordions ought to be wider. The alias editor and the API key
+   editor set it to 720px; that number is ours and unsourced.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L6-L15
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L223 */
 .fui-DialogSurface.fui-DialogSurface {

@@ -35,13 +35,14 @@
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/AppBarToggleButton_themeresources.xaml#L9-L12
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/AppBarToggleButton_themeresources.xaml#L22-L25
 //
-// The container keeps Fluent's layout, which is a departure. WinUI's CommandBar
-// is a full-width bar of 68-wide items stacking a glyph over a label at a 40px
-// AppBarThemeCompactHeight row, with everything past the fold moving into an
-// overflow flyout; the dashboard's toolbars are short inline groups beside a
-// heading, and Fluent's Toolbar is a flex row of ordinary buttons. Taking the
-// bar's geometry would mean adopting the control, not restyling this one, so
-// only the typography it shares with its items is transcribed below.
+// The container keeps Fluent's layout, which is a departure nothing sources.
+// WinUI's CommandBar is a full-width bar of 68-wide items stacking a glyph
+// over a label at a 40px AppBarThemeCompactHeight row, with everything past
+// the fold moving into an overflow flyout; the dashboard's toolbars are short
+// inline groups beside a heading, and Fluent's Toolbar is a flex row of
+// ordinary buttons. Where the restyle stops -- at the typography the bar
+// shares with its items, short of the bar's own geometry -- is our line, not
+// one WinUI draws.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L19126-L19134
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L26
 import { notOptedOut } from '../tokens';

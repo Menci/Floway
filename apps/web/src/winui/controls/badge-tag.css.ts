@@ -59,13 +59,16 @@ export const badgeTagCss = `
    needs: Fluent's reset already runs the label at 12px on a 16px line box,
    which is what WinUI's Caption ramp states, and no Badge size step moves it.
 
-   InfoBadge's geometry stays Fluent's, by our choice. MinWidth 4 and
-   MaxHeight 16 are one package with ValueInfoBadgeTextMargin 4,0,4,2 and
-   InfoBadgeValueFontSize 11, so transcribing it means a size-scoped
-   font-size: 11px with padding: 0 4px 2px alongside those bounds -- which
-   sinks the floor under every Fluent size step (20px base, 16/24/32px per
-   size) and caps the box at 16px against the reset's 20px box height. That
-   replaces Fluent's size ramp rather than restyling it, and we keep the ramp.
+   InfoBadge's geometry stays Fluent's. The operator rejected InfoBadge as the
+   model for this control outright -- his badges are never the circle
+   InfoBadge draws -- and pinned their height on Fluent's own size ramp, so
+   the ramp is what stands. Transcribing InfoBadge instead would mean a
+   package: MinWidth 4 and MaxHeight 16 go together with
+   ValueInfoBadgeTextMargin 4,0,4,2 and InfoBadgeValueFontSize 11, giving a
+   size-scoped font-size: 11px with padding: 0 4px 2px alongside those bounds
+   -- which sinks the floor under every Fluent size step (20px base, 16/24/32px
+   per size) and caps the box at 16px against the reset's 20px box height. That
+   replaces Fluent's size ramp rather than restyling it.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBadge/InfoBadge_themeresources.xaml#L82
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBadge/InfoBadge_themeresources.xaml#L8-L15 */
 .fui-Badge.fui-Badge {
