@@ -10,11 +10,11 @@ import {
 } from 'react-router';
 
 import type { Route } from './+types/dashboard';
-import { requireDashboardSession } from './route-guards';
+import { requireDashboardSession } from './guards';
 import type { AuthUser } from '../api/auth';
 import { FlowayLogo } from '../components/logo';
 import { usePageFrames } from '../components/page-frames';
-import { Sidebar } from '../components/sidebar/sidebar';
+import { Sidebar } from '../components/sidebar/nav';
 import { OutcomeToastProvider } from '../components/ui/outcome-toast';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { fluentComponents } from '../fluent';

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { keyWriteBody } from '../../../src/components/api-keys/key-source';
+import { keyWriteBody } from '../../../src/components/api-keys/source';
 
 describe('API key write body', () => {
   it('requests a generated key without a custom_key field', () => {

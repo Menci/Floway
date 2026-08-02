@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { Route } from './+types/dashboard-providers-proxy';
-import { requireDashboardAdmin } from './route-guards';
+import { requireDashboardAdmin } from './guards';
 import { api, callApi, callApiNoContent } from '../api/client';
 import type { ProxyRecord, BackoffRow } from '../api/types';
 import { ProxyDialog } from '../components/proxy/dialog';

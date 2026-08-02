@@ -5,8 +5,8 @@ import { redirect, useSearchParams } from 'react-router';
 
 import type { Route } from './+types/dashboard-monitor-usage';
 import { useDashboardOutletContext } from './dashboard';
+import { requireDashboardSession } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
-import { requireDashboardSession } from './route-guards';
 import type { GlobalError } from '../api/client';
 import type { ControlPlaneModel } from '../api/types';
 import { ChoiceGroup } from '../components/ui/choice-group';

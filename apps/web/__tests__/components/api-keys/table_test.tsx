@@ -2,7 +2,7 @@ import { act } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ApiKey } from '../../../src/api/types';
-import { KeysTable } from '../../../src/components/api-keys/keys-table';
+import { KeysTable } from '../../../src/components/api-keys/table';
 import { i18n } from '../../../src/i18n';
 import { renderInApp } from '../../render';
 

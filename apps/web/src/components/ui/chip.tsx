@@ -1,4 +1,3 @@
-import type { TagProps } from '@fluentui/react-components';
 import type { ComponentProps, CSSProperties, ReactElement, ReactNode } from 'react';
 
 import { fluentComponents } from '../../fluent';
@@ -32,11 +31,12 @@ type ChipTriggerProps = Omit<
   | 'media' | 'primaryText' | 'secondaryText' | 'selected' | 'shape' | 'size' | 'style' | 'value'
 >;
 
-export function Chip({ children, className, icon, size = 'small', style, ...trigger }: {
+// Fluent's `small` is the 24px step, which every badge in the dashboard stands
+// on -- `StatusBadge` reaches the same height through Badge's `large`.
+export function Chip({ children, className, icon, style, ...trigger }: {
   children: ReactNode;
   className?: string;
   icon?: ReactElement;
-  size?: TagProps['size'];
   style?: CSSProperties;
 } & ChipTriggerProps) {
   const styles = useStyles();
@@ -45,7 +45,7 @@ export function Chip({ children, className, icon, size = 'small', style, ...trig
     <Tag
       appearance="outline"
       shape="circular"
-      size={size}
+      size="small"
       className={mergeClasses(styles.root, className)}
       icon={icon}
       primaryText={{ className: styles.text }}

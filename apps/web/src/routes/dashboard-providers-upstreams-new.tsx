@@ -1,8 +1,8 @@
 import { redirect } from 'react-router';
 
 import type { Route } from './+types/dashboard-providers-upstreams-new';
+import { requireDashboardAdmin } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
-import { requireDashboardAdmin } from './route-guards';
 import { api, callApi } from '../api/client';
 import {
   loadEditorAux,

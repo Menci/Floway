@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { keyWriteBody, type KeySource } from './key-source';
-import { KeySourceControl } from './key-source-control';
+import { keyWriteBody, type KeySource } from './source';
+import { KeySourceControl } from './source-field';
 import { api, callApi } from '../../api/client';
 import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';

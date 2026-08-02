@@ -222,7 +222,6 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
           color={record.upstream.color}
           kind={record.upstream.kind}
           label={record.upstream.name}
-          size="extra-small"
           title={`${record.upstream.kind}, ${record.upstream.id}`}
         />}
       </div>

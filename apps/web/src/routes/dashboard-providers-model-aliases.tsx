@@ -3,7 +3,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { Route } from './+types/dashboard-providers-model-aliases';
-import { requireDashboardAdmin } from './route-guards';
+import { requireDashboardAdmin } from './guards';
 import { api, callApi, callApiNoContent } from '../api/client';
 import type { ControlPlaneModel, ModelAlias } from '../api/types';
 import { AliasDialog } from '../components/model-alias/dialog';

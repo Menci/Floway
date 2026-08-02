@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router';
 
 import type { Route } from './+types/dashboard-monitor-requests';
-import { requireDashboardSession } from './route-guards';
+import { requireDashboardSession } from './guards';
 import { api, callApi } from '../api/client';
 import type { ApiKey } from '../api/types';
 import { RequestDetailPanel } from '../components/requests/detail';

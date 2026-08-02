@@ -5,9 +5,9 @@ import { Controller, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 
-import { keyWriteBody, type KeySource } from './key-source';
-import { KeySourceControl } from './key-source-control';
 import { RetentionField, parsedRetention, type RetentionValue } from './retention-field';
+import { keyWriteBody, type KeySource } from './source';
+import { KeySourceControl } from './source-field';
 import { api, callApi } from '../../api/client';
 import type { ApiKey, ControlPlaneModel, UpstreamOption } from '../../api/types';
 import { fluentComponents } from '../../fluent';

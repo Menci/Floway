@@ -4,8 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { redirect, useSearchParams } from 'react-router';
 
 import type { Route } from './+types/dashboard-monitor-performance';
+import { requireDashboardSession } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
-import { requireDashboardSession } from './route-guards';
 import { api, callApi, type GlobalError } from '../api/client';
 import { PerformanceChartSection } from '../components/performance/chart';
 import {

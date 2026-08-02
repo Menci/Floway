@@ -11,8 +11,8 @@ import { useTranslation } from 'react-i18next';
 import { Link, useLocation, useNavigate } from 'react-router';
 
 import type { Route } from './+types/dashboard-providers-upstreams';
+import { requireDashboardAdmin } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
-import { requireDashboardAdmin } from './route-guards';
 import { api, callApi } from '../api/client';
 import type {
   ControlPlaneModel,

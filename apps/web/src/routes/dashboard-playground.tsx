@@ -11,7 +11,7 @@ import { useTranslation } from 'react-i18next';
 
 import type { Route } from './+types/dashboard-playground';
 import { useDashboardOutletContext } from './dashboard';
-import { requireDashboardSession } from './route-guards';
+import { requireDashboardSession } from './guards';
 import { api, callApi } from '../api/client';
 import type { ApiKey, ControlPlaneModel } from '../api/types';
 import { indexCatalog } from '../components/models/catalog-index';

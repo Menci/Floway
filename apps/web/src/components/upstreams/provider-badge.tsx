@@ -1,4 +1,3 @@
-import type { TagProps } from '@fluentui/react-components';
 import { ServerRegular } from '@fluentui/react-icons';
 import { useTranslation } from 'react-i18next';
 
@@ -111,11 +110,10 @@ export const providerLabel = (kind: ProviderBadgeKind) =>
 
 // An operator-typed colour is one literal for both schemes, so lib/color.ts
 // composites it instead of taking a preset's per-scheme values.
-export function ProviderBadge({ color, kind, label, size = 'small', title }: {
+export function ProviderBadge({ color, kind, label, title }: {
   color: UpstreamColor | null;
   kind: ProviderBadgeKind;
   label?: string;
-  size?: TagProps['size'];
   title?: string;
 }) {
   const { t } = useTranslation();
@@ -133,8 +131,7 @@ export function ProviderBadge({ color, kind, label, size = 'small', title }: {
       <Chip
         className={styles[tone]}
         style={isHexColor(color) ? badgeHueStyle(color) : undefined}
-        icon={<ProviderIcon kind={kind} className={size === 'extra-small' ? 'h-3 w-3' : 'h-4 w-4'} />}
-        size={size}
+        icon={<ProviderIcon kind={kind} className="h-4 w-4" />}
       >
         {visibleLabel}
       </Chip>

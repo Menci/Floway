@@ -17,6 +17,7 @@ import { PANEL_STACK_CLASS } from '../components/ui/layout';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { SectionHeader } from '../components/ui/section-header';
+import { StatusBadge } from '../components/ui/status-badge';
 import { fluentComponents } from '../fluent';
 
 const {
@@ -942,21 +943,21 @@ function ListSection() {
           <div className="flex w-full items-center gap-3">
             <ServerRegular />
             <Text>Copilot (work)</Text>
-            <Badge appearance="tint" color="success" className="!ml-auto">Online</Badge>
+            <StatusBadge color="success" className="!ml-auto">Online</StatusBadge>
           </div>
         </ListItem>
         <ListItem value="azure" aria-label="Azure AI Foundry">
           <div className="flex w-full items-center gap-3">
             <ServerRegular />
             <Text>Azure AI Foundry</Text>
-            <Badge appearance="tint" color="warning" className="!ml-auto">Degraded</Badge>
+            <StatusBadge color="warning" className="!ml-auto">Degraded</StatusBadge>
           </div>
         </ListItem>
         <ListItem value="ollama" aria-label="Ollama (local)">
           <div className="flex w-full items-center gap-3">
             <ServerRegular />
             <Text>Ollama (local)</Text>
-            <Badge appearance="tint" color="danger" className="!ml-auto">Offline</Badge>
+            <StatusBadge color="danger" className="!ml-auto">Offline</StatusBadge>
           </div>
         </ListItem>
       </List>

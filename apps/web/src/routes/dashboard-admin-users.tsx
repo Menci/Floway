@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import type { Route } from './+types/dashboard-admin-users';
 import { useDashboardOutletContext } from './dashboard';
-import { requireDashboardAdmin } from './route-guards';
+import { requireDashboardAdmin } from './guards';
 import { api, callApi } from '../api/client';
 import type { ControlPlaneModel, ControlPlaneUser, UpstreamOption } from '../api/types';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';

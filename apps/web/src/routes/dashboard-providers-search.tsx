@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { Route } from './+types/dashboard-providers-search';
-import { requireDashboardAdmin } from './route-guards';
+import { requireDashboardAdmin } from './guards';
 import { api, callApi } from '../api/client';
 import type { ControlPlaneModel, SearchConfig, UpstreamRecord } from '../api/types';
 import jinaIconUrl from '../assets/jina-color.svg';
