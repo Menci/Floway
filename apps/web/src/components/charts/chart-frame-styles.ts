@@ -46,7 +46,23 @@ export const useUnclippedChartFrame = makeStyles({
     // flyout content padding Fluent spends on it.
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToolTip_themeresources.xaml#L50
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToolTip_themeresources.xaml#L76
+    // The surface is translucent over a blur, and that is the operator's
+    // decision rather than a reading of WinUI. WinUI fills a ToolTip with
+    // AcrylicInAppFillColorDefaultBrush, and ../../winui/tokens.ts takes that
+    // brush's flat FallbackColor because the acrylic recipe -- a luminosity
+    // blend into the blurred backdrop, a tint over it, noise composited through
+    // the result -- has no CSS counterpart. That reasoning holds for a flyout
+    // standing over a page. It does not hold here: this callout covers the
+    // plot it describes, and an opaque panel hides the very lines the reader
+    // is pointing at. So this one surface keeps a backdrop blur and a fill a
+    // step off opaque -- nearer to what acrylic looks like than the fallback
+    // is, over the one background where that matters.
+    //
+    // An audit read the pair as unsourced and removed it, leaving the callout
+    // on the flat fallback. Do not do that again.
     '& .fui-PopoverSurface': {
+      backdropFilter: 'blur(8px)',
+      backgroundColor: 'color-mix(in srgb, var(--winui-acrylic-in-app-fill-default) 86%, transparent)',
       padding: '6px 9px 8px 9px',
       pointerEvents: 'none',
     },
