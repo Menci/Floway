@@ -121,20 +121,29 @@ const HARDEST_BADGE_SURFACE = { light: '#EBF3FC', dark: '#434343' } as const;
 const BADGE_FILL_ALPHA = 0.1;
 const BADGE_STROKE_ALPHA = 0.35;
 
+/** A hue that reads the same in both schemes, or one stated per scheme. */
+export type BadgeHue = string | { light: string; dark: string };
+
 /**
  * A badge painted in an arbitrary hue. The label is resolved against the fill
  * rather than the surface under it, because the wash moves the reading by enough
- * to change the answer. Fill and stroke need no light-dark pair: as fractions of
- * the hue they composite over whatever is beneath, following that surface's
- * pointer and selection states on their own.
+ * to change the answer. Fill and stroke need no light-dark pair of their own: as
+ * fractions of the hue they composite over whatever is beneath, following that
+ * surface's pointer and selection states on their own.
+ *
+ * A hue may still differ by scheme -- WinUI states its own success, caution and
+ * critical colours twice, because a colour that carries a meaning against white
+ * is not the one that carries it against black. The pair enters through the hue
+ * itself, so everything downstream is unchanged.
  */
-export const badgeHueStyle = (hue: string): Record<string, string> => {
-  const label = (surface: string) => readableTone(hue, blendHex(hue, BADGE_FILL_ALPHA, surface));
+export const badgeHueStyle = (hue: BadgeHue): Record<string, string> => {
+  const pair = typeof hue === 'string' ? { light: hue, dark: hue } : hue;
+  const label = (own: string, surface: string) => readableTone(own, blendHex(own, BADGE_FILL_ALPHA, surface));
   return {
-    '--floway-badge-hue': hue,
+    '--floway-badge-hue': typeof hue === 'string' ? hue : `light-dark(${pair.light}, ${pair.dark})`,
     '--floway-chip-stroke': `color-mix(in srgb, var(--floway-badge-hue) ${BADGE_STROKE_ALPHA * 100}%, transparent)`,
     backgroundColor: `color-mix(in srgb, var(--floway-badge-hue) ${BADGE_FILL_ALPHA * 100}%, transparent)`,
     borderColor: 'var(--floway-chip-stroke)',
-    color: `light-dark(${label(HARDEST_BADGE_SURFACE.light)}, ${label(HARDEST_BADGE_SURFACE.dark)})`,
+    color: `light-dark(${label(pair.light, HARDEST_BADGE_SURFACE.light)}, ${label(pair.dark, HARDEST_BADGE_SURFACE.dark)})`,
   };
 };

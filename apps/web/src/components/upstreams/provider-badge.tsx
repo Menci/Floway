@@ -8,7 +8,7 @@ import githubCopilotIconUrl from '../../assets/githubcopilot.svg?no-inline';
 import ollamaIconUrl from '../../assets/ollama.svg?no-inline';
 import openaiIconUrl from '../../assets/openai.svg?no-inline';
 import { fluentComponents } from '../../fluent';
-import { badgeHueStyle, isHexColor } from '../../lib/color';
+import { badgeHueStyle, isHexColor, type BadgeHue } from '../../lib/color';
 import { Chip } from '../ui/chip';
 import { MaskedIcon } from '../ui/masked-icon';
 
@@ -35,82 +35,22 @@ export const KIND_DEFAULT_TONES: Record<UpstreamProviderKind, UpstreamColorPrese
   ollama: 'rose',
 };
 
-// WinUI states no per-upstream identity colour, so this palette is ours. Every
-// label clears 4.5:1 against its own fill — the floor lib/color.ts holds an
-// operator-typed hue to.
-//
-// The stroke is published under a name the WinUI layer reads, because the layer
-// flattens a chip's stroke under a press the way Button does and an identity
-// colour has to outlive that.
-//
-// It is then spelled one edge at a time, because Fluent states the chip's own
-// stroke that way and a shorthand against a longhand at equal specificity is
-// decided by which sheet was written last -- which neither side can see, and
-// which differs between the rest state and the pressed one.
+// WinUI states no per-upstream identity colour, so these hues are ours. Only the
+// hue is: the wash, the outline and the label all come out of the one badge
+// algorithm in lib/color.ts, which solves the label against the wash for 4.5:1
+// instead of it being picked and checked. An operator-typed colour enters the
+// same way, so a preset and a hand-typed hue cannot paint by different rules.
+const PROVIDER_HUES: Record<ProviderTone, BadgeHue> = {
+  amber: { light: '#8a4b00', dark: '#f5c778' },
+  emerald: { light: '#0f6c4f', dark: '#7cd9b2' },
+  cyan: { light: '#006b75', dark: '#79d7df' },
+  violet: { light: '#5b2e91', dark: '#cbb6f4' },
+  rose: { light: '#9f1d35', dark: '#f2a1b4' },
+  orange: { light: '#b14f2f', dark: '#f3ad8f' },
+  zinc: { light: '#616161', dark: '#d6d6d6' },
+};
+
 const useStyles = makeStyles({
-  amber: {
-    backgroundColor: 'light-dark(#fff8f0, #4d2d0a)',
-    '--floway-chip-stroke': 'light-dark(#d69b52, #8f642d)',
-    borderTopColor: 'var(--floway-chip-stroke)',
-    borderRightColor: 'var(--floway-chip-stroke)',
-    borderBottomColor: 'var(--floway-chip-stroke)',
-    borderLeftColor: 'var(--floway-chip-stroke)',
-    color: 'light-dark(#8a4b00, #f5c778)',
-  } as any,
-  emerald: {
-    backgroundColor: 'light-dark(#f0faf5, #103d30)',
-    '--floway-chip-stroke': 'light-dark(#5da98b, #397c65)',
-    borderTopColor: 'var(--floway-chip-stroke)',
-    borderRightColor: 'var(--floway-chip-stroke)',
-    borderBottomColor: 'var(--floway-chip-stroke)',
-    borderLeftColor: 'var(--floway-chip-stroke)',
-    color: 'light-dark(#0f6c4f, #7cd9b2)',
-  } as any,
-  cyan: {
-    backgroundColor: 'light-dark(#eff9fb, #103b42)',
-    '--floway-chip-stroke': 'light-dark(#58aeb8, #347b84)',
-    borderTopColor: 'var(--floway-chip-stroke)',
-    borderRightColor: 'var(--floway-chip-stroke)',
-    borderBottomColor: 'var(--floway-chip-stroke)',
-    borderLeftColor: 'var(--floway-chip-stroke)',
-    color: 'light-dark(#006b75, #79d7df)',
-  } as any,
-  violet: {
-    backgroundColor: 'light-dark(#f7f3ff, #342453)',
-    '--floway-chip-stroke': 'light-dark(#9a7bc2, #705b94)',
-    borderTopColor: 'var(--floway-chip-stroke)',
-    borderRightColor: 'var(--floway-chip-stroke)',
-    borderBottomColor: 'var(--floway-chip-stroke)',
-    borderLeftColor: 'var(--floway-chip-stroke)',
-    color: 'light-dark(#5b2e91, #cbb6f4)',
-  } as any,
-  rose: {
-    backgroundColor: 'light-dark(#fff3f5, #4b202b)',
-    '--floway-chip-stroke': 'light-dark(#cf7187, #8a4b5a)',
-    borderTopColor: 'var(--floway-chip-stroke)',
-    borderRightColor: 'var(--floway-chip-stroke)',
-    borderBottomColor: 'var(--floway-chip-stroke)',
-    borderLeftColor: 'var(--floway-chip-stroke)',
-    color: 'light-dark(#9f1d35, #f2a1b4)',
-  } as any,
-  orange: {
-    backgroundColor: 'light-dark(#fff4ef, #4b291d)',
-    '--floway-chip-stroke': 'light-dark(#d17e60, #8d5944)',
-    borderTopColor: 'var(--floway-chip-stroke)',
-    borderRightColor: 'var(--floway-chip-stroke)',
-    borderBottomColor: 'var(--floway-chip-stroke)',
-    borderLeftColor: 'var(--floway-chip-stroke)',
-    color: 'light-dark(#b14f2f, #f3ad8f)',
-  } as any,
-  zinc: {
-    backgroundColor: 'light-dark(#f5f5f5, #303030)',
-    '--floway-chip-stroke': 'light-dark(#a8a8a8, #666666)',
-    borderTopColor: 'var(--floway-chip-stroke)',
-    borderRightColor: 'var(--floway-chip-stroke)',
-    borderBottomColor: 'var(--floway-chip-stroke)',
-    borderLeftColor: 'var(--floway-chip-stroke)',
-    color: 'light-dark(#616161, #d6d6d6)',
-  } as any,
   // A mask over a background-color disappears under forced colours; opting the
   // mask box out keeps the `currentColor` the chip already resolved.
   // https://drafts.csswg.org/css-color-adjust-1/#forced-colors-properties
@@ -133,7 +73,6 @@ export function ProviderBadge({ color, kind, label, title }: {
   title?: string;
 }) {
   const { t } = useTranslation();
-  const styles = useStyles();
   const tone: ProviderTone = color && !isHexColor(color)
     ? color
     : kind === null ? 'zinc' : KIND_DEFAULT_TONES[kind];
@@ -145,8 +84,7 @@ export function ProviderBadge({ color, kind, label, title }: {
   return (
     <Tooltip content={title ?? visibleLabel} relationship={title === undefined ? 'label' : 'description'}>
       <Chip
-        className={styles[tone]}
-        style={isHexColor(color) ? badgeHueStyle(color) : undefined}
+        style={badgeHueStyle(isHexColor(color) ? color : PROVIDER_HUES[tone])}
         icon={<ProviderIcon kind={kind} className="h-4 w-4" />}
       >
         {visibleLabel}

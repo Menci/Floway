@@ -938,21 +938,21 @@ function ListSection() {
           <div className="flex w-full items-center gap-3">
             <ServerRegular />
             <Text>Copilot (work)</Text>
-            <StatusBadge color="success" className="!ml-auto">Online</StatusBadge>
+            <StatusBadge tone="success" className="!ml-auto">Online</StatusBadge>
           </div>
         </ListItem>
         <ListItem value="azure" aria-label="Azure AI Foundry">
           <div className="flex w-full items-center gap-3">
             <ServerRegular />
             <Text>Azure AI Foundry</Text>
-            <StatusBadge color="warning" className="!ml-auto">Degraded</StatusBadge>
+            <StatusBadge tone="warning" className="!ml-auto">Degraded</StatusBadge>
           </div>
         </ListItem>
         <ListItem value="ollama" aria-label="Ollama (local)">
           <div className="flex w-full items-center gap-3">
             <ServerRegular />
             <Text>Ollama (local)</Text>
-            <StatusBadge color="danger" className="!ml-auto">Offline</StatusBadge>
+            <StatusBadge tone="danger" className="!ml-auto">Offline</StatusBadge>
           </div>
         </ListItem>
       </List>

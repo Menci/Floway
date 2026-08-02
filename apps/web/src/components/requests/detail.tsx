@@ -235,7 +235,7 @@ export function RequestDetailPanel({ collected: loadedCollected, error: loadedEr
         </SectionBody>
       </section>
       <section className={s.section}>
-        <DetailSectionHeader title={t('dashboard.requests.response')} detail={<><HttpStatusBadge color={severity === 'success' ? 'success' : severity === 'warning' ? 'warning' : 'danger'}>{record.response.status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>{responseError && <Text size={200} className={dangerText}>{responseError}</Text>}</>} copyText={record.response.headers.length ? responseHeadersCopy : undefined} />
+        <DetailSectionHeader title={t('dashboard.requests.response')} detail={<><HttpStatusBadge tone={severity === 'success' ? 'success' : severity === 'warning' ? 'warning' : 'danger'}>{record.response.status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>{responseError && <Text size={200} className={dangerText}>{responseError}</Text>}</>} copyText={record.response.headers.length ? responseHeadersCopy : undefined} />
         <HeaderSectionBody>
           {record.response.headers.length ? <HeaderTable key={`response-${record.meta.id}`} headers={record.response.headers} /> : <EmptyStateLine className="p-4">{t('dashboard.requests.noResponseHeaders')}</EmptyStateLine>}
         </HeaderSectionBody>

@@ -36,9 +36,9 @@ export function CodexAccountCard({ record }: { record: CodexRecord }) {
       <div className="grid gap-1 min-w-0 flex-1">
         <Text block weight="semibold" truncate wrap={false}>{account.email}</Text>
         <div className="flex flex-wrap items-center gap-2">
-          <StatusBadge color="brand">{account.planType}</StatusBadge>
+          <StatusBadge tone="accent">{account.planType}</StatusBadge>
           {credits?.credits_has_credits === false
-            ? <StatusBadge color="danger">{t('dashboard.upstreamEditor.codex.noCredits')}</StatusBadge>
+            ? <StatusBadge tone="danger">{t('dashboard.upstreamEditor.codex.noCredits')}</StatusBadge>
             : credits?.credits_balance !== undefined && <Badge appearance="outline" size="large">
               {t('dashboard.upstreamEditor.codex.credits', { balance: credits.credits_balance })}
             </Badge>}
@@ -47,7 +47,7 @@ export function CodexAccountCard({ record }: { record: CodexRecord }) {
           </Tooltip>
         </div>
       </div>
-      <StatusBadge color={status.tone}>{statusLabel}</StatusBadge>
+      <StatusBadge tone={status.tone}>{statusLabel}</StatusBadge>
     </div>
 
     {status.tone === 'danger' && status.detail && <Text size={200} className="text-fui-fg2">{status.detail}</Text>}

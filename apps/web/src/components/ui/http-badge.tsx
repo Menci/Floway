@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-import { StatusBadge } from './status-badge';
+import { StatusBadge, type BadgeTone } from './status-badge';
 import { fluentComponents } from '../../fluent';
 
 const { makeStyles } = fluentComponents;
@@ -23,19 +23,17 @@ const useStyles = makeStyles({
   },
 });
 
-type HttpBadgeColor = 'brand' | 'danger' | 'informative' | 'success' | 'warning';
-
-function HttpBadge({ children, color }: { children: ReactNode; color: HttpBadgeColor }) {
+function HttpBadge({ children, tone }: { children: ReactNode; tone: BadgeTone }) {
   const styles = useStyles();
-  return <StatusBadge className={styles.root} color={color}>
+  return <StatusBadge className={styles.root} tone={tone}>
     <span translate="no">{children}</span>
   </StatusBadge>;
 }
 
 export function HttpMethodBadge({ method }: { method: string }) {
-  return <HttpBadge color={method === 'GET' ? 'brand' : method === 'POST' ? 'success' : 'informative'}>{method}</HttpBadge>;
+  return <HttpBadge tone={method === 'GET' ? 'accent' : method === 'POST' ? 'success' : 'neutral'}>{method}</HttpBadge>;
 }
 
-export function HttpStatusBadge({ children, color }: { children: ReactNode; color: 'danger' | 'success' | 'warning' }) {
-  return <HttpBadge color={color}>{children}</HttpBadge>;
+export function HttpStatusBadge({ children, tone }: { children: ReactNode; tone: 'danger' | 'success' | 'warning' }) {
+  return <HttpBadge tone={tone}>{children}</HttpBadge>;
 }

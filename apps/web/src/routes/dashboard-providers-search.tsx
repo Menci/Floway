@@ -394,7 +394,7 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
           <SectionHeader level={2} title={t('dashboard.searchConfig.testResults')} />
 
           <div className="flex items-center gap-2 flex-wrap">
-            <StatusBadge color={testResult.ok ? 'success' : 'danger'}>
+            <StatusBadge tone={testResult.ok ? 'success' : 'danger'}>
               {testResult.ok ? t('dashboard.searchConfig.testBadge.ok') : t('dashboard.searchConfig.testBadge.error')}
             </StatusBadge>
             <Text size={200} className="text-fui-fg3">

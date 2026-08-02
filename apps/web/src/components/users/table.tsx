@@ -67,7 +67,7 @@ export function UsersTable({
                     the row grows to hold it. */}
                 <TableCell>{user.username}</TableCell>
                 <TableCell>
-                  <StatusBadge color={user.isAdmin ? 'brand' : 'informative'}>
+                  <StatusBadge tone={user.isAdmin ? 'accent' : 'neutral'}>
                     {t(`dashboard.users.role.${user.isAdmin ? 'admin' : 'operator'}`)}
                   </StatusBadge>
                 </TableCell>

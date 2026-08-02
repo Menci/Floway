@@ -60,10 +60,10 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
         <div className="flex flex-wrap items-center gap-2">
           {credential?.tokenKind === 'setup-token' && <Tooltip content={t('dashboard.upstreamEditor.claudeCode.setupTokenHint')} relationship="description">
             <span className="winui-focus-rect inline-flex" tabIndex={0}>
-              <StatusBadge color="important">{t('dashboard.upstreamEditor.claudeCode.setupToken')}</StatusBadge>
+              <StatusBadge tone="neutral">{t('dashboard.upstreamEditor.claudeCode.setupToken')}</StatusBadge>
             </span>
           </Tooltip>}
-          {subscription && <StatusBadge color="brand">{subscription}</StatusBadge>}
+          {subscription && <StatusBadge tone="accent">{subscription}</StatusBadge>}
           {account.rateLimitTier && <Badge appearance="outline" size="large">{account.rateLimitTier}</Badge>}
           <Tooltip content={account.accountUuid} relationship="description">
             <Text size={200} className="winui-focus-rect text-fui-fg3 font-mono mono-size-xs" tabIndex={0}>{accountUuidShort}</Text>
@@ -73,7 +73,7 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
           </Tooltip>}
         </div>
       </div>
-      <StatusBadge color={status.tone}>{statusLabel}</StatusBadge>
+      <StatusBadge tone={status.tone}>{statusLabel}</StatusBadge>
     </div>
 
     {status.tone === 'danger' && status.detail && <Text size={200} className="text-fui-fg2">{status.detail}</Text>}
@@ -119,13 +119,13 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
       {quota?.representativeClaim && <Badge appearance="outline" size="large">
         {t('dashboard.upstreamEditor.claudeCode.representative', { claim: quota.representativeClaim })}
       </Badge>}
-      {quota?.overage?.status === 'allowed' && <StatusBadge color="success">
+      {quota?.overage?.status === 'allowed' && <StatusBadge tone="success">
         {t('dashboard.upstreamEditor.claudeCode.overageAllowed')}
       </StatusBadge>}
-      {disabledReason && <StatusBadge color="danger">
+      {disabledReason && <StatusBadge tone="danger">
         {t('dashboard.upstreamEditor.claudeCode.disabledReason', { reason: disabledReason })}
       </StatusBadge>}
-      {quota?.fallbackAvailable === false && <StatusBadge color="warning">
+      {quota?.fallbackAvailable === false && <StatusBadge tone="warning">
         {t('dashboard.upstreamEditor.claudeCode.fallbackUnavailable')}
       </StatusBadge>}
     </div>
