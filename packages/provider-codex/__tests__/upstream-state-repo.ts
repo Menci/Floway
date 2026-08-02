@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 
-import type { UpstreamRecord } from '@floway-dev/provider';
+import { UpstreamGoneError, type UpstreamRecord } from '@floway-dev/provider';
 
 export interface UpstreamStateRepoStub {
   getById: ReturnType<typeof vi.fn<(id: string) => Promise<UpstreamRecord | null>>>;
@@ -23,7 +23,7 @@ export const createUpstreamStateRepoStub = (
     getById: vi.fn(async () => read()),
     saveState: vi.fn(async (id, mutate) => {
       const row = read();
-      if (!row) throw new Error(`Upstream ${id} disappeared before its state could be written`);
+      if (!row) throw new UpstreamGoneError(id);
       const next = mutate(row.state);
       if (JSON.stringify(next) === JSON.stringify(row.state)) return;
       writes.push(next);

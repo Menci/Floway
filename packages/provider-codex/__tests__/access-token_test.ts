@@ -74,10 +74,15 @@ describe('putCodexAccessToken', () => {
     await expect(putCodexAccessToken(upstreamId, accountId, entry)).rejects.toThrow('D1 boom');
   });
 
-  test('surfaces an upstream that disappeared mid-flight', async () => {
+  // A minted access token is bookkeeping the next request re-derives, so an
+  // operator deleting the upstream mid-request is tolerated. The storage
+  // failure above is not — that distinction is the whole point of the typed
+  // error.
+  test('tolerates an upstream that disappeared mid-flight', async () => {
     current = null;
     const entry: CodexAccessTokenEntry = { token: 'at_new', expiresAt: farFutureMs, refreshedAt: 'now' };
-    await expect(putCodexAccessToken(upstreamId, accountId, entry)).rejects.toThrow(/disappeared/);
+    await putCodexAccessToken(upstreamId, accountId, entry);
+    expect(repo.writes).toEqual([]);
   });
 
   test('warns and writes nothing when the requested account is not in the pool', async () => {
