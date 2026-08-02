@@ -57,7 +57,9 @@ const countRecords = (data: BackupFileData): Record<string, number> => {
 // Empty entities are dropped here where the readouts above the Import command
 // keep them: a report of what happened has nothing to say about a table nobody
 // touched, while a preview has to be able to answer that the file carries none.
-const recordSummary = (
+// Exported for `__tests__/routes/dashboard-admin-backup-restore_test.ts`, which
+// pins the sentence against both locales; the page is its only other caller.
+export const recordSummary = (
   counts: Record<string, number>,
   t: ReturnType<typeof useTranslation>['t'],
   locale: string,
