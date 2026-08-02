@@ -9,6 +9,7 @@ import { fluentComponents } from '../../fluent';
 import { pageNavigation } from '../../lib/page-navigation';
 import { CodeBlock } from '../ui/code-block';
 import { HttpMethodBadge } from '../ui/http-badge';
+import { SECTION_STACK_CLASS } from '../ui/layout';
 import { OpenLinkLabel } from '../ui/open-link-label';
 import { Panel } from '../ui/panel';
 import { ScrollArea } from '../ui/scroll-area';
@@ -29,6 +30,15 @@ const {
   Text,
 } = fluentComponents;
 
+// `SECTION_STACK_CLASS` restated so it beats `Card`'s own display and gap.
+const PANEL_STACK_CLASS = '!grid !gap-2';
+
+// WinUI separates one settings section from the next by 30 of header margin
+// over a 4 stack spacing, and leaves only 6 + 4 under the header, so the two
+// distances cannot both be a container gap: the groups take the larger one.
+// https://github.com/microsoft/WinUI-Gallery/blob/f4dc3eb367f4bcecac1793829d9a221e924e5bfb/WinUIGallery/Pages/SettingsPage.xaml#L10-L21
+const ENDPOINT_GROUP_GAP = 'grid gap-[34px]';
+
 export function ApiDocsContent() {
   const { t } = useTranslation();
   const { copy, outcomeFor } = useCopyToClipboard();
@@ -36,7 +46,7 @@ export function ApiDocsContent() {
   const authExample = authCurlExample(window.location.origin);
 
   return <>
-    <Panel className="!grid !gap-4">
+    <Panel className={PANEL_STACK_CLASS}>
       <SectionHeader
         description={<Trans
           components={[<RouterLink {...pageNavigation} className="text-fui-brand1 no-underline hover:underline" key="api-keys" to="/dashboard/services/api-keys" />]}
@@ -52,11 +62,11 @@ export function ApiDocsContent() {
       <CodeBlock code={authExample} copyOutcome={outcomeFor('auth')} language="bash" onCopy={() => copy(authExample, 'auth')} />
     </Panel>
 
-    <Panel className="!grid !gap-5">
+    <Panel className={PANEL_STACK_CLASS}>
       <SectionHeader description={t('dashboard.apiDocs.endpointsDescription')} level={2} title={t('dashboard.apiDocs.endpointsTitle')} />
-      {apiDocsGroups.map(group => {
+      <div className={ENDPOINT_GROUP_GAP}>{apiDocsGroups.map(group => {
         const endpoints = apiDocsEndpoints.filter(endpoint => endpoint.group === group);
-        return <section className="grid gap-2" key={group}>
+        return <section className={SECTION_STACK_CLASS} key={group}>
           <SectionHeader level={3} title={t(`dashboard.apiDocs.groups.${group}`)} />
           <ScrollArea axes="horizontal" className="min-w-0">
             <Table aria-label={t(`dashboard.apiDocs.groups.${group}`)} className="min-w-[780px] table-fixed" size="small">
@@ -76,7 +86,7 @@ export function ApiDocsContent() {
             </Table>
           </ScrollArea>
         </section>;
-      })}
+      })}</div>
     </Panel>
   </>;
 }
