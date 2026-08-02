@@ -155,12 +155,20 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     setSearchParams(serializePerformanceUrlState({ metric, percentile, groupBy, range, filters, hidden: [...hiddenSeries] }), { replace: true });
   }, [filters, groupBy, hiddenSeries, metric, percentile, range, setSearchParams]);
 
+  // Fluent's single-select reports every click on an option, including a click
+  // on the one already selected, and nothing downstream can tell the two apart
+  // once a fresh filters object exists: the query is the same, but the refetch
+  // is keyed on identity and the chart's bucket axis moves under an operator
+  // who chose nothing. So the selection that changes nothing is recognised
+  // where it arrives.
+  // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-combobox/library/src/utils/useSelection.ts#L23-L26
   const changeGroupBy = (next: PerformanceGroupBy) => {
+    if (next === groupBy) return;
     setGroupBy(next);
     setFilters(current => clearGroupedFilter(current, next));
     setHiddenSeries(new Set());
   };
-  const setFilter = (key: keyof PerformanceFilters, value: string) => setFilters(current => ({ ...current, [key]: value }));
+  const setFilter = (key: keyof PerformanceFilters, value: string) => setFilters(current => (current[key] === value ? current : { ...current, [key]: value }));
   const buckets = useMemo(() => performanceBuckets(loadedRange, loadedAt, locale), [loadedAt, loadedRange, locale]);
   const labels = useMemo(() => overview && performanceLabels(overview, upstreamNames), [overview, upstreamNames]);
   const chart = useMemo(() => overview && labels && buildPerformanceChart(overview.series, metric, percentile, groupBy, labels, buckets, loadedRange), [buckets, groupBy, labels, loadedRange, metric, overview, percentile]);
