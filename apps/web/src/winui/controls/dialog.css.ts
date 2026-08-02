@@ -144,12 +144,11 @@ export const dialogCss = `
    give that room back to the title's edge by outsetting itself the same length.
    The two halves are one compensation and neither is meaningful alone, so they
    are written together, on the two boxes DialogShell itself supplies, and a
-   DialogContent that is not DialogShell's gets neither. The length is
-   FocusVisualMargin, the 3px a WinUI focus visual is drawn outside the control
-   it belongs to.
+   DialogContent that is not DialogShell's gets neither. The length is the room
+   a focus visual needs outside the control it belongs to.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L167 */
 .floway-dialog-shell__content.floway-dialog-shell__content {
-  --floway-dialog-focus-gutter: 3px;
+  --floway-dialog-focus-gutter: 4px;
   margin-inline: calc(-1 * var(--floway-dialog-focus-gutter));
 }
 
