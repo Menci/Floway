@@ -25,7 +25,54 @@ const { Switch, Text, makeStyles, mergeClasses, shorthands } = fluentComponents;
 // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L67-L95
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L52-L72
 // https://drafts.csswg.org/css-color-adjust/#forced-colors-properties
+
+// SettingsCardHeaderIconMargin is 2,0,20,0 around the glyph. Those three
+// measures are the width of the icon column, which is also the inset the
+// wrapped control below takes, so the column is composed from the same values
+// the icon states rather than restated as the number they come to.
+// https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L106
+const ICON_MARGIN_START = '2px';
+const ICON_MARGIN_END = '20px';
+const ICON_SIZE = '24px';
+const ICON_COLUMN = `calc(${ICON_MARGIN_START} + ${ICON_SIZE} + ${ICON_MARGIN_END})`;
+
+// The icon column is a column the toolkit's grid declares whether or not
+// anything is in it; here the span exists only when there is an icon, so the
+// rule that indents the wrapped control has to ask whether one preceded it.
+// A marker attribute is what a sibling selector can ask about -- the class
+// Griffel mints for the icon is not a name this sheet can write down.
+const ICON_MARKER = 'data-settings-card-icon';
+
+// SettingsCardWrapThreshold 476 and SettingsCardWrapNoIconThreshold 286. The
+// toolkit reaches them through a ControlSizeTrigger, which activates on
+// `MinWidth <= ActualWidth < MaxWidth`; the range syntax states that comparison
+// as it is written, so RightWrapped and RightWrappedNoIcon stay the disjoint
+// pair the two triggers make rather than one overriding the other.
+// https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L110-L111
+// https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L312-L345
+// https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/Triggers/src/ControlSizeTrigger.cs#L174-L175
+const WRAPPED = '@container floway-settings-row (width < 476px)';
+const WRAPPED_WITH_ICON = '@container floway-settings-row (286px <= width < 476px)';
+const WRAPPED_NO_ICON = '@container floway-settings-row (width < 286px)';
+
 const useStyles = makeStyles({
+  // The box the two thresholds above are measured against. A size container
+  // query reports its container's CONTENT box -- measured, not assumed: a 400px
+  // border-box element with 50 of padding and 10 of border answers 280 -- while
+  // the toolkit's trigger reads the whole grid, padding and border included.
+  // Declaring the containment one level out of the row makes those the same
+  // box, since this element carries neither. It also has to: a container query
+  // styles the container's descendants and never the container, and the wrapped
+  // state has something to say about the row itself.
+  //
+  // The row's own inline size never depends on its contents -- it is a block
+  // filling the list it sits in -- so declaring the containment states what was
+  // already true.
+  // https://drafts.csswg.org/css-contain-3/#size-container
+  row: {
+    containerName: 'floway-settings-row',
+    containerType: 'inline-size',
+  },
   // MinHeight 68, Padding 16, ControlCornerRadius, a 1px card stroke.
   //
   // The row's foreground is the primary text fill, and the header and the
@@ -52,15 +99,19 @@ const useStyles = makeStyles({
     borderRadius: 'var(--winui-control-corner-radius)',
     boxSizing: 'border-box',
     color: 'var(--winui-text-fill-primary)',
-    // Named as a container so the trailing control can ask how much room the
-    // row has before it takes a floor. The row's own inline size never depends
-    // on its contents -- it is a block filling the list it sits in -- so
-    // declaring the containment states what was already true.
-    containerName: 'floway-settings-row',
-    containerType: 'inline-size',
     display: 'flex',
     minHeight: '68px',
     padding: '16px',
+    // The narrow states put the control on a line of its own, and
+    // ContentSpacingStates opens SettingsCardVerticalHeaderContentSpacing
+    // between the two lines once it is there. Wrapping is stated inside the
+    // query rather than at every width, because a flex line breaks on what its
+    // items would like to be rather than on what they can be squeezed to: left
+    // on, a header long enough to want the whole row would send the control
+    // down on its own at any width at all.
+    // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L109
+    // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L388-L395
+    [WRAPPED]: { flexWrap: 'wrap', rowGap: '8px' },
   },
   // A card only takes the pointer ramp when it does something when clicked.
   // The fill moves over the control's own duration; the toolkit leaves the
@@ -150,7 +201,19 @@ const useStyles = makeStyles({
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml#L87-L96
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L6-L8
   clickable: { '&:active': { color: 'var(--winui-text-fill-secondary)' } },
-  text: { display: 'grid', minWidth: 0, marginInlineEnd: 'auto', paddingInlineEnd: '24px' },
+  // The 24 the header keeps between itself and the control is HeaderPanel's own
+  // trailing margin, and the wrapped states set that margin to 0: with the
+  // control on the line below rather than beside it, there is nothing left for
+  // the 24 to hold apart. The auto margin stays, because on an expander it is
+  // what keeps the chevron against the trailing edge.
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L409-L412
+  text: {
+    display: 'grid',
+    minWidth: 0,
+    marginInlineEnd: 'auto',
+    paddingInlineEnd: '24px',
+    [WRAPPED]: { paddingInlineEnd: 0 },
+  },
   // SettingsCardHeaderIconMaxSize 20 with SettingsCardHeaderIconMargin 2,0,20,0.
   // The holder collapses when there is no icon, so a card without one starts
   // its text at the padding rather than at an empty column. The glyph takes
@@ -173,12 +236,15 @@ const useStyles = makeStyles({
     flexGrow: 0,
     flexShrink: 0,
     flexBasis: 'auto',
-    fontSize: '24px',
+    fontSize: ICON_SIZE,
     justifyContent: 'center',
-    '& svg': { height: '24px', width: '24px' },
-    marginInlineEnd: '20px',
-    marginInlineStart: '2px',
-    width: '24px',
+    '& svg': { height: ICON_SIZE, width: ICON_SIZE },
+    marginInlineEnd: ICON_MARGIN_END,
+    marginInlineStart: ICON_MARGIN_START,
+    width: ICON_SIZE,
+    // RightWrappedNoIcon collapses the holder outright, which is the same
+    // display: none the toolkit's Visibility means.
+    [WRAPPED_NO_ICON]: { display: 'none' },
   },
   // The header takes no TextBlock style in the toolkit: it inherits the control
   // content size, which is the body step at the regular weight. The description
@@ -214,18 +280,36 @@ const useStyles = makeStyles({
   // one of them would make a row change width for a reason that has nothing to
   // do with its value.
   //
-  // A floor that always applied would be a hard one -- `min-width` cannot
-  // yield, so it would push the row wider than its container instead of
-  // giving way -- which is why the container query is the rule rather than a
-  // guard on it. 480 is the width at which the row can afford the floor: 122
-  // of chrome (16 of leading padding, 46 for the icon and its margins, 24
-  // between text and control, the 32 chevron, 4 of trailing padding), 200 for
-  // the control, and 160 left for the label, which is a readable line rather
-  // than a squeezed one. Narrower than that and the select goes back to
-  // sizing itself, which is what a phone-width row wants anyway.
+  // It applies at every width, as the toolkit's own does:
+  // SettingsCardContentMinWidth goes into the card's content scope as an
+  // implicit MinWidth on Slider, ComboBox and TextBox -- "so they neatly align"
+  // -- and no visual state withdraws it. What the narrow states do instead is
+  // give the control a line of its own, which is where the room for the floor
+  // comes from. The 200 is ours rather than the toolkit's 120, and is argued
+  // where the variable is declared.
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L146-L170
+  //
+  // Wrapped, the control takes the row below: PART_ContentPresenter moves to
+  // row 1 and stretches, and its own content aligns Left inside that. The order
+  // is what keeps an expander's chevron up on the header line -- flex fills its
+  // lines in order-modified order, so a control that is 100% wide would
+  // otherwise carry the chevron down with it.
+  //
+  // The column it moves into is the HEADER's, not the card's leading edge, so
+  // with the icon still shown the control is indented to where the header text
+  // starts. Below the no-icon threshold the icon is gone and that indent goes
+  // with it, which is why the indent is the narrower of the two ranges: the
+  // two container queries are disjoint, so neither has to outrank the other.
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L204-L207
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L453-L458
   action: {
-    '@container floway-settings-row (min-width: 480px)': {
-      '--floway-select-min-width': '200px',
+    '--floway-select-min-width': '200px',
+    [WRAPPED]: { flexBasis: '100%', order: 1 },
+    [WRAPPED_WITH_ICON]: {
+      [`[${ICON_MARKER}] ~ &`]: {
+        flexBasis: `calc(100% - ${ICON_COLUMN})`,
+        marginInlineStart: ICON_COLUMN,
+      },
     },
   },
   expanderHeaderOpen: { borderEndStartRadius: 0, borderEndEndRadius: 0 },
@@ -377,6 +461,11 @@ const useStyles = makeStyles({
     height: '36px',
     justifyContent: 'flex-end',
     minWidth: 0,
+    // Wrapped, the content presenter stretches across the row below and aligns
+    // what is in it Left. Every other control lands there on its own, but this
+    // one is a flex row that was packing itself against the trailing edge, and
+    // a stretched box would have kept it there.
+    [WRAPPED]: { justifyContent: 'flex-start' },
   },
   // The readout is the ToggleSwitch's own OnContent and OffContent in that
   // retemplate, so a disabled switch paints it TextFillColorDisabled along
@@ -390,7 +479,7 @@ const useStyles = makeStyles({
 function CardText({ description, header, icon, id }: { description?: string; header: ReactNode; icon?: ReactNode; id?: string }) {
   const styles = useStyles();
   return <>
-    {icon !== undefined && <span aria-hidden className={styles.icon}>{icon}</span>}
+    {icon !== undefined && <span aria-hidden className={styles.icon} {...{ [ICON_MARKER]: '' }}>{icon}</span>}
     <span className={styles.text}>
       <Text block id={id}>{header}</Text>
       {description !== undefined && <Text block size={200} className={styles.description}>{description}</Text>}
@@ -427,9 +516,9 @@ export function SettingsCard({ action, description, header, icon, onClick }: {
     <CardText description={description} header={header} icon={icon} />
     {action !== undefined && <span className={styles.action}>{action}</span>}
   </>;
-  return onClick
+  return <div className={styles.row}>{onClick
     ? <div className={className} onClick={onClick} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }} role="button" tabIndex={0}>{content}</div>
-    : <div className={className}>{content}</div>;
+    : <div className={className}>{content}</div>}</div>;
 }
 
 // The disclosure and the trailing control are independent: the switch can be
@@ -478,7 +567,7 @@ export function SettingsExpander({ action, children, defaultOpen = false, descri
   }
   const contentId = useId();
   const headerId = useId();
-  return <div>
+  return <div className={styles.row}>
     <button
       aria-controls={contentId}
       aria-expanded={open}

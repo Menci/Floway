@@ -383,8 +383,8 @@ function PerformanceChart({ chart, hidden }: { chart: PerformanceChartModel; hid
   const stateStyles = useChartStateStyles();
   const chartStyles = usePerformanceChartStyles();
   const chartRootStyles = useUnclippedChartFrame();
-  const [host, setHost] = useState<HTMLDivElement | null>(null);
-  const size = useElementSize(host);
+  const hostRef = useRef<HTMLDivElement>(null);
+  const size = useElementSize(hostRef);
   const locale = useLocale();
   const formatter = chart.metric === 'ttft' ? formatDuration : formatTokenRate;
   const entryByLegend = useMemo(() => new Map(chart.entries.map(entry => [entry.legend, entry])), [chart.entries]);
@@ -401,7 +401,7 @@ function PerformanceChart({ chart, hidden }: { chart: PerformanceChartModel; hid
         title={formatCalloutTitle(props.x, labelByTime, chart.range, locale)}
       />, [chart.details, chart.range, entryByLegend, labelByTime, locale]);
   const plotHeight = Math.max(0, size.height - chartMargins.top - chartMargins.bottom);
-  return <div className={`${chartStyles.root} h-[320px] min-w-0 w-full`} ref={setHost}>{size.width < 120 ? null : visibleData.lineChartData?.length ? <LineChart styles={chartRootStyles} customDateTimeFormatter={date => formatAxisDate(date, chart.range, locale)} data={visibleData} enablePerfOptimization height={size.height} hideLegend margins={chartMargins} onRenderCalloutPerStack={callout} tickValues={chartTickValues(chart.buckets).map(bucket => bucket.date)} width={size.width} xAxistickSize={-plotHeight} yAxisTickFormat={(value: number) => labelledOnLogAxis(value) ? formatter(value) : ''} yMaxValue={values.length ? Math.max(...values) : undefined} yMinValue={values.length ? Math.min(...values) : undefined} yScaleType="log" /> : <div className={stateStyles.root}>{t('dashboard.performance.empty')}</div>}</div>;
+  return <div className={`${chartStyles.root} h-[320px] min-w-0 w-full`} ref={hostRef}>{size.width < 120 ? null : visibleData.lineChartData?.length ? <LineChart styles={chartRootStyles} customDateTimeFormatter={date => formatAxisDate(date, chart.range, locale)} data={visibleData} enablePerfOptimization height={size.height} hideLegend margins={chartMargins} onRenderCalloutPerStack={callout} tickValues={chartTickValues(chart.buckets).map(bucket => bucket.date)} width={size.width} xAxistickSize={-plotHeight} yAxisTickFormat={(value: number) => labelledOnLogAxis(value) ? formatter(value) : ''} yMaxValue={values.length ? Math.max(...values) : undefined} yMinValue={values.length ? Math.min(...values) : undefined} yScaleType="log" /> : <div className={stateStyles.root}>{t('dashboard.performance.empty')}</div>}</div>;
 }
 
 function PerformanceChartCallout({ data, details, entryByLegend, title }: {
