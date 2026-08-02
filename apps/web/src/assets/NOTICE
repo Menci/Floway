@@ -41,14 +41,31 @@ SOFTWARE.
 The following assets are taken from lobe-icons at commit
 a88f09a2892016a74f4c20f096c167c88f6c19c1:
 
+- azure-color.svg
+  https://github.com/lobehub/lobe-icons/blob/a88f09a2892016a74f4c20f096c167c88f6c19c1/packages/static-svg/icons/azure-color.svg
+- claude-color.svg
+  https://github.com/lobehub/lobe-icons/blob/a88f09a2892016a74f4c20f096c167c88f6c19c1/packages/static-svg/icons/claude-color.svg
+- githubcopilot.svg
+  https://github.com/lobehub/lobe-icons/blob/a88f09a2892016a74f4c20f096c167c88f6c19c1/packages/static-svg/icons/githubcopilot.svg
 - jina-color.svg
   https://github.com/lobehub/lobe-icons/blob/a88f09a2892016a74f4c20f096c167c88f6c19c1/packages/static-svg/icons/jina.svg
 - microsoft-color.svg
   https://github.com/lobehub/lobe-icons/blob/a88f09a2892016a74f4c20f096c167c88f6c19c1/packages/static-svg/icons/microsoft-color.svg
-- tavily-color.svg
-  https://github.com/lobehub/lobe-icons/blob/a88f09a2892016a74f4c20f096c167c88f6c19c1/packages/static-svg/icons/tavily-color.svg
+- ollama.svg
+  https://github.com/lobehub/lobe-icons/blob/a88f09a2892016a74f4c20f096c167c88f6c19c1/packages/static-svg/icons/ollama.svg
 - openai.svg
   https://github.com/lobehub/lobe-icons/blob/a88f09a2892016a74f4c20f096c167c88f6c19c1/packages/static-svg/icons/openai.svg
+- tavily-color.svg
+  https://github.com/lobehub/lobe-icons/blob/a88f09a2892016a74f4c20f096c167c88f6c19c1/packages/static-svg/icons/tavily-color.svg
+
+codex.svg comes from the same project at a later commit, because the Codex mark
+did not exist at the one above:
+
+- codex.svg
+  https://github.com/lobehub/lobe-icons/blob/63c800e3db6427b3f156f7b88d426ccb3f7277a1/packages/static-svg/icons/codex-color.svg
+
+codex.svg drops the white app-icon plate and tightens the viewBox to the glyph,
+so it renders at the same optical size as the other provider marks.
 
 microsoft-color.svg is the four-square Microsoft logo, which upstream files
 under the Azure name; its title is changed to "Microsoft".
@@ -59,7 +76,9 @@ fills them with Jina's own brand colours, sampled as the two dominant opaque
 values of the 256x256 mark at https://jina.ai/favicon.ico: #EB6161 for the dot
 and #009191 for the J.
 
-tavily-color.svg and openai.svg are verbatim.
+Everything else here is verbatim: take a replacement from the static-svg
+directory above rather than from a rendered page, whose gradient ids carry
+React's per-render suffix.
 
 MIT License
 
