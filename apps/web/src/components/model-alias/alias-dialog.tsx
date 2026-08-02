@@ -26,7 +26,7 @@ import { SectionHeader } from '../ui/section-header';
 import { SettingsCard, SettingsExpander, SettingsSwitch } from '../ui/settings-card';
 import { MODEL_KINDS } from '@floway-dev/protocols/common';
 
-const { Button, DialogActions, DialogTitle, Field, MessageBar, MessageBarBody, Option, Text } = fluentComponents;
+const { Button, DialogActions, DialogTitle, Field, Option, Text } = fluentComponents;
 
 export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, record }: {
   aliases: readonly ModelAlias[];
@@ -140,7 +140,7 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
     >
       <MetadataEditor disabled={saving || !values.manualMetadata} kind={kind} value={values.manualMetadata ? values.announcedMetadata : automaticMetadata} onChange={value => setValue('announcedMetadata', value, { shouldValidate: true })} />
     </SettingsExpander>}
-    {aliasWarnings.length > 0 && <MessageBar intent="warning"><MessageBarBody>{aliasWarnings.map(warning => <Text block key={warning.type}>{t(`dashboard.modelAliases.warnings.${warning.key}`, warning.values)}</Text>)}</MessageBarBody></MessageBar>}
+    {aliasWarnings.length > 0 && <OutcomeMessageBar intent="warning">{aliasWarnings.map(warning => <Text block key={warning.type}>{t(`dashboard.modelAliases.warnings.${warning.key}`, warning.values)}</Text>)}</OutcomeMessageBar>}
     <SettingsCard
       action={<SettingsSwitch checked={values.visible} disabled={saving} label={t('dashboard.modelAliases.form.visible')} onChange={checked => setValue('visible', checked)} />}
       description={t('dashboard.modelAliases.form.visibleHint')}

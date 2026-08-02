@@ -5,8 +5,9 @@ import type { AnnouncedMetadata, ModelKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
 import { TWO_COLUMN_FORM_CLASS } from '../ui/layout';
+import { SectionHeader } from '../ui/section-header';
 
-const { Field, Option, Switch, Text } = fluentComponents;
+const { Field, Option, Switch } = fluentComponents;
 
 const numberValue = (value: string) => value === '' ? undefined : Number(value);
 
@@ -38,7 +39,7 @@ export function MetadataEditor({ disabled, kind, onChange, value }: {
   return (
     <div className="grid gap-5" role="group" aria-label={t('dashboard.modelAliases.metadata.heading')}>
       <section className="grid gap-3">
-        <Text size={300} weight="semibold">{t('dashboard.modelAliases.metadata.limits')}</Text>
+        <SectionHeader level={4} title={t('dashboard.modelAliases.metadata.limits')} />
         <div className="grid grid-cols-3 gap-3 max-[680px]:grid-cols-1">
           <Field label={t('dashboard.modelAliases.metadata.context')} {...issueProps('max_context_window_tokens')}><Input disabled={disabled} min={0} type="number" value={value.limits?.max_context_window_tokens?.toString() ?? ''} onChange={(_, data) => patchLimit('max_context_window_tokens', data.value)} /></Field>
           <Field label={t('dashboard.modelAliases.metadata.prompt')} {...issueProps('max_prompt_tokens')}><Input disabled={disabled} min={0} type="number" value={value.limits?.max_prompt_tokens?.toString() ?? ''} onChange={(_, data) => patchLimit('max_prompt_tokens', data.value)} /></Field>
@@ -47,7 +48,7 @@ export function MetadataEditor({ disabled, kind, onChange, value }: {
       </section>
       {kind === 'chat' && <>
         <section className="grid gap-2">
-          <Text size={300} weight="semibold">{t('dashboard.modelAliases.metadata.modalities')}</Text>
+          <SectionHeader level={4} title={t('dashboard.modelAliases.metadata.modalities')} />
           <Switch
             checked={value.chat?.modalities?.input.includes('image') ?? false}
             disabled={disabled}
@@ -59,7 +60,7 @@ export function MetadataEditor({ disabled, kind, onChange, value }: {
           />
         </section>
         <section className="grid gap-3">
-          <Text size={300} weight="semibold">{t('dashboard.modelAliases.metadata.reasoning')}</Text>
+          <SectionHeader level={4} title={t('dashboard.modelAliases.metadata.reasoning')} />
           <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
             <Switch checked={effort !== undefined} disabled={disabled || value.chat?.reasoning?.mandatory === true} label={t('dashboard.modelAliases.metadata.effortEnabled')} onChange={(_, data) => patchReasoning({ effort: data.checked ? { supported: ['low', 'medium', 'high'], default: 'medium' } : undefined })} />
             <Switch checked={budget !== undefined} disabled={disabled || value.chat?.reasoning?.mandatory === true} label={t('dashboard.modelAliases.metadata.budgetEnabled')} onChange={(_, data) => patchReasoning({ budget_tokens: data.checked ? {} : undefined })} />
