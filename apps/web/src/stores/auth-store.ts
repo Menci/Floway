@@ -85,9 +85,8 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   },
 
   // Local logout intent takes precedence when server-side revocation fails; the
-  // gateway expires any surviving session independently. This resolves either
-  // way: a `finally` alone re-raised the rejection past the clear, into a
-  // sign-out handler with nothing left to do about it.
+  // gateway expires any surviving session independently. A bare `finally`
+  // re-raises the rejection past the clear.
   logout: async () => {
     try {
       await api.auth.logout.$post();
