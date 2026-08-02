@@ -91,9 +91,16 @@ const useStyles = makeStyles({
   // The document sheet states the face, the size and the line height of every
   // `pre`, so only the box is stated here. Its inset is ours: the Expander pads
   // its content region to 16 around a form, where this holds a code sample.
+  // The width is what makes that inset survive a scroll. Left to `auto` the
+  // block is as wide as the viewport and only its text overflows, so the
+  // scrollable region ends where the text does and the trailing padding is
+  // never reachable -- scrolled fully right, the last character sits against
+  // the frame. Sizing the block to its own content instead puts its padding
+  // inside the scrollable region, and `min-width` rather than `width` keeps it
+  // filling the viewport when the sample is short.
   pre: {
     margin: 0,
-    minWidth: 0,
+    minWidth: 'max-content',
     padding: '12px',
     tabSize: '2',
   },
