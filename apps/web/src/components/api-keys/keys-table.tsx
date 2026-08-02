@@ -23,16 +23,13 @@ const {
 } = fluentComponents;
 
 const useStyles = makeStyles({
-  // WinUI colours type with the accent text ramp rather than with the accent
-  // fill a button takes, and it is the ramp Link and the toast action already
-  // run on.
+  // WinUI types accent text on the accent text ramp, not the accent fill a button takes.
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L93
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L297
   accentText: { color: 'var(--winui-accent-text-fill-primary)' },
-  // Only what ../../winui/controls/list.css.ts has no ListViewItem counterpart
-  // for: the row stacks four lines rather than centring one, and the separator
-  // is a divider rather than a card stroke, which is black in both themes and
-  // disappears against a dark page.
+  // Only what ../../winui/controls/list.css.ts has no ListViewItem counterpart for:
+  // a four-line row, and a divider separator rather than the card stroke, which is
+  // black in both themes and disappears against a dark page.
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L46
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L250
   mobileItem: {
@@ -59,18 +56,14 @@ export function KeysTable({
   const trailingCell = useTrailingCellClass();
   const narrow = useMediaQuery('(max-width: 760px)');
   const locale = useLocale();
-  // "Last used" is read relative to the wall clock, so the column re-renders on
-  // its own rather than only when a key changes.
   const now = useNow(RELATIVE_REFRESH_MS);
   const upstreamById = useMemo(
     () => new Map(upstreams.map(upstream => [upstream.id, upstream])),
     [upstreams],
   );
 
-  // Every cell is a flex item, so without a basis they divide the row evenly and
-  // the column carrying a fifty-character secret gets the same room as the one
-  // reading "All". Griffel injects after the utilities and Fluent states its own
-  // `flex: 1 1 0`, so each basis has to be important to reach the cell.
+  // Griffel injects after the utilities and Fluent states its own `flex: 1 1 0`,
+  // so each basis has to be important to reach the cell.
   const columnWidth: Partial<Record<string, string>> = {
     name: '!basis-[180px]',
     key: '!basis-[240px]',
@@ -88,8 +81,6 @@ export function KeysTable({
       }),
       createTableColumn<ApiKey>({
         columnId: 'key', renderHeaderCell: () => t('dashboard.apiKeys.table.key'),
-        // The key cell is elided, so the copy button is what makes the whole
-        // value reachable and belongs beside it.
         renderCell: key => {
           const copyTag = `key-${key.id}`;
           return (
