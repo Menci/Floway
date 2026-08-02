@@ -74,11 +74,9 @@ const compactSelector = (draft: PricingEntryDraft): PricingSelector => {
   return selector;
 };
 
-// The base entry is the one that names no coordinate. Asked of the compacted
-// selector rather than of its canonical key, because a draft mid-edit can hold
-// a threshold the canonicalizer rejects, and "does not canonicalize" is not an
-// answer to "is this the base entry" -- `collectDraftIssues` is where an
-// operator is told the selector is invalid.
+// Asked of the compacted selector rather than of its canonical key: a draft
+// mid-edit can hold a threshold the canonicalizer rejects, and that is
+// `collectDraftIssues`'s report to make, not this one's.
 export const isBaseEntry = (draft: PricingEntryDraft): boolean =>
   Object.keys(compactSelector(draft)).length === 0;
 
@@ -107,8 +105,8 @@ export const pricingEntryCoordinateLabel = (draft: PricingEntryDraft): string =>
   return labels.length > 0 ? labels.join(', ') : 'Base';
 };
 
-// The metric name is translated; the unit is not, because it is a symbol the
-// same metric changes between kinds — per MTok, per second, per 1K searches.
+// The unit is not translated: it is a symbol the same metric changes between
+// kinds — per MTok, per second, per 1K searches.
 export const pricingFieldLabel = (name: string, { displayUnit }: PricingField): string =>
   `${name} ($/${displayUnit})`;
 

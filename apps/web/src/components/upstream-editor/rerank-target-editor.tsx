@@ -48,8 +48,8 @@ export function RerankTargetEditor({ onChange, readOnly, value }: {
         value={value.path ?? ''}
         onChange={(_, data) => {
           const path = data.value.trim();
-          // An empty override means "use the protocol default", which is the
-          // absence of the field rather than an empty string.
+          // "Use the protocol default" is the absence of the field rather
+          // than an empty string.
           onChange(path === '' ? { protocol: value.protocol } : { ...value, path });
         }}
       />

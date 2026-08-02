@@ -40,11 +40,9 @@ export type UpstreamEditorLoaderData = UpstreamEditorLoaderDataBase & (
   | { mode: 'edit' }
 );
 
-// One row of the model list: what the table draws, what the detail edits, and
-// what a delete confirms against. `manualIndex` is the row's position in the
-// form's manual array when it has one, and `hasAuto` says the upstream also
-// lists the model, which is what makes switching the row back to `auto`
-// possible.
+// `manualIndex` is the row's position in the form's manual array when it has
+// one; `hasAuto` says the upstream also lists the model, which is what makes
+// switching the row back to `auto` possible.
 export interface ModelRow {
   key: string;
   source: 'auto' | 'manual';
@@ -147,7 +145,6 @@ export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues =
 
 // The editor holds one flat form model for every provider kind, so the config
 // is assembled structurally and only becomes a specific union member here.
-// This is the single point where the two representations meet.
 const configFromValues = (
   record: UpstreamRecord,
   values: UpstreamEditorValues,
@@ -207,10 +204,9 @@ export const createBody = (record: UpstreamRecord, values: UpstreamEditorValues)
     ...((record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code')
       ? { state: values.state }
       : {}),
-    // The editor's form model is flat across provider kinds while the wire
-    // contract discriminates on `kind`; TypeScript cannot prove the two agree
-    // from a structurally assembled object. Field names, method and path stay
-    // checked against the route — only this correlation is asserted.
+    // TypeScript cannot prove a structurally assembled object satisfies the
+    // wire contract's discriminated union; only that correlation is asserted,
+    // field names, method and path stay checked against the route.
   } as CreateUpstreamBody;
 };
 
