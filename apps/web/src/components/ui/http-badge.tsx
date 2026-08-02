@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react';
 
+import { StatusBadge } from './status-badge';
 import { fluentComponents } from '../../fluent';
 
-const { Badge, makeStyles } = fluentComponents;
+const { makeStyles } = fluentComponents;
 
 // Monospace, but at the badge's own Caption size: the app's mono ramp shrinks a
 // pixel to sit inside prose, and a badge label has none beside it. The width
@@ -18,13 +19,9 @@ type HttpBadgeColor = 'brand' | 'danger' | 'informative' | 'success' | 'warning'
 
 function HttpBadge({ children, color }: { children: ReactNode; color: HttpBadgeColor }) {
   const styles = useStyles();
-  return <Badge
-    appearance="tint"
-    className={styles.root}
-    color={color}
-    size="large"
-    translate="no"
-  >{children}</Badge>;
+  return <StatusBadge className={styles.root} color={color}>
+    <span translate="no">{children}</span>
+  </StatusBadge>;
 }
 
 export function HttpMethodBadge({ method }: { method: string }) {
