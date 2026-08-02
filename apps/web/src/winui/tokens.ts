@@ -33,8 +33,22 @@
 //
 // The doubling is a specificity device and nothing else, so it applies once, to
 // the subject. That puts the subject at exactly one class above Griffel's
-// single-class atoms — enough to win regardless of stylesheet order, and low
-// enough that a consumer's own class can still override us.
+// single-class atoms, which is what makes the layer win regardless of
+// stylesheet order.
+//
+// It wins against every single-class atom, not only Fluent's. Griffel emits one
+// class per declaration whoever calls it, so an app component that restyles a
+// Fluent element this layer already paints is outranked by the same margin
+// Fluent is, and has to escalate to !important to take the declaration back.
+// That is the price of not resting the layer on injection order, and it is paid
+// outside the layer: there is no !important anywhere in this directory and 31 in
+// the components around it -- ../components/requests/request-list.tsx,
+// ../components/usage/summary-metrics.tsx, ../components/ui/danger.ts,
+// ../components/ui/confirm-dialog.tsx, ../components/ui/fluent-form-controls.tsx,
+// ../components/upstream-editor/mono-label.ts, ../components/sidebar/sidebar.tsx
+// and ../routes/dashboard-monitor-performance.tsx. A component that needs one
+// declaration back should say at the declaration which rule here it is taking it
+// from, the way ../components/ui/danger.ts does.
 //
 // The rejected alternative was to scope each rule under an ancestor
 // `.fui-FluentProvider`. It works today, and it works on portalled surfaces
