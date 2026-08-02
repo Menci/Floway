@@ -249,7 +249,7 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
     config: body.config,
     state: stateFromBody,
     // Operator edits never carry the catalog cache; the repo leaves the
-    // columns to the refresh path.
+    // column to the refresh path.
     modelsCache: null,
   };
 

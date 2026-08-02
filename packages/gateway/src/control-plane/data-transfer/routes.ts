@@ -173,7 +173,7 @@ const parseUpstreamRecords = (value: unknown): { type: 'ok'; records: UpstreamRe
         config: item.config,
         state: normalizeUpstreamState(kind, item.state),
         // The catalog cache is gateway bookkeeping, not transferable content:
-        // an import re-derives it from the upstream on first use.
+        // the import re-warms each restored upstream from its own upstream.
         modelsCache: null,
       };
       records.push({ ...record, config: normalizeUpstreamConfig(record) });

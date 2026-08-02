@@ -392,7 +392,7 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
   await repo.upstreams.deleteAll();
 
   // Three upstreams cover the three cache states: no row, warm row, warm row
-  // with a follow-up failure annotated via setLastError.
+  // with a follow-up failure annotated via saveModelsCacheError.
   const baseRow = {
     kind: 'custom' as const,
     enabled: true,
