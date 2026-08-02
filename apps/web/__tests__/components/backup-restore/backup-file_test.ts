@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { BACKUP_FILE_VERSION, parseBackupFile } from '../../../src/components/backup-restore/backup-file';
+import { BACKUP_FILE_VERSION, parseBackupFile } from '../../../src/components/backup-restore/file';
 
 const data = {
   users: [],
