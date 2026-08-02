@@ -11,7 +11,6 @@ type FluentComponents = typeof import('@fluentui/react-components');
 export const winuiAppearanceAttribute = 'data-winui-appearance';
 export const winuiIntentAttribute = 'data-winui-intent';
 export const winuiSizeAttribute = 'data-winui-size';
-export const winuiShapeAttribute = 'data-winui-shape';
 export const winuiCheckedAttribute = 'data-winui-checked';
 
 type SlotProps = Record<string, unknown>;
@@ -100,8 +99,6 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
     ({ prop: 'appearance', attribute: winuiAppearanceAttribute, fallback, slots });
   const size = (fallback: string, slots?: readonly string[]) =>
     ({ prop: 'size', attribute: winuiSizeAttribute, fallback, slots });
-  const shape = (fallback: string, slots?: readonly string[]) =>
-    ({ prop: 'shape', attribute: winuiShapeAttribute, fallback, slots });
 
   // A tri-state check box carries its mixed state only as the input's
   // `indeterminate` property, which Fluent assigns from a layout effect keyed on
@@ -272,7 +269,7 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
     Card: stamp(components.Card, appearance('filled', rootIsPrimary)),
     TableRow: stamp(components.TableRow, appearance('none', rootIsPrimary)),
     TabList: stamp(components.TabList, appearance('transparent', rootIsPrimary)),
-    Checkbox: stampCheckedState(stamp(components.Checkbox, shape('square', rootAndPrimary))),
+    Checkbox: stampCheckedState(components.Checkbox),
     TableSelectionCell: stampSelectionCellCheckedState(components.TableSelectionCell),
     Switch: stamp(components.Switch, size('medium', rootAndPrimary)),
   };

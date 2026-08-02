@@ -213,7 +213,16 @@ export const Dropdown = forwardRef<HTMLButtonElement, Omit<ComponentProps<typeof
 // since that is the default action the toggle is.
 const refuseToggle = (event: MouseEvent<HTMLInputElement>) => event.preventDefault();
 
-export const Checkbox = forwardRef<HTMLInputElement, ComponentProps<typeof FluentCheckbox> & ReadOnlyProp>(
+// `size` and `shape` are omitted because WinUI states one check box and only
+// one: a single CheckBoxSize, a single glyph measure, a square corner, and no
+// round counterpart anywhere in the control. The layer already held both of
+// Fluent's sizes to that one box, so `size` changed nothing a caller could see
+// except to pick a different glyph asset, whose ink is a different width once
+// it is squeezed into the one slot; a circular box has nothing to transcribe
+// at all.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L270-L271
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L294
+export const Checkbox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof FluentCheckbox>, 'shape' | 'size'> & ReadOnlyProp>(
   ({ input, onChange, readOnly, ...props }, ref) => (
     <FluentCheckbox
       {...props}

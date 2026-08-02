@@ -126,13 +126,13 @@ const selectedDot = `${selectedEllipse}::after`;
 export const choiceCss = `
 /* Check box geometry. The corner radius has to be stated: Fluent's indicator reset
    reads \`borderRadiusSmall\`, which the theme layer leaves on Fluent's own 2px
-   because no WinUI radius is that small -- and stating it means naming the
-   square shape, since \`shape="circular"\` reads the same property.
+   because no WinUI radius is that small.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L270-L271
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L294
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L603
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CornerRadius_themeresources.xaml#L13-L15 */
 .fui-Checkbox__indicator.fui-Checkbox__indicator {
+  border-radius: var(--winui-control-corner-radius);
   width: 20px;
   height: 20px;
   /* WinUI centres the box in the control, where Fluent pins it to the top so
@@ -140,18 +140,6 @@ export const choiceCss = `
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L602 */
   align-self: center;
   margin: 0;
-}
-
-/* Fluent's mark is an SVG carrying literal width and height attributes which no
-   font size reaches, and it picks a different drawing per size -- a 12 unit one
-   at medium and a 16 unit one at large, whose ink is a fifth wider inside the
-   same box. Only forced colours still renders it, where the layer's own marks
-   below do not apply, so the one measure WinUI states for a glyph slot pins
-   both sizes to one footprint there.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L271 */
-.fui-Checkbox__indicator.fui-Checkbox__indicator > svg {
-  width: 12px;
-  height: 12px;
 }
 
 /* WinUI states eight pixels as the label's own offset rather than a surround on
@@ -199,10 +187,6 @@ export const choiceCss = `
 .fui-Checkbox.fui-Checkbox:has(> .fui-Checkbox__label),
 .fui-Radio.fui-Radio:has(> .fui-Radio__label) {
   min-height: 34px;
-}
-
-.fui-Checkbox[data-winui-shape='square'] > .fui-Checkbox__indicator.fui-Checkbox__indicator {
-  border-radius: var(--winui-control-corner-radius);
 }
 
 /* The input is the hit target, wider than the drawn box. */

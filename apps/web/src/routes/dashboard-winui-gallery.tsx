@@ -231,12 +231,8 @@ function ChoiceSection() {
       <Checkbox disabled label="Disabled, unchecked" />
       <Checkbox checked disabled label="Disabled, checked" />
       <Checkbox checked="mixed" disabled label="Disabled, mixed" />
-      <Checkbox label="Circular" shape="circular" />
-      <Checkbox defaultChecked label="Circular, checked" shape="circular" />
     </Row>
-    <Row label="checkbox - sizes and label position">
-      <Checkbox defaultChecked label="Medium" size="medium" />
-      <Checkbox defaultChecked label="Large" size="large" />
+    <Row label="checkbox - label position">
       <Checkbox defaultChecked label="Label before" labelPosition="before" />
     </Row>
     <Row label="checkbox - invalid">
