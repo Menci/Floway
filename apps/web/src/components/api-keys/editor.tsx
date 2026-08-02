@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 
 import { RetentionField, parsedRetention, type RetentionValue } from './retention-field';
-import { keyWriteBody, type KeySource } from './source';
+import { keySourceFields, keyWriteBody, refineKeySource, type KeySource } from './source';
 import { KeySourceControl } from './source-field';
 import { api, callApi } from '../../api/client';
 import type { ApiKey, ControlPlaneModel, UpstreamOption } from '../../api/types';
@@ -72,8 +72,7 @@ export function KeyDialog(props: KeyDialogProps) {
       z
         .object({
           name: z.string().trim().min(1, 'dashboard.apiKeys.validation.nameRequired'),
-          keySource: z.enum(['generate', 'custom']),
-          customKey: z.string(),
+          ...keySourceFields,
           upstreamOverride: z.boolean(),
           upstreamIds: z.array(z.string()),
           dumpRetention: z.union([z.number(), z.null(), z.literal('invalid')]),
@@ -81,13 +80,9 @@ export function KeyDialog(props: KeyDialogProps) {
         })
         .superRefine((value, ctx) => {
           refineUpstreamAccess(value, ctx);
-          if (isCreate && value.keySource === 'custom' && !value.customKey.trim()) {
-            ctx.addIssue({
-              code: 'custom',
-              message: 'dashboard.apiKeys.validation.customKeyRequired',
-              path: ['customKey'],
-            });
-          }
+          // Rotation always re-reads the source; creation is the only other
+          // moment a key's own text is set.
+          if (isCreate) refineKeySource(value, ctx);
           for (const field of ['dumpRetention', 'responsesRetention'] as const) {
             if (value[field] === 'invalid') {
               ctx.addIssue({

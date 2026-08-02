@@ -11,15 +11,16 @@ import { useNow } from '../../lib/use-now';
 import { useDangerActionClasses, useDangerTextClass } from '../ui/danger';
 import { ResourceListEmptyState } from '../ui/resource-list';
 import { ScrollArea } from '../ui/scroll-area';
-import { TableActions, stopRowSelection, useTrailingCellClass } from '../ui/table-actions';
+import { TABLE_ACTIONS_WIDTH, TableActions, TableActionsHeader, stopRowSelection } from '../ui/table-actions';
+import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { copyOutcomeIcon, useCopyLabel, type ClipboardCopy } from '../ui/use-copy-to-clipboard';
 
 const {
-  Button,
-  DataGrid, DataGridBody, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow,
-  List, ListItem, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, TableCellLayout, Text, Tooltip,
-  createTableColumn, makeStyles,
+  Button, List, ListItem, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger,
+  Table, TableBody, TableCell, TableCellLayout, TableHeader, TableHeaderCell, TableRow, TableSelectionCell,
+  Text, Tooltip,
+  createTableColumn, makeStyles, useArrowNavigationGroup, useTableFeatures, useTableSelection, useTableSort,
 } = fluentComponents;
 
 const useStyles = makeStyles({
@@ -53,7 +54,6 @@ export function KeysTable({
   const s = useStyles();
   const dangerText = useDangerTextClass();
   const dangerClasses = useDangerActionClasses();
-  const trailingCell = useTrailingCellClass();
   const narrow = useMediaQuery('(max-width: 760px)');
   const locale = useLocale();
   const now = useNow(RELATIVE_REFRESH_MS);
@@ -62,92 +62,30 @@ export function KeysTable({
     [upstreams],
   );
 
-  // Griffel injects after the utilities and Fluent states its own `flex: 1 1 0`,
-  // so each basis has to be important to reach the cell.
-  const columnWidth: Partial<Record<string, string>> = {
-    name: '!basis-[180px]',
-    key: '!basis-[240px]',
-    upstreams: '!grow-0 !basis-[120px]',
-    created: '!grow-0 !basis-[132px]',
-    lastUsed: '!grow-0 !basis-[148px]',
-  };
+  // Only sorting needs a column definition; the cells themselves are written
+  // out below, the way every other table on the dashboard writes them.
+  const columns = useMemo(() => [
+    createTableColumn<ApiKey>({ columnId: 'name', compare: (a, b) => a.name.localeCompare(b.name) }),
+    createTableColumn<ApiKey>({ columnId: 'created', compare: (a, b) => a.created_at.localeCompare(b.created_at) }),
+    createTableColumn<ApiKey>({ columnId: 'lastUsed', compare: (a, b) => (a.last_used_at ?? '').localeCompare(b.last_used_at ?? '') }),
+  ], []);
 
-  const columns = useMemo(
-    () => [
-      createTableColumn<ApiKey>({
-        columnId: 'name', compare: (a, b) => a.name.localeCompare(b.name),
-        renderHeaderCell: () => t('dashboard.apiKeys.table.name'),
-        renderCell: key => <TableCellLayout truncate>{key.name}</TableCellLayout>,
-      }),
-      createTableColumn<ApiKey>({
-        columnId: 'key', renderHeaderCell: () => t('dashboard.apiKeys.table.key'),
-        renderCell: key => {
-          const copyTag = `key-${key.id}`;
-          return (
-            <span className="flex items-center gap-1 min-w-0">
-              <Tooltip content={key.key} relationship="label">
-                <code className="winui-focus-rect w-[144px] flex-none truncate" tabIndex={0}>{key.key}</code>
-              </Tooltip>
-              <span className="flex-none" {...stopRowSelection}><TooltipIconButton
-                disabled={disabled}
-                icon={copyOutcomeIcon(clipboard.outcomeFor(copyTag))}
-                label={copyLabel(clipboard.outcomeFor(copyTag), t('dashboard.apiKeys.actions.copy'))}
-                onClick={() => clipboard.copy(key.key, copyTag)}
-              /></span>
-            </span>
-          );
+  const { getRows, selection, sort } = useTableFeatures(
+    { columns, getRowId: key => key.id, items: keys },
+    [
+      useTableSelection({
+        onSelectionChange: (_, data) => {
+          if (disabled) return;
+          const [id] = [...data.selectedItems];
+          if (typeof id === 'string') onSelect(id);
         },
+        selectedItems: selectedKeyId === '' ? [] : [selectedKeyId],
+        selectionMode: 'single',
       }),
-      createTableColumn<ApiKey>({
-        columnId: 'upstreams', renderHeaderCell: () => t('dashboard.apiKeys.table.upstreams'),
-        renderCell: key => (
-          <Tooltip content={upstreamsTitle(key, upstreamById, t)} relationship="description">
-            <TableCellLayout
-              truncate
-              className={`winui-focus-rect ${
-                !key.upstream_ids ? ''
-                  : key.upstream_ids.length === 0 ? dangerText : s.accentText
-              }`}
-              tabIndex={0}
-            >
-              {upstreamsText(key, upstreamById, t)}
-            </TableCellLayout>
-          </Tooltip>
-        ),
-      }),
-      createTableColumn<ApiKey>({
-        columnId: 'created', compare: (a, b) => a.created_at.localeCompare(b.created_at),
-        renderHeaderCell: () => t('dashboard.apiKeys.table.created'),
-        renderCell: key => <Tooltip content={dateTime(key.created_at, locale)} relationship="description">
-          <span className="winui-focus-rect" tabIndex={0}>{shortDate(key.created_at, locale)}</span>
-        </Tooltip>,
-      }),
-      createTableColumn<ApiKey>({
-        columnId: 'lastUsed', compare: (a, b) => (a.last_used_at ?? '').localeCompare(b.last_used_at ?? ''),
-        renderHeaderCell: () => t('dashboard.apiKeys.table.lastUsed'),
-        renderCell: key => key.last_used_at
-          ? <Tooltip content={dateTime(key.last_used_at, locale)} relationship="description">
-              <span className="winui-focus-rect" tabIndex={0}>
-                {relativeTime(key.last_used_at, locale, { now }) ?? t('dashboard.apiKeys.table.usedOn', { date: shortDate(key.last_used_at, locale) })}
-              </span>
-            </Tooltip>
-          : <span>{t('dashboard.apiKeys.table.never')}</span>,
-      }),
-      createTableColumn<ApiKey>({
-        columnId: 'actions', renderHeaderCell: () => t('dashboard.apiKeys.table.actions'),
-        renderCell: key => {
-          return (
-            <TableActions>
-              <TooltipIconButton disabled={disabled} icon={<EditRegular />} label={t('dashboard.apiKeys.actions.editNamed', { name: key.name })} onClick={() => onEdit(key)} />
-              <TooltipIconButton disabled={disabled} icon={<ArrowClockwiseRegular />} label={t('dashboard.apiKeys.actions.rotateNamed', { name: key.name })} onClick={() => onRotate(key)} />
-              <TooltipIconButton danger disabled={disabled} icon={<DeleteRegular />} label={t('dashboard.apiKeys.actions.deleteNamed', { name: key.name })} onClick={() => onDelete(key)} />
-            </TableActions>
-          );
-        },
-      }),
+      useTableSort({}),
     ],
-    [clipboard, copyLabel, dangerText, disabled, locale, now, onDelete, onEdit, onRotate, s, t, upstreamById],
   );
+  const gridNavigation = useArrowNavigationGroup({ axis: 'grid' });
 
   if (keys.length === 0) {
     return <ResourceListEmptyState>{t('dashboard.apiKeys.empty')}</ResourceListEmptyState>;
@@ -201,48 +139,111 @@ export function KeysTable({
 
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
-      <DataGrid
+      <Table
+        {...gridNavigation}
         aria-label={t('dashboard.apiKeys.table.title')}
-        columns={columns}
-        focusMode="composite"
-        getRowId={key => key.id}
-        items={keys}
-        onSelectionChange={(_, data) => {
-          if (disabled) return;
-          const [id] = [...data.selectedItems];
-          if (typeof id === 'string') onSelect(id);
-        }}
-        selectedItems={selectedKeyId === '' ? [] : [selectedKeyId]}
-        selectionMode="single"
-        sortable
+        className="min-w-[960px]"
+        role="grid"
       >
-        <DataGridHeader>
-          <DataGridRow selectionCell={{ 'aria-label': t('dashboard.apiKeys.table.select') }}>
-            {({ renderHeaderCell, columnId }) => (
-              <DataGridHeaderCell className={columnId === 'actions' ? trailingCell : columnWidth[columnId]}>
-                {renderHeaderCell()}
-              </DataGridHeaderCell>
-            )}
-          </DataGridRow>
-        </DataGridHeader>
-        <DataGridBody<ApiKey>>
-          {({ item, rowId }) => (
-            <DataGridRow<ApiKey>
-              key={rowId}
-              selectionCell={{ radioIndicator: { 'aria-label': t('dashboard.apiKeys.table.selectNamed', { name: item.name }) } }}
+        <TableColumns widths={[null, null, '200px', '120px', '132px', '148px', TABLE_ACTIONS_WIDTH]} />
+        <TableHeader>
+          <TableRow>
+            <TableSelectionCell
+              aria-label={t('dashboard.apiKeys.table.select')}
+              checked={false}
+              invisible
+              radioIndicator={null}
+              type="radio"
+            />
+            <TableHeaderCell onClick={event => sort.toggleColumnSort(event, 'name')} sortDirection={sort.getSortDirection('name')} sortable>
+              {t('dashboard.apiKeys.table.name')}
+            </TableHeaderCell>
+            <TableHeaderCell>{t('dashboard.apiKeys.table.key')}</TableHeaderCell>
+            <TableHeaderCell>{t('dashboard.apiKeys.table.upstreams')}</TableHeaderCell>
+            <TableHeaderCell onClick={event => sort.toggleColumnSort(event, 'created')} sortDirection={sort.getSortDirection('created')} sortable>
+              {t('dashboard.apiKeys.table.created')}
+            </TableHeaderCell>
+            <TableHeaderCell onClick={event => sort.toggleColumnSort(event, 'lastUsed')} sortDirection={sort.getSortDirection('lastUsed')} sortable>
+              {t('dashboard.apiKeys.table.lastUsed')}
+            </TableHeaderCell>
+            <TableActionsHeader>{t('dashboard.apiKeys.table.actions')}</TableActionsHeader>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {sort.sort(getRows()).map(({ item: key }) => {
+            const copyTag = `key-${key.id}`;
+            const selected = selection.isRowSelected(key.id);
+            return <TableRow
+              aria-selected={selected}
+              key={key.id}
+              onClick={event => { if (!disabled) selection.toggleRow(event, key.id); }}
+              // The row is what the space bar reaches only while the row itself
+              // holds focus; inside a cell the key belongs to the control there.
+              onKeyDown={event => {
+                if (disabled || event.key !== ' ' || event.target !== event.currentTarget) return;
+                event.preventDefault();
+                selection.toggleRow(event, key.id);
+              }}
+              tabIndex={0}
             >
-              {({ renderCell, columnId }) => (
-                <DataGridCell
-                  className={columnId === 'actions' ? trailingCell : columnWidth[columnId]}
-                  focusMode={columnId === 'actions' ? 'group' : 'cell'}
-                >
-                  {renderCell(item)}
-                </DataGridCell>
-              )}
-            </DataGridRow>
-          )}
-        </DataGridBody>
-      </DataGrid>
+              <TableSelectionCell
+                checked={selected}
+                radioIndicator={{ 'aria-label': t('dashboard.apiKeys.table.selectNamed', { name: key.name }) }}
+                type="radio"
+              />
+              <TableCell className="overflow-hidden"><TableCellLayout truncate>{key.name}</TableCellLayout></TableCell>
+              <TableCell className="overflow-hidden">
+                <span className="flex items-center gap-1 min-w-0">
+                  <Tooltip content={key.key} relationship="label">
+                    <code className="winui-focus-rect w-[144px] flex-none truncate" tabIndex={0}>{key.key}</code>
+                  </Tooltip>
+                  <span className="flex-none" {...stopRowSelection}><TooltipIconButton
+                    disabled={disabled}
+                    icon={copyOutcomeIcon(clipboard.outcomeFor(copyTag))}
+                    label={copyLabel(clipboard.outcomeFor(copyTag), t('dashboard.apiKeys.actions.copy'))}
+                    onClick={() => clipboard.copy(key.key, copyTag)}
+                  /></span>
+                </span>
+              </TableCell>
+              <TableCell className="overflow-hidden">
+                <Tooltip content={upstreamsTitle(key, upstreamById, t)} relationship="description">
+                  <TableCellLayout
+                    truncate
+                    className={`winui-focus-rect ${
+                      !key.upstream_ids ? ''
+                        : key.upstream_ids.length === 0 ? dangerText : s.accentText
+                    }`}
+                    tabIndex={0}
+                  >
+                    {upstreamsText(key, upstreamById, t)}
+                  </TableCellLayout>
+                </Tooltip>
+              </TableCell>
+              <TableCell>
+                <Tooltip content={dateTime(key.created_at, locale)} relationship="description">
+                  <span className="winui-focus-rect" tabIndex={0}>{shortDate(key.created_at, locale)}</span>
+                </Tooltip>
+              </TableCell>
+              <TableCell>
+                {key.last_used_at
+                  ? <Tooltip content={dateTime(key.last_used_at, locale)} relationship="description">
+                      <span className="winui-focus-rect" tabIndex={0}>
+                        {relativeTime(key.last_used_at, locale, { now }) ?? t('dashboard.apiKeys.table.usedOn', { date: shortDate(key.last_used_at, locale) })}
+                      </span>
+                    </Tooltip>
+                  : <span>{t('dashboard.apiKeys.table.never')}</span>}
+              </TableCell>
+              <TableCell>
+                <TableActions>
+                  <TooltipIconButton disabled={disabled} icon={<EditRegular />} label={t('dashboard.apiKeys.actions.editNamed', { name: key.name })} onClick={() => onEdit(key)} />
+                  <TooltipIconButton disabled={disabled} icon={<ArrowClockwiseRegular />} label={t('dashboard.apiKeys.actions.rotateNamed', { name: key.name })} onClick={() => onRotate(key)} />
+                  <TooltipIconButton danger disabled={disabled} icon={<DeleteRegular />} label={t('dashboard.apiKeys.actions.deleteNamed', { name: key.name })} onClick={() => onDelete(key)} />
+                </TableActions>
+              </TableCell>
+            </TableRow>;
+          })}
+        </TableBody>
+      </Table>
     </ScrollArea>
   );
 }

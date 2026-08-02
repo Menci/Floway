@@ -5,17 +5,14 @@ import { fluentComponents } from '../../fluent';
 
 const { TableCell, TableHeaderCell, makeStyles, mergeClasses } = fluentComponents;
 
-// All three declarations are load-bearing: a header cell's label sits inside a
-// button, a `Table` body cell is a `table-cell` where `justify-content` is
-// inert, and a `DataGrid` cell is a flex box where `text-align` is.
+// Both declarations are load-bearing: a cell aligns its own text, while a
+// header cell's label sits inside a button that aligns itself.
 const useStyles = makeStyles({
   trailing: {
-    justifyContent: 'flex-end',
     textAlign: 'right',
     '& .fui-TableHeaderCell__button': { justifyContent: 'flex-end' },
   },
   centred: {
-    justifyContent: 'center',
     textAlign: 'center',
     '& .fui-TableHeaderCell__button': { justifyContent: 'center' },
   },
@@ -38,10 +35,10 @@ export function TableCentredCell({ className, ...props }: TableCellProps) {
   return <TableCell {...props} className={mergeClasses(styles.centred, className)} />;
 }
 
-// `DataGridRow` and `ListItem` select from their own `onClick`, which a nested
-// button reaches -- through a portal too, a menu popover being a React child of
-// its trigger. The click alone: arrow keys must keep travelling for focus
-// navigation.
+// A selectable `TableRow` and a `ListItem` select from their own `onClick`,
+// which a nested button reaches -- through a portal too, a menu popover being a
+// React child of its trigger. The click alone: arrow keys must keep travelling
+// for focus navigation.
 export const stopRowSelection = { onClick: (event: MouseEvent<HTMLElement>) => event.stopPropagation() };
 
 const ACTION_GAP = 'var(--spacingHorizontalXS)';
@@ -57,8 +54,6 @@ const ACTION_BUTTON_SIZE = '24px';
 // vertical, which a per-route width does not.
 export const TABLE_ACTIONS_WIDTH = `calc(3 * ${ACTION_BUTTON_SIZE} + 2 * ${ACTION_GAP} + var(--spacingHorizontalS) + var(--floway-panel-inset))`;
 
-// `grow` is for the flex `DataGrid` cell, which would otherwise size this row to
-// its buttons and leave `justify-end` nothing to distribute.
 export function TableActions({ children }: { children: ReactNode }) {
-  return <div className="flex grow items-center justify-end gap-[var(--spacingHorizontalXS)]" {...stopRowSelection}>{children}</div>;
+  return <div className="flex items-center justify-end" style={{ gap: ACTION_GAP }} {...stopRowSelection}>{children}</div>;
 }

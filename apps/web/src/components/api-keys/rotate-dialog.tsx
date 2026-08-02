@@ -1,7 +1,10 @@
+import { zodResolver } from '@hookform/resolvers/zod';
 import { useState } from 'react';
+import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { z } from 'zod';
 
-import { keyWriteBody, type KeySource } from './source';
+import { keySourceFields, keyWriteBody, refineKeySource, type KeySourceValues } from './source';
 import { KeySourceControl } from './source-field';
 import { api, callApi } from '../../api/client';
 import type { ApiKey } from '../../api/types';
@@ -11,6 +14,8 @@ import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
 
 const { Button, DialogActions, DialogTitle, Text } = fluentComponents;
+
+const rotateSchema = z.object(keySourceFields).superRefine(refineKeySource);
 
 export function RotateKeyDialog({
   apiKey,
@@ -25,24 +30,22 @@ export function RotateKeyDialog({
 }) {
   const { t } = useTranslation();
   const toasts = useOutcomeToasts();
-  const [keySource, setKeySource] = useState<KeySource>('generate');
-  const [customKey, setCustomKey] = useState('');
+  const { control, formState: { errors }, handleSubmit, setValue } = useForm<KeySourceValues>({
+    defaultValues: { customKey: '', keySource: 'generate' },
+    resolver: zodResolver(rotateSchema),
+  });
+  const values = useWatch({ control }) as KeySourceValues;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const snapName = apiKey.name;
-  const rotate = async () => {
-    const trimmed = customKey.trim();
-    if (keySource === 'custom' && !trimmed) {
-      setError(t('dashboard.apiKeys.validation.customKeyRequired'));
-      return;
-    }
+  const rotate = async (values: KeySourceValues) => {
     setSaving(true);
     setError(null);
     try {
       const handle = toasts.start(t('dashboard.apiKeys.toast.rotate.pending', { name: snapName }));
       const result = await callApi(() => api.api.keys[':id'].rotate.$post({
         param: { id: apiKey.id },
-        json: keyWriteBody(keySource, trimmed),
+        json: keyWriteBody(values.keySource, values.customKey),
       }));
       if (result.error) {
         handle.settle();
@@ -61,7 +64,7 @@ export function RotateKeyDialog({
     <DialogShell
       open={open}
       onOpenChange={(_, data) => !saving && onOpenChange(data.open)}
-      onSubmit={() => void rotate()}
+      onSubmit={() => void handleSubmit(rotate)()}
       title={<DialogTitle>{t('dashboard.apiKeys.rotate.title')}</DialogTitle>}
       actions={
         <DialogActions>
@@ -78,14 +81,14 @@ export function RotateKeyDialog({
         {t('dashboard.apiKeys.rotate.message', { name: snapName })}
       </Text>
       <KeySourceControl
-        customKey={customKey}
+        customKey={values.customKey}
         disabled={saving}
-        error={keySource === 'custom' ? error ?? undefined : undefined}
-        onCustomKeyChange={setCustomKey}
-        onSourceChange={value => { setKeySource(value); setError(null); }}
-        source={keySource}
+        error={errors.customKey?.message ? t(errors.customKey.message) : undefined}
+        onCustomKeyChange={value => setValue('customKey', value, { shouldValidate: true })}
+        onSourceChange={value => setValue('keySource', value, { shouldValidate: true })}
+        source={values.keySource}
       />
-      {error && keySource !== 'custom' && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
+      {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
     </DialogShell>
   );
 }
