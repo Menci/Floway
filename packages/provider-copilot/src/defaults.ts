@@ -21,9 +21,9 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
   // Upstream default is off; Claude models below 4.8 flip it on via the
   // per-model default. See `defaultFlagsForCopilotModel` for the empirical
   // basis.
-  'demote-interleaved-system-to-user': false,
-  'demote-developer-to-system': false,
-  'promote-system-to-developer': false,
+  'rewrite-mid-conv-system-to-user': false,
+  'rewrite-developer-to-system': false,
+  'rewrite-system-to-developer': false,
   'strip-billing-attribution': true,
   'strip-prompt-cache-key': false,
 };
@@ -122,7 +122,7 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
 //
 // Threshold conclusion: `>= 4.8`. This includes `claude-opus-4.8` and every
 // 5.x release (which trivially exceeds `[4, 8]`); everything at 4.7 or below
-// stays demoted.
+// keeps the rewrite.
 const supportsInlineSystem = (id: string): boolean => {
   const m = /^claude-[a-z]+-(\d+)(?:[.-](\d+))?$/.exec(id);
   if (!m) return false;
@@ -132,12 +132,12 @@ const supportsInlineSystem = (id: string): boolean => {
 };
 
 // Per-model default flag deltas for Copilot. Only Claude models below
-// 4.8 opt into `demote-interleaved-system-to-user`; every other flag
+// 4.8 opt into `rewrite-mid-conv-system-to-user`; every other flag
 // inherits from `COPILOT_DEFAULT_FLAGS`. Upstream-wide operator overrides
 // are applied before this provider-enforced per-model delta, so the technical
 // requirement for affected Claude models remains authoritative.
 export const defaultFlagsForCopilotModel = (model: Omit<ProviderModel, 'enabledFlags'>): FlagOverrides => {
   if (!model.id.startsWith('claude-')) return {};
   if (supportsInlineSystem(model.id)) return {};
-  return { 'demote-interleaved-system-to-user': true };
+  return { 'rewrite-mid-conv-system-to-user': true };
 };

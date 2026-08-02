@@ -281,7 +281,7 @@ test('POST /v1/responses makes a done reasoning item reusable before terminal', 
   }
 });
 
-test('POST /v1/responses canonicalizes and promotes an implicit system message', async () => {
+test('POST /v1/responses canonicalizes an implicit system message and rewrites it to developer', async () => {
   installRepo();
   let observedBody: Omit<CanonicalResponsesPayload, 'model'> | undefined;
   const callResponses = vi.fn(async (_model, body): Promise<ProviderResponsesResult> => {
@@ -296,7 +296,7 @@ test('POST /v1/responses canonicalizes and promotes an implicit system message',
   });
   queueResolution([makeCandidate({
     callResponses,
-    enabledFlags: new Set(['promote-system-to-developer']),
+    enabledFlags: new Set(['rewrite-system-to-developer']),
   })]);
 
   const response = await makeApp().request('/v1/responses', {

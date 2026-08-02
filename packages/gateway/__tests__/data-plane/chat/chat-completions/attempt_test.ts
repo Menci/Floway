@@ -146,9 +146,9 @@ test('generate native target applies role compatibility flags in target-chain or
       callChatCompletions,
       endpoints: { chatCompletions: {} },
       enabledFlags: new Set([
-        'demote-developer-to-system',
-        'demote-interleaved-system-to-user',
-        'promote-system-to-developer',
+        'rewrite-developer-to-system',
+        'rewrite-mid-conv-system-to-user',
+        'rewrite-system-to-developer',
       ]),
     }),
     headers: new Headers(),
@@ -244,7 +244,7 @@ test('generate translates through the Responses target when only that endpoint i
   assertEquals(callResponses.mock.calls.length, 1);
 });
 
-test('generate preserves translated instructions before promoting inline system messages', async () => {
+test('generate preserves translated instructions before rewriting inline system messages', async () => {
   installRepo();
   const observedBodies: Omit<ResponsesPayload, 'model'>[] = [];
   const callResponses = vi.fn(async (_model, body): Promise<ProviderResponsesResult> => {
@@ -275,7 +275,7 @@ test('generate preserves translated instructions before promoting inline system 
     candidate: makeCandidate({
       callResponses,
       endpoints: { responses: {} },
-      enabledFlags: new Set<FlagId>(['promote-system-to-developer']),
+      enabledFlags: new Set<FlagId>(['rewrite-system-to-developer']),
     }),
     headers: new Headers(),
   });

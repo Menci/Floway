@@ -617,17 +617,17 @@ const en = {
               description:
                   'Some upstreams do not support forced tool calls and reasoning mode at the same time, and reject such requests outright.\nWhen this option is enabled and the caller forces a specific tool through `tool_choice`, Floway **disables reasoning mode** before forwarding the request.',
             },
-            'demote-interleaved-system-to-user': {
+            'rewrite-mid-conv-system-to-user': {
               label: 'Rewrite Inline system Roles to user',
               description:
                   'Some upstreams only allow the `system` role at the beginning of a conversation and reject inline `system` messages interleaved between `user` or `assistant` messages (for example, DeepSeek-R1).\nWhen this option is enabled, consecutive `system` messages at the beginning of the conversation are preserved, while later interleaved `system` roles are rewritten to `user`. Message content remains unchanged.\nFor Messages API upstreams, this option is treated as enabled because system prompts can only appear in the top-level `system` field.',
             },
-            'demote-developer-to-system': {
+            'rewrite-developer-to-system': {
               label: 'Rewrite developer Roles to system',
               description:
                   'The latest OpenAI API specification includes the `developer` role (`role`), but some upstreams do not support it.\nEnable this option to rewrite `developer` as `system` before sending requests to the upstream.\nFor example, Codex system prompts use the `developer` role, while DeepSeek does not support it; enable this option in that case.',
             },
-            'promote-system-to-developer': {
+            'rewrite-system-to-developer': {
               label: 'Rewrite system Roles to developer',
               description:
                   'Rewrite messages with the `system` role to `developer` for upstreams that reject system-role input while accepting the developer role.',

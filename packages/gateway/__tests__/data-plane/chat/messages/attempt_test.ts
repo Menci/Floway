@@ -142,7 +142,7 @@ test('generate translate-to-responses branch routes through responsesAttempt', a
   assertEquals(callResponses.mock.calls.length, 1);
 });
 
-test('generate lets target promotion take precedence over source demotion', async () => {
+test('generate lets the target system-to-developer rewrite take precedence over the source system-to-user rewrite', async () => {
   installRepo();
   const observedBodies: Omit<ResponsesPayload, 'model'>[] = [];
   const callResponses = vi.fn(async (_model, body): Promise<ProviderResponsesResult> => {
@@ -181,8 +181,8 @@ test('generate lets target promotion take precedence over source demotion', asyn
       callResponses,
       endpoints: { responses: {} },
       enabledFlags: new Set<FlagId>([
-        'demote-interleaved-system-to-user',
-        'promote-system-to-developer',
+        'rewrite-mid-conv-system-to-user',
+        'rewrite-system-to-developer',
       ]),
     }),
     headers: new Headers(),
@@ -200,7 +200,7 @@ test('generate lets target promotion take precedence over source demotion', asyn
   assertEquals(input[1], { type: 'message', role: 'developer', content: 'inline instructions' });
 });
 
-test('generate translate-to-responses branch promotes multi-block system prefix', async () => {
+test('generate translate-to-responses branch rewrites a multi-block system prefix to developer', async () => {
   installRepo();
   const observedBodies: Omit<ResponsesPayload, 'model'>[] = [];
   const callResponses = vi.fn(async (_model, body): Promise<ProviderResponsesResult> => {
@@ -239,7 +239,7 @@ test('generate translate-to-responses branch promotes multi-block system prefix'
     candidate: makeCandidate({
       callResponses,
       endpoints: { responses: {} },
-      enabledFlags: new Set<FlagId>(['promote-system-to-developer']),
+      enabledFlags: new Set<FlagId>(['rewrite-system-to-developer']),
     }),
     headers: new Headers(),
   });
@@ -308,7 +308,7 @@ test('countTokens applies generation request transforms before provider dispatch
       enabledFlags: new Set<FlagId>([
         'strip-billing-attribution',
         'disable-reasoning-on-forced-tool-choice',
-        'demote-interleaved-system-to-user',
+        'rewrite-mid-conv-system-to-user',
       ]),
     }),
     headers: new Headers(),

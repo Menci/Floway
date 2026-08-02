@@ -437,15 +437,15 @@ test('Copilot provider exposes its default flag set via ProviderModel.enabledFla
   );
 });
 
-test('per-model provider default beats operator upstream override — Claude < 4.8 stays demoted even when the upstream flag is off', async () => {
+test('per-model provider default beats operator upstream override — Claude < 4.8 keeps the system rewrite even when the upstream flag is off', async () => {
   const { copilotUpstream } = await setupCopilotTest({
     // Operator flipped the upstream-wide flag off. Provider says
-    // Claude < 4.8 must stay demoted (its Vertex backend rejects
+    // Claude < 4.8 must keep the system rewrite (its Vertex backend rejects
     // inline `role:'system'`), and the per-model layer sits after the
     // upstream override in the resolve chain, so the provider judgment
     // wins for the affected model while every other model honors the
     // operator setting.
-    flagOverrides: { 'demote-interleaved-system-to-user': false },
+    flagOverrides: { 'rewrite-mid-conv-system-to-user': false },
   });
   const instance = createCopilotProvider(copilotUpstream);
 
@@ -478,15 +478,15 @@ test('per-model provider default beats operator upstream override — Claude < 4
       const claude48 = models.find(m => m.id === 'claude-opus-4-8');
       const gpt = models.find(m => m.id === 'gpt-test');
       if (!claude46 || !claude48 || !gpt) throw new Error('expected all three models in the emitted catalog');
-      // Per-model layer forces demote on for Claude < 4.8, even though
+      // Per-model layer forces the rewrite on for Claude < 4.8, even though
       // the operator upstream override said off.
-      assertEquals(claude46.enabledFlags.has('demote-interleaved-system-to-user'), true);
+      assertEquals(claude46.enabledFlags.has('rewrite-mid-conv-system-to-user'), true);
       // No per-model rule for Claude >= 4.8; the operator upstream
       // override wins on this row.
-      assertEquals(claude48.enabledFlags.has('demote-interleaved-system-to-user'), false);
+      assertEquals(claude48.enabledFlags.has('rewrite-mid-conv-system-to-user'), false);
       // Non-Claude ids never get a per-model rule; operator setting
       // stands.
-      assertEquals(gpt.enabledFlags.has('demote-interleaved-system-to-user'), false);
+      assertEquals(gpt.enabledFlags.has('rewrite-mid-conv-system-to-user'), false);
     },
   );
 });

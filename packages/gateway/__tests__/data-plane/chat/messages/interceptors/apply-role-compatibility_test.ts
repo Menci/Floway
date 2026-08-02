@@ -32,12 +32,12 @@ test('leaves roles unchanged without the flag or at a translated target', async 
   const messages: MessagesMessage[] = [{ role: 'system', content: 'inline rules' }];
   assertEquals(await applyRoles(messages, new Set()), messages);
   assertEquals(
-    await applyRoles(messages, new Set(['demote-interleaved-system-to-user']), 'responses'),
+    await applyRoles(messages, new Set(['rewrite-mid-conv-system-to-user']), 'responses'),
     messages,
   );
 });
 
-test('demotes every inline system message and preserves content', async () => {
+test('rewrites every inline system message and preserves content', async () => {
   const content = [{ type: 'text' as const, text: 'inline rules' }];
   assertEquals(
     await applyRoles(
@@ -46,7 +46,7 @@ test('demotes every inline system message and preserves content', async () => {
         { role: 'user', content: 'hello' },
         { role: 'system', content },
       ],
-      new Set(['demote-interleaved-system-to-user']),
+      new Set(['rewrite-mid-conv-system-to-user']),
     ),
     [
       { role: 'user', content: 'first rules' },
@@ -56,16 +56,16 @@ test('demotes every inline system message and preserves content', async () => {
   );
   const result = await applyRoles(
     [{ role: 'system', content }],
-    new Set(['demote-interleaved-system-to-user']),
+    new Set(['rewrite-mid-conv-system-to-user']),
   );
   assert(result[0]?.content === content);
 });
 
 test('handles empty input and leaves non-system messages unchanged', async () => {
-  assertEquals(await applyRoles([], new Set(['demote-interleaved-system-to-user'])), []);
+  assertEquals(await applyRoles([], new Set(['rewrite-mid-conv-system-to-user'])), []);
   const messages: MessagesMessage[] = [
     { role: 'user', content: 'hello' },
     { role: 'assistant', content: 'hi' },
   ];
-  assertEquals(await applyRoles(messages, new Set(['demote-interleaved-system-to-user'])), messages);
+  assertEquals(await applyRoles(messages, new Set(['rewrite-mid-conv-system-to-user'])), messages);
 });

@@ -26,7 +26,7 @@ import { withMessagesWebSearchRequestPrepared, withMessagesWebSearchShim } from 
 //   - withReasoningDisabledOnForcedToolChoice: gated by
 //     `disable-reasoning-on-forced-tool-choice`.
 //   - withRoleCompatibilityApplied: Anthropic's top-level `payload.system` is
-//     the only first-position system slot, so the interleaved-system flag
+//     the only first-position system slot, so the mid-conversation-system flag
 //     rewrites every inline system message to user after Messages is selected
 //     as the final target.
 //
