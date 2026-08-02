@@ -1,40 +1,33 @@
 // TabList and Tab restyled after WinUI 3's inline tab strip: Pivot supplies the
-// shape, TabView the foreground ramp. Pivot routes its four foreground states
-// through the legacy SystemControl* brushes while TabView states the same four
-// over the modern TextFillColor* resources this file already speaks; nothing in
-// the corpus picks between them, so the modern layer is our choice, not a
-// source. They differ visibly — Pivot brightens an unselected item under the
-// pointer and dims the selected one, TabView lets selection outrank the pointer
-// entirely, which is what the rules below implement.
+// shape, TabView the foreground ramp. Nothing in the corpus picks between
+// Pivot's legacy SystemControl* brushes and TabView's modern TextFillColor*
+// resources; the modern layer is our choice, and it lets selection outrank the
+// pointer instead of the reverse.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L47-L53
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L504-L574
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L265-L285
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L12-L21
 //
-// Fluent's appearance variants are carried entirely by Griffel atoms with no
-// class or attribute to select them by, so the foreground ramp reaches the two
-// circular appearances too, outranking the `color: inherit` they set so a
-// brand-filled chip can hand its foreground down. A selected filled chip
-// therefore shows WinUI's primary text over Fluent's brand fill; accepted
-// rather than chasing hashed atoms.
+// Fluent's appearance variants carry no class or attribute to select them by,
+// so the ramp also outranks the `color: inherit` the circular appearances set:
+// a selected filled chip shows WinUI's primary text over Fluent's brand fill,
+// accepted rather than chasing hashed atoms.
 // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-tabs/library/src/components/Tab/useTabStyles.styles.ts#L184-L189
 //
-// Focus stays Fluent's by choice: PivotHeaderItem draws no per-item focus
-// visual, and transcribing that silence would leave the strip looking
-// unfocusable.
+// Focus stays Fluent's: PivotHeaderItem draws no per-item focus visual, and
+// transcribing that silence would leave the strip looking unfocusable.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L486
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L587
 //
 // The disabled foreground is left to Fluent: it withholds `aria-selected` from
 // a disabled tab, so no selector below reaches one, and its disabled atom
-// already resolves to TextFillColorDisabled through the theme.
+// already resolves to TextFillColorDisabled.
 // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-tabs/library/src/components/Tab/useTab.ts#L97-L99
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L16
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L21
 //
-// The state rules are ordered rest → hover → pressed → selected, and each
-// selected step repeats the interaction pseudo-classes of the step it has to
-// outweigh, so a pressed selected tab still reads as selected.
+// Rules run rest → hover → pressed → selected, and each selected step repeats
+// the interaction pseudo-classes it has to outweigh.
 export const tabsCss = `
 /* TabViewItemHeaderForegroundPointerOver resolves to the same
    TextFillColorSecondary as rest, so the pointer alone carries the state.
@@ -66,9 +59,8 @@ export const tabsCss = `
   color: var(--winui-text-fill-primary);
 }
 
-/* PointerOverSelected and PressedSelected each restate the selected foreground,
-   so a selected tab holds the primary fill through both; Fluent moves it in
-   both, hence these two combinations.
+/* Selection holds the primary fill through both pointer states in WinUI, but
+   Fluent moves it in both, hence these two combinations.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView.xaml#L354-L372
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView.xaml#L373-L391 */
 .fui-Tab[aria-selected='true']:enabled:hover .fui-Tab__content.fui-Tab__content,
@@ -78,17 +70,14 @@ export const tabsCss = `
   color: var(--winui-text-fill-primary);
 }
 
-/* Repainted only outside High Contrast. Fluent guards these pseudo-elements
-   with forced-colors rules holding them on Highlight and ButtonText; a media
-   query carries no specificity, so our rules would otherwise win inside that
-   mode and put a theme color where the contract is system colors.
+/* Repainted only outside High Contrast: Fluent's forced-colors rules hold these
+   pseudo-elements on Highlight and ButtonText, and a media query carries no
+   specificity, so our rules would otherwise win inside that mode.
    https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-tabs/library/src/components/Tab/useTabStyles.styles.ts#L359-L366
    https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-tabs/library/src/components/Tab/useTabStyles.styles.ts#L453-L463 */
 @media not (forced-colors: active) {
-  /* Fluent previews a selection by growing a neutral bar in the slot the accent
-     pipe will take; every unselected Pivot state collapses SelectedPipe
-     instead. The bar contributes only a fill, so nulling it removes the
-     preview outright.
+  /* Every unselected Pivot state collapses SelectedPipe, so Fluent's neutral
+     selection-preview bar is nulled out; it contributes only a fill.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L536-L538
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L559-L561 */
   .fui-Tab.fui-Tab:hover::before,
