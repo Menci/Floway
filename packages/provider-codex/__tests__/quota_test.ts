@@ -10,6 +10,7 @@ import {
   type CodexQuotaSnapshot,
 } from '../src/quota.ts';
 import type { CodexQuotaSnapshotEntryMap, CodexUpstreamState } from '../src/state.ts';
+import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstream-state-repo.ts';
 import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 
 const accountId = 'acc_1';
@@ -199,13 +200,13 @@ describe('putCodexQuota', () => {
 
   test('throws when the upstream disappeared mid-flight', async () => {
     current = null;
-    await expect(putCodexQuota(upstreamId, accountId, { observed_at: 'now' })).rejects.toThrow(/disappeared mid-request/);
-    expect(saveStateSpy).not.toHaveBeenCalled();
+    await expect(putCodexQuota(upstreamId, accountId, { observed_at: 'now' })).rejects.toThrow(/disappeared/);
+    expect(repo.writes).toEqual([]);
   });
 
   test('throws when the requested account is not in the pool', async () => {
     await expect(putCodexQuota(upstreamId, 'acc_other', { observed_at: 'now' })).rejects.toThrow(/not found in upstream/);
-    expect(saveStateSpy).not.toHaveBeenCalled();
+    expect(repo.writes).toEqual([]);
   });
 });
 

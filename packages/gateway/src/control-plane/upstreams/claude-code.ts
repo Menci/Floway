@@ -247,16 +247,12 @@ export const claudeCodeProbe = async (c: CtxWithJson<typeof claudeCodeProbeBody>
   // instead of asking the client to hand-merge into accounts[0].
   const merged = mergeSnapshotInto(readClaudeCodeUpstreamState(record.state));
 
+  // The snapshot rides on top of whatever state is current at write time, so a
+  // concurrent rotation neither loses its own write nor is overwritten by this
+  // one. A draft that has never been saved has no row to write to.
   if (record.id !== '') {
-    // Best-effort CAS persist against the currently-stored state — a losing
-    // race means a concurrent rotation wrote newer state that supersedes
-    // ours, which is fine (the snapshot rides on top of that new state on
-    // the next probe).
-    const fresh = await getRepo().upstreams.getById(record.id);
-    if (fresh) {
-      const freshMerged = mergeSnapshotInto(readClaudeCodeUpstreamState(fresh.state));
-      await getRepo().upstreams.saveState(record.id, freshMerged, { expectedState: fresh.state });
-    }
+    await getRepo().upstreams.saveState(record.id, current =>
+      mergeSnapshotInto(readClaudeCodeUpstreamState(current)));
   }
 
   logInfo('claude_code_admin_action', { upstream_id: record.id, action: 'quota_probe', actor, outcome: 'ok' });
