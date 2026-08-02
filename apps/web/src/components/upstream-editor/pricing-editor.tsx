@@ -30,26 +30,17 @@ import { PRICING_AXES, type BillingMetric, type ModelKind, type ModelPricing, ty
 
 const { Button, Divider, Field, List, ListItem, MessageBar, MessageBarBody, Option, Text, Toolbar, ToolbarButton, Tooltip, makeStyles } = fluentComponents;
 const usePricingStyles = makeStyles({
-  // A rule row carries two lines -- its coordinate over a one-line summary --
-  // where WinUI's list item carries one, centred in a 40px minimum with no
-  // block padding of its own. The inset here is ours, so the second line has
-  // room and the row grows past that minimum instead of crowding it.
-  //
-  // Everything else the row is made of stays the WinUI layer's:
-  // ../../winui/controls/list.css.ts states the corner radius, the minimum
-  // width and the 16/12 content padding on `.fui-ListItem.fui-ListItem`, whose
-  // doubled class outranks anything declared here, and it draws selection as
-  // the accent bar WinUI runs down a selected row's leading edge. A border in
-  // this rule would sit on top of that bar and read as an edge rather than as
-  // a marker.
+  // WinUI centres one line in a 40px minimum with no block padding; a rule row
+  // carries two. Everything else stays the WinUI layer's, whose doubled
+  // `.fui-ListItem.fui-ListItem` in ../../winui/controls/list.css.ts outranks
+  // whatever this rule declares.
   rule: {
     paddingBlock: '8px',
   },
 });
 
-// Rates are decimal strings end to end, so the input holds the raw text and
-// only hands it to the model on a well-formed value. Parsing to a number here
-// would round sub-cent rates before they ever reached the protocol.
+// Rates stay raw text: parsing to a number here would round sub-cent rates
+// before they ever reached the protocol.
 const RATE_DRAFT_PATTERN = /^\d*(?:\.\d*)?$/;
 
 function RateInput({ label, onChange, readOnly, value }: {
@@ -59,19 +50,15 @@ function RateInput({ label, onChange, readOnly, value }: {
   value: string | undefined;
 }) {
   const [draft, setDraft] = useState(value ?? '');
-  // Whether the operator is in this field decides whether an arriving value is
-  // theirs, so it is read while deciding what to render and is state rather
-  // than a ref.
+  // Read while deciding what to render, so state rather than a ref.
   const [editing, setEditing] = useState(false);
 
   // The rate inputs are keyed by metric rather than by rule, so selecting
-  // another rule hands the same input a new value instead of a new instance.
-  // Adopting it during render rather than in an effect is what keeps the
-  // previously selected rule's numbers from being painted for a frame in the
-  // fields of the rule that has just been opened. A field the operator is
-  // typing in keeps its own text: the rule cannot change under a focused
-  // input, and the value arriving there is the one the typing produced -- a
-  // lone `.` reaches the model as an empty rate and must not come back as one.
+  // another rule hands the same input a new value instead of a new instance;
+  // adopting during render rather than in an effect keeps the previous rule's
+  // numbers from being painted for a frame. A focused field keeps its own
+  // text: a lone `.` reaches the model as an empty rate and must not come back
+  // as one.
   const [adopted, setAdopted] = useState(value);
   if (!editing && value !== adopted) {
     setAdopted(value);
@@ -116,8 +103,8 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
   const styles = usePricingStyles();
   const [ownDrafts, setOwnDrafts] = useState<PricingEntryDraft[]>(() => pricingEntryDraftsFor(value));
   const [selectedId, setSelectedId] = useState<number | null>(() => ownDrafts[0]?.id ?? null);
-  // Read-only is a view of the record; an editable one owns its drafts,
-  // because re-seeding from the prop mid-edit would fight the operator's typing.
+  // An editable editor owns its drafts: re-seeding from the prop mid-edit
+  // would fight the operator's typing.
   const mirrored = useMemo(() => (readOnly ? pricingEntryDraftsFor(value) : null), [readOnly, value]);
   const drafts = mirrored ?? ownDrafts;
   const conditionsHeadingId = useId();
