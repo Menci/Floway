@@ -4,8 +4,8 @@ import { useTranslation } from 'react-i18next';
 
 import { requireDashboardAdmin } from './route-guards';
 import { api, callApi } from '../api/client';
-import { BackupFilePicker, BackupFileSummary } from '../components/backup-restore/backup-file-picker';
 import { BACKUP_FILE_VERSION, parseBackupFile, type BackupFile, type BackupFileData } from '../components/backup-restore/backup-file';
+import { BackupFilePicker, BackupFileSummary } from '../components/backup-restore/backup-file-picker';
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';

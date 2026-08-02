@@ -1,7 +1,7 @@
 import type { DragEventHandler, ReactNode } from 'react';
 
-import { TIGHT_STACK_CLASS } from '../ui/layout';
 import { fluentComponents } from '../../fluent';
+import { TIGHT_STACK_CLASS } from '../ui/layout';
 
 const { Text, makeStyles, mergeClasses } = fluentComponents;
 
