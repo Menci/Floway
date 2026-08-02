@@ -3,9 +3,8 @@ export const flowaySessionHeader = 'x-floway-session';
 
 const sessionInvalidatedEvent = 'floway-session-invalidated';
 
-// Guards the build-time prerender pass, which has no DOM. A browser with storage
-// switched off is deliberately not handled: the throw is the correct outcome,
-// because a session that cannot be persisted is not one this app can carry.
+// Guards the build-time prerender pass, which has no DOM. Storage switched off
+// is deliberately unguarded: a session that cannot persist should throw.
 const hasWindow = (): boolean => typeof window !== 'undefined';
 
 export const getSessionToken = (): string | null => {
