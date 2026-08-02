@@ -1,13 +1,10 @@
-import { act } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
+import { act, renderHook, type RenderHookResult } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { flowayTokenStorageKey } from '../../../src/auth/session';
 import { defaultAgentSetupConfiguration } from '../../../src/components/api-keys/agent-setup-contract';
 import { useAgentSetup } from '../../../src/components/api-keys/use-agent-setup';
 import { stubLocalStorage } from '../../local-storage-stub';
-
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 type SetupState = ReturnType<typeof useAgentSetup>;
 
@@ -36,25 +33,24 @@ const settle = async () => {
 };
 
 describe('Agent Setup lease lifecycle', () => {
-  let root: Root;
-  let container: HTMLDivElement;
-  let current: SetupState;
   const storage = stubLocalStorage();
+  let view: RenderHookResult<SetupState, { apiKeyId: string | null }>;
 
-  const Harness = ({ apiKeyId }: { apiKeyId: string | null }) => {
-    current = useAgentSetup(apiKeyId);
-    return null;
+  const mount = (apiKeyId: string | null) => {
+    view = renderHook(({ apiKeyId: key }: { apiKeyId: string | null }) => useAgentSetup(key), {
+      initialProps: { apiKeyId },
+    });
   };
+
+  const current = () => view.result.current;
 
   beforeEach(() => {
     vi.useFakeTimers();
     storage.set(flowayTokenStorageKey, 'session-token');
-    container = document.createElement('div');
-    root = createRoot(container);
   });
 
-  afterEach(async () => {
-    await act(async () => root.unmount());
+  afterEach(() => {
+    view.unmount();
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
@@ -62,7 +58,7 @@ describe('Agent Setup lease lifecycle', () => {
   it('does not create a public lease until a key is explicitly selected', async () => {
     const fetch = vi.fn(async () => json(lease()));
     vi.stubGlobal('fetch', fetch);
-    await act(async () => root.render(<Harness apiKeyId={null} />));
+    mount(null);
     await settle();
     expect(fetch).not.toHaveBeenCalled();
   });
@@ -70,11 +66,11 @@ describe('Agent Setup lease lifecycle', () => {
   it('expires copy permission at the exact server timestamp', async () => {
     const expiresAt = Date.now() + 500;
     vi.stubGlobal('fetch', vi.fn(async () => json(lease(expiresAt))));
-    await act(async () => root.render(<Harness apiKeyId="key-1" />));
+    mount('key-1');
     await settle();
-    expect(current.canCopy).toBe(true);
+    expect(current().canCopy).toBe(true);
     await act(async () => vi.advanceTimersByTime(500));
-    expect(current.canCopy).toBe(false);
+    expect(current().canCopy).toBe(false);
   });
 
   it('retries a failed heartbeat after the retry delay', async () => {
@@ -86,7 +82,7 @@ describe('Agent Setup lease lifecycle', () => {
       }
       return json(lease());
     }));
-    await act(async () => root.render(<Harness apiKeyId="key-1" />));
+    mount('key-1');
     await settle();
     await act(async () => vi.advanceTimersByTime(60_000));
     await settle();
@@ -101,18 +97,18 @@ describe('Agent Setup lease lifecycle', () => {
       if (init?.method === 'PUT') return json({ error: 'save rejected' }, 400);
       return json(lease());
     }));
-    await act(async () => root.render(<Harness apiKeyId="key-1" />));
+    mount('key-1');
     await settle();
-    await act(async () => current.updateDraft(configuration => ({
+    await act(async () => current().updateDraft(configuration => ({
       ...configuration,
       codex: { ...configuration.codex, model: 'gpt-test' },
     })));
     await act(async () => vi.advanceTimersByTime(400));
     await settle();
-    expect(current.error).toBe('save rejected');
+    expect(current().error).toBe('save rejected');
     await act(async () => vi.advanceTimersByTime(60_000));
     await settle();
-    expect(current.error).toBe('save rejected');
+    expect(current().error).toBe('save rejected');
   });
 
   it('aborts an active request when the selected key changes', async () => {
@@ -123,9 +119,9 @@ describe('Agent Setup lease lifecycle', () => {
         signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
       });
     }));
-    await act(async () => root.render(<Harness apiKeyId="key-1" />));
+    mount('key-1');
     expect(signal?.aborted).toBe(false);
-    await act(async () => root.render(<Harness apiKeyId={null} />));
+    view.rerender({ apiKeyId: null });
     expect(signal?.aborted).toBe(true);
   });
 
@@ -135,12 +131,12 @@ describe('Agent Setup lease lifecycle', () => {
       operations.push(String(input).endsWith('/heartbeat') ? 'heartbeat' : init?.method ?? 'GET');
       return json(lease());
     }));
-    await act(async () => root.render(<Harness apiKeyId="key-1" />));
+    mount('key-1');
     await settle();
     operations.length = 0;
     Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
     document.dispatchEvent(new Event('visibilitychange'));
-    await act(async () => current.updateDraft(configuration => ({
+    await act(async () => current().updateDraft(configuration => ({
       ...configuration,
       codex: { ...configuration.codex, model: 'gpt-visible' },
     })));
@@ -162,15 +158,15 @@ describe('Agent Setup lease lifecycle', () => {
       }
       return json(lease());
     }));
-    await act(async () => root.render(<Harness apiKeyId="key-1" />));
+    mount('key-1');
     await settle();
-    await act(async () => current.updateDraft(configuration => ({
+    await act(async () => current().updateDraft(configuration => ({
       ...configuration,
       codex: { ...configuration.codex, model: 'first' },
     })));
     await act(async () => vi.advanceTimersByTime(400));
     await settle();
-    await act(async () => current.updateDraft(configuration => ({
+    await act(async () => current().updateDraft(configuration => ({
       ...configuration,
       codex: { ...configuration.codex, model: 'second' },
     })));
