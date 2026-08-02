@@ -49,7 +49,17 @@ export function DialogShell({ actions, children, maxWidth, onExited, onOpenChang
           <DialogBody className="floway-dialog-shell__body">
             {title}
             <DialogContent className="floway-dialog-shell__content !p-0">
-              <ScrollArea axes="vertical" className="floway-dialog-shell__scroller h-full min-h-0" contentClassName="grid gap-4 pr-[2px]">
+              {/* Three boxes clip on the identical rect here -- the scrollport,
+                  its host and DialogContent itself -- and a full-width control
+                  inside them reaches 3px past its own border box for the
+                  outline and the band it stands off by. The gutter goes on the
+                  scrollport because that is the innermost of the three and the
+                  only one inside the clip; the other two then have nothing left
+                  to cut. It is not pulled back out with a negative margin: the
+                  host already spans DialogContent exactly, so a negative margin
+                  would push the content under DialogContent's own clip and put
+                  the severed pixels back. */}
+              <ScrollArea axes="vertical" className="floway-dialog-shell__scroller h-full min-h-0" contentClassName="grid gap-4" viewportClassName="px-[3px]">
                 {children}
               </ScrollArea>
             </DialogContent>
