@@ -45,7 +45,6 @@ const MODEL_DEFAULT = '\u0000default';
 const NO_MODEL_MATCHES = '\u0000no-matches';
 const FIELD_GRID_CLASS = `${TWO_COLUMN_FORM_CLASS} gap-3`;
 const CLAUDE_MODEL_GRID_CLASS = 'grid gap-3 grid-cols-[repeat(5,minmax(0,1fr))] max-[1680px]:grid-cols-[repeat(3,minmax(0,1fr))] max-[1180px]:grid-cols-[repeat(2,minmax(0,1fr))] max-[680px]:grid-cols-[minmax(0,1fr)]';
-// cleanupPeriodDays is a numeric top-level Claude Code setting.
 // https://code.claude.com/docs/en/settings#available-settings
 const claudeCleanupPeriods = [180, 365, 99999] as const satisfies readonly NonNullable<AgentSetupConfiguration['claudeCode']['cleanupPeriodDays']>[];
 
@@ -86,8 +85,7 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
 
   const scripts = setup.lease?.scripts[agent];
   const scriptPath = platform === 'unix' ? scripts?.sh : scripts?.ps1;
-  // Both shells comment with `#`, so a command that is not ready yet says why
-  // inside the block it will occupy rather than above it.
+  // Both shells comment with `#`, so an unavailable command says why inside the block it will occupy.
   const command = scriptPath
     ? agentSetupCommand(window.location.origin, scriptPath, platform)
     : `# ${t(selectedKey ? 'dashboard.apiKeys.agentSetup.commandPending' : 'dashboard.apiKeys.agentSetup.selectKey')}`;
@@ -287,9 +285,8 @@ function SwitchSetting({ checked, description, label, onChange }: {
   label: string;
   onChange: (checked: boolean) => void;
 }) {
-  // The info button sits beside the switch rather than inside its label: a
-  // Switch injects `htmlFor` into its label, so a button placed there threw the
-  // switch instead of running its own handler.
+  // A Switch injects `htmlFor` into its label, so a button placed there toggles
+  // the switch instead of running its own handler; the info button sits outside.
   return <span className="inline-flex items-center gap-1">
     <Switch
       checked={checked}
