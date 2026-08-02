@@ -21,8 +21,7 @@ export interface PricingField {
   readonly displayScale: DecimalString;
 }
 
-// Rates are stored per base unit but authored per display unit, so each field
-// carries the scale between the two.
+// Rates are stored per base unit but authored per display unit; the scale bridges the two.
 const tokenPricingField = (metric: BillingMetric): PricingField => ({ metric, displayUnit: 'MTok', displayScale: '1000000' });
 const tokenPricingFields = (...metrics: BillingMetric[]): PricingField[] => metrics.map(tokenPricingField);
 
@@ -74,18 +73,16 @@ const compactSelector = (draft: PricingEntryDraft): PricingSelector => {
   return selector;
 };
 
-// Asked of the compacted selector rather than of its canonical key: a draft
-// mid-edit can hold a threshold the canonicalizer rejects, and that is
-// `collectDraftIssues`'s report to make, not this one's.
+// Asked of the compacted selector, not of its canonical key: a draft mid-edit can hold a
+// threshold the canonicalizer rejects, and that is `collectDraftIssues`'s report to make.
 export const isBaseEntry = (draft: PricingEntryDraft): boolean =>
   Object.keys(compactSelector(draft)).length === 0;
 
 export const baseEntryOf = (drafts: readonly PricingEntryDraft[]): PricingEntryDraft | undefined =>
   drafts.find(isBaseEntry);
 
-// The declared field set for the kind, plus any metric an entry actually
-// prices — an upstream may bill on something this kind does not list, and
-// hiding it would silently drop the rate on the next write.
+// An upstream may bill on a metric this kind does not declare; hiding that field would
+// silently drop the rate on the next write.
 export const visiblePricingFields = (drafts: readonly PricingEntryDraft[], kind: ModelKind): readonly PricingField[] => {
   const fields = new Map(PRICING_FIELDS_BY_KIND[kind].map(field => [field.metric, field]));
   for (const metric of BILLING_METRICS) {
@@ -105,8 +102,7 @@ export const pricingEntryCoordinateLabel = (draft: PricingEntryDraft): string =>
   return labels.length > 0 ? labels.join(', ') : 'Base';
 };
 
-// The unit is not translated: it is a symbol the same metric changes between
-// kinds — per MTok, per second, per 1K searches.
+// Not translated: the unit is a symbol, and the same metric changes it between kinds.
 export const pricingFieldLabel = (name: string, { displayUnit }: PricingField): string =>
   `${name} ($/${displayUnit})`;
 
