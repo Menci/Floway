@@ -51,9 +51,8 @@ const groupByValues: PerformanceGroupBy[] = ['model', 'upstream', 'operation', '
 interface LoaderData {
   error: GlobalError | null;
   loadedAt: number;
-  // `null` is a failed fetch, not a quiet gateway. An empty overview renders
-  // eight zeroes and a table that says nobody sent a request, which is a
-  // telemetry page asserting something it does not know.
+  // `null` is a failed fetch, not a quiet gateway: an empty overview would
+  // render zeroes the page does not know to be true.
   overview: PerformanceOverviewResponse | null;
   state: PerformanceUrlState;
   upstreamNames: UpstreamName[];
@@ -103,25 +102,15 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const [overview, setOverview] = useState<PerformanceOverviewResponse | null>(loaderData.overview);
   const [upstreamNames] = useState(() => new Map(loaderData.upstreamNames.map(record => [record.id, record.name])));
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
-  // What is on screen, as the run that put it there recorded it. The effect
-  // below reacts to the query the page is asking -- the range, the grouping and
-  // the filters -- so what it has
-  // to answer is whether that query still describes the data on screen, not
-  // whether this is the first pass through it. Asked the second way, with a
-  // "have I mounted yet" flag, StrictMode's development double invocation is
-  // indistinguishable from a real change: the first pass sets the flag, the
-  // second finds it set and refetches. Every visit then paid a duplicate round
-  // of requests and overwrote the `loadedAt` the chart buckets are computed
-  // from, in the one build anybody measures in. Recording the query the fetch
-  // asked for rather than the one it brought back is the same mistake in the
-  // other direction: a run torn down before it answered would be remembered as
-  // the data on screen and never re-issued.
+  // The query the data on screen came back for, recorded on arrival. A "have I
+  // mounted yet" flag instead would make StrictMode's double invocation
+  // indistinguishable from a real change and refetch on every visit; recording
+  // the query at request time instead would strand a run torn down before it
+  // answered.
   const loadedFor = useRef({ filters, groupBy, range });
   const locale = useLocale();
 
-  // A background poll must not clear a failure the operator has not read:
-  // these pages reload themselves every minute, and wiping the bar on the way
-  // in meant a server's own words could appear and vanish unseen.
+  // A background poll must not clear a failure the operator has not read.
   const reload = useCallback(async (signal: AbortSignal, { background }: { background: boolean }) => {
     const requestedAt = Date.now();
     if (!background) setError(null);
@@ -150,21 +139,15 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
 
   usePollWhileVisible(poll);
 
-  // The session is gone, not the page: the gateway said so with a status, and
-  // only the status says it -- a 401 body carrying its own words never matches
-  // a message comparison.
   useEffect(() => { if (error?.status === 401) clearAuth(); }, [clearAuth, error]);
 
   useEffect(() => {
     setSearchParams(serializePerformanceUrlState({ metric, percentile, groupBy, range, filters, hidden: [...hiddenSeries] }), { replace: true });
   }, [filters, groupBy, hiddenSeries, metric, percentile, range, setSearchParams]);
 
-  // Fluent's single-select reports every click on an option, including a click
-  // on the one already selected, and nothing downstream can tell the two apart
-  // once a fresh filters object exists: the query is the same, but the refetch
-  // is keyed on identity and the chart's bucket axis moves under an operator
-  // who chose nothing. So the selection that changes nothing is recognised
-  // where it arrives.
+  // Fluent's single-select reports a click on the already-selected option too;
+  // a fresh filters object for it would refetch and move the chart's bucket
+  // axis under an operator who chose nothing.
   // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-combobox/library/src/utils/useSelection.ts#L23-L26
   const changeGroupBy = (next: PerformanceGroupBy) => {
     if (next === groupBy) return;
@@ -249,12 +232,9 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
         <PerformanceChartSection chart={chart} hidden={hiddenSeries} onHiddenChange={setHiddenSeries} title={t('dashboard.performance.chartTitle', { metric: t(`dashboard.performance.metric.${metric === 'ttft' ? 'ttft' : 'outputSpeed'}`), group: t(`dashboard.performance.groupBy.${groupBy}`), percentile })} />
       </Panel>
       <Panel className="!grid !gap-3 min-w-0">
-        {/* The tabs sit flush against the scrollport on the block axis, so the
-            2px ring a focused tab paints has nowhere to go. The gutter is on
-            the scrollport, which is the box that clips, and the host takes the
-            same distance back off its margin so the row still lines up with the
-            panel. Not an inward ring: it would land on the tab's own selection
-            pipe. */}
+        {/* The scrollport clips the 2px ring a focused tab paints, so it takes
+            a gutter and the host removes the same distance again to keep the
+            row aligned. An inward ring would land on the tab's selection pipe. */}
         <ScrollArea axes="horizontal" className="min-w-0 -m-0.5" viewportClassName="p-0.5"><TabList selectedValue={activeBreakdown.key} onTabSelect={(_, data) => setBreakdownGroup(data.value as PerformanceGroupBy)}>
           {breakdowns.map(({ key }) => <Tab key={key} value={key}>{t(`dashboard.performance.groupBy.${key}`)}</Tab>)}
         </TabList></ScrollArea>
