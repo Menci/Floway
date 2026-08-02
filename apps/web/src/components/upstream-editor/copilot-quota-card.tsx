@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { quotaBarColor } from './subscription-account-quota';
 import { api, callApi } from '../../api/client';
 import type { CopilotQuotaSnapshot, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
@@ -120,7 +121,7 @@ export function CopilotQuotaCard({ record }: { record: CopilotRecord }) {
               {t(`dashboard.upstreamEditor.copilot.quota.${bucket.kind}`)}
             </Text>}
       </div>
-      {bucket.kind === 'metered' && <ProgressBar max={100} thickness="large" value={bucket.barPercent ?? undefined} />}
+      {bucket.kind === 'metered' && <ProgressBar color={quotaBarColor(bucket.barPercent)} max={100} thickness="large" value={bucket.barPercent ?? undefined} />}
     </div>)}
 
     {/* The reset date leads because a narrow row stacks these two, and alone on
