@@ -1,11 +1,9 @@
-// Copying runs from a click, and only the synchronous path is guaranteed to
-// still be inside that user gesture: `document.execCommand` is deprecated but
-// cannot be defeated by anything having been awaited first, and it is the only
-// path at all outside a secure context, where `navigator.clipboard` is not
-// exposed. So the legacy command is tried first and the asynchronous Clipboard
-// API is the fallback for when it fails or is unavailable -- ordering the two
-// the other way round spends the gesture on the await and can leave the
-// fallback unable to work.
+// The legacy command is tried first and the async Clipboard API is the
+// fallback: only the synchronous path is guaranteed to still be inside the
+// click's user gesture, and it is the only path at all outside a secure
+// context, where `navigator.clipboard` is not exposed. Ordering the two the
+// other way round spends the gesture on the await and can leave the fallback
+// unable to work.
 // https://developer.mozilla.org/en-US/docs/Web/API/Document/execCommand
 // https://stackoverflow.com/questions/400212/how-do-i-copy-to-the-clipboard-in-javascript
 export const copyToClipboard = async (text: string): Promise<boolean> => {
@@ -14,10 +12,9 @@ export const copyToClipboard = async (text: string): Promise<boolean> => {
     await navigator.clipboard.writeText(text);
     return true;
   } catch (error) {
-    // The boolean is the caller's contract and it does render the failure, but
-    // "Copy failed" does not say whether the page lacks the permissions-policy
-    // grant, the document was not focused, or the user refused the prompt --
-    // which is the first thing anybody reporting this would be asked.
+    // The caller's boolean renders the failure but cannot say whether the page
+    // lacks the permissions-policy grant, the document was not focused, or the
+    // user refused the prompt.
     console.warn('Copying to the clipboard failed.', error);
     return false;
   }
@@ -29,7 +26,7 @@ const copyWithExecCommand = (text: string): boolean => {
   const previousRange = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
   const textArea = document.createElement('textarea');
   // The node has to be focusable and selectable to be copied from, which rules
-  // out hiding it; it is made invisible instead.
+  // out hiding it, so it is made invisible instead.
   textArea.style.position = 'fixed';
   textArea.style.top = '0';
   textArea.style.left = '0';
@@ -51,7 +48,6 @@ const copyWithExecCommand = (text: string): boolean => {
     return false;
   } finally {
     textArea.remove();
-    // Nobody should lose their place in the page because they copied something.
     if (selection && previousRange) {
       selection.removeAllRanges();
       selection.addRange(previousRange);
