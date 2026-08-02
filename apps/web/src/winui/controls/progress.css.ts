@@ -21,14 +21,14 @@
 // Motion is answered per control. The ring is an AnimatedVisualPlayer running a
 // Lottie composition, so its timing lives in generated animation source and not
 // in the template, and Fluent's spin is kept for want of anything to
-// transcribe. The bar's indeterminate storyboard is stated in full — two
-// indicators over a 2s loop on a 0.4,0,0.6,1 spline, the second held until
-// 0.75s — and Fluent's single sweeping segment is kept against it by choice, so
-// the two controls are not left with one transcribed motion and one borrowed
-// one. The choice carries with it the reduced-motion form Fluent substitutes
-// for that sweep, an opacity pulse over the full width. The determinate step
-// keeps Fluent's 0.3s width transition, WinUI's counterpart being a
-// RepositionThemeAnimation over the length the indicator gained.
+// transcribe. The bar's indeterminate storyboard is not in that position: it is
+// stated in full — two indicators over a 2s loop on a 0.4,0,0.6,1 spline, the
+// second held until 0.75s — and is transcribable, and Fluent's single sweeping
+// segment is kept anyway. Nothing sources that; the transcription is simply not
+// spent. With it goes the reduced-motion form Fluent substitutes for the sweep,
+// an opacity pulse over the full width. The determinate step keeps Fluent's
+// 0.3s width transition, WinUI's counterpart being a RepositionThemeAnimation
+// over the length the indicator gained.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressRing/ProgressRing.xaml#L31-L32
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar.xaml#L94-L111
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar.xaml#L20-L24
