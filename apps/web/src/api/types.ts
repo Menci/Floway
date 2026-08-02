@@ -1,5 +1,3 @@
-// Control-plane DTOs the SPA consumes — serialized shapes the gateway emits at /api.
-
 import type { InferRequestType, InferResponseType } from 'hono/client';
 
 import type { api } from './client';
