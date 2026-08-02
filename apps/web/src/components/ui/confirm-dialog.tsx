@@ -7,27 +7,19 @@ import { fluentComponents } from '../../fluent';
 const { Button, DialogActions, DialogTitle, makeStyles, mergeClasses } = fluentComponents;
 
 const useStyles = makeStyles({
-  // A destructive confirmation is an accent button wearing Fluent's danger ramp,
-  // one #c50f1f family in both themes. The label is StaticInverted, white in
-  // both, because the fill does not follow the theme.
-  //
+  // The label is StaticInverted because the fill does not follow the theme.
   // Not OnBrand: ../../winui/theme.ts re-points it at WinUI's
-  // TextOnAccentFillColorPrimary, which is keyed to the accent's own lightness
-  // and so goes black in dark, reading 3.46:1 at rest and 2.36 pressed on a fill
-  // that stays dark red. Not DangerForegroundInverted either -- that is the
-  // danger hue for use ON an inverted surface, and over DangerBackground3 it
-  // reads 1.74:1 in light and 1.17:1 in dark.
+  // TextOnAccentFillColorPrimary, which goes black in dark, reading 3.46:1 at
+  // rest and 2.36 pressed. Not DangerForegroundInverted either, which reads
+  // 1.74:1 in light and 1.17:1 in dark over DangerBackground3.
   //
-  // Every rule is qualified to the enabled states: the `!important` that lets
-  // these outrank the WinUI layer's accent fill would otherwise also outrank the
-  // disabled painting, which is the whole signal that the confirmation is in
-  // flight. Pressed is `:active` alone because WinUI enters Pressed on a
-  // keyboard invoke as well as under the pointer.
+  // The enabled-state qualifiers keep the `!important` that outranks the WinUI
+  // layer's accent fill from also outranking the disabled painting. Pressed is
+  // `:active` alone because WinUI enters Pressed on a keyboard invoke as well.
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L106-L110
   //
   // Colour is confined to `@media not (forced-colors: active)`: WinUI maps the
-  // whole AccentButton brush set onto system brushes there, so intent stops
-  // being expressible and Fluent's Highlight/HighlightText drawing stands.
+  // whole AccentButton brush set onto system brushes there.
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L53-L65
   danger: {
     '@media not (forced-colors: active)': {
@@ -64,11 +56,6 @@ export function ConfirmDialog({
   actionLabel: string;
   busy?: boolean;
   cancelLabel?: string;
-  /**
-   * A failed attempt at the action, reported here rather than behind the dialog,
-   * where a page-level report would sit under the dialog the operator is
-   * looking at.
-   */
   error?: string | null;
   message: string;
   onCancel?: () => void;
