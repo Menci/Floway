@@ -44,15 +44,10 @@ const {
 } = fluentComponents;
 
 const useStyles = makeStyles({
-  // Geometry only: the fill ramp comes from the WinUI layer, and selection is
-  // drawn by NavSelectionIndicator, which needs one element outliving both the
-  // item leaving selection and the one taking it.
-  //
   // 36px is a floor rather than a fixed height, so a two-line label lengthens
-  // the row instead of being cut. The horizontal box is read off the left-pane
-  // template, whose 40px icon column plus the presenter's 4 puts the label at
-  // 44; Fluent's icon slot is 20px wide, so the gap that carries the label to
-  // that 44 is 12 rather than 16.
+  // the row instead of being cut. The left-pane template's 40px icon column
+  // plus the presenter's 4 puts the label at 44; Fluent's icon slot is 20px
+  // wide, so the gap carrying the label to that 44 is 12 rather than 16.
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L208
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L217
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L219
@@ -166,24 +161,21 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
   const logout = useAuthStore(state => state.logout);
   const styles = useStyles();
   const logoutDialog = useDialogInvocation<void>();
-  // Signing out redirects away and takes this sidebar with it, so it has to
-  // wait for the dialog's exit; doing both in one handler batches the redirect
-  // in before the exit gets a frame. The exit also runs on a dismissal, so only
-  // a confirmed one signs out.
+  // Signing out redirects away and unmounts this sidebar, so it waits for the
+  // dialog's exit. The exit also runs on a dismissal, so only a confirmed one
+  // signs out.
   const signOutConfirmed = useRef(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const footerRef = useRef<HTMLDivElement>(null);
   // Color icons carry hardcoded gradient ids, so two mounted drawers would
-  // collide on them. idPrefix namespaces the ids per Sidebar instance, and the
-  // separators React puts around useId() are illegal inside url(#…).
+  // collide on them; the separators React puts in useId() are illegal inside
+  // url(#…).
   const iconIdPrefix = useId().replace(/[^a-zA-Z0-9]/g, '');
   const valueForPath = (path: string) => navGroups
     .flatMap(group => group.items)
     .find(item => path === item.to || path.startsWith(`${item.to}/`))?.to
     ?? (path.startsWith('/dashboard/settings') ? '/dashboard/settings' : '');
   const selectedValue = valueForPath(pathname);
-  // A route commits only after its loaders resolve, so holding the item pressed
-  // for that window is what says the click landed.
   const pendingValue = navigation.location ? valueForPath(navigation.location.pathname) : '';
 
   return <>
