@@ -30,12 +30,8 @@ import 'prismjs/components/prism-json';
 
 const { MessageBar, MessageBarBody, Tab, TabList, Text, makeStyles, mergeClasses } = fluentComponents;
 
-// Every rule here separates stacked regions inside one surface, so each takes
-// WinUI's divider brush, which Fluent reaches through `colorNeutralStroke3`.
-// The control outline is a different brush and the two are indistinguishable in
-// light, so only the dark dictionary shows which one a rule picked. The last
-// divider in each run gives up its edge, since the enclosing surface already
-// draws that boundary.
+// Region dividers take WinUI's divider brush (`colorNeutralStroke3`), not the
+// control outline; the two only differ in the dark dictionary.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L53
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L257
 const useStyles = makeStyles({
@@ -150,11 +146,7 @@ export function RequestDetailPanel({ collected: loadedCollected, error: loadedEr
   error: string | null;
   record: DumpRecord | null;
   recordId: string | null;
-  /**
-   * Whether the surface this panel is drawn on outlives the selection that
-   * filled it. A drawer's does -- the record leaves the URL when its close is
-   * requested, and the slide runs after that. A panel in the page passes false.
-   */
+  /** True when the surface outlives the selection: a drawer loses the record from the URL before its slide-out runs. */
   retainLastRecord: boolean;
 }) {
   const { t } = useTranslation();
@@ -162,9 +154,8 @@ export function RequestDetailPanel({ collected: loadedCollected, error: loadedEr
   const dangerText = useDangerTextClass();
   const [streamView, setStreamView] = useState<'collected' | 'events'>('collected');
 
-  // While a retaining surface is still on screen with nothing selected, the
-  // last record it drew is what slides away. Deriving that during render rather
-  // than in an effect keeps the swap out of the first frame of the leave.
+  // Deriving the retained record during render rather than in an effect keeps
+  // the swap out of the first frame of the leave animation.
   const [shown, setShown] = useState({ collected: loadedCollected, error: loadedError, record: loadedRecord, recordId: selectedRecordId });
   const incoming = retainLastRecord && selectedRecordId === null
     ? shown
@@ -253,8 +244,7 @@ export function RequestDetailPanel({ collected: loadedCollected, error: loadedEr
           {record.response.body.type === 'stream' && streamView === 'events' && renderedEvents.map((event, index) => (
             <div className={s.section} key={index}>
               {/* Not `formatDuration`: its ladder rounds the sub-millisecond
-                  gaps that separate a burst to `0ms`, and an inter-event offset
-                  is read against its neighbours. */}
+                  gaps within a burst to `0ms`. */}
               <div className="flex items-center gap-2 px-4 pt-3"><Text size={100} className="font-mono mono-size-100 text-fui-fg2">{event.event ?? t('dashboard.requests.unlabeled')}</Text>{event.parseError && <Text size={100} className={dangerText}>{t('dashboard.requests.jsonParseFailed')}</Text>}<Text size={100} className="ml-auto font-mono mono-size-100 text-fui-fg3">+{event.timestamp.toFixed(event.timestamp < 1 ? 3 : 0)}ms</Text></div>
               <CodeView body={{ text: event.text, copyText: event.text, decodeError: event.parseError, isJson: !event.parseError }} />
             </div>
