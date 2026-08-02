@@ -5,14 +5,9 @@ import { fluentComponents } from '../../fluent';
 
 const { Text, mergeClasses } = fluentComponents;
 
-// Nothing here is transcribed: microsoft-ui-xaml's `controls/dev/` and the
-// toolkit's `components/` present no empty state at all, so every number below
-// is ours.
-//
-// The block is centred in the space it is given either way; `align` decides only
-// how its own lines sit inside it. It must be centring rather than stretching: a
-// stretched grid item hands the slack to its own rows, and the title, the line
-// under it and the action drift to opposite ends of the panel.
+// Centring rather than stretching: a stretched grid item hands the slack to its
+// own rows, and the title, the line under it and the action drift to opposite
+// ends of the panel.
 const ALIGN_CLASS = {
   center: 'text-center justify-items-center',
   start: 'justify-items-start',
@@ -36,9 +31,8 @@ export function EmptyState({ action, align = 'center', className, description, t
   </div>;
 }
 
-// One sentence standing where content would be. It states no inset of its own:
-// a flush panel, a section body and a legend row each hold their content off
-// their edge by a different measure.
+// No inset of its own: a flush panel, a section body and a legend row each hold
+// their content off their edge by a different measure.
 export function EmptyStateLine({ children, className }: { children: ReactNode; className?: string }) {
   return <Text block size={300} className={mergeClasses('text-fui-fg2', className)}>{children}</Text>;
 }
