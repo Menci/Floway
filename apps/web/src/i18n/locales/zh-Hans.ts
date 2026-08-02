@@ -276,6 +276,8 @@ const zhHansCN = {
         moveUp: '上移',
         moveDown: '下移',
         modelCount_other: '{{count, number}} 个模型',
+        modelCountUnknown: '数量不可用',
+        upstreamDisabled: '上游已停用',
         validation: '至少选择一个上游，或关闭限制。',
       },
       apiKeys: {
@@ -422,9 +424,11 @@ const zhHansCN = {
           ready: '缓存就绪',
           empty: '尚未加载',
           failed: '刷新失败',
+          disabled: '上游已停用',
           readyDetail: '模型缓存最近刷新于 {{time}}。',
           emptyDetail: '该上游的模型缓存尚未生成。',
           failedDetail: '最近一次刷新在 {{time}} 失败：{{message}}',
+          disabledDetail: '该上游已停用，此处显示的是最后一次缓存的目录数量。{{detail}}',
         },
         summary: {
           ollama: 'Ollama 端点',

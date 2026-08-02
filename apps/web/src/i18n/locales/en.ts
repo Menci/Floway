@@ -288,6 +288,8 @@ const en = {
         moveDown: 'Move down',
         modelCount_one: '{{count, number}} model',
         modelCount_other: '{{count, number}} models',
+        modelCountUnknown: 'Count unavailable',
+        upstreamDisabled: 'Upstream disabled',
         validation: 'Select at least one upstream, or turn off the limit.',
       },
       apiKeys: {
@@ -443,10 +445,12 @@ const en = {
           ready: 'Cache ready',
           empty: 'Not loaded',
           failed: 'Refresh failed',
+          disabled: 'Upstream disabled',
           readyDetail: 'Model cache last refreshed {{time}}.',
           emptyDetail:
               "This upstream's model cache has not been populated yet.",
           failedDetail: 'Last refresh failed at {{time}}: {{message}}',
+          disabledDetail: 'This upstream is disabled, so the count is its last cached catalog. {{detail}}',
         },
         summary: {
           ollama: 'Ollama endpoint',

@@ -1,4 +1,4 @@
-import { ShieldKeyhole24Regular } from '@fluentui/react-icons';
+import { PlugDisconnectedRegular, ShieldKeyhole24Regular } from '@fluentui/react-icons';
 import { useCallback, useId, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -24,11 +24,14 @@ const {
 
 interface UpstreamAccessRow {
   color: UpstreamOption['color'];
-  enabled: boolean;
   id: string;
   kind: UpstreamOption['kind'] | null;
-  modelCount: number;
+  // Null is a count nobody knows: the upstream is gone, or it is disabled and
+  // never cached a catalog while it was on.
+  modelCount: number | null;
   name: string;
+  selected: boolean;
+  upstreamEnabled: boolean;
 }
 
 export function UpstreamAccessControl({
@@ -108,10 +111,15 @@ export function UpstreamAccessControl({
             <TableBody>{rows.map(row => {
               const index = ids.indexOf(row.id);
               return <TableRow key={row.id}>
-                <TableCell><Checkbox aria-label={`${t('dashboard.upstreamAccess.enabled')}: ${row.name}`} checked={row.enabled} disabled={disabled || !override} onChange={(_, data) => toggleUpstream(row.id, !!data.checked)} /></TableCell>
+                <TableCell><Checkbox aria-label={`${t('dashboard.upstreamAccess.enabled')}: ${row.name}`} checked={row.selected} disabled={disabled || !override} onChange={(_, data) => toggleUpstream(row.id, !!data.checked)} /></TableCell>
                 <TableCell><div className="inline-flex items-center gap-1"><ReorderButtons disabled={disabled || !override} downLabel={t('dashboard.upstreamAccess.moveDown')} isFirst={index <= 0} isLast={index === -1 || index >= ids.length - 1} onMove={direction => moveUpstream(row.id, direction)} upLabel={t('dashboard.upstreamAccess.moveUp')} /></div></TableCell>
                 <TableCell><ProviderBadge color={row.color} kind={row.kind} label={row.name} /></TableCell>
-                <TableCell>{t('dashboard.upstreamAccess.modelCount', { count: row.modelCount })}</TableCell>
+                <TableCell><span className="inline-flex items-center gap-1.5 min-w-0">
+                  {row.modelCount === null
+                    ? t('dashboard.upstreamAccess.modelCountUnknown')
+                    : t('dashboard.upstreamAccess.modelCount', { count: row.modelCount })}
+                  {!row.upstreamEnabled && <PlugDisconnectedRegular className="block flex-none text-fui-fg2" aria-label={t('dashboard.upstreamAccess.upstreamDisabled')} />}
+                </span></TableCell>
               </TableRow>;
             })}</TableBody>
           </Table>
@@ -134,17 +142,23 @@ const accessRows = (
       modelCounts.set(id, (modelCounts.get(id) ?? 0) + 1);
     }
   }
-  const rowFor = (upstream: UpstreamOption, enabled: boolean): UpstreamAccessRow => ({
-    ...upstream,
-    enabled,
-    modelCount: modelCounts.get(upstream.id) ?? 0,
+  // A disabled upstream contributes nothing to the live catalog these counts
+  // come from, so it reports the size of the catalog it stored while it was on.
+  const rowFor = (upstream: UpstreamOption, isSelected: boolean): UpstreamAccessRow => ({
+    color: upstream.color,
+    id: upstream.id,
+    kind: upstream.kind,
+    modelCount: upstream.enabled ? (modelCounts.get(upstream.id) ?? 0) : upstream.cachedModelCount,
+    name: upstream.name,
+    selected: isSelected,
+    upstreamEnabled: upstream.enabled,
   });
   return [
     ...ids.map(id => {
       const upstream = byId.get(id);
       return upstream
         ? rowFor(upstream, true)
-        : { id, name: `Unknown (${id})`, kind: null, color: null, enabled: true, modelCount: 0 };
+        : { id, name: `Unknown (${id})`, kind: null, color: null, modelCount: null, selected: true, upstreamEnabled: true };
     }),
     ...available.filter(upstream => !selected.has(upstream.id)).map(upstream => rowFor(upstream, false)),
   ];

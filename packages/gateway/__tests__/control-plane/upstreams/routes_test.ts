@@ -426,11 +426,12 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
   const items = (await list.json()) as JsonObject[];
   const byId = Object.fromEntries(items.map(i => [i.id, i]));
 
-  assertEquals(byId.up_fresh.modelsCache, { fetchedAt: null, lastError: null });
-  assertEquals(byId.up_warm.modelsCache, { fetchedAt: 1_700_000_000_000, lastError: null });
+  assertEquals(byId.up_fresh.modelsCache, { fetchedAt: null, lastError: null, modelCount: null });
+  assertEquals(byId.up_warm.modelsCache, { fetchedAt: 1_700_000_000_000, lastError: null, modelCount: 1 });
   assertEquals(byId.up_failed.modelsCache, {
     fetchedAt: 1_700_000_000_000,
     lastError: { message: 'boom', at: 1_700_000_500_000 },
+    modelCount: 1,
   });
 });
 
@@ -453,10 +454,20 @@ test('GET /api/upstream-options returns the minimal picker shape to admin and no
     config: { baseUrl: 'https://custom.example.com', authStyle: 'bearer', apiKey: 'sk-secret', endpoints: { chatCompletions: {} } },
     state: null,
   });
+  // A disabled upstream is absent from the live catalog, so the picker's count
+  // comes from the catalog it stored while it was on.
+  await repo.upstreams.saveModelsCache('up_disabled_custom', {
+    revision: MODEL_CATALOG_REVISION,
+    fetchedAt: 1_700_000_000_000,
+    models: [
+      { id: 'm1', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} },
+      { id: 'm2', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} },
+    ],
+  });
 
   const expected = [
-    { id: 'up_copilot', name: 'GitHub Copilot (tester)', kind: 'copilot', enabled: true, color: null },
-    { id: 'up_disabled_custom', name: 'Disabled Custom', kind: 'custom', enabled: false, color: null },
+    { id: 'up_copilot', name: 'GitHub Copilot (tester)', kind: 'copilot', enabled: true, color: null, cachedModelCount: null },
+    { id: 'up_disabled_custom', name: 'Disabled Custom', kind: 'custom', enabled: false, color: null, cachedModelCount: 2 },
   ];
 
   const adminResp = await requestApp('/api/upstream-options', { headers: { 'x-floway-session': adminSession } });
@@ -469,7 +480,7 @@ test('GET /api/upstream-options returns the minimal picker shape to admin and no
   assertEquals(userBody, expected);
   // No secret-bearing or operator-only fields leak through this endpoint.
   for (const row of userBody) {
-    assertEquals(Object.keys(row).sort(), ['color', 'enabled', 'id', 'kind', 'name']);
+    assertEquals(Object.keys(row).sort(), ['cachedModelCount', 'color', 'enabled', 'id', 'kind', 'name']);
   }
 });
 

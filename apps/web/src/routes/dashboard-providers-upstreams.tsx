@@ -3,6 +3,7 @@ import {
   ChevronDownRegular,
   DeleteRegular,
   EditRegular,
+  PlugDisconnectedRegular,
   WarningRegular,
 } from '@fluentui/react-icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -405,7 +406,7 @@ function UpstreamsTable({
                 </TableCellLayout>
               </TableCell>
               <TableCell>
-                <ModelStatus count={modelCounts.get(record.id)!} modelsAvailable={data.models !== null} record={record} />
+                <ModelStatus count={modelCounts.get(record.id)!} record={record} />
               </TableCell>
               <TableCentredCell>
                 <Switch
@@ -443,11 +444,9 @@ function UpstreamsTable({
 
 function ModelStatus({
   count,
-  modelsAvailable,
   record,
 }: {
-  count: number;
-  modelsAvailable: boolean;
+  count: number | null;
   record: UpstreamRecord;
 }) {
   const { t } = useTranslation();
@@ -455,8 +454,8 @@ function ModelStatus({
   const cacheStatus = record.modelsCache.lastError
     ? 'failed'
     : record.modelsCache.fetchedAt === null ? 'empty' : 'ready';
-  const healthy = modelsAvailable && count > 0 && !record.modelsCache.lastError;
-  const detail = record.modelsCache.lastError
+  const healthy = count !== null && count > 0 && !record.modelsCache.lastError;
+  const cacheDetail = record.modelsCache.lastError
     ? t('dashboard.upstreams.cache.failedDetail', {
         message: record.modelsCache.lastError.message,
         time: dateTime(record.modelsCache.lastError.at, locale),
@@ -464,18 +463,23 @@ function ModelStatus({
     : record.modelsCache.fetchedAt !== null
       ? t('dashboard.upstreams.cache.readyDetail', { time: dateTime(record.modelsCache.fetchedAt, locale) })
       : t('dashboard.upstreams.cache.emptyDetail');
+  // A disabled upstream's cache freshness is a statement about the past, so the
+  // tooltip says the upstream is off before it says when it last refreshed.
+  const detail = record.enabled ? cacheDetail : t('dashboard.upstreams.cache.disabledDetail', { detail: cacheDetail });
 
   return (
     <Tooltip content={detail} relationship="description">
       <span className="inline-flex items-center gap-1.5 min-w-0 w-fit max-w-full" tabIndex={0}>
         <Text size={300} wrap={false}>
-          {modelsAvailable
-            ? t('dashboard.upstreams.models.count', { count })
-            : t('dashboard.upstreams.models.unavailable')}
+          {count === null
+            ? t('dashboard.upstreams.models.unavailable')
+            : t('dashboard.upstreams.models.count', { count })}
         </Text>
-        {healthy
-          ? <CheckmarkCircleRegular className="block flex-none text-[var(--colorPaletteGreenForeground1)]" fontSize={18} aria-label={t('dashboard.upstreams.cache.ready')} />
-          : <WarningRegular className="block flex-none text-[var(--colorPaletteDarkOrangeForeground1)]" fontSize={18} aria-label={t(`dashboard.upstreams.cache.${cacheStatus}`)} />}
+        {!record.enabled
+          ? <PlugDisconnectedRegular className="block flex-none text-fui-fg2" fontSize={18} aria-label={t('dashboard.upstreams.cache.disabled')} />
+          : healthy
+            ? <CheckmarkCircleRegular className="block flex-none text-[var(--colorPaletteGreenForeground1)]" fontSize={18} aria-label={t('dashboard.upstreams.cache.ready')} />
+            : <WarningRegular className="block flex-none text-[var(--colorPaletteDarkOrangeForeground1)]" fontSize={18} aria-label={t(`dashboard.upstreams.cache.${cacheStatus}`)} />}
       </span>
     </Tooltip>
   );
@@ -490,17 +494,28 @@ const compareUpstreams = (a: UpstreamRecord, b: UpstreamRecord) =>
 const buildModelCounts = (
   upstreams: UpstreamRecord[],
   models: ControlPlaneModel[] | null,
-): Map<string, number> => {
+): Map<string, number | null> => {
   const byId = new Map(upstreams.map(record => [record.id, record]));
-  const counts = new Map(upstreams.map(record => [record.id, record.kind === 'azure' ? record.config.models.length : 0]));
-  if (!models) return counts;
-  for (const model of models) {
+  const listed = new Map(upstreams.map(record => [record.id, 0]));
+  for (const model of models ?? []) {
     for (const binding of model.upstreams) {
       const record = byId.get(binding.id);
-      if (record && record.kind !== 'azure') counts.set(record.id, counts.get(record.id)! + 1);
+      if (record) listed.set(record.id, listed.get(record.id)! + 1);
     }
   }
-  return counts;
+  const countFor = (record: UpstreamRecord): number | null => {
+    // Azure's catalog is the operator's own configured list, so it is known
+    // without the listing.
+    if (record.kind === 'azure') return record.config.models.length;
+    // The model registry builds providers from enabled upstreams only, so the
+    // listing has nothing to say about a disabled upstream: the size of the
+    // catalog it stored while it was on is the count instead, and null when it
+    // never cached one.
+    if (!record.enabled) return record.modelsCache.modelCount;
+    // Null is a count nobody knows — here, because the listing failed.
+    return models === null ? null : listed.get(record.id)!;
+  };
+  return new Map(upstreams.map(record => [record.id, countFor(record)]));
 };
 
 const upstreamSummary = (record: UpstreamRecord, t: ReturnType<typeof useTranslation>['t']): string => {

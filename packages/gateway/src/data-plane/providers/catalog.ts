@@ -1,8 +1,8 @@
 import { unionEndpoints } from './endpoint-union.ts';
-import { fetchUpstreamModelsCached } from './models-cache.ts';
+import { fetchUpstreamModelsCached, MODEL_CATALOG_REVISION } from './models-cache.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
-import { isAbortError, type Fetcher, type InternalModel, type Provider, type ProviderModel } from '@floway-dev/provider';
+import { isAbortError, type Fetcher, type InternalModel, type Provider, type ProviderModel, type UpstreamRecord } from '@floway-dev/provider';
 
 interface ProviderModelsResult {
   models: InternalModel[];
@@ -157,6 +157,23 @@ const collectProviderModels = async (
   }
 
   return { models: [...byId.values()], upstreamsByPublicId, sawSuccess, lastError, failedUpstreams };
+};
+
+// How many catalog entries this upstream's stored catalog would surface, under
+// the surfacing rules the loop above applies: an operator-disabled id
+// contributes nothing, and a prefix policy contributes one entry per listed
+// form. Null when the row holds no catalog written under the current revision.
+//
+// The registry builds providers from enabled upstreams only, so a disabled
+// upstream contributes nothing to the live catalog and the dashboard cannot
+// count it from there. This is the count it had while it was on, which is the
+// last one that was ever true for it.
+export const storedCatalogSize = (record: UpstreamRecord): number | null => {
+  const cache = record.modelsCache;
+  if (!cache || cache.revision !== MODEL_CATALOG_REVISION) return null;
+  const disabled = new Set(record.disabledPublicModelIds);
+  const surfacedForms = record.modelPrefix?.listed.length ?? 1;
+  return cache.models.filter(model => model.id && !disabled.has(model.id)).length * surfacedForms;
 };
 
 // Public-facing model-id ordering, applied to the real-model slice of the

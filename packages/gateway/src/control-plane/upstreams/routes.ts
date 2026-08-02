@@ -2,7 +2,8 @@ import type { Context } from 'hono';
 
 import { blueprintUpstreamRecord, upstreamRecordToFullJson, upstreamRecordToJson } from './serialize.ts';
 import { isValidProviderKind, upstreamErrorMessage as errorMessage } from './shared.ts';
-import type { FullSerializedUpstreamRecord, RedactedSerializedUpstreamRecord } from './types.ts';
+import type { FullSerializedUpstreamRecord, ModelsCacheStatus, RedactedSerializedUpstreamRecord } from './types.ts';
+import { storedCatalogSize } from '../../data-plane/providers/catalog.ts';
 import { type AuthedContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -34,10 +35,7 @@ type SerializedUpstreamRecord = FullSerializedUpstreamRecord | RedactedSerialize
 type UpstreamResponse = SerializedUpstreamRecord & CodexQuotaProjection;
 
 type UpstreamWithCacheResponse = UpstreamResponse & {
-  modelsCache: {
-    fetchedAt: number | null;
-    lastError: { message: string; at: number } | null;
-  };
+  modelsCache: ModelsCacheStatus;
 };
 
 const codexQuotaForResponse = async (record: UpstreamRecord): Promise<CodexQuotaProjection> => {
@@ -79,6 +77,7 @@ const serializeForResponse = async (
     modelsCache: {
       fetchedAt: record.modelsCache?.fetchedAt ?? null,
       lastError: record.modelsCache?.lastError ?? null,
+      modelCount: storedCatalogSize(record),
     },
     ...codexQuota,
   };
@@ -182,6 +181,10 @@ export const listUpstreamOptions = async (c: Context) => {
       kind: upstream.kind,
       enabled: upstream.enabled,
       color: upstream.color,
+      // The picker states a model count per upstream, and a disabled upstream
+      // is absent from the live catalog the picker counts against, so it also
+      // carries the size of the catalog it stored while it was on.
+      cachedModelCount: storedCatalogSize(upstream),
     })));
 };
 
@@ -195,7 +198,7 @@ export const getUpstreamBlueprint = (c: Context) => {
   }
   return c.json({
     ...blueprintUpstreamRecord(kind),
-    modelsCache: { fetchedAt: null, lastError: null },
+    modelsCache: { fetchedAt: null, lastError: null, modelCount: null },
   });
 };
 

@@ -184,6 +184,9 @@ export type BlueprintSerializedUpstreamRecord =
 export interface ModelsCacheStatus {
   fetchedAt: number | null;
   lastError: { message: string; at: number } | null;
+  // Entries the stored catalog would surface. Null when nothing usable is
+  // cached; see `storedCatalogSize`.
+  modelCount: number | null;
 }
 
 type WithResponseProjections<T> = T extends { kind: 'codex' }
