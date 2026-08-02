@@ -8,6 +8,7 @@ import { BACKUP_FILE_VERSION, parseBackupFile, type BackupFile, type BackupFileD
 import { BackupFilePicker, BackupFileStats, BackupFileSummary } from '../components/backup-restore/backup-file-picker';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
+import { PANEL_STACK_CLASS } from '../components/ui/layout';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { Panel } from '../components/ui/panel';
@@ -236,7 +237,7 @@ export default function DashboardAdminBackupRestore() {
     <section className="dashboard-page max-w-[960px]">
       <DashboardPageHeader description={t('dashboard.pages.backupRestore')} title={t('dashboard.nav.backupRestore')} />
 
-      <Panel className="!grid !gap-[18px]">
+      <Panel className={PANEL_STACK_CLASS}>
         <SectionHeader description={t('dashboard.backupRestore.export.description')} level={2} title={t('dashboard.backupRestore.export.heading')} />
 
         {/* A check box rather than a switch, because nothing is exported until
@@ -267,7 +268,7 @@ export default function DashboardAdminBackupRestore() {
         </div>
       </Panel>
 
-      <Panel className="!grid !gap-[18px]">
+      <Panel className={PANEL_STACK_CLASS}>
         <SectionHeader description={t('dashboard.backupRestore.import.description')} level={2} title={t('dashboard.backupRestore.import.heading')} />
 
         <input

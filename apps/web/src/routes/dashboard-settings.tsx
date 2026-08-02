@@ -9,6 +9,7 @@ import type { Route } from './+types/dashboard-settings';
 import { changeOwnPassword } from '../api/auth';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Input } from '../components/ui/fluent-form-controls';
+import { PANEL_STACK_CLASS } from '../components/ui/layout';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { Panel } from '../components/ui/panel';
@@ -108,7 +109,7 @@ export default function DashboardSettings() {
     <section className="dashboard-page max-w-[960px]">
       <DashboardPageHeader description={t('dashboard.settings.description')} title={t('dashboard.nav.settings')} />
 
-      <Panel className="!grid w-full max-w-[480px] !gap-[18px]">
+      <Panel className={`${PANEL_STACK_CLASS} w-full max-w-[480px]`}>
         <SectionHeader level={2} title={t('dashboard.settings.changePassword')} />
 
         <form className="grid gap-4" onSubmit={event => void handleSubmit(submit)(event)}>

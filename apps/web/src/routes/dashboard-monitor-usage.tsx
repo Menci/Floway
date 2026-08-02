@@ -12,7 +12,7 @@ import type { ControlPlaneModel } from '../api/types';
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
-import { HEADER_ROW_CLASS } from '../components/ui/layout';
+import { HEADER_ROW_CLASS, PANEL_STACK_CLASS } from '../components/ui/layout';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { ResourceListActions } from '../components/ui/resource-list';
@@ -241,7 +241,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
 
       {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error.message}</OutcomeMessageBar>}
 
-      <Panel className="!grid !gap-[18px] min-w-0">
+      <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
         <div className={`${HEADER_ROW_CLASS} gap-3`}>
           <div className="flex items-center flex-wrap gap-2.5 min-w-0">
             {canSwitchView && (

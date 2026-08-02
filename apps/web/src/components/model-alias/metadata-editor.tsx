@@ -4,7 +4,7 @@ import { announcedMetadataIssues, type AnnouncedMetadataField } from './validati
 import type { AnnouncedMetadata, ModelKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { Dropdown, Input, Switch } from '../ui/fluent-form-controls';
-import { TWO_COLUMN_FORM_CLASS } from '../ui/layout';
+import { SECTION_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { SectionHeader } from '../ui/section-header';
 
 const { Field, Option } = fluentComponents;
@@ -39,7 +39,7 @@ export function MetadataEditor({ disabled, kind, onChange, readOnly, value }: {
 
   return (
     <div className="grid gap-5" role="group" aria-label={t('dashboard.modelAliases.metadata.heading')}>
-      <section className="grid gap-3">
+      <section className={SECTION_STACK_CLASS}>
         <SectionHeader level={4} title={t('dashboard.modelAliases.metadata.limits')} />
         <div className="grid grid-cols-3 gap-3 max-[680px]:grid-cols-1">
           <Field label={t('dashboard.modelAliases.metadata.context')} {...issueProps('max_context_window_tokens')}><Input disabled={disabled} min={0} readOnly={readOnly} type="number" value={value.limits?.max_context_window_tokens?.toString() ?? ''} onChange={(_, data) => patchLimit('max_context_window_tokens', data.value)} /></Field>
@@ -48,7 +48,7 @@ export function MetadataEditor({ disabled, kind, onChange, readOnly, value }: {
         </div>
       </section>
       {kind === 'chat' && <>
-        <section className="grid gap-2">
+        <section className={SECTION_STACK_CLASS}>
           <SectionHeader level={4} title={t('dashboard.modelAliases.metadata.modalities')} />
           <Switch
             checked={value.chat?.modalities?.input.includes('image') ?? false}
@@ -61,7 +61,7 @@ export function MetadataEditor({ disabled, kind, onChange, readOnly, value }: {
             }}
           />
         </section>
-        <section className="grid gap-3">
+        <section className={SECTION_STACK_CLASS}>
           <SectionHeader level={4} title={t('dashboard.modelAliases.metadata.reasoning')} />
           <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
             <Switch checked={effort !== undefined} disabled={disabled || value.chat?.reasoning?.mandatory === true} readOnly={readOnly} label={t('dashboard.modelAliases.metadata.effortEnabled')} onChange={(_, data) => patchReasoning({ effort: data.checked ? { supported: ['low', 'medium', 'high'], default: 'medium' } : undefined })} />

@@ -12,7 +12,7 @@ import microsoftIconUrl from '../assets/microsoft-color.svg';
 import tavilyIconUrl from '../assets/tavily-color.svg';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Dropdown, LISTBOX_POSITIONING } from '../components/ui/fluent-form-controls';
-import { TWO_COLUMN_FORM_CLASS } from '../components/ui/layout';
+import { PANEL_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../components/ui/layout';
 import { OpenLinkLabel } from '../components/ui/open-link-label';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
@@ -377,7 +377,7 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
       )}
 
       {testResult && (
-        <Panel className="!grid !gap-[14px]">
+        <Panel className={PANEL_STACK_CLASS}>
           <SectionHeader level={2} title={t('dashboard.searchConfig.testResults')} />
 
           <div className="flex items-center gap-2 flex-wrap">

@@ -30,6 +30,7 @@ import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
 import { Dropdown } from '../components/ui/fluent-form-controls';
+import { PANEL_STACK_CLASS } from '../components/ui/layout';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { ResourceListActions } from '../components/ui/resource-list';
@@ -183,7 +184,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     />
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error.message}</OutcomeMessageBar>}
     {overview === null || chart === null || labels === null || activeBreakdown === undefined ? <Panel><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel> : <>
-      <Panel className="!grid !gap-3 min-w-0">
+      <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
         <div className="flex items-end gap-3 min-w-0 flex-wrap">
           <Field className="w-[160px] flex-none" label={t('dashboard.performance.groupBy.label')}>
             <div className="flex items-center gap-2">
@@ -230,7 +231,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       <Panel className="min-w-0">
         <PerformanceChartSection chart={chart} hidden={hiddenSeries} onHiddenChange={setHiddenSeries} title={t('dashboard.performance.chartTitle', { metric: t(`dashboard.performance.metric.${metric === 'ttft' ? 'ttft' : 'outputSpeed'}`), group: t(`dashboard.performance.groupBy.${groupBy}`), percentile })} />
       </Panel>
-      <Panel className="!grid !gap-3 min-w-0">
+      <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
         {/* The scrollport clips the 2px ring a focused tab paints, so it takes
             a gutter and the host removes the same distance again to keep the
             row aligned. An inward ring would land on the tab's selection pipe. */}

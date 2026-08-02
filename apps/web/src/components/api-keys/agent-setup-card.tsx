@@ -30,7 +30,7 @@ import { fluentComponents } from '../../fluent';
 import { CodeBlock } from '../ui/code-block';
 import { Combobox, Dropdown } from '../ui/fluent-form-controls';
 import { infoLabelSlot } from '../ui/info-label';
-import { PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
+import { PANE_GAP_CLASS, SECTION_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SectionHeader } from '../ui/section-header';
 import type { ClipboardCopy } from '../ui/use-copy-to-clipboard';
@@ -116,7 +116,7 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
             >{setup.createError}</OutcomeMessageBar>
           : setup.error && <OutcomeMessageBar onDismiss={setup.dismissError}>{setup.error}</OutcomeMessageBar>}
 
-        <section className="grid gap-3">
+        <section className={SECTION_STACK_CLASS}>
           <SectionHeader level={3} title={t('dashboard.apiKeys.agentSetup.modelSelection')} />
           <AgentConfigurationFields agent={agent} configuration={activeDraft} models={models} onChange={updateConfiguration} />
         </section>
@@ -231,7 +231,7 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
         </Dropdown>
       </Field>
     </div>
-    <section className="grid gap-3">
+    <section className={SECTION_STACK_CLASS}>
       <SectionHeader level={4} title={t('dashboard.apiKeys.agentSetup.miscSettings')} />
       <SwitchSetting
         checked={configuration.claudeCode.modelDiscovery}
