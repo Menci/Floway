@@ -44,7 +44,7 @@ export function PlaygroundEditDialog({ imageEnabled, message, onOpenChange, onSa
       title={<DialogTitle>{t('dashboard.playground.edit.title')}</DialogTitle>}
     >
       <Field label={t('dashboard.playground.edit.message')}>
-        <Textarea autoFocus resize="vertical" rows={8} value={text} onChange={(_, data) => setText(data.value)} />
+        <Textarea autoFocus rows={8} value={text} onChange={(_, data) => setText(data.value)} />
       </Field>
       {message.role === 'user' && imageEnabled && (
         <Field label={t('dashboard.playground.edit.imageUrl')}>

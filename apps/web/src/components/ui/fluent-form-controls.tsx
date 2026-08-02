@@ -244,8 +244,15 @@ export const Switch = forwardRef<HTMLInputElement, ComponentProps<typeof FluentS
   ),
 );
 
-export const Textarea = forwardRef<HTMLTextAreaElement, ComponentProps<typeof FluentTextarea>>(
+// WinUI's multi-line TextBox is a fixed box: the template is the single-line
+// one, and nothing in it offers a drag handle. Withholding the prop leaves
+// Fluent's own `none` default, and ../../winui/controls/text-input.css.ts takes
+// back the bottom padding Fluent reserves for the grip. A caller sizes the box
+// with rows.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L336-L337
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-textarea/library/src/components/Textarea/useTextareaStyles.styles.ts#L204-L217
+export const Textarea = forwardRef<HTMLTextAreaElement, Omit<ComponentProps<typeof FluentTextarea>, 'resize'>>(
   ({ className, ...props }, ref) => (
     <FluentTextarea {...props} className={mergeClasses(className, MIN_WIDTH_CLASS)} ref={ref} />
   ),
-) as typeof FluentTextarea;
+);

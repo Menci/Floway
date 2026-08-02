@@ -107,10 +107,10 @@ describe('components whose root is not their primary slot', () => {
     }
   });
 
-  it('keeps the underline appearance nameable', () => {
-    const view = renderInApp(<Input appearance="underline" aria-label="input" />);
+  it('carries a non-default appearance through to the attribute', () => {
+    const view = renderInApp(<Input appearance="filled-darker" aria-label="input" />);
 
-    expect(view.container.querySelector('.fui-Input')?.getAttribute(winuiAppearanceAttribute)).toBe('underline');
+    expect(view.container.querySelector('.fui-Input')?.getAttribute(winuiAppearanceAttribute)).toBe('filled-darker');
   });
 
   it('accepts a root slot given as shorthand rather than as a props object', () => {

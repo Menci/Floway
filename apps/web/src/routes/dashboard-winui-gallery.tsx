@@ -188,7 +188,6 @@ function TextInputSection() {
     <Hint>Hover, click into and tab through each field to reach hover, focus-visible and the focused underline.</Hint>
     <Row label="input - appearances">
       <StateLabel state="outline (rest)"><Input defaultValue="https://api.githubcopilot.com" /></StateLabel>
-      <StateLabel state="underline"><Input appearance="underline" defaultValue="gpt-5-codex" /></StateLabel>
       <StateLabel state="filled-darker"><Input appearance="filled-darker" defaultValue="gpt-5-codex" /></StateLabel>
       <StateLabel state="filled-lighter"><Input appearance="filled-lighter" defaultValue="gpt-5-codex" /></StateLabel>
     </Row>
