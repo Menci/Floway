@@ -22,7 +22,20 @@ export const pageTransitionCss = `
      same frame the swap happens in, which is what a NavigationView does too.
      Its indicator has its own animation and is not this one's business. */
   :root { view-transition-name: none; }
-  .floway-page-transition { view-transition-name: floway-page; }
+
+  /* A reload has no outgoing frame, so the pair below never runs and the
+     entrance is stated here instead: same travel, same curve, and no wait,
+     because the 150 the incoming leg is normally held for is the time the
+     outgoing one takes to leave and there is nothing to leave. The navigation
+     pane arrives with the document and does not animate -- it is outside the
+     frame, and on a reload it is the fixed thing the page comes back into.
+     Fully opaque throughout, as the source states it: WinUI shows the arriving
+     frame whole and travels it, rather than fading it up. */
+  .floway-page-transition {
+    animation: floway-page-enter var(--winui-page-enter-duration)
+      var(--winui-page-enter-easing) both;
+    view-transition-name: floway-page;
+  }
 
   /* The group would animate the frame's box between the two snapshots. Both
      are the viewport, so there is nothing to travel -- but a scrollbar
@@ -65,6 +78,7 @@ export const pageTransitionCss = `
      the opacity its own resting style states.
      https://github.com/w3c/wcag/blob/900ea026b967bc306a2cdbe0c586330a508d6759/guidelines/terms/21/motion-animation.html */
   @media (prefers-reduced-motion: reduce) {
+    .floway-page-transition { animation-duration: 0.01ms; }
     ::view-transition-old(floway-page) { animation-duration: 0.01ms; }
     ::view-transition-new(floway-page) {
       animation-delay: 0.01ms;
