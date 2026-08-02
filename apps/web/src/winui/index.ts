@@ -27,33 +27,24 @@ import { pageTransitionCss } from './page-transition.css';
 import { winuiResetCss } from './reset.css';
 import { winuiTokenCss } from './tokens';
 
-// The whole override layer as one stylesheet: the box-model reset first, then
-// the token vocabulary, so a reader meets the `--winui-*` names before the
-// rules that spend them, then the app's own frame motion, then the controls. Order beyond that carries no meaning — every rule doubles its
-// subject's class, so none of them is resolved against another by document
-// order. See ./tokens.ts for the selector convention every rule here follows.
-// The document head is where this lands, next to the app's other critical
-// stylesheets in ../root.tsx.
+// The whole override layer as one stylesheet. Order carries no meaning beyond
+// reading convenience — every rule doubles its subject's class, so none of them
+// is resolved against another by document order. See ./tokens.ts for the
+// selector convention every rule here follows.
 //
-// Reduced motion is answered in one of three shapes, and which one a rule takes
-// follows from what Fluent already answers for the same element. Where Fluent
-// declares the transition and its own reduced-motion rule beside it, we
-// state our timing under `@media (prefers-reduced-motion: no-preference)`
-// alone: a media query carries no specificity, so an unconditional rule of ours
-// would outrank Fluent's answer and we would have to restate it, where the
-// complementary query simply stands aside and leaves that answer whole. Where
-// the motion is this layer's own — a transition on a pseudo-element Fluent does
-// not style, or one whose declaration has to outrank a Fluent rule for an
-// unrelated reason — the timing is unconditional and
-// `@media (prefers-reduced-motion: reduce)` clamps it to 0.01ms rather than to
-// nothing, so the transition still completes and fires. The third shape is the
-// Spinner's alone, in ./controls/progress.css.ts: WinUI's ring keeps its full
-// animation with animations off, so a `reduce` block there undoes Fluent's
-// reduce answer declaration by declaration instead of holding motion back.
-// Only that third form spells the `screen` media type, and it spells it because
-// the Fluent rule it undoes is itself gated on `screen`. The other two have no
-// print branch to distinguish themselves from, as `prefers-color-scheme` in
-// ./tokens.ts has none either.
+// Reduced motion takes one of three shapes, and which one a rule takes follows
+// from what Fluent already answers for the same element. Where Fluent declares
+// the transition and its own reduced-motion rule beside it, our timing goes
+// under `@media (prefers-reduced-motion: no-preference)` alone: a media query
+// carries no specificity, so an unconditional rule would outrank Fluent's
+// answer and we would have to restate it. Where the motion is this layer's own,
+// the timing is unconditional and `@media (prefers-reduced-motion: reduce)`
+// clamps it to 0.01ms rather than to nothing, so the transition still completes
+// and fires. The third shape is the Spinner's alone, in
+// ./controls/progress.css.ts: WinUI's ring keeps its full animation with
+// animations off, so a `reduce` block there undoes Fluent's reduce answer
+// declaration by declaration. Only that third form spells the `screen` media
+// type, because the Fluent rule it undoes is itself gated on `screen`.
 export const winuiCss = [
   winuiResetCss,
   winuiTokenCss,
