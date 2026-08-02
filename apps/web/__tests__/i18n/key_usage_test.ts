@@ -143,8 +143,8 @@ describe('translation key usage', () => {
     // The badge's own union. Reached only as `i18nKey={`…badges.${badge.limit}`}`,
     // so no literal spells these and neither direction of the scan above can see
     // them -- deleting all three once passed every check and shipped three raw
-    // keys into the playground.
-    ['dashboard.playground.badges', ['context', 'prompt', 'output']],
+    // keys into the badge row.
+    ['dashboard.models.badges', ['context', 'prompt', 'output']],
   ])('covers every member of the enum behind %s.*', (prefix, members) => {
     expect([...members].filter(member => !resolves(`${prefix}.${member}`))).toEqual([]);
   });

@@ -120,6 +120,14 @@ const en = {
           reasoningEffort: 'Reasoning effort',
           providerDefault: 'Provider default',
         },
+        customJsonHint: 'Protocol-native fields override the controls above.',
+        errors: {
+          imageUnsupported: 'This model does not support image input.',
+          imageUrl: 'Enter a valid absolute image URL.',
+          customReserved: 'Remove reserved fields: {{fields}}.',
+        },
+      },
+      models: {
         badges: {
           context: 'Context <strong>{{value}}</strong>',
           prompt: 'Prompt <strong>{{value}}</strong>',
@@ -147,12 +155,6 @@ const en = {
             verbosity: 'Verbosity varies',
             serviceTier: 'Service tier varies',
           },
-        },
-        customJsonHint: 'Protocol-native fields override the controls above.',
-        errors: {
-          imageUnsupported: 'This model does not support image input.',
-          imageUrl: 'Enter a valid absolute image URL.',
-          customReserved: 'Remove reserved fields: {{fields}}.',
         },
       },
       settings: {

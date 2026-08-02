@@ -113,6 +113,14 @@ const zhHansCN = {
           reasoningEffort: '思考强度',
           providerDefault: '提供商默认值',
         },
+        customJsonHint: '协议原生字段会覆盖上方控件的值。',
+        errors: {
+          imageUnsupported: '当前模型不支持图片输入。',
+          imageUrl: '请输入有效的绝对图片 URL。',
+          customReserved: '请移除保留字段：{{fields}}。',
+        },
+      },
+      models: {
         badges: {
           context: '上下文 <strong>{{value}}</strong>',
           prompt: '输入 <strong>{{value}}</strong>',
@@ -139,12 +147,6 @@ const zhHansCN = {
             verbosity: '输出详细度因目标而异',
             serviceTier: '服务层级因目标而异',
           },
-        },
-        customJsonHint: '协议原生字段会覆盖上方控件的值。',
-        errors: {
-          imageUnsupported: '当前模型不支持图片输入。',
-          imageUrl: '请输入有效的绝对图片 URL。',
-          customReserved: '请移除保留字段：{{fields}}。',
         },
       },
       settings: {
