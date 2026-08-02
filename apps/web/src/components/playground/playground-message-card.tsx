@@ -52,7 +52,6 @@ export function PlaygroundMessageCard({ children, role }: PlaygroundMessageCardP
   return (
     <Card
       className={`min-w-0 break-words overflow-hidden !rounded-[12px] after:!rounded-[12px] ${role === 'user' ? s.user : s.assistant}`}
-      size="medium"
     >
       {children}
     </Card>
