@@ -53,6 +53,20 @@ const useStyles = makeStyles({
     // continues underneath it.
     borderRadius: 'var(--winui-overlay-corner-radius) var(--winui-overlay-corner-radius) 0 0 !important',
     width: '100%',
+    // The field sits flush against the card's own clip on three sides, so the
+    // ComboBox focus visual -- a 2px FocusStrokeColorOuter outline standing off
+    // by a 2px band of ControlFillColorDefault -- has nowhere outside the box
+    // to be drawn and is cut away entirely. The card cannot open a gutter for
+    // it either: padding there would put a band of card fill above the field
+    // and undo the reading the rules above are for. So the same composite is
+    // turned inward, keeping the two brushes in the same order as seen from the
+    // field's edge: the outline covers the outer pair of the shadow's four
+    // pixels, which leaves the inner pair as the stand-off band.
+    // ../../winui/controls/select.css.ts
+    '&:has([data-fui-focus-visible])': {
+      boxShadow: 'inset 0 0 0 4px var(--winui-control-fill-default) !important',
+      outlineOffset: '-2px !important',
+    },
     '&:hover': { backgroundColor: 'var(--colorSubtleBackgroundHover) !important' },
     '&:active, &:has(.fui-Dropdown__button[aria-expanded="true"])': { backgroundColor: 'var(--colorSubtleBackgroundPressed) !important' },
     '& .fui-Dropdown__button': { paddingInlineStart: '16px' },
