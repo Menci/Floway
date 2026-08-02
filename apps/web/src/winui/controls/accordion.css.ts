@@ -1,41 +1,21 @@
-// Accordion restyled from Fluent 2 Web onto WinUI 3, whose counterpart is the
-// Expander: where Fluent draws chromeless text, WinUI joins two card surfaces --
-// the header on the default card fill and stroke, the content region on the
-// Secondary step of that ramp, with the edge the two share left unstroked.
+// Accordion restyled onto WinUI 3's Expander: the header takes the default card
+// fill and stroke, the content region the Secondary step of that ramp, and the
+// edge the two share is left unstroked.
 //
-// The header slab never repaints under the pointer: no ExpanderHeaderBackground*
-// key exists for any state, and the light and dark dictionaries are
+// The header slab never repaints under the pointer -- no ExpanderHeaderBackground*
+// key exists for any state -- and the light and dark dictionaries are
 // byte-identical, so every colour here is a theme token and no rule below is
-// written per scheme. Disabled is the exception -- it repaints the foreground to
-// TextFillColorDisabled.
+// written per scheme.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L4-L51
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L103-L110
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L122-L129
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L144-L151
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L185-L192
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L166
-//
-// The chevron is the whole of the control's pointer feedback, and it reacts to
-// the header being hovered or pressed rather than to being hovered itself,
-// which is also how fluent-svelte's Expander wires it.
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L16
-// https://github.com/tropicaaal/fluent-svelte/blob/ba1813ecc0797117be0e1b24be3a3c4905111ba7/src/lib/Expander/Expander.scss#L89-L95
-//
-// HighContrast breaks both halves and is stated in a block of its own below:
-// there the header's foreground and border do swap to the Highlight colour
-// under the pointer, and the header's stroke is ButtonText where the content
-// region's is WindowText.
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L52-L74
-//
-// Accordion and AccordionItem declare no CSS in Fluent — their style hooks only
-// stamp a class name — so nothing below targets them.
 export const accordionCss = `
-/* The header surface. The fill, the stroke and the radius belong on the button
-   rather than the header root: Fluent's button slot resets background-color to
-   inherit, so a fill on the root would be repainted square by the button over
-   the root's rounded corners. Both card colours are translucent, so the fill has
-   to stop at the border rather than run under it; ../reset.css.ts already clips
-   every element that way.
+/* The fill, the stroke and the radius belong on the button rather than the
+   header root: Fluent's button slot resets background-color to inherit, so a
+   fill on the root would be repainted square by the button over the root's
+   rounded corners.
 
    WinUI's Expander declares no size variant, so the single min-height and
    leading header inset are stated unconditionally, which overrides the 32px
@@ -64,13 +44,9 @@ export const accordionCss = `
   border-end-end-radius: 0;
 }
 
-/* The chevron surface: a fixed 32x32 button-shaped box with a 12px glyph
-   centred in it, rounded like a control, and no rest fill. Fluent's trailing
-   variant makes the slot a flex spacer that absorbs the row's free space, which
-   would stretch that box and let the pointer fill paint the whole remainder of
-   the row, so the box is pinned to its own size instead. Fluent's 8px gap toward
-   the row's content becomes a margin, which is where WinUI puts it, so the gap
-   stays clear of the pointer fill and the glyph stays centred in the box.
+/* Fluent's trailing variant makes the chevron slot a flex spacer that absorbs
+   the row's free space, which would stretch the box and let the pointer fill
+   paint the whole remainder of the row, so the box is pinned to its own size.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L81
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L84
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L85
@@ -85,17 +61,15 @@ export const accordionCss = `
   border-radius: var(--winui-control-corner-radius);
 }
 
-/* The chevron turns instead of being swapped. Fluent computes that rotation
-   itself, but only while it is the one creating the glyph, and the runtime
-   chokepoint now supplies a 12px cut in place of the 20px artwork Fluent scales
-   down -- see ../index.ts. So the turn is stated below, unconditionally and
-   clamped under reduce.
+/* Fluent computes the chevron's rotation itself, but only while it is the one
+   creating the glyph, and the runtime chokepoint now supplies a 12px cut in
+   place of the 20px artwork Fluent scales down -- see ../index.ts. So the turn
+   is stated below, unconditionally and clamped under reduce.
 
-   Its timing is WinUI's own. The chevron is an AnimatedIcon, so the numbers live
-   in the generated visual source rather than the theme dictionaries: the
-   NormalOffToNormalOn and NormalOnToNormalOff segments each spend ten frames of
-   a 60fps composition turning -- 167ms, symmetric for that reason, while the
-   Expander's own asymmetric open and close stay with the region they time.
+   167ms is WinUI's own: the chevron is an AnimatedIcon, so its timing lives in
+   the generated visual source, where the NormalOffToNormalOn and
+   NormalOnToNormalOff segments each spend ten frames of a 60fps composition
+   turning.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L280-L282
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedChevronUpDownSmallVisualSource.cpp#L104
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedChevronUpDownSmallVisualSource.cpp#L352
@@ -125,14 +99,13 @@ export const accordionCss = `
   margin-inline-end: 8px;
 }
 
-/* A trailing chevron is the arrangement WinUI does state: an auto-width column
-   at the end of the header grid, with the content column taking the rest. The
-   auto inline-start margin reproduces that split, and the row gap supplies the
-   20px leading term of the chevron margin as the floor it is -- the auto margin
-   alone exceeds it while the row has slack and collapses to nothing once the
-   content fills the row, which is the one case the margin exists for. Its price
-   is that the row gap also lands between an icon slot and the header text, where
-   Fluent states 8px.
+/* WinUI ends the header grid with an auto-width chevron column, the content
+   column taking the rest. The auto inline-start margin reproduces that split,
+   and the row gap supplies the 20px leading term of the chevron margin as the
+   floor it is -- the auto margin alone exceeds it while the row has slack and
+   collapses to nothing once the content fills the row. Its price is that the row
+   gap also lands between an icon slot and the header text, where Fluent states
+   8px.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L98-L99
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L81
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L80 */
@@ -146,18 +119,13 @@ export const accordionCss = `
   margin-inline-end: 8px;
 }
 
-/* Pointer feedback lives entirely on the chevron, and it answers the whole
-   header row rather than the chevron alone. A header that cannot be actuated is
+/* Pointer feedback lives entirely on the chevron and answers the whole header
+   row rather than the chevron alone. A header that cannot be actuated is
    excluded, because WinUI's disabled visual state puts the chevron's rest brush
-   back. Fluent reaches that state two ways: a disabled AccordionItem, which it
-   renders with the native attribute, and the sole open item of a non-collapsible
-   Accordion, which it leaves natively enabled and marks aria-disabled while
-   keeping the header's chrome ungrayed. Both stop the toggle, so both drop the
-   feedback.
-
-   The graying of the first of those two is Fluent's, through the disabled
-   foreground token theme.ts points at TextFillColorDisabled. Nothing here writes
-   a colour on the label or the glyph, so nothing here outranks it.
+   back. Fluent reaches that state two ways: a disabled AccordionItem, rendered
+   with the native attribute, and the sole open item of a non-collapsible
+   Accordion, left natively enabled and marked aria-disabled with its chrome
+   ungrayed. Both stop the toggle, so both drop the feedback.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L12
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L16
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L166-L184 */
@@ -172,15 +140,9 @@ export const accordionCss = `
   background-color: var(--winui-subtle-fill-tertiary);
 }
 
-/* Forced colours. The user agent's forced adjustment reaches most of WinUI's
-   HighContrast map on its own; the chevron's two pointer fills resolve the same
-   way but keep the alpha they were written with, a few percent, so they land on
-   the untinted chevron this dictionary states rather than on a fill.
-
-   What the adjustment cannot reach is the rest of the pointer state, which this
-   dictionary alone paints in Highlight, and the two strokes it alone thickens
-   to 2px -- the border-box sizing this app resets to keeps that thickness
-   inside the 32px chevron and the 48px row.
+/* The user agent's forced adjustment reaches most of WinUI's HighContrast map on
+   its own. What it cannot reach is the pointer state, painted in Highlight here,
+   and the two strokes thickened to 2px.
 
    A media query adds no specificity, so the two unconditional rules below
    restate their subject's selector exactly and win on source order alone. The
@@ -209,13 +171,12 @@ export const accordionCss = `
   }
 }
 
-/* The focus visual. Fluent already draws WinUI's outer-ring geometry, so only
-   the ring's colour is restated, through the token the ring reads. WinUI's
-   second ring sits immediately against the control, inside the first, and an
-   inset shadow is the way to land it there: an inner shadow is clipped to the
-   padding box, so its pixel falls just inside the band the outer ring covers.
-   Under forced colours the shadow is dropped by the user agent and Fluent's own
-   literal system colour carries the ring.
+/* Fluent already draws WinUI's outer-ring geometry, so only the ring's colour is
+   restated. WinUI's second ring sits immediately against the control, inside the
+   first, and an inset shadow is the way to land it there: an inner shadow is
+   clipped to the padding box, so its pixel falls just inside the band the outer
+   ring covers. Under forced colours the shadow is dropped by the user agent and
+   Fluent's own literal system colour carries the ring.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
    https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
@@ -224,11 +185,10 @@ export const accordionCss = `
   box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
 }
 
-/* The content region: the Secondary step of the card ramp, inside the same
-   stroke as the header, flush with it and unstroked along the edge the two
-   share. Fluent insets the panel from the item instead, which a joined surface
-   cannot keep. Like fluent-svelte's Expander, the bottom-only rounding here is
-   unconditional and only the header's bottom squares off on expansion.
+/* Fluent insets the panel from the item, which a joined surface cannot keep, so
+   the region sits flush inside the same stroke as the header. Like
+   fluent-svelte's Expander, the bottom-only rounding is unconditional and only
+   the header's bottom squares off on expansion.
    https://github.com/tropicaaal/fluent-svelte/blob/ba1813ecc0797117be0e1b24be3a3c4905111ba7/src/lib/Expander/Expander.scss#L10-L22
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L25
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L26
