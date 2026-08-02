@@ -1,7 +1,7 @@
 import { gradientBackgroundCss } from './components/gradient-background.css';
 import { navigationProgressCss } from './components/navigation-progress.css';
-import { appLoadingCss } from './components/ui/app-loading-screen.css';
 import { errorShellCss } from './components/ui/error-shell.css';
+import { loadingCss } from './components/ui/loading-screen.css';
 import { baseFontStack } from './font-stacks';
 
 // Fluent scopes its tokens to the FluentProvider element, so `<body>`, the
@@ -27,7 +27,7 @@ body { font-family: var(--fontFamilyBase); }
 export const criticalCss = [
   documentCss,
   gradientBackgroundCss,
-  appLoadingCss,
+  loadingCss,
   errorShellCss,
   navigationProgressCss,
 ].join('\n');

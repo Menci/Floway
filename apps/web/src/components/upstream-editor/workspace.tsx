@@ -13,7 +13,7 @@ import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router';
 
 import type { ModelRow, UpstreamEditorValues } from './editor-data';
-import { publicModelId } from './editor-data';
+import { canFetchModelCatalog, publicModelId } from './editor-data';
 import { FeatureFlagsEditor } from './feature-flags';
 import { ModelDetail } from './model-detail';
 import { parseModels, serializeModels } from './models-yaml';
@@ -22,12 +22,12 @@ import { fluentComponents } from '../../fluent';
 import { dateTime, relativeTime } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
-import { ContentLoadingScreen } from '../ui/app-loading-screen';
 import { BackNavigationButton } from '../ui/back-navigation-button';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { useDangerTextClass } from '../ui/danger';
 import { EmptyStateLine } from '../ui/empty-state';
 import { Input } from '../ui/fluent-form-controls';
+import { ContentLoadingScreen } from '../ui/loading-screen';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { RowTitleButton } from '../ui/row-title';
 import { ScrollArea } from '../ui/scroll-area';
@@ -198,6 +198,7 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
   const readOnly = record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code';
   const autoFetchEnabled = record.kind !== 'custom'
     || (config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).modelsFetch.enabled;
+  const canFetch = canFetchModelCatalog(record, config);
   const rows = useMemo<ModelRow[]>(() => {
     const visibleDiscovered = autoFetchEnabled ? discovered : [];
     const autoById = new Map(visibleDiscovered.map(item => [item.upstreamModelId, item]));
@@ -316,7 +317,7 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
         {!readOnly && <Button className="!min-w-[160px]" icon={<CodeRegular />} onClick={() => { onYamlChange(serializeModels(manual)); onYamlErrorChange(null); onViewChange('yaml'); }}>{t('dashboard.upstreamEditor.models.editAsYaml')}</Button>}
         {record.kind !== 'azure' && <>
           <ModelsCacheStatus cache={record.modelsCache} />
-          <Button disabled={!autoFetchEnabled} disabledFocusable={modelsLoading} icon={modelsLoading ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={onRefreshModels}>{t('dashboard.upstreamEditor.models.refresh')}</Button>
+          <Button disabled={!canFetch} disabledFocusable={modelsLoading} icon={modelsLoading ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={onRefreshModels}>{t('dashboard.upstreamEditor.models.refresh')}</Button>
         </>}
       </>}
     />
