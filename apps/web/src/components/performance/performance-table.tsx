@@ -19,9 +19,8 @@ const usePerformanceTableStyles = makeStyles({
     whiteSpace: 'nowrap',
     '& .fui-TableHeaderCell__button': { justifyContent: 'flex-end', whiteSpace: 'nowrap' },
   },
-  // The truncated group name is the tooltip trigger and so a tab stop of its
-  // own, while the cell around it never takes focus. Both WinUI strokes are
-  // drawn inside the name's own box because the cell clips whatever leaves it.
+  // Both WinUI strokes are drawn inside the name's own box because the cell
+  // clips whatever leaves it.
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
   groupName: {
@@ -52,12 +51,9 @@ export function PerformanceTable({ groupBy, labels, rows }: { groupBy: Performan
   const sortDirection = (key: PerformanceTableSortKey) => sort.key === key ? sort.direction : undefined;
   return <section className="grid gap-2.5 min-w-0">
     <ScrollArea axes="horizontal" className="border border-fui-stroke1 rounded-lg min-w-0"><Table aria-label={t(`dashboard.performance.groupBy.${groupBy}`)} size="small" className="min-w-[570px]">
-      {/* Fluent's Table lays out `fixed`, so columns split evenly unless the
-          first row states a width: every column landed on the same 116px, which
-          wrapped the longest header onto two lines and clipped model ids to
-          `claude-opus-...`, hiding which of 4.6/4.7/4.8 a row described. Sizing
-          the four measure columns to their widest label leaves the rest to the
-          name, which is the only column whose content has no bound. */}
+      {/* Fluent's Table lays out `fixed`, so sizing the four measure columns to
+          their widest label leaves the rest to the name, the only column whose
+          content has no bound. */}
       <TableHeader><TableRow><TableHeaderCell sortable sortDirection={sortDirection('group')} onClick={() => sortBy('group')}>{t(`dashboard.performance.filters.${groupBy}`)}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('requests')} onClick={() => sortBy('requests')} className={`${styles.numericHeader} text-right !w-[112px]`}>{t('dashboard.performance.tables.requests')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('errors')} onClick={() => sortBy('errors')} className={`${styles.numericHeader} text-right !w-[88px]`}>{t('dashboard.performance.tables.errors')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('ttft')} onClick={() => sortBy('ttft')} className={`${styles.numericHeader} text-right !w-[112px]`}>{t('dashboard.performance.tables.ttftP95')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('speed')} onClick={() => sortBy('speed')} className={`${styles.numericHeader} text-right !w-[160px]`}>{t('dashboard.performance.tables.speedP95')}</TableHeaderCell></TableRow></TableHeader>
       <TableBody>{sortedRows.length ? sortedRows.map(row => <TableRow key={row.group}><TableCell><Tooltip content={row.group} relationship="description"><span className={`${styles.groupName} block overflow-hidden text-ellipsis whitespace-nowrap`} tabIndex={0}>{resolvePerformanceGroup(row.group, groupBy, labels)}</span></Tooltip></TableCell><TableCell className="text-right tabular-nums">{formatCount(row.requests, locale)}</TableCell><TableCell className="text-right tabular-nums">{formatCount(row.errors, locale)}</TableCell><TableCell className="text-right tabular-nums">{formatDuration(row.ttftMsP95)}</TableCell><TableCell className="text-right tabular-nums">{formatTokenRateFromTpot(row.tpotUsP95)}</TableCell></TableRow>) : <TableRow><TableCell colSpan={5}><EmptyStateLine>{t('dashboard.performance.empty')}</EmptyStateLine></TableCell></TableRow>}</TableBody>
     </Table></ScrollArea>
