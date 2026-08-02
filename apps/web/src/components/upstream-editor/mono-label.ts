@@ -5,10 +5,11 @@ const { makeStyles } = fluentComponents;
 // A label that names a wire path -- an endpoint, a path override -- is read as
 // a literal rather than as prose, so it is set in the monospace face one pixel
 // under the prose size beside it: the same reduction global.css makes for
-// inline code, because a monospace face at the same nominal size out-measures
-// the proportional one. WinUI has no code face, so the choice is ours. The
-// size is read from --floway-font-size-mono so a mono-size scope rescales it
-// along with every other monospace surface.
+// inline code, and the same operator instruction, which is that monospace runs
+// a pixel under whatever the position would take were it not monospace. WinUI
+// has no code face, so there is nothing to transcribe. The size is read from
+// --floway-font-size-mono so a mono-size scope rescales it along with every
+// other monospace surface.
 //
 // Both outlets -- Fluent's Checkbox label slot and Field's label slot --
 // render a Label, and Label states the face on its root and the size on its

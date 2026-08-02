@@ -299,7 +299,8 @@ export const winuiTokenCss = `
    smaller and offset one in -- which CSS has no counterpart for, since a CSS
    shadow is cast by the element itself. The recipe's 8 is therefore the
    faithful blur; the rule spending this token in ./controls/tooltip.css.ts
-   writes 9, one pixel of ours.
+   writes 9 -- the pre-inset radius the compositor is handed rather than the
+   one it is handed it for. Nothing sources that pixel; it is ours.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/graphics/inc/DropShadowRecipe.h#L108-L162
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/comptree/HWCompNodeWinRT.cpp#L1608-L1675
 
