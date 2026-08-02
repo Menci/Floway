@@ -47,6 +47,13 @@ defect in this tree is a call site hand-building a slot its component provides,
 which then also overrides the component's own type and colour, so it drifts
 twice.
 
+## A module is named for its job, not for its directory
+
+A file under `components/<x>/` never repeats `<x>`: the directory already said
+it, and a name that says it again spends itself on what the path already
+carries. The suffix carries the job — `data.ts` talks to the network, `plot.ts`
+builds a chart model — and the leading words distinguish it from its siblings.
+
 ## Surfaces with the same purpose share one implementation
 
 Pages that do the same kind of thing are isomorphic — same structure, same
