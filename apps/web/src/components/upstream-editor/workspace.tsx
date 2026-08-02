@@ -12,7 +12,6 @@ import { Controller, useFieldArray, useFormContext, useWatch } from 'react-hook-
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router';
 
-import { BackNavigationButton } from './back-navigation-button';
 import type { ModelRow, UpstreamEditorValues } from './editor-data';
 import { publicModelId } from './editor-data';
 import { FeatureFlagsEditor } from './feature-flags';
@@ -24,6 +23,7 @@ import { dateTime, relativeTime } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
 import { ContentLoadingScreen } from '../ui/app-loading-screen';
+import { BackNavigationButton } from '../ui/back-navigation-button';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { useDangerTextClass } from '../ui/danger';
 import { Input } from '../ui/fluent-form-controls';

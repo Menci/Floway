@@ -1,12 +1,11 @@
 import { SaveRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FormProvider, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useBlocker, useNavigate } from 'react-router';
 import { z } from 'zod';
 
-import { BackNavigationButton } from './back-navigation-button';
 import { UpstreamConfigSidebar } from './config-sidebar';
 import {
   createBody,
@@ -24,29 +23,20 @@ import { api, callApi } from '../../api/client';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { pageNavigation } from '../../lib/page-navigation';
+import { BackNavigationButton } from '../ui/back-navigation-button';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { PANE_GAP_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
+import { useOutcomeToasts } from '../ui/outcome-toast';
 import { Panel } from '../ui/panel';
 import { useDialogInvocation } from '../ui/use-dialog-invocation';
 
-const {
-  Button,
-  Spinner,
-  Text,
-  Toast,
-  Toaster,
-  ToastTitle,
-  useToastController,
-} = fluentComponents;
-
-const saveToastFlashKey = 'floway-upstream-save-toast';
+const { Button, Spinner, Text } = fluentComponents;
 
 export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const toasterId = useId();
-  const { dispatchToast } = useToastController(toasterId);
+  const toasts = useOutcomeToasts();
   const [record, setRecord] = useState(data.record);
   const [discovered, setDiscovered] = useState(data.discovered);
   const [modelsLoading, setModelsLoading] = useState(false);
@@ -114,21 +104,6 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     setDialogFollowsBlocked(blocked);
     if (blocked) leaveDialog.open(); else leaveDialog.close();
   }
-
-  const showSavedToast = useCallback(() => {
-    dispatchToast(
-      <Toast>
-        <ToastTitle>{t('dashboard.upstreamEditor.toast.saved')}</ToastTitle>
-      </Toast>,
-      { intent: 'success' },
-    );
-  }, [dispatchToast, t]);
-
-  useEffect(() => {
-    if (sessionStorage.getItem(saveToastFlashKey) !== '1') return;
-    sessionStorage.removeItem(saveToastFlashKey);
-    showSavedToast();
-  }, [showSavedToast]);
 
   useEffect(() => {
     const handler = (event: BeforeUnloadEvent) => {
@@ -206,16 +181,18 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     const savedValues = valuesFromRecord(saved);
     setSavedBaseline(comparableValues(savedValues));
     reset(savedValues);
+    // The dashboard's toaster sits above the outlet, so one call serves both
+    // branches: the create branch's toast outlives the navigation that follows
+    // it instead of having to be handed across to the page that lands.
+    toasts.succeed(t('dashboard.upstreamEditor.toast.saved'));
     if (data.mode === 'create') {
       allowNavigation.current = true;
-      sessionStorage.setItem(saveToastFlashKey, '1');
       // Left set: the editor unmounts when the target route commits, and the
       // button reads as busy for the whole hand-off rather than going live
       // again a beat before the page changes underneath it.
       void navigate(`/dashboard/providers/upstreams/${encodeURIComponent(saved.id)}`, { replace: true });
     } else {
       setSaving(false);
-      showSavedToast();
     }
   }, () => {
     // Every rejection is rendered on the control that produced it, so the
@@ -226,7 +203,6 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const leave = () => void navigate('/dashboard/providers/upstreams', pageNavigation);
 
   return <FormProvider {...form}>
-    <Toaster toasterId={toasterId} position="top-end" />
     {/* A column rather than a row template: the error bar is only sometimes
         there, and a template that names a row for it leaves an empty one and a
         gap under everything else when it is not. */}
