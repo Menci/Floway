@@ -6,6 +6,7 @@ import 'prismjs/components/prism-bash';
 
 import { apiDocsEndpoints, apiDocsGroups, authCurlExample } from './api-docs-data';
 import { fluentComponents } from '../../fluent';
+import { pageNavigation } from '../../lib/page-navigation';
 import { CodeBlock } from '../ui/code-block';
 import { HttpMethodBadge } from '../ui/http-badge';
 import { OpenLinkLabel } from '../ui/open-link-label';
@@ -38,7 +39,7 @@ export function ApiDocsContent() {
     <Panel className="!grid !gap-4">
       <SectionHeader
         description={<Trans
-          components={[<RouterLink className="text-fui-brand1 no-underline hover:underline" key="api-keys" to="/dashboard/services/api-keys" />]}
+          components={[<RouterLink {...pageNavigation} className="text-fui-brand1 no-underline hover:underline" key="api-keys" to="/dashboard/services/api-keys" />]}
           i18nKey="dashboard.apiDocs.authentication.description"
         />}
         level={2}
