@@ -61,8 +61,7 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
     }
   }), [aliases, record?.name]);
   const { control, formState: { errors }, handleSubmit, setValue } = useForm<AliasFormValues>({ resolver: zodResolver(schema), defaultValues: aliasDefaults(record) });
-  // Every field has a default and useFieldArray preserves complete target rows;
-  // RHF still exposes useWatch as DeepPartial, so narrow at this form boundary.
+  // useWatch is typed DeepPartial, but every field has a default and useFieldArray keeps target rows whole.
   const values = useWatch({ control }) as AliasFormValues;
   const targets = values.targets;
   const kind = values.kind;
@@ -87,8 +86,7 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
     setValue('announcedMetadata', enabled ? structuredClone(automaticMetadata) : {});
   };
   const save = async (form: AliasFormValues) => {
-    // The button stays focusable while this runs, so its form can still be
-    // submitted from it; refusing here is what makes the second press inert.
+    // disabledFocusable keeps the submit button usable while saving, so this guard is what makes a second press inert.
     if (saving) return;
     setSaving(true); setServerError(null);
     try {
