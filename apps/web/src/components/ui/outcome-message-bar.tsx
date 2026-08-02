@@ -7,11 +7,8 @@ import { fluentComponents } from '../../fluent';
 const { Button, MessageBar, MessageBarActions, MessageBarBody, MessageBarTitle, Tooltip } = fluentComponents;
 
 // Nothing dismisses this on a timer: it carries a server's own words, which may
-// need to be read twice or copied. It belongs inside whatever contains the
-// control that failed rather than at page level, where a dialog-borne failure
-// would be invisible while the dialog is open — hence a class on both the bar
-// (the container states the spacing) and the body (a long unbreakable token
-// needs somewhere to say where it may wrap).
+// need to be read twice or copied. Both class names are needed — the container
+// states the spacing, the body says where a long unbreakable token may wrap.
 export function OutcomeMessageBar({
   action,
   bodyClassName,
