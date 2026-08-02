@@ -89,26 +89,61 @@ export const loadEditorAux = async (): Promise<EditorAuxData> => {
   };
 };
 
-export const loadInitialModelCatalog = async (record: UpstreamRecord) => {
-  const values = valuesFromRecord(record);
-  const canFetch = record.kind === 'custom'
-    ? Boolean(record.config.baseUrl) && record.config.modelsFetch.enabled
-    : record.kind === 'ollama'
-      ? Boolean(record.config.baseUrl)
-      : record.id !== '' && record.kind !== 'azure';
-  if (!canFetch) return { discovered: [], modelsError: null, record };
+// Whether a listing request has anything to ask with. It reads the edited
+// config rather than the stored one, so the switch and the base URL the
+// operator is typing decide, and it is the single answer behind the loader,
+// the refresh action and the refresh button.
+export const canFetchModelCatalog = (record: UpstreamRecord, config: UpstreamEditorValues['config']): boolean => {
+  switch (record.kind) {
+  case 'custom': {
+    const custom = config as Extract<UpstreamRecord, { kind: 'custom' }>['config'];
+    return Boolean(custom.baseUrl) && custom.modelsFetch.enabled;
+  }
+  case 'ollama':
+    return Boolean((config as Extract<UpstreamRecord, { kind: 'ollama' }>['config']).baseUrl);
+  case 'azure':
+    return false;
+  default:
+    return record.id !== '';
+  }
+};
+
+export interface ModelCatalogFetch {
+  /** Null when nothing was listed, which leaves whatever the caller already shows. */
+  discovered: UpstreamModelConfig[] | null;
+  modelsError: string | null;
+  refreshed: UpstreamRecord | null;
+}
+
+// Listing re-reads the upstream afterwards: the server writes its models cache
+// as a side effect of the call, and the record the editor holds carries it.
+export const fetchModelCatalog = async (
+  record: UpstreamRecord,
+  values: UpstreamEditorValues,
+  init?: RequestInit,
+): Promise<ModelCatalogFetch> => {
+  if (!canFetchModelCatalog(record, values.config)) return { discovered: null, modelsError: null, refreshed: null };
 
   const result = await callApi(() => api.api.upstreams['list-models'].$post({
     json: { record: previewRecord(record, values) },
-  }));
-  if (result.error) return { discovered: [], modelsError: result.error.message, record };
+  }, { init }));
+  if (result.error) return { discovered: null, modelsError: result.error.message, refreshed: null };
 
-  const endpoints = record.kind === 'custom' ? record.config.endpoints : {};
+  const endpoints = record.kind === 'custom'
+    ? (values.config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).endpoints
+    : {};
   const discovered = discoveredModelsFromResponse(result.data, endpoints);
-  const refreshed = await callApi(() => api.api.upstreams[':id'].$get({ param: { id: record.id } }));
+  if (record.id === '') return { discovered, modelsError: null, refreshed: null };
+
+  const refreshed = await callApi(() => api.api.upstreams[':id'].$get({ param: { id: record.id } }, { init }));
   return refreshed.error
-    ? { discovered, modelsError: refreshed.error.message, record }
-    : { discovered, modelsError: null, record: refreshed.data };
+    ? { discovered, modelsError: refreshed.error.message, refreshed: null }
+    : { discovered, modelsError: null, refreshed: refreshed.data };
+};
+
+export const loadInitialModelCatalog = async (record: UpstreamRecord) => {
+  const { discovered, modelsError, refreshed } = await fetchModelCatalog(record, valuesFromRecord(record));
+  return { discovered: discovered ?? [], modelsError, record: refreshed ?? record };
 };
 
 export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues => {

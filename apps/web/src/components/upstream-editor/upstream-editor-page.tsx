@@ -9,9 +9,8 @@ import { z } from 'zod';
 import { UpstreamConfigSidebar } from './config-sidebar';
 import {
   createBody,
-  discoveredModelsFromResponse,
+  fetchModelCatalog,
   modelPrefixIsValid,
-  previewRecord,
   updateBody,
   valuesFromRecord,
   type UpstreamEditorLoaderData,
@@ -112,28 +111,12 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   // The workspace's refresh button and the custom provider's fetch switch both
   // reach this, so runs can overlap; `useRefresh` aborts the superseded one.
   const { refresh: refreshModels, refreshing: modelsLoading } = useRefresh(useCallback(async (signal: AbortSignal) => {
-    if (record.kind === 'azure') return;
     setModelsError(null);
-    const values = getValues();
-    const result = await callApi(() => api.api.upstreams['list-models'].$post({
-      json: { record: previewRecord(record, values) },
-    }, { init: { signal } }));
+    const catalog = await fetchModelCatalog(record, getValues(), { signal });
     if (signal.aborted) return;
-    if (result.error) {
-      setModelsError(result.error.message);
-      return;
-    }
-    const endpoints = record.kind === 'custom' ? (values.config as typeof record.config).endpoints : {};
-    setDiscovered(discoveredModelsFromResponse(result.data, endpoints));
-    if (record.id !== '') {
-      const refreshed = await callApi(() => api.api.upstreams[':id'].$get({ param: { id: record.id } }, { init: { signal } }));
-      if (signal.aborted) return;
-      if (refreshed.error) {
-        setModelsError(refreshed.error.message);
-      } else {
-        setRecord(current => ({ ...current, modelsCache: refreshed.data.modelsCache } as UpstreamRecord));
-      }
-    }
+    setModelsError(catalog.modelsError);
+    if (catalog.discovered) setDiscovered(catalog.discovered);
+    if (catalog.refreshed) setRecord(current => ({ ...current, modelsCache: catalog.refreshed!.modelsCache } as UpstreamRecord));
   }, [getValues, record]));
 
   const applyProviderPatch = (patch: { config?: unknown; state?: unknown }, persisted = false) => {
