@@ -86,7 +86,15 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
   const requestRef = useRef<AbortController | null>(null);
-  const mountedRef = useRef(false);
+  // What the loader already fetched. The effect below reacts to the view and
+  // the range, so what it has to answer is whether those still describe the
+  // data on screen -- not whether this is the first pass through it. Asked the
+  // second way, with a "have I mounted yet" flag, StrictMode's development
+  // double invocation is indistinguishable from a real change: the first pass
+  // sets the flag, the second finds it set and refetches. Every visit then
+  // paid a duplicate round of requests and overwrote the `loadedAt` the chart
+  // buckets are computed from, in the one build anybody measures in.
+  const loadedFor = useRef({ range: loaderData.range, view: loaderData.view });
 
   const canSwitchView = user.isAdmin;
   const locale = useLocale();
@@ -123,15 +131,13 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   }, [range, view]);
 
   useEffect(() => {
-    if (!mountedRef.current) {
-      mountedRef.current = true;
-      return;
-    }
+    if (loadedFor.current.range === range && loadedFor.current.view === view) return;
+    loadedFor.current = { range, view };
     void refresh();
     return () => {
       requestRef.current?.abort();
     };
-  }, [refresh]);
+  }, [range, refresh, view]);
 
   usePollWhileVisible(refresh, 60_000);
 

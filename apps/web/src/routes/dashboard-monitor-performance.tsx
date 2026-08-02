@@ -193,7 +193,16 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
   const requestRef = useRef<AbortController | null>(null);
-  const mountedRef = useRef(false);
+  // What the loader already fetched. The effect below reacts to the query the
+  // page is asking -- the range, the grouping and the filters -- so what it has
+  // to answer is whether that query still describes the data on screen, not
+  // whether this is the first pass through it. Asked the second way, with a
+  // "have I mounted yet" flag, StrictMode's development double invocation is
+  // indistinguishable from a real change: the first pass sets the flag, the
+  // second finds it set and refetches. Every visit then paid a duplicate round
+  // of requests and overwrote the `loadedAt` the chart buckets are computed
+  // from, in the one build anybody measures in.
+  const loadedFor = useRef({ filters, groupBy, range });
   const locale = useLocale();
 
   // A background poll must not clear a failure the operator has not read:
@@ -223,13 +232,12 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   }, [filters, groupBy, range, view]);
 
   useEffect(() => {
-    if (!mountedRef.current) {
-      mountedRef.current = true;
-      return;
-    }
+    const loaded = loadedFor.current;
+    if (loaded.filters === filters && loaded.groupBy === groupBy && loaded.range === range) return;
+    loadedFor.current = { filters, groupBy, range };
     void refresh();
     return () => { requestRef.current?.abort(); };
-  }, [refresh]);
+  }, [filters, groupBy, range, refresh]);
 
   usePollWhileVisible(refresh, 60_000);
 
