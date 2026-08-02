@@ -26,8 +26,6 @@ import {
 
 export type CollectKind = 'completions' | 'chat-completions' | 'messages' | 'responses' | 'gemini';
 
-// A recorded stream may be partial, so collection distinguishes a complete
-// result, a truncated best-effort result, and a failure with no result.
 export interface CollectedStream {
   result: unknown | null;
   error: string | null;
@@ -50,8 +48,6 @@ export const detectCollectKind = (path: string): CollectKind | null => {
   return null;
 };
 
-// A dump that never recorded a terminal frame was cut short, whatever the
-// reassembler managed to fold out of what it did record.
 export const streamEndedCleanly = (events: DumpStreamEvent[]): boolean =>
   events.at(-1)?.frame.type === 'done';
 
