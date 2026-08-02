@@ -988,7 +988,6 @@ const en = {
           dropzoneActive: 'Release to load the file',
           fileSelected: '{{name}} ({{size}})',
           change: 'Change',
-          preview: 'Preview',
           mode: 'Import Mode',
           modeMerge: 'Merge',
           modeMergeDesc:

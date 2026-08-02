@@ -948,7 +948,6 @@ const zhHansCN = {
           dropzoneActive: '释放文件以加载',
           fileSelected: '{{name}}（{{size}}）',
           change: '更换',
-          preview: '预览',
           mode: '导入模式',
           modeMerge: '合并',
           modeMergeDesc:
