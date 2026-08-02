@@ -103,15 +103,19 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const [overview, setOverview] = useState<PerformanceOverviewResponse | null>(loaderData.overview);
   const [upstreamNames] = useState(() => new Map(loaderData.upstreamNames.map(record => [record.id, record.name])));
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
-  // What the loader already fetched. The effect below reacts to the query the
-  // page is asking -- the range, the grouping and the filters -- so what it has
+  // What is on screen, as the run that put it there recorded it. The effect
+  // below reacts to the query the page is asking -- the range, the grouping and
+  // the filters -- so what it has
   // to answer is whether that query still describes the data on screen, not
   // whether this is the first pass through it. Asked the second way, with a
   // "have I mounted yet" flag, StrictMode's development double invocation is
   // indistinguishable from a real change: the first pass sets the flag, the
   // second finds it set and refetches. Every visit then paid a duplicate round
   // of requests and overwrote the `loadedAt` the chart buckets are computed
-  // from, in the one build anybody measures in.
+  // from, in the one build anybody measures in. Recording the query the fetch
+  // asked for rather than the one it brought back is the same mistake in the
+  // other direction: a run torn down before it answered would be remembered as
+  // the data on screen and never re-issued.
   const loadedFor = useRef({ filters, groupBy, range });
   const locale = useLocale();
 
@@ -132,6 +136,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       setOverview(result.data);
       setLoadedRange(range);
       setLoadedAt(requestedAt);
+      loadedFor.current = { filters, groupBy, range };
     }
   }, [filters, groupBy, range, view]);
 
@@ -140,7 +145,6 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   useEffect(() => {
     const loaded = loadedFor.current;
     if (loaded.filters === filters && loaded.groupBy === groupBy && loaded.range === range) return;
-    loadedFor.current = { filters, groupBy, range };
     void refresh();
   }, [filters, groupBy, range, refresh]);
 

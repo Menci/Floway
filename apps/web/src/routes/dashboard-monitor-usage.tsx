@@ -85,14 +85,18 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(() => new Set(loaderData.hiddenKeys));
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(() => new Set(loaderData.hiddenModels));
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
-  // What the loader already fetched. The effect below reacts to the view and
-  // the range, so what it has to answer is whether those still describe the
-  // data on screen -- not whether this is the first pass through it. Asked the
-  // second way, with a "have I mounted yet" flag, StrictMode's development
-  // double invocation is indistinguishable from a real change: the first pass
-  // sets the flag, the second finds it set and refetches. Every visit then
-  // paid a duplicate round of requests and overwrote the `loadedAt` the chart
-  // buckets are computed from, in the one build anybody measures in.
+  // What is on screen, as the run that put it there recorded it. The effect
+  // below reacts to the view and the range, so what it has to answer is
+  // whether those still describe the data on screen -- not whether this is the
+  // first pass through it. Asked the second way, with a "have I mounted yet"
+  // flag, StrictMode's development double invocation is indistinguishable from
+  // a real change: the first pass sets the flag, the second finds it set and
+  // refetches. Every visit then paid a duplicate round of requests and
+  // overwrote the `loadedAt` the chart buckets are computed from, in the one
+  // build anybody measures in. Recording the query the fetch asked for rather
+  // than the one it brought back is the same mistake in the other direction:
+  // a run torn down before it answered would be remembered as the data on
+  // screen and never re-issued.
   const loadedFor = useRef({ range: loaderData.range, view: loaderData.view });
 
   const canSwitchView = user.isAdmin;
@@ -112,6 +116,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
       setModels(next.models);
       setLoadedRange(range);
       setLoadedAt(requestedAt);
+      loadedFor.current = { range, view };
       setError(next.error);
     } catch (error) {
       if (signal.aborted) return;
@@ -123,7 +128,6 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
 
   useEffect(() => {
     if (loadedFor.current.range === range && loadedFor.current.view === view) return;
-    loadedFor.current = { range, view };
     void refresh();
   }, [range, refresh, view]);
 
