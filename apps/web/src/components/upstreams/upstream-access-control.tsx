@@ -110,7 +110,7 @@ export function UpstreamAccessControl({
                 <TableCell><Checkbox aria-label={`${t('dashboard.upstreamAccess.enabled')}: ${row.name}`} checked={row.enabled} disabled={disabled || !override} onChange={(_, data) => toggleUpstream(row.id, !!data.checked)} /></TableCell>
                 <TableCell><div className="inline-flex items-center gap-1"><ReorderButtons disabled={disabled || !override} downLabel={t('dashboard.upstreamAccess.moveDown')} isFirst={index <= 0} isLast={index === -1 || index >= ids.length - 1} onMove={direction => moveUpstream(row.id, direction)} upLabel={t('dashboard.upstreamAccess.moveUp')} /></div></TableCell>
                 <TableCell><ProviderBadge color={row.color} kind={row.kind} label={row.name} /></TableCell>
-                <TableCell><Text>{t('dashboard.upstreamAccess.modelCount', { count: row.modelCount })}</Text></TableCell>
+                <TableCell>{t('dashboard.upstreamAccess.modelCount', { count: row.modelCount })}</TableCell>
               </TableRow>;
             })}</TableBody>
           </Table>
