@@ -1,76 +1,62 @@
 // Switch restyled as WinUI 3's ToggleSwitch. Fluent's medium track already
-// matches WinUI's OuterBorder, so the track box carries over untouched and only
-// the knob's shape and the paint of both parts are restated here. WinUI's knob
-// is a 12x12 rectangle in a left-aligned 20x20 cell where Fluent's is a circle
-// glyph filling the track height, so we keep Fluent's element and its
-// translate, blank the glyph, and paint the knob as the element's own box.
+// matches WinUI's OuterBorder, so the track box carries over and only the knob
+// and the paint are restated: WinUI's knob is a 12x12 rectangle in a 20x20
+// cell where Fluent's is a circle glyph filling the track height, so we keep
+// Fluent's element and its translate, blank the glyph, and paint the knob as
+// the element's own box.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L507-L521
 //
-// The track is two stacked capsules, not one. XAML draws OuterBorder under
-// SwitchKnobBounds, which carries the accent fill at Opacity="0", and toggling
-// cross-fades their opacities -- which is why the track washes out towards the
-// page half way through. A single element interpolating one background-color
-// travels straight between the two fills and cannot show that, so the two
-// capsules are reproduced as the indicator's two pseudo-elements.
+// The track is two stacked capsules, not one: XAML cross-fades OuterBorder
+// against SwitchKnobBounds, and a single element interpolating one
+// background-color travels straight between the two fills instead of washing
+// out towards the page half way through, so the pair is reproduced as the
+// indicator's two pseudo-elements.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L507-L508
 //
-// Knob sizes and gaps are written as multiples of a unit the size sets, so
-// Fluent's small track — which WinUI has no counterpart for — carries the same
-// proportions instead of the medium size's pixels. The unit is the ratio of the
-// two content boxes, 14 over 18, which is what keeps the knob's travel landing
-// inside the track: at medium's literal 12px the small knob finished half a
-// pixel past the track's inner edge. Every offset below is stated relative to
-// the track's outer edge and then reduced by the 1px border the content box is
-// inset by.
+// Knob sizes and gaps are multiples of a unit the size sets, so Fluent's small
+// track — which WinUI has no counterpart for — keeps the same proportions: at
+// medium's literal 12px the small knob finished half a pixel past the track's
+// inner edge. Every offset below is stated relative to the track's outer edge
+// and then reduced by the 1px border the content box is inset by.
 //
 // The knob is the one subject the doubling convention cannot be applied to.
 // Fluent gives it no class of its own, addressing it as `> *` from the
-// indicator's reset class; every knob rule here therefore doubles the indicator
-// instead, which puts the pair one class above that reset atom exactly as a
-// doubled subject would.
+// indicator's reset class, so every knob rule here doubles the indicator
+// instead.
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-switch/library/src/components/Switch/useSwitchStyles.styles.ts#L74-L82
 //
-// XAML centres each knob inside the 20x20 cell minus its own margin, so the
-// 12x12 off knob (Margin="-1,0,0,0") sits at -1 + (21 - 12) / 2 = 3.5px and the
-// on knob (Margin="0,0,1,0") at (19 - 12) / 2 = 3.5px within a cell that
-// translates by 20px. The two knobs share that offset, so one translated
-// element carries both positions. It does not carry their cross-fade: Fluent's
-// knob is an SVG element, and an SVG element generates no ::before or ::after
-// box to stack a second knob in.
+// XAML centres both knobs at the same 3.5px inside a cell that translates by
+// 20px, so one translated element carries both positions. It does not carry
+// their cross-fade: Fluent's knob is an SVG element, and an SVG element
+// generates no ::before or ::after box to stack a second knob in.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L510-L520
 //
-// Colour is confined to `@media not (forced-colors: active)`. This layer's
-// track is drawn on pseudo-elements and its knob on a blanked glyph, and forced
-// colours reaches neither: a Highlight capsule would need
-// `forced-color-adjust: none` on the pseudo-elements, which this layer chooses
-// not to take on. Under forced colours the paint below therefore drops out
-// entirely and Fluent's own drawing shows through. Geometry, motion and the
+// Colour is confined to `@media not (forced-colors: active)`: a Highlight
+// capsule would need `forced-color-adjust: none` on the pseudo-elements, which
+// this layer chooses not to take on, so under forced colours the paint below
+// drops out and Fluent's own drawing shows through. Geometry, motion and the
 // knob's travel apply in both modes.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L64-L123
 export const switchCss = `
-/* The whole control is the drag surface, not the knob: XAML lays a transparent
-   Thumb across all three rows and columns, so the caption drags the switch too.
-   ManipulationMode="System,TranslateX" claims the horizontal axis for the
+/* ManipulationMode="System,TranslateX" claims the horizontal axis for the
    control and leaves the vertical one to the scroller above it, which is what
    touch-action: pan-y says here.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L197
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L524-L528 */
 .fui-Switch.fui-Switch {
   touch-action: pan-y;
 }
 
-/* The indicator itself paints nothing and animates nothing: the fill and stroke
-   belong to the two capsules below it and the knob paints its own.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L602-L606 */
+/* The indicator paints nothing and animates nothing: the two capsules below
+   carry the fill and stroke, and the knob paints its own. */
 .fui-Switch__indicator.fui-Switch__indicator {
   align-items: center;
   align-self: center;
   display: flex;
-  /* Fluent's own eight-pixel ring is dropped: inline, the twelve the template's
-     gap column states takes over, declared on the root because that is the only
-     form which survives the label moving to either side. Block-wise WinUI's 40px
-     body is deliberately dropped too, so the switch runs at the one control-row
-     height this app's forms share.
+  /* Fluent's own eight-pixel inline ring is dropped for the twelve the
+     template's gap column states, declared on the root because that is the only
+     form which survives the label moving to either side; WinUI's 40px block
+     body is dropped so the switch runs at the one control-row height this app's
+     forms share.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L186-L187
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L495-L501 */
   margin: 0;
@@ -84,30 +70,23 @@ export const switchCss = `
 }
 
 /* Fluent's label padding is the last thing holding the root taller than the
-   track, so it goes with the indicator's block margin, on the same choice of
-   row height stated at the rule above. */
+   track, so it goes with the indicator's block margin. */
 .fui-Switch__label.fui-Switch__label {
   padding: 0;
 }
 
-/* A switch that carries a label is a field standing beside inputs and combo
-   boxes, so it takes the row height those share; one that does not is only
-   itself. Both the 34 and the gate are this app's choice -- WinUI states 40 for
-   every switch, labelled or not. ./text-input.css.ts is where the 34 is written
-   down. */
+/* A labelled switch is a field standing beside inputs and combo boxes, so it
+   takes the row height those share; one that does not is only itself. Both the
+   34 (written down in ./text-input.css.ts) and the gate are this app's choice --
+   WinUI states 40 for every switch, labelled or not. */
 .fui-Switch.fui-Switch:has(> .fui-Switch__label) {
   min-height: 34px;
 }
 
-/* Turning on cross-fades the two capsules over ControlFasterAnimationDuration,
-   linearly: OffToOnTransition states a LinearDoubleKeyFrame on each of the four
-   opacities it touches.
-
-   Turning off does not fade at all. OnToOffTransition carries GeneratedDuration
-   0 and the Off state is empty, so leaving On reverts every opacity in one
-   tick; a 60fps capture of the shipped control confirms both halves. So one
-   duration is declared here and it is the on direction's; the off direction is
-   what remains when nothing animates.
+/* Turning on cross-fades the two capsules linearly over
+   ControlFasterAnimationDuration; turning off does not fade at all --
+   OnToOffTransition carries GeneratedDuration 0 and the Off state is empty. So
+   the one duration declared here is the on direction's.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L418-L439
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L442 */
 .fui-Switch__indicator.fui-Switch__indicator {
@@ -353,9 +332,8 @@ export const switchCss = `
     background-color: var(--winui-accent-fill-tertiary);
   }
 
-  /* Disabled. WinUI returns the knob to its rest size, which no pointer state
-     can reach here, because every size rule above is gated on the input being
-     enabled.
+  /* Disabled. WinUI returns the knob to its rest size, which needs no rule here:
+     every size rule above is gated on the input being enabled.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L138-L139
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L146-L158
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L357-L368 */
@@ -370,12 +348,9 @@ export const switchCss = `
     background-color: var(--winui-accent-fill-disabled);
   }
 
-  /* Focus: Fluent already draws a 2px ring around the whole control, so its
-     colour becomes FocusStrokeColorOuter and the 1px inner ring is added inside
-     it. What is not transcribed is the FocusVisualMargin of -7,-3,-7,-3, which
-     inflates the pair around SwitchAreaGrid: that margin is stated against a
-     template part, and the ring here belongs to the whole control, so the
-     inflation stays as Fluent draws it.
+  /* Focus. WinUI's FocusVisualMargin of -7,-3,-7,-3 is not transcribed: it
+     inflates the ring around a template part, where this ring belongs to the
+     whole control, so the inflation stays as Fluent draws it.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L200
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/DependencyObject/DependencyProperty.cpp#L22-L25 */
