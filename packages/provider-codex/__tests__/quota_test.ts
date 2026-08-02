@@ -43,19 +43,14 @@ const baseAccount = {
 };
 
 let current: UpstreamRecord | null;
-let saveStateSpy: ReturnType<typeof vi.fn<(id: string, newState: unknown, opts: { expectedState: unknown }) => Promise<{ updated: boolean }>>>;
-let getByIdSpy: ReturnType<typeof vi.fn<(id: string) => Promise<UpstreamRecord | null>>>;
+let repo: UpstreamStateRepoStub;
 
 beforeEach(() => {
   current = makeRecord({ accounts: [{ ...baseAccount }] });
-  saveStateSpy = vi.fn(async (_id, newState, _opts) => {
-    if (current) current = { ...current, state: newState as CodexUpstreamState };
-    return { updated: true };
+  repo = createUpstreamStateRepoStub(() => current, state => {
+    current = { ...current!, state: state as CodexUpstreamState };
   });
-  getByIdSpy = vi.fn(async () => current);
-  initProviderRepo(() => ({
-    upstreams: { getById: getByIdSpy, saveState: saveStateSpy },
-  }));
+  initProviderRepo(() => ({ upstreams: repo }));
 });
 
 afterEach(() => vi.restoreAllMocks());
@@ -167,16 +162,15 @@ describe('getCodexQuota', () => {
 });
 
 describe('putCodexQuota', () => {
-  test('persists the snapshot under its active limit via saveState', async () => {
+  test('persists the snapshot under its active limit, leaving the rest of the credential alone', async () => {
     const snap: CodexQuotaSnapshot = { observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'premium', primary_used_percent: 42 };
     await putCodexQuota(upstreamId, accountId, snap);
-    expect(saveStateSpy).toHaveBeenCalledTimes(1);
-    const [id, nextState, opts] = saveStateSpy.mock.calls[0];
-    expect(id).toBe(upstreamId);
-    const written = (nextState as CodexUpstreamState).accounts[0].quotaSnapshot;
+    expect(repo.saveState).toHaveBeenCalledTimes(1);
+    expect(repo.saveState.mock.calls[0][0]).toBe(upstreamId);
+    const written = (current!.state as CodexUpstreamState).accounts[0].quotaSnapshot;
     expect(written?.premium?.data).toEqual(snap);
     expect(typeof written?.premium?.fetchedAt).toBe('number');
-    expect(opts.expectedState).toEqual({ accounts: [{ ...baseAccount }] });
+    expect({ ...(current!.state as CodexUpstreamState).accounts[0], quotaSnapshot: null }).toEqual({ ...baseAccount });
   });
 
   test('preserves other active-limit buckets and replaces the matching bucket', async () => {

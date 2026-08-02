@@ -30,9 +30,8 @@ const installRepoAndClearCache = async () => {
   initProviderRepo(() => ({
     upstreams: {
       getById: async () => ({ ...stub, state }),
-      saveState: async (_id, newState) => {
-        state = newState;
-        return { updated: true };
+      saveState: async (_id, mutate) => {
+        state = mutate(state);
       },
     },
   }));
@@ -198,15 +197,14 @@ test('copilotAuthedFetch reads a still-valid Copilot token from state_json inste
   assertEquals(authHeader, 'Bearer tok-persisted');
 });
 
-// Regression: the token persist used to key its CAS on the row read BEFORE
-// the token exchange, so any write that landed during that round trip — and
-// the quota harvest writes this row on every data-plane response — cost the
-// upstream its freshly minted token, sending every isolate back to the token
-// endpoint on its own. The persist now re-reads immediately before saving.
+// Regression: the token persist used to build its document from the row read
+// BEFORE the token exchange, so any write that landed during that round trip —
+// and the quota harvest writes this row on every data-plane response — was
+// either overwritten or cost the upstream its freshly minted token. The persist
+// is now a mutator over the state the repo hands it at write time.
 test('copilotAuthedFetch persists a minted token even when the row changed during the exchange', async () => {
   let state: unknown = { knownModels: null, copilotToken: null, quotaSnapshot: null };
   let exchanged = false;
-  const casLosses: number[] = [];
   const stub: UpstreamRecord = {
     id: UPSTREAM_ID,
     kind: 'copilot',
@@ -226,16 +224,8 @@ test('copilotAuthedFetch persists a minted token even when the row changed durin
   initProviderRepo(() => ({
     upstreams: {
       getById: async () => ({ ...stub, state }),
-      saveState: async (_id, newState, options) => {
-        // Real CAS semantics: the mock persists inline, so JSON equality on
-        // the state we read vs. the row's current value is what D1's
-        // state_json round-trip would compare.
-        if (JSON.stringify(options.expectedState) !== JSON.stringify(state)) {
-          casLosses.push(1);
-          return { updated: false };
-        }
-        state = newState;
-        return { updated: true };
+      saveState: async (_id, mutate) => {
+        state = mutate(state);
       },
     },
   }));
@@ -272,10 +262,9 @@ test('copilotAuthedFetch persists a minted token even when the row changed durin
   );
 
   assertEquals(exchanged, true);
-  assertEquals(casLosses.length, 0);
   const persisted = state as CopilotUpstreamState;
   assertEquals(persisted.copilotToken?.token, 'tok-test');
-  // The sibling write that landed mid-exchange survives — the persist carries
+  // The sibling write that landed mid-exchange survives — the persist spreads
   // the row as it stands now, not the snapshot taken before the round trip.
   assertEquals(persisted.quotaSnapshot?.fetchedAt, 1);
 });

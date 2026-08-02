@@ -7,6 +7,7 @@ import { parseClaudeCodeQuotaHeaders, type ClaudeCodeQuotaSnapshot } from './quo
 import {
   readClaudeCodeUpstreamState,
   replaceSoleAccount,
+  type ClaudeCodeAccountCredential,
 } from './state.ts';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
@@ -122,16 +123,19 @@ const isRateLimitedNow = (
 };
 
 const persistQuotaSnapshot = async (upstreamId: string, snapshot: ClaudeCodeQuotaSnapshot): Promise<void> => {
-  const fresh = await getProviderRepo().upstreams.getById(upstreamId);
-  if (!fresh) throw new Error(`Claude Code upstream ${upstreamId} disappeared mid-request`);
-  const state = readClaudeCodeUpstreamState(fresh.state);
-  const account = state.accounts[0];
-  const priorStatus = account.quotaSnapshot === null ? null : account.quotaSnapshot.data.status;
-  const next = replaceSoleAccount(state, account => ({
-    ...account,
-    quotaSnapshot: { fetchedAt: Date.now(), data: snapshot },
-  }));
-  await getProviderRepo().upstreams.saveState(upstreamId, next, { expectedState: fresh.state });
+  // The prior status comes from the state the mutator was handed: the write is
+  // retried against whoever won the row, so only that view describes the
+  // snapshot this write actually replaced.
+  let previousAccount!: ClaudeCodeAccountCredential;
+  await getProviderRepo().upstreams.saveState(upstreamId, current => {
+    const state = readClaudeCodeUpstreamState(current);
+    previousAccount = state.accounts[0];
+    return replaceSoleAccount(state, account => ({
+      ...account,
+      quotaSnapshot: { fetchedAt: Date.now(), data: snapshot },
+    }));
+  });
+  const priorStatus = previousAccount.quotaSnapshot === null ? null : previousAccount.quotaSnapshot.data.status;
   // Emit only on transition. Persisting every response would flood the log
   // with one event per request; the dashboard already reads the snapshot
   // verbatim. Operators care about the moment the upstream flipped from
@@ -139,7 +143,7 @@ const persistQuotaSnapshot = async (upstreamId: string, snapshot: ClaudeCodeQuot
   if (priorStatus !== snapshot.status) {
     logInfo('claude_code_quota_state_transition', {
       upstream_id: upstreamId,
-      account_uuid: account.accountUuid,
+      account_uuid: previousAccount.accountUuid,
       from_status: priorStatus,
       to_status: snapshot.status,
       reset_at_iso: snapshot.reset,
@@ -148,12 +152,10 @@ const persistQuotaSnapshot = async (upstreamId: string, snapshot: ClaudeCodeQuot
   }
 };
 
-// Best-effort persist: a CAS loss to a concurrent rotation or quota write is
-// fine because the live state already carries a snapshot at least as fresh
-// as the one we'd write. The hot path must not block on the write completing
-// or surface its failures to the caller. Skip writing when the response
-// carries no rate-limit signal at all — that would erase the prior snapshot
-// for no upside.
+// Best-effort persist: the hot path must not block on the write completing or
+// surface its failures to the caller. Skip writing when the response carries
+// no rate-limit signal at all — that would erase the prior snapshot for no
+// upside.
 //
 // On Cloudflare Workers the runtime cancels orphan promises the moment the
 // response is sent to the client, so a bare fire-and-forget would lose the
@@ -228,38 +230,38 @@ const detectTerminalSentinel = (status: number, bodyText: string): string | null
 
 // Terminal flip from the data-plane sentinel detector. Distinct from
 // access-token.ts's `persistTerminalState`: this path runs in a
-// fire-and-forget context with no caller-side state, so we re-read; the
-// flip is body-sentinel-triggered (org disabled/banned), not oauth-error-
-// triggered, so the log carries `upstream_status` instead of `oauth_code`;
-// and a sibling oauth-side flip may have already happened, so we skip the
-// write when the account isn't `active` anymore. Merging the two helpers
-// would force conditional dispatch on every one of these axes.
+// fire-and-forget context with no caller-side state, so the account it logs
+// comes from the mutator's own view; the flip is body-sentinel-triggered (org
+// disabled/banned), not oauth-error-triggered, so the log carries
+// `upstream_status` instead of `oauth_code`; and a sibling oauth-side flip may
+// have already happened, so an account that is no longer `active` is returned
+// untouched — the repo reads that as "nothing to do" and the dashboard keeps
+// the first signal. Merging the two helpers would force conditional dispatch
+// on every one of these axes.
 const persistTerminalAccountState = async (
   upstreamId: string,
   terminalMessage: string,
   reason: string,
   upstreamStatus: number,
 ): Promise<void> => {
-  const fresh = await getProviderRepo().upstreams.getById(upstreamId);
-  if (!fresh) return;
-  const state = readClaudeCodeUpstreamState(fresh.state);
-  const account = state.accounts[0];
-  // Already terminal — a sibling write (e.g. an OAuth refresh death) won;
-  // skip overwriting the prior message so the dashboard keeps the first
-  // signal.
-  if (account.state !== 'active') return;
-  const flipped = replaceSoleAccount(state, account => ({
-    ...account,
-    state: 'refresh_failed',
-    stateMessage: terminalMessage,
-    stateUpdatedAt: new Date().toISOString(),
-    accessToken: null,
-  }));
-  await getProviderRepo().upstreams.saveState(upstreamId, flipped, { expectedState: fresh.state });
+  let previousAccount!: ClaudeCodeAccountCredential;
+  await getProviderRepo().upstreams.saveState(upstreamId, current => {
+    const state = readClaudeCodeUpstreamState(current);
+    previousAccount = state.accounts[0];
+    if (previousAccount.state !== 'active') return state;
+    return replaceSoleAccount(state, account => ({
+      ...account,
+      state: 'refresh_failed',
+      stateMessage: terminalMessage,
+      stateUpdatedAt: new Date().toISOString(),
+      accessToken: null,
+    }));
+  });
+  if (previousAccount.state !== 'active') return;
   logWarn('claude_code_account_state_flip', {
     upstream_id: upstreamId,
-    account_uuid: account.accountUuid,
-    from_state: account.state,
+    account_uuid: previousAccount.accountUuid,
+    from_state: previousAccount.state,
     to_state: 'refresh_failed',
     reason,
     upstream_status: upstreamStatus,
@@ -269,10 +271,7 @@ const persistTerminalAccountState = async (
 
 // Fire-and-forget: clones the response so the original body still streams
 // to the caller intact (we surface upstream verbatim — the terminal flip
-// is purely additional dashboard signal). CAS loss to a concurrent
-// rotation is fine: either the sibling already flipped to terminal (no
-// regression) or the sibling rotated state and the next request
-// re-detects the sentinel.
+// is purely additional dashboard signal).
 //
 // Same lifecycle dance as `persistQuotaFromHeadersFireAndForget`: under
 // Workers the runtime cancels orphan promises the moment the response is
