@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { defaultAgentSetupConfiguration } from '../../../src/components/api-keys/agent-setup-contract';
 import { useAgentSetup } from '../../../src/components/api-keys/use-agent-setup';
+import { flowayTokenStorageKey } from '../../../src/auth/session';
+import { useLocalStorageStub } from '../../local-storage-stub';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -37,7 +39,7 @@ describe('Agent Setup lease lifecycle', () => {
   let root: Root;
   let container: HTMLDivElement;
   let current: SetupState;
-  const originalLocalStorage = Object.getOwnPropertyDescriptor(window, 'localStorage');
+  const storage = useLocalStorageStub();
 
   const Harness = ({ apiKeyId }: { apiKeyId: string | null }) => {
     current = useAgentSetup(apiKeyId);
@@ -46,14 +48,7 @@ describe('Agent Setup lease lifecycle', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    Object.defineProperty(window, 'localStorage', {
-      configurable: true,
-      value: {
-        getItem: () => 'session-token',
-        setItem: () => undefined,
-        removeItem: () => undefined,
-      },
-    });
+    storage.set(flowayTokenStorageKey, 'session-token');
     container = document.createElement('div');
     root = createRoot(container);
   });
@@ -62,8 +57,6 @@ describe('Agent Setup lease lifecycle', () => {
     await act(async () => root.unmount());
     vi.useRealTimers();
     vi.unstubAllGlobals();
-    if (originalLocalStorage) Object.defineProperty(window, 'localStorage', originalLocalStorage);
-    else Reflect.deleteProperty(window, 'localStorage');
   });
 
   it('does not create a public lease until a key is explicitly selected', async () => {
