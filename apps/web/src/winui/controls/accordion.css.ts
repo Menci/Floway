@@ -179,10 +179,17 @@ export const accordionCss = `
    clipped to the padding box, so its pixel falls just inside the band the outer
    ring covers. Under forced colours the shadow is dropped by the user agent and
    Fluent's own literal system colour carries the ring.
+
+   Fluent also blanks the header's own border while the ring shows, and the
+   Expander template has no focus visual state at all -- its header keeps
+   ExpanderHeaderBorderBrush focused or not -- so the stroke is restated here at
+   the weight that blanking rule ties.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L9
    https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
 .fui-AccordionHeader__button.fui-AccordionHeader__button[data-fui-focus-visible] {
+  border-color: var(--winui-card-stroke-default);
   box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
 }
 
