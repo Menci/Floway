@@ -59,17 +59,17 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
         <Text block weight="semibold" truncate wrap={false}>{account.email ?? accountUuidShort}</Text>
         <div className="flex flex-wrap items-center gap-2">
           {credential?.tokenKind === 'setup-token' && <Tooltip content={t('dashboard.upstreamEditor.claudeCode.setupTokenHint')} relationship="description">
-            <span className="inline-flex" tabIndex={0}>
+            <span className="winui-focus-rect inline-flex" tabIndex={0}>
               <StatusBadge color="important">{t('dashboard.upstreamEditor.claudeCode.setupToken')}</StatusBadge>
             </span>
           </Tooltip>}
           {subscription && <StatusBadge color="brand">{subscription}</StatusBadge>}
           {account.rateLimitTier && <Badge appearance="outline" size="large">{account.rateLimitTier}</Badge>}
           <Tooltip content={account.accountUuid} relationship="description">
-            <Text size={200} className="text-fui-fg3 font-mono mono-size-xs" tabIndex={0}>{accountUuidShort}</Text>
+            <Text size={200} className="winui-focus-rect text-fui-fg3 font-mono mono-size-xs" tabIndex={0}>{accountUuidShort}</Text>
           </Tooltip>
           {account.email === null && <Tooltip content={t('dashboard.upstreamEditor.claudeCode.noEmailScopeHint')} relationship="description">
-            <Text size={200} className="text-fui-fg3" tabIndex={0}>{t('dashboard.upstreamEditor.claudeCode.noEmailScope')}</Text>
+            <Text size={200} className="winui-focus-rect text-fui-fg3" tabIndex={0}>{t('dashboard.upstreamEditor.claudeCode.noEmailScope')}</Text>
           </Tooltip>}
         </div>
       </div>
@@ -156,10 +156,10 @@ function EntryList({ entries }: { entries: [string, string][] }) {
   return <dl className="grid gap-1 m-0">
     {entries.map(([key, value]) => <div key={key} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-3">
       <Tooltip content={key} relationship="label">
-        <dt className="truncate font-mono mono-size-xs text-fui-fg3" tabIndex={0}>{key}</dt>
+        <dt className="winui-focus-rect truncate font-mono mono-size-xs text-fui-fg3" tabIndex={0}>{key}</dt>
       </Tooltip>
       <Tooltip content={value} relationship="label">
-        <dd className="truncate font-mono mono-size-xs text-fui-fg2 m-0" tabIndex={0}>{value}</dd>
+        <dd className="winui-focus-rect truncate font-mono mono-size-xs text-fui-fg2 m-0" tabIndex={0}>{value}</dd>
       </Tooltip>
     </div>)}
   </dl>;

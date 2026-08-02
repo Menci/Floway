@@ -113,17 +113,12 @@ const useStyles = makeStyles({
     paddingLeft: tokens.spacingHorizontalM,
   },
   // Chrome makes an overflowing scroller focusable when nothing inside it can
-  // take focus, and a markdown table holds nothing that can. The ring is inward
-  // because the scrollport clips, leaving no room outside it.
+  // take focus, and a markdown table holds nothing that can, which is what the
+  // focus rect on this host is for.
   tableScroll: {
     minWidth: 0,
     marginTop: tokens.spacingVerticalM,
     marginBottom: tokens.spacingVerticalM,
-    '& :focus-visible': {
-      boxShadow: 'inset 0 0 0 3px var(--winui-focus-stroke-inner)',
-      outline: '2px solid var(--winui-focus-stroke-outer)',
-      outlineOffset: '-2px',
-    },
   },
   table: {
     borderCollapse: 'collapse',
@@ -211,7 +206,7 @@ export const PlaygroundMarkdown = memo(function PlaygroundMarkdown({ content, st
     code: props => <MarkdownCode {...props} streaming={streaming} />,
     img: () => null,
     pre: MarkdownPre,
-    table: ({ children }) => <ScrollArea axes="horizontal" className={s.tableScroll}><table className={s.table}>{children}</table></ScrollArea>,
+    table: ({ children }) => <ScrollArea axes="horizontal" className={`winui-focus-rect-within ${s.tableScroll}`}><table className={s.table}>{children}</table></ScrollArea>,
     td: ({ children, ...props }) => <td {...props} className={s.tableCell}>{children}</td>,
     th: ({ children, ...props }) => <th {...props} className={`${s.tableCell} ${s.tableHeader}`}>{children}</th>,
   }), [s, streaming]);

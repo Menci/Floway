@@ -3,21 +3,7 @@ import type { PropsWithChildren, ReactNode } from 'react';
 import { ScrollArea } from './scroll-area';
 import { fluentComponents } from '../../fluent';
 
-const { Text, makeStyles, mergeClasses } = fluentComponents;
-
-const useStyles = makeStyles({
-  // The host's padding box is the viewport's border box exactly, so the ring is
-  // drawn inward: outside it would be cut on all four sides.
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
-  stack: {
-    '& :focus-visible': {
-      boxShadow: 'inset 0 0 0 3px var(--winui-focus-stroke-inner)',
-      outline: '2px solid var(--winui-focus-stroke-outer)',
-      outlineOffset: '-2px',
-    },
-  },
-});
+const { Text } = fluentComponents;
 
 export function ErrorShell({ action, children, message, title }: PropsWithChildren<{
   action?: ReactNode;
@@ -46,11 +32,10 @@ export function ErrorShell({ action, children, message, title }: PropsWithChildr
 }
 
 export function ErrorStack({ children }: PropsWithChildren) {
-  const styles = useStyles();
   return (
     <ScrollArea
       axes="horizontal"
-      className={mergeClasses('w-full min-w-0 rounded-[var(--winui-overlay-corner-radius,8px)] border border-solid border-fui-stroke1 bg-fui-bg2 text-left', styles.stack)}
+      className="winui-focus-rect-within w-full min-w-0 rounded-[var(--winui-overlay-corner-radius,8px)] border border-solid border-fui-stroke1 bg-fui-bg2 text-left"
     >
       <pre className="m-0 w-max min-w-full p-4 font-mono"><code>{children}</code></pre>
     </ScrollArea>

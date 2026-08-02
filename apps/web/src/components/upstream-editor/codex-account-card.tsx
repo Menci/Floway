@@ -43,7 +43,7 @@ export function CodexAccountCard({ record }: { record: CodexRecord }) {
               {t('dashboard.upstreamEditor.codex.credits', { balance: credits.credits_balance })}
             </Badge>}
           <Tooltip content={account.chatgptAccountId} relationship="description">
-            <Text size={200} className="text-fui-fg3 font-mono mono-size-xs" tabIndex={0}>{shortAccountId(account.chatgptAccountId)}</Text>
+            <Text size={200} className="winui-focus-rect text-fui-fg3 font-mono mono-size-xs" tabIndex={0}>{shortAccountId(account.chatgptAccountId)}</Text>
           </Tooltip>
         </div>
       </div>
@@ -57,7 +57,7 @@ export function CodexAccountCard({ record }: { record: CodexRecord }) {
       : entries.map(entry => <section className="grid gap-3 border-0 border-t border-solid border-fui-divider py-3 first:border-t-0" key={entry.key}>
           <div className="flex items-baseline justify-between gap-3 min-w-0">
             <Tooltip content={entry.label} relationship="label">
-              <Text block truncate weight="semibold" tabIndex={0} wrap={false}>{entry.label}</Text>
+              <Text block className="winui-focus-rect" truncate weight="semibold" tabIndex={0} wrap={false}>{entry.label}</Text>
             </Tooltip>
             <Text size={200} className="text-fui-fg3 shrink-0 uppercase tracking-wide">{t('dashboard.upstreamEditor.codex.activeLimit')}</Text>
           </div>

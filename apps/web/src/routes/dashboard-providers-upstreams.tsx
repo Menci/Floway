@@ -25,7 +25,7 @@ import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { ReorderButtons } from '../components/ui/reorder-buttons';
 import { ResourceListActions, ResourceListEmptyState, ResourceListPanel } from '../components/ui/resource-list';
-import { useRowTitleClass } from '../components/ui/row-title';
+import { rowTitleClass } from '../components/ui/row-title';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { TABLE_ACTIONS_WIDTH, TableActions, TableActionsHeader, TableCentredCell, TableCentredHeader } from '../components/ui/table-actions';
 import { TableColumns } from '../components/ui/table-columns';
@@ -344,7 +344,6 @@ function UpstreamsTable({
   onToggle: (record: UpstreamRecord, enabled: boolean) => void;
 }) {
   const { t } = useTranslation();
-  const rowTitle = useRowTitleClass();
   const upstreams = data.upstreams;
   const modelCounts = useMemo(() => buildModelCounts(upstreams ?? [], data.models), [data.models, upstreams]);
 
@@ -390,14 +389,14 @@ function UpstreamsTable({
                 <TableCellLayout
                   className="max-w-[520px]"
                   description={<Tooltip content={upstreamSummary(record, t)} relationship="label">
-                    <Text block tabIndex={0} truncate wrap={false}>{upstreamSummary(record, t)}</Text>
+                    <Text block className="winui-focus-rect" tabIndex={0} truncate wrap={false}>{upstreamSummary(record, t)}</Text>
                   </Tooltip>}
                   truncate
                 >
                   <Tooltip content={record.name} relationship="label">
                     <Link
                       {...pageNavigation}
-                      className={rowTitle}
+                      className={rowTitleClass}
                       to={`/dashboard/providers/upstreams/${encodeURIComponent(record.id)}`}
                     >
                       {record.name}
@@ -469,7 +468,7 @@ function ModelStatus({
 
   return (
     <Tooltip content={detail} relationship="description">
-      <span className="inline-flex items-center gap-1.5 min-w-0 w-fit max-w-full" tabIndex={0}>
+      <span className="winui-focus-rect inline-flex items-center gap-1.5 min-w-0 w-fit max-w-full" tabIndex={0}>
         {!record.enabled
           ? <ProhibitedRegular className="block flex-none text-fui-fg2" fontSize={18} aria-label={t('dashboard.upstreams.cache.disabled')} />
           : healthy

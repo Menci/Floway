@@ -78,18 +78,8 @@ const useStyles = makeStyles({
     color: 'var(--winui-text-fill-primary)',
     whiteSpace: 'pre',
   },
-  // WinUI's focus visual, drawn inside the viewport because the frame clips
-  // anything outside it: the outline covers the outer two of the shadow's three
-  // pixels, leaving FocusStrokeColorInner as the third.
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
   scroll: {
     maxHeight: '340px',
-    '& :focus-visible': {
-      boxShadow: 'inset 0 0 0 3px var(--winui-focus-stroke-inner)',
-      outline: '2px solid var(--winui-focus-stroke-outer)',
-      outlineOffset: '-2px',
-    },
   },
 });
 
@@ -127,7 +117,7 @@ export function CodeBlock({ code, copyOutcome, disabled = false, header, languag
           {copyLabel(copyOutcome, t('common.copy.action'))}
         </Button>
       </div>
-      <ScrollArea axes="both" className={styles.scroll}>
+      <ScrollArea axes="both" className={`winui-focus-rect-within ${styles.scroll}`}>
         <pre className={mergeClasses(`language-${language}`, styles.pre)}>
           <code
             className={mergeClasses(`language-${language}`, styles.code)}

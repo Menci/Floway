@@ -297,6 +297,14 @@ const config: Linter.Config[] = [
         selector: 'JSXOpeningElement[name.name=/^(Text|Link)$/] > JSXAttribute[name.name="className"] Literal[value=/(^|\\s)(truncate|text-ellipsis|overflow-hidden|whitespace-(no)?wrap)(\\s|$)/]',
         message: 'This utility is dead on Text and Link: their Griffel roots already state white-space, overflow and text-overflow. Use the component\'s own props — `block truncate wrap={false}` trims — or put the box on the plain element around it.',
       }, {
+        // XAML draws a focus visual for every focusable element, so an element
+        // this app makes focusable carries the app's rect rather than the user
+        // agent's outline. `winui-focus-rect` is where that geometry is stated;
+        // rows are exempt because the table and list stylesheets ring them
+        // through Fluent's own focus-visible stamp.
+        selector: 'JSXOpeningElement:not([name.name=/^(TableRow|ListItem)$/]):has(JSXAttribute[name.name="tabIndex"] > JSXExpressionContainer > Literal[value=0]):not(:has(JSXAttribute[name.name="className"] :matches(Literal[value=/winui-focus-rect/], TemplateElement[value.raw=/winui-focus-rect/])))',
+        message: 'An element made focusable needs the WinUI focus rect: add `winui-focus-rect` to its className, or `winui-focus-rect-within` to a host whose focusable element the app does not render itself.',
+      }, {
         // `truncate` contributes `text-overflow: ellipsis` and nothing else.
         selector: 'JSXOpeningElement[name.name="Text"]:has(JSXAttribute[name.name="truncate"]):not(:has(JSXAttribute[name.name="wrap"]))',
         message: 'Fluent\'s `truncate` only adds the ellipsis. The single line and the clip come from `wrap={false}`, and the clip needs a block display, so a Text that trims states all three.',

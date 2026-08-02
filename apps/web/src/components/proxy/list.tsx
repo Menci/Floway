@@ -65,13 +65,13 @@ export function ProxyList({
                       {t(`dashboard.proxy.kind.${kind}` as never, kind)}
                     </Chip>
                     <Tooltip content={proxy.name} relationship="label">
-                      <Text block className="min-w-0" tabIndex={0} truncate wrap={false}>{proxy.name}</Text>
+                      <Text block className="winui-focus-rect min-w-0" tabIndex={0} truncate wrap={false}>{proxy.name}</Text>
                     </Tooltip>
                   </div>
                 </TableCell>
                 <TableCell className="overflow-hidden">
                   <Tooltip content={hostPortLabel(proxy.url)} relationship="label">
-                    <Text block className="text-fui-fg2" tabIndex={0} truncate wrap={false}>
+                    <Text block className="winui-focus-rect text-fui-fg2" tabIndex={0} truncate wrap={false}>
                       {hostPortLabel(proxy.url)}
                     </Text>
                   </Tooltip>

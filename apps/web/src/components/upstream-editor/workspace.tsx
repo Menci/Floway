@@ -361,7 +361,7 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
               </Tooltip>
             </TableCell>
             <TableCentredCell>{t(`dashboard.upstreamEditor.models.kindValue.${row.config.kind}`)}</TableCentredCell>
-            <TableCell className="overflow-hidden"><span className="flex items-center gap-1 min-w-0 max-w-full"><Tooltip content={id} relationship="label"><code className="block min-w-0 max-w-[calc(100%-36px)] truncate leading-[var(--lineHeightBase300)]" tabIndex={0}>{id}</code></Tooltip><TooltipIconButton className="flex-none" icon={copyOutcomeIcon(outcomeFor(id))} label={copyLabel(outcomeFor(id), t('dashboard.upstreamEditor.models.copy'))} onClick={() => copy(id, id)} /></span></TableCell>
+            <TableCell className="overflow-hidden"><span className="flex items-center gap-1 min-w-0 max-w-full"><Tooltip content={id} relationship="label"><code className="winui-focus-rect block min-w-0 max-w-[calc(100%-36px)] truncate leading-[var(--lineHeightBase300)]" tabIndex={0}>{id}</code></Tooltip><TooltipIconButton className="flex-none" icon={copyOutcomeIcon(outcomeFor(id))} label={copyLabel(outcomeFor(id), t('dashboard.upstreamEditor.models.copy'))} onClick={() => copy(id, id)} /></span></TableCell>
             <TableCentredCell>{t(`dashboard.upstreamEditor.models.${row.source}`)}</TableCentredCell>
             <TableCell><TableActions><TooltipIconButton icon={<EditRegular />} label={t('dashboard.upstreamEditor.models.editNamed', { name: row.config.display_name ?? id })} onClick={() => onSelectUpstreamModel(row.config.upstreamModelId)} />{row.manualIndex !== null && <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.deleteNamed', { name: row.config.display_name ?? id })} onClick={() => deleteDialog.open(row)} />}</TableActions></TableCell>
           </TableRow>;
@@ -386,7 +386,7 @@ function ModelsCacheStatus({ cache }: { cache: UpstreamRecord['modelsCache'] }) 
     ? t('dashboard.upstreamEditor.models.cacheErrorDetail', { message: cache.lastError.message, time: dateTime(cache.lastError.at, locale) })
     : cache.fetchedAt === null ? label : dateTime(cache.fetchedAt, locale);
   return <Tooltip content={detail} relationship="description">
-    <span className="inline-flex items-center gap-1 text-fui-fg2" tabIndex={0}>
+    <span className="winui-focus-rect inline-flex items-center gap-1 text-fui-fg2" tabIndex={0}>
       {cache.lastError ? <WarningRegular /> : <CheckmarkCircleRegular />}
       <Text size={200}>{cache.lastError ? t('dashboard.upstreamEditor.models.cacheFailed') : label}</Text>
     </span>

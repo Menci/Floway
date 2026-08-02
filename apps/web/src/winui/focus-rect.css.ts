@@ -1,0 +1,29 @@
+// XAML draws one focus visual for every focusable element: a 2px
+// FocusStrokeColorOuter band with FocusStrokeColorInner riding its inner edge,
+// which is why the outline carries the outer colour and the inset shadow's
+// third pixel carries the inner one.
+//
+// Both strokes are drawn inside the element's own box. Everything that wears
+// this sits in a host that clips what leaves it -- a table cell, a card, a
+// scrollport -- so an outward rect would be cut on at least one side, and the
+// pair has to seat itself within the box it belongs to.
+//
+// The -within form is for a host whose focusable element the app does not
+// render: a scroller the engine makes focusable because it overflows and holds
+// nothing that can take focus itself.
+//
+// Under forced colours the user agent drops the inset shadow and forces the
+// outline onto CanvasText, so no branch is needed there.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
+// https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L173-L174
+// https://drafts.csswg.org/css-color-adjust/#forced-colors-properties
+
+export const focusRectCss = `
+.winui-focus-rect:focus-visible,
+.winui-focus-rect-within :focus-visible {
+  box-shadow: inset 0 0 0 3px var(--winui-focus-stroke-inner);
+  outline: 2px solid var(--winui-focus-stroke-outer);
+  outline-offset: -2px;
+}
+`;

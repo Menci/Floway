@@ -84,7 +84,7 @@ export function AliasTargetRow({
         </Combobox>
         <div className="grid grid-cols-4 gap-0.5 w-[134px] max-[620px]:col-span-2 max-[620px]:justify-self-end">
           {modelWarning
-            ? <Tooltip content={t(`dashboard.modelAliases.warnings.${modelWarning.key}`, modelWarning.values)} relationship="description"><span className="grid h-8 w-8 place-items-center" tabIndex={0}><WarningRegular aria-label={t('dashboard.modelAliases.warnings.label')} fontSize={20} /></span></Tooltip>
+            ? <Tooltip content={t(`dashboard.modelAliases.warnings.${modelWarning.key}`, modelWarning.values)} relationship="description"><span className="winui-focus-rect grid h-8 w-8 place-items-center" tabIndex={0}><WarningRegular aria-label={t('dashboard.modelAliases.warnings.label')} fontSize={20} /></span></Tooltip>
             : <span aria-hidden className="h-8 w-8" />}
           <ReorderButtons disabled={disabled} downLabel={t('dashboard.modelAliases.target.moveDown')} isFirst={isFirst} isLast={isLast} onMove={onMove} upLabel={t('dashboard.modelAliases.target.moveUp')} />
           <TooltipIconButton danger disabled={disabled || isSole} icon={<DeleteRegular />} label={t('dashboard.modelAliases.target.remove')} onClick={onRemove} />

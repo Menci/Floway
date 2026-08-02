@@ -78,7 +78,7 @@ export function UsersTable({
                 </TableCell>
                 <TableCell>
                   <Tooltip content={dateTime(user.createdAt, locale)} relationship="description">
-                    <span tabIndex={0}>
+                    <span className="winui-focus-rect" tabIndex={0}>
                       {shortDate(user.createdAt, locale)}
                     </span>
                   </Tooltip>
