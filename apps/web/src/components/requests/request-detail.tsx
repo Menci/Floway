@@ -267,6 +267,12 @@ export function RequestDetailPanel({ collected: loadedCollected, error: loadedEr
           )}
           {record.response.body.type === 'stream' && streamView === 'events' && renderedEvents.map((event, index) => (
             <div className={s.section} key={index}>
+              {/* Not `formatDuration`: an inter-event offset is the one duration
+                  here that is read against its neighbours rather than on its
+                  own, so the sub-millisecond gaps that separate a burst have to
+                  survive. The shared ladder rounds every one of them to `0ms`
+                  and bins anything past a second away from the millisecond the
+                  reader is counting in. */}
               <div className="flex items-center gap-2 px-4 pt-3"><Text size={100} className="font-mono mono-size-100 text-fui-fg2">{event.event ?? t('dashboard.requests.unlabeled')}</Text>{event.parseError && <Text size={100} className={dangerText}>{t('dashboard.requests.jsonParseFailed')}</Text>}<Text size={100} className="ml-auto font-mono mono-size-100 text-fui-fg3">+{event.timestamp.toFixed(event.timestamp < 1 ? 3 : 0)}ms</Text></div>
               <CodeView body={{ text: event.text, copyText: event.text, decodeError: event.parseError, isJson: !event.parseError }} />
             </div>
