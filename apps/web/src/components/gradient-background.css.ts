@@ -8,12 +8,12 @@
 // at the top centre falling into a vertical ramp, which gives the canvas the
 // lit-from-above reading Mica gets from the wallpaper behind the title bar.
 //
-// The stops are ours as well, and they are not the neutral ramp. Light carries
-// a blue cast and dark runs a step deeper at the foot than any page fill WinUI
-// states -- both deliberate, because a canvas mixed from the same greys as the
-// cards on top of it reads as one flat sheet, which is the one thing Mica never
-// looks like. Mica is a tinted sample of the wallpaper, so it carries a colour
-// the window's own surfaces do not; the cast here stands in for that.
+// That the canvas carries a tint at all is the operator's: he reported a
+// canvas painted from the neutral ramp as wrong, and asked for the Mica cast
+// back. The stops that answer him are ours and unsourced -- light carries a
+// blue cast and dark runs a step deeper at the foot than any page fill WinUI
+// states. The dark floor in particular was put to him and he did not rule on
+// it, so it is a value of ours standing under a decision of his.
 //
 // The surfaces drawn over it do read the neutral ramp, through ../winui/theme.ts.
 // The canvas being slightly off it is what separates them.
