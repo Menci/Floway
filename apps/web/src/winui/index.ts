@@ -23,6 +23,7 @@ import { textCss } from './controls/text.css';
 import { toastCss } from './controls/toast.css';
 import { toolbarCss } from './controls/toolbar.css';
 import { tooltipCss } from './controls/tooltip.css';
+import { flyoutArrowCss } from './flyout-arrow.css';
 import { pageTransitionCss } from './page-transition.css';
 import { winuiResetCss } from './reset.css';
 import { winuiTokenCss } from './tokens';
@@ -31,6 +32,7 @@ export const winuiCss = [
   winuiResetCss,
   winuiTokenCss,
   pageTransitionCss,
+  flyoutArrowCss,
   accordionCss,
   badgeTagCss,
   buttonCss,

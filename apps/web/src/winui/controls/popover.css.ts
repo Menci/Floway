@@ -1,7 +1,8 @@
 // WinUI 3 FlyoutPresenter styling for Fluent v9's PopoverSurface.
 //
-// The arrow needs no rule of its own: Fluent gives it
-// `background-color: inherit` and the surface is its parent.
+// The arrow needs no fill rule of its own: Fluent gives it
+// `background-color: inherit` and the surface is its parent. Its stroke comes
+// from ../flyout-arrow.css, which every flyout beak shares.
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-positioning/library/src/createArrowStyles.ts#L76-L77
 //
 // FlyoutContentPadding is deliberately not restated: `size` is composed into
@@ -24,17 +25,21 @@
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/FlyoutPresenter_themeresources.xaml#L5
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/FlyoutPresenter_themeresources.xaml#L15
 export const popoverCss = `
-/* WinUI's flyout has one fill, so it is stated for every appearance -- the
-   doubled class name outranks the atoms Fluent composes for its inverted and
-   brand surfaces, which have no WinUI counterpart.
+/* WinUI's flyout has one fill and one foreground, so both are stated for every
+   appearance -- the doubled class name outranks the atoms Fluent composes for
+   its inverted and brand surfaces, which have no WinUI counterpart. Stating
+   only the fill left an inverted or brand surface wearing a foreground meant
+   for the fill it no longer has, which is unreadable in both themes.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/FlyoutPresenter_themeresources.xaml#L39
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/FlyoutPresenter_themeresources.xaml#L6
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/FlyoutPresenter_themeresources.xaml#L16
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/FlyoutPresenter_themeresources.xaml#L43 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/FlyoutPresenter_themeresources.xaml#L43
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L244 */
 .fui-PopoverSurface.fui-PopoverSurface {
   border-radius: var(--winui-overlay-corner-radius);
   border-color: var(--winui-surface-stroke-flyout);
   background-color: var(--winui-acrylic-in-app-fill-default);
+  color: var(--winui-text-fill-primary);
 }
 
 /* Forced colours already collapse the fill and the stroke onto the system

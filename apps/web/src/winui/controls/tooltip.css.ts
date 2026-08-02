@@ -2,7 +2,8 @@
 //
 // Fluent merges the root and the content onto the same node, so
 // `.fui-Tooltip__content` is the whole surface; the arrow is rendered from
-// `state.arrowClassName`, Griffel atoms with no stable class to name.
+// `state.arrowClassName`, Griffel atoms with no stable class to name, and its
+// stroke comes from ../flyout-arrow.css along with every other flyout beak.
 //
 // The corner radius and the 12px content size are already true through theme.ts
 // and Fluent respectively, and BackgroundSizing is InnerBorderEdge, which
