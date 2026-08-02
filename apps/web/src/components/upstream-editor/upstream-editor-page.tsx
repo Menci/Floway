@@ -226,7 +226,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
         there, and a template that names a row for it leaves an empty one and a
         gap under everything else when it is not. */}
     <div className="flex flex-col gap-[14px] h-full min-h-0">
-      <header className="flex items-center gap-3 min-w-0 px-1">
+      <header className="flex items-center gap-3 min-w-0">
         <BackNavigationButton onClick={leave}>{t('dashboard.upstreamEditor.actions.back')}</BackNavigationButton>
         {hasUnsavedChanges && <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.unsaved')}</Text>}
         {/* Save is the same flag the unsaved hint reads: with nothing to send
