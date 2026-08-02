@@ -85,7 +85,7 @@ function CustomConfig({ onRefreshModels, record }: { onRefreshModels: () => void
   };
   return (
     <div className="grid gap-4">
-      <Field label={t('dashboard.upstreamEditor.fields.baseUrl')} required>
+      <Field label={t('dashboard.upstreamEditor.fields.baseUrl')}>
         <Controller
           control={control}
           name={'config.baseUrl' as never}
@@ -184,7 +184,7 @@ function AzureConfig({ record }: { record: Extract<UpstreamRecord, { kind: 'azur
   const { t } = useTranslation();
   const { control } = useFormContext<UpstreamEditorValues>();
   return <div className="grid gap-4">
-    <Field label={t('dashboard.upstreamEditor.fields.endpoint')} required>
+    <Field label={t('dashboard.upstreamEditor.fields.endpoint')}>
       <Controller control={control} name={'config.endpoint' as never} render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="https://resource.openai.azure.com/openai/v1" ref={field.ref} value={typeof field.value === 'string' ? field.value : ''} />} />
     </Field>
     <SecretField name="config.apiKey" secretSet={record.config.apiKeySet === true || Boolean(record.config.apiKey)} />
@@ -195,7 +195,7 @@ function OllamaConfig({ record }: { record: Extract<UpstreamRecord, { kind: 'oll
   const { t } = useTranslation();
   const { control } = useFormContext<UpstreamEditorValues>();
   return <div className="grid gap-4">
-    <Field label={t('dashboard.upstreamEditor.fields.baseUrl')} required>
+    <Field label={t('dashboard.upstreamEditor.fields.baseUrl')}>
       <Controller control={control} name={'config.baseUrl' as never} render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="https://ollama.com" ref={field.ref} value={typeof field.value === 'string' ? field.value : ''} />} />
     </Field>
     <SecretField name="config.apiKey" secretSet={record.config.apiKeySet === true || Boolean(record.config.apiKey)} optional />

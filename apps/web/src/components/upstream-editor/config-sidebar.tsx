@@ -10,6 +10,7 @@ import type { ProxyRecord, UpstreamModelConfig, UpstreamRecord } from '../../api
 import { fluentComponents } from '../../fluent';
 import { useDangerTextClass } from '../ui/danger';
 import { Combobox, Dropdown, Input } from '../ui/fluent-form-controls';
+import { PANEL_INSET_CLASS } from '../ui/panel';
 import { ReorderButtons } from '../ui/reorder-buttons';
 import { ScrollArea } from '../ui/scroll-area';
 import { SectionHeader } from '../ui/section-header';
@@ -49,9 +50,9 @@ export function UpstreamConfigSidebar({
   const { t } = useTranslation();
   const { control, formState: { errors } } = useFormContext<UpstreamEditorValues>();
   return <ScrollArea axes="vertical" className="h-full min-h-0 max-[1050px]:h-auto" noTabIndex viewportClassName="scroll-py-1">
-    <div className="p-[18px_20px_28px]">
+    <div className={PANEL_INSET_CLASS}>
       <aside className="grid gap-7">
-        <EditorSection required title={t('dashboard.upstreamEditor.fields.name')}>
+        <EditorSection title={t('dashboard.upstreamEditor.fields.name')}>
           <Controller
             control={control}
             name="name"
@@ -122,10 +123,10 @@ function UpstreamColorEditor({ kind, onValidityChange }: { kind: UpstreamRecord[
 }
 
 // The composite editors here -- colour popover, provider credential flow -- are not one control a Fluent `Field` could speak for.
-function EditorSection({ children, description, error, inline = false, required = false, title }: { children: React.ReactNode; description?: string; error?: string; inline?: boolean; required?: boolean; title: string }) {
+function EditorSection({ children, description, error, inline = false, title }: { children: React.ReactNode; description?: string; error?: string; inline?: boolean; title: string }) {
   const dangerText = useDangerTextClass();
   return <section className={inline ? 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4' : 'grid gap-4'}>
-    <SectionHeader description={description} level={2} title={<>{title}{required && <span aria-hidden className={dangerText}> *</span>}</>} />
+    <SectionHeader description={description} level={2} title={title} />
     {children}
     {error && <Text className={`${dangerText} ${inline ? 'col-span-2' : ''}`} role="alert" size={200}>{error}</Text>}
   </section>;
@@ -241,9 +242,11 @@ function ColoCombobox({ current, onChange, value }: { current: string; onChange:
     }}
     onOpenChange={(_, data) => { setOpen(data.open); setQuery(''); }}
     onOptionSelect={(_, data) => { commit(data.selectedOptions); setQuery(''); }}
-    placeholder={t('dashboard.upstreamEditor.proxy.allColos')}
+    placeholder={value.length === 0
+      ? t('dashboard.upstreamEditor.proxy.allColos')
+      : t('dashboard.upstreamEditor.proxy.colosSelected', { count: value.length })}
     selectedOptions={value}
-    value={open ? query : value.length === 0 ? '' : value.join(', ')}
+    value={open ? query : ''}
   >
     {options.map(location => <Option key={location} text={location} value={location}>
       <span className="flex items-center justify-between gap-2 w-full"><span className="font-mono">{location}</span>{location === current && <StatusBadge color="informative">{t('dashboard.upstreamEditor.proxy.currentColo')}</StatusBadge>}</span>

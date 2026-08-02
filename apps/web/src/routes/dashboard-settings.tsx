@@ -119,7 +119,6 @@ export default function DashboardSettings() {
             render={({ field }) => (
               <Field
                 label={t('dashboard.settings.currentPassword')}
-                required
                 validationMessage={errors.currentPassword?.message ? t(errors.currentPassword.message) : undefined}
                 validationState={errors.currentPassword ? 'error' : undefined}
               >
@@ -134,7 +133,6 @@ export default function DashboardSettings() {
             render={({ field }) => (
               <Field
                 label={t('dashboard.settings.newPassword')}
-                required
                 validationMessage={errors.newPassword?.message ? t(errors.newPassword.message) : undefined}
                 validationState={errors.newPassword ? 'error' : undefined}
               >
@@ -149,7 +147,6 @@ export default function DashboardSettings() {
             render={({ field }) => (
               <Field
                 label={t('dashboard.settings.confirmPassword')}
-                required
                 validationMessage={errors.confirmPassword?.message ? t(errors.confirmPassword.message) : undefined}
                 validationState={errors.confirmPassword ? 'error' : undefined}
               >

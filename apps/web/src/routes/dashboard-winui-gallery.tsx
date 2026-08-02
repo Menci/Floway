@@ -360,11 +360,6 @@ function FieldSection() {
           <Input defaultValue="Copilot (work)" />
         </Field>
       </StateLabel>
-      <StateLabel state="required">
-        <Field label="Base URL" required>
-          <Input defaultValue="https://api.githubcopilot.com" />
-        </Field>
-      </StateLabel>
       <StateLabel state="error">
         <Field label="Base URL" validationMessage="Enter an absolute https:// URL." validationState="error">
           <Input defaultValue="api.githubcopilot" />
