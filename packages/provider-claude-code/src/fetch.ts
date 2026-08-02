@@ -123,6 +123,10 @@ const isRateLimitedNow = (
 };
 
 const persistQuotaSnapshot = async (upstreamId: string, snapshot: ClaudeCodeQuotaSnapshot): Promise<void> => {
+  // Stamped before the write: the mutator is replayed on a lost race and must
+  // return the same document each time, and this records when the snapshot was
+  // observed rather than which attempt landed it.
+  const fetchedAt = Date.now();
   // The prior status comes from the state the mutator was handed: the write is
   // retried against whoever won the row, so only that view describes the
   // snapshot this write actually replaced.
@@ -132,7 +136,7 @@ const persistQuotaSnapshot = async (upstreamId: string, snapshot: ClaudeCodeQuot
     previousAccount = state.accounts[0];
     return replaceSoleAccount(state, account => ({
       ...account,
-      quotaSnapshot: { fetchedAt: Date.now(), data: snapshot },
+      quotaSnapshot: { fetchedAt, data: snapshot },
     }));
   });
   const priorStatus = previousAccount.quotaSnapshot === null ? null : previousAccount.quotaSnapshot.data.status;
@@ -244,6 +248,9 @@ const persistTerminalAccountState = async (
   reason: string,
   upstreamStatus: number,
 ): Promise<void> => {
+  // Stamped before the write for the same reason as the quota snapshot: a
+  // replay must produce the same document.
+  const flippedAt = new Date().toISOString();
   let previousAccount!: ClaudeCodeAccountCredential;
   await getProviderRepo().upstreams.saveState(upstreamId, current => {
     const state = readClaudeCodeUpstreamState(current);
@@ -253,7 +260,7 @@ const persistTerminalAccountState = async (
       ...account,
       state: 'refresh_failed',
       stateMessage: terminalMessage,
-      stateUpdatedAt: new Date().toISOString(),
+      stateUpdatedAt: flippedAt,
       accessToken: null,
     }));
   });

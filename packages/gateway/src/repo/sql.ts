@@ -54,7 +54,7 @@ import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import type { SqlBindValue, SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
 import { addDecimalStrings, canonicalPricingSelectorKey, parseBillingMetric, parseModelKind, parseNonNegativeDecimalString, parsePricingSelectorKey, type AliasSelection, type AliasTarget, type AnnouncedMetadata } from '@floway-dev/protocols/common';
 import type { ProviderModel, ProxyFallbackEntry, ModelPrefixConfig, UpstreamRecord } from '@floway-dev/provider';
-import { normalizeModelPrefix, parsePerformanceOperation } from '@floway-dev/provider';
+import { normalizeModelPrefix, parsePerformanceOperation, UpstreamGoneError } from '@floway-dev/provider';
 
 interface ApiKeyRow {
   id: string;
@@ -903,10 +903,12 @@ class SqlWebSearchConfigRepo implements WebSearchConfigRepo {
   }
 }
 
-// Four attempts against a measured per-attempt loss rate of a few percent puts
-// the residual failure below one write in ten thousand, and a failure is
-// visible rather than silent.
-const UPSTREAM_STATE_WRITE_ATTEMPTS = 4;
+// Losing once is ordinary on a row this contended, losing four times in a row
+// is not — and the attempts run back-to-back with no delay, so they observe
+// much the same contention rather than independent draws. The bound is a
+// judgement call about how much immediate re-reading is worth doing before
+// declaring the row unwritable, not a derived figure.
+export const UPSTREAM_STATE_WRITE_ATTEMPTS = 4;
 
 class SqlUpstreamRepo implements UpstreamRepo {
   constructor(private db: SqlDatabase) {}
@@ -993,7 +995,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
         .prepare('SELECT state_json FROM upstreams WHERE id = ?')
         .bind(id)
         .first<{ state_json: string | null }>();
-      if (!row) throw new Error(`Upstream ${id} disappeared before its state could be written`);
+      if (!row) throw new UpstreamGoneError(id);
       let current: unknown = null;
       if (row.state_json !== null) {
         try {

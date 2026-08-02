@@ -217,12 +217,15 @@ const persistTerminalState = async (
     oauthCode: string | null;
   },
 ): Promise<void> => {
+  // Stamped before the write: the mutator is replayed on a lost race and must
+  // return the same document each time.
+  const flippedAt = new Date().toISOString();
   await repo.saveState(upstreamId, current =>
     replaceSoleAccount(readClaudeCodeUpstreamState(current), account => ({
       ...account,
       state: 'refresh_failed',
       stateMessage: fields.message,
-      stateUpdatedAt: new Date().toISOString(),
+      stateUpdatedAt: flippedAt,
       accessToken: null,
     })));
   logWarn('claude_code_account_state_flip', {

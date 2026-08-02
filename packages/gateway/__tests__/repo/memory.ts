@@ -60,7 +60,7 @@ import { bucketForTtftMs, bucketForTpotUs } from '../../src/shared/performance-h
 import { assertWebSearchProviderName, type WebSearchConfig } from '../../src/shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import { addDecimalStrings, canonicalPricingSelectorKey, canonicalizePricingSelector, type BillingMetric, type DecimalString, type PricingSelector } from '@floway-dev/protocols/common';
-import type { ProviderModel, UpstreamRecord } from '@floway-dev/provider';
+import { UpstreamGoneError, type ProviderModel, type UpstreamRecord } from '@floway-dev/provider';
 
 const SEED_ADMIN_USER: User = {
   id: SEED_ADMIN_USER_ID,
@@ -617,7 +617,7 @@ class MemoryUpstreamRepo implements UpstreamRepo {
   // unchanged is a no-op here too.
   saveState(id: string, mutate: (current: unknown) => unknown): Promise<void> {
     const existing = this.store.get(id);
-    if (!existing) throw new Error(`Upstream ${id} disappeared before its state could be written`);
+    if (!existing) throw new UpstreamGoneError(id);
     const next = mutate(existing.state);
     const serialized = serializeStoredState(next);
     existing.state = serialized === null ? null : (JSON.parse(serialized) as unknown);

@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { createSqliteTestDb } from './test-sqlite.ts';
-import { SqlRepo } from '../../src/repo/sql.ts';
+import { SqlRepo, UPSTREAM_STATE_WRITE_ATTEMPTS } from '../../src/repo/sql.ts';
 import type { SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, assertRejects, stubProviderModel } from '@floway-dev/test-utils';
@@ -57,20 +57,20 @@ test('SQL upstream repo saveState applies the mutator to the stored state', asyn
   assertEquals((await repo.getById('up_test'))?.state, { accounts: [{ ...goodAccount, refresh_token: 'rt_v2' }] });
 });
 
-// Deterministic stand-in for a concurrent writer: the first read of
-// `state_json` lands an out-of-band write before returning, so the CAS that
-// follows it is guaranteed to lose. Without this the retry path is unreachable
-// from a single-threaded test.
-const withWriterRacingTheFirstRead = (db: SqlDatabase, race: () => Promise<unknown>): SqlDatabase => {
-  let raced = false;
+// Deterministic stand-in for a concurrent writer: each of the first `times`
+// reads of `state_json` lands an out-of-band write before returning, so that
+// many CAS attempts are guaranteed to lose. Without this neither the retry nor
+// the exhaustion path is reachable from a single-threaded test.
+const withWriterRacingReads = (db: SqlDatabase, race: () => Promise<unknown>, times: number): SqlDatabase => {
+  let raced = 0;
   const wrapStatement = (statement: SqlPreparedStatement, racing: boolean): SqlPreparedStatement => ({
     bind: (...values) => wrapStatement(statement.bind(...values), racing),
     all: <T>() => statement.all<T>(),
     run: () => statement.run(),
     first: async <T>() => {
       const row = await statement.first<T>();
-      if (racing && !raced) {
-        raced = true;
+      if (racing && raced < times) {
+        raced += 1;
         await race();
       }
       return row;
@@ -90,10 +90,10 @@ test('SQL upstream repo saveState re-applies the mutator against the write that 
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db).upstreams;
   await repo.save(baseRecord());
-  const racing = new SqlRepo(withWriterRacingTheFirstRead(db, () =>
+  const racing = new SqlRepo(withWriterRacingReads(db, () =>
     db.prepare('UPDATE upstreams SET state_json = ? WHERE id = ?')
       .bind(JSON.stringify({ accounts: [{ ...goodAccount, state_message: 'written by a sibling' }] }), 'up_test')
-      .run())).upstreams;
+      .run(), 1)).upstreams;
 
   const seen: string[] = [];
   await racing.saveState('up_test', current => {
@@ -107,6 +107,36 @@ test('SQL upstream repo saveState re-applies the mutator against the write that 
   const stored = (await repo.getById('up_test'))?.state as { accounts: { refresh_token: string; state_message?: string }[] };
   assertEquals(stored.accounts[0].refresh_token, 'rt_v2');
   assertEquals(stored.accounts[0].state_message, 'written by a sibling');
+});
+
+// A writer that never wins gives up rather than looping, and says so instead
+// of reporting a flag a caller could drop.
+test('SQL upstream repo saveState gives up after a bounded number of lost races', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db).upstreams;
+  await repo.save(baseRecord());
+  let siblingWrites = 0;
+  const racing = new SqlRepo(withWriterRacingReads(db, () => {
+    siblingWrites += 1;
+    return db.prepare('UPDATE upstreams SET state_json = ? WHERE id = ?')
+      .bind(JSON.stringify({ accounts: [{ ...goodAccount, state_message: `sibling ${siblingWrites}` }] }), 'up_test')
+      .run();
+  }, Number.MAX_SAFE_INTEGER)).upstreams;
+
+  let attempts = 0;
+  await assertRejects(
+    () => racing.saveState('up_test', current => {
+      attempts += 1;
+      const [account] = (current as { accounts: Record<string, unknown>[] }).accounts;
+      return { accounts: [{ ...account, refresh_token: 'rt_v2' }] };
+    }),
+    Error,
+    'consecutive races',
+  );
+  // Every attempt ran the mutator, and none of them landed.
+  assertEquals(attempts, UPSTREAM_STATE_WRITE_ATTEMPTS);
+  const stored = (await repo.getById('up_test'))?.state as { accounts: { refresh_token: string }[] };
+  assertEquals(stored.accounts[0].refresh_token, goodAccount.refresh_token);
 });
 
 test('SQL upstream repo saveState throws when the row is gone', async () => {

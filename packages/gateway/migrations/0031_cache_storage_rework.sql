@@ -31,13 +31,13 @@ CREATE TABLE image_cache (
 -- The pre-rework `models_store:<id>` rows in `config` cannot be lifted into
 -- `upstreams.state_json` from SQL: serializeStoredState canonicalizes by
 -- recursively sorting object keys, but SQLite's JSON1 (`json_object`,
--- `json()`) only minify and preserve input order. Any in-SQL lift would
--- write a non-canonical blob that the runtime saveState CAS could never
--- match (`UPDATE ... WHERE state_json IS ?` binds the canonicalized form),
--- so token mints and 24h known-models updates would silently drop until
--- something else rewrote the row. The runtime re-derives the ledger from
--- `/models` on first request after deploy, so dropping the legacy data is
--- a one-fetch cost with no correctness loss.
+-- `json()`) only minify and preserve input order. Under the CAS as it stood
+-- at this migration, which bound the canonicalized form, any in-SQL lift
+-- would have written a blob the runtime could never match again, so token
+-- mints and 24h known-models updates would silently drop until something
+-- else rewrote the row. The runtime re-derives the ledger from `/models` on
+-- first request after deploy, so dropping the legacy data is a one-fetch
+-- cost with no correctness loss.
 
 -- Lift search-config singleton -------------------------------------------
 

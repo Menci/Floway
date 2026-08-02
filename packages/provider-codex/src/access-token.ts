@@ -1,6 +1,6 @@
 import { CodexOAuthSessionTerminatedError, refreshCodexAccessToken } from './auth/oauth.ts';
 import { findCodexAccountIndex, readCodexUpstreamState, replaceCodexAccount, type CodexAccessTokenEntry } from './state.ts';
-import { getProviderRepo, type Fetcher } from '@floway-dev/provider';
+import { getProviderRepo, UpstreamGoneError, type Fetcher } from '@floway-dev/provider';
 
 export type { CodexAccessTokenEntry };
 
@@ -22,18 +22,34 @@ const persistAccessToken = async (
   entry: CodexAccessTokenEntry | null,
   where: string,
 ): Promise<void> => {
-  await getProviderRepo().upstreams.saveState(upstreamId, current => {
-    const state = readCodexUpstreamState(current);
-    const idx = findCodexAccountIndex(state, accountId);
-    if (idx < 0) {
-      console.warn(`${where}: Codex account ${accountId} not found in upstream ${upstreamId}`);
-      return current;
-    }
-    // Invalidating an already-null slot has nothing to write — the case where
-    // a 401 retry races a concurrent refresh that already cleared the token.
-    if (entry === null && state.accounts[idx].accessToken === null) return current;
-    return replaceCodexAccount(state, idx, account => ({ ...account, accessToken: entry }));
-  });
+  // The mutator is replayed on a lost race, so the diagnostic is recorded and
+  // emitted once afterwards rather than logged from inside it.
+  let accountMissing = false;
+  try {
+    await getProviderRepo().upstreams.saveState(upstreamId, current => {
+      const state = readCodexUpstreamState(current);
+      const idx = findCodexAccountIndex(state, accountId);
+      if (idx < 0) {
+        accountMissing = true;
+        return current;
+      }
+      accountMissing = false;
+      // Invalidating an already-null slot has nothing to write — the case where
+      // a 401 retry races a concurrent refresh that already cleared the token.
+      if (entry === null && state.accounts[idx].accessToken === null) return current;
+      return replaceCodexAccount(state, idx, account => ({ ...account, accessToken: entry }));
+    });
+  } catch (err) {
+    // A minted access token is bookkeeping the next request re-derives, so an
+    // operator deleting the upstream mid-request is not worth failing that
+    // request over. Every other storage failure still propagates.
+    if (!(err instanceof UpstreamGoneError)) throw err;
+    console.warn(`${where}: Codex upstream ${upstreamId} disappeared mid-request`);
+    return;
+  }
+  if (accountMissing) {
+    console.warn(`${where}: Codex account ${accountId} not found in upstream ${upstreamId}`);
+  }
 };
 
 export const putCodexAccessToken = async (
