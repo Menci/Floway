@@ -37,8 +37,8 @@ const useStyles = makeStyles({
     '& > :first-child': { marginTop: 0 },
     '& > :last-child': { marginBottom: 0 },
     '& p': { marginTop: tokens.spacingVerticalS, marginBottom: tokens.spacingVerticalS },
-    // Semibold is where the dashboard's type stops, so the 700 a browser gives
-    // a heading by default would outweigh anything else on the page.
+    // Semibold is where the dashboard's type stops; a heading's default 700
+    // would outweigh anything else on the page.
     '& h1, & h2, & h3, & h4, & h5, & h6': { fontWeight: tokens.fontWeightSemibold },
     '& h1': {
       fontSize: tokens.fontSizeBase600,
@@ -76,11 +76,8 @@ const useStyles = makeStyles({
       marginBottom: tokens.spacingVerticalL,
     },
   },
-  // The accent TEXT ramp a WinUI Hyperlink walks -- primary at rest, secondary
-  // under the pointer, tertiary while pressed. Dark states primary and
-  // secondary as the same shade in WinUI's own table, so hover moves no colour
-  // there. HyperlinkUnderlineVisible is True and the decoration is kept through
-  // every state rather than arriving on hover.
+  // The accent TEXT ramp a WinUI Hyperlink walks -- primary, secondary, tertiary
+  // -- with the underline kept through every state rather than arriving on hover.
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/HyperlinkButton_themeresources.xaml#L5-L7
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L297-L299
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L93-L95
@@ -91,9 +88,8 @@ const useStyles = makeStyles({
     textDecorationLine: 'underline',
     '&:hover': { color: 'var(--winui-accent-text-fill-secondary)' },
     '&:active': { color: 'var(--winui-accent-text-fill-tertiary)' },
-    // WinUI draws two concentric rings so the indicator survives on any
-    // surface: 1px FocusStrokeColorInner against the element, contrasting 2px
-    // FocusStrokeColorOuter around it, rounded at 4px for a hyperlink.
+    // Two concentric rings so the indicator survives on any surface, at the 4px
+    // radius WinUI rounds a hyperlink's to.
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L195
@@ -105,7 +101,7 @@ const useStyles = makeStyles({
     },
   },
   // An accent surface, so AccentFillColorDefault rather than Fluent's brand
-  // stroke -- the fill every other accent marker in the app is drawn with.
+  // stroke.
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L329
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L125
   blockquote: {
@@ -115,9 +111,8 @@ const useStyles = makeStyles({
     paddingLeft: tokens.spacingHorizontalM,
   },
   // Chrome makes an overflowing scroller focusable when nothing inside it can
-  // take focus, and a markdown table holds nothing that can, so this box is a
-  // tab stop. The ring is drawn inward because the scrollport is the box that
-  // clips, leaving no room outside it for a ring.
+  // take focus, and a markdown table holds nothing that can. The ring is inward
+  // because the scrollport clips, leaving no room outside it.
   tableScroll: {
     minWidth: 0,
     marginTop: tokens.spacingVerticalM,
@@ -132,9 +127,6 @@ const useStyles = makeStyles({
     borderCollapse: 'collapse',
     minWidth: '100%',
   },
-  // All four edges, not just the horizontal rule: a table in an answer arrives
-  // without column widths or alignment, and the vertical edges hold its columns
-  // apart.
   tableCell: {
     border: '1px solid var(--winui-divider-stroke-default)',
     padding: `${tokens.spacingVerticalS} ${tokens.spacingHorizontalM}`,
@@ -142,15 +134,15 @@ const useStyles = makeStyles({
     verticalAlign: 'top',
   },
   // Weight alone: WinUI gives a ListViewHeaderItem a transparent background in
-  // every dictionary, and the dashboard's own tables carry no header fill.
+  // every dictionary.
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L631
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L9451
   tableHeader: {
     fontWeight: tokens.fontWeightSemibold,
   },
-  // The page canvas rather than a card fill, because it is the neutral that
-  // steps away from the message card in both themes; the edge is the control
-  // stroke, the card outline being black in dark and so edgeless there.
+  // The page canvas rather than a card fill, the one neutral that steps away
+  // from the message card in both themes; the card outline is black in dark, so
+  // the edge is the control stroke.
   codeBlock: {
     backgroundColor: tokens.colorNeutralBackground3,
     border: `1px solid ${tokens.colorNeutralStroke1}`,
@@ -175,9 +167,8 @@ type MarkdownCodeProps = ComponentProps<'code'> & { streaming: boolean };
 
 function MarkdownCode({ children, className, streaming, ...props }: MarkdownCodeProps) {
   const match = /language-([\w-]+)/.exec(className ?? '');
-  // Inline code takes its colour and surface from the prose around it: WinUI
-  // has no inline-code chip, and a fill plus border plus foreground would turn
-  // a word in a sentence into a control. Its face is global.css's.
+  // Inline code keeps the surrounding prose's colour and surface, its face
+  // coming from global.css: WinUI has no inline-code chip.
   if (!match) return <code {...props}>{children}</code>;
 
   const language = match[1]!;
