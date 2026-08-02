@@ -1,8 +1,11 @@
 // Colour math the dashboard needs outside a component: the HSV / RGB / HEX
 // conversions the upstream colour picker edits in, and the WCAG contrast the
 // provider badge resolves an operator-chosen hue against. Kept here so the math
-// is unit-testable without rendering, and so any later surface that has to
-// place text on a colour a person picked can share the same primitives.
+// is unit-testable without rendering.
+//
+// `badgeHueStyle` is the only caller of `blendHex` and `readableTone`. They
+// stay exported for the unit tests, which pin the empirical reasoning written
+// down at `readableTone` directly rather than through a rendered badge.
 //
 // HSV coordinates: hue in [0, 360), saturation/value in [0, 1]. HEX is
 // the canonical wire form (`#RRGGBB`, upper-or-lower case accepted).

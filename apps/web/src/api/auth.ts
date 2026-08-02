@@ -5,9 +5,9 @@ import { api, callApi, type ApiResult } from './client';
 // Derived from the routes themselves, the way every other control-plane DTO in
 // api/types.ts is: a hand-written copy of a response shape only reports drift
 // once a field it never mentioned is read at runtime.
-export type MeResponse = InferResponseType<typeof api.auth.me.$get, 200>;
+type MeResponse = InferResponseType<typeof api.auth.me.$get, 200>;
 export type LoginResponse = InferResponseType<typeof api.auth.login.$post, 200>;
-export type ChangeOwnPasswordResponse = InferResponseType<typeof api.api.users.me.password.$patch, 200>;
+type ChangeOwnPasswordResponse = InferResponseType<typeof api.api.users.me.password.$patch, 200>;
 export type AuthUser = MeResponse['user'];
 
 export const getCurrentSession = (): Promise<ApiResult<MeResponse>> =>

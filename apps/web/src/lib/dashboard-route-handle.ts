@@ -1,4 +1,4 @@
-export interface DashboardRouteHandle {
+interface DashboardRouteHandle {
   contentLayout: 'workspace';
 }
 

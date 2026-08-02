@@ -2,7 +2,7 @@ export const defaultLanguage = 'en';
 
 export const supportedLanguages = ['en', 'zh-Hans'] as const;
 
-export type SupportedLanguage = (typeof supportedLanguages)[number];
+type SupportedLanguage = (typeof supportedLanguages)[number];
 
 const languageLocales: Record<SupportedLanguage, string> = {
   'en': 'en-US',
