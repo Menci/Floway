@@ -4,12 +4,10 @@ import { Input } from './fluent-form-controls';
 
 type InputProps = ComponentProps<typeof Input>;
 
-// Password managers fill any empty password-typed field on load, silently
-// replacing a credential the operator never touched. The standard opt-outs are
-// advisory and each manager honours a different one, so the field additionally
-// stays readOnly until the user actually reaches for it: an empty readOnly
-// input is not a fill target, and the guard re-arms on blur if nothing was
-// entered.
+// Password managers overwrite any empty password-typed field on load, and the
+// opt-out attributes are advisory — each manager honours a different one. The
+// field additionally stays readOnly, which is not a fill target, until the user
+// reaches for it, re-arming on blur while still empty.
 export function SecretInput({ onChange, revealed = false, value, ...rest }: InputProps & { revealed?: boolean }) {
   const [guardLocked, setGuardLocked] = useState(true);
   const hasValue = String(value ?? '').length > 0;
