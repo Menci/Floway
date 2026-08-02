@@ -816,8 +816,8 @@ function MessageBarSection() {
     </Row>
     <Row label="several messages">
       <OutcomeMessageBar className="!w-full" intent="warning">
-        <>No pricing rule matches gpt-5-codex, so its requests are recorded without a cost.</>
-        <>Two rules select the same coordinate; the later one never applies.</>
+        <Text>No pricing rule matches gpt-5-codex, so its requests are recorded without a cost.</Text>
+        <Text>Two rules select the same coordinate; the later one never applies.</Text>
       </OutcomeMessageBar>
     </Row>
   </Section>;
