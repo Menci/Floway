@@ -6,19 +6,16 @@ import { fluentComponents } from '../../fluent';
 import { useLocale } from '../../lib/use-locale';
 const { Text, ToggleButton, makeStyles, mergeClasses } = fluentComponents;
 
-// A metric tile is one of a set, so it is marked as a WinUI ListViewItem
-// rather than as a checked ToggleButton: subtle fill plus a leading accent bar,
-// and a label that never dims.
+// A metric tile is one of a set, so it is styled as a WinUI ListViewItem
+// rather than as a checked ToggleButton.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L20-L22
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L26-L28
 //
-// Each state is restated rather than declared once, because the checked-only
-// rule ties with `.fXXX:hover` from ../../winui/controls/button.css.ts on
-// specificity and loses on order, letting the accent ramp back in. Pressed
-// takes two selectors because Fluent's does: `:hover:active` for the pointer,
-// `:active:focus-visible` for the keyboard. The border needs `!important` both
-// ways because that same layer sets the checked accent stroke at a specificity
-// a call site cannot reach.
+// Each state is restated because the checked-only rule ties with `.fXXX:hover`
+// from ../../winui/controls/button.css.ts on specificity and loses on order.
+// Pressed takes two selectors because Fluent's does. The border needs
+// `!important` both ways: that same layer sets the checked accent stroke at a
+// specificity a call site cannot reach.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L29-L30
 const useStyles = makeStyles({
   tile: {
@@ -46,10 +43,9 @@ const useStyles = makeStyles({
       borderLeftColor: 'var(--winui-focus-stroke-inner) !important',
     },
     // The bar is declared on every tile and carries its state in its values;
-    // gating `content` on [aria-pressed] instead gave the departure nothing to
-    // animate, since the box stops existing in the same frame. Departure is the
-    // fade alone -- WinUI registers no scale key frame on deselect -- which is
-    // what the delayed zero-duration scale states.
+    // gating `content` on [aria-pressed] left the departure nothing to animate.
+    // Departure is the fade alone -- WinUI registers no scale key frame on
+    // deselect -- hence the delayed zero-duration scale.
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L60
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L75-L77
     // https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/core/core/elements/ListViewBaseItemChrome.cpp#L1750-L1758
@@ -73,10 +69,9 @@ const useStyles = makeStyles({
       transition: 'opacity 83ms linear, scale 167ms cubic-bezier(0.167, 0.167, 0, 1)',
       '@media (prefers-reduced-motion: reduce)': { transitionDelay: '0s', transitionDuration: '0.01ms' },
     },
-    // Fluent would hand every colour above to a forced palette unchanged;
     // WinUI's High Contrast dictionary holds one Highlight/HighlightText pair
-    // across all three selected states and inverts the indicator, and the
-    // descendants are named because the caption asks for a colour of its own.
+    // across all three selected states and inverts the indicator; descendants
+    // are named because the caption asks for a colour of its own.
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L85-L87
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L91-L93
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L151-L153
