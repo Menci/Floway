@@ -31,7 +31,18 @@ export default defineConfig({
     'text-fui-brand1': 'text-[var(--colorBrandForeground1)]',
     'bg-fui-bg1': 'bg-[var(--colorNeutralBackground1)]',
     'bg-fui-bg2': 'bg-[var(--colorNeutralBackground2)]',
+    // The two strokes a hairline can be. `stroke1` is ControlStrokeColorDefault,
+    // the outline of a control's own box; `divider` is DividerStrokeColorDefault,
+    // the line drawn between two pieces of content. The dictionaries give them
+    // the same value in light and part in dark (#ffffff12 against #ffffff15), so
+    // a separator drawn with the control stroke only reads wrong in dark, which
+    // is how every one of them here came to be the control stroke.
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L39-L49
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L50-L53
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L243-L253
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L254-L257
     'border-fui-stroke1': 'border-[var(--colorNeutralStroke1)]',
+    'border-fui-divider': 'border-[var(--colorNeutralStroke3)]',
   },
   rules: [
     ['font-fui-regular', { 'font-weight': 'var(--fontWeightRegular)' }],
