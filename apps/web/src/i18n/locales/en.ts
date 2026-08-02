@@ -843,7 +843,7 @@ const en = {
         },
         toast: {
           saving: 'Saving upstream {{name}}',
-          saved: 'Upstream settings saved.',
+          saved: 'Saved upstream settings',
         },
         leave: {
           title: 'Discard unsaved changes?',
@@ -994,7 +994,7 @@ const en = {
               'All existing data is permanently deleted before the import runs. This cannot be undone.',
           button: 'Import Data',
           pending: 'Importing the backup file',
-          success: 'Imported {{summary}}.',
+          success: 'Imported {{summary}}',
           successEmpty: 'Import completed. The backup file carried no records.',
           // Each entity as it is written inside a sentence: sentence case, the
           // noun agreeing with the count, and the figure already grouped by the
@@ -1155,7 +1155,7 @@ const en = {
         toast: {
           save: { pending: 'Saving proxy {{name}}', success: 'Saved proxy {{name}}' },
           delete: { pending: 'Deleting proxy {{name}}', success: 'Deleted proxy {{name}}' },
-          backoff: { pending: 'Resetting backoff', success: 'Backoff reset.' },
+          backoff: { pending: 'Resetting backoff', success: 'Reset backoff' },
         },
         delete: {
           title: 'Delete proxy',

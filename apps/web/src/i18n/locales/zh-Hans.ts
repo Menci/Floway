@@ -803,7 +803,7 @@ const zhHansCN = {
         },
         toast: {
           saving: '正在保存上游 {{name}}',
-          saved: '上游设置已保存。',
+          saved: '已保存上游设置',
         },
         leave: {
           title: '放弃未保存的更改？',
@@ -953,7 +953,7 @@ const zhHansCN = {
               '导入开始前会永久删除所有现有数据，此操作无法撤销。',
           button: '导入数据',
           pending: '正在导入备份文件',
-          success: '已导入{{summary}}。',
+          success: '已导入{{summary}}',
           successEmpty: '导入完成。备份文件中没有任何记录。',
           imported: {
             users_other: '{{n}} 个用户',
@@ -1092,7 +1092,7 @@ const zhHansCN = {
         toast: {
           save: { pending: '正在保存代理 {{name}}', success: '已保存代理 {{name}}' },
           delete: { pending: '正在删除代理 {{name}}', success: '已删除代理 {{name}}' },
-          backoff: { pending: '正在重置退避', success: '退避已重置。' },
+          backoff: { pending: '正在重置退避', success: '已重置退避' },
         },
         delete: {
           title: '删除代理',
