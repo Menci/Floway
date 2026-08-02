@@ -19,7 +19,7 @@ export const createSqliteTestDb = async (): Promise<SqlDatabase> => {
   const SQL = await initSqlJs();
   const db = new SQL.Database() as SqlJsDatabase;
   for (const [, sql] of migrationSqlByFilename) db.run(sql);
-  return new SqlJsSqlDatabase(db);
+  return wrapSqlJsDatabase(db);
 };
 
 // sql.js binds through JavaScript and happily takes values neither deployment
