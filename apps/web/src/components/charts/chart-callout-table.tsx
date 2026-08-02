@@ -4,9 +4,8 @@ import { SeriesMarker } from './series-marker';
 import { fluentComponents } from '../../fluent';
 
 const { Text } = fluentComponents;
-// The header takes Caption, the size the axis labels beside it are set in; the
-// value rows sit under it, off WinUI's ramp. Both leadings are the ramp's, so
-// these size/leading pairs are deliberately not the ones the ramp states.
+// Header matches the axis labels' Caption size and the value rows sit under it,
+// against the ramp's leadings — so neither pair is one WinUI's ramp states.
 const headerTextStyle = { fontSize: '12px', lineHeight: '16px' } as const;
 const bodyTextStyle = { fontSize: '11px', lineHeight: '14px' } as const;
 
