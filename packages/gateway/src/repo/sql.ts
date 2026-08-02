@@ -869,14 +869,14 @@ class SqlUpstreamRepo implements UpstreamRepo {
 
   async list(): Promise<UpstreamRecord[]> {
     const { results } = await this.db
-      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, models_json, models_fetched_at, models_revision, models_last_error_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, color FROM upstreams ORDER BY sort_order, created_at')
+      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, color FROM upstreams ORDER BY sort_order, created_at')
       .all<UpstreamRow>();
     return results.map(toUpstreamRecord);
   }
 
   async getById(id: string): Promise<UpstreamRecord | null> {
     const row = await this.db
-      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, models_json, models_fetched_at, models_revision, models_last_error_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, color FROM upstreams WHERE id = ?')
+      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, color FROM upstreams WHERE id = ?')
       .bind(id)
       .first<UpstreamRow>();
     return row ? toUpstreamRecord(row) : null;
@@ -935,17 +935,20 @@ class SqlUpstreamRepo implements UpstreamRepo {
   // rename race a refresh.
   async saveModelsCache(id: string, cache: { revision: number; fetchedAt: number; models: ProviderModel[] }): Promise<void> {
     await this.db
-      .prepare('UPDATE upstreams SET models_json = ?, models_fetched_at = ?, models_revision = ?, models_last_error_json = NULL WHERE id = ?')
-      .bind(JSON.stringify(cache.models, modelsReplacer), cache.fetchedAt, cache.revision, id)
+      .prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ?')
+      .bind(JSON.stringify({ ...cache, lastError: null }, modelsReplacer), id)
       .run();
   }
 
-  // Annotates a previously-successful entry; an upstream that has never cached
-  // a catalog has nothing to annotate, so the row's other columns stay null.
+  // Annotates a previously-successful entry, so an upstream that has never
+  // cached a catalog has nothing to annotate. Patched in SQL rather than
+  // read-modify-written: it touches one key of a document whose other keys a
+  // concurrent refresh may be rewriting, and nothing compares this column's
+  // text, so the encoding SQLite produces here is immaterial.
   async saveModelsCacheError(id: string, error: { message: string; at: number } | null): Promise<void> {
     await this.db
-      .prepare('UPDATE upstreams SET models_last_error_json = ? WHERE id = ? AND models_json IS NOT NULL')
-      .bind(error === null ? null : JSON.stringify(error), id)
+      .prepare("UPDATE upstreams SET models_cache_json = json_set(models_cache_json, '$.lastError', json(?)) WHERE id = ? AND models_cache_json IS NOT NULL")
+      .bind(error === null ? 'null' : JSON.stringify(error), id)
       .run();
   }
 
@@ -1001,10 +1004,7 @@ interface UpstreamRow {
   updated_at: string;
   config_json: string;
   state_json: string | null;
-  models_json: string | null;
-  models_fetched_at: number | null;
-  models_revision: number | null;
-  models_last_error_json: string | null;
+  models_cache_json: string | null;
   flag_overrides: string;
   disabled_public_model_ids: string;
   proxy_fallback_list_json: string;
@@ -1047,28 +1047,16 @@ const toUpstreamRecord = (row: UpstreamRow): UpstreamRecord => {
   };
 };
 
-// A row that has never cached a catalog carries nulls in all four columns; a
-// partially-populated set means the row was written by something other than
-// saveModelsCache, which is a bug rather than a state to tolerate.
+// The whole entry is one document, so a row either has a catalog or does not —
+// there is no half-populated state to reject. `modelsReviver` restores the Sets
+// that `modelsReplacer` flattened on the way in.
 const parseModelsCache = (row: UpstreamRow): UpstreamModelsCache | null => {
-  if (row.models_json === null) return null;
-  if (row.models_fetched_at === null || row.models_revision === null) {
-    throw new Error(`Upstream ${row.id} has a cached catalog without its fetch stamp`);
-  }
-  let models: ProviderModel[];
+  if (row.models_cache_json === null) return null;
   try {
-    models = JSON.parse(row.models_json, modelsReviver) as ProviderModel[];
+    return JSON.parse(row.models_cache_json, modelsReviver) as UpstreamModelsCache;
   } catch (cause) {
     throw new Error(`Malformed upstream models cache JSON for ${row.id}`, { cause });
   }
-  return {
-    revision: row.models_revision,
-    fetchedAt: row.models_fetched_at,
-    models,
-    lastError: row.models_last_error_json === null
-      ? null
-      : JSON.parse(row.models_last_error_json) as { message: string; at: number },
-  };
 };
 
 const parseFlagOverrides = (id: string, json: string): Record<string, boolean> => {
