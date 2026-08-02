@@ -50,11 +50,10 @@ export const summaryMetrics: UsageMetric[][] = [
 const shortMonthDay = (date: Date, locale: string): string =>
   date.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
 
-// `formatRange` on an hour-only format keeps the span reading locale-owned,
-// where a hand-built `14:00 - 15:00` would impose a 24-hour clock. The end is
-// wrapped onto the start's own calendar day because `formatRange` widens to two
-// full datetimes once its endpoints fall on different days; reversed endpoints
-// still print in the order given.
+// `formatRange` keeps the span locale-owned, where a hand-built `14:00 - 15:00`
+// would impose a 24-hour clock. The end is wrapped onto the start's own calendar
+// day because `formatRange` widens to two full datetimes once its endpoints fall
+// on different days; reversed endpoints still print in the order given.
 const bucketHourRange = (date: Date, spanHours: number, locale: string): string => {
   const end = new Date(date);
   end.setHours((date.getHours() + spanHours) % 24, 0, 0, 0);
@@ -138,8 +137,7 @@ export const buildTokenChart = ({
 type PlottedSeries = Array<{ entry: ChartSeries; data: Array<number | null> }>;
 
 // A null bucket is not the reading zero, so its point is left out and the curve
-// bridges the gap instead of dipping through it. `markerSize` is per point
-// because the area form states its radius once, in `pointOptions`.
+// bridges the gap instead of dipping through it.
 const seriesPoints = (
   buckets: ChartBucket[],
   values: Array<number | null>,
@@ -332,8 +330,6 @@ export const summarizeUsage = (records: DisplayUsageRecord[]): TokenSummary => {
   return summarizeCounters(counters);
 };
 
-// The single derivation from disjoint counters to displayed figures, read by
-// both the summary tiles and the chart callout so they cannot disagree.
 export const summarizeCounters = (counters: TokenCounters): TokenSummary => {
   return {
     requests: counters.requests,
@@ -420,8 +416,8 @@ const plottableMetricValue = (record: DisplayUsageRecord, metric: UsageMetric): 
   return typeof value === 'number' ? value : decimalStringToPlottableNumber(value);
 };
 
-// Ratios are percentages of one aggregate over another, so both sides convert
-// to plottable numbers first; the division itself has no precision to protect.
+// Ratios divide one aggregate by another, so both sides convert to plottable
+// numbers first; the division has no precision to protect.
 const tokenCountersMetricValue = (counters: TokenCounters, metric: UsageMetric): number | null => {
   const ratio = (numerator: DecimalString, denominator: DecimalString): number | null => {
     const bottom = decimalStringToPlottableNumber(denominator);
@@ -453,7 +449,7 @@ export const bucketKeyForCallout = (
 };
 
 // A compact spelling is three significant figures by construction, so unlike
-// the exact labels it has no precision to keep and crosses into floating point.
+// the exact labels it has no precision to keep.
 export const formatCompactDecimalCount = (value: DecimalString, locale: string): string =>
   formatCompactCount(decimalStringToPlottableNumber(value), locale);
 
@@ -492,8 +488,6 @@ export const formatSummaryMetric = (
   }
 };
 
-// Axis-side: the value is a plotted point, so no exact decimal is left to
-// preserve. Summary tiles format the decimal values instead.
 export const formatMetricValue = (value: number, metric: UsageMetric, locale: string): string => {
   const kind = metricConfig[metric].kind;
   if (kind === 'percent') return `${value.toFixed(0)}%`;
