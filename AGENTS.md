@@ -381,7 +381,7 @@ pnpm run db:migrate:remote   # production D1
 `dev` runs the Worker on `http://127.0.0.1:8788` and the SPA on
 `http://localhost:5174`. For frontend development open the Vite SPA (5174):
 Vite proxies the gateway's HTTP paths to the Worker (see the canonical list in
-`apps/web/vite.config.ts`'s `wranglerProxiedPaths`), so relative-URL fetches in
+`apps/web/gateway-paths.ts`'s `wranglerProxiedPaths`), so relative-URL fetches in
 `apps/web` work identically in dev and prod. The Worker port serves the last
 built `apps/web/dist/client` via Workers Static Assets; direct SPA routes (e.g.
 `/login`, `/dashboard/...`) require

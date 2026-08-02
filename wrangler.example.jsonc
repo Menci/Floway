@@ -41,18 +41,20 @@
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "single-page-application",
     // The path set that diverts to the Worker (rather than being served by
-    // Workers Static Assets as a SPA fallback) MUST stay in sync with the
-    // same list in two other places — drift is silent and only surfaces as
-    // a 404 the SPA fallback served for a real gateway endpoint:
+    // Workers Static Assets as a SPA fallback) restates, for production on
+    // Cloudflare, the set two other files restate for their topologies:
     //
     //   - The `location ~` regexes in docker/nginx.conf (the docker-compose
     //     self-host topology).
-    //   - `wranglerProxiedPaths` in apps/web/vite.config.ts (the `vite dev`
+    //   - `wranglerProxiedPaths` in apps/web/gateway-paths.ts (the `vite dev`
     //     proxy-to-wrangler-dev topology).
     //
     // All three describe the same concept: every path the gateway owns; the
     // rest is the SPA. Bare data-plane paths are listed when the gateway also
-    // accepts a root form.
+    // accepts a root form. Drift is silent and surfaces only as a 404 the SPA
+    // fallback served for a real gateway endpoint, so
+    // apps/web/__tests__/gateway-paths_test.ts replays the public data-plane
+    // route table through all three.
     "run_worker_first": [
       "/api/*",
       "/auth",

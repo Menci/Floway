@@ -4,6 +4,8 @@ import { resolve } from 'node:path';
 import { reactRouter } from '@react-router/dev/vite';
 import { defineConfig, runnerImport, type Plugin } from 'vite';
 
+import { wranglerProxiedPaths } from './gateway-paths';
+
 // Part of the app's CSS is authored in TypeScript, because its rules spend
 // values the running app spends too: the WinUI layer under src/winui
 // interpolates the token names, motion durations and opt-out selector that the
@@ -112,41 +114,8 @@ const prismComponentsEsm = (): Plugin => ({
 // Both ends are overridable so a second checkout — another worktree, or a
 // Node-target instance running beside the Worker one — can claim its own pair
 // of ports without editing this file.
-//
-// This list MUST stay in sync with the same list in two other places — drift
-// is silent and only surfaces as a 404 the SPA fallback served for a real
-// gateway endpoint:
-//
-//   - The `location ~` regexes in docker/nginx.conf (the docker-compose
-//     self-host topology).
-//   - `assets.run_worker_first` in wrangler.example.jsonc (the production
-//     Cloudflare Workers topology, where the SPA is served from Workers
-//     Static Assets and the listed paths divert to the Worker).
-//
-// Bare data-plane paths are listed because the gateway accepts both root and
-// `/v1` forms where the upstream protocol defines them.
 const wranglerOrigin = process.env.FLOWAY_DEV_GATEWAY_ORIGIN ?? 'http://127.0.0.1:8788';
 const webPort = Number(process.env.FLOWAY_DEV_WEB_PORT ?? '5174');
-const wranglerProxiedPaths = [
-  '/api',
-  '/auth',
-  '/favicon.ico',
-  '/v1',
-  '/v2',
-  '/v1beta',
-  '/jina',
-  '/voyage',
-  '/azure-api.codex',
-  '/alpha/search',
-  '/completions',
-  '/chat/completions',
-  '/responses',
-  '/messages',
-  '/embeddings',
-  '/models',
-  '/images/generations',
-  '/images/edits',
-];
 
 export default defineConfig({
   // React Router discovers route modules lazily. Pre-bundle their browser

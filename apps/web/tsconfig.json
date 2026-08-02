@@ -15,6 +15,7 @@
     "__tests__/**/*.ts",
     "__tests__/**/*.tsx",
     ".react-router/types/**/*",
+    "gateway-paths.ts",
     "react-router.config.ts",
     "vite.config.ts",
     "vitest.config.ts",
