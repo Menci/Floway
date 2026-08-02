@@ -11,7 +11,7 @@ type SetupState = ReturnType<typeof useAgentSetup>;
 const lease = (expiresAt = Date.now() + 120_000) => ({
   status: 'ok',
   token: 'lease-token',
-  configuration: defaultAgentSetupConfiguration('key-1'),
+  configuration: { ...defaultAgentSetupConfiguration(), apiKeyId: 'key-1' },
   configurationRevision: 1,
   expiresAt,
   scripts: {

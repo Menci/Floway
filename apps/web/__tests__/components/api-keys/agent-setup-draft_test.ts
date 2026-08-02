@@ -7,7 +7,7 @@ describe('pre-lease Agent Setup edits', () => {
     const baseline = defaultAgentSetupConfiguration();
     const local = structuredClone(baseline);
     local.claudeCode.defaultOpusModel = 'claude-opus-custom';
-    const server = defaultAgentSetupConfiguration('key-1');
+    const server = { ...defaultAgentSetupConfiguration(), apiKeyId: 'key-1' };
     server.claudeCode.model = 'server-default';
     server.codex.model = 'server-codex';
 

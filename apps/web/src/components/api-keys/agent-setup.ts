@@ -5,8 +5,8 @@ import type { api } from '../../api/client';
 export type AgentSetupLease = Extract<InferResponseType<typeof api.api.setup.$put>, { status: 'ok' }>;
 export type AgentSetupConfiguration = AgentSetupLease['configuration'];
 
-export const defaultAgentSetupConfiguration = (apiKeyId = ''): AgentSetupConfiguration => ({
-  apiKeyId,
+export const defaultAgentSetupConfiguration = (): AgentSetupConfiguration => ({
+  apiKeyId: '',
   claudeCode: {
     model: null,
     defaultFableModel: null,

@@ -83,13 +83,13 @@ export function ResourceListPanel({ className, rowHeight = DEFAULT_ROW_HEIGHT, s
 }
 
 type ResourceListActionsProps = {
-  appearance?: 'secondary' | 'subtle';
+  appearance?: 'subtle';
   disabled?: boolean;
   onRefresh: () => void;
   refreshLabel: string;
   refreshing?: boolean;
 } & (
-  | { createLabel: string; createTrailingIcon?: ReactNode; onCreate: () => void; createTrigger?: never }
+  | { createLabel: string; createTrailingIcon?: never; onCreate: () => void; createTrigger?: never }
   | { createLabel: string; createTrailingIcon?: ReactNode; createTrigger: (button: ReactElement) => ReactNode; onCreate?: never }
   | { createLabel?: never; createTrailingIcon?: never; onCreate?: never; createTrigger?: never }
 );
