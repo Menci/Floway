@@ -7,8 +7,12 @@
 // FlyoutContentPadding is deliberately not restated: `size` is composed into
 // hashed padding atoms and PopoverSurface is not one of the components
 // `winui/appearance.ts` stamps, so stating the padding would flatten all three
-// sizes.
+// sizes. Nothing is lost by leaving it to Fluent -- `usePopover_unstable` seeds
+// `size: 'medium'` before it spreads the caller's props, so a Popover that
+// names no size lands on the 16px that FlyoutContentPadding gives the two sides
+// it does not split.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/FlyoutPresenter_themeresources.xaml#L20
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-popover/library/src/components/Popover/usePopover.ts#L36-L41
 // The Min/Max Width/Height setters read FlyoutThemeMinWidth and its three
 // siblings, which the shipping dictionaries never define, so Fluent's
 // unconstrained surface stands.
