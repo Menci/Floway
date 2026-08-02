@@ -1,9 +1,9 @@
 import { SaveRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FormProvider, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { useBlocker, useNavigate } from 'react-router';
+import { useBlocker, useNavigate, type BlockerFunction } from 'react-router';
 import { z } from 'zod';
 
 import { UpstreamConfigSidebar } from './config-sidebar';
@@ -46,7 +46,11 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   // lives here: it is what the schema rejects on and what the leave prompt
   // counts as an unsaved change.
   const [colorDraftInvalid, setColorDraftInvalid] = useState(false);
-  const allowNavigation = useRef(false);
+  // A create hands off to the created record's own route. The blocker reads the
+  // form's saved state, so the hand-off is state rather than a call: naming the
+  // id lets the navigation wait for the render that the save made clean instead
+  // of racing it and having to be excused from the prompt.
+  const [createdUpstreamId, setCreatedUpstreamId] = useState<string | null>(null);
   const initialValues = valuesFromRecord(data.record);
   const [savedBaseline, setSavedBaseline] = useState(() => comparableValues(initialValues));
   const schema = useMemo(() => z.object({
@@ -80,10 +84,21 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const currentValues = useWatch({ control }) as UpstreamEditorValues;
   const hasUnsavedChanges = comparableValues(currentValues) !== savedBaseline || colorDraftInvalid;
 
-  const blocker = useBlocker(useCallback(
-    () => hasUnsavedChanges && !allowNavigation.current,
+  // The editor carries its own position — workspace tab, selected model, model
+  // section, YAML view — in the search params of one route, so a move between
+  // any of those is this record still being edited, through another view of
+  // itself. Only a change of pathname leaves the record and is worth a prompt.
+  const blocker = useBlocker(useCallback<BlockerFunction>(
+    ({ currentLocation, nextLocation }) => currentLocation.pathname !== nextLocation.pathname && hasUnsavedChanges,
     [hasUnsavedChanges],
   ));
+
+  // Declared after the blocker so that within the commit the save produces, the
+  // blocker is re-registered against the now-clean form before this runs.
+  useEffect(() => {
+    if (createdUpstreamId === null) return;
+    void navigate(`/dashboard/providers/upstreams/${encodeURIComponent(createdUpstreamId)}`, { replace: true });
+  }, [createdUpstreamId, navigate]);
 
   // Releasing the blocker commits the route change, which would unmount this
   // body-portaled dialog mid-exit. So confirm only closes it and the blocker is
@@ -153,15 +168,10 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     setSavedBaseline(comparableValues(savedValues));
     reset(savedValues);
     handle.succeed(t('dashboard.upstreamEditor.toast.saved'));
-    if (data.mode === 'create') {
-      allowNavigation.current = true;
-      // `saving` is left set: the create route's loader probes the provider for
-      // its catalog, so the page stays mounted and interactive across the
-      // hand-off, and a Save left live there posts a second create.
-      void navigate(`/dashboard/providers/upstreams/${encodeURIComponent(saved.id)}`, { replace: true });
-    } else {
-      setSaving(false);
-    }
+    // `saving` is left set on create: the created record's loader probes the
+    // provider for its catalog, so the page stays mounted and interactive
+    // across the hand-off, and a Save left live there posts a second create.
+    if (data.mode === 'create') setCreatedUpstreamId(saved.id); else setSaving(false);
   }, () => {
     // Field rejections render on the control that produced them; the
     // page-level bar is only where a server says no.
