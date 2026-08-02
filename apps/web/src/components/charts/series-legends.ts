@@ -1,5 +1,4 @@
-// `legend` is the `label` disambiguated against its siblings, which is what
-// Fluent keys its own series by, so it exists only for a compared set.
+// Fluent keys its own series by `legend`, so only a compared set carries one.
 export interface SeriesLegendEntry { id: string; label: string; colorSlot: number }
 export type ChartSeries = SeriesLegendEntry & { legend: string };
 
