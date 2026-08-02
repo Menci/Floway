@@ -56,15 +56,19 @@ export const navigationProgressCss = `
      the tokens flip between carries the whole colour answer and no rule below
      is stated twice. ProgressBarCornerRadius is 1.5 and reaches each indicator
      as its rectangle's radius. They are left aligned and sized as fractions of
-     the control -- 40% and 60% -- and each rests at the offset its storyboard
-     starts from, so the pair is off the left edge whenever the strip is idle
-     and the fade out has nothing standing still in it.
+     the control -- 40% and 60% -- and the storyboard's own first frame puts the
+     pair off the left edge, so a strip that has never run is empty rather than
+     showing two bars parked at its start.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar_themeresources.xaml#L6
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar_themeresources.xaml#L22
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar_themeresources.xaml#L31
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar.cpp#L223-L230 */
   .floway-navigation-progress::before,
   .floway-navigation-progress::after {
+    animation-duration: 2s;
+    animation-iteration-count: infinite;
+    animation-play-state: paused;
+    animation-timing-function: linear;
     background-color: var(--winui-accent-fill-default);
     border-radius: 1.5px;
     content: '';
@@ -72,11 +76,11 @@ export const navigationProgressCss = `
     position: absolute;
   }
   .floway-navigation-progress::before {
-    transform: translateX(-100%);
+    animation-name: floway-navigation-progress-indicator;
     width: 40%;
   }
   .floway-navigation-progress::after {
-    transform: translateX(-150%);
+    animation-name: floway-navigation-progress-indicator-2;
     width: 60%;
   }
 
@@ -91,11 +95,18 @@ export const navigationProgressCss = `
      curve, since both of their frames carry the same offset.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar.xaml#L100-L111
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar.cpp#L223-L230 */
-  .floway-navigation-progress[data-active='true']::before {
-    animation: floway-navigation-progress-indicator 2s linear infinite;
-  }
+  /* Paused rather than unanimated when the strip is idle, and that is what
+     makes the fade out a fade. Hung on the active state, the animation was
+     REMOVED the instant the strip went idle and each indicator snapped back to
+     the offset its own rule stated -- off the left edge -- so the strip emptied
+     in one frame and the opacity underneath it was easing nothing. Paused, they
+     hold the position they had reached and go out with the strip that carries
+     them. A paused animation costs nothing while it waits, and resuming where
+     it stopped is right for an indicator that means "still working" rather than
+     "starting over". */
+  .floway-navigation-progress[data-active='true']::before,
   .floway-navigation-progress[data-active='true']::after {
-    animation: floway-navigation-progress-indicator-2 2s linear infinite;
+    animation-play-state: running;
   }
   @keyframes floway-navigation-progress-indicator {
     0% {
