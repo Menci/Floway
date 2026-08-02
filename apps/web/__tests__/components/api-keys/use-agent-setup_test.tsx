@@ -2,7 +2,7 @@ import { act, renderHook, type RenderHookResult } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { flowayTokenStorageKey } from '../../../src/auth/session';
-import { defaultAgentSetupConfiguration } from '../../../src/components/api-keys/agent-setup-contract';
+import { defaultAgentSetupConfiguration } from '../../../src/components/api-keys/agent-setup';
 import { useAgentSetup } from '../../../src/components/api-keys/use-agent-setup';
 import { stubLocalStorage } from '../../local-storage-stub';
 

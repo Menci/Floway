@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { detectAgentSetupPlatform } from '../../../src/components/api-keys/agent-setup-platform';
+import { detectAgentSetupPlatform } from '../../../src/components/api-keys/agent-setup';
 
 describe('Agent Setup platform detection', () => {
   it('detects Windows from either browser signal', () => {

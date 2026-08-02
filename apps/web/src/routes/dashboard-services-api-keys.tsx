@@ -7,7 +7,7 @@ import { requireDashboardSession } from './route-guards';
 import { api, callApi } from '../api/client';
 import type { ApiKey } from '../api/types';
 import { AgentSetupCard } from '../components/api-keys/agent-setup-card';
-import type { AgentSetupLease } from '../components/api-keys/agent-setup-contract';
+import type { AgentSetupLease } from '../components/api-keys/agent-setup';
 import { KeyDialog } from '../components/api-keys/key-editor';
 import { KeysTable } from '../components/api-keys/keys-table';
 import { modelsForAgentSetup } from '../components/api-keys/model-reachability';

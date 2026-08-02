@@ -11,11 +11,18 @@ import 'prismjs/components/prism-json';
 import 'prismjs/components/prism-powershell';
 import 'prismjs/components/prism-toml';
 
-import { cloneAgentSetupConfiguration, defaultAgentSetupConfiguration, type AgentSetupConfiguration, type AgentSetupLease } from './agent-setup-contract';
-import { applyLocalAgentSetupChanges } from './agent-setup-draft';
+import {
+  applyLocalAgentSetupChanges,
+  cloneAgentSetupConfiguration,
+  codexUnixCredentialSnippet,
+  codexWindowsCredentialSnippet,
+  defaultAgentSetupConfiguration,
+  detectAgentSetupPlatform,
+  type AgentSetupConfiguration,
+  type AgentSetupLease,
+  type AgentSetupPlatform,
+} from './agent-setup';
 import { buildAgentModelOptions, rankAgentSetupModels, type ClaudePicker } from './agent-setup-models';
-import { detectAgentSetupPlatform, type AgentSetupPlatform } from './agent-setup-platform';
-import { codexUnixCredentialSnippet, codexWindowsCredentialSnippet } from './codex-credential-snippets';
 import { agentSetupCommand, useAgentSetup } from './use-agent-setup';
 import type { ApiKey, ControlPlaneModel } from '../../api/types';
 import claudeIconUrl from '../../assets/claude-color.svg';

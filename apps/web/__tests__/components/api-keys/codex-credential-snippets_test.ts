@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { codexUnixCredentialSnippet, codexWindowsCredentialSnippet } from '../../../src/components/api-keys/codex-credential-snippets';
+import { codexUnixCredentialSnippet, codexWindowsCredentialSnippet } from '../../../src/components/api-keys/agent-setup';
 
 describe('Codex provider credentials', () => {
   it('stores a provider-scoped token without replacing auth.json', () => {
