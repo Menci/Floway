@@ -346,9 +346,21 @@ export default function DashboardAdminBackupRestore() {
             </div>
 
             <Field label={t('dashboard.backupRestore.import.mode')}>
-              <RadioGroup disabled={importing} layout="horizontal" value={importMode} onChange={(_, data) => setImportMode(data.value as 'merge' | 'replace')}>
-                <Radio label={<span className="grid gap-0.5"><Text weight="semibold">{t('dashboard.backupRestore.import.modeMerge')}</Text><Text size={200} className="text-fui-fg3">{t('dashboard.backupRestore.import.modeMergeDesc')}</Text></span>} value="merge" />
-                <Radio label={<span className="grid gap-0.5"><Text weight="semibold">{t('dashboard.backupRestore.import.modeReplace')}</Text><Text size={200} className="text-fui-fg3">{t('dashboard.backupRestore.import.modeReplaceDesc')}</Text></span>} value="replace" />
+              {/* Each mode carries a sentence, so the options stack: side by
+                  side the two descriptions met in the middle and the trailing
+                  radio read as part of the preceding sentence.
+
+                  The two lines are the same pair ../components/ui/settings-card.tsx
+                  builds -- the control content size at the regular weight over
+                  the caption in the secondary fill, with no gap between them.
+                  WinUI's RadioButton states the size and states no weight, so
+                  the label is body regular and the emphasis lives in the fill
+                  step rather than in a heavier face.
+                  https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L193
+                  https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L424 */}
+              <RadioGroup disabled={importing} value={importMode} onChange={(_, data) => setImportMode(data.value as 'merge' | 'replace')}>
+                <Radio label={<span className="grid"><Text block>{t('dashboard.backupRestore.import.modeMerge')}</Text><Text block size={200} className="text-fui-fg2">{t('dashboard.backupRestore.import.modeMergeDesc')}</Text></span>} value="merge" />
+                <Radio label={<span className="grid"><Text block>{t('dashboard.backupRestore.import.modeReplace')}</Text><Text block size={200} className="text-fui-fg2">{t('dashboard.backupRestore.import.modeReplaceDesc')}</Text></span>} value="replace" />
               </RadioGroup>
             </Field>
 
