@@ -47,18 +47,33 @@ export const badgeTagCss = `
   --colorNeutralBackgroundDisabled: var(--winui-control-fill-disabled);
   --colorNeutralForeground2: var(--winui-text-fill-primary);
   --colorNeutralStrokeDisabled: var(--winui-control-stroke-default);
+  border-color: var(--winui-control-elevation-border-color);
 }
 
-/* The pressable halves take Button's interaction ramp: the selected fill steps
-   to the accent secondary and tertiary — the rest accent at 90% and 80% rather
-   than separate hues — and the label holds at the primary text fill on hover,
-   dropping to secondary under a press, where Fluent darkens on hover and tints
-   the outline appearance's glyph toward the brand. The primary half reads the
-   plain Foreground2 steps and the dismiss half the Brand-suffixed ones for the
-   same label, so both pairs are stated.
+/* Button flattens its stroke to ControlStrokeColorDefault under a press and
+   while disabled, and holds the elevation border either side of that. Stated
+   because Fluent's own filled chip is borderless and its outline chip carries
+   one flat neutral stroke through every state, so neither half of the ramp
+   arrives on its own.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L129-L132 */
+.fui-Tag.fui-Tag:active,
+.fui-Tag.fui-Tag[disabled],
+.fui-InteractionTagPrimary.fui-InteractionTagPrimary:active,
+.fui-InteractionTagPrimary.fui-InteractionTagPrimary[disabled],
+.fui-InteractionTagSecondary.fui-InteractionTagSecondary:active,
+.fui-InteractionTagSecondary.fui-InteractionTagSecondary[disabled] {
+  border-color: var(--winui-control-stroke-default);
+}
+
+/* The pressable halves take Button's interaction ramp: the label holds at the
+   primary text fill on hover and drops to secondary under a press, where Fluent
+   darkens on hover and tints the outline appearance's glyph toward the brand.
+   The primary half reads the plain Foreground2 steps and the dismiss half the
+   Brand-suffixed ones for the same label, so both pairs are stated. The selected
+   fill's own steps -- the rest accent at 90% and 80% rather than separate hues
+   -- arrive through ../theme.ts with the rest of the accent ramp.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L128-L134
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L119-L121
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L104-L105 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L119-L121 */
 .fui-InteractionTagPrimary.fui-InteractionTagPrimary,
 .fui-InteractionTagSecondary.fui-InteractionTagSecondary {
   --colorNeutralBackground3Hover: var(--winui-control-fill-secondary);
@@ -67,8 +82,6 @@ export const badgeTagCss = `
   --colorNeutralForeground2Pressed: var(--winui-text-fill-secondary);
   --colorNeutralForeground2BrandHover: var(--winui-text-fill-primary);
   --colorNeutralForeground2BrandPressed: var(--winui-text-fill-secondary);
-  --colorBrandBackgroundHover: var(--winui-accent-fill-secondary);
-  --colorBrandBackgroundPressed: var(--winui-accent-fill-tertiary);
 }
 
 /* The dismiss glyph is a subtle button in WinUI terms — InfoBar builds its
@@ -81,25 +94,37 @@ export const badgeTagCss = `
   --colorCompoundBrandForeground1Pressed: var(--winui-text-fill-secondary);
 }
 
-/* The rest fill is restated here because Fluent's --colorBrandBackground stays
-   on its own brand ramp, and it has to meet the hover and pressed steps above.
-   WinUI draws the on-accent elevation gradient as a three-term border colour
-   where Fluent draws one flat brand stroke. A TagGroup with the listbox role
-   writes the selection as aria-selected instead, so both attributes name the
-   same state. The sibling selector sits in :where() so the dismiss half's
-   states stack in the same order the primary half's do rather than being lifted
-   over the focus visual by the extra compound.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L103
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L107
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L111
+/* The selected chip's stroke. WinUI draws the on-accent elevation gradient as a
+   three-term border colour where Fluent draws one flat brand stroke; the accent
+   fill under it arrives through ../theme.ts, which carries Fluent's brand ramps
+   onto the accent ones. A TagGroup with the listbox role writes the selection as
+   aria-selected instead, so both attributes name the same state. The sibling
+   selector sits in :where() so the dismiss half's states stack in the same order
+   the primary half's do rather than being lifted over the focus visual by the
+   extra compound.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SplitButton/SplitButton_themeresources.xaml#L9
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SplitButton/SplitButton_themeresources.xaml#L28 */
 .fui-Tag.fui-Tag[aria-pressed='true'],
 .fui-Tag.fui-Tag[aria-selected='true'],
 .fui-InteractionTagPrimary.fui-InteractionTagPrimary[aria-pressed='true'],
 :where(.fui-InteractionTagPrimary[aria-pressed='true']) + .fui-InteractionTagSecondary.fui-InteractionTagSecondary {
-  --colorBrandBackground: var(--winui-accent-fill-default);
   border-color: var(--winui-accent-control-elevation-border-color);
+}
+
+/* A plain Tag is a span, so Fluent ships it no pointer atoms at all and there is
+   no token to re-point for the two steps a checked ToggleButton takes; both
+   fills are stated outright.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L12
+   https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-tags/library/src/components/Tag/useTag.ts#L43 */
+.fui-Tag.fui-Tag[aria-pressed='true']:not([disabled]):hover,
+.fui-Tag.fui-Tag[aria-selected='true']:not([disabled]):hover {
+  background-color: var(--winui-accent-fill-secondary);
+}
+
+/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L13 */
+.fui-Tag.fui-Tag[aria-pressed='true']:not([disabled]):active,
+.fui-Tag.fui-Tag[aria-selected='true']:not([disabled]):active {
+  background-color: var(--winui-accent-fill-tertiary);
 }
 
 /* WinUI draws two concentric focus rings, 2px over 1px. Fluent draws a single
@@ -129,13 +154,16 @@ export const badgeTagCss = `
    focused one and repaints the border either way. The press excludes a
    disabled chip: WinUI cannot leave Disabled for a pointer state, and a rule
    settling that by source order alone breaks the moment either selector gains
-   a component.
+   a component. The guard names the attribute rather than :disabled, because
+   Fluent renders a non-dismissible Tag as a span, which no form pseudo-class
+   reaches.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L109
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L113 */
-.fui-Tag.fui-Tag[aria-pressed='true']:active:not(:disabled),
-.fui-Tag.fui-Tag[aria-selected='true']:active:not(:disabled),
-.fui-InteractionTagPrimary.fui-InteractionTagPrimary[aria-pressed='true']:active:not(:disabled),
-:where(.fui-InteractionTagPrimary[aria-pressed='true']) + .fui-InteractionTagSecondary.fui-InteractionTagSecondary:active:not(:disabled) {
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L113
+   https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-tags/library/src/components/Tag/useTag.ts#L43 */
+.fui-Tag.fui-Tag[aria-pressed='true']:active:not([disabled]),
+.fui-Tag.fui-Tag[aria-selected='true']:active:not([disabled]),
+.fui-InteractionTagPrimary.fui-InteractionTagPrimary[aria-pressed='true']:active:not([disabled]),
+:where(.fui-InteractionTagPrimary[aria-pressed='true']) + .fui-InteractionTagSecondary.fui-InteractionTagSecondary:active:not([disabled]) {
   border-color: var(--winui-control-fill-transparent);
   color: var(--winui-text-on-accent-fill-secondary);
 }
@@ -153,16 +181,16 @@ export const badgeTagCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SplitButton/SplitButton_themeresources.xaml#L27
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SplitButton/SplitButton.xaml#L71-L79
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SplitButton/SplitButton.xaml#L225 */
-.fui-Tag.fui-Tag[aria-pressed='true']:disabled,
-.fui-Tag.fui-Tag[aria-selected='true']:disabled,
-.fui-InteractionTagPrimary.fui-InteractionTagPrimary[aria-pressed='true']:disabled,
-:where(.fui-InteractionTagPrimary[aria-pressed='true']) + .fui-InteractionTagSecondary.fui-InteractionTagSecondary:disabled {
+.fui-Tag.fui-Tag[aria-pressed='true'][disabled],
+.fui-Tag.fui-Tag[aria-selected='true'][disabled],
+.fui-InteractionTagPrimary.fui-InteractionTagPrimary[aria-pressed='true'][disabled],
+:where(.fui-InteractionTagPrimary[aria-pressed='true']) + .fui-InteractionTagSecondary.fui-InteractionTagSecondary[disabled] {
   background-color: var(--winui-accent-fill-disabled);
   border-color: var(--winui-control-fill-transparent);
   color: var(--winui-text-on-accent-fill-disabled);
 }
 
-:where(.fui-InteractionTagPrimary[aria-pressed='true']) + .fui-InteractionTagSecondary.fui-InteractionTagSecondary:disabled {
+:where(.fui-InteractionTagPrimary[aria-pressed='true']) + .fui-InteractionTagSecondary.fui-InteractionTagSecondary[disabled] {
   border-left-color: var(--winui-control-stroke-default);
 }
 `;

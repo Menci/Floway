@@ -2,8 +2,8 @@ import type { Theme } from '@fluentui/react-components';
 
 import { flowayDarkTheme, flowayLightTheme } from '../theme';
 
-// Brand, shared, and status colors have no one-to-one WinUI counterpart and are
-// spent per control in ./controls/*.css.ts instead.
+// Shared and status colors have no one-to-one WinUI counterpart and are spent
+// per control in ./controls/*.css.ts instead.
 //
 // One table serves both themes only because the app picks its Fluent theme from
 // `prefers-color-scheme` and nothing else (../root.tsx), the same query the
@@ -75,6 +75,29 @@ const palette = {
   colorNeutralForegroundDisabled: 'var(--winui-text-fill-disabled)',
   colorNeutralForegroundInverted: 'var(--winui-text-fill-inverse)',
   colorNeutralForegroundOnBrand: 'var(--winui-text-on-accent-fill-primary)',
+
+  // WinUI has one accent ramp -- AccentFillColor Default, Secondary and
+  // Tertiary, the same base at 100%, 90% and 80% -- and no tinted-accent
+  // surface at all: an accent-intent control is a solid accent fill under an
+  // on-accent label. Fluent's two brand background ramps therefore land on the
+  // same three fills, and the foreground that pairs with the tinted one lands
+  // on the on-accent text beside colorNeutralForegroundOnBrand above. Leaving
+  // either ramp unmapped is what let a chip, a badge and a tab chip wear Fluent
+  // blue beside WinUI accent, and let a dark filled badge pair black on-accent
+  // text with Fluent's dark brand fill.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L36-L38
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L103-L105
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L11-L13
+  colorBrandBackground: 'var(--winui-accent-fill-default)',
+  colorBrandBackgroundHover: 'var(--winui-accent-fill-secondary)',
+  colorBrandBackgroundPressed: 'var(--winui-accent-fill-tertiary)',
+  colorBrandBackgroundSelected: 'var(--winui-accent-fill-default)',
+  colorBrandBackground2: 'var(--winui-accent-fill-default)',
+  colorBrandBackground2Hover: 'var(--winui-accent-fill-secondary)',
+  colorBrandBackground2Pressed: 'var(--winui-accent-fill-tertiary)',
+  colorBrandForeground2: 'var(--winui-text-on-accent-fill-primary)',
+  colorBrandForeground2Hover: 'var(--winui-text-on-accent-fill-primary)',
+  colorBrandForeground2Pressed: 'var(--winui-text-on-accent-fill-secondary)',
 
   // WinUI's focus visual is two concentric strokes, and Fluent spends one token
   // per stroke in the same roles, so the pair is stated here rather than at each
