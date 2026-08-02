@@ -22,7 +22,11 @@
 // The knob is the one subject the doubling convention cannot be applied to.
 // Fluent gives it no class of its own, addressing it as `> *` from the
 // indicator's reset class, so every knob rule here doubles the indicator
-// instead.
+// instead. It is named by element rather than by that reach: useSwitch fills
+// the indicator slot with CircleFilled, and a mono-colour react-icons glyph is
+// one svg holding one path, so `> svg` and `> svg > path` are the two elements
+// that exist (@fluentui/react-switch useSwitch, @fluentui/react-icons
+// renderSvgBody).
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-switch/library/src/components/Switch/useSwitchStyles.styles.ts#L74-L82
 //
 // XAML centres both knobs at the same 3.5px inside a cell that translates by
@@ -56,10 +60,10 @@ const pressedRoots = [
 ];
 
 const enabledKnob = `.fui-Switch__input:enabled:not([aria-disabled='true'])`
-  + ' ~ .fui-Switch__indicator.fui-Switch__indicator > *';
+  + ' ~ .fui-Switch__indicator.fui-Switch__indicator > svg';
 
 const enabledCheckedKnob = `.fui-Switch__input:enabled:checked:not([aria-disabled='true'])`
-  + ' ~ .fui-Switch__indicator.fui-Switch__indicator > *';
+  + ' ~ .fui-Switch__indicator.fui-Switch__indicator > svg';
 
 const offTrack = `.fui-Switch__input:enabled:not(:checked):not([aria-disabled='true'])`
   + ' ~ .fui-Switch__indicator.fui-Switch__indicator::before';
@@ -149,7 +153,7 @@ export const switchCss = `
   --winui-switch-travel-duration: 0s;
 }
 
-.fui-Switch[data-winui-switch-dragging] .fui-Switch__indicator.fui-Switch__indicator > * {
+.fui-Switch[data-winui-switch-dragging] .fui-Switch__indicator.fui-Switch__indicator > svg {
   transform: translateX(var(--winui-switch-drag-x));
 }
 
@@ -197,7 +201,14 @@ export const switchCss = `
   opacity: 1;
 }
 
-.fui-Switch__indicator.fui-Switch__indicator > * {
+.fui-Switch__indicator.fui-Switch__indicator > svg {
+  /* WinUI over-specifies the knob radius as 7 on a 12x12 box -- CornerRadius on
+     the on-knob, RadiusX and RadiusY on the off-knob -- so XAML clamps it to a
+     circle. A radius past half the box clamps the same way here, and it stays
+     correct through the swell and the pressed capsule, where a stated 7 would
+     leave the ends squarer than the template draws them.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L510
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L515 */
   border-radius: 999px;
   height: calc(12 * var(--winui-switch-unit));
   margin-inline-start: calc(2.5 * var(--winui-switch-unit));
@@ -258,7 +269,7 @@ ${under(pressedRoots, [enabledCheckedKnob])} {
 @media (prefers-reduced-motion: reduce) {
   .fui-Switch__indicator.fui-Switch__indicator::before,
   .fui-Switch__indicator.fui-Switch__indicator::after,
-  .fui-Switch__indicator.fui-Switch__indicator > * {
+  .fui-Switch__indicator.fui-Switch__indicator > svg {
     transition-duration: 0.01ms;
   }
 }
@@ -305,7 +316,7 @@ ${under(pressedRoots, [enabledCheckedKnob])} {
   /* Fluent's glyph has to go, or it shows through as a second, circular knob
      inside the one this file paints. \`fill\` on the SVG does not reach the path
      that draws it, so the path is named. */
-  .fui-Switch__indicator.fui-Switch__indicator > * > * {
+  .fui-Switch__indicator.fui-Switch__indicator > svg > path {
     fill: transparent;
   }
 
@@ -315,21 +326,21 @@ ${under(pressedRoots, [enabledCheckedKnob])} {
      background-color with no interpolable endpoints, so the knob would jump the
      moment the indicator's colour did.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L151-L158 */
-  .fui-Switch__indicator.fui-Switch__indicator > * {
+  .fui-Switch__indicator.fui-Switch__indicator > svg {
     background-color: var(--winui-text-fill-secondary);
   }
 
-  .fui-Switch__input:checked ~ .fui-Switch__indicator.fui-Switch__indicator > * {
+  .fui-Switch__input:checked ~ .fui-Switch__indicator.fui-Switch__indicator > svg {
     background-color: var(--winui-text-on-accent-fill-primary);
   }
 
-  .fui-Switch__input:disabled:not(:checked) ~ .fui-Switch__indicator.fui-Switch__indicator > *,
-  .fui-Switch__input[aria-disabled='true']:not(:checked) ~ .fui-Switch__indicator.fui-Switch__indicator > * {
+  .fui-Switch__input:disabled:not(:checked) ~ .fui-Switch__indicator.fui-Switch__indicator > svg,
+  .fui-Switch__input[aria-disabled='true']:not(:checked) ~ .fui-Switch__indicator.fui-Switch__indicator > svg {
     background-color: var(--winui-text-fill-disabled);
   }
 
-  .fui-Switch__input:disabled:checked ~ .fui-Switch__indicator.fui-Switch__indicator > *,
-  .fui-Switch__input[aria-disabled='true']:checked ~ .fui-Switch__indicator.fui-Switch__indicator > * {
+  .fui-Switch__input:disabled:checked ~ .fui-Switch__indicator.fui-Switch__indicator > svg,
+  .fui-Switch__input[aria-disabled='true']:checked ~ .fui-Switch__indicator.fui-Switch__indicator > svg {
     background-color: var(--winui-text-on-accent-fill-disabled);
   }
 
