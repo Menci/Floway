@@ -42,16 +42,32 @@ const expand = (
   .flatMap(variant => states.map(state => `${base(variant)}${state}`))
   .join(',\n');
 
+// Fluent's `disabledFocusable` keeps the element enabled to the browser and
+// says so with `aria-disabled`, so both spellings name the disabled visual.
+const disabledStates = [':disabled', `[aria-disabled='true']`];
+
+// WinUI's VisualStateManager never leaves Disabled, so no interaction keyframe
+// can run over a disabled button. CSS has no such exclusivity: a pressed
+// selector carries two pseudo-classes where the disabled one carries a single
+// class-level part, so it outranks the disabled rule and source order cannot
+// rescue it. Every interactive state therefore excludes both disabled
+// spellings in the state itself, which keeps the exclusion attached to the
+// state rather than to each rule that happens to notice the collision.
+const notDisabled = disabledStates.map(state => `:not(${state})`).join('');
+
+const restState = notDisabled;
+
+const hoverStates = [`:hover${notDisabled}`];
+
 // Fluent states its pressed step on `:hover:active` and on
 // `:active:focus-visible`, so that a space or enter press reaches it as well as
 // a pointer one. A rule restating a pressed value has to name the same pair, or
 // the keyboard press keeps the rest value.
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-button/library/src/components/Button/useButtonStyles.styles.ts#L55
-const pressedStates = [':hover:active', ':active:focus-visible'];
-
-// Fluent's `disabledFocusable` keeps the element enabled to the browser and
-// says so with `aria-disabled`, so both spellings name the disabled visual.
-const disabledStates = [':disabled', `[aria-disabled='true']`];
+const pressedStates = [
+  `:hover:active${notDisabled}`,
+  `:active:focus-visible${notDisabled}`,
+];
 
 // Fluent colours the icon of a chromeless or disabled button through a
 // descendant rule of its own rather than letting it inherit, so a colour stated
@@ -67,17 +83,16 @@ const neutral = (states: readonly string[] = ['']) =>
   expand(['secondary', 'outline'], states, appearanceRoot);
 
 // The two chromeless appearances, minus the checked state, which paints itself
-// from the accent family instead, and minus the disabled one, which takes the
-// same disabled foreground every other appearance takes.
-const enabledUnchecked = (appearance: string) =>
+// from the accent family instead.
+const unchecked = (appearance: string) =>
   `${appearanceRoot(appearance)}:not([aria-pressed='true'])`
-  + `:not([aria-checked='true']):not(:disabled):not([aria-disabled='true'])`;
+  + `:not([aria-checked='true'])`;
 
-const chromeless = (states: readonly string[] = ['']) =>
-  expand(['subtle', 'transparent'], states, enabledUnchecked);
+const chromeless = (states: readonly string[]) =>
+  expand(['subtle', 'transparent'], states, unchecked);
 
-const transparentOnly = (states: readonly string[] = ['']) =>
-  expand(['transparent'], states, enabledUnchecked);
+const transparentOnly = (states: readonly string[]) =>
+  expand(['transparent'], states, unchecked);
 
 // Every selector nested in the forced-colours guard below is interpolated at
 // the start of a line, so the indent it would have been written with has to
@@ -192,13 +207,14 @@ ${nested(appearanceRoot('primary'))} {
     border-color: var(--winui-accent-control-elevation-border-color);
   }
 
-${nested(appearanceRoot('primary'))}:hover {
+${nested(expand(['primary'], hoverStates, appearanceRoot))} {
     background-color: var(--winui-accent-fill-secondary);
   }
 
 ${nested(expand(['primary'], pressedStates, appearanceRoot))} {
     background-color: var(--winui-accent-fill-tertiary);
     border-color: var(--winui-control-fill-transparent);
+    color: var(--winui-text-on-accent-fill-secondary);
   }
 
   /* A disabled accent button keeps the accent ramp rather than the shared neutral
@@ -222,7 +238,7 @@ ${nested(expand(['primary'], withIcon(disabledStates), appearanceRoot))} {
      disabled transparent button, which WinUI leaves at SubtleFillColorTransparent.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L115-L118
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L17-L20 */
-${nested(transparentOnly([':hover']))} {
+${nested(transparentOnly(hoverStates))} {
     background-color: var(--winui-subtle-fill-secondary);
   }
 
@@ -236,7 +252,7 @@ ${nested(transparentOnly(pressedStates))} {
      chromeless icon is one such descendant, so the glyph is named beside the label.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L119-L121
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L21-L23 */
-${nested(chromeless(['', ':hover', ...withIcon([':hover'])]))} {
+${nested(chromeless([restState, ...hoverStates, ...withIcon(hoverStates)]))} {
     color: var(--winui-text-fill-primary);
   }
 
