@@ -10,7 +10,7 @@
 // receives the props Fluent would have passed its own motion component and
 // renders whatever it likes with them. That is the seam every wrapper below
 // goes through.
-// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-motion/library/src/slots/presenceMotionSlot.ts#L13-L19
+// https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-motion/library/src/slots/presenceMotionSlot.ts#L13-L19
 import * as React from 'react';
 
 import {
@@ -65,14 +65,21 @@ export const withWinuiMotion = (components: FluentComponents): FluentComponents 
     ],
   });
 
-  // The dimming layer behind the dialog. WinUI hands it its own keyframes and
-  // gives it nothing but the opacity leg -- the scale targets the dialog's own
-  // background element, so the backdrop never moves -- and runs it symmetrically
-  // in both directions. Fluent fades it over 300ms, which outlasts even the
-  // dialog's 250ms entrance, so the page is still dimming after the dialog has
-  // arrived.
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/dxaml/lib/LayoutTransition_partial.cpp
-  // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-dialog/library/src/components/DialogBackdropMotion.ts
+  // The dimming layer behind the dialog. ContentDialog's storyboard gives the
+  // scale to the dialog's own background element and the opacity to LayoutRoot,
+  // which is what the dim rides, so the backdrop never moves; and it states the
+  // same opacity leg for showing and for hiding, so the two directions match.
+  // That is the same 83ms linear fade every other opacity leg here takes.
+  //
+  // Fluent's is DialogBackdropMotion = FadeRelaxed, whose duration is
+  // motionTokens.durationGentle -- 250ms, the same length as Fluent's own
+  // dialog entrance rather than longer than it. Replacing it is the ordinary
+  // transcription this file exists for and not the correction of a mismatch.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L82-L93
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L101-L112
+  // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-dialog/library/src/components/DialogBackdropMotion.ts#L1-L3
+  // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-motion-components-preview/library/src/components/Fade/Fade.ts#L46
+  // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-motion/library/src/motions/motionTokens.ts#L9
   const DialogBackdropMotion = components.createPresenceComponent({
     enter: fadeIn,
     exit: fadeOut,
