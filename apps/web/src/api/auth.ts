@@ -2,8 +2,6 @@ import type { InferResponseType } from 'hono/client';
 
 import { api, callApi, type ApiResult } from './client';
 
-// Derived from the routes, like every DTO in api/types.ts: a hand-written copy
-// of a response shape only reports drift once a missing field is read.
 type MeResponse = InferResponseType<typeof api.auth.me.$get, 200>;
 export type LoginResponse = InferResponseType<typeof api.auth.login.$post, 200>;
 type ChangeOwnPasswordResponse = InferResponseType<typeof api.api.users.me.password.$patch, 200>;
