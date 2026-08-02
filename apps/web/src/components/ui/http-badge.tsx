@@ -4,19 +4,13 @@ import { fluentComponents } from '../../fluent';
 
 const { Badge, makeStyles } = fluentComponents;
 
-// A method or a status is a badge like any other here, so it takes the size the
-// upstream and model chips take: a 24px pill carrying the 12px-on-16px Caption
-// that Badge's own reset states and that the WinUI layer runs at the regular
-// weight. What is ours is the face and the width floor; the pill's fill, stroke
-// and label colour are the tint appearance's, in both schemes.
+// The label is a wire token, so it is set in the monospace stack, but it keeps
+// the badge's Caption size rather than stepping onto the app's mono ramp: that
+// ramp's one-pixel reduction is spent against the prose a code span sits inside,
+// and a badge label has none beside it.
 //
-// The label is a wire token, so it is set in the monospace stack. It keeps the
-// badge's Caption size rather than stepping onto the app's mono ramp: that
-// ramp's one-pixel reduction is spent against the prose a code span sits
-// inside, and a badge label has no prose beside it.
-//
-// The floor is wider than any method an endpoint table lists, so the column
-// they sit in reads as one width rather than one width per method name.
+// The width floor is wider than any method an endpoint table lists, so the
+// column reads as one width rather than one per method name.
 const useStyles = makeStyles({
   root: {
     fontFamily: 'var(--fontFamilyMonospace)',
