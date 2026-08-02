@@ -88,14 +88,28 @@ const palette = {
   // ramps unmapped is what let a chip, a badge, a tab chip and the colour
   // picker's swatch grid wear Fluent blue beside WinUI accent, and let a dark
   // filled badge pair black on-accent text with Fluent's dark brand fill.
+  //
+  // Stroke2 is the odd one out: its consumers -- a tinted chip's outline and
+  // the divider between the two halves of a brand InteractionTag -- are strokes
+  // ON the accent surface rather than around a neutral one, which is the role
+  // SplitButton fills with ControlStrokeColorOnAccentTertiary for its own
+  // checked divider.
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L36-L38
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L103-L105
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L11-L13
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SplitButton/SplitButton_themeresources.xaml#L9-L11
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SplitButton/SplitButton_themeresources.xaml#L17
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SplitButton/SplitButton_themeresources.xaml#L32
   colorBrandBackground: 'var(--winui-accent-fill-default)',
   colorBrandBackgroundHover: 'var(--winui-accent-fill-secondary)',
   colorBrandBackgroundPressed: 'var(--winui-accent-fill-tertiary)',
   colorBrandBackgroundSelected: 'var(--winui-accent-fill-default)',
+  colorBrandBackground2: 'var(--winui-accent-fill-default)',
+  colorBrandBackground2Hover: 'var(--winui-accent-fill-secondary)',
+  colorBrandBackground2Pressed: 'var(--winui-accent-fill-tertiary)',
+  colorBrandForeground2: 'var(--winui-text-on-accent-fill-primary)',
   colorBrandStroke1: 'var(--winui-accent-fill-default)',
+  colorBrandStroke2: 'var(--winui-control-stroke-on-accent-tertiary)',
   colorCompoundBrandStroke: 'var(--winui-accent-fill-default)',
   colorCompoundBrandStrokeHover: 'var(--winui-accent-fill-secondary)',
   colorCompoundBrandStrokePressed: 'var(--winui-accent-fill-tertiary)',
