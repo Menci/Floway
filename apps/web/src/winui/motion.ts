@@ -9,10 +9,13 @@ export const CONTROL_FASTER_ANIMATION_MS = 83;
 export const CONTROL_FAST_OUT_SLOW_IN_EASING = 'cubic-bezier(0, 0, 0, 1)';
 
 // SplitView's overlaying pane, which is the pane NavigationView opens over its
-// content. Its open transition translates the pane and the pane's clip, with no
-// opacity and no shadow key frame riding along.
+// content. Its transition translates the pane and the pane's clip, with no
+// opacity and no shadow key frame riding along, and it leaves faster than it
+// arrives on the one spline both directions share.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SplitView/SplitView_themeresources.xaml#L63-L70
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SplitView/SplitView_themeresources.xaml#L185-L190
 export const PANE_SLIDE_MS = 350;
+export const PANE_SLIDE_OUT_MS = 120;
 export const PANE_SLIDE_EASING = 'cubic-bezier(0.1, 0.9, 0.2, 1)';
 
 // Expander's own open and close, which are neither the control durations above

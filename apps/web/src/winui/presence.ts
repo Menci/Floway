@@ -11,6 +11,7 @@ import {
   CONTROL_NORMAL_ANIMATION_MS,
   PANE_SLIDE_EASING,
   PANE_SLIDE_MS,
+  PANE_SLIDE_OUT_MS,
 } from './motion';
 
 type FluentComponents = typeof import('@fluentui/react-components');
@@ -99,8 +100,7 @@ export const withWinuiMotion = (components: FluentComponents): FluentComponents 
   // how far WinUI depth is carried here. Fluent instead fades the surface in
   // and ramps shadow64 alongside the slide over a size-dependent duration, and
   // since it is the only shadow the drawer has, dropping the term leaves the
-  // open surface flat. One duration serves both directions; WinUI's own close
-  // is shorter than its open.
+  // open surface flat.
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L96-L107
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SplitView/SplitView_themeresources.xaml#L185-L190
   // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-drawer/library/src/shared/drawerMotions.ts#L14-L19
@@ -112,7 +112,7 @@ export const withWinuiMotion = (components: FluentComponents): FluentComponents 
 
     return {
       enter: { keyframes: [closed, open], duration: PANE_SLIDE_MS, easing: PANE_SLIDE_EASING },
-      exit: { keyframes: [open, closed], duration: PANE_SLIDE_MS, easing: PANE_SLIDE_EASING },
+      exit: { keyframes: [open, closed], duration: PANE_SLIDE_OUT_MS, easing: PANE_SLIDE_EASING },
     };
   });
 
