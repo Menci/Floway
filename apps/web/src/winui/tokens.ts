@@ -362,8 +362,14 @@ export const winuiTokenCss = `
   }
 }
 
-/* Text on and against accent.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L214-L218 */
+/* Text on and against accent. The light dictionary's disabled step is opaque
+   white rather than a wash, so every disabled accent surface renders its label
+   at about 1.7:1 there against AccentFillColorDisabled. That is WinUI's own
+   result -- measured off Microsoft's screenshots on the issue below, which
+   they closed as not planned -- so it is transcribed, not corrected; raising it
+   would be a departure of ours to own. Dark's #87ffffff reaches about 3.7:1.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L214-L218
+   https://github.com/microsoft/microsoft-ui-xaml/issues/6500 */
 :root {
   --winui-accent-text-fill-disabled: #0000005c;
   --winui-text-on-accent-fill-primary: #ffffff;
