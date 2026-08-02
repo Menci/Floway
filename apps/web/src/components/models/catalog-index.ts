@@ -1,9 +1,7 @@
 import type { ControlPlaneModel } from '../../api/types';
 
-// Every catalog lookup in the dashboard asks the same question — the real
-// model addressed by an id — and asks it from inside a loop over another
-// collection: per alias target, per row, per candidate while filtering the
-// whole catalog. Built once and passed down, so the scan does not repeat.
+// Built once and passed down: every catalog lookup happens inside a loop over
+// another collection, so a per-call scan would be quadratic.
 export type CatalogIndex = ReadonlyMap<string, ControlPlaneModel>;
 
 export const indexCatalog = (

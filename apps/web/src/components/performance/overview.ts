@@ -93,9 +93,8 @@ export const performanceValue = (
   return us === null || us <= 0 ? null : 1_000_000 / us;
 };
 
-// A group is resolved to a name once per chart series, once per table row and
-// twice per comparison of the table's sort, so the three id-to-name lookups are
-// indexed together rather than scanned per call.
+// Indexed rather than scanned per call: a group is resolved to a name once per
+// chart series, once per table row and twice per sort comparison.
 export interface PerformanceLabels {
   upstreams: ReadonlyMap<string, string>;
   users: ReadonlyMap<string, string>;

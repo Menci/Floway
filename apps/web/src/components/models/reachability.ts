@@ -18,9 +18,8 @@ const realModelReachable = (
   cap: readonly string[] | null,
 ) => cap === null || model.upstreams.some(upstream => cap.includes(upstream.id));
 
-// The alias targets the caller could actually route to right now. A target
-// whose id resolves to no catalog row — operator typo, model withdrawn — is
-// unreachable, as is one whose every binding sits outside the cap.
+// A target whose id resolves to no catalog row is unreachable, as is one whose
+// every binding sits outside the cap.
 export const reachableTargets = (
   alias: ControlPlaneModel,
   catalog: CatalogIndex,
@@ -41,10 +40,6 @@ export const isModelReachable = (
   ? realModelReachable(model, cap)
   : reachableTargets(model, catalog, cap).length > 0;
 
-// Reachability is asked of a whole catalog more often than of a single row, and
-// the index every such pass needs is derived from that same catalog — so the
-// callers hand over the catalog and the cap, and narrowing to a kind is the one
-// thing they still say for themselves.
 export const reachableModels = (
   catalog: readonly ControlPlaneModel[],
   cap: readonly string[] | null,

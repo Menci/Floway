@@ -66,9 +66,8 @@ export const computeAliasWarnings = (
   if (shadowed && !alias.targets.some(target => target.target_model_id === alias.name)) {
     warnings.push({ type: 'shadow', key: 'shadow', values: { id: shadowed.id, display: shadowed.display_name === shadowed.id ? '' : shadowed.display_name } });
   }
-  // Only once a target has been entered. A new alias opens on one blank row, so
-  // nothing resolves yet by construction, and saying so before the operator has
-  // typed anything reports the starting state as a fault.
+  // A new alias opens on one blank row, so warning before anything is typed
+  // would report the starting state as a fault.
   const entered = alias.targets.filter(target => target.target_model_id !== '');
   if (catalog !== null && entered.length > 0 && !entered.some(target => catalog.has(target.target_model_id))) {
     warnings.push({ type: 'no-target', key: 'noTarget' });

@@ -5,29 +5,23 @@ import { ALIAS_RULE_BADGE_FIELDS, formatAliasRuleBadges, type AliasRuleBadge, ty
 
 export type ModelBadge =
   | { key: string; kind: 'limit'; limit: 'context' | 'prompt' | 'output'; value: string }
-  // Sole reachable target: the raw model id, not its display name, so the badge
-  // mirrors what the operator typed into the alias target and what a client
-  // would put on the wire.
+  // The raw model id rather than the display name, so the badge mirrors what a
+  // client would put on the wire.
   | { key: string; kind: 'aliasOfModel'; target: string }
   | { key: string; kind: 'aliasOfCount'; reachable: number; total: number }
   | { key: string; kind: 'selection'; selection: 'random' | 'first-available' }
   | { key: string; kind: 'rule'; field: AliasRuleBadgeField; value: AliasRuleBadge['value'] | null; varies: boolean };
 
-// A specification, not a count: the badge quotes what the model advertises,
-// and "128k context" is how that number is written in the documentation an
-// operator would compare it against. Deliberately not the app's compact number
-// formatter, which would render it `128K`, and `12.8万` under zh-Hans.
+// Deliberately not the app's compact number formatter, which renders `128K`,
+// and `12.8万` under zh-Hans; a spec is quoted as its documentation writes it.
 const formatTokenLimit = (count: number): string => {
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(count % 1_000_000 === 0 ? 0 : 1)}M`;
   if (count >= 1_000) return `${(count / 1_000).toFixed(count % 1_000 === 0 ? 0 : 1)}k`;
   return String(count);
 };
 
-// The upstreams a request for this model would actually reach. A real model
-// advertises its own bindings; an alias carries none on the wire — the server
-// lifts that information onto the targets — so the union of its reachable
-// targets' in-cap bindings is what gives an alias the same badge shape a real
-// model has.
+// An alias carries no bindings on the wire, so the union of its reachable
+// targets' in-cap bindings is what gives it a real model's badge shape.
 export const effectiveUpstreams = (
   model: ControlPlaneModel,
   catalog: CatalogIndex,
@@ -44,9 +38,8 @@ export const effectiveUpstreams = (
   }));
 };
 
-// One reachable target renders its configured rules; multiple reachable
-// targets collapse disagreements to "varies", so the row describes the active
-// resolver candidates rather than an unreachable target's configuration.
+// Disagreements across several reachable targets collapse to "varies", so the
+// row describes the active resolver candidates rather than any one target.
 const ruleBadges = (targets: readonly AliasTarget[]): ModelBadge[] => {
   if (targets.length === 1) {
     return formatAliasRuleBadges(targets[0]!.rules)
@@ -96,8 +89,6 @@ export const modelBadges = (
   badges.push(sole === null
     ? { key: 'aliasOf', kind: 'aliasOfCount', reachable: reachable.length, total: alias.targets.length }
     : { key: 'aliasOf', kind: 'aliasOfModel', target: sole.id });
-  // The selection strategy only decides anything when the resolver has more
-  // than one candidate to pick between.
   if (reachable.length > 1) badges.push({ key: 'selection', kind: 'selection', selection: alias.selection });
   return [...badges, ...ruleBadges(reachableAliasTargets)];
 };

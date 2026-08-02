@@ -7,12 +7,8 @@ import type { ControlPlaneModel } from '../../api/types';
 import { Chip } from '../ui/chip';
 import { ProviderBadge } from '../upstreams/provider-badge';
 
-// A model id inside a chip is set in the monospace face at the smallest step
-// of the shared mono scale, which is one pixel under the 12px caption the chip
-// runs at, so the monospace face does not out-measure the proportional text
-// beside it. The chip's own colour, its caption size and the semibold weight
-// of a `strong` are all stated once elsewhere -- by Fluent's outline Tag, by
-// its caption ramp, and by global.css -- so nothing here restates them.
+// One step under the chip's 12px caption, so the monospace face does not
+// out-measure the proportional text beside it.
 const modelValueClassName = 'font-mono mono-size-xs';
 
 const ruleBadgeContent = (
@@ -72,14 +68,8 @@ const badgeContent = (
   }
 };
 
-// The model row's capability summary: which upstreams a request would reach,
-// the token limits the catalog advertises, and — for an alias — what it
-// resolves to under the caller's current upstream cap.
-//
-// These are attributes of the selected model, which is what Fluent's Tag
-// represents; Badge is a decoration for a UI element, and CounterBadge and
-// PresenceBadge cover the count and status cases. A Tag that is not
-// dismissible renders as a plain span, so the row states facts without
+// Tag rather than Badge: these are attributes of the selected model, and a
+// non-dismissible Tag renders as a plain span, so the row states facts without
 // offering an interaction it does not have.
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-tags/stories/src/Tag/TagDescription.md
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-badge/stories/src/Badge/BadgeDescription.md

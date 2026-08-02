@@ -1,10 +1,8 @@
 import type { AliasTarget, AnnouncedMetadata } from '../../api/types';
 
-// What the dialog's controls can hold but an alias cannot mean. Each rule is
-// stated once here and read twice: the editor that owns the control renders
-// the message on it, and the dialog's schema asks the same question again to
-// refuse the submit. Neither can drift from the other, and no rule can end up
-// blocking a save without saying why.
+// Each rule is read twice -- by the editor that renders the message on its
+// control, and by the dialog's schema that refuses the submit -- so that no
+// rule can block a save without saying why.
 
 const isTokenCount = (value: unknown): boolean =>
   typeof value === 'number' && Number.isInteger(value) && value >= 0;
@@ -38,9 +36,8 @@ export const announcedMetadataIssues = (metadata: AnnouncedMetadata): AnnouncedM
   const budget = metadata.chat?.reasoning?.budget_tokens;
   if (budget?.min !== undefined && !isTokenCount(budget.min)) issues.budgetMin = 'dashboard.modelAliases.validation.metadataNumber';
   if (budget?.max !== undefined && !isTokenCount(budget.max)) issues.budgetMax = 'dashboard.modelAliases.validation.metadataNumber';
-  // A range only means anything once both ends are numbers, so the ordering
-  // rule waits for the ends to be readable rather than piling onto a field
-  // that is already saying it holds the wrong kind of value.
+  // The ordering rule waits for both ends to be readable rather than piling
+  // onto a field already reporting the wrong kind of value.
   if (issues.budgetMax === undefined && issues.budgetMin === undefined && budget?.min !== undefined && budget.max !== undefined && budget.max < budget.min) {
     issues.budgetMax = 'dashboard.modelAliases.validation.metadataRange';
   }

@@ -19,17 +19,9 @@ const usePerformanceTableStyles = makeStyles({
     whiteSpace: 'nowrap',
     '& .fui-TableHeaderCell__button': { justifyContent: 'flex-end', whiteSpace: 'nowrap' },
   },
-  // The truncated group name is the cell's tooltip trigger and therefore a tab
-  // stop of its own, so it draws its own focus visual: the cell around it takes
-  // no focus, and the ring the layer gives a table cell never fires. WinUI's is
-  // a 2px FocusStrokeColorOuter ring with 1px of FocusStrokeColorInner
-  // immediately inside it. Both are drawn inside the name's own box, because
-  // the cell clips whatever leaves it -- the outline covers the outer two of
-  // the shadow's three pixels, which leaves the inner ring as the third. Each
-  // stroke is stated per theme in the dictionaries and reached through the
-  // custom property, so the one declaration serves both schemes; under a forced
-  // palette the user agent drops the shadow and paints the outline in the
-  // system focus colour.
+  // The truncated group name is the tooltip trigger and so a tab stop of its
+  // own, while the cell around it never takes focus. Both WinUI strokes are
+  // drawn inside the name's own box because the cell clips whatever leaves it.
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
   groupName: {
