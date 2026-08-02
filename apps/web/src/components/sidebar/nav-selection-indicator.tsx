@@ -83,6 +83,7 @@ export function NavSelectionIndicator({
   const trackRef = useRef<HTMLDivElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
   const previousRef = useRef<Geometry | null>(null);
+  const ranFor = useRef<string | undefined>(undefined);
   const [geometry, setGeometry] = useState<Geometry | null>(null);
 
   useLayoutEffect(() => {
@@ -92,9 +93,17 @@ export function NavSelectionIndicator({
     // out first.
     if (!container || !item) return;
     const next = geometryOf(container, item);
-    // Arriving from the other list, which is reaching its own bar out in this
-    // same commit. Waiting that out is what separates the two.
-    if (previousRef.current) {
+    // The wait is for a hand-over and for nothing else: the other list is
+    // reaching its own bar out in this same commit, and waiting that out is
+    // what separates the two. So it is keyed on the selection having MOVED
+    // here, rather than on this list not having held it before -- which is
+    // also true on a fresh load, where nobody is reaching and the page the
+    // reader asked for would sit unmarked for the length of a reach. Running
+    // again on the same selection is not a move either, which is what a
+    // StrictMode double pass is.
+    const moved = ranFor.current !== undefined && ranFor.current !== selectedValue;
+    ranFor.current = selectedValue;
+    if (previousRef.current || !moved) {
       setGeometry(next);
       return;
     }
