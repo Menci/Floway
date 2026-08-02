@@ -9,8 +9,7 @@ const languageLocales: Record<SupportedLanguage, string> = {
   'zh-Hans': 'zh-CN',
 };
 
-// Traditional tags fold onto Simplified rather than falling back to English: a
-// Traditional reader gets more out of Simplified Chinese than out of English.
+// A Traditional reader gets more out of Simplified Chinese than out of English.
 export const normalizeLanguage = (value: string | null | undefined): SupportedLanguage | null => {
   if (!value) return null;
 
