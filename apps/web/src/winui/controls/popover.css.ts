@@ -43,13 +43,18 @@ export const popoverCss = `
 }
 
 /* Forced colours already collapse the fill and the stroke onto the system
-   colours the HighContrast dictionary names, so its doubled stroke width is
-   the one value restated there.
+   colours the HighContrast dictionary names, which leaves the stroke width and
+   the elevation. Fluent paints the elevation as a filter, which is not a
+   forced-colors property and so keeps painting where a box-shadow would have
+   been forced away, and WinUI casts no drop shadow at all while a high
+   contrast theme is active.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/FlyoutPresenter_themeresources.xaml#L9-L13
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/comptree/HWCompNodeWinRT.cpp#L3962-L3970
    https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
 @media (forced-colors: active) {
   .fui-PopoverSurface.fui-PopoverSurface {
     border-width: 2px;
+    filter: none;
   }
 }
 `;

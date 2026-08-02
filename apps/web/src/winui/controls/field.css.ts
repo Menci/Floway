@@ -77,7 +77,9 @@ export const fieldCss = `
    --winui-text-base-medium) at the text control's own 14px FontSize, where
    Fluent's secondary text is the 12px caption ramp. Hint and validation message
    share one neutral base atom, so the colour is written as a redefinition of
-   that token on both slots.
+   that token on both slots. DescriptionPresenter carries no Margin, where
+   Fluent lifts its subordinate line off the control by spacingVerticalXXS, so
+   the gutter is taken back out.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L340
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L186
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L36 */
@@ -86,6 +88,7 @@ export const fieldCss = `
   --colorNeutralForeground3: var(--winui-text-base-medium);
   font-size: var(--fontSizeBase300);
   line-height: var(--lineHeightBase300);
+  margin-top: 0;
 }
 
 /* WinUI's only subordinate-text slot, Description, is a bare ContentPresenter
@@ -149,6 +152,39 @@ export const fieldCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L76 */
 .fui-Field__validationMessage.fui-Field__validationMessage:has(> .fui-Field__validationMessageIcon.${fieldSuccessIconAtom}) {
   color: var(--winui-system-fill-success);
+}
+
+/* The info glyph is a subtle button in WinUI terms, and a subtle button says
+   pointer with its fill: SubtleButtonBackground walks transparent, secondary,
+   tertiary while SubtleButtonForeground holds TextFillColorPrimary from rest
+   through PointerOver and steps one down the text ramp on Pressed. Fluent
+   inverts that -- its fill stays transparent and its foreground climbs the
+   brand ramp on hover, on press and for as long as the tip is open -- so both
+   halves are restated here. The glyph rests one step lower than a subtle
+   button's label, on colorNeutralForeground2, which ../theme.ts resolves to
+   TextFillColorSecondary, so holding and then stepping once lands on secondary
+   and tertiary. A flyout merely being open is a state WinUI states no
+   foreground for, so the selected step is the rest colour.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L17-L24 */
+.fui-InfoButton.fui-InfoButton {
+  --colorTransparentBackgroundHover: var(--winui-subtle-fill-secondary);
+  --colorTransparentBackgroundPressed: var(--winui-subtle-fill-tertiary);
+  --colorNeutralForeground2BrandHover: var(--winui-text-fill-secondary);
+  --colorNeutralForeground2BrandPressed: var(--winui-text-fill-tertiary);
+  --colorNeutralForeground2BrandSelected: var(--winui-text-fill-secondary);
+}
+
+/* Fluent renders both weights of the bundled info icon and swaps which one is
+   displayed on hover and while the tip is open. Every state a subtle button
+   names is a brush -- fill, foreground and stroke, and nothing else -- so the
+   outline weight is pinned for all of them.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L17-L28 */
+.fui-InfoButton.fui-InfoButton .fui-Icon-filled.fui-Icon-filled {
+  display: none;
+}
+
+.fui-InfoButton.fui-InfoButton .fui-Icon-regular.fui-Icon-regular {
+  display: inline-flex;
 }
 
 /* A link's three enabled steps. WinUI walks a HyperlinkButton down the accent
