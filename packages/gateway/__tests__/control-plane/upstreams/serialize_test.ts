@@ -23,6 +23,7 @@ const custom: UpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  modelsCache: null,
   color: null,
   config: {
     baseUrl: 'https://api.example.com',
@@ -169,6 +170,7 @@ const claudeCodeBase = (overrides: { config?: unknown; state?: unknown }): Upstr
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  modelsCache: null,
   color: null,
   config: overrides.config ?? { accounts: [{ email: 'a@example.com' }] },
   state: overrides.state ?? null,
@@ -186,6 +188,7 @@ const codexBase = (overrides: { config?: unknown; state?: unknown }): UpstreamRe
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  modelsCache: null,
   color: null,
   config: overrides.config ?? { accounts: [{ email: 'a@example.com' }] },
   state: overrides.state ?? null,

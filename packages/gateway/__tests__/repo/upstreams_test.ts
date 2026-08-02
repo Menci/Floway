@@ -20,6 +20,7 @@ const upstream = (overrides: Partial<UpstreamRecord> & Pick<UpstreamRecord, 'id'
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  modelsCache: null,
   color: null,
   ...overrides,
 });
@@ -394,6 +395,7 @@ test('SQL upstream repo round-trips a non-null model_prefix', async () => {
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['prefixed'] },
+    modelsCache: null,
     color: null,
   };
   await repo.save(record);

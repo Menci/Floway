@@ -137,6 +137,7 @@ const makeCandidate = (overrides: {
       name: upstream,
       disabledPublicModelIds: [],
       modelPrefix: null,
+      modelsCache: null,
       instance: provider,
     },
     model: stubInternalModel({

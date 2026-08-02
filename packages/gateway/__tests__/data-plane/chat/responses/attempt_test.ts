@@ -65,6 +65,7 @@ const makeCandidate = (
       name: upstream,
       disabledPublicModelIds: [],
       modelPrefix: null,
+      modelsCache: null,
       instance: provider,
     },
     model: stubInternalModel({
@@ -290,6 +291,7 @@ test('generate defers role promotion until after translation to Chat Completions
       name: upstream,
       disabledPublicModelIds: [],
       modelPrefix: null,
+      modelsCache: null,
       instance: stubProvider({ callChatCompletions }),
     },
     model: stubInternalModel({
@@ -441,7 +443,7 @@ test('generate inherits headers and injects external image loading across transl
   const candidate: ModelCandidate = {
     provider: {
       upstreamId: 'up_test', kind: 'custom', name: 'up_test',
-      disabledPublicModelIds: [], modelPrefix: null, instance: messagesProvider,
+      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, instance: messagesProvider,
     },
     model: upstreamModel,
     fetcher: directFetcher,
