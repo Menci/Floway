@@ -103,9 +103,11 @@
 // Opting a subtree out of the restyle
 // ---------------------------------------------------------------------------
 //
-// `data-winui-card-restyle='off'` on an element removes the layer from it and
-// everything below. Surfaces designed against Fluent's own palette and
-// elevations live under it — the playground transcript and composer above all.
+// `data-winui-card-restyle='off'` on an element withdraws from it, and from
+// everything below it, the part of the layer that opted into the attribute.
+// Surfaces designed against Fluent's own palette and elevations live under it —
+// the playground transcript and composer above all.
+//
 // Two mechanisms carry it, and which one a rule needs depends on what the rule
 // spends. A rule that reads a `--winui-*` custom property goes through an
 // indirection declared on `:root` and reset to `initial` under the attribute,
@@ -113,6 +115,15 @@
 // expressed as a value — geometry, a new declaration Fluent does not make —
 // excludes the subtree in its selector with
 // `:not([data-winui-card-restyle='off'] *)`.
+//
+// Its reach is exactly the token indirections ./controls/card.css.ts declares
+// plus the files that name the selector: ./reset.css.ts, and
+// ./controls/{button,card,scrollbar,text-input,toolbar}.css.ts. Every geometry,
+// glyph size and inset the other control files state still applies inside an
+// opted-out subtree — a Combobox placed in one would take Fluent's height from
+// text-input.css.ts's guarded rule and WinUI's insets from select.css.ts's
+// unguarded ones. Nothing in the app is in that position today; a control newly
+// placed under the attribute has to be added to the guard deliberately.
 //
 // The attribute cannot reach a portalled surface: a tooltip, a dialog or a menu
 // mounts under the provider root rather than under the element that opened it,
