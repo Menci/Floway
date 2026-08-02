@@ -10,11 +10,18 @@ export const winuiAppearanceAttribute = 'data-winui-appearance';
 export const winuiIntentAttribute = 'data-winui-intent';
 export const winuiSizeAttribute = 'data-winui-size';
 export const winuiShapeAttribute = 'data-winui-shape';
+export const winuiCheckedAttribute = 'data-winui-checked';
 
 type SlotProps = Record<string, unknown>;
 type PropCarrier = Record<string, unknown>;
 type MessageBarIntent = 'error' | 'warning' | 'success' | 'info';
 interface IntentCarrier { intent?: MessageBarIntent; icon?: React.ReactNode }
+type CheckedState = boolean | 'mixed';
+interface CheckedCarrier {
+  checked?: CheckedState;
+  defaultChecked?: CheckedState;
+  onChange?: (ev: React.ChangeEvent<HTMLInputElement>, data: { checked: CheckedState }) => void;
+}
 
 // Where the root is not the primary slot, `getPartitionedNativeProps` forwards a
 // top-level `data-*` to the inner `<input>`/`<textarea>`/`<select>` instead of
@@ -87,6 +94,70 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
   const shape = (fallback: string, slots?: readonly string[]) =>
     ({ prop: 'shape', attribute: winuiShapeAttribute, fallback, slots });
 
+  // A tri-state check box carries its mixed state only as the input's
+  // `indeterminate` property, which Fluent assigns from a layout effect keyed on
+  // that state. The browser clears the property on user activation, and the
+  // effect does not re-run while the state stays mixed, so `:indeterminate` is
+  // gone for good on a box held at mixed while Fluent keeps painting mixed. The
+  // resolved tri-state is stamped instead, and ./controls/choice.css.ts reads
+  // the stamp rather than the property.
+  //
+  // Fluent's own resolution is mirrored here: the prop wins where it is given,
+  // otherwise the last value its onChange reported, seeded from defaultChecked.
+  // https://html.spec.whatwg.org/multipage/input.html#the-input-element:legacy-pre-activation-behavior
+  // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-checkbox/library/src/components/Checkbox/useCheckbox.tsx#L163-L169
+  // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-checkbox/library/src/components/Checkbox/useCheckbox.tsx#L93-L97
+  // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-checkbox/library/src/components/Checkbox/useCheckbox.tsx#L152-L156
+  const stampCheckedState = <Component>(component: Component): Component => {
+    const elementType = component as React.ElementType;
+
+    const wrapped = React.forwardRef<unknown, CheckedCarrier>((props, ref) => {
+      const [uncontrolled, setUncontrolled] = React.useState<CheckedState>(props.defaultChecked ?? false);
+      const checked = props.checked ?? uncontrolled;
+
+      return React.createElement(elementType, {
+        ...props,
+        [winuiCheckedAttribute]: String(checked),
+        onChange: (ev: React.ChangeEvent<HTMLInputElement>, data: { checked: CheckedState }) => {
+          setUncontrolled(data.checked);
+          props.onChange?.(ev, data);
+        },
+        ref,
+      });
+    });
+
+    wrapped.displayName = (component as { displayName?: string }).displayName;
+
+    return wrapped as Component;
+  };
+
+  // The table builds the selection cell's check box itself, so the stamp reaches
+  // it through that slot, carrying the cell's own tri-state. The slot is left
+  // alone where the cell draws a radio or suppresses the box, because a slot
+  // object of our making would render a box the cell had not asked for.
+  // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-table/library/src/components/TableSelectionCell/useTableSelectionCell.ts#L20-L36
+  const stampSelectionCellCheckedState = <Component>(component: Component): Component => {
+    const elementType = component as React.ElementType;
+
+    const wrapped = React.forwardRef<unknown, PropCarrier>((props, ref) => {
+      const drawsCheckbox = (props.type ?? 'checkbox') === 'checkbox' && props.checkboxIndicator !== null;
+      const stampedSlotProps = drawsCheckbox
+        ? {
+          checkboxIndicator: {
+            ...resolveSlotProps(props.checkboxIndicator),
+            [winuiCheckedAttribute]: String(props.checked ?? false),
+          },
+        }
+        : {};
+
+      return React.createElement(elementType, { ...props, ...stampedSlotProps, ref });
+    });
+
+    wrapped.displayName = (component as { displayName?: string }).displayName;
+
+    return wrapped as Component;
+  };
+
   // Every InfoBar severity is a circle in WinUI, where Fluent reaches for a
   // diamond for `error` and a triangle for `warning`. The intent is stamped
   // alongside because Fluent settles it in JavaScript.
@@ -155,7 +226,8 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
     Combobox: stamp(components.Combobox, appearance('outline', rootAndPrimary)),
     Dropdown: stamp(components.Dropdown, appearance('outline', rootAndPrimary)),
     Card: stamp(components.Card, appearance('filled', rootIsPrimary)),
-    Checkbox: stamp(components.Checkbox, shape('square', rootAndPrimary)),
+    Checkbox: stampCheckedState(stamp(components.Checkbox, shape('square', rootAndPrimary))),
+    TableSelectionCell: stampSelectionCellCheckedState(components.TableSelectionCell),
     Switch: stamp(components.Switch, size('medium', rootAndPrimary)),
   };
 };

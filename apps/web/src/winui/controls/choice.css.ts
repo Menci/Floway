@@ -362,9 +362,12 @@ ${under(radioPressed, [selectedDot])} {
 @media not (forced-colors: active) {
   /* WinUI holds the label at TextFillColorPrimary through every enabled state;
      the disabled label is left to Fluent, whose token already resolves to
-     TextFillColorDisabled.
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L122-L125 */
-  .fui-Radio .fui-Radio__input:enabled ~ .fui-Radio__label.fui-Radio__label {
+     TextFillColorDisabled. Fluent walks its own neutral ramp for an unchecked
+     radio under the pointer from a selector that ties this one on specificity
+     and is inserted later, so the label slot is named a third time to clear it.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L122-L125
+     https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-radio/library/src/components/Radio/useRadioStyles.styles.ts#L53-L67 */
+  .fui-Radio .fui-Radio__input:enabled ~ .fui-Radio__label.fui-Radio__label.fui-Radio__label {
     color: var(--winui-text-fill-primary);
   }
 
