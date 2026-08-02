@@ -47,21 +47,28 @@ const countRecords = (data: BackupFileData): Record<string, number> => {
   return counts;
 };
 
-// What the server says it took, in the same vocabulary the readouts above the
-// Import command name. Empty entities are dropped here where the readouts keep
-// them: a report of what happened has nothing to say about a table nobody
+// What the server says it took, written as a sentence rather than assembled as
+// one. Each entity carries its own singular and plural, and `Intl.ListFormat`
+// supplies the conjunction and the separators the reader's language actually
+// uses -- "a, b, and c" against "a、b和c" -- neither of which a join can spell.
+// The figures are grouped before they are handed over, because i18next
+// interpolates a value as `String(value)` and would otherwise print 18309.
+//
+// Empty entities are dropped here where the readouts above the Import command
+// keep them: a report of what happened has nothing to say about a table nobody
 // touched, while a preview has to be able to answer that the file carries none.
 const recordSummary = (
   counts: Record<string, number>,
   t: ReturnType<typeof useTranslation>['t'],
+  locale: string,
 ): string => {
-  return PREVIEW_LABEL_KEYS
+  const parts = PREVIEW_LABEL_KEYS
     .filter(key => counts[key] > 0)
-    .map(key => t('dashboard.backupRestore.import.summaryItem', {
-      n: counts[key],
-      label: t(`dashboard.backupRestore.import.previewLabel.${key}`),
-    }))
-    .join(', ');
+    .map(key => t(`dashboard.backupRestore.import.imported.${key}`, {
+      count: counts[key],
+      n: formatCount(counts[key], locale),
+    }));
+  return new Intl.ListFormat(locale, { style: 'long', type: 'conjunction' }).format(parts);
 };
 
 export default function DashboardAdminBackupRestore() {
@@ -217,11 +224,11 @@ export default function DashboardAdminBackupRestore() {
     setImportFile(null);
     setImportParsedData(null);
     setImporting(false);
-    const summary = recordSummary(result.data.imported, t);
+    const summary = recordSummary(result.data.imported, t, locale);
     handle.succeed(summary
       ? t('dashboard.backupRestore.import.success', { summary })
       : t('dashboard.backupRestore.import.successEmpty'));
-  }, [importParsedData, replaceExisting, t, toasts]);
+  }, [importParsedData, locale, replaceExisting, t, toasts]);
 
   const handleImportClick = useCallback(() => {
     if (!importParsedData) return;
@@ -234,7 +241,7 @@ export default function DashboardAdminBackupRestore() {
 
   return (
     <section className="dashboard-page max-w-[960px]">
-      <DashboardPageHeader title={t('dashboard.backupRestore.heading')} />
+      <DashboardPageHeader description={t('dashboard.pages.backupRestore')} title={t('dashboard.backupRestore.heading')} />
 
       {/* Two operations, each framed by the panel that holds it, its parameters
           above the command that runs them and the command against the trailing

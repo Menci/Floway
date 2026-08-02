@@ -98,6 +98,8 @@ const en = {
             'Monitor latency, throughput, and upstream performance signals',
         users:
             'Manage console users, permissions, telemetry access, and upstream scopes',
+        backupRestore:
+            'Download a full copy of everything this gateway holds, or restore it from an earlier export',
         unavailable: 'This view could not be loaded',
       },
       playground: {
@@ -995,9 +997,27 @@ const en = {
               'Replace mode will permanently delete all existing data before importing. This action cannot be undone.',
           button: 'Import Data',
           pending: 'Importing the backup file',
-          success: 'Import completed: {{summary}}.',
+          success: 'Imported {{summary}}.',
           successEmpty: 'Import completed. The backup file carried no records.',
-          summaryItem: '{{n}} × {{label}}',
+          // Each entity as it is written inside a sentence: sentence case, the
+          // noun agreeing with the count, and the figure already grouped by the
+          // caller because i18next interpolation is `String(value)`.
+          imported: {
+            users_one: '{{n}} user',
+            users_other: '{{n}} users',
+            apiKeys_one: '{{n}} API key',
+            apiKeys_other: '{{n}} API keys',
+            upstreams_one: '{{n}} upstream',
+            upstreams_other: '{{n}} upstreams',
+            proxies_one: '{{n}} proxy',
+            proxies_other: '{{n}} proxies',
+            usage_one: '{{n}} usage record',
+            usage_other: '{{n}} usage records',
+            searchUsage_one: '{{n}} search-usage record',
+            searchUsage_other: '{{n}} search-usage records',
+            performance_one: '{{n}} performance record',
+            performance_other: '{{n}} performance records',
+          },
           error: 'Import failed.',
           errorInvalidFile:
               'The selected file is not a valid Floway backup file: {{message}}',

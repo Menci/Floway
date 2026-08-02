@@ -138,27 +138,42 @@ export function BackupFileSummary({ accepting, action, drop, name }: {
 
 // What the file carries, one readout per entity.
 //
-// The pair is the one ../usage/summary-metrics.tsx already reads a measured
-// value out as -- the caption at the secondary fill naming the quantity, the
-// value a step up the ramp under it, four apart. That file marks its readouts
-// as ListViewItems because each of them is a button that selects what the chart
-// plots; these are not selectable, so they take the type and none of the
-// chrome.
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBlock_themeresources.xaml#L19-L22
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBlock_themeresources.xaml#L36-L39
+// Windows ships no stat, metric or readout control -- InfoBadge is the nearest
+// thing and it is a dismissible notification, eleven pixels of type in a pill
+// that never exceeds sixteen. So the figure is not enlarged: the two steps here
+// are the ones the Gallery's own tiles pair, the body strong line over the
+// caption in the secondary fill, four apart. Where Windows does read a count
+// out beside its name -- "N Views", "N Likes" -- it sets both at the caption
+// and spends no size contrast at all, so a larger number would be ours alone.
+// https://github.com/microsoft/WinUI-Gallery/blob/f4dc3eb367f4bcecac1793829d9a221e924e5bfb/WinUIGallery/Controls/HomePage/Tile.xaml#L69-L82
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBlock_themeresources.xaml#L19-L26
 //
-// Every entity is listed, zeros included: a readout that disappears when it
-// reaches zero cannot answer "does this backup carry any performance data",
-// which is the question the operator is reading these to settle. The column
-// counts are ours, chosen so the row divides evenly at each width rather than
-// leaving one readout standing alone.
+// The name sits above the figure rather than under it, which is the order the
+// Gallery's own properties pane reads a value out in. That pane sets its label
+// at the caption and leaves the value at the body step; the strong step comes
+// from the tile above, because on this page the figure is what is being read
+// and the name only says which figure it is.
+// https://github.com/microsoft/WinUI-Gallery/blob/f4dc3eb367f4bcecac1793829d9a221e924e5bfb/WinUIGallery/Samples/Iconography/IconographyPage.xaml#L131-L231
+//
+// Eight between one readout and the next: the step Windows names for the space
+// between two controls, and the one the Gallery gives its own repeaters.
+// https://github.com/microsoft/WinUI-Gallery/blob/f4dc3eb367f4bcecac1793829d9a221e924e5bfb/WinUIGallery/Samples/Spacing/SpacingPage.xaml#L137-L180
+// https://github.com/microsoft/WinUI-Gallery/blob/f4dc3eb367f4bcecac1793829d9a221e924e5bfb/WinUIGallery/Samples/Iconography/IconographyPage.xaml#L124-L127
+//
+// Every entity is listed, zeros included. Windows clears a badge at zero, but
+// that is a rule about un-actioned notifications; a readout of what a file
+// holds has to be able to answer that it holds none of something, and a row
+// whose meaning turned on absence would answer nothing. The column counts are
+// ours, chosen so the row divides evenly at each width rather than leaving one
+// readout standing alone.
+// https://learn.microsoft.com/en-us/windows/apps/develop/notifications/badges
 export function BackupFileStats({ items }: {
   items: { key: string; label: string; value: string }[];
 }) {
-  return <dl className="m-0 grid gap-2.5 grid-cols-7 max-[900px]:grid-cols-4 max-[560px]:grid-cols-2">
+  return <dl className="m-0 grid gap-2 grid-cols-7 max-[900px]:grid-cols-4 max-[560px]:grid-cols-2">
     {items.map(item => <div className={mergeClasses(TIGHT_STACK_CLASS, 'min-w-0')} key={item.key}>
-      <dt><Text size={200} weight="semibold" className="text-fui-fg2">{item.label}</Text></dt>
-      <dd className="m-0"><Text size={500} weight="semibold">{item.value}</Text></dd>
+      <dt><Text size={200} className="text-fui-fg2">{item.label}</Text></dt>
+      <dd className="m-0"><Text size={300} weight="semibold">{item.value}</Text></dd>
     </div>)}
   </dl>;
 }
