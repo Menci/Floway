@@ -192,8 +192,13 @@ export const accordionCss = `
    What the adjustment cannot reach is the rest of the pointer state, which this
    dictionary alone paints in Highlight, and the two strokes it alone thickens
    to 2px -- the border-box sizing this app resets to keeps that thickness
-   inside the 32px chevron and the 48px row. A media query adds no specificity,
-   so the pointer rules below repeat the selectors they override.
+   inside the 32px chevron and the 48px row.
+
+   A media query adds no specificity, so the two unconditional rules below
+   restate their subject's selector exactly and win on source order alone. The
+   pointer rules need no such restatement: the state they name is not written
+   anywhere else on the button, so they carry more weight than the rest rules
+   they displace and stand on their own.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L52-L77
    https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
 @media (forced-colors: active) {
