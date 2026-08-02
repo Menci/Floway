@@ -552,6 +552,16 @@ export const winuiTokenCss = `
   --winui-button-padding: 5px 11px 6px;
 }
 
+/* ComboBoxThemeMinWidth, which WinUI puts on the template's Background border so
+   the field keeps a body no matter how short the selected value is. Spent by
+   ../components/ui/fluent-form-controls.tsx, where it is the floor a select
+   falls back to.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L321
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L571 */
+:root {
+  --winui-combo-box-min-width: 64px;
+}
+
 /* Not emitted. One metric the controls above ask for is deliberately left on
    Fluent's own value.
 

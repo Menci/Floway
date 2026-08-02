@@ -33,11 +33,13 @@ interface ReadOnlyProp {
 // container. Zeroing both lets the column decide.
 const MIN_WIDTH_CLASS = '!min-w-[0px] [&_input]:!min-w-[0px]';
 
-// A select is only as wide as the value it currently shows, so a column of them
-// has nothing to line up on. The floor is off by default and carried by a
-// variable rather than a second class, so a caller sets a value instead of
-// racing the `!important` this one needs to clear Fluent's own 250px.
-const SELECT_MIN_WIDTH_CLASS = '!min-w-[var(--floway-select-min-width,0px)] [&_input]:!min-w-[0px]';
+// A select is only as wide as the value it currently shows, so clearing Fluent's
+// 250px leaves nothing under it. The floor is WinUI's own ComboBoxThemeMinWidth,
+// stated as a token in ../../winui/tokens.ts, and the variable raises it where a
+// column of selects has to line up. Carried by a variable rather than a second
+// class, so a caller sets a value instead of racing the `!important` this one
+// needs to clear Fluent's.
+const SELECT_MIN_WIDTH_CLASS = '!min-w-[var(--floway-select-min-width,var(--winui-combo-box-min-width))] [&_input]:!min-w-[0px]';
 
 // Fluent flips the popup to whichever side has room for its natural height, so
 // a long list ends up beside the field rather than under it. Restricting the
