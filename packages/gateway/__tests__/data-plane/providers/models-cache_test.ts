@@ -26,7 +26,7 @@ const stubInstance = (
   instance: stubProvider({ getProvidedModels: fetchFn }),
 });
 
-// The cache columns live on the upstream row, so every write needs a row to
+// The cache lives on the upstream row, so every write needs a row to
 // land on.
 const setupRepo = async (): Promise<InMemoryRepo> => {
   const repo = new InMemoryRepo();

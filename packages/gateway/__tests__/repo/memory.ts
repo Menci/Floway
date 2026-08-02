@@ -566,7 +566,7 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     return Promise.resolve(found ? cloneUpstreamRecord(found) : null);
   }
 
-  // Mirrors the SQL INSERT/UPDATE column list, which omits the cache columns:
+  // Mirrors the SQL INSERT/UPDATE column list, which omits the cache column:
   // an existing row keeps whatever the refresh path last wrote there, and a new
   // row starts uncached whatever the caller's record carried.
   save(upstream: UpstreamRecord): Promise<void> {
