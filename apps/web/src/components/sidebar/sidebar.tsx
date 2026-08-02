@@ -88,6 +88,15 @@ interface NavGroup {
   items: NavItemDefinition[];
 }
 
+// The sidebar carries Fluent's multi-colour glyphs, where WinUI's
+// NavigationView draws monochrome ones and moves the icon and the label to the
+// same brush in every visual state. These assets hard-code their gradient
+// stops and consume no currentColor, so the per-state foreground
+// winui/controls/nav.css.ts substitutes reaches the label and stops there: a
+// row's glyph holds its colour through hover, press and selection. Swapping the
+// set to the monochrome Regular/Filled pair is what would close that, and it is
+// a product decision about the sidebar's look rather than a styling one.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L460-L491
 const navGroups: NavGroup[] = [
   {
     items: [
