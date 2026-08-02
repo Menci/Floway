@@ -10,8 +10,6 @@ const FAILED_MS = 2000;
 
 export type CopyOutcome = 'idle' | 'copied' | 'failed';
 
-// The same three states drive every copy button's icon, so the mapping is named
-// here and a button asks for the state it is in rather than deriving the icon.
 const COPY_OUTCOME_ICON = {
   idle: CopyRegular,
   copied: CheckmarkRegular,
@@ -23,12 +21,8 @@ const COPY_OUTCOME_ICON = {
 export const copyOutcomeIcon = (outcome: CopyOutcome): ReactElement =>
   createElement(COPY_OUTCOME_ICON[outcome]);
 
-// The labels sit under `common` rather than under a page, because the control
-// they belong to is not one page's.
-//
-// Only the resting label belongs to the call site -- "Copy", "Copy model ID",
-// "Copy authorization URL" -- so that one is asked for and the two outcome
-// labels are not.
+// Only the resting label belongs to the call site, so that one is asked for
+// and the two outcome labels are not.
 const COPY_OUTCOME_LABEL_KEY = {
   copied: 'common.copy.copied',
   failed: 'common.copy.failed',
@@ -45,8 +39,7 @@ export const useCopyLabel = (): ((outcome: CopyOutcome, idle: string) => string)
 export interface ClipboardCopy {
   /**
    * `tag` names which button is showing the outcome, so one hook can serve a
-   * whole table of them and a late expiry can only clear its own result. A lone
-   * copy button leaves it out, and asks `outcomeFor` the same way.
+   * whole table of them and a late expiry can only clear its own result.
    */
   copy: (text: string, tag?: string) => void;
   outcomeFor: (tag?: string) => CopyOutcome;

@@ -2,9 +2,8 @@ import { ArrowDownRegular, ArrowUpRegular } from '@fluentui/react-icons';
 
 import { TooltipIconButton } from './tooltip-icon-button';
 
-// The pair itself, and no container: a reorder pair sits in a flex row beside
-// an index, in a fixed grid track beside a delete button, and in a bare
-// `inline-flex` beside both. The caller owns whichever of those it is.
+// A fragment rather than a container: callers place the pair in a flex row, a
+// fixed grid track, or a bare `inline-flex`, and own that choice.
 export function ReorderButtons({ disabled = false, downLabel, isFirst, isLast, onMove, upLabel }: {
   disabled?: boolean;
   downLabel: string;

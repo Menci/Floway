@@ -5,14 +5,8 @@ import { fluentComponents } from '../../fluent';
 
 const { Spinner, Toast, Toaster, ToastTitle, useToastController } = fluentComponents;
 
-// One toaster for the whole dashboard, and one way to report that an action
-// finished.
-//
-// The division of labour is by whether the message has to survive being read.
-// Success carries nothing the operator needs to keep, so it goes here and
-// leaves. Failure carries a server's own words — `callApi` never throws, so
-// every failure message in this app is text the server wrote — and belongs in
-// a surface the operator dismisses, next to the thing that failed.
+// Success only. A failure carries a server's own words and belongs in a surface
+// that is dismissed by hand, next to the thing that failed.
 
 const TOAST_DISMISS_MS = 3000;
 
@@ -37,9 +31,8 @@ export function OutcomeToastProvider({ children }: PropsWithChildren) {
   const sequence = useRef(0);
   const { dispatchToast, dismissToast, updateToast } = useToastController(toasterId);
 
-  // A toast is an aside, and an aside that has been read has nothing left to
-  // say. Clicking one takes it back rather than making the operator wait out
-  // its timeout or aim at a close button it does not have.
+  // Clicking a toast takes it back, rather than waiting out a timeout or aiming
+  // at a close button it does not have.
   const toastFor = useCallback((toastId: string, message: string, pending: boolean) => (
     <Toast className="cursor-pointer" onClick={() => dismissToast(toastId)}>
       <ToastTitle media={pending ? <Spinner size="tiny" /> : undefined}>{message}</ToastTitle>

@@ -5,16 +5,10 @@ export interface DialogInvocation<Value> {
   value: Value;
 }
 
-// The invocation outlives the closing. A dialog rendered only while it is open
-// is closed by unmounting, and an unmounted surface cannot play the exit its
-// motion declares -- it is simply gone on the next frame. So the value is kept
-// after `close`, and `isOpen` is what the dialog is given, which leaves the
-// surface mounted for as long as Fluent needs to animate it out.
-//
-// Reopening the same entity still gets a clean form. That guarantee rests on
-// the monotonic key, not on the unmount: every `open` mints a new one, so the
-// caller's `key` changes and React replaces the subtree whether or not the
-// previous instance was still mounted.
+// The invocation outlives the closing: an unmounted surface cannot play the
+// exit its motion declares, so the value is kept after `close` and `isOpen` is
+// what the dialog is given. A clean form on reopen then rests on the monotonic
+// key rather than on the unmount.
 export interface DialogControl<Value> {
   close: () => void;
   invocation: DialogInvocation<Value> | null;
