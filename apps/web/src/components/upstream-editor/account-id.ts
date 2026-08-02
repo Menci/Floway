@@ -1,8 +1,6 @@
 const HEAD = 8;
 const TAIL = 6;
-// Below the combined width of the two slices they overlap and the id prints
-// some of its own characters twice; just above it the ellipsis costs about
-// what it saves.
+// Below HEAD + TAIL the slices overlap and repeat characters; just above it the ellipsis costs what it saves.
 const SHORTEST_WORTH_ELIDING = 18;
 
 export const shortAccountId = (id: string): string =>
