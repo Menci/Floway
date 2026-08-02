@@ -57,7 +57,7 @@ export function AliasTargetRow({
   const toggleLabel = t('dashboard.modelAliases.target.toggle');
 
   return (
-    <div className="border-0 border-t border-solid border-fui-stroke1 pt-2" role="group" aria-label={t('dashboard.modelAliases.target.label', { number: index + 1 })}>
+    <div className="border-0 border-t border-solid border-fui-divider pt-2" role="group" aria-label={t('dashboard.modelAliases.target.label', { number: index + 1 })}>
       <div className="grid grid-cols-[32px_minmax(180px,1fr)_134px] gap-2 items-center py-2 max-[620px]:grid-cols-[32px_minmax(0,1fr)]">
         <Tooltip content={toggleLabel} relationship="label">
           <Button
