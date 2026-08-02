@@ -765,14 +765,14 @@ function AccordionSection() {
         </AccordionItem>
       </Accordion>
     </Row>
-    <Row label="multiple open, and header sizes">
+    <Row label="multiple open">
       <Accordion multiple defaultOpenItems={['a', 'b']} className="!w-full">
         <AccordionItem value="a">
-          <AccordionHeader size="small">Small header</AccordionHeader>
+          <AccordionHeader>Upstream health</AccordionHeader>
           <AccordionPanel><Text>4 upstreams online.</Text></AccordionPanel>
         </AccordionItem>
         <AccordionItem value="b">
-          <AccordionHeader size="large">Large header</AccordionHeader>
+          <AccordionHeader>Model catalog</AccordionHeader>
           <AccordionPanel><Text>12 models addressable.</Text></AccordionPanel>
         </AccordionItem>
       </Accordion>

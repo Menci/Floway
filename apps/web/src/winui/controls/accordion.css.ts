@@ -17,20 +17,28 @@ export const accordionCss = `
    fill on the root would be repainted square by the button over the root's
    rounded corners.
 
-   WinUI's Expander declares no size variant, so the single min-height and
-   leading header inset are stated unconditionally, which overrides the 32px
-   min-height Fluent gives its small header.
+   WinUI's Expander declares no size variant, so the single min-height, the
+   leading header inset and the header type are stated unconditionally, which
+   overrides the 32px min-height Fluent gives its small header and the per-size
+   type it gives the small, large and extra-large ones. WinUI's header is a
+   ToggleButton carrying the Header as its content and states no font size of
+   its own, so it takes the 14 ControlContentThemeFontSize gives every button.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L96
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L77
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L80
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L5
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L9
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L14
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander.xaml#L111
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L36
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L5995
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CornerRadius_themeresources.xaml#L5 */
 .fui-AccordionHeader__button.fui-AccordionHeader__button {
   background-color: var(--winui-card-background-fill-default);
   border: 1px solid var(--winui-card-stroke-default);
   border-radius: var(--winui-control-corner-radius);
+  font-size: var(--fontSizeBase300);
+  line-height: var(--lineHeightBase300);
   min-height: 48px;
   padding-inline-start: 16px;
 }

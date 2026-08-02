@@ -37,7 +37,7 @@ export function ChartCalloutTable({ columns, rows, title }: { columns: ChartCall
             <Text style={bodyTextStyle}>{row.label}</Text>
           </span>
         </td>
-        {row.values.map((value, index) => <td className="px-1.5 text-right" key={columns[index]!.key}><Text style={bodyTextStyle}>{value}</Text></td>)}
+        {row.values.map((value, index) => <td className="px-1.5 text-right tabular-nums" key={columns[index]!.key}><Text style={bodyTextStyle}>{value}</Text></td>)}
       </tr>)}
     </tbody>
   </table>;
