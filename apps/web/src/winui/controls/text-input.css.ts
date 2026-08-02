@@ -6,9 +6,9 @@
 // needs no rule at all: Fluent's colorNeutralStroke1 plus its
 // colorNeutralStrokeAccessible bottom already resolve to what
 // TextControlElevationBorderBrush paints, and any declaration on the root would
-// outrank Fluent's focus and aria-invalid strokes. The disagreeing states are
-// written as redefinitions of the Fluent variables only those states read, so
-// Fluent's own atoms keep deciding which state wins.
+// outrank Fluent's focus stroke. The disagreeing states are written as
+// redefinitions of the Fluent variables only those states read, so Fluent's own
+// atoms keep deciding which state wins.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L48-L56
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L155-L163
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-input/library/src/components/Input/useInputStyles.styles.ts#L186-L201
@@ -145,6 +145,40 @@ export const textInputCss = `
 .fui-Input.fui-Input,
 .fui-Textarea.fui-Textarea {
   --colorNeutralStrokeDisabled: var(--winui-control-stroke-default);
+}
+
+/* A rejected value does not recolour the field. Shipped WinUI 3 has no
+   field-level error affordance at all: the input-validation design is present
+   in the dxaml templates, but the API is stripped from the release WinMD, the
+   XAML compiler skips the INotifyDataErrorInfo bridge once that type probe
+   fails, and the WinUI 3 dictionaries replace those templates with ones that
+   carry no error state -- there is even a build target named
+   DeleteInputValidate to scrub leftovers. Nothing under controls/dev assigns a
+   SystemFill role to a BorderBrush in any state; InfoBar, the one shipped error
+   surface, keeps the severity-neutral card stroke and says error in its fill,
+   its icon and its text. So the message beside the field carries the state --
+   ./field.css.ts paints it SystemFillColorCritical -- and the stroke holds its
+   rest value, which is the redefinition below.
+
+   The bottom edge cannot ride that redefinition: Fluent's invalid atom writes
+   all four longhands from the one token, so the accessible bottom stroke is
+   restated. It is guarded against the two states that outrank Invalid, and
+   Fluent's own atom is likewise written against :not(:focus-within).
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/dll/Microsoft.UI.Xaml.Common.targets#L391
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/tools/UpdateThemeResources.ps1
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/inc/FeatureFlags.h#L20-L31
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/src/XamlCompiler/BuildTasks/CompileXamlInternal.cs#L1912
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L178
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L20
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-input/library/src/components/Input/useInputStyles.styles.ts#L163-L167 */
+.fui-Input.fui-Input,
+.fui-Textarea.fui-Textarea {
+  --colorPaletteRedBorder2: var(--colorNeutralStroke1);
+}
+
+.fui-Input.fui-Input:has(> .fui-Input__input[aria-invalid='true']):not(:focus-within):not(:has(> .fui-Input__input:disabled)),
+.fui-Textarea.fui-Textarea:has(> .fui-Textarea__textarea[aria-invalid='true']):not(:focus-within):not(:has(> .fui-Textarea__textarea:disabled)) {
+  border-bottom-color: var(--colorNeutralStrokeAccessible);
 }
 
 /* WinUI holds the placeholder one step more prominent than Fluent's Foreground4

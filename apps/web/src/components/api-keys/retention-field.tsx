@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -88,6 +88,7 @@ export function RetentionField({
 }) {
   const { t } = useTranslation();
   const dangerText = useDangerTextClass();
+  const errorId = useId();
   const [editor, setEditor] = useState(() => editorStateFor(value, offValue, presets, customInputUnit));
   if (editor.value !== value) {
     setEditor(editorStateFor(value, offValue, presets, customInputUnit));
@@ -129,6 +130,8 @@ export function RetentionField({
       : presets.find(preset => `seconds:${preset.seconds}` === choice)!.label;
 
   const action = <Combobox
+    aria-describedby={invalid ? errorId : undefined}
+    aria-invalid={invalid || undefined}
     aria-label={label}
     className="!w-auto flex-none"
     disabled={disabled}
@@ -152,6 +155,6 @@ export function RetentionField({
     {children === undefined
       ? <SettingsCard action={action} description={description} header={label} icon={icon} />
       : <SettingsExpander action={action} description={description} header={label} icon={icon}>{children}</SettingsExpander>}
-    {invalid && <Text className={dangerText} role="alert" size={200}>{t('dashboard.apiKeys.retention.invalid')}</Text>}
+    {invalid && <Text className={dangerText} id={errorId} role="alert" size={200}>{t('dashboard.apiKeys.retention.invalid')}</Text>}
   </>;
 }

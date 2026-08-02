@@ -114,6 +114,7 @@ export function UpstreamColorPicker({ kind, onChange, onValidityChange, value }:
             <div className="flex items-center gap-2">
               <Input
                 aria-describedby={draftInvalid ? errorId : undefined}
+                aria-invalid={draftInvalid || undefined}
                 aria-label={t('dashboard.upstreamEditor.color.custom')}
                 className="!w-[140px] font-mono"
                 maxLength={7}

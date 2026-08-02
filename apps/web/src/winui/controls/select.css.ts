@@ -11,16 +11,22 @@
 // ./choice.css.ts writes down for every check box.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L110-L136
 export const selectCss = `
-/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L32 */
+/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L32
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L54 */
 .fui-Dropdown.fui-Dropdown[data-winui-appearance='outline'],
 .fui-Combobox.fui-Combobox[data-winui-appearance='outline'] {
   background-color: var(--winui-control-fill-default);
+  border-color: var(--winui-control-elevation-border-color);
 }
 
-/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L54 */
-.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:not(:has(.fui-Dropdown__button[aria-invalid='true'])),
-.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:not(:has(.fui-Combobox__input[aria-invalid='true'])) {
-  border-color: var(--winui-control-elevation-border-color);
+/* A rejected value does not recolour the field; ./text-input.css.ts carries the
+   evidence and the reasoning for the whole layer. The rules here therefore run
+   over an invalid field like any other, and the appearances this sheet leaves
+   to Fluent take the neutral stroke through the token its invalid atom reads.
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Dropdown/useDropdownStyles.styles.ts#L153-L160 */
+.fui-Dropdown.fui-Dropdown,
+.fui-Combobox.fui-Combobox {
+  --colorPaletteRedBorder2: var(--colorNeutralStroke1);
 }
 
 /* The pressed and disabled placeholder steps must be stated because the rest
@@ -49,17 +55,13 @@ export const selectCss = `
    sheet paints stays enabled while the inner control carries the disabled
    attribute, so every state below excludes the disabled field itself. Leaving
    that to the disabled rule further down does not hold: the disabled field is
-   named through :has, and a state written beside another :has -- the invalid
-   exclusions here -- reaches the same weight plus its pseudo-class and wins.
+   named through :has, so a state naming it inside :not reaches the same weight
+   plus its own pseudo-class and wins.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L33
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L55 */
 .fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:hover:not(:has(.fui-Dropdown__button:disabled)),
 .fui-Combobox.fui-Combobox[data-winui-appearance='outline']:hover:not(:has(.fui-Combobox__input:disabled)) {
   background-color: var(--winui-control-fill-secondary);
-}
-
-.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:hover:not(:has(.fui-Dropdown__button:disabled)):not(:has(.fui-Dropdown__button[aria-invalid='true'])),
-.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:hover:not(:has(.fui-Combobox__input:disabled)):not(:has(.fui-Combobox__input[aria-invalid='true'])) {
   border-color: var(--winui-control-elevation-border-color);
 }
 
@@ -113,8 +115,7 @@ export const selectCss = `
 }
 
 /* Fluent swaps the field border to its pressed stroke while focus is inside, where
-   WinUI's Focused state leaves it, so the rest stroke is restated. Fluent's own
-   invalid border is written against :not(:focus-within), so no invalid exclusion.
+   WinUI's Focused state leaves it, so the rest stroke is restated.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L473-L487 */
 .fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:focus-within,
 .fui-Combobox.fui-Combobox[data-winui-appearance='outline']:focus-within {
@@ -135,10 +136,6 @@ export const selectCss = `
 .fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:active:not(:has(.fui-Dropdown__button:disabled)),
 .fui-Combobox.fui-Combobox[data-winui-appearance='outline']:active:not(:has(.fui-Combobox__input:disabled)) {
   background-color: var(--winui-control-fill-tertiary);
-}
-
-.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:active:not(:has(.fui-Dropdown__button:disabled)):not(:has(.fui-Dropdown__button[aria-invalid='true'])),
-.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:active:not(:has(.fui-Combobox__input:disabled)):not(:has(.fui-Combobox__input[aria-invalid='true'])) {
   border-color: var(--winui-control-stroke-default);
 }
 

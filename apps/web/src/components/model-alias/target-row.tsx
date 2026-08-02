@@ -1,5 +1,5 @@
 import { ChevronDownRegular, DeleteRegular, WarningRegular } from '@fluentui/react-icons';
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { computeModelWarning, computeRuleWarnings } from './warnings';
@@ -40,6 +40,7 @@ export function AliasTargetRow({
 }) {
   const { t } = useTranslation();
   const dangerText = useDangerTextClass();
+  const errorId = useId();
   const [expanded, setExpanded] = useState(false);
   const model = catalog.get(target.target_model_id);
   const modelWarning = computeModelWarning(target.target_model_id, model, kind);
@@ -71,6 +72,8 @@ export function AliasTargetRow({
           />
         </Tooltip>
         <Combobox
+          aria-describedby={error ? errorId : undefined}
+          aria-invalid={error ? true : undefined}
           aria-label={t('dashboard.modelAliases.target.modelId')}
           className="font-mono"
           disabled={disabled}
@@ -90,7 +93,7 @@ export function AliasTargetRow({
           <TooltipIconButton danger disabled={disabled || isSole} icon={<DeleteRegular />} label={t('dashboard.modelAliases.target.remove')} onClick={onRemove} />
         </div>
       </div>
-      {error && <Text block className={`${dangerText} ml-10 pb-2`} role="alert" size={200}>{error}</Text>}
+      {error && <Text block className={`${dangerText} ml-10 pb-2`} id={errorId} role="alert" size={200}>{error}</Text>}
       {expanded && kind === 'chat' && (
         <div className={`${TWO_COLUMN_FORM_CLASS} gap-3 ml-10 py-3`}>
           <RuleCombobox label={t('dashboard.modelAliases.rules.effort')} value={target.rules.reasoning?.effort ?? ''} items={suggestions.effort} disabled={disabled} warning={warningFor('reasoning.effort')} onChange={value => patchReasoning({ effort: value || undefined })} />
