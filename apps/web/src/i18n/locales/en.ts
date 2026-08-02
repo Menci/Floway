@@ -637,7 +637,7 @@ const en = {
           rerankProtocol: 'Rerank protocol',
           rerankTarget: 'Rerank target',
           title: 'Models',
-          summary: '{{total}} total · {{manual}} manual · {{auto}} auto',
+          summary: '{{total}} total, {{manual}} manual, {{auto}} auto',
           auto: 'Auto',
           manual: 'Manual',
           add: 'Add',
@@ -853,7 +853,7 @@ const en = {
         },
       },
       requests: {
-        apiKey: 'API Key · Requests',
+        apiKey: 'API key for the request list',
         listLabel: 'Captured requests',
         empty: 'No requests recorded yet',
         unknownModel: 'Unknown model',
@@ -919,7 +919,7 @@ const en = {
           byKey: 'By API Key',
           byModel: 'By Model',
           search: 'Search Usage',
-          searchWithProvider: 'Search Usage · {{provider}}',
+          searchWithProvider: 'Search Usage ({{provider}})',
         },
         metrics: {
           requests: 'Requests',
@@ -956,7 +956,7 @@ const en = {
           ttftP95: 'TTFT p95', speedP95: 'Worst 5% speed',
           ttftP99: 'TTFT p99', speedP99: 'Worst 1% speed',
         },
-        chartTitle: '{{metric}} {{percentile}} · {{group}}',
+        chartTitle: '{{group}}: {{metric}} {{percentile}}',
         series: {
           label: 'Performance series selection',
         },

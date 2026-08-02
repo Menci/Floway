@@ -386,8 +386,10 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
             </StatusBadge>
             <Text size={200} className="text-fui-fg3">
               {t('dashboard.searchConfig.testedProvider', { provider: testedProviderLabel })}
-              {testResult.query ? ` · ${t('dashboard.searchConfig.testedQuery', { query: testResult.query })}` : ''}
             </Text>
+            {testResult.query && <Text size={200} className="text-fui-fg3">
+              {t('dashboard.searchConfig.testedQuery', { query: testResult.query })}
+            </Text>}
           </div>
 
           {testResult.ok && testResult.results ? (

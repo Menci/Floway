@@ -322,7 +322,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
               hidden={hiddenKeys}
               onHiddenChange={setHiddenKeys}
               title={t('dashboard.usage.charts.searchWithProvider', {
-                provider: searchChart.providers.map(formatProvider).join(' · '),
+                provider: searchChart.providers.map(formatProvider).join(', '),
               })}
               valueFormatter={value => formatCount(value, locale)}
             />

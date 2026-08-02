@@ -219,7 +219,7 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
           kind={record.upstream.kind}
           label={record.upstream.name}
           size="extra-small"
-          title={`${record.upstream.kind} · ${record.upstream.id}`}
+          title={`${record.upstream.kind}, ${record.upstream.id}`}
         />}
       </div>
       <div className="flex items-center gap-3 min-w-0 text-fui-fg3">

@@ -66,10 +66,12 @@ export function CodexAccountCard({ record }: { record: CodexRecord }) {
             return <div className="grid gap-1" key={item.key}>
               <div className="flex items-baseline justify-between gap-3">
                 <Text size={200}>{t(`dashboard.upstreamEditor.codex.window.${item.key}`)}</Text>
-                <Text size={200} className="text-fui-fg2">
-                  {percentText(percent)}
-                  {item.windowMinutes !== null ? ` · ${t('dashboard.upstreamEditor.codex.windowMinutes', { minutes: item.windowMinutes })}` : ''}
-                </Text>
+                <div className="flex items-baseline gap-2">
+                  <Text size={200} className="text-fui-fg2">{percentText(percent)}</Text>
+                  {item.windowMinutes !== null && <Text size={200} className="text-fui-fg3">
+                    {t('dashboard.upstreamEditor.codex.windowMinutes', { minutes: item.windowMinutes })}
+                  </Text>}
+                </div>
               </div>
               <ProgressBar color={quotaBarColor(percent)} max={100} thickness="large" value={percent ?? undefined} />
               {item.resetAt && <Text size={200} className="text-fui-fg3">

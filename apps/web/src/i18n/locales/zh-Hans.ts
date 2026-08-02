@@ -612,7 +612,7 @@ const zhHansCN = {
           rerankProtocol: 'Rerank 协议',
           rerankTarget: 'Rerank 目标',
           title: '模型',
-          summary: '共 {{total}} 个 · {{manual}} 个手动 · {{auto}} 个自动',
+          summary: '共 {{total}} 个，{{manual}} 个手动，{{auto}} 个自动',
           auto: '自动',
           manual: '手动',
           add: '添加',
@@ -813,7 +813,7 @@ const zhHansCN = {
         },
       },
       requests: {
-        apiKey: 'API 密钥 · 请求列表',
+        apiKey: '请求列表使用的 API 密钥',
         listLabel: '已捕获的请求',
         empty: '尚未记录任何请求',
         unknownModel: '未知模型',
@@ -879,7 +879,7 @@ const zhHansCN = {
           byKey: '按 API 密钥',
           byModel: '按模型',
           search: '搜索使用量',
-          searchWithProvider: '搜索使用量 · {{provider}}',
+          searchWithProvider: '搜索使用量（{{provider}}）',
         },
         metrics: {
           requests: '请求数',
@@ -916,7 +916,7 @@ const zhHansCN = {
           ttftP95: 'TTFT p95', speedP95: '最慢 5% 速度',
           ttftP99: 'TTFT p99', speedP99: '最慢 1% 速度',
         },
-        chartTitle: '{{metric}} {{percentile}} · {{group}}',
+        chartTitle: '{{group}}：{{metric}} {{percentile}}',
         series: {
           label: '性能序列选择',
         },

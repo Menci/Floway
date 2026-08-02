@@ -178,7 +178,10 @@ export function KeysTable({
             <Tooltip content={upstreamsTitle(key, upstreamById, t)} relationship="description">
               <Text truncate size={200} className="text-fui-fg2" tabIndex={0} wrap={false}>{upstreamsText(key, upstreamById, t)}</Text>
             </Tooltip>
-            <Text size={200} className="text-fui-fg3">{shortDate(key.created_at, locale)} · {lastUsed}</Text>
+            <div className="flex flex-wrap gap-x-3 text-fui-fg3">
+              <Text size={200}>{shortDate(key.created_at, locale)}</Text>
+              <Text size={200}>{lastUsed}</Text>
+            </div>
           </div>
           <span {...stopRowSelection}><Menu>
             <MenuTrigger disableButtonEnhancement>

@@ -39,7 +39,7 @@ import { getProviderRepo, type Fetcher } from '@floway-dev/provider';
 //   unavailable  the bucket does not apply to this seat — a free seat's
 //                `premium_interactions` comes back `entitlement: 0` with
 //                `has_quota: false` and `percent_remaining: 0`. Reading that as
-//                consumption renders "0 / 0 · 100% used" on a seat that simply
+//                consumption renders "0 / 0, 100% used" on a seat that simply
 //                has no premium allotment.
 //
 // `entitlement > 0` separates metered from unavailable on both sources, which is
