@@ -45,6 +45,23 @@ export const cardCss = `
 }
 
 @media not (forced-colors: active) {
+  /* WinUI holds an item's foreground still through every pointer and selection
+     state: ListViewItemForeground and its PointerOver, Pressed, Selected,
+     SelectedPointerOver and SelectedPressed siblings are one brush,
+     TextFillColorPrimaryBrush. Fluent instead drops an interactive
+     filled-alternative card from colorNeutralForeground1 to
+     colorNeutralForeground2Hover on hover, which is a move between ramps rather
+     than within one, so mapping the sibling tokens in ../theme.ts cannot reach
+     it. Stating the fill once on the enabled card outranks every appearance's
+     hover atom; the disabled card is excluded because its own foreground is a
+     single-class atom that ../theme.ts already lands.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L23-L28
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L175-L180
+     https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-card/library/src/components/Card/useCardStyles.styles.ts#L225-L242 */
+  ${enabledCard} {
+    color: var(--winui-text-fill-primary);
+  }
+
   /* The Expander header. The doubled class outranks Fluent's hover and pressed
      atoms, which is how the surface stops repainting under the pointer.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L5
