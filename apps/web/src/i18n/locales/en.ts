@@ -1071,7 +1071,7 @@ const en = {
         testedProvider: 'Provider: {{provider}}',
         testedQuery: 'Query: {{query}}',
         testSuccess:
-            'Connection test successful - {{count}} results returned.',
+            'Connection test successful - {{count, number}} results returned.',
         testFailed: 'Test failed',
         pageAge: '{{age}} ago',
       },

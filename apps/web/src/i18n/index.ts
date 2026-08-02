@@ -6,15 +6,17 @@ import {
   htmlLanguageFor,
   supportedLanguages,
 } from './languages';
+import { numberFormatter } from './number-format';
 import { resources } from './resources';
 
-void i18n.use(initReactI18next).init({
+void i18n.use(numberFormatter).use(initReactI18next).init({
   resources,
   lng: defaultLanguage,
   fallbackLng: defaultLanguage,
   supportedLngs: [...supportedLanguages],
   interpolation: {
     escapeValue: false,
+    alwaysFormat: true,
   },
 });
 

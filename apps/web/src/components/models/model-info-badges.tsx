@@ -11,6 +11,15 @@ import { ProviderBadge } from '../upstreams/provider-badge';
 // out-measure the proportional text beside it.
 const modelValueClassName = 'font-mono mono-size-xs';
 
+// The badge builder gives this field a token count; the surrounding union is
+// wide enough to hold the string-valued rules too, so the number is asserted
+// rather than stringified — the interpolation has to receive a number to be
+// grouped.
+const budgetTokens = (value: Extract<ModelBadge, { kind: 'rule' }>['value']): number => {
+  if (typeof value !== 'number') throw new TypeError(`Reasoning budget badge carries ${typeof value}, not a number.`);
+  return value;
+};
+
 const ruleBadgeContent = (
   badge: Extract<ModelBadge, { kind: 'rule' }>,
   t: ReturnType<typeof useTranslation>['t'],
@@ -28,7 +37,7 @@ const ruleBadgeContent = (
   const components = { strong: <strong /> };
   switch (badge.field) {
   case 'reasoning.effort': return <Trans components={components} i18nKey="dashboard.models.badges.rules.reasoningEffort" values={{ value: String(badge.value) }} />;
-  case 'reasoning.budget_tokens': return <Trans components={components} i18nKey="dashboard.models.badges.rules.reasoningBudget" values={{ value: String(badge.value) }} />;
+  case 'reasoning.budget_tokens': return <Trans components={components} i18nKey="dashboard.models.badges.rules.reasoningBudget" values={{ value: budgetTokens(badge.value) }} />;
   case 'reasoning.adaptive':
     return badge.value === true
       ? t('dashboard.models.badges.rules.adaptive')

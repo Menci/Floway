@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import { api, callApi } from '../../api/client';
 import type { CopilotQuotaSnapshot, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
-import { formatCount } from '../../lib/format-number';
 import { dateTime, shortDate } from '../../lib/format-time';
 import { clampPercent } from '../../lib/percent';
 import { useLocale } from '../../lib/use-locale';
@@ -109,8 +108,8 @@ export function CopilotQuotaCard({ record }: { record: CopilotRecord }) {
           ? <div className="flex items-baseline gap-2">
               <Text size={200} className="text-fui-fg2">
                 {t('dashboard.upstreamEditor.copilot.quota.used', {
-                  used: formatCount(bucket.used, locale),
-                  entitlement: formatCount(bucket.entitlement, locale),
+                  used: bucket.used,
+                  entitlement: bucket.entitlement,
                 })}
               </Text>
               <Text size={200} className="text-fui-fg3">

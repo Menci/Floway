@@ -13,9 +13,12 @@ export const formatBytes = (value: number, locale: string): string => {
 export const formatCompactCount = (value: number, locale: string): string =>
   new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(value);
 
+export const formatNumber = (value: number, locale: string): string =>
+  new Intl.NumberFormat(locale).format(value);
+
 // Clamped at zero: a negative tally is an arithmetic artifact, not a quantity.
 export const formatCount = (value: number, locale: string): string =>
-  Math.max(0, Math.round(value)).toLocaleString(locale);
+  formatNumber(Math.max(0, Math.round(value)), locale);
 
 // Three significant figures across the range, so a column of rates stays comparable digit by digit.
 export const formatTokenRate = (tokensPerSecond: number | null): string => {

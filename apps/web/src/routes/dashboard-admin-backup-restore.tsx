@@ -15,7 +15,7 @@ import { Panel } from '../components/ui/panel';
 import { SectionHeader } from '../components/ui/section-header';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { fluentComponents } from '../fluent';
-import { formatBytes, formatCount } from '../lib/format-number';
+import { formatCount } from '../lib/format-number';
 import { useLocale } from '../lib/use-locale';
 
 const {
@@ -50,9 +50,7 @@ const countRecords = (data: BackupFileData): Record<string, number> => {
 
 // `Intl.ListFormat` supplies the conjunction and the separators the reader's
 // language actually uses -- "a, b, and c" against "a、b和c" -- neither of which
-// a join can spell. The figures are grouped before they are handed over,
-// because i18next interpolates a value as `String(value)` and would otherwise
-// print 18309.
+// a join can spell.
 export const recordSummary = (
   counts: Record<string, number>,
   t: ReturnType<typeof useTranslation>['t'],
@@ -62,7 +60,6 @@ export const recordSummary = (
     .filter(key => counts[key] > 0)
     .map(key => t(`dashboard.backupRestore.import.imported.${key}`, {
       count: counts[key],
-      n: formatCount(counts[key], locale),
     }));
   return new Intl.ListFormat(locale, { style: 'long', type: 'conjunction' }).format(parts);
 };
@@ -288,7 +285,7 @@ export default function DashboardAdminBackupRestore() {
               drop={dropHandlers}
               name={t('dashboard.backupRestore.import.fileSelected', {
                 name: importFile.name,
-                size: formatBytes(importFile.size, locale),
+                size: importFile.size,
               })}
             />
           : <BackupFilePicker
