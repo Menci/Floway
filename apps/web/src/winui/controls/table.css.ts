@@ -35,6 +35,27 @@ export const tableCss = `
   color: var(--winui-text-fill-primary);
 }
 
+/* A column header is told apart from the rows below it by weight. WinUI ships
+   no data grid, and the one header-shaped item it does state --
+   ListViewHeaderItem, a group caption rather than a column label -- sets no
+   weight at all, so there is nothing here to transcribe: semibold is the
+   dashboard's own choice, taken once for every table.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L9448-L9456
+
+   The weight is stated on the cell alone, which the button slot a sortable
+   header nests inside it inherits. The leading has to be stated on that button
+   instead, because Fluent's button reset pins it to normal, and a header that
+   wraps would otherwise sit on a different leading from the cells beside it.
+   Weight and leading are all this states, so the pointer, press, sort and focus
+   states the rules below draw are left to them. */
+.fui-TableHeaderCell.fui-TableHeaderCell {
+  font-weight: var(--fontWeightSemibold);
+}
+
+.fui-TableHeaderCell__button.fui-TableHeaderCell__button {
+  line-height: var(--lineHeightBase300);
+}
+
 /* The pointer fill inside a header. Fluent puts the hover and pressed fill on
    the header cell, and only when the column is sortable; the header row is
    never given the interactive ramp at all. The button slot the cell nests
