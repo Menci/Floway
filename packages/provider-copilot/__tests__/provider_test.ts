@@ -946,6 +946,7 @@ test('readCopilotUpstreamState round-trips a persisted state with both knownMode
       1_000_000,
     ),
     copilotToken: { token: 'tok', expiresAt: 2_000_000, baseUrl: 'https://api.individual.githubcopilot.com' },
+    quotaSnapshot: null,
   };
   const round = readCopilotUpstreamState(JSON.parse(JSON.stringify(seeded)));
   assertEquals(round.copilotToken?.token, 'tok');
@@ -1273,4 +1274,86 @@ test('Copilot chat field: no capabilities → no chat field', async () => {
     { id: 'basic-model' },
   ]);
   assertEquals(model.chat, undefined);
+});
+
+// Copilot reports the seat's entitlement on every data-plane response, so a
+// served request is enough to keep the dashboard current — no GitHub REST poll
+// and no operator click. The headers arrive with the response head, ahead of
+// the SSE body, so a streaming call snapshots at stream start.
+test('Copilot provider persists the quota snapshot a data-plane response carries', async () => {
+  const harness = await setupCopilotTest();
+  const provider = createCopilotProvider(harness.copilotUpstream).instance;
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'tid=x;exp=9999999999',
+          expires_at: 9_999_999_999,
+          refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
+        });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-chat', supported_endpoints: ['/chat/completions'] }]));
+      }
+      if (url.pathname === '/chat/completions') {
+        return sseResponse('data: [DONE]\n\n', 200, {
+          'x-quota-snapshot-chat': 'ent=-1&ov=0.0&ovPerm=false&rem=100.0&rst=2026-09-01T00%3A00%3A00Z&totRem=-1',
+          'x-quota-snapshot-premium_interactions': 'ent=300&ov=0.0&ovPerm=false&rem=90.0&rst=2026-09-01T00%3A00%3A00Z&totRem=270',
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const [model] = await provider.getProvidedModels(directFetcher);
+      await provider.callChatCompletions(model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, noopUpstreamCallOptions());
+      // The persist is fire-and-forget: on workerd `waitUntil` keeps it alive
+      // past the response, and here it settles on the host event loop.
+      await vi.waitFor(() => {
+        if (readCopilotUpstreamState(harness.getCurrentState()).quotaSnapshot === null) {
+          throw new Error('quota snapshot not persisted yet');
+        }
+      });
+    },
+  );
+
+  const snapshot = readCopilotUpstreamState(harness.getCurrentState()).quotaSnapshot;
+  assertEquals(snapshot?.data.quotas.premium_interactions.quota_remaining, 270);
+  assertEquals(snapshot?.data.quotas.chat.unlimited, true);
+  assertEquals(snapshot?.data.reset_at, '2026-09-01T00:00:00Z');
+});
+
+// `/models` and every 4xx we have observed come back without the header
+// family. Writing an empty snapshot on those would erase a good reading for
+// no upside, so the slot is left exactly as it was.
+test('Copilot provider leaves the persisted snapshot alone when a response carries no quota headers', async () => {
+  const harness = await setupCopilotTest();
+  const provider = createCopilotProvider(harness.copilotUpstream).instance;
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'tid=x;exp=9999999999',
+          expires_at: 9_999_999_999,
+          refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
+        });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-chat', supported_endpoints: ['/chat/completions'] }]));
+      }
+      if (url.pathname === '/chat/completions') return sseResponse();
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const [model] = await provider.getProvidedModels(directFetcher);
+      await provider.callChatCompletions(model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, noopUpstreamCallOptions());
+    },
+  );
+
+  assertEquals(readCopilotUpstreamState(harness.getCurrentState()).quotaSnapshot, null);
 });

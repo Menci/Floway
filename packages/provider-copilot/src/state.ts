@@ -3,6 +3,7 @@
 // on the prior state JSON.
 
 import type { CopilotKnownModels } from './known-models.ts';
+import type { CopilotQuotaSnapshot } from './quota.ts';
 
 // Short-lived Copilot session token minted by exchanging the operator-supplied
 // GitHub PAT against /copilot_internal/v2/token. The PAT itself lives in
@@ -17,20 +18,41 @@ export interface CopilotTokenEntry {
   baseUrl: string;
 }
 
+// Most recent entitlement observation, from either quota source. `fetchedAt`
+// is unix ms — the wrapper matches the slot Codex and Claude Code persist
+// their snapshots under, so the state shape and its serializer contract stay
+// uniform across the three providers. The dashboard reads the observation time
+// off the snapshot's own `observed_at`, which is the only one of the two that
+// also travels on the refresh endpoint's reply.
+// No TTL: a Copilot seat resets monthly, so an old snapshot rendered with its
+// timestamp is more useful to an operator than an empty card, and any traffic
+// on the upstream replaces it.
+export interface CopilotQuotaSnapshotEntry {
+  fetchedAt: number;
+  data: CopilotQuotaSnapshot;
+}
+
 export interface CopilotUpstreamState {
   knownModels: CopilotKnownModels | null;
   copilotToken: CopilotTokenEntry | null;
+  quotaSnapshot: CopilotQuotaSnapshotEntry | null;
 }
 
 const ALLOWED_STATE_KEYS_MAP: Record<keyof CopilotUpstreamState, true> = {
   knownModels: true,
   copilotToken: true,
+  quotaSnapshot: true,
 };
 
 const ALLOWED_TOKEN_KEYS_MAP: Record<keyof CopilotTokenEntry, true> = {
   token: true,
   expiresAt: true,
   baseUrl: true,
+};
+
+const ALLOWED_QUOTA_SNAPSHOT_KEYS_MAP: Record<keyof CopilotQuotaSnapshotEntry, true> = {
+  fetchedAt: true,
+  data: true,
 };
 
 const assertCopilotTokenEntry = (value: unknown, where: string): void => {
@@ -67,6 +89,27 @@ const assertCopilotKnownModels = (value: unknown, where: string): void => {
   }
 };
 
+// Deeper validation of the snapshot's `data` payload lives in quota.ts, which
+// owns the shape both sources project into. Here we only confirm the wrapper is
+// a plain object so an unrelated value (array, scalar) doesn't slip past.
+const assertCopilotQuotaSnapshotEntry = (value: unknown, where: string): void => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new TypeError(`${where} must be a plain object`);
+  }
+  const obj = value as Record<string, unknown>;
+  for (const key of Object.keys(obj)) {
+    if (!Object.hasOwn(ALLOWED_QUOTA_SNAPSHOT_KEYS_MAP, key)) {
+      throw new TypeError(`${where} has unexpected key '${key}'`);
+    }
+  }
+  if (typeof obj.fetchedAt !== 'number' || !Number.isFinite(obj.fetchedAt)) {
+    throw new TypeError(`${where}.fetchedAt must be a finite number`);
+  }
+  if (typeof obj.data !== 'object' || obj.data === null || Array.isArray(obj.data)) {
+    throw new TypeError(`${where}.data must be a plain object`);
+  }
+};
+
 export function assertCopilotUpstreamState(value: unknown): asserts value is CopilotUpstreamState {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new TypeError('CopilotUpstreamState must be a plain object');
@@ -85,11 +128,15 @@ export function assertCopilotUpstreamState(value: unknown): asserts value is Cop
   if (obj.copilotToken !== null && obj.copilotToken !== undefined) {
     assertCopilotTokenEntry(obj.copilotToken, 'CopilotUpstreamState.copilotToken');
   }
+  if (obj.quotaSnapshot !== null && obj.quotaSnapshot !== undefined) {
+    assertCopilotQuotaSnapshotEntry(obj.quotaSnapshot, 'CopilotUpstreamState.quotaSnapshot');
+  }
 }
 
 export const emptyCopilotUpstreamState = (): CopilotUpstreamState => ({
   knownModels: null,
   copilotToken: null,
+  quotaSnapshot: null,
 });
 
 export const readCopilotUpstreamState = (raw: unknown): CopilotUpstreamState => {
@@ -98,5 +145,6 @@ export const readCopilotUpstreamState = (raw: unknown): CopilotUpstreamState => 
   return {
     knownModels: raw.knownModels ?? null,
     copilotToken: raw.copilotToken ?? null,
+    quotaSnapshot: raw.quotaSnapshot ?? null,
   };
 };

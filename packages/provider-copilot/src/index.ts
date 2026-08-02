@@ -12,7 +12,14 @@ export {
   exchangeCopilotToken,
 } from './auth.ts';
 export { fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from './github-device-flow.ts';
-export { fetchCopilotUsage, type CopilotUsageResponse } from './quota.ts';
+export {
+  fetchCopilotUsage,
+  projectCopilotUsageResponse,
+  putCopilotQuota,
+  type CopilotQuotaDetail,
+  type CopilotQuotaSnapshot,
+  type CopilotUsageResponse,
+} from './quota.ts';
 export {
   assertCopilotUpstreamRecord,
   parseCopilotUpstreamConfig,
@@ -23,6 +30,7 @@ export {
   assertCopilotUpstreamState,
   emptyCopilotUpstreamState,
   readCopilotUpstreamState,
+  type CopilotQuotaSnapshotEntry,
   type CopilotTokenEntry,
   type CopilotUpstreamState,
 } from './state.ts';

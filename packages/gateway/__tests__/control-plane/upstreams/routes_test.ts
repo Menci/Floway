@@ -1827,9 +1827,9 @@ test('POST /api/upstreams/claude-code/probe rejects non-claude-code records with
   assertEquals(body.error.includes('claude-code'), true);
 });
 
-// A minimal but shape-complete CopilotUsageResponse — the copilot quota
-// endpoint round-trips this body verbatim, so an operator staring at the
-// dashboard sees the same numbers GitHub reports.
+// A minimal but shape-complete `/copilot_internal/user` body. The quota
+// endpoint projects it onto the same snapshot shape the data-plane headers
+// produce, so both sources render identically on the dashboard.
 const sampleCopilotQuotaBody = {
   access_type_sku: 'copilot_pro',
   analytics_tracking_id: 'trk-1',
@@ -1840,10 +1840,11 @@ const sampleCopilotQuotaBody = {
   organization_login_list: [],
   organization_list: [],
   quota_reset_date: '2026-07-01',
+  quota_reset_date_utc: '2026-07-01T00:00:00.000Z',
   quota_snapshots: {
     chat: { entitlement: 300, overage_count: 0, overage_permitted: false, percent_remaining: 100, quota_id: 'chat', quota_remaining: 300, remaining: 300, unlimited: false },
     completions: { entitlement: 0, overage_count: 0, overage_permitted: false, percent_remaining: 100, quota_id: 'completions', quota_remaining: 0, remaining: 0, unlimited: true },
-    premium_interactions: { entitlement: 300, overage_count: 0, overage_permitted: false, percent_remaining: 100, quota_id: 'premium_interactions', quota_remaining: 300, remaining: 300, unlimited: false },
+    premium_interactions: { entitlement: 300, overage_count: 0, overage_permitted: false, percent_remaining: 90, quota_id: 'premium_interactions', quota_remaining: 270, remaining: 270, unlimited: false },
   },
 };
 
@@ -2110,8 +2111,8 @@ test('spec invariant (3): POST /api/upstreams/list-models ignores record.name mu
 // the shared upstream editor serves both create and edit; the
 // blueprint is a shape-complete blank editor response that never touches
 // the DB or an assert. GET /api/upstreams/:id — the unredacted single-record
-// read the edit page depends on. POST /api/upstreams/copilot/quota — pure
-// query that surfaces GitHub Copilot's quota block verbatim.
+// read the edit page depends on. POST /api/upstreams/copilot/quota — the
+// operator-driven refresh of the seat's entitlement snapshot.
 
 test('GET /api/upstreams/blueprint round-trips a shape-complete blank for every kind', async () => {
   const { adminSession } = await setupAppTest();
@@ -2229,7 +2230,7 @@ test('GET /api/upstreams/:id returns 404 for an unknown id', async () => {
   assertEquals(resp.status, 404);
 });
 
-test('POST /api/upstreams/copilot/quota returns the upstream CopilotUsageResponse verbatim on success', async () => {
+test('POST /api/upstreams/copilot/quota projects the GitHub body and persists it into upstream state', async () => {
   const { repo, adminSession, copilotUpstream } = await setupAppTest();
   const envelope = envelopeFromRecord(await getRecord(repo, copilotUpstream.id));
 
@@ -2243,9 +2244,66 @@ test('POST /api/upstreams/copilot/quota returns the upstream CopilotUsageRespons
     async () => {
       const resp = await requestApp('/api/upstreams/copilot/quota', authed(adminSession, { record: envelope }));
       assertEquals(resp.status, 200);
-      assertEquals(await resp.json(), sampleCopilotQuotaBody);
+      const body = (await resp.json()) as { reset_at: string; quotas: Record<string, JsonObject> };
+      assertEquals(body.reset_at, '2026-07-01T00:00:00.000Z');
+      assertEquals(Object.keys(body.quotas).sort(), ['chat', 'completions', 'premium_interactions']);
+      assertEquals(body.quotas.premium_interactions, {
+        entitlement: 300,
+        overage_count: 0,
+        overage_permitted: false,
+        percent_remaining: 90,
+        quota_remaining: 270,
+        unlimited: false,
+      });
     },
   );
+
+  // The refresh writes the same slot the data plane fills, so the dashboard
+  // reads one snapshot regardless of which source observed the seat last.
+  const stored = await repo.upstreams.getById(copilotUpstream.id);
+  const snapshot = (stored?.state as { quotaSnapshot: { data: { quotas: Record<string, JsonObject> } } }).quotaSnapshot;
+  assertEquals(snapshot.data.quotas.premium_interactions.quota_remaining, 270);
+});
+
+// The passive header path refuses to write an empty snapshot so a good
+// reading survives; the operator refresh has to honour the same contract, or
+// pressing Refresh against a body on the pre-2026-06 shape — which carries no
+// `quota_snapshots` — would erase what the headers harvested.
+test('POST /api/upstreams/copilot/quota leaves the stored snapshot alone when the body reports no buckets', async () => {
+  const { repo, adminSession, copilotUpstream } = await setupAppTest();
+  const stored = await repo.upstreams.getById(copilotUpstream.id);
+  if (!stored) throw new Error('copilot upstream missing');
+  const harvested = {
+    fetchedAt: 1_700_000_000_000,
+    data: {
+      observed_at: '2026-08-01T00:00:00.000Z',
+      reset_at: '2026-09-01T00:00:00.000Z',
+      quotas: { chat: { entitlement: 50, overage_count: 0, overage_permitted: false, percent_remaining: 80, quota_remaining: 40, unlimited: false } },
+    },
+  };
+  await repo.upstreams.saveState(
+    copilotUpstream.id,
+    { ...(stored.state as Record<string, unknown>), quotaSnapshot: harvested },
+    { expectedState: stored.state },
+  );
+
+  const envelope = envelopeFromRecord(await getRecord(repo, copilotUpstream.id));
+  await withMockedFetch(
+    async (request: Request) => {
+      if (request.url === 'https://api.github.com/copilot_internal/user') {
+        return jsonResponse({ access_type_sku: 'free_limited_copilot', copilot_plan: 'individual', limited_user_quotas: { chat: 500, completions: 3876 }, monthly_quotas: { chat: 500, completions: 4000 } });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const resp = await requestApp('/api/upstreams/copilot/quota', authed(adminSession, { record: envelope }));
+      assertEquals(resp.status, 200);
+      assertEquals(await resp.json(), null);
+    },
+  );
+
+  const after = await repo.upstreams.getById(copilotUpstream.id);
+  assertEquals((after?.state as { quotaSnapshot: unknown }).quotaSnapshot, harvested);
 });
 
 test('POST /api/upstreams/copilot/quota rejects a non-copilot record with 400', async () => {

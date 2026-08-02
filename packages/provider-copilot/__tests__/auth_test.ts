@@ -197,3 +197,85 @@ test('copilotAuthedFetch reads a still-valid Copilot token from state_json inste
   assertEquals(upstreamFetches, 2);
   assertEquals(authHeader, 'Bearer tok-persisted');
 });
+
+// Regression: the token persist used to key its CAS on the row read BEFORE
+// the token exchange, so any write that landed during that round trip — and
+// the quota harvest writes this row on every data-plane response — cost the
+// upstream its freshly minted token, sending every isolate back to the token
+// endpoint on its own. The persist now re-reads immediately before saving.
+test('copilotAuthedFetch persists a minted token even when the row changed during the exchange', async () => {
+  let state: unknown = { knownModels: null, copilotToken: null, quotaSnapshot: null };
+  let exchanged = false;
+  const casLosses: number[] = [];
+  const stub: UpstreamRecord = {
+    id: UPSTREAM_ID,
+    kind: 'copilot',
+    name: 'auth-test',
+    enabled: true,
+    sortOrder: 0,
+    createdAt: '2026-03-15T00:00:00.000Z',
+    updatedAt: '2026-03-15T00:00:00.000Z',
+    state: null,
+    flagOverrides: {},
+    disabledPublicModelIds: [],
+    proxyFallbackList: [],
+    modelPrefix: null,
+    color: null,
+    config: { githubToken: 'ghu_test', user: { id: 1, login: 't', name: null, avatar_url: '' } },
+  };
+  initProviderRepo(() => ({
+    upstreams: {
+      getById: async () => ({ ...stub, state }),
+      saveState: async (_id, newState, options) => {
+        // Real CAS semantics: the mock persists inline, so JSON equality on
+        // the state we read vs. the row's current value is what D1's
+        // state_json round-trip would compare.
+        if (JSON.stringify(options.expectedState) !== JSON.stringify(state)) {
+          casLosses.push(1);
+          return { updated: false };
+        }
+        state = newState;
+        return { updated: true };
+      },
+    },
+  }));
+  clearInProcessCopilotTokenCache();
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        // A concurrent quota harvest lands mid-exchange, advancing the row.
+        exchanged = true;
+        state = {
+          knownModels: null,
+          copilotToken: null,
+          quotaSnapshot: { fetchedAt: 1, data: { observed_at: '2026-08-01T00:00:00.000Z', reset_at: null, quotas: {} } },
+        };
+        return jsonResponse({
+          token: 'tok-test',
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+          refresh_in: 1800,
+          endpoints: { api: TOKEN_BASE_URL },
+        });
+      }
+      return new Response('{}', { status: 200, headers: new Headers({ 'content-type': 'application/json' }) });
+    },
+    async () => {
+      await copilotAuthedFetch(
+        '/v1/messages',
+        { method: 'POST', body: '{}' },
+        { id: UPSTREAM_ID, githubToken: 'ghu_test' },
+        { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall },
+      );
+    },
+  );
+
+  assertEquals(exchanged, true);
+  assertEquals(casLosses.length, 0);
+  const persisted = state as CopilotUpstreamState;
+  assertEquals(persisted.copilotToken?.token, 'tok-test');
+  // The sibling write that landed mid-exchange survives — the persist carries
+  // the row as it stands now, not the snapshot taken before the round trip.
+  assertEquals(persisted.quotaSnapshot?.fetchedAt, 1);
+});

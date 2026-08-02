@@ -3,7 +3,7 @@ import { COMPACTION_TRIGGER, compactionResponse } from './compaction.ts';
 import { assertCopilotUpstreamRecord } from './config.ts';
 import { COPILOT_DEFAULT_FLAGS, defaultFlagsForCopilotModel } from './defaults.ts';
 import { fetchCopilotModels } from './fetch-models.ts';
-import { copilotFetchChatCompletions, copilotFetchEmbeddings, copilotFetchMessages, copilotFetchMessagesCountTokens, copilotFetchResponses } from './fetch.ts';
+import { copilotFetchChatCompletions, copilotFetchEmbeddings, copilotFetchMessages, copilotFetchMessagesCountTokens, copilotFetchResponses, type CopilotDataPlaneFetchOptions } from './fetch.ts';
 import { COPILOT_CHAT_COMPLETIONS_BOUNDARY } from './interceptors/chat-completions/index.ts';
 import type { ChatCompletionsBoundaryCtx } from './interceptors/chat-completions/types.ts';
 import { COPILOT_MESSAGES_BOUNDARY, COPILOT_MESSAGES_COUNT_TOKENS_BOUNDARY } from './interceptors/messages/index.ts';
@@ -22,7 +22,7 @@ import { parseChatCompletionsStream, type ChatCompletionsPayload, type ChatCompl
 import { type ModelEndpointKey, type ModelEndpoints, type ProtocolFrame, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseAnthropicBetaHeader, parseMessagesStream, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type CanonicalResponsesPayload, type ResponsesResult } from '@floway-dev/protocols/responses';
-import { eventResult, getProviderRepo, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, resolveEffectiveFlags, type ExecuteResult, type FlagOverrides, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { eventResult, getProviderRepo, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, resolveEffectiveFlags, type ExecuteResult, type FlagOverrides, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotProviderData {
   rawModels: CopilotRawModel[];
@@ -192,7 +192,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
   const upstreamConfig = { id: copilot.id, githubToken: copilot.config.githubToken };
 
   const call = async (
-    transport: (config: typeof upstreamConfig, init: RequestInit, options: UpstreamFetchOptions) => Promise<Response>,
+    transport: (config: typeof upstreamConfig, init: RequestInit, options: CopilotDataPlaneFetchOptions) => Promise<Response>,
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
     rawModel: CopilotRawModel,
@@ -206,13 +206,13 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
         body: JSON.stringify({ ...body, model: rawModel.id }),
         signal,
       },
-      { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
+      { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall, waitUntil: opts.waitUntil },
     );
     return { response, modelKey: rawModel.id };
   };
 
   const callStreaming = <TEvent>(
-    transport: (config: typeof upstreamConfig, init: RequestInit, options: UpstreamFetchOptions) => Promise<Response>,
+    transport: (config: typeof upstreamConfig, init: RequestInit, options: CopilotDataPlaneFetchOptions) => Promise<Response>,
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
     rawModel: CopilotRawModel,
@@ -228,7 +228,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
           body: JSON.stringify({ ...body, stream: true, model: rawModel.id }),
           signal,
         },
-        { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
+        { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall, waitUntil: opts.waitUntil },
       ),
       parser,
       rawModel.id,
@@ -371,7 +371,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
             const response = await copilotFetchResponses(
               upstreamConfig,
               { method: 'POST', body: JSON.stringify(triggered), signal },
-              { extraHeaders: ctx.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
+              { extraHeaders: ctx.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall, waitUntil: opts.waitUntil },
             );
             if (!response.ok) return { action: 'compact', ok: false, response, modelKey: rawModel.id };
             const generated = (await response.json()) as ResponsesResult;

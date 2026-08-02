@@ -141,15 +141,26 @@ async function getCopilotToken(upstreamId: string, githubToken: string, fetcher:
   return await withRetry(async () => {
     const entry = await exchangeCopilotToken(githubToken, fetcher, signal);
     inProcessTokenCache.set(upstreamId, { entry, cachedAt: Date.now() });
-    // Best-effort persistence: a losing CAS or transient DB error must not
+    // Re-read the row after the exchange instead of keying the CAS on the
+    // snapshot taken before it. The exchange is a full api.github.com round
+    // trip, and the quota harvest writes this same state_json row on every
+    // data-plane response, so a pre-fetch `expectedState` loses on any busy
+    // upstream — leaving the persisted slot holding the expired token and
+    // sending every isolate back to the token endpoint on its own. Same
+    // rationale as the known-models save in provider.ts.
+    //
+    // Best-effort throughout: a losing CAS or transient DB error must not
     // invalidate the freshly fetched token, which the caller is about to use
-    // to satisfy a live request. Mirrors the known-models persistence policy.
+    // to satisfy a live request.
     try {
-      await getRepo().upstreams.saveState(
-        upstreamId,
-        { ...state, copilotToken: entry } satisfies CopilotUpstreamState,
-        { expectedState: fresh.state },
-      );
+      const latest = await getRepo().upstreams.getById(upstreamId);
+      if (latest) {
+        await getRepo().upstreams.saveState(
+          upstreamId,
+          { ...readCopilotUpstreamState(latest.state), copilotToken: entry } satisfies CopilotUpstreamState,
+          { expectedState: latest.state },
+        );
+      }
     } catch (err) {
       console.warn(`Failed to persist Copilot token for ${upstreamId}:`, err);
     }

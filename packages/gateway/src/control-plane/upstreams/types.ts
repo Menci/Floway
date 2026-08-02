@@ -29,6 +29,7 @@ import type {
   CodexUpstreamState as StoredCodexUpstreamState,
 } from '@floway-dev/provider-codex';
 import type {
+  CopilotQuotaSnapshotEntry,
   CopilotUpstreamConfig as StoredCopilotUpstreamConfig,
   CopilotUpstreamState as StoredCopilotUpstreamState,
 } from '@floway-dev/provider-copilot';
@@ -65,6 +66,12 @@ export type CopilotUpstreamConfig = Omit<StoredCopilotUpstreamConfig, 'githubTok
 
 export interface CopilotUpstreamState {
   copilotToken: { baseUrl: string } | null;
+  // The quota snapshot is upstream-owned numbers with no secret in it, so
+  // unlike the token beside it there is nothing to redact and it crosses
+  // whole. Whichever source saw the seat last wrote it: the data plane
+  // harvests one off every response, and an explicit refresh writes the same
+  // shape.
+  quotaSnapshot: CopilotQuotaSnapshotEntry | null;
 }
 
 export type CodexUpstreamConfig = Omit<StoredCodexUpstreamConfig, 'accounts'> & {

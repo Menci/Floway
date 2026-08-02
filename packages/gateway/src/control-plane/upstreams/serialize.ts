@@ -75,7 +75,14 @@ export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializ
     let state: Extract<RedactedSerializedUpstreamRecord, { kind: 'copilot' }>['state'] = null;
     if (upstream.state !== null) {
       assertCopilotUpstreamState(upstream.state);
-      state = { copilotToken: upstream.state.copilotToken === null ? null : { baseUrl: upstream.state.copilotToken.baseUrl } };
+      state = {
+        copilotToken: upstream.state.copilotToken === null ? null : { baseUrl: upstream.state.copilotToken.baseUrl },
+        // The whole snapshot is upstream-owned numbers with no secret in it, so
+        // it round-trips verbatim. Rows written before the slot existed carry
+        // no key at all -- the same absent-is-null boundary the state reader
+        // applies.
+        quotaSnapshot: upstream.state.quotaSnapshot ?? null,
+      };
     }
     return {
       ...base,
