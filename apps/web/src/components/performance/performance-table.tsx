@@ -50,7 +50,7 @@ export function PerformanceTable({ groupBy, labels, rows }: { groupBy: Performan
   }), [groupBy, labels, rows, sort]);
   const sortDirection = (key: PerformanceTableSortKey) => sort.key === key ? sort.direction : undefined;
   return <section className="grid gap-2.5 min-w-0">
-    <ScrollArea axes="horizontal" className="border border-fui-stroke1 rounded-lg min-w-0"><Table aria-label={t(`dashboard.performance.groupBy.${groupBy}`)} size="small" className="min-w-[570px]">
+    <ScrollArea axes="horizontal" className="rounded-[var(--winui-overlay-corner-radius,8px)] min-w-0"><Table aria-label={t(`dashboard.performance.groupBy.${groupBy}`)} size="small" className="min-w-[570px]">
       {/* Fluent's Table lays out `fixed`, so sizing the four measure columns to
           their widest label leaves the rest to the name, the only column whose
           content has no bound. */}
