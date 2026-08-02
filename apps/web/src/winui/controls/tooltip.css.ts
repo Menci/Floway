@@ -1,31 +1,21 @@
-// ToolTip, restyled from Fluent 2 Web onto WinUI 3, which paints it as the
-// smallest flyout there is: in-app acrylic fill, flyout stroke, and a single
-// shallow shadow at half a flyout's elevation.
+// ToolTip, restyled from Fluent 2 Web onto WinUI 3.
 //
 // Fluent merges the root and the content onto the same node, so
 // `.fui-Tooltip__content` is the whole surface; the arrow is rendered from
 // `state.arrowClassName`, Griffel atoms with no stable class to name.
 //
-// A tooltip is not a pointer target, so there is no hover, pressed, selected,
-// disabled, focus or validity row; the one row Fluent adds and WinUI has no
-// counterpart for is `appearance="inverted"`, which the surface rule flattens.
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToolTip_themeresources.xaml#L57-L70
-//
 // The corner radius and the 12px content size are already true through theme.ts
 // and Fluent respectively, so neither is restated.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToolTip_themeresources.xaml#L43-L52
 //
-// Line height is unsourceable, so Fluent's lineHeightBase200 of 16px stands
-// rather than a number being invented: WinUI's template is a bare
-// ContentPresenter and TextBlock_themeresources.xaml declares no LineHeight,
-// taking the leading from the font's metrics through
-// LineStackingStrategy="MaxHeight".
+// Line height is unsourceable -- WinUI's template declares none and takes the
+// leading from the font's metrics -- so Fluent's lineHeightBase200 of 16px
+// stands rather than a number being invented.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToolTip_themeresources.xaml#L56
 export const tooltipCss = `
-/* Both fill and foreground are stated for every appearance -- the doubled class
-   name outranks the atoms Fluent composes for its inverted surface, and pinning
-   the fill alone would leave that appearance's inverted foreground standing on
-   our own fill.
+/* The doubled class name outranks the atoms Fluent composes for its inverted
+   surface; pinning the fill alone would leave that appearance's inverted
+   foreground standing on our own fill.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToolTip_themeresources.xaml#L43
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToolTip_themeresources.xaml#L44
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToolTip_themeresources.xaml#L46
