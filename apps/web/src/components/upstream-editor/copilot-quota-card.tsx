@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { api, callApi } from '../../api/client';
@@ -10,6 +10,7 @@ import { useLocale } from '../../lib/use-locale';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { ResourceListActions } from '../ui/resource-list';
 import { SectionHeader } from '../ui/section-header';
+import { useRefresh } from '../ui/use-refresh';
 
 const { ProgressBar, Text } = fluentComponents;
 
@@ -77,24 +78,28 @@ export function CopilotQuotaCard({ record }: { record: CopilotRecord }) {
   // re-fetching the record to display it.
   const [refreshed, setRefreshed] = useState<CopilotQuotaSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
 
   const quota = refreshed ?? record.state?.quotaSnapshot?.data ?? null;
   const buckets = shownBuckets(readBuckets(quota));
 
-  const load = async () => {
-    setLoading(true);
+  // The refresh control can be pressed again while a probe is out, so the
+  // reload goes through the hook that aborts the superseded one and owns the
+  // in-flight flag rather than letting the older reply land last.
+  const { refresh: load, refreshing: loading } = useRefresh(useCallback(async (signal: AbortSignal) => {
     setError(null);
     const { data, error: failure } = await callApi(
-      () => api.api.upstreams.copilot.quota.$post({ json: { record: { id: record.id, kind: 'copilot', config: record.config, state: record.state ?? null } } }),
+      () => api.api.upstreams.copilot.quota.$post(
+        { json: { record: { id: record.id, kind: 'copilot', config: record.config, state: record.state ?? null } } },
+        { init: { signal } },
+      ),
     );
-    setLoading(false);
+    if (signal.aborted) return;
     if (failure) {
       setError(failure.message);
       return;
     }
     setRefreshed(data ?? null);
-  };
+  }, [record]));
 
   // `reset_at` is an instant, but it is always a day boundary and nobody plans
   // against its clock time, so it renders as the local calendar date it falls

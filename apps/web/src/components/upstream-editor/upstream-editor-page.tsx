@@ -30,6 +30,7 @@ import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
 import { Panel } from '../ui/panel';
 import { useDialogInvocation } from '../ui/use-dialog-invocation';
+import { useRefresh } from '../ui/use-refresh';
 
 const { Button, Spinner, Text } = fluentComponents;
 
@@ -39,7 +40,6 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const toasts = useOutcomeToasts();
   const [record, setRecord] = useState(data.record);
   const [discovered, setDiscovered] = useState(data.discovered);
-  const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(data.modelsError);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -114,36 +114,35 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     return () => window.removeEventListener('beforeunload', handler);
   }, [hasUnsavedChanges]);
 
-  const refreshModelsFor = useCallback(async (currentRecord: UpstreamRecord) => {
-    if (currentRecord.kind === 'azure') return;
-    setModelsLoading(true);
+  // The listing is reachable from two controls -- the workspace's refresh
+  // button and the custom provider's fetch switch -- so two runs can overlap
+  // and the older one lands last. `useRefresh` is what the rest of the
+  // dashboard uses for that: it aborts the superseded run at the transport,
+  // owns the in-flight flag, and aborts on unmount.
+  const { refresh: refreshModels, refreshing: modelsLoading } = useRefresh(useCallback(async (signal: AbortSignal) => {
+    if (record.kind === 'azure') return;
     setModelsError(null);
     const values = getValues();
     const result = await callApi(() => api.api.upstreams['list-models'].$post({
-      json: { record: previewRecord(currentRecord, values) },
-    }));
+      json: { record: previewRecord(record, values) },
+    }, { init: { signal } }));
+    if (signal.aborted) return;
     if (result.error) {
-      setModelsLoading(false);
       setModelsError(result.error.message);
       return;
     }
-    const endpoints = currentRecord.kind === 'custom' ? (values.config as typeof currentRecord.config).endpoints : {};
+    const endpoints = record.kind === 'custom' ? (values.config as typeof record.config).endpoints : {};
     setDiscovered(discoveredModelsFromResponse(result.data, endpoints));
-    if (currentRecord.id !== '') {
-      const refreshed = await callApi(() => api.api.upstreams[':id'].$get({ param: { id: currentRecord.id } }));
+    if (record.id !== '') {
+      const refreshed = await callApi(() => api.api.upstreams[':id'].$get({ param: { id: record.id } }, { init: { signal } }));
+      if (signal.aborted) return;
       if (refreshed.error) {
         setModelsError(refreshed.error.message);
       } else {
         setRecord(current => ({ ...current, modelsCache: refreshed.data.modelsCache } as UpstreamRecord));
       }
     }
-    setModelsLoading(false);
-  }, [getValues]);
-
-  const refreshModels = useCallback(
-    () => refreshModelsFor(record),
-    [record, refreshModelsFor],
-  );
+  }, [getValues, record]));
 
   const applyProviderPatch = (patch: { config?: unknown; state?: unknown }, persisted = false) => {
     if (patch.config !== undefined) setValue('config', patch.config as UpstreamEditorValues['config'], { shouldDirty: !persisted });
