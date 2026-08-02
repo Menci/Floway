@@ -121,9 +121,17 @@ export const drawerCss = `
    Fluent reads the header's and footer's scroll separators off that same
    element, so a body that never scrolls never carries them either: the scroll,
    and anything that belongs to it, is the ScrollArea's.
+
+   Fluent's own padding on that element is 0 24px 25px, which leaves a control
+   at the body's top edge with nothing between it and the clip this rule
+   installs, and its focus ring is cut. The block padding is squared off at the
+   value Fluent already gives the bottom, so the clip has the same room inside
+   it on both ends. A production body passes \`!p-0\` and nests its own padded
+   ScrollArea, so this reaches the plain bodies alone.
    https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-drawer/library/src/components/DrawerBody/useDrawerBodyStyles.styles.ts#L15-L28 */
 .fui-DrawerBody.fui-DrawerBody {
   min-height: 0;
   overflow: hidden;
+  padding-block: 25px;
 }
 `;
