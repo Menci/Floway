@@ -87,23 +87,33 @@ export function NavSelectionIndicator({
   const [geometry, setGeometry] = useState<Geometry | null>(null);
 
   useLayoutEffect(() => {
+    // The wait is for a hand-over and for nothing else: the other list is
+    // reaching its own bar out in this same commit, and waiting that out is
+    // what separates the two. So it is keyed on the selection having MOVED,
+    // rather than on this list not having held it before -- which is also true
+    // on a fresh load, where nobody is reaching and the page the reader asked
+    // for would sit unmarked for the length of a reach. Running again on the
+    // same selection is not a move either, which is what a StrictMode double
+    // pass is.
+    //
+    // Every commit records the selection it saw, whether or not this list holds
+    // it. A list only ever waits for a hand-over on the commit that brings it
+    // the bar, and on that commit it did not hold the selection before -- so
+    // recording only the selections a list holds is recording exactly the
+    // commits that cannot ask the question. The footer holds one item and would
+    // never have recorded anything else.
+    const moved = ranFor.current !== undefined && ranFor.current !== selectedValue;
+    ranFor.current = selectedValue;
     const container = containerRef.current;
     const item = container?.querySelector<HTMLElement>(`[data-nav-value="${CSS.escape(selectedValue)}"]`);
     // A bar that has to leave is not cleared here; the effect below reaches it
     // out first.
     if (!container || !item) return;
     const next = geometryOf(container, item);
-    // The wait is for a hand-over and for nothing else: the other list is
-    // reaching its own bar out in this same commit, and waiting that out is
-    // what separates the two. So it is keyed on the selection having MOVED
-    // here, rather than on this list not having held it before -- which is
-    // also true on a fresh load, where nobody is reaching and the page the
-    // reader asked for would sit unmarked for the length of a reach. Running
-    // again on the same selection is not a move either, which is what a
-    // StrictMode double pass is.
-    const moved = ranFor.current !== undefined && ranFor.current !== selectedValue;
-    ranFor.current = selectedValue;
-    if (previousRef.current || !moved) {
+    // Under reduced motion the other list has nothing to reach out with and
+    // lets its bar go in this same commit, so there is nothing to wait for and
+    // waiting would leave the reader with no marker at all.
+    if (previousRef.current || !moved || prefersReducedMotion()) {
       setGeometry(next);
       return;
     }
@@ -114,22 +124,40 @@ export function NavSelectionIndicator({
   // Leaving for the other list. The bar stays long enough to reach after the
   // selection before it goes, which is the half of WinUI's pair that plays on
   // this side.
+  //
+  // WinUI also fades its outgoing indicator, holding it opaque through the
+  // reach and easing it away across the settle that follows, so that it can
+  // travel over the scroll area without painting where nothing should. Here the
+  // bar is clipped to the item it sits in, and the settle belongs to the other
+  // list, so the bar is dropped at the instant WinUI's fade would begin and
+  // there is no window left for it to fade in.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.cpp#L2197-L2204
   useEffect(() => {
     const container = containerRef.current;
     if (!geometry || container?.querySelector(`[data-nav-value="${CSS.escape(selectedValue)}"]`)) return;
     const bar = barRef.current;
-    if (bar && !prefersReducedMotion()) {
-      bar.style.transformOrigin = otherListIs === 'below' ? 'top' : 'bottom';
-      bar.animate(
-        [{ transform: 'scaleY(1)' }, { transform: `scaleY(${geometry.height / bar.offsetHeight + 1})` }],
-        { duration: INDICATOR_REACH_MS, easing: INDICATOR_STRETCH_EASING, fill: 'forwards' },
-      );
-    }
-    const gone = window.setTimeout(() => {
+    if (!bar) return;
+    const drop = () => {
       previousRef.current = null;
       setGeometry(null);
-    }, INDICATOR_REACH_MS);
-    return () => window.clearTimeout(gone);
+    };
+    // Nothing to wait out when nothing is playing.
+    if (prefersReducedMotion()) {
+      drop();
+      return;
+    }
+    bar.style.transformOrigin = otherListIs === 'below' ? 'top' : 'bottom';
+    // The reach is over when the reach says so. A timer of the same length
+    // starts at the call and the animation starts at the next frame, and the
+    // stretch's easing puts most of its travel in its last few frames, so the
+    // frames a timer cuts off are the ones carrying the motion -- one frame on
+    // a quiet commit, several when a route commit is contending for them.
+    const reach = bar.animate(
+      [{ transform: 'scaleY(1)' }, { transform: `scaleY(${geometry.height / bar.offsetHeight + 1})` }],
+      { duration: INDICATOR_REACH_MS, easing: INDICATOR_STRETCH_EASING, fill: 'forwards' },
+    );
+    reach.addEventListener('finish', drop);
+    return () => reach.cancel();
   }, [containerRef, geometry, otherListIs, selectedValue]);
 
   // The item can move without the selection changing -- a group appearing above
