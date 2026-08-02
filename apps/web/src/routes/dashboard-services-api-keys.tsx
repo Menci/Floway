@@ -74,8 +74,6 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
   const { user } = useDashboardOutletContext();
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  // The error belongs to the attempt that produced it, so opening the dialog for
-  // another key clears it rather than waiting for a dismissal.
   const openDeleteDialog = (target: ApiKey) => {
     setDeleteError(null);
     deleteDialog.open(target);
