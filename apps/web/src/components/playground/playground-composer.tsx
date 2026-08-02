@@ -234,8 +234,10 @@ const useStyles = makeStyles({
       backgroundColor: bingAccentWashResting,
       // The wash takes the fill duration every button in the layer answers a
       // pointer with, and the curve that rule leaves at its initial value; the
-      // press keeps the original's own timing beside it. Under the OS setting
-      // both collapse, as the layer's button fill does.
+      // press keeps the original's own timing beside it. The original steps
+      // this swap rather than easing it, so easing it is a second departure of
+      // ours inside the frozen composer, and it is unruled. Under the OS
+      // setting both collapse, as the layer's button fill does.
       transitionProperty: 'transform, background-color',
       transitionDuration: `${bingComposerTransitionDuration}, var(--winui-control-faster-animation-duration)`,
       transitionTimingFunction: `${bingComposerTransitionEasing}, ease`,

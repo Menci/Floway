@@ -43,6 +43,9 @@
 // block from the same shape, write the wash first; that is the order taken
 // here, so hover and active read as the states they are named for:
 // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/dark.scss#L268-L300
+// This is the one place these tokens depart from the capture, and it sits
+// inside the region the operator froze. He was shown the transposition and has
+// not ruled on it, so it stands as ours rather than as a correction he made.
 const wash = (alpha: number) => `rgba(0, 0, 0, ${alpha})`;
 
 export const bingAccentGradient = 'linear-gradient(130deg, #2870EA 20%, #1B4AEF 77.5%)';
