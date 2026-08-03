@@ -1,6 +1,6 @@
 import type { InferRequestType } from 'hono/client';
 
-import { shapeForKind } from './endpoints';
+import { PATH_OVERRIDE_PATHS, shapeForKind } from './endpoints';
 import { api, callApi } from '../../api/client';
 import type {
   BackoffRow,
@@ -190,7 +190,16 @@ export const loadInitialModelCatalog = async (record: UpstreamRecord) => {
 
 export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues => {
   const config: UpstreamRecord['config'] = record.kind === 'custom'
-    ? { ...structuredClone(record.config), apiKey: '' }
+    ? {
+        ...structuredClone(record.config),
+        apiKey: '',
+        // The override fields register the whole map, so the edited value
+        // carries every listed path whether or not the stored config does.
+        // Seeding the blanks keeps the saved state and the edited state the
+        // same shape; configFromValues drops the map again when all of it is
+        // blank, and a stored path the form does not list survives the merge.
+        pathOverrides: { ...Object.fromEntries(PATH_OVERRIDE_PATHS.map(path => [path, ''])), ...record.config.pathOverrides },
+      }
     : record.kind === 'azure'
       ? { ...structuredClone(record.config), apiKey: '' }
       : record.kind === 'ollama'

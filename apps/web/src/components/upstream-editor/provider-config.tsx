@@ -14,7 +14,7 @@ import { CodexAccountCard } from './codex-account-card';
 import { CopilotQuotaCard } from './copilot-quota-card';
 import type { UpstreamEditorValues } from './data';
 import { isPersisted, previewRecord } from './data';
-import { CHAT_ENDPOINT_KEYS, ENDPOINT_PATHS, endpointOptionsFor, IMAGE_ENDPOINT_KEYS } from './endpoints';
+import { CHAT_ENDPOINT_KEYS, endpointOptionsFor, PATH_OVERRIDE_PATHS } from './endpoints';
 import { useMonoLabelClass } from './mono-label';
 import { clearPkce, generatePkce, parseCallbackPaste, recallPkce, stashPkce } from './pkce';
 import { EditorSection } from './section';
@@ -155,7 +155,7 @@ function CustomApiPaths() {
         title={t('dashboard.upstreamEditor.fields.pathOverrides')}
       >
         <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
-          {pathOverrideKeys.map(path => (
+          {PATH_OVERRIDE_PATHS.map(path => (
             <Controller
               control={control}
               key={path}
@@ -235,9 +235,6 @@ function SecretField({ optional, secretSet }: { optional?: boolean; secretSet: b
 }
 
 const endpointOptions = endpointOptionsFor(CHAT_ENDPOINT_KEYS);
-
-const pathOverrideKeys = ([...CHAT_ENDPOINT_KEYS, 'embeddings', 'rerank', ...IMAGE_ENDPOINT_KEYS] as const)
-  .map(key => ENDPOINT_PATHS[key]);
 
 function EndpointPicker() {
   const { t } = useTranslation();

@@ -18,6 +18,12 @@ export const ENDPOINT_PATHS = {
 export const CHAT_ENDPOINT_KEYS = ['completions', 'chatCompletions', 'responses', 'messages'] as const satisfies readonly (keyof ModelEndpoints)[];
 export const IMAGE_ENDPOINT_KEYS = ['imagesGenerations', 'imagesEdits'] as const satisfies readonly (keyof ModelEndpoints)[];
 
+// Every path the custom provider accepts an override for, in the order the
+// editor lists them. Audio transcription is deliberately absent from the form
+// yet kept in the value, so an override stored for it survives a save.
+export const PATH_OVERRIDE_PATHS = ([...CHAT_ENDPOINT_KEYS, 'embeddings', 'rerank', ...IMAGE_ENDPOINT_KEYS] as const)
+  .map(key => ENDPOINT_PATHS[key]);
+
 export const endpointOptionsFor = (
   keys: readonly (keyof ModelEndpoints)[],
 ): [keyof ModelEndpoints, string][] => keys.map(key => [key, ENDPOINT_PATHS[key]]);
