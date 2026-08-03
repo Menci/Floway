@@ -30,7 +30,7 @@ const PRESET_HEX: Record<UpstreamColorPreset, string> = {
   orange: '#ff9800',
 };
 
-const DEFAULT_CUSTOM_HEX = '#00e5ff';
+const DEFAULT_CUSTOM_HEX = PRESET_HEX.cyan;
 
 export function UpstreamColorPicker({ kind, onChange, onValidityChange, value }: {
   kind: UpstreamProviderKind;
