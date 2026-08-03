@@ -12,7 +12,7 @@ import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { chatCompletionsProtocolFrameToSSEFrame, CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE, collectChatCompletionsProtocolEventsToResult, chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
-import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
+import { eventFrame, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
 import { apiErrorToResponse } from '@floway-dev/provider';
 
@@ -65,7 +65,7 @@ export const respondChatCompletions = async (
   return streamSSE(c, async stream => {
     let completion: StreamCompletion = 'error';
     try {
-      completion = await writeSSEFrames(stream, chatCompletionsSseFrames(frames, includeUsageChunk, state), {
+      completion = await writeSSEFrames(stream, chatCompletionsSseFrames(frames, includeUsageChunk, state, ctx), {
         keepAlive: { frame: sseCommentFrame('keepalive') },
         ...(ctx.downstreamAbortController !== undefined ? { downstreamAbortController: ctx.downstreamAbortController } : {}),
       });
@@ -115,7 +115,7 @@ const observeChatCompletionsFrames = async function* (frames: AsyncIterable<Prot
   throw new Error(CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE);
 };
 
-const chatCompletionsSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>, includeUsageChunk: boolean, state: SourceStreamState) {
+const chatCompletionsSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>, includeUsageChunk: boolean, state: SourceStreamState, ctx: GatewayCtx) {
   try {
     for await (const frame of frames) {
       const sse = chatCompletionsProtocolFrameToSSEFrame(frame, { includeUsageChunk });
@@ -123,6 +123,8 @@ const chatCompletionsSseFrames = async function* (frames: AsyncIterable<Protocol
     }
   } catch (error) {
     state.failed = true;
-    yield sseFrame(JSON.stringify(internalChatCompletionsErrorPayload(toInternalDebugError(error))), 'error');
+    const event = internalChatCompletionsErrorPayload(toInternalDebugError(error)) as unknown as ChatCompletionsStreamEvent;
+    ctx.dump?.frame(eventFrame(event));
+    yield sseFrame(JSON.stringify(event), 'error');
   }
 };
