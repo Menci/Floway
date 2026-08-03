@@ -4,6 +4,7 @@ import { supportedLanguages } from '../../src/i18n/languages';
 import en from '../../src/i18n/locales/en';
 import { numberFormatNames } from '../../src/i18n/number-format';
 import { loadLocale } from '../../src/i18n/resources';
+import { isPlural, leafEntries, leafKeys, pluralBase } from './keys';
 
 // The app fetches one locale per session, so the whole set is assembled here
 // through the same loader map rather than from a list this file keeps of its
@@ -11,35 +12,6 @@ import { loadLocale } from '../../src/i18n/resources';
 const locales = await Promise.all(
   supportedLanguages.map(async language => [language, await loadLocale(language)] as const),
 );
-
-const leafKeys = (value: object, prefix = ''): string[] =>
-  Object.entries(value).flatMap(([key, child]) => {
-    const path = prefix ? `${prefix}.${key}` : key;
-    return typeof child === 'object' && child !== null
-      ? leafKeys(child, path)
-      : [path];
-  });
-
-const leafStrings = (value: object, prefix = ''): Map<string, string> =>
-  new Map(
-    Object.entries(value).flatMap(([key, child]) => {
-      const path = prefix ? `${prefix}.${key}` : key;
-      return typeof child === 'object' && child !== null
-        ? [...leafStrings(child, path)]
-        : [[path, String(child)] as const];
-    }),
-  );
-
-// i18next appends a CLDR plural category to the key, and the categories a
-// language has are a fact about that language: English distinguishes one from
-// other, Chinese has only other. Comparing raw keys would demand every locale
-// carry English's categories, so structure is compared on the base key and
-// every plural is required to supply `other`.
-const PLURAL_SUFFIX = /_(zero|one|two|few|many|other)$/;
-
-const pluralBase = (key: string): string => key.replace(PLURAL_SUFFIX, '');
-
-const isPlural = (key: string): boolean => PLURAL_SUFFIX.test(key);
 
 // A locale key with no English counterpart is a defect in the resources, and
 // the structural case above already names it; comparing against a stand-in
@@ -79,10 +51,10 @@ describe('translation resources', () => {
   });
 
   it('preserves interpolation variables in every locale', () => {
-    const expected = leafStrings(en);
+    const expected = leafEntries(en);
 
     for (const [, resource] of locales) {
-      for (const [key, value] of leafStrings(resource)) {
+      for (const [key, value] of leafEntries(resource)) {
         const reference = englishReference(expected, key);
         expect(interpolations(value), key).toEqual(interpolations(reference));
       }
@@ -93,7 +65,7 @@ describe('translation resources', () => {
   // that actually renders, so a typo can sit in a rarely-opened dialog.
   it('names a registered format at every interpolation that asks for one', () => {
     for (const [language, resource] of locales) {
-      for (const [key, value] of leafStrings(resource)) {
+      for (const [key, value] of leafEntries(resource)) {
         for (const name of formatNames(value)) {
           expect(numberFormatNames, `${language}: ${key}`).toContain(name);
         }
@@ -102,10 +74,10 @@ describe('translation resources', () => {
   });
 
   it('preserves rich-text tags in every locale', () => {
-    const expected = leafStrings(en);
+    const expected = leafEntries(en);
 
     for (const [, resource] of locales) {
-      for (const [key, value] of leafStrings(resource)) {
+      for (const [key, value] of leafEntries(resource)) {
         const reference = englishReference(expected, key);
         expect(tags(value), key).toEqual(tags(reference));
       }

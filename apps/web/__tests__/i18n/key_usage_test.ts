@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import en from '../../src/i18n/locales/en';
+import { isPlural, leafKeys, pluralBase } from './keys';
 import { BILLING_METRICS, MODEL_KINDS } from '@floway-dev/protocols/common';
 import { OPTIONAL_FLAG_IDS } from '@floway-dev/provider/flags';
 import { ALL_PROVIDER_KINDS } from '@floway-dev/provider/model';
@@ -18,16 +19,6 @@ const sourceFiles = (dir: string): string[] =>
     if (entry.isDirectory()) return path === LOCALES_DIR ? [] : sourceFiles(path);
     return /\.tsx?$/.test(entry.name) ? [path] : [];
   });
-
-const leafKeys = (value: object, prefix = ''): string[] =>
-  Object.entries(value).flatMap(([key, child]) => {
-    const path = prefix ? `${prefix}.${key}` : key;
-    return typeof child === 'object' && child !== null ? leafKeys(child, path) : [path];
-  });
-
-// i18next resolves `count` against a CLDR plural category, so the leaf that
-// backs `t('x.count')` is `x.count_one` / `x.count_other` rather than `x.count`.
-const PLURAL_SUFFIX = /_(zero|one|two|few|many|other)$/;
 
 // A key reaches i18next three ways: `t('a.b')`, `<Trans i18nKey="a.b">`, and a
 // literal sitting behind a ternary inside either. Anchoring on `t(` alone
@@ -89,7 +80,7 @@ const KEY_STEM = new RegExp(`^(?:${NAMESPACES.join('|')})\\.`);
 
 describe('translation key usage', () => {
   const defined = new Set(leafKeys(en.translation));
-  const pluralBases = new Set([...defined].filter(key => PLURAL_SUFFIX.test(key)).map(key => key.replace(PLURAL_SUFFIX, '')));
+  const pluralBases = new Set([...defined].filter(isPlural).map(pluralBase));
   const resolves = (key: string) => defined.has(key) || pluralBases.has(key);
 
   it('has a string behind every literal key the dashboard asks for', () => {
@@ -117,7 +108,7 @@ describe('translation key usage', () => {
       for (const [, prefix] of source.matchAll(TEMPLATE_KEY_PREFIX)) templatePrefixes.add(prefix);
     }
     const orphaned = [...defined].filter(key => {
-      if (used.has(key) || used.has(key.replace(PLURAL_SUFFIX, ''))) return false;
+      if (used.has(key) || used.has(pluralBase(key))) return false;
       if ([...templatePrefixes].some(prefix => key.startsWith(prefix))) return false;
       return ![...used].some(literal =>
         KEY_STEM.test(literal) && literal.length < key.length && key.startsWith(literal));
