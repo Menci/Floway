@@ -10,7 +10,7 @@ import { formatTokenRate } from '../../lib/format-number';
 import { useLocale } from '../../lib/use-locale';
 import { ChartCalloutTable } from '../charts/callout-table';
 import { chartTickValues, formatAxisDate, formatCalloutTitle } from '../charts/dashboard-time';
-import { useUnclippedChartFrame } from '../charts/frame-styles';
+import { useChartFrame } from '../charts/frame-styles';
 import { ChartSection } from '../charts/section';
 import type { ChartSeries } from '../charts/series-legends';
 import { useElementSize } from '../charts/use-element-size';
@@ -30,20 +30,16 @@ const labelledOnLogAxis = (value: number): boolean => {
 };
 // The per-series highlight circle would contradict the callout table, so it
 // loses its paint rather than its box: Fluent anchors the callout to that
-// circle's bounding rect, which `display` would collapse onto the origin.
+// circle's bounding rect, which `display` would collapse onto the origin. The
+// marker sizing in the shared chart frame holds in every state, because the
+// pointer is answered at an x position rather than at one series' point.
 //
 // The x axis draws its ticks at the plot's full height so they double as
 // gridlines, so hit testing has to pass through them or a pointer crossing one
 // leaves the series beneath unanswered.
-//
-// Radius and stroke width together give a marker its diameter -- 2px of radius
-// inside a 1.5px stroke reads as 5.5px beside the 2px line -- and they hold in
-// every state, because the pointer is answered at an x position rather than at
-// one series' point.
 const usePerformanceChartStyles = makeStyles({
   root: {
     '& .fui-cart__xAxis line': { pointerEvents: 'none' },
-    '& circle:not([id*="staticHighlightCircle"])': { r: '2px !important', strokeWidth: '1.5px' },
     '& circle[id*="staticHighlightCircle"]': { visibility: 'hidden' },
   },
 });
@@ -57,7 +53,7 @@ export function PerformanceChartSection({ chart, hidden, onHiddenChange, title }
 function PerformanceChart({ chart, hidden }: { chart: PerformancePlot; hidden: Set<string> }) {
   const { t } = useTranslation();
   const chartStyles = usePerformanceChartStyles();
-  const chartRootStyles = useUnclippedChartFrame();
+  const chartRootStyles = useChartFrame();
   const [host, setHost] = useState<HTMLDivElement | null>(null);
   const size = useElementSize(host);
   const locale = useLocale();

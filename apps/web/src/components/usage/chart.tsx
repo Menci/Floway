@@ -7,7 +7,7 @@ import type { CalloutPoint, UsageChartModel } from './types';
 import { fluentComponents } from '../../fluent';
 import { useLocale } from '../../lib/use-locale';
 import { chartTickValues, formatAxisDate } from '../charts/dashboard-time';
-import { useUnclippedChartFrame } from '../charts/frame-styles';
+import { useChartFrame } from '../charts/frame-styles';
 import { useElementSize } from '../charts/use-element-size';
 import { EmptyStateLine } from '../ui/empty-state';
 
@@ -28,10 +28,6 @@ const useAreaBoundaryStyles = makeStyles({
     // the boundary between them stops reading; 0.42 keeps each band a tint of
     // the surface it sits on, in either scheme.
     '& path[id*="-graph-"]': { fillOpacity: '0.42' },
-    // Fluent's area form draws no point until one is hovered, leaving the
-    // bucket count invisible at rest, so both forms mark their buckets alike.
-    // The highlight disc Fluent moves under the pointer keeps its own size.
-    '& circle:not([id*="staticHighlightCircle"])': { r: '2px', strokeWidth: '1.5px' },
   },
 });
 
@@ -40,7 +36,7 @@ const chartMargins = { top: 16, right: 20, bottom: 42, left: 54 } as const;
 export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: UsageChartModel; valueFormatter: (value: number) => string; visibleLegends: string[] }) {
   const { t } = useTranslation();
   const areaBoundaryStyles = useAreaBoundaryStyles();
-  const chartRootStyles = useUnclippedChartFrame();
+  const chartRootStyles = useChartFrame();
   const [host, setHost] = useState<HTMLDivElement | null>(null);
   const size = useElementSize(host);
   const locale = useLocale();
