@@ -5,16 +5,12 @@
 # the main worktree off `main` is reverted immediately and reported as an
 # error.
 
-prev_head="$1"
 new_head="$2"
 branch_flag="$3"
 
 # Skip file checkouts (`git checkout -- path`); only branch/ref checkouts
 # pass branch_flag=1.
 [ "$branch_flag" = "1" ] || exit 0
-
-# Nothing actually moved (e.g. `git checkout` of the current branch).
-[ "$prev_head" = "$new_head" ] && exit 0
 
 # A linked worktree's per-worktree git dir sits under the main repo's
 # .git/worktrees/<name>/, so --absolute-git-dir and --git-common-dir
@@ -29,9 +25,14 @@ case "$common_dir" in
 esac
 [ "$git_dir" = "$common_dir" ] || exit 0
 
-# In the main worktree. `main` is the only acceptable HEAD. Husky runs us
-# under `sh -e`, so detached-HEAD failures from `git symbolic-ref` must be
-# swallowed explicitly — otherwise set -e kills the hook before we can react.
+# In the main worktree. Decide on where HEAD ended up, never on whether the
+# checkout moved it: post-checkout is handed two commit ids and no ref names,
+# so a `prev == new` test reads "same commit", not "same branch". Branch
+# creation at HEAD (`git checkout -b`) and a switch between two refs pointing
+# at one commit both leave the ids equal while moving the worktree off `main`.
+# `main` is the only acceptable HEAD, whatever the ids say. Husky runs us under
+# `sh -e`, so detached-HEAD failures from `git symbolic-ref` must be swallowed
+# explicitly — otherwise set -e kills the hook before we can react.
 current_branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
 [ "$current_branch" = "main" ] && exit 0
 
