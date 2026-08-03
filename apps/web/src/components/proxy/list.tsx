@@ -56,6 +56,7 @@ export function ProxyList({
           {proxies.map(proxy => {
             const kind = kindFromUri(proxy.url);
             const hue = KIND_HUES[kind] ?? '#616161';
+            const address = hostPortLabel(proxy.url) ?? t('dashboard.proxy.unknownAddress');
 
             return (
               <TableRow key={proxy.id}>
@@ -70,9 +71,9 @@ export function ProxyList({
                   </div>
                 </TableCell>
                 <TableCell className="overflow-hidden">
-                  <Tooltip content={hostPortLabel(proxy.url)} relationship="label">
+                  <Tooltip content={address} relationship="label">
                     <Text block className="winui-focus-rect text-fui-fg2" tabIndex={0} truncate wrap={false}>
-                      {hostPortLabel(proxy.url)}
+                      {address}
                     </Text>
                   </Tooltip>
                 </TableCell>
