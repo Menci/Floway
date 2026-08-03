@@ -31,6 +31,22 @@ const UI_PRIMITIVE_FORBIDDEN_SOURCES = [
   './apps/web/src/components/usage',
 ];
 
+const RESTRICTED_IMPORT_PATTERNS = [
+  {
+    group: ['@floway-dev/*/src/**'],
+    message: 'Cross-package deep imports are forbidden. Use the package\'s public exports map.',
+  },
+  {
+    group: [
+      '@floway-dev/platform-cloudflare',
+      '@floway-dev/platform-cloudflare/*',
+      '@floway-dev/platform-node',
+      '@floway-dev/platform-node/*',
+    ],
+    message: 'Platform implementations are deployment-target apps, not libraries. They are reachable only from their own entry.ts via relative imports.',
+  },
+];
+
 const projectList = [
   './tsconfig.scripts.json',
   './apps/platform-cloudflare/tsconfig.json',
@@ -76,23 +92,7 @@ const commonConfig: Linter.Config = {
     ],
     'import/no-duplicates': 'error',
 
-    'no-restricted-imports': ['error', {
-      patterns: [
-        {
-          group: ['@floway-dev/*/src/**'],
-          message: 'Cross-package deep imports are forbidden. Use the package\'s public exports map.',
-        },
-        {
-          group: [
-            '@floway-dev/platform-cloudflare',
-            '@floway-dev/platform-cloudflare/*',
-            '@floway-dev/platform-node',
-            '@floway-dev/platform-node/*',
-          ],
-          message: 'Platform implementations are deployment-target apps, not libraries. They are reachable only from their own entry.ts via relative imports.',
-        },
-      ],
-    }],
+    'no-restricted-imports': ['error', { patterns: RESTRICTED_IMPORT_PATTERNS }],
 
     // Belt-and-suspenders for the package-name ban above: relative imports
     // bypass `no-restricted-imports`, so a file inside one platform-target app
@@ -245,29 +245,16 @@ const config: Linter.Config[] = [
     },
   },
   {
-    // Redefining a single rule replaces its whole option value (the
-    // option array is not deep-merged with the earlier declaration), so
-    // the platform-impl patterns from commonConfig's `no-restricted-imports`
-    // must be re-listed here alongside the proxy-root ban. Other common
-    // rules still apply to apps/web via flat-config's per-rule merge
-    // across matching config objects.
+    // Redefining a single rule replaces its whole option value: the option
+    // array is not deep-merged with the earlier declaration, so the shared
+    // patterns are spread in again alongside the proxy-root ban. Other common
+    // rules still apply to apps/web via flat-config's per-rule merge across
+    // matching config objects.
     files: ['apps/web/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': ['error', {
         patterns: [
-          {
-            group: ['@floway-dev/*/src/**'],
-            message: 'Cross-package deep imports are forbidden. Use the package\'s public exports map.',
-          },
-          {
-            group: [
-              '@floway-dev/platform-cloudflare',
-              '@floway-dev/platform-cloudflare/*',
-              '@floway-dev/platform-node',
-              '@floway-dev/platform-node/*',
-            ],
-            message: 'Platform implementations are deployment-target apps, not libraries. They are reachable only from their own entry.ts via relative imports.',
-          },
+          ...RESTRICTED_IMPORT_PATTERNS,
           {
             // Match the bare specifier only, not the `/url`, `/url-kind`,
             // etc. subpaths the dashboard is allowed to import.
