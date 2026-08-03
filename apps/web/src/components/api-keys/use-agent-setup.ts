@@ -20,15 +20,10 @@ const clearTimer = (timer: { current: ReturnType<typeof setTimeout> | null }) =>
 
 const isRetryableStatus = (status: number) =>
   status === 0 || status === 408 || status === 429 || status >= 500;
-const configurationsEqual = (left: unknown, right: unknown): boolean => {
-  if (left === right) return true;
-  if (!left || !right || typeof left !== 'object' || typeof right !== 'object') return false;
-  const leftRecord = left as Record<string, unknown>;
-  const rightRecord = right as Record<string, unknown>;
-  const keys = Object.keys(leftRecord);
-  return keys.length === Object.keys(rightRecord).length
-    && keys.every(key => configurationsEqual(leftRecord[key], rightRecord[key]));
-};
+// A configuration is a closed object of JSON scalars whose key order the
+// gateway's schema fixes on both sides of the wire, so it compares by
+// serializing, the way every other draft in this dashboard does.
+const comparableConfiguration = (configuration: AgentSetupConfiguration): string => JSON.stringify(configuration);
 
 export const agentSetupCommand = (origin: string, path: string, platform: 'unix' | 'windows'): string => platform === 'unix'
   ? `export SETUP_ENDPOINT='${origin.replaceAll("'", "'\\''")}'; curl -fsSL "$SETUP_ENDPOINT${path}" | bash`
@@ -175,7 +170,7 @@ export const useAgentSetup = (
           const current: AgentSetupLease = { ...failure, status: 'ok' };
           adoptLease(current);
           if (generationRef.current === sentGeneration
-            && configurationsEqual(current.configuration, sentConfiguration)) {
+            && comparableConfiguration(current.configuration) === comparableConfiguration(sentConfiguration)) {
             confirmedRef.current = sentGeneration;
             setConfirmedGeneration(sentGeneration);
             setSaveError(null);
@@ -326,7 +321,7 @@ export const useAgentSetup = (
     const current = draftRef.current;
     if (!current || terminatedRef.current) return;
     const next = update(cloneAgentSetupConfiguration(current));
-    if (configurationsEqual(current, next)) return;
+    if (comparableConfiguration(current) === comparableConfiguration(next)) return;
     draftRef.current = next;
     const nextGeneration = generationRef.current + 1;
     generationRef.current = nextGeneration;
