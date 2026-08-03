@@ -206,10 +206,10 @@ export const Dropdown = forwardRef<HTMLButtonElement, Omit<ComponentProps<typeof
   ),
 );
 
-// A checkbox and a switch are both a native checkbox, on which HTML accepts
+// A checkbox, a switch and a radio are all native inputs on which HTML accepts
 // `readonly` and does nothing with it. Cancelling the click refuses the change,
-// since that is the default action the toggle is.
-const refuseToggle = (event: MouseEvent<HTMLInputElement>) => event.preventDefault();
+// since that is the default action of a click on such an input.
+export const refuseToggle = (event: MouseEvent<HTMLInputElement>) => event.preventDefault();
 
 // `size` and `shape` are omitted because WinUI states one check box and only
 // one: a single CheckBoxSize, a single glyph measure, a square corner, and no
