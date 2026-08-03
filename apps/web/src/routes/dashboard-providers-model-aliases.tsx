@@ -7,7 +7,6 @@ import { requireDashboardAdmin } from './guards';
 import { api, callApi, callApiNoContent } from '../api/client';
 import { mapResult, mergeResults } from '../api/partial-results';
 import type { ControlPlaneModel } from '../api/types';
-import type { ModelAlias } from '@floway-dev/protocols/common';
 import { AliasDialog } from '../components/model-alias/dialog';
 import { computeAliasWarnings } from '../components/model-alias/warnings';
 import { indexCatalog } from '../components/models/catalog-index';
@@ -23,6 +22,7 @@ import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { useRefresh } from '../components/ui/use-refresh';
 import { fluentComponents } from '../fluent';
+import type { ModelAlias } from '@floway-dev/protocols/common';
 
 const { Table, TableBody, TableCell, TableCellLayout, TableHeader, TableHeaderCell, TableRow, Text, Tooltip } = fluentComponents;
 

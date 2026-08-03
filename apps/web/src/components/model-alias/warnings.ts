@@ -1,6 +1,6 @@
 import type { ControlPlaneModel } from '../../api/types';
-import type { AliasTarget, ChatAliasRules, ModelKind } from '@floway-dev/protocols/common';
 import type { CatalogIndex } from '../models/catalog-index';
+import type { AliasTarget, ChatAliasRules, ModelKind } from '@floway-dev/protocols/common';
 
 export const realModelIdsOfKind = (models: readonly ControlPlaneModel[] | null | undefined, kind: ModelKind) => {
   return (models ?? [])

@@ -18,7 +18,6 @@ import { FeatureFlagsEditor } from './feature-flags';
 import { ModelDetail } from './model-detail';
 import { parseModels, serializeModels } from './models-yaml';
 import type { UpstreamRecord } from '../../api/types';
-import type { UpstreamModelConfig } from '@floway-dev/provider';
 import { fluentComponents } from '../../fluent';
 import { dateTime, relativeTime } from '../../lib/format-time';
 import { useEntryRewrite } from '../../lib/page-navigation';
@@ -39,6 +38,7 @@ import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-copy-to-clipboard';
 import { useDialogInvocation } from '../ui/use-dialog-invocation';
+import type { UpstreamModelConfig } from '@floway-dev/provider';
 
 const {
   Button,

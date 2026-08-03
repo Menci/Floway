@@ -8,7 +8,6 @@ import { modelPrefixIsValid, publicModelId } from './data';
 import { ApiPathsSection, ProviderConfigSection } from './provider-config';
 import { EditorSection } from './section';
 import type { ProxyRecord, UpstreamRecord } from '../../api/types';
-import type { UpstreamModelConfig } from '@floway-dev/provider';
 import { fluentComponents } from '../../fluent';
 import { Combobox, Dropdown, Input } from '../ui/fluent-form-controls';
 import { PANEL_INSET_CLASS } from '../ui/panel';
@@ -17,6 +16,7 @@ import { ScrollArea } from '../ui/scroll-area';
 import { StatusBadge } from '../ui/status-badge';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { UpstreamColorPicker } from '../upstreams/color-picker';
+import type { UpstreamModelConfig } from '@floway-dev/provider';
 import { MODEL_PREFIX_MAX_LENGTH } from '@floway-dev/provider/model-prefix';
 
 const { Button, Checkbox, Field, MessageBar, MessageBarBody, Option, Text } = fluentComponents;

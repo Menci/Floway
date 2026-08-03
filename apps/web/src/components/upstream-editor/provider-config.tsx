@@ -20,7 +20,6 @@ import { clearPkce, generatePkce, parseCallbackPaste, recallPkce, stashPkce } fr
 import { EditorSection } from './section';
 import { api, callApi } from '../../api/client';
 import type { DeviceFlowStart, UpstreamRecord } from '../../api/types';
-import type { UpstreamProviderKind } from '@floway-dev/provider/model';
 import { fluentComponents } from '../../fluent';
 import { errorMessage } from '../../lib/error-message';
 import { Dropdown, Input, Textarea } from '../ui/fluent-form-controls';
@@ -31,6 +30,7 @@ import { SecretInput } from '../ui/secret-input';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-copy-to-clipboard';
 import { ProviderIcon, providerLabel } from '../upstreams/provider-badge';
+import type { UpstreamProviderKind } from '@floway-dev/provider/model';
 
 const {
   Button,

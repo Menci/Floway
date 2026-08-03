@@ -15,7 +15,6 @@ import { requireDashboardAdmin } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
 import { api, callApi } from '../api/client';
 import type { ControlPlaneModel, UpstreamRecord } from '../api/types';
-import type { UpstreamProviderKind } from '@floway-dev/provider/model';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
@@ -35,6 +34,7 @@ import { dateTime } from '../lib/format-time';
 import { pageNavigation, useEntryRewrite } from '../lib/page-navigation';
 import { useLocale } from '../lib/use-locale';
 import { ALL_PROVIDER_KINDS } from '@floway-dev/provider';
+import type { UpstreamProviderKind } from '@floway-dev/provider/model';
 
 const {
   Menu,

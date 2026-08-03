@@ -1,4 +1,5 @@
 import type { ControlPlaneModel } from '../../api/types';
+import type { CatalogIndex } from '../models/catalog-index';
 import type {
   AliasTarget,
   AnnouncedMetadata,
@@ -7,7 +8,6 @@ import type {
   ModelKind,
   PublicModelLimits,
 } from '@floway-dev/protocols/common';
-import type { CatalogIndex } from '../models/catalog-index';
 
 const intersectArrays = <T>(arrays: readonly (readonly T[])[]) => {
   if (!arrays.length) return [];

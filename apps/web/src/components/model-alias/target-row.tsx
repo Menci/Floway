@@ -3,7 +3,6 @@ import { useId, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { computeModelWarning, computeRuleWarnings } from './warnings';
-import type { AliasTarget, ModelKind } from '@floway-dev/protocols/common';
 import { fluentComponents } from '../../fluent';
 import type { CatalogIndex } from '../models/catalog-index';
 import { useDangerTextClass } from '../ui/danger';
@@ -11,6 +10,7 @@ import { Combobox, Dropdown, Input } from '../ui/fluent-form-controls';
 import { TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { ReorderButtons } from '../ui/reorder-buttons';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
+import type { AliasTarget, ModelKind } from '@floway-dev/protocols/common';
 
 const { Button, Field, MessageBar, MessageBarBody, Option, Text, Tooltip } = fluentComponents;
 
