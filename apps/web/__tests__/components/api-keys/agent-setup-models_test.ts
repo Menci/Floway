@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildAgentModelOptions, rankAgentSetupModels } from '../../../src/components/api-keys/agent-setup-models';
+import { buildAgentModelOptions, filterModelOptions, modelOptions, rankAgentSetupModels } from '../../../src/components/api-keys/agent-setup-models';
 import { catalogModel } from '../../api/model-fixture';
 
 describe('Agent Setup model ranking', () => {
@@ -56,5 +56,36 @@ describe('Agent Setup persisted model values', () => {
   it('leaves a Claude model that cannot reach the window unsuffixed', () => {
     expect(buildAgentModelOptions([catalogModel('claude-haiku-4-5', { contextWindow: 200_000 })], { family: 'claude', picker: 'haiku' })[0]?.value)
       .toBe('claude-haiku-4-5');
+  });
+});
+
+describe('Agent Setup model picker', () => {
+  it('offers the full chat catalog while ranking the requested family', () => {
+    const options = modelOptions([
+      catalogModel('gpt-5.6', { contextWindow: 400_000 }),
+      catalogModel('claude-opus-4.6', { contextWindow: 1_000_000 }),
+      catalogModel('other-chat', { contextWindow: 100_000 }),
+    ], 'claude', 'opus');
+    expect(options.map(option => option.value)).toEqual([
+      'claude-opus-4.6[1m]',
+      'gpt-5.6',
+      'other-chat',
+    ]);
+  });
+
+  it('searches the label case-insensitively and the value the label does not spell', () => {
+    const options = modelOptions([
+      catalogModel('claude-opus-4.6', { contextWindow: 1_000_000 }),
+      catalogModel('gpt-5.6', { contextWindow: 400_000 }),
+    ], 'claude', 'default');
+
+    expect(filterModelOptions(options, 'OPUS').map(option => option.label))
+      .toEqual(['claude-opus-4.6']);
+    // The label stays the public model id while the value carries the [1m]
+    // context override, so a search for the override has only the value to
+    // match against.
+    expect(filterModelOptions(options, '[1m]').map(option => option.value))
+      .toEqual(['claude-opus-4.6[1m]']);
+    expect(filterModelOptions(options, 'sonnet')).toEqual([]);
   });
 });

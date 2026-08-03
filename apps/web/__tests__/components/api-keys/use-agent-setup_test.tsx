@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { flowayTokenStorageKey } from '../../../src/auth/session';
 import { defaultAgentSetupConfiguration } from '../../../src/components/api-keys/agent-setup';
-import { useAgentSetup } from '../../../src/components/api-keys/use-agent-setup';
+import { agentSetupCommand, useAgentSetup } from '../../../src/components/api-keys/use-agent-setup';
 import { stubLocalStorage } from '../../local-storage-stub';
 import { advance, settle } from '../../settle';
 
@@ -19,6 +19,15 @@ const lease = (expiresAt = Date.now() + 120_000) => ({
     claude: { sh: '/claude.sh', ps1: '/claude.ps1' },
     codex: { sh: '/codex.sh', ps1: '/codex.ps1' },
   },
+});
+
+describe('Agent Setup install command', () => {
+  it('builds origin-scoped Unix and Windows commands', () => {
+    expect(agentSetupCommand('https://floway.example', '/api/setup/token/claude.sh', 'unix'))
+      .toBe("export SETUP_ENDPOINT='https://floway.example'; curl -fsSL \"$SETUP_ENDPOINT/api/setup/token/claude.sh\" | bash");
+    expect(agentSetupCommand('https://floway.example', '/api/setup/token/codex.ps1', 'windows'))
+      .toBe("$SetupEndpoint = 'https://floway.example'; irm \"$SetupEndpoint/api/setup/token/codex.ps1\" | iex");
+  });
 });
 
 describe('Agent Setup lease lifecycle', () => {
