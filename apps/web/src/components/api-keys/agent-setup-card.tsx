@@ -38,9 +38,9 @@ import type { ClipboardCopy } from '../ui/use-copy-to-clipboard';
 const { Button, Field, InfoButton, Option, Switch, Tab, TabList, Text } = fluentComponents;
 type Agent = 'claude' | 'codex';
 type Platform = AgentSetupPlatform;
-const NONE = '__floway_none__';
-// Model overrides reject NUL at the gateway boundary, so these UI-only values
-// cannot collide with an opaque model id.
+// The option that stands for no override. Model overrides reject NUL at the
+// gateway boundary, so this UI-only value cannot collide with an opaque model
+// id.
 const MODEL_DEFAULT = '\u0000default';
 const FIELD_GRID_CLASS = `${TWO_COLUMN_FORM_CLASS} gap-3`;
 const CLAUDE_MODEL_GRID_CLASS = 'grid gap-3 grid-cols-[repeat(5,minmax(0,1fr))] max-[1680px]:grid-cols-[repeat(3,minmax(0,1fr))] max-[1180px]:grid-cols-[repeat(2,minmax(0,1fr))] max-[680px]:grid-cols-[minmax(0,1fr)]';
@@ -224,8 +224,8 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
       <ModelSelect label={t('dashboard.apiKeys.agentSetup.sonnetModel')} models={models} family="claude" picker="sonnet" value={configuration.claudeCode.defaultSonnetModel} onChange={model => patchClaude({ defaultSonnetModel: model })} />
       <ModelSelect label={t('dashboard.apiKeys.agentSetup.haikuModel')} models={models} family="claude" picker="haiku" value={configuration.claudeCode.defaultHaikuModel} onChange={model => patchClaude({ defaultHaikuModel: model })} />
       <Field label={t('dashboard.apiKeys.agentSetup.reasoningEffort')}>
-        <Dropdown selectedOptions={[configuration.claudeCode.effortLevel ?? NONE]} value={configuration.claudeCode.effortLevel ?? t('dashboard.apiKeys.agentSetup.modelDefault')} onOptionSelect={(_, data) => data.optionValue !== undefined && patchClaude({ effortLevel: data.optionValue === NONE ? null : data.optionValue as NonNullable<AgentSetupConfiguration['claudeCode']['effortLevel']> })}>
-          <Option value={NONE}>{t('dashboard.apiKeys.agentSetup.modelDefault')}</Option>
+        <Dropdown selectedOptions={[configuration.claudeCode.effortLevel ?? MODEL_DEFAULT]} value={configuration.claudeCode.effortLevel ?? t('dashboard.apiKeys.agentSetup.modelDefault')} onOptionSelect={(_, data) => data.optionValue !== undefined && patchClaude({ effortLevel: data.optionValue === MODEL_DEFAULT ? null : data.optionValue as NonNullable<AgentSetupConfiguration['claudeCode']['effortLevel']> })}>
+          <Option value={MODEL_DEFAULT}>{t('dashboard.apiKeys.agentSetup.modelDefault')}</Option>
           {(['low', 'medium', 'high', 'xhigh'] as const).map(effort => <Option key={effort} value={effort}>{effort}</Option>)}
         </Dropdown>
       </Field>
@@ -247,10 +247,10 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
       <div className={FIELD_GRID_CLASS}>
         <Field label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.cleanupRetention'), t('dashboard.apiKeys.agentSetup.cleanupRetentionHint')) }}>
           <Dropdown
-            selectedOptions={[configuration.claudeCode.cleanupPeriodDays?.toString() ?? NONE]}
+            selectedOptions={[configuration.claudeCode.cleanupPeriodDays?.toString() ?? MODEL_DEFAULT]}
             value={configuration.claudeCode.cleanupPeriodDays === null ? t('dashboard.apiKeys.agentSetup.modelDefault') : t('dashboard.apiKeys.agentSetup.cleanupDays', { count: configuration.claudeCode.cleanupPeriodDays })}
             onOptionSelect={(_, data) => {
-              if (data.optionValue === NONE) {
+              if (data.optionValue === MODEL_DEFAULT) {
                 patchClaude({ cleanupPeriodDays: null });
                 return;
               }
@@ -258,7 +258,7 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
               if (period !== undefined) patchClaude({ cleanupPeriodDays: period });
             }}
           >
-            <Option value={NONE}>{t('dashboard.apiKeys.agentSetup.modelDefault')}</Option>
+            <Option value={MODEL_DEFAULT}>{t('dashboard.apiKeys.agentSetup.modelDefault')}</Option>
             {claudeCleanupPeriods.map(period => (
               <Option key={period} value={String(period)}>{t('dashboard.apiKeys.agentSetup.cleanupDays', { count: period })}</Option>
             ))}
