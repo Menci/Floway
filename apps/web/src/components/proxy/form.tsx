@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { DEFAULT_DIAL_TIMEOUT_SECONDS, FORM_KIND_LABELS, KIND_OPTIONS, PROXY_CONFIG_ISSUE_FIELDS, SS2022_METHOD_OPTIONS, SS_METHOD_OPTIONS, formKindFromConfig, orUndef, proxyUrlPlaceholder, type ProxyConfigIssueField, type ProxyFormValues } from './config';
 import { fluentComponents } from '../../fluent';
 import { issuesFromErrors, useIssueText } from '../../lib/form-issues';
-import { Dropdown, Input } from '../ui/fluent-form-controls';
+import { Dropdown, Input, Switch } from '../ui/fluent-form-controls';
 import { SecretInput } from '../ui/secret-input';
 import type {
   HttpProxyConfig,
@@ -18,7 +18,7 @@ import type {
   VlessWsTlsProxyConfig,
 } from '@floway-dev/proxy/proxy-config';
 
-const { Field, Option, Switch } = fluentComponents;
+const { Field, Option } = fluentComponents;
 
 export type ProxyTestResult =
   | { ok: true; egress_ip: string }

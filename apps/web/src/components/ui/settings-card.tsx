@@ -2,9 +2,10 @@ import { useId, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Switch } from './fluent-form-controls';
 import { fluentComponents } from '../../fluent';
 
-const { Switch, Text, makeStyles, mergeClasses, shorthands } = fluentComponents;
+const { Text, makeStyles, mergeClasses, shorthands } = fluentComponents;
 
 // Metrics transcribed from the Community Toolkit's SettingsCard and
 // SettingsExpander, not microsoft-ui-xaml; brushes are resolved through the

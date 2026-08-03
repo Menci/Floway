@@ -28,14 +28,14 @@ import claudeIconUrl from '../../assets/claude-color.svg';
 import codexIconUrl from '../../assets/codex.svg';
 import { fluentComponents } from '../../fluent';
 import { CodeBlock } from '../ui/code-block';
-import { Combobox, Dropdown } from '../ui/fluent-form-controls';
+import { Combobox, Dropdown, Switch } from '../ui/fluent-form-controls';
 import { infoLabelSlot } from '../ui/info-label';
 import { PANE_GAP_CLASS, SECTION_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SectionHeader } from '../ui/section-header';
 import type { ClipboardCopy } from '../ui/use-copy-to-clipboard';
 
-const { Button, Field, InfoButton, Option, Switch, Tab, TabList, Text } = fluentComponents;
+const { Button, Field, InfoButton, Option, Tab, TabList, Text } = fluentComponents;
 type Agent = 'claude' | 'codex';
 type Platform = AgentSetupPlatform;
 // The option that stands for no override. Model overrides reject NUL at the
