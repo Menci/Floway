@@ -19,6 +19,7 @@ import { ErrorShell, ErrorStack } from './components/ui/error-shell';
 import { AppLoadingScreen } from './components/ui/loading-screen';
 import { fluentComponents } from './fluent';
 import { defaultLanguage, htmlLanguageFor } from './i18n/languages';
+import { DARK_SCHEME_QUERY, useMediaQuery } from './lib/use-media-query';
 import { winuiDarkTheme, winuiLightTheme } from './winui/theme';
 import './i18n';
 import '@fontsource/maple-mono/400.css';
@@ -41,22 +42,7 @@ export const links: Route.LinksFunction = () => [
   { rel: 'preload', as: 'font', type: 'font/ttf', href: SEGOE_UI_VARIABLE_URL, crossOrigin: 'anonymous' },
 ];
 
-const COLOR_SCHEME_QUERY = '(prefers-color-scheme: dark)';
-
-const subscribeToColorScheme = (onChange: () => void): (() => void) => {
-  const query = window.matchMedia(COLOR_SCHEME_QUERY);
-  query.addEventListener('change', onChange);
-  return () => query.removeEventListener('change', onChange);
-};
-
-const useSystemTheme = () => {
-  const dark = useSyncExternalStore(
-    subscribeToColorScheme,
-    () => window.matchMedia(COLOR_SCHEME_QUERY).matches,
-    () => false,
-  );
-  return dark ? winuiDarkTheme : winuiLightTheme;
-};
+const useSystemTheme = () => useMediaQuery(DARK_SCHEME_QUERY) ? winuiDarkTheme : winuiLightTheme;
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const theme = useSystemTheme();

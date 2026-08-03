@@ -5,7 +5,7 @@ import { useEffect, useRef } from 'react';
 
 import YamlWorker from './models-yaml.worker.ts?worker';
 import { monospaceStack } from '../../font-stacks';
-import { useMediaQuery } from '../../lib/use-media-query';
+import { DARK_SCHEME_QUERY, useMediaQuery } from '../../lib/use-media-query';
 
 interface MonacoEnvironment {
   getWorker: (moduleId: string, label: string) => Worker;
@@ -29,7 +29,7 @@ configureMonacoYaml(monaco, {
 let modelSerial = 0;
 
 // Monaco's built-in themes, picked off the one query the rest of the app's
-// scheme follows (../../root.tsx).
+// scheme follows.
 const monacoTheme = (dark: boolean) => dark ? 'vs-dark' : 'vs';
 
 export default function ModelsYamlEditor({ onChange, value }: { onChange: (value: string) => void; value: string }) {
@@ -37,7 +37,7 @@ export default function ModelsYamlEditor({ onChange, value }: { onChange: (value
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const initialValueRef = useRef(value);
   const onChangeRef = useRef(onChange);
-  const dark = useMediaQuery('(prefers-color-scheme: dark)');
+  const dark = useMediaQuery(DARK_SCHEME_QUERY);
   const initialDarkRef = useRef(dark);
 
   useEffect(() => {
