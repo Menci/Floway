@@ -34,6 +34,7 @@ import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@
 import { assertCodexUpstreamRecord, assertCodexUpstreamState } from '@floway-dev/provider-codex';
 import { parseCopilotUpstreamConfig } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
+import { assertOllamaUpstreamRecord } from '@floway-dev/provider-ollama';
 import { parseProxyUri } from '@floway-dev/proxy';
 
 // Wire shape of a proxy entry in the export/import payload. The backoff rows
@@ -81,17 +82,22 @@ const importErrorBuilder = (field: string, expected: string) => new Error(`${fie
 const nonEmptyString = (value: unknown, field: string): string => nonEmptyStringField(value, field, importErrorBuilder);
 
 const normalizeUpstreamConfig = (record: UpstreamRecord): unknown => {
-  if (record.kind === 'custom') return assertCustomUpstreamRecord(record).config;
-  if (record.kind === 'azure') return assertAzureUpstreamRecord(record).config;
-  if (record.kind === 'codex') {
+  switch (record.kind) {
+  case 'custom':
+    return assertCustomUpstreamRecord(record).config;
+  case 'azure':
+    return assertAzureUpstreamRecord(record).config;
+  case 'ollama':
+    return assertOllamaUpstreamRecord(record).config;
+  case 'codex':
     assertCodexUpstreamRecord(record);
     return record.config;
-  }
-  if (record.kind === 'claude-code') {
+  case 'claude-code':
     assertClaudeCodeUpstreamRecord(record);
     return record.config;
+  case 'copilot':
+    return parseCopilotUpstreamConfig(record.config, importErrorBuilder);
   }
-  return parseCopilotUpstreamConfig(record.config, importErrorBuilder);
 };
 
 // Only Codex and Claude Code carry state across an import: their per-account
