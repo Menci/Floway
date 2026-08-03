@@ -11,10 +11,13 @@ import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@f
 
 const stubCtx = mockChatGatewayCtx();
 
-const invocation = (enabledFlags: ReadonlySet<FlagId> = new Set(['usage-exclusive-cached-tokens'])): ChatCompletionsInvocation => ({
+const invocation = (
+  enabledFlags: ReadonlySet<FlagId> = new Set(['usage-exclusive-cached-tokens']),
+  targetApi: ChatCompletionsInvocation['targetApi'] = 'chat-completions',
+): ChatCompletionsInvocation => ({
   payload: { model: 'kimi-k3', messages: [{ role: 'user', content: 'hi' }] } satisfies ChatCompletionsPayload,
   candidate: stubModelCandidate({ enabledFlags }),
-  targetApi: 'chat-completions',
+  targetApi,
   headers: new Headers(),
 });
 
@@ -121,4 +124,13 @@ test('raises when the flag claims exclusive and the totals say inclusive', async
 test('raises naming the flag when the cache counts underflow with no verdict', async () => {
   await expect(run(invocation(new Set()), HYPER_USAGE_WITHOUT_TOTAL))
     .rejects.toThrowError(/enable usage-exclusive-cached-tokens/);
+});
+
+test('stands down entirely when the wire it speaks about is elsewhere', async () => {
+  // A Chat Completions request whose upstream speaks Responses: the Responses
+  // entry owns that wire, and by the time these events reach this chain they
+  // are a translation. Neither the fold nor its errors apply here, so even a
+  // payload that would raise on the wire passes through untouched.
+  const usage = await run(invocation(undefined, 'responses'), HYPER_USAGE_WITHOUT_TOTAL);
+  assertEquals(usage.prompt_tokens, 479);
 });

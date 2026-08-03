@@ -11,10 +11,13 @@ import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@f
 
 const stubCtx = mockChatGatewayCtx();
 
-const invocation = (enabledFlags: ReadonlySet<FlagId> = new Set(['usage-exclusive-cached-tokens'])): ResponsesInvocation => ({
+const invocation = (
+  enabledFlags: ReadonlySet<FlagId> = new Set(['usage-exclusive-cached-tokens']),
+  targetApi: ResponsesInvocation['targetApi'] = 'responses',
+): ResponsesInvocation => ({
   payload: { model: 'test-model', input: [{ type: 'message', role: 'user', content: 'hi' }] },
   candidate: stubModelCandidate({ enabledFlags }),
-  targetApi: 'responses',
+  targetApi,
   headers: new Headers(),
   action: 'generate',
 });
@@ -117,4 +120,9 @@ test('raises when the flag claims exclusive and the totals say inclusive', async
 test('raises naming the flag when the cache counts underflow with no verdict', async () => {
   await expect(run(invocation(new Set()), exclusiveUsageWithoutTotal()))
     .rejects.toThrowError(/enable usage-exclusive-cached-tokens/);
+});
+
+test('stands down entirely when the wire it speaks about is elsewhere', async () => {
+  const response = await run(invocation(undefined, 'chat-completions'), exclusiveUsageWithoutTotal());
+  assertEquals(response.usage?.input_tokens, 479);
 });

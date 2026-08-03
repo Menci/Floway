@@ -49,6 +49,10 @@ const rewriteInboundUsage = (
 };
 
 export const withExclusiveCachedTokensNormalized: ResponsesInterceptor = async (ctx, _gatewayCtx, run) => {
+  // Runs only where the wire it speaks about is; see the Chat Completions
+  // counterpart.
+  if (ctx.targetApi !== 'responses') return await run();
+
   const model = providerModelOf(ctx.candidate);
   const declaredExclusive = model.enabledFlags.has('usage-exclusive-cached-tokens');
   const identity = `${ctx.candidate.provider.upstreamId}/${model.id}`;

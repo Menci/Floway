@@ -64,6 +64,16 @@ const rewriteInboundUsage = (
 };
 
 export const withExclusiveCachedTokensNormalized: ChatCompletionsInterceptor = async (ctx, _gatewayCtx, run) => {
+  // Everything this entry says is about one upstream's Chat Completions wire:
+  // the flag it reads describes how that upstream writes its usage there, and
+  // the remedy its errors name is a setting for that upstream. A translated
+  // request re-enters its target's chain, where these events are a projection
+  // of some other wire — the flag answers a question about counts it does not
+  // describe, and telling an operator to set it would be advice that cannot
+  // help. Nothing is lost by standing down: a translator emits the canonical
+  // form, which is the one case the fold has nothing to do with.
+  if (ctx.targetApi !== 'chat-completions') return await run();
+
   const model = providerModelOf(ctx.candidate);
   const declaredExclusive = model.enabledFlags.has('usage-exclusive-cached-tokens');
   const identity = `${ctx.candidate.provider.upstreamId}/${model.id}`;
