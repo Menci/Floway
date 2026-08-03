@@ -17,8 +17,8 @@ const SURFACE_DARK = [0.652, 0.361] as const;
 const tone = (hue: number, [saturation, value]: readonly [number, number]) =>
   rgbToHex(...hsvToRgb(hue, saturation, value));
 
-// Both schemes' tones are published and the root class below picks between
-// them, because a style attribute cannot carry a media query.
+// A style attribute cannot carry a media query, so the root class below picks
+// between the two tones.
 const paint = (hue: number) => ({
   '--floway-mark-surface-light': tone(hue, SURFACE_LIGHT),
   '--floway-mark-surface-dark': tone(hue, SURFACE_DARK),

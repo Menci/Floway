@@ -22,11 +22,9 @@ const HARDEST_BADGE_SURFACE = { light: '#EBF3FC', dark: '#434343' } as const;
 const BADGE_FILL_ALPHA = 0.1;
 const BADGE_STROKE_ALPHA = 0.35;
 
-// Only the scheme choice lives here. The three painted properties stay on the
-// element's own style attribute, where they outrank both Fluent's own chip
-// styles and the WinUI layer's doubled-class rules the way they always have;
-// what this class decides is which of the two values behind each of them a
-// `var()` on that attribute resolves to.
+// The three painted properties stay on the element's own style attribute,
+// which is what outranks Fluent's chip styles and the WinUI layer's
+// doubled-class rules; only the scheme choice can live in a class.
 const useStyles = makeStyles({
   scheme: {
     '--floway-badge-fill': 'var(--floway-badge-fill-light)',
@@ -51,8 +49,7 @@ const alpha = (hex: string, fraction: number): string => `rgba(${hexToRgb(hex).j
  *
  * A hue may differ by scheme -- WinUI states its own success, caution and
  * critical colours twice, because a colour that carries a meaning against white
- * is not the one that carries it against black. Both schemes' values are always
- * published; the returned class picks between them.
+ * is not the one that carries it against black.
  */
 export const useBadgeHue = (hue: BadgeHue): { className: string; style: CSSProperties } => {
   const styles = useStyles();
