@@ -283,10 +283,17 @@ export default defineConfig({
                   test: /node_modules[\\/](?:\.pnpm[\\/])?(?:@fluentui\+(?!react-charts|chart-utilities)|@griffel\+|tabster@|@fluentui[\\/](?!react-charts|chart-utilities)|@griffel[\\/]|tabster[\\/])/,
                   priority: 30,
                 },
+                // Above the Fluent group: at a lower priority React's core,
+                // its jsx-runtime, the scheduler and react-dom are emitted
+                // into the Fluent chunk instead (read off the chunk
+                // sourcemaps), which erases the cache boundary this group
+                // exists to draw -- a Fluent bump would rehash React and the
+                // other way round. Both chunks are shell-loaded either way, so
+                // the split costs no request.
                 {
                   name: 'react-runtime',
                   test: /node_modules[\\/](?:\.pnpm[\\/])?(?:react(?:-dom|-router)?@|scheduler@|react(?:-dom|-router)?[\\/]|scheduler[\\/])/,
-                  priority: 20,
+                  priority: 40,
                 },
               ],
             },
