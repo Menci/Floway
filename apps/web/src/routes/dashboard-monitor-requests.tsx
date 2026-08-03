@@ -138,10 +138,10 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
   return (
     <section className="h-full min-h-0 grid grid-rows-[auto_minmax(0,1fr)] gap-[18px] min-w-0">
       <DashboardPageHeader description={t('dashboard.pages.requests')} title={t('dashboard.nav.requests')} />
-      {keys === null ? (
-        keysError
-          ? <OutcomeMessageBar onDismiss={() => setReplacement({ ...shown, keysError: null })}>{keysError}</OutcomeMessageBar>
-          : <Panel className="!grid"><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel>
+      {keysError && (keys === null || keys.length === 0) ? (
+        <OutcomeMessageBar onDismiss={() => setReplacement({ ...shown, keysError: null })}>{keysError}</OutcomeMessageBar>
+      ) : keys === null ? (
+        <Panel className="!grid"><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel>
       ) : keys.length === 0 ? (
         <Panel className="!grid">
           <EmptyState
