@@ -26,7 +26,6 @@ import { SettingsExpander, SettingsSwitch } from '../components/ui/settings-card
 import { StatusBadge } from '../components/ui/status-badge';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { fluentComponents } from '../fluent';
-import { errorMessage } from '../lib/error-message';
 
 type SearchConfigTestResult = InferResponseType<typeof api.api['search-config']['test']['$post'], 200>;
 
@@ -233,18 +232,18 @@ function SearchSettings({ config, models, upstreams }: {
     setTesting(true);
     setTestError(null);
     setTestResult(null);
-    try {
-      const response = await api.api['search-config'].test.$post({ json: draft });
-      // Probe failures are structured SearchTestResult bodies at HTTP 400;
-      // preserving the body keeps the upstream error code and query visible.
-      const result = await response.json();
-      if (!('ok' in result)) throw new Error(result.error);
-      setTestResult(result);
-    } catch (error) {
-      setTestError(errorMessage(error));
-    } finally {
-      setTesting(false);
+    const result = await callApi(() => api.api['search-config'].test.$post({ json: draft }));
+    setTesting(false);
+    if (result.error) {
+      // A failed probe is a structured test-result body at HTTP 400, and
+      // rendering it keeps the upstream error code and the query visible. Every
+      // other failure of this route carries a message and nothing to show.
+      const raw = result.error.raw;
+      if (raw && 'ok' in raw) setTestResult(raw);
+      else setTestError(result.error.message);
+      return;
     }
+    setTestResult(result.data);
   }, [draft]);
 
   return (
