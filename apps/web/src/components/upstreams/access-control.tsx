@@ -24,16 +24,12 @@ const {
 
 interface UpstreamAccessRow {
   id: string;
-  // Null is a count nobody knows: the upstream is gone, or it is disabled and
-  // never cached a catalog while it was on.
+  // Null is a count nobody knows: the upstream is disabled and never cached a
+  // catalog while it was on.
   modelCount: number | null;
   name: string;
   selected: boolean;
-  // Null where a granted id is absent from `available`. A deleted upstream is
-  // not that case: every read path projects a stored cap through the live
-  // catalog first. What survives is a grant that outlived the viewer's own cap
-  // being narrowed, which prunes neither the key nor its owner's other grants.
-  upstream: { hue: number; kind: UpstreamOption['kind'] } | null;
+  upstream: { hue: number; kind: UpstreamOption['kind'] };
   upstreamEnabled: boolean;
 }
 
@@ -57,7 +53,7 @@ export function UpstreamAccessControl({
   const { t } = useTranslation();
   const dangerText = useDangerTextClass();
   const errorId = useId();
-  const rows = useMemo(() => accessRows(available, ids, models, t), [available, ids, models, t]);
+  const rows = useMemo(() => accessRows(available, ids, models), [available, ids, models]);
 
   // Opening on an empty selection would fail validation before the operator has
   // touched a row, so it opens on everything the scope can see.
@@ -136,7 +132,6 @@ const accessRows = (
   available: UpstreamOption[],
   ids: string[],
   models: ControlPlaneModel[],
-  t: ReturnType<typeof useTranslation>['t'],
 ): UpstreamAccessRow[] => {
   const selected = new Set(ids);
   const byId = new Map(available.map(upstream => [upstream.id, upstream]));
@@ -156,12 +151,13 @@ const accessRows = (
     upstream: { hue: upstream.hue, kind: upstream.kind },
     upstreamEnabled: upstream.enabled,
   });
+  // Selected first, in the order the cap states, then the rest. An id absent
+  // from `available` has none: the control plane serves a cap already projected
+  // through what the principal can reach, so every id here resolves.
   return [
-    ...ids.map(id => {
+    ...ids.flatMap(id => {
       const upstream = byId.get(id);
-      return upstream
-        ? rowFor(upstream, true)
-        : { id, name: t('dashboard.upstreamAccess.unknownUpstream', { id }), modelCount: null, selected: true, upstream: null, upstreamEnabled: true };
+      return upstream ? [rowFor(upstream, true)] : [];
     }),
     ...available.filter(upstream => !selected.has(upstream.id)).map(upstream => rowFor(upstream, false)),
   ];

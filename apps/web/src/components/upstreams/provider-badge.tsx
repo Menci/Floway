@@ -44,23 +44,18 @@ export const providerLabel = (kind: UpstreamProviderKind) => providerLabels[kind
 export function ProviderBadge({ label, title, upstream }: {
   label?: string;
   title?: string;
-  // Null where a row names an upstream id the caller has nothing to render it
-  // from, which leaves neither a provider to name nor a hue to paint. The
-  // badge then carries no identity at all and reads as the neutral chip every
-  // other piece of metadata is stated in.
-  upstream: { hue: number; kind: UpstreamProviderKind } | null;
+  upstream: { hue: number; kind: UpstreamProviderKind };
 }) {
   const { t } = useTranslation();
-  const visibleLabel = label
-    ?? (upstream === null ? t('provider.unknown') : t(`provider.${upstream.kind}`, providerLabel(upstream.kind)));
+  const visibleLabel = label ?? t(`provider.${upstream.kind}`, providerLabel(upstream.kind));
 
   // A caller-supplied title describes the badge; the default is the clipped
   // label restored, which names it.
   return (
     <Tooltip content={title ?? visibleLabel} relationship={title === undefined ? 'label' : 'description'}>
       <Chip
-        style={upstream === null ? undefined : badgeHueStyle(hueBadgeTone(upstream.hue))}
-        icon={upstream === null ? undefined : <ProviderIcon kind={upstream.kind} className="h-4 w-4" />}
+        style={badgeHueStyle(hueBadgeTone(upstream.hue))}
+        icon={<ProviderIcon kind={upstream.kind} className="h-4 w-4" />}
       >
         {visibleLabel}
       </Chip>
