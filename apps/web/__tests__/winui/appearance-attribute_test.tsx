@@ -306,6 +306,26 @@ describe('the checked axis the WinUI rules read', () => {
     expect(stamped).toEqual(['mixed', 'true', 'false']);
   });
 
+  it('follows a selection cell check box the cell left to itself', () => {
+    const view = renderInApp(
+      <Table>
+        <TableBody>
+          <TableRow>
+            <TableSelectionCell />
+          </TableRow>
+        </TableBody>
+      </Table>,
+    );
+
+    const input = view.container.querySelector('.fui-Checkbox input')!;
+
+    expect(input.getAttribute(winuiCheckedAttribute)).toBe('false');
+
+    fireEvent.click(input);
+
+    expect(input.getAttribute(winuiCheckedAttribute)).toBe('true');
+  });
+
   it('leaves a selection cell that draws no check box alone', () => {
     const view = renderInApp(
       <Table>
