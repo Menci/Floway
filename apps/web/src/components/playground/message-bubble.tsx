@@ -39,13 +39,11 @@ const useStyles = makeStyles({
   },
   // The assistant half keeps the dashboard's neutral surface: the page here is
   // opaque where Bing's was a photograph under a translucent card.
-  assistant: {
-    boxShadow: bingCardShadow,
-  },
+  assistant: bingCardShadow,
   user: {
     color: bingOnAccentForeground,
     backgroundImage: bingAccentGradient,
-    boxShadow: bingElevation4,
+    ...bingElevation4,
   },
 });
 

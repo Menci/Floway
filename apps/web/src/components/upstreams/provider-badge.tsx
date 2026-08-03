@@ -7,8 +7,8 @@ import githubCopilotIconUrl from '../../assets/githubcopilot.svg?no-inline';
 import ollamaIconUrl from '../../assets/ollama.svg?no-inline';
 import openaiIconUrl from '../../assets/openai.svg?no-inline';
 import { fluentComponents } from '../../fluent';
-import { badgeHueStyle } from '../../lib/color';
 import { hueBadgeTone } from '../../lib/hue';
+import { useBadgeHue } from '../ui/badge-hue';
 import { Chip } from '../ui/chip';
 import { MaskedIcon } from '../ui/masked-icon';
 import type { UpstreamProviderKind } from '@floway-dev/provider/model';
@@ -39,14 +39,15 @@ export const providerLabel = (kind: UpstreamProviderKind) => providerLabels[kind
 
 // WinUI states no per-upstream identity colour, so the badge is ours. Only the
 // operator's hue is picked: the wash, the outline and the label all come out of
-// the one badge algorithm in lib/color.ts, which solves the label against the
-// wash for 4.5:1 rather than it being chosen and then checked.
+// the one badge algorithm in ../ui/badge-hue.ts, which solves the label against
+// the wash for 4.5:1 rather than it being chosen and then checked.
 export function ProviderBadge({ label, title, upstream }: {
   label?: string;
   title?: string;
   upstream: { hue: number; kind: UpstreamProviderKind };
 }) {
   const { t } = useTranslation();
+  const hue = useBadgeHue(hueBadgeTone(upstream.hue));
   const visibleLabel = label ?? t(`provider.${upstream.kind}`, providerLabel(upstream.kind));
 
   // A caller-supplied title describes the badge; the default is the clipped
@@ -54,7 +55,8 @@ export function ProviderBadge({ label, title, upstream }: {
   return (
     <Tooltip content={title ?? visibleLabel} relationship={title === undefined ? 'label' : 'description'}>
       <Chip
-        style={badgeHueStyle(hueBadgeTone(upstream.hue))}
+        className={hue.className}
+        style={hue.style}
         icon={<ProviderIcon kind={upstream.kind} className="h-4 w-4" />}
       >
         {visibleLabel}

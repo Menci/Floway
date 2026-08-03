@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react';
 
+import { useBadgeHue, type BadgeHue } from './badge-hue';
 import { fluentComponents } from '../../fluent';
-import { badgeHueStyle, type BadgeHue } from '../../lib/color';
 
-const { Badge } = fluentComponents;
+const { Badge, mergeClasses } = fluentComponents;
 
 export type BadgeTone = 'accent' | 'danger' | 'neutral' | 'success' | 'warning';
 
@@ -33,5 +33,6 @@ export function StatusBadge({ children, className, tone }: {
   className?: string;
   tone: BadgeTone;
 }) {
-  return <Badge appearance="tint" className={className} size="large" style={badgeHueStyle(TONE_HUES[tone])}>{children}</Badge>;
+  const hue = useBadgeHue(TONE_HUES[tone]);
+  return <Badge appearance="tint" className={mergeClasses(hue.className, className)} size="large" style={hue.style}>{children}</Badge>;
 }

@@ -17,7 +17,7 @@ import type { ApiKey, ControlPlaneModel } from '../api/types';
 import { indexCatalog } from '../components/models/catalog-index';
 import { ModelInfoBadges } from '../components/models/info-badges';
 import { effectiveUpstreamCap, reachableModels } from '../components/models/reachability';
-import { bingAccentForeground, bingAccentForegroundHover } from '../components/playground/bing-chat-tokens';
+import { bingAccentForeground, bingAccentForegroundHover, bingSchemed } from '../components/playground/bing-chat-tokens';
 import { PlaygroundComposer } from '../components/playground/composer';
 import { PlaygroundEditDialog, type PlaygroundMessageDraft } from '../components/playground/edit-dialog';
 import { PlaygroundMarkdown } from '../components/playground/markdown';
@@ -109,9 +109,9 @@ const useStyles = makeStyles({
   // through the press. Fluent clears forced-color-adjust on a reached button,
   // so the forced-colours Highlight pairing has to be restated here.
   brandIconAction: {
-    [ENABLED]: { color: takenBack(bingAccentForeground) },
-    [HOVER]: reachedPaint(bingAccentForegroundHover),
-    [PRESSED]: reachedPaint(bingAccentForegroundHover),
+    [ENABLED]: bingSchemed(bingAccentForeground, color => ({ color: takenBack(color) })),
+    [HOVER]: bingSchemed(bingAccentForegroundHover, reachedPaint),
+    [PRESSED]: bingSchemed(bingAccentForegroundHover, reachedPaint),
     '@media (forced-colors: active)': {
       [HOVER]: reachedPaint('Highlight'),
       [PRESSED]: reachedPaint('Highlight'),

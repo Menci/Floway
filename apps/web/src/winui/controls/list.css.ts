@@ -107,14 +107,25 @@ ${reducedMotion([
    those names a disabled brush of its own. A CSS group opacity cannot spare a
    pseudo-element or a slot, so the content is dimmed through its colour
    instead: the row's text carries TextFillColorPrimary, so 30% of it is what
-   the animation would have produced. A descendant that states its own colour
+   the animation would have produced -- written out per scheme because the
+   source already carries an alpha of its own, and not to be mistaken for
+   TextFillColorDisabled, which is a different value (0.361) that WinUI reaches
+   by another route. A descendant that states its own colour
    keeps it, where WinUI would have faded it with the rest.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L6
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L78
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/core/elements/ListViewBaseItemChrome.cpp#L888-L916
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/core/elements/ListViewBaseItemChrome.cpp#L3290-L3312 */
 .fui-ListItem.fui-ListItem[aria-disabled='true'] {
-  color: color-mix(in srgb, var(--winui-text-fill-primary) 30%, transparent);
+  /* 30% of --winui-text-fill-primary (#000000e4). */
+  color: #00000044;
+}
+
+@media (prefers-color-scheme: dark) {
+  /* 30% of --winui-text-fill-primary (#ffffff). */
+  .fui-ListItem.fui-ListItem[aria-disabled='true'] {
+    color: #ffffff4d;
+  }
 }
 
 .fui-ListItem.fui-ListItem[aria-disabled='true']::before {

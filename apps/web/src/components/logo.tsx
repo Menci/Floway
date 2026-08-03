@@ -1,3 +1,5 @@
+import type { CSSProperties } from 'react';
+
 import { currentMark } from './logo-mark';
 import { fluentComponents } from '../fluent';
 import { hsvToRgb, rgbToHex } from '../lib/color';
@@ -15,9 +17,13 @@ const SURFACE_DARK = [0.652, 0.361] as const;
 const tone = (hue: number, [saturation, value]: readonly [number, number]) =>
   rgbToHex(...hsvToRgb(hue, saturation, value));
 
+// Both schemes' tones are published and the root class below picks between
+// them, because a style attribute cannot carry a media query.
 const paint = (hue: number) => ({
-  background: `light-dark(${tone(hue, SURFACE_LIGHT)}, ${tone(hue, SURFACE_DARK)})`,
-});
+  '--floway-mark-surface-light': tone(hue, SURFACE_LIGHT),
+  '--floway-mark-surface-dark': tone(hue, SURFACE_DARK),
+  background: 'var(--floway-mark-surface)',
+}) as CSSProperties;
 
 const useMarkStyles = makeStyles({
   root: {
@@ -30,6 +36,10 @@ const useMarkStyles = makeStyles({
     height: '36px',
     justifyContent: 'center',
     width: '36px',
+    '--floway-mark-surface': 'var(--floway-mark-surface-light)',
+    '@media (prefers-color-scheme: dark)': {
+      '--floway-mark-surface': 'var(--floway-mark-surface-dark)',
+    },
   },
   glyph: { display: 'block', height: '24px', width: '24px' },
 });
