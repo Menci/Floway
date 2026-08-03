@@ -1,5 +1,5 @@
 import { EyeOffRegular, EyeRegular } from '@fluentui/react-icons';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { redirect, useSearchParams } from 'react-router';
 
@@ -17,13 +17,14 @@ import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { ResourceListActions } from '../components/ui/resource-list';
 import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
-import { useRefresh } from '../components/ui/use-refresh';
+import { useRefreshOnChange } from '../components/ui/use-refresh';
 import { UsageChartSection } from '../components/usage/chart-section';
 import { loadUsagePageData } from '../components/usage/data';
 import { formatMetricValue, formatProvider } from '../components/usage/format';
 import { buildSearchChart, buildTokenChart, dashboardBuckets, summarizeUsage } from '../components/usage/plot';
 import { SummaryMetrics } from '../components/usage/summary-metrics';
 import type { UsageMetric, UsageRange, UsageView } from '../components/usage/types';
+import { parseUsageUrlState, serializeUsageUrlState, type UsageUrlState } from '../components/usage/url-state';
 import { fluentComponents } from '../fluent';
 import { errorMessage } from '../lib/error-message';
 import { formatCount } from '../lib/format-number';
@@ -32,39 +33,20 @@ import { useLocale } from '../lib/use-locale';
 import { useAuthStore } from '../stores/auth-store';
 
 const { Button, Tooltip } = fluentComponents;
-const usageMetricValues: UsageMetric[] = ['requests', 'cost', 'total', 'input', 'output', 'prefill', 'cached', 'cachedRate', 'cacheCreation', 'cacheHitRate'];
-const usageRangeValues: UsageRange[] = ['today', '7d', '30d'];
 
-type LoaderData = Awaited<ReturnType<typeof loadUsagePageData>> & {
-  loadedAt: number;
-  metric: UsageMetric;
-  range: UsageRange;
-  redactKeys: boolean;
-  hiddenKeys: string[];
-  hiddenModels: string[];
-  view: UsageView;
-};
+type LoaderData = Awaited<ReturnType<typeof loadUsagePageData>> & UsageUrlState & { loadedAt: number };
 
 export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise<LoaderData> {
   requireDashboardSession();
   const user = await useAuthStore.getState().initialize();
   if (!user) throw redirect('/');
-  const search = new URL(request.url).searchParams;
-  const requestedView = search.get('view');
-  const view: UsageView = user.isAdmin && requestedView === 'self-by-key' ? 'self-by-key' : user.isAdmin ? 'all-by-user' : 'self-by-key';
-  const requestedRange = search.get('range') as UsageRange | null;
-  const range = requestedRange && usageRangeValues.includes(requestedRange) ? requestedRange : 'today';
-  const requestedMetric = search.get('metric') as UsageMetric | null;
-  const metric = requestedMetric && usageMetricValues.includes(requestedMetric) ? requestedMetric : 'total';
+  const state = parseUsageUrlState(new URL(request.url).searchParams);
+  const view: UsageView = user.isAdmin ? state.view : 'self-by-key';
   const loadedAt = Date.now();
   return {
-    ...await loadUsagePageData(view, range, loadedAt),
+    ...await loadUsagePageData(view, state.range, loadedAt),
+    ...state,
     loadedAt,
-    metric,
-    range,
-    redactKeys: search.get('redact') === '1',
-    hiddenKeys: search.getAll('hideKey'),
-    hiddenModels: search.getAll('hideModel'),
     view,
   };
 }
@@ -76,7 +58,6 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const { user } = useDashboardOutletContext();
   const [, setSearchParams] = useSearchParams();
   const rewrite = useEntryRewrite();
-  const clearAuth = useAuthStore(state => state.clear);
   const [view, setView] = useState<UsageView>(loaderData.view);
   const [range, setRange] = useState<UsageRange>(loaderData.range);
   const [loadedRange, setLoadedRange] = useState<UsageRange>(loaderData.range);
@@ -89,55 +70,38 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(() => new Set(loaderData.hiddenKeys));
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(() => new Set(loaderData.hiddenModels));
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
-  // The query the data on screen came from, recorded once it answered. A "have
-  // I mounted yet" flag instead would refetch on StrictMode's double
-  // invocation; recording the requested query instead would strand a run torn
-  // down before it answered.
-  const loadedFor = useRef({ range: loaderData.range, view: loaderData.view });
+  const query = useMemo(() => ({ range, view }), [range, view]);
 
   const canSwitchView = user.isAdmin;
   const locale = useLocale();
 
   // A background poll must not clear a failure the operator has not read: these
   // pages reload themselves every minute.
-  const reload = useCallback(async (signal: AbortSignal, { background }: { background: boolean }) => {
+  const reload = useCallback(async (signal: AbortSignal, { background }: { background: boolean }, arrived: () => void) => {
     const requestedAt = Date.now();
     if (!background) setError(null);
     try {
-      const next = await loadUsagePageData(view, range, requestedAt, signal);
+      const next = await loadUsagePageData(query.view, query.range, requestedAt, signal);
       if (signal.aborted) return;
       setUsage(next.usage);
       setSearch(next.search);
       setModels(next.models);
-      setLoadedRange(range);
+      setLoadedRange(query.range);
       setLoadedAt(requestedAt);
-      loadedFor.current = { range, view };
+      arrived();
       setError(next.error);
     } catch (error) {
       if (signal.aborted) return;
       setError({ status: 0, message: errorMessage(error) });
     }
-  }, [range, view]);
+  }, [query]);
 
-  const { poll, refresh, refreshing } = useRefresh(reload);
-
-  useEffect(() => {
-    if (loadedFor.current.range === range && loadedFor.current.view === view) return;
-    void refresh();
-  }, [range, refresh, view]);
+  const { poll, refresh, refreshing } = useRefreshOnChange(query, reload);
 
   usePollWhileVisible(poll);
 
   useEffect(() => {
-    if (error?.status === 401) clearAuth();
-  }, [clearAuth, error]);
-
-  useEffect(() => {
-    const next = new URLSearchParams({ view, range, metric });
-    if (redactKeys) next.set('redact', '1');
-    for (const id of [...hiddenKeys].sort()) next.append('hideKey', id);
-    for (const id of [...hiddenModels].sort()) next.append('hideModel', id);
-    setSearchParams(next, rewrite);
+    setSearchParams(serializeUsageUrlState({ view, range, metric, redactKeys, hiddenKeys: [...hiddenKeys], hiddenModels: [...hiddenModels] }), rewrite);
   }, [hiddenKeys, hiddenModels, metric, range, redactKeys, rewrite, setSearchParams, view]);
 
   const buckets = useMemo(
