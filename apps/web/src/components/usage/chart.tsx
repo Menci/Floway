@@ -8,6 +8,7 @@ import { fluentComponents } from '../../fluent';
 import { useLocale } from '../../lib/use-locale';
 import { chartTickValues, formatAxisDate } from '../charts/dashboard-time';
 import { useChartFrame } from '../charts/frame-styles';
+import { chartHeight } from '../charts/layout';
 import { useElementSize } from '../charts/use-element-size';
 import { EmptyStateLine } from '../ui/empty-state';
 
@@ -82,10 +83,10 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
     return () => window.cancelAnimationFrame(frame);
   }, [chart.plot.data, chart.plot.form, host, size.height, size.width]);
 
-  if (size.width < 120) return <div className="h-[320px] min-w-0 w-full" ref={setHost} />;
+  if (size.width < 120) return <div className="min-w-0 w-full" ref={setHost} style={{ height: chartHeight }} />;
 
   return (
-    <div className={`${areaBoundaryStyles.root} h-[320px] min-w-0 w-full`} ref={setHost}>
+    <div className={`${areaBoundaryStyles.root} min-w-0 w-full`} ref={setHost} style={{ height: chartHeight }}>
       {!hasData ? <div className="grid h-full place-items-center"><EmptyStateLine>{t('dashboard.usage.empty')}</EmptyStateLine></div>
         : chart.plot.form === 'area' ? (
           <AreaChart
