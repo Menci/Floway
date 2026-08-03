@@ -1,28 +1,15 @@
 import { memo, useMemo } from 'react';
 import type { ComponentProps } from 'react';
 import ReactMarkdown from 'react-markdown';
-import type { Components, UrlTransform } from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import type { Components } from 'react-markdown';
 import remend from 'remend';
 
 import { fluentComponents } from '../../fluent';
+import { MarkdownLink, markdownRemarkPlugins, markdownUrlTransform } from '../ui/markdown';
 import { highlight, prismTokenStyles } from '../ui/prism';
 import { ScrollArea } from '../ui/scroll-area';
 
 const { makeStyles, tokens } = fluentComponents;
-
-const remarkPlugins = [remarkGfm];
-
-const safeUrlTransform: UrlTransform = url => {
-  if (url.startsWith('/') || url.startsWith('#')) return url;
-
-  try {
-    const parsed = new URL(url);
-    return ['http:', 'https:', 'mailto:'].includes(parsed.protocol) ? url : null;
-  } catch {
-    return null;
-  }
-};
 
 const useStyles = makeStyles({
   root: {
@@ -68,32 +55,6 @@ const useStyles = makeStyles({
       borderTop: '1px solid var(--winui-divider-stroke-default)',
       marginTop: tokens.spacingVerticalL,
       marginBottom: tokens.spacingVerticalL,
-    },
-  },
-  // A link in running prose is WinUI's inline Hyperlink, so it walks the accent
-  // TEXT ramp -- primary, secondary, tertiary -- and, because WinUI 3 ships
-  // HyperlinkUnderlineVisible as False, is underlined only at rest: the pointer
-  // states drop the underline rather than gaining one.
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Hyperlink_themeresources.xaml#L5-L7
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Hyperlink_themeresources.xaml#L20
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L297-L299
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L93-L95
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/text/TextBlock/Hyperlink.cpp#L669-L671
-  link: {
-    color: 'var(--winui-accent-text-fill-primary)',
-    textDecorationLine: 'underline',
-    '&:hover': { color: 'var(--winui-accent-text-fill-secondary)', textDecorationLine: 'none' },
-    '&:active': { color: 'var(--winui-accent-text-fill-tertiary)', textDecorationLine: 'none' },
-    // Two concentric rings so the indicator survives on any surface, at the 4px
-    // radius WinUI rounds a hyperlink's to.
-    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55
-    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
-    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L195
-    '&:focus-visible': {
-      borderRadius: '4px',
-      boxShadow: '0 0 0 1px var(--winui-focus-stroke-inner)',
-      outline: '2px solid var(--winui-focus-stroke-outer)',
-      outlineOffset: '1px',
     },
   },
   // An accent surface, so AccentFillColorDefault rather than Fluent's brand
@@ -192,7 +153,7 @@ export const PlaygroundMarkdown = memo(function PlaygroundMarkdown({ content, st
     [content, streaming],
   );
   const components = useMemo<Components>(() => ({
-    a: ({ children, ...props }) => <a {...props} className={s.link} target="_blank" rel="noopener noreferrer">{children}</a>,
+    a: MarkdownLink,
     blockquote: ({ children, ...props }) => <blockquote {...props} className={s.blockquote}>{children}</blockquote>,
     code: props => <MarkdownCode {...props} streaming={streaming} />,
     img: () => null,
@@ -206,9 +167,9 @@ export const PlaygroundMarkdown = memo(function PlaygroundMarkdown({ content, st
     <div className={s.root}>
       <ReactMarkdown
         components={components}
-        remarkPlugins={remarkPlugins}
+        remarkPlugins={markdownRemarkPlugins}
         skipHtml
-        urlTransform={safeUrlTransform}
+        urlTransform={markdownUrlTransform}
       >
         {renderedContent}
       </ReactMarkdown>
