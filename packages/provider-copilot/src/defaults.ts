@@ -26,6 +26,7 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
   'promote-system-to-developer': false,
   'strip-billing-attribution': true,
   'strip-prompt-cache-key': false,
+  'usage-exclusive-cached-tokens': false,
 };
 
 // True when the model id names a Claude release Copilot can serve an inline

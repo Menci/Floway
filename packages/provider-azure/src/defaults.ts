@@ -15,4 +15,5 @@ export const AZURE_DEFAULT_FLAGS: FlagDefaults = {
   'promote-system-to-developer': false,
   'strip-billing-attribution': true,
   'strip-prompt-cache-key': false,
+  'usage-exclusive-cached-tokens': false,
 };

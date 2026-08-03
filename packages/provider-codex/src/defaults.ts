@@ -17,4 +17,5 @@ export const CODEX_DEFAULT_FLAGS: FlagDefaults = {
   'promote-system-to-developer': true,
   'strip-billing-attribution': true,
   'strip-prompt-cache-key': false,
+  'usage-exclusive-cached-tokens': false,
 };

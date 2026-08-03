@@ -27,4 +27,5 @@ export const CLAUDE_CODE_DEFAULT_FLAGS: FlagDefaults = {
   'promote-system-to-developer': false,
   'strip-billing-attribution': false,
   'strip-prompt-cache-key': false,
+  'usage-exclusive-cached-tokens': false,
 };

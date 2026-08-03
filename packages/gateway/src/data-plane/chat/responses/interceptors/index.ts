@@ -1,6 +1,7 @@
 import { withRoleCompatibilityApplied } from './apply-role-compatibility.ts';
 import { withResponsesCompactShim } from './compact-shim.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
+import { withExclusiveCachedTokensNormalized } from './normalize-exclusive-cached-tokens.ts';
 import { withResponsesServerToolShim } from './server-tool-shim.ts';
 import { imageGenerationServerTool } from './server-tools/image-generation.ts';
 import { webSearchServerTool } from './server-tools/web-search.ts';
@@ -35,6 +36,9 @@ import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
 //     as an unknown argument (e.g. Azure DeepSeek). Runs before vendor
 //     normalizers so vendor-specific translation sees the already-stripped
 //     canonical payload.
+//   - withExclusiveCachedTokensNormalized: gated by
+//     `usage-exclusive-cached-tokens`. Folds the cache buckets back into
+//     `input_tokens` for upstreams that report them alongside it.
 //   - withVendor*ResponsesNormalize: gated by `vendor-<X>`. Registered after
 //     the role-compatibility entry so each gets the final say on the outbound wire
 //     body.
@@ -47,6 +51,7 @@ export const responsesInterceptors: readonly ResponsesInterceptor[] = [
   withReasoningDisabledOnForcedToolChoice,
   withRoleCompatibilityApplied,
   withPromptCacheKeyStripped,
+  withExclusiveCachedTokensNormalized,
   withVendorDeepSeekResponsesNormalize,
   withVendorQwenResponsesNormalize,
 ];
