@@ -1,20 +1,30 @@
 import { screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
+import { leafEntries } from '../../i18n/keys';
 import { InlineMarkdown } from '../../../src/components/ui/markdown';
+import en from '../../../src/i18n/locales/en';
 import zhHans from '../../../src/i18n/locales/zh-Hans';
 import { renderInApp } from '../../render';
 
-const flags = zhHans.translation.dashboard.upstreamEditor.flags.entries as Record<string, { label: string; description: string }>;
+const locales = { en, 'zh-Hans': zhHans };
 
 describe('probe', () => {
-  it('renders a zh-Hans description bold run', () => {
-    const line = flags['vendor-qwen']!.description.split('\n')[2]!;
-    renderInApp(<div data-testid="out"><InlineMarkdown>{line}</InlineMarkdown></div>);
+  it('renders every emphasis run in both locales', () => {
+    const literal: string[] = [];
+    for (const [locale, resource] of Object.entries(locales)) {
+      for (const [key, value] of leafEntries(resource.translation)) {
+        for (const line of value.split('\n')) {
+          if (!line.includes('**')) continue;
+          const { unmount } = renderInApp(<div data-testid="out"><InlineMarkdown>{line}</InlineMarkdown></div>);
+          const text = screen.getByTestId('out').textContent ?? '';
+          if (text.includes('**')) literal.push(`${locale}:${key}: ${line}`);
+          unmount();
+        }
+      }
+    }
     // eslint-disable-next-line no-console
-    console.log('LINE:', JSON.stringify(line));
-    // eslint-disable-next-line no-console
-    console.log('HTML:', screen.getByTestId('out').innerHTML);
-    expect(screen.getByTestId('out').textContent).not.toContain('**');
+    console.log('LITERAL:', JSON.stringify(literal, null, 2));
+    expect(literal).toEqual([]);
   });
 });

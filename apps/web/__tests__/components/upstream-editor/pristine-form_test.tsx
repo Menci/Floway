@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { FormProvider, useForm } from 'react-hook-form';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -6,6 +6,7 @@ import type { UpstreamRecord } from '../../../src/api/types';
 import type { UpstreamEditorValues } from '../../../src/components/upstream-editor/data';
 import { valuesFromRecord } from '../../../src/components/upstream-editor/data';
 import { ProviderConfigSection } from '../../../src/components/upstream-editor/provider-config';
+import { i18n } from '../../../src/i18n';
 import { upstreamRecord } from '../../api/upstream-fixture';
 import { renderInApp } from '../../render';
 
@@ -19,22 +20,54 @@ const DirtyProbe = ({ record }: { record: UpstreamRecord }) => {
   );
 };
 
-const custom = upstreamRecord('up_custom', {
+const customWith = (modelsFetch: { enabled: boolean; endpoint?: string }): UpstreamRecord => upstreamRecord('up_custom', {
   kind: 'custom',
   config: {
     baseUrl: 'https://api.example.com',
     authStyle: 'bearer',
     apiKey: '',
     endpoints: { chatCompletions: {} },
-    modelsFetch: { enabled: true },
+    modelsFetch,
     models: [],
   },
   state: null,
 });
 
+const dirty = () => screen.getByTestId('dirty').textContent;
+const baseUrl = () => screen.getByDisplayValue('https://api.example.com');
+
 describe('probe', () => {
-  it('reports dirtiness of an untouched custom config', () => {
-    renderInApp(<DirtyProbe record={custom} />);
-    expect(screen.getByTestId('dirty').textContent).toBe('false');
+  it('round-trips an edit without an endpoint in the stored config', () => {
+    renderInApp(<DirtyProbe record={customWith({ enabled: true })} />);
+    // eslint-disable-next-line no-console
+    console.log('NO-ENDPOINT mounted:', dirty());
+    fireEvent.change(baseUrl(), { target: { value: 'https://api.example.com/x' } });
+    // eslint-disable-next-line no-console
+    console.log('NO-ENDPOINT edited:', dirty());
+    fireEvent.change(screen.getByDisplayValue('https://api.example.com/x'), { target: { value: 'https://api.example.com' } });
+    // eslint-disable-next-line no-console
+    console.log('NO-ENDPOINT reverted:', dirty());
+    expect(dirty()).toBe('false');
+  });
+
+  it('round-trips an edit with an endpoint in the stored config', () => {
+    renderInApp(<DirtyProbe record={customWith({ enabled: true, endpoint: '/v1/models' })} />);
+    fireEvent.change(baseUrl(), { target: { value: 'https://api.example.com/x' } });
+    fireEvent.change(screen.getByDisplayValue('https://api.example.com/x'), { target: { value: 'https://api.example.com' } });
+    // eslint-disable-next-line no-console
+    console.log('WITH-ENDPOINT reverted:', dirty());
+    expect(dirty()).toBe('false');
+  });
+
+  it('round-trips the catalog switch', () => {
+    renderInApp(<DirtyProbe record={customWith({ enabled: false })} />);
+    const label = i18n.t('dashboard.upstreamEditor.fields.fetchModels');
+    fireEvent.click(screen.getByLabelText(label));
+    // eslint-disable-next-line no-console
+    console.log('SWITCH on:', dirty());
+    fireEvent.click(screen.getByLabelText(label));
+    // eslint-disable-next-line no-console
+    console.log('SWITCH off:', dirty());
+    expect(dirty()).toBe('false');
   });
 });
