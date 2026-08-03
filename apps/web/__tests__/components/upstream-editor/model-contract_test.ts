@@ -14,7 +14,21 @@ describe('custom discovered model projection', () => {
     }, { chatCompletions: {} });
 
     expect(models[0]?.endpoints).toEqual({ audioTranscriptions: {} });
-    expect(models[1]?.endpoints).toEqual({});
+    expect(models[1]?.endpoints).toEqual({ rerank: {} });
+  });
+
+  it('projects every discovered row into a shape the gateway accepts', () => {
+    const models = discoveredModelsFromResponse({
+      kind: 'custom',
+      data: [
+        { id: 'talker', kind: 'chat' },
+        { id: 'painter', kind: 'image' },
+        { id: 'speech', kind: 'transcription' },
+        { id: 'ranker', kind: 'rerank' },
+      ],
+    }, { chatCompletions: {} });
+
+    expect(modelsAreValid(models)).toBe(true);
   });
 });
 

@@ -12,8 +12,9 @@ import { Controller, useFieldArray, useFormContext, useWatch } from 'react-hook-
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router';
 
-import type { ModelRow, UpstreamEditorValues } from './data';
+import type { ModelListingFailure, ModelRow, UpstreamEditorValues } from './data';
 import { canFetchModelCatalog, manualModelsSupported, publicModelId } from './data';
+import { shapeForKind } from './endpoints';
 import { FeatureFlagsEditor } from './feature-flags';
 import { ModelDetail } from './model-detail';
 import { parseModels, serializeModels } from './models-yaml';
@@ -86,7 +87,7 @@ export function UpstreamWorkspace({
   record,
 }: {
   discovered: UpstreamModelConfig[];
-  modelsError: string | null;
+  modelsError: ModelListingFailure | null;
   modelsLoading: boolean;
   onRefreshModels: () => void;
   record: UpstreamRecord;
@@ -191,7 +192,7 @@ export function UpstreamWorkspace({
 function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading, onRefreshModels, onSelectUpstreamModel, onViewChange, onYamlDraftChange, readOnly, record, selectedUpstreamModelId, view, yamlDraft }: {
   detailSection: ModelDetailTab;
   discovered: UpstreamModelConfig[];
-  modelsError: string | null;
+  modelsError: ModelListingFailure | null;
   modelsLoading: boolean;
   onRefreshModels: () => void;
   onSelectUpstreamModel: (id: string | null) => void;
@@ -254,10 +255,6 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
     if (source === 'manual' && row.source === 'auto') {
       setPendingManualUpstreamModelId(row.config.upstreamModelId);
       const manualConfig = structuredClone(row.config);
-      if (manualConfig.kind === 'rerank') {
-        manualConfig.endpoints = { rerank: {} };
-        manualConfig.rerankTarget = { protocol: 'cohere-v2' };
-      }
       setPendingManualConfig(manualConfig);
       append(manualConfig);
       return;
@@ -335,7 +332,7 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
       level={2}
       title={t('dashboard.upstreamEditor.models.title')}
       actions={<>
-        {!readOnly && <Button appearance="primary" icon={<AddRegular />} onClick={() => append({ upstreamModelId: '', kind: 'chat', endpoints: { chatCompletions: {} } })}>{t('dashboard.upstreamEditor.models.add')}</Button>}
+        {!readOnly && <Button appearance="primary" icon={<AddRegular />} onClick={() => append({ upstreamModelId: '', kind: 'chat', ...shapeForKind('chat', { endpoints: {} }) })}>{t('dashboard.upstreamEditor.models.add')}</Button>}
         {!readOnly && <Button className="!min-w-[160px]" icon={<CodeRegular />} onClick={() => onViewChange('yaml')}>{t('dashboard.upstreamEditor.models.editAsYaml')}</Button>}
         {record.kind !== 'azure' && <>
           <ModelsCacheStatus cache={record.modelsCache} />
@@ -344,9 +341,9 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
       </>}
     />
     {modelsError && <OutcomeMessageBar intent="warning">
-      {modelsError === 'Upstream model listing failed'
+      {modelsError.upstreamListingFailed
         ? t('dashboard.upstreamEditor.models.listingFailed')
-        : t('dashboard.upstreamEditor.models.listingFailedWithDetail', { message: modelsError })}
+        : t('dashboard.upstreamEditor.models.listingFailedWithDetail', { message: modelsError.message })}
     </OutcomeMessageBar>}
     <Input value={search} onChange={(_, data) => setSearch(data.value)} placeholder={t('dashboard.upstreamEditor.models.search')} />
     <ScrollArea axes="horizontal" className="min-w-0">

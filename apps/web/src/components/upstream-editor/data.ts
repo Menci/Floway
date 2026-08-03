@@ -1,9 +1,9 @@
-import type { InferRequestType } from 'hono/client';
+import type { InferRequestType, InferResponseType } from 'hono/client';
 
+import { shapeForKind } from './endpoints';
 import { api, callApi } from '../../api/client';
 import type {
   BackoffRow,
-  CustomRawModel,
   ListUpstreamModelsResponse,
   ProxyRecord,
   UpstreamRecord,
@@ -32,7 +32,7 @@ export interface EditorAuxData {
 interface UpstreamEditorLoaderDataBase extends EditorAuxData {
   record: UpstreamRecord;
   discovered: UpstreamModelConfig[];
-  modelsError: string | null;
+  modelsError: ModelListingFailure | null;
 }
 
 export type UpstreamEditorLoaderData = UpstreamEditorLoaderDataBase & (
@@ -124,8 +124,24 @@ export const manualModelsSupported = (record: UpstreamRecord): record is Extract
 export interface ModelCatalogFetch {
   /** Null when nothing was listed, which leaves whatever the caller already shows. */
   discovered: UpstreamModelConfig[] | null;
-  modelsError: string | null;
+  modelsError: ModelListingFailure | null;
   refreshed: UpstreamRecord | null;
+}
+
+// The gateway squashes a genuine upstream failure to a message that names
+// nothing, so the editor writes that case in its own words and quotes every
+// other message. The code carries that distinction; the type comes from the
+// route, so a rename on the gateway side fails this declaration.
+type ListModelsFailureCode = Extract<
+  InferResponseType<typeof api.api.upstreams['list-models']['$post'], 502>['error'],
+  { code: string }
+>['code'];
+
+const MODEL_LISTING_FAILURE_CODE: ListModelsFailureCode = 'upstream_model_listing_failed';
+
+export interface ModelListingFailure {
+  message: string;
+  upstreamListingFailed: boolean;
 }
 
 // Listing re-reads the upstream afterwards: the server writes its models cache
@@ -140,7 +156,17 @@ export const fetchModelCatalog = async (
   const result = await callApi(() => api.api.upstreams['list-models'].$post({
     json: { record: previewRecord(record, values) },
   }, { init }));
-  if (result.error) return { discovered: null, modelsError: result.error.message, refreshed: null };
+  if (result.error) {
+    const body = result.error.raw?.error;
+    return {
+      discovered: null,
+      modelsError: {
+        message: result.error.message,
+        upstreamListingFailed: typeof body === 'object' && 'code' in body && body.code === MODEL_LISTING_FAILURE_CODE,
+      },
+      refreshed: null,
+    };
+  }
 
   const endpoints = record.kind === 'custom'
     ? (values.config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).endpoints
@@ -150,7 +176,7 @@ export const fetchModelCatalog = async (
 
   const refreshed = await callApi(() => api.api.upstreams[':id'].$get({ param: { id: record.id } }, { init }));
   return refreshed.error
-    ? { discovered, modelsError: refreshed.error.message, refreshed: null }
+    ? { discovered, modelsError: { message: refreshed.error.message, upstreamListingFailed: false }, refreshed: null }
     : { discovered, modelsError: null, refreshed: refreshed.data };
 };
 
@@ -265,29 +291,18 @@ export const updateBody = (record: UpstreamRecord, values: UpstreamEditorValues)
   } as UpdateUpstreamBody;
 };
 
-const discoveredCustomModelEndpoints = (
-  kind: CustomRawModel['kind'],
-  configured: ModelEndpoints,
-): ModelEndpoints => {
-  if (kind === 'embedding') return { embeddings: {} };
-  if (kind === 'image') return { imagesGenerations: {}, imagesEdits: {} };
-  if (kind === 'transcription') return { audioTranscriptions: {} };
-  if (kind === 'rerank') return {};
-  return Object.keys(configured).length ? structuredClone(configured) : { chatCompletions: {} };
-};
-
 export const discoveredModelsFromResponse = (
   response: ListUpstreamModelsResponse,
   endpoints: ModelEndpoints,
 ): UpstreamModelConfig[] => {
   if (response.kind !== 'custom') return response.data;
   return response.data.map(model => {
-    const modelEndpoints = discoveredCustomModelEndpoints(model.kind, endpoints);
+    const kind = model.kind ?? 'chat';
     return {
       upstreamModelId: model.id,
       publicModelId: model.id,
-      kind: model.kind ?? 'chat',
-      endpoints: modelEndpoints,
+      kind,
+      ...shapeForKind(kind, { endpoints }),
       ...(model.display_name ?? model.name ? { display_name: model.display_name ?? model.name } : {}),
       ...(model.limits ? { limits: model.limits } : {}),
       ...(model.pricing ? { pricing: model.pricing } : {}),

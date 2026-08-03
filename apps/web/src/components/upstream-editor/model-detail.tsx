@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import type { ModelRow } from './data';
 import { publicModelId } from './data';
-import { CHAT_ENDPOINT_KEYS, endpointOptionsFor, IMAGE_ENDPOINT_KEYS } from './endpoints';
+import { CHAT_ENDPOINT_KEYS, endpointOptionsFor, IMAGE_ENDPOINT_KEYS, shapeForKind } from './endpoints';
 import { FeatureFlagsEditor } from './feature-flags';
 import { useMonoLabelClass } from './mono-label';
 import { PricingEditor } from './pricing-editor';
@@ -63,11 +63,10 @@ export function ModelDetail({
   };
   const setKind = (kind: UpstreamModelConfig['kind']) => patch({
     kind,
-    endpoints: defaultEndpointsForKind(kind, row.config.endpoints),
     chat: kind === 'chat' ? row.config.chat : undefined,
-    // A rerank model without a target cannot be saved.
-    rerankTarget: kind === 'rerank' ? row.config.rerankTarget ?? { protocol: 'cohere-v2' } : undefined,
+    rerankTarget: undefined,
     ...(kind === 'image' ? { limits: undefined } : {}),
+    ...shapeForKind(kind, row.config),
   });
 
   const updateLimit = (key: keyof NonNullable<UpstreamModelConfig['limits']>, raw: string) => {
@@ -305,17 +304,6 @@ const cleanChat = (chat: UpstreamChatModelConfig): UpstreamChatModelConfig | und
 const numberRange = (range: { min?: number; max?: number }, key: 'min' | 'max', raw: string) => { const next = { ...range }; const value = optionalNumber(raw); if (value === undefined) delete next[key]; else next[key] = value; return next; };
 
 const ENDPOINT_CHOICE_KINDS = new Set<UpstreamModelConfig['kind']>(['chat', 'image']);
-
-const defaultEndpointsForKind = (kind: UpstreamModelConfig['kind'], current: UpstreamModelConfig['endpoints']) => {
-  if (kind === 'embedding') return { embeddings: {} };
-  if (kind === 'transcription') return { audioTranscriptions: {} };
-  if (kind === 'rerank') return { rerank: {} };
-  const keys = kind === 'image' ? ['imagesGenerations', 'imagesEdits'] as const : ['completions', 'chatCompletions', 'responses', 'messages'] as const;
-  const kept: UpstreamModelConfig['endpoints'] = {};
-  for (const key of keys) if (current[key]) kept[key] = current[key];
-  if (Object.keys(kept).length) return kept;
-  return kind === 'image' ? { imagesGenerations: {}, imagesEdits: {} } : { chatCompletions: {} };
-};
 
 const modelEndpointOptions = (kind: UpstreamModelConfig['kind']) =>
   endpointOptionsFor(kind === 'image' ? IMAGE_ENDPOINT_KEYS : CHAT_ENDPOINT_KEYS);
