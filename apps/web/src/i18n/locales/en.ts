@@ -290,6 +290,7 @@ const en = {
         modelCount_one: '{{count, number}} model',
         modelCount_other: '{{count, number}} models',
         modelCountUnknown: 'Count unavailable',
+        unknownUpstream: 'Unknown ({{id}})',
         upstreamDisabled: 'Upstream disabled',
         validation: 'Select at least one upstream, or turn off the limit.',
       },

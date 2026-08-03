@@ -54,7 +54,7 @@ export function UpstreamAccessControl({
   const { t } = useTranslation();
   const dangerText = useDangerTextClass();
   const errorId = useId();
-  const rows = useMemo(() => accessRows(available, ids, models), [available, ids, models]);
+  const rows = useMemo(() => accessRows(available, ids, models, t), [available, ids, models, t]);
 
   // Opening on an empty selection would fail validation before the operator has
   // touched a row, so it opens on everything the scope can see.
@@ -133,6 +133,7 @@ const accessRows = (
   available: UpstreamOption[],
   ids: string[],
   models: ControlPlaneModel[],
+  t: ReturnType<typeof useTranslation>['t'],
 ): UpstreamAccessRow[] => {
   const selected = new Set(ids);
   const byId = new Map(available.map(upstream => [upstream.id, upstream]));
@@ -158,7 +159,7 @@ const accessRows = (
       const upstream = byId.get(id);
       return upstream
         ? rowFor(upstream, true)
-        : { id, name: `Unknown (${id})`, kind: null, color: null, modelCount: null, selected: true, upstreamEnabled: true };
+        : { id, name: t('dashboard.upstreamAccess.unknownUpstream', { id }), kind: null, color: null, modelCount: null, selected: true, upstreamEnabled: true };
     }),
     ...available.filter(upstream => !selected.has(upstream.id)).map(upstream => rowFor(upstream, false)),
   ];

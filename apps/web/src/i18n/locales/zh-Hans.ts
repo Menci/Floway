@@ -276,6 +276,7 @@ const zhHansCN = {
         models: '模型',
         modelCount_other: '{{count, number}} 个模型',
         modelCountUnknown: '数量不可用',
+        unknownUpstream: '未知（{{id}}）',
         upstreamDisabled: '上游已停用',
         validation: '至少选择一个上游，或关闭限制。',
       },
