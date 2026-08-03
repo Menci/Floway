@@ -8,21 +8,16 @@ describe('latency durations', () => {
     expect(formatDuration(0)).toBe('0ms');
     expect(formatDuration(999)).toBe('999ms');
     expect(formatDuration(1_000)).toBe('1.0s');
+    expect(formatDuration(1_500)).toBe('1.5s');
     expect(formatDuration(59_999)).toBe('60.0s');
     expect(formatDuration(60_000)).toBe('1.0m');
+    expect(formatDuration(90_000)).toBe('1.5m');
   });
 
   it('reports no reading rather than a zero one', () => {
     expect(formatDuration(null)).toBe(NO_READING);
     expect(formatDuration(Number.NaN)).toBe(NO_READING);
     expect(formatDuration(Number.POSITIVE_INFINITY)).toBe(NO_READING);
-  });
-
-  // A latency ladder is the same everywhere, so the unit suffixes are literal
-  // rather than resolved through the locale.
-  it('spells its units the same in every locale', () => {
-    expect(formatDuration(1_500)).toBe('1.5s');
-    expect(formatDuration(90_000)).toBe('1.5m');
   });
 });
 
