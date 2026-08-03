@@ -1,4 +1,9 @@
 import type { UpstreamRecord } from '../../src/api/types';
+import { OPTIONAL_FLAG_IDS, type FlagDefaults } from '@floway-dev/provider/flags';
+
+// `FlagDefaults` is exhaustive over the flag catalog, so it is built from that
+// catalog rather than written out: a new flag needs no edit here.
+const flagDefaults = Object.fromEntries(OPTIONAL_FLAG_IDS.map(id => [id, false])) as FlagDefaults;
 
 // Everything a record carries that no suite is about. The kind, its config and
 // its state come from the caller because the union correlates them; the rest
@@ -11,7 +16,7 @@ const commonFields = {
   created_at: '',
   updated_at: '',
   flag_overrides: {},
-  flag_defaults: {},
+  flag_defaults: flagDefaults,
   disabled_public_model_ids: [],
   proxy_fallback_list: [],
   model_prefix: null,

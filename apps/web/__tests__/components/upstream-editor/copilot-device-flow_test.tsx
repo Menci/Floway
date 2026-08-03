@@ -23,7 +23,7 @@ const flow = {
 const record = upstreamRecord('up_copilot', {
   name: 'Copilot',
   kind: 'copilot',
-  config: { user: { login: null, name: null } },
+  config: { user: { login: '', avatar_url: '', name: null, id: 0 } },
   state: null,
 });
 
