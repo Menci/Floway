@@ -122,7 +122,10 @@ const useStyles = makeStyles({
         borderBottomColor: 'var(--winui-control-stroke-default)',
       },
     },
-    '&:active': {
+    // `:has` alongside each pointer state: the expander's own press lands on the
+    // overlay inside the row, and a row that reacts only to a press on itself
+    // would hold its rest fill while the reader is holding it down.
+    '&:active, &:has(> :active)': {
       backgroundColor: 'var(--winui-control-fill-tertiary)',
       ...shorthands.borderColor('var(--winui-control-stroke-default)'),
     },
@@ -142,7 +145,11 @@ const useStyles = makeStyles({
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L441-L451
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/DependencyObject/DependencyProperty.cpp#L22-L25
     // https://drafts.csswg.org/css-color-adjust/#forced-colors-properties
-    '&:focus-visible': {
+    //
+    // The expander's row wears the ring for the disclosure inside it: the
+    // element taking focus is a stretched overlay, and a ring on the overlay
+    // would sit inside the row's own edge rather than around it.
+    '&:focus-visible, &:has(> :focus-visible)': {
       boxShadow: '0 0 0 1px var(--winui-focus-stroke-inner)',
       outlineColor: 'var(--winui-focus-stroke-outer)',
       outlineOffset: '1px',
@@ -254,11 +261,16 @@ const useStyles = makeStyles({
   // the header the row already renders, so the action keeps its own place in
   // the flex line and its own clicks.
   expanderDisclosure: {
-    all: 'unset',
+    appearance: 'none',
+    // The row paints the ring; see the interactive style above.
+    ':focus-visible': { outline: 'none' },
+    background: 'none',
+    ...shorthands.borderWidth(0),
     cursor: 'pointer',
     inset: 0,
+    margin: 0,
+    padding: 0,
     position: 'absolute',
-    '::after': { content: '""', inset: 0, position: 'absolute' },
   },
 
   // The edge shared with the header above is suppressed rather than drawn twice.
