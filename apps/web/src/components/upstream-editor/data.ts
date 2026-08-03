@@ -188,6 +188,15 @@ export const loadInitialModelCatalog = async (record: UpstreamRecord) => {
   return { discovered: discovered ?? [], modelsError, record: refreshed ?? record };
 };
 
+// A field react-hook-form has registered owns its key from then on: mounting it
+// writes the key into the edited values even when nothing filled it in, and
+// dirtiness is decided by comparing those values against the ones the form
+// opened with -- key by key, so a key one side lacks entirely reads as an edit.
+// An optional field therefore opens with its key already present and empty, and
+// every optional field the editor registers needs that seed.
+const withRegisteredKey = <T extends object, K extends keyof T>(key: K, value: T): T =>
+  ({ [key]: undefined, ...value }) as T;
+
 export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues => {
   const config: UpstreamRecord['config'] = record.kind === 'custom'
     ? {
@@ -199,6 +208,7 @@ export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues =
         // same shape; configFromValues drops the map again when all of it is
         // blank, and a stored path the form does not list survives the merge.
         pathOverrides: { ...Object.fromEntries(PATH_OVERRIDE_PATHS.map(path => [path, ''])), ...record.config.pathOverrides },
+        modelsFetch: withRegisteredKey('endpoint', structuredClone(record.config.modelsFetch)),
       }
     : record.kind === 'azure'
       ? { ...structuredClone(record.config), apiKey: '' }
@@ -210,7 +220,7 @@ export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues =
     name: record.name,
     enabled: record.enabled,
     color: record.color,
-    proxyFallbackList: structuredClone(record.proxy_fallback_list),
+    proxyFallbackList: structuredClone(record.proxy_fallback_list).map(entry => withRegisteredKey('colos', entry)),
     modelPrefix: structuredClone(record.model_prefix),
     disabledPublicModelIds: [...record.disabled_public_model_ids],
     flagOverrides: record.flag_overrides,
