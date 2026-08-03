@@ -10,7 +10,7 @@ import type { ControlPlaneModel, SearchConfig, UpstreamRecord } from '../api/typ
 import jinaIconUrl from '../assets/jina-color.svg';
 import microsoftIconUrl from '../assets/microsoft-color.svg';
 import tavilyIconUrl from '../assets/tavily-color.svg';
-import { eligibleSearchUpstreams } from '../components/search/eligibility';
+import { eligibleSearchUpstreams, servesChatFor } from '../components/search/eligibility';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Dropdown, LISTBOX_POSITIONING } from '../components/ui/fluent-form-controls';
 import { PANEL_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../components/ui/layout';

@@ -2,7 +2,7 @@ import type { ControlPlaneModel, UpstreamRecord } from '../../api/types';
 
 // Search passthrough sends a chat completion to the upstream it names, so the
 // model it picks has to be one that upstream actually serves on that endpoint.
-const servesChatFor = (model: ControlPlaneModel, upstreamId: string) =>
+export const servesChatFor = (model: ControlPlaneModel, upstreamId: string) =>
   model.kind === 'chat' && model.upstreams.some(binding => binding.id === upstreamId);
 
 export const eligibleSearchUpstreams = (upstreams: readonly UpstreamRecord[], models: readonly ControlPlaneModel[]) =>
