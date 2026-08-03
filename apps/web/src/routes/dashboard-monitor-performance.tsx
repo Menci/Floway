@@ -1,5 +1,5 @@
 import { InfoRegular } from '@fluentui/react-icons';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { redirect, useSearchParams } from 'react-router';
 
@@ -36,7 +36,7 @@ import { Panel } from '../components/ui/panel';
 import { ResourceListActions } from '../components/ui/resource-list';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
-import { useRefresh } from '../components/ui/use-refresh';
+import { useRefreshOnChange } from '../components/ui/use-refresh';
 import { fluentComponents } from '../fluent';
 import { formatDuration } from '../lib/format-duration';
 import { formatCount, formatTokenRateFromTpot } from '../lib/format-number';
@@ -88,7 +88,6 @@ export const shouldRevalidate = revalidateOnPathnameChange;
 
 export default function DashboardMonitorPerformance({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
-  const clearAuth = useAuthStore(state => state.clear);
   const [, setSearchParams] = useSearchParams();
   const rewrite = useEntryRewrite();
   const initialState = loaderData.state;
@@ -105,19 +104,14 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const [overview, setOverview] = useState<PerformanceOverviewResponse | null>(loaderData.overview);
   const [upstreamNames] = useState(() => new Map(loaderData.upstreamNames.map(record => [record.id, record.name])));
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
-  // The query the data on screen came back for, recorded on arrival. A "have I
-  // mounted yet" flag instead would make StrictMode's double invocation
-  // indistinguishable from a real change and refetch on every visit; recording
-  // the query at request time instead would strand a run torn down before it
-  // answered.
-  const loadedFor = useRef({ filters, groupBy, range });
+  const query = useMemo(() => ({ filters, groupBy, range }), [filters, groupBy, range]);
   const locale = useLocale();
 
   // A background poll must not clear a failure the operator has not read.
-  const reload = useCallback(async (signal: AbortSignal, { background }: { background: boolean }) => {
+  const reload = useCallback(async (signal: AbortSignal, { background }: { background: boolean }, arrived: () => void) => {
     const requestedAt = Date.now();
     if (!background) setError(null);
-    const search = buildPerformanceQuery(view, range, groupBy, filters, requestedAt);
+    const search = buildPerformanceQuery(view, query.range, query.groupBy, query.filters, requestedAt);
     const result = await callApi(() => api.api.performance.overview.$get(
       { query: Object.fromEntries(search) },
       { init: { signal } },
@@ -126,23 +120,15 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     if (result.error) setError(result.error);
     else {
       setOverview(result.data);
-      setLoadedRange(range);
+      setLoadedRange(query.range);
       setLoadedAt(requestedAt);
-      loadedFor.current = { filters, groupBy, range };
+      arrived();
     }
-  }, [filters, groupBy, range, view]);
+  }, [query, view]);
 
-  const { poll, refresh, refreshing } = useRefresh(reload);
-
-  useEffect(() => {
-    const loaded = loadedFor.current;
-    if (loaded.filters === filters && loaded.groupBy === groupBy && loaded.range === range) return;
-    void refresh();
-  }, [filters, groupBy, range, refresh]);
+  const { poll, refresh, refreshing } = useRefreshOnChange(query, reload);
 
   usePollWhileVisible(poll);
-
-  useEffect(() => { if (error?.status === 401) clearAuth(); }, [clearAuth, error]);
 
   useEffect(() => {
     setSearchParams(serializePerformanceUrlState({ metric, percentile, groupBy, range, filters, hidden: [...hiddenSeries] }), rewrite);
