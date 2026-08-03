@@ -84,14 +84,20 @@ const AriaLive = ({ announceRef }: { announceRef: React.RefObject<ToastAnnounce>
     if (frame.current) return;
     frame.current = requestAnimationFrame(() => {
       frame.current = 0;
-      setCurrent(queue.current.shift());
+      const next = queue.current.shift();
+      // Written here rather than from the effect below: `announce` reads this
+      // to decide whether the pump is idle, and between this callback and the
+      // commit it schedules there is a window in which an effect can announce.
+      // A mirror written only on commit still holds the message just retired,
+      // so the announcement would be queued behind a pump nothing restarts.
+      currentRef.current = next;
+      setCurrent(next);
     });
   }, []);
 
   React.useEffect(() => () => cancelAnimationFrame(frame.current), []);
 
   React.useEffect(() => {
-    currentRef.current = current;
     if (!current) return;
     const timer = setTimeout(pump, MESSAGE_HOLD_MS);
     return () => clearTimeout(timer);
