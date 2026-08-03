@@ -48,7 +48,7 @@ export const toastCss = `
   box-shadow: var(--shadow16);
 }
 
-${severityCss({ card: '.fui-Toast', icon: '.fui-ToastTitle__media' })}
+${severityCss({ card: '.fui-Toast', icon: '.fui-ToastTitle__media', ground: 'var(--winui-solid-background-fill-base)' })}
 
 /* Fluent's inverted appearance is flattened onto the default one: WinUI states
    one look per theme dictionary, and an inverted chip would be the only

@@ -26,8 +26,17 @@ export const severityFills = [
  * `card` is the element taking the severity background; `icon` is the slot
  * holding the glyph. Both are doubled where they carry a declaration, so the
  * rules outrank the single-class Griffel atoms they replace.
+ *
+ * `ground` is for a card that floats. Only the Attention step of this family is
+ * translucent -- half in light, a twentieth in dark -- and a bar laid inline
+ * over the page can carry that because the page supplies the opacity. A surface
+ * with arbitrary content beneath it cannot: the same wash leaves buttons legible
+ * through the card. Passing a ground composites the tint over it, which is what
+ * an inline bar resolves to anyway, and leaves the three opaque steps as they
+ * are.
+ * https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L235
  */
-export const severityCss = ({ card, icon }: { card: string; icon: string }) => `
+export const severityCss = ({ card, icon, ground }: { card: string; icon: string; ground?: string }) => `
 /* InfoBarIconMargin, the thickness 0,16,14,16, whose block terms pin the glyph
    to the first line of the message rather than to the middle of the card --
    hence align-self. 16 + 16 + 16 is InfoBarMinHeight, so the two placements
@@ -69,7 +78,10 @@ ${icon}${icon}[data-winui-severity-mark] {
 }
 ${severityFills.map(([intent, fill]) => `
 ${card}${card}[data-winui-intent='${intent}'] {
-  background-color: var(--winui-system-fill-${fill}-background);
+${ground === undefined
+  ? `  background-color: var(--winui-system-fill-${fill}-background);`
+  : `  background-color: ${ground};
+  background-image: linear-gradient(var(--winui-system-fill-${fill}-background), var(--winui-system-fill-${fill}-background));`}
 }
 
 ${card}[data-winui-intent='${intent}'] ${icon}${icon}[data-winui-severity-mark] {
