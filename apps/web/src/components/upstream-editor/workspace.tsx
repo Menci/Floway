@@ -111,7 +111,7 @@ export function UpstreamWorkspace({
   // A provider-owned catalog has no manual models to write, so its editor is
   // not addressable either — a typed `?view=yaml` lands on the list rather than
   // on an editable buffer the upstream would never store.
-  const editableCatalog = manualModelsSupported(record.kind);
+  const editableCatalog = manualModelsSupported(record);
   const modelView: ModelView = selectedUpstreamModelId !== null
     ? 'detail'
     : params.get(VIEW_PARAM) === 'yaml' && editableCatalog ? 'yaml' : 'list';

@@ -118,8 +118,8 @@ export const canFetchModelCatalog = (record: UpstreamRecord, config: UpstreamEdi
 // Manual entries exist only for the kinds whose stored config carries a model
 // list. For the rest the catalog is the provider's, and the editor can only
 // enable and disable what it lists.
-export const manualModelsSupported = (kind: UpstreamProviderKind): kind is 'custom' | 'azure' | 'ollama' =>
-  kind === 'custom' || kind === 'azure' || kind === 'ollama';
+export const manualModelsSupported = (record: UpstreamRecord): record is Extract<UpstreamRecord, { kind: 'custom' | 'azure' | 'ollama' }> =>
+  record.kind === 'custom' || record.kind === 'azure' || record.kind === 'ollama';
 
 export interface ModelCatalogFetch {
   /** Null when nothing was listed, which leaves whatever the caller already shows. */
@@ -173,7 +173,7 @@ export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues =
       : record.kind === 'ollama'
         ? { ...structuredClone(record.config), apiKey: '' }
         : structuredClone(record.config);
-  const manualModels = manualModelsSupported(record.kind) ? structuredClone(record.config.models) : [];
+  const manualModels = manualModelsSupported(record) ? structuredClone(record.config.models) : [];
   return {
     name: record.name,
     enabled: record.enabled,
@@ -196,7 +196,7 @@ const configFromValues = (
   options: { preserveStoredSecret?: boolean } = {},
 ): UpstreamRecord['config'] => {
   const config = structuredClone(values.config) as unknown as Record<string, unknown>;
-  if (manualModelsSupported(record.kind)) {
+  if (manualModelsSupported(record)) {
     config.models = structuredClone(values.manualModels);
     const apiKey = typeof config.apiKey === 'string' ? config.apiKey.trim() : '';
     if (apiKey) config.apiKey = apiKey;
@@ -261,7 +261,7 @@ export const updateBody = (record: UpstreamRecord, values: UpstreamEditorValues)
     disabled_public_model_ids: values.disabledPublicModelIds,
     proxy_fallback_list: values.proxyFallbackList,
     model_prefix: values.modelPrefix,
-    ...(manualModelsSupported(record.kind) ? { config: configFromValues(record, values) } : {}),
+    ...(manualModelsSupported(record) ? { config: configFromValues(record, values) } : {}),
   } as UpdateUpstreamBody;
 };
 
