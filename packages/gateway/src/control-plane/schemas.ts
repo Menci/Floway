@@ -21,7 +21,7 @@ import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
 import { RETENTION_MAX_SECONDS, SECONDS_PER_DAY } from '../shared/retention.ts';
 import { kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS } from '@floway-dev/protocols/common';
-import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, normalizeUpstreamColor, parseFlagOverridesWire } from '@floway-dev/provider';
+import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, parseFlagOverridesWire, UPSTREAM_HUE_DEGREES } from '@floway-dev/provider';
 
 // --- shared atoms ---
 
@@ -326,21 +326,10 @@ const modelPrefixSchema = z.object({
   listed: z.array(addressableFormSchema),
 }).nullable();
 
-// Per-upstream badge color override. `null` inherits the frontend's kind
-// default. Delegates parsing entirely to `normalizeUpstreamColor` so the
-// wire accept-rules stay in one place (`@floway-dev/provider/model`);
-// widening / narrowing the accepted forms — new preset, alpha hex, etc.
-// — is a one-file change. The transform surfaces the normalizer's throw
-// as a Zod issue so the client-side error shape stays consistent with
-// the sibling flagOverridesSchema.
-const upstreamColorSchema = z.unknown().transform((value, ctx) => {
-  try {
-    return normalizeUpstreamColor(value);
-  } catch (e) {
-    ctx.issues.push({ code: 'custom', message: e instanceof Error ? e.message : String(e), input: value });
-    return z.NEVER;
-  }
-});
+// The badge hue, an OKLCH hue angle. Half-open at the top because 360° and 0°
+// are the same angle and storing both would let two rows carry one hue under
+// two names.
+const upstreamHueSchema = z.number().int().min(0).max(UPSTREAM_HUE_DEGREES - 1);
 
 const upstreamBaseFields = {
   name: z.string().min(1),
@@ -350,7 +339,7 @@ const upstreamBaseFields = {
   disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
   proxy_fallback_list: proxyFallbackListSchema.optional(),
   model_prefix: modelPrefixSchema.optional(),
-  color: upstreamColorSchema.optional(),
+  hue: upstreamHueSchema,
 };
 
 // Create accepts a discriminated union on `kind` for per-provider config
@@ -389,7 +378,7 @@ export const updateUpstreamBody = z.object({
   disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
   proxy_fallback_list: proxyFallbackListSchema.optional(),
   model_prefix: modelPrefixSchema.optional(),
-  color: upstreamColorSchema.optional(),
+  hue: upstreamHueSchema.optional(),
   // Patches only carry field diffs, not per-kind shape validation — the
   // handler dispatches on the existing row's kind and enforces the shape
   // there (Copilot/Codex/Claude Code reject a config patch outright, since

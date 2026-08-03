@@ -180,7 +180,7 @@ export const listUpstreamOptions = async (c: Context) => {
       name: upstream.name,
       kind: upstream.kind,
       enabled: upstream.enabled,
-      color: upstream.color,
+      hue: upstream.hue,
       // The picker states a model count per upstream, and a disabled upstream
       // is absent from the live catalog the picker counts against, so it also
       // carries the size of the catalog it stored while it was on.
@@ -250,7 +250,7 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
     disabledPublicModelIds: body.disabled_public_model_ids ?? [],
     proxyFallbackList,
     modelPrefix,
-    color: body.color ?? null,
+    hue: body.hue,
     config: body.config,
     state: stateFromBody,
     // Operator edits never carry the catalog cache; the repo leaves the
@@ -324,7 +324,7 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
     if (!result.ok) return c.json({ error: result.error }, 400);
     next = { ...next, modelPrefix: result.value };
   }
-  if (body.color !== undefined) next = { ...next, color: body.color };
+  if (body.hue !== undefined) next = { ...next, hue: body.hue };
   if (body.config !== undefined) {
     const config = mergeConfigPatch(existing.kind, existing.config, body.config);
     if (!config.ok) return c.json({ error: config.error }, 400);

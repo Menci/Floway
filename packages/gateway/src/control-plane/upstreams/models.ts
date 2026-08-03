@@ -62,7 +62,8 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
     disabledPublicModelIds: [],
     proxyFallbackList: (record.proxy_fallback_list ?? []) as ProxyFallbackEntry[],
     modelPrefix: null,
-    color: null,
+    // A draft only lists models; nothing renders its badge.
+    hue: 0,
     config: record.config,
     state: record.state,
     // A draft is built from the request envelope and lists models live, so it

@@ -1,5 +1,5 @@
 import { DUMP_FILE_PREFIX, SPILLED_FILE_STAGE_GRACE_MS } from './spilled-files-policy.ts';
-import { parseUpstreamColor, parseUpstreamKind } from './upstream-parse.ts';
+import { parseUpstreamHue, parseUpstreamKind } from './upstream-parse.ts';
 import type { DumpListOptions, DumpStore } from '../dump/store-contract.ts';
 import type {
   DumpMetadata,
@@ -30,7 +30,7 @@ interface DumpRow {
   upstream_id: string | null;
   upstream_name: string | null;
   upstream_kind: string | null;
-  upstream_color: string | null;
+  upstream_hue: number | null;
   meta_json: string;
   request_headers_json: string;
   response_headers_json: string | null;
@@ -42,19 +42,17 @@ interface DumpRow {
 // (auth/validation reject, no candidate matched); a non-null id with a null
 // joined `upstream_name` means the referenced upstream was since deleted.
 // `upstreams.name`/`provider` are NOT NULL so checking name alone suffices.
-// `upstream_color` is nullable in the upstreams table itself (NULL means
-// "inherit the frontend's kind default"). Kind and color are both validated
-// at read time via the shared `upstream-parse.ts` helpers — the write path
-// already rejects bad values, but a manual DB edit / migration slip would
-// otherwise poison every read that renders the badge. Same policy the SQL
-// repo's own hydrator uses.
-const hydrateUpstream = (row: Pick<DumpRow, 'upstream_id' | 'upstream_name' | 'upstream_kind' | 'upstream_color'>): DumpUpstreamRef | null => {
+// Kind and hue are both validated at read time via the shared
+// `upstream-parse.ts` helpers — the write path already rejects bad values, but
+// a manual DB edit / migration slip would otherwise poison every read that
+// renders the badge. Same policy the SQL repo's own hydrator uses.
+const hydrateUpstream = (row: Pick<DumpRow, 'upstream_id' | 'upstream_name' | 'upstream_kind' | 'upstream_hue'>): DumpUpstreamRef | null => {
   if (row.upstream_id === null || row.upstream_name === null) return null;
   return {
     id: row.upstream_id,
     name: row.upstream_name,
     kind: parseUpstreamKind(row.upstream_id, row.upstream_kind),
-    color: parseUpstreamColor(row.upstream_id, row.upstream_color),
+    hue: parseUpstreamHue(row.upstream_id, row.upstream_hue),
   };
 };
 
@@ -197,7 +195,7 @@ export class FileDumpStore implements DumpStore {
     // millisecond still page deterministically — ULID lex order matches
     // creation order within the ms.
     const select
-      = 'SELECT d.meta_json, d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, u.color AS upstream_color '
+      = 'SELECT d.meta_json, d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, u.hue AS upstream_hue '
       + 'FROM dump_records d LEFT JOIN upstreams u ON u.id = d.upstream_id '
       + 'JOIN api_keys k ON k.id = d.key_id AND k.deleted_at IS NULL AND k.dump_retention_seconds IS NOT NULL ';
     const visible = 'd.key_id = ? AND d.created_at >= ? - k.dump_retention_seconds * 1000';
@@ -208,7 +206,7 @@ export class FileDumpStore implements DumpStore {
     const stmt = beforeTs === null
       ? this.db.prepare(sql).bind(keyId, now, opts.limit)
       : this.db.prepare(sql).bind(keyId, now, beforeTs, beforeTs, beforeId, opts.limit);
-    const { results } = await stmt.all<Pick<DumpRow, 'meta_json' | 'upstream_id' | 'upstream_name' | 'upstream_kind' | 'upstream_color'>>();
+    const { results } = await stmt.all<Pick<DumpRow, 'meta_json' | 'upstream_id' | 'upstream_name' | 'upstream_kind' | 'upstream_hue'>>();
     return results.map(row => ({
       ...JSON.parse(row.meta_json) as Omit<DumpMetadata, 'upstream'>,
       upstream: hydrateUpstream(row),
@@ -217,7 +215,7 @@ export class FileDumpStore implements DumpStore {
 
   async get(keyId: string, recordId: DumpRecordId): Promise<StoredDumpRecord | null> {
     const row = await this.db.prepare(
-      'SELECT d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, u.color AS upstream_color, '
+      'SELECT d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, u.hue AS upstream_hue, '
       + 'd.meta_json, d.request_headers_json, d.response_headers_json, d.request_body_descriptor, d.response_body_descriptor '
       + 'FROM dump_records d LEFT JOIN upstreams u ON u.id = d.upstream_id '
       + 'JOIN api_keys k ON k.id = d.key_id AND k.deleted_at IS NULL AND k.dump_retention_seconds IS NOT NULL '
