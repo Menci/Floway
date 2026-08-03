@@ -208,12 +208,13 @@ export default defineConfig({
       'zod',
       'zustand',
     ],
-    // These six are Prism's language scripts, which the prism-components-esm
-    // plugin below rewrites into modules. The dependency optimizer does not run
-    // plugin transforms, so pre-bundling them -- which the scanner would do on
-    // its own for a bare specifier -- would hand the browser the untransformed
-    // script and leave it to find `Prism` on the window. Excluding them keeps
-    // them on the plugin pipeline in dev, as they already are in the build.
+    // The language scripts src/components/ui/prism.ts registers, which the
+    // prism-components-esm plugin below rewrites into modules. The dependency
+    // optimizer does not run plugin transforms, so pre-bundling them -- which
+    // the scanner would do on its own for a bare specifier -- would hand the
+    // browser the untransformed script and leave it to find `Prism` on the
+    // window. Excluding them keeps them on the plugin pipeline in dev, as they
+    // already are in the build. The list mirrors that module's imports.
     exclude: [
       'prismjs/components/prism-bash',
       'prismjs/components/prism-json',

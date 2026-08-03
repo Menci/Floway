@@ -1,12 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
-// Prism grammars register themselves onto Prism as a module side effect, so
-// `prismjs` must be named first and ESM source order is what guarantees it.
-import 'prismjs';
-import 'prismjs/components/prism-bash';
-import 'prismjs/components/prism-json';
-import 'prismjs/components/prism-powershell';
-import 'prismjs/components/prism-toml';
 
 import {
   applyLocalAgentSetupChanges,

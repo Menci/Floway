@@ -1,7 +1,4 @@
 import { Trans, useTranslation } from 'react-i18next';
-// Prism grammars register themselves onto Prism as a module side effect, so `prismjs` must import first.
-import 'prismjs';
-import 'prismjs/components/prism-bash';
 
 import { apiDocsEndpoints, apiDocsGroups, authCurlExample } from './data';
 import { fluentComponents } from '../../fluent';

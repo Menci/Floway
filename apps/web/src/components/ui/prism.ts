@@ -1,16 +1,23 @@
 import Prism from 'prismjs';
+import 'prismjs/components/prism-bash';
+import 'prismjs/components/prism-json';
+import 'prismjs/components/prism-markdown';
+import 'prismjs/components/prism-powershell';
+import 'prismjs/components/prism-toml';
+import 'prismjs/components/prism-typescript';
 
 import { fluentComponents } from '../../fluent';
 
 const { tokens } = fluentComponents;
 
-/**
- * Prism registers a grammar as a module side effect, so the module naming a
- * language is the one that imports it. An unregistered name resolves to the
- * empty plain grammar, which stringifies to escaped source rather than
- * throwing.
- */
-export const grammarFor = (language: string) => Prism.languages[language] ?? Prism.languages.plain;
+// Every grammar the dashboard can render is registered above, so this module
+// is the whole of Prism as far as the app is concerned. A language it does not
+// name resolves to the empty plain grammar, which stringifies to escaped
+// source rather than throwing.
+const grammarFor = (language: string) => Prism.languages[language] ?? Prism.languages.plain;
+
+export const highlight = (code: string, language: string): string =>
+  Prism.highlight(code, grammarFor(language), language);
 
 export const prismTokenStyles = {
   '& .token.comment, & .token.prolog, & .token.doctype, & .token.cdata': {

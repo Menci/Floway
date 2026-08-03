@@ -2,7 +2,6 @@ import {
   EyeOffRegular,
   EyeRegular,
 } from '@fluentui/react-icons';
-import Prism from 'prismjs';
 import { useMemo, useState } from 'react';
 import type { PropsWithChildren, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -21,12 +20,11 @@ import { useDangerTextClass } from '../ui/danger';
 import { EmptyStateLine } from '../ui/empty-state';
 import { HttpMethodBadge, HttpStatusBadge } from '../ui/http-badge';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
-import { grammarFor, prismTokenStyles } from '../ui/prism';
+import { highlight, prismTokenStyles } from '../ui/prism';
 import { ScrollArea } from '../ui/scroll-area';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-copy-to-clipboard';
 import type { DumpRecord, DumpStreamEvent } from '@floway-dev/gateway/dump-types';
-import 'prismjs/components/prism-json';
 
 const { Tab, TabList, Text, makeStyles, mergeClasses } = fluentComponents;
 
@@ -110,7 +108,7 @@ function CopyButton({ text }: { text: string }) {
 function CodeView({ body }: { body: RenderedBody }) {
   const s = useStyles();
   const highlighted = useMemo(
-    () => Prism.highlight(body.text, grammarFor(body.isJson ? 'json' : 'plain'), body.isJson ? 'json' : 'plain'),
+    () => highlight(body.text, body.isJson ? 'json' : 'plain'),
     [body],
   );
   return <pre className={mergeClasses(s.code, `language-${body.isJson ? 'json' : 'plain'}`)}><code className={s.highlightedCode} dangerouslySetInnerHTML={{ __html: highlighted }} /></pre>;

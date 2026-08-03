@@ -1,9 +1,8 @@
-import Prism from 'prismjs';
 import { useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { grammarFor, prismTokenStyles } from './prism';
+import { highlight, prismTokenStyles } from './prism';
 import { ScrollArea } from './scroll-area';
 import { copyOutcomeIcon, useCopyLabel, type CopyOutcome } from './use-copy-to-clipboard';
 import { fluentComponents } from '../../fluent';
@@ -96,7 +95,7 @@ export function CodeBlock({ code, copyOutcome, disabled = false, header, languag
   const styles = useStyles();
   const copyLabel = useCopyLabel();
   const highlighted = useMemo(
-    () => Prism.highlight(code, grammarFor(language), language),
+    () => highlight(code, language),
     [code, language],
   );
 

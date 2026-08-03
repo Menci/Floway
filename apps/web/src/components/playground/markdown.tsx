@@ -1,18 +1,12 @@
-import Prism from 'prismjs';
 import { memo, useMemo } from 'react';
 import type { ComponentProps } from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { Components, UrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remend from 'remend';
-import 'prismjs/components/prism-bash';
-import 'prismjs/components/prism-json';
-import 'prismjs/components/prism-markdown';
-import 'prismjs/components/prism-toml';
-import 'prismjs/components/prism-typescript';
 
 import { fluentComponents } from '../../fluent';
-import { grammarFor, prismTokenStyles } from '../ui/prism';
+import { highlight, prismTokenStyles } from '../ui/prism';
 import { ScrollArea } from '../ui/scroll-area';
 
 const { makeStyles, tokens } = fluentComponents;
@@ -170,7 +164,7 @@ function MarkdownCode({ children, className, streaming, ...props }: MarkdownCode
 
   const language = match[1]!;
   const code = String(children).replace(/\n$/, '');
-  const highlighted = streaming ? null : Prism.highlight(code, grammarFor(language), language);
+  const highlighted = streaming ? null : highlight(code, language);
 
   return (
     <code
