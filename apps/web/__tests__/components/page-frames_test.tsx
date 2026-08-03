@@ -1,10 +1,11 @@
-import { act } from '@testing-library/react';
+import { act, fireEvent } from '@testing-library/react';
 import { useState } from 'react';
 import { createMemoryRouter, RouterProvider, useOutlet } from 'react-router';
 import { describe, expect, it } from 'vitest';
 
 import { usePageFrames } from '../../src/components/page-frames';
 import { pageNavigation } from '../../src/lib/page-navigation';
+import { PAGE_LEAVE_ANIMATION } from '../../src/winui/page-transition.css';
 import { renderInApp } from '../render';
 
 // A page is held on screen while it leaves, and it is held so that what the
@@ -20,8 +21,8 @@ const Page = () => {
 };
 
 const Shell = () => {
-  const frames = usePageFrames(useOutlet(), 5_000);
-  return <>{frames.map(frame => <div data-leaving={frame.leaving} key={frame.id}>{frame.node}</div>)}</>;
+  const frames = usePageFrames(useOutlet());
+  return <>{frames.map(frame => <div data-leaving={frame.leaving} key={frame.id} onAnimationEnd={frame.onAnimationEnd}>{frame.node}</div>)}</>;
 };
 
 const renderRouter = () => {
@@ -44,6 +45,26 @@ describe('page frames', () => {
     const leaving = container.querySelector('[data-leaving="true"]');
     expect(leaving?.querySelector('button')).toBe(held);
     expect(leaving?.textContent).toBe('second');
+  });
+
+  // A request for reduced motion clamps the fade to 0.01ms, so anything that
+  // held the frame for the unclamped length would keep an invisible copy of the
+  // page -- effects, polling and all -- mounted long after it had gone.
+  it('drops the leaving page when its fade ends, whatever that fade lasted', async () => {
+    const { router, container } = renderRouter();
+
+    await act(async () => { await router.navigate('/next', pageNavigation); });
+    const leaving = container.querySelector('[data-leaving="true"]');
+    if (!leaving) throw new Error('the navigation drew no leaving frame');
+    const page = leaving.querySelector('button');
+    if (!page) throw new Error('the leaving frame drew no page');
+
+    // A page inside the frame animating is not the frame leaving.
+    await act(async () => { fireEvent.animationEnd(page, { animationName: PAGE_LEAVE_ANIMATION }); });
+    expect(container.querySelector('[data-leaving="true"]')).toBe(leaving);
+
+    await act(async () => { fireEvent.animationEnd(leaving, { animationName: PAGE_LEAVE_ANIMATION }); });
+    expect(container.querySelector('[data-leaving="true"]')).toBeNull();
   });
 
   // A page carries the mark on its own entry and replaces that entry when it

@@ -3,6 +3,12 @@
 // in one grid cell. The View Transition API would snapshot the outgoing page
 // instead and make those frames unnecessary; they are here so the transition
 // does not depend on its availability.
+
+// The leg that owns how long the outgoing frame stays mounted: it is dropped
+// when this animation ends, so ../components/page-frames.tsx recognises it by
+// name off the animation event.
+export const PAGE_LEAVE_ANIMATION = 'floway-page-leave';
+
 export const pageTransitionCss = `
   /* The legs are strictly sequential, so the entering animation fills forwards:
      a delayed animation's default fill leaves the element at its own resting
@@ -10,7 +16,7 @@ export const pageTransitionCss = `
      opacity is two discrete key frames that never interpolate, as in the
      source. */
   .floway-page-leaving {
-    animation: floway-page-leave var(--winui-page-leave-duration)
+    animation: ${PAGE_LEAVE_ANIMATION} var(--winui-page-leave-duration)
       var(--winui-page-leave-easing) forwards;
     pointer-events: none;
   }
@@ -19,7 +25,7 @@ export const pageTransitionCss = `
       var(--winui-page-enter-easing) var(--winui-page-leave-duration) forwards;
     opacity: 0;
   }
-  @keyframes floway-page-leave { to { opacity: 0; } }
+  @keyframes ${PAGE_LEAVE_ANIMATION} { to { opacity: 0; } }
   @keyframes floway-page-enter {
     from { opacity: 1; translate: 0 var(--winui-page-enter-offset); }
     to { opacity: 1; translate: none; }
