@@ -9,7 +9,7 @@ import {
   SaveRegular,
   ServerRegular,
 } from '@fluentui/react-icons';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Combobox, Dropdown } from '../components/ui/fluent-form-controls';
@@ -828,25 +828,87 @@ function ProgressSection() {
 
 const toastIntents = ['info', 'success', 'warning', 'error'] as const;
 
+// Long enough to hover a bar mid-depletion and watch it hold.
+const TOAST_TIMEOUT_MS = 8000;
+const TOAST_SETTLE_MS = 1500;
+const TOAST_LIMIT = 3;
+
+const wrappingBody = 'The catalog came back with 128 models. 12 of them declare an endpoint set no protocol here speaks, 3 are addressable only through an alias another upstream already claims, and the rest were recorded against the prices published at the moment of the fetch.';
+const unbrokenToken = 'https://models.inference.example.invalid/v2/deployments/gpt-5-codex-preview-2026-07-31-eastus2-provisioned/chat/completions';
+
 function ToastSection() {
   const toasterId = useFluentId('winui-gallery-toaster');
-  const { dispatchToast } = useToastController(toasterId);
+  const { dismissToast, dispatchToast, updateToast } = useToastController(toasterId);
+  const sequence = useRef(0);
+  const stacked = useRef<string[]>([]);
+
+  const fire = (content: React.ReactNode, intent?: (typeof toastIntents)[number]) => {
+    const toastId = `${toasterId}-${sequence.current++}`;
+    dispatchToast(content, { intent, timeout: TOAST_TIMEOUT_MS, toastId });
+    return toastId;
+  };
+
+  const saved = <Toast>
+    <ToastTitle action={<Button appearance="transparent" size="small">Undo</Button>}>Upstream saved</ToastTitle>
+    <ToastBody subtitle="Copilot (work)">12 models are now addressable.</ToastBody>
+    <ToastFooter><Link>Open the upstream</Link></ToastFooter>
+  </Toast>;
+
+  const firePending = () => {
+    const toastId = `${toasterId}-${sequence.current++}`;
+    dispatchToast(
+      <Toast><ToastTitle media={<Spinner size="tiny" />}>Saving the upstream…</ToastTitle></Toast>,
+      { timeout: -1, toastId },
+    );
+    setTimeout(() => updateToast({
+      content: <Toast><ToastTitle>Upstream saved</ToastTitle></Toast>,
+      intent: 'success',
+      timeout: TOAST_TIMEOUT_MS,
+      toastId,
+    }), TOAST_SETTLE_MS);
+  };
+
+  const fireStack = () => {
+    stacked.current = ['Oldest, at the bottom', 'The middle one', 'Newest, on top'].map((title, index) => fire(
+      <Toast><ToastTitle>{title}</ToastTitle></Toast>,
+      toastIntents[index],
+    ));
+  };
 
   return <Section id="toast" title="Toast">
-    <Hint>Toasts are transient, so each intent is fired on demand rather than parked on the page.</Hint>
-    <Toaster toasterId={toasterId} position="top-end" />
+    <Hint>Toasts are transient, so each case is fired on demand. This toaster holds {TOAST_LIMIT} at once and queues the rest, and each toast runs for {TOAST_TIMEOUT_MS / 1000} seconds - hover one to hold its bar where it is, and leave it to carry on from there rather than start again.</Hint>
+    <Toaster limit={TOAST_LIMIT} position="top-end" toasterId={toasterId} />
     <Row label="intents">
-      {toastIntents.map(intent => <Button
-        key={intent}
-        onClick={() => dispatchToast(
-          <Toast>
-            <ToastTitle action={<Button appearance="transparent" size="small">Undo</Button>}>Upstream saved</ToastTitle>
-            <ToastBody subtitle="Copilot (work)">12 models are now addressable.</ToastBody>
-            <ToastFooter><Link>Open the upstream</Link></ToastFooter>
-          </Toast>,
-          { intent, timeout: 4000 },
-        )}
-      >Fire {intent}</Button>)}
+      {toastIntents.map(intent => <Button key={intent} onClick={() => fire(saved, intent)}>Fire {intent}</Button>)}
+    </Row>
+    <Row label="layouts">
+      <Button onClick={() => fire(<Toast><ToastTitle>Model catalog refreshed</ToastTitle></Toast>, 'success')}>
+        Title only
+      </Button>
+      <Button onClick={() => fire(
+        <Toast><ToastTitle>Model catalog refreshed</ToastTitle><ToastBody>128 models are addressable.</ToastBody></Toast>,
+        'success',
+      )}>One line each</Button>
+      <Button onClick={() => fire(
+        <Toast><ToastTitle>Model catalog refreshed</ToastTitle><ToastBody>{wrappingBody}</ToastBody></Toast>,
+        'warning',
+      )}>Wrapping body</Button>
+      <Button onClick={() => fire(
+        <Toast><ToastTitle>Upstream refused the request</ToastTitle><ToastBody>{unbrokenToken}</ToastBody></Toast>,
+        'error',
+      )}>Unbroken token</Button>
+    </Row>
+    <Hint>The wrapped body is the case the severity mark&apos;s margin exists for: the glyph pins to the first line instead of centring in the card.</Hint>
+    <Row label="pending settling into a result">
+      <Button onClick={firePending}>Save an upstream</Button>
+    </Row>
+    <Row label="a stack, and what leaves it">
+      <Button onClick={fireStack}>Fire three</Button>
+      <Button onClick={() => dismissToast(stacked.current[1])}>Dismiss the middle one</Button>
+      <Button onClick={() => Array.from({ length: TOAST_LIMIT + 2 }, (_, index) => fire(
+        <Toast><ToastTitle>Queued behind the limit, number {index + 1}</ToastTitle></Toast>,
+        'info',
+      ))}>Fire past the limit</Button>
     </Row>
   </Section>;
 }
