@@ -1,4 +1,4 @@
-import type { InferRequestType, InferResponseType } from 'hono/client';
+import type { InferRequestType } from 'hono/client';
 
 import { shapeForKind } from './endpoints';
 import { api, callApi } from '../../api/client';
@@ -9,6 +9,7 @@ import type {
   UpstreamRecord,
   UpstreamRecordEnvelope,
 } from '../../api/types';
+import type { MODEL_LISTING_FAILURE_CODE as GatewayModelListingFailureCode } from '@floway-dev/gateway/data-plane/models/shared';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { UpstreamModelConfig } from '@floway-dev/provider';
 import type { UpstreamProviderKind } from '@floway-dev/provider/model';
@@ -130,14 +131,17 @@ export interface ModelCatalogFetch {
 
 // The gateway squashes a genuine upstream failure to a message that names
 // nothing, so the editor writes that case in its own words and quotes every
-// other message. The code carries that distinction; the type comes from the
-// route, so a rename on the gateway side fails this declaration.
-type ListModelsFailureCode = Extract<
-  InferResponseType<typeof api.api.upstreams['list-models']['$post'], 502>['error'],
-  { code: string }
->['code'];
+// other message. The code carries that distinction, and taking its type from
+// the gateway makes a rename there fail this declaration.
+const MODEL_LISTING_FAILURE_CODE: typeof GatewayModelListingFailureCode = 'upstream_model_listing_failed';
 
-const MODEL_LISTING_FAILURE_CODE: ListModelsFailureCode = 'upstream_model_listing_failed';
+// Hono infers one response union for the route rather than one per status, so
+// the failure body is read structurally.
+const failureCode = (raw: unknown): unknown =>
+  typeof raw === 'object' && raw !== null && 'error' in raw
+  && typeof raw.error === 'object' && raw.error !== null && 'code' in raw.error
+    ? raw.error.code
+    : null;
 
 export interface ModelListingFailure {
   message: string;
@@ -157,12 +161,11 @@ export const fetchModelCatalog = async (
     json: { record: previewRecord(record, values) },
   }, { init }));
   if (result.error) {
-    const body = result.error.raw?.error;
     return {
       discovered: null,
       modelsError: {
         message: result.error.message,
-        upstreamListingFailed: typeof body === 'object' && 'code' in body && body.code === MODEL_LISTING_FAILURE_CODE,
+        upstreamListingFailed: failureCode(result.error.raw) === MODEL_LISTING_FAILURE_CODE,
       },
       refreshed: null,
     };

@@ -23,6 +23,9 @@
     "./control-plane/upstreams/types": {
       "types": "./src/control-plane/upstreams/types.ts"
     },
+    "./data-plane/models/shared": {
+      "types": "./src/data-plane/models/shared.ts"
+    },
     "./dump-codec": {
       "import": "./src/dump/codec.ts",
       "types": "./src/dump/codec.ts"

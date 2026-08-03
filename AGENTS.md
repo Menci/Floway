@@ -307,8 +307,9 @@ restricted to `/url`, `/url-kind`, `/proxy-config`, and `/constants` so the SPA
 does not pull in dialers, userspace TLS, or Node `crypto`. It type-imports
 gateway contracts through `/app-type`, `/dump-types`,
 `/control-plane/performance/aggregate`, `/control-plane/upstreams/types`,
-`/control-plane/usage-types`, and
-`/control-plane/proxies/serialize`; `@floway-dev/gateway` stays a
+`/control-plane/usage-types`,
+`/control-plane/proxies/serialize`, and `/data-plane/models/shared`;
+`@floway-dev/gateway` stays a
 devDependency, because every one of those imports is type-only. It does not
 depend on
 `@floway-dev/agent-setup`; the dashboard derives Agent Setup types from the RPC
