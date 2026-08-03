@@ -154,22 +154,27 @@ function AgentConfigSnippets({ agent, apiKey, clipboard, configuration, onPlatfo
   if (agent === 'claude') {
     const snippet = buildAgentClaudeSnippet(origin, apiKey, configuration.claudeCode);
     return <div className="grid gap-2 border-t border-t-solid border-fui-divider pt-4">
-      <Text size={200} className="text-fui-fg2">{t('dashboard.apiKeys.configuration.claudeHint')}</Text>
+      <Text size={200} className="text-fui-fg2">
+        <Trans components={{ path: <code className="font-mono mono-size-xs" /> }} i18nKey="dashboard.apiKeys.configuration.claudeHint" />
+      </Text>
       <CodeBlock code={snippet} copyOutcome={clipboard.outcomeFor('agent-snippet-claude')} language="json" onCopy={() => clipboard.copy(snippet, 'agent-snippet-claude')} />
     </div>;
   }
-  const config = buildAgentCodexSnippet(origin, configuration.codex);
-  const unix = codexUnixCredentialSnippet(apiKey);
-  const windows = codexWindowsCredentialSnippet(apiKey);
-  const credential = platform === 'windows' ? windows : unix;
-  const credentialTag = platform === 'windows' ? 'agent-snippet-codex-windows' : 'agent-snippet-codex-unix';
+  // Both snippets are one platform's pair -- the config's auth command reads the
+  // file the credential snippet writes -- so one choice drives them and each
+  // block carries the picker, whichever the reader reaches first.
+  const config = buildAgentCodexSnippet(origin, configuration.codex, platform);
+  const credential = platform === 'windows' ? codexWindowsCredentialSnippet(apiKey) : codexUnixCredentialSnippet(apiKey);
+  const configTag = platform === 'windows' ? 'agent-snippet-codex-windows' : 'agent-snippet-codex-unix';
+  const credentialTag = `${configTag}-token`;
+  const tabs = <PlatformTabs onChange={onPlatformChange} platform={platform} />;
   return <div className="grid gap-3 border-t border-t-solid border-fui-divider pt-4">
-    <Text size={200} className="text-fui-fg2">{t('dashboard.apiKeys.configuration.codexConfigHint')}</Text>
-    <CodeBlock code={config} copyOutcome={clipboard.outcomeFor('agent-snippet-codex')} language="toml" onCopy={() => clipboard.copy(config, 'agent-snippet-codex')} />
     <Text size={200} className="text-fui-fg2">
-      {t(platform === 'windows' ? 'dashboard.apiKeys.configuration.codexWindowsAuthHint' : 'dashboard.apiKeys.configuration.codexAuthHint')}
+      <Trans components={{ path: <code className="font-mono mono-size-xs" /> }} i18nKey={platform === 'windows' ? 'dashboard.apiKeys.configuration.codexConfigHintWindows' : 'dashboard.apiKeys.configuration.codexConfigHint'} />
     </Text>
-    <CodeBlock code={credential} copyOutcome={clipboard.outcomeFor(credentialTag)} header={<PlatformTabs onChange={onPlatformChange} platform={platform} />} language={platform === 'windows' ? 'powershell' : 'bash'} onCopy={() => clipboard.copy(credential, credentialTag)} />
+    <CodeBlock code={config} copyOutcome={clipboard.outcomeFor(configTag)} header={tabs} language="toml" onCopy={() => clipboard.copy(config, configTag)} />
+    <Text size={200} className="text-fui-fg2">{t('dashboard.apiKeys.configuration.codexAuthHint')}</Text>
+    <CodeBlock code={credential} copyOutcome={clipboard.outcomeFor(credentialTag)} header={tabs} language={platform === 'windows' ? 'powershell' : 'bash'} onCopy={() => clipboard.copy(credential, credentialTag)} />
   </div>;
 }
 

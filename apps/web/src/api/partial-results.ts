@@ -13,8 +13,10 @@ export interface MergedResults<T> {
 
 // A page loads its regions in parallel and each of them can fail on its own, so
 // a region that failed keeps whatever is already on screen instead of blanking
-// it. `current` is that screen state, and it is what fixes both the set of
-// regions and their types.
+// it. `current` is that screen state, and `results` fixes the set of regions:
+// a caller hands its whole state in, which carries fields no request answers,
+// and a parameter typed to a subset does not stop it -- an argument that is not
+// a literal is never checked for excess properties.
 export const mergeResults = <T extends Record<string, unknown>>(
   current: T,
   results: { [K in keyof T]: ApiResult<T[K]> },
@@ -22,7 +24,7 @@ export const mergeResults = <T extends Record<string, unknown>>(
   const values = { ...current };
   const errors = {} as { [K in keyof T]: string | null };
   let error: string | null = null;
-  for (const key of Object.keys(current) as (keyof T)[]) {
+  for (const key of Object.keys(results) as (keyof T)[]) {
     const result = results[key];
     if (result.error) {
       errors[key] = result.error.message;

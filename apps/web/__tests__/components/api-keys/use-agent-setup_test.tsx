@@ -129,6 +129,30 @@ describe('Agent Setup lease lifecycle', () => {
     expect(saves.map(save => save.configuration.codex.model)).toEqual(['gpt-early']);
   });
 
+  it('leaves a saved edit behind when the next key answers with its own configuration', async () => {
+    const saves: { configuration: { codex: { model: string | null } } }[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'PUT') saves.push(JSON.parse(String(init.body)) as (typeof saves)[number]);
+      return Response.json(lease());
+    }));
+    mount('key-1');
+    await settle();
+    await act(async () => current().updateDraft(configuration => ({
+      ...configuration,
+      codex: { ...configuration.codex, model: 'gpt-saved' },
+    })));
+    await advance(400);
+    await settle();
+    expect(saves.map(save => save.configuration.codex.model)).toEqual(['gpt-saved']);
+
+    view.rerender({ apiKeyId: 'key-2' });
+    await settle();
+    expect(current().draft.codex.model).toBe(null);
+    await advance(400);
+    await settle();
+    expect(saves).toHaveLength(1);
+  });
+
   it('aborts an active request when the selected key changes', async () => {
     let signal: AbortSignal | undefined;
     vi.stubGlobal('fetch', vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {

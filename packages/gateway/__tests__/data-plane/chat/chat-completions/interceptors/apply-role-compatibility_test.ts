@@ -34,29 +34,29 @@ test('leaves roles unchanged without flags or at a translated target', async () 
 
   assertEquals(await applyRoles(messages, new Set()), messages);
   assertEquals(
-    await applyRoles(messages, new Set(['promote-system-to-developer']), 'responses'),
+    await applyRoles(messages, new Set(['rewrite-system-to-developer']), 'responses'),
     messages,
   );
 });
 
-test('applies promotion and developer demotion independently', async () => {
+test('applies the system and developer rewrites independently', async () => {
   assertEquals(
     await applyRoles(
       [{ role: 'system', content: 'rules' }, { role: 'user', content: 'hello' }],
-      new Set(['promote-system-to-developer']),
+      new Set(['rewrite-system-to-developer']),
     ),
     [{ role: 'developer', content: 'rules' }, { role: 'user', content: 'hello' }],
   );
   assertEquals(
     await applyRoles(
       [{ role: 'developer', content: 'rules' }, { role: 'user', content: 'hello' }],
-      new Set(['demote-developer-to-system']),
+      new Set(['rewrite-developer-to-system']),
     ),
     [{ role: 'system', content: 'rules' }, { role: 'user', content: 'hello' }],
   );
 });
 
-test('preserves the leading system run and demotes later system messages', async () => {
+test('preserves the leading system run and rewrites later system messages', async () => {
   assertEquals(
     await applyRoles(
       [
@@ -65,7 +65,7 @@ test('preserves the leading system run and demotes later system messages', async
         { role: 'user', content: 'hello' },
         { role: 'system', content: 'inline rules' },
       ],
-      new Set(['demote-interleaved-system-to-user']),
+      new Set(['rewrite-mid-conv-system-to-user']),
     ),
     [
       { role: 'system', content: 'base A' },
@@ -81,24 +81,24 @@ test('keeps a leading-only system run and an empty input unchanged', async () =>
     { role: 'system', content: 'base A' },
     { role: 'system', content: 'base B' },
   ];
-  assertEquals(await applyRoles(leading, new Set(['demote-interleaved-system-to-user'])), leading);
-  assertEquals(await applyRoles([], new Set(['demote-interleaved-system-to-user'])), []);
+  assertEquals(await applyRoles(leading, new Set(['rewrite-mid-conv-system-to-user'])), leading);
+  assertEquals(await applyRoles([], new Set(['rewrite-mid-conv-system-to-user'])), []);
 });
 
-test('preserves multipart content identity when demoting an interleaved system message', async () => {
+test('preserves multipart content identity when rewriting a mid-conversation system message', async () => {
   const content = [
     { type: 'text' as const, text: 'one' },
     { type: 'text' as const, text: 'two' },
   ];
   const result = await applyRoles(
     [{ role: 'user', content: 'hello' }, { role: 'system', content }],
-    new Set(['demote-interleaved-system-to-user']),
+    new Set(['rewrite-mid-conv-system-to-user']),
   );
   assertEquals(result, [{ role: 'user', content: 'hello' }, { role: 'user', content }]);
   assert(result[1]?.content === content);
 });
 
-test('applies overlapping flags in promotion then demotion order', async () => {
+test('applies overlapping flags in system-to-developer then developer-to-system order', async () => {
   assertEquals(
     await applyRoles(
       [
@@ -107,9 +107,9 @@ test('applies overlapping flags in promotion then demotion order', async () => {
         { role: 'system', content: 'inline rules' },
       ],
       new Set([
-        'promote-system-to-developer',
-        'demote-developer-to-system',
-        'demote-interleaved-system-to-user',
+        'rewrite-system-to-developer',
+        'rewrite-developer-to-system',
+        'rewrite-mid-conv-system-to-user',
       ]),
     ),
     [

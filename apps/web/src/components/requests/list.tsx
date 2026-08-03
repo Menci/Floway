@@ -6,7 +6,7 @@ import {
   TimerRegular,
 } from '@fluentui/react-icons';
 import { useCallback, useMemo, useState } from 'react';
-import type { KeyboardEvent } from 'react';
+import type { CSSProperties, KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { List } from 'react-window';
 import type { ListImperativeAPI, RowComponentProps } from 'react-window';
@@ -23,6 +23,7 @@ import { useNow } from '../../lib/use-now';
 import { EmptyState } from '../ui/empty-state';
 import { Dropdown } from '../ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
+import { useRouteAddress } from '../ui/route-link';
 import { useScrollAreaHost } from '../ui/scroll-area';
 import { ProviderBadge } from '../upstreams/provider-badge';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
@@ -62,6 +63,10 @@ const useStyles = makeStyles({
   list: { outlineStyle: 'none' },
   row: {
     backgroundColor: 'transparent',
+    // The row addresses the record it opens, and an anchor would otherwise take
+    // the user-agent link colour and underline.
+    color: 'inherit',
+    textDecorationLine: 'none',
     // A divider rather than a card stroke: the card stroke is black in both
     // themes and disappears against a dark page.
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L46
@@ -140,6 +145,8 @@ const useStyles = makeStyles({
 });
 
 interface RequestListProps {
+  /** Where the record a row opens is read, so the row can be opened in a second tab. */
+  addressOfRecord: (recordId: string) => string;
   apiKeys: ApiKey[];
   selectedKeyId: string;
   onKeyChange: (keyId: string) => void;
@@ -153,6 +160,7 @@ interface RequestListProps {
 }
 
 interface RowProps {
+  addressOfRecord: (recordId: string) => string;
   now: number;
   onSelect: (recordId: string) => void;
   records: DumpMetadata[];
@@ -160,19 +168,28 @@ interface RowProps {
   selectByIndex: (index: number) => void;
 }
 
-function RequestRow({ index, style, records, selectedId, now, onSelect, selectByIndex }: RowComponentProps<RowProps>) {
+function RequestRow({ index, records, style, ...rest }: RowComponentProps<RowProps>) {
+  const record = records[index];
+  if (!record) return null;
+  return <RequestRowContent {...rest} index={index} record={record} records={records} style={style} />;
+}
+
+function RequestRowContent({ addressOfRecord, index, now, onSelect, record, records, selectByIndex, selectedId, style }: RowProps & {
+  index: number;
+  record: DumpMetadata;
+  style: CSSProperties;
+}) {
   const s = useStyles();
   const { t } = useTranslation();
   const locale = useLocale();
-  const record = records[index];
-  if (!record) return null;
+  const address = useRouteAddress(addressOfRecord(record.id), () => onSelect(record.id));
   const severity = requestSeverity(record.status, record.error);
   const tokens = totalTokens(record);
   const rowError = errorLabel(record.error, record.status);
   const StatusIcon = severity === 'success' ? CheckmarkCircleRegular : DismissCircleRegular;
   const selected = selectedId === record.id;
 
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+  const handleKeyDown = (event: KeyboardEvent<HTMLAnchorElement>) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       onSelect(record.id);
@@ -186,11 +203,11 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
   };
 
   return (
-    <div
+    <a
+      {...address}
       aria-selected={selected}
       className={mergeClasses(s.row, selected && s.selected)}
       data-record-index={index}
-      onClick={() => onSelect(record.id)}
       onKeyDown={handleKeyDown}
       role="option"
       style={style}
@@ -248,7 +265,7 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
               {tokens === null ? NO_READING : `${formatCompactCount(tokens, locale)} tok`}
             </Text>}
       </div>
-    </div>
+    </a>
   );
 }
 
@@ -270,12 +287,13 @@ export function RequestListPanel(props: RequestListProps) {
   }, [listRef, onRecordChange, records]);
 
   const rowProps = useMemo<RowProps>(() => ({
+    addressOfRecord: props.addressOfRecord,
     now,
     onSelect: onRecordChange,
     records,
     selectedId: props.selectedRecordId,
     selectByIndex,
-  }), [now, onRecordChange, records, props.selectedRecordId, selectByIndex]);
+  }), [now, onRecordChange, props.addressOfRecord, records, props.selectedRecordId, selectByIndex]);
 
   return (
     <div className="h-full min-h-0 flex flex-col">

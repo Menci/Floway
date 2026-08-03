@@ -834,6 +834,7 @@ const TOAST_SETTLE_MS = 1500;
 const TOAST_LIMIT = 3;
 
 const wrappingBody = 'The catalog came back with 128 models. 12 of them declare an endpoint set no protocol here speaks, 3 are addressable only through an alias another upstream already claims, and the rest were recorded against the prices published at the moment of the fetch.';
+const wrappingTitle = 'The upstream catalog refresh could not reach api.githubcopilot.com';
 const unbrokenToken = 'https://models.inference.example.invalid/v2/deployments/gpt-5-codex-preview-2026-07-31-eastus2-provisioned/chat/completions';
 
 function ToastSection() {
@@ -894,11 +895,15 @@ function ToastSection() {
         'warning',
       )}>Wrapping body</Button>
       <Button onClick={() => fire(
+        <Toast><ToastTitle>{wrappingTitle}</ToastTitle><ToastBody>Retrying in 30 seconds.</ToastBody></Toast>,
+        'error',
+      )}>Wrapping title</Button>
+      <Button onClick={() => fire(
         <Toast><ToastTitle>Upstream refused the request</ToastTitle><ToastBody>{unbrokenToken}</ToastBody></Toast>,
         'error',
       )}>Unbroken token</Button>
     </Row>
-    <Hint>The wrapped body is the case the severity mark&apos;s margin exists for: the glyph pins to the first line instead of centring in the card.</Hint>
+    <Hint>The wrapped title is the case the severity mark&apos;s margin exists for: the glyph pins to the first line instead of centring in the row it shares with the title. The body has a grid row of its own below that one, so it cannot move the mark however far it wraps.</Hint>
     <Row label="pending settling into a result">
       <Button onClick={firePending}>Save an upstream</Button>
     </Row>

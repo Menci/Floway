@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ChartBucket } from '../../../src/components/charts/dashboard-time';
+import { dashboardBucketKeyForUtcHour, type ChartBucket } from '../../../src/components/charts/dashboard-time';
 import { buildSearchChart, buildTokenChart, summarizeCounters, summarizeUsage } from '../../../src/components/usage/plot';
 import type { ChartPlot, DisplayUsageRecord } from '../../../src/components/usage/types';
 
@@ -15,17 +15,21 @@ const areaPlot = (plot: ChartPlot) => {
   return plot.data;
 };
 
+// The chart buckets by local hour, so a fixture that spelled the key out would
+// only line up with the record in the zone it was written in.
+const RECORD_HOUR = '2026-07-28T04';
+
 const bucket: ChartBucket = {
-  key: '2026-07-28T12',
+  key: dashboardBucketKeyForUtcHour('today', RECORD_HOUR),
   label: '12:00 - 13:00',
-  date: new Date('2026-07-28T04:00:00.000Z'),
+  date: new Date(`${RECORD_HOUR}:00:00.000Z`),
 };
 
 const record = (metrics: DisplayUsageRecord['metrics']): DisplayUsageRecord => ({
   keyId: 'key-1',
   keyName: 'Key 1',
   model: 'model-1',
-  hour: '2026-07-28T04',
+  hour: RECORD_HOUR,
   requests: 1,
   metrics,
   cost: null,
@@ -159,7 +163,7 @@ describe('search chart', () => {
     provider,
     keyId: 'key-1',
     keyName: 'Key 1',
-    hour: '2026-07-28T04',
+    hour: RECORD_HOUR,
     requests,
   });
   const searchChart = (records: ReturnType<typeof searchRecord>[]) => buildSearchChart({

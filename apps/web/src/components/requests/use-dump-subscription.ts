@@ -41,6 +41,14 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
   // eslint-disable-next-line react-hooks/refs -- Carrying the newest render's seed to an effect that must not list it as a dependency.
   initialRecordsRef.current = initialRecords;
 
+  // react-i18next hands back a new `t` on every language change, and
+  // BrowserLanguageSync announces one at boot whether or not the language it
+  // lands on is the one i18next booted in, so the disconnect message reaches
+  // the effect the same way the seed does.
+  const disconnectedRef = useRef('');
+  // eslint-disable-next-line react-hooks/refs -- Carrying the newest render's translation to an effect that must not list it as a dependency.
+  disconnectedRef.current = t('dashboard.requests.streamDisconnected');
+
   // Discarding during render rather than in the effect keeps the component from
   // ever painting one key's records under another key's heading.
   const [subscribedKeyId, setSubscribedKeyId] = useState(keyId);
@@ -89,7 +97,7 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
         }
         source.close();
       } else if (source.readyState === EventSource.CLOSED) {
-        setError(t('dashboard.requests.streamDisconnected'));
+        setError(disconnectedRef.current);
         // EventSource reports no status, and the stream carries the same session
         // as every other call; asking for the session puts an expired one
         // through authFetch, which is where "a 401 ends this session" lives.
@@ -100,7 +108,7 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
       olderRequestRef.current?.abort();
       source.close();
     };
-  }, [keyId, t]);
+  }, [keyId]);
 
   const loadOlder = useCallback(async () => {
     const oldest = records.at(-1);

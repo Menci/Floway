@@ -11,7 +11,7 @@ const toRgb = converter('rgb');
 registerMode(modeOklch);
 const toOklch = converter('oklch');
 
-const HUE_MIGRATION = '0073_upstream_hue.sql';
+const HUE_MIGRATION = '0074_upstream_hue.sql';
 
 // The migration runs on Cloudflare D1 and on Node, both of which build SQLite
 // with SQLITE_ENABLE_MATH_FUNCTIONS. node:sqlite is therefore the honest place

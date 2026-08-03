@@ -1,72 +1,13 @@
 import { act, screen } from '@testing-library/react';
 import { StrictMode, useLayoutEffect, useSyncExternalStore } from 'react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
+import { eventSourceClosed, record, stubEventSource } from './dump-stream-stub';
 import { flowayTokenStorageKey } from '../../../src/auth/session';
 import { useDumpSubscription } from '../../../src/components/requests/use-dump-subscription';
 import { stubLocalStorage } from '../../local-storage-stub';
 import { renderInApp } from '../../render';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
-
-const record = (id: string): DumpMetadata => ({
-  id,
-  startedAt: 0,
-  completedAt: 0,
-  method: 'POST',
-  path: `/v1/${id}`,
-  status: 200,
-  upstream: null,
-  model: null,
-  inputTokens: null,
-  outputTokens: null,
-  requestBytes: 0,
-  responseBytes: 0,
-  durationMs: 0,
-  error: null,
-});
-
-type Lifecycle = { event: 'open' | 'close'; keyId: string };
-
-const lifecycle: Lifecycle[] = [];
-const sources: StubEventSource[] = [];
-
-class StubEventSource {
-  static readonly CLOSED = 2;
-
-  readyState = 1;
-  private readonly listeners = new Map<string, ((event: MessageEvent) => void)[]>();
-
-  constructor(readonly url: string) {
-    sources.push(this);
-    lifecycle.push({ event: 'open', keyId: this.keyId });
-  }
-
-  get keyId(): string {
-    return decodeURIComponent(new URL(this.url, 'https://dashboard.test').pathname.split('/')[4] ?? '');
-  }
-
-  addEventListener(type: string, listener: (event: MessageEvent) => void): void {
-    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
-  }
-
-  close(): void {
-    if (this.readyState === StubEventSource.CLOSED) return;
-    this.readyState = StubEventSource.CLOSED;
-    lifecycle.push({ event: 'close', keyId: this.keyId });
-  }
-
-  emit(type: string, data: string): void {
-    act(() => {
-      this.listeners.get(type)?.forEach(listener => { listener(new MessageEvent(type, { data })); });
-    });
-  }
-}
-
-const liveSource = (): StubEventSource => {
-  const open = sources.filter(source => source.readyState !== StubEventSource.CLOSED);
-  expect(open).toHaveLength(1);
-  return open[0]!;
-};
 
 interface Commit { ids: string[]; keyId: string | null }
 interface Selection { keyId: string | null; seed: DumpMetadata[] }
@@ -115,23 +56,13 @@ const renderSubscription = (keyId: string | null, seed: DumpMetadata[]) => {
 
 describe('dump subscription key switch', () => {
   const storage = stubLocalStorage();
-  const originalEventSource = Reflect.getOwnPropertyDescriptor(globalThis, 'EventSource');
+  const stream = stubEventSource();
 
-  beforeEach(() => {
-    storage.set(flowayTokenStorageKey, 'session-token');
-    lifecycle.length = 0;
-    sources.length = 0;
-    Object.defineProperty(globalThis, 'EventSource', { configurable: true, value: StubEventSource, writable: true });
-  });
-
-  afterEach(() => {
-    if (originalEventSource) Object.defineProperty(globalThis, 'EventSource', originalEventSource);
-    else Reflect.deleteProperty(globalThis, 'EventSource');
-  });
+  beforeEach(() => { storage.set(flowayTokenStorageKey, 'session-token'); });
 
   it('never shows one key\'s records under another key\'s heading', () => {
     const { commits, show } = renderSubscription('key-a', [record('key-a-1')]);
-    liveSource().emit('appended', JSON.stringify(record('key-a-2')));
+    stream.liveSource().emit('appended', JSON.stringify(record('key-a-2')));
     expect(screen.getByText('/v1/key-a-2')).toBeTruthy();
 
     show('key-b', [record('key-b-1')]);
@@ -152,20 +83,20 @@ describe('dump subscription key switch', () => {
 
     // StrictMode tears the subscription down and reopens it, so the run is
     // several streams long; what has to hold is that it is never two at once.
-    expect(sources.length).toBeGreaterThan(1);
-    expect(lifecycle.map(entry => entry.event)).toEqual(lifecycle.map((_, index) => (index % 2 === 0 ? 'open' : 'close')));
-    expect(sources.filter(source => source.readyState !== StubEventSource.CLOSED).map(source => source.keyId)).toEqual(['key-b']);
+    expect(stream.sources.length).toBeGreaterThan(1);
+    expect(stream.lifecycle.map(entry => entry.event)).toEqual(stream.lifecycle.map((_, index) => (index % 2 === 0 ? 'open' : 'close')));
+    expect(stream.sources.filter(source => source.readyState !== eventSourceClosed).map(source => source.keyId)).toEqual(['key-b']);
   });
 
   it('does not append a record twice when the reopened stream replays it', () => {
     const { show } = renderSubscription('key-a', [record('key-a-1')]);
-    liveSource().emit('appended', JSON.stringify(record('key-a-2')));
+    stream.liveSource().emit('appended', JSON.stringify(record('key-a-2')));
 
     show('key-b', [record('key-b-1')]);
     // The loader re-runs on the way back, so the seed for key-a now carries the
     // record that arrived over the stream the first time round.
     show('key-a', [record('key-a-2'), record('key-a-1')]);
-    liveSource().emit('appended', JSON.stringify(record('key-a-2')));
+    stream.liveSource().emit('appended', JSON.stringify(record('key-a-2')));
 
     expect(screen.getAllByText('/v1/key-a-2')).toHaveLength(1);
     expect(screen.getAllByRole('listitem').map(item => item.textContent)).toEqual(['/v1/key-a-2', '/v1/key-a-1']);
@@ -175,6 +106,6 @@ describe('dump subscription key switch', () => {
     storage.delete(flowayTokenStorageKey);
 
     expect(() => renderSubscription('key-a', [record('key-a-1')])).toThrow('Authenticated dump subscription has no session token');
-    expect(sources).toEqual([]);
+    expect(stream.sources).toEqual([]);
   });
 });

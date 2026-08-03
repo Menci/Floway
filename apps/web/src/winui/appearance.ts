@@ -146,16 +146,20 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
   // The table builds the selection cell's check box out of Fluent's own
   // Checkbox rather than the wrapped one above, so the stamp reaches it through
   // that slot -- through the same resolution, so a cell that leaves `checked`
-  // to the box cannot be stamped with a state the box has since left. The slot
-  // is left alone where the cell draws a radio or suppresses the box, because a
-  // slot object of our making would render a box the cell had not asked for.
+  // to the box cannot be stamped with a state the box has since left. Fluent
+  // merges the slot over its own `defaultProps: { checked: props.checked }`, so
+  // a slot that states its own `checked` outranks the cell's; the stamp reads
+  // the same order rather than overwriting it. The slot is left alone where the
+  // cell draws a radio or suppresses the box, because a slot object of our
+  // making would render a box the cell had not asked for.
   // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-table/library/src/components/TableSelectionCell/useTableSelectionCell.ts#L20-L36
   const stampSelectionCellCheckedState = <Component>(component: Component): Component =>
     wrapFluent(component, (props: PropCarrier) => {
       const drawsCheckbox = (props.type ?? 'checkbox') === 'checkbox' && props.checkboxIndicator !== null;
+      const slotProps = resolveSlotProps(props.checkboxIndicator);
       const checkboxIndicator = useCheckedProps({
-        ...resolveSlotProps(props.checkboxIndicator),
-        checked: props.checked as CheckedState | undefined,
+        ...slotProps,
+        checked: (slotProps?.checked ?? props.checked) as CheckedState | undefined,
       });
 
       return { ...props, ...(drawsCheckbox ? { checkboxIndicator } : {}) };
