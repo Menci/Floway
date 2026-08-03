@@ -11,7 +11,7 @@ import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { forwardUpstreamHeaders, mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
-import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
+import { eventFrame, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { geminiProtocolFrameToSSEFrame, GEMINI_MISSING_TERMINAL_MESSAGE, isGeminiErrorEvent, isGeminiTerminalEvent, collectGeminiProtocolEventsToResult } from '@floway-dev/protocols/gemini';
 import type { GeminiErrorResponse, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import { type ExecuteResult, type PlainResult, type ApiErrorResult, type InternalDebugError, toInternalDebugError, decodeApiErrorBody } from '@floway-dev/provider';
@@ -68,7 +68,7 @@ export const respondGemini = async (
   return streamSSE(c, async stream => {
     let completion: StreamCompletion = 'error';
     try {
-      completion = await writeSSEFrames(stream, geminiSseFrames(frames, state), {
+      completion = await writeSSEFrames(stream, geminiSseFrames(frames, state, ctx), {
         keepAlive: { frame: sseCommentFrame('keepalive') },
         ...(ctx.downstreamAbortController !== undefined ? { downstreamAbortController: ctx.downstreamAbortController } : {}),
       });
@@ -179,7 +179,8 @@ const caughtGeminiErrorEvent = (error: unknown): GeminiErrorResponse | null => {
   return isGeminiErrorResponse(error.cause) ? error.cause : null;
 };
 
-const geminiStreamErrorFrame = (error: unknown) => sseFrame(JSON.stringify(caughtGeminiErrorEvent(error) ?? geminiInternalRpcErrorPayload(500, error)));
+const geminiStreamErrorEvent = (error: unknown): GeminiStreamEvent =>
+  (caughtGeminiErrorEvent(error) ?? geminiInternalRpcErrorPayload(500, error)) as unknown as GeminiStreamEvent;
 
 // --- frame observation ---
 
@@ -197,7 +198,7 @@ const observeGeminiFrames = async function* (frames: AsyncIterable<ProtocolFrame
   throw new Error(GEMINI_MISSING_TERMINAL_MESSAGE);
 };
 
-const geminiSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>, state: SourceStreamState) {
+const geminiSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>, state: SourceStreamState, ctx: GatewayCtx) {
   try {
     for await (const frame of frames) {
       const sse = geminiProtocolFrameToSSEFrame(frame);
@@ -205,6 +206,8 @@ const geminiSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<Gem
     }
   } catch (error) {
     state.failed = true;
-    yield geminiStreamErrorFrame(error);
+    const event = geminiStreamErrorEvent(error);
+    ctx.dump?.frame(eventFrame(event));
+    yield sseFrame(JSON.stringify(event));
   }
 };
