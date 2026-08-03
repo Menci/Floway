@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -12,6 +12,7 @@ import { fluentComponents } from '../../fluent';
 import { DialogShell } from '../ui/dialog-shell';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
+import { useDiscardGuard } from '../ui/use-discard-guard';
 
 const { Button, DialogActions, DialogTitle, Text } = fluentComponents;
 
@@ -37,6 +38,8 @@ export function RotateKeyDialog({
   const values = useWatch({ control }) as KeySourceValues;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const close = useCallback(() => onOpenChange(false), [onOpenChange]);
+  const { discardConfirmation, requestClose } = useDiscardGuard({ onClose: close, values });
   const snapName = apiKey.name;
   const rotate = async (values: KeySourceValues) => {
     // disabledFocusable leaves the submit button submittable while the rotation
@@ -64,14 +67,14 @@ export function RotateKeyDialog({
   };
 
   return (
-    <DialogShell
+    <>{discardConfirmation}<DialogShell
       open={open}
-      onOpenChange={(_, data) => !saving && onOpenChange(data.open)}
+      onOpenChange={(_, data) => { if (!data.open && !saving) requestClose(); }}
       onSubmit={() => void handleSubmit(rotate)()}
       title={<DialogTitle>{t('dashboard.apiKeys.rotate.title')}</DialogTitle>}
       actions={
         <DialogActions>
-          <Button disabled={saving} onClick={() => onOpenChange(false)}>
+          <Button disabled={saving} onClick={requestClose}>
             {t('common.cancel')}
           </Button>
           <Button appearance="primary" disabledFocusable={saving} type="submit">
@@ -92,6 +95,6 @@ export function RotateKeyDialog({
         source={values.keySource}
       />
       {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
-    </DialogShell>
+    </DialogShell></>
   );
 }
