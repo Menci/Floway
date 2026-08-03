@@ -1,5 +1,5 @@
 import { LineChart, type CustomizedCalloutData } from '@fluentui/react-charts';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import type { ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -11,12 +11,10 @@ import { useLocale } from '../../lib/use-locale';
 import { ChartCalloutTable } from '../charts/callout-table';
 import { chartTickValues, formatAxisDate, formatCalloutTitle } from '../charts/dashboard-time';
 import { useChartFrame } from '../charts/frame-styles';
-import { chartHeight } from '../charts/layout';
+import { ChartHost } from '../charts/host';
 import { ChartSection } from '../charts/section';
 import type { ChartSeries } from '../charts/series-legends';
 import { visibleSeriesData } from '../charts/series-selection';
-import { useElementSize } from '../charts/use-element-size';
-import { EmptyStateLine } from '../ui/empty-state';
 import { ScrollArea } from '../ui/scroll-area';
 
 const { makeStyles } = fluentComponents;
@@ -56,8 +54,6 @@ function PerformanceChart({ chart, hidden }: { chart: PerformancePlot; hidden: S
   const { t } = useTranslation();
   const chartStyles = usePerformanceChartStyles();
   const chartRootStyles = useChartFrame();
-  const [host, setHost] = useState<HTMLDivElement | null>(null);
-  const size = useElementSize(host);
   const locale = useLocale();
   const formatter = chart.metric === 'ttft' ? formatDuration : formatTokenRate;
   const entryByLegend = useMemo(() => new Map(chart.entries.map(entry => [entry.legend, entry])), [chart.entries]);
@@ -72,8 +68,10 @@ function PerformanceChart({ chart, hidden }: { chart: PerformancePlot; hidden: S
         entryByLegend={entryByLegend}
         title={formatCalloutTitle(props.x, labelByTime, chart.range, locale)}
       />, [chart.details, chart.range, entryByLegend, labelByTime, locale]);
-  const plotHeight = Math.max(0, size.height - chartMargins.top - chartMargins.bottom);
-  return <div className={`${chartStyles.root} min-w-0 w-full`} ref={setHost} style={{ height: chartHeight }}>{size.width < 120 ? null : visibleData.lineChartData?.length ? <LineChart styles={chartRootStyles} customDateTimeFormatter={date => formatAxisDate(date, chart.range, locale)} data={visibleData} enablePerfOptimization height={size.height} hideLegend margins={chartMargins} onRenderCalloutPerStack={callout} tickValues={chartTickValues(chart.buckets).map(bucket => bucket.date)} width={size.width} xAxistickSize={-plotHeight} yAxisTickFormat={(value: number) => labelledOnLogAxis(value) ? formatter(value) : ''} yMaxValue={values.length ? Math.max(...values) : undefined} yMinValue={values.length ? Math.min(...values) : undefined} yScaleType="log" /> : <div className="grid h-full place-items-center"><EmptyStateLine>{t('dashboard.performance.empty')}</EmptyStateLine></div>}</div>;
+
+  return <ChartHost className={chartStyles.root} emptyText={t('dashboard.performance.empty')} hasData={Boolean(visibleData.lineChartData?.length)}>
+    {({ size }) => <LineChart styles={chartRootStyles} customDateTimeFormatter={date => formatAxisDate(date, chart.range, locale)} data={visibleData} enablePerfOptimization height={size.height} hideLegend margins={chartMargins} onRenderCalloutPerStack={callout} tickValues={chartTickValues(chart.buckets).map(bucket => bucket.date)} width={size.width} xAxistickSize={-Math.max(0, size.height - chartMargins.top - chartMargins.bottom)} yAxisTickFormat={(value: number) => labelledOnLogAxis(value) ? formatter(value) : ''} yMaxValue={values.length ? Math.max(...values) : undefined} yMinValue={values.length ? Math.min(...values) : undefined} yScaleType="log" />}
+  </ChartHost>;
 }
 
 function PerformanceChartCallout({ data, details, entryByLegend, title }: {
