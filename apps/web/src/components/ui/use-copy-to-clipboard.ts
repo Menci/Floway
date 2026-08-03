@@ -42,27 +42,24 @@ export interface ClipboardCopy {
 }
 
 export const useCopyToClipboard = (): ClipboardCopy => {
-  const [copiedTag, setCopiedTag] = useState<string | null>(null);
-  const [copyFailedTag, setCopyFailedTag] = useState<string | null>(null);
+  const [result, setResult] = useState<{ outcome: Exclude<CopyOutcome, 'idle'>; tag: string } | null>(null);
 
   const copy = useCallback((text: string, tag = '') => {
     // Synchronous up to the first await, so the legacy copy path inside still
     // runs within the click that asked for it.
     void copyToClipboard(text).then(copied => {
-      setCopiedTag(copied ? tag : null);
-      setCopyFailedTag(copied ? null : tag);
+      const outcome = copied ? 'copied' : 'failed';
+      setResult({ outcome, tag });
       window.setTimeout(() => {
-        const clear = copied ? setCopiedTag : setCopyFailedTag;
-        clear(current => (current === tag ? null : current));
+        setResult(current => (current?.tag === tag && current.outcome === outcome ? null : current));
       }, copied ? COPIED_MS : FAILED_MS);
     });
   }, []);
 
-  const outcomeFor = useCallback((tag = ''): CopyOutcome => {
-    if (copyFailedTag === tag) return 'failed';
-    if (copiedTag === tag) return 'copied';
-    return 'idle';
-  }, [copiedTag, copyFailedTag]);
+  const outcomeFor = useCallback(
+    (tag = ''): CopyOutcome => (result?.tag === tag ? result.outcome : 'idle'),
+    [result],
+  );
 
   return { copy, outcomeFor };
 };
