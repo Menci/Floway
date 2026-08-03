@@ -34,6 +34,6 @@ export function HttpMethodBadge({ method }: { method: string }) {
   return <HttpBadge tone={method === 'GET' ? 'accent' : method === 'POST' ? 'success' : 'neutral'}>{method}</HttpBadge>;
 }
 
-export function HttpStatusBadge({ children, tone }: { children: ReactNode; tone: 'danger' | 'success' | 'warning' }) {
-  return <HttpBadge tone={tone}>{children}</HttpBadge>;
+export function HttpStatusBadge({ children, severity }: { children: ReactNode; severity: 'success' | 'warning' | 'error' }) {
+  return <HttpBadge tone={severity === 'error' ? 'danger' : severity}>{children}</HttpBadge>;
 }
