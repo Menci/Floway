@@ -3,9 +3,9 @@ import { FormProvider, useForm } from 'react-hook-form';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { UpstreamRecord } from '../../../src/api/types';
+import { UpstreamConfigSidebar } from '../../../src/components/upstream-editor/config-sidebar';
 import type { UpstreamEditorValues } from '../../../src/components/upstream-editor/data';
 import { valuesFromRecord } from '../../../src/components/upstream-editor/data';
-import { UpstreamConfigSidebar } from '../../../src/components/upstream-editor/config-sidebar';
 import { ProviderConfigSection } from '../../../src/components/upstream-editor/provider-config';
 import { i18n } from '../../../src/i18n';
 import { upstreamRecord } from '../../api/upstream-fixture';
