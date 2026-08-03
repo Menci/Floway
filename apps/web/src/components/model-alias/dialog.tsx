@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 
 import { computeAnnouncedMetadata } from './announced-metadata';
-import { aliasBody, aliasDefaults, blankTarget, metadataForKind, type AliasFormValues } from './form-data';
+import { aliasBody, aliasDefaults, blankTarget, kindAnnouncesMetadata, metadataForKind, type AliasFormValues } from './form-data';
 import { MetadataEditor } from './metadata-editor';
 import { AliasTargetRow } from './target-row';
 import { announcedMetadataIssues, targetIssue, ANNOUNCED_METADATA_FIELDS } from './validation';
@@ -78,12 +78,8 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
   const changeKind = (next: ModelKind) => {
     setValue('kind', next, { shouldValidate: true });
     replace(targets.map(target => ({ ...target, rules: {} })));
-    if (next === 'image') {
-      setValue('manualMetadata', false);
-      setValue('announcedMetadata', {});
-    } else {
-      setValue('announcedMetadata', metadataForKind(next, values.announcedMetadata));
-    }
+    if (!kindAnnouncesMetadata(next)) setValue('manualMetadata', false);
+    setValue('announcedMetadata', metadataForKind(next, values.announcedMetadata));
   };
   const setManual = (enabled: boolean) => {
     setValue('manualMetadata', enabled);
@@ -134,7 +130,7 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
       {fields.map((field, index) => <AliasTargetRow key={field.id} disabled={saving} error={errors.targets?.[index]?.target_model_id?.message ? t(errors.targets[index].target_model_id.message) : undefined} index={index} isFirst={index === 0} isLast={index === fields.length - 1} isSole={fields.length === 1} catalog={catalog} kind={kind} target={targets[index] ?? field} targetIds={targetIds} onChange={target => setValue(`targets.${index}`, target, { shouldDirty: true, shouldValidate: true })} onMove={direction => move(index, index + direction)} onRemove={() => remove(index)} />)}
       {errors.targets?.message && <Text className={dangerText} role="alert" size={200}>{t(errors.targets.message)}</Text>}
     </section>
-    {kind !== 'image' && <SettingsExpander
+    {kindAnnouncesMetadata(kind) && <SettingsExpander
       action={<SettingsSwitch checked={values.manualMetadata} disabled={saving} label={t('dashboard.modelAliases.metadata.manual')} onChange={setManual} />}
       description={t('dashboard.modelAliases.metadata.description')}
       icon={<Info24Regular />}
