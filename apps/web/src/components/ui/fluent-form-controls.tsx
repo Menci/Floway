@@ -27,6 +27,12 @@ interface ReadOnlyProp {
   readOnly?: boolean;
 }
 
+// The caller's own slot spreads first and the refusal lands on top of it, so a
+// slot carrying the same key cannot leave the control editable while the root
+// still states aria-readonly. A slot given in Fluent's shorthand form -- an
+// element or a string -- has no props to keep.
+const slotProps = <T,>(slot: T) => (typeof slot === 'object' && slot !== null ? slot : {});
+
 // Fluent's minimum width and the wrapped input's own `min-width: auto` form an
 // intrinsic floor that propagates up through every auto-sized grid track above
 // the control, so a field in a fluid column can push its layout wider than the
@@ -181,7 +187,7 @@ export const Combobox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof 
       {...props}
       aria-readonly={readOnly === true ? true : undefined}
       expandIcon={expandIcon === undefined ? EXPAND_ICON : expandIcon}
-      input={{ readOnly, ...(typeof props.input === 'object' && props.input !== null ? props.input : {}) }}
+      input={{ ...slotProps(props.input), readOnly }}
       onOptionSelect={readOnly === true ? undefined : onOptionSelect}
       positioning={positioning ?? LISTBOX_POSITIONING}
       listbox={listboxFor(listWidth, props.freeform === true, emptyMessage)}
@@ -225,7 +231,7 @@ export const Checkbox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof 
     <FluentCheckbox
       {...props}
       aria-readonly={readOnly === true ? true : undefined}
-      input={{ onClick: readOnly === true ? refuseToggle : undefined, ...(typeof input === 'object' && input !== null ? input : {}) }}
+      input={{ ...slotProps(input), ...(readOnly === true ? { onClick: refuseToggle } : {}) }}
       onChange={readOnly === true ? undefined : onChange}
       ref={ref}
     />
@@ -237,7 +243,7 @@ export const Switch = forwardRef<HTMLInputElement, ComponentProps<typeof FluentS
     <FluentSwitch
       {...props}
       aria-readonly={readOnly === true ? true : undefined}
-      input={{ onClick: readOnly === true ? refuseToggle : undefined, ...(typeof input === 'object' && input !== null ? input : {}) }}
+      input={{ ...slotProps(input), ...(readOnly === true ? { onClick: refuseToggle } : {}) }}
       onChange={readOnly === true ? undefined : onChange}
       ref={ref}
     />
