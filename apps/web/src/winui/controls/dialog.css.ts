@@ -72,7 +72,7 @@ export const dialogCss = `
 .fui-DialogSurface.fui-DialogSurface[data-fui-focus-visible]::after {
   inset: 0;
   border-radius: calc(var(--winui-overlay-corner-radius) - 1px);
-  box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
+  box-shadow: inset 0 0 0 var(--winui-focus-visual-secondary-thickness) var(--winui-focus-stroke-inner);
 }
 
 /* The default close action is a bare button carrying Fluent's reset and no
@@ -101,7 +101,7 @@ export const dialogCss = `
 /* The surface's second focus stroke, on the dialog's other focusable part.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L259 */
 .fui-DialogTitle__action > button:not(.fui-Button)[data-fui-focus-visible]::after {
-  box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
+  box-shadow: inset 0 0 0 var(--winui-focus-visual-secondary-thickness) var(--winui-focus-stroke-inner);
 }
 
 /* The body takes over the 24px ContentDialogPadding the surface gave up, and

@@ -189,7 +189,7 @@ export const accordionCss = `
    https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
 .fui-AccordionHeader__button.fui-AccordionHeader__button[data-fui-focus-visible] {
   border-color: var(--winui-card-stroke-default);
-  box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
+  box-shadow: inset 0 0 0 var(--winui-focus-visual-secondary-thickness) var(--winui-focus-stroke-inner);
 }
 
 /* Fluent insets the panel from the item, which a joined surface cannot keep, so

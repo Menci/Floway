@@ -390,7 +390,7 @@ ${nested(under(pressedRoots, [onTrack]))} {
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/DependencyObject/DependencyProperty.cpp#L22-L25 */
   .fui-Switch.fui-Switch[data-fui-focus-within]:focus-within::after {
     border-color: var(--winui-focus-stroke-outer);
-    box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
+    box-shadow: inset 0 0 0 var(--winui-focus-visual-secondary-thickness) var(--winui-focus-stroke-inner);
   }
 }
 `;

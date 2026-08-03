@@ -156,7 +156,7 @@ export const menuCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L144
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L145 */
 .fui-MenuItem.fui-MenuItem[data-fui-focus-visible]::after {
-  box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
+  box-shadow: inset 0 0 0 var(--winui-focus-visual-secondary-thickness) var(--winui-focus-stroke-inner);
 }
 
 /* Separator: 1px off its neighbours, and out to the presenter's edges — our

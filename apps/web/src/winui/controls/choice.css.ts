@@ -420,7 +420,7 @@ ${nested(under(checkboxPressed, selectedBoxes))} {
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L250-L252 */
   .fui-Checkbox.fui-Checkbox[data-fui-focus-within]:focus-within::after {
     border-color: var(--winui-focus-stroke-outer);
-    box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
+    box-shadow: inset 0 0 0 var(--winui-focus-visual-secondary-thickness) var(--winui-focus-stroke-inner);
   }
 }
 
@@ -620,7 +620,7 @@ ${nested(under(radioPressed, [selectedEllipse]))} {
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L196 */
   .fui-Radio.fui-Radio[data-fui-focus-within]:focus-within::after {
     border-color: var(--winui-focus-stroke-outer);
-    box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
+    box-shadow: inset 0 0 0 var(--winui-focus-visual-secondary-thickness) var(--winui-focus-stroke-inner);
   }
 }
 `;
