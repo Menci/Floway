@@ -163,6 +163,20 @@ const STACK_POSITIONS: readonly ToastPosition[] = [
   'top',
 ];
 
+interface StackInset {
+  horizontal?: number;
+  vertical?: number;
+}
+
+// A caller states its offset either once for every position or per position, and
+// the two shapes are not discriminable: every property of the uniform one is
+// optional, so the presence of a key cannot rule it out of the other branch.
+const insetFor = (offset: ToastOffset | undefined, position: ToastPosition): StackInset => {
+  if (!offset) return {};
+  if ('horizontal' in offset || 'vertical' in offset) return offset;
+  return (offset as Partial<Record<ToastPosition, StackInset>>)[position] ?? {};
+};
+
 // Where a stack sits in the viewport. This is Fluent's own computation, out of
 // reach for the same reason, restated with its axes, its flip on reading
 // direction and its default insets unchanged -- those insets are Fluent's
@@ -173,8 +187,7 @@ const stackPlacement = (
   offset: ToastOffset | undefined,
 ): React.CSSProperties => {
   const centred = position === 'top' || position === 'bottom';
-  const perPosition = offset === undefined || 'horizontal' in offset || 'vertical' in offset ? offset : offset[position];
-  const { horizontal = centred ? 0 : 20, vertical = 16 } = perPosition ?? {};
+  const { horizontal = centred ? 0 : 20, vertical = 16 } = insetFor(offset, position);
   const block = position.startsWith('top') ? { top: vertical } : { bottom: vertical };
 
   if (centred) return { ...block, left: `calc(50% + ${horizontal}px)`, transform: 'translateX(-50%)' };
