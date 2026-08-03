@@ -10,9 +10,7 @@
 // bindings still arrive as an argument, so ../fluent.ts stays the one place a
 // Fluent component surface is resolved and wrapped.
 import {
-  TOAST_POSITIONS,
   ToastContainerContextProvider,
-  getPositionStyles,
   toastContainerClassNames,
   toasterClassNames,
   useToastAnnounce,
@@ -25,6 +23,7 @@ import type {
   ToastAnnounceOptions,
   ToastContainerProps,
   ToastData,
+  ToastOffset,
   ToastPosition,
   ToasterProps,
 } from '@fluentui/react-toast';
@@ -152,15 +151,36 @@ const createToastContainer = (components: FluentComponents) => {
 };
 
 // Every position a toast can be dispatched to, in one fixed order so that the
-// stacks keep their document order as they come and go.
+// stacks keep their document order as they come and go. Fluent publishes the
+// same list, but only from a barrel its package exports does not reach; the
+// element type is exported, so the set is checked rather than asserted.
 const STACK_POSITIONS: readonly ToastPosition[] = [
-  TOAST_POSITIONS.bottom,
-  TOAST_POSITIONS.bottomStart,
-  TOAST_POSITIONS.bottomEnd,
-  TOAST_POSITIONS.topStart,
-  TOAST_POSITIONS.topEnd,
-  TOAST_POSITIONS.top,
+  'bottom',
+  'bottom-start',
+  'bottom-end',
+  'top-start',
+  'top-end',
+  'top',
 ];
+
+// Where a stack sits in the viewport. This is Fluent's own computation, out of
+// reach for the same reason, restated with its axes, its flip on reading
+// direction and its default insets unchanged -- those insets are Fluent's
+// numbers, kept for the reason the stack's width and gap are.
+const stackPlacement = (
+  position: ToastPosition,
+  dir: 'ltr' | 'rtl',
+  offset: ToastOffset | undefined,
+): React.CSSProperties => {
+  const centred = position === 'top' || position === 'bottom';
+  const perPosition = offset === undefined || 'horizontal' in offset || 'vertical' in offset ? offset : offset[position];
+  const { horizontal = centred ? 0 : 20, vertical = 16 } = perPosition ?? {};
+  const block = position.startsWith('top') ? { top: vertical } : { bottom: vertical };
+
+  if (centred) return { ...block, left: `calc(50% + ${horizontal}px)`, transform: 'translateX(-50%)' };
+
+  return { ...block, ...(position.endsWith('start') === (dir === 'ltr') ? { left: horizontal } : { right: horizontal }) };
+};
 
 const isNode = (value: EventTarget | null): value is Node => value instanceof Node;
 
@@ -270,7 +290,7 @@ export const withWinuiToaster = (components: FluentComponents): FluentComponents
       onKeyDown={onKeyDown}
       ref={ref}
       role="list"
-      style={{ position: inline ? 'absolute' : 'fixed', ...getPositionStyles(position, dir, offset), ...style }}
+      style={{ position: inline ? 'absolute' : 'fixed', ...stackPlacement(position, dir, offset), ...style }}
       {...focusableGroupAttribute}
     >
       {toasts.map(toast => <ToastContainer
