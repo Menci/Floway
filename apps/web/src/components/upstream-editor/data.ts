@@ -40,6 +40,13 @@ export type UpstreamEditorLoaderData = UpstreamEditorLoaderDataBase & (
   | { mode: 'edit' }
 );
 
+// The create form opens on a blueprint the gateway hands out with an empty id,
+// which the first save replaces with the stored record. So this asks whether
+// the record has a row, not whether the page is the create page: after a
+// create the editor stays mounted, on loader mode 'create', over a persisted
+// record.
+export const isPersisted = (record: UpstreamRecord): boolean => record.id !== '';
+
 // `hasAuto` says the upstream also lists the model, which is what makes
 // switching the row back to `auto` possible.
 export interface ModelRow {
@@ -104,7 +111,7 @@ export const canFetchModelCatalog = (record: UpstreamRecord, config: UpstreamEdi
   case 'azure':
     return false;
   default:
-    return record.id !== '';
+    return isPersisted(record);
   }
 };
 
@@ -139,7 +146,7 @@ export const fetchModelCatalog = async (
     ? (values.config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).endpoints
     : {};
   const discovered = discoveredModelsFromResponse(result.data, endpoints);
-  if (record.id === '') return { discovered, modelsError: null, refreshed: null };
+  if (!isPersisted(record)) return { discovered, modelsError: null, refreshed: null };
 
   const refreshed = await callApi(() => api.api.upstreams[':id'].$get({ param: { id: record.id } }, { init }));
   return refreshed.error
@@ -157,7 +164,7 @@ export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues =
     ? {
         ...structuredClone(record.config),
         apiKey: '',
-        ...(record.id === '' && Object.keys(record.config.endpoints).length === 0
+        ...(!isPersisted(record) && Object.keys(record.config.endpoints).length === 0
           ? { endpoints: { chatCompletions: {} }, modelsFetch: { ...record.config.modelsFetch, enabled: true } }
           : {}),
       }
