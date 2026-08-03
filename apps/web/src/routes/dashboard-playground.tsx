@@ -45,7 +45,7 @@ import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { fluentComponents } from '../fluent';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
-import { errorMessage } from '../lib/error-message';
+import { errorMessage, isAbortError } from '../lib/error-message';
 import { prefersReducedMotion } from '../lib/reduced-motion';
 import { useMediaQuery } from '../lib/use-media-query';
 
@@ -276,7 +276,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
         setMessages(current => [...current, { id: assistantId, role: 'assistant', text: t('dashboard.playground.emptyResponse') }]);
       }
     } catch (error) {
-      if (!(error instanceof Error && error.name === 'AbortError') && !controller.signal.aborted) {
+      if (!isAbortError(error) && !controller.signal.aborted) {
         setRequestError(errorMessage(error));
       }
     } finally {

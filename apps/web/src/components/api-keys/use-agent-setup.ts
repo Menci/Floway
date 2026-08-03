@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { cloneAgentSetupConfiguration, type AgentSetupConfiguration, type AgentSetupLease } from './agent-setup';
-import { api, callApi } from '../../api/client';
+import { api, callApi, type ApiCallResult } from '../../api/client';
+import { isAbortError } from '../../lib/error-message';
 
 interface ActiveRequest {
   controller: AbortController;
@@ -49,6 +51,7 @@ export const useAgentSetup = (
   initialCreateError: string | null = null,
   initialApiKeyId: string | null = null,
 ): AgentSetupSession => {
+  const { t } = useTranslation();
   const initialResource = initialApiKeyId === apiKeyId
     ? { apiKeyId: initialApiKeyId, error: initialCreateError, lease: initialLease }
     : null;
@@ -91,20 +94,29 @@ export const useAgentSetup = (
     activeRequestsRef.current.clear();
   }, []);
 
-  const request = useCallback(async <TResponse extends Response>(send: (signal: AbortSignal) => Promise<TResponse>) => {
+  const request = useCallback(async <TResponse extends Response>(
+    send: (signal: AbortSignal) => Promise<TResponse>,
+  ): Promise<ApiCallResult<TResponse>> => {
     const controller = new AbortController();
+    let timedOut = false;
     const requestState: ActiveRequest = {
       controller,
-      timeout: setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS),
+      timeout: setTimeout(() => { timedOut = true; controller.abort(); }, REQUEST_TIMEOUT_MS),
     };
     activeRequestsRef.current.add(requestState);
     try {
-      return await callApi(() => send(controller.signal));
+      const result = await callApi(() => send(controller.signal));
+      // Our own deadline is a request timeout, and it is described in our own
+      // words; the abort we raised to enforce it says nothing an operator can use.
+      if (result.error && timedOut && isAbortError(result.error.cause)) {
+        return { error: { status: 408, message: t('dashboard.apiKeys.agentSetup.timedOut'), cause: result.error.cause } };
+      }
+      return result;
     } finally {
       clearTimeout(requestState.timeout);
       activeRequestsRef.current.delete(requestState);
     }
-  }, []);
+  }, [t]);
 
   const enqueue = useCallback((task: () => Promise<void>) => {
     const lifecycle = lifecycleRef.current;
