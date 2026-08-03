@@ -36,9 +36,12 @@ import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
 //     as an unknown argument (e.g. Azure DeepSeek). Runs before vendor
 //     normalizers so vendor-specific translation sees the already-stripped
 //     canonical payload.
-//   - withExclusiveCachedTokensNormalized: gated by
-//     `usage-exclusive-cached-tokens`. Folds the cache buckets back into
-//     `input_tokens` for upstreams that report them alongside it.
+//   - withExclusiveCachedTokensNormalized: unconditional on a Responses
+//     target. Folds the cache buckets back into `input_tokens` whenever
+//     `total_tokens` witnesses that the upstream reports them alongside it,
+//     and consults `usage-exclusive-cached-tokens` for the responses whose
+//     totals witness nothing — so the flag is a declaration input rather than
+//     a gate.
 //   - withVendor*ResponsesNormalize: gated by `vendor-<X>`. Registered after
 //     the role-compatibility entry so each gets the final say on the outbound wire
 //     body.
