@@ -175,6 +175,9 @@ importers:
       i18next:
         specifier: ^26.3.6
         version: 26.3.6(typescript@5.9.3)
+      isbot:
+        specifier: ^5
+        version: 5.2.1
       monaco-editor:
         specifier: 0.54.0
         version: 0.54.0
