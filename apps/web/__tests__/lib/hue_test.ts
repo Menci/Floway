@@ -1,10 +1,10 @@
-import { converter, modeOklch, modeRgb, useMode } from 'culori/fn';
+import { converter, modeOklch, modeRgb, useMode as registerMode } from 'culori/fn';
 import { describe, expect, it } from 'vitest';
 
 import { hueBadgeTone, pickDistinctHue } from '../../src/lib/hue';
 
-useMode(modeRgb);
-useMode(modeOklch);
+registerMode(modeRgb);
+registerMode(modeOklch);
 const toOklch = converter('oklch');
 
 const everyHue = Array.from({ length: 360 }, (_, hue) => hue);

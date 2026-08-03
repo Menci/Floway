@@ -1,12 +1,12 @@
-import { converter, formatHex, modeOklch, modeRgb, useMode } from 'culori/fn';
+import { converter, formatHex, modeOklch, modeRgb, useMode as registerMode } from 'culori/fn';
 
 import type { BadgeHue } from './color';
 
 // culori's tree-shakeable entry only knows the color spaces that were
 // registered, and `converter` resolves its path through that registry.
-useMode(modeRgb);
+registerMode(modeRgb);
 const toRgb = converter('rgb');
-useMode(modeOklch);
+registerMode(modeOklch);
 
 // A badge hue is stated once per scheme at a fixed lightness and chroma, so
 // every hue reads with the same weight -- the whole point of choosing OKLCH

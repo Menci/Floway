@@ -50,6 +50,7 @@ const copilotConfig = {
 const createBody = (overrides: Record<string, unknown> = {}) => ({
   kind: 'custom',
   name: 'Test custom upstream',
+  hue: 210,
   config: customConfig,
   flag_overrides: {},
   ...overrides,
@@ -177,6 +178,7 @@ test('POST /api/upstreams rejects a codex create with null state', async () => {
   const resp = await requestApp('/api/upstreams', authed(adminSession, {
     kind: 'codex',
     name: 'Codex',
+    hue: 210,
     config: patch.config,
     state: null,
     flag_overrides: {},
@@ -202,6 +204,7 @@ test('POST /api/upstreams rejects a claude-code create with null state', async (
   const resp = await requestApp('/api/upstreams', authed(adminSession, {
     kind: 'claude-code',
     name: 'Claude Code',
+    hue: 210,
     config: patch.config,
     state: null,
     flag_overrides: {},
@@ -480,7 +483,7 @@ test('GET /api/upstream-options returns the minimal picker shape to admin and no
   assertEquals(userBody, expected);
   // No secret-bearing or operator-only fields leak through this endpoint.
   for (const row of userBody) {
-    assertEquals(Object.keys(row).sort(), ['cachedModelCount', 'color', 'enabled', 'id', 'kind', 'name']);
+    assertEquals(Object.keys(row).sort(), ['cachedModelCount', 'enabled', 'hue', 'id', 'kind', 'name']);
   }
 });
 
@@ -816,6 +819,7 @@ const createCodexUpstreamViaExchange = async (adminSession: string, overrides: R
   const create = await requestApp('/api/upstreams', authed(adminSession, {
     kind: 'codex',
     name: 'ChatGPT Codex',
+    hue: 210,
     config: patch.config,
     state: patch.state,
   }));
@@ -1054,6 +1058,7 @@ const createClaudeCodeUpstreamViaExchange = async (
   const create = await requestApp('/api/upstreams', authed(adminSession, {
     kind: 'claude-code',
     name: 'Claude Code',
+    hue: 210,
     config: patch.config,
     state: patch.state,
   }));
@@ -1609,6 +1614,7 @@ const createClaudeCodeSetupTokenUpstreamViaExchange = async (
   const create = await requestApp('/api/upstreams', authed(adminSession, {
     kind: 'claude-code',
     name: 'Claude Code',
+    hue: 210,
     config: patch.config,
     state: patch.state,
   }));

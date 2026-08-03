@@ -901,6 +901,13 @@ test('migration 0072 folds every cached catalog onto its upstream row', async ()
 
     assertEquals(sqlJsRows<{ name: string }>(db, "SELECT name FROM sqlite_master WHERE name = 'models_cache'"), []);
 
+    // The folded cache is read back through the production repository, which
+    // selects the columns the current schema has, so the rest of the corpus
+    // has to land before it can.
+    for (const filename of migrationFilenames.filter(f => f > '0072_fold_models_cache.sql').toSorted()) {
+      applySqlJsFile(db, filename);
+    }
+
     const repo = new SqlRepo(wrapSqlJsDatabase(db)).upstreams;
     const clean = (await repo.getById('up_clean'))?.modelsCache;
     assertEquals(clean?.revision, 4);

@@ -1,13 +1,14 @@
-import { converter, formatHex, modeOklch, modeRgb, useMode } from 'culori/fn';
 import { DatabaseSync } from 'node:sqlite';
+
+import { converter, formatHex, modeOklch, modeRgb, useMode as registerMode } from 'culori/fn';
 import { test } from 'vitest';
 
 import { migrationSqlByFilename } from '../repo/test-sqlite.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
-useMode(modeRgb);
+registerMode(modeRgb);
 const toRgb = converter('rgb');
-useMode(modeOklch);
+registerMode(modeOklch);
 const toOklch = converter('oklch');
 
 const HUE_MIGRATION = '0073_upstream_hue.sql';
@@ -56,7 +57,7 @@ test('the hue migration converts a stored hex the way culori does', () => {
   const hexes = chromaticSamples();
 
   migrate(hexes).forEach((hue, index) => {
-    const expected = toOklch(hexes[index]!).h!;
+    const expected = toOklch(hexes[index]!)!.h!;
     // Both sides answer in degrees and the column is an integer, so the only
     // permitted difference is the rounding, plus the wrap at the top.
     const delta = Math.abs(hue - expected);
@@ -85,8 +86,8 @@ test('the hue migration reads a preset key and an inherited kind default', () =>
   const keys = Object.keys(presets) as (keyof typeof presets)[];
 
   migrate(keys).forEach((hue, index) => {
-    assertEquals(hue, Math.round(toOklch(presets[keys[index]!]).h!) % 360, `preset ${keys[index]}`);
+    assertEquals(hue, Math.round(toOklch(presets[keys[index]!])!.h!) % 360, `preset ${keys[index]}`);
   });
   // Every `custom` upstream inherited amber.
-  assertEquals(migrate([null])[0], Math.round(toOklch(presets.amber).h!) % 360);
+  assertEquals(migrate([null])[0], Math.round(toOklch(presets.amber)!.h!) % 360);
 });
