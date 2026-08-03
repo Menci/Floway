@@ -43,7 +43,7 @@ const record = {
   disabled_public_model_ids: [],
   proxy_fallback_list: [],
   model_prefix: null,
-  color: null,
+  hue: 210,
   modelsCache: { fetchedAt: null, lastError: null },
   config: {
     baseUrl: 'https://example.com',

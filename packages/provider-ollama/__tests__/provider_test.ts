@@ -20,7 +20,7 @@ const buildRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord =>
   proxyFallbackList: [],
   modelPrefix: null,
   modelsCache: null,
-  color: null,
+  hue: 210,
   ...overrides,
 });
 

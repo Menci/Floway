@@ -87,7 +87,7 @@ const CUSTOM_UPSTREAM: UpstreamRecord = {
   proxyFallbackList: [],
   modelPrefix: null,
   modelsCache: null,
-  color: null,
+  hue: 210,
   config: {
     baseUrl: 'https://custom.example.com',
     authStyle: 'bearer',
@@ -111,7 +111,7 @@ const COPILOT_UPSTREAM: UpstreamRecord = {
   proxyFallbackList: [],
   modelPrefix: null,
   modelsCache: null,
-  color: null,
+  hue: 210,
   config: {
     githubToken: 'ghu-alice',
     user: {
@@ -137,7 +137,7 @@ const AZURE_UPSTREAM: UpstreamRecord = {
   proxyFallbackList: [],
   modelPrefix: null,
   modelsCache: null,
-  color: null,
+  hue: 210,
   config: {
     endpoint: 'https://example.openai.azure.com',
     apiKey: 'az-key',
@@ -171,7 +171,7 @@ const CODEX_UPSTREAM: UpstreamRecord = {
   proxyFallbackList: [],
   modelPrefix: null,
   modelsCache: null,
-  color: null,
+  hue: 210,
   config: {
     accounts: [{
       email: 'alice@example.com',
@@ -403,7 +403,7 @@ test('import rejects any version other than the current one before deleting data
   await repo.apiKeys.save(KEY_A);
   await repo.upstreams.save(CUSTOM_UPSTREAM);
 
-  const VERSION_ERROR = 'version must be 18 — older export formats are not supported; re-export from the current deployment';
+  const VERSION_ERROR = 'version must be 19 — older export formats are not supported; re-export from the current deployment';
   const previousV11 = await doImport(app, 'replace', latestImportData(), 11);
   const ancientVersion = await doImport(app, 'replace', { apiKeys: [] }, 1);
   const missingVersionResponse = await app.request('/import', {
@@ -1021,7 +1021,7 @@ test('import validates mode and data before mutating', async () => {
   const missingData = await app.request('/import', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode: 'replace', version: 18 }),
+    body: JSON.stringify({ mode: 'replace', version: 19 }),
   });
   const missingUpstreams = await doImport(app, 'merge', {}, 18);
   const emptyMerge = await doImport(app, 'merge', latestImportData(), 18);
@@ -1261,7 +1261,7 @@ test('import rejects a pre-accounts v3 export instead of coercing its legacy api
   }, 3);
 
   assertEquals(result.status, 400);
-  assertEquals(String(result.body.error).includes('version must be 18'), true);
+  assertEquals(String(result.body.error).includes('version must be 19'), true);
   // Rejected at the version gate, before touching any data.
   assertEquals(await repo.apiKeys.list(), [KEY_A]);
   assertEquals((await repo.users.list()).map(u => u.id), [SEED_ADMIN.id]);
@@ -1403,7 +1403,7 @@ test('any data bearing a historical version is rejected on the version gate, bef
   for (const version of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]) {
     const result = await doImport(app, 'replace', wellFormed, version);
     assertEquals(result.status, 400);
-    assertEquals(String(result.body.error).includes('version must be 18'), true);
+    assertEquals(String(result.body.error).includes('version must be 19'), true);
   }
 
   // Nothing was touched — the version gate runs before any delete or write.

@@ -22,7 +22,7 @@ export function HuePicker({ hue, kind, onChange }: {
           aria-label={`${t('dashboard.upstreamEditor.hue.label')}: ${hue}`}
           className="!min-w-0 !p-0"
         >
-          <ProviderBadge hue={hue} kind={kind} />
+          <ProviderBadge upstream={{ hue, kind }} />
         </Button>
       </PopoverTrigger>
       <PopoverSurface className="w-[min(360px,calc(100vw-32px))]">

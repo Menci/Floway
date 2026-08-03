@@ -70,7 +70,7 @@ export const buildCopilotUpstreamRecord = (githubAccount: CopilotAccountFixture,
     proxyFallbackList: [],
     modelPrefix: null,
     modelsCache: null,
-    color: null,
+    hue: 210,
     ...rest,
     config: overrideConfig ?? config,
   };
@@ -99,7 +99,7 @@ export const buildCustomUpstreamRecord = (overrides: Partial<UpstreamRecord> = {
     proxyFallbackList: [],
     modelPrefix: null,
     modelsCache: null,
-    color: null,
+    hue: 210,
     ...rest,
     config: overrideConfig ?? config,
   };

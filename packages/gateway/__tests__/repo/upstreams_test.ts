@@ -1,8 +1,7 @@
-import initSqlJs from 'sql.js';
 import { test } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
-import { migrationSqlByFilename, wrapSqlJsDatabase } from './test-sqlite.ts';
+import { createSqlJsDatabase, migrationSqlByFilename, wrapSqlJsDatabase, type SqlJsDatabase } from './test-sqlite.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { UpstreamRepo } from '../../src/repo/types.ts';
 import type { SqlDatabase } from '@floway-dev/platform';
@@ -21,7 +20,7 @@ const upstream = (overrides: Partial<UpstreamRecord> & Pick<UpstreamRecord, 'id'
   proxyFallbackList: [],
   modelPrefix: null,
   modelsCache: null,
-  color: null,
+  hue: 210,
   ...overrides,
 });
 
@@ -253,7 +252,7 @@ test('SQL upstream repo rejects malformed stored upstream JSON', async () => {
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
     model_prefix_json: null,
-    color: null,
+    hue: 210,
   });
 
   await assertRejects(() => new SqlRepo(db).upstreams.list(), Error, 'Malformed upstream config JSON for up_bad_config');
@@ -276,7 +275,7 @@ test('SQL upstream repo rejects malformed stored flag overrides JSON', async () 
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
     model_prefix_json: null,
-    color: null,
+    hue: 210,
   });
 
   await assertRejects(() => new SqlRepo(db).upstreams.getById('up_bad_fixes'), Error, 'Malformed upstream flag_overrides JSON for up_bad_fixes');
@@ -299,7 +298,7 @@ test('SQL upstream repo rejects array-shaped flag_overrides with helpful message
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
     model_prefix_json: null,
-    color: null,
+    hue: 210,
   });
 
   await assertRejects(
@@ -326,7 +325,7 @@ test('SQL upstream repo rejects non-boolean value in flag_overrides with helpful
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
     model_prefix_json: null,
-    color: null,
+    hue: 210,
   });
 
   await assertRejects(
@@ -353,7 +352,7 @@ test('SQL upstream repo rejects malformed stored model_prefix_json', async () =>
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
     model_prefix_json: '{not json',
-    color: null,
+    hue: 210,
   });
 
   await assertRejects(() => new SqlRepo(db).upstreams.getById('up_bad_prefix_json'), Error, 'Malformed upstream model_prefix_json for up_bad_prefix_json');
@@ -377,7 +376,7 @@ test('SQL upstream repo rejects shape-invalid model_prefix_json', async () => {
     proxy_fallback_list_json: '[]',
     // Prefix missing trailing slash — passes JSON.parse but fails the regex.
     model_prefix_json: '{"prefix":"or","addressable":["unprefixed"],"listed":[]}',
-    color: null,
+    hue: 210,
   });
 
   await assertRejects(() => new SqlRepo(db).upstreams.getById('up_bad_prefix_shape'), Error, 'Invalid upstream model_prefix_json shape for up_bad_prefix_shape');
@@ -402,40 +401,40 @@ test('SQL upstream repo round-trips a non-null model_prefix', async () => {
     proxyFallbackList: [],
     modelPrefix: { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['prefixed'] },
     modelsCache: null,
-    color: null,
+    hue: 210,
   };
   await repo.save(record);
   const reloaded = await repo.getById('up_prefix_rt');
   assertEquals(reloaded?.modelPrefix, { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['prefixed'] });
 });
 
-test('SQL upstream repo round-trips a preset color and a hex color', async () => {
+test('SQL upstream repo round-trips the badge hue', async () => {
   const repo = new SqlRepo(new FakeUpstreamsSqlDatabase()).upstreams;
   await repo.save(upstream({
-    id: 'up_color_preset',
+    id: 'up_hue_zero',
     kind: 'custom',
     sortOrder: 0,
     createdAt: '2026-07-01T00:00:00.000Z',
-    color: 'emerald',
+    hue: 0,
   }));
   await repo.save(upstream({
-    id: 'up_color_hex',
+    id: 'up_hue_top',
     kind: 'custom',
     sortOrder: 1,
     createdAt: '2026-07-01T00:00:01.000Z',
-    color: '#8B5CF6',
+    hue: 359,
   }));
 
-  assertEquals((await repo.getById('up_color_preset'))?.color, 'emerald');
-  assertEquals((await repo.getById('up_color_hex'))?.color, '#8B5CF6');
+  assertEquals((await repo.getById('up_hue_zero'))?.hue, 0);
+  assertEquals((await repo.getById('up_hue_top'))?.hue, 359);
 });
 
-test('SQL upstream repo rejects an invalid stored color', async () => {
+test('SQL upstream repo rejects a stored hue outside the circle', async () => {
   const db = new FakeUpstreamsSqlDatabase();
   db.rows.push({
-    id: 'up_bad_color',
+    id: 'up_bad_hue',
     provider: 'custom',
-    name: 'Bad Color',
+    name: 'Bad Hue',
     enabled: 1,
     sort_order: 0,
     created_at: '2026-07-01T00:00:00.000Z',
@@ -447,10 +446,10 @@ test('SQL upstream repo rejects an invalid stored color', async () => {
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
     model_prefix_json: null,
-    color: 'not-a-tone',
+    hue: 360,
   });
 
-  await assertRejects(() => new SqlRepo(db).upstreams.getById('up_bad_color'), Error, 'Invalid upstream color for up_bad_color');
+  await assertRejects(() => new SqlRepo(db).upstreams.getById('up_bad_hue'), Error, 'Invalid upstream hue for up_bad_hue');
 });
 
 test('migration 0010 creates unified upstreams and rewrites legacy upstream identities', async () => {
@@ -936,7 +935,7 @@ type FakeUpstreamRow = {
   disabled_public_model_ids: string;
   proxy_fallback_list_json: string;
   model_prefix_json: string | null;
-  color: string | null;
+  hue: number;
 };
 
 class FakeUpstreamsSqlPreparedStatement {
@@ -1006,7 +1005,7 @@ class FakeUpstreamsSqlDatabase implements SqlDatabase {
   }
 
   upsert(binds: unknown[]): void {
-    const [id, provider, name, enabled, sortOrder, createdAt, updatedAt, configJson, stateJson, flagOverrides, disabledPublicModelIds, proxyFallbackListJson, modelPrefixJson, color] = binds as [string, string, string, number, number, string, string, string, string | null, string, string, string, string | null, string | null];
+    const [id, provider, name, enabled, sortOrder, createdAt, updatedAt, configJson, stateJson, flagOverrides, disabledPublicModelIds, proxyFallbackListJson, modelPrefixJson, hue] = binds as [string, string, string, number, number, string, string, string, string | null, string, string, string, string | null, number];
     const existingIndex = this.rows.findIndex(candidate => candidate.id === id);
     const existing = existingIndex >= 0 ? this.rows[existingIndex] : undefined;
     const preservedCreatedAt = existing ? existing.created_at : createdAt;
@@ -1027,7 +1026,7 @@ class FakeUpstreamsSqlDatabase implements SqlDatabase {
       disabled_public_model_ids: disabledPublicModelIds,
       proxy_fallback_list_json: proxyFallbackListJson,
       model_prefix_json: modelPrefixJson,
-      color,
+      hue,
     };
     if (existingIndex >= 0) {
       this.rows[existingIndex] = row;
@@ -1047,17 +1046,10 @@ const cloneFakeUpstreamRow = (row: FakeUpstreamRow): FakeUpstreamRow => ({ ...ro
 
 const compareFakeUpstreamRows = (a: FakeUpstreamRow, b: FakeUpstreamRow): number => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at);
 
-type SqlJsDatabase = {
-  run(sql: string): void;
-  exec(sql: string): Array<{ columns: string[]; values: unknown[][] }>;
-  close(): void;
-};
-
 const migrationFilenames = migrationSqlByFilename.map(([filename]) => filename);
 
 const createMigratedSqlJsDatabase = async (): Promise<SqlJsDatabase> => {
-  const SQL = await initSqlJs();
-  const db = new SQL.Database() as SqlJsDatabase;
+  const db = await createSqlJsDatabase();
   for (const filename of migrationFilenames.filter(filename => filename < '0010_unified_upstreams.sql').toSorted()) {
     applySqlJsFile(db, filename);
   }
@@ -1143,8 +1135,7 @@ const inputRates = (input: number, output?: number) => ({
 const tokenPricing = (entries: ModelPricing['entries']): ModelPricing => ({ entries });
 
 test('model pricing migrations materialize legacy semantics as base-unit metric rates', async () => {
-  const SQL = await initSqlJs();
-  const db = new SQL.Database();
+  const db = await createSqlJsDatabase();
   for (const [filename, sql] of migrationSqlByFilename) {
     if (filename === '0054_model_pricing.sql') {
       const legacyKey = ['co', 'st'].join('');
@@ -1336,8 +1327,7 @@ test('model pricing migrations materialize legacy semantics as base-unit metric 
 });
 
 test('model pricing migration preserves every digit in current numeric rate lexemes', async () => {
-  const SQL = await initSqlJs();
-  const db = new SQL.Database();
+  const db = await createSqlJsDatabase();
   for (const [filename, sql] of migrationSqlByFilename) {
     if (filename === '0062_usage_billing_metrics.sql') {
       const configJson = '{"models":[{"upstreamModelId":"precise-rate","pricing":{"entries":[{"rates":{"input":0.12345678901234566,"output":1e-20,"input_cache_read":9223372036854775807,"input_cache_write":1e-324}}]}}]}';
@@ -1362,8 +1352,7 @@ test('model pricing migration preserves every digit in current numeric rate lexe
 
 test('model pricing migration rejects malformed, negative, and non-finite legacy rates', async () => {
   for (const invalidRateJson of ['"not-a-price"', 'null', 'true', '-1', '1e999', '1e-400']) {
-    const SQL = await initSqlJs();
-    const db = new SQL.Database();
+    const db = await createSqlJsDatabase();
     for (const [filename, sql] of migrationSqlByFilename) {
       if (filename === '0062_usage_billing_metrics.sql') {
         const configJson = `{"models":[{"upstreamModelId":"invalid-rate","pricing":{"entries":[{"rates":{"input":${invalidRateJson}}]}}]}`;

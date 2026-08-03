@@ -22,7 +22,7 @@ const installRepoAndConfig = async () => {
     proxyFallbackList: [],
     modelPrefix: null,
     modelsCache: null,
-    color: null,
+    hue: 210,
     config: { githubToken, user: { id: 1, login: 't', name: null, avatar_url: '' } },
   };
   initProviderRepo(() => ({

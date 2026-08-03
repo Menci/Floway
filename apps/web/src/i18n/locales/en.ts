@@ -52,6 +52,7 @@ const en = {
       codex: 'Codex',
       'claude-code': 'Claude Code',
       ollama: 'Ollama',
+      unknown: 'Unknown',
     },
     dashboard: {
       title: 'Dashboard',

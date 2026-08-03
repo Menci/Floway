@@ -41,23 +41,26 @@ export const providerLabel = (kind: UpstreamProviderKind) => providerLabels[kind
 // operator's hue is picked: the wash, the outline and the label all come out of
 // the one badge algorithm in lib/color.ts, which solves the label against the
 // wash for 4.5:1 rather than it being chosen and then checked.
-export function ProviderBadge({ hue, kind, label, title }: {
-  hue: number;
-  kind: UpstreamProviderKind;
+export function ProviderBadge({ label, title, upstream }: {
   label?: string;
   title?: string;
+  // Null where an id is still referenced but the upstream behind it is gone,
+  // which leaves nothing to name a provider or paint a hue with. The badge
+  // then carries no identity at all and reads as the neutral chip every other
+  // piece of metadata is stated in.
+  upstream: { hue: number; kind: UpstreamProviderKind } | null;
 }) {
   const { t } = useTranslation();
-  const providerName = t(`provider.${kind}`, providerLabel(kind));
-  const visibleLabel = label ?? providerName;
+  const visibleLabel = label
+    ?? (upstream === null ? t('provider.unknown') : t(`provider.${upstream.kind}`, providerLabel(upstream.kind)));
 
   // A caller-supplied title describes the badge; the default is the clipped
   // label restored, which names it.
   return (
     <Tooltip content={title ?? visibleLabel} relationship={title === undefined ? 'label' : 'description'}>
       <Chip
-        style={badgeHueStyle(hueBadgeTone(hue))}
-        icon={<ProviderIcon kind={kind} className="h-4 w-4" />}
+        style={upstream === null ? undefined : badgeHueStyle(hueBadgeTone(upstream.hue))}
+        icon={upstream === null ? undefined : <ProviderIcon kind={upstream.kind} className="h-4 w-4" />}
       >
         {visibleLabel}
       </Chip>

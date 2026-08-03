@@ -20,7 +20,7 @@ const config: OllamaUpstreamConfig = assertOllamaUpstreamRecord({
   proxyFallbackList: [],
   modelPrefix: null,
   modelsCache: null,
-  color: null,
+  hue: 210,
 }).config;
 
 const tagsBody = {

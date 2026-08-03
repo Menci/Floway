@@ -51,8 +51,8 @@ CREATE TABLE upstreams_with_hue (
 -- https://github.com/cloudflare/workerd/blob/05e868985ed7496ee7e162c22bce4f8a3f206038/src/workerd/util/sqlite.c%2B%2B#L450-L476
 -- https://github.com/nodejs/node/blob/20da4aeadabc5b0a01e3fcf520f91df8285c68a2/deps/sqlite/sqlite.gyp#L23
 --
--- That allowlist rejects the pow/ceil/log aliases (power, ceiling, log10), and
--- SQLite's own `%` is integer-only, so the wrap goes through mod(x, 360.0).
+-- That allowlist rejects the pow/ceil/log aliases (power, ceiling, log10), so
+-- the cube roots and the transfer function spell it `pow`.
 --
 -- Matrices and transfer function: Björn Ottosson's OKLab derivation.
 -- https://bottosson.github.io/posts/oklab/#converting-from-linear-srgb-to-oklab
@@ -92,7 +92,13 @@ SELECT
   CASE
     WHEN oklab_a IS NULL THEN named_hue
     WHEN sqrt(oklab_a * oklab_a + oklab_b * oklab_b) < 1e-6 THEN (random() % 360 + 360) % 360
-    ELSE CAST(round(mod(degrees(atan2(oklab_b, oklab_a)) + 360.0, 360.0)) AS INTEGER) % 360
+    -- atan2 returns (-180, 180], so one branch on the sign brings the angle
+    -- onto [0, 360) without a floating-point modulo. The outer one catches the
+    -- single value that rounds up onto 360, which is 0 under another name.
+    ELSE CAST(round(CASE
+      WHEN degrees(atan2(oklab_b, oklab_a)) < 0 THEN degrees(atan2(oklab_b, oklab_a)) + 360.0
+      ELSE degrees(atan2(oklab_b, oklab_a))
+    END) AS INTEGER) % 360
   END
 FROM (
   SELECT

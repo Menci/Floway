@@ -29,7 +29,7 @@ const makeRecord = (state: CodexUpstreamState): UpstreamRecord => ({
   proxyFallbackList: [],
   modelPrefix: null,
   modelsCache: null,
-  color: null,
+  hue: 210,
 });
 
 const baseAccount = {

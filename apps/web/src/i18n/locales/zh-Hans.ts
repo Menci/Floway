@@ -52,6 +52,7 @@ const zhHansCN = {
       codex: 'Codex',
       'claude-code': 'Claude Code',
       ollama: 'Ollama',
+      unknown: '未知',
     },
     dashboard: {
       title: 'Dashboard',

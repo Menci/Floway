@@ -23,14 +23,14 @@ const {
 } = fluentComponents;
 
 interface UpstreamAccessRow {
-  color: UpstreamOption['color'];
   id: string;
-  kind: UpstreamOption['kind'] | null;
   // Null is a count nobody knows: the upstream is gone, or it is disabled and
   // never cached a catalog while it was on.
   modelCount: number | null;
   name: string;
   selected: boolean;
+  // Null where the key still grants an id whose upstream has been deleted.
+  upstream: { hue: number; kind: UpstreamOption['kind'] } | null;
   upstreamEnabled: boolean;
 }
 
@@ -113,7 +113,7 @@ export function UpstreamAccessControl({
               return <TableRow key={row.id}>
                 <TableCell><Checkbox aria-label={`${t('dashboard.upstreamAccess.enabled')}: ${row.name}`} checked={row.selected} disabled={disabled || !override} onChange={(_, data) => toggleUpstream(row.id, !!data.checked)} /></TableCell>
                 <TableCell><div className="inline-flex items-center gap-1"><ReorderButtons disabled={disabled || !override} downLabel={t('dashboard.upstreams.actions.moveDown', { name: row.name })} isFirst={index <= 0} isLast={index === -1 || index >= ids.length - 1} onMove={direction => moveUpstream(row.id, direction)} upLabel={t('dashboard.upstreams.actions.moveUp', { name: row.name })} /></div></TableCell>
-                <TableCell><ProviderBadge hue={row.hue} kind={row.kind} label={row.name} /></TableCell>
+                <TableCell><ProviderBadge label={row.name} upstream={row.upstream} /></TableCell>
                 <TableCell><span className="inline-flex items-center gap-1.5 min-w-0">
                   {!row.upstreamEnabled && <ProhibitedRegular className="block flex-none text-fui-fg2" aria-label={t('dashboard.upstreamAccess.upstreamDisabled')} />}
                   {row.modelCount === null
@@ -145,12 +145,11 @@ const accessRows = (
   // A disabled upstream contributes nothing to the live catalog these counts
   // come from, so it reports the size of the catalog it stored while it was on.
   const rowFor = (upstream: UpstreamOption, isSelected: boolean): UpstreamAccessRow => ({
-    color: upstream.color,
     id: upstream.id,
-    kind: upstream.kind,
     modelCount: upstream.enabled ? (modelCounts.get(upstream.id) ?? 0) : upstream.cachedModelCount,
     name: upstream.name,
     selected: isSelected,
+    upstream: { hue: upstream.hue, kind: upstream.kind },
     upstreamEnabled: upstream.enabled,
   });
   return [
@@ -158,7 +157,7 @@ const accessRows = (
       const upstream = byId.get(id);
       return upstream
         ? rowFor(upstream, true)
-        : { id, name: `Unknown (${id})`, kind: null, color: null, modelCount: null, selected: true, upstreamEnabled: true };
+        : { id, name: `Unknown (${id})`, modelCount: null, selected: true, upstream: null, upstreamEnabled: true };
     }),
     ...available.filter(upstream => !selected.has(upstream.id)).map(upstream => rowFor(upstream, false)),
   ];

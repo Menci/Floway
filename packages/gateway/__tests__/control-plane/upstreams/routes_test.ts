@@ -309,7 +309,7 @@ test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () =>
     proxyFallbackList: [],
     modelPrefix: null,
     modelsCache: null,
-    color: null,
+    hue: 210,
     config: {
       endpoint: 'https://example.openai.azure.com/openai/v1',
       apiKey: 'az-secret',
@@ -356,7 +356,7 @@ test('PATCH /api/upstreams round-trips a flat per-model flagOverrides map', asyn
     proxyFallbackList: [],
     modelPrefix: null,
     modelsCache: null,
-    color: null,
+    hue: 210,
     config: {
       endpoint: 'https://example.openai.azure.com/openai/v1',
       apiKey: 'az-secret',
@@ -401,7 +401,7 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
     proxyFallbackList: [],
     modelPrefix: null,
     modelsCache: null,
-    color: null,
+    hue: 210,
     config: { baseUrl: 'https://a.example.com', authStyle: 'bearer', apiKey: 'x', endpoints: { chatCompletions: {} } },
     state: null,
   };
@@ -450,7 +450,7 @@ test('GET /api/upstream-options returns the minimal picker shape to admin and no
     proxyFallbackList: [],
     modelPrefix: null,
     modelsCache: null,
-    color: null,
+    hue: 210,
     config: { baseUrl: 'https://custom.example.com', authStyle: 'bearer', apiKey: 'sk-secret', endpoints: { chatCompletions: {} } },
     state: null,
   });
@@ -466,8 +466,8 @@ test('GET /api/upstream-options returns the minimal picker shape to admin and no
   });
 
   const expected = [
-    { id: 'up_copilot', name: 'GitHub Copilot (tester)', kind: 'copilot', enabled: true, color: null, cachedModelCount: null },
-    { id: 'up_disabled_custom', name: 'Disabled Custom', kind: 'custom', enabled: false, color: null, cachedModelCount: 2 },
+    { id: 'up_copilot', name: 'GitHub Copilot (tester)', kind: 'copilot', enabled: true, hue: 210, cachedModelCount: null },
+    { id: 'up_disabled_custom', name: 'Disabled Custom', kind: 'custom', enabled: false, hue: 210, cachedModelCount: 2 },
   ];
 
   const adminResp = await requestApp('/api/upstream-options', { headers: { 'x-floway-session': adminSession } });
@@ -631,7 +631,7 @@ test('POST /api/upstreams/list-models with a persisted id forces a fresh upstrea
     proxyFallbackList: [],
     modelPrefix: null,
     modelsCache: null,
-    color: null,
+    hue: 210,
     config: { ...customConfig, apiKey: 'sk-refresh' },
     state: null,
   };
@@ -2117,7 +2117,7 @@ test('spec invariant (3): POST /api/upstreams/list-models ignores record.name mu
     proxyFallbackList: [],
     modelPrefix: null,
     modelsCache: null,
-    color: null,
+    hue: 210,
     config: {
       endpoint: 'https://invariant.openai.azure.com',
       apiKey: 'sk-invariant',

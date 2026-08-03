@@ -48,7 +48,7 @@ const record = (state: ClaudeCodeRecord['state']): ClaudeCodeRecord => ({
   kind: 'claude-code',
   name: 'Claude',
   enabled: true,
-  color: null,
+  hue: 210,
   sort_order: 0,
   proxy_fallback_list: null,
   model_prefix: null,
