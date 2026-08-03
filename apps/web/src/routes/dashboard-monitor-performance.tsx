@@ -56,7 +56,9 @@ interface LoaderData {
   // render zeroes the page does not know to be true.
   overview: PerformanceOverviewResponse | null;
   state: PerformanceUrlState;
-  upstreamNames: UpstreamName[];
+  // Null on the same terms: without the names, a group labels itself with an
+  // upstream id the page would be presenting as a name.
+  upstreamNames: UpstreamName[] | null;
   view: PerformanceView;
 }
 
@@ -76,7 +78,7 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
     loadedAt,
     overview: overview.data ?? null,
     state: { ...state, groupBy },
-    upstreamNames: upstreams.data ?? [],
+    upstreamNames: upstreams.data ?? null,
     view,
   };
 }
@@ -99,7 +101,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const [filters, setFilters] = useState<PerformanceFilters>(initialState.filters);
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set(initialState.hidden));
   const [overview, setOverview] = useState<PerformanceOverviewResponse | null>(loaderData.overview);
-  const [upstreamNames] = useState(() => new Map(loaderData.upstreamNames.map(record => [record.id, record.name])));
+  const [upstreamNames] = useState(() => loaderData.upstreamNames && new Map(loaderData.upstreamNames.map(record => [record.id, record.name])));
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
   const query = useMemo(() => ({ filters, groupBy, range }), [filters, groupBy, range]);
   const locale = useLocale();
@@ -143,7 +145,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   };
   const setFilter = (key: keyof PerformanceFilters, value: string) => setFilters(current => (current[key] === value ? current : { ...current, [key]: value }));
   const buckets = useMemo(() => performanceBuckets(loadedRange, loadedAt, locale), [loadedAt, loadedRange, locale]);
-  const labels = useMemo(() => overview && performanceLabels(overview, upstreamNames), [overview, upstreamNames]);
+  const labels = useMemo(() => overview && upstreamNames && performanceLabels(overview, upstreamNames), [overview, upstreamNames]);
   const chart = useMemo(() => overview && labels && buildPerformanceChart(overview.series, metric, percentile, groupBy, labels, buckets, loadedRange), [buckets, groupBy, labels, loadedRange, metric, overview, percentile]);
   const summary = overview?.axes.none[0];
   const summaryCards = [

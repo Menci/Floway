@@ -13,6 +13,7 @@ import tavilyIconUrl from '../assets/tavily-color.svg';
 import { eligibleSearchUpstreams, servesChatFor } from '../components/search/eligibility';
 import { SEARCH_PROVIDER_LABEL_KEYS } from '../components/search/provider';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
+import { EmptyStateLine } from '../components/ui/empty-state';
 import { Dropdown, LISTBOX_POSITIONING } from '../components/ui/fluent-form-controls';
 import { PANEL_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../components/ui/layout';
 import { OpenLinkLabel } from '../components/ui/open-link-label';
@@ -37,10 +38,12 @@ const {
   Text,
 } = fluentComponents;
 
+// `null` is a fetch that failed, distinct from a deployment that genuinely has
+// no upstream: an empty catalog would report passthrough search as impossible.
 interface LoaderData {
   config: SearchConfig;
-  upstreams: UpstreamRecord[];
-  models: ControlPlaneModel[];
+  upstreams: UpstreamRecord[] | null;
+  models: ControlPlaneModel[] | null;
   error: string | null;
 }
 
@@ -54,8 +57,8 @@ export async function clientLoader(): Promise<LoaderData> {
   if (configResult.error) throw new Error(configResult.error.message);
   return {
     config: configResult.data,
-    upstreams: upstreamsResult.data ?? [],
-    models: modelsResult.data?.data ?? [],
+    upstreams: upstreamsResult.data ?? null,
+    models: modelsResult.data?.data ?? null,
     error: upstreamsResult.error?.message ?? modelsResult.error?.message ?? null,
   };
 }
@@ -109,11 +112,35 @@ const findProviderOption = (
 
 export default function DashboardProvidersSearch({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
-  const toasts = useOutcomeToasts();
-  const [draft, setDraft] = useState<SearchConfig>(loaderData.config);
-  const upstreams = loaderData.upstreams;
-  const models = loaderData.models;
   const [loadError, setLoadError] = useState(loaderData.error);
+  const { models, upstreams } = loaderData;
+
+  return (
+    <section className="dashboard-page max-w-[960px]">
+      <DashboardPageHeader
+        description={t('dashboard.searchConfig.description')}
+        title={t('dashboard.searchConfig.heading')}
+      />
+
+      {loadError && (
+        <OutcomeMessageBar onDismiss={() => setLoadError(null)}>{loadError}</OutcomeMessageBar>
+      )}
+
+      {upstreams === null || models === null
+        ? <Panel><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel>
+        : <SearchSettings config={loaderData.config} models={models} upstreams={upstreams} />}
+    </section>
+  );
+}
+
+function SearchSettings({ config, models, upstreams }: {
+  config: SearchConfig;
+  models: ControlPlaneModel[];
+  upstreams: UpstreamRecord[];
+}) {
+  const { t } = useTranslation();
+  const toasts = useOutcomeToasts();
+  const [draft, setDraft] = useState<SearchConfig>(config);
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -223,16 +250,7 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
   }, [draft]);
 
   return (
-    <section className="dashboard-page max-w-[960px]">
-      <DashboardPageHeader
-        description={t('dashboard.searchConfig.description')}
-        title={t('dashboard.searchConfig.heading')}
-      />
-
-      {loadError && (
-        <OutcomeMessageBar onDismiss={() => setLoadError(null)}>{loadError}</OutcomeMessageBar>
-      )}
-
+    <>
       <SettingsExpander
         action={<Dropdown
           className="!w-auto flex-none"
@@ -438,7 +456,7 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
           ) : null}
         </Panel>
       )}
-    </section>
+    </>
   );
 }
 
