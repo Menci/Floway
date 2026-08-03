@@ -14,14 +14,12 @@ import { CodexAccountCard } from './codex-account-card';
 import { CopilotQuotaCard } from './copilot-quota-card';
 import type { UpstreamEditorValues } from './data';
 import { previewRecord } from './data';
+import { CHAT_ENDPOINT_KEYS, ENDPOINT_PATHS, endpointOptionsFor, IMAGE_ENDPOINT_KEYS } from './endpoints';
 import { useMonoLabelClass } from './mono-label';
 import { clearPkce, generatePkce, parseCallbackPaste, recallPkce, stashPkce } from './pkce';
 import { api, callApi } from '../../api/client';
-import type {
-  DeviceFlowStart,
-  UpstreamProviderKind,
-  UpstreamRecord,
-} from '../../api/types';
+import type { DeviceFlowStart, UpstreamRecord } from '../../api/types';
+import type { UpstreamProviderKind } from '@floway-dev/provider/model';
 import { fluentComponents } from '../../fluent';
 import { errorMessage } from '../../lib/error-message';
 import { Dropdown, Input, Textarea } from '../ui/fluent-form-controls';
@@ -232,23 +230,10 @@ function SecretField({ name, optional, secretSet }: { name: string; optional?: b
   </Field>;
 }
 
-const endpointOptions = [
-  ['completions', '/completions'],
-  ['chatCompletions', '/chat/completions'],
-  ['responses', '/responses'],
-  ['messages', '/messages'],
-] as const;
+const endpointOptions = endpointOptionsFor(CHAT_ENDPOINT_KEYS);
 
-const pathOverrideKeys = [
-  '/completions',
-  '/chat/completions',
-  '/responses',
-  '/messages',
-  '/embeddings',
-  '/alpha/search',
-  '/images/generations',
-  '/images/edits',
-] as const;
+const pathOverrideKeys = ([...CHAT_ENDPOINT_KEYS, 'embeddings', 'rerank', ...IMAGE_ENDPOINT_KEYS] as const)
+  .map(key => ENDPOINT_PATHS[key]);
 
 function EndpointPicker() {
   const { t } = useTranslation();

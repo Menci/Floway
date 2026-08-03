@@ -4,21 +4,19 @@ import { useTranslation } from 'react-i18next';
 
 import type { ModelRow } from './data';
 import { publicModelId } from './data';
+import { CHAT_ENDPOINT_KEYS, endpointOptionsFor, IMAGE_ENDPOINT_KEYS } from './endpoints';
 import { FeatureFlagsEditor } from './feature-flags';
 import { useMonoLabelClass } from './mono-label';
 import { PricingEditor } from './pricing-editor';
 import { pricingEntryDraftsFor, pricingIsValid } from './pricing-model';
 import { RerankTargetEditor } from './rerank-target-editor';
-import type {
-  UpstreamModelConfig,
-  UpstreamRecord,
-} from '../../api/types';
+import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { ChoiceGroup } from '../ui/choice-group';
 import { Checkbox, Combobox, Dropdown, Input, Switch } from '../ui/fluent-form-controls';
 import { CHECKBOX_LIST_CLASS, PANE_GAP_CLASS, SECTION_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { SectionHeader } from '../ui/section-header';
-import { modelsField, type UpstreamChatModelConfig } from '@floway-dev/provider';
+import { modelsField, type UpstreamChatModelConfig, type UpstreamModelConfig } from '@floway-dev/provider';
 
 const {
   Button,
@@ -326,7 +324,5 @@ const defaultEndpointsForKind = (kind: UpstreamModelConfig['kind'], current: Ups
   return kind === 'image' ? { imagesGenerations: {}, imagesEdits: {} } : { chatCompletions: {} };
 };
 
-const modelEndpointOptions = (kind: UpstreamModelConfig['kind']): [keyof UpstreamModelConfig['endpoints'], string][] => {
-  if (kind === 'image') return [['imagesGenerations', '/images/generations'], ['imagesEdits', '/images/edits']];
-  return [['completions', '/completions'], ['chatCompletions', '/chat/completions'], ['responses', '/responses'], ['messages', '/messages']];
-};
+const modelEndpointOptions = (kind: UpstreamModelConfig['kind']) =>
+  endpointOptionsFor(kind === 'image' ? IMAGE_ENDPOINT_KEYS : CHAT_ENDPOINT_KEYS);
