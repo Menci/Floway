@@ -63,3 +63,11 @@ ${nested(list(selectors))} {
     ${[`${property}: var(--winui-reduced-motion-duration);`, ...alsoDeclared].join('\n    ')}
   }
 }`;
+
+/**
+ * A subject stated twice, which is how every rule in this layer outranks the
+ * single-class atoms Griffel composes: two class-level parts against one, with
+ * no id and no important. A subject Fluent gives no class of its own cannot be
+ * written this way, and each such rule says so where it departs.
+ */
+export const doubled = (selector: string) => `${selector}${selector}`;

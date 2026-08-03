@@ -1,3 +1,5 @@
+import { doubled } from './selectors';
+
 // The InfoBar severity idiom, shared by every surface in this layer that carries
 // one. InfoBar is the only WinUI control with a severity, so a control restyled
 // onto that chassis takes the whole of it: the card tint, the disc-and-knockout
@@ -24,8 +26,8 @@ export const severityFills = [
  * circle glyph in the icon slot.
  *
  * `card` is the element taking the severity background; `icon` is the slot
- * holding the glyph. Both are doubled where they carry a declaration, so the
- * rules outrank the single-class Griffel atoms they replace.
+ * holding the glyph. Both take the doubling convention `./selectors.ts`
+ * records wherever they carry a declaration.
  *
  * `ground` is for a card that floats. Only the Attention step of this family is
  * translucent -- half in light, a twentieth in dark -- and a bar laid inline
@@ -48,7 +50,7 @@ export const severityCss = ({ card, icon, ground }: { card: string; icon: string
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar.xaml#L107-L111
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L76
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L77 */
-${icon}${icon} {
+${doubled(icon)} {
   align-self: start;
   padding: 0;
   font-size: 16px;
@@ -69,7 +71,7 @@ ${icon}${icon} {
    front of the card instead of behind a symbol.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar.xaml#L107-L111
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L13-L16 */
-${icon}${icon}[data-winui-severity-mark] {
+${doubled(icon)}[data-winui-severity-mark] {
   background: radial-gradient(
     closest-side,
     var(--winui-text-fill-inverse) 79%,
@@ -77,14 +79,14 @@ ${icon}${icon}[data-winui-severity-mark] {
   );
 }
 ${severityFills.map(([intent, fill]) => `
-${card}${card}[data-winui-intent='${intent}'] {
+${doubled(card)}[data-winui-intent='${intent}'] {
 ${ground === undefined
   ? `  background-color: var(--winui-system-fill-${fill}-background);`
   : `  background-color: ${ground};
   background-image: linear-gradient(var(--winui-system-fill-${fill}-background), var(--winui-system-fill-${fill}-background));`}
 }
 
-${card}[data-winui-intent='${intent}'] ${icon}${icon}[data-winui-severity-mark] {
+${card}[data-winui-intent='${intent}'] ${doubled(icon)}[data-winui-severity-mark] {
   color: var(--winui-system-fill-${fill});
 }`).join('\n')}
 
@@ -98,11 +100,11 @@ ${card}[data-winui-intent='${intent}'] ${icon}${icon}[data-winui-severity-mark] 
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L42-L60
    https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
 @media (forced-colors: active) {
-  ${card}${card} {
+  ${doubled(card)} {
     border-width: 2px;
   }
 
-  ${card}[data-winui-intent] ${icon}${icon}[data-winui-severity-mark] {
+  ${card}[data-winui-intent] ${doubled(icon)}[data-winui-severity-mark] {
     forced-color-adjust: none;
     color: Highlight;
     background: radial-gradient(
