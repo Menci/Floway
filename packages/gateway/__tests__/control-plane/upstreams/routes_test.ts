@@ -1,6 +1,7 @@
 import { test } from 'vitest';
 
 import { blueprintUpstreamRecord, upstreamRecordToFullJson } from '../../../src/control-plane/upstreams/serialize.ts';
+import { MODEL_LISTING_FAILURE_CODE } from '../../../src/data-plane/models/shared.ts';
 import { MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
 import { requestApp, setupAppTest } from '../../test-utils/app.ts';
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
@@ -572,8 +573,9 @@ test('POST /api/upstreams/list-models surfaces upstream model-listing failures a
         record: blueprintEnvelope('custom', { config: customConfig }),
       }));
       assertEquals(resp.status, 502);
-      const body = (await resp.json()) as { error: { message: string; type: string } };
+      const body = (await resp.json()) as { error: { message: string; type: string; code: string } };
       assertEquals(body.error.type, 'api_error');
+      assertEquals(body.error.code, MODEL_LISTING_FAILURE_CODE);
     },
   );
 });
@@ -596,8 +598,9 @@ test('POST /api/upstreams/list-models surfaces an ollama /api/tags failure as 50
         }),
       }));
       assertEquals(resp.status, 502);
-      const body = (await resp.json()) as { error: { message: string; type: string } };
+      const body = (await resp.json()) as { error: { message: string; type: string; code: string } };
       assertEquals(body.error.type, 'api_error');
+      assertEquals(body.error.code, MODEL_LISTING_FAILURE_CODE);
     },
   );
 });

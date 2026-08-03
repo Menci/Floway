@@ -1,7 +1,7 @@
 import { resolveControlPlaneFetcher } from './proxy-resolution.ts';
 import { isValidProviderKind, upstreamErrorMessage as errorMessage } from './shared.ts';
 import type { ListedUpstreamModel } from './types.ts';
-import { MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
+import { MODEL_LISTING_FAILURE_CODE, MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
 import { fetchUpstreamModelsCached } from '../../data-plane/providers/models-cache.ts';
 import { createProvider } from '../../data-plane/providers/registry.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
@@ -117,7 +117,7 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
     return c.json({ kind, data: models.map(reshapeModelForDashboard) });
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {
-      return c.json({ error: { message: MODEL_LISTING_FAILURE_MESSAGE, type: 'api_error' } }, 502);
+      return c.json({ error: { message: MODEL_LISTING_FAILURE_MESSAGE, type: 'api_error', code: MODEL_LISTING_FAILURE_CODE } }, 502);
     }
     if (e instanceof Error && /Malformed .* upstream config/.test(e.message)) {
       return c.json({ error: errorMessage(e) }, 400);

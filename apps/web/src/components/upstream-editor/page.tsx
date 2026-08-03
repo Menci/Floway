@@ -13,6 +13,7 @@ import {
   modelPrefixIsValid,
   updateBody,
   valuesFromRecord,
+  type ModelListingFailure,
   type UpstreamEditorLoaderData,
   type UpstreamEditorValues,
 } from './data';
@@ -40,7 +41,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const toasts = useOutcomeToasts();
   const [record, setRecord] = useState(data.record);
   const [discovered, setDiscovered] = useState(data.discovered);
-  const [modelsError, setModelsError] = useState<string | null>(data.modelsError);
+  const [modelsError, setModelsError] = useState<ModelListingFailure | null>(data.modelsError);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   // The colour picker commits only what parses, so the outstanding-draft fact

@@ -3,3 +3,8 @@
 // the registry's "no upstream configured" hint) carry actionable operator
 // guidance and surface verbatim.
 export const MODEL_LISTING_FAILURE_MESSAGE = 'Upstream model listing failed';
+
+// The message says nothing about the upstream and is prose, so control-plane
+// bodies carry this code beside it: the dashboard tells this failure apart from
+// an arbitrary one without matching English.
+export const MODEL_LISTING_FAILURE_CODE = 'upstream_model_listing_failed';
