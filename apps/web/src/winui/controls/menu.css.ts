@@ -8,6 +8,7 @@
 // MenuItemCheckbox, MenuItemRadio, MenuItemSwitch and MenuItemLink each add a
 // root class of their own and then run the MenuItem style hook, so every item
 // rule below reaches all five roots and their shared slot classes.
+import { REVEAL_HEADROOM, revealAnimation } from './reveal';
 import { reducedMotion } from './selectors';
 
 export const menuCss = `
@@ -263,30 +264,12 @@ export const menuCss = `
    data-popper-placement a few milliseconds later, so an element.getAttribute
    there is always null -- every menu took the downward branch, including the
    ones that flipped. CSS re-resolves when the attribute lands, which is before
-   the first frame is painted, and the animation is gated on the attribute
-   existing at all so an unplaced surface does not animate the wrong way and
-   then correct itself. That gate is what Radix puts on its own popper content,
-   for the same reason.
+   the first frame is painted; ./reveal.ts records the rest of that mechanism.
 
-   The direction is carried by custom properties inside one set of keyframes
-   rather than by two animation names: swapping animation-name once the
-   attribute lands restarts the animation from zero, where swapping a custom
-   property leaves it running and recomputes. Fluent reached the same conclusion
-   and deprecated its own attribute-keyed helper for it.
-
-   The slide is written to translate rather than into transform, because
-   transform is where Fluent's positioning already lives: a surface is placed
-   by translating it to the coordinates the positioning engine computed, and a
-   keyframe naming transform would replace that outright and play the reveal
-   at the origin of the containing block.
-
-   Only the three edges that do not travel go outside the box. Beyond the
-   travelling edge lies the element's own translated body, which a clip cannot
-   tell from shadow, so a negative value there lets the surface overshoot its
-   final position mid-reveal. 32px is headroom over what shadow16 needs: a blur
-   spreads a shadow by about its own length past the offset edge, so its key
-   term, 0 8px 16px, reaches about 24px below the border box and 16px to either
-   side.
+   The slide is written to translate rather than into transform, for the reason
+   ./reveal.ts gives for the clip. Beyond the travelling edge lies the element's
+   own translated body, which a clip cannot tell from shadow, so a negative
+   value there lets the surface overshoot its final position mid-reveal.
 
    The close is not here. It is a bare 83ms fade that has to hold the surface
    mounted while it runs, which only a presence component can do --
@@ -294,37 +277,37 @@ export const menuCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/dxaml/lib/MenuPopupThemeTransition_Partial.h#L23-L24
    https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/dxaml/lib/MenuFlyout_Partial.cpp#L253
    https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/dxaml/lib/MenuFlyoutSubItem_Partial.cpp#L741
-   https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/dxaml/lib/LayoutTransition_partial.cpp#L423-L563
-   https://www.w3.org/TR/css-backgrounds-3/#shadow-blur
-   https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/tokens/src/utils/shadows.ts#L11 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/dxaml/lib/LayoutTransition_partial.cpp#L423-L563 */
 @keyframes winui-menu-flyout-reveal {
   from {
     translate: 0 var(--winui-menu-reveal-offset);
     clip-path: inset(
-      var(--winui-menu-reveal-leading) -32px var(--winui-menu-reveal-trailing) -32px);
+      var(--winui-menu-reveal-leading) ${REVEAL_HEADROOM} var(--winui-menu-reveal-trailing) ${REVEAL_HEADROOM});
   }
   to {
     translate: 0 0;
     clip-path: inset(
-      var(--winui-menu-open-leading) -32px var(--winui-menu-open-trailing) -32px);
+      var(--winui-menu-open-leading) ${REVEAL_HEADROOM} var(--winui-menu-open-trailing) ${REVEAL_HEADROOM});
   }
 }
 
-.fui-MenuPopover.fui-MenuPopover {
-  --winui-menu-reveal-offset: -50%;
-  --winui-menu-reveal-leading: 50%;
-  --winui-menu-reveal-trailing: -32px;
-  --winui-menu-open-leading: 0%;
-  --winui-menu-open-trailing: -32px;
-  animation-duration: var(--winui-control-normal-animation-duration);
-  animation-timing-function: var(--winui-control-fast-out-slow-in-easing);
-}
+${revealAnimation({
+  root: '.fui-MenuPopover.fui-MenuPopover',
+  keyframes: 'winui-menu-flyout-reveal',
+  properties: [
+    '--winui-menu-reveal-offset: -50%;',
+    '--winui-menu-reveal-leading: 50%;',
+    `--winui-menu-reveal-trailing: ${REVEAL_HEADROOM};`,
+    '--winui-menu-open-leading: 0%;',
+    `--winui-menu-open-trailing: ${REVEAL_HEADROOM};`,
+  ],
+})}
 
 .fui-MenuPopover.fui-MenuPopover[data-popper-placement^='top'] {
   --winui-menu-reveal-offset: 50%;
-  --winui-menu-reveal-leading: -32px;
+  --winui-menu-reveal-leading: ${REVEAL_HEADROOM};
   --winui-menu-reveal-trailing: 50%;
-  --winui-menu-open-leading: -32px;
+  --winui-menu-open-leading: ${REVEAL_HEADROOM};
   --winui-menu-open-trailing: 0%;
 }
 
@@ -332,10 +315,6 @@ export const menuCss = `
 .fui-MenuPopover.fui-MenuPopover[data-popper-placement^='left'] {
   --winui-menu-reveal-offset: -67%;
   --winui-menu-reveal-leading: 67%;
-}
-
-.fui-MenuPopover.fui-MenuPopover[data-popper-placement] {
-  animation-name: winui-menu-flyout-reveal;
 }
 
 /* The reveal moves and resizes the surface, so it goes when the OS says motion

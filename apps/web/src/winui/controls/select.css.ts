@@ -12,6 +12,7 @@
 // ./choice.css.ts writes down for every check box.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L358-L359
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L110-L136
+import { REVEAL_HEADROOM, revealAnimation } from './reveal';
 import { reducedMotion } from './selectors';
 
 export const selectCss = `
@@ -502,52 +503,34 @@ ${reducedMotion(
    animatable state: the listbox is collapsed with display: none while the
    trigger holds focus, and unmounted outright once focus leaves.
 
-   Written as an animation rather than a transition because the element enters
-   already in its final state, and on clip-path rather than transform because
-   transform is where Fluent's positioning lives -- the popup is placed by a
-   matrix translate, and a keyframe naming transform would replace it and play
-   the reveal at the origin of the containing block.
-
-   The direction is carried by custom properties inside ONE set of keyframes
-   rather than by two animation names: the placement attribute is written a few
-   milliseconds after the element mounts, and swapping animation-name at that
-   point restarts the animation from zero, where swapping a custom property
-   leaves it running and simply recomputes. The animation is gated on the
-   attribute existing at all, so an unplaced popup does not animate in the
-   default direction and then correct itself -- the same gate Radix puts on its
-   own popper content.
-
-   32px is headroom over what shadow16 needs; the derivation is written once, at
-   the same constant in ./menu.css.ts. The leading edge nonetheless starts on
-   the border box rather than outside it: a clip that opened at -32px would show
-   a band of the popup's own shadow before any of the list it belongs to.
+   The mechanism is ./reveal.ts's. The leading edge nonetheless starts on the
+   border box rather than outside it: a clip that opened past it would show a
+   band of the popup's own shadow before any of the list it belongs to.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L517-L528
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/SplitOpenThemeAnimation_Partial.h#L16-L17
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/ThemeAnimations.cpp#L596-L721
    https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Combobox/useCombobox.tsx#L102
    https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Combobox/useComboboxStyles.styles.ts#L93-L94 */
-@keyframes floway-combobox-listbox-reveal {
+@keyframes winui-listbox-reveal {
   from {
     clip-path: inset(
-      var(--floway-listbox-reveal-leading) -32px var(--floway-listbox-reveal-trailing) -32px);
+      var(--winui-listbox-reveal-leading) ${REVEAL_HEADROOM} var(--winui-listbox-reveal-trailing) ${REVEAL_HEADROOM});
   }
-  to { clip-path: inset(-32px); }
+  to { clip-path: inset(${REVEAL_HEADROOM}); }
 }
 
-.floway-combobox-listbox {
-  --floway-listbox-reveal-leading: 0%;
-  --floway-listbox-reveal-trailing: 50%;
-  animation-duration: var(--winui-control-normal-animation-duration);
-  animation-timing-function: var(--winui-control-fast-out-slow-in-easing);
-}
+${revealAnimation({
+  root: '.floway-combobox-listbox',
+  keyframes: 'winui-listbox-reveal',
+  properties: [
+    '--winui-listbox-reveal-leading: 0%;',
+    '--winui-listbox-reveal-trailing: 50%;',
+  ],
+})}
 
 .floway-combobox-listbox[data-popper-placement^='top'] {
-  --floway-listbox-reveal-leading: 50%;
-  --floway-listbox-reveal-trailing: 0%;
-}
-
-.floway-combobox-listbox[data-popper-placement] {
-  animation-name: floway-combobox-listbox-reveal;
+  --winui-listbox-reveal-leading: 50%;
+  --winui-listbox-reveal-trailing: 0%;
 }
 
 /* The reveal grows the popup out of a band, which alters its perceived size, so
