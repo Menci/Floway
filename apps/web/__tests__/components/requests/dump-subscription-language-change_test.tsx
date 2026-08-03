@@ -2,13 +2,13 @@ import { act, screen } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { record, stubEventSource } from './dump-stream-stub';
 import { flowayTokenStorageKey } from '../../../src/auth/session';
 import { useDumpSubscription } from '../../../src/components/requests/use-dump-subscription';
 import { setLanguage } from '../../../src/i18n';
 import { browserLanguage } from '../../../src/i18n/languages';
 import { stubLocalStorage } from '../../local-storage-stub';
 import { renderInApp } from '../../render';
-import { record, stubEventSource } from './dump-stream-stub';
 
 const Harness = ({ keyId }: { keyId: string }) => {
   const subscription = useDumpSubscription(keyId, [record(`${keyId}-1`)]);

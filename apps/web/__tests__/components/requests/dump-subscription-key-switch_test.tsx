@@ -2,11 +2,11 @@ import { act, screen } from '@testing-library/react';
 import { StrictMode, useLayoutEffect, useSyncExternalStore } from 'react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { eventSourceClosed, record, stubEventSource } from './dump-stream-stub';
 import { flowayTokenStorageKey } from '../../../src/auth/session';
 import { useDumpSubscription } from '../../../src/components/requests/use-dump-subscription';
 import { stubLocalStorage } from '../../local-storage-stub';
 import { renderInApp } from '../../render';
-import { eventSourceClosed, record, stubEventSource } from './dump-stream-stub';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 
 interface Commit { ids: string[]; keyId: string | null }
