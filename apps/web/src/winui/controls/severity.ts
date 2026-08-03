@@ -33,16 +33,10 @@ export const severityCss = ({ card, icon }: { card: string; icon: string }) => `
    hence align-self. 16 + 16 + 16 is InfoBarMinHeight, so the two placements
    differ exactly when the body wraps, the case the margin exists for. The box
    is that margin and InfoBarIconFontSize alone, so a slot Fluent pads is
-   cleared.
-
-   WinUI stacks a severity-coloured disc under a symbol painted in
-   TextFillColorInverse; a Fluent *Filled circle glyph is that silhouette
-   inverted, one path with the symbol as negative space, so the disc behind it
-   carries the inverse layer. All four are an r=8 circle in a 20 unit box -- 80%
-   of the closest side on a square 1em icon, with the stops just inside that
-   edge so no ring escapes from under the glyph.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar.xaml#L107-L109
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L13-L16
+   cleared. It is the box of the standard mark and of a caller's own artwork
+   alike: InfoBar gives UserIconBox the same margin and caps it at the same
+   size.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar.xaml#L107-L111
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L76
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L77 */
 ${icon}${icon} {
@@ -51,6 +45,22 @@ ${icon}${icon} {
   font-size: 16px;
   margin-block: 16px;
   margin-inline-end: 14px;
+}
+
+/* WinUI stacks a severity-coloured disc under a symbol painted in
+   TextFillColorInverse; a Fluent *Filled circle glyph is that silhouette
+   inverted, one path with the symbol as negative space, so the disc behind it
+   carries the inverse layer. All four are an r=8 circle in a 20 unit box -- 80%
+   of the closest side on a square 1em icon, with the stops just inside that
+   edge so no ring escapes from under the glyph.
+
+   The disc and the severity colour reach the standard mark alone. InfoBar
+   paints neither onto UserIconBox, and a caller's artwork is opaque to us: it
+   need not be a silhouette with a hole, and anything else lands the disc in
+   front of the card instead of behind a symbol.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar.xaml#L107-L111
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L13-L16 */
+${icon}${icon}[data-winui-severity-mark] {
   background: radial-gradient(
     closest-side,
     var(--winui-text-fill-inverse) 79%,
@@ -62,7 +72,7 @@ ${card}${card}[data-winui-intent='${intent}'] {
   background-color: var(--winui-system-fill-${fill}-background);
 }
 
-${card}[data-winui-intent='${intent}'] ${icon}${icon} {
+${card}[data-winui-intent='${intent}'] ${icon}${icon}[data-winui-severity-mark] {
   color: var(--winui-system-fill-${fill});
 }`).join('\n')}
 
@@ -80,7 +90,7 @@ ${card}[data-winui-intent='${intent}'] ${icon}${icon} {
     border-width: 2px;
   }
 
-  ${card}[data-winui-intent] ${icon}${icon} {
+  ${card}[data-winui-intent] ${icon}${icon}[data-winui-severity-mark] {
     forced-color-adjust: none;
     color: Highlight;
     background: radial-gradient(

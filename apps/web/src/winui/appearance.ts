@@ -12,13 +12,14 @@ type FluentComponents = typeof import('@fluentui/react-components');
 export const winuiAppearanceAttribute = 'data-winui-appearance';
 const winuiIntentAttribute = 'data-winui-intent';
 const winuiSizeAttribute = 'data-winui-size';
+const winuiSeverityMarkAttribute = 'data-winui-severity-mark';
 export const winuiCheckedAttribute = 'data-winui-checked';
 
 type SlotProps = Record<string, unknown>;
 type PropCarrier = Record<string, unknown>;
 type SeverityIntent = 'error' | 'warning' | 'success' | 'info';
-interface IntentCarrier { intent?: SeverityIntent; icon?: React.ReactNode }
-interface MediaCarrier { media?: React.ReactNode }
+interface IntentCarrier { intent?: SeverityIntent; icon?: unknown }
+interface MediaCarrier { media?: unknown }
 type ToastController = ReturnType<FluentComponents['useToastController']>;
 type ToastDispatchOptions = NonNullable<Parameters<ToastController['dispatchToast']>[1]>;
 type CheckedState = boolean | 'mixed';
@@ -183,6 +184,15 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
     info: InfoFilled,
   };
 
+  // The mark is stamped as well as filled in. Only the standard mark is a
+  // silhouette with the symbol as negative space, so only it may take the disc
+  // ./controls/severity.ts paints behind the slot; a caller's own artwork would
+  // wear the disc in front of the card.
+  const severityMark = (intent: SeverityIntent) => ({
+    children: React.createElement(severityIcons[intent]),
+    [winuiSeverityMarkAttribute]: '',
+  });
+
   // The intent is stamped alongside because Fluent settles it in JavaScript.
   // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-message-bar/library/src/components/MessageBar/useMessageBar.ts#L22
   const stampIntent = <Component>(component: Component): Component => {
@@ -192,7 +202,7 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
       return React.createElement(elementType, {
         ...props,
         [winuiIntentAttribute]: intent,
-        icon: props.icon === undefined ? React.createElement(severityIcons[intent]) : props.icon,
+        icon: props.icon === undefined ? severityMark(intent) : props.icon,
         ref,
       });
     });
@@ -257,7 +267,7 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
       const intent = React.useContext(ToastIntentContext);
       return React.createElement(elementType, {
         ...props,
-        media: props.media === undefined ? React.createElement(severityIcons[intent]) : props.media,
+        media: props.media === undefined ? severityMark(intent) : props.media,
         ref,
       });
     });
