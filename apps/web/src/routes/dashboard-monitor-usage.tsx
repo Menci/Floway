@@ -1,11 +1,11 @@
 import { EyeOffRegular, EyeRegular } from '@fluentui/react-icons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { redirect, useSearchParams } from 'react-router';
+import { useSearchParams } from 'react-router';
 
 import type { Route } from './+types/dashboard-monitor-usage';
 import { useDashboardOutletContext } from './dashboard';
-import { requireDashboardSession } from './guards';
+import { requireDashboardUser } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
 import type { GlobalError } from '../api/client';
 import type { ControlPlaneModel } from '../api/types';
@@ -30,16 +30,13 @@ import { errorMessage } from '../lib/error-message';
 import { formatCount } from '../lib/format-number';
 import { useEntryRewrite } from '../lib/page-navigation';
 import { useLocale } from '../lib/use-locale';
-import { useAuthStore } from '../stores/auth-store';
 
 const { Button, Tooltip } = fluentComponents;
 
 type LoaderData = Awaited<ReturnType<typeof loadUsagePageData>> & UsageUrlState & { loadedAt: number };
 
 export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise<LoaderData> {
-  requireDashboardSession();
-  const user = await useAuthStore.getState().initialize();
-  if (!user) throw redirect('/');
+  const user = await requireDashboardUser();
   const state = parseUsageUrlState(new URL(request.url).searchParams);
   const view: UsageView = user.isAdmin ? state.view : 'self-by-key';
   const loadedAt = Date.now();

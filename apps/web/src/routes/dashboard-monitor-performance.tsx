@@ -1,10 +1,10 @@
 import { InfoRegular } from '@fluentui/react-icons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { redirect, useSearchParams } from 'react-router';
+import { useSearchParams } from 'react-router';
 
 import type { Route } from './+types/dashboard-monitor-performance';
-import { requireDashboardSession } from './guards';
+import { requireDashboardUser } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
 import { api, callApi, type GlobalError } from '../api/client';
 import { PerformanceChartSection } from '../components/performance/chart';
@@ -42,7 +42,6 @@ import { formatDuration } from '../lib/format-duration';
 import { formatCount, formatTokenRateFromTpot } from '../lib/format-number';
 import { useEntryRewrite } from '../lib/page-navigation';
 import { useLocale } from '../lib/use-locale';
-import { useAuthStore } from '../stores/auth-store';
 
 const { Button, Field, Option, Tab, TabList, Text, Tooltip } = fluentComponents;
 
@@ -62,9 +61,7 @@ interface LoaderData {
 }
 
 export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise<LoaderData> {
-  requireDashboardSession();
-  const user = await useAuthStore.getState().initialize();
-  if (!user) throw redirect('/');
+  const user = await requireDashboardUser();
   const state = parsePerformanceUrlState(new URL(request.url).searchParams);
   const view: PerformanceView = user.isAdmin ? 'all-by-user' : 'self-by-key';
   const groupBy = state.groupBy === 'userId' && view !== 'all-by-user' ? 'model' : state.groupBy;
