@@ -38,8 +38,7 @@
     "remend": "^1.3.0",
     "yaml": "^2.9.0",
     "zod": "^4.4.3",
-    "zustand": "^5.0.14",
-    "isbot": "^5"
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@floway-dev/gateway": "workspace:*",
