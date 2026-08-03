@@ -54,10 +54,6 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const [modelsError, setModelsError] = useState<ModelListingFailure | null>(data.modelsError);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  // The colour picker commits only what parses, so the outstanding-draft fact
-  // lives here: it is what the schema rejects on and what the leave prompt
-  // counts as an unsaved change.
-  const [colorDraftInvalid, setColorDraftInvalid] = useState(false);
   // A create hands off to the created record's own route. The blocker reads the
   // form's saved state, so the hand-off is state rather than a call: naming the
   // id lets the navigation wait for the render that the save made clean instead
@@ -67,7 +63,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const schema = useMemo(() => z.object({
     name: z.string().trim().min(1, 'dashboard.upstreamEditor.validation.name'),
     enabled: z.boolean(),
-    color: z.any(),
+    hue: z.number(),
     proxyFallbackList: z.any(),
     modelPrefix: z.any(),
     disabledPublicModelIds: z.array(z.string()),
@@ -76,7 +72,6 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     state: z.any(),
     manualModels: z.any(),
   }).superRefine((values, ctx) => {
-    if (colorDraftInvalid) ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.validation.color', path: ['color'] });
     if (values.modelPrefix && !modelPrefixIsValid(values.modelPrefix.prefix)) ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.prefixInvalid', path: ['modelPrefix'] });
     if (values.modelPrefix?.addressable.length === 0) ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.validation.prefix', path: ['modelPrefix'] });
     if (!modelsAreValid(values.manualModels)) ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.validation.models', path: ['manualModels'] });
@@ -85,14 +80,14 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     if (data.mode !== 'create') return;
     if (record.kind === 'copilot' && !values.config.githubToken) ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.validation.copilot', path: ['config'] });
     if ((record.kind === 'codex' || record.kind === 'claude-code') && values.config.accounts.length === 0) ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.validation.credential', path: ['config'] });
-  }), [colorDraftInvalid, data.mode, record.kind]);
+  }), [data.mode, record.kind]);
   const form = useForm<UpstreamEditorValues>({
     defaultValues: initialValues,
     mode: 'onBlur',
     resolver: zodResolver(schema),
   });
   const { formState, getValues, handleSubmit, reset, setValue } = form;
-  const hasUnsavedChanges = formState.isDirty || colorDraftInvalid;
+  const hasUnsavedChanges = formState.isDirty;
 
   // The editor carries its own position — workspace tab, selected model, model
   // section, YAML view — in the search params of one route, so a move between
@@ -217,7 +212,6 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
           <UpstreamConfigSidebar
             catalogAvailable={modelsError === null}
             discovered={discovered}
-            onColorValidityChange={setColorDraftInvalid}
             onPatch={applyProviderPatch}
             onRefreshModels={() => void refreshModels()}
             proxies={data.proxies}

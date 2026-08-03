@@ -61,7 +61,7 @@ const makeRecord = (state: ClaudeCodeUpstreamState): UpstreamRecord => ({
   proxyFallbackList: [],
   modelPrefix: null,
   modelsCache: null,
-  color: null,
+  hue: 210,
 });
 
 let currentRecord: UpstreamRecord;

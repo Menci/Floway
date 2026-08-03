@@ -54,7 +54,6 @@ const en = {
       codex: 'Codex',
       'claude-code': 'Claude Code',
       ollama: 'Ollama',
-      unknown: 'Unknown',
     },
     dashboard: {
       title: 'Dashboard',
@@ -290,7 +289,6 @@ const en = {
         modelCount_one: '{{count, number}} model',
         modelCount_other: '{{count, number}} models',
         modelCountUnknown: 'Count unavailable',
-        unknownUpstream: 'Unknown ({{id}})',
         upstreamDisabled: 'Upstream disabled',
         validation: 'Select at least one upstream, or turn off the limit.',
       },
@@ -515,22 +513,15 @@ const en = {
         },
         sections: {
           connection: 'Connection and authentication',
-          color: 'Badge color',
+          hue: 'Badge color',
           proxy: 'Proxy routing',
           apiPaths: 'API paths',
           prefix: 'Model name prefix',
           disabledModels: 'Disabled models',
         },
-        color: {
+        hue: {
           description: 'Choose how this upstream is distinguished across the console.',
-          inherit: 'Provider default',
-          custom: 'Custom hex',
           label: 'Badge color',
-          hue: 'Hue',
-          saturation: 'Saturation',
-          brightness: 'Brightness',
-          invalidHex: 'Enter #RRGGBB',
-          preset: { amber: 'Amber', emerald: 'Emerald', cyan: 'Cyan', violet: 'Violet', rose: 'Rose', orange: 'Orange' },
         },
         fields: {
           name: 'Upstream name',
@@ -863,7 +854,6 @@ const en = {
           name: 'Upstream name is required.',
           prefix: 'At least one model prefix form must remain addressable.',
           models: 'One or more models have an invalid configuration.',
-          color: 'Enter a valid custom color before saving.',
           copilot: 'Complete GitHub device authorization before saving.',
           credential: 'Import a credential before saving.',
         },

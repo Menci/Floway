@@ -50,7 +50,6 @@ const SidebarProbe = ({ record }: { record: UpstreamRecord }) => {
       <UpstreamConfigSidebar
         catalogAvailable
         discovered={[]}
-        onColorValidityChange={vi.fn()}
         onPatch={vi.fn()}
         onRefreshModels={vi.fn()}
         proxies={[]}

@@ -87,7 +87,7 @@ export function ModelInfoBadges({ cap, catalog, model }: {
   return (
     <div className="flex flex-wrap items-center gap-1.5 min-w-0">
       {effectiveUpstreams(model, catalog, cap).map(upstream => (
-        <ProviderBadge key={upstream.id} color={upstream.color} kind={upstream.kind} label={upstream.name} />
+        <ProviderBadge key={upstream.id} label={upstream.name} upstream={upstream} />
       ))}
       {modelBadges(model, catalog, cap).map(badge => (
         <Chip key={badge.key}>

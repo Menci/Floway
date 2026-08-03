@@ -8,7 +8,7 @@ import { SectionHeader } from '../ui/section-header';
 
 const { Text } = fluentComponents;
 
-// A titled block of the upstream editor. What it holds -- a colour popover, a
+// A titled block of the upstream editor. What it holds -- a hue rail, a
 // credential flow, a proxy list, a row of endpoint checkboxes -- is a composite
 // no single Fluent Field can speak for, so the block names itself as a group
 // instead.

@@ -626,7 +626,7 @@ const cloneUpstreamRecord = (upstream: UpstreamRecord): UpstreamRecord => ({
   disabledPublicModelIds: normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds),
   proxyFallbackList: normalizeProxyFallbackList(upstream.proxyFallbackList),
   modelPrefix: structuredClone(upstream.modelPrefix),
-  color: upstream.color ?? null,
+  hue: upstream.hue,
 });
 
 const responsesCleanupDueAt = async (

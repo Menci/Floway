@@ -2,11 +2,10 @@
 // scenarios by default; the SQL backend (sql.js applying every migration)
 // catches schema drift, JSON-column round-trips, and name uniqueness.
 
-import initSqlJs from 'sql.js';
 import { test } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
-import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
+import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename, type SqlJsDatabase } from './test-sqlite.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { ModelAliasRecord, Repo } from '../../src/repo/types.ts';
 import { assertEquals, assertExists, assertRejects, assertThrows } from '@floway-dev/test-utils';
@@ -210,17 +209,10 @@ test('[sql] rejects an unknown kind stored under the open database constraint', 
   await assertRejects(() => repo.modelAliases.getByName('future-alias'), Error, 'model_aliases.kind for future-alias is invalid');
 });
 
-type SqlJsDatabase = {
-  run(sql: string): void;
-  exec(sql: string): Array<{ columns: string[]; values: unknown[][] }>;
-  close(): void;
-};
-
 const migrationFilenames = migrationSqlByFilename.map(([filename]) => filename);
 
 const createPreUpstreamsMigrationDatabase = async (): Promise<SqlJsDatabase> => {
-  const SQL = await initSqlJs();
-  const db = new SQL.Database() as SqlJsDatabase;
+  const db = await createSqlJsDatabase();
   for (const filename of migrationFilenames.filter(filename => filename < '0010_unified_upstreams.sql')) {
     applyMigration(db, filename);
   }

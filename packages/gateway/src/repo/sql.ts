@@ -43,7 +43,7 @@ import type {
   UsersRepo,
 } from './types.ts';
 import { serializeStoredConfig, serializeStoredState } from './upstream-json.ts';
-import { parseUpstreamColor, parseUpstreamKind } from './upstream-parse.ts';
+import { parseUpstreamHue, parseUpstreamKind } from './upstream-parse.ts';
 import { usageMetricRows } from './usage-metrics.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
 import { parseServerSecret } from '../shared/server-secret.ts';
@@ -873,14 +873,14 @@ class SqlUpstreamRepo implements UpstreamRepo {
 
   async list(): Promise<UpstreamRecord[]> {
     const { results } = await this.db
-      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, color FROM upstreams ORDER BY sort_order, created_at')
+      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue FROM upstreams ORDER BY sort_order, created_at')
       .all<UpstreamRow>();
     return results.map(toUpstreamRecord);
   }
 
   async getById(id: string): Promise<UpstreamRecord | null> {
     const row = await this.db
-      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, color FROM upstreams WHERE id = ?')
+      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue FROM upstreams WHERE id = ?')
       .bind(id)
       .first<UpstreamRow>();
     return row ? toUpstreamRecord(row) : null;
@@ -891,7 +891,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
     // wins, and re-saves preserve that timestamp regardless of what the caller passes.
     await this.db
       .prepare(
-        `INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, color) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            provider = excluded.provider,
            name = excluded.name,
@@ -904,7 +904,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
            disabled_public_model_ids = excluded.disabled_public_model_ids,
            proxy_fallback_list_json = excluded.proxy_fallback_list_json,
            model_prefix_json = excluded.model_prefix_json,
-           color = excluded.color`,
+           hue = excluded.hue`,
       )
       .bind(
         upstream.id,
@@ -920,7 +920,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
         JSON.stringify(normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds)),
         JSON.stringify(normalizeProxyFallbackList(upstream.proxyFallbackList)),
         upstream.modelPrefix === null ? null : JSON.stringify(upstream.modelPrefix),
-        upstream.color,
+        upstream.hue,
       )
       .run();
   }
@@ -1013,7 +1013,7 @@ interface UpstreamRow {
   disabled_public_model_ids: string;
   proxy_fallback_list_json: string;
   model_prefix_json: string | null;
-  color: string | null;
+  hue: number;
 }
 
 const toUpstreamRecord = (row: UpstreamRow): UpstreamRecord => {
@@ -1047,7 +1047,7 @@ const toUpstreamRecord = (row: UpstreamRow): UpstreamRecord => {
     disabledPublicModelIds: parseDisabledPublicModelIds(row.id, row.disabled_public_model_ids),
     proxyFallbackList: parseProxyFallbackList(row.id, row.proxy_fallback_list_json),
     modelPrefix: parseModelPrefix(row.id, row.model_prefix_json),
-    color: parseUpstreamColor(row.id, row.color),
+    hue: parseUpstreamHue(row.id, row.hue),
   };
 };
 

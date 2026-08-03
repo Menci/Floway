@@ -28,7 +28,7 @@ import { parseUpstreamIdsValue } from '../shared/upstream-ids.ts';
 import { warmModelsCache } from '../shared/warm-models-cache.ts';
 import { type FullSerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, parseNonNegativeDecimalString, type PricingSelector } from '@floway-dev/protocols/common';
-import { ALL_PROVIDER_KINDS, normalizeModelPrefix, normalizeUpstreamColor, parseFlagOverridesWire, parsePerformanceOperation, type ProxyFallbackEntry, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
+import { ALL_PROVIDER_KINDS, normalizeModelPrefix, normalizeUpstreamHue, parseFlagOverridesWire, parsePerformanceOperation, type ProxyFallbackEntry, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
 import { assertCodexUpstreamRecord, assertCodexUpstreamState } from '@floway-dev/provider-codex';
@@ -48,7 +48,7 @@ interface SerializedProxy {
 }
 
 interface ExportPayload {
-  version: 18;
+  version: 19;
   exportedAt: string;
   data: {
     users: User[];
@@ -63,7 +63,7 @@ interface ExportPayload {
   };
 }
 
-const EXPORT_VERSION = 18;
+const EXPORT_VERSION = 19;
 const SEARCH_USAGE_HOUR_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}$/;
 const PERFORMANCE_METRICS = new Set<PerformanceMetric>(['ttft_ms', 'tpot_us']);
 const UPSTREAM_PROVIDERS = new Set<UpstreamProviderKind>(ALL_PROVIDER_KINDS);
@@ -175,7 +175,7 @@ const parseUpstreamRecords = (value: unknown): { type: 'ok'; records: UpstreamRe
         disabledPublicModelIds: parseDisabledPublicModelIdsWire(item.disabled_public_model_ids),
         proxyFallbackList: parseProxyFallbackListField(item.proxy_fallback_list),
         modelPrefix: normalizeModelPrefix(item.model_prefix),
-        color: normalizeUpstreamColor(item.color),
+        hue: normalizeUpstreamHue(item.hue),
         config: item.config,
         state: normalizeUpstreamState(kind, item.state),
         // The catalog cache is gateway bookkeeping, not transferable content:

@@ -7,7 +7,7 @@ import { CUSTOM_API_KEY_MAX_LENGTH, generateApiKeyToken, type KeySource } from '
 import { generateServerSecret } from '../../shared/server-secret.ts';
 import type { createKeyBody, rotateKeyBody, updateKeyBody } from '../schemas.ts';
 import { ownedKeyForUser } from '../shared/owned-key.ts';
-import { loadKnownUpstreamIds, pruneDeletedUpstreamIds, unknownUpstreamIdsError } from '../shared/upstream-ids.ts';
+import { loadKnownUpstreamIds, pruneUnreachableUpstreamIds, reachableUpstreamIds, unknownUpstreamIdsError } from '../shared/upstream-ids.ts';
 
 const GENERATED_KEY_RETRIES = 5;
 
@@ -21,13 +21,16 @@ type KeyWriteResult = { ok: true; key: ApiKey } | KeyWriteError;
 
 const keyWriteError = (status: KeyWriteError['status'], error: string): KeyWriteError => ({ ok: false, status, error });
 
-const apiKeyToJson = (key: ApiKey, knownUpstreamIds: ReadonlySet<string>) => ({
+// The set is what this key's owner can reach, not the whole catalog: a grant
+// their cap no longer covers routes nothing, so serving it would put a row in
+// the dashboard that resolves to no upstream.
+const apiKeyToJson = (key: ApiKey, reachable: ReadonlySet<string>) => ({
   id: key.id,
   name: key.name,
   key: key.key,
   created_at: key.createdAt,
   last_used_at: key.lastUsedAt ?? null,
-  upstream_ids: pruneDeletedUpstreamIds(key.upstreamIds, knownUpstreamIds),
+  upstream_ids: pruneUnreachableUpstreamIds(key.upstreamIds, reachable),
   dump_retention_seconds: key.dumpRetentionSeconds,
   responses_retention_seconds: key.responsesRetentionSeconds,
 });
@@ -119,7 +122,8 @@ const validateUpstreamIdsAgainstUserCap = (
 export const listKeys = async (c: AuthedContext) => {
   const userId = userFromContext(c).id;
   const [keys, knownUpstreamIds] = await Promise.all([getRepo().apiKeys.listByUserId(userId), loadKnownUpstreamIds()]);
-  return c.json(keys.map(key => apiKeyToJson(key, knownUpstreamIds)));
+  const reachable = reachableUpstreamIds(knownUpstreamIds, userUpstreamIdsFromContext(c));
+  return c.json(keys.map(key => apiKeyToJson(key, reachable)));
 };
 
 export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
@@ -144,7 +148,7 @@ export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
 
   const result = await writeKeyForRequest(template, body);
   if (!result.ok) return c.json({ error: result.error }, result.status);
-  return c.json(apiKeyToJson(result.key, knownUpstreamIds), 201);
+  return c.json(apiKeyToJson(result.key, reachableUpstreamIds(knownUpstreamIds, userUpstreamIdsFromContext(c))), 201);
 };
 
 export const deleteKey = async (c: AuthedContext) => {
@@ -166,7 +170,7 @@ export const rotateKey = async (c: CtxWithJson<typeof rotateKeyBody>) => {
 
   const result = await writeKeyForRequest(owned, c.req.valid('json'));
   if (!result.ok) return c.json({ error: result.error }, result.status);
-  return c.json(apiKeyToJson(result.key, await loadKnownUpstreamIds()));
+  return c.json(apiKeyToJson(result.key, reachableUpstreamIds(await loadKnownUpstreamIds(), userUpstreamIdsFromContext(c))));
 };
 
 export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
@@ -200,5 +204,5 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
     if (next === null && previous !== null) await notifyDisabledBestEffort(id, 'updateKey retention disable');
   }
 
-  return c.json(apiKeyToJson(updated, knownUpstreamIds));
+  return c.json(apiKeyToJson(updated, reachableUpstreamIds(knownUpstreamIds, userUpstreamIdsFromContext(c))));
 };

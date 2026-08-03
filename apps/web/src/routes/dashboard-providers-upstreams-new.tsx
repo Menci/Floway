@@ -10,6 +10,7 @@ import {
 } from '../components/upstream-editor/data';
 import { UpstreamEditorPage } from '../components/upstream-editor/page';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
+import { pickDistinctHue } from '../lib/hue';
 import { ALL_PROVIDER_KINDS } from '@floway-dev/provider';
 
 export const handle = dashboardWorkspaceHandle;
@@ -30,6 +31,10 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     ...recordResult.data,
     name: providerDefaultName[kind],
     enabled: true,
+    // A blueprint carries no hue: the badge only has to be told apart from the
+    // ones already on screen, which is a fact the dashboard holds and the
+    // server does not.
+    hue: pickDistinctHue(aux.upstreams.map(upstream => upstream.hue)),
   };
   return { ...aux, mode: 'create' as const, record, discovered: [], modelsError: null };
 }

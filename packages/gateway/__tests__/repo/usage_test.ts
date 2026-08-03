@@ -1,8 +1,7 @@
-import initSqlJs from 'sql.js';
 import { test } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
-import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
+import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename } from './test-sqlite.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { Repo, UsageRecord } from '../../src/repo/types.ts';
 import { tokenCountsFromUsage, tokenRatesFromUsage, tokenUsageMetrics } from '../../src/repo/usage-metrics.ts';
@@ -35,8 +34,7 @@ const record = (overrides: Partial<UsageRecord>): UsageRecord => ({
 const query = (repo: Repo) => repo.usage.query({ keyId: 'key-1', start: '2026-07-12T00', end: '2026-07-12T01' });
 
 test('0052 preserves distinct open-string service tiers as canonical selectors', async () => {
-  const SQL = await initSqlJs();
-  const db = new SQL.Database();
+  const db = await createSqlJsDatabase();
   for (const [filename, sql] of migrationSqlByFilename) {
     if (filename === '0053_usage_pricing_selector.sql') {
       db.run(`INSERT INTO usage (key_id, model, upstream, model_key, hour, tier, dimension, tokens, unit_price) VALUES
@@ -80,8 +78,7 @@ test('0062 rejects malformed legacy usage quantities and prices', async () => {
     ['1.5', '1'],
     ["'not-a-quantity'", '1'],
   ]) {
-    const SQL = await initSqlJs();
-    const db = new SQL.Database();
+    const db = await createSqlJsDatabase();
     for (const [filename, sql] of migrationSqlByFilename) {
       if (filename === '0062_usage_billing_metrics.sql') {
         db.run(`INSERT INTO usage (

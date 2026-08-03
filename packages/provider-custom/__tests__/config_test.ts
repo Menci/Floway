@@ -24,7 +24,7 @@ const baseRecord: UpstreamRecord = {
   proxyFallbackList: [],
   modelPrefix: null,
   modelsCache: null,
-  color: null,
+  hue: 210,
 };
 
 test('assertCustomUpstreamRecord parses modelsFetch and models', () => {

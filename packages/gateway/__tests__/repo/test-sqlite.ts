@@ -1,23 +1,38 @@
 import initSqlJs from 'sql.js';
+import type { SqlJsDatabase } from 'sql.js';
 
 import type { SqlBindValue, SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
+
+export type { SqlJsDatabase };
 
 export const migrationSqlByFilename = Object.entries(import.meta.glob('../../migrations/*.sql', { query: '?raw', import: 'default', eager: true }) as Record<string, string>)
   .map(([path, sql]) => [path.slice(path.lastIndexOf('/') + 1), sql] as const)
   .toSorted(([a], [b]) => a.localeCompare(b));
 
-type SqlJsDatabase = {
-  run(sql: string, params?: unknown[]): void;
-  exec(sql: string, params?: unknown[]): Array<{ columns: string[]; values: unknown[][] }>;
+// Both deployment targets build SQLite with SQLITE_ENABLE_MATH_FUNCTIONS, which
+// spells exponentiation `pow`. sql.js instead carries SQLite's contrib
+// extension-functions set, which spells the same operation `power` and is the
+// spelling D1's authorizer rejects, so a migration cannot be written against
+// it. Register the name the targets have rather than the name this build does.
+// https://github.com/cloudflare/workerd/blob/05e868985ed7496ee7e162c22bce4f8a3f206038/src/workerd/util/sqlite.c%2B%2B#L450-L476
+const registerTargetMathFunctions = (db: SqlJsDatabase) => {
+  db.create_function('pow', ((base: number, exponent: number) => base ** exponent) as (...args: never[]) => unknown);
 };
 
 // Lets a test that drove the migrations itself — seeding rows between two of
 // them — read the result back through the production repository.
 export const wrapSqlJsDatabase = (db: SqlJsDatabase): SqlDatabase => new SqlJsSqlDatabase(db);
 
+// The only way to open a sql.js database here, so no test can reach one that
+// is missing a function the deployment targets have.
+export const createSqlJsDatabase = async (): Promise<SqlJsDatabase> => {
+  const db = new (await initSqlJs()).Database();
+  registerTargetMathFunctions(db);
+  return db;
+};
+
 export const createSqliteTestDb = async (): Promise<SqlDatabase> => {
-  const SQL = await initSqlJs();
-  const db = new SQL.Database() as SqlJsDatabase;
+  const db = await createSqlJsDatabase();
   for (const [, sql] of migrationSqlByFilename) db.run(sql);
   return wrapSqlJsDatabase(db);
 };

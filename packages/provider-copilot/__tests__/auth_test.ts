@@ -25,7 +25,7 @@ const installRepoAndClearCache = async () => {
     proxyFallbackList: [],
     modelPrefix: null,
     modelsCache: null,
-    color: null,
+    hue: 210,
     config: { githubToken: 'ghu_test', user: { id: 1, login: 't', name: null, avatar_url: '' } },
   };
   initProviderRepo(() => ({
@@ -220,7 +220,7 @@ test('copilotAuthedFetch persists a minted token even when the row changed durin
     proxyFallbackList: [],
     modelPrefix: null,
     modelsCache: null,
-    color: null,
+    hue: 210,
     config: { githubToken: 'ghu_test', user: { id: 1, login: 't', name: null, avatar_url: '' } },
   };
   initProviderRepo(() => ({

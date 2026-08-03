@@ -94,7 +94,7 @@ const resolveUpstreamRef = async (id: string | null): Promise<DumpUpstreamRef | 
   if (!id) return null;
   const upstream = await getRepo().upstreams.getById(id);
   if (!upstream) return null;
-  return { id: upstream.id, name: upstream.name, kind: upstream.kind, color: upstream.color };
+  return { id: upstream.id, name: upstream.name, kind: upstream.kind, hue: upstream.hue };
 };
 
 export class DumpAccumulator {

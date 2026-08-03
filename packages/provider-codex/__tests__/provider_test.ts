@@ -25,7 +25,7 @@ const baseRecord: UpstreamRecord = {
   proxyFallbackList: [],
   modelPrefix: null,
   modelsCache: null,
-  color: null,
+  hue: 210,
 };
 
 const recordWithAccessToken = (entry: CodexAccessTokenEntry = freshAccessToken): UpstreamRecord => ({

@@ -1,5 +1,5 @@
 import type { User } from '../../repo/types.ts';
-import { pruneDeletedUpstreamIds } from '../shared/upstream-ids.ts';
+import { pruneUnreachableUpstreamIds } from '../shared/upstream-ids.ts';
 
 // The self-description returned by /auth/login and /auth/me. The live upstream
 // catalog is a required argument rather than an optional one so a new caller
@@ -8,7 +8,7 @@ export const userToSessionWire = (user: User, knownUpstreamIds: ReadonlySet<stri
   id: user.id,
   username: user.username,
   isAdmin: user.isAdmin,
-  upstreamIds: pruneDeletedUpstreamIds(user.upstreamIds, knownUpstreamIds),
+  upstreamIds: pruneUnreachableUpstreamIds(user.upstreamIds, knownUpstreamIds),
 });
 
 export const userToAdminWire = (user: User, knownUpstreamIds: ReadonlySet<string>) => ({

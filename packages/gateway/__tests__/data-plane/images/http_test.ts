@@ -197,7 +197,7 @@ test('/v1/images/edits forwards a multipart request through an Azure model and r
     proxyFallbackList: [],
     modelPrefix: null,
     modelsCache: null,
-    color: null,
+    hue: 210,
     config: {
       endpoint: 'https://example.openai.azure.com/openai/v1',
       apiKey: 'azkey',
