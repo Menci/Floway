@@ -129,9 +129,18 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
 
   usePollWhileVisible(poll);
 
+  const urlState = useMemo<PerformanceUrlState>(
+    () => ({ metric, percentile, groupBy, range, filters, hidden: [...hiddenSeries] }),
+    [filters, groupBy, hiddenSeries, metric, percentile, range],
+  );
+
   useEffect(() => {
-    setSearchParams(serializePerformanceUrlState({ metric, percentile, groupBy, range, filters, hidden: [...hiddenSeries] }), rewrite);
-  }, [filters, groupBy, hiddenSeries, metric, percentile, range, rewrite, setSearchParams]);
+    setSearchParams(serializePerformanceUrlState(urlState), rewrite);
+  }, [rewrite, setSearchParams, urlState]);
+
+  // The page keeps the view in state and writes the URL after it, so each
+  // choice carries the address its own view would be read at.
+  const addressOf = (patch: Partial<PerformanceUrlState>) => `?${serializePerformanceUrlState({ ...urlState, ...patch })}`;
 
   // Fluent's single-select reports a click on the already-selected option too;
   // a fresh filters object for it would refetch and move the chart's bucket
@@ -205,12 +214,12 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
         </div>
         <div className="flex items-center justify-between gap-4 min-w-0 flex-wrap">
           <ChoiceGroup ariaLabel={t('dashboard.performance.metric.label')} items={[
-            { value: 'ttft', label: t('dashboard.performance.metric.ttft') },
-            { value: 'tokPerSec', label: t('dashboard.performance.metric.outputSpeed') },
+            { value: 'ttft', label: t('dashboard.performance.metric.ttft'), to: addressOf({ metric: 'ttft' }) },
+            { value: 'tokPerSec', label: t('dashboard.performance.metric.outputSpeed'), to: addressOf({ metric: 'tokPerSec' }) },
           ]} onChange={value => setMetric(value as PerformanceMetric)} value={metric} />
-          <ChoiceGroup ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} />
+          <ChoiceGroup ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value, to: addressOf({ percentile: value }) }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} />
           <ChoiceGroup ariaLabel={t('dashboard.performance.range.label')} items={[
-            { value: 'today', label: t('dashboard.performance.range.today') }, { value: '7d', label: t('dashboard.performance.range.sevenDays') }, { value: '30d', label: t('dashboard.performance.range.thirtyDays') },
+            { value: 'today', label: t('dashboard.performance.range.today'), to: addressOf({ range: 'today' }) }, { value: '7d', label: t('dashboard.performance.range.sevenDays'), to: addressOf({ range: '7d' }) }, { value: '30d', label: t('dashboard.performance.range.thirtyDays'), to: addressOf({ range: '30d' }) },
           ]} onChange={value => setRange(value as PerformanceRange)} value={range} />
         </div>
       </Panel>

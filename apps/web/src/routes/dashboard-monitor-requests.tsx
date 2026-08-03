@@ -80,6 +80,15 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   };
 }
 
+// The page holds its selection in the URL, so the list rows read their address
+// from the same builder the selection is written with.
+const selectionSearch = (keyId: string, recordId?: string | null): URLSearchParams => {
+  const search = new URLSearchParams();
+  search.set('key', keyId);
+  if (recordId) search.set('record', recordId);
+  return search;
+};
+
 export default function DashboardMonitorRequests({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -97,18 +106,14 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
   const subscription = useDumpSubscription(selectedKeyId, loaderData.records);
 
   const updateSelection = useCallback((keyId: string, recordId?: string | null) => {
-    const next = new URLSearchParams();
-    next.set('key', keyId);
-    if (recordId) next.set('record', recordId);
-    setSearchParams(next, rewrite);
+    setSearchParams(selectionSearch(keyId, recordId), rewrite);
   }, [rewrite, setSearchParams]);
 
   const reloadKeys = useCallback((signal: AbortSignal) => refreshRequestKeys({
     currentKeys: keys,
     load: keySignal => callApi(() => api.api.keys.$get(undefined, { init: { signal: keySignal } })),
     onNavigate: nextSelectedKeyId => {
-      const next = new URLSearchParams();
-      if (nextSelectedKeyId) next.set('key', nextSelectedKeyId);
+      const next = nextSelectedKeyId === null ? new URLSearchParams() : selectionSearch(nextSelectedKeyId);
       void navigate(`/dashboard/monitor/requests${next.size ? `?${next}` : ''}`, rewrite);
     },
     onUpdate: (nextKeys, error) => setReplacement(current => ({
@@ -151,6 +156,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
       ) : selectedKeyId ? narrow ? <>
         <Panel className="!block overflow-hidden min-w-0 h-full" padding="flush">
           <RequestListPanel
+            addressOfRecord={recordId => `?${selectionSearch(selectedKeyId, recordId)}`}
             apiKeys={keys}
             error={subscription.error ?? shown.recordsError ?? keysError}
             hasOlder={subscription.hasOlder}
@@ -188,6 +194,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
           </Panel>
           <Panel className="!block overflow-hidden min-w-0 h-full" padding="flush">
             <RequestListPanel
+              addressOfRecord={recordId => `?${selectionSearch(selectedKeyId, recordId)}`}
               apiKeys={keys}
               error={subscription.error ?? shown.recordsError ?? keysError}
               hasOlder={subscription.hasOlder}

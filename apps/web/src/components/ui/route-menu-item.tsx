@@ -1,6 +1,6 @@
 import type { ComponentProps, ReactNode } from 'react';
 
-import { useRouteAddress } from './route-link';
+import { useRouteAddress, type RouteAddress } from './route-link';
 import { fluentComponents } from '../../fluent';
 
 const { MenuItem, mergeClasses } = fluentComponents;
@@ -15,7 +15,9 @@ const { MenuItem, mergeClasses } = fluentComponents;
 // here: its renderer has no subText slot, so it would drop the second line this
 // menu's items carry.
 // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-menu/library/src/components/MenuItemLink/renderMenuItemLink.tsx#L13-L21
-const AnchorMenuItem = MenuItem as unknown as (props: ComponentProps<typeof MenuItem> & { as: 'a'; href: string }) => ReactNode;
+const AnchorMenuItem = MenuItem as unknown as (
+  props: Omit<ComponentProps<typeof MenuItem>, 'as' | 'onClick'> & RouteAddress & { as: 'a' },
+) => ReactNode;
 
 // The menu item that opens a page. Fluent's own styles never reset an anchor's
 // underline, because its div root never needed one.
