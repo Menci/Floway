@@ -102,14 +102,6 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
   },
 ];
 
-const findProviderOption = (
-  provider: SearchConfig['provider'],
-): ProviderOption => {
-  return (
-    PROVIDER_OPTIONS.find(o => o.value === provider) ?? PROVIDER_OPTIONS[0]
-  );
-};
-
 export default function DashboardProvidersSearch({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
   const [loadError, setLoadError] = useState(loaderData.error);
@@ -152,9 +144,14 @@ function SearchSettings({ config, models, upstreams }: {
     null,
   );
 
-  const activeOption = findProviderOption(draft.provider);
-  // The gateway may echo back a provider this build does not know; an
-  // unrecognized id is shown verbatim rather than collapsed onto a familiar one.
+  // The gateway may echo back a provider this build does not know. An
+  // unrecognized id is named verbatim rather than collapsed onto a familiar one,
+  // and its key field stays shut: this build has no field to store that key in,
+  // so every keystroke into it would be discarded on save.
+  const activeOption = PROVIDER_OPTIONS.find(option => option.value === draft.provider);
+  const activeProviderLabel = activeOption
+    ? t(SEARCH_PROVIDER_LABEL_KEYS[activeOption.value])
+    : t('dashboard.searchConfig.unavailable', { id: draft.provider });
   const testedOption = PROVIDER_OPTIONS.find(option => option.value === testResult?.provider);
   const testedProviderLabel = testedOption ? t(SEARCH_PROVIDER_LABEL_KEYS[testedOption.value]) : testResult?.provider;
   const eligibleUpstreams = useMemo(() => eligibleSearchUpstreams(upstreams, models), [models, upstreams]);
@@ -211,9 +208,10 @@ function SearchSettings({ config, models, upstreams }: {
 
   const handleApiKeyChange = useCallback(
     (_: unknown, data: { value: string }) => {
+      if (!activeOption) throw new Error(`Search provider ${draft.provider} has no API key field in this build`);
       setDraft(prev => activeOption.setApiKey(prev, data.value));
     },
-    [activeOption],
+    [activeOption, draft.provider],
   );
 
   const handleSave = useCallback(async () => {
@@ -257,8 +255,8 @@ function SearchSettings({ config, models, upstreams }: {
           button={{
             children: (
               <ProviderOptionLabel
-                iconUrl={activeOption.iconUrl}
-                label={t(SEARCH_PROVIDER_LABEL_KEYS[activeOption.value])}
+                iconUrl={activeOption?.iconUrl}
+                label={activeProviderLabel}
               />
             ),
           }}
@@ -266,8 +264,11 @@ function SearchSettings({ config, models, upstreams }: {
           onOptionSelect={handleProviderChange}
           positioning={{ ...LISTBOX_POSITIONING, align: 'end' }}
           selectedOptions={[draft.provider]}
-          value={t(SEARCH_PROVIDER_LABEL_KEYS[activeOption.value])}
+          value={activeProviderLabel}
         >
+          {activeOption === undefined && <Option disabled text={draft.provider} value={draft.provider}>
+            {activeProviderLabel}
+          </Option>}
           {PROVIDER_OPTIONS.map(opt => (
             <Option key={opt.value} value={opt.value} text={t(SEARCH_PROVIDER_LABEL_KEYS[opt.value])}>
               <ProviderOptionLabel iconUrl={opt.iconUrl} label={t(SEARCH_PROVIDER_LABEL_KEYS[opt.value])} />
@@ -288,14 +289,14 @@ function SearchSettings({ config, models, upstreams }: {
                 label={secretVisible ? t('dashboard.upstreamEditor.actions.hideSecret') : t('dashboard.upstreamEditor.actions.showSecret')}
                 onClick={() => setSecretVisible(value => !value)}
               />}
-              disabled={draft.provider === 'disabled'}
+              disabled={activeOption === undefined || draft.provider === 'disabled'}
               onChange={handleApiKeyChange}
               placeholder={t('dashboard.searchConfig.apiKeyPlaceholder')}
               revealed={secretVisible}
-              value={activeOption.getApiKey(draft)}
+              value={activeOption?.getApiKey(draft) ?? ''}
             />
           </Field>
-          {activeOption.url && (
+          {activeOption?.url && (
             <Link href={activeOption.url} target="_blank" rel="noopener noreferrer">
               <OpenLinkLabel>{t('dashboard.searchConfig.getKeyLink')}</OpenLinkLabel>
             </Link>
@@ -323,10 +324,10 @@ function SearchSettings({ config, models, upstreams }: {
                 disabled={!draft.passthroughOpenAiSearch.enabled}
                 onOptionSelect={(_, data) => data.optionValue && setPassthroughUpstream(data.optionValue)}
                 selectedOptions={[draft.passthroughOpenAiSearch.upstreamId]}
-                value={selectedUpstream?.name ?? (unavailableUpstreamId === null ? '' : t('dashboard.searchConfig.passthrough.unavailable', { id: unavailableUpstreamId }))}
+                value={selectedUpstream?.name ?? (unavailableUpstreamId === null ? '' : t('dashboard.searchConfig.unavailable', { id: unavailableUpstreamId }))}
               >
                 {unavailableUpstreamId !== null && <Option disabled text={unavailableUpstreamId} value={unavailableUpstreamId}>
-                  {t('dashboard.searchConfig.passthrough.unavailable', { id: unavailableUpstreamId })}
+                  {t('dashboard.searchConfig.unavailable', { id: unavailableUpstreamId })}
                 </Option>}
                 {eligibleUpstreams.map(upstream => (
                   <Option key={upstream.id} text={upstream.name} value={upstream.id}>
@@ -350,10 +351,10 @@ function SearchSettings({ config, models, upstreams }: {
                   setDraft(current => ({ ...current, passthroughOpenAiSearch: { ...current.passthroughOpenAiSearch, model } }));
                 }}
                 selectedOptions={[draft.passthroughOpenAiSearch.model]}
-                value={selectedModel ? modelLabel(selectedModel) : (unavailableModelId === null ? '' : t('dashboard.searchConfig.passthrough.unavailable', { id: unavailableModelId }))}
+                value={selectedModel ? modelLabel(selectedModel) : (unavailableModelId === null ? '' : t('dashboard.searchConfig.unavailable', { id: unavailableModelId }))}
               >
                 {unavailableModelId !== null && <Option disabled text={unavailableModelId} value={unavailableModelId}>
-                  {t('dashboard.searchConfig.passthrough.unavailable', { id: unavailableModelId })}
+                  {t('dashboard.searchConfig.unavailable', { id: unavailableModelId })}
                 </Option>}
                 {modelsForSelectedUpstream.map(model => (
                   <Option key={model.id} text={modelLabel(model)} value={model.id}>
