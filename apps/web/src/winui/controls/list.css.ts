@@ -1,13 +1,10 @@
 // List and ListItem, restyled to WinUI 3. Fluent's list is headless -- no fill,
 // no radius, no state -- so every rule below adds a state rather than replacing
 // a Fluent value.
-import { checkboxNotMixed } from './choice.css';
+import { checkboxNotMixed, uncheckedBox } from './choice.css';
 import { nested, pressedRoots, under } from './selectors';
 
 const checkmarkPressed = pressedRoots('.fui-ListItem__checkmark.fui-Checkbox', '.fui-Checkbox__input');
-
-const uncheckedBox = `.fui-Checkbox__input:enabled:not(:checked)${checkboxNotMixed}`
-  + ' ~ .fui-Checkbox__indicator.fui-Checkbox__indicator';
 
 const interactiveRow = ".fui-ListItem[tabindex]:not([aria-disabled='true'])";
 

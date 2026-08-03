@@ -107,7 +107,9 @@ export const checkboxNotMixed = `:not(${checkboxMixed})`;
 const checkboxPressed = pressedRoots('.fui-Checkbox', '.fui-Checkbox__input');
 const radioPressed = pressedRoots('.fui-Radio', '.fui-Radio__input');
 
-const uncheckedBox = `.fui-Checkbox__input:enabled:not(:checked)${checkboxNotMixed}`
+// The Checkbox DOM shape is stated here for every sheet that answers a check
+// box, ./list.css.ts included, so no other sheet spells the slot out again.
+export const uncheckedBox = `.fui-Checkbox__input:enabled:not(:checked)${checkboxNotMixed}`
   + ' ~ .fui-Checkbox__indicator.fui-Checkbox__indicator';
 
 const selectedBoxes = [
