@@ -9,6 +9,7 @@ import { requireDashboardUser } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
 import type { GlobalError } from '../api/client';
 import type { ControlPlaneModel } from '../api/types';
+import { SEARCH_PROVIDER_LABEL_KEYS } from '../components/search/provider';
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
@@ -20,7 +21,7 @@ import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
 import { useRefreshOnChange } from '../components/ui/use-refresh';
 import { UsageChartSection } from '../components/usage/chart-section';
 import { loadUsagePageData } from '../components/usage/data';
-import { formatMetricValue, formatProvider } from '../components/usage/format';
+import { formatMetricValue } from '../components/usage/format';
 import { buildSearchChart, buildTokenChart, dashboardBuckets, summarizeUsage } from '../components/usage/plot';
 import { SummaryMetrics } from '../components/usage/summary-metrics';
 import type { UsageMetric, UsageRange, UsageView } from '../components/usage/types';
@@ -280,7 +281,9 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
               hidden={hiddenKeys}
               onHiddenChange={setHiddenKeys}
               title={t('dashboard.usage.charts.searchWithProvider', {
-                provider: searchChart.providers.map(formatProvider).join(', '),
+                provider: searchChart.providers
+                  .map(id => SEARCH_PROVIDER_LABEL_KEYS[id] === undefined ? id : t(SEARCH_PROVIDER_LABEL_KEYS[id]))
+                  .join(', '),
               })}
               valueFormatter={value => formatCount(value, locale)}
             />

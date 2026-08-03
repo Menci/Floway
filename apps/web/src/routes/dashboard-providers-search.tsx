@@ -11,6 +11,7 @@ import jinaIconUrl from '../assets/jina-color.svg';
 import microsoftIconUrl from '../assets/microsoft-color.svg';
 import tavilyIconUrl from '../assets/tavily-color.svg';
 import { eligibleSearchUpstreams, servesChatFor } from '../components/search/eligibility';
+import { SEARCH_PROVIDER_LABEL_KEYS } from '../components/search/provider';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Dropdown, LISTBOX_POSITIONING } from '../components/ui/fluent-form-controls';
 import { PANEL_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../components/ui/layout';
@@ -63,7 +64,6 @@ export async function clientLoader(): Promise<LoaderData> {
 // chips: nothing else in the row says who the third party is.
 interface ProviderOption {
   value: SearchConfig['provider'];
-  labelKey: string;
   iconUrl?: string;
   url?: string;
   getApiKey: (config: SearchConfig) => string;
@@ -73,13 +73,11 @@ interface ProviderOption {
 const PROVIDER_OPTIONS: ProviderOption[] = [
   {
     value: 'disabled',
-    labelKey: 'dashboard.searchConfig.provider.disabled',
     getApiKey: () => '',
     setApiKey: c => c,
   },
   {
     value: 'tavily',
-    labelKey: 'dashboard.searchConfig.provider.tavily',
     iconUrl: tavilyIconUrl,
     url: 'https://app.tavily.com/',
     getApiKey: c => c.tavily.apiKey,
@@ -87,7 +85,6 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
   },
   {
     value: 'microsoft-web-iq',
-    labelKey: 'dashboard.searchConfig.provider.microsoftWebIq',
     iconUrl: microsoftIconUrl,
     url: 'https://webiq.microsoft.ai/profiles',
     getApiKey: c => c.microsoftWebIq.apiKey,
@@ -95,7 +92,6 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
   },
   {
     value: 'jina',
-    labelKey: 'dashboard.searchConfig.provider.jina',
     iconUrl: jinaIconUrl,
     url: 'https://jina.ai/',
     getApiKey: c => c.jina.apiKey,
@@ -133,7 +129,7 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
   // The gateway may echo back a provider this build does not know; an
   // unrecognized id is shown verbatim rather than collapsed onto a familiar one.
   const testedOption = PROVIDER_OPTIONS.find(option => option.value === testResult?.provider);
-  const testedProviderLabel = testedOption ? t(testedOption.labelKey) : testResult?.provider;
+  const testedProviderLabel = testedOption ? t(SEARCH_PROVIDER_LABEL_KEYS[testedOption.value]) : testResult?.provider;
   const eligibleUpstreams = useMemo(() => eligibleSearchUpstreams(upstreams, models), [models, upstreams]);
   const modelsForSelectedUpstream = useMemo(
     () => models.filter(model => servesChatFor(model, draft.passthroughOpenAiSearch.upstreamId)),
@@ -244,7 +240,7 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
             children: (
               <ProviderOptionLabel
                 iconUrl={activeOption.iconUrl}
-                label={t(activeOption.labelKey)}
+                label={t(SEARCH_PROVIDER_LABEL_KEYS[activeOption.value])}
               />
             ),
           }}
@@ -252,11 +248,11 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
           onOptionSelect={handleProviderChange}
           positioning={{ ...LISTBOX_POSITIONING, align: 'end' }}
           selectedOptions={[draft.provider]}
-          value={t(activeOption.labelKey)}
+          value={t(SEARCH_PROVIDER_LABEL_KEYS[activeOption.value])}
         >
           {PROVIDER_OPTIONS.map(opt => (
-            <Option key={opt.value} value={opt.value} text={t(opt.labelKey)}>
-              <ProviderOptionLabel iconUrl={opt.iconUrl} label={t(opt.labelKey)} />
+            <Option key={opt.value} value={opt.value} text={t(SEARCH_PROVIDER_LABEL_KEYS[opt.value])}>
+              <ProviderOptionLabel iconUrl={opt.iconUrl} label={t(SEARCH_PROVIDER_LABEL_KEYS[opt.value])} />
             </Option>
           ))}
         </Dropdown>}

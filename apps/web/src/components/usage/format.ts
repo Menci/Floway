@@ -43,10 +43,3 @@ const formatPlottedCost = (value: number): string => {
   if (value <= 0) return '$0';
   return `$${value.toFixed(usdFractionDigits(boundary => value >= Number(boundary)))}`;
 };
-
-export const formatProvider = (provider: string): string => {
-  if (provider === 'microsoft-web-iq') return 'Microsoft Web IQ';
-  if (provider === 'tavily') return 'Tavily';
-  if (provider === 'jina') return 'Jina';
-  return provider;
-};
