@@ -1,5 +1,13 @@
-import type { AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ControlPlaneModel, ModelKind, PublicModelLimits } from '../../api/types';
+import type { ControlPlaneModel } from '../../api/types';
 import type { CatalogIndex } from '../models/catalog-index';
+import type {
+  AliasTarget,
+  AnnouncedMetadata,
+  ChatAliasRules,
+  ChatModelInfo,
+  ModelKind,
+  PublicModelLimits,
+} from '@floway-dev/protocols/common';
 
 const intersectArrays = <T>(arrays: readonly (readonly T[])[]) => {
   if (!arrays.length) return [];

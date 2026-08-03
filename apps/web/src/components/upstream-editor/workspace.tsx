@@ -12,12 +12,13 @@ import { Controller, useFieldArray, useFormContext, useWatch } from 'react-hook-
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router';
 
-import type { ModelRow, UpstreamEditorValues } from './data';
+import type { ModelListingFailure, ModelRow, UpstreamEditorValues } from './data';
 import { canFetchModelCatalog, manualModelsSupported, publicModelId } from './data';
+import { shapeForKind } from './endpoints';
 import { FeatureFlagsEditor } from './feature-flags';
 import { ModelDetail } from './model-detail';
 import { parseModels, serializeModels } from './models-yaml';
-import type { UpstreamModelConfig, UpstreamRecord } from '../../api/types';
+import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { dateTime, relativeTime } from '../../lib/format-time';
 import { useEntryRewrite } from '../../lib/page-navigation';
@@ -33,11 +34,12 @@ import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { RowTitleButton } from '../ui/row-title';
 import { ScrollArea } from '../ui/scroll-area';
 import { SectionHeader } from '../ui/section-header';
-import { TABLE_ACTIONS_WIDTH, TableActions, TableActionsHeader, TableCentredCell, TableCentredHeader } from '../ui/table-actions';
+import { TABLE_ACTIONS_WIDTH, TableActions, TableCentredCell, TableCentredHeader, TableTrailingHeader } from '../ui/table-actions';
 import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-copy-to-clipboard';
 import { useDialogInvocation } from '../ui/use-dialog-invocation';
+import type { UpstreamModelConfig } from '@floway-dev/provider';
 
 const {
   Button,
@@ -85,7 +87,7 @@ export function UpstreamWorkspace({
   record,
 }: {
   discovered: UpstreamModelConfig[];
-  modelsError: string | null;
+  modelsError: ModelListingFailure | null;
   modelsLoading: boolean;
   onRefreshModels: () => void;
   record: UpstreamRecord;
@@ -110,7 +112,7 @@ export function UpstreamWorkspace({
   // A provider-owned catalog has no manual models to write, so its editor is
   // not addressable either — a typed `?view=yaml` lands on the list rather than
   // on an editable buffer the upstream would never store.
-  const editableCatalog = manualModelsSupported(record.kind);
+  const editableCatalog = manualModelsSupported(record);
   const modelView: ModelView = selectedUpstreamModelId !== null
     ? 'detail'
     : params.get(VIEW_PARAM) === 'yaml' && editableCatalog ? 'yaml' : 'list';
@@ -190,7 +192,7 @@ export function UpstreamWorkspace({
 function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading, onRefreshModels, onSelectUpstreamModel, onViewChange, onYamlDraftChange, readOnly, record, selectedUpstreamModelId, view, yamlDraft }: {
   detailSection: ModelDetailTab;
   discovered: UpstreamModelConfig[];
-  modelsError: string | null;
+  modelsError: ModelListingFailure | null;
   modelsLoading: boolean;
   onRefreshModels: () => void;
   onSelectUpstreamModel: (id: string | null) => void;
@@ -253,10 +255,6 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
     if (source === 'manual' && row.source === 'auto') {
       setPendingManualUpstreamModelId(row.config.upstreamModelId);
       const manualConfig = structuredClone(row.config);
-      if (manualConfig.kind === 'rerank') {
-        manualConfig.endpoints = { rerank: {} };
-        manualConfig.rerankTarget = { protocol: 'cohere-v2' };
-      }
       setPendingManualConfig(manualConfig);
       append(manualConfig);
       return;
@@ -334,7 +332,7 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
       level={2}
       title={t('dashboard.upstreamEditor.models.title')}
       actions={<>
-        {!readOnly && <Button appearance="primary" icon={<AddRegular />} onClick={() => append({ upstreamModelId: '', kind: 'chat', endpoints: { chatCompletions: {} } })}>{t('dashboard.upstreamEditor.models.add')}</Button>}
+        {!readOnly && <Button appearance="primary" icon={<AddRegular />} onClick={() => append({ upstreamModelId: '', kind: 'chat', ...shapeForKind('chat', { endpoints: {} }) })}>{t('dashboard.upstreamEditor.models.add')}</Button>}
         {!readOnly && <Button className="!min-w-[160px]" icon={<CodeRegular />} onClick={() => onViewChange('yaml')}>{t('dashboard.upstreamEditor.models.editAsYaml')}</Button>}
         {record.kind !== 'azure' && <>
           <ModelsCacheStatus cache={record.modelsCache} />
@@ -343,15 +341,15 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
       </>}
     />
     {modelsError && <OutcomeMessageBar intent="warning">
-      {modelsError === 'Upstream model listing failed'
+      {modelsError.upstreamListingFailed
         ? t('dashboard.upstreamEditor.models.listingFailed')
-        : t('dashboard.upstreamEditor.models.listingFailedWithDetail', { message: modelsError })}
+        : t('dashboard.upstreamEditor.models.listingFailedWithDetail', { message: modelsError.message })}
     </OutcomeMessageBar>}
     <Input value={search} onChange={(_, data) => setSearch(data.value)} placeholder={t('dashboard.upstreamEditor.models.search')} />
     <ScrollArea axes="horizontal" className="min-w-0">
       <Table aria-label={t('dashboard.upstreamEditor.models.title')} className="w-full min-w-[664px]">
         <TableColumns widths={['80px', '25%', '88px', null, '80px', TABLE_ACTIONS_WIDTH]} />
-        <TableHeader><TableRow><TableCentredHeader>{t('dashboard.upstreamEditor.models.enabled')}</TableCentredHeader><TableHeaderCell>{t('dashboard.upstreamEditor.models.name')}</TableHeaderCell><TableCentredHeader>{t('dashboard.upstreamEditor.models.kind')}</TableCentredHeader><TableHeaderCell>{t('dashboard.upstreamEditor.models.id')}</TableHeaderCell><TableCentredHeader>{t('dashboard.upstreamEditor.models.source')}</TableCentredHeader><TableActionsHeader>{t('dashboard.upstreamEditor.models.actions')}</TableActionsHeader></TableRow></TableHeader>
+        <TableHeader><TableRow><TableCentredHeader>{t('dashboard.upstreamEditor.models.enabled')}</TableCentredHeader><TableHeaderCell>{t('dashboard.upstreamEditor.models.name')}</TableHeaderCell><TableCentredHeader>{t('dashboard.upstreamEditor.models.kind')}</TableCentredHeader><TableHeaderCell>{t('dashboard.upstreamEditor.models.id')}</TableHeaderCell><TableCentredHeader>{t('dashboard.upstreamEditor.models.source')}</TableCentredHeader><TableTrailingHeader>{t('dashboard.upstreamEditor.models.actions')}</TableTrailingHeader></TableRow></TableHeader>
         <TableBody>{filtered.length === 0 ? <TableRow><TableCell colSpan={6}><EmptyStateLine>{t('dashboard.upstreamEditor.models.noMatches')}</EmptyStateLine></TableCell></TableRow> : filtered.map(row => {
           const id = publicModelId(row.config); return <TableRow className="h-14" key={row.key}>
             <TableCentredCell><Switch aria-label={t('dashboard.upstreamEditor.models.enabledFor', { name: row.config.display_name ?? id })} checked={!disabled.includes(id)} onChange={(_, data) => setEnabled(id, data.checked)} /></TableCentredCell>

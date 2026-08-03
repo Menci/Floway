@@ -12,6 +12,21 @@
 // ./choice.css.ts writes down for every check box.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L358-L359
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L110-L136
+import { checkboxSurfaceCss } from './checkbox-surface';
+import { REVEAL_HEADROOM, revealAnimation } from './reveal';
+import { selectionPill } from './selection-pill';
+import { nested, reducedMotion } from './selectors';
+
+// The multiselect option's check box, addressed through the option that owns
+// it: Fluent writes the state on the option as ARIA, and the box has no state
+// of its own to read.
+const checkIcon = '.fui-Option__checkIcon.fui-Option__checkIcon';
+const optionBox = (option: string) => `.fui-Option${option} ${checkIcon}`;
+const uncheckedOption = "[aria-checked='false']";
+const checkedOption = "[aria-checked='true']";
+const enabledOption = ":not([aria-disabled='true'])";
+const disabledOption = "[aria-disabled='true']";
+
 export const selectCss = `
 /* The rest fill, and the neutralisation of the token Fluent paints a rejected
    value with: WinUI does not recolour the field for one, and ./text-input.css.ts
@@ -97,12 +112,13 @@ export const selectCss = `
 }
 
 /* Keyboard focus. WinUI lights a detached highlight border inset by -4px plus
-   the accent pill on the faceplate's leading edge. An outline at 2px offset
-   reproduces that border -- the ring is carried by an outline rather than by
-   the ::after freed below -- except at the corner, where an outline takes the
-   field's radius plus its offset and so lands a pixel tighter than WinUI's
-   fixed 7px. The shadow fills the two offset pixels with HighlightBackground,
-   which coincides with the stroke in light and parts from it in dark.
+   the accent pill on the faceplate's leading edge. An outline of the primary
+   thickness held off the field by that same thickness reproduces that border --
+   the ring is carried by an outline rather than by the ::after freed below --
+   except at the corner, where an outline takes the field's radius plus its
+   offset and so lands a pixel tighter than WinUI's fixed 7px. The shadow fills
+   the two offset pixels with HighlightBackground, which coincides with the
+   stroke in light and parts from it in dark.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L32
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L37
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L38
@@ -115,9 +131,12 @@ export const selectCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L328 */
 .fui-Dropdown.fui-Dropdown:has([data-fui-focus-visible]),
 .fui-Combobox.fui-Combobox:has([data-fui-focus-visible]) {
-  box-shadow: var(--floway-select-focus-shadow, 0 0 0 2px var(--winui-control-fill-default));
-  outline: 2px solid var(--winui-focus-stroke-outer);
-  outline-offset: var(--floway-select-focus-offset, 2px);
+  box-shadow: var(
+    --floway-select-focus-shadow,
+    0 0 0 var(--winui-focus-visual-primary-thickness) var(--winui-control-fill-default)
+  );
+  outline: var(--winui-focus-visual-primary-thickness) solid var(--winui-focus-stroke-outer);
+  outline-offset: var(--floway-select-focus-offset, var(--winui-focus-visual-primary-thickness));
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L324
@@ -362,12 +381,11 @@ export const selectCss = `
   background-color: var(--winui-subtle-fill-secondary);
 }
 
-/* The accent selection pill, drawn as ::before because Fluent spends ::after on
-   the active-descendant focus ring. A multiselect option gets no pill: WinUI's
-   ComboBox has no multiselect form, and Fluent's checkbox there already reads
-   the state. WinUI fixes the pill at 16px on its 32px item; a quarter inset at
-   each end reproduces that exactly while keeping it in proportion when an Option
-   carries multi-line content.
+/* The accent selection pill, on the shared geometry and drawn as ::before
+   because Fluent spends ::after on the active-descendant focus ring. The corner
+   radius is ComboBoxItemPillCornerRadius, the full round-off of the shared 3px
+   bar. A multiselect option gets no pill: WinUI's ComboBox has no multiselect
+   form, and Fluent's checkbox there already reads the state.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L106
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L324
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L325
@@ -375,32 +393,33 @@ export const selectCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L759 */
 .fui-Option.fui-Option[aria-selected='true']::before {
   background-color: var(--winui-accent-fill-default);
-  border-radius: 1.5px;
   content: '';
-  inset-block: 25%;
+${selectionPill('1.5px')}
   inset-inline-start: 0;
   pointer-events: none;
   position: absolute;
-  width: 3px;
 }
 
 /* Pressing a selected item shortens its pill to ComboBoxItemPillMinScale. The
    timing rides the pressed rule rather than the pill's own, because WinUI
    registers a key frame on the way in and none on the way out: the scale snaps
-   back when the state ends.
+   back when the state ends. ComboBoxItemScaleAnimationDuration and the key
+   spline it rides are ControlFastAnimationDuration and
+   ControlFastOutSlowInKeySpline, so both come from the motion tokens.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L326
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L330
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L726-L728 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L726-L728
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L602
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L604 */
 .fui-Option.fui-Option[aria-selected='true']:not([aria-disabled='true']):active::before {
   scale: 1 0.625;
-  transition: scale 167ms cubic-bezier(0, 0, 0, 1);
+  transition: scale var(--winui-control-fast-animation-duration) var(--winui-control-fast-out-slow-in-easing);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .fui-Option.fui-Option[aria-selected='true']:not([aria-disabled='true']):active::before {
-    transition-duration: 0.01ms;
-  }
-}
+${reducedMotion(
+  [".fui-Option.fui-Option[aria-selected='true']:not([aria-disabled='true']):active::before"],
+  'transition-duration',
+)}
 
 /* The pill is WinUI's whole single-select indicator, so Fluent's check glyph
    goes -- and so does the column it sat in, since WinUI draws the pill inside
@@ -410,77 +429,30 @@ export const selectCss = `
    keeps its checkbox.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L759
    https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Option/useOption.tsx#L115-L117 */
-.fui-Option[aria-selected] .fui-Option__checkIcon.fui-Option__checkIcon {
+${optionBox('[aria-selected]')} {
   display: none;
 }
 
-/* The check box a multiselect option keeps, on WinUI's own state table. Once
-   checked, the stroke IS the accent fill, so the box reads as a filled square
-   with no outline.
+/* The check box a multiselect option keeps, on the shared table
+   ./checkbox-surface.ts states. An option carries its box in a slot of its own
+   and spells every state as an ARIA attribute on the option rather than as a
+   pseudo-class on an input, so only the selectors are stated here.
 
-   Colour is confined to the not-forced-colours query below, for the reason
-   ./choice.css.ts writes down for every check box: an accent-filled indicator
-   under forced colours also needs forced-color-adjust: none, which this layer
-   does not take on. ./choice.css.ts states the same table for the check box
-   control; an option draws its box from a different slot, so it is restated
-   here rather than inherited.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L41-L44
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L45-L48
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L53-L56
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L57-L60
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L69-L72 */
+   Colour is confined to the not-forced-colours query, for the reason
+   ./choice.css.ts writes down for every check box.
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Option/useOption.tsx#L115-L117 */
 @media not (forced-colors: active) {
-  .fui-Option[aria-checked='false'] .fui-Option__checkIcon.fui-Option__checkIcon {
-    background-color: var(--winui-control-alt-fill-secondary);
-    border-color: var(--winui-control-strong-stroke-default);
-  }
-
-  .fui-Option[aria-checked='false']:not([aria-disabled='true']):hover
-    .fui-Option__checkIcon.fui-Option__checkIcon {
-    background-color: var(--winui-control-alt-fill-tertiary);
-    border-color: var(--winui-control-strong-stroke-default);
-  }
-
-  .fui-Option[aria-checked='false']:not([aria-disabled='true']):active
-    .fui-Option__checkIcon.fui-Option__checkIcon {
-    background-color: var(--winui-control-alt-fill-quarternary);
-    border-color: var(--winui-control-strong-stroke-disabled);
-  }
-
-  .fui-Option[aria-checked='true'] .fui-Option__checkIcon.fui-Option__checkIcon {
-    background-color: var(--winui-accent-fill-default);
-    border-color: var(--winui-accent-fill-default);
-    color: var(--winui-text-on-accent-fill-primary);
-  }
-
-  .fui-Option[aria-checked='true']:not([aria-disabled='true']):hover
-    .fui-Option__checkIcon.fui-Option__checkIcon {
-    background-color: var(--winui-accent-fill-secondary);
-    border-color: var(--winui-accent-fill-secondary);
-  }
-
-  .fui-Option[aria-checked='true']:not([aria-disabled='true']):active
-    .fui-Option__checkIcon.fui-Option__checkIcon {
-    background-color: var(--winui-accent-fill-tertiary);
-    border-color: var(--winui-accent-fill-tertiary);
-    color: var(--winui-text-on-accent-fill-secondary);
-  }
-
-  .fui-Option[aria-checked][aria-disabled='true']
-    .fui-Option__checkIcon.fui-Option__checkIcon {
-    border-color: var(--winui-control-strong-stroke-disabled);
-    color: var(--winui-text-on-accent-fill-disabled);
-  }
-
-  .fui-Option[aria-checked='false'][aria-disabled='true']
-    .fui-Option__checkIcon.fui-Option__checkIcon {
-    background-color: var(--winui-control-alt-fill-disabled);
-  }
-
-  .fui-Option[aria-checked='true'][aria-disabled='true']
-    .fui-Option__checkIcon.fui-Option__checkIcon {
-    background-color: var(--winui-accent-fill-disabled);
-  }
+${nested(checkboxSurfaceCss({
+  unchecked: optionBox(uncheckedOption),
+  uncheckedHovered: optionBox(`${uncheckedOption}${enabledOption}:hover`),
+  uncheckedPressed: optionBox(`${uncheckedOption}${enabledOption}:active`),
+  uncheckedDisabled: optionBox(`${uncheckedOption}${disabledOption}`),
+  selected: optionBox(checkedOption),
+  selectedHovered: optionBox(`${checkedOption}${enabledOption}:hover`),
+  selectedPressed: optionBox(`${checkedOption}${enabledOption}:active`),
+  disabled: optionBox(`[aria-checked]${disabledOption}`),
+  selectedDisabled: optionBox(`${checkedOption}${disabledOption}`),
+}))}
 }
 
 /* The drop-down's reveal. WinUI runs SplitOpenThemeAnimation, which holds the
@@ -501,52 +473,34 @@ export const selectCss = `
    animatable state: the listbox is collapsed with display: none while the
    trigger holds focus, and unmounted outright once focus leaves.
 
-   Written as an animation rather than a transition because the element enters
-   already in its final state, and on clip-path rather than transform because
-   transform is where Fluent's positioning lives -- the popup is placed by a
-   matrix translate, and a keyframe naming transform would replace it and play
-   the reveal at the origin of the containing block.
-
-   The direction is carried by custom properties inside ONE set of keyframes
-   rather than by two animation names: the placement attribute is written a few
-   milliseconds after the element mounts, and swapping animation-name at that
-   point restarts the animation from zero, where swapping a custom property
-   leaves it running and simply recomputes. The animation is gated on the
-   attribute existing at all, so an unplaced popup does not animate in the
-   default direction and then correct itself -- the same gate Radix puts on its
-   own popper content.
-
-   32px is headroom over what shadow16 needs; the derivation is written once, at
-   the same constant in ./menu.css.ts. The leading edge nonetheless starts on
-   the border box rather than outside it: a clip that opened at -32px would show
-   a band of the popup's own shadow before any of the list it belongs to.
+   The mechanism is ./reveal.ts's. The leading edge nonetheless starts on the
+   border box rather than outside it: a clip that opened past it would show a
+   band of the popup's own shadow before any of the list it belongs to.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L517-L528
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/SplitOpenThemeAnimation_Partial.h#L16-L17
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/ThemeAnimations.cpp#L596-L721
    https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Combobox/useCombobox.tsx#L102
    https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Combobox/useComboboxStyles.styles.ts#L93-L94 */
-@keyframes floway-combobox-listbox-reveal {
+@keyframes winui-listbox-reveal {
   from {
     clip-path: inset(
-      var(--floway-listbox-reveal-leading) -32px var(--floway-listbox-reveal-trailing) -32px);
+      var(--winui-listbox-reveal-leading) ${REVEAL_HEADROOM} var(--winui-listbox-reveal-trailing) ${REVEAL_HEADROOM});
   }
-  to { clip-path: inset(-32px); }
+  to { clip-path: inset(${REVEAL_HEADROOM}); }
 }
 
-.floway-combobox-listbox {
-  --floway-listbox-reveal-leading: 0%;
-  --floway-listbox-reveal-trailing: 50%;
-  animation-duration: var(--winui-control-normal-animation-duration);
-  animation-timing-function: var(--winui-control-fast-out-slow-in-easing);
-}
+${revealAnimation({
+  root: '.floway-combobox-listbox',
+  keyframes: 'winui-listbox-reveal',
+  properties: [
+    '--winui-listbox-reveal-leading: 0%;',
+    '--winui-listbox-reveal-trailing: 50%;',
+  ],
+})}
 
 .floway-combobox-listbox[data-popper-placement^='top'] {
-  --floway-listbox-reveal-leading: 50%;
-  --floway-listbox-reveal-trailing: 0%;
-}
-
-.floway-combobox-listbox[data-popper-placement] {
-  animation-name: floway-combobox-listbox-reveal;
+  --winui-listbox-reveal-leading: 50%;
+  --winui-listbox-reveal-trailing: 0%;
 }
 
 /* The reveal grows the popup out of a band, which alters its perceived size, so
@@ -555,11 +509,7 @@ export const selectCss = `
    disabled the VSM generates it in SteadyState rather than Transition mode,
    which emits the end values and no motion.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/vsm/VisualStateManagerActuator.cpp#L383-L400 */
-@media (prefers-reduced-motion: reduce) {
-  .floway-combobox-listbox {
-    animation-duration: 0.01ms;
-  }
-}
+${reducedMotion(['.floway-combobox-listbox'], 'animation-duration')}
 
 /* High Contrast. The pill takes the same Highlight the row is filled with, so
    it is the fill that carries selection there rather than the bar. The field's

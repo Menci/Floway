@@ -5,6 +5,7 @@ import type { Route } from './+types/dashboard-services-api-keys';
 import { useDashboardOutletContext } from './dashboard';
 import { requireDashboardSession } from './guards';
 import { api, callApi } from '../api/client';
+import { mapResult, mergeResults } from '../api/partial-results';
 import type { ApiKey, ControlPlaneModel, UpstreamOption } from '../api/types';
 import type { AgentSetupLease } from '../components/api-keys/agent-setup';
 import { AgentSetupCard } from '../components/api-keys/agent-setup-card';
@@ -49,12 +50,12 @@ const loadPageData = async (
     callApi(() => api.api['upstream-options'].$get(undefined, { init: { signal } })),
     callApi(() => api.api.models.$get({ query: { include_unlisted: 'true' } }, { init: { signal } })),
   ]);
-  return {
-    keys: keysRes.data ?? current.keys,
-    upstreams: upstreamsRes.data ?? current.upstreams,
-    models: modelsRes.data?.data ?? current.models,
-    error: keysRes.error?.message ?? upstreamsRes.error?.message ?? modelsRes.error?.message ?? null,
-  };
+  const { values, error } = mergeResults(current, {
+    keys: keysRes,
+    upstreams: upstreamsRes,
+    models: mapResult(modelsRes, body => body.data),
+  });
+  return { ...values, error };
 };
 
 const unloadedPageData: Pick<ApiKeysPageData, 'keys' | 'upstreams' | 'models'> = { keys: null, upstreams: null, models: null };

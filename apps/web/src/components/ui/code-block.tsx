@@ -1,9 +1,8 @@
-import Prism from 'prismjs';
 import { useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { prismTokenStyles } from './prism-token-styles';
+import { highlight, prismTokenStyles } from './prism';
 import { ScrollArea } from './scroll-area';
 import { copyOutcomeIcon, useCopyLabel, type CopyOutcome } from './use-copy-to-clipboard';
 import { fluentComponents } from '../../fluent';
@@ -95,11 +94,8 @@ export function CodeBlock({ code, copyOutcome, disabled = false, header, languag
   const { t } = useTranslation();
   const styles = useStyles();
   const copyLabel = useCopyLabel();
-  // Prism registers a grammar as a module side effect, so the module naming a
-  // language is the one that imports it. An unregistered name falls back to the
-  // empty plain grammar, which stringifies to escaped source rather than throwing.
   const highlighted = useMemo(
-    () => Prism.highlight(code, Prism.languages[language] ?? Prism.languages.plain, language),
+    () => highlight(code, language),
     [code, language],
   );
 
@@ -117,7 +113,7 @@ export function CodeBlock({ code, copyOutcome, disabled = false, header, languag
           {copyLabel(copyOutcome, t('common.copy.action'))}
         </Button>
       </div>
-      <ScrollArea axes="both" className={`winui-focus-rect-within ${styles.scroll}`}>
+      <ScrollArea axes="both" className={mergeClasses('winui-focus-rect-within', styles.scroll)}>
         <pre className={mergeClasses(`language-${language}`, styles.pre)}>
           <code
             className={mergeClasses(`language-${language}`, styles.code)}

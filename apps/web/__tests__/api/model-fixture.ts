@@ -11,9 +11,11 @@ const upstreamBinding = (id: string) => ({ id, name: id, kind: 'custom' as const
 
 // One builder for the catalog shape, so a new required field on
 // `ControlPlaneModel` is one edit rather than one per suite. The defaults are
-// what the control plane announces for an unremarkable chat model: no limits,
-// the whole chat endpoint surface, and no upstream binding.
-export const chatModel = (
+// what the control plane announces for an unremarkable chat model -- no
+// limits, the whole chat endpoint surface, no upstream binding -- and `kind`
+// with `endpoints` are overrides like any other, which is how a suite builds
+// an embedding or rerank row.
+export const catalogModel = (
   id: string,
   { contextWindow, upstreams = [], ...overrides }: ModelOverrides = {},
 ): ControlPlaneModel => ({
@@ -30,12 +32,12 @@ export const chatModel = (
 
 // An alias row that resolves its targets in order. A suite pinning a different
 // selection strategy or per-target rules writes `aliasedFrom` out on
-// `chatModel`, since those are the subject of the assertion rather than setup.
+// `catalogModel`, since those are the subject of the assertion rather than setup.
 export const aliasModel = (
   id: string,
   targets: readonly string[],
   overrides: ModelOverrides = {},
-): ControlPlaneModel => chatModel(id, {
+): ControlPlaneModel => catalogModel(id, {
   ...overrides,
   aliasedFrom: {
     selection: 'first-available',

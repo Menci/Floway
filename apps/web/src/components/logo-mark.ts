@@ -64,5 +64,5 @@ document.head.appendChild(l);
 // writing.
 export const currentMark = () => {
   const drawn = typeof window === 'undefined' ? undefined : window[MARK_GLOBAL];
-  return MARKS[Number.isInteger(drawn) ? drawn! : 0] ?? MARKS[0]!;
+  return MARKS[typeof drawn === 'number' ? drawn : 0]!;
 };

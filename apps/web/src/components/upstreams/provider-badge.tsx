@@ -1,7 +1,6 @@
 import { ServerRegular } from '@fluentui/react-icons';
 import { useTranslation } from 'react-i18next';
 
-import type { UpstreamProviderKind } from '../../api/types';
 import azureIconUrl from '../../assets/azure-color.svg?no-inline';
 import claudeIconUrl from '../../assets/claude-color.svg?no-inline';
 import githubCopilotIconUrl from '../../assets/githubcopilot.svg?no-inline';
@@ -12,6 +11,7 @@ import { badgeHueStyle } from '../../lib/color';
 import { hueBadgeTone } from '../../lib/hue';
 import { Chip } from '../ui/chip';
 import { MaskedIcon } from '../ui/masked-icon';
+import type { UpstreamProviderKind } from '@floway-dev/provider/model';
 
 const { Tooltip, makeStyles } = fluentComponents;
 

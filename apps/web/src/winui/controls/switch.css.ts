@@ -42,7 +42,7 @@
 // knob's travel apply in both modes.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L64-L123
 
-import { nested, pressedRoots as pressedUnion, under } from './selectors';
+import { nested, notDisabled, pressedRoots, reducedMotion, under } from './selectors';
 
 // The two pointer states are answered from the root, never from the input:
 // Fluent's input covers the track alone, so a label beside it is hovered
@@ -54,21 +54,21 @@ const hoverRoots = [
   '.fui-Switch[data-winui-switch-dragging]',
 ];
 
-const pressedRoots = [
-  ...pressedUnion('.fui-Switch', '.fui-Switch__input'),
+const switchPressedRoots = [
+  ...pressedRoots('.fui-Switch', '.fui-Switch__input'),
   '.fui-Switch[data-winui-switch-dragging]',
 ];
 
-const enabledKnob = `.fui-Switch__input:enabled:not([aria-disabled='true'])`
+const enabledKnob = `.fui-Switch__input${notDisabled}`
   + ' ~ .fui-Switch__indicator.fui-Switch__indicator > svg';
 
-const enabledCheckedKnob = `.fui-Switch__input:enabled:checked:not([aria-disabled='true'])`
+const enabledCheckedKnob = `.fui-Switch__input${notDisabled}:checked`
   + ' ~ .fui-Switch__indicator.fui-Switch__indicator > svg';
 
-const offTrack = `.fui-Switch__input:enabled:not(:checked):not([aria-disabled='true'])`
+const offTrack = `.fui-Switch__input${notDisabled}:not(:checked)`
   + ' ~ .fui-Switch__indicator.fui-Switch__indicator::before';
 
-const onTrack = `.fui-Switch__input:enabled:checked:not([aria-disabled='true'])`
+const onTrack = `.fui-Switch__input${notDisabled}:checked`
   + ' ~ .fui-Switch__indicator.fui-Switch__indicator::after';
 
 export const switchCss = `
@@ -252,27 +252,23 @@ ${under(hoverRoots, [enabledKnob])} {
    supply it -- Space on the focused input, and a drag that has carried the
    pointer off the control -- and a 17x12 knob is a shape the template never
    draws. */
-${under(pressedRoots, [enabledKnob])} {
+${under(switchPressedRoots, [enabledKnob])} {
   height: calc(14 * var(--winui-switch-unit));
   margin-inline-start: calc(2 * var(--winui-switch-unit));
   width: calc(17 * var(--winui-switch-unit));
 }
 
-${under(pressedRoots, [enabledCheckedKnob])} {
+${under(switchPressedRoots, [enabledCheckedKnob])} {
   margin-inline-start: calc(-1 * var(--winui-switch-unit));
 }
 
 /* Fluent clamps its own switch transitions under reduced motion, but at a
-   single class, so every timing declared above outranks it. 0.01ms rather than
-   none for the reason ./choice.css.ts records: the transition still has to
-   complete. */
-@media (prefers-reduced-motion: reduce) {
-  .fui-Switch__indicator.fui-Switch__indicator::before,
-  .fui-Switch__indicator.fui-Switch__indicator::after,
-  .fui-Switch__indicator.fui-Switch__indicator > svg {
-    transition-duration: 0.01ms;
-  }
-}
+   single class, so every timing declared above outranks it. */
+${reducedMotion([
+  '.fui-Switch__indicator.fui-Switch__indicator::before',
+  '.fui-Switch__indicator.fui-Switch__indicator::after',
+  '.fui-Switch__indicator.fui-Switch__indicator > svg',
+], 'transition-duration')}
 
 @media not (forced-colors: active) {
   /* The indicator paints neither fill nor stroke of its own. Fluent states both
@@ -281,14 +277,17 @@ ${under(pressedRoots, [enabledCheckedKnob])} {
      states is answered here. Both matter: the fill is what shows through the
      moment neither capsule is opaque, and the stroke is a second ring one pixel
      outside the capsule's own, which appears in that same window when a drag
-     settles back to off. */
+     settles back to off. The subject is Fluent's own :hover:active rather than
+     the pressed union ./selectors.ts defines, because these rules only cancel
+     Fluent atoms, which stop matching in exactly the conditions that chain
+     does. */
   .fui-Switch__indicator.fui-Switch__indicator,
-  .fui-Switch__input:enabled:not(:checked):not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator,
-  .fui-Switch__input:enabled:not(:checked):not([aria-disabled='true']):hover ~ .fui-Switch__indicator.fui-Switch__indicator,
-  .fui-Switch__input:enabled:not(:checked):not([aria-disabled='true']):hover:active ~ .fui-Switch__indicator.fui-Switch__indicator,
-  .fui-Switch__input:enabled:checked:not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator,
-  .fui-Switch__input:enabled:checked:not([aria-disabled='true']):hover ~ .fui-Switch__indicator.fui-Switch__indicator,
-  .fui-Switch__input:enabled:checked:not([aria-disabled='true']):hover:active ~ .fui-Switch__indicator.fui-Switch__indicator,
+  .fui-Switch__input${notDisabled}:not(:checked) ~ .fui-Switch__indicator.fui-Switch__indicator,
+  .fui-Switch__input${notDisabled}:not(:checked):hover ~ .fui-Switch__indicator.fui-Switch__indicator,
+  .fui-Switch__input${notDisabled}:not(:checked):hover:active ~ .fui-Switch__indicator.fui-Switch__indicator,
+  .fui-Switch__input${notDisabled}:checked ~ .fui-Switch__indicator.fui-Switch__indicator,
+  .fui-Switch__input${notDisabled}:checked:hover ~ .fui-Switch__indicator.fui-Switch__indicator,
+  .fui-Switch__input${notDisabled}:checked:hover:active ~ .fui-Switch__indicator.fui-Switch__indicator,
   .fui-Switch__input:disabled:not(:checked) ~ .fui-Switch__indicator.fui-Switch__indicator,
   .fui-Switch__input[aria-disabled='true']:not(:checked) ~ .fui-Switch__indicator.fui-Switch__indicator,
   .fui-Switch__input:disabled:checked ~ .fui-Switch__indicator.fui-Switch__indicator,
@@ -352,7 +351,7 @@ ${nested(under(hoverRoots, [offTrack]))} {
     background-color: var(--winui-control-alt-fill-tertiary);
   }
 
-${nested(under(pressedRoots, [offTrack]))} {
+${nested(under(switchPressedRoots, [offTrack]))} {
     background-color: var(--winui-control-alt-fill-quarternary);
   }
 
@@ -362,7 +361,7 @@ ${nested(under(hoverRoots, [onTrack]))} {
     background-color: var(--winui-accent-fill-secondary);
   }
 
-${nested(under(pressedRoots, [onTrack]))} {
+${nested(under(switchPressedRoots, [onTrack]))} {
     background-color: var(--winui-accent-fill-tertiary);
   }
 
@@ -390,7 +389,7 @@ ${nested(under(pressedRoots, [onTrack]))} {
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/DependencyObject/DependencyProperty.cpp#L22-L25 */
   .fui-Switch.fui-Switch[data-fui-focus-within]:focus-within::after {
     border-color: var(--winui-focus-stroke-outer);
-    box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
+    box-shadow: inset 0 0 0 var(--winui-focus-visual-secondary-thickness) var(--winui-focus-stroke-inner);
   }
 }
 `;

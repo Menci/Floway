@@ -10,7 +10,10 @@ import type { ControlPlaneModel, SearchConfig, UpstreamRecord } from '../api/typ
 import jinaIconUrl from '../assets/jina-color.svg';
 import microsoftIconUrl from '../assets/microsoft-color.svg';
 import tavilyIconUrl from '../assets/tavily-color.svg';
+import { eligibleSearchUpstreams, servesChatFor } from '../components/search/eligibility';
+import { SEARCH_PROVIDER_LABEL_KEYS } from '../components/search/provider';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
+import { EmptyStateLine } from '../components/ui/empty-state';
 import { Dropdown, LISTBOX_POSITIONING } from '../components/ui/fluent-form-controls';
 import { PANEL_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../components/ui/layout';
 import { OpenLinkLabel } from '../components/ui/open-link-label';
@@ -23,7 +26,6 @@ import { SettingsExpander, SettingsSwitch } from '../components/ui/settings-card
 import { StatusBadge } from '../components/ui/status-badge';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { fluentComponents } from '../fluent';
-import { errorMessage } from '../lib/error-message';
 
 type SearchConfigTestResult = InferResponseType<typeof api.api['search-config']['test']['$post'], 200>;
 
@@ -35,10 +37,12 @@ const {
   Text,
 } = fluentComponents;
 
+// `null` is a fetch that failed, distinct from a deployment that genuinely has
+// no upstream: an empty catalog would report passthrough search as impossible.
 interface LoaderData {
   config: SearchConfig;
-  upstreams: UpstreamRecord[];
-  models: ControlPlaneModel[];
+  upstreams: UpstreamRecord[] | null;
+  models: ControlPlaneModel[] | null;
   error: string | null;
 }
 
@@ -52,27 +56,16 @@ export async function clientLoader(): Promise<LoaderData> {
   if (configResult.error) throw new Error(configResult.error.message);
   return {
     config: configResult.data,
-    upstreams: upstreamsResult.data ?? [],
-    models: modelsResult.data?.data ?? [],
+    upstreams: upstreamsResult.data ?? null,
+    models: modelsResult.data?.data ?? null,
     error: upstreamsResult.error?.message ?? modelsResult.error?.message ?? null,
   };
 }
-
-// Search passthrough sends a chat completion to the upstream it names, so the
-// model it picks has to be one that upstream actually serves on that endpoint.
-const servesChatFor = (model: ControlPlaneModel, upstreamId: string) =>
-  model.kind === 'chat' && model.upstreams.some(binding => binding.id === upstreamId);
-
-export const eligibleSearchUpstreams = (upstreams: readonly UpstreamRecord[], models: readonly ControlPlaneModel[]) =>
-  upstreams.filter(upstream => upstream.enabled
-    && (upstream.kind === 'codex' || upstream.kind === 'custom')
-    && models.some(model => servesChatFor(model, upstream.id)));
 
 // Marks keep their owner's colors, unlike the one-tone-per-provider upstream
 // chips: nothing else in the row says who the third party is.
 interface ProviderOption {
   value: SearchConfig['provider'];
-  labelKey: string;
   iconUrl?: string;
   url?: string;
   getApiKey: (config: SearchConfig) => string;
@@ -82,13 +75,11 @@ interface ProviderOption {
 const PROVIDER_OPTIONS: ProviderOption[] = [
   {
     value: 'disabled',
-    labelKey: 'dashboard.searchConfig.provider.disabled',
     getApiKey: () => '',
     setApiKey: c => c,
   },
   {
     value: 'tavily',
-    labelKey: 'dashboard.searchConfig.provider.tavily',
     iconUrl: tavilyIconUrl,
     url: 'https://app.tavily.com/',
     getApiKey: c => c.tavily.apiKey,
@@ -96,7 +87,6 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
   },
   {
     value: 'microsoft-web-iq',
-    labelKey: 'dashboard.searchConfig.provider.microsoftWebIq',
     iconUrl: microsoftIconUrl,
     url: 'https://webiq.microsoft.ai/profiles',
     getApiKey: c => c.microsoftWebIq.apiKey,
@@ -104,7 +94,6 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
   },
   {
     value: 'jina',
-    labelKey: 'dashboard.searchConfig.provider.jina',
     iconUrl: jinaIconUrl,
     url: 'https://jina.ai/',
     getApiKey: c => c.jina.apiKey,
@@ -112,21 +101,37 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
   },
 ];
 
-const findProviderOption = (
-  provider: SearchConfig['provider'],
-): ProviderOption => {
-  return (
-    PROVIDER_OPTIONS.find(o => o.value === provider) ?? PROVIDER_OPTIONS[0]
-  );
-};
-
 export default function DashboardProvidersSearch({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
-  const toasts = useOutcomeToasts();
-  const [draft, setDraft] = useState<SearchConfig>(loaderData.config);
-  const upstreams = loaderData.upstreams;
-  const models = loaderData.models;
   const [loadError, setLoadError] = useState(loaderData.error);
+  const { models, upstreams } = loaderData;
+
+  return (
+    <section className="dashboard-page max-w-[960px]">
+      <DashboardPageHeader
+        description={t('dashboard.searchConfig.description')}
+        title={t('dashboard.searchConfig.heading')}
+      />
+
+      {loadError && (
+        <OutcomeMessageBar onDismiss={() => setLoadError(null)}>{loadError}</OutcomeMessageBar>
+      )}
+
+      {upstreams === null || models === null
+        ? <Panel><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel>
+        : <SearchSettings config={loaderData.config} models={models} upstreams={upstreams} />}
+    </section>
+  );
+}
+
+function SearchSettings({ config, models, upstreams }: {
+  config: SearchConfig;
+  models: ControlPlaneModel[];
+  upstreams: UpstreamRecord[];
+}) {
+  const { t } = useTranslation();
+  const toasts = useOutcomeToasts();
+  const [draft, setDraft] = useState<SearchConfig>(config);
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -138,11 +143,16 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
     null,
   );
 
-  const activeOption = findProviderOption(draft.provider);
-  // The gateway may echo back a provider this build does not know; an
-  // unrecognized id is shown verbatim rather than collapsed onto a familiar one.
+  // The gateway may echo back a provider this build does not know. An
+  // unrecognized id is named verbatim rather than collapsed onto a familiar one,
+  // and its key field stays shut: this build has no field to store that key in,
+  // so every keystroke into it would be discarded on save.
+  const activeOption = PROVIDER_OPTIONS.find(option => option.value === draft.provider);
+  const activeProviderLabel = activeOption
+    ? t(SEARCH_PROVIDER_LABEL_KEYS[activeOption.value])
+    : t('dashboard.searchConfig.unavailable', { id: draft.provider });
   const testedOption = PROVIDER_OPTIONS.find(option => option.value === testResult?.provider);
-  const testedProviderLabel = testedOption ? t(testedOption.labelKey) : testResult?.provider;
+  const testedProviderLabel = testedOption ? t(SEARCH_PROVIDER_LABEL_KEYS[testedOption.value]) : testResult?.provider;
   const eligibleUpstreams = useMemo(() => eligibleSearchUpstreams(upstreams, models), [models, upstreams]);
   const modelsForSelectedUpstream = useMemo(
     () => models.filter(model => servesChatFor(model, draft.passthroughOpenAiSearch.upstreamId)),
@@ -197,9 +207,10 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
 
   const handleApiKeyChange = useCallback(
     (_: unknown, data: { value: string }) => {
+      if (!activeOption) throw new Error(`Search provider ${draft.provider} has no API key field in this build`);
       setDraft(prev => activeOption.setApiKey(prev, data.value));
     },
-    [activeOption],
+    [activeOption, draft.provider],
   );
 
   const handleSave = useCallback(async () => {
@@ -221,39 +232,30 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
     setTesting(true);
     setTestError(null);
     setTestResult(null);
-    try {
-      const response = await api.api['search-config'].test.$post({ json: draft });
-      // Probe failures are structured SearchTestResult bodies at HTTP 400;
-      // preserving the body keeps the upstream error code and query visible.
-      const result = await response.json();
-      if (!('ok' in result)) throw new Error(result.error);
-      setTestResult(result);
-    } catch (error) {
-      setTestError(errorMessage(error));
-    } finally {
-      setTesting(false);
+    const result = await callApi(() => api.api['search-config'].test.$post({ json: draft }));
+    setTesting(false);
+    if (result.error) {
+      // A failed probe is a structured test-result body at HTTP 400, and
+      // rendering it keeps the upstream error code and the query visible. Every
+      // other failure of this route carries a message and nothing to show.
+      const raw = result.error.raw;
+      if (raw && 'ok' in raw) setTestResult(raw);
+      else setTestError(result.error.message);
+      return;
     }
+    setTestResult(result.data);
   }, [draft]);
 
   return (
-    <section className="dashboard-page max-w-[960px]">
-      <DashboardPageHeader
-        description={t('dashboard.searchConfig.description')}
-        title={t('dashboard.searchConfig.heading')}
-      />
-
-      {loadError && (
-        <OutcomeMessageBar onDismiss={() => setLoadError(null)}>{loadError}</OutcomeMessageBar>
-      )}
-
+    <>
       <SettingsExpander
         action={<Dropdown
           className="!w-auto flex-none"
           button={{
             children: (
               <ProviderOptionLabel
-                iconUrl={activeOption.iconUrl}
-                label={t(activeOption.labelKey)}
+                iconUrl={activeOption?.iconUrl}
+                label={activeProviderLabel}
               />
             ),
           }}
@@ -261,11 +263,14 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
           onOptionSelect={handleProviderChange}
           positioning={{ ...LISTBOX_POSITIONING, align: 'end' }}
           selectedOptions={[draft.provider]}
-          value={t(activeOption.labelKey)}
+          value={activeProviderLabel}
         >
+          {activeOption === undefined && <Option disabled text={draft.provider} value={draft.provider}>
+            {activeProviderLabel}
+          </Option>}
           {PROVIDER_OPTIONS.map(opt => (
-            <Option key={opt.value} value={opt.value} text={t(opt.labelKey)}>
-              <ProviderOptionLabel iconUrl={opt.iconUrl} label={t(opt.labelKey)} />
+            <Option key={opt.value} value={opt.value} text={t(SEARCH_PROVIDER_LABEL_KEYS[opt.value])}>
+              <ProviderOptionLabel iconUrl={opt.iconUrl} label={t(SEARCH_PROVIDER_LABEL_KEYS[opt.value])} />
             </Option>
           ))}
         </Dropdown>}
@@ -283,14 +288,14 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
                 label={secretVisible ? t('dashboard.upstreamEditor.actions.hideSecret') : t('dashboard.upstreamEditor.actions.showSecret')}
                 onClick={() => setSecretVisible(value => !value)}
               />}
-              disabled={draft.provider === 'disabled'}
+              disabled={activeOption === undefined || draft.provider === 'disabled'}
               onChange={handleApiKeyChange}
               placeholder={t('dashboard.searchConfig.apiKeyPlaceholder')}
               revealed={secretVisible}
-              value={activeOption.getApiKey(draft)}
+              value={activeOption?.getApiKey(draft) ?? ''}
             />
           </Field>
-          {activeOption.url && (
+          {activeOption?.url && (
             <Link href={activeOption.url} target="_blank" rel="noopener noreferrer">
               <OpenLinkLabel>{t('dashboard.searchConfig.getKeyLink')}</OpenLinkLabel>
             </Link>
@@ -318,10 +323,10 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
                 disabled={!draft.passthroughOpenAiSearch.enabled}
                 onOptionSelect={(_, data) => data.optionValue && setPassthroughUpstream(data.optionValue)}
                 selectedOptions={[draft.passthroughOpenAiSearch.upstreamId]}
-                value={selectedUpstream?.name ?? (unavailableUpstreamId === null ? '' : t('dashboard.searchConfig.passthrough.unavailable', { id: unavailableUpstreamId }))}
+                value={selectedUpstream?.name ?? (unavailableUpstreamId === null ? '' : t('dashboard.searchConfig.unavailable', { id: unavailableUpstreamId }))}
               >
                 {unavailableUpstreamId !== null && <Option disabled text={unavailableUpstreamId} value={unavailableUpstreamId}>
-                  {t('dashboard.searchConfig.passthrough.unavailable', { id: unavailableUpstreamId })}
+                  {t('dashboard.searchConfig.unavailable', { id: unavailableUpstreamId })}
                 </Option>}
                 {eligibleUpstreams.map(upstream => (
                   <Option key={upstream.id} text={upstream.name} value={upstream.id}>
@@ -345,10 +350,10 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
                   setDraft(current => ({ ...current, passthroughOpenAiSearch: { ...current.passthroughOpenAiSearch, model } }));
                 }}
                 selectedOptions={[draft.passthroughOpenAiSearch.model]}
-                value={selectedModel ? modelLabel(selectedModel) : (unavailableModelId === null ? '' : t('dashboard.searchConfig.passthrough.unavailable', { id: unavailableModelId }))}
+                value={selectedModel ? modelLabel(selectedModel) : (unavailableModelId === null ? '' : t('dashboard.searchConfig.unavailable', { id: unavailableModelId }))}
               >
                 {unavailableModelId !== null && <Option disabled text={unavailableModelId} value={unavailableModelId}>
-                  {t('dashboard.searchConfig.passthrough.unavailable', { id: unavailableModelId })}
+                  {t('dashboard.searchConfig.unavailable', { id: unavailableModelId })}
                 </Option>}
                 {modelsForSelectedUpstream.map(model => (
                   <Option key={model.id} text={modelLabel(model)} value={model.id}>
@@ -451,7 +456,7 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
           ) : null}
         </Panel>
       )}
-    </section>
+    </>
   );
 }
 

@@ -1,16 +1,22 @@
-// Fluent's motion slot forbids `as`, so the animating component cannot be
-// swapped by naming it; the slot's render function is the seam every wrapper
-// below goes through.
+// Every motion Fluent runs from JavaScript, restated as WinUI states it. A
+// component that animates takes its motion from a slot, so the slot is the one
+// seam this file writes through: a presence component where WinUI states its own
+// keyframes, motion parameters where Fluent's own component keeps the shape, and
+// nothing at all where a stylesheet takes the motion over. Fluent's motion slot
+// forbids `as`, so a presence component reaches it through the slot's render
+// function rather than by being named.
 // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-motion/library/src/slots/presenceMotionSlot.tsx#L13-L19
 import * as React from 'react';
 
 import {
   CHEVRON_TURN_EASING,
   CHEVRON_TURN_MS,
+  COLLAPSE_ANIMATION_MS,
   CONTROL_FASTER_ANIMATION_MS,
   CONTROL_FAST_ANIMATION_MS,
   CONTROL_FAST_OUT_SLOW_IN_EASING,
   CONTROL_NORMAL_ANIMATION_MS,
+  EXPAND_ANIMATION_MS,
   PANE_SLIDE_EASING,
   PANE_SLIDE_MS,
   PANE_SLIDE_OUT_MS,
@@ -21,11 +27,26 @@ import {
   POPUP_SLIDE_MS,
   POP_IN_OFFSET_PX,
 } from './motion';
-
-type FluentComponents = typeof import('@fluentui/react-components');
+import { wrapFluent } from './wrap';
+import type { FluentComponents, PropCarrier } from './wrap';
 
 interface MotionSlotProps { children?: unknown }
-type MotionCarrier = Record<string, unknown>;
+
+// One rule for every motion slot this layer fills: ours is the base, a caller's
+// object is merged over it -- onMotionFinish above all -- and a caller's null
+// suppresses the slot rather than being merged into, which is how a caller
+// switches the motion off entirely.
+const resolveMotionSlot = (ours: PropCarrier | null, stated: PropCarrier | null | undefined) => {
+  if (stated === undefined) return ours;
+  if (stated === null) return null;
+  return { ...ours, ...stated };
+};
+
+const motionSlot = <Component>(component: Component, slot: string, ours: PropCarrier | null): Component =>
+  wrapFluent(component, (props: PropCarrier) => ({
+    ...props,
+    [slot]: resolveMotionSlot(ours, props[slot] as PropCarrier | null | undefined),
+  }));
 
 // Filled in both directions: several opacity legs finish well before the
 // transform they accompany, and their final value has to hold until the whole
@@ -154,30 +175,53 @@ export const withWinuiMotion = (components: FluentComponents): FluentComponents 
     exit: { keyframes: [chevronExpanded, chevronCollapsed], duration: CHEVRON_TURN_MS, easing: CHEVRON_TURN_EASING },
   });
 
-  // Slot props from the caller are spread last, so a caller that states its own
-  // motion keeps it and anything else -- `onMotionFinish` above all -- rides
-  // along with ours.
-  const runMotion = <Component>(component: Component, slot: string, Motion: React.ElementType): Component => {
-    const elementType = component as React.ElementType;
-    const render = (_: unknown, motionProps: MotionSlotProps) => React.createElement(Motion, motionProps);
+  const runMotion = <Component>(component: Component, slot: string, Motion: React.ElementType): Component =>
+    motionSlot(component, slot, {
+      children: (_: unknown, motionProps: MotionSlotProps) => React.createElement(Motion, motionProps),
+    });
 
-    const wrapped = React.forwardRef<unknown, MotionCarrier>((props, ref) => React.createElement(elementType, {
-      ...props,
-      [slot]: { children: render, ...(props[slot] as MotionCarrier | null | undefined) },
-      ref,
-    }));
-
-    wrapped.displayName = (component as { displayName?: string }).displayName;
-
-    return wrapped as Component;
+  // WinUI's Expander slides its content region open and never touches its
+  // opacity: all four expand storyboards animate ExpanderContent's Visibility
+  // and TranslateY alone, and the template carries no opacity animation at all.
+  // Fluent's Collapse fades the panel with the height, which takes the card's
+  // own fill and stroke transparent mid-animation, so the fade atom is switched
+  // off.
+  //
+  // The size animation then runs on the pair of durations those storyboards
+  // state, 333ms opening and 167ms closing, read from ./motion so this and the
+  // SettingsExpander cannot drift apart. What travels is the panel's own size
+  // rather than the clipped translate WinUI animates -- the SettingsExpander's
+  // simplification too -- and on that geometry both directions take the opening
+  // KeySpline; nothing sources the substitution for the close, which upstream
+  // states as cubic-bezier(1, 1, 0, 1).
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander.xaml#L33-L90
+  // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-accordion/library/src/components/AccordionPanel/useAccordionPanel.ts#L42-L48
+  // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-motion-components-preview/library/src/components/Collapse/Collapse.ts#L30-L48
+  const panelCollapse = {
+    animateOpacity: false,
+    duration: EXPAND_ANIMATION_MS,
+    exitDuration: COLLAPSE_ANIMATION_MS,
+    easing: CONTROL_FAST_OUT_SLOW_IN_EASING,
+    exitEasing: CONTROL_FAST_OUT_SLOW_IN_EASING,
   };
 
   return {
     ...components,
+    AccordionPanel: motionSlot(components.AccordionPanel, 'collapseMotion', panelCollapse),
     Dialog: runMotion(components.Dialog, 'surfaceMotion', DialogSurfaceMotion),
     DialogSurface: runMotion(components.DialogSurface, 'backdropMotion', DialogBackdropMotion),
     Menu: runMotion(components.Menu, 'surfaceMotion', MenuSurfaceMotion),
     NavCategoryItem: runMotion(components.NavCategoryItem, 'expandIconMotion', ChevronTurnMotion),
     OverlayDrawer: runMotion(components.OverlayDrawer, 'surfaceMotion', DrawerSurfaceMotion),
+    // Fluent runs the indeterminate ProgressBar from the Web Animations API
+    // rather than a stylesheet -- one 33 per cent segment sweeping across in 3s,
+    // or a full-width opacity pulse under a reduced-motion preference -- so no
+    // rule can retime or reshape it. Its motion slot is documented as nullable,
+    // and emptying it here is what hands the state to
+    // ./progress-indeterminate.css, whose transcription of WinUI's own
+    // storyboard is the only shape this control has.
+    // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-progress/library/src/components/ProgressBar/progressBarMotions.ts#L8-L23
+    // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-progress/library/src/components/ProgressBar/ProgressBar.types.ts#L13-L16
+    ProgressBar: motionSlot(components.ProgressBar, 'indeterminateMotion', null),
   };
 };

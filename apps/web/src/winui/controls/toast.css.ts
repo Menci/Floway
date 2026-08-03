@@ -203,7 +203,7 @@ ${severityFills.map(([intent, fill]) => `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L173-L186 */
 .fui-ToastContainer.fui-ToastContainer[data-fui-focus-visible] {
   outline: var(--winui-focus-visual-primary-thickness) solid var(--winui-focus-stroke-outer);
-  outline-offset: 1px;
-  box-shadow: 0 0 0 1px var(--winui-focus-stroke-inner);
+  outline-offset: var(--winui-focus-visual-secondary-thickness);
+  box-shadow: 0 0 0 var(--winui-focus-visual-secondary-thickness) var(--winui-focus-stroke-inner);
 }
 `;

@@ -1,3 +1,5 @@
+import { shellLoadingLabel } from '../shell';
+
 const en = {
   translation: {
     app: {
@@ -5,7 +7,7 @@ const en = {
       documentTitle: '{{title}} | Floway',
     },
     common: {
-      loading: 'Loading…',
+      loading: shellLoadingLabel,
       on: 'On',
       off: 'Off',
       cancel: 'Cancel',
@@ -288,6 +290,7 @@ const en = {
         modelCount_one: '{{count, number}} model',
         modelCount_other: '{{count, number}} models',
         modelCountUnknown: 'Count unavailable',
+        unknownUpstream: 'Unknown ({{id}})',
         upstreamDisabled: 'Upstream disabled',
         validation: 'Select at least one upstream, or turn off the limit.',
       },
@@ -396,7 +399,7 @@ const en = {
           codexWindowsAuthHint: 'Windows PowerShell: store the same provider token without changing the official account login.',
         },
         agentSetup: {
-          agent: 'Agent', accessMethod: 'Connection method', setupTab: 'Setup script', snippetsTab: 'Config snippet', platform: 'Platform', commandPending: 'Preparing setup command…', modelSelection: 'Model selection', miscSettings: 'Miscellaneous settings', selectKey: 'Select an API key above to prepare a setup command.', noKey: 'Create an API key to use Agent Setup.', expired: 'This setup link has expired. Retry to create a fresh link.', retry: 'Retry', expires: 'The setup link stays alive while this page is visible and expires after you leave.', defaultModel: 'Default model', fableModel: 'Fable model', opusModel: 'Opus model', sonnetModel: 'Sonnet model', haikuModel: 'Haiku model', reasoningEffort: 'Reasoning effort', modelDefault: 'Default', noModelMatches: 'No matching models', modelDiscovery: 'Gateway model discovery', modelDiscoveryHint: 'Let Claude Code discover available models from this Floway gateway.', cleanupRetention: 'Cleanup retention', cleanupRetentionHint: 'Set how long Claude Code retains local session data before cleanup.', cleanupDays: '{{count, number}} days', optOutAiAttribution: 'Opt out of Claude Code AI attribution', optOutAiAttributionHint: 'Remove Claude Code attribution ("Co-Authored-By") from commits and pull requests, and hide session links.',
+          agent: 'Agent', accessMethod: 'Connection method', setupTab: 'Setup script', snippetsTab: 'Config snippet', platform: 'Platform', commandPending: 'Preparing setup command…', modelSelection: 'Model selection', miscSettings: 'Miscellaneous settings', selectKey: 'Select an API key above to prepare a setup command.', noKey: 'Create an API key to use Agent Setup.', expired: 'This setup link has expired. Retry to create a fresh link.', timedOut: 'The gateway did not answer in time.', retry: 'Retry', expires: 'The setup link stays alive while this page is visible and expires after you leave.', defaultModel: 'Default model', fableModel: 'Fable model', opusModel: 'Opus model', sonnetModel: 'Sonnet model', haikuModel: 'Haiku model', reasoningEffort: 'Reasoning effort', modelDefault: 'Default', noModelMatches: 'No matching models', modelDiscovery: 'Gateway model discovery', modelDiscoveryHint: 'Let Claude Code discover available models from this Floway gateway.', cleanupRetention: 'Cleanup retention', cleanupRetentionHint: 'Set how long Claude Code retains local session data before cleanup.', cleanupDays: '{{count, number}} days', optOutAiAttribution: 'Opt out of Claude Code AI attribution', optOutAiAttributionHint: 'Remove Claude Code attribution ("Co-Authored-By") from commits and pull requests, and hide session links.',
         },
         rotate: {
           title: 'Rotate API Key',
@@ -866,6 +869,7 @@ const en = {
         apiKey: 'API key for the request list',
         listLabel: 'Captured requests',
         empty: 'No requests recorded yet',
+        streamDisconnected: 'The request stream disconnected.',
         unknownModel: 'Unknown model',
         status: { success: 'Successful request', warning: 'Request warning', error: 'Failed request' },
         duration: 'Duration: {{value, number}}ms',
@@ -1062,8 +1066,8 @@ const en = {
           upstream: 'Search upstream',
           model: 'Search model',
           empty: 'Add an enabled Codex or Custom upstream with a chat model to use passthrough search.',
-          unavailable: '{{id}} (unavailable)',
         },
+        unavailable: '{{id}} (unavailable)',
         getKeyLink: 'Get API key',
         apiKeyLabel: 'API Key',
         apiKeyPlaceholder: 'Enter API key…',
@@ -1104,6 +1108,7 @@ const en = {
         listTitle: 'Proxies',
         columns: { actions: 'Actions' },
         empty: 'No proxies configured. Add a proxy to route outbound traffic.',
+        unknownAddress: 'Unrecognized address',
         addTitle: 'Add proxy',
         editTitle: 'Edit proxy',
         form: {
@@ -1111,6 +1116,17 @@ const en = {
           namePlaceholder: 'My proxy',
           url: 'Proxy URL',
           protocol: 'Protocol',
+          protocolOptions: {
+            'http': 'HTTP',
+            'https': 'HTTPS',
+            'socks5': 'SOCKS5',
+            'ss': 'Shadowsocks',
+            'ss2022': 'Shadowsocks 2022',
+            'trojan': 'Trojan',
+            'vless-tcp': 'VLESS / TLS',
+            'vless-ws': 'VLESS / WebSocket',
+            'reality': 'VLESS / REALITY',
+          },
           host: 'Host',
           hostPlaceholder: 'server.example.com',
           address: 'Address',
@@ -1136,6 +1152,7 @@ const en = {
           shortId: 'Short ID (optional)',
           shortIdPlaceholder: 'hex, up to 16 chars',
           timeout: 'Dial timeout',
+          timeoutPlaceholder: '{{seconds}} (default)',
           timeoutHint: 'Seconds. Leave empty for default 10s timeout.',
         },
         validation: {

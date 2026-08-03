@@ -12,7 +12,7 @@ import { resolve } from 'node:path';
 // written here would keep matching. Membership is read off the build output
 // instead: a chunk's sourcemap names the modules it was built from, and the
 // stylesheets carry Monaco's own class prefix.
-const clientDir = resolve(import.meta.dirname, '../apps/web/dist/client');
+const clientDir = resolve(import.meta.dirname, '../dist/client');
 const assetsDir = resolve(clientDir, 'assets');
 
 const MONACO_MODULE = /\/monaco-(?:editor|yaml)\//;

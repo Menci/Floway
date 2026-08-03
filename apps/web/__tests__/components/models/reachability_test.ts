@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { indexCatalog } from '../../../src/components/models/catalog-index';
 import { effectiveUpstreamCap, isModelReachable, reachableModels } from '../../../src/components/models/reachability';
-import { aliasModel, chatModel } from '../../api/model-fixture';
+import { aliasModel, catalogModel } from '../../api/model-fixture';
 
 describe('model reachability', () => {
   it('intersects API-key and owner upstream caps', () => {
@@ -12,7 +12,7 @@ describe('model reachability', () => {
   });
 
   it('resolves alias targets through the effective cap', () => {
-    const real = chatModel('real', { upstreams: ['u1'] });
+    const real = catalogModel('real', { upstreams: ['u1'] });
     const alias = aliasModel('alias', [real.id]);
     const catalog = indexCatalog([real, alias]);
     expect(isModelReachable(alias, catalog, ['u1'])).toBe(true);
@@ -21,9 +21,9 @@ describe('model reachability', () => {
 
   it('keeps only the catalog entries an alias or an upstream binding can reach', () => {
     const catalog = [
-      chatModel('allowed', { upstreams: ['u1'] }),
-      chatModel('key-denied', { upstreams: ['u2'] }),
-      chatModel('user-denied', { upstreams: ['u3'] }),
+      catalogModel('allowed', { upstreams: ['u1'] }),
+      catalogModel('key-denied', { upstreams: ['u2'] }),
+      catalogModel('user-denied', { upstreams: ['u3'] }),
       aliasModel('alias-allowed', ['allowed', 'user-denied']),
       aliasModel('alias-denied', ['user-denied']),
       aliasModel('alias-missing', ['missing']),
@@ -36,10 +36,10 @@ describe('model reachability', () => {
   });
 
   it('narrows by the caller predicate without regard to endpoint surface', () => {
-    const responsesOnly = chatModel('responses-only', { upstreams: ['a'], endpoints: { responses: {} } });
+    const responsesOnly = catalogModel('responses-only', { upstreams: ['a'], endpoints: { responses: {} } });
     const alias = aliasModel('alias', ['responses-only'], { endpoints: { responses: {} } });
-    const chatOnly = chatModel('chat-only', { upstreams: ['a'], endpoints: { chatCompletions: {} } });
-    const embedding = chatModel('embedding', { upstreams: ['a'], kind: 'embedding', endpoints: { embeddings: {} } });
+    const chatOnly = catalogModel('chat-only', { upstreams: ['a'], endpoints: { chatCompletions: {} } });
+    const embedding = catalogModel('embedding', { upstreams: ['a'], kind: 'embedding', endpoints: { embeddings: {} } });
 
     expect(reachableModels([responsesOnly, alias, chatOnly, embedding], ['a'], model => model.kind === 'chat')
       .map(entry => entry.id))

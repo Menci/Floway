@@ -11,7 +11,7 @@ import { useNow } from '../../lib/use-now';
 import { useDangerActionClasses, useDangerTextClass } from '../ui/danger';
 import { ResourceListEmptyState } from '../ui/resource-list';
 import { ScrollArea } from '../ui/scroll-area';
-import { TABLE_ACTIONS_WIDTH, TableActions, TableActionsHeader, stopRowSelection } from '../ui/table-actions';
+import { TABLE_ACTIONS_WIDTH, TableActions, TableTrailingHeader, stopRowSelection } from '../ui/table-actions';
 import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { copyOutcomeIcon, useCopyLabel, type ClipboardCopy } from '../ui/use-copy-to-clipboard';
@@ -70,16 +70,20 @@ export function KeysTable({
     createTableColumn<ApiKey>({ columnId: 'lastUsed', compare: (a, b) => (a.last_used_at ?? '').localeCompare(b.last_used_at ?? '') }),
   ], []);
 
+  // One rule for both branches: the table and the narrow list each report a
+  // selection in their own shape, and only this decides what a selection means.
+  const selectRow = (id: unknown) => {
+    if (disabled || typeof id !== 'string') return;
+    onSelect(id);
+  };
+  const selectedItems = selectedKeyId === '' ? [] : [selectedKeyId];
+
   const { getRows, selection, sort } = useTableFeatures(
     { columns, getRowId: key => key.id, items: keys },
     [
       useTableSelection({
-        onSelectionChange: (_, data) => {
-          if (disabled) return;
-          const [id] = [...data.selectedItems];
-          if (typeof id === 'string') onSelect(id);
-        },
-        selectedItems: selectedKeyId === '' ? [] : [selectedKeyId],
+        onSelectionChange: (_, data) => selectRow([...data.selectedItems][0]),
+        selectedItems,
         selectionMode: 'single',
       }),
       useTableSort({}),
@@ -93,15 +97,14 @@ export function KeysTable({
 
   if (narrow) return <List
     aria-label={t('dashboard.apiKeys.table.title')}
-    onSelectionChange={(_, data) => {
-      if (disabled) return;
-      const id = data.selectedItems[0];
-      if (typeof id === 'string') onSelect(id);
-    }}
-    selectedItems={selectedKeyId === '' ? [] : [selectedKeyId]}
+    onSelectionChange={(_, data) => selectRow(data.selectedItems[0])}
+    selectedItems={selectedItems}
     selectionMode="single"
   >
-    {keys.map(key => {
+    {/* The same rows in the same order as the wide table: the sort a column
+        header set is state of this component, so crossing the breakpoint is a
+        change of presentation and not of what is being presented. */}
+    {sort.sort(getRows()).map(({ item: key }) => {
       const copyTag = `key-${key.id}`;
       const lastUsed = key.last_used_at
         ? relativeTime(key.last_used_at, locale, { now }) ?? t('dashboard.apiKeys.table.usedOn', { date: shortDate(key.last_used_at, locale) })
@@ -166,7 +169,7 @@ export function KeysTable({
             <TableHeaderCell onClick={event => sort.toggleColumnSort(event, 'lastUsed')} sortDirection={sort.getSortDirection('lastUsed')} sortable>
               {t('dashboard.apiKeys.table.lastUsed')}
             </TableHeaderCell>
-            <TableActionsHeader>{t('dashboard.apiKeys.table.actions')}</TableActionsHeader>
+            <TableTrailingHeader>{t('dashboard.apiKeys.table.actions')}</TableTrailingHeader>
           </TableRow>
         </TableHeader>
         <TableBody>

@@ -1,6 +1,7 @@
 import { SelectAllOffRegular, SelectAllOnRegular, SquareMultipleRegular } from '@fluentui/react-icons';
 import { useTranslation } from 'react-i18next';
 
+import { chartHeight } from './layout';
 import { colorForSlot } from './palette';
 import type { SeriesLegendEntry } from './series-legends';
 import { SeriesMarker } from './series-marker';
@@ -68,7 +69,7 @@ export function ChartSection({
           </div>
         : <EmptyStateLine>{emptyText}</EmptyStateLine>}
 
-      <div className="min-h-[320px] min-w-0">{children}</div>
+      <div className="min-w-0" style={{ minHeight: chartHeight }}>{children}</div>
     </section>
   );
 }

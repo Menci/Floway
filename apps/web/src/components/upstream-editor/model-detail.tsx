@@ -1,24 +1,24 @@
 import { DeleteRegular } from '@fluentui/react-icons';
-import { useId, useState } from 'react';
+import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { ModelRow } from './data';
 import { publicModelId } from './data';
+import { CHAT_ENDPOINT_KEYS, endpointOptionsFor, IMAGE_ENDPOINT_KEYS, shapeForKind } from './endpoints';
 import { FeatureFlagsEditor } from './feature-flags';
 import { useMonoLabelClass } from './mono-label';
 import { PricingEditor } from './pricing-editor';
 import { pricingEntryDraftsFor, pricingIsValid } from './pricing-model';
 import { RerankTargetEditor } from './rerank-target-editor';
-import type {
-  UpstreamModelConfig,
-  UpstreamRecord,
-} from '../../api/types';
+import { EditorSection } from './section';
+import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { ChoiceGroup } from '../ui/choice-group';
-import { Checkbox, Combobox, Dropdown, Input, Switch } from '../ui/fluent-form-controls';
-import { CHECKBOX_LIST_CLASS, PANE_GAP_CLASS, SECTION_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
+import { Checkbox, Dropdown, Input, Switch } from '../ui/fluent-form-controls';
+import { CHECKBOX_LIST_CLASS, PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { SectionHeader } from '../ui/section-header';
-import { modelsField, type UpstreamChatModelConfig } from '@floway-dev/provider';
+import { TagCombobox } from '../ui/tag-combobox';
+import { modelsField, type UpstreamChatModelConfig, type UpstreamModelConfig } from '@floway-dev/provider';
 
 const {
   Button,
@@ -64,11 +64,10 @@ export function ModelDetail({
   };
   const setKind = (kind: UpstreamModelConfig['kind']) => patch({
     kind,
-    endpoints: defaultEndpointsForKind(kind, row.config.endpoints),
     chat: kind === 'chat' ? row.config.chat : undefined,
-    // A rerank model without a target cannot be saved.
-    rerankTarget: kind === 'rerank' ? row.config.rerankTarget ?? { protocol: 'cohere-v2' } : undefined,
+    rerankTarget: undefined,
     ...(kind === 'image' ? { limits: undefined } : {}),
+    ...shapeForKind(kind, row.config),
   });
 
   const updateLimit = (key: keyof NonNullable<UpstreamModelConfig['limits']>, raw: string) => {
@@ -113,7 +112,7 @@ export function ModelDetail({
       /> : <>
         {validationError && <MessageBar intent="error"><MessageBarBody>{validationError}</MessageBarBody></MessageBar>}
 
-        <ModelEditorSection title={t('dashboard.upstreamEditor.models.identity')}>
+        <EditorSection level={3} title={t('dashboard.upstreamEditor.models.identity')}>
           {/* This sits beside a 380px sidebar, so the available width and the
               width a media query can see are two different numbers. */}
           <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4">
@@ -134,9 +133,9 @@ export function ModelDetail({
               <Input className="!w-full font-mono" placeholder={row.config.upstreamModelId || t('dashboard.upstreamEditor.models.publicIdPlaceholder')} readOnly={fieldsReadOnly} value={row.config.publicModelId ?? ''} onChange={(_, data) => patch({ publicModelId: data.value || undefined })} />
             </Field>
           </div>
-        </ModelEditorSection>
+        </EditorSection>
 
-        {ENDPOINT_CHOICE_KINDS.has(row.config.kind) && <ModelEditorSection title={t('dashboard.upstreamEditor.models.endpoints')}>
+        {ENDPOINT_CHOICE_KINDS.has(row.config.kind) && <EditorSection level={3} title={t('dashboard.upstreamEditor.models.endpoints')}>
           <div className={`${TWO_COLUMN_FORM_CLASS} ${CHECKBOX_LIST_CLASS}`}>
             {modelEndpointOptions(row.config.kind).map(([key, label]) => <Checkbox
               checked={key in row.config.endpoints}
@@ -150,13 +149,13 @@ export function ModelDetail({
               }}
             />)}
           </div>
-        </ModelEditorSection>}
+        </EditorSection>}
 
-        {row.config.kind === 'rerank' && row.config.rerankTarget && <ModelEditorSection title={t('dashboard.upstreamEditor.models.rerankTarget')}>
+        {row.config.kind === 'rerank' && row.config.rerankTarget && <EditorSection level={3} title={t('dashboard.upstreamEditor.models.rerankTarget')}>
           <RerankTargetEditor readOnly={fieldsReadOnly} value={row.config.rerankTarget} onChange={rerankTarget => patch({ rerankTarget })} />
-        </ModelEditorSection>}
+        </EditorSection>}
 
-        {row.config.kind !== 'image' && <ModelEditorSection title={t('dashboard.upstreamEditor.models.capabilities')}>
+        {row.config.kind !== 'image' && <EditorSection level={3} title={t('dashboard.upstreamEditor.models.capabilities')}>
           <div className="grid grid-cols-3 gap-4 max-[760px]:grid-cols-1">
             <NumberField label={t('dashboard.upstreamEditor.models.contextWindow')} placeholder="e.g. 1050000" readOnly={fieldsReadOnly} value={row.config.limits?.max_context_window_tokens} onChange={raw => updateLimit('max_context_window_tokens', raw)} />
             <NumberField label={t('dashboard.upstreamEditor.models.promptTokens')} placeholder="e.g. 922000" readOnly={fieldsReadOnly} value={row.config.limits?.max_prompt_tokens} onChange={raw => updateLimit('max_prompt_tokens', raw)} />
@@ -184,16 +183,16 @@ export function ModelDetail({
               </div>}
             </div>
           </>}
-        </ModelEditorSection>}
+        </EditorSection>}
 
-        <ModelEditorSection title={t('dashboard.upstreamEditor.models.pricing')} description={t('dashboard.upstreamEditor.models.pricingHint')}>
+        <EditorSection level={3} title={t('dashboard.upstreamEditor.models.pricing')} description={t('dashboard.upstreamEditor.models.pricingHint')}>
           <PricingEditor
             readOnly={fieldsReadOnly}
             kind={row.config.kind}
             onChange={pricing => patch({ pricing })}
             value={row.config.pricing}
           />
-        </ModelEditorSection>
+        </EditorSection>
 
         {!fieldsReadOnly && <Button icon={<DeleteRegular />} onClick={onDelete}>
           {t('dashboard.upstreamEditor.models.delete')}
@@ -203,62 +202,28 @@ export function ModelDetail({
   );
 }
 
-function ModelEditorSection({ children, description, title }: { children: React.ReactNode; description?: string; title: string }) {
-  const titleId = useId();
-  return <section aria-labelledby={titleId} className={SECTION_STACK_CLASS} role="group">
-    <SectionHeader description={description} level={3} title={title} titleId={titleId} />
-    {children}
-  </section>;
-}
-
 function NumberField({ label, onChange, placeholder, readOnly, value }: { label: string; onChange: (raw: string) => void; placeholder: string; readOnly: boolean; value?: number }) {
   return <Field className="min-w-0" label={label}><Input className="!w-full" min={0} placeholder={placeholder} readOnly={readOnly} type="number" value={value === undefined ? '' : String(value)} onChange={(_, data) => onChange(data.value)} /></Field>;
 }
 
 function EffortEditor({ effort, onChange, readOnly, t }: { readOnly: boolean; effort: NonNullable<UpstreamChatModelConfig['reasoning']>['effort'] & {}; onChange: (effort: NonNullable<UpstreamChatModelConfig['reasoning']>['effort']) => void; t: ReturnType<typeof useTranslation>['t'] }) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
   const supported = effort.supported;
-  const options = [...new Set([...reasoningPresets, ...supported])]
-    .filter(level => level.toLowerCase().includes(query.trim().toLowerCase()));
-  const setSupported = (next: readonly string[]) => {
-    const values = [...next];
-    onChange({
-      supported: values,
-      default: values.includes(effort.default) ? effort.default : values[0] ?? '',
-    });
-  };
-  const add = (raw: string) => {
-    const level = raw.trim();
-    if (level && !supported.includes(level)) setSupported([...supported, level]);
-    setQuery('');
-  };
+  const setSupported = (values: readonly string[]) => onChange({
+    supported: [...values],
+    default: values.includes(effort.default) ? effort.default : values[0] ?? '',
+  });
   return <div className={`grid grid-cols-[minmax(0,1fr)_minmax(180px,0.45fr)] ${PANE_GAP_CLASS} max-[760px]:grid-cols-1`}>
     <Field label={t('dashboard.upstreamEditor.models.supportedEfforts')}>
-      <Combobox
-        readOnly={readOnly}
+      <TagCombobox
+        closedLabel={supported.join(', ')}
         freeform
-        multiselect
-        onChange={event => setQuery(event.target.value)}
-        onKeyDown={event => {
-          if (event.key !== 'Enter' || query.trim() === '') return;
-          event.preventDefault();
-          add(query);
-        }}
-        onOpenChange={(_, data) => {
-          setOpen(data.open);
-          setQuery('');
-        }}
-        onOptionSelect={(_, data) => {
-          setSupported(data.selectedOptions);
-          setQuery('');
-        }}
+        normalizeValue={level => level.trim()}
+        onChange={setSupported}
+        options={[...new Set([...reasoningPresets, ...supported])]}
         placeholder={t('dashboard.upstreamEditor.models.effortPlaceholder')}
-        selectedOptions={[...supported]}
-        value={open ? query : supported.join(', ')}
-      >
-        {options.map(level => <Option key={level} text={level} value={level}>{level}</Option>)}
-      </Combobox>
+        readOnly={readOnly}
+        value={supported}
+      />
     </Field>
     <Field label={t('dashboard.upstreamEditor.models.defaultEffort')}>
       <Dropdown disabled={supported.length === 0} readOnly={readOnly} selectedOptions={[effort.default]} value={effort.default} onOptionSelect={(_, data) => data.optionValue !== undefined && onChange({ ...effort, default: data.optionValue })}>
@@ -315,18 +280,5 @@ const numberRange = (range: { min?: number; max?: number }, key: 'min' | 'max', 
 
 const ENDPOINT_CHOICE_KINDS = new Set<UpstreamModelConfig['kind']>(['chat', 'image']);
 
-const defaultEndpointsForKind = (kind: UpstreamModelConfig['kind'], current: UpstreamModelConfig['endpoints']) => {
-  if (kind === 'embedding') return { embeddings: {} };
-  if (kind === 'transcription') return { audioTranscriptions: {} };
-  if (kind === 'rerank') return { rerank: {} };
-  const keys = kind === 'image' ? ['imagesGenerations', 'imagesEdits'] as const : ['completions', 'chatCompletions', 'responses', 'messages'] as const;
-  const kept: UpstreamModelConfig['endpoints'] = {};
-  for (const key of keys) if (current[key]) kept[key] = current[key];
-  if (Object.keys(kept).length) return kept;
-  return kind === 'image' ? { imagesGenerations: {}, imagesEdits: {} } : { chatCompletions: {} };
-};
-
-const modelEndpointOptions = (kind: UpstreamModelConfig['kind']): [keyof UpstreamModelConfig['endpoints'], string][] => {
-  if (kind === 'image') return [['imagesGenerations', '/images/generations'], ['imagesEdits', '/images/edits']];
-  return [['completions', '/completions'], ['chatCompletions', '/chat/completions'], ['responses', '/responses'], ['messages', '/messages']];
-};
+const modelEndpointOptions = (kind: UpstreamModelConfig['kind']) =>
+  endpointOptionsFor(kind === 'image' ? IMAGE_ENDPOINT_KEYS : CHAT_ENDPOINT_KEYS);

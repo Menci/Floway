@@ -1,10 +1,10 @@
 import { InfoRegular } from '@fluentui/react-icons';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { redirect, useSearchParams } from 'react-router';
+import { useSearchParams } from 'react-router';
 
 import type { Route } from './+types/dashboard-monitor-performance';
-import { requireDashboardSession } from './guards';
+import { requireDashboardUser } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
 import { api, callApi, type GlobalError } from '../api/client';
 import { PerformanceChartSection } from '../components/performance/chart';
@@ -36,13 +36,12 @@ import { Panel } from '../components/ui/panel';
 import { ResourceListActions } from '../components/ui/resource-list';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
-import { useRefresh } from '../components/ui/use-refresh';
+import { useRefreshOnChange } from '../components/ui/use-refresh';
 import { fluentComponents } from '../fluent';
 import { formatDuration } from '../lib/format-duration';
 import { formatCount, formatTokenRateFromTpot } from '../lib/format-number';
 import { useEntryRewrite } from '../lib/page-navigation';
 import { useLocale } from '../lib/use-locale';
-import { useAuthStore } from '../stores/auth-store';
 
 const { Button, Field, Option, Tab, TabList, Text, Tooltip } = fluentComponents;
 
@@ -57,14 +56,14 @@ interface LoaderData {
   // render zeroes the page does not know to be true.
   overview: PerformanceOverviewResponse | null;
   state: PerformanceUrlState;
-  upstreamNames: UpstreamName[];
+  // Null on the same terms: without the names, a group labels itself with an
+  // upstream id the page would be presenting as a name.
+  upstreamNames: UpstreamName[] | null;
   view: PerformanceView;
 }
 
 export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise<LoaderData> {
-  requireDashboardSession();
-  const user = await useAuthStore.getState().initialize();
-  if (!user) throw redirect('/');
+  const user = await requireDashboardUser();
   const state = parsePerformanceUrlState(new URL(request.url).searchParams);
   const view: PerformanceView = user.isAdmin ? 'all-by-user' : 'self-by-key';
   const groupBy = state.groupBy === 'userId' && view !== 'all-by-user' ? 'model' : state.groupBy;
@@ -79,7 +78,7 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
     loadedAt,
     overview: overview.data ?? null,
     state: { ...state, groupBy },
-    upstreamNames: upstreams.data ?? [],
+    upstreamNames: upstreams.data ?? null,
     view,
   };
 }
@@ -88,7 +87,6 @@ export const shouldRevalidate = revalidateOnPathnameChange;
 
 export default function DashboardMonitorPerformance({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
-  const clearAuth = useAuthStore(state => state.clear);
   const [, setSearchParams] = useSearchParams();
   const rewrite = useEntryRewrite();
   const initialState = loaderData.state;
@@ -103,21 +101,16 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const [filters, setFilters] = useState<PerformanceFilters>(initialState.filters);
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set(initialState.hidden));
   const [overview, setOverview] = useState<PerformanceOverviewResponse | null>(loaderData.overview);
-  const [upstreamNames] = useState(() => new Map(loaderData.upstreamNames.map(record => [record.id, record.name])));
+  const [upstreamNames] = useState(() => loaderData.upstreamNames && new Map(loaderData.upstreamNames.map(record => [record.id, record.name])));
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
-  // The query the data on screen came back for, recorded on arrival. A "have I
-  // mounted yet" flag instead would make StrictMode's double invocation
-  // indistinguishable from a real change and refetch on every visit; recording
-  // the query at request time instead would strand a run torn down before it
-  // answered.
-  const loadedFor = useRef({ filters, groupBy, range });
+  const query = useMemo(() => ({ filters, groupBy, range }), [filters, groupBy, range]);
   const locale = useLocale();
 
   // A background poll must not clear a failure the operator has not read.
-  const reload = useCallback(async (signal: AbortSignal, { background }: { background: boolean }) => {
+  const reload = useCallback(async (signal: AbortSignal, { background }: { background: boolean }, arrived: () => void) => {
     const requestedAt = Date.now();
     if (!background) setError(null);
-    const search = buildPerformanceQuery(view, range, groupBy, filters, requestedAt);
+    const search = buildPerformanceQuery(view, query.range, query.groupBy, query.filters, requestedAt);
     const result = await callApi(() => api.api.performance.overview.$get(
       { query: Object.fromEntries(search) },
       { init: { signal } },
@@ -126,23 +119,15 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     if (result.error) setError(result.error);
     else {
       setOverview(result.data);
-      setLoadedRange(range);
+      setLoadedRange(query.range);
       setLoadedAt(requestedAt);
-      loadedFor.current = { filters, groupBy, range };
+      arrived();
     }
-  }, [filters, groupBy, range, view]);
+  }, [query, view]);
 
-  const { poll, refresh, refreshing } = useRefresh(reload);
-
-  useEffect(() => {
-    const loaded = loadedFor.current;
-    if (loaded.filters === filters && loaded.groupBy === groupBy && loaded.range === range) return;
-    void refresh();
-  }, [filters, groupBy, range, refresh]);
+  const { poll, refresh, refreshing } = useRefreshOnChange(query, reload);
 
   usePollWhileVisible(poll);
-
-  useEffect(() => { if (error?.status === 401) clearAuth(); }, [clearAuth, error]);
 
   useEffect(() => {
     setSearchParams(serializePerformanceUrlState({ metric, percentile, groupBy, range, filters, hidden: [...hiddenSeries] }), rewrite);
@@ -160,7 +145,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   };
   const setFilter = (key: keyof PerformanceFilters, value: string) => setFilters(current => (current[key] === value ? current : { ...current, [key]: value }));
   const buckets = useMemo(() => performanceBuckets(loadedRange, loadedAt, locale), [loadedAt, loadedRange, locale]);
-  const labels = useMemo(() => overview && performanceLabels(overview, upstreamNames), [overview, upstreamNames]);
+  const labels = useMemo(() => overview && upstreamNames && performanceLabels(overview, upstreamNames), [overview, upstreamNames]);
   const chart = useMemo(() => overview && labels && buildPerformanceChart(overview.series, metric, percentile, groupBy, labels, buckets, loadedRange), [buckets, groupBy, labels, loadedRange, metric, overview, percentile]);
   const summary = overview?.axes.none[0];
   const summaryCards = [

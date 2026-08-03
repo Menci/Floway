@@ -4,7 +4,8 @@
 // name the presence component. Everything below re-states that render function
 // and the shell around it, so the toast keeps Fluent's dispatch, queue, timeout,
 // focus restoration and update semantics while the surface, the motion and the
-// countdown are ours.
+// countdown are ours. The card and the title are wrapped here too, because the
+// context carrying a toast's intent is exported by this package alone.
 //
 // This is the app's only value import of `@fluentui/react-toast`. The runtime
 // bindings still arrive as an argument, so ../fluent.ts stays the one place a
@@ -14,6 +15,7 @@ import {
   toastContainerClassNames,
   toasterClassNames,
   useToastAnnounce,
+  useToastContainerContext,
   useToastContainerContextValues_unstable,
   useToastContainer_unstable,
   useToaster,
@@ -29,10 +31,11 @@ import type {
 } from '@fluentui/react-toast';
 import * as React from 'react';
 
+import { severityMark, winuiIntentAttribute } from './appearance';
 import { createToastPresence } from './presence';
 import { createReposition } from './reposition';
-
-type FluentComponents = typeof import('@fluentui/react-components');
+import { wrapFluent } from './wrap';
+import type { FluentComponents, PropCarrier } from './wrap';
 
 type Politeness = ToastAnnounceOptions['politeness'];
 
@@ -43,6 +46,7 @@ const STACK_ITEM_CLASS = 'winui-toast-slot';
 
 // Long enough for a screen reader to register that the region changed. Fluent's
 // own live region holds each message for the same span.
+// https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-toast/library/src/components/AriaLive/useAriaLive.ts#L7-L8
 const MESSAGE_HOLD_MS = 500;
 
 interface LiveMessage {
@@ -116,7 +120,9 @@ interface CountdownProps {
 // rather than a second mechanism beside it: one CSS animation whose duration is
 // the timeout and whose end event is what closes the toast, so pausing the
 // animation pauses the toast, exactly, and resuming carries on from where it
-// stopped instead of restarting.
+// stopped instead of restarting. A negative timeout is Fluent's own sentinel for
+// a toast that never expires, and it draws no bar for one.
+// https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-toast/library/src/components/Timer/Timer.tsx#L23-L25
 const Countdown = ({ onTimeout, running, timeout }: CountdownProps) => (timeout < 0 ? null : <span
   className={toastContainerClassNames.timer}
   data-timer-status={running ? 'running' : 'paused'}
@@ -181,6 +187,7 @@ const insetFor = (offset: ToastOffset | undefined, position: ToastPosition): Sta
 // reach for the same reason, restated with its axes, its flip on reading
 // direction and its default insets unchanged -- those insets are Fluent's
 // numbers, kept for the reason the stack's width and gap are.
+// https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-toast/library/src/state/vanilla/getPositionStyles.ts#L19-L21
 const stackPlacement = (
   position: ToastPosition,
   dir: 'ltr' | 'rtl',
@@ -217,6 +224,26 @@ type ToasterOptionProps = Pick<
   | 'timeout'
   | 'toasterId'
 >;
+
+// The card and the title read their intent from the container context this file
+// already installs, which is the one place a toast's intent is in scope: the
+// dispatched content is rendered inside it, and an update carries a new intent
+// through it without the content being rewritten. `info` is what the container
+// resolves an absent intent to, and an InfoBar without a severity is
+// Informational too.
+// https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-toast/library/src/contexts/toastContainerContext.tsx#L13-L24
+// https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-toast/library/src/components/ToastContainer/useToastContainer.ts#L44
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar.xaml#L15
+const useToastIntent = () => useToastContainerContext().intent ?? 'info';
+
+const useCardIntentProps = (props: PropCarrier) => ({ ...props, [winuiIntentAttribute]: useToastIntent() });
+
+// WinUI paints the severity on the card and always shows its glyph, so an
+// explicit media slot is the only thing that displaces the mark.
+const useTitleSeverityProps = (props: { media?: unknown }) => {
+  const intent = useToastIntent();
+  return { ...props, media: props.media === undefined ? severityMark(intent) : props.media };
+};
 
 export const withWinuiToaster = (components: FluentComponents): FluentComponents => {
   const { Portal, useFluent, useFocusableGroup } = components;
@@ -282,7 +309,7 @@ export const withWinuiToaster = (components: FluentComponents): FluentComponents
 
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         const containers = [...event.currentTarget.querySelectorAll<HTMLElement>(`.${toastContainerClassNames.root}`)];
-        const focused = containers.findIndex(container => container.contains(event.target as Node));
+        const focused = containers.findIndex(container => isNode(event.target) && container.contains(event.target));
         if (focused >= 0) {
           const step = event.key === 'ArrowDown' ? 1 : -1;
           containers[(focused + step + containers.length) % containers.length].focus();
@@ -372,5 +399,10 @@ export const withWinuiToaster = (components: FluentComponents): FluentComponents
 
   WinuiToaster.displayName = 'Toaster';
 
-  return { ...components, Toaster: WinuiToaster };
+  return {
+    ...components,
+    Toast: wrapFluent(components.Toast, useCardIntentProps),
+    Toaster: WinuiToaster,
+    ToastTitle: wrapFluent(components.ToastTitle, useTitleSeverityProps),
+  };
 };

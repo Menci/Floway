@@ -2,7 +2,7 @@ import { redirect } from 'react-router';
 
 import type { Route } from './+types/home';
 import { login as loginWithPassword } from '../api/auth';
-import { setSessionToken, getSessionToken } from '../auth/session';
+import { getSessionToken } from '../auth/session';
 import { LoginForm, type LoginActionData } from '../components/login-form';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { useAuthStore } from '../stores/auth-store';
@@ -11,8 +11,6 @@ export async function clientLoader() {
   if (getSessionToken()) throw redirect('/dashboard/playground');
   return null;
 }
-
-clientLoader.hydrate = true as const;
 
 export async function clientAction({
   request,
@@ -31,7 +29,6 @@ export async function clientAction({
     };
   }
 
-  setSessionToken(result.data.token);
   useAuthStore.getState().primeFromLogin(result.data);
   throw redirect('/dashboard/playground');
 }

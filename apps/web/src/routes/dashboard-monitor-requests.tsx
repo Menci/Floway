@@ -13,7 +13,7 @@ import { RequestListPanel } from '../components/requests/list';
 import { collectStream, detectCollectKind, type CollectedStream } from '../components/requests/stream-render';
 import { useDumpSubscription } from '../components/requests/use-dump-subscription';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
-import { EmptyState } from '../components/ui/empty-state';
+import { EmptyState, EmptyStateLine } from '../components/ui/empty-state';
 import { PANE_GAP_CLASS } from '../components/ui/layout';
 import { OpenLinkLabel } from '../components/ui/open-link-label';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
@@ -31,10 +31,13 @@ export const handle = dashboardWorkspaceHandle;
 
 const { Button, DrawerBody, DrawerHeader, DrawerHeaderTitle, OverlayDrawer } = fluentComponents;
 
+// `null` is a fetch that failed, distinct from an account that genuinely holds
+// no key with dump retention: an empty list sends the operator off to create a
+// key they may already have.
 interface LoaderData {
   collected: CollectedStream | null;
   error: string | null;
-  keys: ApiKey[];
+  keys: ApiKey[] | null;
   record: DumpRecord | null;
   recordError: string | null;
   records: DumpMetadata[];
@@ -45,10 +48,12 @@ interface LoaderData {
 export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise<LoaderData> {
   requireDashboardSession();
   const keysResult = await callApi(() => api.api.keys.$get());
-  const keys = keysResult.data?.filter(key => key.dump_retention_seconds !== null) ?? [];
+  const keys = keysResult.data?.filter(key => key.dump_retention_seconds !== null) ?? null;
   const url = new URL(request.url);
   const requestedKeyId = url.searchParams.get('key');
-  const selectedKeyId = keys.some(key => key.id === requestedKeyId) ? requestedKeyId : keys[0]?.id ?? null;
+  const selectedKeyId = keys === null
+    ? null
+    : keys.some(key => key.id === requestedKeyId) ? requestedKeyId : keys[0]?.id ?? null;
   const recordId = url.searchParams.get('record');
   if (!selectedKeyId) {
     return { collected: null, error: keysResult.error?.message ?? null, keys, record: null, recordError: null, records: [], recordsError: null, selectedKeyId };
@@ -81,7 +86,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
   const [searchParams, setSearchParams] = useSearchParams();
   const rewrite = useEntryRewrite();
   // Tied to the loader payload it came from: a navigation discards it rather than showing one route's keys under another's URL.
-  const [replacement, setReplacement] = useState<{ source: LoaderData; keys: ApiKey[]; keysError: string | null; recordsError: string | null } | null>(null);
+  const [replacement, setReplacement] = useState<{ source: LoaderData; keys: ApiKey[] | null; keysError: string | null; recordsError: string | null } | null>(null);
   const shown = replacement?.source === loaderData
     ? replacement
     : { source: loaderData, keys: loaderData.keys, keysError: loaderData.error, recordsError: loaderData.recordsError };
@@ -128,8 +133,10 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
   return (
     <section className="h-full min-h-0 grid grid-rows-[auto_minmax(0,1fr)] gap-[18px] min-w-0">
       <DashboardPageHeader description={t('dashboard.pages.requests')} title={t('dashboard.nav.requests')} />
-      {keysError && keys.length === 0 ? (
-        <OutcomeMessageBar onDismiss={() => setReplacement({ ...shown, keysError: null })}>{keysError}</OutcomeMessageBar>
+      {keys === null ? (
+        keysError
+          ? <OutcomeMessageBar onDismiss={() => setReplacement({ ...shown, keysError: null })}>{keysError}</OutcomeMessageBar>
+          : <Panel className="!grid"><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel>
       ) : keys.length === 0 ? (
         <Panel className="!grid">
           <EmptyState

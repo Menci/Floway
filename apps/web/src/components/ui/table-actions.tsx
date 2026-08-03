@@ -18,11 +18,14 @@ const useStyles = makeStyles({
   },
 });
 
-export const useTrailingCellClass = (): string => useStyles().trailing;
-
-export function TableActionsHeader({ className, ...props }: TableHeaderCellProps) {
+export function TableTrailingHeader({ className, ...props }: TableHeaderCellProps) {
   const styles = useStyles();
   return <TableHeaderCell {...props} className={mergeClasses(styles.trailing, className)} />;
+}
+
+export function TableTrailingCell({ className, ...props }: TableCellProps) {
+  const styles = useStyles();
+  return <TableCell {...props} className={mergeClasses(styles.trailing, className)} />;
 }
 
 export function TableCentredHeader({ className, ...props }: TableHeaderCellProps) {

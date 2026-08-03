@@ -2,8 +2,10 @@
 //
 // WinUI paints the selected state as a filled accent shape carrying a light
 // glyph, where Fluent leaves the box hollow and tints the glyph itself. Border
-// and glyph swap roles on selection, so the checked and indeterminate rules
-// restate background, border and glyph together rather than adjusting one.
+// and glyph swap roles on selection, so the selected rules restate background,
+// border and glyph together rather than adjusting one; the check box's own
+// surface table lives in ./checkbox-surface.ts, which every slot in this layer
+// that draws a box shares, and the ellipse's is stated below.
 // The indicator element is painted directly rather than through Fluent's
 // `--fui-Checkbox__indicator--*` custom properties, so one rule can cover the
 // Fluent states sharing a single WinUI value.
@@ -18,7 +20,8 @@
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L92-L179
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L62-L119
 
-import { nested, pressedRoots, under } from './selectors';
+import { checkboxSurfaceCss } from './checkbox-surface';
+import { list, nested, pressedRoots, reducedMotion, under } from './selectors';
 
 // The check box's marks. WinUI does not draw a font character: the template's
 // CheckGlyph is an AnimatedIcon over AnimatedAcceptVisualSource, and both the
@@ -107,13 +110,17 @@ export const checkboxNotMixed = `:not(${checkboxMixed})`;
 const checkboxPressed = pressedRoots('.fui-Checkbox', '.fui-Checkbox__input');
 const radioPressed = pressedRoots('.fui-Radio', '.fui-Radio__input');
 
-const uncheckedBox = `.fui-Checkbox__input:enabled:not(:checked)${checkboxNotMixed}`
-  + ' ~ .fui-Checkbox__indicator.fui-Checkbox__indicator';
+// The Checkbox DOM shape is stated here for every sheet that answers a check
+// box, ./list.css.ts included, so no other sheet spells the slot out again.
+const indicator = '.fui-Checkbox__indicator.fui-Checkbox__indicator';
+const box = (input: string) => `.fui-Checkbox__input${input} ~ ${indicator}`;
 
-const selectedBoxes = [
-  '.fui-Checkbox__input:enabled:checked ~ .fui-Checkbox__indicator.fui-Checkbox__indicator',
-  `.fui-Checkbox__input:enabled${checkboxMixed} ~ .fui-Checkbox__indicator.fui-Checkbox__indicator`,
-];
+export const uncheckedBox = box(`:enabled:not(:checked)${checkboxNotMixed}`);
+
+const selectedBoxes = [box(':enabled:checked'), box(`:enabled${checkboxMixed}`)];
+const selectedDisabledBoxes = [box(':disabled:checked'), box(`:disabled${checkboxMixed}`)];
+
+const hoveredCheckbox = ['.fui-Checkbox:hover'];
 
 const uncheckedEllipse = '.fui-Radio__input:enabled:not(:checked)'
   + ' ~ .fui-Radio__indicator.fui-Radio__indicator';
@@ -223,110 +230,21 @@ export const choiceCss = `
     color: var(--winui-text-fill-disabled);
   }
 
-  /* Unchecked box. The outline holds ControlStrongStrokeColorDefault across
-     rest and pointer-over, so one rule replaces Fluent's rest and hover pair,
-     but the interior is a cavity that washes one step further down the alt-fill
-     ramp per state, which Fluent leaves transparent throughout.
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L217-L218
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L229 */
-  .fui-Checkbox__input:enabled:not(:checked)${checkboxNotMixed}
-    ~ .fui-Checkbox__indicator.fui-Checkbox__indicator {
-    background-color: var(--winui-control-alt-fill-secondary);
-    border-color: var(--winui-control-strong-stroke-default);
-  }
-
-  /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L230 */
-  .fui-Checkbox:hover
-    .fui-Checkbox__input:enabled:not(:checked)${checkboxNotMixed}
-    ~ .fui-Checkbox__indicator.fui-Checkbox__indicator {
-    background-color: var(--winui-control-alt-fill-tertiary);
-  }
-
-  /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L219
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L231 */
-${nested(under(checkboxPressed, [uncheckedBox]))} {
-    background-color: var(--winui-control-alt-fill-quarternary);
-    border-color: var(--winui-control-strong-stroke-disabled);
-  }
-
-  /* The disabled cavity is the one alt-fill step that is fully transparent, so
-     it is the unchecked box, not the checked one, that loses its interior.
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L232 */
-  .fui-Checkbox__input:disabled:not(:checked)${checkboxNotMixed}
-    ~ .fui-Checkbox__indicator.fui-Checkbox__indicator {
-    background-color: var(--winui-control-alt-fill-disabled);
-  }
-
-  /* Selected box. WinUI gives Indeterminate the same accent fill and stroke as
-     Checked and differs only in the glyph it draws, so both states share these
-     rules; Fluent instead leaves the indeterminate box hollow. Fill and stroke
-     are the same accent brush per state, so the box reads as a filled square
-     with no outline of its own.
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L221
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L225
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L233
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L237
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L245
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L249 */
-  .fui-Checkbox__input:enabled:checked ~ .fui-Checkbox__indicator.fui-Checkbox__indicator,
-  .fui-Checkbox__input:enabled${checkboxMixed} ~ .fui-Checkbox__indicator.fui-Checkbox__indicator {
-    background-color: var(--winui-accent-fill-default);
-    border-color: var(--winui-accent-fill-default);
-    color: var(--winui-text-on-accent-fill-primary);
-  }
-
-  /* The selected box walks the accent ramp on pointer-over and pressed, the
-     same two steps for Checked and Indeterminate.
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L222
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L226
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L234
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L238 */
-  .fui-Checkbox:hover
-    .fui-Checkbox__input:enabled:checked
-    ~ .fui-Checkbox__indicator.fui-Checkbox__indicator,
-  .fui-Checkbox:hover
-    .fui-Checkbox__input:enabled${checkboxMixed}
-    ~ .fui-Checkbox__indicator.fui-Checkbox__indicator {
-    background-color: var(--winui-accent-fill-secondary);
-    border-color: var(--winui-accent-fill-secondary);
-  }
-
-  /* Pressed also drops the glyph one step down the on-accent ramp, which no
-     other state of the check box does.
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L223
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L227
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L235
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L239
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L247
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L251 */
-${nested(under(checkboxPressed, selectedBoxes))} {
-    background-color: var(--winui-accent-fill-tertiary);
-    border-color: var(--winui-accent-fill-tertiary);
-    color: var(--winui-text-on-accent-fill-secondary);
-  }
-
-  /* Disabled. WinUI keeps the selected box accent-shaped and only desaturates
-     it, and keeps the glyph on the on-accent ramp, where Fluent collapses every
-     disabled check box onto one neutral appearance. The stroke is the disabled
-     strong stroke whether the box is unchecked, checked or indeterminate, and
-     so is the glyph's disabled on-accent colour, so one rule states both.
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L220
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L224
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L228
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L244
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L248
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L252 */
-  .fui-Checkbox__input:disabled ~ .fui-Checkbox__indicator.fui-Checkbox__indicator {
-    border-color: var(--winui-control-strong-stroke-disabled);
-    color: var(--winui-text-on-accent-fill-disabled);
-  }
-
-  /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L236
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L240 */
-  .fui-Checkbox__input:disabled:checked ~ .fui-Checkbox__indicator.fui-Checkbox__indicator,
-  .fui-Checkbox__input:disabled${checkboxMixed} ~ .fui-Checkbox__indicator.fui-Checkbox__indicator {
-    background-color: var(--winui-accent-fill-disabled);
-  }
+  /* The box's own surface, on the shared table ./checkbox-surface.ts states.
+     The check box addresses it from the input, so every state is a pseudo-class
+     on that input, with pointer-over and pressed read from the root because
+     WinUI makes them states of the whole control. */
+${nested(checkboxSurfaceCss({
+  unchecked: uncheckedBox,
+  uncheckedHovered: under(hoveredCheckbox, [uncheckedBox]),
+  uncheckedPressed: under(checkboxPressed, [uncheckedBox]),
+  uncheckedDisabled: box(`:disabled:not(:checked)${checkboxNotMixed}`),
+  selected: list(selectedBoxes),
+  selectedHovered: under(hoveredCheckbox, selectedBoxes),
+  selectedPressed: under(checkboxPressed, selectedBoxes),
+  disabled: box(':disabled'),
+  selectedDisabled: list(selectedDisabledBoxes),
+}))}
 
   /* The two marks. Fluent mounts its glyph only while the box is selected, so
      the check is drawn on a pseudo-element that is always present and the
@@ -400,15 +318,12 @@ ${nested(under(checkboxPressed, selectedBoxes))} {
   }
 
   /* AnimatedIcon cuts to the destination frame when animations are off, so the
-     preference lands on the same path the framework already takes. 0.01ms rather
-     than none, for the reason the radio dot below states.
+     preference lands on the same path the framework already takes.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedIcon.cpp#L435-L444 */
-  @media (prefers-reduced-motion: reduce) {
-    .fui-Checkbox__indicator.fui-Checkbox__indicator::before,
-    .fui-Checkbox__input:checked ~ .fui-Checkbox__indicator.fui-Checkbox__indicator::before {
-      transition-duration: 0.01ms;
-    }
-  }
+${nested(reducedMotion([
+  '.fui-Checkbox__indicator.fui-Checkbox__indicator::before',
+  '.fui-Checkbox__input:checked ~ .fui-Checkbox__indicator.fui-Checkbox__indicator::before',
+], 'transition-duration'))}
 
   /* Focus ring colours. WinUI's focus visual is two concentric rings -- an
      outer one in the text colour and an inner one in the surface colour -- so
@@ -420,7 +335,7 @@ ${nested(under(checkboxPressed, selectedBoxes))} {
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L250-L252 */
   .fui-Checkbox.fui-Checkbox[data-fui-focus-within]:focus-within::after {
     border-color: var(--winui-focus-stroke-outer);
-    box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
+    box-shadow: inset 0 0 0 var(--winui-focus-visual-secondary-thickness) var(--winui-focus-stroke-inner);
   }
 }
 
@@ -473,18 +388,10 @@ ${nested(under(checkboxPressed, selectedBoxes))} {
    definition, which turns on perceived size and position, so the preference is
    about it whatever the framework's gate happens to reach.
 
-   0.01ms rather than none, for the reason WinUI runs a disabled
-   ConnectedAnimation for 1ms instead of zero: the completion still has to
-   fire.
    https://www.w3.org/TR/WCAG21/#dfn-motion-animation
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L255-L259
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/vsm/VisualStateManagerActuator.cpp#L590-L609
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/animation/ConnectedAnimationService.cpp#L313-L327 */
-@media (prefers-reduced-motion: reduce) {
-  .fui-Radio__indicator.fui-Radio__indicator::after {
-    transition-duration: 0.01ms;
-  }
-}
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/vsm/VisualStateManagerActuator.cpp#L590-L609 */
+${reducedMotion(['.fui-Radio__indicator.fui-Radio__indicator::after'], 'transition-duration')}
 
 /* The same hit target as the check box above, on the ellipse. It is stated as a
    floor rather than a width because labelPosition="below" stacks the label under
@@ -522,8 +429,17 @@ ${under(radioPressed, [selectedDot])} {
 
   /* Unselected ellipse; WinUI washes the interior down the alt-fill ramp per
      state where Fluent leaves it transparent.
+
+     The radio rules name the root where the check box rules do not, because
+     Fluent reaches the two indicators differently: the check box's arrives
+     through custom properties set by single-class atoms, so a rule on the
+     indicator wins outright, while the radio's is styled from the input by
+     selectors that carry up to four pseudo-classes. A rest rule has to outweigh
+     the pointer ones, or Fluent takes the stroke back the moment the pointer
+     lands, and the root is the class that gets it there.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L134-L135
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L138 */
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L138
+     https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-radio/library/src/components/Radio/useRadioStyles.styles.ts#L50-L78 */
   .fui-Radio
     .fui-Radio__input:enabled:not(:checked)
     ~ .fui-Radio__indicator.fui-Radio__indicator {
@@ -620,7 +536,7 @@ ${nested(under(radioPressed, [selectedEllipse]))} {
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L196 */
   .fui-Radio.fui-Radio[data-fui-focus-within]:focus-within::after {
     border-color: var(--winui-focus-stroke-outer);
-    box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
+    box-shadow: inset 0 0 0 var(--winui-focus-visual-secondary-thickness) var(--winui-focus-stroke-inner);
   }
 }
 `;

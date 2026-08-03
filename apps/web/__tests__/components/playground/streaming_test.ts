@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createWireFetch } from '../../../src/components/playground/request';
+import { createWireFetch, generationOptions } from '../../../src/components/playground/request';
 import { streamPlaygroundText } from '../../../src/components/playground/stream';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -67,7 +67,7 @@ describe('playground wire requests', () => {
       model: 'test-model',
       system: '',
       messages: [{ id: '1', role: 'user', text: 'hello' }],
-      options: {},
+      options: generationOptions(api, undefined),
       signal: new AbortController().signal,
       fetchImpl: createWireFetch(custom, api),
     }));
@@ -76,7 +76,7 @@ describe('playground wire requests', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]!.url).toBe(path);
     const body = JSON.parse(String(calls[0]!.init.body));
-    expect(body).toMatchObject({ model: 'test-model', stream: true, ...custom });
+    expect(body).toMatchObject({ model: 'test-model', stream: true, ...generationOptions(api, undefined), ...custom });
   });
 
   it('sends the API key the way each protocol authenticates', async () => {

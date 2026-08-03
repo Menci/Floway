@@ -1,9 +1,8 @@
 import type { ChartProps } from '@fluentui/react-charts';
 
-import type { BillingMetric } from '../../api/types';
 import type { ChartBucket, DashboardRange } from '../charts/dashboard-time';
 import type { ChartSeries } from '../charts/series-legends';
-import type { DecimalString } from '@floway-dev/protocols/common';
+import type { BillingMetric, DecimalString } from '@floway-dev/protocols/common';
 
 export type UsageView = 'all-by-user' | 'self-by-key';
 export type UsageRange = DashboardRange;
@@ -55,6 +54,7 @@ export interface TokenCounters {
   outputImage: DecimalString;
 }
 // Folded: `prompt` is the whole billed prompt side, `output` includes images.
+// The rates are percentages, null where their denominator has no reading at all.
 export interface TokenSummary {
   requests: number;
   cost: DecimalString | null;
@@ -64,6 +64,8 @@ export interface TokenSummary {
   prefill: DecimalString;
   cacheRead: DecimalString;
   cacheCreation: DecimalString;
+  cachedRate: number | null;
+  cacheHitRate: number | null;
 }
 
 export type ChartPlot =

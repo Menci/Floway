@@ -4,8 +4,9 @@ import { useTranslation } from 'react-i18next';
 
 import { requireDashboardAdmin } from './guards';
 import { api, callApi } from '../api/client';
-import { BACKUP_FILE_VERSION, parseBackupFile, type BackupFile, type BackupFileData } from '../components/backup-restore/file';
+import { BACKUP_FILE_VERSION, parseBackupFile, type BackupFile } from '../components/backup-restore/file';
 import { BackupFilePicker, BackupFileStats, BackupFileSummary } from '../components/backup-restore/file-picker';
+import { countRecords, PREVIEW_LABEL_KEYS, recordSummary } from '../components/backup-restore/summary';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { PANEL_STACK_CLASS } from '../components/ui/layout';
@@ -29,40 +30,6 @@ export async function clientLoader() {
   await requireDashboardAdmin();
   return null;
 }
-
-const PREVIEW_LABEL_KEYS = [
-  'users',
-  'apiKeys',
-  'upstreams',
-  'proxies',
-  'usage',
-  'searchUsage',
-  'performance',
-] as const;
-const countRecords = (data: BackupFileData): Record<string, number> => {
-  const counts: Record<string, number> = {};
-  for (const key of PREVIEW_LABEL_KEYS) {
-    const value = data[key];
-    counts[key] = Array.isArray(value) ? value.length : 0;
-  }
-  return counts;
-};
-
-// `Intl.ListFormat` supplies the conjunction and the separators the reader's
-// language actually uses -- "a, b, and c" against "a、b和c" -- neither of which
-// a join can spell.
-export const recordSummary = (
-  counts: Record<string, number>,
-  t: ReturnType<typeof useTranslation>['t'],
-  locale: string,
-): string => {
-  const parts = PREVIEW_LABEL_KEYS
-    .filter(key => counts[key] > 0)
-    .map(key => t(`dashboard.backupRestore.import.imported.${key}`, {
-      count: counts[key],
-    }));
-  return new Intl.ListFormat(locale, { style: 'long', type: 'conjunction' }).format(parts);
-};
 
 export default function DashboardAdminBackupRestore() {
   const { t } = useTranslation();

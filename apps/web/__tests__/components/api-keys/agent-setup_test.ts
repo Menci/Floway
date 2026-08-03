@@ -1,47 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildAgentClaudeSnippet, buildAgentCodexSnippet } from '../../../src/components/api-keys/agent-setup';
-import { filterModelOptions, modelOptions } from '../../../src/components/api-keys/agent-setup-models';
-import { agentSetupCommand } from '../../../src/components/api-keys/use-agent-setup';
-import { chatModel } from '../../api/model-fixture';
 
-describe('Agent Setup', () => {
-  it('builds origin-scoped Unix and Windows commands', () => {
-    expect(agentSetupCommand('https://floway.example', '/api/setup/token/claude.sh', 'unix'))
-      .toBe("export SETUP_ENDPOINT='https://floway.example'; curl -fsSL \"$SETUP_ENDPOINT/api/setup/token/claude.sh\" | bash");
-    expect(agentSetupCommand('https://floway.example', '/api/setup/token/codex.ps1', 'windows'))
-      .toBe("$SetupEndpoint = 'https://floway.example'; irm \"$SetupEndpoint/api/setup/token/codex.ps1\" | iex");
-  });
-
-  it('offers the full chat catalog while ranking the requested family', () => {
-    const options = modelOptions([
-      chatModel('gpt-5.6', { contextWindow: 400_000 }),
-      chatModel('claude-opus-4.6', { contextWindow: 1_000_000 }),
-      chatModel('other-chat', { contextWindow: 100_000 }),
-    ], 'claude', 'opus');
-    expect(options.map(option => option.value)).toEqual([
-      'claude-opus-4.6[1m]',
-      'gpt-5.6',
-      'other-chat',
-    ]);
-  });
-
-  it('searches the label case-insensitively and the value the label does not spell', () => {
-    const options = modelOptions([
-      chatModel('claude-opus-4.6', { contextWindow: 1_000_000 }),
-      chatModel('gpt-5.6', { contextWindow: 400_000 }),
-    ], 'claude', 'default');
-
-    expect(filterModelOptions(options, 'OPUS').map(option => option.label))
-      .toEqual(['claude-opus-4.6']);
-    // The label stays the public model id while the value carries the [1m]
-    // context override, so a search for the override has only the value to
-    // match against.
-    expect(filterModelOptions(options, '[1m]').map(option => option.value))
-      .toEqual(['claude-opus-4.6[1m]']);
-    expect(filterModelOptions(options, 'sonnet')).toEqual([]);
-  });
-
+describe('Agent Setup snippets', () => {
   it('renders selected Codex model and reasoning effort', () => {
     const snippet = buildAgentCodexSnippet('https://floway.example', { model: 'gpt-5.6', reasoningEffort: 'xhigh' });
     expect(snippet).toContain('model = "gpt-5.6"');

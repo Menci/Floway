@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { resources } from '../../src/i18n/resources';
+import { isPlural, leafKeys, pluralBase } from './keys';
+import en from '../../src/i18n/locales/en';
 import { BILLING_METRICS, MODEL_KINDS } from '@floway-dev/protocols/common';
 import { OPTIONAL_FLAG_IDS } from '@floway-dev/provider/flags';
 import { ALL_PROVIDER_KINDS } from '@floway-dev/provider/model';
@@ -18,16 +19,6 @@ const sourceFiles = (dir: string): string[] =>
     if (entry.isDirectory()) return path === LOCALES_DIR ? [] : sourceFiles(path);
     return /\.tsx?$/.test(entry.name) ? [path] : [];
   });
-
-const leafKeys = (value: object, prefix = ''): string[] =>
-  Object.entries(value).flatMap(([key, child]) => {
-    const path = prefix ? `${prefix}.${key}` : key;
-    return typeof child === 'object' && child !== null ? leafKeys(child, path) : [path];
-  });
-
-// i18next resolves `count` against a CLDR plural category, so the leaf that
-// backs `t('x.count')` is `x.count_one` / `x.count_other` rather than `x.count`.
-const PLURAL_SUFFIX = /_(zero|one|two|few|many|other)$/;
 
 // A key reaches i18next three ways: `t('a.b')`, `<Trans i18nKey="a.b">`, and a
 // literal sitting behind a ternary inside either. Anchoring on `t(` alone
@@ -43,7 +34,7 @@ const PLURAL_SUFFIX = /_(zero|one|two|few|many|other)$/;
 // A template key (`t(`a.b.${x}`)`) resolves from a value this test cannot know
 // and stays out of scope; the resources suite still guarantees both locales
 // agree on whatever exists.
-const NAMESPACES = Object.keys(resources.en.translation);
+const NAMESPACES = Object.keys(en.translation);
 const LITERAL_KEY = new RegExp(`['"\`]((?:${NAMESPACES.join('|')})\\.[a-zA-Z][a-zA-Z0-9_.]*)['"\`]`, 'g');
 
 // The reverse direction needs a wider net than `t(...)`. A key reaches the
@@ -88,8 +79,8 @@ const withoutComments = (source: string) =>
 const KEY_STEM = new RegExp(`^(?:${NAMESPACES.join('|')})\\.`);
 
 describe('translation key usage', () => {
-  const defined = new Set(leafKeys(resources.en.translation));
-  const pluralBases = new Set([...defined].filter(key => PLURAL_SUFFIX.test(key)).map(key => key.replace(PLURAL_SUFFIX, '')));
+  const defined = new Set(leafKeys(en.translation));
+  const pluralBases = new Set([...defined].filter(isPlural).map(pluralBase));
   const resolves = (key: string) => defined.has(key) || pluralBases.has(key);
 
   it('has a string behind every literal key the dashboard asks for', () => {
@@ -117,7 +108,7 @@ describe('translation key usage', () => {
       for (const [, prefix] of source.matchAll(TEMPLATE_KEY_PREFIX)) templatePrefixes.add(prefix);
     }
     const orphaned = [...defined].filter(key => {
-      if (used.has(key) || used.has(key.replace(PLURAL_SUFFIX, ''))) return false;
+      if (used.has(key) || used.has(pluralBase(key))) return false;
       if ([...templatePrefixes].some(prefix => key.startsWith(prefix))) return false;
       return ![...used].some(literal =>
         KEY_STEM.test(literal) && literal.length < key.length && key.startsWith(literal));

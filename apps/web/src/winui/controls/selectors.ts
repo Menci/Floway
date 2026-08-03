@@ -31,3 +31,43 @@ export const pressedRoots = (root: string, input: string) => [
   `${root}:active`,
   `${root}:has(${input}:active)`,
 ];
+
+/**
+ * Fluent's disabledFocusable keeps the element enabled to the browser and says
+ * so with aria-disabled, so both spellings name the disabled visual.
+ */
+export const disabledStates = [':disabled', `[aria-disabled='true']`];
+
+/**
+ * WinUI's VisualStateManager never leaves Disabled, so no interaction keyframe
+ * can run over a disabled control. CSS has no such exclusivity: a pressed
+ * selector carries two pseudo-classes where the disabled one carries a single
+ * class-level part, so it outranks the disabled rule and source order cannot
+ * rescue it. Every interactive state therefore excludes both disabled
+ * spellings in the state itself, which keeps the exclusion attached to the
+ * state rather than to each rule that happens to notice the collision.
+ */
+export const notDisabled = disabledStates.map(state => `:not(${state})`).join('');
+
+/**
+ * The clamp a sheet states for a motion of its own under the reduced-motion
+ * preference. The duration is a token rather than a literal, since the reason
+ * it is not zero belongs with the value.
+ */
+export const reducedMotion = (
+  selectors: readonly string[],
+  property: 'animation-duration' | 'transition-duration',
+  alsoDeclared: readonly string[] = [],
+) => `@media (prefers-reduced-motion: reduce) {
+${nested(list(selectors))} {
+    ${[`${property}: var(--winui-reduced-motion-duration);`, ...alsoDeclared].join('\n    ')}
+  }
+}`;
+
+/**
+ * A subject stated twice, which is how every rule in this layer outranks the
+ * single-class atoms Griffel composes: two class-level parts against one, with
+ * no id and no important. A subject Fluent gives no class of its own cannot be
+ * written this way, and each such rule says so where it departs.
+ */
+export const doubled = (selector: string) => `${selector}${selector}`;

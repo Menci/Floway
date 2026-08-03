@@ -1,6 +1,6 @@
-import { metricConfig } from './metrics';
+import { metricConfig, summaryFieldForMetric } from './metrics';
 import type { TokenSummary, UsageMetric } from './types';
-import { decimalStringToPlottableNumber, formatDecimalQuantity, formatUsd, sumDecimalStrings, usdFractionDigits } from '../../lib/decimal-display';
+import { decimalStringToPlottableNumber, formatDecimalQuantity, formatUsd, usdFractionDigits } from '../../lib/decimal-display';
 import { formatCompactCount, formatCount } from '../../lib/format-number';
 import { NO_READING } from '../../lib/no-reading';
 import type { DecimalString } from '@floway-dev/protocols/common';
@@ -10,11 +10,8 @@ import type { DecimalString } from '@floway-dev/protocols/common';
 export const formatCompactDecimalCount = (value: DecimalString, locale: string): string =>
   formatCompactCount(decimalStringToPlottableNumber(value), locale);
 
-export const formatRatePercent = (numerator: DecimalString, denominator: DecimalString): string => {
-  const total = decimalStringToPlottableNumber(denominator);
-  if (total <= 0) return NO_READING;
-  return `${((decimalStringToPlottableNumber(numerator) / total) * 100).toFixed(1)}%`;
-};
+export const formatRatePercent = (rate: number | null): string =>
+  rate === null ? NO_READING : `${rate.toFixed(1)}%`;
 
 export const formatSummaryMetric = (
   summary: TokenSummary,
@@ -26,22 +23,11 @@ export const formatSummaryMetric = (
     return formatCount(summary.requests, locale);
   case 'cost':
     return formatUsd(summary.cost);
-  case 'total':
-    return formatDecimalQuantity(summary.total);
-  case 'input':
-    return formatDecimalQuantity(summary.prompt);
-  case 'output':
-    return formatDecimalQuantity(summary.output);
-  case 'prefill':
-    return formatDecimalQuantity(summary.prefill);
-  case 'cached':
-    return formatDecimalQuantity(summary.cacheRead);
-  case 'cacheCreation':
-    return formatDecimalQuantity(summary.cacheCreation);
   case 'cachedRate':
-    return formatRatePercent(summary.cacheRead, summary.prompt);
   case 'cacheHitRate':
-    return formatRatePercent(summary.cacheRead, sumDecimalStrings(summary.cacheRead, summary.cacheCreation));
+    return formatRatePercent(summary[metric]);
+  default:
+    return formatDecimalQuantity(summary[summaryFieldForMetric[metric]]);
   }
 };
 
@@ -56,11 +42,4 @@ export const formatMetricValue = (value: number, metric: UsageMetric, locale: st
 const formatPlottedCost = (value: number): string => {
   if (value <= 0) return '$0';
   return `$${value.toFixed(usdFractionDigits(boundary => value >= Number(boundary)))}`;
-};
-
-export const formatProvider = (provider: string): string => {
-  if (provider === 'microsoft-web-iq') return 'Microsoft Web IQ';
-  if (provider === 'tavily') return 'Tavily';
-  if (provider === 'jina') return 'Jina';
-  return provider;
 };

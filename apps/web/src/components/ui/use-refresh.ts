@@ -38,3 +38,37 @@ export const useRefresh = (
 
   return { poll, refresh, refreshing };
 };
+
+const sameQuery = <Query extends Record<string, unknown>>(left: Query, right: Query): boolean =>
+  Object.keys(left).every(key => left[key] === right[key]);
+
+/**
+ * A page whose data is a function of a query refetches whenever the query
+ * changes. `reload` reports the moment the answer lands by calling `arrived`,
+ * and that is where the query the data on screen came back for is recorded. A
+ * "have I mounted yet" flag instead would make StrictMode's double invocation
+ * indistinguishable from a real change and refetch on every visit; recording
+ * the query at request time instead would strand a run torn down before it
+ * answered.
+ *
+ * `query` also carries the identity every run and the poll interval hang from,
+ * so the caller holds it across the renders in which its fields do not change.
+ */
+export const useRefreshOnChange = <Query extends Record<string, unknown>>(
+  query: Query,
+  reload: (signal: AbortSignal, options: { background: boolean }, arrived: () => void) => Promise<void>,
+): RefreshControl => {
+  const loadedFor = useRef(query);
+  const control = useRefresh(useCallback(
+    (signal: AbortSignal, options: { background: boolean }) => reload(signal, options, () => { loadedFor.current = query; }),
+    [query, reload],
+  ));
+  const { refresh } = control;
+
+  useEffect(() => {
+    if (sameQuery(loadedFor.current, query)) return;
+    void refresh();
+  }, [query, refresh]);
+
+  return control;
+};

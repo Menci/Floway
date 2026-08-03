@@ -9,10 +9,10 @@ export const refreshRequestKeys = async ({
   selectedKeyId,
   signal,
 }: {
-  currentKeys: ApiKey[];
+  currentKeys: ApiKey[] | null;
   load: (signal: AbortSignal) => Promise<ApiResult<ApiKey[]>>;
   onNavigate: (keyId: string | null) => void;
-  onUpdate: (keys: ApiKey[], error: string | null) => void;
+  onUpdate: (keys: ApiKey[] | null, error: string | null) => void;
   selectedKeyId: string | null;
   signal: AbortSignal;
 }) => {

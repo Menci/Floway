@@ -1,3 +1,4 @@
+import { oneOf } from '../../lib/search-params';
 import { dashboardRangeQuery, type DashboardRange } from '../charts/dashboard-time';
 
 export type PerformanceView = 'all-by-user' | 'self-by-key';
@@ -120,9 +121,6 @@ export const resolvePerformanceGroup = (
   if (groupBy === 'keyId') return labels.keys.get(group) ?? group;
   return group;
 };
-
-const oneOf = <T extends string>(value: string | null, allowed: readonly T[], fallback: T): T =>
-  value !== null && (allowed as readonly string[]).includes(value) ? value as T : fallback;
 
 export const parsePerformanceUrlState = (search: URLSearchParams): PerformanceUrlState => ({
   metric: oneOf(search.get('m'), ['ttft', 'tokPerSec'], 'ttft'),

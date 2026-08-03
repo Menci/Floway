@@ -5,11 +5,11 @@ import { FormProvider, useForm } from 'react-hook-form';
 import { MemoryRouter } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { UpstreamRecord } from '../../../src/api/types';
-import type { UpstreamEditorValues } from '../../../src/components/upstream-editor/data';
+import type { ModelListingFailure, UpstreamEditorValues } from '../../../src/components/upstream-editor/data';
 import { valuesFromRecord } from '../../../src/components/upstream-editor/data';
 import { UpstreamWorkspace } from '../../../src/components/upstream-editor/workspace';
 import { i18n } from '../../../src/i18n';
+import { upstreamRecord } from '../../api/upstream-fixture';
 import { renderInApp } from '../../render';
 
 vi.mock('../../../src/components/upstream-editor/models-yaml-editor', () => ({
@@ -30,21 +30,9 @@ const model = (id: string) => ({
   endpoints: { responses: {} },
 });
 
-const record = {
-  id: 'up_test',
+const record = upstreamRecord('up_test', {
   name: 'Test',
   kind: 'custom',
-  enabled: true,
-  sort_order: 1,
-  created_at: '',
-  updated_at: '',
-  flag_overrides: {},
-  flag_defaults: {},
-  disabled_public_model_ids: [],
-  proxy_fallback_list: [],
-  model_prefix: null,
-  hue: 210,
-  modelsCache: { fetchedAt: null, lastError: null },
   config: {
     baseUrl: 'https://example.com',
     authStyle: 'bearer',
@@ -54,9 +42,9 @@ const record = {
     models: [model('model-a'), model('model-b')],
   },
   state: null,
-} as unknown as UpstreamRecord;
+});
 
-function Harness() {
+function Harness({ modelsError = null }: { modelsError?: ModelListingFailure | null }) {
   const form = useForm<UpstreamEditorValues>({ defaultValues: valuesFromRecord(record) });
   return (
     // The workspace reads which tab and which model it is on out of the search,
@@ -66,7 +54,7 @@ function Harness() {
         <UpstreamWorkspace
           discovered={[]}
           modelsLoading={false}
-          modelsError={null}
+          modelsError={modelsError}
           onRefreshModels={vi.fn()}
           record={record}
         />
@@ -110,5 +98,16 @@ describe('upstream model workspace field-array transitions', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: models('editWithUi') }));
     await waitFor(() => expect(deleteCommands()).toHaveLength(1));
+  });
+});
+
+describe('upstream model listing failure wording', () => {
+  it('writes the squashed upstream failure in its own words and quotes any other message', () => {
+    const { unmount } = renderInApp(<Harness modelsError={{ message: 'Upstream model listing failed', upstreamListingFailed: true }} />);
+    expect(screen.getByText(models('listingFailed'))).toBeTruthy();
+    unmount();
+
+    renderInApp(<Harness modelsError={{ message: 'Malformed custom upstream config', upstreamListingFailed: false }} />);
+    expect(screen.getByText(i18n.t('dashboard.upstreamEditor.models.listingFailedWithDetail', { message: 'Malformed custom upstream config' }))).toBeTruthy();
   });
 });

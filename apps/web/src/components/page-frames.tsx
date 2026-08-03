@@ -1,5 +1,5 @@
-import { useContext, useEffect, useState } from 'react';
-import type { ReactNode } from 'react';
+import { useContext, useState } from 'react';
+import type { AnimationEventHandler, ReactNode } from 'react';
 import {
   NavigationType,
   useLocation,
@@ -12,6 +12,7 @@ import {
 } from 'react-router';
 
 import { isPageChange } from '../lib/page-navigation';
+import { PAGE_LEAVE_ANIMATION } from '../winui/page-transition.css';
 
 // The outgoing page, kept on screen while it leaves. The browser's View
 // Transition API would snapshot it for us; this exists so the transition does
@@ -65,6 +66,12 @@ export interface PageFrame {
   id: number;
   node: ReactNode;
   leaving: boolean;
+  /**
+   * Belongs on the element that carries the transition classes: the leaving
+   * frame is dropped when its own leave animation ends, so its lifetime is the
+   * animation's rather than a second statement of the animation's length.
+   */
+  onAnimationEnd: AnimationEventHandler<HTMLElement>;
 }
 
 /**
@@ -81,7 +88,7 @@ export interface PageFrame {
  * page would snap back to its initial state, lose its scroll position and re-run
  * its effects, and only then fade.
  */
-export const usePageFrames = (outlet: ReactNode, leaveMs: number): PageFrame[] => {
+export const usePageFrames = (outlet: ReactNode): PageFrame[] => {
   const location = useLocation();
   const navigationType = useNavigationType();
   const contexts = useRouterContexts();
@@ -102,13 +109,18 @@ export const usePageFrames = (outlet: ReactNode, leaveMs: number): PageFrame[] =
     setCurrent({ id: pageChange ? current.id + 1 : current.id, key: location.key, node: outlet, contexts });
   }
 
-  useEffect(() => {
-    if (!leaving) return;
-    const done = window.setTimeout(() => setLeaving(null), leaveMs);
-    return () => window.clearTimeout(done);
-  }, [leaving, leaveMs]);
+  // The frame is dropped by the animation that fades it, not by a timer of the
+  // same length: a clamped animation -- what a request for reduced motion turns
+  // the fade into -- would otherwise leave a fully mounted, invisible copy of
+  // the page running its effects and its polling for the rest of the timer. The
+  // page inside the frame animates too, so only this element's own leave
+  // animation counts.
+  const onAnimationEnd: AnimationEventHandler<HTMLElement> = event => {
+    if (event.target !== event.currentTarget || event.animationName !== PAGE_LEAVE_ANIMATION) return;
+    setLeaving(null);
+  };
 
-  const frames: PageFrame[] = [{ id: current.id, node: <FrozenRoute contexts={contexts}>{outlet}</FrozenRoute>, leaving: false }];
-  if (leaving) frames.unshift({ id: leaving.id, node: <FrozenRoute contexts={leaving.contexts}>{leaving.node}</FrozenRoute>, leaving: true });
+  const frames: PageFrame[] = [{ id: current.id, node: <FrozenRoute contexts={contexts}>{outlet}</FrozenRoute>, leaving: false, onAnimationEnd }];
+  if (leaving) frames.unshift({ id: leaving.id, node: <FrozenRoute contexts={leaving.contexts}>{leaving.node}</FrozenRoute>, leaving: true, onAnimationEnd });
   return frames;
 };

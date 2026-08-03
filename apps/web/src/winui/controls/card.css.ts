@@ -118,7 +118,7 @@ export const cardCss = `
   .fui-Card.fui-Card[data-fui-focus-visible]::after,
   .fui-Card.fui-Card[data-fui-focus-within]:focus-within::after {
     border-color: var(--colorStrokeFocus2);
-    box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
+    box-shadow: inset 0 0 0 var(--winui-focus-visual-secondary-thickness) var(--winui-focus-stroke-inner);
   }
 }
 

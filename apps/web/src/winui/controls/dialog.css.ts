@@ -72,7 +72,7 @@ export const dialogCss = `
 .fui-DialogSurface.fui-DialogSurface[data-fui-focus-visible]::after {
   inset: 0;
   border-radius: calc(var(--winui-overlay-corner-radius) - 1px);
-  box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
+  box-shadow: inset 0 0 0 var(--winui-focus-visual-secondary-thickness) var(--winui-focus-stroke-inner);
 }
 
 /* The default close action is a bare button carrying Fluent's reset and no
@@ -101,7 +101,7 @@ export const dialogCss = `
 /* The surface's second focus stroke, on the dialog's other focusable part.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L259 */
 .fui-DialogTitle__action > button:not(.fui-Button)[data-fui-focus-visible]::after {
-  box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
+  box-shadow: inset 0 0 0 var(--winui-focus-visual-secondary-thickness) var(--winui-focus-stroke-inner);
 }
 
 /* The body takes over the 24px ContentDialogPadding the surface gave up, and
@@ -157,11 +157,10 @@ export const dialogCss = `
    The two halves are one compensation and neither is meaningful alone, so they
    are written together, on the two boxes DialogShell itself supplies, and a
    DialogContent that is not DialogShell's gets neither. The length is the room
-   a focus visual needs outside the control it belongs to.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L167 */
+   a focus visual needs outside the control it belongs to, which ../tokens.ts
+   derives. */
 .floway-dialog-shell__content.floway-dialog-shell__content {
-  --floway-dialog-focus-gutter: 4px;
-  margin-inline: calc(-1 * var(--floway-dialog-focus-gutter));
+  margin-inline: calc(-1 * var(--winui-focus-visual-outset));
 }
 
 /* ContentDialog presents its content with TextWrapping="Wrap", which breaks
@@ -173,7 +172,7 @@ export const dialogCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L246
    https://drafts.csswg.org/css-text-4/#overflow-wrap-property */
 .floway-dialog-shell__scrollport {
-  padding-inline: var(--floway-dialog-focus-gutter);
+  padding-inline: var(--winui-focus-visual-outset);
   overflow-wrap: anywhere;
 }
 

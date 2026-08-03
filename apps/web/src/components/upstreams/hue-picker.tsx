@@ -1,9 +1,9 @@
 import { useTranslation } from 'react-i18next';
 
 import { ProviderBadge } from './provider-badge';
-import type { UpstreamProviderKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { HUE_RAMP_GRADIENT } from '../../lib/hue';
+import type { UpstreamProviderKind } from '@floway-dev/provider/model';
 
 const { Button, ColorSlider, Popover, PopoverSurface, PopoverTrigger } = fluentComponents;
 

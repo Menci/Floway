@@ -46,8 +46,10 @@ describe('language locales', () => {
     expect(localeForLanguage(null)).toBe('en-US');
   });
 
-  it('drops the region from the document language for English', () => {
+  it('states the document language as the supported tag itself', () => {
     expect(htmlLanguageFor('en')).toBe('en');
-    expect(htmlLanguageFor('zh-Hans')).toBe('zh-CN');
+    expect(htmlLanguageFor('zh-Hans')).toBe('zh-Hans');
+    expect(htmlLanguageFor('zh-TW')).toBe('zh-Hans');
+    expect(htmlLanguageFor('ko-KR')).toBe('en');
   });
 });

@@ -13,8 +13,8 @@
 import * as React from 'react';
 
 import { CONTROL_FASTER_ANIMATION_MS } from './motion';
+import type { FluentComponents, PropCarrier } from './wrap';
 
-type FluentComponents = typeof import('@fluentui/react-components');
 type SwitchProps = React.ComponentProps<FluentComponents['Switch']>;
 
 const DRAG_X = '--winui-switch-drag-x';
@@ -52,6 +52,8 @@ const paint = (gesture: Gesture) => {
 
 export const withWinuiDrag = (components: FluentComponents): FluentComponents => {
   const FluentSwitch = components.Switch;
+  const { indicator: indicatorClass, input: inputClass } = components.switchClassNames;
+  const resolveSlotProps = components.slot.resolveShorthand as (value: unknown) => PropCarrier | undefined;
 
   const DraggableSwitch = React.forwardRef<HTMLInputElement, SwitchProps>(({ root, ...props }, ref) => {
     const gestureRef = React.useRef<Gesture | null>(null);
@@ -91,9 +93,13 @@ export const withWinuiDrag = (components: FluentComponents): FluentComponents =>
       suppressClickRef.current = false;
       if (!event.isPrimary || event.button !== 0) return;
       const element = event.currentTarget;
-      const input = element.querySelector<HTMLInputElement>('.fui-Switch__input');
-      const indicator = element.querySelector<HTMLElement>('.fui-Switch__indicator');
-      if (!input || !indicator || input.disabled || input.getAttribute('aria-disabled') === 'true') return;
+      const input = element.querySelector<HTMLInputElement>(`.${inputClass}`);
+      const indicator = element.querySelector<HTMLElement>(`.${indicatorClass}`);
+      // Fluent renders both unconditionally, so their absence is not a switch
+      // that cannot be dragged: it is the control this layer targets no longer
+      // being there, which the quiet return below would hide.
+      if (!input || !indicator) throw new Error('The Switch drag gesture found no input or indicator under the switch root.');
+      if (input.disabled || input.getAttribute('aria-disabled') === 'true') return;
       if (element.getAttribute('aria-readonly') === 'true') return;
 
       // XAML's range is knob-bounds width minus knob width; Fluent's knob cell is
@@ -166,7 +172,7 @@ export const withWinuiDrag = (components: FluentComponents): FluentComponents =>
         {...props}
         ref={ref}
         root={{
-          ...(typeof root === 'object' && root !== null && !React.isValidElement(root) ? root : {}),
+          ...resolveSlotProps(root),
           onClickCapture,
           onLostPointerCapture: abandon,
           onPointerCancel: abandon,

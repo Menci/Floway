@@ -1,10 +1,10 @@
 import type { FieldErrors } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
-import { DEFAULT_DIAL_TIMEOUT_SECONDS, FORM_KIND_LABELS, KIND_OPTIONS, PROXY_CONFIG_ISSUE_FIELDS, SS2022_METHOD_OPTIONS, SS_METHOD_OPTIONS, formKindFromConfig, orUndef, proxyUrlPlaceholder, type ProxyConfigIssueField, type ProxyFormValues } from './config';
+import { DEFAULT_DIAL_TIMEOUT_SECONDS, FORM_KINDS, PROXY_CONFIG_ISSUE_FIELDS, SS2022_METHOD_OPTIONS, SS_METHOD_OPTIONS, formKindFromConfig, formKindLabelKey, orUndef, proxyUrlPlaceholder, type ProxyConfigIssueField, type ProxyFormValues } from './config';
 import { fluentComponents } from '../../fluent';
 import { issuesFromErrors, useIssueText } from '../../lib/form-issues';
-import { Dropdown, Input } from '../ui/fluent-form-controls';
+import { Dropdown, Input, Switch } from '../ui/fluent-form-controls';
 import { SecretInput } from '../ui/secret-input';
 import type {
   HttpProxyConfig,
@@ -18,7 +18,7 @@ import type {
   VlessWsTlsProxyConfig,
 } from '@floway-dev/proxy/proxy-config';
 
-const { Field, Option, Switch } = fluentComponents;
+const { Field, Option } = fluentComponents;
 
 export type ProxyTestResult =
   | { ok: true; egress_ip: string }
@@ -87,11 +87,11 @@ export function ProxyForm({
         <Dropdown
           onOptionSelect={onKindChange}
           selectedOptions={[formKind]}
-          value={FORM_KIND_LABELS[formKind]}
+          value={t(formKindLabelKey(formKind))}
         >
-          {KIND_OPTIONS.map(opt => (
-            <Option key={opt.value} value={opt.value}>
-              {opt.label}
+          {FORM_KINDS.map(kind => (
+            <Option key={kind} value={kind}>
+              {t(formKindLabelKey(kind))}
             </Option>
           ))}
         </Dropdown>
@@ -445,7 +445,7 @@ export function ProxyForm({
           inputMode="numeric"
           min={1}
           onChange={(_, d) => onDialTimeoutChange(d.value)}
-          placeholder={`${DEFAULT_DIAL_TIMEOUT_SECONDS} (default)`}
+          placeholder={t('dashboard.proxy.form.timeoutPlaceholder', { seconds: DEFAULT_DIAL_TIMEOUT_SECONDS })}
           type="number"
           value={dialTimeoutInput}
         />

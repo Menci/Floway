@@ -1,4 +1,4 @@
-import type { AliasTarget, AnnouncedMetadata } from '../../api/types';
+import type { AliasTarget, AnnouncedMetadata } from '@floway-dev/protocols/common';
 
 const isTokenCount = (value: unknown): boolean =>
   typeof value === 'number' && Number.isInteger(value) && value >= 0;

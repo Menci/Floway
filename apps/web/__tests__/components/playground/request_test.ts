@@ -7,7 +7,7 @@ import {
   parseCustomJson,
   supportsImageInput,
 } from '../../../src/components/playground/request';
-import { chatModel } from '../../api/model-fixture';
+import { catalogModel } from '../../api/model-fixture';
 
 describe('custom JSON', () => {
   it('rejects invalid, non-object and reserved fields', () => {
@@ -40,8 +40,8 @@ describe('generation and capabilities', () => {
   });
 
   it('reads image and output limits conservatively', () => {
-    expect(supportsImageInput(chatModel('unknown', { upstreams: [] }))).toBe(true);
-    expect(supportsImageInput(chatModel('text', { upstreams: [],  chat: { modalities: { input: ['text'], output: ['text'] } } }))).toBe(false);
-    expect(defaultMaxOutputTokens(chatModel('limited', { upstreams: [],  limits: { max_output_tokens: 2048 } }))).toBe(2048);
+    expect(supportsImageInput(catalogModel('unknown', { upstreams: [] }))).toBe(true);
+    expect(supportsImageInput(catalogModel('text', { upstreams: [],  chat: { modalities: { input: ['text'], output: ['text'] } } }))).toBe(false);
+    expect(defaultMaxOutputTokens(catalogModel('limited', { upstreams: [],  limits: { max_output_tokens: 2048 } }))).toBe(2048);
   });
 });

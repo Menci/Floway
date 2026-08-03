@@ -13,21 +13,17 @@ export type FormKind =
 
 export const DEFAULT_DIAL_TIMEOUT_SECONDS = Math.floor(DEFAULT_DIAL_DEADLINE_MS / 1000);
 
-export const FORM_KIND_LABELS: Record<FormKind, string> = {
-  'http': 'HTTP',
-  'https': 'HTTPS',
-  'socks5': 'SOCKS5',
-  'ss': 'Shadowsocks',
-  'ss2022': 'Shadowsocks 2022',
-  'trojan': 'Trojan',
-  'vless-tcp': 'VLESS / TLS',
-  'vless-ws': 'VLESS / WebSocket',
-  'reality': 'VLESS / REALITY',
-};
+export const FORM_KINDS: FormKind[] = [
+  'http', 'https',
+  'socks5',
+  'ss', 'ss2022',
+  'trojan',
+  'vless-tcp', 'vless-ws',
+  'reality',
+];
 
-export const KIND_OPTIONS = (Object.keys(FORM_KIND_LABELS) as FormKind[]).map(
-  value => ({ value, label: FORM_KIND_LABELS[value] }),
-);
+export const formKindLabelKey = (kind: FormKind): string =>
+  `dashboard.proxy.form.protocolOptions.${kind}`;
 
 export const SS_METHOD_OPTIONS = [
   { value: 'aes-128-gcm' as const, label: 'aes-128-gcm' },
@@ -194,17 +190,19 @@ export const proxyUrlPlaceholder = (config: ProxyConfig): string => {
   }
 };
 
-// Never expose proxy credentials in list labels.
-export const hostPortLabel = (url: string): string => {
+// Never expose proxy credentials in list labels. A stored URL therefore either
+// reduces to an address -- the parsed host and port, or the authority minus its
+// userinfo for a scheme this build cannot parse -- or it gets no label at all,
+// because every remaining rendering of it carries the password it was written
+// with.
+export const hostPortLabel = (url: string): string | null => {
   const parsed = parseSavedUrl(url);
   if (parsed) return `${parsed.host}:${parsed.port}`;
   try {
-    const u = new URL(url);
-    u.username = '';
-    u.password = '';
-    return u.toString().replace(/\/\/@/, '//');
+    const { host } = new URL(url);
+    return host === '' ? null : host;
   } catch {
-    return url;
+    return null;
   }
 };
 

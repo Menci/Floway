@@ -20,9 +20,6 @@ export function UsageChartSection({
   valueFormatter: (value: number) => string;
 }) {
   const { t } = useTranslation();
-  const visibleLegends = chart.entries
-    .filter(entry => !hidden.has(entry.id))
-    .map(entry => entry.legend);
 
   return (
     <ChartSection
@@ -33,7 +30,7 @@ export function UsageChartSection({
       onHiddenChange={onHiddenChange}
       title={title}
     >
-      <UsageChart chart={chart} valueFormatter={valueFormatter} visibleLegends={visibleLegends} />
+      <UsageChart chart={chart} hidden={hidden} valueFormatter={valueFormatter} />
     </ChartSection>
   );
 }

@@ -6,6 +6,7 @@ import { useFetcher } from 'react-router';
 import { z } from 'zod';
 
 import type { Route } from './+types/dashboard-settings';
+import { requireDashboardSession } from './guards';
 import { changeOwnPassword } from '../api/auth';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Input } from '../components/ui/fluent-form-controls';
@@ -21,6 +22,11 @@ const {
   Field,
   Text,
 } = fluentComponents;
+
+export async function clientLoader() {
+  requireDashboardSession();
+  return null;
+}
 
 const passwordSchema = z
   .object({

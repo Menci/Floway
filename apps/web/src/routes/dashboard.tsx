@@ -21,7 +21,7 @@ import { fluentComponents } from '../fluent';
 import { isDashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
 import { prefersReducedMotion } from '../lib/reduced-motion';
 import { useAuthStore } from '../stores/auth-store';
-import { PAGE_ENTER_EASING, PAGE_ENTER_MS, PAGE_ENTER_OFFSET_PX, PAGE_LEAVE_MS } from '../winui/motion';
+import { PAGE_ENTER_EASING, PAGE_ENTER_MS, PAGE_ENTER_OFFSET_PX } from '../winui/motion';
 
 const { Button, DrawerBody, OverlayDrawer } = fluentComponents;
 
@@ -41,7 +41,7 @@ export async function clientLoader() {
 // The signed-in check is its own component so everything below takes a user
 // rather than a user-or-null: a hook cannot run behind a condition.
 export default function Dashboard({}: Route.ComponentProps) {
-  const user = useAuthStore(state => state.user);
+  const user = useAuthStore(state => state.session?.user ?? null);
   if (!user) return <Navigate replace to="/" />;
   return <DashboardShell user={user} />;
 }
@@ -90,7 +90,7 @@ function DashboardShell({ user }: { user: AuthUser }) {
       ? 'h-full min-h-0 p-[22px_var(--floway-page-inset)_var(--floway-page-inset)] max-[680px]:p-4'
       : 'p-[22px_var(--floway-page-inset)_var(--floway-page-inset)] max-[680px]:p-4'}>{outlet}</div>
   </ScrollArea>;
-  const frames = usePageFrames(page, PAGE_LEAVE_MS);
+  const frames = usePageFrames(page);
 
   return (
     <OutcomeToastProvider>
@@ -121,6 +121,7 @@ function DashboardShell({ user }: { user: AuthUser }) {
             role={frame.leaving ? undefined : 'main'}
             inert={frame.leaving}
             key={frame.id}
+            onAnimationEnd={frame.onAnimationEnd}
             ref={frame.id === 0 && !frame.leaving ? firstFrameRef : undefined}
             tabIndex={frame.leaving ? undefined : -1}
           >{frame.node}</div>)}

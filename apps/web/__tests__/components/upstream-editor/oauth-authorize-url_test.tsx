@@ -1,12 +1,10 @@
-import { act, fireEvent, screen } from '@testing-library/react';
-import { FormProvider, useForm } from 'react-hook-form';
+import { fireEvent, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { UpstreamRecord } from '../../../src/api/types';
-import type { UpstreamEditorValues } from '../../../src/components/upstream-editor/data';
-import { valuesFromRecord } from '../../../src/components/upstream-editor/data';
-import { ProviderConfigSection } from '../../../src/components/upstream-editor/provider-config';
+import { ProviderConfigHarness } from './provider-config-harness';
+import { upstreamRecord } from '../../api/upstream-fixture';
 import { renderInApp } from '../../render';
+import { settle } from '../../settle';
 
 const AUTHORIZE_URL_PATH = '/api/upstreams/claude-code/oauth/authorize-url';
 
@@ -23,41 +21,14 @@ vi.mock('../../../src/components/upstream-editor/pkce', async importOriginal => 
 
 const material = (n: number) => ({ verifier: `verifier-${n}`, challenge: `challenge-${n}`, state: `state-${n}` });
 
-const record = {
-  id: 'up_claude',
+const record = upstreamRecord('up_claude', {
   name: 'Claude',
   kind: 'claude-code',
-  enabled: true,
-  sort_order: 1,
-  created_at: '',
-  updated_at: '',
-  flag_overrides: {},
-  flag_defaults: {},
-  disabled_public_model_ids: [],
-  proxy_fallback_list: [],
-  model_prefix: null,
-  hue: 210,
-  modelsCache: { fetchedAt: null, lastError: null },
   config: { accounts: [] },
-  state: null,
-} as unknown as UpstreamRecord;
-
-function Harness() {
-  const form = useForm<UpstreamEditorValues>({ defaultValues: valuesFromRecord(record) });
-  return (
-    <FormProvider {...form}>
-      <ProviderConfigSection record={record} onPatch={vi.fn()} onRefreshModels={vi.fn()} />
-    </FormProvider>
-  );
-}
+  state: { accounts: [] },
+});
 
 let fetchMock: ReturnType<typeof vi.fn>;
-
-// `prepare` awaits the PKCE material and then the authorize-url round trip, so
-// settling it takes a macrotask rather than a single microtask drain.
-const flush = async () => {
-  await act(async () => { await new Promise(resolve => { setTimeout(resolve, 0); }); });
-};
 
 const authorizeUrlCount = () =>
   fetchMock.mock.calls.filter(([input]) => String(input).includes(AUTHORIZE_URL_PATH)).length;
@@ -74,10 +45,7 @@ beforeEach(() => {
     const { pathname } = new URL(String(input), 'http://localhost');
     if (pathname !== AUTHORIZE_URL_PATH) throw new Error(`Unexpected request to ${pathname}`);
     const body = JSON.parse(String(init?.body)) as { state: string };
-    return new Response(
-      JSON.stringify({ authorize_url: `https://claude.ai/oauth/authorize?state=${body.state}` }),
-      { status: 200, headers: { 'content-type': 'application/json' } },
-    );
+    return Response.json({ authorize_url: `https://claude.ai/oauth/authorize?state=${body.state}` });
   });
   vi.stubGlobal('fetch', fetchMock);
 });
@@ -86,22 +54,22 @@ afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('OAuth authorize-url preparation', () => {
   it('keeps the stashed verifier with the authorize URL when a superseded run resolves last', async () => {
-    renderInApp(<Harness />);
-    await flush();
+    renderInApp(<ProviderConfigHarness record={record} />);
+    await settle();
 
     fireEvent.click(screen.getByRole('tab', { name: 'Setup Token' }));
-    await flush();
+    await settle();
     fireEvent.click(screen.getByRole('tab', { name: 'OAuth' }));
-    await flush();
+    await settle();
     expect(pkceResolvers).toHaveLength(3);
 
     // Newest first: the two superseded runs then finish their crypto against a
     // generation that has already moved on.
     pkceResolvers[2]!(material(3));
-    await flush();
+    await settle();
     pkceResolvers[1]!(material(2));
     pkceResolvers[0]!(material(1));
-    await flush();
+    await settle();
 
     expect(authorizeUrlCount()).toBe(1);
     const link = await screen.findByRole('link');

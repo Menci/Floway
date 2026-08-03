@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import type { AliasTarget } from '../../../src/api/types';
 import { effectiveUpstreams, modelBadges } from '../../../src/components/models/badges';
 import { indexCatalog } from '../../../src/components/models/catalog-index';
-import { chatModel } from '../../api/model-fixture';
+import { catalogModel } from '../../api/model-fixture';
+import type { AliasTarget } from '@floway-dev/protocols/common';
 
 describe('model badges', () => {
   it('abbreviates the token limits the catalog advertises', () => {
-    expect(modelBadges(chatModel('m', {
+    expect(modelBadges(catalogModel('m', {
       upstreams: ['a'],
       limits: { max_context_window_tokens: 1_000_000, max_prompt_tokens: 1_500, max_output_tokens: 64_000 },
     }), indexCatalog([]), null)).toEqual([
@@ -15,13 +15,13 @@ describe('model badges', () => {
       { key: 'limit:prompt', kind: 'limit', limit: 'prompt', value: '1.5k' },
       { key: 'limit:output', kind: 'limit', limit: 'output', value: '64k' },
     ]);
-    expect(modelBadges(chatModel('m', { upstreams: ['a'] }), indexCatalog([]), null)).toEqual([]);
+    expect(modelBadges(catalogModel('m', { upstreams: ['a'] }), indexCatalog([]), null)).toEqual([]);
   });
 
   it('names the sole reachable target and drops the selection strategy with it', () => {
-    const real = chatModel('real', { upstreams: ['a'] });
-    const capped = chatModel('capped', { upstreams: ['b'] });
-    const alias = chatModel('alias', {
+    const real = catalogModel('real', { upstreams: ['a'] });
+    const capped = catalogModel('capped', { upstreams: ['b'] });
+    const alias = catalogModel('alias', {
       upstreams: [],
       aliasedFrom: {
         selection: 'random',
@@ -38,8 +38,8 @@ describe('model badges', () => {
   });
 
   it('counts a target the catalog cannot resolve as out of reach', () => {
-    const real = chatModel('real', { upstreams: ['a'] });
-    const alias = chatModel('alias', {
+    const real = catalogModel('real', { upstreams: ['a'] });
+    const alias = catalogModel('alias', {
       upstreams: [],
       aliasedFrom: {
         selection: 'first-available',
@@ -49,7 +49,7 @@ describe('model badges', () => {
     expect(modelBadges(alias, indexCatalog([real, alias]), null)).toContainEqual(
       { key: 'aliasOf', kind: 'aliasOfModel', target: 'real' },
     );
-    const unreachable = chatModel('unreachable', {
+    const unreachable = catalogModel('unreachable', {
       upstreams: [],
       aliasedFrom: {
         selection: 'random',
@@ -63,45 +63,45 @@ describe('model badges', () => {
 
   it('collapses a rule its targets disagree on', () => {
     const alias = (targets: AliasTarget[]) =>
-      chatModel('alias', { aliasedFrom: { selection: 'random', targets } });
+      catalogModel('alias', { aliasedFrom: { selection: 'random', targets } });
     const one = alias([{ target_model_id: 'a', rules: { reasoning: { effort: 'high' } } }]);
-    expect(modelBadges(one, indexCatalog([chatModel('a', { upstreams: ['u'] }), one]), null)).toContainEqual(
+    expect(modelBadges(one, indexCatalog([catalogModel('a', { upstreams: ['u'] }), one]), null)).toContainEqual(
       { key: 'rule:reasoning.effort', kind: 'rule', field: 'reasoning.effort', value: 'high', varies: false },
     );
     const many = alias([
       { target_model_id: 'a', rules: { reasoning: { effort: 'high' } } },
       { target_model_id: 'b', rules: { reasoning: { effort: 'low' } } },
     ]);
-    expect(modelBadges(many, indexCatalog([chatModel('a', { upstreams: ['u'] }), chatModel('b', { upstreams: ['u'] }), many]), null)).toContainEqual(
+    expect(modelBadges(many, indexCatalog([catalogModel('a', { upstreams: ['u'] }), catalogModel('b', { upstreams: ['u'] }), many]), null)).toContainEqual(
       { key: 'rule:reasoning.effort', kind: 'rule', field: 'reasoning.effort', value: null, varies: true },
     );
     const partlyUnset = alias([
       { target_model_id: 'a', rules: { reasoning: { effort: 'high' } } },
       { target_model_id: 'b', rules: {} },
     ]);
-    expect(modelBadges(partlyUnset, indexCatalog([chatModel('a', { upstreams: ['u'] }), chatModel('b', { upstreams: ['u'] }), partlyUnset]), null)).toContainEqual(
+    expect(modelBadges(partlyUnset, indexCatalog([catalogModel('a', { upstreams: ['u'] }), catalogModel('b', { upstreams: ['u'] }), partlyUnset]), null)).toContainEqual(
       { key: 'rule:reasoning.effort', kind: 'rule', field: 'reasoning.effort', value: null, varies: true },
     );
     const capped = alias([
       { target_model_id: 'a', rules: { reasoning: { effort: 'high' } } },
       { target_model_id: 'b', rules: { reasoning: { effort: 'low' } } },
     ]);
-    expect(modelBadges(capped, indexCatalog([chatModel('a', { upstreams: ['u-a'] }), chatModel('b', { upstreams: ['u-b'] }), capped]), ['u-a'])).toContainEqual(
+    expect(modelBadges(capped, indexCatalog([catalogModel('a', { upstreams: ['u-a'] }), catalogModel('b', { upstreams: ['u-b'] }), capped]), ['u-a'])).toContainEqual(
       { key: 'rule:reasoning.effort', kind: 'rule', field: 'reasoning.effort', value: 'high', varies: false },
     );
     const disjoint = alias([
       { target_model_id: 'a', rules: { serviceTier: 'fast' } },
       { target_model_id: 'b', rules: { reasoning: { effort: 'high' } } },
     ]);
-    expect(modelBadges(disjoint, indexCatalog([chatModel('a', { upstreams: ['u'] }), chatModel('b', { upstreams: ['u'] }), disjoint]), null)
+    expect(modelBadges(disjoint, indexCatalog([catalogModel('a', { upstreams: ['u'] }), catalogModel('b', { upstreams: ['u'] }), disjoint]), null)
       .filter(badge => badge.kind === 'rule').map(badge => badge.field))
       .toEqual(['reasoning.effort', 'serviceTier']);
   });
 
   it('lifts an alias row onto the in-cap bindings of its reachable targets', () => {
-    const real = chatModel('real', { upstreams: ['a', 'b'] });
-    const other = chatModel('other', { upstreams: ['b'] });
-    const alias = chatModel('alias', {
+    const real = catalogModel('real', { upstreams: ['a', 'b'] });
+    const other = catalogModel('other', { upstreams: ['b'] });
+    const alias = catalogModel('alias', {
       upstreams: [],
       aliasedFrom: {
         selection: 'random',

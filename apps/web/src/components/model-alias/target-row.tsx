@@ -3,14 +3,15 @@ import { useId, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { computeModelWarning, computeRuleWarnings } from './warnings';
-import type { AliasTarget, ModelKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { filterModelOptions } from '../../lib/model-query';
 import type { CatalogIndex } from '../models/catalog-index';
 import { useDangerTextClass } from '../ui/danger';
 import { Combobox, Dropdown, Input } from '../ui/fluent-form-controls';
 import { TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { ReorderButtons } from '../ui/reorder-buttons';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
+import type { AliasTarget, ModelKind } from '@floway-dev/protocols/common';
 
 const { Button, Field, MessageBar, MessageBarBody, Option, Text, Tooltip } = fluentComponents;
 
@@ -45,7 +46,7 @@ export function AliasTargetRow({
   const model = catalog.get(target.target_model_id);
   const modelWarning = computeModelWarning(target.target_model_id, model, kind);
   const ruleWarnings = computeRuleWarnings(target.rules, model);
-  const options = useMemo(() => targetIds.filter(id => id.toLowerCase().includes(target.target_model_id.toLowerCase())), [target.target_model_id, targetIds]);
+  const options = useMemo(() => filterModelOptions(targetIds, target.target_model_id), [target.target_model_id, targetIds]);
   const patchRules = (patch: Partial<AliasTarget['rules']>) => onChange({ ...target, rules: { ...target.rules, ...patch } });
   const patchReasoning = (patch: Partial<NonNullable<AliasTarget['rules']['reasoning']>>) => {
     const reasoning = { ...(target.rules.reasoning ?? {}), ...patch };

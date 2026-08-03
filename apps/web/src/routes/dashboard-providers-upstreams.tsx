@@ -14,11 +14,7 @@ import type { Route } from './+types/dashboard-providers-upstreams';
 import { requireDashboardAdmin } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
 import { api, callApi } from '../api/client';
-import type {
-  ControlPlaneModel,
-  UpstreamProviderKind,
-  UpstreamRecord,
-} from '../api/types';
+import type { ControlPlaneModel, UpstreamRecord } from '../api/types';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
@@ -27,7 +23,7 @@ import { ReorderButtons } from '../components/ui/reorder-buttons';
 import { ResourceListActions, ResourceListEmptyState, ResourceListPanel } from '../components/ui/resource-list';
 import { rowTitleClass } from '../components/ui/row-title';
 import { ScrollArea } from '../components/ui/scroll-area';
-import { TABLE_ACTIONS_WIDTH, TableActions, TableActionsHeader, TableCentredCell, TableCentredHeader } from '../components/ui/table-actions';
+import { TABLE_ACTIONS_WIDTH, TableActions, TableCentredCell, TableCentredHeader, TableTrailingHeader } from '../components/ui/table-actions';
 import { TableColumns } from '../components/ui/table-columns';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
@@ -38,6 +34,7 @@ import { dateTime } from '../lib/format-time';
 import { pageNavigation, useEntryRewrite } from '../lib/page-navigation';
 import { useLocale } from '../lib/use-locale';
 import { ALL_PROVIDER_KINDS } from '@floway-dev/provider';
+import type { UpstreamProviderKind } from '@floway-dev/provider/model';
 
 const {
   Menu,
@@ -370,7 +367,7 @@ function UpstreamsTable({
             <TableHeaderCell>{t('dashboard.upstreams.table.upstream')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.upstreams.table.models')}</TableHeaderCell>
             <TableCentredHeader>{t('dashboard.upstreams.table.enabled')}</TableCentredHeader>
-            <TableActionsHeader>{t('dashboard.upstreams.table.actions')}</TableActionsHeader>
+            <TableTrailingHeader>{t('dashboard.upstreams.table.actions')}</TableTrailingHeader>
           </TableRow>
         </TableHeader>
         <TableBody>

@@ -1,9 +1,10 @@
 import { act } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { ApiKey } from '../../../src/api/types';
 import { KeysTable } from '../../../src/components/api-keys/table';
 import { i18n } from '../../../src/i18n';
+import { stubMatchMedia } from '../../match-media-stub';
 import { renderInApp } from '../../render';
 
 // Selecting a key is what the Agent Setup card below the table reads, so it is
@@ -64,15 +65,7 @@ describe('API keys table selection', () => {
   // portalled out of the row in the DOM but stays a React child of its trigger,
   // so a click on an item still reaches the row through React's own tree.
   describe('narrow', () => {
-    const matchMedia = window.matchMedia;
-    beforeEach(() => {
-      window.matchMedia = ((query: string) => ({
-        matches: query === '(max-width: 760px)',
-        addEventListener: () => {},
-        removeEventListener: () => {},
-      })) as unknown as typeof window.matchMedia;
-    });
-    afterEach(() => { window.matchMedia = matchMedia; });
+    stubMatchMedia(query => query === '(max-width: 760px)');
 
     it('does not select the row a menu command was run from', async () => {
       const onSelect = vi.fn();

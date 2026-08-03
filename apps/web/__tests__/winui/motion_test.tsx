@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { NavSelectionIndicator } from '../../src/components/sidebar/nav-selection-indicator';
 import { fluentComponents } from '../../src/fluent';
+import { stubMatchMedia } from '../match-media-stub';
 import { renderInApp } from '../render';
 
 interface ScheduledAnimation {
@@ -50,10 +51,6 @@ const stubLayout = () => {
   });
 };
 
-const stubReducedMotion = (reduce: boolean) => {
-  window.matchMedia = vi.fn(() => ({ addEventListener: () => {}, matches: reduce, removeEventListener: () => {} })) as unknown as typeof window.matchMedia;
-};
-
 // The selection is driven from inside the tree because the indicator measures
 // against a container it is rendered into, and re-rendering from the outside
 // would remount that container along with the positions it has recorded.
@@ -85,6 +82,8 @@ const NavHarness = () => {
 const select = (name: string) => fireEvent.click(screen.getByRole('button', { name }));
 
 describe('nav selection indicator', () => {
+  const setMedia = stubMatchMedia(() => false);
+
   afterEach(() => {
     Reflect.deleteProperty(Element.prototype, 'animate');
     Reflect.deleteProperty(HTMLElement.prototype, 'getBoundingClientRect');
@@ -94,14 +93,13 @@ describe('nav selection indicator', () => {
     stubLayout();
 
     stubAnimations();
-    stubReducedMotion(false);
     const moving = renderInApp(<StrictMode><NavHarness /></StrictMode>);
     select('models');
     expect(scheduled.length).toBeGreaterThan(0);
     moving.unmount();
 
     stubAnimations();
-    stubReducedMotion(true);
+    setMedia(() => true);
     renderInApp(<StrictMode><NavHarness /></StrictMode>);
     select('models');
     expect(scheduled).toHaveLength(0);
@@ -110,7 +108,6 @@ describe('nav selection indicator', () => {
   it('cancels the outgoing animation it already scheduled instead of stacking a second one', () => {
     stubLayout();
     stubAnimations();
-    stubReducedMotion(false);
 
     renderInApp(<StrictMode><NavHarness /></StrictMode>);
     select('settings');
@@ -121,6 +118,8 @@ describe('nav selection indicator', () => {
 });
 
 describe('winui presence motion', () => {
+  stubMatchMedia(() => false);
+
   const { Button, Dialog, DialogBody, DialogSurface, DialogTitle } = fluentComponents;
 
   it('renders the dialog through the motion slot and keeps a caller-supplied motion callback', async () => {

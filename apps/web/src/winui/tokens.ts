@@ -434,6 +434,17 @@ export const winuiTokenCss = `
   );
 }
 
+/* How far a focus visual reaches outside the control that wears it. Nearly
+   everything here seats its strokes inside its own box, and the exception is
+   the ComboBox faceplate: WinUI lights a detached HighlightBackground around
+   that field at Margin -4, which ./controls/select.css.ts draws as an outline
+   of the primary thickness held off the field by that same thickness. A host
+   that clips its content has to leave that much room for it.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L570 */
+:root {
+  --winui-focus-visual-outset: calc(2 * var(--winui-focus-visual-primary-thickness));
+}
+
 /* Control alt fills — the interior of a control whose body is a cavity rather
    than a surface. The ramp runs the opposite way to the control fills, so it
    darkens on light and lightens on dark, and the disabled step is fully
@@ -581,6 +592,14 @@ export const winuiTokenCss = `
   --winui-page-enter-duration: ${PAGE_ENTER_MS}ms;
   --winui-page-enter-easing: ${PAGE_ENTER_EASING};
   --winui-page-enter-offset: ${PAGE_ENTER_OFFSET_PX}px;
+}
+
+/* The duration every motion clamps to when the OS asks for reduced motion.
+   Not zero, for the reason WinUI runs a disabled ConnectedAnimation for 1ms
+   instead: the completion still has to fire.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/animation/ConnectedAnimationService.cpp#L313-L327 */
+:root {
+  --winui-reduced-motion-duration: 0.01ms;
 }
 
 /* Button padding. XAML thicknesses read left,top,right,bottom while the CSS

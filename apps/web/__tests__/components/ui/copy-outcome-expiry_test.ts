@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { copyToClipboard } from '../../../src/components/ui/copy-to-clipboard';
 import { useCopyToClipboard } from '../../../src/components/ui/use-copy-to-clipboard';
+import { advance } from '../../settle';
 
 vi.mock('../../../src/components/ui/copy-to-clipboard', () => ({ copyToClipboard: vi.fn() }));
 
@@ -11,7 +12,6 @@ const copyResult = vi.mocked(copyToClipboard);
 // The copy itself resolves on a microtask the fake timers do not hold, so a
 // press has to be awaited before its outcome is on screen.
 const press = async (copy: () => void) => { await act(async () => { copy(); }); };
-const wait = async (ms: number) => { await act(async () => { vi.advanceTimersByTime(ms); }); };
 
 describe('copy outcome expiry', () => {
   beforeEach(() => {
@@ -35,13 +35,13 @@ describe('copy outcome expiry', () => {
     const { result } = renderHook(() => useCopyToClipboard());
 
     await press(() => { result.current.copy('first', 'row-1'); });
-    await wait(1_000);
+    await advance(1_000);
     await press(() => { result.current.copy('second', 'row-2'); });
-    await wait(500);
+    await advance(500);
 
     expect(result.current.outcomeFor('row-2')).toBe('copied');
 
-    await wait(1_000);
+    await advance(1_000);
 
     expect(result.current.outcomeFor('row-2')).toBe('idle');
   });
@@ -53,10 +53,10 @@ describe('copy outcome expiry', () => {
     await press(() => { result.current.copy('first', 'row-1'); });
     expect(result.current.outcomeFor('row-1')).toBe('failed');
 
-    await wait(1_500);
+    await advance(1_500);
     expect(result.current.outcomeFor('row-1')).toBe('failed');
 
-    await wait(500);
+    await advance(500);
     expect(result.current.outcomeFor('row-1')).toBe('idle');
   });
 

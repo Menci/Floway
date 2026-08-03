@@ -1,6 +1,7 @@
 import { test } from 'vitest';
 
 import { blueprintUpstreamRecord, upstreamRecordToFullJson } from '../../../src/control-plane/upstreams/serialize.ts';
+import { MODEL_LISTING_FAILURE_CODE } from '../../../src/data-plane/models/shared.ts';
 import { MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
 import { requestApp, setupAppTest } from '../../test-utils/app.ts';
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
@@ -575,8 +576,9 @@ test('POST /api/upstreams/list-models surfaces upstream model-listing failures a
         record: blueprintEnvelope('custom', { config: customConfig }),
       }));
       assertEquals(resp.status, 502);
-      const body = (await resp.json()) as { error: { message: string; type: string } };
+      const body = (await resp.json()) as { error: { message: string; type: string; code: string } };
       assertEquals(body.error.type, 'api_error');
+      assertEquals(body.error.code, MODEL_LISTING_FAILURE_CODE);
     },
   );
 });
@@ -599,8 +601,9 @@ test('POST /api/upstreams/list-models surfaces an ollama /api/tags failure as 50
         }),
       }));
       assertEquals(resp.status, 502);
-      const body = (await resp.json()) as { error: { message: string; type: string } };
+      const body = (await resp.json()) as { error: { message: string; type: string; code: string } };
       assertEquals(body.error.type, 'api_error');
+      assertEquals(body.error.code, MODEL_LISTING_FAILURE_CODE);
     },
   );
 });
@@ -2162,7 +2165,7 @@ test('GET /api/upstreams/blueprint round-trips a shape-complete blank for every 
     assertEquals(body.id, '');
     assertEquals(body.kind, kind);
     assertEquals(body.config !== null && typeof body.config === 'object', true);
-    assertEquals(body.modelsCache, { fetchedAt: null, lastError: null });
+    assertEquals(body.modelsCache, { fetchedAt: null, lastError: null, modelCount: null });
   }
 });
 
@@ -2172,17 +2175,19 @@ test('GET /api/upstreams/blueprint rejects an unknown kind with 400', async () =
   assertEquals(resp.status, 400);
 });
 
-test('GET /api/upstreams/blueprint serves a pure-blank record with provider flag defaults filled in', async () => {
+test('GET /api/upstreams/blueprint serves the record a new upstream starts as with provider flag defaults filled in', async () => {
   const { adminSession } = await setupAppTest();
 
-  // Blueprints are pure-blank shape-complete records; the SPA discards
-  // everything except `flag_defaults` and lets the operator fill the
-  // actual config in from an empty draft. Serialization is a static
-  // registry lookup so no provider asserter runs against the blank.
+  // The blueprint is the create form's opening record, so it carries the
+  // starting values as well as the shape: a custom upstream opens on an
+  // OpenAI-compatible chat endpoint with catalog fetching on. Serialization is
+  // a static registry lookup so no provider asserter runs against it.
   // Credentials are editable empty strings, not redacted `*Set` projections.
   const custom = (await (await requestApp('/api/upstreams/blueprint?kind=custom', { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;
   assertEquals(custom.config.authStyle, 'bearer');
   assertEquals(custom.config.apiKey, '');
+  assertEquals(custom.config.endpoints, { chatCompletions: {} });
+  assertEquals(custom.config.modelsFetch, { enabled: true });
   const azure = (await (await requestApp('/api/upstreams/blueprint?kind=azure', { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;
   assertEquals(azure.config.models, []);
   const ollama = (await (await requestApp('/api/upstreams/blueprint?kind=ollama', { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;

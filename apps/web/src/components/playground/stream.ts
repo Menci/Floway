@@ -2,7 +2,7 @@ import type { PlaygroundApi, PlaygroundMessage } from './request';
 import { errorMessageFromPayload } from '../../lib/error-payload';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { parseSSEStream } from '@floway-dev/protocols/common';
-import { MESSAGES_FALLBACK_MAX_TOKENS, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 export interface PlaygroundRequest {
@@ -45,7 +45,7 @@ const contentFor = (message: PlaygroundMessage, api: PlaygroundApi): unknown => 
 const bodyFor = ({ api, model, system, messages, options }: PlaygroundRequest): unknown => {
   const turns = messages.map(message => ({ role: message.role, content: contentFor(message, api) }));
   if (api === 'messages') {
-    return { model, stream: true, max_tokens: MESSAGES_FALLBACK_MAX_TOKENS, ...(system ? { system } : {}), messages: turns, ...options };
+    return { model, stream: true, ...(system ? { system } : {}), messages: turns, ...options };
   }
   if (api === 'responses') {
     return { model, stream: true, ...(system ? { instructions: system } : {}), input: turns, ...options };

@@ -1,5 +1,6 @@
 import { useId } from 'react';
 
+import { refuseToggle } from './fluent-form-controls';
 import { fluentComponents } from '../../fluent';
 
 const { makeStyles, tokens } = fluentComponents;
@@ -177,9 +178,7 @@ export function ChoiceGroup({
         disabled={item.disabled}
         name={name}
         onChange={readOnly === true ? undefined : () => onChange(item.value)}
-        // A radio's default action is the selection, so cancelling the click
-        // refuses it while leaving the control its own appearance.
-        onClick={readOnly === true ? event => event.preventDefault() : undefined}
+        onClick={readOnly === true ? refuseToggle : undefined}
         type="radio"
         value={item.value}
       />

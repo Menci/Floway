@@ -1,6 +1,6 @@
 import { Database24Regular, History24Regular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -17,6 +17,7 @@ import { OpenLinkLabel } from '../ui/open-link-label';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
 import { RouteLink } from '../ui/route-link';
+import { useDiscardGuard } from '../ui/use-discard-guard';
 import { UpstreamAccessControl } from '../upstreams/access-control';
 import { refineUpstreamAccess } from '../upstreams/access-validation';
 
@@ -106,6 +107,8 @@ export function KeyDialog(props: KeyDialogProps) {
     defaultValues: keyFormDefaults(apiKey),
   });
   const values = useWatch({ control }) as KeyFormValues;
+  const close = useCallback(() => onOpenChange(false), [onOpenChange]);
+  const { discardConfirmation, requestClose } = useDiscardGuard({ onClose: close, values });
   const dumpRetentionPresets = DUMP_RETENTION_PRESETS.map(preset => ({
     seconds: preset.seconds,
     label: t(`dashboard.apiKeys.retention.presets.${preset.labelKey}`),
@@ -164,10 +167,10 @@ export function KeyDialog(props: KeyDialogProps) {
   };
 
   return (
-    <DialogShell
+    <>{discardConfirmation}<DialogShell
       width="editor"
       open={props.open}
-      onOpenChange={(_, data) => !saving && onOpenChange(data.open)}
+      onOpenChange={(_, data) => { if (!data.open && !saving) requestClose(); }}
       onSubmit={() => void handleSubmit(save)()}
       title={
         <DialogTitle>
@@ -178,7 +181,7 @@ export function KeyDialog(props: KeyDialogProps) {
       }
       actions={
         <DialogActions>
-          <Button disabled={saving} onClick={() => onOpenChange(false)}>
+          <Button disabled={saving} onClick={requestClose}>
             {t('common.cancel')}
           </Button>
           <Button appearance="primary" disabledFocusable={saving} type="submit">
@@ -285,7 +288,7 @@ export function KeyDialog(props: KeyDialogProps) {
       {error && (
         <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>
       )}
-    </DialogShell>
+    </DialogShell></>
   );
 }
 

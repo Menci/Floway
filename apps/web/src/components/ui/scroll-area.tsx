@@ -10,7 +10,7 @@ const { mergeClasses } = fluentComponents;
 OverlayScrollbars.plugin(ClickScrollPlugin);
 
 export type ScrollAxes = 'both' | 'horizontal' | 'vertical';
-export const scrollAreaHostClassName = 'floway-scroll-area relative overflow-hidden';
+const SCROLL_AREA_HOST_CLASS = 'floway-scroll-area relative overflow-hidden';
 
 interface ScrollAreaProps extends PropsWithChildren {
   axes: ScrollAxes;
@@ -79,7 +79,7 @@ const subscribeToScrollbarSize = (listener: () => void) => {
 const getNativeScrollbarSize = () => nativeScrollbarSize;
 const getServerScrollbarSize = () => 0;
 
-export const useOverlayScrollbarsEnabled = (): boolean => useSyncExternalStore(
+const useOverlayScrollbarsEnabled = (): boolean => useSyncExternalStore(
   subscribeToScrollbarSize,
   getNativeScrollbarSize,
   getServerScrollbarSize,
@@ -103,9 +103,9 @@ const elementOverflowFor = (axes: ScrollAxes, overlayScrollbarsEnabled: boolean)
   };
 };
 
-export const initializeScrollArea = (
-  host: HTMLDivElement,
-  viewport: HTMLDivElement,
+const initializeScrollArea = (
+  host: HTMLElement,
+  viewport: HTMLElement,
   axes: ScrollAxes,
   noTabIndex: boolean,
   overlayScrollbarsEnabled: boolean,
@@ -126,6 +126,47 @@ export const initializeScrollArea = (
   return () => instance.destroy();
 };
 
+interface ScrollAreaHost {
+  axes: ScrollAxes;
+  noTabIndex?: boolean;
+  /**
+   * A host whose scrollport is built by something else -- a virtualised list
+   * owning its own element -- hands it over here instead of taking
+   * `viewportRef`, so the wiring waits for the element the same way.
+   */
+  viewport?: HTMLElement | null;
+}
+
+/**
+ * The whole recipe a scroll area host needs: the two elements, the props that
+ * mark the host, the scrollport's own overflow, and the library binding
+ * between them. `ScrollArea` is this hook over a plain div; a host that has to
+ * be some other element calls the hook directly.
+ */
+export const useScrollAreaHost = ({ axes, noTabIndex = false, viewport }: ScrollAreaHost) => {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const overlayScrollbarsEnabled = useOverlayScrollbarsEnabled();
+
+  useLayoutEffect(() => {
+    const host = hostRef.current;
+    const scrollport = viewport === undefined ? viewportRef.current : viewport;
+    if (!host || !scrollport) return;
+    return initializeScrollArea(host, scrollport, axes, noTabIndex, overlayScrollbarsEnabled);
+  }, [axes, noTabIndex, overlayScrollbarsEnabled, viewport]);
+
+  const overflow = elementOverflowFor(axes, overlayScrollbarsEnabled);
+  return {
+    hostProps: {
+      className: SCROLL_AREA_HOST_CLASS,
+      ...(overlayScrollbarsEnabled ? { 'data-overlayscrollbars-initialize': '' } : {}),
+      ref: hostRef,
+    },
+    viewportRef,
+    viewportStyle: { overflowX: overflow.x, overflowY: overflow.y },
+  };
+};
+
 export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function ScrollArea({
   axes,
   children,
@@ -134,29 +175,15 @@ export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function S
   noTabIndex = false,
   viewportClassName,
 }, forwardedRef) {
-  const hostRef = useRef<HTMLDivElement>(null);
-  const viewportRef = useRef<HTMLDivElement>(null);
-  const overlayScrollbarsEnabled = useOverlayScrollbarsEnabled();
-  useImperativeHandle(forwardedRef, () => viewportRef.current as HTMLDivElement, []);
+  const { hostProps, viewportRef, viewportStyle } = useScrollAreaHost({ axes, noTabIndex });
+  useImperativeHandle(forwardedRef, () => viewportRef.current as HTMLDivElement, [viewportRef]);
 
-  useLayoutEffect(() => {
-    const host = hostRef.current;
-    const viewport = viewportRef.current;
-    if (!host || !viewport) return;
-    return initializeScrollArea(host, viewport, axes, noTabIndex, overlayScrollbarsEnabled);
-  }, [axes, noTabIndex, overlayScrollbarsEnabled]);
-
-  const overflow = elementOverflowFor(axes, overlayScrollbarsEnabled);
   return (
-    <div
-      className={mergeClasses(scrollAreaHostClassName, className)}
-      {...(overlayScrollbarsEnabled ? { 'data-overlayscrollbars-initialize': '' } : {})}
-      ref={hostRef}
-    >
+    <div {...hostProps} className={mergeClasses(hostProps.className, className)}>
       <div
         className={mergeClasses('h-full w-full', viewportClassName)}
         ref={viewportRef}
-        style={{ overflowX: overflow.x, overflowY: overflow.y }}
+        style={viewportStyle}
       >
         <div className={contentClassName}>{children}</div>
       </div>

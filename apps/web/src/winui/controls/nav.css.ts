@@ -6,13 +6,8 @@
 // do so because the value is painted from a keyframe stop, which outranks every
 // normal rule; the variable that stop reads is the one remaining input. See
 // ./tokens.ts for the selector convention.
-//
-// WinUI's VisualStateManager never leaves Disabled, so no pointer state is
-// reachable from it. In CSS a state pseudo-class only adds weight, so a
-// selected item's pointer rule would outrank a plain disabled rule; the
-// pointer states therefore exclude both disabled spellings themselves rather
-// than being settled by the disabled rules that follow them.
-const notDisabled = ":not(:disabled):not([aria-disabled='true'])";
+import { selectionPill } from './selection-pill';
+import { notDisabled } from './selectors';
 
 export const navCss = `
 /* No seam on the pane's inline-end edge: WinUI draws that hairline from the
@@ -92,12 +87,19 @@ export const navCss = `
    an endpoint of that animation and a sub-item is rendered nowhere the measured
    indicator is drawn, so both keep a pseudo-element.
 
-   WinUI states the pill as a fixed 16px on its 36px left-pane row. The quarter
-   inset reproduces that at the stock height while holding the proportion as the
-   row grows; the measured indicator is pinned at 20px to match.
+   Those two take the shared pill geometry at NavigationViewSelectionIndicator's
+   own 2px radius, with Fluent's fixed indicator height released so the inset
+   sets the length; the measured indicator is pinned at 20px to match what that
+   inset gives them on the stock row.
+
+   The accent is substituted rather than declared: the key frame Fluent ends
+   this pseudo-element's entrance on paints background from
+   colorCompoundBrandForeground1 and holds it, which is the case the note at the
+   top of this file describes.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L217
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L220-L222
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L48 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L48
+   https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-nav/library/src/components/sharedNavStyles.styles.ts#L87-L103 */
 .fui-NavItem.fui-NavItem::after {
   content: none;
 }
@@ -105,10 +107,8 @@ export const navCss = `
 .fui-NavSubItem.fui-NavSubItem[aria-current='page']::after,
 .fui-NavCategoryItem.fui-NavCategoryItem[aria-current='page']::after {
   --colorCompoundBrandForeground1: var(--winui-accent-fill-default);
-  border-radius: 2px;
+${selectionPill('2px')}
   height: auto;
-  inset-block: 25%;
-  width: 3px;
 }
 
 .fui-NavItem.fui-NavItem:active${notDisabled},

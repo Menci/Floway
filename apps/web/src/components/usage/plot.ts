@@ -1,8 +1,8 @@
 import type { ChartProps } from '@fluentui/react-charts';
 
-import { metricConfig } from './metrics';
+import { metricConfig, summaryFieldForMetric } from './metrics';
 import type { DisplayUsageRecord, SearchChartModel, SearchUsageResponse, TokenChartModel, TokenCounters, TokenSummary, UsageMetric, UsageRange, UsageResponse } from './types';
-import type { ControlPlaneModel, BillingMetric } from '../../api/types';
+import type { ControlPlaneModel } from '../../api/types';
 import { decimalStringToPlottableNumber, sumDecimalStrings } from '../../lib/decimal-display';
 import type { ChartBucket } from '../charts/dashboard-time';
 import {
@@ -12,7 +12,7 @@ import {
 import type { ChartSeries } from '../charts/series-legends';
 import { withUniqueSeriesLegends } from '../charts/series-legends';
 import { areaSeries, lineSeries } from '../charts/series-plot';
-import type { DecimalString } from '@floway-dev/protocols/common';
+import type { BillingMetric, DecimalString } from '@floway-dev/protocols/common';
 
 const shortMonthDay = (date: Date, locale: string): string =>
   date.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
@@ -47,7 +47,6 @@ export const buildTokenChart = ({
   metadata,
   models,
   groupKey,
-  hiddenOwn,
   hiddenOther,
   redactKeys,
   metric,
@@ -58,7 +57,6 @@ export const buildTokenChart = ({
   metadata: UsageResponse['keys'];
   models: ControlPlaneModel[];
   groupKey: 'keyId' | 'model';
-  hiddenOwn: Set<string>;
   hiddenOther: Set<string>;
   redactKeys: boolean;
   metric: UsageMetric;
@@ -74,9 +72,8 @@ export const buildTokenChart = ({
       ? keyChartEntries([...presentGroups], metadata, records, redactKeys)
       : modelChartEntries([...presentGroups], models);
 
-  const visibleEntries = entries.filter(entry => !hiddenOwn.has(entry.id));
   const isPercent = metricConfig[metric].kind === 'percent';
-  const series = visibleEntries
+  const series = entries
     .map(entry => ({
       entry,
       data: buckets.map(bucket => {
@@ -130,13 +127,11 @@ const areaChartData = (buckets: ChartBucket[], series: PlottedSeries): ChartProp
 
 export const buildSearchChart = ({
   search,
-  hiddenKeys,
   redactKeys,
   range,
   buckets,
 }: {
   search: SearchUsageResponse;
-  hiddenKeys: Set<string>;
   redactKeys: boolean;
   range: UsageRange;
   buckets: ChartBucket[];
@@ -179,8 +174,6 @@ export const buildSearchChart = ({
     })),
     redactKeys,
   );
-  const visibleEntries = entries.filter(entry => !hiddenKeys.has(entry.id));
-
   return {
     entries,
     buckets,
@@ -189,7 +182,7 @@ export const buildSearchChart = ({
     range,
     plot: {
       form: 'area',
-      data: areaChartData(buckets, visibleEntries.map(entry => ({
+      data: areaChartData(buckets, entries.map(entry => ({
         entry,
         data: buckets.map(bucket => groups.get(entry.id)?.get(bucket.key) ?? 0),
       }))),
@@ -224,7 +217,7 @@ const aggregateTokenRecords = (
     if (metricConfig[metric].kind !== 'percent') {
       const bucketValues = values.get(bucket);
       if (bucketValues === undefined) throw new RangeError(`Bucket is missing from the chart series: ${bucket}`);
-      const value = plottableMetricValue(record, metric);
+      const value = plottableMetricValue(countersForRecord(record), metric);
       if (value !== null) {
         bucketValues.set(group, (bucketValues.get(group) ?? 0) + value);
       } else if (!bucketValues.has(group)) {
@@ -237,7 +230,7 @@ const aggregateTokenRecords = (
     for (const [bucket, bucketDetails] of details) {
       const bucketValues = values.get(bucket)!;
       for (const [group, detail] of bucketDetails) {
-        bucketValues.set(group, tokenCountersMetricValue(detail, metric));
+        bucketValues.set(group, plottableMetricValue(detail, metric));
       }
     }
   }
@@ -298,16 +291,26 @@ export const summarizeUsage = (records: DisplayUsageRecord[]): TokenSummary => {
 };
 
 export const summarizeCounters = (counters: TokenCounters): TokenSummary => {
+  const prompt = sumDecimalStrings(counters.input, counters.cacheRead, counters.cacheCreation, counters.inputImage);
   return {
     requests: counters.requests,
     cost: counters.cost,
     cacheRead: counters.cacheRead,
     cacheCreation: counters.cacheCreation,
-    prompt: sumDecimalStrings(counters.input, counters.cacheRead, counters.cacheCreation, counters.inputImage),
+    prompt,
     output: sumDecimalStrings(counters.output, counters.outputImage),
     total: sumDecimalStrings(counters.input, counters.output, counters.cacheRead, counters.cacheCreation, counters.inputImage, counters.outputImage),
     prefill: sumDecimalStrings(counters.input, counters.cacheCreation, counters.inputImage),
+    cachedRate: percentOf(counters.cacheRead, prompt),
+    cacheHitRate: percentOf(counters.cacheRead, sumDecimalStrings(counters.cacheRead, counters.cacheCreation)),
   };
+};
+
+// Ratios divide one aggregate by another, so both sides convert to plottable
+// numbers first; the division has no precision to protect.
+const percentOf = (numerator: DecimalString, denominator: DecimalString): number | null => {
+  const bottom = decimalStringToPlottableNumber(denominator);
+  return bottom > 0 ? (decimalStringToPlottableNumber(numerator) / bottom) * 100 : null;
 };
 
 const addRecordToCounters = (counters: TokenCounters, record: DisplayUsageRecord) => {
@@ -334,65 +337,21 @@ const emptyCounters = (): TokenCounters => {
   };
 };
 
+const countersForRecord = (record: DisplayUsageRecord): TokenCounters => {
+  const counters = emptyCounters();
+  addRecordToCounters(counters, record);
+  return counters;
+};
+
 const dim = (record: DisplayUsageRecord, key: BillingMetric): DecimalString => {
   return record.metrics[key] ?? '0';
 };
 
-const metricValue = (record: DisplayUsageRecord, metric: UsageMetric): DecimalString | number | null => {
-  switch (metric) {
-  case 'requests':
-    return record.requests;
-  case 'cost':
-    return record.cost;
-  case 'total':
-    return sumDecimalStrings(
-      dim(record, 'input_tokens'),
-      dim(record, 'output_tokens'),
-      dim(record, 'input_cache_read_tokens'),
-      dim(record, 'input_cache_write_tokens'),
-      dim(record, 'input_cache_write_1h_tokens'),
-      dim(record, 'input_image_tokens'),
-      dim(record, 'output_image_tokens'),
-    );
-  case 'input':
-    return sumDecimalStrings(
-      dim(record, 'input_tokens'),
-      dim(record, 'input_cache_read_tokens'),
-      dim(record, 'input_cache_write_tokens'),
-      dim(record, 'input_cache_write_1h_tokens'),
-      dim(record, 'input_image_tokens'),
-    );
-  case 'output':
-    return sumDecimalStrings(dim(record, 'output_tokens'), dim(record, 'output_image_tokens'));
-  case 'prefill':
-    return sumDecimalStrings(dim(record, 'input_tokens'), dim(record, 'input_cache_write_tokens'), dim(record, 'input_cache_write_1h_tokens'), dim(record, 'input_image_tokens'));
-  case 'cached':
-    return dim(record, 'input_cache_read_tokens');
-  case 'cacheCreation':
-    return sumDecimalStrings(dim(record, 'input_cache_write_tokens'), dim(record, 'input_cache_write_1h_tokens'));
-  case 'cachedRate':
-  case 'cacheHitRate':
-    return null;
-  }
-};
-
 // Plot values cross into floating point exactly here, at the axis boundary.
-const plottableMetricValue = (record: DisplayUsageRecord, metric: UsageMetric): number | null => {
-  const value = metricValue(record, metric);
+const plottableMetricValue = (counters: TokenCounters, metric: UsageMetric): number | null => {
+  const value = summarizeCounters(counters)[summaryFieldForMetric[metric]];
   if (value === null) return null;
   return typeof value === 'number' ? value : decimalStringToPlottableNumber(value);
-};
-
-// Ratios divide one aggregate by another, so both sides convert to plottable
-// numbers first; the division has no precision to protect.
-const tokenCountersMetricValue = (counters: TokenCounters, metric: UsageMetric): number | null => {
-  const ratio = (numerator: DecimalString, denominator: DecimalString): number | null => {
-    const bottom = decimalStringToPlottableNumber(denominator);
-    return bottom > 0 ? (decimalStringToPlottableNumber(numerator) / bottom) * 100 : null;
-  };
-  if (metric === 'cacheHitRate') return ratio(counters.cacheRead, sumDecimalStrings(counters.cacheRead, counters.cacheCreation));
-  if (metric === 'cachedRate') return ratio(counters.cacheRead, summarizeCounters(counters).prompt);
-  return null;
 };
 
 const hasRequests = (details: Map<string, Map<string, TokenCounters>>, id: string): boolean => {

@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { formatCompactDecimalCount, formatRatePercent } from './format';
 import { bucketKeyForCallout, summarizeCounters } from './plot';
 import type { CalloutPoint, UsageChartModel } from './types';
-import { formatUsd, sumDecimalStrings } from '../../lib/decimal-display';
+import { formatUsd } from '../../lib/decimal-display';
 import { formatCount } from '../../lib/format-number';
 import { useLocale } from '../../lib/use-locale';
 import { ChartCalloutTable } from '../charts/callout-table';
@@ -22,21 +22,20 @@ export function UsageChartCallout({ chart, labelByTime, point, valueFormatter }:
     .sort((a, b) => b.value - a.value);
   if (rows.length === 0) return null;
   const title = formatCalloutTitle(point.x, labelByTime, chart.range, locale);
-  const entryIds = new Set(chart.entries.map(entry => entry.id));
   return (
     <ScrollArea axes="horizontal" className="max-w-[min(650px,calc(100vw-48px))] min-w-[220px]" contentClassName="grid gap-1">
       {chart.kind === 'token' && bucketDetails ? (
         <ChartCalloutTable
           columns={(['requests', 'cost', 'total', 'cached', 'cachedRate', 'prefill', 'output', 'hitRate'] as const).map(key => ({ key, label: t(`dashboard.usage.callout.${key}`) }))}
           rows={rows.flatMap(item => {
-            const counters = entryIds.has(item.id) ? bucketDetails.get(item.id) : undefined;
+            const counters = bucketDetails.get(item.id);
             if (!counters) return [];
             const summary = summarizeCounters(counters);
             return [{
               color: item.color,
               key: item.id,
               label: item.label,
-              values: [formatCount(summary.requests, locale), formatUsd(summary.cost), formatCompactDecimalCount(summary.total, locale), formatCompactDecimalCount(summary.cacheRead, locale), formatRatePercent(summary.cacheRead, summary.prompt), formatCompactDecimalCount(summary.prefill, locale), formatCompactDecimalCount(summary.output, locale), formatRatePercent(summary.cacheRead, sumDecimalStrings(summary.cacheRead, summary.cacheCreation))],
+              values: [formatCount(summary.requests, locale), formatUsd(summary.cost), formatCompactDecimalCount(summary.total, locale), formatCompactDecimalCount(summary.cacheRead, locale), formatRatePercent(summary.cachedRate), formatCompactDecimalCount(summary.prefill, locale), formatCompactDecimalCount(summary.output, locale), formatRatePercent(summary.cacheHitRate)],
             }];
           })}
           title={title}

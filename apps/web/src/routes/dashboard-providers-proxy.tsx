@@ -9,15 +9,19 @@ import { ProxyDialog } from '../components/proxy/dialog';
 import { ProxyList } from '../components/proxy/list';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
+import { EmptyStateLine } from '../components/ui/empty-state';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
+import { Panel } from '../components/ui/panel';
 import { ResourceListActions, ResourceListPanel } from '../components/ui/resource-list';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { useRefresh } from '../components/ui/use-refresh';
 
+// `null` is a fetch that failed, distinct from a deployment that genuinely has
+// no proxy: an empty list invites a second copy of a proxy that already exists.
 interface LoaderData {
-  proxies: ProxyRecord[];
-  backoffs: BackoffRow[];
+  proxies: ProxyRecord[] | null;
+  backoffs: BackoffRow[] | null;
   error: string | null;
 }
 
@@ -27,8 +31,8 @@ const loadPageData = async (): Promise<LoaderData> => {
     callApi(() => api.api.proxies.backoffs.$get()),
   ]);
   return {
-    proxies: proxiesRes.data ?? [],
-    backoffs: backoffsRes.data ?? [],
+    proxies: proxiesRes.data ?? null,
+    backoffs: backoffsRes.data ?? null,
     error: proxiesRes.error?.message ?? backoffsRes.error?.message ?? null,
   };
 };
@@ -72,6 +76,8 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
 
   const { refresh, refreshing } = useRefresh(refreshProxies);
 
+  const loaded = proxies !== null && backoffs !== null;
+
   const handleDeleteConfirm = useCallback(async (target: ProxyRecord) => {
     setMutating(true);
     setDeleteError(null);
@@ -105,6 +111,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
     <section className="dashboard-page">
       <DashboardPageHeader
         actions={<ResourceListActions
+          createDisabled={!loaded}
           createLabel={t('dashboard.proxy.actions.create')}
           disabled={mutating}
           onCreate={() => editorDialog.open(null)}
@@ -120,31 +127,33 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
         <OutcomeMessageBar onDismiss={() => setLoadError(null)}>{loadError}</OutcomeMessageBar>
       )}
 
-      <ResourceListPanel>
-        <ProxyList disabled={refreshing || mutating} proxies={proxies} onDelete={openDeleteDialog} onEdit={editorDialog.open} />
-      </ResourceListPanel>
+      {!loaded ? <Panel><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel> : <>
+        <ResourceListPanel>
+          <ProxyList disabled={refreshing || mutating} proxies={proxies} onDelete={openDeleteDialog} onEdit={editorDialog.open} />
+        </ResourceListPanel>
 
-      {editorDialog.invocation && <ProxyDialog
-        open={editorDialog.isOpen}
-        backoffs={backoffs}
-        key={editorDialog.invocation.key}
-        onOpenChange={open => { if (!open) editorDialog.close(); }}
-        onSaved={refresh}
-        record={editorDialog.invocation.value}
-      />}
+        {editorDialog.invocation && <ProxyDialog
+          open={editorDialog.isOpen}
+          backoffs={backoffs}
+          key={editorDialog.invocation.key}
+          onOpenChange={open => { if (!open) editorDialog.close(); }}
+          onSaved={refresh}
+          record={editorDialog.invocation.value}
+        />}
 
-      {deleteDialog.invocation && <ConfirmDialog
-        open={deleteDialog.isOpen}
-        actionLabel={t('dashboard.proxy.actions.delete')}
-        busy={mutating}
-        error={deleteError}
-        key={deleteDialog.invocation.key}
-        message={t('dashboard.proxy.delete.message', { name: deleteDialog.invocation.value.name })}
-        onConfirm={() => void handleDeleteConfirm(deleteDialog.invocation!.value)}
-        onDismissError={() => setDeleteError(null)}
-        onOpenChange={open => { if (!open) deleteDialog.close(); }}
-        title={t('dashboard.proxy.delete.title')}
-      />}
+        {deleteDialog.invocation && <ConfirmDialog
+          open={deleteDialog.isOpen}
+          actionLabel={t('dashboard.proxy.actions.delete')}
+          busy={mutating}
+          error={deleteError}
+          key={deleteDialog.invocation.key}
+          message={t('dashboard.proxy.delete.message', { name: deleteDialog.invocation.value.name })}
+          onConfirm={() => void handleDeleteConfirm(deleteDialog.invocation!.value)}
+          onDismissError={() => setDeleteError(null)}
+          onOpenChange={open => { if (!open) deleteDialog.close(); }}
+          title={t('dashboard.proxy.delete.title')}
+        />}
+      </>}
     </section>
   );
 }

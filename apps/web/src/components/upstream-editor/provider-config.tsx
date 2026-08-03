@@ -5,7 +5,7 @@ import {
   EyeRegular,
   PlugConnectedRegular,
 } from '@fluentui/react-icons';
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Controller, useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
@@ -13,26 +13,24 @@ import { ClaudeCodeAccountCard } from './claude-code-account-card';
 import { CodexAccountCard } from './codex-account-card';
 import { CopilotQuotaCard } from './copilot-quota-card';
 import type { UpstreamEditorValues } from './data';
-import { previewRecord } from './data';
+import { isPersisted, previewRecord } from './data';
+import { CHAT_ENDPOINT_KEYS, endpointOptionsFor, PATH_OVERRIDE_PATHS } from './endpoints';
 import { useMonoLabelClass } from './mono-label';
 import { clearPkce, generatePkce, parseCallbackPaste, recallPkce, stashPkce } from './pkce';
+import { EditorSection } from './section';
 import { api, callApi } from '../../api/client';
-import type {
-  DeviceFlowStart,
-  UpstreamProviderKind,
-  UpstreamRecord,
-} from '../../api/types';
+import type { DeviceFlowStart, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { errorMessage } from '../../lib/error-message';
 import { Dropdown, Input, Textarea } from '../ui/fluent-form-controls';
-import { CHECKBOX_LIST_CLASS, SECTION_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
+import { CHECKBOX_LIST_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OpenLinkLabel } from '../ui/open-link-label';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SecretInput } from '../ui/secret-input';
-import { SectionHeader } from '../ui/section-header';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-copy-to-clipboard';
 import { ProviderIcon, providerLabel } from '../upstreams/provider-badge';
+import type { UpstreamProviderKind } from '@floway-dev/provider/model';
 
 const {
   Button,
@@ -46,6 +44,15 @@ const {
   TabList,
   Text,
 } = fluentComponents;
+
+// react-hook-form resolves a field path against the values type it is given,
+// and the editor's `config` is a union across provider kinds, which has no
+// member path to resolve. Each provider's own editor already holds a record of
+// one kind, so it states that kind and gets its own config's paths and value
+// types back.
+type ValuesForKind<K extends UpstreamProviderKind> = Omit<UpstreamEditorValues, 'config'> & {
+  config: Extract<UpstreamRecord, { kind: K }>['config'];
+};
 
 // OAuth 2.0 device flow slow_down increases the current polling interval by five seconds.
 // https://www.rfc-editor.org/rfc/rfc8628#section-3.5
@@ -74,21 +81,22 @@ export function ApiPathsSection({ record }: { record: UpstreamRecord }) {
 
 function CustomConfig({ onRefreshModels, record }: { onRefreshModels: () => void; record: Extract<UpstreamRecord, { kind: 'custom' }> }) {
   const { t } = useTranslation();
-  const { control, setValue } = useFormContext<UpstreamEditorValues>();
-  const authStyle = useWatch({ control, name: 'config.authStyle' as never }) as string;
-  const fetchesCatalog = Boolean(useWatch({ control, name: 'config.modelsFetch.enabled' as never }));
-  const authStyleLabel = (value: unknown) => {
-    if (value === 'bearer') return 'Bearer';
-    if (value === 'anthropic') return 'Anthropic';
-    if (value === 'none') return t('dashboard.upstreamEditor.auth.none');
-    return '';
+  const { control, setValue } = useFormContext<ValuesForKind<'custom'>>();
+  const authStyle = useWatch({ control, name: 'config.authStyle' });
+  const fetchesCatalog = useWatch({ control, name: 'config.modelsFetch.enabled' });
+  const authStyleLabel = (value: typeof authStyle) => {
+    switch (value) {
+    case 'bearer': return 'Bearer';
+    case 'anthropic': return 'Anthropic';
+    case 'none': return t('dashboard.upstreamEditor.auth.none');
+    }
   };
   return (
     <div className="grid gap-4">
       <Field label={t('dashboard.upstreamEditor.fields.baseUrl')}>
         <Controller
           control={control}
-          name={'config.baseUrl' as never}
+          name="config.baseUrl"
           render={({ field }) => (
             <Input
               className="font-mono"
@@ -97,16 +105,16 @@ function CustomConfig({ onRefreshModels, record }: { onRefreshModels: () => void
               onChange={(_, data) => field.onChange(data.value)}
               placeholder="https://api.openai.com"
               ref={field.ref}
-              value={typeof field.value === 'string' ? field.value : ''}
+              value={field.value}
             />
           )}
         />
       </Field>
-      <Controller control={control} name={'config.authStyle' as never} render={({ field }) => (
+      <Controller control={control} name="config.authStyle" render={({ field }) => (
         <Field label={t('dashboard.upstreamEditor.fields.authStyle')}>
-          <Dropdown value={authStyleLabel(field.value)} selectedOptions={[String(field.value)]} onOptionSelect={(_, data) => {
+          <Dropdown value={authStyleLabel(field.value)} selectedOptions={[field.value]} onOptionSelect={(_, data) => {
             field.onChange(data.optionValue);
-            if (data.optionValue === 'none') setValue('config.apiKey' as never, '' as never, { shouldDirty: true });
+            if (data.optionValue === 'none') setValue('config.apiKey', '', { shouldDirty: true });
           }}>
             <Option value="bearer">Bearer</Option>
             <Option value="anthropic">Anthropic</Option>
@@ -114,10 +122,10 @@ function CustomConfig({ onRefreshModels, record }: { onRefreshModels: () => void
           </Dropdown>
         </Field>
       )} />
-      {authStyle !== 'none' && <SecretField name="config.apiKey" secretSet={record.config.apiKeySet === true || Boolean(record.config.apiKey)} />}
-      <Controller control={control} name={'config.modelsFetch.enabled' as never} render={({ field }) => (
+      {authStyle !== 'none' && <SecretField secretSet={record.config.apiKeySet === true || Boolean(record.config.apiKey)} />}
+      <Controller control={control} name="config.modelsFetch.enabled" render={({ field }) => (
         <Switch
-          checked={Boolean(field.value)}
+          checked={field.value}
           label={t('dashboard.upstreamEditor.fields.fetchModels')}
           onChange={(_, data) => {
             field.onChange(data.checked);
@@ -127,7 +135,7 @@ function CustomConfig({ onRefreshModels, record }: { onRefreshModels: () => void
       )} />
       {fetchesCatalog && (
         <Field label={t('dashboard.upstreamEditor.fields.catalogPath')}>
-          <Controller control={control} name={'config.modelsFetch.endpoint' as never} render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="/v1/models" ref={field.ref} value={typeof field.value === 'string' ? field.value : ''} />} />
+          <Controller control={control} name="config.modelsFetch.endpoint" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="/v1/models" ref={field.ref} value={field.value ?? ''} />} />
         </Field>
       )}
     </div>
@@ -137,24 +145,21 @@ function CustomConfig({ onRefreshModels, record }: { onRefreshModels: () => void
 function CustomApiPaths() {
   const { t } = useTranslation();
   const monoLabel = useMonoLabelClass();
-  const idPrefix = useId();
-  const { control } = useFormContext<UpstreamEditorValues>();
+  const { control } = useFormContext<ValuesForKind<'custom'>>();
   return (
     <div className="grid gap-4">
       <EndpointPicker />
-      <div
-        aria-describedby={`${idPrefix}-hint`}
-        aria-labelledby={`${idPrefix}-label`}
-        className={SECTION_STACK_CLASS}
-        role="group"
+      <EditorSection
+        hint={t('dashboard.upstreamEditor.pathOverridesHint')}
+        level={3}
+        title={t('dashboard.upstreamEditor.fields.pathOverrides')}
       >
-        <SectionHeader level={3} title={t('dashboard.upstreamEditor.fields.pathOverrides')} titleId={`${idPrefix}-label`} />
         <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
-          {pathOverrideKeys.map(path => (
+          {PATH_OVERRIDE_PATHS.map(path => (
             <Controller
               control={control}
               key={path}
-              name={`config.pathOverrides.${path}` as never}
+              name={`config.pathOverrides.${path}`}
               render={({ field }) => (
                 <Field className="min-w-0" label={{ children: path, className: monoLabel }}>
                   <Input
@@ -164,46 +169,43 @@ function CustomApiPaths() {
                     onChange={(_, data) => field.onChange(data.value)}
                     placeholder={`/v1${path}`}
                     ref={field.ref}
-                    value={typeof field.value === 'string' ? field.value : ''}
+                    value={field.value ?? ''}
                   />
                 </Field>
               )}
             />
           ))}
         </div>
-        <Text id={`${idPrefix}-hint`} size={200} className="text-fui-fg2">
-          {t('dashboard.upstreamEditor.pathOverridesHint')}
-        </Text>
-      </div>
+      </EditorSection>
     </div>
   );
 }
 
 function AzureConfig({ record }: { record: Extract<UpstreamRecord, { kind: 'azure' }> }) {
   const { t } = useTranslation();
-  const { control } = useFormContext<UpstreamEditorValues>();
+  const { control } = useFormContext<ValuesForKind<'azure'>>();
   return <div className="grid gap-4">
     <Field label={t('dashboard.upstreamEditor.fields.endpoint')}>
-      <Controller control={control} name={'config.endpoint' as never} render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="https://resource.openai.azure.com/openai/v1" ref={field.ref} value={typeof field.value === 'string' ? field.value : ''} />} />
+      <Controller control={control} name="config.endpoint" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="https://resource.openai.azure.com/openai/v1" ref={field.ref} value={field.value} />} />
     </Field>
-    <SecretField name="config.apiKey" secretSet={record.config.apiKeySet === true || Boolean(record.config.apiKey)} />
+    <SecretField secretSet={record.config.apiKeySet === true || Boolean(record.config.apiKey)} />
   </div>;
 }
 
 function OllamaConfig({ record }: { record: Extract<UpstreamRecord, { kind: 'ollama' }> }) {
   const { t } = useTranslation();
-  const { control } = useFormContext<UpstreamEditorValues>();
+  const { control } = useFormContext<ValuesForKind<'ollama'>>();
   return <div className="grid gap-4">
     <Field label={t('dashboard.upstreamEditor.fields.baseUrl')}>
-      <Controller control={control} name={'config.baseUrl' as never} render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="https://ollama.com" ref={field.ref} value={typeof field.value === 'string' ? field.value : ''} />} />
+      <Controller control={control} name="config.baseUrl" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="https://ollama.com" ref={field.ref} value={field.value} />} />
     </Field>
-    <SecretField name="config.apiKey" secretSet={record.config.apiKeySet === true || Boolean(record.config.apiKey)} optional />
+    <SecretField secretSet={record.config.apiKeySet === true || Boolean(record.config.apiKey)} optional />
   </div>;
 }
 
-function SecretField({ name, optional, secretSet }: { name: string; optional?: boolean; secretSet: boolean }) {
+function SecretField({ optional, secretSet }: { optional?: boolean; secretSet: boolean }) {
   const { t } = useTranslation();
-  const { control } = useFormContext<UpstreamEditorValues>();
+  const { control } = useFormContext<ValuesForKind<'custom' | 'azure' | 'ollama'>>();
   const [visible, setVisible] = useState(false);
   return <Field
     label={`${t('dashboard.upstreamEditor.fields.apiKey')}${optional ? ` (${t('dashboard.upstreamEditor.optional')})` : ''}`}
@@ -211,11 +213,11 @@ function SecretField({ name, optional, secretSet }: { name: string; optional?: b
   >
     <Controller
       control={control}
-      name={name as never}
+      name="config.apiKey"
       render={({ field }) => (
         <SecretInput
           revealed={visible}
-          value={typeof field.value === 'string' ? field.value : ''}
+          value={field.value ?? ''}
           onBlur={field.onBlur}
           onChange={(_, data) => field.onChange(data.value)}
           placeholder={secretSet ? '••••••••' : 'sk-...'}
@@ -232,34 +234,16 @@ function SecretField({ name, optional, secretSet }: { name: string; optional?: b
   </Field>;
 }
 
-const endpointOptions = [
-  ['completions', '/completions'],
-  ['chatCompletions', '/chat/completions'],
-  ['responses', '/responses'],
-  ['messages', '/messages'],
-] as const;
-
-const pathOverrideKeys = [
-  '/completions',
-  '/chat/completions',
-  '/responses',
-  '/messages',
-  '/embeddings',
-  '/alpha/search',
-  '/images/generations',
-  '/images/edits',
-] as const;
+const endpointOptions = endpointOptionsFor(CHAT_ENDPOINT_KEYS);
 
 function EndpointPicker() {
   const { t } = useTranslation();
   const monoLabel = useMonoLabelClass();
-  const idPrefix = useId();
   const { control, getValues, setValue } = useFormContext<UpstreamEditorValues>();
   const config = useWatch({ control, name: 'config' });
   const customConfig = config as Extract<UpstreamRecord, { kind: 'custom' }>['config'];
   const value = customConfig.endpoints;
-  return <div className={SECTION_STACK_CLASS} role="group" aria-labelledby={`${idPrefix}-label`}>
-    <SectionHeader level={3} title={t('dashboard.upstreamEditor.fields.defaultEndpoints')} titleId={`${idPrefix}-label`} />
+  return <EditorSection level={3} title={t('dashboard.upstreamEditor.fields.defaultEndpoints')}>
     <div className={`grid ${CHECKBOX_LIST_CLASS}`}>
       {endpointOptions.map(([key, label]) => {
         const selected = value[key] !== undefined;
@@ -275,7 +259,7 @@ function EndpointPicker() {
           }} />;
       })}
     </div>
-  </div>;
+  </EditorSection>;
 }
 
 function ReadyToSaveHint({ kind }: { kind: UpstreamProviderKind }) {
@@ -316,7 +300,7 @@ function CopilotConfig({ record, onPatch }: {
       timer.current = window.setTimeout(() => void pollRef.current(deviceCode, interval, secondsLeft - interval), interval * 1000);
       return;
     }
-    if (result.data.status === 'complete') { setBusy(false); onPatch(result.data.patch, record.id !== ''); return; }
+    if (result.data.status === 'complete') { setBusy(false); onPatch(result.data.patch, isPersisted(record)); return; }
     if (result.data.status === 'slow_down') {
       const next = interval + DEVICE_FLOW_SLOW_DOWN_SECONDS;
       timer.current = window.setTimeout(() => void pollRef.current(deviceCode, next, secondsLeft - next), next * 1000);
@@ -352,7 +336,7 @@ function CopilotConfig({ record, onPatch }: {
   if (config.user.login) {
     return <div className="grid gap-3">
       <AccountSummary kind="copilot" title={config.user.name ?? config.user.login} subtitle={`@${config.user.login}`} />
-      {record.id === '' ? <ReadyToSaveHint kind="copilot" /> : <CopilotQuotaCard record={record} />}
+      {isPersisted(record) ? <CopilotQuotaCard record={record} /> : <ReadyToSaveHint kind="copilot" />}
     </div>;
   }
   return <div className="grid gap-3">
@@ -388,7 +372,7 @@ function OAuthConfig({ record, onPatch }: {
       : await callApi(() => api.api.upstreams['claude-code'].oauth.refresh.$post({ json: body }));
     setRefreshing(false);
     if (result.error) { setError(result.error.message); return; }
-    onPatch(result.data.patch, record.id !== '');
+    onPatch(result.data.patch, isPersisted(record));
   };
   const [open, setOpen] = useState(!hasAccount);
   const [probing, setProbing] = useState(false);
@@ -401,7 +385,7 @@ function OAuthConfig({ record, onPatch }: {
     }));
     setProbing(false);
     if (result.error) { setError(result.error.message); return; }
-    onPatch(result.data.patch, record.id !== '');
+    onPatch(result.data.patch, isPersisted(record));
   };
   const [tab, setTab] = useState(record.kind === 'codex' ? 'json' : 'oauth');
   const [json, setJson] = useState('');
@@ -476,7 +460,7 @@ function OAuthConfig({ record, onPatch }: {
     setBusy(false);
     if (result.error) { setError(result.error.message); return; }
     clearPkce(record.kind, flowKind);
-    onPatch(result.data.patch, record.id !== '');
+    onPatch(result.data.patch, isPersisted(record));
     setOpen(false); setJson(''); setCallback(''); setAuthorizeUrl(null);
   };
 
@@ -488,7 +472,7 @@ function OAuthConfig({ record, onPatch }: {
           probing={probing}
           record={{ ...record, kind: 'claude-code', config: config as Extract<UpstreamRecord, { kind: 'claude-code' }>['config'], state: values.state as Extract<UpstreamRecord, { kind: 'claude-code' }>['state'] }}
         />)}
-    {hasAccount && record.id === '' && <ReadyToSaveHint kind={record.kind} />}
+    {hasAccount && !isPersisted(record) && <ReadyToSaveHint kind={record.kind} />}
     {hasAccount && <div className="flex flex-wrap items-center gap-2">
       <Button appearance="primary" disabledFocusable={refreshing} icon={refreshing ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={() => void refreshCredential()}>
         {t('dashboard.upstreamEditor.oauth.refresh')}

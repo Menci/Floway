@@ -1,10 +1,9 @@
-import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { EditorSection } from './section';
 import { fluentComponents } from '../../fluent';
 import { Dropdown } from '../ui/fluent-form-controls';
-import { SECTION_STACK_CLASS } from '../ui/layout';
-import { SectionHeader } from '../ui/section-header';
+import { InlineMarkdown } from '../ui/markdown';
 import { OPTIONAL_FLAG_IDS, type FlagDefaults, type FlagId, type FlagOverrides } from '@floway-dev/provider/flags';
 
 const { Option, Text } = fluentComponents;
@@ -74,6 +73,9 @@ export function FeatureFlagsEditor({
           <InlineMarkdown>{label}</InlineMarkdown>
         </Text>
         <div className="grid gap-1">
+          {/* A description separates its paragraphs with a single newline, which
+              markdown reads as a soft break rather than a paragraph boundary, so
+              the split is ours and each line is rendered as inline prose. */}
           {description.split('\n').map((line, i) => (
             <Text key={i} size={200} className="text-fui-fg2">
               <InlineMarkdown>{line}</InlineMarkdown>
@@ -104,36 +106,11 @@ export function FeatureFlagsEditor({
 
   return <div className="grid gap-5 min-w-0">
     {groupedFlags.map(group => (
-      <section className={SECTION_STACK_CLASS} key={group.id}>
-        <SectionHeader level={3} title={t(`dashboard.upstreamEditor.flags.groups.${group.id}`)} />
+      <EditorSection key={group.id} level={3} title={t(`dashboard.upstreamEditor.flags.groups.${group.id}`)}>
         <div>
           {group.flags.map(renderFlag)}
         </div>
-      </section>
+      </EditorSection>
     ))}
   </div>;
 }
-
-function InlineMarkdown({ children }: { children: string }) {
-  return <>{parseInlineMarkdown(children)}</>;
-}
-
-const parseInlineMarkdown = (text: string): ReactNode[] => {
-  const tokens = text.split(/(`[^`\n]+`|\*\*[^*\n]+\*\*|\*[^*\n]+\*)/g);
-  return tokens.filter(Boolean).map((token, index) => {
-    if (token.startsWith('`') && token.endsWith('`')) {
-      return (
-        <code key={index}>
-          {token.slice(1, -1)}
-        </code>
-      );
-    }
-    if (token.startsWith('**') && token.endsWith('**')) {
-      return <strong key={index}>{parseInlineMarkdown(token.slice(2, -2))}</strong>;
-    }
-    if (token.startsWith('*') && token.endsWith('*')) {
-      return <em key={index}>{parseInlineMarkdown(token.slice(1, -1))}</em>;
-    }
-    return token;
-  });
-};

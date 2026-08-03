@@ -20,8 +20,10 @@ export const hsvToRgb = (h: number, s: number, v: number): [number, number, numb
 export const rgbToHex = (r: number, g: number, b: number): string =>
   `#${  [r, g, b].map(n => n.toString(16).padStart(2, '0')).join('').toUpperCase()}`;
 
-export const hexToRgb = (hex: string): [number, number, number] | null => {
-  if (!HEX_RE.test(hex)) return null;
+// Everything that composites holds a colour this module or the schema already
+// produced, so an unparseable value is a fault rather than a shade to invent.
+export const hexToRgb = (hex: string): [number, number, number] => {
+  if (!HEX_RE.test(hex)) throw new TypeError(`Not a #RRGGBB colour: ${hex}`);
   return [
     parseInt(hex.slice(1, 3), 16),
     parseInt(hex.slice(3, 5), 16),
@@ -61,7 +63,6 @@ const contrastRatio = (a: [number, number, number], b: [number, number, number])
 export const blendHex = (hex: string, alpha: number, backdrop: string): string => {
   const top = hexToRgb(hex);
   const bottom = hexToRgb(backdrop);
-  if (!top || !bottom) return backdrop;
   return rgbToHex(...(top.map((channel, index) =>
     Math.round(channel * alpha + bottom[index]! * (1 - alpha))) as [number, number, number]));
 };
@@ -79,7 +80,6 @@ const WHITE: [number, number, number] = [255, 255, 255];
 export const readableTone = (hex: string, surface: string): string => {
   const rgb = hexToRgb(hex);
   const surfaceRgb = hexToRgb(surface);
-  if (!rgb || !surfaceRgb) return hex;
   if (contrastRatio(rgb, surfaceRgb) >= TEXT_CONTRAST_FLOOR) return hex;
 
   const [h, s, v] = rgbToHsv(...rgb);

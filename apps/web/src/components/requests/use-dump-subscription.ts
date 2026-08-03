@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
+import { getCurrentSession } from '../../api/auth';
 import { api, callApi } from '../../api/client';
 import { getSessionToken } from '../../auth/session';
 import { errorMessage } from '../../lib/error-message';
@@ -16,6 +18,7 @@ export interface DumpSubscription {
 }
 
 export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMetadata[]): DumpSubscription => {
+  const { t } = useTranslation();
   const [records, setRecords] = useState(initialRecords);
   const [hasOlder, setHasOlder] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -86,14 +89,18 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
         }
         source.close();
       } else if (source.readyState === EventSource.CLOSED) {
-        setError('Stream disconnected');
+        setError(t('dashboard.requests.streamDisconnected'));
+        // EventSource reports no status, and the stream carries the same session
+        // as every other call; asking for the session puts an expired one
+        // through authFetch, which is where "a 401 ends this session" lives.
+        void getCurrentSession();
       }
     });
     return () => {
       olderRequestRef.current?.abort();
       source.close();
     };
-  }, [keyId]);
+  }, [keyId, t]);
 
   const loadOlder = useCallback(async () => {
     const oldest = records.at(-1);

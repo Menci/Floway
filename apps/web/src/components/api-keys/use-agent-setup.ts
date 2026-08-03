@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useStore } from 'zustand';
+import { createStore } from 'zustand/vanilla';
 
-import { cloneAgentSetupConfiguration, type AgentSetupConfiguration, type AgentSetupLease } from './agent-setup';
-import { api, callApi } from '../../api/client';
+import {
+  applyLocalAgentSetupChanges,
+  blankAgentSetupDraft,
+  cloneAgentSetupConfiguration,
+  type AgentSetupConfiguration,
+  type AgentSetupLease,
+} from './agent-setup';
+import { api, callApi, type ApiCallResult } from '../../api/client';
+import { isAbortError } from '../../lib/error-message';
 
 interface ActiveRequest {
   controller: AbortController;
@@ -20,23 +30,40 @@ const clearTimer = (timer: { current: ReturnType<typeof setTimeout> | null }) =>
 
 const isRetryableStatus = (status: number) =>
   status === 0 || status === 408 || status === 429 || status >= 500;
-const configurationsEqual = (left: unknown, right: unknown): boolean => {
-  if (left === right) return true;
-  if (!left || !right || typeof left !== 'object' || typeof right !== 'object') return false;
-  const leftRecord = left as Record<string, unknown>;
-  const rightRecord = right as Record<string, unknown>;
-  const keys = Object.keys(leftRecord);
-  return keys.length === Object.keys(rightRecord).length
-    && keys.every(key => configurationsEqual(leftRecord[key], rightRecord[key]));
-};
+// A configuration is a closed object of JSON scalars whose key order the
+// gateway's schema fixes on both sides of the wire, so it compares by
+// serializing, the way every other draft in this dashboard does.
+const comparableConfiguration = (configuration: AgentSetupConfiguration): string => JSON.stringify(configuration);
 
 export const agentSetupCommand = (origin: string, path: string, platform: 'unix' | 'windows'): string => platform === 'unix'
   ? `export SETUP_ENDPOINT='${origin.replaceAll("'", "'\\''")}'; curl -fsSL "$SETUP_ENDPOINT${path}" | bash`
   : `$SetupEndpoint = '${origin.replaceAll("'", "''")}'; irm "$SetupEndpoint${path}" | iex`;
 
+// The lease is external state: a server owns it, timers renew and expire it,
+// and the save and heartbeat callbacks have to act on what it holds when they
+// run rather than on the render that created them. Holding the whole session in
+// one store read through useSyncExternalStore gives every fact a single writer
+// and puts render and callbacks on the same snapshot.
+interface SetupSessionState {
+  lease: AgentSetupLease | null;
+  // The form is editable before a lease exists, so the draft outlives one.
+  // baseline is what the draft held when a lease last seeded it, and the
+  // difference between the two is the edit set the next lease must keep.
+  draft: AgentSetupConfiguration;
+  baseline: AgentSetupConfiguration;
+  generation: number;
+  confirmedGeneration: number;
+  terminated: boolean;
+  expired: boolean;
+  noSelectableKey: boolean;
+  createError: string | null;
+  saveError: string | null;
+  heartbeatError: string | null;
+}
+
 export interface AgentSetupSession {
   lease: AgentSetupLease | null;
-  draft: AgentSetupConfiguration | null;
+  draft: AgentSetupConfiguration;
   error: string | null;
   createError: string | null;
   dismissError: () => void;
@@ -54,31 +81,33 @@ export const useAgentSetup = (
   initialCreateError: string | null = null,
   initialApiKeyId: string | null = null,
 ): AgentSetupSession => {
+  const { t } = useTranslation();
   const initialResource = initialApiKeyId === apiKeyId
     ? { apiKeyId: initialApiKeyId, error: initialCreateError, lease: initialLease }
     : null;
   const initialResourceRef = useRef(initialResource);
-  const initialDraft = initialResource?.lease
-    ? cloneAgentSetupConfiguration(initialResource.lease.configuration)
-    : null;
-  const [lease, setLease] = useState<AgentSetupLease | null>(initialResource?.lease ?? null);
-  const [draft, setDraftState] = useState<AgentSetupConfiguration | null>(initialDraft);
-  const [createError, setCreateError] = useState<string | null>(initialResource?.error ?? null);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [heartbeatError, setHeartbeatError] = useState<string | null>(null);
-  const [terminated, setTerminated] = useState(false);
-  const [noSelectableKey, setNoSelectableKey] = useState(false);
-  const [generation, setGeneration] = useState(0);
-  const [confirmedGeneration, setConfirmedGeneration] = useState(0);
-  const [expired, setExpired] = useState(false);
+  const [store] = useState(() => {
+    const draft = initialResource?.lease
+      ? cloneAgentSetupConfiguration(initialResource.lease.configuration)
+      : blankAgentSetupDraft();
+    return createStore<SetupSessionState>(() => ({
+      lease: initialResource?.lease ?? null,
+      draft,
+      baseline: draft,
+      generation: 0,
+      confirmedGeneration: 0,
+      terminated: false,
+      expired: false,
+      noSelectableKey: false,
+      createError: initialResource?.error ?? null,
+      saveError: null,
+      heartbeatError: null,
+    }));
+  });
+  const session = useStore(store);
   const [createAttempt, setCreateAttempt] = useState(0);
 
   const lifecycleRef = useRef(0);
-  const leaseRef = useRef<AgentSetupLease | null>(initialResource?.lease ?? null);
-  const draftRef = useRef<AgentSetupConfiguration | null>(initialDraft);
-  const generationRef = useRef(0);
-  const confirmedRef = useRef(0);
-  const terminatedRef = useRef(false);
   const queueRef = useRef(Promise.resolve());
   const activeRequestsRef = useRef(new Set<ActiveRequest>());
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -96,20 +125,29 @@ export const useAgentSetup = (
     activeRequestsRef.current.clear();
   }, []);
 
-  const request = useCallback(async <TResponse extends Response>(send: (signal: AbortSignal) => Promise<TResponse>) => {
+  const request = useCallback(async <TResponse extends Response>(
+    send: (signal: AbortSignal) => Promise<TResponse>,
+  ): Promise<ApiCallResult<TResponse>> => {
     const controller = new AbortController();
+    let timedOut = false;
     const requestState: ActiveRequest = {
       controller,
-      timeout: setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS),
+      timeout: setTimeout(() => { timedOut = true; controller.abort(); }, REQUEST_TIMEOUT_MS),
     };
     activeRequestsRef.current.add(requestState);
     try {
-      return await callApi(() => send(controller.signal));
+      const result = await callApi(() => send(controller.signal));
+      // Our own deadline is a request timeout, and it is described in our own
+      // words; the abort we raised to enforce it says nothing an operator can use.
+      if (result.error && timedOut && isAbortError(result.error.cause)) {
+        return { error: { status: 408, message: t('dashboard.apiKeys.agentSetup.timedOut'), cause: result.error.cause } };
+      }
+      return result;
     } finally {
       clearTimeout(requestState.timeout);
       activeRequestsRef.current.delete(requestState);
     }
-  }, []);
+  }, [t]);
 
   const enqueue = useCallback((task: () => Promise<void>) => {
     const lifecycle = lifecycleRef.current;
@@ -120,50 +158,62 @@ export const useAgentSetup = (
   const scheduleExpiry = useCallback((expiresAt: number) => {
     clearTimer(expiryTimerRef);
     const remaining = expiresAt - Date.now();
-    setExpired(remaining <= 0);
-    if (remaining > 0) expiryTimerRef.current = setTimeout(() => setExpired(true), remaining);
-  }, []);
+    store.setState({ expired: remaining <= 0 });
+    if (remaining > 0) expiryTimerRef.current = setTimeout(() => store.setState({ expired: true }), remaining);
+  }, [store]);
 
   const adoptLease = useCallback((next: AgentSetupLease) => {
-    leaseRef.current = next;
-    setLease(next);
+    store.setState({ lease: next });
     scheduleExpiry(next.expiresAt);
-  }, [scheduleExpiry]);
+  }, [scheduleExpiry, store]);
+
+  // A lease answers with the configuration the account last stored. The fields
+  // the draft moved away from its baseline while the lease was being acquired
+  // survive it and are unsaved against it; every other field takes the server's
+  // value, and the draft becomes the baseline the next lease is measured from.
+  const seedDraft = useCallback((configuration: AgentSetupConfiguration) => {
+    store.setState(current => {
+      const draft = applyLocalAgentSetupChanges(configuration, current.draft, current.baseline);
+      return {
+        draft,
+        baseline: draft,
+        generation: comparableConfiguration(draft) === comparableConfiguration(configuration) ? 0 : 1,
+        confirmedGeneration: 0,
+      };
+    });
+  }, [store]);
 
   const markTerminated = useCallback(() => {
-    terminatedRef.current = true;
-    setTerminated(true);
+    store.setState({ terminated: true });
     clearTimer(debounceTimerRef);
     clearTimer(saveRetryTimerRef);
     clearTimer(heartbeatTimerRef);
     clearTimer(expiryTimerRef);
-  }, []);
+  }, [store]);
 
   const scheduleSaveRetry = useCallback(() => {
     clearTimer(saveRetryTimerRef);
-    if (terminatedRef.current) return;
+    if (store.getState().terminated) return;
     saveRetryTimerRef.current = setTimeout(() => enqueue(runSaveRef.current), RETRY_DELAY_MS);
-  }, [enqueue]);
+  }, [enqueue, store]);
 
   const scheduleHeartbeat = useCallback((delay: number) => {
     clearTimer(heartbeatTimerRef);
-    if (terminatedRef.current || document.visibilityState === 'hidden') return;
+    if (store.getState().terminated || document.visibilityState === 'hidden') return;
     heartbeatTimerRef.current = setTimeout(() => enqueue(heartbeatRef.current), delay);
-  }, [enqueue]);
+  }, [enqueue, store]);
 
   const runSave = useCallback(async () => {
-    const currentLease = leaseRef.current;
-    const configuration = draftRef.current;
-    if (!currentLease || !configuration || terminatedRef.current
-      || generationRef.current === confirmedRef.current) return;
-    const sentGeneration = generationRef.current;
+    const { confirmedGeneration, draft, generation, lease, terminated } = store.getState();
+    if (!lease || terminated || generation === confirmedGeneration) return;
+    const sentGeneration = generation;
     const lifecycle = lifecycleRef.current;
-    const sentConfiguration = cloneAgentSetupConfiguration(configuration);
+    const sentConfiguration = cloneAgentSetupConfiguration(draft);
     const result = await request(signal => api.api.setup.$put({
       json: {
-        token: currentLease.token,
+        token: lease.token,
         configuration: sentConfiguration,
-        expectedRevision: currentLease.configurationRevision,
+        expectedRevision: lease.configurationRevision,
       },
     }, { init: { signal } }));
     if (lifecycle !== lifecycleRef.current) return;
@@ -174,11 +224,9 @@ export const useAgentSetup = (
         if (failure.status === 'revision-conflict') {
           const current: AgentSetupLease = { ...failure, status: 'ok' };
           adoptLease(current);
-          if (generationRef.current === sentGeneration
-            && configurationsEqual(current.configuration, sentConfiguration)) {
-            confirmedRef.current = sentGeneration;
-            setConfirmedGeneration(sentGeneration);
-            setSaveError(null);
+          if (store.getState().generation === sentGeneration
+            && comparableConfiguration(current.configuration) === comparableConfiguration(sentConfiguration)) {
+            store.setState({ confirmedGeneration: sentGeneration, saveError: null });
             return;
           }
           clearTimer(debounceTimerRef);
@@ -186,39 +234,38 @@ export const useAgentSetup = (
           return;
         }
       }
-      setSaveError(result.error.message);
+      store.setState({ saveError: result.error.message });
       if (isRetryableStatus(result.error.status)) scheduleSaveRetry();
       return;
     }
     clearTimer(saveRetryTimerRef);
     adoptLease(result.data);
-    setSaveError(null);
-    if (sentGeneration > confirmedRef.current) {
-      confirmedRef.current = sentGeneration;
-      setConfirmedGeneration(sentGeneration);
-    }
-  }, [adoptLease, enqueue, markTerminated, request, scheduleSaveRetry]);
+    store.setState(current => ({
+      saveError: null,
+      confirmedGeneration: Math.max(current.confirmedGeneration, sentGeneration),
+    }));
+  }, [adoptLease, enqueue, markTerminated, request, scheduleSaveRetry, store]);
   useEffect(() => { runSaveRef.current = runSave; }, [runSave]);
 
   const runHeartbeat = useCallback(async () => {
-    const currentLease = leaseRef.current;
-    if (!currentLease || terminatedRef.current || document.visibilityState === 'hidden') return;
+    const { lease, terminated } = store.getState();
+    if (!lease || terminated || document.visibilityState === 'hidden') return;
     const lifecycle = lifecycleRef.current;
     const result = await request(signal => api.api.setup.heartbeat.$post({
-      json: { token: currentLease.token },
+      json: { token: lease.token },
     }, { init: { signal } }));
     if (lifecycle !== lifecycleRef.current) return;
     if (result.error) {
       const failure = result.error.raw;
       if (failure && 'status' in failure && failure.status === 'missing') { markTerminated(); return; }
-      setHeartbeatError(result.error.message);
+      store.setState({ heartbeatError: result.error.message });
       if (isRetryableStatus(result.error.status)) scheduleHeartbeat(RETRY_DELAY_MS);
       return;
     }
     adoptLease(result.data);
-    setHeartbeatError(null);
+    store.setState({ heartbeatError: null });
     scheduleHeartbeat(HEARTBEAT_INTERVAL_MS);
-  }, [adoptLease, markTerminated, request, scheduleHeartbeat]);
+  }, [adoptLease, markTerminated, request, scheduleHeartbeat, store]);
   useEffect(() => { heartbeatRef.current = runHeartbeat; }, [runHeartbeat]);
 
   useEffect(() => {
@@ -229,28 +276,27 @@ export const useAgentSetup = (
     clearTimer(heartbeatTimerRef);
     clearTimer(expiryTimerRef);
     queueRef.current = Promise.resolve();
-    leaseRef.current = null;
-    draftRef.current = null;
-    generationRef.current = 0;
-    confirmedRef.current = 0;
-    terminatedRef.current = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- A key change tears down one external lease before acquiring another.
-    setLease(null);
-    setDraftState(null);
-    setGeneration(0);
-    setConfirmedGeneration(0);
     const loaded = createAttempt === 0 && initialResourceRef.current?.apiKeyId === apiKeyId
       ? initialResourceRef.current
       : null;
     // Discarding here rather than on the adopting pass keeps a re-entered
     // lifecycle for the same key idempotent.
     if (!loaded) initialResourceRef.current = null;
-    setCreateError(loaded?.error ?? null);
-    setSaveError(null);
-    setHeartbeatError(null);
-    setTerminated(false);
-    setExpired(false);
-    setNoSelectableKey(false);
+    // The draft and its baseline deliberately survive the teardown: the form
+    // keeps showing the configuration it is showing until a lease answers for
+    // the new key, and anything edited in the meantime is still measured
+    // against the baseline and merged over what that lease brings.
+    store.setState({
+      lease: null,
+      generation: 0,
+      confirmedGeneration: 0,
+      terminated: false,
+      expired: false,
+      noSelectableKey: false,
+      createError: loaded?.error ?? null,
+      saveError: null,
+      heartbeatError: null,
+    });
     const cleanup = () => {
       lifecycleRef.current += 1;
       abortRequests();
@@ -258,9 +304,7 @@ export const useAgentSetup = (
     if (!apiKeyId) return cleanup;
     if (loaded?.lease) {
       adoptLease(loaded.lease);
-      const configuration = cloneAgentSetupConfiguration(loaded.lease.configuration);
-      draftRef.current = configuration;
-      setDraftState(configuration);
+      seedDraft(loaded.lease.configuration);
       scheduleHeartbeat(HEARTBEAT_INTERVAL_MS);
       return cleanup;
     }
@@ -272,29 +316,27 @@ export const useAgentSetup = (
       if (lifecycle !== lifecycleRef.current) return;
       if (result.error) {
         const failure = result.error.raw;
-        if (failure && 'status' in failure && failure.status === 'no-selectable-key') setNoSelectableKey(true);
-        else setCreateError(result.error.message);
+        if (failure && 'status' in failure && failure.status === 'no-selectable-key') store.setState({ noSelectableKey: true });
+        else store.setState({ createError: result.error.message });
         return;
       }
       adoptLease(result.data);
-      const configuration = cloneAgentSetupConfiguration(result.data.configuration);
-      draftRef.current = configuration;
-      setDraftState(configuration);
+      seedDraft(result.data.configuration);
       scheduleHeartbeat(HEARTBEAT_INTERVAL_MS);
     })();
     return cleanup;
-  }, [abortRequests, adoptLease, apiKeyId, createAttempt, request, scheduleHeartbeat]);
+  }, [abortRequests, adoptLease, apiKeyId, createAttempt, request, scheduleHeartbeat, seedDraft, store]);
 
-  // Watching the lease and the draft objects would restart the debounce window
-  // on every heartbeat, which adopts a freshly issued lease; only an edit may.
-  const hasLease = lease !== null;
-  const hasDraft = draft !== null;
+  // Watching the lease object would restart the debounce window on every
+  // heartbeat, which adopts a freshly issued lease; only an edit may.
+  const hasLease = session.lease !== null;
+  const { confirmedGeneration, generation, terminated } = session;
   useEffect(() => {
-    if (!hasLease || !hasDraft || generation === confirmedGeneration || terminated) return;
+    if (!hasLease || generation === confirmedGeneration || terminated) return;
     clearTimer(debounceTimerRef);
     debounceTimerRef.current = setTimeout(() => enqueue(runSaveRef.current), SAVE_DEBOUNCE_MS);
     return () => clearTimer(debounceTimerRef);
-  }, [confirmedGeneration, enqueue, generation, hasDraft, hasLease, terminated]);
+  }, [confirmedGeneration, enqueue, generation, hasLease, terminated]);
 
   useEffect(() => {
     const onVisibility = () => {
@@ -302,8 +344,9 @@ export const useAgentSetup = (
         clearTimer(heartbeatTimerRef);
         return;
       }
-      if (!leaseRef.current || terminatedRef.current) return;
-      if (generationRef.current !== confirmedRef.current) {
+      const state = store.getState();
+      if (!state.lease || state.terminated) return;
+      if (state.generation !== state.confirmedGeneration) {
         clearTimer(debounceTimerRef);
         enqueue(runSaveRef.current);
       }
@@ -311,7 +354,7 @@ export const useAgentSetup = (
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, [enqueue]);
+  }, [enqueue, store]);
 
   useEffect(() => () => {
     lifecycleRef.current += 1;
@@ -323,34 +366,28 @@ export const useAgentSetup = (
   }, [abortRequests]);
 
   const updateDraft = useCallback((update: (current: AgentSetupConfiguration) => AgentSetupConfiguration) => {
-    const current = draftRef.current;
-    if (!current || terminatedRef.current) return;
-    const next = update(cloneAgentSetupConfiguration(current));
-    if (configurationsEqual(current, next)) return;
-    draftRef.current = next;
-    const nextGeneration = generationRef.current + 1;
-    generationRef.current = nextGeneration;
-    setGeneration(nextGeneration);
-    setDraftState(next);
-  }, []);
+    const state = store.getState();
+    if (state.terminated) return;
+    const next = update(cloneAgentSetupConfiguration(state.draft));
+    if (comparableConfiguration(state.draft) === comparableConfiguration(next)) return;
+    store.setState(current => ({ draft: next, generation: current.generation + 1 }));
+  }, [store]);
 
   const retryCreate = useCallback(() => {
-    if (!apiKeyId || leaseRef.current) return;
+    if (!apiKeyId || store.getState().lease) return;
     abortRequests();
-    setCreateError(null);
-    setNoSelectableKey(false);
+    store.setState({ createError: null, noSelectableKey: false });
     setCreateAttempt(value => value + 1);
-  }, [abortRequests, apiKeyId]);
+  }, [abortRequests, apiKeyId, store]);
 
   const dismissError = useCallback(() => {
-    setSaveError(null);
-    setHeartbeatError(null);
-    setCreateError(null);
-  }, []);
+    store.setState({ saveError: null, heartbeatError: null, createError: null });
+  }, [store]);
 
+  const { createError, draft, lease, noSelectableKey } = session;
   const syncing = generation !== confirmedGeneration;
-  const canCopy = !!lease && !!draft && !syncing && !terminated && !expired && draft.apiKeyId === apiKeyId;
-  const error = saveError ?? heartbeatError ?? createError;
+  const canCopy = !!lease && !syncing && !terminated && !session.expired && draft.apiKeyId === apiKeyId;
+  const error = session.saveError ?? session.heartbeatError ?? createError;
   return useMemo(() => ({
     lease,
     draft,

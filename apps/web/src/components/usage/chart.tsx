@@ -1,5 +1,5 @@
 import { AreaChart, LineChart, type CustomizedCalloutData } from '@fluentui/react-charts';
-import { useCallback, useLayoutEffect, useMemo, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, type ComponentProps } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { UsageChartCallout } from './callout';
@@ -7,9 +7,9 @@ import type { CalloutPoint, UsageChartModel } from './types';
 import { fluentComponents } from '../../fluent';
 import { useLocale } from '../../lib/use-locale';
 import { chartTickValues, formatAxisDate } from '../charts/dashboard-time';
-import { useUnclippedChartFrame } from '../charts/frame-styles';
-import { useElementSize } from '../charts/use-element-size';
-import { EmptyStateLine } from '../ui/empty-state';
+import { useChartFrame } from '../charts/frame-styles';
+import { ChartHost } from '../charts/host';
+import { visibleSeriesData } from '../charts/series-selection';
 
 const { makeStyles } = fluentComponents;
 
@@ -28,26 +28,19 @@ const useAreaBoundaryStyles = makeStyles({
     // the boundary between them stops reading; 0.42 keeps each band a tint of
     // the surface it sits on, in either scheme.
     '& path[id*="-graph-"]': { fillOpacity: '0.42' },
-    // Fluent's area form draws no point until one is hovered, leaving the
-    // bucket count invisible at rest, so both forms mark their buckets alike.
-    // The highlight disc Fluent moves under the pointer keeps its own size.
-    '& circle:not([id*="staticHighlightCircle"])': { r: '2px', strokeWidth: '1.5px' },
   },
 });
 
 const chartMargins = { top: 16, right: 20, bottom: 42, left: 54 } as const;
 
-export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: UsageChartModel; valueFormatter: (value: number) => string; visibleLegends: string[] }) {
+export function UsageChart({ chart, hidden, valueFormatter }: { chart: UsageChartModel; hidden: Set<string>; valueFormatter: (value: number) => string }) {
   const { t } = useTranslation();
   const areaBoundaryStyles = useAreaBoundaryStyles();
-  const chartRootStyles = useUnclippedChartFrame();
-  const [host, setHost] = useState<HTMLDivElement | null>(null);
-  const size = useElementSize(host);
+  const chartRootStyles = useChartFrame();
   const locale = useLocale();
   const entryByLegend = useMemo(() => new Map(chart.entries.map(entry => [entry.legend, entry])), [chart.entries]);
+  const visibleData = useMemo(() => visibleSeriesData(chart.entries, chart.plot.data, hidden), [chart.entries, chart.plot.data, hidden]);
   const labelByTime = useMemo(() => new Map(chart.buckets.map(bucket => [bucket.date.getTime(), bucket.label])), [chart.buckets]);
-  const tickCount = Math.max(2, Math.min(chart.buckets.length <= 24 ? 6 : 7, Math.floor(Math.max(0, size.width - chartMargins.left - chartMargins.right) / 120)));
-  const tickValues = useMemo(() => chartTickValues(chart.buckets, tickCount).map(bucket => bucket.date), [chart.buckets, tickCount]);
   const dateFormatter = useCallback((date: Date) => formatAxisDate(date, chart.range, locale), [chart.range, locale]);
 
   const renderCallout = useCallback((point: CalloutPoint | null) => (
@@ -66,35 +59,19 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
     }),
   } : null), [entryByLegend, renderCallout]);
 
-  const hasData = chart.plot.data.lineChartData?.some(series => series.data.length > 0) ?? false;
-
-  // Fluent emits each stacked band right after its own boundary line, and the
-  // band's top edge is that line, so every band paints over the stroke it was
-  // meant to be capped by. Moving the lines to the end of the series group is
-  // the paint order the boundary rule above assumes.
-  useLayoutEffect(() => {
-    if (!host || chart.plot.form !== 'area') return;
-    const frame = window.requestAnimationFrame(() => {
-      const lines = [...host.querySelectorAll<SVGPathElement>('path[id*="-line-"]')];
-      // Each run starts from the order the previous one left, so appending them
-      // as found reverses them and the next run reverses them back, flipping
-      // which colour wins wherever two boundaries coincide. Sorting by the
-      // series index the id carries is the fixed point: the lowest series ends
-      // up last and stays on top however this pass finds them.
-      for (const line of lines.sort((a, b) => Number.parseInt(b.id, 10) - Number.parseInt(a.id, 10))) line.parentNode?.append(line);
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [chart.plot.data, chart.plot.form, host, size.height, size.width]);
-
-  if (size.width < 120) return <div className="h-[320px] min-w-0 w-full" ref={setHost} />;
+  const hasData = visibleData.lineChartData?.some(series => series.data.length > 0) ?? false;
 
   return (
-    <div className={`${areaBoundaryStyles.root} h-[320px] min-w-0 w-full`} ref={setHost}>
-      {!hasData ? <div className="grid h-full place-items-center"><EmptyStateLine>{t('dashboard.usage.empty')}</EmptyStateLine></div>
-        : chart.plot.form === 'area' ? (
-          <AreaChart
+    <ChartHost className={areaBoundaryStyles.root} emptyText={t('dashboard.usage.empty')} hasData={hasData}>
+      {({ element, size }) => {
+        const tickCount = Math.max(2, Math.min(chart.buckets.length <= 24 ? 6 : 7, Math.floor(Math.max(0, size.width - chartMargins.left - chartMargins.right) / 120)));
+        const tickValues = chartTickValues(chart.buckets, tickCount).map(bucket => bucket.date);
+
+        return chart.plot.form === 'area' ? (
+          <StackedAreaChart
             customDateTimeFormatter={dateFormatter}
-            data={chart.plot.data}
+            data={visibleData}
+            element={element}
             enablePerfOptimization
             height={size.height}
             hideLegend
@@ -110,11 +87,10 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
         ) : (
           <LineChart
             customDateTimeFormatter={dateFormatter}
-            data={chart.plot.data}
+            data={visibleData}
             enablePerfOptimization
             height={size.height}
             hideLegend
-            legendProps={{ selectedLegends: visibleLegends, canSelectMultipleLegends: true }}
             margins={chartMargins}
             onRenderCalloutPerStack={lineCallout}
             styles={chartRootStyles}
@@ -124,7 +100,41 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
             yMaxValue={100}
             yMinValue={0}
           />
-        )}
-    </div>
+        );
+      }}
+    </ChartHost>
   );
+}
+
+// Fluent emits each stacked band right after its own boundary line, and the
+// band's top edge is that line, so every band paints over the stroke it was
+// meant to be capped by. Moving the lines to the end of the series group is the
+// paint order the boundary rule above assumes, and it is why this form takes the
+// host element: the reorder is driven by the mutations it repairs rather than by
+// a render or a frame tick, so each re-emission of the group is answered before
+// the browser paints it.
+function StackedAreaChart({ element, ...chartProps }: { element: HTMLElement } & ComponentProps<typeof AreaChart>) {
+  useLayoutEffect(() => {
+    const raiseBoundaries = () => {
+      const lines = [...element.querySelectorAll<SVGPathElement>('path[id*="-line-"]')];
+      const group = lines[0]?.parentElement;
+      if (!group) return;
+      // Sorting by the series index the id carries is the fixed point: appending
+      // the lines in the order they are found reverses them on every pass, which
+      // flips which colour wins wherever two boundaries coincide. The lowest
+      // series ends up last and stays on top however this pass finds them.
+      const raised = lines.toSorted((a, b) => Number.parseInt(b.id, 10) - Number.parseInt(a.id, 10));
+      // The observer sees its own appends, so a pass with nothing to do moves
+      // nothing at all.
+      const tail = [...group.children].slice(-raised.length);
+      if (tail.every((node, index) => node === raised[index])) return;
+      for (const line of raised) group.append(line);
+    };
+    raiseBoundaries();
+    const observer = new MutationObserver(raiseBoundaries);
+    observer.observe(element, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [element]);
+
+  return <AreaChart {...chartProps} />;
 }

@@ -1,51 +1,47 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
-// Prism grammars register themselves onto Prism as a module side effect, so
-// `prismjs` must be named first and ESM source order is what guarantees it.
-import 'prismjs';
-import 'prismjs/components/prism-bash';
-import 'prismjs/components/prism-json';
-import 'prismjs/components/prism-powershell';
-import 'prismjs/components/prism-toml';
 
 import {
-  applyLocalAgentSetupChanges,
   buildAgentClaudeSnippet,
   buildAgentCodexSnippet,
-  cloneAgentSetupConfiguration,
   codexUnixCredentialSnippet,
   codexWindowsCredentialSnippet,
-  defaultAgentSetupConfiguration,
   detectAgentSetupPlatform,
   type AgentSetupConfiguration,
   type AgentSetupLease,
   type AgentSetupPlatform,
 } from './agent-setup';
-import { filterModelOptions, modelOptions, rankAgentSetupModels, type ClaudePicker } from './agent-setup-models';
+import { modelOptions, rankAgentSetupModels, type ClaudePicker } from './agent-setup-models';
 import { agentSetupCommand, useAgentSetup } from './use-agent-setup';
 import type { ApiKey, ControlPlaneModel } from '../../api/types';
 import claudeIconUrl from '../../assets/claude-color.svg';
 import codexIconUrl from '../../assets/codex.svg';
 import { fluentComponents } from '../../fluent';
+import { filterModelOptions } from '../../lib/model-query';
 import { CodeBlock } from '../ui/code-block';
-import { Combobox, Dropdown } from '../ui/fluent-form-controls';
+import { Combobox, Dropdown, Switch } from '../ui/fluent-form-controls';
 import { infoLabelSlot } from '../ui/info-label';
 import { PANE_GAP_CLASS, SECTION_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SectionHeader } from '../ui/section-header';
 import type { ClipboardCopy } from '../ui/use-copy-to-clipboard';
 
-const { Button, Field, InfoButton, Option, Switch, Tab, TabList, Text } = fluentComponents;
+const { Button, Field, InfoButton, Option, Tab, TabList, Text } = fluentComponents;
 type Agent = 'claude' | 'codex';
 type Platform = AgentSetupPlatform;
-const NONE = '__floway_none__';
-// Model overrides reject NUL at the gateway boundary, so these UI-only values
-// cannot collide with an opaque model id.
+// The option that stands for no override. Model overrides reject NUL at the
+// gateway boundary, so this UI-only value cannot collide with an opaque model
+// id.
 const MODEL_DEFAULT = '\u0000default';
 const FIELD_GRID_CLASS = `${TWO_COLUMN_FORM_CLASS} gap-3`;
 const CLAUDE_MODEL_GRID_CLASS = 'grid gap-3 grid-cols-[repeat(5,minmax(0,1fr))] max-[1680px]:grid-cols-[repeat(3,minmax(0,1fr))] max-[1180px]:grid-cols-[repeat(2,minmax(0,1fr))] max-[680px]:grid-cols-[minmax(0,1fr)]';
 // https://code.claude.com/docs/en/settings#available-settings
 const claudeCleanupPeriods = [180, 365, 99999] as const satisfies readonly NonNullable<AgentSetupConfiguration['claudeCode']['cleanupPeriodDays']>[];
+// Claude Code's effort is a closed setting rather than the open, upstream-owned
+// string Codex takes, so the picker offers the levels the setup contract
+// accepts and nothing else.
+// https://docs.claude.com/en/docs/claude-code/settings
+const claudeEffortLevels = ['low', 'medium', 'high', 'xhigh'] as const satisfies readonly NonNullable<AgentSetupConfiguration['claudeCode']['effortLevel']>[];
 
 export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initialLease, models, selectedKey }: {
   initialApiKeyId: string | null;
@@ -59,28 +55,7 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
   const [view, setView] = useState<'setup' | 'snippets'>('setup');
   const [agent, setAgent] = useState<Agent>('claude');
   const [platform, setPlatform] = useState<Platform>(() => detectAgentSetupPlatform(window.navigator.platform, window.navigator.userAgent));
-  const [localDraft, setLocalDraft] = useState(() => defaultAgentSetupConfiguration());
-  const localDraftBaseline = useRef(cloneAgentSetupConfiguration(localDraft));
-  const appliedLease = useRef<string | null>(null);
   const setup = useAgentSetup(selectedKey?.id ?? null, initialLease, initialError, initialApiKeyId);
-  const setupDraft = setup.draft;
-  const setupLease = setup.lease;
-  const updateSetupDraft = setup.updateDraft;
-
-  useEffect(() => {
-    if (!selectedKey || !setupLease || !setupDraft) return;
-    const leaseKey = `${selectedKey.id}:${setupLease.token}`;
-    if (appliedLease.current === leaseKey) return;
-    appliedLease.current = leaseKey;
-    updateSetupDraft(current => applyLocalAgentSetupChanges(current, localDraft, localDraftBaseline.current, selectedKey.id));
-    localDraftBaseline.current = cloneAgentSetupConfiguration(localDraft);
-  }, [localDraft, selectedKey, setupDraft, setupLease, updateSetupDraft]);
-
-  const activeDraft = selectedKey && setupDraft ? setupDraft : localDraft;
-  const updateConfiguration = (update: (current: AgentSetupConfiguration) => AgentSetupConfiguration) => {
-    if (selectedKey && setupDraft) updateSetupDraft(update);
-    else setLocalDraft(current => update(cloneAgentSetupConfiguration(current)));
-  };
 
   const scripts = setup.lease?.scripts[agent];
   const scriptPath = platform === 'unix' ? scripts?.sh : scripts?.ps1;
@@ -117,11 +92,11 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
 
         <section className={SECTION_STACK_CLASS}>
           <SectionHeader level={3} title={t('dashboard.apiKeys.agentSetup.modelSelection')} />
-          <AgentConfigurationFields agent={agent} configuration={activeDraft} models={models} onChange={updateConfiguration} />
+          <AgentConfigurationFields agent={agent} configuration={setup.draft} models={models} onChange={setup.updateDraft} />
         </section>
 
         {view === 'snippets' && selectedKey
-          ? <AgentConfigSnippets agent={agent} apiKey={selectedKey.key} configuration={activeDraft} clipboard={clipboard} onPlatformChange={setPlatform} platform={platform} />
+          ? <AgentConfigSnippets agent={agent} apiKey={selectedKey.key} configuration={setup.draft} clipboard={clipboard} onPlatformChange={setPlatform} platform={platform} />
           : view === 'snippets'
             ? <OutcomeMessageBar intent="info">{t('dashboard.apiKeys.agentSetup.selectKey')}</OutcomeMessageBar>
             : <div className="border-t border-t-solid border-fui-divider pt-4">
@@ -224,9 +199,20 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
       <ModelSelect label={t('dashboard.apiKeys.agentSetup.sonnetModel')} models={models} family="claude" picker="sonnet" value={configuration.claudeCode.defaultSonnetModel} onChange={model => patchClaude({ defaultSonnetModel: model })} />
       <ModelSelect label={t('dashboard.apiKeys.agentSetup.haikuModel')} models={models} family="claude" picker="haiku" value={configuration.claudeCode.defaultHaikuModel} onChange={model => patchClaude({ defaultHaikuModel: model })} />
       <Field label={t('dashboard.apiKeys.agentSetup.reasoningEffort')}>
-        <Dropdown selectedOptions={[configuration.claudeCode.effortLevel ?? NONE]} value={configuration.claudeCode.effortLevel ?? t('dashboard.apiKeys.agentSetup.modelDefault')} onOptionSelect={(_, data) => data.optionValue !== undefined && patchClaude({ effortLevel: data.optionValue === NONE ? null : data.optionValue as NonNullable<AgentSetupConfiguration['claudeCode']['effortLevel']> })}>
-          <Option value={NONE}>{t('dashboard.apiKeys.agentSetup.modelDefault')}</Option>
-          {(['low', 'medium', 'high', 'xhigh'] as const).map(effort => <Option key={effort} value={effort}>{effort}</Option>)}
+        <Dropdown
+          selectedOptions={[configuration.claudeCode.effortLevel ?? MODEL_DEFAULT]}
+          value={configuration.claudeCode.effortLevel ?? t('dashboard.apiKeys.agentSetup.modelDefault')}
+          onOptionSelect={(_, data) => {
+            if (data.optionValue === MODEL_DEFAULT) {
+              patchClaude({ effortLevel: null });
+              return;
+            }
+            const level = claudeEffortLevels.find(candidate => candidate === data.optionValue);
+            if (level !== undefined) patchClaude({ effortLevel: level });
+          }}
+        >
+          <Option value={MODEL_DEFAULT}>{t('dashboard.apiKeys.agentSetup.modelDefault')}</Option>
+          {claudeEffortLevels.map(effort => <Option key={effort} value={effort}>{effort}</Option>)}
         </Dropdown>
       </Field>
     </div>
@@ -247,10 +233,10 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
       <div className={FIELD_GRID_CLASS}>
         <Field label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.cleanupRetention'), t('dashboard.apiKeys.agentSetup.cleanupRetentionHint')) }}>
           <Dropdown
-            selectedOptions={[configuration.claudeCode.cleanupPeriodDays?.toString() ?? NONE]}
+            selectedOptions={[configuration.claudeCode.cleanupPeriodDays?.toString() ?? MODEL_DEFAULT]}
             value={configuration.claudeCode.cleanupPeriodDays === null ? t('dashboard.apiKeys.agentSetup.modelDefault') : t('dashboard.apiKeys.agentSetup.cleanupDays', { count: configuration.claudeCode.cleanupPeriodDays })}
             onOptionSelect={(_, data) => {
-              if (data.optionValue === NONE) {
+              if (data.optionValue === MODEL_DEFAULT) {
                 patchClaude({ cleanupPeriodDays: null });
                 return;
               }
@@ -258,7 +244,7 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
               if (period !== undefined) patchClaude({ cleanupPeriodDays: period });
             }}
           >
-            <Option value={NONE}>{t('dashboard.apiKeys.agentSetup.modelDefault')}</Option>
+            <Option value={MODEL_DEFAULT}>{t('dashboard.apiKeys.agentSetup.modelDefault')}</Option>
             {claudeCleanupPeriods.map(period => (
               <Option key={period} value={String(period)}>{t('dashboard.apiKeys.agentSetup.cleanupDays', { count: period })}</Option>
             ))}

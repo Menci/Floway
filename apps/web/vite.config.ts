@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import { reactRouter } from '@react-router/dev/vite';
@@ -106,6 +107,67 @@ const prismComponentsEsm = (): Plugin => ({
   },
 });
 
+// Fontsource writes every static face with a WOFF source behind the WOFF2 one,
+// so importing one of its stylesheets pulls a second, larger copy of each face
+// into the bundle:
+// https://github.com/fontsource/fontsource/blob/e50a906d3026beac81ebc47b5436c9d7c2e3a070/packages/core/src/css/face-rule.ts#L26-L44
+// No browser this app is built for can ask for it. `build.target` is left at
+// Vite's default `baseline-widely-available`, which at this version resolves to
+// chrome111, edge111, firefox114, safari16.4 and ios16.4
+// (https://github.com/vitejs/vite/blob/v8.1.5/packages/vite/src/node/constants.ts#L90-L96),
+// while WOFF2 has been answered since Chrome 36, Firefox 39, Safari 10 and iOS
+// 10 (https://caniuse.com/woff2).
+//
+// Dropping the source before `vite:css` resolves it, rather than transcribing
+// the rules by hand, leaves the family, weights, subset, style and
+// `font-display` upstream's to state, so no copy of them can drift from the
+// installed package.
+const fontsourceWoff2Only = (): Plugin => ({
+  name: 'fontsource-woff2-only',
+  enforce: 'pre',
+  transform(code, id) {
+    const path = id.split('?', 1)[0]!.replaceAll('\\', '/');
+    if (!/\/@fontsource(?:-variable)?\/[^/]+\/[^/]+\.css$/.test(path)) return;
+    const woff2Only = code.replaceAll(/,\s*url\([^()]+\.woff\)\s*format\(['"]?woff['"]?\)/g, '');
+    // A rewrite of the rule upstream would otherwise put the fallback back
+    // silently, since the strip that no longer matches anything looks the same
+    // from here as a sheet that never carried one.
+    if (/\.woff\b/.test(woff2Only)) throw new Error(`${path} still declares a WOFF source`);
+    return woff2Only;
+  },
+});
+
+// Workers Static Assets uploads every file under the configured `directory`,
+// which for this app is the client build output, so the source maps below
+// would ride along -- 42.4 MiB across 172 files, the largest of them within a
+// factor of 1.4 of Cloudflare's 25 MiB per-file ceiling.
+//
+// `.assetsignore` is wrangler's exclusion list for that directory: it is read
+// from the directory root, takes `.gitignore` syntax, and is itself left out
+// of the upload along with the other metafiles
+// (https://developers.cloudflare.com/workers/static-assets/binding/#ignoring-assets,
+// implemented at
+// https://github.com/cloudflare/workers-sdk/blob/wrangler%404.81.0/packages/workers-shared/utils/helpers.ts#L61-L86).
+// The whole output tree is gitignored, so the file is emitted by the build
+// rather than checked in.
+const excludeSourceMapsFromUpload = (): Plugin => {
+  let assetsIgnorePath: string;
+  return {
+    name: 'floway-assetsignore',
+    apply: 'build',
+    applyToEnvironment: environment => environment.name === 'client',
+    configResolved(config) {
+      // `build.outDir` is kept as authored, so it is the top-level root every
+      // other consumer resolves it against.
+      assetsIgnorePath = resolve(config.root, config.environments.client!.build.outDir, '.assetsignore');
+    },
+    closeBundle: {
+      order: 'post',
+      handler: () => writeFile(assetsIgnorePath, '*.js.map\n'),
+    },
+  };
+};
+
 // The Worker runs at 8788 in `wrangler dev`. Vite proxies every path the Worker
 // owns so the SPA can call relative URLs in both dev and prod. Anything not
 // matched falls through to the Vite dev server, which serves the SPA itself.
@@ -146,12 +208,13 @@ export default defineConfig({
       'zod',
       'zustand',
     ],
-    // These six are Prism's language scripts, which the prism-components-esm
-    // plugin below rewrites into modules. The dependency optimizer does not run
-    // plugin transforms, so pre-bundling them -- which the scanner would do on
-    // its own for a bare specifier -- would hand the browser the untransformed
-    // script and leave it to find `Prism` on the window. Excluding them keeps
-    // them on the plugin pipeline in dev, as they already are in the build.
+    // The language scripts src/components/ui/prism.ts registers, which the
+    // prism-components-esm plugin below rewrites into modules. The dependency
+    // optimizer does not run plugin transforms, so pre-bundling them -- which
+    // the scanner would do on its own for a bare specifier -- would hand the
+    // browser the untransformed script and leave it to find `Prism` on the
+    // window. Excluding them keeps them on the plugin pipeline in dev, as they
+    // already are in the build. The list mirrors that module's imports.
     exclude: [
       'prismjs/components/prism-bash',
       'prismjs/components/prism-json',
@@ -161,7 +224,13 @@ export default defineConfig({
       'prismjs/components/prism-typescript',
     ],
   },
-  plugins: [prismComponentsEsm(), typescriptStylesheets(), reactRouter()],
+  plugins: [
+    excludeSourceMapsFromUpload(),
+    fontsourceWoff2Only(),
+    prismComponentsEsm(),
+    typescriptStylesheets(),
+    reactRouter(),
+  ],
   // Fluent's ESM facade imports named exports from its provider packages,
   // whose `node` export condition points at CommonJS. Dev SSR must transform
   // the whole family together; externalizing the nested provider lets Node
@@ -177,24 +246,54 @@ export default defineConfig({
   environments: {
     client: {
       build: {
-        // A stack trace is only worth showing if it names our own source, so the
-        // maps ship with the bundle. They cost bytes a browser fetches only when
-        // a devtools pane is open, and the alternative is a failure page whose
-        // trace points at minified chunk names.
-        sourcemap: true,
+        // The maps are built for the three build checks that read them --
+        // scripts/check-web-monaco-lazy.ts,
+        // scripts/check-web-gallery-dev-only.ts and
+        // scripts/check-web-locales-split.ts derive chunk membership from
+        // each map's module list, and fall back to a far weaker scan of the
+        // emitted text without one. Both find a map by chunk filename, so
+        // `hidden` serves them while leaving the chunks without the trailing
+        // `sourceMappingURL` comment -- the maps are not deployed (see the
+        // `.assetsignore` plugin above), and a comment naming a file the
+        // upload does not carry is a 404 in anyone's devtools. Nothing in the
+        // browser would consume them anyway: the ErrorBoundary in
+        // src/root.tsx renders `error.stack` as text, and a source map never
+        // reaches that string.
+        sourcemap: 'hidden',
         rolldownOptions: {
           output: {
             codeSplitting: {
               groups: [
+                // The charts are excluded because they are the one part of
+                // Fluent this app reaches without going through
+                // `@fluentui/react-components`: the two monitor routes import
+                // `@fluentui/react-charts` by name, so leaving it out of the
+                // group lets it and its d3 dependencies settle into a chunk
+                // those routes pull in, instead of riding the shell to every
+                // page. Measured against the login payload: 2298.7 -> 2111.6
+                // KiB raw, 492.8 -> 445.1 KiB brotli. The two chart routes pay
+                // 4.1 KiB brotli for the extra chunk boundary.
+                //
+                // Nothing else separates the same way while src/fluent.ts
+                // imports the component barrel as a namespace, because that
+                // makes every package behind the barrel reachable from the
+                // root route.
                 {
                   name: 'fluent',
-                  test: /node_modules[\\/](?:\.pnpm[\\/])?(?:@fluentui\+|@griffel\+|tabster@|@fluentui[\\/]|@griffel[\\/]|tabster[\\/])/,
+                  test: /node_modules[\\/](?:\.pnpm[\\/])?(?:@fluentui\+(?!react-charts|chart-utilities)|@griffel\+|tabster@|@fluentui[\\/](?!react-charts|chart-utilities)|@griffel[\\/]|tabster[\\/])/,
                   priority: 30,
                 },
+                // Above the Fluent group: at a lower priority React's core,
+                // its jsx-runtime, the scheduler and react-dom are emitted
+                // into the Fluent chunk instead (read off the chunk
+                // sourcemaps), which erases the cache boundary this group
+                // exists to draw -- a Fluent bump would rehash React and the
+                // other way round. Both chunks are shell-loaded either way, so
+                // the split costs no request.
                 {
                   name: 'react-runtime',
                   test: /node_modules[\\/](?:\.pnpm[\\/])?(?:react(?:-dom|-router)?@|scheduler@|react(?:-dom|-router)?[\\/]|scheduler[\\/])/,
-                  priority: 20,
+                  priority: 40,
                 },
               ],
             },

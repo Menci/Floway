@@ -36,6 +36,8 @@
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ScrollBar_themeresources.xaml#L587
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ScrollBar_themeresources.xaml#L705-L708
 
+import { reducedMotion } from './selectors';
+
 const host = `.floway-scroll-area[data-overlayscrollbars='host']`;
 
 export const scrollbarCss = `
@@ -123,10 +125,8 @@ ${host} .os-scrollbar:hover .os-scrollbar-track {
    grows smoothly and vanishes instantly. The delays stay -- they are timing
    rather than travel.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ScrollBar_themeresources.xaml#L530-L555 */
-@media (prefers-reduced-motion: reduce) {
-  ${host} .os-scrollbar .os-scrollbar-handle,
-  ${host} .os-scrollbar .os-scrollbar-track {
-    transition-duration: 0.01ms;
-  }
-}
+${reducedMotion([
+  `${host} .os-scrollbar .os-scrollbar-handle`,
+  `${host} .os-scrollbar .os-scrollbar-track`,
+], 'transition-duration')}
 `;

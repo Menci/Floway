@@ -2,13 +2,12 @@ import {
   EyeOffRegular,
   EyeRegular,
 } from '@fluentui/react-icons';
-import Prism from 'prismjs';
 import { useMemo, useState } from 'react';
 import type { PropsWithChildren, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { contentTypeOf, EMPTY_BODY, renderBody, type RenderedBody } from './body-render';
-import { requestSeverity } from './format';
+import { errorLabel, requestSeverity } from './format';
 import { isSensitiveHeader, redactHeaderValue } from './header-redact';
 import {
   detectCollectKind,
@@ -21,12 +20,11 @@ import { useDangerTextClass } from '../ui/danger';
 import { EmptyStateLine } from '../ui/empty-state';
 import { HttpMethodBadge, HttpStatusBadge } from '../ui/http-badge';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
-import { prismTokenStyles } from '../ui/prism-token-styles';
+import { highlight, prismTokenStyles } from '../ui/prism';
 import { ScrollArea } from '../ui/scroll-area';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-copy-to-clipboard';
 import type { DumpRecord, DumpStreamEvent } from '@floway-dev/gateway/dump-types';
-import 'prismjs/components/prism-json';
 
 const { Tab, TabList, Text, makeStyles, mergeClasses } = fluentComponents;
 
@@ -109,10 +107,10 @@ function CopyButton({ text }: { text: string }) {
 
 function CodeView({ body }: { body: RenderedBody }) {
   const s = useStyles();
-  const highlighted = useMemo(() => {
-    const grammar = body.isJson ? Prism.languages.json : Prism.languages.plain;
-    return grammar ? Prism.highlight(body.text, grammar, body.isJson ? 'json' : 'plain') : escapeHtml(body.text);
-  }, [body]);
+  const highlighted = useMemo(
+    () => highlight(body.text, body.isJson ? 'json' : 'plain'),
+    [body],
+  );
   return <pre className={mergeClasses(s.code, `language-${body.isJson ? 'json' : 'plain'}`)}><code className={s.highlightedCode} dangerouslySetInnerHTML={{ __html: highlighted }} /></pre>;
 }
 
@@ -212,9 +210,7 @@ export function RequestDetailPanel({ collected: loadedCollected, error: loadedEr
   if (!record) return null;
 
   const severity = requestSeverity(record.response.status, record.meta.error);
-  const responseError = record.meta.error?.kind === 'failed'
-    ? record.meta.error.reason
-    : record.meta.error ? `${record.meta.error.kind} error` : null;
+  const responseError = errorLabel(record.meta.error);
   const requestHeadersCopy = record.request.headers.map(([name, value]) => `${name}: ${value}`).join('\n');
   const responseHeadersCopy = record.response.headers.map(([name, value]) => `${name}: ${value}`).join('\n');
   const collectedCopyText = collected?.result === null || collected?.result === undefined
@@ -235,7 +231,7 @@ export function RequestDetailPanel({ collected: loadedCollected, error: loadedEr
         </SectionBody>
       </section>
       <section className={s.section}>
-        <DetailSectionHeader title={t('dashboard.requests.response')} detail={<><HttpStatusBadge tone={severity === 'success' ? 'success' : severity === 'warning' ? 'warning' : 'danger'}>{record.response.status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>{responseError && <Text size={200} className={dangerText}>{responseError}</Text>}</>} copyText={record.response.headers.length ? responseHeadersCopy : undefined} />
+        <DetailSectionHeader title={t('dashboard.requests.response')} detail={<><HttpStatusBadge severity={severity}>{record.response.status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>{responseError && <Text size={200} className={dangerText}>{responseError}</Text>}</>} copyText={record.response.headers.length ? responseHeadersCopy : undefined} />
         <HeaderSectionBody>
           {record.response.headers.length ? <HeaderTable key={`response-${record.meta.id}`} headers={record.response.headers} /> : <EmptyStateLine className="p-4">{t('dashboard.requests.noResponseHeaders')}</EmptyStateLine>}
         </HeaderSectionBody>
@@ -282,7 +278,3 @@ export function RequestDetailPanel({ collected: loadedCollected, error: loadedEr
     </ScrollArea>
   );
 }
-
-const escapeHtml = (value: string): string => {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-};

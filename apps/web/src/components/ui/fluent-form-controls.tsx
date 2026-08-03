@@ -1,10 +1,10 @@
 import type { ListboxProps } from '@fluentui/react-components';
 import { ChevronDown12Regular } from '@fluentui/react-icons';
-import { Children, createElement, forwardRef, useLayoutEffect, useRef } from 'react';
+import { Children, createElement, forwardRef } from 'react';
 import type { ComponentProps, ElementType, MouseEvent, ReactNode, Ref } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { initializeScrollArea, scrollAreaHostClassName, useOverlayScrollbarsEnabled } from './scroll-area';
+import { useScrollAreaHost } from './scroll-area';
 import { fluentComponents } from '../../fluent';
 
 const {
@@ -26,6 +26,12 @@ const {
 interface ReadOnlyProp {
   readOnly?: boolean;
 }
+
+// The caller's own slot spreads first and the refusal lands on top of it, so a
+// slot carrying the same key cannot leave the control editable while the root
+// still states aria-readonly. A slot given in Fluent's shorthand form -- an
+// element or a string -- has no props to keep.
+const slotProps = <T,>(slot: T) => (typeof slot === 'object' && slot !== null ? slot : {});
 
 // Fluent's minimum width and the wrapped input's own `min-width: auto` form an
 // intrinsic floor that propagates up through every auto-sized grid track above
@@ -80,9 +86,7 @@ function ScrollableListbox({
   ListboxComponent: ElementType<ListboxProps>;
   listboxProps: Omit<ListboxProps, 'as'>;
 }) {
-  const hostRef = useRef<HTMLDivElement>(null);
-  const viewportRef = useRef<HTMLDivElement>(null);
-  const overlayScrollbarsEnabled = useOverlayScrollbarsEnabled();
+  const { hostProps, viewportRef, viewportStyle } = useScrollAreaHost({ axes: 'vertical', noTabIndex: true });
   const {
     children,
     className,
@@ -90,25 +94,19 @@ function ScrollableListbox({
     ...rootProps
   } = listboxProps as ListboxRenderPropsWithRef;
   const { t } = useTranslation();
-  const mergedRef = useMergedRefs(fluentRef, hostRef);
-  useLayoutEffect(() => {
-    const host = hostRef.current;
-    const viewport = viewportRef.current;
-    if (!host || !viewport) return;
-    return initializeScrollArea(host, viewport, 'vertical', true, overlayScrollbarsEnabled);
-  }, [overlayScrollbarsEnabled]);
+  const mergedRef = useMergedRefs(fluentRef, hostProps.ref);
 
   return createElement(
     ListboxComponent as ElementType,
     {
       ...rootProps,
-      className: mergeClasses(className, scrollAreaHostClassName, 'floway-combobox-listbox'),
-      ...(overlayScrollbarsEnabled ? { 'data-overlayscrollbars-initialize': '' } : {}),
+      ...hostProps,
+      className: mergeClasses(className, hostProps.className, 'floway-combobox-listbox'),
       ref: mergedRef,
     },
     // JSX rather than createElement, so the ref is a ref to the compiler and not
     // an ordinary prop it has to assume is read in render.
-    <div className="floway-combobox-listbox-viewport" ref={viewportRef} style={{ overflowX: 'hidden', overflowY: 'scroll' }}>
+    <div className="floway-combobox-listbox-viewport" ref={viewportRef} style={viewportStyle}>
       {/* Fluent opens the popup whether or not there is anything in it, so an
           empty list would arrive as a bordered seam a few pixels tall. Filling
           it is not an ARIA obligation, despite appearances: 1.3 renamed the
@@ -181,7 +179,7 @@ export const Combobox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof 
       {...props}
       aria-readonly={readOnly === true ? true : undefined}
       expandIcon={expandIcon === undefined ? EXPAND_ICON : expandIcon}
-      input={{ readOnly, ...(typeof props.input === 'object' && props.input !== null ? props.input : {}) }}
+      input={{ ...slotProps(props.input), readOnly }}
       onOptionSelect={readOnly === true ? undefined : onOptionSelect}
       positioning={positioning ?? LISTBOX_POSITIONING}
       listbox={listboxFor(listWidth, props.freeform === true, emptyMessage)}
@@ -206,10 +204,10 @@ export const Dropdown = forwardRef<HTMLButtonElement, Omit<ComponentProps<typeof
   ),
 );
 
-// A checkbox and a switch are both a native checkbox, on which HTML accepts
+// A checkbox, a switch and a radio are all native inputs on which HTML accepts
 // `readonly` and does nothing with it. Cancelling the click refuses the change,
-// since that is the default action the toggle is.
-const refuseToggle = (event: MouseEvent<HTMLInputElement>) => event.preventDefault();
+// since that is the default action of a click on such an input.
+export const refuseToggle = (event: MouseEvent<HTMLInputElement>) => event.preventDefault();
 
 // `size` and `shape` are omitted because WinUI states one check box and only
 // one: a single CheckBoxSize, a single glyph measure, a square corner, and no
@@ -225,7 +223,7 @@ export const Checkbox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof 
     <FluentCheckbox
       {...props}
       aria-readonly={readOnly === true ? true : undefined}
-      input={{ onClick: readOnly === true ? refuseToggle : undefined, ...(typeof input === 'object' && input !== null ? input : {}) }}
+      input={{ ...slotProps(input), ...(readOnly === true ? { onClick: refuseToggle } : {}) }}
       onChange={readOnly === true ? undefined : onChange}
       ref={ref}
     />
@@ -237,7 +235,7 @@ export const Switch = forwardRef<HTMLInputElement, ComponentProps<typeof FluentS
     <FluentSwitch
       {...props}
       aria-readonly={readOnly === true ? true : undefined}
-      input={{ onClick: readOnly === true ? refuseToggle : undefined, ...(typeof input === 'object' && input !== null ? input : {}) }}
+      input={{ ...slotProps(input), ...(readOnly === true ? { onClick: refuseToggle } : {}) }}
       onChange={readOnly === true ? undefined : onChange}
       ref={ref}
     />

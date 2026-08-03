@@ -103,16 +103,6 @@ export const buildAgentModelOptions = (
   return options;
 };
 
-interface ModelOption { value: string; label: string }
-
-export const filterModelOptions = (options: readonly ModelOption[], query: string) => {
-  const needle = query.trim().toLocaleLowerCase();
-  if (!needle) return options;
-  return options.filter(option =>
-    option.label.toLocaleLowerCase().includes(needle)
-    || option.value.toLocaleLowerCase().includes(needle));
-};
-
 export const modelOptions = (models: ControlPlaneModel[], family: 'claude' | 'codex', picker: ClaudePicker) =>
   buildAgentModelOptions(models, family === 'claude' ? { family, picker } : { family })
     .map(option => ({ value: option.value, label: option.publicModelId }));

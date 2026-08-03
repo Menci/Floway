@@ -12,6 +12,9 @@ import type { AppType } from '@floway-dev/gateway/app-type';
 export interface GlobalError<TRaw = unknown> {
   status: number;
   message: string;
+  // A transport failure keeps the thrown value: abort, DNS failure and a bug in
+  // the client are one status here, and only the cause tells them apart.
+  cause?: unknown;
   raw?: TRaw;
 }
 
@@ -65,6 +68,7 @@ const requestResponse = async <TRaw>(
       error: {
         status: 0,
         message: errorMessage(error),
+        cause: error,
       },
     };
   }
@@ -100,14 +104,18 @@ const callResponse = async <T, TRaw>(fn: () => Promise<Response>): Promise<ApiRe
       error: {
         status: result.data.status,
         message: errorMessage(error),
+        cause: error,
       },
     };
   }
 };
 
+export type ApiCallResult<TResponse extends Response> =
+  ApiResult<SuccessfulJson<TResponse>, FailedJson<TResponse>>;
+
 export const callApi = <TResponse extends Response>(
   fn: () => Promise<TResponse>,
-): Promise<ApiResult<SuccessfulJson<TResponse>, FailedJson<TResponse>>> =>
+): Promise<ApiCallResult<TResponse>> =>
   callResponse<SuccessfulJson<TResponse>, FailedJson<TResponse>>(fn);
 
 // A 204 carries no body, so parsing it would turn success into a parse failure.

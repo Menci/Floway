@@ -1,13 +1,11 @@
 // List and ListItem, restyled to WinUI 3. Fluent's list is headless -- no fill,
 // no radius, no state -- so every rule below adds a state rather than replacing
 // a Fluent value.
-import { checkboxNotMixed } from './choice.css';
-import { nested, pressedRoots, under } from './selectors';
+import { checkboxNotMixed, uncheckedBox } from './choice.css';
+import { selectionPill } from './selection-pill';
+import { nested, pressedRoots, reducedMotion, under } from './selectors';
 
 const checkmarkPressed = pressedRoots('.fui-ListItem__checkmark.fui-Checkbox', '.fui-Checkbox__input');
-
-const uncheckedBox = `.fui-Checkbox__input:enabled:not(:checked)${checkboxNotMixed}`
-  + ' ~ .fui-Checkbox__indicator.fui-Checkbox__indicator';
 
 const interactiveRow = ".fui-ListItem[tabindex]:not([aria-disabled='true'])";
 
@@ -68,50 +66,40 @@ export const listCss = `
   background-color: var(--winui-subtle-fill-secondary);
 }
 
-/* The selection indicator. ListViewItem's stated 1.5px corner radius fixes the
-   width, since a full round-off is one only on a 3px bar. The length departs
-   from WinUI deliberately: the presenter sizes the bar by MAX(16, itemHeight -
-   40), a flat 16px here, and a quarter inset at each end reproduces roughly
-   that length while holding the proportion as the row height changes. On
-   deselect WinUI registers no scale key frame and destroys the rectangle once
-   the 83ms is up, so the height snaps back after the fade rather than shrinking
+/* The selection indicator, on the shared pill geometry. ListViewItem states its
+   own 1.5px corner radius, which is the full round-off of the shared 3px bar.
+   On deselect WinUI registers no scale key frame and destroys the rectangle
+   once the fade is up, so the height snaps back after it rather than shrinking
    with it.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L57
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L60
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L75
-   https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/core/core/elements/ListViewBaseItemChrome.cpp#L1750-L1758
-   https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/dxaml/lib/ListViewBaseItemPresenter_Partial.cpp#L945-L982 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L75 */
 .fui-ListItem.fui-ListItem::before {
   content: '';
   position: absolute;
   inset-inline-start: 0;
-  inset-block: 25%;
-  inline-size: 3px;
-  border-radius: 1.5px;
+${selectionPill('1.5px')}
   background-color: var(--winui-accent-fill-default);
   pointer-events: none;
   opacity: 0;
   scale: 1 0;
   transition:
-    opacity 83ms linear,
-    scale 0s linear 83ms;
+    opacity var(--winui-control-faster-animation-duration) linear,
+    scale 0s linear var(--winui-control-faster-animation-duration);
 }
 
 .fui-ListItem.fui-ListItem[aria-selected='true']::before {
   opacity: 1;
   scale: 1 1;
   transition:
-    opacity 83ms linear,
-    scale 167ms cubic-bezier(0.167, 0.167, 0, 1);
+    opacity var(--winui-control-faster-animation-duration) linear,
+    scale var(--winui-control-fast-animation-duration) cubic-bezier(0.167, 0.167, 0, 1);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .fui-ListItem.fui-ListItem::before,
-  .fui-ListItem.fui-ListItem[aria-selected='true']::before {
-    transition-duration: 0.01ms;
-    transition-delay: 0s;
-  }
-}
+${reducedMotion([
+  '.fui-ListItem.fui-ListItem::before',
+  ".fui-ListItem.fui-ListItem[aria-selected='true']::before",
+], 'transition-duration', ['transition-delay: 0s;'])}
 
 /* On the rounded chrome path the disabled opacity lands on the item's template
    child alone, and GetTemplateChildIfExists returns nothing for the backplate,

@@ -5,9 +5,16 @@ const { makeStyles } = fluentComponents;
 // Fluent renders a chart's hover callout as an absolutely positioned popover
 // inside the chart's own root rather than through a portal, and treats the
 // nearest clipping ancestor as the popover's overflow boundary.
-export const useUnclippedChartFrame = makeStyles({
+export const useChartFrame = makeStyles({
   root: {
     overflow: 'visible',
+    // Fluent's area form draws no point until one is hovered, leaving the bucket
+    // count invisible at rest, so every form in the dashboard marks its buckets
+    // alike. Radius and stroke width together give a marker its diameter -- 2px
+    // of radius inside a 1.5px stroke reads as 5.5px beside the 2px series
+    // stroke `series-plot.ts` draws. The highlight disc Fluent moves under the
+    // pointer keeps its own size.
+    '& circle:not([id*="staticHighlightCircle"])': { r: '2px', strokeWidth: '1.5px' },
     // Axis labels take Caption, the floor of WinUI's type ramp; WinUI ships no
     // chart, and Fluent's own 10px SemiBold ticks sit below every step it has.
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBlock_themeresources.xaml#L3
