@@ -11,7 +11,7 @@
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L122-L129
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L144-L151
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L185-L192
-import { notDisabled } from './selectors';
+import { notDisabled, reducedMotion } from './selectors';
 
 export const accordionCss = `
 /* The fill, the stroke and the radius belong on the button rather than the
@@ -86,11 +86,7 @@ export const accordionCss = `
   transition-timing-function: var(--winui-chevron-turn-easing);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
-    transition-duration: 0.01ms;
-  }
-}
+${reducedMotion(['.fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon'], 'transition-duration')}
 
 /* Fluent's leading chevron has no WinUI counterpart to take spacing from -- the
    Expander always ends its row with the chevron -- so the gap Fluent already

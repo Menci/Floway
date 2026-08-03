@@ -8,6 +8,8 @@
 // MenuItemCheckbox, MenuItemRadio, MenuItemSwitch and MenuItemLink each add a
 // root class of their own and then run the MenuItem style hook, so every item
 // rule below reaches all five roots and their shared slot classes.
+import { reducedMotion } from './selectors';
+
 export const menuCss = `
 /* Flyout surface.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L285
@@ -338,9 +340,5 @@ export const menuCss = `
 
 /* The reveal moves and resizes the surface, so it goes when the OS says motion
    goes. The close fade is opacity, which WCAG excludes from motion animation. */
-@media (prefers-reduced-motion: reduce) {
-  .fui-MenuPopover.fui-MenuPopover[data-popper-placement] {
-    animation-duration: 0.01ms;
-  }
-}
+${reducedMotion(['.fui-MenuPopover.fui-MenuPopover[data-popper-placement]'], 'animation-duration')}
 `;

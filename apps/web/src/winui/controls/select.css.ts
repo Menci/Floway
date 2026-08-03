@@ -12,6 +12,8 @@
 // ./choice.css.ts writes down for every check box.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L358-L359
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L110-L136
+import { reducedMotion } from './selectors';
+
 export const selectCss = `
 /* The rest fill, and the neutralisation of the token Fluent paints a rejected
    value with: WinUI does not recolour the field for one, and ./text-input.css.ts
@@ -396,11 +398,10 @@ export const selectCss = `
   transition: scale 167ms cubic-bezier(0, 0, 0, 1);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .fui-Option.fui-Option[aria-selected='true']:not([aria-disabled='true']):active::before {
-    transition-duration: 0.01ms;
-  }
-}
+${reducedMotion(
+  [".fui-Option.fui-Option[aria-selected='true']:not([aria-disabled='true']):active::before"],
+  'transition-duration',
+)}
 
 /* The pill is WinUI's whole single-select indicator, so Fluent's check glyph
    goes -- and so does the column it sat in, since WinUI draws the pill inside
@@ -555,11 +556,7 @@ export const selectCss = `
    disabled the VSM generates it in SteadyState rather than Transition mode,
    which emits the end values and no motion.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/vsm/VisualStateManagerActuator.cpp#L383-L400 */
-@media (prefers-reduced-motion: reduce) {
-  .floway-combobox-listbox {
-    animation-duration: 0.01ms;
-  }
-}
+${reducedMotion(['.floway-combobox-listbox'], 'animation-duration')}
 
 /* High Contrast. The pill takes the same Highlight the row is filled with, so
    it is the fill that carries selection there rather than the bar. The field's

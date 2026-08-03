@@ -48,3 +48,18 @@ export const disabledStates = [':disabled', `[aria-disabled='true']`];
  * state rather than to each rule that happens to notice the collision.
  */
 export const notDisabled = disabledStates.map(state => `:not(${state})`).join('');
+
+/**
+ * The clamp a sheet states for a motion of its own under the reduced-motion
+ * preference. The duration is a token rather than a literal, since the reason
+ * it is not zero belongs with the value.
+ */
+export const reducedMotion = (
+  selectors: readonly string[],
+  property: 'animation-duration' | 'transition-duration',
+  alsoDeclared: readonly string[] = [],
+) => `@media (prefers-reduced-motion: reduce) {
+${nested(list(selectors))} {
+    ${[`${property}: var(--winui-reduced-motion-duration);`, ...alsoDeclared].join('\n    ')}
+  }
+}`;

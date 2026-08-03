@@ -18,7 +18,7 @@
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L92-L179
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L62-L119
 
-import { nested, pressedRoots, under } from './selectors';
+import { nested, pressedRoots, reducedMotion, under } from './selectors';
 
 // The check box's marks. WinUI does not draw a font character: the template's
 // CheckGlyph is an AnimatedIcon over AnimatedAcceptVisualSource, and both the
@@ -402,15 +402,12 @@ ${nested(under(checkboxPressed, selectedBoxes))} {
   }
 
   /* AnimatedIcon cuts to the destination frame when animations are off, so the
-     preference lands on the same path the framework already takes. 0.01ms rather
-     than none, for the reason the radio dot below states.
+     preference lands on the same path the framework already takes.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedIcon.cpp#L435-L444 */
-  @media (prefers-reduced-motion: reduce) {
-    .fui-Checkbox__indicator.fui-Checkbox__indicator::before,
-    .fui-Checkbox__input:checked ~ .fui-Checkbox__indicator.fui-Checkbox__indicator::before {
-      transition-duration: 0.01ms;
-    }
-  }
+${nested(reducedMotion([
+  '.fui-Checkbox__indicator.fui-Checkbox__indicator::before',
+  '.fui-Checkbox__input:checked ~ .fui-Checkbox__indicator.fui-Checkbox__indicator::before',
+], 'transition-duration'))}
 
   /* Focus ring colours. WinUI's focus visual is two concentric rings -- an
      outer one in the text colour and an inner one in the surface colour -- so
@@ -475,18 +472,10 @@ ${nested(under(checkboxPressed, selectedBoxes))} {
    definition, which turns on perceived size and position, so the preference is
    about it whatever the framework's gate happens to reach.
 
-   0.01ms rather than none, for the reason WinUI runs a disabled
-   ConnectedAnimation for 1ms instead of zero: the completion still has to
-   fire.
    https://www.w3.org/TR/WCAG21/#dfn-motion-animation
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L255-L259
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/vsm/VisualStateManagerActuator.cpp#L590-L609
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/animation/ConnectedAnimationService.cpp#L313-L327 */
-@media (prefers-reduced-motion: reduce) {
-  .fui-Radio__indicator.fui-Radio__indicator::after {
-    transition-duration: 0.01ms;
-  }
-}
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/vsm/VisualStateManagerActuator.cpp#L590-L609 */
+${reducedMotion(['.fui-Radio__indicator.fui-Radio__indicator::after'], 'transition-duration')}
 
 /* The same hit target as the check box above, on the ellipse. It is stated as a
    floor rather than a width because labelPosition="below" stacks the label under

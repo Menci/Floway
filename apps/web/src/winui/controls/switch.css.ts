@@ -42,7 +42,7 @@
 // knob's travel apply in both modes.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L64-L123
 
-import { nested, notDisabled, pressedRoots, under } from './selectors';
+import { nested, notDisabled, pressedRoots, reducedMotion, under } from './selectors';
 
 // The two pointer states are answered from the root, never from the input:
 // Fluent's input covers the track alone, so a label beside it is hovered
@@ -263,16 +263,12 @@ ${under(switchPressedRoots, [enabledCheckedKnob])} {
 }
 
 /* Fluent clamps its own switch transitions under reduced motion, but at a
-   single class, so every timing declared above outranks it. 0.01ms rather than
-   none for the reason ./choice.css.ts records: the transition still has to
-   complete. */
-@media (prefers-reduced-motion: reduce) {
-  .fui-Switch__indicator.fui-Switch__indicator::before,
-  .fui-Switch__indicator.fui-Switch__indicator::after,
-  .fui-Switch__indicator.fui-Switch__indicator > svg {
-    transition-duration: 0.01ms;
-  }
-}
+   single class, so every timing declared above outranks it. */
+${reducedMotion([
+  '.fui-Switch__indicator.fui-Switch__indicator::before',
+  '.fui-Switch__indicator.fui-Switch__indicator::after',
+  '.fui-Switch__indicator.fui-Switch__indicator > svg',
+], 'transition-duration')}
 
 @media not (forced-colors: active) {
   /* The indicator paints neither fill nor stroke of its own. Fluent states both

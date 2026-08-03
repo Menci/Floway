@@ -30,7 +30,7 @@
 // both modes.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L53-L101
 
-import { disabledStates, nested, notDisabled } from './selectors';
+import { disabledStates, nested, notDisabled, reducedMotion } from './selectors';
 
 // A suffix on a selector list attaches to its last item alone, so appending a
 // state to an already joined string silently leaves every variant but the last
@@ -145,11 +145,7 @@ ${checkedToggle(disabledStates)} {
   transition-duration: var(--winui-control-faster-animation-duration);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .fui-Button.fui-Button {
-    transition-duration: 0.01ms;
-  }
-}
+${reducedMotion(['.fui-Button.fui-Button'], 'transition-duration')}
 
 @media not (forced-colors: active) {
   /* WinUI's fill is translucent where Fluent's Background1 is opaque, and its

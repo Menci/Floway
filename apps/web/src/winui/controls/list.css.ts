@@ -2,7 +2,7 @@
 // no radius, no state -- so every rule below adds a state rather than replacing
 // a Fluent value.
 import { checkboxNotMixed, uncheckedBox } from './choice.css';
-import { nested, pressedRoots, under } from './selectors';
+import { nested, pressedRoots, reducedMotion, under } from './selectors';
 
 const checkmarkPressed = pressedRoots('.fui-ListItem__checkmark.fui-Checkbox', '.fui-Checkbox__input');
 
@@ -102,13 +102,10 @@ export const listCss = `
     scale 167ms cubic-bezier(0.167, 0.167, 0, 1);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .fui-ListItem.fui-ListItem::before,
-  .fui-ListItem.fui-ListItem[aria-selected='true']::before {
-    transition-duration: 0.01ms;
-    transition-delay: 0s;
-  }
-}
+${reducedMotion([
+  '.fui-ListItem.fui-ListItem::before',
+  ".fui-ListItem.fui-ListItem[aria-selected='true']::before",
+], 'transition-duration', ['transition-delay: 0s;'])}
 
 /* On the rounded chrome path the disabled opacity lands on the item's template
    child alone, and GetTemplateChildIfExists returns nothing for the backplate,

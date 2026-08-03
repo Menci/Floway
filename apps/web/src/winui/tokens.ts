@@ -583,6 +583,14 @@ export const winuiTokenCss = `
   --winui-page-enter-offset: ${PAGE_ENTER_OFFSET_PX}px;
 }
 
+/* The duration every motion clamps to when the OS asks for reduced motion.
+   Not zero, for the reason WinUI runs a disabled ConnectedAnimation for 1ms
+   instead: the completion still has to fire.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/animation/ConnectedAnimationService.cpp#L313-L327 */
+:root {
+  --winui-reduced-motion-duration: 0.01ms;
+}
+
 /* Button padding. XAML thicknesses read left,top,right,bottom while the CSS
    shorthand reads top,right,bottom,left; the two horizontal values are equal
    here, so this collapses to three terms.
