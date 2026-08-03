@@ -1,6 +1,6 @@
 import type { InferRequestType } from 'hono/client';
 
-import { PATH_OVERRIDE_PATHS, shapeForKind } from './endpoints';
+import { configuredEndpoints, PATH_OVERRIDE_PATHS, shapeForKind } from './endpoints';
 import { api, callApi } from '../../api/client';
 import type {
   BackoffRow,
@@ -308,7 +308,7 @@ export const discoveredModelsFromResponse = (
       upstreamModelId: model.id,
       publicModelId: model.id,
       kind,
-      ...shapeForKind(kind, { endpoints }),
+      ...(kind === 'chat' ? { endpoints: configuredEndpoints(endpoints) } : shapeForKind(kind, { endpoints })),
       ...(model.display_name ?? model.name ? { display_name: model.display_name ?? model.name } : {}),
       ...(model.limits ? { limits: model.limits } : {}),
       ...(model.pricing ? { pricing: model.pricing } : {}),

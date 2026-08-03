@@ -17,6 +17,16 @@ describe('custom discovered model projection', () => {
     expect(models[1]?.endpoints).toEqual({ rerank: {} });
   });
 
+  it('gives a row that declares no kind the configured map the gateway gives it', () => {
+    const models = discoveredModelsFromResponse({
+      kind: 'custom',
+      data: [{ id: 'bge-m3' }, { id: 'talker', kind: 'chat' }],
+    }, { embeddings: {} });
+
+    expect(models[0]?.endpoints).toEqual({ embeddings: {} });
+    expect(models[1]?.endpoints).toEqual({ embeddings: {} });
+  });
+
   it('projects every discovered row into a shape the gateway accepts', () => {
     const models = discoveredModelsFromResponse({
       kind: 'custom',
