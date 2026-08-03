@@ -133,7 +133,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const { t } = useTranslation();
   const { user } = useDashboardOutletContext();
   const s = useStyles();
-  const [api, setApi] = useState<PlaygroundApi>('responses');
+  const [playgroundApi, setPlaygroundApi] = useState<PlaygroundApi>('responses');
   const [keyId, setKeyId] = useState(loaderData.keys?.[0]?.id ?? '');
   const [publicModelId, setPublicModelId] = useState('');
   // `null` shows the selection; a string is a live search term. Opening the list
@@ -221,7 +221,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
         return;
       }
     }
-    const customResult = parseCustomJson(api, customDraft);
+    const customResult = parseCustomJson(playgroundApi, customDraft);
     if (customResult.error) {
       const message = customResult.error === 'reserved'
         ? t('dashboard.playground.errors.customReserved', { fields: customResult.fields.join(', ') })
@@ -243,7 +243,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
     abortRef.current = controller;
 
     try {
-      const wireFetch = createWireFetch(customResult.value, api);
+      const wireFetch = createWireFetch(customResult.value, playgroundApi);
 
       const assistantId = randomId();
       let assistantText = '';
@@ -258,12 +258,12 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
         });
       };
       for await (const delta of streamPlaygroundText({
-        api,
+        api: playgroundApi,
         apiKey: sendTarget.apiKey.key,
         model: sendTarget.model.id,
         system: system.trim(),
         messages: context,
-        options: generationOptions(api, reasoningEffort || undefined, defaultMaxOutputTokens(sendTarget.model)),
+        options: generationOptions(playgroundApi, reasoningEffort || undefined, defaultMaxOutputTokens(sendTarget.model)),
         signal: controller.signal,
         fetchImpl: wireFetch,
       })) {
@@ -335,9 +335,9 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
       </Field>
       <Field label={t('dashboard.playground.api')}>
         <Dropdown
-          selectedOptions={[api]}
-          value={t(`dashboard.playground.apis.${api}`)}
-          onOptionSelect={(_, data) => data.optionValue !== undefined && changeContext(() => setApi(data.optionValue as PlaygroundApi))}
+          selectedOptions={[playgroundApi]}
+          value={t(`dashboard.playground.apis.${playgroundApi}`)}
+          onOptionSelect={(_, data) => data.optionValue !== undefined && changeContext(() => setPlaygroundApi(data.optionValue as PlaygroundApi))}
         >
           {playgroundApis.map(value => <Option key={value} value={value}>{t(`dashboard.playground.apis.${value}`)}</Option>)}
         </Dropdown>
