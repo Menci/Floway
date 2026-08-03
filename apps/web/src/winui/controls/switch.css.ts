@@ -42,7 +42,7 @@
 // knob's travel apply in both modes.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L64-L123
 
-import { nested, notDisabled, pressedRoots as pressedUnion, under } from './selectors';
+import { nested, notDisabled, pressedRoots, under } from './selectors';
 
 // The two pointer states are answered from the root, never from the input:
 // Fluent's input covers the track alone, so a label beside it is hovered
@@ -54,8 +54,8 @@ const hoverRoots = [
   '.fui-Switch[data-winui-switch-dragging]',
 ];
 
-const pressedRoots = [
-  ...pressedUnion('.fui-Switch', '.fui-Switch__input'),
+const switchPressedRoots = [
+  ...pressedRoots('.fui-Switch', '.fui-Switch__input'),
   '.fui-Switch[data-winui-switch-dragging]',
 ];
 
@@ -252,13 +252,13 @@ ${under(hoverRoots, [enabledKnob])} {
    supply it -- Space on the focused input, and a drag that has carried the
    pointer off the control -- and a 17x12 knob is a shape the template never
    draws. */
-${under(pressedRoots, [enabledKnob])} {
+${under(switchPressedRoots, [enabledKnob])} {
   height: calc(14 * var(--winui-switch-unit));
   margin-inline-start: calc(2 * var(--winui-switch-unit));
   width: calc(17 * var(--winui-switch-unit));
 }
 
-${under(pressedRoots, [enabledCheckedKnob])} {
+${under(switchPressedRoots, [enabledCheckedKnob])} {
   margin-inline-start: calc(-1 * var(--winui-switch-unit));
 }
 
@@ -281,7 +281,10 @@ ${under(pressedRoots, [enabledCheckedKnob])} {
      states is answered here. Both matter: the fill is what shows through the
      moment neither capsule is opaque, and the stroke is a second ring one pixel
      outside the capsule's own, which appears in that same window when a drag
-     settles back to off. */
+     settles back to off. The subject is Fluent's own :hover:active rather than
+     the pressed union ./selectors.ts defines, because these rules only cancel
+     Fluent atoms, which stop matching in exactly the conditions that chain
+     does. */
   .fui-Switch__indicator.fui-Switch__indicator,
   .fui-Switch__input${notDisabled}:not(:checked) ~ .fui-Switch__indicator.fui-Switch__indicator,
   .fui-Switch__input${notDisabled}:not(:checked):hover ~ .fui-Switch__indicator.fui-Switch__indicator,
@@ -352,7 +355,7 @@ ${nested(under(hoverRoots, [offTrack]))} {
     background-color: var(--winui-control-alt-fill-tertiary);
   }
 
-${nested(under(pressedRoots, [offTrack]))} {
+${nested(under(switchPressedRoots, [offTrack]))} {
     background-color: var(--winui-control-alt-fill-quarternary);
   }
 
@@ -362,7 +365,7 @@ ${nested(under(hoverRoots, [onTrack]))} {
     background-color: var(--winui-accent-fill-secondary);
   }
 
-${nested(under(pressedRoots, [onTrack]))} {
+${nested(under(switchPressedRoots, [onTrack]))} {
     background-color: var(--winui-accent-fill-tertiary);
   }
 
