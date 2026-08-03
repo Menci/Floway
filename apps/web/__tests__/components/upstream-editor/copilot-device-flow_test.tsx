@@ -80,7 +80,7 @@ beforeEach(() => {
   fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const { pathname } = new URL(String(input), 'http://localhost');
     if (pathname === DEVICE_LOGIN_START) return json(200, flow);
-    if (pathname === DEVICE_LOGIN_POLL) return pollResponse();
+    if (pathname === DEVICE_LOGIN_POLL) return await pollResponse();
     throw new Error(`Unexpected request to ${pathname}`);
   });
   vi.stubGlobal('fetch', fetchMock);

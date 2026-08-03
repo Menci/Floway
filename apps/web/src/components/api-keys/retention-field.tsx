@@ -2,11 +2,11 @@ import { useId, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { formatDurationInput, parseDuration } from './duration-input';
 import { fluentComponents } from '../../fluent';
 import { useDangerTextClass } from '../ui/danger';
 import { Combobox, LISTBOX_POSITIONING } from '../ui/fluent-form-controls';
 import { SettingsCard, SettingsExpander } from '../ui/settings-card';
-import { formatDurationInput, parseDuration } from './duration-input';
 
 const { Option, Text } = fluentComponents;
 
