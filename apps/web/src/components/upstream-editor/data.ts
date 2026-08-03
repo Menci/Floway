@@ -187,13 +187,7 @@ export const loadInitialModelCatalog = async (record: UpstreamRecord) => {
 
 export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues => {
   const config: UpstreamRecord['config'] = record.kind === 'custom'
-    ? {
-        ...structuredClone(record.config),
-        apiKey: '',
-        ...(!isPersisted(record) && Object.keys(record.config.endpoints).length === 0
-          ? { endpoints: { chatCompletions: {} }, modelsFetch: { ...record.config.modelsFetch, enabled: true } }
-          : {}),
-      }
+    ? { ...structuredClone(record.config), apiKey: '' }
     : record.kind === 'azure'
       ? { ...structuredClone(record.config), apiKey: '' }
       : record.kind === 'ollama'

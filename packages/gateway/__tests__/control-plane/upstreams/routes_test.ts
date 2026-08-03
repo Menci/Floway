@@ -2166,17 +2166,19 @@ test('GET /api/upstreams/blueprint rejects an unknown kind with 400', async () =
   assertEquals(resp.status, 400);
 });
 
-test('GET /api/upstreams/blueprint serves a pure-blank record with provider flag defaults filled in', async () => {
+test('GET /api/upstreams/blueprint serves the record a new upstream starts as with provider flag defaults filled in', async () => {
   const { adminSession } = await setupAppTest();
 
-  // Blueprints are pure-blank shape-complete records; the SPA discards
-  // everything except `flag_defaults` and lets the operator fill the
-  // actual config in from an empty draft. Serialization is a static
-  // registry lookup so no provider asserter runs against the blank.
+  // The blueprint is the create form's opening record, so it carries the
+  // starting values as well as the shape: a custom upstream opens on an
+  // OpenAI-compatible chat endpoint with catalog fetching on. Serialization is
+  // a static registry lookup so no provider asserter runs against it.
   // Credentials are editable empty strings, not redacted `*Set` projections.
   const custom = (await (await requestApp('/api/upstreams/blueprint?kind=custom', { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;
   assertEquals(custom.config.authStyle, 'bearer');
   assertEquals(custom.config.apiKey, '');
+  assertEquals(custom.config.endpoints, { chatCompletions: {} });
+  assertEquals(custom.config.modelsFetch, { enabled: true });
   const azure = (await (await requestApp('/api/upstreams/blueprint?kind=azure', { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;
   assertEquals(azure.config.models, []);
   const ollama = (await (await requestApp('/api/upstreams/blueprint?kind=ollama', { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;
