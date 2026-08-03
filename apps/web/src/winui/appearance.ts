@@ -5,29 +5,75 @@
 import { CheckmarkCircleFilled, ChevronDown12Regular, DismissCircleFilled, ErrorCircleFilled, InfoFilled } from '@fluentui/react-icons';
 import * as React from 'react';
 
-import { COLLAPSE_ANIMATION_MS, CONTROL_FAST_OUT_SLOW_IN_EASING, EXPAND_ANIMATION_MS } from './motion';
-
-type FluentComponents = typeof import('@fluentui/react-components');
+import { wrapFluent } from './wrap';
+import type { FluentComponents, PropCarrier } from './wrap';
 
 export const winuiAppearanceAttribute = 'data-winui-appearance';
-const winuiIntentAttribute = 'data-winui-intent';
+export const winuiIntentAttribute = 'data-winui-intent';
 const winuiSizeAttribute = 'data-winui-size';
 const winuiSeverityMarkAttribute = 'data-winui-severity-mark';
 export const winuiCheckedAttribute = 'data-winui-checked';
 
-type SlotProps = Record<string, unknown>;
-type PropCarrier = Record<string, unknown>;
-type SeverityIntent = 'error' | 'warning' | 'success' | 'info';
+export type SeverityIntent = 'error' | 'warning' | 'success' | 'info';
 interface IntentCarrier { intent?: SeverityIntent; icon?: unknown }
-interface MediaCarrier { media?: unknown }
-type ToastController = ReturnType<FluentComponents['useToastController']>;
-type ToastDispatchOptions = NonNullable<Parameters<ToastController['dispatchToast']>[1]>;
 type CheckedState = boolean | 'mixed';
 interface CheckedCarrier {
   checked?: CheckedState;
   defaultChecked?: CheckedState;
   onChange?: (ev: React.ChangeEvent<HTMLInputElement>, data: { checked: CheckedState }) => void;
 }
+
+// Every InfoBar severity is a circle in WinUI, where Fluent reaches for a
+// diamond and a triangle in two of the four places — a different pair per
+// control, so the map is stated once and every severity-carrying control is
+// routed through it.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L70-L74
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar.xaml#L107-L110
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-message-bar/library/src/components/MessageBar/getIntentIcon.tsx#L7-L19
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-toast/library/src/components/ToastTitle/useToastTitle.ts#L47-L60
+const severityIcons: Record<SeverityIntent, React.ComponentType> = {
+  error: DismissCircleFilled,
+  warning: ErrorCircleFilled,
+  success: CheckmarkCircleFilled,
+  info: InfoFilled,
+};
+
+// The mark is stamped as well as filled in. Only the standard mark is a
+// silhouette with the symbol as negative space, so only it may take the disc
+// ./controls/severity.ts paints behind the slot; a caller's own artwork would
+// wear the disc in front of the card.
+export const severityMark = (intent: SeverityIntent) => ({
+  children: React.createElement(severityIcons[intent]),
+  [winuiSeverityMarkAttribute]: '',
+});
+
+// A tri-state check box carries its mixed state only as the input's
+// `indeterminate` property, which Fluent assigns from a layout effect keyed on
+// that state. The browser clears the property on user activation, and the
+// effect does not re-run while the state stays mixed, so `:indeterminate` is
+// gone for good on a box held at mixed while Fluent keeps painting mixed. The
+// resolved tri-state is stamped instead, and ./controls/choice.css.ts reads
+// the stamp rather than the property.
+//
+// Fluent's own resolution is mirrored here: the prop wins where it is given,
+// otherwise the last value its onChange reported, seeded from defaultChecked.
+// https://html.spec.whatwg.org/multipage/input.html#the-input-element:legacy-pre-activation-behavior
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-checkbox/library/src/components/Checkbox/useCheckbox.tsx#L163-L169
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-checkbox/library/src/components/Checkbox/useCheckbox.tsx#L93-L97
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-checkbox/library/src/components/Checkbox/useCheckbox.tsx#L152-L156
+const useCheckedProps = (props: CheckedCarrier) => {
+  const [uncontrolled, setUncontrolled] = React.useState<CheckedState>(props.defaultChecked ?? false);
+  const checked = props.checked ?? uncontrolled;
+
+  return {
+    ...props,
+    [winuiCheckedAttribute]: String(checked),
+    onChange: (ev: React.ChangeEvent<HTMLInputElement>, data: { checked: CheckedState }) => {
+      setUncontrolled(data.checked);
+      props.onChange?.(ev, data);
+    },
+  };
+};
 
 // Where the root is not the primary slot, `getPartitionedNativeProps` forwards a
 // top-level `data-*` to the inner `<input>`/`<textarea>`/`<select>` instead of
@@ -76,204 +122,53 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
   // normalization folds the other shorthand forms into `{ children: value }`.
   // `null` is left alone — merging into it would render a suppressed slot back.
   // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-utilities/src/compose/slot.ts#L82-L93
-  const resolveSlotProps = components.slot.resolveShorthand as (value: unknown) => SlotProps | undefined;
+  const resolveSlotProps = components.slot.resolveShorthand as (value: unknown) => PropCarrier | undefined;
 
   const stamp = <Component>(
     component: Component,
     axis: { prop: string; attribute: string; fallback: string; slots?: readonly string[] },
-  ): Component => {
-    const elementType = component as React.ElementType;
+  ): Component => wrapFluent(component, (props: PropCarrier) => {
+    const mark = { [axis.attribute]: props[axis.prop] ?? axis.fallback };
+    const stampedSlotProps = Object.fromEntries(
+      (axis.slots ?? [])
+        .filter(name => props[name] !== null)
+        .map(name => [name, { ...resolveSlotProps(props[name]), ...mark }]),
+    );
 
-    const wrapped = React.forwardRef<unknown, PropCarrier>((props, ref) => {
-      const mark = { [axis.attribute]: props[axis.prop] ?? axis.fallback };
-      const stampedSlotProps = Object.fromEntries(
-        (axis.slots ?? [])
-          .filter(name => props[name] !== null)
-          .map(name => [name, { ...resolveSlotProps(props[name]), ...mark }]),
-      );
-
-      return React.createElement(elementType, { ...props, ...mark, ...stampedSlotProps, ref });
-    });
-
-    wrapped.displayName = (component as { displayName?: string }).displayName;
-
-    return wrapped as Component;
-  };
+    return { ...props, ...mark, ...stampedSlotProps };
+  });
 
   const appearance = (fallback: string, slots?: readonly string[]) =>
     ({ prop: 'appearance', attribute: winuiAppearanceAttribute, fallback, slots });
   const size = (fallback: string, slots?: readonly string[]) =>
     ({ prop: 'size', attribute: winuiSizeAttribute, fallback, slots });
 
-  // A tri-state check box carries its mixed state only as the input's
-  // `indeterminate` property, which Fluent assigns from a layout effect keyed on
-  // that state. The browser clears the property on user activation, and the
-  // effect does not re-run while the state stays mixed, so `:indeterminate` is
-  // gone for good on a box held at mixed while Fluent keeps painting mixed. The
-  // resolved tri-state is stamped instead, and ./controls/choice.css.ts reads
-  // the stamp rather than the property.
-  //
-  // Fluent's own resolution is mirrored here: the prop wins where it is given,
-  // otherwise the last value its onChange reported, seeded from defaultChecked.
-  // https://html.spec.whatwg.org/multipage/input.html#the-input-element:legacy-pre-activation-behavior
-  // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-checkbox/library/src/components/Checkbox/useCheckbox.tsx#L163-L169
-  // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-checkbox/library/src/components/Checkbox/useCheckbox.tsx#L93-L97
-  // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-checkbox/library/src/components/Checkbox/useCheckbox.tsx#L152-L156
-  const stampCheckedState = <Component>(component: Component): Component => {
-    const elementType = component as React.ElementType;
-
-    const wrapped = React.forwardRef<unknown, CheckedCarrier>((props, ref) => {
-      const [uncontrolled, setUncontrolled] = React.useState<CheckedState>(props.defaultChecked ?? false);
-      const checked = props.checked ?? uncontrolled;
-
-      return React.createElement(elementType, {
-        ...props,
-        [winuiCheckedAttribute]: String(checked),
-        onChange: (ev: React.ChangeEvent<HTMLInputElement>, data: { checked: CheckedState }) => {
-          setUncontrolled(data.checked);
-          props.onChange?.(ev, data);
-        },
-        ref,
-      });
-    });
-
-    wrapped.displayName = (component as { displayName?: string }).displayName;
-
-    return wrapped as Component;
-  };
-
   // The table builds the selection cell's check box itself, so the stamp reaches
   // it through that slot, carrying the cell's own tri-state. The slot is left
   // alone where the cell draws a radio or suppresses the box, because a slot
   // object of our making would render a box the cell had not asked for.
   // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-table/library/src/components/TableSelectionCell/useTableSelectionCell.ts#L20-L36
-  const stampSelectionCellCheckedState = <Component>(component: Component): Component => {
-    const elementType = component as React.ElementType;
-
-    const wrapped = React.forwardRef<unknown, PropCarrier>((props, ref) => {
+  const stampSelectionCellCheckedState = <Component>(component: Component): Component =>
+    wrapFluent(component, (props: PropCarrier) => {
       const drawsCheckbox = (props.type ?? 'checkbox') === 'checkbox' && props.checkboxIndicator !== null;
       const checkboxIndicator = {
         ...resolveSlotProps(props.checkboxIndicator),
         [winuiCheckedAttribute]: String(props.checked ?? false),
       };
 
-      return React.createElement(elementType, {
-        ...props,
-        ...(drawsCheckbox ? { checkboxIndicator } : {}),
-        ref,
-      });
+      return { ...props, ...(drawsCheckbox ? { checkboxIndicator } : {}) };
     });
-
-    wrapped.displayName = (component as { displayName?: string }).displayName;
-
-    return wrapped as Component;
-  };
-
-  // Every InfoBar severity is a circle in WinUI, where Fluent reaches for a
-  // diamond and a triangle in two of the four places — a different pair per
-  // control, so the map is stated once and every severity-carrying control is
-  // routed through it.
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L70-L74
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar.xaml#L107-L110
-  // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-message-bar/library/src/components/MessageBar/getIntentIcon.tsx#L7-L19
-  // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-toast/library/src/components/ToastTitle/useToastTitle.ts#L47-L60
-  const severityIcons: Record<SeverityIntent, React.ComponentType> = {
-    error: DismissCircleFilled,
-    warning: ErrorCircleFilled,
-    success: CheckmarkCircleFilled,
-    info: InfoFilled,
-  };
-
-  // The mark is stamped as well as filled in. Only the standard mark is a
-  // silhouette with the symbol as negative space, so only it may take the disc
-  // ./controls/severity.ts paints behind the slot; a caller's own artwork would
-  // wear the disc in front of the card.
-  const severityMark = (intent: SeverityIntent) => ({
-    children: React.createElement(severityIcons[intent]),
-    [winuiSeverityMarkAttribute]: '',
-  });
 
   // The intent is stamped alongside because Fluent settles it in JavaScript.
   // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-message-bar/library/src/components/MessageBar/useMessageBar.ts#L22
-  const stampIntent = <Component>(component: Component): Component => {
-    const elementType = component as React.ElementType;
-    const wrapped = React.forwardRef<unknown, IntentCarrier>((props, ref) => {
-      const intent = props.intent ?? 'info';
-      return React.createElement(elementType, {
-        ...props,
-        [winuiIntentAttribute]: intent,
-        icon: props.icon === undefined ? severityMark(intent) : props.icon,
-        ref,
-      });
-    });
-    wrapped.displayName = (component as { displayName?: string }).displayName;
-    return wrapped as Component;
-  };
-
-  // A toast's intent travels in a context `react-components` does not re-export,
-  // so neither the card nor the title slot can read it where Fluent puts it. It
-  // is put back beside the content at the one point every toast passes through,
-  // the controller the dispatching component holds, and the two slots read it
-  // from there. `info` is the fallback the toast container itself resolves an
-  // absent intent to, and an InfoBar without a severity is Informational too.
-  // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-toast/library/src/components/ToastContainer/useToastContainer.ts#L36
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar.xaml#L15
-  const ToastIntentContext = React.createContext<SeverityIntent>('info');
-
-  const carryToastIntent = (content: React.ReactNode, intent: SeverityIntent | undefined) =>
-    React.createElement(ToastIntentContext.Provider, { value: intent ?? 'info' }, content);
-
-  const carryToastIntentOnDispatch = (controller: FluentComponents['useToastController']) => {
-    const useWinuiToastController: FluentComponents['useToastController'] = toasterId => {
-      const { dispatchToast, updateToast, ...rest } = controller(toasterId);
-
-      return {
-        ...rest,
-        dispatchToast: React.useCallback(
-          (content: React.ReactNode, options?: ToastDispatchOptions) =>
-            dispatchToast(carryToastIntent(content, options?.intent), options),
-          [dispatchToast],
-        ),
-        updateToast: React.useCallback<ToastController['updateToast']>(
-          options => updateToast(
-            options.content === undefined
-              ? options
-              : { ...options, content: carryToastIntent(options.content as React.ReactNode, options.intent) },
-          ),
-          [updateToast],
-        ),
-      };
-    };
-
-    return useWinuiToastController;
-  };
-
-  // WinUI paints the severity on the card and always shows its glyph, so an
-  // explicit media slot is the only thing that displaces the mark.
-  const stampToastIntent = <Component>(component: Component): Component => {
-    const elementType = component as React.ElementType;
-    const wrapped = React.forwardRef<unknown, PropCarrier>((props, ref) => React.createElement(elementType, {
+  const stampIntent = <Component>(component: Component): Component => wrapFluent(component, (props: IntentCarrier) => {
+    const intent = props.intent ?? 'info';
+    return {
       ...props,
-      [winuiIntentAttribute]: React.useContext(ToastIntentContext),
-      ref,
-    }));
-    wrapped.displayName = (component as { displayName?: string }).displayName;
-    return wrapped as Component;
-  };
-
-  const stampToastSeverityIcon = <Component>(component: Component): Component => {
-    const elementType = component as React.ElementType;
-    const wrapped = React.forwardRef<unknown, MediaCarrier>((props, ref) => {
-      const intent = React.useContext(ToastIntentContext);
-      return React.createElement(elementType, {
-        ...props,
-        media: props.media === undefined ? severityMark(intent) : props.media,
-        ref,
-      });
-    });
-    wrapped.displayName = (component as { displayName?: string }).displayName;
-    return wrapped as Component;
-  };
+      [winuiIntentAttribute]: intent,
+      icon: props.icon === undefined ? severityMark(intent) : props.icon,
+    };
+  });
 
   // WinUI ends the header row with the chevron, points it down when collapsed,
   // and states 12 for the glyph where Fluent leads with it, points it right, and
@@ -282,62 +177,18 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L82-L85
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L280-L281
   // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-accordion/library/src/components/AccordionHeader/useAccordionHeader.tsx#L42-L50
-  const winuiChevron = <Component>(component: Component): Component => {
-    const elementType = component as React.ElementType;
-    const wrapped = React.forwardRef<unknown, PropCarrier>((props, ref) => React.createElement(elementType, {
-      expandIconPosition: 'end',
-      ...props,
-      expandIcon: props.expandIcon ?? { children: React.createElement(ChevronDown12Regular) },
-      ref,
-    }));
-    wrapped.displayName = (component as { displayName?: string }).displayName;
-    return wrapped as Component;
-  };
-
-  // WinUI's Expander slides its content region open and never touches its
-  // opacity: all four expand storyboards animate ExpanderContent's Visibility
-  // and TranslateY alone, and the template carries no opacity animation at all.
-  // Fluent's Collapse fades the panel with the height, which takes the card's
-  // own fill and stroke transparent mid-animation, so the fade atom is switched
-  // off.
-  //
-  // The size animation then runs on the pair of durations those storyboards
-  // state, 333ms opening and 167ms closing, read from ./motion so this and the
-  // SettingsExpander cannot drift apart. What travels is the panel's own size
-  // rather than the clipped translate WinUI animates -- the SettingsExpander's
-  // simplification too -- and on that geometry both directions take the opening
-  // KeySpline; nothing sources the substitution for the close, which upstream
-  // states as cubic-bezier(1, 1, 0, 1).
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander.xaml#L33-L90
-  // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-accordion/library/src/components/AccordionPanel/useAccordionPanel.ts#L42-L48
-  // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-motion-components-preview/library/src/components/Collapse/Collapse.ts#L30-L48
-  const winuiPanelMotion = <Component>(component: Component): Component => {
-    const elementType = component as React.ElementType;
-    const wrapped = React.forwardRef<unknown, PropCarrier>((props, ref) => React.createElement(elementType, {
-      collapseMotion: {
-        animateOpacity: false,
-        duration: EXPAND_ANIMATION_MS,
-        exitDuration: COLLAPSE_ANIMATION_MS,
-        easing: CONTROL_FAST_OUT_SLOW_IN_EASING,
-        exitEasing: CONTROL_FAST_OUT_SLOW_IN_EASING,
-      },
-      ...props,
-      ref,
-    }));
-    wrapped.displayName = (component as { displayName?: string }).displayName;
-    return wrapped as Component;
-  };
+  const winuiChevron = <Component>(component: Component): Component => wrapFluent(component, (props: PropCarrier) => ({
+    expandIconPosition: 'end',
+    ...props,
+    expandIcon: props.expandIcon === undefined ? { children: React.createElement(ChevronDown12Regular) } : props.expandIcon,
+  }));
 
   // The map covers Fluent's whole appearance-carrying surface, not just the
   // subset the dashboard renders today, so a later component arrives stamped.
   return {
     ...components,
     AccordionHeader: winuiChevron(components.AccordionHeader),
-    AccordionPanel: winuiPanelMotion(components.AccordionPanel),
     MessageBar: stampIntent(components.MessageBar),
-    Toast: stampToastIntent(components.Toast),
-    ToastTitle: stampToastSeverityIcon(components.ToastTitle),
-    useToastController: carryToastIntentOnDispatch(components.useToastController),
     Button: stamp(components.Button, appearance('secondary', rootIsPrimary)),
     ToggleButton: stamp(components.ToggleButton, appearance('secondary', rootIsPrimary)),
     CompoundButton: stamp(components.CompoundButton, appearance('secondary', rootIsPrimary)),
@@ -355,7 +206,7 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
     Card: stamp(components.Card, appearance('filled', rootIsPrimary)),
     TableRow: stamp(components.TableRow, appearance('none', rootIsPrimary)),
     TabList: stamp(components.TabList, appearance('transparent', rootIsPrimary)),
-    Checkbox: stampCheckedState(components.Checkbox),
+    Checkbox: wrapFluent(components.Checkbox, useCheckedProps),
     TableSelectionCell: stampSelectionCellCheckedState(components.TableSelectionCell),
     Switch: stamp(components.Switch, size('medium', rootAndPrimary)),
   };
