@@ -58,10 +58,10 @@ export const textInputCss = `
    resize grip cannot sit on the focus strip. Our Textarea withholds the resize
    prop, so there is no grip, and the band would otherwise leave bare fill under
    the last line and carry the focus strip 2px further down than the strip of a
-   single-line field standing on the same baseline. WinUI draws multi-line and single-line
-   from the one TextBox template: one ScrollViewer filling BorderElement under a
-   uniform TextControlThemePadding, no grip, and a focus underline that is the
-   border's own bottom edge thickening.
+   single-line field standing on the same baseline. WinUI draws multi-line and
+   single-line from the one TextBox template: one ScrollViewer filling
+   BorderElement under a uniform TextControlThemePadding, no grip, and a focus
+   underline that is the border's own bottom edge thickening.
    https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-textarea/library/src/components/Textarea/useTextareaStyles.styles.ts#L20-L22
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L194
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L296-L303
