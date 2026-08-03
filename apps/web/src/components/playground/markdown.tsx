@@ -12,7 +12,7 @@ import 'prismjs/components/prism-toml';
 import 'prismjs/components/prism-typescript';
 
 import { fluentComponents } from '../../fluent';
-import { prismTokenStyles } from '../ui/prism-token-styles';
+import { grammarFor, prismTokenStyles } from '../ui/prism';
 import { ScrollArea } from '../ui/scroll-area';
 
 const { makeStyles, tokens } = fluentComponents;
@@ -170,10 +170,7 @@ function MarkdownCode({ children, className, streaming, ...props }: MarkdownCode
 
   const language = match[1]!;
   const code = String(children).replace(/\n$/, '');
-  const grammar = Prism.languages[language] ?? Prism.languages.plain;
-  const highlighted = !streaming && grammar
-    ? Prism.highlight(code, grammar, language)
-    : null;
+  const highlighted = streaming ? null : Prism.highlight(code, grammarFor(language), language);
 
   return (
     <code

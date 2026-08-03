@@ -21,7 +21,7 @@ import { useDangerTextClass } from '../ui/danger';
 import { EmptyStateLine } from '../ui/empty-state';
 import { HttpMethodBadge, HttpStatusBadge } from '../ui/http-badge';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
-import { prismTokenStyles } from '../ui/prism-token-styles';
+import { grammarFor, prismTokenStyles } from '../ui/prism';
 import { ScrollArea } from '../ui/scroll-area';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-copy-to-clipboard';
@@ -109,10 +109,10 @@ function CopyButton({ text }: { text: string }) {
 
 function CodeView({ body }: { body: RenderedBody }) {
   const s = useStyles();
-  const highlighted = useMemo(() => {
-    const grammar = body.isJson ? Prism.languages.json : Prism.languages.plain;
-    return grammar ? Prism.highlight(body.text, grammar, body.isJson ? 'json' : 'plain') : escapeHtml(body.text);
-  }, [body]);
+  const highlighted = useMemo(
+    () => Prism.highlight(body.text, grammarFor(body.isJson ? 'json' : 'plain'), body.isJson ? 'json' : 'plain'),
+    [body],
+  );
   return <pre className={mergeClasses(s.code, `language-${body.isJson ? 'json' : 'plain'}`)}><code className={s.highlightedCode} dangerouslySetInnerHTML={{ __html: highlighted }} /></pre>;
 }
 
@@ -283,6 +283,3 @@ export function RequestDetailPanel({ collected: loadedCollected, error: loadedEr
   );
 }
 
-const escapeHtml = (value: string): string => {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-};

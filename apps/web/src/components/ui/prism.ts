@@ -1,6 +1,16 @@
+import Prism from 'prismjs';
+
 import { fluentComponents } from '../../fluent';
 
 const { tokens } = fluentComponents;
+
+/**
+ * Prism registers a grammar as a module side effect, so the module naming a
+ * language is the one that imports it. An unregistered name resolves to the
+ * empty plain grammar, which stringifies to escaped source rather than
+ * throwing.
+ */
+export const grammarFor = (language: string) => Prism.languages[language] ?? Prism.languages.plain;
 
 export const prismTokenStyles = {
   '& .token.comment, & .token.prolog, & .token.doctype, & .token.cdata': {
