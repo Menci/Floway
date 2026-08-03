@@ -6,15 +6,14 @@ import { useTranslation } from 'react-i18next';
 import type { RuntimeInfo, UpstreamEditorValues } from './data';
 import { modelPrefixIsValid, publicModelId } from './data';
 import { ApiPathsSection, ProviderConfigSection } from './provider-config';
+import { EditorSection } from './section';
 import type { ProxyRecord, UpstreamRecord } from '../../api/types';
 import type { UpstreamModelConfig } from '@floway-dev/provider';
 import { fluentComponents } from '../../fluent';
-import { useDangerTextClass } from '../ui/danger';
 import { Combobox, Dropdown, Input } from '../ui/fluent-form-controls';
 import { PANEL_INSET_CLASS } from '../ui/panel';
 import { ReorderButtons } from '../ui/reorder-buttons';
 import { ScrollArea } from '../ui/scroll-area';
-import { SectionHeader } from '../ui/section-header';
 import { StatusBadge } from '../ui/status-badge';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { UpstreamColorPicker } from '../upstreams/color-picker';
@@ -121,16 +120,6 @@ function UpstreamColorEditor({ kind, onValidityChange }: { kind: UpstreamRecord[
       onValidityChange={onValidityChange}
     />
   </div>} />;
-}
-
-// The composite editors here -- colour popover, provider credential flow -- are not one control a Fluent `Field` could speak for.
-function EditorSection({ children, description, error, inline = false, title }: { children: React.ReactNode; description?: string; error?: string; inline?: boolean; title: string }) {
-  const dangerText = useDangerTextClass();
-  return <section className={inline ? 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4' : 'grid gap-4'}>
-    <SectionHeader description={description} level={2} title={title} />
-    {children}
-    {error && <Text className={`${dangerText} ${inline ? 'col-span-2' : ''}`} role="alert" size={200}>{error}</Text>}
-  </section>;
 }
 
 // The sorted union of every model id this upstream can disable, which

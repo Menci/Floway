@@ -10,11 +10,12 @@ import { useMonoLabelClass } from './mono-label';
 import { PricingEditor } from './pricing-editor';
 import { pricingEntryDraftsFor, pricingIsValid } from './pricing-model';
 import { RerankTargetEditor } from './rerank-target-editor';
+import { EditorSection } from './section';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { ChoiceGroup } from '../ui/choice-group';
 import { Checkbox, Combobox, Dropdown, Input, Switch } from '../ui/fluent-form-controls';
-import { CHECKBOX_LIST_CLASS, PANE_GAP_CLASS, SECTION_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
+import { CHECKBOX_LIST_CLASS, PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { SectionHeader } from '../ui/section-header';
 import { modelsField, type UpstreamChatModelConfig, type UpstreamModelConfig } from '@floway-dev/provider';
 
@@ -111,7 +112,7 @@ export function ModelDetail({
       /> : <>
         {validationError && <MessageBar intent="error"><MessageBarBody>{validationError}</MessageBarBody></MessageBar>}
 
-        <ModelEditorSection title={t('dashboard.upstreamEditor.models.identity')}>
+        <EditorSection level={3} title={t('dashboard.upstreamEditor.models.identity')}>
           {/* This sits beside a 380px sidebar, so the available width and the
               width a media query can see are two different numbers. */}
           <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4">
@@ -132,9 +133,9 @@ export function ModelDetail({
               <Input className="!w-full font-mono" placeholder={row.config.upstreamModelId || t('dashboard.upstreamEditor.models.publicIdPlaceholder')} readOnly={fieldsReadOnly} value={row.config.publicModelId ?? ''} onChange={(_, data) => patch({ publicModelId: data.value || undefined })} />
             </Field>
           </div>
-        </ModelEditorSection>
+        </EditorSection>
 
-        {ENDPOINT_CHOICE_KINDS.has(row.config.kind) && <ModelEditorSection title={t('dashboard.upstreamEditor.models.endpoints')}>
+        {ENDPOINT_CHOICE_KINDS.has(row.config.kind) && <EditorSection level={3} title={t('dashboard.upstreamEditor.models.endpoints')}>
           <div className={`${TWO_COLUMN_FORM_CLASS} ${CHECKBOX_LIST_CLASS}`}>
             {modelEndpointOptions(row.config.kind).map(([key, label]) => <Checkbox
               checked={key in row.config.endpoints}
@@ -148,13 +149,13 @@ export function ModelDetail({
               }}
             />)}
           </div>
-        </ModelEditorSection>}
+        </EditorSection>}
 
-        {row.config.kind === 'rerank' && row.config.rerankTarget && <ModelEditorSection title={t('dashboard.upstreamEditor.models.rerankTarget')}>
+        {row.config.kind === 'rerank' && row.config.rerankTarget && <EditorSection level={3} title={t('dashboard.upstreamEditor.models.rerankTarget')}>
           <RerankTargetEditor readOnly={fieldsReadOnly} value={row.config.rerankTarget} onChange={rerankTarget => patch({ rerankTarget })} />
-        </ModelEditorSection>}
+        </EditorSection>}
 
-        {row.config.kind !== 'image' && <ModelEditorSection title={t('dashboard.upstreamEditor.models.capabilities')}>
+        {row.config.kind !== 'image' && <EditorSection level={3} title={t('dashboard.upstreamEditor.models.capabilities')}>
           <div className="grid grid-cols-3 gap-4 max-[760px]:grid-cols-1">
             <NumberField label={t('dashboard.upstreamEditor.models.contextWindow')} placeholder="e.g. 1050000" readOnly={fieldsReadOnly} value={row.config.limits?.max_context_window_tokens} onChange={raw => updateLimit('max_context_window_tokens', raw)} />
             <NumberField label={t('dashboard.upstreamEditor.models.promptTokens')} placeholder="e.g. 922000" readOnly={fieldsReadOnly} value={row.config.limits?.max_prompt_tokens} onChange={raw => updateLimit('max_prompt_tokens', raw)} />
@@ -182,16 +183,16 @@ export function ModelDetail({
               </div>}
             </div>
           </>}
-        </ModelEditorSection>}
+        </EditorSection>}
 
-        <ModelEditorSection title={t('dashboard.upstreamEditor.models.pricing')} description={t('dashboard.upstreamEditor.models.pricingHint')}>
+        <EditorSection level={3} title={t('dashboard.upstreamEditor.models.pricing')} description={t('dashboard.upstreamEditor.models.pricingHint')}>
           <PricingEditor
             readOnly={fieldsReadOnly}
             kind={row.config.kind}
             onChange={pricing => patch({ pricing })}
             value={row.config.pricing}
           />
-        </ModelEditorSection>
+        </EditorSection>
 
         {!fieldsReadOnly && <Button icon={<DeleteRegular />} onClick={onDelete}>
           {t('dashboard.upstreamEditor.models.delete')}
@@ -199,14 +200,6 @@ export function ModelDetail({
       </>}
     </div>
   );
-}
-
-function ModelEditorSection({ children, description, title }: { children: React.ReactNode; description?: string; title: string }) {
-  const titleId = useId();
-  return <section aria-labelledby={titleId} className={SECTION_STACK_CLASS} role="group">
-    <SectionHeader description={description} level={3} title={title} titleId={titleId} />
-    {children}
-  </section>;
 }
 
 function NumberField({ label, onChange, placeholder, readOnly, value }: { label: string; onChange: (raw: string) => void; placeholder: string; readOnly: boolean; value?: number }) {

@@ -1,10 +1,9 @@
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { EditorSection } from './section';
 import { fluentComponents } from '../../fluent';
 import { Dropdown } from '../ui/fluent-form-controls';
-import { SECTION_STACK_CLASS } from '../ui/layout';
-import { SectionHeader } from '../ui/section-header';
 import { OPTIONAL_FLAG_IDS, type FlagDefaults, type FlagId, type FlagOverrides } from '@floway-dev/provider/flags';
 
 const { Option, Text } = fluentComponents;
@@ -104,12 +103,11 @@ export function FeatureFlagsEditor({
 
   return <div className="grid gap-5 min-w-0">
     {groupedFlags.map(group => (
-      <section className={SECTION_STACK_CLASS} key={group.id}>
-        <SectionHeader level={3} title={t(`dashboard.upstreamEditor.flags.groups.${group.id}`)} />
+      <EditorSection key={group.id} level={3} title={t(`dashboard.upstreamEditor.flags.groups.${group.id}`)}>
         <div>
           {group.flags.map(renderFlag)}
         </div>
-      </section>
+      </EditorSection>
     ))}
   </div>;
 }
