@@ -39,6 +39,9 @@ export function RotateKeyDialog({
   const [error, setError] = useState<string | null>(null);
   const snapName = apiKey.name;
   const rotate = async (values: KeySourceValues) => {
+    // disabledFocusable leaves the submit button submittable while the rotation
+    // is in flight, so this guard is what makes a second press inert.
+    if (saving) return;
     setSaving(true);
     setError(null);
     try {
