@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { resources } from '../../src/i18n/resources';
+import en from '../../src/i18n/locales/en';
 import { BILLING_METRICS, MODEL_KINDS } from '@floway-dev/protocols/common';
 import { OPTIONAL_FLAG_IDS } from '@floway-dev/provider/flags';
 import { ALL_PROVIDER_KINDS } from '@floway-dev/provider/model';
@@ -43,7 +43,7 @@ const PLURAL_SUFFIX = /_(zero|one|two|few|many|other)$/;
 // A template key (`t(`a.b.${x}`)`) resolves from a value this test cannot know
 // and stays out of scope; the resources suite still guarantees both locales
 // agree on whatever exists.
-const NAMESPACES = Object.keys(resources.en.translation);
+const NAMESPACES = Object.keys(en.translation);
 const LITERAL_KEY = new RegExp(`['"\`]((?:${NAMESPACES.join('|')})\\.[a-zA-Z][a-zA-Z0-9_.]*)['"\`]`, 'g');
 
 // The reverse direction needs a wider net than `t(...)`. A key reaches the
@@ -88,7 +88,7 @@ const withoutComments = (source: string) =>
 const KEY_STEM = new RegExp(`^(?:${NAMESPACES.join('|')})\\.`);
 
 describe('translation key usage', () => {
-  const defined = new Set(leafKeys(resources.en.translation));
+  const defined = new Set(leafKeys(en.translation));
   const pluralBases = new Set([...defined].filter(key => PLURAL_SUFFIX.test(key)).map(key => key.replace(PLURAL_SUFFIX, '')));
   const resolves = (key: string) => defined.has(key) || pluralBases.has(key);
 

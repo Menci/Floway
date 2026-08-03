@@ -1,3 +1,5 @@
+import { shellLoadingLabel } from '../shell';
+
 const en = {
   translation: {
     app: {
@@ -5,7 +7,7 @@ const en = {
       documentTitle: '{{title}} | Floway',
     },
     common: {
-      loading: 'Loading…',
+      loading: shellLoadingLabel,
       on: 'On',
       off: 'Off',
       cancel: 'Cancel',
