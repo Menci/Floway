@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { hexToRgb } from '../../src/lib/color';
 import { winuiTokenCss } from '../../src/winui/tokens';
 
 // The theme dictionaries write colour as AARRGGBB and CSS reads eight digits as
@@ -23,5 +24,39 @@ describe('winui token channel order', () => {
       .map(([, name]) => name)
       .filter(name => !name.includes('transparent') && !deliberatelyInvisible.has(name));
     expect(invisible).toEqual([]);
+  });
+
+  // A token whose alpha is stated separately publishes its channels beside its
+  // hex, and the two spellings are written by hand. Nothing else reads both, so
+  // an accent retuned in the hex alone would paint two different blues on one
+  // page with no other check firing.
+  it('gives every channel companion the channels of the token it sits beside', () => {
+    // Declarations for a token and its companion always share a `:root` body,
+    // including the one nested in the dark media query.
+    const bodies = [...winuiTokenCss.matchAll(/:root\s*\{([^}]*)\}/g)].map(([, body]) => body);
+    expect(bodies.length).toBeGreaterThan(0);
+
+    const mismatched: string[] = [];
+    for (const body of bodies) {
+      const declared = new Map([...body.matchAll(/(--winui-[a-z0-9-]+):\s*([^;]+);/g)]
+        .map(([, name, value]) => [name, value.trim()] as const));
+      for (const [name, value] of declared) {
+        if (!name.endsWith('-rgb')) continue;
+        const source = name.slice(0, -'-rgb'.length);
+        const hex = declared.get(source);
+        if (hex === undefined) { mismatched.push(`${name} has no ${source} beside it`); continue; }
+        // An indirection is only sound if the companion follows the same token
+        // the source does.
+        const indirect = /^var\((--winui-[a-z0-9-]+)\)$/.exec(value);
+        if (indirect) {
+          const expected = `var(${indirect[1]!.slice(0, -'-rgb'.length)})`;
+          if (!indirect[1]!.endsWith('-rgb') || hex !== expected) mismatched.push(`${name} follows ${value} while ${source} follows ${hex}`);
+          continue;
+        }
+        const channels = value.split(',').map(part => Number(part.trim()));
+        if (String(channels) !== String(hexToRgb(hex))) mismatched.push(`${name} is ${value} but ${source} is ${hex}`);
+      }
+    }
+    expect(mismatched).toEqual([]);
   });
 });
