@@ -341,6 +341,7 @@ const en = {
           select: 'Select a key',
           selectNamed: 'Select {{name}}',
           never: 'Never',
+          usedOn: 'Used on {{date}}',
         },
         source: {
           generate: 'Randomly generate',

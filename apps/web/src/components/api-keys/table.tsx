@@ -106,8 +106,10 @@ export function KeysTable({
         change of presentation and not of what is being presented. */}
     {sort.sort(getRows()).map(({ item: key }) => {
       const copyTag = `key-${key.id}`;
+      // No column heads the list, so a date too far back for a relative phrase
+      // has to name itself: beside the created date, two bare dates read alike.
       const lastUsed = key.last_used_at
-        ? relativeTime(key.last_used_at, locale, { now }) ?? shortDate(key.last_used_at, locale)
+        ? relativeTime(key.last_used_at, locale, { now }) ?? t('dashboard.apiKeys.table.usedOn', { date: shortDate(key.last_used_at, locale) })
         : t('dashboard.apiKeys.table.never');
       return <ListItem checkmark={null} className={s.mobileItem} disabledSelection={disabled} key={key.id} value={key.id}>
         <div className="flex items-start gap-2 min-w-0 w-full">

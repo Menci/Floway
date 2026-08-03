@@ -327,6 +327,7 @@ const zhHansCN = {
           select: '选择密钥',
           selectNamed: '选择 {{name}}',
           never: '从未使用',
+          usedOn: '使用于 {{date}}',
         },
         source: {
           generate: '随机生成',

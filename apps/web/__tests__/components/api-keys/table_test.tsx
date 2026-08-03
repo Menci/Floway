@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ApiKey } from '../../../src/api/types';
 import { KeysTable } from '../../../src/components/api-keys/table';
 import { i18n } from '../../../src/i18n';
+import { localeForLanguage } from '../../../src/i18n/languages';
+import { shortDate } from '../../../src/lib/format-time';
 import { stubMatchMedia } from '../../match-media-stub';
 import { renderInApp } from '../../render';
 
@@ -84,6 +86,29 @@ describe('API keys table selection', () => {
       await act(async () => { view.getByText('Second key').click(); });
 
       expect(onSelect).toHaveBeenCalledWith('second');
+    });
+
+    // The wide table heads the cell with Last Used; the list has no header, so
+    // a date old enough to lose its relative phrase would sit beside the
+    // created date as a second bare date.
+    it('names what a date too old for a relative phrase is the date of', () => {
+      const view = renderInApp(
+        <KeysTable
+          clipboard={clipboard}
+          disabled={false}
+          keys={[{ ...keys[0]!, last_used_at: '2020-02-15T00:00:00.000Z' }]}
+          onDelete={vi.fn()}
+          onEdit={vi.fn()}
+          onRotate={vi.fn()}
+          onSelect={vi.fn()}
+          selectedKeyId=""
+          upstreams={[]}
+        />,
+      );
+
+      expect(view.getByText(i18n.t('dashboard.apiKeys.table.usedOn', {
+        date: shortDate('2020-02-15T00:00:00.000Z', localeForLanguage(i18n.language)),
+      }))).toBeTruthy();
     });
   });
 });
