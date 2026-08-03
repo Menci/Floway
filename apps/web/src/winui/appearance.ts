@@ -1,6 +1,7 @@
 // Fluent v9 resolves `appearance` into hashed Griffel atoms and keeps it off the
 // DOM, so no CSS selector can name a variant. These wrappers put the resolved
-// value back as `data-winui-*` for `winui/controls/*.css.ts` to address.
+// value back as `data-winui-*` for `winui/controls/*.css.ts` to address, and
+// swap the artwork Fluent picks where WinUI picks another.
 import { CheckmarkCircleFilled, ChevronDown12Regular, DismissCircleFilled, ErrorCircleFilled, InfoFilled } from '@fluentui/react-icons';
 import * as React from 'react';
 
@@ -15,8 +16,11 @@ export const winuiCheckedAttribute = 'data-winui-checked';
 
 type SlotProps = Record<string, unknown>;
 type PropCarrier = Record<string, unknown>;
-type MessageBarIntent = 'error' | 'warning' | 'success' | 'info';
-interface IntentCarrier { intent?: MessageBarIntent; icon?: React.ReactNode }
+type SeverityIntent = 'error' | 'warning' | 'success' | 'info';
+interface IntentCarrier { intent?: SeverityIntent; icon?: React.ReactNode }
+interface MediaCarrier { media?: React.ReactNode }
+type ToastController = ReturnType<FluentComponents['useToastController']>;
+type ToastDispatchOptions = NonNullable<Parameters<ToastController['dispatchToast']>[1]>;
 type CheckedState = boolean | 'mixed';
 interface CheckedCarrier {
   checked?: CheckedState;
@@ -165,18 +169,22 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
   };
 
   // Every InfoBar severity is a circle in WinUI, where Fluent reaches for a
-  // diamond for `error` and a triangle for `warning`. The intent is stamped
-  // alongside because Fluent settles it in JavaScript.
+  // diamond and a triangle in two of the four places — a different pair per
+  // control, so the map is stated once and every severity-carrying control is
+  // routed through it.
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L70-L74
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar.xaml#L107-L110
   // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-message-bar/library/src/components/MessageBar/getIntentIcon.tsx#L7-L19
-  // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-message-bar/library/src/components/MessageBar/useMessageBar.ts#L22
-  const severityIcons: Record<MessageBarIntent, React.ComponentType> = {
+  // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-toast/library/src/components/ToastTitle/useToastTitle.ts#L47-L60
+  const severityIcons: Record<SeverityIntent, React.ComponentType> = {
     error: DismissCircleFilled,
     warning: ErrorCircleFilled,
     success: CheckmarkCircleFilled,
     info: InfoFilled,
   };
+
+  // The intent is stamped alongside because Fluent settles it in JavaScript.
+  // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-message-bar/library/src/components/MessageBar/useMessageBar.ts#L22
   const stampIntent = <Component>(component: Component): Component => {
     const elementType = component as React.ElementType;
     const wrapped = React.forwardRef<unknown, IntentCarrier>((props, ref) => {
@@ -185,6 +193,71 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
         ...props,
         [winuiIntentAttribute]: intent,
         icon: props.icon === undefined ? React.createElement(severityIcons[intent]) : props.icon,
+        ref,
+      });
+    });
+    wrapped.displayName = (component as { displayName?: string }).displayName;
+    return wrapped as Component;
+  };
+
+  // A toast's intent travels in a context `react-components` does not re-export,
+  // so neither the card nor the title slot can read it where Fluent puts it. It
+  // is put back beside the content at the one point every toast passes through,
+  // the controller the dispatching component holds, and the two slots read it
+  // from there. `info` is the fallback the toast container itself resolves an
+  // absent intent to, and an InfoBar without a severity is Informational too.
+  // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-toast/library/src/components/ToastContainer/useToastContainer.ts#L36
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar.xaml#L15
+  const ToastIntentContext = React.createContext<SeverityIntent>('info');
+
+  const carryToastIntent = (content: React.ReactNode, intent: SeverityIntent | undefined) =>
+    React.createElement(ToastIntentContext.Provider, { value: intent ?? 'info' }, content);
+
+  const carryToastIntentOnDispatch = (controller: FluentComponents['useToastController']) => {
+    const useWinuiToastController: FluentComponents['useToastController'] = toasterId => {
+      const { dispatchToast, updateToast, ...rest } = controller(toasterId);
+
+      return {
+        ...rest,
+        dispatchToast: React.useCallback(
+          (content: React.ReactNode, options?: ToastDispatchOptions) =>
+            dispatchToast(carryToastIntent(content, options?.intent), options),
+          [dispatchToast],
+        ),
+        updateToast: React.useCallback<ToastController['updateToast']>(
+          options => updateToast(
+            options.content === undefined
+              ? options
+              : { ...options, content: carryToastIntent(options.content as React.ReactNode, options.intent) },
+          ),
+          [updateToast],
+        ),
+      };
+    };
+
+    return useWinuiToastController;
+  };
+
+  // WinUI paints the severity on the card and always shows its glyph, so an
+  // explicit media slot is the only thing that displaces the mark.
+  const stampToastIntent = <Component>(component: Component): Component => {
+    const elementType = component as React.ElementType;
+    const wrapped = React.forwardRef<unknown, PropCarrier>((props, ref) => React.createElement(elementType, {
+      ...props,
+      [winuiIntentAttribute]: React.useContext(ToastIntentContext),
+      ref,
+    }));
+    wrapped.displayName = (component as { displayName?: string }).displayName;
+    return wrapped as Component;
+  };
+
+  const stampToastSeverityIcon = <Component>(component: Component): Component => {
+    const elementType = component as React.ElementType;
+    const wrapped = React.forwardRef<unknown, MediaCarrier>((props, ref) => {
+      const intent = React.useContext(ToastIntentContext);
+      return React.createElement(elementType, {
+        ...props,
+        media: props.media === undefined ? React.createElement(severityIcons[intent]) : props.media,
         ref,
       });
     });
@@ -252,6 +325,9 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
     AccordionHeader: winuiChevron(components.AccordionHeader),
     AccordionPanel: winuiPanelMotion(components.AccordionPanel),
     MessageBar: stampIntent(components.MessageBar),
+    Toast: stampToastIntent(components.Toast),
+    ToastTitle: stampToastSeverityIcon(components.ToastTitle),
+    useToastController: carryToastIntentOnDispatch(components.useToastController),
     Button: stamp(components.Button, appearance('secondary', rootIsPrimary)),
     ToggleButton: stamp(components.ToggleButton, appearance('secondary', rootIsPrimary)),
     CompoundButton: stamp(components.CompoundButton, appearance('secondary', rootIsPrimary)),

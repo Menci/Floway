@@ -14,6 +14,8 @@
 // structurally, through the `bottomReflowSpacer` slot Fluent renders only there;
 // the four severities are reached through `data-winui-intent`, which the runtime
 // chokepoint stamps — the same chokepoint that swaps in the filled glyph.
+import { severityCss } from './severity';
+
 export const messageBarCss = `
 /* InfoBarMinHeight, and InfoBarContentRootPadding — the thickness 16,0,0,0, so
    leading only. The stroke is restated because InfoBar takes InfoBarBorderBrush
@@ -33,70 +35,10 @@ export const messageBarCss = `
   min-width: 0;
 }
 
-/* InfoBarIconMargin, the thickness 0,16,14,16, whose block terms pin the glyph
-   to the first line of the message rather than to the middle of the bar — hence
-   align-self. 16 + 16 + 16 is InfoBarMinHeight, so the two placements differ
-   exactly when the body wraps, the case the margin exists for.
-
-   WinUI stacks a severity-coloured disc under a symbol painted in
-   TextFillColorInverse; a Fluent *Filled circle glyph is that silhouette
-   inverted, one path with the symbol as negative space, so the disc behind it
-   carries the inverse layer. All four are an r=8 circle in a 20 unit box — 80%
-   of the closest side on a square 1em icon, with the stops just inside that
-   edge so no ring escapes from under the glyph.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar.xaml#L107-L109
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L13-L16
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L76
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L77 */
-.fui-MessageBar__icon.fui-MessageBar__icon {
-  align-self: start;
-  font-size: 16px;
-  margin-block: 16px;
-  margin-inline-end: 14px;
-  background: radial-gradient(
-    closest-side,
-    var(--winui-text-fill-inverse) 79%,
-    transparent 80%
-  );
-}
-
-/* Each severity maps onto one SystemFillColor family: the bar takes its
-   Background step, the glyph the plain one. Fluent instead tints the brand ramp
-   and strokes the bar to match; the stroke stays the card stroke all four
-   share.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L5-L12
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L20 */
-.fui-MessageBar.fui-MessageBar[data-winui-intent='error'] {
-  background-color: var(--winui-system-fill-critical-background);
-}
-
-.fui-MessageBar[data-winui-intent='error'] .fui-MessageBar__icon.fui-MessageBar__icon {
-  color: var(--winui-system-fill-critical);
-}
-
-.fui-MessageBar.fui-MessageBar[data-winui-intent='warning'] {
-  background-color: var(--winui-system-fill-caution-background);
-}
-
-.fui-MessageBar[data-winui-intent='warning'] .fui-MessageBar__icon.fui-MessageBar__icon {
-  color: var(--winui-system-fill-caution);
-}
-
-.fui-MessageBar.fui-MessageBar[data-winui-intent='success'] {
-  background-color: var(--winui-system-fill-success-background);
-}
-
-.fui-MessageBar[data-winui-intent='success'] .fui-MessageBar__icon.fui-MessageBar__icon {
-  color: var(--winui-system-fill-success);
-}
-
-.fui-MessageBar.fui-MessageBar[data-winui-intent='info'] {
-  background-color: var(--winui-system-fill-attention-background);
-}
-
-.fui-MessageBar[data-winui-intent='info'] .fui-MessageBar__icon.fui-MessageBar__icon {
-  color: var(--winui-system-fill-attention);
-}
+/* Fluent tints the brand ramp for its intents and strokes the bar to match; the
+   InfoBar idiom replaces both, and the stroke stays the card stroke all four
+   severities share. */
+${severityCss({ card: '.fui-MessageBar', icon: '.fui-MessageBar__icon' })}
 
 /* InfoBarPanelMargin, the thickness 0,0,16,0.
 
@@ -202,30 +144,5 @@ export const messageBarCss = `
   display: grid;
   gap: 4px;
   white-space: normal;
-}
-
-/* Forced colours. WinUI's HighContrast dictionary drops the severity fill and
-   doubles the stroke; the user agent's forced adjustment already lands the
-   colours, leaving only the thickness to state. It cannot reach the badge:
-   background-image is not among the forced properties, so the gradient carrying
-   HighlightText would go on painting the inverse text fill of the underlying
-   scheme. Opting the badge out is what lets both layers be named. A media query
-   adds no specificity, so the selector matches the severity rules it overrides.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L42-L60
-   https://drafts.csswg.org/css-color-adjust/#forced-colors-properties */
-@media (forced-colors: active) {
-  .fui-MessageBar.fui-MessageBar {
-    border-width: 2px;
-  }
-
-  .fui-MessageBar[data-winui-intent] .fui-MessageBar__icon.fui-MessageBar__icon {
-    forced-color-adjust: none;
-    color: Highlight;
-    background: radial-gradient(
-      closest-side,
-      HighlightText 79%,
-      transparent 80%
-    );
-  }
 }
 `;

@@ -30,12 +30,9 @@ export function OutcomeToastProvider({ children }: PropsWithChildren) {
 
   // Clicking dismisses: Fluent's Toast ships no close button, and waiting out the timeout is the only other exit.
   //
-  // A settled toast leaves the media slot unset and carries an intent, which is what makes Fluent fill the slot
-  // with its own filled severity glyph. We keep that glyph: a surface that dismisses itself in seconds should
-  // carry its state without being read. WinUI ships no toast, and of its two nearest surfaces only InfoBar
-  // carries a severity -- it paints one glyph per severity, and this follows that reading; the glyph already
-  // renders in WinUI's SystemFill severity colours, which the toast layer routes onto Fluent's status ramp.
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L70-L74
+  // A settled toast leaves the media slot unset and carries an intent, which is what makes the appearance layer
+  // fill the slot with the InfoBar severity mark. We keep that mark: a surface that dismisses itself in seconds
+  // should carry its state without being read.
   const toastFor = useCallback((toastId: string, message: string, pending: boolean) => (
     <Toast className="cursor-pointer" onClick={() => dismissToast(toastId)}>
       <ToastTitle media={pending ? <Spinner size="tiny" /> : undefined}>{message}</ToastTitle>
