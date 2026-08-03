@@ -20,10 +20,8 @@
 // https://www.w3.org/TR/css-backgrounds-3/#propdef-background-image
 // https://www.w3.org/TR/css-backgrounds-3/#propdef-background-color
 //
-// Balanced's own entry writes the wash below the gradient, where an opaque fill
-// hides it and hover stays pixel-identical to rest; Creative and Precise write
-// it first, and that is the order taken here.
-// https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/dark.scss#L268-L300
+// Which layer the wash sits in is decided where the two are stacked, in
+// ./composer.tsx.
 const wash = (alpha: number) => `rgba(0, 0, 0, ${alpha})`;
 
 export const bingAccentGradient = 'linear-gradient(130deg, #2870EA 20%, #1B4AEF 77.5%)';

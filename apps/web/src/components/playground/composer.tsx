@@ -176,11 +176,10 @@ const useStyles = makeStyles({
   // A pair of pseudo-elements filling a clipping button, as the original has
   // it: the fill scales down inside the clip while the label holds still.
   //
-  // The original states the whole fill as one uninterpolatable `background` and
-  // lets the pointer step. It is split here -- `::before` holds the gradient,
-  // the same in every state, and `::after` the black wash, whose alpha is all
-  // hover and active change. Both take the press scale, so the fill stays one
-  // shape while it runs.
+  // The original states the whole fill as one `background`. It is split here --
+  // `::before` holds the gradient, the same in every state, and `::after` the
+  // black wash, whose alpha is all hover and active change. Both take the press
+  // scale, so the fill stays one shape while it runs.
   newTopicButton: {
     position: 'relative',
     height: bingComposeButtonSize,
