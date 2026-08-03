@@ -249,12 +249,15 @@ export default defineConfig({
         // scripts/check-web-monaco-lazy.ts and
         // scripts/check-web-gallery-dev-only.ts derive chunk membership from
         // each map's module list, and fall back to a far weaker scan of the
-        // emitted text without one. They are not deployed: the
-        // `.assetsignore` plugin above keeps them out of the Workers Static
-        // Assets upload. Nothing in the browser would consume them anyway --
-        // the ErrorBoundary in src/root.tsx renders `error.stack` as text, and
-        // a source map never reaches that string.
-        sourcemap: true,
+        // emitted text without one. Both find a map by chunk filename, so
+        // `hidden` serves them while leaving the chunks without the trailing
+        // `sourceMappingURL` comment -- the maps are not deployed (see the
+        // `.assetsignore` plugin above), and a comment naming a file the
+        // upload does not carry is a 404 in anyone's devtools. Nothing in the
+        // browser would consume them anyway: the ErrorBoundary in
+        // src/root.tsx renders `error.stack` as text, and a source map never
+        // reaches that string.
+        sourcemap: 'hidden',
         rolldownOptions: {
           output: {
             codeSplitting: {
