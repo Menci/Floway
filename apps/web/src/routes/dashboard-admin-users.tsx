@@ -5,6 +5,7 @@ import type { Route } from './+types/dashboard-admin-users';
 import { useDashboardOutletContext } from './dashboard';
 import { requireDashboardAdmin } from './guards';
 import { api, callApi } from '../api/client';
+import { mapResult, mergeResults } from '../api/partial-results';
 import type { ControlPlaneModel, ControlPlaneUser, UpstreamOption } from '../api/types';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
@@ -37,12 +38,12 @@ const loadPageData = async (
     callApi(() => api.api['upstream-options'].$get(undefined, { init: { signal } })),
     callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } }, { init: { signal } })),
   ]);
-  return {
-    users: usersResult.data ?? current.users,
-    upstreams: upstreamsResult.data ?? current.upstreams,
-    models: modelsResult.data?.data ?? current.models,
-    error: usersResult.error?.message ?? upstreamsResult.error?.message ?? modelsResult.error?.message ?? null,
-  };
+  const { values, error } = mergeResults(current, {
+    users: usersResult,
+    upstreams: upstreamsResult,
+    models: mapResult(modelsResult, body => body.data),
+  });
+  return { ...values, error };
 };
 
 const unloadedPageData: Pick<LoaderData, 'users' | 'upstreams' | 'models'> = { users: null, upstreams: null, models: null };

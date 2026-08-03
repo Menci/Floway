@@ -3,46 +3,10 @@ import { describe, expect, it } from 'vitest';
 import type { AliasTarget, ModelAlias } from '@floway-dev/protocols/common';
 import { computeAnnouncedMetadata } from '../../../src/components/model-alias/announced-metadata';
 import { aliasBody, aliasDefaults, metadataForKind } from '../../../src/components/model-alias/form-data';
-import { mergeModelAliasesPageData } from '../../../src/components/model-alias/page-data';
 import { computeAliasWarnings, computeModelWarning, computeRuleWarnings } from '../../../src/components/model-alias/warnings';
 import { indexCatalog } from '../../../src/components/models/catalog-index';
 import { catalogModel } from '../../api/model-fixture';
 const target = (id: string, rules: AliasTarget['rules'] = {}): AliasTarget => ({ target_model_id: id, rules });
-
-describe('model alias page data', () => {
-  it('keeps aliases usable when the model catalog fails', () => {
-    const alias = aliasDefaultsToRecord('virtual');
-    const result = mergeModelAliasesPageData(
-      { aliases: [], models: null },
-      { data: [alias] },
-      { error: { status: 503, message: 'catalog unavailable' } },
-    );
-
-    expect(result).toEqual({
-      aliases: [alias],
-      models: null,
-      aliasError: null,
-      modelsError: 'catalog unavailable',
-    });
-  });
-
-  it('retains the previous catalog across a temporary reload failure', () => {
-    const catalog = [catalogModel('stable')];
-    const result = mergeModelAliasesPageData(
-      { aliases: [], models: catalog },
-      { data: [] },
-      { error: { status: 503, message: 'catalog unavailable' } },
-    );
-
-    expect(result.models).toBe(catalog);
-  });
-});
-
-const aliasDefaultsToRecord = (name: string): ModelAlias => ({
-  id: `alias_${name}`, name, kind: 'chat', selection: 'first-available', display_name: null,
-  visible_in_models_list: true, targets: [target('a')], announced_metadata: null,
-  sort_order: 0, created_at: '2026-01-01', updated_at: '2026-01-01',
-});
 
 describe('model alias warnings', () => {
   it('never treats an alias catalog row as a real target', () => {

@@ -5,10 +5,10 @@ import { useTranslation } from 'react-i18next';
 import type { Route } from './+types/dashboard-providers-model-aliases';
 import { requireDashboardAdmin } from './guards';
 import { api, callApi, callApiNoContent } from '../api/client';
+import { mapResult, mergeResults } from '../api/partial-results';
 import type { ControlPlaneModel } from '../api/types';
 import type { ModelAlias } from '@floway-dev/protocols/common';
 import { AliasDialog } from '../components/model-alias/dialog';
-import { mergeModelAliasesPageData } from '../components/model-alias/page-data';
 import { computeAliasWarnings } from '../components/model-alias/warnings';
 import { indexCatalog } from '../components/models/catalog-index';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
@@ -37,12 +37,11 @@ const loadPageData = async (current: LoaderData['catalog'], signal?: AbortSignal
     callApi(() => api.api.aliases.$get(undefined, { init: { signal } })),
     callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } }, { init: { signal } })),
   ]);
-  const merged = mergeModelAliasesPageData(current, aliasResult, modelResult);
-  return {
-    catalog: { aliases: merged.aliases, models: merged.models },
-    error: merged.aliasError,
-    modelsError: merged.modelsError,
-  };
+  const { values, errors } = mergeResults(current, {
+    aliases: aliasResult,
+    models: mapResult(modelResult, body => body.data),
+  });
+  return { catalog: values, error: errors.aliases, modelsError: errors.models };
 };
 
 export async function clientLoader(): Promise<LoaderData> {
