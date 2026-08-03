@@ -1,13 +1,15 @@
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import type { RouteConfigEntry } from '@react-router/dev/routes';
 import { describe, expect, it } from 'vitest';
 
 import routeConfig from '../../src/routes';
 
-const appDirectory = fileURLToPath(new URL('../../src/', import.meta.url));
+// Read as text rather than imported: what is asserted is the module's shape,
+// and importing a route would pull the whole component tree in with it.
+const routeSources = import.meta.glob<string>('../../src/routes/*.tsx', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+});
 
 const routeFiles = (entries: readonly RouteConfigEntry[]): string[] =>
   entries.flatMap(entry => [entry.file, ...routeFiles(entry.children ?? [])]);
@@ -19,9 +21,10 @@ const routeFiles = (entries: readonly RouteConfigEntry[]): string[] =>
 // the one shape that cannot honour it, and nothing else in the suite notices
 // when a new route is added without one.
 describe('route session gates', () => {
-  it('gives every route its own client loader', async () => {
+  it('gives every route its own client loader', () => {
     for (const file of routeFiles(routeConfig)) {
-      const source = await readFile(join(appDirectory, file), 'utf8');
+      const source = routeSources[`../../src/${file}`];
+      expect(source, file).toBeDefined();
       expect(source, file).toMatch(/export (?:async )?function clientLoader\b/);
     }
   });
