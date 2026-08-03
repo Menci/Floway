@@ -110,7 +110,7 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
   };
 
   return <>{discardConfirmation}<DialogShell
-    maxWidth="720px"
+    width="editor"
     open={open}
     onOpenChange={(_, data) => { if (!data.open && !saving) requestClose(); }}
     onSubmit={() => void handleSubmit(save)()}

@@ -120,7 +120,7 @@ export function UserDialog(props: UserDialogProps) {
 
   return (
     <>{discardConfirmation}<DialogShell
-      maxWidth="720px"
+      width="editor"
       open={props.open}
       actions={
         <DialogActions>
