@@ -158,6 +158,34 @@ const AZURE_UPSTREAM: UpstreamRecord = {
   state: null,
 };
 
+const OLLAMA_UPSTREAM: UpstreamRecord = {
+  id: 'up_ollama_a',
+  kind: 'ollama',
+  name: 'Ollama A',
+  enabled: true,
+  sortOrder: 25,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+  flagOverrides: {},
+  disabledPublicModelIds: [],
+  proxyFallbackList: [],
+  modelPrefix: null,
+  modelsCache: null,
+  color: null,
+  config: {
+    baseUrl: 'https://ollama.com',
+    apiKey: 'ollama-key',
+    models: [
+      {
+        upstreamModelId: 'qwen3-coder:480b-cloud',
+        kind: 'chat',
+        endpoints: { chatCompletions: {} },
+      },
+    ],
+  },
+  state: null,
+};
+
 const CODEX_UPSTREAM: UpstreamRecord = {
   id: 'up_codex_a',
   kind: 'codex',
@@ -671,6 +699,28 @@ test('import rejects missing upstreams before clearing existing data', async () 
   assertEquals(await repo.apiKeys.list(), [KEY_A]);
   assertEquals(await repo.upstreams.list(), [CUSTOM_UPSTREAM]);
   assertEquals(await repo.usage.listAll(), [USAGE_1]);
+});
+
+test('ollama upstreams export and import round-trip', async () => {
+  const { app, repo } = setup();
+  await repo.upstreams.save(OLLAMA_UPSTREAM);
+  await repo.webSearchConfig.save(DEFAULT_WEB_SEARCH_CONFIG);
+
+  const result = await doExport(app);
+  const exportedOllama = result.data.upstreams.find((upstream: any) => upstream.id === 'up_ollama_a');
+  assertEquals(exportedOllama.config, OLLAMA_UPSTREAM.config);
+
+  const replaceResult = await doImport(app, 'replace', {
+    users: [SEED_ADMIN],
+    apiKeys: [],
+    upstreams: [exportedOllama],
+    usage: [],
+    searchUsage: [],
+    performanceIncluded: false,
+    searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
+  });
+  assertEquals(replaceResult.status, 200);
+  assertEquals(await repo.upstreams.list(), [OLLAMA_UPSTREAM]);
 });
 
 test('codex upstreams export and import round-trip with state intact', async () => {
