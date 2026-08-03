@@ -1,7 +1,7 @@
 import { SaveRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FormProvider, useForm, useWatch } from 'react-hook-form';
+import { FormProvider, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useBlocker, useNavigate, type BlockerFunction } from 'react-router';
 import { z } from 'zod';
@@ -53,8 +53,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   // id lets the navigation wait for the render that the save made clean instead
   // of racing it and having to be excused from the prompt.
   const [createdUpstreamId, setCreatedUpstreamId] = useState<string | null>(null);
-  const initialValues = valuesFromRecord(data.record);
-  const [savedBaseline, setSavedBaseline] = useState(() => comparableValues(initialValues));
+  const [initialValues] = useState(() => valuesFromRecord(data.record));
   const schema = useMemo(() => z.object({
     name: z.string().trim().min(1, 'dashboard.upstreamEditor.validation.name'),
     enabled: z.boolean(),
@@ -82,9 +81,8 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     mode: 'onBlur',
     resolver: zodResolver(schema),
   });
-  const { control, getValues, handleSubmit, reset, setValue } = form;
-  const currentValues = useWatch({ control }) as UpstreamEditorValues;
-  const hasUnsavedChanges = comparableValues(currentValues) !== savedBaseline || colorDraftInvalid;
+  const { formState, getValues, handleSubmit, reset, setValue } = form;
+  const hasUnsavedChanges = formState.isDirty || colorDraftInvalid;
 
   // The editor carries its own position — workspace tab, selected model, model
   // section, YAML view — in the search params of one route, so a move between
@@ -139,15 +137,21 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const applyProviderPatch = (patch: { config?: unknown; state?: unknown }, persisted = false) => {
     if (patch.config !== undefined) setValue('config', patch.config as UpstreamEditorValues['config'], { shouldDirty: !persisted });
     if (patch.state !== undefined) setValue('state', patch.state as UpstreamEditorValues['state'], { shouldDirty: !persisted });
-    if (persisted) {
-      setSavedBaseline(baseline => {
-        const parsed = JSON.parse(baseline) as UpstreamEditorValues;
-        if (patch.config !== undefined) parsed.config = patch.config as UpstreamEditorValues['config'];
-        if (patch.state !== undefined) parsed.state = patch.state as UpstreamEditorValues['state'];
-        return comparableValues(parsed);
-      });
-    }
-    setRecord(current => ({ ...current, ...(patch.config !== undefined ? { config: patch.config } : {}), ...(patch.state !== undefined ? { state: patch.state } : {}) } as UpstreamRecord));
+    const changes = { ...(patch.config !== undefined ? { config: patch.config } : {}), ...(patch.state !== undefined ? { state: patch.state } : {}) };
+    setRecord(current => ({ ...current, ...changes } as UpstreamRecord));
+    // A patch the provider has already stored is not an edit, so it moves the
+    // saved state the form measures itself against instead of counting as one.
+    // Everything but that baseline is held: the fields keep what the operator
+    // has typed into them, and only the dirty flag is re-derived.
+    if (persisted) reset(valuesFromRecord({ ...record, ...changes } as UpstreamRecord), {
+      keepDirtyValues: true,
+      keepErrors: true,
+      keepIsSubmitSuccessful: true,
+      keepIsSubmitted: true,
+      keepSubmitCount: true,
+      keepTouched: true,
+      keepValues: true,
+    });
   };
 
   const submitForm = () => handleSubmit(async values => {
@@ -166,9 +170,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       if (!full.error) saved = full.data;
     }
     setRecord(saved);
-    const savedValues = valuesFromRecord(saved);
-    setSavedBaseline(comparableValues(savedValues));
-    reset(savedValues);
+    reset(valuesFromRecord(saved));
     handle.succeed(t('dashboard.upstreamEditor.toast.saved'));
     // `saving` is left set on create: the created record's loader probes the
     // provider for its catalog, so the page stays mounted and interactive
@@ -233,5 +235,3 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     />}
   </FormProvider>;
 }
-
-const comparableValues = (values: UpstreamEditorValues): string => JSON.stringify(values);
