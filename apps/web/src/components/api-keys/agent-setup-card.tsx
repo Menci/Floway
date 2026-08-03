@@ -1,14 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
 import {
-  applyLocalAgentSetupChanges,
   buildAgentClaudeSnippet,
   buildAgentCodexSnippet,
-  cloneAgentSetupConfiguration,
   codexUnixCredentialSnippet,
   codexWindowsCredentialSnippet,
-  defaultAgentSetupConfiguration,
   detectAgentSetupPlatform,
   type AgentSetupConfiguration,
   type AgentSetupLease,
@@ -58,28 +55,7 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
   const [view, setView] = useState<'setup' | 'snippets'>('setup');
   const [agent, setAgent] = useState<Agent>('claude');
   const [platform, setPlatform] = useState<Platform>(() => detectAgentSetupPlatform(window.navigator.platform, window.navigator.userAgent));
-  const [localDraft, setLocalDraft] = useState(() => defaultAgentSetupConfiguration());
-  const localDraftBaseline = useRef(cloneAgentSetupConfiguration(localDraft));
-  const appliedLease = useRef<string | null>(null);
   const setup = useAgentSetup(selectedKey?.id ?? null, initialLease, initialError, initialApiKeyId);
-  const setupDraft = setup.draft;
-  const setupLease = setup.lease;
-  const updateSetupDraft = setup.updateDraft;
-
-  useEffect(() => {
-    if (!selectedKey || !setupLease || !setupDraft) return;
-    const leaseKey = `${selectedKey.id}:${setupLease.token}`;
-    if (appliedLease.current === leaseKey) return;
-    appliedLease.current = leaseKey;
-    updateSetupDraft(current => applyLocalAgentSetupChanges(current, localDraft, localDraftBaseline.current, selectedKey.id));
-    localDraftBaseline.current = cloneAgentSetupConfiguration(localDraft);
-  }, [localDraft, selectedKey, setupDraft, setupLease, updateSetupDraft]);
-
-  const activeDraft = selectedKey && setupDraft ? setupDraft : localDraft;
-  const updateConfiguration = (update: (current: AgentSetupConfiguration) => AgentSetupConfiguration) => {
-    if (selectedKey && setupDraft) updateSetupDraft(update);
-    else setLocalDraft(current => update(cloneAgentSetupConfiguration(current)));
-  };
 
   const scripts = setup.lease?.scripts[agent];
   const scriptPath = platform === 'unix' ? scripts?.sh : scripts?.ps1;
@@ -116,11 +92,11 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
 
         <section className={SECTION_STACK_CLASS}>
           <SectionHeader level={3} title={t('dashboard.apiKeys.agentSetup.modelSelection')} />
-          <AgentConfigurationFields agent={agent} configuration={activeDraft} models={models} onChange={updateConfiguration} />
+          <AgentConfigurationFields agent={agent} configuration={setup.draft} models={models} onChange={setup.updateDraft} />
         </section>
 
         {view === 'snippets' && selectedKey
-          ? <AgentConfigSnippets agent={agent} apiKey={selectedKey.key} configuration={activeDraft} clipboard={clipboard} onPlatformChange={setPlatform} platform={platform} />
+          ? <AgentConfigSnippets agent={agent} apiKey={selectedKey.key} configuration={setup.draft} clipboard={clipboard} onPlatformChange={setPlatform} platform={platform} />
           : view === 'snippets'
             ? <OutcomeMessageBar intent="info">{t('dashboard.apiKeys.agentSetup.selectKey')}</OutcomeMessageBar>
             : <div className="border-t border-t-solid border-fui-divider pt-4">

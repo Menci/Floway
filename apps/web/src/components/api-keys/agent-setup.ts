@@ -5,7 +5,15 @@ import type { api } from '../../api/client';
 export type AgentSetupLease = Extract<InferResponseType<typeof api.api.setup.$put>, { status: 'ok' }>;
 export type AgentSetupConfiguration = AgentSetupLease['configuration'];
 
-export const defaultAgentSetupConfiguration = (): AgentSetupConfiguration => ({
+// What the form is edited into before a lease answers. The gateway authors the
+// real first-use configuration and the dashboard never sees that code — types
+// cross this boundary, values do not — so the field set here is held to the
+// contract by the annotation: a field added or dropped server-side fails this
+// literal to compile. The values only decide what the fields render in the
+// seconds before a lease arrives, and they cannot reach a saved configuration,
+// because applyLocalAgentSetupChanges measures the draft against this same
+// object and copies nothing that was left alone.
+export const blankAgentSetupDraft = (): AgentSetupConfiguration => ({
   apiKeyId: '',
   claudeCode: {
     model: null,
@@ -44,12 +52,10 @@ export const applyLocalAgentSetupChanges = (
   server: AgentSetupConfiguration,
   local: AgentSetupConfiguration,
   baseline: AgentSetupConfiguration,
-  apiKeyId: string,
 ): AgentSetupConfiguration => {
   const merged = cloneAgentSetupConfiguration(server);
   copyChangedFields(merged.claudeCode, local.claudeCode, baseline.claudeCode);
   copyChangedFields(merged.codex, local.codex, baseline.codex);
-  merged.apiKeyId = apiKeyId;
   return merged;
 };
 

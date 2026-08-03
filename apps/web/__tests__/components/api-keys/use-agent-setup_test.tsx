@@ -2,7 +2,7 @@ import { act, renderHook, type RenderHookResult } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { flowayTokenStorageKey } from '../../../src/auth/session';
-import { defaultAgentSetupConfiguration } from '../../../src/components/api-keys/agent-setup';
+import { blankAgentSetupDraft } from '../../../src/components/api-keys/agent-setup';
 import { agentSetupCommand, useAgentSetup } from '../../../src/components/api-keys/use-agent-setup';
 import { stubLocalStorage } from '../../local-storage-stub';
 import { advance, settle } from '../../settle';
@@ -12,7 +12,7 @@ type SetupState = ReturnType<typeof useAgentSetup>;
 const lease = (expiresAt = Date.now() + 120_000) => ({
   status: 'ok',
   token: 'lease-token',
-  configuration: { ...defaultAgentSetupConfiguration(), apiKeyId: 'key-1' },
+  configuration: { ...blankAgentSetupDraft(), apiKeyId: 'key-1' },
   configurationRevision: 1,
   expiresAt,
   scripts: {
@@ -107,6 +107,26 @@ describe('Agent Setup lease lifecycle', () => {
     await advance(60_000);
     await settle();
     expect(current().error).toBe('save rejected');
+  });
+
+  it('carries an edit made before a key was selected into the configuration it saves', async () => {
+    const saves: { configuration: { codex: { model: string | null } } }[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'PUT') saves.push(JSON.parse(String(init.body)) as (typeof saves)[number]);
+      return Response.json(lease());
+    }));
+    mount(null);
+    await settle();
+    await act(async () => current().updateDraft(configuration => ({
+      ...configuration,
+      codex: { ...configuration.codex, model: 'gpt-early' },
+    })));
+    view.rerender({ apiKeyId: 'key-1' });
+    await settle();
+    expect(current().draft.codex.model).toBe('gpt-early');
+    await advance(400);
+    await settle();
+    expect(saves.map(save => save.configuration.codex.model)).toEqual(['gpt-early']);
   });
 
   it('aborts an active request when the selected key changes', async () => {
