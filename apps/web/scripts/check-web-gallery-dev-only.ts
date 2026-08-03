@@ -13,7 +13,7 @@ import { resolve } from 'node:path';
 // build's mode. Reading the property off the build output is what makes the
 // mistake unable to ship: whatever the gate says, the emitted assets either
 // carry the gallery or they do not.
-const clientDir = resolve(import.meta.dirname, '../apps/web/dist/client');
+const clientDir = resolve(import.meta.dirname, '../dist/client');
 const assetsDir = resolve(clientDir, 'assets');
 
 const GALLERY_MODULE = '/routes/dashboard-winui-gallery.tsx';

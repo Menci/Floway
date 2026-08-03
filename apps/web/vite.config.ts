@@ -245,9 +245,10 @@ export default defineConfig({
   environments: {
     client: {
       build: {
-        // The maps are built for the two build checks that read them --
-        // scripts/check-web-monaco-lazy.ts and
-        // scripts/check-web-gallery-dev-only.ts derive chunk membership from
+        // The maps are built for the three build checks that read them --
+        // scripts/check-web-monaco-lazy.ts,
+        // scripts/check-web-gallery-dev-only.ts and
+        // scripts/check-web-locales-split.ts derive chunk membership from
         // each map's module list, and fall back to a far weaker scan of the
         // emitted text without one. Both find a map by chunk filename, so
         // `hidden` serves them while leaving the chunks without the trailing

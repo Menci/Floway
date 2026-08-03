@@ -327,10 +327,10 @@ test. Every tested package owns a `vitest.config.ts` including
 `__tests__/**/*_test.{ts,tsx}`, and the root Vitest config discovers
 `packages/*/vitest.config.ts` and `apps/*/vitest.config.ts`. Package TypeScript
 projects include their Vitest configs and their `__tests__/` tree. Root
-`scripts/**/*.ts` and
+`scripts/**/*.ts`, `apps/web/scripts/**/*.ts` and
 `packages/agent-setup/scripts/**/*.ts` have Node-typed script projects; the
 base config sets `types: []` so ambient types enter only projects that request
-them. ESLint checks both script trees and every package Vitest config; the
+them. ESLint checks every script tree and every package Vitest config; the
 workspace-root `eslint.config.ts` and `vitest.config.ts` sit outside every
 checked TypeScript project and are ignored.
 

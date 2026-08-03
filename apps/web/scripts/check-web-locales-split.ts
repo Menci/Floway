@@ -12,7 +12,7 @@ import { resolve } from 'node:path';
 //
 // Membership is read off the sourcemaps, as in check-web-monaco-lazy.ts, since
 // chunk names are rolldown's own derivation and no contract.
-const clientDir = resolve(import.meta.dirname, '../apps/web/dist/client');
+const clientDir = resolve(import.meta.dirname, '../dist/client');
 const assetsDir = resolve(clientDir, 'assets');
 
 const LOCALE_MODULE = /\/src\/i18n\/locales\/([^/]+)\.ts$/;

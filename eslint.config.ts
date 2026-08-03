@@ -52,6 +52,7 @@ const projectList = [
   './apps/platform-cloudflare/tsconfig.json',
   './apps/platform-node/tsconfig.json',
   './apps/web/tsconfig.json',
+  './apps/web/tsconfig.scripts.json',
   './packages/agent-setup/tsconfig.json',
   './packages/agent-setup/tsconfig.scripts.json',
   './packages/gateway/tsconfig.json',
