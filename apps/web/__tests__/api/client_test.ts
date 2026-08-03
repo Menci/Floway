@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { callApi, callApiNoContent } from '../../src/api/client.ts';
+import { callApi, callApiNoContent } from '../../src/api/client';
 
 const respond = (response: Response) => () => Promise.resolve(response);
 
