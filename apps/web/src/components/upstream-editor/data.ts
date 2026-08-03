@@ -5,13 +5,13 @@ import type {
   BackoffRow,
   CustomRawModel,
   ListUpstreamModelsResponse,
-  ModelEndpoints,
   ProxyRecord,
-  UpstreamModelConfig,
-  UpstreamProviderKind,
   UpstreamRecord,
   UpstreamRecordEnvelope,
 } from '../../api/types';
+import type { ModelEndpoints } from '@floway-dev/protocols/common';
+import type { UpstreamModelConfig } from '@floway-dev/provider';
+import type { UpstreamProviderKind } from '@floway-dev/provider/model';
 import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX } from '@floway-dev/provider/model-prefix';
 
 type CreateUpstreamBody = InferRequestType<typeof api.api.upstreams.$post>['json'];
@@ -111,7 +111,7 @@ export const canFetchModelCatalog = (record: UpstreamRecord, config: UpstreamEdi
 // Manual entries exist only for the kinds whose stored config carries a model
 // list. For the rest the catalog is the provider's, and the editor can only
 // enable and disable what it lists.
-export const manualModelsSupported = (kind: UpstreamProviderKind): boolean =>
+export const manualModelsSupported = (kind: UpstreamProviderKind): kind is 'custom' | 'azure' | 'ollama' =>
   kind === 'custom' || kind === 'azure' || kind === 'ollama';
 
 export interface ModelCatalogFetch {
@@ -166,9 +166,7 @@ export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues =
       : record.kind === 'ollama'
         ? { ...structuredClone(record.config), apiKey: '' }
         : structuredClone(record.config);
-  const manualModels = record.kind === 'custom' || record.kind === 'azure' || record.kind === 'ollama'
-    ? structuredClone(record.config.models)
-    : [];
+  const manualModels = manualModelsSupported(record.kind) ? structuredClone(record.config.models) : [];
   return {
     name: record.name,
     enabled: record.enabled,
@@ -191,7 +189,7 @@ const configFromValues = (
   options: { preserveStoredSecret?: boolean } = {},
 ): UpstreamRecord['config'] => {
   const config = structuredClone(values.config) as unknown as Record<string, unknown>;
-  if (record.kind === 'custom' || record.kind === 'azure' || record.kind === 'ollama') {
+  if (manualModelsSupported(record.kind)) {
     config.models = structuredClone(values.manualModels);
     const apiKey = typeof config.apiKey === 'string' ? config.apiKey.trim() : '';
     if (apiKey) config.apiKey = apiKey;
@@ -256,9 +254,7 @@ export const updateBody = (record: UpstreamRecord, values: UpstreamEditorValues)
     disabled_public_model_ids: values.disabledPublicModelIds,
     proxy_fallback_list: values.proxyFallbackList,
     model_prefix: values.modelPrefix,
-    ...((record.kind === 'custom' || record.kind === 'azure' || record.kind === 'ollama')
-      ? { config: configFromValues(record, values) }
-      : {}),
+    ...(manualModelsSupported(record.kind) ? { config: configFromValues(record, values) } : {}),
   } as UpdateUpstreamBody;
 };
 
