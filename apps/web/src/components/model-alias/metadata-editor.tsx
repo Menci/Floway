@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 
 import type { AnnouncedMetadataField, AnnouncedMetadataIssues } from './validation';
-import type { AnnouncedMetadata, ModelKind } from '../../api/types';
+import type { AnnouncedMetadata, ModelKind } from '@floway-dev/protocols/common';
 import { fluentComponents } from '../../fluent';
 import { Dropdown, Input, Switch } from '../ui/fluent-form-controls';
 import { SECTION_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';

@@ -2,12 +2,11 @@ import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { KIND_DEFAULT_TONES, ProviderBadge } from './provider-badge';
-import type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { HEX_RE, hexToRgb, hsvToRgb, isHexColor, rgbToHex, rgbToHsv } from '../../lib/color';
 import { useDangerTextClass } from '../ui/danger';
 import { Input } from '../ui/fluent-form-controls';
-import { UPSTREAM_COLOR_PRESETS } from '@floway-dev/provider/model';
+import { UPSTREAM_COLOR_PRESETS, type UpstreamColor, type UpstreamColorPreset, type UpstreamProviderKind } from '@floway-dev/provider/model';
 
 const {
   Button,

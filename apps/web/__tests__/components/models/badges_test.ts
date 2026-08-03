@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { AliasTarget } from '../../../src/api/types';
+import type { AliasTarget } from '@floway-dev/protocols/common';
 import { effectiveUpstreams, modelBadges } from '../../../src/components/models/badges';
 import { indexCatalog } from '../../../src/components/models/catalog-index';
 import { chatModel } from '../../api/model-fixture';

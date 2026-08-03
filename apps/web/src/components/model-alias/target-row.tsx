@@ -3,7 +3,7 @@ import { useId, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { computeModelWarning, computeRuleWarnings } from './warnings';
-import type { AliasTarget, ModelKind } from '../../api/types';
+import type { AliasTarget, ModelKind } from '@floway-dev/protocols/common';
 import { fluentComponents } from '../../fluent';
 import type { CatalogIndex } from '../models/catalog-index';
 import { useDangerTextClass } from '../ui/danger';

@@ -17,7 +17,8 @@ import { canFetchModelCatalog, manualModelsSupported, publicModelId } from './da
 import { FeatureFlagsEditor } from './feature-flags';
 import { ModelDetail } from './model-detail';
 import { parseModels, serializeModels } from './models-yaml';
-import type { UpstreamModelConfig, UpstreamRecord } from '../../api/types';
+import type { UpstreamRecord } from '../../api/types';
+import type { UpstreamModelConfig } from '@floway-dev/provider';
 import { fluentComponents } from '../../fluent';
 import { dateTime, relativeTime } from '../../lib/format-time';
 import { useEntryRewrite } from '../../lib/page-navigation';

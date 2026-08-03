@@ -14,11 +14,8 @@ import type { Route } from './+types/dashboard-providers-upstreams';
 import { requireDashboardAdmin } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
 import { api, callApi } from '../api/client';
-import type {
-  ControlPlaneModel,
-  UpstreamProviderKind,
-  UpstreamRecord,
-} from '../api/types';
+import type { ControlPlaneModel, UpstreamRecord } from '../api/types';
+import type { UpstreamProviderKind } from '@floway-dev/provider/model';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';

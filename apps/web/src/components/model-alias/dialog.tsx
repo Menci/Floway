@@ -12,7 +12,7 @@ import { AliasTargetRow } from './target-row';
 import { announcedMetadataIssues, targetIssue, ANNOUNCED_METADATA_FIELDS } from './validation';
 import { computeAliasWarnings, realModelIdsOfKind } from './warnings';
 import { api, callApi } from '../../api/client';
-import type { ControlPlaneModel, ModelAlias, ModelKind } from '../../api/types';
+import type { ControlPlaneModel } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { issuesFromErrors } from '../../lib/form-issues';
 import { indexCatalog } from '../models/catalog-index';
@@ -26,7 +26,7 @@ import { useOutcomeToasts } from '../ui/outcome-toast';
 import { SectionHeader } from '../ui/section-header';
 import { SettingsCard, SettingsExpander, SettingsSwitch } from '../ui/settings-card';
 import { useDiscardGuard } from '../ui/use-discard-guard';
-import { MODEL_KINDS } from '@floway-dev/protocols/common';
+import { MODEL_KINDS, type ModelAlias, type ModelKind } from '@floway-dev/protocols/common';
 
 const { Button, DialogActions, DialogTitle, Field, Option, Text } = fluentComponents;
 

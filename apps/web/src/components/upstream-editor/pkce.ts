@@ -1,4 +1,4 @@
-import type { UpstreamProviderKind } from '../../api/types';
+import type { UpstreamProviderKind } from '@floway-dev/provider/model';
 
 const encoder = new TextEncoder();
 

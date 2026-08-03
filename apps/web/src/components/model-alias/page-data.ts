@@ -1,7 +1,8 @@
 import type { InferResponseType } from 'hono/client';
 
 import type { api, ApiResult } from '../../api/client';
-import type { ControlPlaneModel, ModelAlias } from '../../api/types';
+import type { ControlPlaneModel } from '../../api/types';
+import type { ModelAlias } from '@floway-dev/protocols/common';
 
 type ModelsResponse = InferResponseType<typeof api.api.models.$get, 200>;
 

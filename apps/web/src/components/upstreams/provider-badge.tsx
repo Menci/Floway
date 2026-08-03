@@ -1,7 +1,7 @@
 import { ServerRegular } from '@fluentui/react-icons';
 import { useTranslation } from 'react-i18next';
 
-import type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind } from '../../api/types';
+import type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind } from '@floway-dev/provider/model';
 import azureIconUrl from '../../assets/azure-color.svg?no-inline';
 import claudeIconUrl from '../../assets/claude-color.svg?no-inline';
 import githubCopilotIconUrl from '../../assets/githubcopilot.svg?no-inline';

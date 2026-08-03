@@ -1,7 +1,13 @@
 import type { InferRequestType } from 'hono/client';
 
 import type { api } from '../../api/client';
-import type { AliasSelection, AliasTarget, AnnouncedMetadata, ModelAlias, ModelKind } from '../../api/types';
+import type {
+  AliasSelection,
+  AliasTarget,
+  AnnouncedMetadata,
+  ModelAlias,
+  ModelKind,
+} from '@floway-dev/protocols/common';
 
 type AliasWriteBody = InferRequestType<typeof api.api.aliases.$post>['json'];
 

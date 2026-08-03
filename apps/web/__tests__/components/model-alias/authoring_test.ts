@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { AliasTarget, ModelAlias } from '../../../src/api/types';
+import type { AliasTarget, ModelAlias } from '@floway-dev/protocols/common';
 import { computeAnnouncedMetadata } from '../../../src/components/model-alias/announced-metadata';
 import { aliasBody, aliasDefaults, metadataForKind } from '../../../src/components/model-alias/form-data';
 import { mergeModelAliasesPageData } from '../../../src/components/model-alias/page-data';
