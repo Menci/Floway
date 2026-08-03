@@ -2,11 +2,16 @@ import i18next from 'i18next';
 import { describe, expect, it } from 'vitest';
 
 import { recordSummary } from '../../../src/components/backup-restore/summary';
-import { resources } from '../../../src/i18n/resources';
+import type { SupportedLanguage } from '../../../src/i18n/languages';
+import { loadLocale } from '../../../src/i18n/resources';
 
-const translator = async (language: string) => {
+const translator = async (language: SupportedLanguage) => {
   const instance = i18next.createInstance();
-  await instance.init({ lng: language, resources, interpolation: { escapeValue: false } });
+  await instance.init({
+    lng: language,
+    resources: { [language]: await loadLocale(language) },
+    interpolation: { escapeValue: false },
+  });
   return instance.t.bind(instance);
 };
 
