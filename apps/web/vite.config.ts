@@ -243,6 +243,35 @@ export default defineConfig({
     port: webPort,
     proxy: Object.fromEntries(wranglerProxiedPaths.map(p => [p, { target: wranglerOrigin, changeOrigin: true }])),
   },
+  // The build prerenders the root route by standing up a preview server and
+  // connecting to `resolvedUrls.local[0]` over a real socket:
+  // https://github.com/remix-run/react-router/blob/react-router%408.3.0/packages/react-router-dev/vite/plugins/prerender.ts#L546-L573
+  // The bind address and that URL have to name the same interface. Left at the
+  // default they do not, because Node resolves the name differently on its two
+  // sides. Vite binds `localhost` on purpose, so the server follows whatever
+  // the resolver picks (https://github.com/vitejs/vite/pull/8543), and `listen`
+  // resolves it with no hints
+  // (https://github.com/nodejs/node/blob/v22.23.2/lib/net.js#L2192-L2196),
+  // which orders `::1` first per RFC 6724. `connect` forces AI_ADDRCONFIG
+  // (https://github.com/nodejs/node/blob/v22.23.2/lib/net.js#L1376-L1380),
+  // which drops every IPv6 candidate on a host whose only IPv6 address sits on
+  // loopback -- every default container. So the server listens on `::1` while
+  // the fetch can only reach 127.0.0.1, and `resolvedUrls` names neither: Vite
+  // builds it from the configured hostname rather than from the
+  // `server.address()` it already holds. A GitHub runner resolves `localhost`
+  // to IPv4 on both sides, which is why `verify` never sees this.
+  //
+  // Pinning the literal takes name resolution out of the path, so the two sides
+  // agree by construction rather than by agreeing on an answer. IPv4 because it
+  // is the loopback that exists everywhere -- a container with IPv6 disabled
+  // still has 127.0.0.1.
+  //
+  // Remove this once react-router requests prerenders from the bound address
+  // rather than from `resolvedUrls`:
+  // https://github.com/remix-run/react-router/pull/15325
+  preview: {
+    host: '127.0.0.1',
+  },
   environments: {
     client: {
       build: {
