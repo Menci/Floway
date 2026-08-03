@@ -26,8 +26,6 @@ import { PAGE_ENTER_EASING, PAGE_ENTER_MS, PAGE_ENTER_OFFSET_PX } from '../winui
 
 const { Button, DrawerBody, OverlayDrawer } = fluentComponents;
 
-const PAGE_INSET_CLASS = 'p-[22px_var(--floway-page-inset)_var(--floway-page-inset)] max-[680px]:p-4';
-
 export interface DashboardOutletContext {
   user: AuthUser;
 }
@@ -89,7 +87,7 @@ function DashboardShell({ user }: { user: AuthUser }) {
     contentClassName={workspace ? 'h-full' : 'min-h-full'}
     noTabIndex
   >
-    <div className={`${workspace ? `${SCROLLPORT_FILL_CLASS} ` : ''}${PAGE_INSET_CLASS}`}>{outlet}</div>
+    <div className={`${workspace ? SCROLLPORT_FILL_CLASS : ''} p-[22px_var(--floway-page-inset)_var(--floway-page-inset)] max-[680px]:p-4`}>{outlet}</div>
   </ScrollArea>;
   const frames = usePageFrames(page);
 
