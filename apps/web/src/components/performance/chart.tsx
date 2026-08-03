@@ -1,4 +1,4 @@
-import { LineChart, type ChartProps, type CustomizedCalloutData } from '@fluentui/react-charts';
+import { LineChart, type CustomizedCalloutData } from '@fluentui/react-charts';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -14,6 +14,7 @@ import { useChartFrame } from '../charts/frame-styles';
 import { chartHeight } from '../charts/layout';
 import { ChartSection } from '../charts/section';
 import type { ChartSeries } from '../charts/series-legends';
+import { visibleSeriesData } from '../charts/series-selection';
 import { useElementSize } from '../charts/use-element-size';
 import { EmptyStateLine } from '../ui/empty-state';
 import { ScrollArea } from '../ui/scroll-area';
@@ -60,8 +61,7 @@ function PerformanceChart({ chart, hidden }: { chart: PerformancePlot; hidden: S
   const locale = useLocale();
   const formatter = chart.metric === 'ttft' ? formatDuration : formatTokenRate;
   const entryByLegend = useMemo(() => new Map(chart.entries.map(entry => [entry.legend, entry])), [chart.entries]);
-  const visibleLegends = useMemo(() => new Set(chart.entries.filter(entry => !hidden.has(entry.id)).map(entry => entry.legend)), [chart.entries, hidden]);
-  const visibleData = useMemo<ChartProps>(() => ({ ...chart.data, lineChartData: chart.data.lineChartData?.filter(series => visibleLegends.has(series.legend)) }), [chart.data, visibleLegends]);
+  const visibleData = useMemo(() => visibleSeriesData(chart.entries, chart.data, hidden), [chart.data, chart.entries, hidden]);
   const values = visibleData.lineChartData?.flatMap(series => series.data.map(point => point.y).filter((value): value is number => typeof value === 'number' && value > 0)) ?? [];
   const labelByTime = useMemo(() => new Map(chart.buckets.map(bucket => [bucket.date.getTime(), bucket.label])), [chart.buckets]);
   const callout = useCallback((props?: CustomizedCalloutData): ReactElement | null => !props?.values.length

@@ -9,6 +9,7 @@ import { useLocale } from '../../lib/use-locale';
 import { chartTickValues, formatAxisDate } from '../charts/dashboard-time';
 import { useChartFrame } from '../charts/frame-styles';
 import { chartHeight } from '../charts/layout';
+import { visibleSeriesData } from '../charts/series-selection';
 import { useElementSize } from '../charts/use-element-size';
 import { EmptyStateLine } from '../ui/empty-state';
 
@@ -34,7 +35,7 @@ const useAreaBoundaryStyles = makeStyles({
 
 const chartMargins = { top: 16, right: 20, bottom: 42, left: 54 } as const;
 
-export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: UsageChartModel; valueFormatter: (value: number) => string; visibleLegends: string[] }) {
+export function UsageChart({ chart, hidden, valueFormatter }: { chart: UsageChartModel; hidden: Set<string>; valueFormatter: (value: number) => string }) {
   const { t } = useTranslation();
   const areaBoundaryStyles = useAreaBoundaryStyles();
   const chartRootStyles = useChartFrame();
@@ -42,6 +43,7 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
   const size = useElementSize(host);
   const locale = useLocale();
   const entryByLegend = useMemo(() => new Map(chart.entries.map(entry => [entry.legend, entry])), [chart.entries]);
+  const visibleData = useMemo(() => visibleSeriesData(chart.entries, chart.plot.data, hidden), [chart.entries, chart.plot.data, hidden]);
   const labelByTime = useMemo(() => new Map(chart.buckets.map(bucket => [bucket.date.getTime(), bucket.label])), [chart.buckets]);
   const tickCount = Math.max(2, Math.min(chart.buckets.length <= 24 ? 6 : 7, Math.floor(Math.max(0, size.width - chartMargins.left - chartMargins.right) / 120)));
   const tickValues = useMemo(() => chartTickValues(chart.buckets, tickCount).map(bucket => bucket.date), [chart.buckets, tickCount]);
@@ -63,7 +65,7 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
     }),
   } : null), [entryByLegend, renderCallout]);
 
-  const hasData = chart.plot.data.lineChartData?.some(series => series.data.length > 0) ?? false;
+  const hasData = visibleData.lineChartData?.some(series => series.data.length > 0) ?? false;
 
   // Fluent emits each stacked band right after its own boundary line, and the
   // band's top edge is that line, so every band paints over the stroke it was
@@ -81,7 +83,7 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
       for (const line of lines.sort((a, b) => Number.parseInt(b.id, 10) - Number.parseInt(a.id, 10))) line.parentNode?.append(line);
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [chart.plot.data, chart.plot.form, host, size.height, size.width]);
+  }, [chart.plot.form, host, size.height, size.width, visibleData]);
 
   if (size.width < 120) return <div className="min-w-0 w-full" ref={setHost} style={{ height: chartHeight }} />;
 
@@ -91,7 +93,7 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
         : chart.plot.form === 'area' ? (
           <AreaChart
             customDateTimeFormatter={dateFormatter}
-            data={chart.plot.data}
+            data={visibleData}
             enablePerfOptimization
             height={size.height}
             hideLegend
@@ -107,11 +109,10 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
         ) : (
           <LineChart
             customDateTimeFormatter={dateFormatter}
-            data={chart.plot.data}
+            data={visibleData}
             enablePerfOptimization
             height={size.height}
             hideLegend
-            legendProps={{ selectedLegends: visibleLegends, canSelectMultipleLegends: true }}
             margins={chartMargins}
             onRenderCalloutPerStack={lineCallout}
             styles={chartRootStyles}

@@ -47,7 +47,6 @@ export const buildTokenChart = ({
   metadata,
   models,
   groupKey,
-  hiddenOwn,
   hiddenOther,
   redactKeys,
   metric,
@@ -58,7 +57,6 @@ export const buildTokenChart = ({
   metadata: UsageResponse['keys'];
   models: ControlPlaneModel[];
   groupKey: 'keyId' | 'model';
-  hiddenOwn: Set<string>;
   hiddenOther: Set<string>;
   redactKeys: boolean;
   metric: UsageMetric;
@@ -74,9 +72,8 @@ export const buildTokenChart = ({
       ? keyChartEntries([...presentGroups], metadata, records, redactKeys)
       : modelChartEntries([...presentGroups], models);
 
-  const visibleEntries = entries.filter(entry => !hiddenOwn.has(entry.id));
   const isPercent = metricConfig[metric].kind === 'percent';
-  const series = visibleEntries
+  const series = entries
     .map(entry => ({
       entry,
       data: buckets.map(bucket => {
@@ -130,13 +127,11 @@ const areaChartData = (buckets: ChartBucket[], series: PlottedSeries): ChartProp
 
 export const buildSearchChart = ({
   search,
-  hiddenKeys,
   redactKeys,
   range,
   buckets,
 }: {
   search: SearchUsageResponse;
-  hiddenKeys: Set<string>;
   redactKeys: boolean;
   range: UsageRange;
   buckets: ChartBucket[];
@@ -179,8 +174,6 @@ export const buildSearchChart = ({
     })),
     redactKeys,
   );
-  const visibleEntries = entries.filter(entry => !hiddenKeys.has(entry.id));
-
   return {
     entries,
     buckets,
@@ -189,7 +182,7 @@ export const buildSearchChart = ({
     range,
     plot: {
       form: 'area',
-      data: areaChartData(buckets, visibleEntries.map(entry => ({
+      data: areaChartData(buckets, entries.map(entry => ({
         entry,
         data: buckets.map(bucket => groups.get(entry.id)?.get(bucket.key) ?? 0),
       }))),

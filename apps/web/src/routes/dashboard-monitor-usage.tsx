@@ -117,7 +117,6 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
       metadata: usage.keys,
       models,
       groupKey: 'keyId',
-      hiddenOwn: hiddenKeys,
       hiddenOther: hiddenModels,
       redactKeys,
       metric,
@@ -126,7 +125,6 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     }),
     [
       buckets,
-      hiddenKeys,
       hiddenModels,
       loadedRange,
       metric,
@@ -142,7 +140,6 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
       metadata: usage.keys,
       models,
       groupKey: 'model',
-      hiddenOwn: hiddenModels,
       hiddenOther: hiddenKeys,
       redactKeys,
       metric,
@@ -152,7 +149,6 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     [
       buckets,
       hiddenKeys,
-      hiddenModels,
       loadedRange,
       metric,
       models,
@@ -164,12 +160,11 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const searchChart = useMemo(
     () => search && buildSearchChart({
       search,
-      hiddenKeys,
       redactKeys,
       range: loadedRange,
       buckets,
     }),
-    [buckets, hiddenKeys, loadedRange, redactKeys, search],
+    [buckets, loadedRange, redactKeys, search],
   );
 
   // Recorded search traffic stays visible after the operator turns search off.
