@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import en from '../../src/i18n/locales/en';
 import { isPlural, leafKeys, pluralBase } from './keys';
+import en from '../../src/i18n/locales/en';
 import { BILLING_METRICS, MODEL_KINDS } from '@floway-dev/protocols/common';
 import { OPTIONAL_FLAG_IDS } from '@floway-dev/provider/flags';
 import { ALL_PROVIDER_KINDS } from '@floway-dev/provider/model';

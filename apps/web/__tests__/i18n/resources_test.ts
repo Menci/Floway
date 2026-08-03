@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
+import { isPlural, leafEntries, leafKeys, pluralBase } from './keys';
 import { supportedLanguages } from '../../src/i18n/languages';
 import en from '../../src/i18n/locales/en';
 import { numberFormats } from '../../src/i18n/number-format';
 import { loadLocale } from '../../src/i18n/resources';
-import { isPlural, leafEntries, leafKeys, pluralBase } from './keys';
 
 // The app fetches one locale per session, so the whole set is assembled here
 // through the same loader map rather than from a list this file keeps of its
