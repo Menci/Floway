@@ -1,10 +1,10 @@
 import type { ListboxProps } from '@fluentui/react-components';
 import { ChevronDown12Regular } from '@fluentui/react-icons';
-import { Children, createElement, forwardRef, useLayoutEffect, useRef } from 'react';
+import { Children, createElement, forwardRef } from 'react';
 import type { ComponentProps, ElementType, MouseEvent, ReactNode, Ref } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { initializeScrollArea, scrollAreaHostClassName, useOverlayScrollbarsEnabled } from './scroll-area';
+import { useScrollAreaHost } from './scroll-area';
 import { fluentComponents } from '../../fluent';
 
 const {
@@ -86,9 +86,7 @@ function ScrollableListbox({
   ListboxComponent: ElementType<ListboxProps>;
   listboxProps: Omit<ListboxProps, 'as'>;
 }) {
-  const hostRef = useRef<HTMLDivElement>(null);
-  const viewportRef = useRef<HTMLDivElement>(null);
-  const overlayScrollbarsEnabled = useOverlayScrollbarsEnabled();
+  const { hostProps, viewportRef } = useScrollAreaHost({ axes: 'vertical', noTabIndex: true });
   const {
     children,
     className,
@@ -96,20 +94,14 @@ function ScrollableListbox({
     ...rootProps
   } = listboxProps as ListboxRenderPropsWithRef;
   const { t } = useTranslation();
-  const mergedRef = useMergedRefs(fluentRef, hostRef);
-  useLayoutEffect(() => {
-    const host = hostRef.current;
-    const viewport = viewportRef.current;
-    if (!host || !viewport) return;
-    return initializeScrollArea(host, viewport, 'vertical', true, overlayScrollbarsEnabled);
-  }, [overlayScrollbarsEnabled]);
+  const mergedRef = useMergedRefs(fluentRef, hostProps.ref);
 
   return createElement(
     ListboxComponent as ElementType,
     {
       ...rootProps,
-      className: mergeClasses(className, scrollAreaHostClassName, 'floway-combobox-listbox'),
-      ...(overlayScrollbarsEnabled ? { 'data-overlayscrollbars-initialize': '' } : {}),
+      ...hostProps,
+      className: mergeClasses(className, hostProps.className, 'floway-combobox-listbox'),
       ref: mergedRef,
     },
     // JSX rather than createElement, so the ref is a ref to the compiler and not

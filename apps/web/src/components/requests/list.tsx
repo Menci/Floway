@@ -5,7 +5,7 @@ import {
   DismissCircleRegular,
   TimerRegular,
 } from '@fluentui/react-icons';
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { List } from 'react-window';
@@ -23,7 +23,7 @@ import { useNow } from '../../lib/use-now';
 import { EmptyState } from '../ui/empty-state';
 import { Dropdown } from '../ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
-import { initializeScrollArea, scrollAreaHostClassName, useOverlayScrollbarsEnabled } from '../ui/scroll-area';
+import { useScrollAreaHost } from '../ui/scroll-area';
 import { ProviderBadge } from '../upstreams/provider-badge';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 
@@ -257,8 +257,7 @@ export function RequestListPanel(props: RequestListProps) {
   const { t } = useTranslation();
   const s = useStyles();
   const [listRef, setListRef] = useState<ListImperativeAPI | null>(null);
-  const scrollHostRef = useRef<HTMLDivElement>(null);
-  const overlayScrollbarsEnabled = useOverlayScrollbarsEnabled();
+  const { hostProps } = useScrollAreaHost({ axes: 'vertical', noTabIndex: true, viewport: listRef?.element ?? null });
   const now = useNow(30_000);
   const selectedKey = props.apiKeys.find(key => key.id === props.selectedKeyId)!;
 
@@ -270,13 +269,6 @@ export function RequestListPanel(props: RequestListProps) {
     listRef?.scrollToRow({ align: 'smart', index });
     window.requestAnimationFrame(() => listRef?.element?.querySelector<HTMLElement>(`[data-record-index="${index}"]`)?.focus());
   }, [listRef, onRecordChange, records]);
-
-  useLayoutEffect(() => {
-    const host = scrollHostRef.current;
-    const viewport = listRef?.element;
-    if (!host || !viewport) return;
-    return initializeScrollArea(host, viewport, 'vertical', true, overlayScrollbarsEnabled);
-  }, [listRef, overlayScrollbarsEnabled]);
 
   const rowProps = useMemo<RowProps>(() => ({
     now,
@@ -301,7 +293,7 @@ export function RequestListPanel(props: RequestListProps) {
       {props.records.length === 0 ? (
         <EmptyState className="flex-1 p-6" title={t('dashboard.requests.empty')} />
       ) : (
-        <div className={`${scrollAreaHostClassName} flex-1 min-h-0`} {...(overlayScrollbarsEnabled ? { 'data-overlayscrollbars-initialize': '' } : {})} ref={scrollHostRef}>
+        <div {...hostProps} className={mergeClasses(hostProps.className, 'flex-1 min-h-0')}>
           <List
             aria-label={t('dashboard.requests.listLabel')}
             className={s.list}
