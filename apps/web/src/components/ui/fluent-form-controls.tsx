@@ -86,7 +86,7 @@ function ScrollableListbox({
   ListboxComponent: ElementType<ListboxProps>;
   listboxProps: Omit<ListboxProps, 'as'>;
 }) {
-  const { hostProps, viewportRef } = useScrollAreaHost({ axes: 'vertical', noTabIndex: true });
+  const { hostProps, viewportRef, viewportStyle } = useScrollAreaHost({ axes: 'vertical', noTabIndex: true });
   const {
     children,
     className,
@@ -106,7 +106,7 @@ function ScrollableListbox({
     },
     // JSX rather than createElement, so the ref is a ref to the compiler and not
     // an ordinary prop it has to assume is read in render.
-    <div className="floway-combobox-listbox-viewport" ref={viewportRef} style={{ overflowX: 'hidden', overflowY: 'scroll' }}>
+    <div className="floway-combobox-listbox-viewport" ref={viewportRef} style={viewportStyle}>
       {/* Fluent opens the popup whether or not there is anything in it, so an
           empty list would arrive as a bordered seam a few pixels tall. Filling
           it is not an ARIA obligation, despite appearances: 1.3 renamed the
