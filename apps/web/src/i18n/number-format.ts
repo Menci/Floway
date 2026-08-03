@@ -11,17 +11,17 @@ import { formatBytes, formatCount, formatNumber } from '../lib/format-number';
 // interpolation rather than only the ones that name a format. A number with no
 // format is therefore a throw at render, not a message that quietly disagrees
 // with the component next to it.
-const numberFormats: Record<string, (value: number, locale: string) => string> = {
+export const numberFormats: Record<string, (value: number, locale: string) => string> = {
   number: formatNumber,
   count: formatCount,
   bytes: formatBytes,
 };
 
-export const numberFormatNames: readonly string[] = Object.keys(numberFormats);
-
 const format: FormatFunction = (value, name, language, options) => {
   const key = String((options as { interpolationkey?: string } | undefined)?.interpolationkey ?? '?');
-  if (value === undefined || value === null) return value as unknown as string;
+  if (value === undefined || value === null) {
+    throw new TypeError(`Interpolation {{${key}}} received no value.`);
+  }
 
   if (name === undefined) {
     if (typeof value === 'number') {

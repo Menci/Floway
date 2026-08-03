@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { supportedLanguages } from '../../src/i18n/languages';
 import en from '../../src/i18n/locales/en';
-import { numberFormatNames } from '../../src/i18n/number-format';
+import { numberFormats } from '../../src/i18n/number-format';
 import { loadLocale } from '../../src/i18n/resources';
 import { isPlural, leafEntries, leafKeys, pluralBase } from './keys';
 
@@ -67,7 +67,7 @@ describe('translation resources', () => {
     for (const [language, resource] of locales) {
       for (const [key, value] of leafEntries(resource)) {
         for (const name of formatNames(value)) {
-          expect(numberFormatNames, `${language}: ${key}`).toContain(name);
+          expect(Object.keys(numberFormats), `${language}: ${key}`).toContain(name);
         }
       }
     }
