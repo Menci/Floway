@@ -2156,7 +2156,7 @@ test('GET /api/upstreams/blueprint round-trips a shape-complete blank for every 
     assertEquals(body.id, '');
     assertEquals(body.kind, kind);
     assertEquals(body.config !== null && typeof body.config === 'object', true);
-    assertEquals(body.modelsCache, { fetchedAt: null, lastError: null });
+    assertEquals(body.modelsCache, { fetchedAt: null, lastError: null, modelCount: null });
   }
 });
 
