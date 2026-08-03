@@ -70,16 +70,20 @@ export function KeysTable({
     createTableColumn<ApiKey>({ columnId: 'lastUsed', compare: (a, b) => (a.last_used_at ?? '').localeCompare(b.last_used_at ?? '') }),
   ], []);
 
+  // One rule for both branches: the table and the narrow list each report a
+  // selection in their own shape, and only this decides what a selection means.
+  const selectRow = (id: unknown) => {
+    if (disabled || typeof id !== 'string') return;
+    onSelect(id);
+  };
+  const selectedItems = selectedKeyId === '' ? [] : [selectedKeyId];
+
   const { getRows, selection, sort } = useTableFeatures(
     { columns, getRowId: key => key.id, items: keys },
     [
       useTableSelection({
-        onSelectionChange: (_, data) => {
-          if (disabled) return;
-          const [id] = [...data.selectedItems];
-          if (typeof id === 'string') onSelect(id);
-        },
-        selectedItems: selectedKeyId === '' ? [] : [selectedKeyId],
+        onSelectionChange: (_, data) => selectRow([...data.selectedItems][0]),
+        selectedItems,
         selectionMode: 'single',
       }),
       useTableSort({}),
@@ -93,12 +97,8 @@ export function KeysTable({
 
   if (narrow) return <List
     aria-label={t('dashboard.apiKeys.table.title')}
-    onSelectionChange={(_, data) => {
-      if (disabled) return;
-      const id = data.selectedItems[0];
-      if (typeof id === 'string') onSelect(id);
-    }}
-    selectedItems={selectedKeyId === '' ? [] : [selectedKeyId]}
+    onSelectionChange={(_, data) => selectRow(data.selectedItems[0])}
+    selectedItems={selectedItems}
     selectionMode="single"
   >
     {keys.map(key => {
