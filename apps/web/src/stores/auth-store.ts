@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { StoreApi } from 'zustand';
 
 import { getCurrentSession, type AuthUser, type LoginResponse } from '../api/auth';
-import { api, type GlobalError } from '../api/client';
+import { api, callApiNoContent, type GlobalError } from '../api/client';
 import { clearSessionToken, getSessionToken, onSessionInvalidated, setSessionToken } from '../auth/session';
 
 // ../auth/session.ts owns the token. The store holds only what the gateway
@@ -87,17 +87,12 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     });
   },
 
-  // Local logout intent takes precedence when server-side revocation fails; the
-  // gateway expires any surviving session independently. A bare `finally`
-  // re-raises the rejection past the clear.
+  // Local logout intent takes precedence when server-side revocation fails --
+  // transport or status alike; the gateway expires any surviving session
+  // independently.
   logout: async () => {
-    try {
-      await api.auth.logout.$post();
-    } catch (error) {
-      console.warn('Revoking the session upstream failed; signing out locally anyway.', error);
-    } finally {
-      get().clear();
-    }
+    await callApiNoContent(() => api.auth.logout.$post());
+    get().clear();
   },
 
   initialize: () => loadSession(set, get, false),
