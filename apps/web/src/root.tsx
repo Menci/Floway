@@ -18,6 +18,7 @@ import { NavigationProgress } from './components/navigation-progress';
 import { ErrorShell, ErrorStack } from './components/ui/error-shell';
 import { AppLoadingScreen } from './components/ui/loading-screen';
 import { fluentComponents } from './fluent';
+import { defaultLanguage, htmlLanguageFor } from './i18n/languages';
 import { winuiDarkTheme, winuiLightTheme } from './winui/theme';
 import './i18n';
 import '@fontsource/maple-mono/400.css';
@@ -61,7 +62,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const theme = useSystemTheme();
 
   return (
-    <html lang="en">
+    <html lang={htmlLanguageFor(defaultLanguage)}>
       <head>
         <meta charSet="utf-8" />
         <meta name="darkreader-lock" content="true" />
