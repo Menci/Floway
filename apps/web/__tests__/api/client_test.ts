@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { callApi, callApiNoContent } from '../../src/api/client';
+import { isAbortError } from '../../src/lib/error-message';
 
 const respond = (response: Response) => () => Promise.resolve(response);
 
@@ -34,9 +35,16 @@ describe('callApi', () => {
     expect(result.error?.status).toBe(204);
   });
 
-  it('reports a transport failure as status 0', async () => {
-    const result = await callApi(() => Promise.reject(new Error('network down')));
-    expect(result.error).toEqual({ status: 0, message: 'network down' });
+  it('reports a transport failure as status 0 and keeps what was thrown', async () => {
+    const thrown = new Error('network down');
+    const result = await callApi(() => Promise.reject(thrown));
+    expect(result.error).toEqual({ status: 0, message: 'network down', cause: thrown });
+  });
+
+  it('keeps an abort distinguishable from any other transport failure', async () => {
+    const result = await callApi(() => Promise.reject(AbortSignal.abort().reason));
+    expect(result.error?.status).toBe(0);
+    expect(isAbortError(result.error?.cause)).toBe(true);
   });
 });
 
@@ -54,8 +62,9 @@ describe('callApiNoContent', () => {
     expect(result.error?.raw).toEqual({ error: 'Proxy is referenced by upstreams' });
   });
 
-  it('reports a transport failure as status 0', async () => {
-    const result = await callApiNoContent(() => Promise.reject(new Error('network down')));
-    expect(result.error).toEqual({ status: 0, message: 'network down' });
+  it('reports a transport failure as status 0 and keeps what was thrown', async () => {
+    const thrown = new Error('network down');
+    const result = await callApiNoContent(() => Promise.reject(thrown));
+    expect(result.error).toEqual({ status: 0, message: 'network down', cause: thrown });
   });
 });
