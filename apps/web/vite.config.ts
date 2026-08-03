@@ -186,9 +186,23 @@ export default defineConfig({
           output: {
             codeSplitting: {
               groups: [
+                // The charts are excluded because they are the one part of
+                // Fluent this app reaches without going through
+                // `@fluentui/react-components`: the two monitor routes import
+                // `@fluentui/react-charts` by name, so leaving it out of the
+                // group lets it and its d3 dependencies settle into a chunk
+                // those routes pull in, instead of riding the shell to every
+                // page. Measured against the login payload: 2298.7 -> 2111.6
+                // KiB raw, 492.8 -> 445.1 KiB brotli. The two chart routes pay
+                // 4.1 KiB brotli for the extra chunk boundary.
+                //
+                // Nothing else separates the same way while src/fluent.ts
+                // imports the component barrel as a namespace, because that
+                // makes every package behind the barrel reachable from the
+                // root route.
                 {
                   name: 'fluent',
-                  test: /node_modules[\\/](?:\.pnpm[\\/])?(?:@fluentui\+|@griffel\+|tabster@|@fluentui[\\/]|@griffel[\\/]|tabster[\\/])/,
+                  test: /node_modules[\\/](?:\.pnpm[\\/])?(?:@fluentui\+(?!react-charts|chart-utilities)|@griffel\+|tabster@|@fluentui[\\/](?!react-charts|chart-utilities)|@griffel[\\/]|tabster[\\/])/,
                   priority: 30,
                 },
                 {
