@@ -12,8 +12,6 @@ export async function clientLoader() {
   return null;
 }
 
-clientLoader.hydrate = true as const;
-
 export async function clientAction({
   request,
 }: Route.ClientActionArgs): Promise<LoginActionData | Response> {
