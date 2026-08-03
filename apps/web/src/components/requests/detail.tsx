@@ -7,7 +7,7 @@ import type { PropsWithChildren, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { contentTypeOf, EMPTY_BODY, renderBody, type RenderedBody } from './body-render';
-import { requestSeverity } from './format';
+import { errorLabel, requestSeverity } from './format';
 import { isSensitiveHeader, redactHeaderValue } from './header-redact';
 import {
   detectCollectKind,
@@ -210,9 +210,7 @@ export function RequestDetailPanel({ collected: loadedCollected, error: loadedEr
   if (!record) return null;
 
   const severity = requestSeverity(record.response.status, record.meta.error);
-  const responseError = record.meta.error?.kind === 'failed'
-    ? record.meta.error.reason
-    : record.meta.error ? `${record.meta.error.kind} error` : null;
+  const responseError = errorLabel(record.meta.error);
   const requestHeadersCopy = record.request.headers.map(([name, value]) => `${name}: ${value}`).join('\n');
   const responseHeadersCopy = record.response.headers.map(([name, value]) => `${name}: ${value}`).join('\n');
   const collectedCopyText = collected?.result === null || collected?.result === undefined

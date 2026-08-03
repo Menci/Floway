@@ -8,9 +8,13 @@ export const requestSeverity = (status: number | null, error: DumpErrorMeta | nu
   return 'success';
 };
 
-export const errorLabel = (error: DumpErrorMeta | null, status: number | null): string | null => {
+// The status joins the label only where the caller has nowhere else to carry
+// it. The detail panel renders an HttpStatusBadge beside the label, so it omits
+// the argument and gets the bare kind.
+export const errorLabel = (error: DumpErrorMeta | null, status?: number | null): string | null => {
   if (!error) return null;
   if (error.kind === 'failed') return error.reason;
+  if (status === undefined) return `${error.kind} error`;
   return `${error.kind} error ${status === null || status === 0 ? '???' : status}`;
 };
 
