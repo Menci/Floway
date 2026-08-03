@@ -55,21 +55,26 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
 // generated. Probed in that position, with no `anthropic-beta` header (see
 // below), against every Claude model in the catalog:
 //
-//     | model             | verdict                                   |
-//     | claude-opus-4.8   | 200                                       |
-//     | claude-opus-5     | 200                                       |
-//     | claude-sonnet-5   | 200                                       |
-//     | claude-opus-4.7   | role 'system' is not supported on this... |
-//     | claude-haiku-4.5  | role 'system' is not supported on this... |
-//     | claude-opus-4.6   | Unexpected role "system". The Messages...  |
-//     | claude-sonnet-4.6 | Unexpected role "system". The Messages...  |
+//     | model             | inline system turn |
+//     | claude-opus-4.8   | accepted           |
+//     | claude-opus-5     | accepted           |
+//     | claude-sonnet-5   | accepted           |
+//     | claude-opus-4.7   | rejected           |
+//     | claude-haiku-4.5  | rejected           |
+//     | claude-opus-4.6   | rejected           |
+//     | claude-sonnet-4.6 | rejected           |
 //
-// The two rejections are different failures. `role 'system' is not supported
-// on this model` comes back from a deployment that implements the feature and
-// is telling us the model does not — 4.7 and haiku-4.5 draw it while served by
-// Anthropic's own API. `Unexpected role "system"` is a validator that does not
-// know the role exists, which is what 4.6 and sonnet-4.6 are still served by.
-// The `>= 4.8` threshold happens to separate both at once.
+// Accept/reject is the model's own property and is what this predicate
+// encodes. The wording of a rejection is not: it names the deployment that
+// happened to serve that request. A deployment carrying the feature answers
+// `role 'system' is not supported on this model`, reporting the model's
+// limitation; one whose validator predates the feature answers `Unexpected
+// role "system". The Messages API accepts a top-level system parameter...`,
+// not recognising the role at all. Since the backend is chosen per request
+// (see the routing section below), one model yields both strings over time —
+// `claude-sonnet-4.6` usually draws the pre-feature wording and drew the
+// feature-carrying one on the rounds it landed on Anthropic-direct. Nothing
+// should key on the string.
 //
 // The `anthropic-beta: mid-conversation-system-2026-04-07` header does not
 // help and can hurt: Vertex answers `Unexpected value for the 'anthropic-beta'
