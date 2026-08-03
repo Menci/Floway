@@ -1,22 +1,5 @@
 import type { NavItemProps } from '@fluentui/react-components';
-import {
-  Chat20Color,
-  Clipboard20Color,
-  Cloud20Color,
-  Database20Color,
-  DataPie20Color,
-  DismissRegular,
-  DocumentText20Color,
-  Gauge20Color,
-  People20Color,
-  Person20Color,
-  PersonKey20Color,
-  SearchSparkle20Color,
-  ShareAndroid20Color,
-  ShareIos20Color,
-  TextEditStyle20Color,
-} from '@fluentui/react-icons';
-import type { FluentIcon } from '@fluentui/react-icons';
+import { DismissRegular, ShareIos20Color } from '@fluentui/react-icons';
 import { useId, useRef } from 'react';
 import type { MouseEventHandler, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -27,6 +10,7 @@ import { fluentComponents } from '../../fluent';
 import { pageNavigation } from '../../lib/page-navigation';
 import { FlowayLogo } from '../logo';
 import { NavSelectionIndicator } from './nav-selection-indicator';
+import { accountPage, dashboardPages, navGroups } from './pages';
 import { useAuthStore } from '../../stores/auth-store';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { ScrollArea } from '../ui/scroll-area';
@@ -75,67 +59,6 @@ const useStyles = makeStyles({
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L600-L603
 const NAV_INDICATOR_INSET = 0;
 
-interface NavItemDefinition {
-  to: string;
-  labelKey: string;
-  icon: FluentIcon;
-  adminOnly?: boolean;
-}
-
-interface NavGroup {
-  labelKey?: string;
-  adminOnly?: boolean;
-  items: NavItemDefinition[];
-}
-
-// The sidebar carries Fluent's multi-colour glyphs, where WinUI's
-// NavigationView draws monochrome ones and moves the icon and the label to the
-// same brush in every visual state. These assets hard-code their gradient
-// stops and consume no currentColor, so the per-state foreground
-// winui/controls/nav.css.ts substitutes reaches the label and stops there: a
-// row's glyph holds its colour through hover, press and selection. Swapping the
-// set to the monochrome Regular/Filled pair is what would close that, and it is
-// a product decision about the sidebar's look rather than a styling one.
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L460-L491
-const navGroups: NavGroup[] = [
-  {
-    items: [
-      { to: '/dashboard/playground', labelKey: 'dashboard.nav.playground', icon: Chat20Color },
-    ],
-  },
-  {
-    labelKey: 'dashboard.groups.providers',
-    items: [
-      { to: '/dashboard/providers/upstreams', labelKey: 'dashboard.nav.upstreams', icon: Cloud20Color, adminOnly: true },
-      { to: '/dashboard/providers/search', labelKey: 'dashboard.nav.search', icon: SearchSparkle20Color, adminOnly: true },
-      { to: '/dashboard/providers/proxy', labelKey: 'dashboard.nav.proxy', icon: ShareAndroid20Color, adminOnly: true },
-      { to: '/dashboard/providers/model-aliases', labelKey: 'dashboard.nav.modelAliases', icon: TextEditStyle20Color, adminOnly: true },
-    ],
-  },
-  {
-    labelKey: 'dashboard.groups.services',
-    items: [
-      { to: '/dashboard/services/api-keys', labelKey: 'dashboard.nav.apiKeys', icon: PersonKey20Color },
-      { to: '/dashboard/services/api-docs', labelKey: 'dashboard.nav.apiDocs', icon: DocumentText20Color },
-    ],
-  },
-  {
-    labelKey: 'dashboard.groups.monitor',
-    items: [
-      { to: '/dashboard/monitor/requests', labelKey: 'dashboard.nav.requests', icon: Clipboard20Color },
-      { to: '/dashboard/monitor/usage', labelKey: 'dashboard.nav.usage', icon: DataPie20Color },
-      { to: '/dashboard/monitor/performance', labelKey: 'dashboard.nav.performance', icon: Gauge20Color },
-    ],
-  },
-  {
-    labelKey: 'dashboard.groups.admin',
-    adminOnly: true,
-    items: [
-      { to: '/dashboard/admin/users', labelKey: 'dashboard.nav.users', icon: People20Color },
-      { to: '/dashboard/admin/backup-restore', labelKey: 'dashboard.nav.backupRestore', icon: Database20Color },
-    ],
-  },
-];
 
 function SidebarLink({ children, icon, onNavigate, pending, to }: {
   children: ReactNode;
@@ -163,6 +86,8 @@ function SidebarLink({ children, icon, onNavigate, pending, to }: {
   >{children}</NavItem>;
 }
 
+const AccountIcon = accountPage.icon;
+
 export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: AuthUser }) {
   const { t } = useTranslation();
   const { pathname } = useLocation();
@@ -180,10 +105,8 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
   // collide on them; the separators React puts in useId() are illegal inside
   // url(#…).
   const iconIdPrefix = useId().replace(/[^a-zA-Z0-9]/g, '');
-  const valueForPath = (path: string) => navGroups
-    .flatMap(group => group.items)
-    .find(item => path === item.to || path.startsWith(`${item.to}/`))?.to
-    ?? (path.startsWith('/dashboard/settings') ? '/dashboard/settings' : '');
+  const valueForPath = (path: string) =>
+    dashboardPages.find(page => path === page.to || path.startsWith(`${page.to}/`))?.to ?? '';
   const selectedValue = valueForPath(pathname);
   const pendingValue = navigation.location ? valueForPath(navigation.location.pathname) : '';
 
@@ -246,10 +169,10 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
         <div className="grid gap-y-1 relative w-full" ref={footerRef}>
           <NavSelectionIndicator containerRef={footerRef} inset={NAV_INDICATOR_INSET} otherListIs="above" selectedValue={selectedValue} />
           <SidebarLink
-            icon={<Person20Color idPrefix={iconIdPrefix} />}
+            icon={<AccountIcon idPrefix={iconIdPrefix} />}
             onNavigate={onNavigate}
-            pending={pendingValue === '/dashboard/settings'}
-            to="/dashboard/settings"
+            pending={pendingValue === accountPage.to}
+            to={accountPage.to}
           >{user.username}</SidebarLink>
           <NavItem className={styles.item} icon={<ShareIos20Color className={styles.signOutIcon} idPrefix={iconIdPrefix} />} value="logout">{t('dashboard.logout.label')}</NavItem>
         </div>
