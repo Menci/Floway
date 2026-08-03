@@ -56,16 +56,21 @@ interface CreateFetcherInput {
 // which is how non-buffered shapes like FormData stay supported.
 export const createFetcher = (input: CreateFetcherInput): Fetcher => {
   // An unset policy means direct egress, and direct egress defaults to raw TCP
-  // rather than the runtime's `fetch`. Cloudflare routes a Worker `fetch` body
-  // through its HTTP proxy path, which enforces a read-idle boundary on the
-  // upstream response: a Copilot Responses stream that has already returned
-  // HTTP 200 and then thinks for two minutes is killed mid-stream with
-  // `Network connection lost.` and never delivers a terminal event. A socket
-  // opened through `cloudflare:sockets` does not traverse that path — the same
-  // workload survived 233s of measured upstream silence and completed cleanly
-  // (https://github.com/Menci/Floway/pull/221). `direct_fetch` keeps
-  // the runtime connection pool and HTTP/2, so it stays selectable, but an
-  // operator has to ask for it.
+  // rather than the runtime's `fetch`, because both runtimes' `fetch` abandon a
+  // response whose body goes quiet for long enough. Cloudflare routes a Worker
+  // `fetch` body through its HTTP proxy path, whose Proxy Read Timeout bounds
+  // the gap between two consecutive reads of the upstream response at 120s;
+  // Node's `fetch` is undici, whose `bodyTimeout` "monitors time between
+  // receiving body data" and defaults to 300s. Either one kills a Copilot
+  // Responses stream that has already returned HTTP 200 and then thinks —
+  // measured silences run past both bounds (120s and 300.113s observed on the
+  // same workload), and neither limit is reachable from here. A raw socket has
+  // no such bound: the same workload survived 233s of measured upstream silence
+  // and completed cleanly (https://github.com/Menci/Floway/pull/221).
+  // `direct_fetch` keeps the runtime connection pool and HTTP/2, so it stays
+  // selectable, but an operator has to ask for it.
+  //   https://developers.cloudflare.com/cache/how-to/cache-rules/settings/#proxy-read-timeout-enterprise-only
+  //   https://github.com/nodejs/undici/blob/7392d6f9f565e550e9047458c275ae77aeaefbb9/docs/docs/api/Client.md?plain=1#L20
   //
   // Colo filter precedes the implicit direct-connect collapse so a fully-excluded
   // list behaves like an empty list and gets the direct-connect fallback, rather than
