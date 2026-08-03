@@ -1,41 +1,38 @@
 import type { ComponentProps, ReactNode } from 'react';
 
-import { useRouteAddress, type RouteAddress } from './route-link';
+import { useRouteAddress } from './route-link';
 import { fluentComponents } from '../../fluent';
 
-const { MenuItem, mergeClasses } = fluentComponents;
+const { MenuItem, makeStyles } = fluentComponents;
 
-// Fluent declares MenuItem's root slot as a div, but the hook behind it reads
-// `as` and hands the element to react-aria's button props, so an anchor keeps
-// the menuitem role, the roving focus and both Enter and Space. Only the slot's
-// element type is div-shaped, hence the cast.
+// Fluent's MenuItem cannot be an anchor. Its hook destructures `as` out of the
+// props before building the root slot, so the element type it renders is always
+// the div its slot declares, and the anchor component Fluent ships instead —
+// MenuItemLink — has no subText slot in its renderer, so it would drop the
+// second line these items carry.
 // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-menu/library/src/components/MenuItem/useMenuItemBase.ts#L38-L48
-//
-// MenuItemLink is the component Fluent ships for this, and it is not usable
-// here: its renderer has no subText slot, so it would drop the second line this
-// menu's items carry.
 // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-menu/library/src/components/MenuItemLink/renderMenuItemLink.tsx#L13-L21
-const AnchorMenuItem = MenuItem as unknown as (
-  props: Omit<ComponentProps<typeof MenuItem>, 'as' | 'onClick'> & RouteAddress & { as: 'a' },
-) => ReactNode;
+//
+// So the address is laid over the item as its own element. It resolves against
+// the item, which Fluent's own reset makes a containing block, and it is out of
+// flow, so it changes neither the layout nor the item's states. It is hidden
+// from assistive technology and out of the tab order: what a reader and the
+// keyboard get is the menuitem, unchanged, while the pointer and the context
+// menu get a real link.
+const useStyles = makeStyles({
+  address: { inset: 0, position: 'absolute' },
+});
 
-// The menu item that opens a page. Fluent's own styles never reset an anchor's
-// underline, because its div root never needed one.
-export function RouteMenuItem({ children, className, icon, subText, to }: {
+export function RouteMenuItem({ children, icon, subText, to }: {
   children: ReactNode;
-  className?: string;
   icon?: ComponentProps<typeof MenuItem>['icon'];
   subText?: ComponentProps<typeof MenuItem>['subText'];
   to: string;
 }) {
+  const styles = useStyles();
   const address = useRouteAddress(to);
-  return <AnchorMenuItem
-    {...address}
-    as="a"
-    className={mergeClasses('no-underline', className)}
-    icon={icon}
-    subText={subText}
-  >
+  return <MenuItem icon={icon} onClick={address.onClick} subText={subText}>
     {children}
-  </AnchorMenuItem>;
+    <a aria-hidden className={styles.address} href={address.href} tabIndex={-1} />
+  </MenuItem>;
 }
