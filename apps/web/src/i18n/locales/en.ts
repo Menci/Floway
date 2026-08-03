@@ -1115,6 +1115,7 @@ const en = {
         listTitle: 'Proxies',
         columns: { actions: 'Actions' },
         empty: 'No proxies configured. Add a proxy to route outbound traffic.',
+        unknownAddress: 'Unrecognized address',
         addTitle: 'Add proxy',
         editTitle: 'Edit proxy',
         form: {
@@ -1122,6 +1123,17 @@ const en = {
           namePlaceholder: 'My proxy',
           url: 'Proxy URL',
           protocol: 'Protocol',
+          protocolOptions: {
+            'http': 'HTTP',
+            'https': 'HTTPS',
+            'socks5': 'SOCKS5',
+            'ss': 'Shadowsocks',
+            'ss2022': 'Shadowsocks 2022',
+            'trojan': 'Trojan',
+            'vless-tcp': 'VLESS / TLS',
+            'vless-ws': 'VLESS / WebSocket',
+            'reality': 'VLESS / REALITY',
+          },
           host: 'Host',
           hostPlaceholder: 'server.example.com',
           address: 'Address',
@@ -1147,6 +1159,7 @@ const en = {
           shortId: 'Short ID (optional)',
           shortIdPlaceholder: 'hex, up to 16 chars',
           timeout: 'Dial timeout',
+          timeoutPlaceholder: '{{seconds}} (default)',
           timeoutHint: 'Seconds. Leave empty for default 10s timeout.',
         },
         validation: {

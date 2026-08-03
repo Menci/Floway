@@ -1048,6 +1048,7 @@ const zhHansCN = {
         listTitle: '代理列表',
         columns: { actions: '操作' },
         empty: '暂无代理。添加代理后即可路由出口流量。',
+        unknownAddress: '无法识别的地址',
         addTitle: '添加代理',
         editTitle: '编辑代理',
         form: {
@@ -1055,6 +1056,17 @@ const zhHansCN = {
           namePlaceholder: '我的代理',
           url: '代理 URL',
           protocol: '协议',
+          protocolOptions: {
+            'http': 'HTTP',
+            'https': 'HTTPS',
+            'socks5': 'SOCKS5',
+            'ss': 'Shadowsocks',
+            'ss2022': 'Shadowsocks 2022',
+            'trojan': 'Trojan',
+            'vless-tcp': 'VLESS / TLS',
+            'vless-ws': 'VLESS / WebSocket',
+            'reality': 'VLESS / REALITY',
+          },
           host: '主机',
           hostPlaceholder: 'server.example.com',
           address: '地址',
@@ -1080,6 +1092,7 @@ const zhHansCN = {
           shortId: 'Short ID（可选）',
           shortIdPlaceholder: '十六进制，最多 16 位',
           timeout: '拨号超时',
+          timeoutPlaceholder: '{{seconds}}（默认）',
           timeoutHint: '单位为秒。留空使用默认 10 秒超时。',
         },
         validation: {
