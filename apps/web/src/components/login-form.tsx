@@ -83,8 +83,8 @@ export function LoginForm() {
     );
   };
 
-  const passwordError = errors.password?.message;
   const usernameError = errors.username?.message;
+  const passwordMessage = errors.password?.message ?? credentialError ?? null;
 
   return (
     <Panel className="w-[min(440px,100%)]">
@@ -124,10 +124,8 @@ export function LoginForm() {
           render={({ field }) => (
             <Field
               label={t('auth.login.password')}
-              validationMessage={(passwordError ?? credentialError) === undefined || (passwordError ?? credentialError) === null
-                ? undefined
-                : t((passwordError ?? credentialError)!)}
-              validationState={passwordError ?? credentialError ? 'error' : undefined}
+              validationMessage={passwordMessage === null ? undefined : t(passwordMessage)}
+              validationState={passwordMessage === null ? undefined : 'error'}
             >
               <Input
                 {...field}
