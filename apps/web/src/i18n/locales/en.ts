@@ -391,10 +391,10 @@ const en = {
           usingKey: 'This uses the <strong>{{name}}</strong> API key.',
           claudeCode: 'Claude Code',
           codex: 'Codex',
-          claudeHint: 'Merge the env block into ~/.claude/settings.json or .claude/settings.json.',
-          codexConfigHint: 'Merge into ~/.codex/config.toml.',
-          codexAuthHint: 'Linux and macOS: store only the Floway provider token under CODEX_HOME.',
-          codexWindowsAuthHint: 'Windows PowerShell: store the same provider token without changing the official account login.',
+          claudeHint: 'Merge the env block into <path>~/.claude/settings.json</path> or <path>.claude/settings.json</path>.',
+          codexConfigHint: 'Merge into <path>~/.codex/config.toml</path>.',
+          codexConfigHintWindows: 'Merge into <path>%USERPROFILE%\\.codex\\config.toml</path>.',
+          codexAuthHint: 'Store the Floway provider token beside that config, leaving the official account login alone.',
         },
         agentSetup: {
           agent: 'Agent', accessMethod: 'Connection method', setupTab: 'Setup script', snippetsTab: 'Config snippet', platform: 'Platform', commandPending: 'Preparing setup command…', modelSelection: 'Model selection', miscSettings: 'Miscellaneous settings', selectKey: 'Select an API key above to prepare a setup command.', noKey: 'Create an API key to use Agent Setup.', expired: 'This setup link has expired. Retry to create a fresh link.', timedOut: 'The gateway did not answer in time.', retry: 'Retry', expires: 'The setup link stays alive while this page is visible and expires after you leave.', defaultModel: 'Default model', fableModel: 'Fable model', opusModel: 'Opus model', sonnetModel: 'Sonnet model', haikuModel: 'Haiku model', reasoningEffort: 'Reasoning effort', modelDefault: 'Default', noModelMatches: 'No matching models', modelDiscovery: 'Gateway model discovery', modelDiscoveryHint: 'Let Claude Code discover available models from this Floway gateway.', cleanupRetention: 'Cleanup retention', cleanupRetentionHint: 'Set how long Claude Code retains local session data before cleanup.', cleanupDays: '{{count, number}} days', optOutAiAttribution: 'Opt out of Claude Code AI attribution', optOutAiAttributionHint: 'Remove Claude Code attribution ("Co-Authored-By") from commits and pull requests, and hide session links.',
@@ -608,17 +608,17 @@ const en = {
               description:
                   'Some upstreams do not support forced tool calls and reasoning mode at the same time, and reject such requests outright.\nWhen this option is enabled and the caller forces a specific tool through `tool_choice`, Floway **disables reasoning mode** before forwarding the request.',
             },
-            'demote-interleaved-system-to-user': {
+            'rewrite-mid-conv-system-to-user': {
               label: 'Rewrite Inline system Roles to user',
               description:
                   'Some upstreams only allow the `system` role at the beginning of a conversation and reject inline `system` messages interleaved between `user` or `assistant` messages (for example, DeepSeek-R1).\nWhen this option is enabled, consecutive `system` messages at the beginning of the conversation are preserved, while later interleaved `system` roles are rewritten to `user`. Message content remains unchanged.\nFor Messages API upstreams, this option is treated as enabled because system prompts can only appear in the top-level `system` field.',
             },
-            'demote-developer-to-system': {
+            'rewrite-developer-to-system': {
               label: 'Rewrite developer Roles to system',
               description:
                   'The latest OpenAI API specification includes the `developer` role (`role`), but some upstreams do not support it.\nEnable this option to rewrite `developer` as `system` before sending requests to the upstream.\nFor example, Codex system prompts use the `developer` role, while DeepSeek does not support it; enable this option in that case.',
             },
-            'promote-system-to-developer': {
+            'rewrite-system-to-developer': {
               label: 'Rewrite system Roles to developer',
               description:
                   'Rewrite messages with the `system` role to `developer` for upstreams that reject system-role input while accepting the developer role.',

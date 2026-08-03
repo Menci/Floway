@@ -326,6 +326,26 @@ describe('the checked axis the WinUI rules read', () => {
     expect(input.getAttribute(winuiCheckedAttribute)).toBe('true');
   });
 
+  // Fluent puts the cell's own `checked` in the slot's defaultProps, so a slot
+  // that states its own outranks it. The stamp reads the slot through the same
+  // order, rather than replacing what the slot asked for.
+  it('follows a check box state the caller put on the indicator slot', () => {
+    const view = renderInApp(
+      <Table>
+        <TableBody>
+          <TableRow>
+            <TableSelectionCell checkboxIndicator={{ checked: true }} />
+          </TableRow>
+        </TableBody>
+      </Table>,
+    );
+
+    const input = view.container.querySelector<HTMLInputElement>('.fui-Checkbox input')!;
+
+    expect(input.checked).toBe(true);
+    expect(input.getAttribute(winuiCheckedAttribute)).toBe('true');
+  });
+
   it('leaves a selection cell that draws no check box alone', () => {
     const view = renderInApp(
       <Table>

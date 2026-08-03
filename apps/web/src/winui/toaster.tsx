@@ -84,14 +84,20 @@ const AriaLive = ({ announceRef }: { announceRef: React.RefObject<ToastAnnounce>
     if (frame.current) return;
     frame.current = requestAnimationFrame(() => {
       frame.current = 0;
-      setCurrent(queue.current.shift());
+      const next = queue.current.shift();
+      // Written here rather than from the effect below: `announce` reads this
+      // to decide whether the pump is idle, and between this callback and the
+      // commit it schedules there is a window in which an effect can announce.
+      // A mirror written only on commit still holds the message just retired,
+      // so the announcement would be queued behind a pump nothing restarts.
+      currentRef.current = next;
+      setCurrent(next);
     });
   }, []);
 
   React.useEffect(() => () => cancelAnimationFrame(frame.current), []);
 
   React.useEffect(() => {
-    currentRef.current = current;
     if (!current) return;
     const timer = setTimeout(pump, MESSAGE_HOLD_MS);
     return () => clearTimeout(timer);
@@ -141,9 +147,18 @@ const createToastContainer = (components: FluentComponents) => {
 
     // The slot is transparent to the accessibility tree so that the stack's list
     // role still sees its items as its own children.
+    //
+    // A toast held behind the toaster's limit is rendered here too, with
+    // `visible` false, and `unmountOnExit` is what keeps it out of the document
+    // until a slot frees: a presence component that stays mounted runs the exit
+    // motion on it immediately, and the finish of that motion is Fluent's own
+    // signal to drop the toast from the queue for good.
+    // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-toast/library/src/state/vanilla/createToaster.ts#L161-L165
+    // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-toast/library/src/state/vanilla/createToaster.ts#L123-L141
+    // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-toast/library/src/components/ToastContainer/useToastContainer.ts#L131-L134
     return <ToastContainerContextProvider value={contextValues.toast}>
       <div className={STACK_ITEM_CLASS} role="presentation">
-        <ToastPresence appear onMotionFinish={state.onMotionFinish} visible={state.visible}>
+        <ToastPresence appear onMotionFinish={state.onMotionFinish} unmountOnExit visible={state.visible}>
           <div {...root} className={[toastContainerClassNames.root, root.className].filter(Boolean).join(' ')}>
             {children}
             <Countdown key={state.updateId} onTimeout={onTimeout} running={running} timeout={timeout} />

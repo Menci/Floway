@@ -202,7 +202,7 @@ describe('buildClaudeCodeCatalog', () => {
   });
 
   test('forwards the supplied enabledFlags set onto every model', () => {
-    const flags: ReadonlySet<FlagId> = new Set(['demote-developer-to-system', 'promote-system-to-developer']);
+    const flags: ReadonlySet<FlagId> = new Set(['rewrite-developer-to-system', 'rewrite-system-to-developer']);
     const built = buildClaudeCodeCatalog(SAMPLE_API_MODELS, flags);
     for (const m of built) {
       expect(m.enabledFlags).toBe(flags);

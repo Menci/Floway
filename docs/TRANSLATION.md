@@ -51,8 +51,8 @@ than in pairwise translators.
 - Role compatibility is target-side within those lists, so pair sections below
   describe the translator's intermediate target shape, not an unconditional
   final wire role. Chat Completions and Responses apply enabled role rewrites
-  system-to-developer, developer-to-system, then interleaved system-to-user.
-  Messages can demote inline system messages because its only dedicated system
+  system-to-developer, developer-to-system, then mid-conversation system-to-user.
+  Messages can rewrite inline system messages because its only dedicated system
   slot is top-level `system`.
 - A provider may run another typed interceptor envelope inside `call*`, after
   the gateway protocol envelope and immediately before its wire call. Provider

@@ -34,27 +34,27 @@ test('leaves roles unchanged without flags or at a translated target', async () 
   ];
 
   assertEquals(await applyRoles(input, new Set()), input);
-  assertEquals(await applyRoles(input, new Set(['promote-system-to-developer']), 'chat-completions'), input);
+  assertEquals(await applyRoles(input, new Set(['rewrite-system-to-developer']), 'chat-completions'), input);
 });
 
-test('applies promotion and developer demotion independently', async () => {
+test('applies the system and developer rewrites independently', async () => {
   assertEquals(
     await applyRoles(
       [{ type: 'message', role: 'system', content: 'rules' }],
-      new Set(['promote-system-to-developer']),
+      new Set(['rewrite-system-to-developer']),
     ),
     [{ type: 'message', role: 'developer', content: 'rules' }],
   );
   assertEquals(
     await applyRoles(
       [{ type: 'message', role: 'developer', content: 'rules' }],
-      new Set(['demote-developer-to-system']),
+      new Set(['rewrite-developer-to-system']),
     ),
     [{ type: 'message', role: 'system', content: 'rules' }],
   );
 });
 
-test('uses non-message items as the boundary before demoting later system', async () => {
+test('uses non-message items as the boundary before rewriting later system', async () => {
   assertEquals(
     await applyRoles(
       [
@@ -62,7 +62,7 @@ test('uses non-message items as the boundary before demoting later system', asyn
         { type: 'reasoning', id: 'rs_1', summary: [] },
         { type: 'message', role: 'system', content: 'inline rules' },
       ],
-      new Set(['demote-interleaved-system-to-user']),
+      new Set(['rewrite-mid-conv-system-to-user']),
     ),
     [
       { type: 'message', role: 'system', content: 'base rules' },
@@ -77,11 +77,11 @@ test('keeps a leading-only system run and an empty input unchanged', async () =>
     { type: 'message', role: 'system', content: 'base A' },
     { type: 'message', role: 'system', content: 'base B' },
   ];
-  assertEquals(await applyRoles(leading, new Set(['demote-interleaved-system-to-user'])), leading);
-  assertEquals(await applyRoles([], new Set(['demote-interleaved-system-to-user'])), []);
+  assertEquals(await applyRoles(leading, new Set(['rewrite-mid-conv-system-to-user'])), leading);
+  assertEquals(await applyRoles([], new Set(['rewrite-mid-conv-system-to-user'])), []);
 });
 
-test('preserves multipart content identity when demoting an interleaved system message', async () => {
+test('preserves multipart content identity when rewriting a mid-conversation system message', async () => {
   const content = [
     { type: 'input_text' as const, text: 'one' },
     { type: 'input_text' as const, text: 'two' },
@@ -91,17 +91,17 @@ test('preserves multipart content identity when demoting an interleaved system m
       { type: 'message', role: 'user', content: 'hello' },
       { type: 'message', role: 'system', content },
     ],
-    new Set(['demote-interleaved-system-to-user']),
+    new Set(['rewrite-mid-conv-system-to-user']),
   );
   assertEquals(result, [
     { type: 'message', role: 'user', content: 'hello' },
     { type: 'message', role: 'user', content },
   ]);
-  const demoted = result[1];
-  assert(demoted?.type === 'message' && demoted.content === content);
+  const rewritten = result[1];
+  assert(rewritten?.type === 'message' && rewritten.content === content);
 });
 
-test('applies overlapping flags in promotion then demotion order', async () => {
+test('applies overlapping flags in system-to-developer then developer-to-system order', async () => {
   assertEquals(
     await applyRoles(
       [
@@ -110,9 +110,9 @@ test('applies overlapping flags in promotion then demotion order', async () => {
         { type: 'message', role: 'system', content: 'inline rules' },
       ],
       new Set([
-        'promote-system-to-developer',
-        'demote-developer-to-system',
-        'demote-interleaved-system-to-user',
+        'rewrite-system-to-developer',
+        'rewrite-developer-to-system',
+        'rewrite-mid-conv-system-to-user',
       ]),
     ),
     [

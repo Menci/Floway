@@ -92,9 +92,18 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
 
   usePollWhileVisible(poll);
 
+  const urlState = useMemo<UsageUrlState>(
+    () => ({ view, range, metric, redactKeys, hiddenKeys: [...hiddenKeys], hiddenModels: [...hiddenModels] }),
+    [hiddenKeys, hiddenModels, metric, range, redactKeys, view],
+  );
+
   useEffect(() => {
-    setSearchParams(serializeUsageUrlState({ view, range, metric, redactKeys, hiddenKeys: [...hiddenKeys], hiddenModels: [...hiddenModels] }), rewrite);
-  }, [hiddenKeys, hiddenModels, metric, range, redactKeys, rewrite, setSearchParams, view]);
+    setSearchParams(serializeUsageUrlState(urlState), rewrite);
+  }, [rewrite, setSearchParams, urlState]);
+
+  // The page keeps the view in state and writes the URL after it, so each
+  // choice carries the address its own view would be read at.
+  const addressOf = (patch: Partial<UsageUrlState>) => `?${serializeUsageUrlState({ ...urlState, ...patch })}`;
 
   const buckets = useMemo(
     () => dashboardBuckets(loadedRange, loadedAt, locale),
@@ -205,10 +214,12 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
                   {
                     value: 'all-by-user',
                     label: t('dashboard.usage.view.allByUser'),
+                    to: addressOf({ view: 'all-by-user' }),
                   },
                   {
                     value: 'self-by-key',
                     label: t('dashboard.usage.view.myKeys'),
+                    to: addressOf({ view: 'self-by-key' }),
                   },
                 ]}
                 onChange={value => setView(value as UsageView)}
@@ -228,9 +239,9 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
           <ChoiceGroup
             ariaLabel={t('dashboard.usage.range.label')}
             items={[
-              { value: 'today', label: t('dashboard.usage.range.today') },
-              { value: '7d', label: t('dashboard.usage.range.sevenDays') },
-              { value: '30d', label: t('dashboard.usage.range.thirtyDays') },
+              { value: 'today', label: t('dashboard.usage.range.today'), to: addressOf({ range: 'today' }) },
+              { value: '7d', label: t('dashboard.usage.range.sevenDays'), to: addressOf({ range: '7d' }) },
+              { value: '30d', label: t('dashboard.usage.range.thirtyDays'), to: addressOf({ range: '30d' }) },
             ]}
             onChange={value => setRange(value as UsageRange)}
             value={range}

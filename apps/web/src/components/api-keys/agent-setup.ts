@@ -114,7 +114,10 @@ export const buildAgentClaudeSnippet = (
 // https://github.com/openai/codex/blob/24e9b849fad8f506971dfa0313dbdea8abd90112/codex-rs/features/src/lib.rs#L382-L384
 // https://github.com/openai/codex/blob/24e9b849fad8f506971dfa0313dbdea8abd90112/codex-rs/features/src/lib.rs#L901-L905
 // https://github.com/openai/codex/blob/24e9b849fad8f506971dfa0313dbdea8abd90112/codex-rs/features/src/lib.rs#L1393-L1439
-export const buildAgentCodexSnippet = (origin: string, config: AgentSetupConfiguration['codex']) => [
+// The auth command reads the token file the credential snippet writes, so the
+// two halves of the Codex setup are one platform's pair: a shell that can read
+// it, and a shell that wrote it.
+export const buildAgentCodexSnippet = (origin: string, config: AgentSetupConfiguration['codex'], platform: 'unix' | 'windows') => [
   ...(config.model ? [`model = ${JSON.stringify(config.model)}`] : []),
   ...(config.reasoningEffort ? [`model_reasoning_effort = ${JSON.stringify(config.reasoningEffort)}`] : []),
   'model_provider = "floway"',
@@ -123,8 +126,9 @@ export const buildAgentCodexSnippet = (origin: string, config: AgentSetupConfigu
   '[model_providers.floway]',
   'name = "Floway"',
   `base_url = ${JSON.stringify(`${origin}/azure-api.codex`)}`,
-  'auth = { command = "sh", args = ["-c", "cat \\"${CODEX_HOME:-$HOME/.codex}/floway-token\\""] } # Linux & macOS',
-  '# auth = { command = "powershell", args = ["-NoProfile", "-Command", "$h = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME \'.codex\' }; [IO.File]::ReadAllText((Join-Path $h \'floway-token\'))"] } # Windows: uncomment and remove the line above',
+  platform === 'windows'
+    ? 'auth = { command = "powershell", args = ["-NoProfile", "-Command", "$h = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME \'.codex\' }; [IO.File]::ReadAllText((Join-Path $h \'floway-token\'))"] }'
+    : 'auth = { command = "sh", args = ["-c", "cat \\"${CODEX_HOME:-$HOME/.codex}/floway-token\\""] }',
   'wire_api = "responses"',
   'supports_websockets = true',
   'http_headers = { "x-openai-actor-authorization" = "1" }',

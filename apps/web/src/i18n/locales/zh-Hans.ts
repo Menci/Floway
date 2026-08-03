@@ -373,10 +373,10 @@ const zhHansCN = {
           usingKey: '此处使用 <strong>{{name}}</strong> API 密钥。',
           claudeCode: 'Claude Code',
           codex: 'Codex',
-          claudeHint: '将 env 块合并到 ~/.claude/settings.json 或 .claude/settings.json。',
-          codexConfigHint: '合并到 ~/.codex/config.toml。',
-          codexAuthHint: 'Linux 和 macOS：仅在 CODEX_HOME 下保存 Floway provider token。',
-          codexWindowsAuthHint: 'Windows PowerShell：保存相同 token，不修改官方账号登录。',
+          claudeHint: '将 env 块合并到 <path>~/.claude/settings.json</path> 或 <path>.claude/settings.json</path>。',
+          codexConfigHint: '合并到 <path>~/.codex/config.toml</path>。',
+          codexConfigHintWindows: '合并到 <path>%USERPROFILE%\\.codex\\config.toml</path>。',
+          codexAuthHint: '将 Floway provider token 保存在该配置旁，不影响官方账号登录。',
         },
         agentSetup: { agent: 'Agent', accessMethod: '接入方式', setupTab: '自动配置脚本', snippetsTab: '配置文件片段', platform: '操作系统', commandPending: '正在准备安装命令…', modelSelection: '模型选择', miscSettings: '杂项设置', selectKey: '请先在上方选择 API 密钥。', noKey: '请先创建 API 密钥。', expired: '此安装链接已过期，请重试生成新链接。', timedOut: '网关未在规定时间内响应。', retry: '重试', expires: '页面可见时链接会自动续期，离开后即过期。', defaultModel: '默认模型', fableModel: 'Fable 模型', opusModel: 'Opus 模型', sonnetModel: 'Sonnet 模型', haikuModel: 'Haiku 模型', reasoningEffort: '思考强度', modelDefault: '默认', noModelMatches: '没有匹配的模型', modelDiscovery: 'Gateway 模型发现', modelDiscoveryHint: '允许 Claude Code 从此 Floway gateway 发现可用模型。', cleanupRetention: '清理保留期', cleanupRetentionHint: '设置 Claude Code 本地会话数据的清理保留期。', cleanupDays: '{{count, number}} 天', optOutAiAttribution: '停用 Claude Code AI 归属标记', optOutAiAttributionHint: '移除提交和 Pull Request 中的 Claude Code 归属信息（"Co-Authored-By"），并隐藏会话链接。' },
         rotate: {
@@ -580,17 +580,17 @@ const zhHansCN = {
               description:
                   '部分上游不支持同时开启“强制工具调用”和思考模式，会直接拒绝此类请求。\n开启此开关后，当调用方通过 `tool_choice` 强制指定某个工具时，Floway 会在转发请求时**关闭思考模式**。',
             },
-            'demote-interleaved-system-to-user': {
+            'rewrite-mid-conv-system-to-user': {
               label: '改写行内 system 角色为 user',
               description:
                   '部分上游只允许在对话开头使用 `system` 角色，不接受穿插在 `user` 或 `assistant` 消息之间的行内 `system` 消息（如 DeepSeek-R1）。\n开启此开关后，对话开头连续的 `system` 消息会保留，而后续穿插的 `system` 角色会被改写为 `user`。消息内容保持不变。\n对于 Messages API 上游，由于系统提示词只能放在顶层 `system` 字段中，此开关被视为开启。',
             },
-            'demote-developer-to-system': {
+            'rewrite-developer-to-system': {
               label: '改写 developer 角色为 system',
               description:
                   'OpenAI 的新版 API 规范中包含了 `developer` 这一角色（`role`），但部分上游并不支持。\n开启此开关，以在请求上游时，把 `developer` 改写为 `system`。\n例如，Codex 的系统提示词会使用 `developer` 角色，但 DeepSeek 不支持，此时就应开启。',
             },
-            'promote-system-to-developer': {
+            'rewrite-system-to-developer': {
               label: '改写 system 角色为 developer',
               description:
                   '对拒绝 system 角色但接受 developer 角色的上游，将 `system` 角色消息改写为 `developer`。',

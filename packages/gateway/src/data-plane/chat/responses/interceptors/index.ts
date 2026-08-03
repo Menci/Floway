@@ -28,8 +28,8 @@ import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
 //   - withReasoningDisabledOnForcedToolChoice: gated by
 //     `disable-reasoning-on-forced-tool-choice`.
 //   - withRoleCompatibilityApplied: applies role flags in the fixed order
-//     `system → developer → system → user`; later demotions are authoritative
-//     when flags overlap, and the final step affects only interleaved system.
+//     `system → developer → system → user`; later rewrites are authoritative
+//     when flags overlap, and the final step affects only mid-conversation system.
 //   - withPromptCacheKeyStripped: gated by `strip-prompt-cache-key`. Drops
 //     the top-level `prompt_cache_key` field for upstreams that reject it
 //     as an unknown argument (e.g. Azure DeepSeek). Runs before vendor

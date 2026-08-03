@@ -17,8 +17,11 @@ const { mergeClasses } = fluentComponents;
 // `TableCellLayout`, the other through the element itself.
 export const rowTitleClass = 'winui-focus-rect text-fui-fg1 no-underline hover:underline';
 
-// A `button` rather than an anchor: this one opens the row where it stands, so
-// there is no address to carry and nothing for a new tab to open.
+// A `button` rather than an anchor. The row it opens does have an address --
+// the upstream editor names the selected model in its search params -- but that
+// address is a position inside one editing session, and a second tab on it is a
+// second editor competing over the same record rather than a second view of
+// anything. What earns an anchor is a view a reader would want beside another.
 //
 // The leading is stated because truncation brings `overflow: hidden` with it,
 // and a button's own line box is tight enough to clip a descender. The sibling

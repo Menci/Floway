@@ -106,6 +106,8 @@ export function KeysTable({
         change of presentation and not of what is being presented. */}
     {sort.sort(getRows()).map(({ item: key }) => {
       const copyTag = `key-${key.id}`;
+      // No column heads the list, so a date too far back for a relative phrase
+      // has to name itself: beside the created date, two bare dates read alike.
       const lastUsed = key.last_used_at
         ? relativeTime(key.last_used_at, locale, { now }) ?? t('dashboard.apiKeys.table.usedOn', { date: shortDate(key.last_used_at, locale) })
         : t('dashboard.apiKeys.table.never');
@@ -231,7 +233,7 @@ export function KeysTable({
                 {key.last_used_at
                   ? <Tooltip content={dateTime(key.last_used_at, locale)} relationship="description">
                       <span className="winui-focus-rect" tabIndex={0}>
-                        {relativeTime(key.last_used_at, locale, { now }) ?? t('dashboard.apiKeys.table.usedOn', { date: shortDate(key.last_used_at, locale) })}
+                        {relativeTime(key.last_used_at, locale, { now }) ?? shortDate(key.last_used_at, locale)}
                       </span>
                     </Tooltip>
                   : <span>{t('dashboard.apiKeys.table.never')}</span>}

@@ -47,8 +47,9 @@ export const agentSetupCommand = (origin: string, path: string, platform: 'unix'
 interface SetupSessionState {
   lease: AgentSetupLease | null;
   // The form is editable before a lease exists, so the draft outlives one.
-  // baseline is what the draft held when a lease last seeded it, and the
-  // difference between the two is the edit set the next lease must keep.
+  // baseline is the last configuration a server answered for -- what a lease
+  // seeded, or what a save stored -- and the difference between the two is the
+  // unsaved edit set the next lease must keep.
   draft: AgentSetupConfiguration;
   baseline: AgentSetupConfiguration;
   generation: number;
@@ -168,9 +169,9 @@ export const useAgentSetup = (
   }, [scheduleExpiry, store]);
 
   // A lease answers with the configuration the account last stored. The fields
-  // the draft moved away from its baseline while the lease was being acquired
-  // survive it and are unsaved against it; every other field takes the server's
-  // value, and the draft becomes the baseline the next lease is measured from.
+  // the draft still holds unsaved survive it and are unsaved against it; every
+  // other field takes the server's value, and the draft becomes the baseline
+  // the next lease is measured from.
   const seedDraft = useCallback((configuration: AgentSetupConfiguration) => {
     store.setState(current => {
       const draft = applyLocalAgentSetupChanges(configuration, current.draft, current.baseline);
@@ -226,7 +227,7 @@ export const useAgentSetup = (
           adoptLease(current);
           if (store.getState().generation === sentGeneration
             && comparableConfiguration(current.configuration) === comparableConfiguration(sentConfiguration)) {
-            store.setState({ confirmedGeneration: sentGeneration, saveError: null });
+            store.setState({ baseline: sentConfiguration, confirmedGeneration: sentGeneration, saveError: null });
             return;
           }
           clearTimer(debounceTimerRef);
@@ -242,6 +243,10 @@ export const useAgentSetup = (
     adoptLease(result.data);
     store.setState(current => ({
       saveError: null,
+      // The stored configuration is no longer an unsaved edit, so it leaves the
+      // set the next lease carries over: without this the fields edited under
+      // one key would be copied onto the configuration of the next.
+      baseline: sentConfiguration,
       confirmedGeneration: Math.max(current.confirmedGeneration, sentGeneration),
     }));
   }, [adoptLease, enqueue, markTerminated, request, scheduleSaveRetry, store]);
