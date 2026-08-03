@@ -36,4 +36,14 @@ describe('partial page loads', () => {
     expect(mapResult(failed, () => 'unreached')).toBe(failed);
     expect(mapResult({ data: { data: ['a'] } }, body => body.data)).toEqual({ data: ['a'] });
   });
+
+  it('ignores state the caller carries that no request answers', () => {
+    const merged = mergeResults(
+      { users: null, upstreams: null, models: null, error: null, selectedKeyId: 'k1' },
+      { users: { data: ['u'] }, upstreams: { data: ['s'] }, models: { data: ['m'] } } as never,
+    );
+    expect(merged.values.users).toEqual(['u']);
+    expect(merged.values.selectedKeyId).toBe('k1');
+    expect(merged.error).toBeNull();
+  });
 });
