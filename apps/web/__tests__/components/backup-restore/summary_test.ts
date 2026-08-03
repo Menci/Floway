@@ -1,8 +1,8 @@
 import i18next from 'i18next';
 import { describe, expect, it } from 'vitest';
 
-import { resources } from '../../src/i18n/resources';
-import { recordSummary } from '../../src/routes/dashboard-admin-backup-restore';
+import { recordSummary } from '../../../src/components/backup-restore/summary';
+import { resources } from '../../../src/i18n/resources';
 
 const translator = async (language: string) => {
   const instance = i18next.createInstance();

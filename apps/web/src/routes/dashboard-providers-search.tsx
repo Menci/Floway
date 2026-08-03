@@ -10,6 +10,7 @@ import type { ControlPlaneModel, SearchConfig, UpstreamRecord } from '../api/typ
 import jinaIconUrl from '../assets/jina-color.svg';
 import microsoftIconUrl from '../assets/microsoft-color.svg';
 import tavilyIconUrl from '../assets/tavily-color.svg';
+import { eligibleSearchUpstreams } from '../components/search/eligibility';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Dropdown, LISTBOX_POSITIONING } from '../components/ui/fluent-form-controls';
 import { PANEL_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../components/ui/layout';
@@ -57,16 +58,6 @@ export async function clientLoader(): Promise<LoaderData> {
     error: upstreamsResult.error?.message ?? modelsResult.error?.message ?? null,
   };
 }
-
-// Search passthrough sends a chat completion to the upstream it names, so the
-// model it picks has to be one that upstream actually serves on that endpoint.
-const servesChatFor = (model: ControlPlaneModel, upstreamId: string) =>
-  model.kind === 'chat' && model.upstreams.some(binding => binding.id === upstreamId);
-
-export const eligibleSearchUpstreams = (upstreams: readonly UpstreamRecord[], models: readonly ControlPlaneModel[]) =>
-  upstreams.filter(upstream => upstream.enabled
-    && (upstream.kind === 'codex' || upstream.kind === 'custom')
-    && models.some(model => servesChatFor(model, upstream.id)));
 
 // Marks keep their owner's colors, unlike the one-tone-per-provider upstream
 // chips: nothing else in the row says who the third party is.
