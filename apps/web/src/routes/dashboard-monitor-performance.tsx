@@ -69,16 +69,19 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   const groupBy = state.groupBy === 'userId' && view !== 'all-by-user' ? 'model' : state.groupBy;
   const loadedAt = Date.now();
   const query = buildPerformanceQuery(view, state.range, groupBy, state.filters, loadedAt);
+  // The page opens for every signed-in account, so the names come from the
+  // non-admin upstream picker; /api/upstreams answers 403 to an operator and
+  // would leave the whole page unavailable to them.
   const [overview, upstreams] = await Promise.all([
     callApi(() => api.api.performance.overview.$get({ query: Object.fromEntries(query) })),
-    callApi(() => api.api.upstreams.$get()),
+    callApi(() => api.api['upstream-options'].$get()),
   ]);
   return {
     error: overview.error ?? upstreams.error ?? null,
     loadedAt,
     overview: overview.data ?? null,
     state: { ...state, groupBy },
-    upstreamNames: upstreams.data ?? null,
+    upstreamNames: upstreams.data?.map(({ id, name }) => ({ id, name })) ?? null,
     view,
   };
 }
