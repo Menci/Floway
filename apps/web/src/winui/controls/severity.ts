@@ -11,7 +11,7 @@
 // The theme dictionaries are byte-identical between Light and Default, so one
 // mapping serves both themes and the difference falls out of the token values.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L4-L41
-const severityFills = [
+export const severityFills = [
   ['error', 'critical'],
   ['warning', 'caution'],
   ['success', 'success'],

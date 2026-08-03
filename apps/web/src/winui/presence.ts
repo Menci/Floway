@@ -14,6 +14,12 @@ import {
   PANE_SLIDE_EASING,
   PANE_SLIDE_MS,
   PANE_SLIDE_OUT_MS,
+  POPUP_FADE_DELAY_MS,
+  POPUP_FADE_MS,
+  POPUP_HIDE_MS,
+  POPUP_SLIDE_EASING,
+  POPUP_SLIDE_MS,
+  POP_IN_OFFSET_PX,
 } from './motion';
 
 type FluentComponents = typeof import('@fluentui/react-components');
@@ -43,6 +49,23 @@ const DRAWER_SIZE_VAR = '--fui-Drawer--size';
 const closedDrawerTransform = ({ dir, position }: DrawerMotionParams): string => (position === 'bottom'
   ? `translate3d(0, var(${DRAWER_SIZE_VAR}), 0)`
   : `translate3d(calc(var(${DRAWER_SIZE_VAR}) * ${(position === 'start') === (dir === 'ltr') ? -1 : 1}), 0, 0)`);
+
+// A toast is a floating surface with no edge to be clipped by, which is what the
+// popup family is for: the arrival travels while a much shorter fade catches up,
+// and the departure is that fade alone, with nothing to move a dismissed card
+// across the stack it is leaving. The offset is stated on the horizontal because
+// that is where the platform's own default puts it.
+export const createToastPresence = (components: FluentComponents) => components.createPresenceComponent({
+  enter: [
+    {
+      keyframes: [{ transform: `translateX(${POP_IN_OFFSET_PX}px)` }, { transform: 'none' }],
+      duration: POPUP_SLIDE_MS,
+      easing: POPUP_SLIDE_EASING,
+    },
+    { keyframes: [{ opacity: 0 }, { opacity: 1 }], duration: POPUP_FADE_MS, delay: POPUP_FADE_DELAY_MS, easing: 'linear', fill: 'both' },
+  ],
+  exit: { keyframes: [{ opacity: 1 }, { opacity: 0 }], duration: POPUP_HIDE_MS, easing: 'linear', fill: 'both' },
+});
 
 export const withWinuiMotion = (components: FluentComponents): FluentComponents => {
   // ContentDialog settles down from 1.05 rather than growing in from below 1,
@@ -149,10 +172,6 @@ export const withWinuiMotion = (components: FluentComponents): FluentComponents 
     return wrapped as Component;
   };
 
-  // Popover keeps Fluent's motion: PopupThemeTransition reads duration and
-  // easing out of the Windows theme at runtime through uxtheme rather than
-  // declaring them, so there is nothing to transcribe.
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/dxaml/lib/FlyoutBase_partial.cpp#L69
   return {
     ...components,
     Dialog: runMotion(components.Dialog, 'surfaceMotion', DialogSurfaceMotion),

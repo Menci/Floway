@@ -16,7 +16,7 @@
 // states otherwise; the one row neither can carry is the inner focus stroke,
 // since forced colours drop box-shadow to none.
 // https://www.w3.org/TR/css-color-adjust-1/#forced-colors-properties
-import { severityCss } from './severity';
+import { severityCss, severityFills } from './severity';
 
 export const toastCss = `
 /* InfoBarMinHeight, and the border thickness 1 over InfoBarBorderBrush, which is
@@ -130,13 +130,71 @@ ${severityCss({ card: '.fui-Toast', icon: '.fui-ToastTitle__media' })}
   padding-inline-start: 16px;
 }
 
-/* WinUI states the width of a transient surface as a range, not a number, and a
-   fixed-position box is shrink-to-fit, so Fluent's fixed 292px is dropped. */
+/* WinUI ships no toast, so InfoBar answers the card and nothing upstream answers
+   the stack: neither the width a floating notification takes nor the gap between
+   two of them is stated in any theme dictionary. Both are ours. The width is a
+   range rather than a number because a fixed-position box is shrink-to-fit and a
+   notification should not stretch past its own longest short line; the gap is
+   Fluent's, kept unchanged so that owning the container moves nothing. */
 .fui-Toaster.fui-Toaster {
   width: auto;
   min-width: 320px;
   max-width: 336px;
+  pointer-events: none;
 }
+
+/* The stack slot. It carries the gap, so a reposition moves a card and the space
+   above it as one piece, and it is what keeps the two motions off one element:
+   the slot travels vertically while the card inside it travels horizontally. */
+.winui-toast-slot {
+  margin-top: 16px;
+  pointer-events: all;
+}
+
+/* The card's own box, which the container only has to match in shape so the
+   focus visual traces it. The shadow belongs to the card inside, so the
+   container clips nothing. */
+.fui-ToastContainer.fui-ToastContainer {
+  box-sizing: border-box;
+  position: relative;
+  border-radius: var(--borderRadiusMedium);
+}
+
+/* The remaining time before the toast dismisses itself. Nothing in WinUI puts a
+   progress indicator on a notification, so the bar is a departure; it is stated
+   in the vocabulary already on the card rather than a new one, taking
+   ProgressBarMinHeight for its thickness and the severity fill the card and its
+   mark already share for its colour.
+
+   It rides over the card's bottom stroke rather than inside it. Clipping the
+   container to the card's corner would cut the flyout shadow off the card, so
+   the bar takes the corner itself.
+
+   The animation is the toast's timeout: one declaration whose duration is the
+   remaining time and whose end is what closes the toast, so pausing it pauses
+   the toast to the millisecond and resuming carries on rather than restarting.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressBar/ProgressBar_themeresources.xaml#L23 */
+.fui-ToastContainer__timer {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  block-size: 3px;
+  transform-origin: 0 50%;
+  border-end-start-radius: var(--borderRadiusMedium);
+  border-end-end-radius: var(--borderRadiusMedium);
+  animation-name: winui-toast-countdown;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+@keyframes winui-toast-countdown {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+${severityFills.map(([intent, fill]) => `
+.fui-ToastContainer:has(> .fui-Toast[data-winui-intent='${intent}']) .fui-ToastContainer__timer {
+  background-color: var(--winui-system-fill-${fill});
+}`).join('\n')}
 
 /* WinUI's focus visual is a 2px outer stroke and, inset by that thickness, a 1px
    inner one. A CSS outline sits outside the border box, so the pair is
@@ -144,6 +202,7 @@ ${severityCss({ card: '.fui-Toast', icon: '.fui-ToastTitle__media' })}
    1px spread shadow fills with the inner stroke.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L173-L186 */
 .fui-ToastContainer.fui-ToastContainer[data-fui-focus-visible] {
+  outline: var(--winui-focus-visual-primary-thickness) solid var(--winui-focus-stroke-outer);
   outline-offset: 1px;
   box-shadow: 0 0 0 1px var(--winui-focus-stroke-inner);
 }
