@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import type { AliasTarget, ModelAlias } from '@floway-dev/protocols/common';
 import { computeAnnouncedMetadata } from '../../../src/components/model-alias/announced-metadata';
 import { aliasBody, aliasDefaults, metadataForKind } from '../../../src/components/model-alias/form-data';
 import { computeAliasWarnings, computeModelWarning, computeRuleWarnings } from '../../../src/components/model-alias/warnings';
 import { indexCatalog } from '../../../src/components/models/catalog-index';
 import { catalogModel } from '../../api/model-fixture';
+import type { AliasTarget, ModelAlias } from '@floway-dev/protocols/common';
 const target = (id: string, rules: AliasTarget['rules'] = {}): AliasTarget => ({ target_model_id: id, rules });
 
 describe('model alias warnings', () => {
