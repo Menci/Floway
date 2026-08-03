@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 // Nothing from `src/` is on the stack here on purpose: what this pins is the
 // React Router invariant the dashboard is built on top of, not our use of it.
-// Sixteen routes put their authentication and initial resources in a
+// Every route puts its authentication and initial resources in a
 // `clientLoader` and none of them renders a pending state, because the router
 // keeps the current URL and the current component tree mounted until the next
 // loader resolves. `page-frames.tsx` reads the committed entry's state to
