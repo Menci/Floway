@@ -51,4 +51,10 @@ patchedDependencies:
 # docker-compose topology.
 overrides:
   '@react-router/dev>@react-router/serve': '-'
+  # monaco-editor 0.54.0 pins dompurify at exactly 3.1.7, which is behind every
+  # advisory published since. 3.4.12 is the first release no advisory still
+  # covers -- GHSA-c2j3-45gr-mqc4 names it as the fix, and nothing later has
+  # been published against it. Droppable once Monaco's own pin reaches a
+  # release in that position.
+  # https://github.com/advisories/GHSA-c2j3-45gr-mqc4
   dompurify: 3.4.12
