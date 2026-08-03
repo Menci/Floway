@@ -8,7 +8,7 @@ import { badgeHueStyle } from '../../lib/color';
 import { Chip } from '../ui/chip';
 import { ResourceListEmptyState } from '../ui/resource-list';
 import { ScrollArea } from '../ui/scroll-area';
-import { TABLE_ACTIONS_WIDTH, TableActions, TableActionsHeader } from '../ui/table-actions';
+import { TABLE_ACTIONS_WIDTH, TableActions, TableTrailingHeader } from '../ui/table-actions';
 import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { kindFromUri } from '@floway-dev/proxy/url-kind';
@@ -49,7 +49,7 @@ export function ProxyList({
           <TableRow>
             <TableHeaderCell>{t('dashboard.proxy.form.name')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.proxy.form.address')}</TableHeaderCell>
-            <TableActionsHeader>{t('dashboard.proxy.columns.actions')}</TableActionsHeader>
+            <TableTrailingHeader>{t('dashboard.proxy.columns.actions')}</TableTrailingHeader>
           </TableRow>
         </TableHeader>
         <TableBody>

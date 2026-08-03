@@ -27,7 +27,7 @@ import { ReorderButtons } from '../components/ui/reorder-buttons';
 import { ResourceListActions, ResourceListEmptyState, ResourceListPanel } from '../components/ui/resource-list';
 import { rowTitleClass } from '../components/ui/row-title';
 import { ScrollArea } from '../components/ui/scroll-area';
-import { TABLE_ACTIONS_WIDTH, TableActions, TableActionsHeader, TableCentredCell, TableCentredHeader } from '../components/ui/table-actions';
+import { TABLE_ACTIONS_WIDTH, TableActions, TableCentredCell, TableCentredHeader, TableTrailingHeader } from '../components/ui/table-actions';
 import { TableColumns } from '../components/ui/table-columns';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
@@ -370,7 +370,7 @@ function UpstreamsTable({
             <TableHeaderCell>{t('dashboard.upstreams.table.upstream')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.upstreams.table.models')}</TableHeaderCell>
             <TableCentredHeader>{t('dashboard.upstreams.table.enabled')}</TableCentredHeader>
-            <TableActionsHeader>{t('dashboard.upstreams.table.actions')}</TableActionsHeader>
+            <TableTrailingHeader>{t('dashboard.upstreams.table.actions')}</TableTrailingHeader>
           </TableRow>
         </TableHeader>
         <TableBody>

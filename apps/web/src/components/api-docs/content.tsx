@@ -13,7 +13,7 @@ import { Panel } from '../ui/panel';
 import { RouteLink } from '../ui/route-link';
 import { ScrollArea } from '../ui/scroll-area';
 import { SectionHeader } from '../ui/section-header';
-import { TableActionsHeader, useTrailingCellClass } from '../ui/table-actions';
+import { TableTrailingCell, TableTrailingHeader } from '../ui/table-actions';
 import { TableColumns } from '../ui/table-columns';
 import { useCopyToClipboard } from '../ui/use-copy-to-clipboard';
 
@@ -44,7 +44,6 @@ const ENDPOINT_GROUP_GAP = 'grid gap-[34px]';
 export function ApiDocsContent() {
   const { t } = useTranslation();
   const { copy, outcomeFor } = useCopyToClipboard();
-  const trailingCell = useTrailingCellClass();
   const authExample = authCurlExample(window.location.origin);
 
   return <>
@@ -77,13 +76,13 @@ export function ApiDocsContent() {
                 <TableHeaderCell>{t('dashboard.apiDocs.columns.method')}</TableHeaderCell>
                 <TableHeaderCell>{t('dashboard.apiDocs.columns.endpoint')}</TableHeaderCell>
                 <TableHeaderCell>{t('dashboard.apiDocs.columns.description')}</TableHeaderCell>
-                <TableActionsHeader>{t('dashboard.apiDocs.columns.docs')}</TableActionsHeader>
+                <TableTrailingHeader>{t('dashboard.apiDocs.columns.docs')}</TableTrailingHeader>
               </TableRow></TableHeader>
               <TableBody>{endpoints.map(endpoint => <TableRow key={`${endpoint.method} ${endpoint.path}`}>
                 <TableCell><HttpMethodBadge method={endpoint.method} /></TableCell>
                 <TableCell><code translate="no">{endpoint.path}</code></TableCell>
                 <TableCell>{t(`dashboard.apiDocs.endpointNames.${endpoint.name}`)}</TableCell>
-                <TableCell className={trailingCell}><Link href={endpoint.docs} target="_blank" rel="noopener noreferrer"><OpenLinkLabel>{t('dashboard.apiDocs.docsLink')}</OpenLinkLabel></Link></TableCell>
+                <TableTrailingCell><Link href={endpoint.docs} target="_blank" rel="noopener noreferrer"><OpenLinkLabel>{t('dashboard.apiDocs.docsLink')}</OpenLinkLabel></Link></TableTrailingCell>
               </TableRow>)}</TableBody>
             </Table>
           </ScrollArea>
