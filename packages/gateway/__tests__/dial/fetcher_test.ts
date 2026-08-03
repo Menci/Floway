@@ -229,9 +229,9 @@ describe('createFetcher', () => {
     expect(await repo.proxyBackoffs.listForUpstream('u')).toEqual([]);
   });
 
-  it('empty fallback list defaults to ["direct_fetch"]', async () => {
+  it('empty fallback list defaults to ["direct_connect"]', async () => {
     const repo = new InMemoryRepo();
-    let directCalled = false;
+    let directConnectCalled = false;
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
@@ -239,13 +239,13 @@ describe('createFetcher', () => {
       runtimeLocation: 'TEST',
       proxyById: new Map(),
       runProxied: async () => new Response('proxy'),
-      runDirectFetch: async () => { directCalled = true; return new Response('direct'); },
-      runDirectConnect: async () => new Response('direct connect'),
+      runDirectFetch: async () => new Response('direct fetch'),
+      runDirectConnect: async () => { directConnectCalled = true; return new Response('direct connect'); },
       socketDial: () => stubSocketDial,
     });
     const res = await fetcher('https://api.openai.com', { method: 'GET' });
-    expect(directCalled).toBe(true);
-    expect(await res.text()).toBe('direct');
+    expect(directConnectCalled).toBe(true);
+    expect(await res.text()).toBe('direct connect');
   });
 
   it('runs direct-connect as a built-in materialized transport', async () => {

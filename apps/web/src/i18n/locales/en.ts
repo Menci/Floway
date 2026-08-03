@@ -547,7 +547,7 @@ const en = {
         proxy: {
           directFetch: 'Direct (Fetch)',
           directConnect: 'Direct (TCP connect)',
-          empty: 'Without a fallback entry, traffic uses direct Fetch.',
+          empty: 'Without a fallback entry, traffic uses direct TCP connect.',
           add: 'Add fallback entry',
           colo: 'Current Cloudflare colo: {{colo}}',
           colos: 'Colo whitelist',
