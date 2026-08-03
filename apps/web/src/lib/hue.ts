@@ -1,44 +1,58 @@
 import { converter, formatHex, modeOklch, modeRgb, useMode as registerMode } from 'culori/fn';
 
-import type { BadgeHue } from './color';
-
 // culori's tree-shakeable entry only knows the color spaces that were
 // registered, and `converter` resolves its path through that registry.
 registerMode(modeRgb);
-const toRgb = converter('rgb');
 registerMode(modeOklch);
+const toRgb = converter('rgb');
 
-// A badge hue is stated once per scheme at a fixed lightness and chroma, so
-// every hue reads with the same weight -- the whole point of choosing OKLCH
-// over HSV, where a yellow at the chroma of a blue is far lighter than it.
-//
-// The chroma of each pair is the lowest a hue can reach at that lightness
-// anywhere on the circle (0.085 at h~200 for L=0.50, 0.100 at h~267 for
-// L=0.80), so nothing is ever out of the sRGB gamut and no hue is bent by a
-// gamut mapping or a channel clip on its way to a hex. Both also sit inside the
-// range the hand-picked provider tones occupied before the hue replaced them,
-// so no badge changed weight when it did.
-const BADGE_LIGHTNESS = { light: 0.5, dark: 0.8 } as const;
-const BADGE_CHROMA = { light: 0.085, dark: 0.1 } as const;
+// How much chroma a hue can carry before it reads heavier than its neighbours.
+// Red takes the most and cyan the least, which is why a flat chroma leaves half
+// the circle looking washed out. Taken from @proj-airi/chromatic, whose ladder
+// below comes with it.
+// https://github.com/proj-airi/chromatic/blob/6834a75c3a7a1944bbb7377df7811a1f92f1b303/packages/chromatic/src/index.ts#L92-L94
+const baseChromaByHue = (hue: number): number => 0.18 + Math.cos((hue * Math.PI) / 180) * 0.04;
 
-const toneHex = (scheme: 'light' | 'dark', hue: number): string =>
-  formatHex(toRgb({ mode: 'oklch', l: BADGE_LIGHTNESS[scheme], c: BADGE_CHROMA[scheme], h: hue }));
+// Two rungs of that ladder. Neither the ladder nor this badge has a light and a
+// dark formula: a scheme picks a different rung of the one ladder, the way
+// every consumer of the ladder does.
+// https://github.com/proj-airi/chromatic/blob/6834a75c3a7a1944bbb7377df7811a1f92f1b303/packages/chromatic/src/index.ts#L45-L57
+const BADGE_SHADE = {
+  light: { lightness: 0.54, chromaMultiplier: 1.15 },
+  dark: { lightness: 0.85, chromaMultiplier: 0.75 },
+} as const;
+
+// The ladder asks for more chroma than sRGB can hold across most of the circle,
+// and out-of-gamut channels are clamped rather than gamut-mapped, which is what
+// a browser handed the same `oklch()` would paint. A hue that clamps shifts a
+// little; a hue that is mapped instead loses the chroma the ladder exists to
+// give it.
+const shadeHex = (scheme: keyof typeof BADGE_SHADE, hue: number): string => {
+  const { lightness, chromaMultiplier } = BADGE_SHADE[scheme];
+  return formatHex(toRgb({ mode: 'oklch', l: lightness, c: baseChromaByHue(hue) * chromaMultiplier, h: hue }));
+};
 
 /** The light/dark pair `badgeHueStyle` paints an upstream's hue with. */
-export const hueBadgeTone = (hue: number): Extract<BadgeHue, { light: string }> => ({
-  light: toneHex('light', hue),
-  dark: toneHex('dark', hue),
+export const hueBadgeTone = (hue: number): { light: string; dark: string } => ({
+  light: shadeHex('light', hue),
+  dark: shadeHex('dark', hue),
 });
 
-// The ramp the hue rail is painted with: the tone each hue would give a badge,
-// so the rail shows what is being chosen rather than a raw HSV spectrum. Twelve
-// steps put a stop every 30°, which is close enough that the interpolation
-// between two of them never crosses a hue the rail does not name.
-export const HUE_RAMP_GRADIENT = `linear-gradient(to right, ${
-  Array.from({ length: 13 }, (_, step) => {
-    const tone = hueBadgeTone((step * 360) / 12);
-    return `light-dark(${tone.light}, ${tone.dark})`;
-  }).join(', ')
+// The rail is deliberately not the badge's own curve: it is one flat, brighter
+// ribbon that reads the same in both schemes, so the control shows the hue
+// being chosen rather than the weight it will be painted at. Same values AIRI's
+// hue range uses.
+// https://github.com/moeru-ai/airi/blob/faf96ef3374fab831fc323acce74fee219eab184/packages/ui/src/components/form/range/color-hue-range.vue
+const RAIL_LIGHTNESS = 0.85;
+const RAIL_CHROMA = 0.2;
+
+// One stop per degree, resolved here rather than left to the browser: a
+// gradient interpolates between its stops in sRGB, so a coarser ramp would cut
+// the corner between two hues and pass through colours the circle does not
+// contain.
+export const HUE_RAIL_GRADIENT = `linear-gradient(to right, ${
+  Array.from({ length: 361 }, (_, hue) =>
+    formatHex(toRgb({ mode: 'oklch', l: RAIL_LIGHTNESS, c: RAIL_CHROMA, h: hue % 360 }))).join(', ')
 })`;
 
 /**

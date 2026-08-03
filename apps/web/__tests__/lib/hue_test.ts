@@ -1,7 +1,7 @@
 import { converter, modeOklch, modeRgb, useMode as registerMode } from 'culori/fn';
 import { describe, expect, it } from 'vitest';
 
-import { hueBadgeTone, pickDistinctHue } from '../../src/lib/hue';
+import { hueBadgeTone, HUE_RAIL_GRADIENT, pickDistinctHue } from '../../src/lib/hue';
 
 registerMode(modeRgb);
 registerMode(modeOklch);
@@ -9,34 +9,58 @@ const toOklch = converter('oklch');
 
 const everyHue = Array.from({ length: 360 }, (_, hue) => hue);
 
+// The ladder @proj-airi/chromatic states, restated here so a change to the
+// subject's constants has to be a deliberate edit on both sides rather than a
+// test that follows it.
+// https://github.com/proj-airi/chromatic/blob/6834a75c3a7a1944bbb7377df7811a1f92f1b303/packages/chromatic/src/index.ts#L45-L57
+// https://github.com/proj-airi/chromatic/blob/6834a75c3a7a1944bbb7377df7811a1f92f1b303/packages/chromatic/src/index.ts#L92-L94
+const expected = (scheme: 'light' | 'dark', hue: number) => {
+  const { lightness, multiplier } = scheme === 'light'
+    ? { lightness: 0.54, multiplier: 1.15 }
+    : { lightness: 0.85, multiplier: 0.75 };
+  return { lightness, chroma: (0.18 + Math.cos((hue * Math.PI) / 180) * 0.04) * multiplier };
+};
+
 describe('hueBadgeTone', () => {
-  it('holds the hue it was asked for, in both schemes', () => {
+  it('paints the shade the chromatic ladder states for the hue', () => {
     for (const hue of everyHue) {
       const tone = hueBadgeTone(hue);
-      for (const hex of [tone.light, tone.dark]) {
-        const read = toOklch(hex)!.h!;
-        const delta = Math.abs(read - hue);
-        // A tone bent to fit the gamut would come back on another angle. The
-        // tolerance is the 8-bit hex step, which at this chroma is worth about
-        // a degree of arc; a gamut mapping would cost tens.
-        expect(Math.min(delta, 360 - delta), `${hue}° rendered ${hex}`).toBeLessThan(1.5);
+      for (const scheme of ['light', 'dark'] as const) {
+        const want = expected(scheme, hue);
+        const read = toOklch(scheme === 'light' ? tone.light : tone.dark)!;
+        // A hue sRGB cannot hold comes back with its channels clamped, which
+        // moves the lightness a little either way and can only take chroma. The
+        // lightness stays close enough that the two rungs never approach each
+        // other, which is what would make a light badge and a dark one the same
+        // colour.
+        expect(Math.abs(read.l - want.lightness), `${scheme} ${hue}deg`).toBeLessThan(0.06);
+        expect(read.c, `${scheme} ${hue}deg`).toBeLessThanOrEqual(want.chroma + 0.005);
       }
     }
   });
 
-  // A hue that fell outside the sRGB gamut would come back either bent, which
-  // the hue assertion above catches, or muted, which this one does: a gamut
-  // mapping and a channel clip both cost chroma, and the whole point of the
-  // chosen pair is that neither ever has to happen.
-  it('gives every hue the same lightness and chroma within its scheme', () => {
-    const readings = (pick: (tone: ReturnType<typeof hueBadgeTone>) => string) =>
-      everyHue.map(hue => toOklch(pick(hueBadgeTone(hue)))!);
-    for (const scheme of [readings(tone => tone.light), readings(tone => tone.dark)]) {
-      const lightness = scheme.map(reading => reading.l);
-      const chroma = scheme.map(reading => reading.c);
-      expect(Math.max(...lightness) - Math.min(...lightness)).toBeLessThan(0.01);
-      expect(Math.max(...chroma) - Math.min(...chroma)).toBeLessThan(0.005);
-    }
+  it('carries far more chroma than a flat pale ramp would', () => {
+    // The whole reason for the hue-dependent curve: a badge that reads as a
+    // colour rather than as a grey with a tint.
+    const chroma = everyHue.map(hue => toOklch(hueBadgeTone(hue).light)!.c);
+    expect(Math.min(...chroma)).toBeGreaterThan(0.09);
+  });
+
+  it('separates neighbouring hues', () => {
+    // Two upstreams a rail step apart have to be told apart at a glance, which
+    // a clamp flattening a stretch of the circle onto one colour would break.
+    const distinct = new Set(everyHue.map(hue => hueBadgeTone(hue).light));
+    expect(distinct.size).toBeGreaterThan(300);
+  });
+});
+
+describe('HUE_RAIL_GRADIENT', () => {
+  it('names one colour per degree', () => {
+    const stops = HUE_RAIL_GRADIENT.match(/#[0-9a-f]{6}/g) ?? [];
+    // A gradient interpolates between its stops in sRGB, so a coarser ramp
+    // would cut the corner between two hues.
+    expect(stops).toHaveLength(361);
+    expect(stops[0]).toBe(stops[360]);
   });
 });
 

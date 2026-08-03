@@ -2,10 +2,16 @@ import { useTranslation } from 'react-i18next';
 
 import { ProviderBadge } from './provider-badge';
 import { fluentComponents } from '../../fluent';
-import { HUE_RAMP_GRADIENT } from '../../lib/hue';
+import { HUE_RAIL_GRADIENT } from '../../lib/hue';
 import type { UpstreamProviderKind } from '@floway-dev/provider/model';
 
-const { Button, ColorSlider, Popover, PopoverSurface, PopoverTrigger } = fluentComponents;
+const { Button, ColorSlider, Popover, PopoverSurface, PopoverTrigger, makeStyles } = fluentComponents;
+
+const useStyles = makeStyles({
+  // Fluent lays the slider out as an inline grid at a 200px minimum, so left
+  // alone it keeps that width whatever it is put in.
+  slider: { width: '100%' },
+});
 
 export function HuePicker({ hue, kind, onChange }: {
   hue: number;
@@ -13,6 +19,7 @@ export function HuePicker({ hue, kind, onChange }: {
   onChange: (hue: number) => void;
 }) {
   const { t } = useTranslation();
+  const styles = useStyles();
 
   return (
     <Popover positioning={{ position: 'below', align: 'start' }} trapFocus>
@@ -29,12 +36,13 @@ export function HuePicker({ hue, kind, onChange }: {
         <ColorSlider
           aria-label={t('dashboard.upstreamEditor.hue.label')}
           channel="hue"
+          className={styles.slider}
           color={{ h: hue, s: 1, v: 1 }}
-          // The rail carries the tone each hue gives a badge instead of
-          // Fluent's HSV spectrum, which names a different colour at the same
-          // angle. The thumb needs no such treatment: the WinUI layer already
-          // fills it with a solid disc rather than the colour under it.
-          rail={{ style: { backgroundImage: HUE_RAMP_GRADIENT } }}
+          // Fluent's own rail is an HSV spectrum, which names a different
+          // colour at the same angle. The thumb needs no such treatment: the
+          // WinUI layer already fills it with a solid disc rather than the
+          // colour under it.
+          rail={{ style: { backgroundImage: HUE_RAIL_GRADIENT } }}
           // The rail's own maximum is 360°, which is 0° under another name.
           onChange={(_, data) => onChange(Math.round(data.color.h) % 360)}
         />
