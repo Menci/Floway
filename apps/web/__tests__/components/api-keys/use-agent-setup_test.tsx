@@ -5,6 +5,7 @@ import { flowayTokenStorageKey } from '../../../src/auth/session';
 import { defaultAgentSetupConfiguration } from '../../../src/components/api-keys/agent-setup';
 import { useAgentSetup } from '../../../src/components/api-keys/use-agent-setup';
 import { stubLocalStorage } from '../../local-storage-stub';
+import { advance, settle } from '../../settle';
 
 type SetupState = ReturnType<typeof useAgentSetup>;
 
@@ -19,18 +20,6 @@ const lease = (expiresAt = Date.now() + 120_000) => ({
     codex: { sh: '/codex.sh', ps1: '/codex.ps1' },
   },
 });
-
-const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
-  status,
-  headers: { 'content-type': 'application/json' },
-});
-
-const settle = async () => {
-  await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
-  });
-};
 
 describe('Agent Setup lease lifecycle', () => {
   const storage = stubLocalStorage();
@@ -56,7 +45,7 @@ describe('Agent Setup lease lifecycle', () => {
   });
 
   it('does not create a public lease until a key is explicitly selected', async () => {
-    const fetch = vi.fn(async () => json(lease()));
+    const fetch = vi.fn(async () => Response.json(lease()));
     vi.stubGlobal('fetch', fetch);
     mount(null);
     await settle();
@@ -65,11 +54,11 @@ describe('Agent Setup lease lifecycle', () => {
 
   it('expires copy permission at the exact server timestamp', async () => {
     const expiresAt = Date.now() + 500;
-    vi.stubGlobal('fetch', vi.fn(async () => json(lease(expiresAt))));
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json(lease(expiresAt))));
     mount('key-1');
     await settle();
     expect(current().canCopy).toBe(true);
-    await act(async () => vi.advanceTimersByTime(500));
+    await advance(500);
     expect(current().canCopy).toBe(false);
   });
 
@@ -78,24 +67,24 @@ describe('Agent Setup lease lifecycle', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       if (String(input).endsWith('/heartbeat')) {
         heartbeatCalls += 1;
-        return heartbeatCalls === 1 ? json({ error: 'temporary' }, 503) : json(lease());
+        return heartbeatCalls === 1 ? Response.json({ error: 'temporary' }, { status: 503 }) : Response.json(lease());
       }
-      return json(lease());
+      return Response.json(lease());
     }));
     mount('key-1');
     await settle();
-    await act(async () => vi.advanceTimersByTime(60_000));
+    await advance(60_000);
     await settle();
     expect(heartbeatCalls).toBe(1);
-    await act(async () => vi.advanceTimersByTime(15_000));
+    await advance(15_000);
     await settle();
     expect(heartbeatCalls).toBe(2);
   });
 
   it('does not let a successful heartbeat erase a save error', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (init?.method === 'PUT') return json({ error: 'save rejected' }, 400);
-      return json(lease());
+      if (init?.method === 'PUT') return Response.json({ error: 'save rejected' }, { status: 400 });
+      return Response.json(lease());
     }));
     mount('key-1');
     await settle();
@@ -103,10 +92,10 @@ describe('Agent Setup lease lifecycle', () => {
       ...configuration,
       codex: { ...configuration.codex, model: 'gpt-test' },
     })));
-    await act(async () => vi.advanceTimersByTime(400));
+    await advance(400);
     await settle();
     expect(current().error).toBe('save rejected');
-    await act(async () => vi.advanceTimersByTime(60_000));
+    await advance(60_000);
     await settle();
     expect(current().error).toBe('save rejected');
   });
@@ -129,7 +118,7 @@ describe('Agent Setup lease lifecycle', () => {
     const operations: string[] = [];
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       operations.push(String(input).endsWith('/heartbeat') ? 'heartbeat' : init?.method ?? 'GET');
-      return json(lease());
+      return Response.json(lease());
     }));
     mount('key-1');
     await settle();
@@ -144,7 +133,7 @@ describe('Agent Setup lease lifecycle', () => {
     document.dispatchEvent(new Event('visibilitychange'));
     await settle();
     expect(operations).toEqual(['PUT', 'heartbeat']);
-    await act(async () => vi.advanceTimersByTime(400));
+    await advance(400);
     await settle();
     expect(operations).toEqual(['PUT', 'heartbeat']);
   });
@@ -154,9 +143,9 @@ describe('Agent Setup lease lifecycle', () => {
     vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       if (init?.method === 'PUT') {
         putCalls += 1;
-        return putCalls === 1 ? json({ error: 'temporary' }, 503) : json(lease());
+        return putCalls === 1 ? Response.json({ error: 'temporary' }, { status: 503 }) : Response.json(lease());
       }
-      return json(lease());
+      return Response.json(lease());
     }));
     mount('key-1');
     await settle();
@@ -164,16 +153,16 @@ describe('Agent Setup lease lifecycle', () => {
       ...configuration,
       codex: { ...configuration.codex, model: 'first' },
     })));
-    await act(async () => vi.advanceTimersByTime(400));
+    await advance(400);
     await settle();
     await act(async () => current().updateDraft(configuration => ({
       ...configuration,
       codex: { ...configuration.codex, model: 'second' },
     })));
-    await act(async () => vi.advanceTimersByTime(400));
+    await advance(400);
     await settle();
     expect(putCalls).toBe(2);
-    await act(async () => vi.advanceTimersByTime(15_000));
+    await advance(15_000);
     await settle();
     expect(putCalls).toBe(2);
   });
@@ -182,7 +171,7 @@ describe('Agent Setup lease lifecycle', () => {
     const operations: string[] = [];
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       operations.push(String(input).endsWith('/heartbeat') ? 'heartbeat' : init?.method ?? 'GET');
-      return json(lease());
+      return Response.json(lease());
     }));
     mount('key-1');
     await settle();
@@ -191,17 +180,17 @@ describe('Agent Setup lease lifecycle', () => {
     // Edit with 200ms of the debounce window left before the heartbeat falls
     // due. The heartbeat adopts a freshly issued lease, and the save is timed
     // by the edit rather than by that.
-    await act(async () => vi.advanceTimersByTime(59_800));
+    await advance(59_800);
     await settle();
     await act(async () => current().updateDraft(configuration => ({
       ...configuration,
       codex: { ...configuration.codex, model: 'gpt-debounced' },
     })));
-    await act(async () => vi.advanceTimersByTime(200));
+    await advance(200);
     await settle();
     expect(operations).toEqual(['heartbeat']);
 
-    await act(async () => vi.advanceTimersByTime(200));
+    await advance(200);
     await settle();
     expect(operations).toEqual(['heartbeat', 'PUT']);
   });

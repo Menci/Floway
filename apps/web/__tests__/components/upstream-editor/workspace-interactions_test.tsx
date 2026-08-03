@@ -5,11 +5,11 @@ import { FormProvider, useForm } from 'react-hook-form';
 import { MemoryRouter } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { UpstreamRecord } from '../../../src/api/types';
 import type { UpstreamEditorValues } from '../../../src/components/upstream-editor/data';
 import { valuesFromRecord } from '../../../src/components/upstream-editor/data';
 import { UpstreamWorkspace } from '../../../src/components/upstream-editor/workspace';
 import { i18n } from '../../../src/i18n';
+import { upstreamRecord } from '../../api/upstream-fixture';
 import { renderInApp } from '../../render';
 
 vi.mock('../../../src/components/upstream-editor/models-yaml-editor', () => ({
@@ -30,21 +30,9 @@ const model = (id: string) => ({
   endpoints: { responses: {} },
 });
 
-const record = {
-  id: 'up_test',
+const record = upstreamRecord('up_test', {
   name: 'Test',
   kind: 'custom',
-  enabled: true,
-  sort_order: 1,
-  created_at: '',
-  updated_at: '',
-  flag_overrides: {},
-  flag_defaults: {},
-  disabled_public_model_ids: [],
-  proxy_fallback_list: [],
-  model_prefix: null,
-  color: null,
-  modelsCache: { fetchedAt: null, lastError: null },
   config: {
     baseUrl: 'https://example.com',
     authStyle: 'bearer',
@@ -54,7 +42,7 @@ const record = {
     models: [model('model-a'), model('model-b')],
   },
   state: null,
-} as unknown as UpstreamRecord;
+});
 
 function Harness() {
   const form = useForm<UpstreamEditorValues>({ defaultValues: valuesFromRecord(record) });

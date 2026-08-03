@@ -44,7 +44,7 @@ describe('API keys page', () => {
 
   it('keeps the stored key selection through a visit that could not load the keys', async () => {
     storage.set('floway-agent-setup-selected-key', 'stored-key');
-    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 500 })));
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({}, { status: 500 })));
 
     await act(async () => { renderPage(); });
 
