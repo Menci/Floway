@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildAgentModelOptions, filterModelOptions, modelOptions, rankAgentSetupModels } from '../../../src/components/api-keys/agent-setup-models';
+import { buildAgentModelOptions, modelOptions, rankAgentSetupModels } from '../../../src/components/api-keys/agent-setup-models';
+import { filterModelOptions } from '../../../src/lib/model-query';
 import { catalogModel } from '../../api/model-fixture';
 
 describe('Agent Setup model ranking', () => {

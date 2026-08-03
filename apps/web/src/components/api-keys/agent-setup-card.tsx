@@ -14,12 +14,13 @@ import {
   type AgentSetupLease,
   type AgentSetupPlatform,
 } from './agent-setup';
-import { filterModelOptions, modelOptions, rankAgentSetupModels, type ClaudePicker } from './agent-setup-models';
+import { modelOptions, rankAgentSetupModels, type ClaudePicker } from './agent-setup-models';
 import { agentSetupCommand, useAgentSetup } from './use-agent-setup';
 import type { ApiKey, ControlPlaneModel } from '../../api/types';
 import claudeIconUrl from '../../assets/claude-color.svg';
 import codexIconUrl from '../../assets/codex.svg';
 import { fluentComponents } from '../../fluent';
+import { filterModelOptions } from '../../lib/model-query';
 import { CodeBlock } from '../ui/code-block';
 import { Combobox, Dropdown, Switch } from '../ui/fluent-form-controls';
 import { infoLabelSlot } from '../ui/info-label';
