@@ -513,8 +513,17 @@ ${under(radioPressed, [selectedDot])} {
 
   /* Unselected ellipse; WinUI washes the interior down the alt-fill ramp per
      state where Fluent leaves it transparent.
+
+     The radio rules name the root where the check box rules do not, because
+     Fluent reaches the two indicators differently: the check box's arrives
+     through custom properties set by single-class atoms, so a rule on the
+     indicator wins outright, while the radio's is styled from the input by
+     selectors that carry up to four pseudo-classes. A rest rule has to outweigh
+     the pointer ones, or Fluent takes the stroke back the moment the pointer
+     lands, and the root is the class that gets it there.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L134-L135
-     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L138 */
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L138
+     https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-radio/library/src/components/Radio/useRadioStyles.styles.ts#L50-L78 */
   .fui-Radio
     .fui-Radio__input:enabled:not(:checked)
     ~ .fui-Radio__indicator.fui-Radio__indicator {
