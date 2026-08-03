@@ -1,10 +1,10 @@
 import { fireEvent, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ProviderConfigHarness } from './provider-config-harness';
 import { upstreamRecord } from '../../api/upstream-fixture';
 import { renderInApp } from '../../render';
 import { settle } from '../../settle';
-import { ProviderConfigHarness } from './provider-config-harness';
 
 const AUTHORIZE_URL_PATH = '/api/upstreams/claude-code/oauth/authorize-url';
 

@@ -280,4 +280,3 @@ export function RequestDetailPanel({ collected: loadedCollected, error: loadedEr
     </ScrollArea>
   );
 }
-

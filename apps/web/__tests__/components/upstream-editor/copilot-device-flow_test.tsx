@@ -1,11 +1,11 @@
 import { fireEvent, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ProviderConfigHarness } from './provider-config-harness';
 import { i18n } from '../../../src/i18n';
 import { upstreamRecord } from '../../api/upstream-fixture';
 import { renderInApp } from '../../render';
 import { advance } from '../../settle';
-import { ProviderConfigHarness } from './provider-config-harness';
 
 const DEVICE_LOGIN_START = '/api/upstreams/copilot/oauth/device-login/start';
 const DEVICE_LOGIN_POLL = '/api/upstreams/copilot/oauth/device-login/poll';
