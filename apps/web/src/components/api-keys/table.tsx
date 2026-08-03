@@ -101,7 +101,10 @@ export function KeysTable({
     selectedItems={selectedItems}
     selectionMode="single"
   >
-    {keys.map(key => {
+    {/* The same rows in the same order as the wide table: the sort a column
+        header set is state of this component, so crossing the breakpoint is a
+        change of presentation and not of what is being presented. */}
+    {sort.sort(getRows()).map(({ item: key }) => {
       const copyTag = `key-${key.id}`;
       const lastUsed = key.last_used_at
         ? relativeTime(key.last_used_at, locale, { now }) ?? t('dashboard.apiKeys.table.usedOn', { date: shortDate(key.last_used_at, locale) })
