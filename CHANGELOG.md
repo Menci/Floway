@@ -10,6 +10,16 @@ Impact levels:
 
 Hard and minor entries may include recommended actions; those actions do not need a separate advisory entry.
 
+## 2026-08-04 · advisory
+
+### Direct egress now defaults to a TCP connection
+
+An upstream whose Proxy Fallback List is empty — or whose every entry is excluded by the current runtime location — used to egress through the runtime's `fetch()`. It now egresses through **Direct (TCP connect)**: a raw TCP socket with userspace TLS and HTTP/1.1. No stored configuration changes, and any list that names its own entries is dispatched exactly as before.
+
+The reason is Cloudflare-specific. A Worker's `fetch()` leaves through Cloudflare's HTTP proxy path, which enforces a read-idle limit of roughly 120 seconds between two reads of the upstream response body. A long-thinking Copilot Responses stream that has already returned HTTP 200 and then goes quiet is killed mid-body with `Network connection lost.` and never delivers a terminal event. A socket opened with `connect()` does not traverse that path; the same workload survived 233 seconds of measured upstream silence and completed cleanly. A Node deployment never had that particular failure, but its egress transport changes here too.
+
+Review each upstream and decide whether it should keep the new default. Add **Direct (Fetch)** as the first entry of that upstream's Proxy Fallback List where you want the old transport back — in particular when the upstream's hostname resolves to a Cloudflare-owned address, which Workers refuse to dial over `connect()`, or when you depend on the runtime's connection pool and HTTP/2 rather than a fresh HTTP/1.1 connection per request. Both transports remain selectable and orderable, so an upstream can also list **Direct (TCP connect)** first and fall back to **Direct (Fetch)**.
+
 ## 2026-07-24 · advisory
 
 ### Audit dump files created before payload-file tracking
