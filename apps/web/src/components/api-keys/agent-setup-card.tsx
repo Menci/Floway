@@ -39,6 +39,11 @@ const FIELD_GRID_CLASS = `${TWO_COLUMN_FORM_CLASS} gap-3`;
 const CLAUDE_MODEL_GRID_CLASS = 'grid gap-3 grid-cols-[repeat(5,minmax(0,1fr))] max-[1680px]:grid-cols-[repeat(3,minmax(0,1fr))] max-[1180px]:grid-cols-[repeat(2,minmax(0,1fr))] max-[680px]:grid-cols-[minmax(0,1fr)]';
 // https://code.claude.com/docs/en/settings#available-settings
 const claudeCleanupPeriods = [180, 365, 99999] as const satisfies readonly NonNullable<AgentSetupConfiguration['claudeCode']['cleanupPeriodDays']>[];
+// Claude Code's effort is a closed setting rather than the open, upstream-owned
+// string Codex takes, so the picker offers the levels the setup contract
+// accepts and nothing else.
+// https://docs.claude.com/en/docs/claude-code/settings
+const claudeEffortLevels = ['low', 'medium', 'high', 'xhigh'] as const satisfies readonly NonNullable<AgentSetupConfiguration['claudeCode']['effortLevel']>[];
 
 export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initialLease, models, selectedKey }: {
   initialApiKeyId: string | null;
@@ -217,9 +222,20 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
       <ModelSelect label={t('dashboard.apiKeys.agentSetup.sonnetModel')} models={models} family="claude" picker="sonnet" value={configuration.claudeCode.defaultSonnetModel} onChange={model => patchClaude({ defaultSonnetModel: model })} />
       <ModelSelect label={t('dashboard.apiKeys.agentSetup.haikuModel')} models={models} family="claude" picker="haiku" value={configuration.claudeCode.defaultHaikuModel} onChange={model => patchClaude({ defaultHaikuModel: model })} />
       <Field label={t('dashboard.apiKeys.agentSetup.reasoningEffort')}>
-        <Dropdown selectedOptions={[configuration.claudeCode.effortLevel ?? MODEL_DEFAULT]} value={configuration.claudeCode.effortLevel ?? t('dashboard.apiKeys.agentSetup.modelDefault')} onOptionSelect={(_, data) => data.optionValue !== undefined && patchClaude({ effortLevel: data.optionValue === MODEL_DEFAULT ? null : data.optionValue as NonNullable<AgentSetupConfiguration['claudeCode']['effortLevel']> })}>
+        <Dropdown
+          selectedOptions={[configuration.claudeCode.effortLevel ?? MODEL_DEFAULT]}
+          value={configuration.claudeCode.effortLevel ?? t('dashboard.apiKeys.agentSetup.modelDefault')}
+          onOptionSelect={(_, data) => {
+            if (data.optionValue === MODEL_DEFAULT) {
+              patchClaude({ effortLevel: null });
+              return;
+            }
+            const level = claudeEffortLevels.find(candidate => candidate === data.optionValue);
+            if (level !== undefined) patchClaude({ effortLevel: level });
+          }}
+        >
           <Option value={MODEL_DEFAULT}>{t('dashboard.apiKeys.agentSetup.modelDefault')}</Option>
-          {(['low', 'medium', 'high', 'xhigh'] as const).map(effort => <Option key={effort} value={effort}>{effort}</Option>)}
+          {claudeEffortLevels.map(effort => <Option key={effort} value={effort}>{effort}</Option>)}
         </Dropdown>
       </Field>
     </div>
