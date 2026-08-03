@@ -114,7 +114,7 @@ export function CodeBlock({ code, copyOutcome, disabled = false, header, languag
           {copyLabel(copyOutcome, t('common.copy.action'))}
         </Button>
       </div>
-      <ScrollArea axes="both" className={`winui-focus-rect-within ${styles.scroll}`}>
+      <ScrollArea axes="both" className={mergeClasses('winui-focus-rect-within', styles.scroll)}>
         <pre className={mergeClasses(`language-${language}`, styles.pre)}>
           <code
             className={mergeClasses(`language-${language}`, styles.code)}
