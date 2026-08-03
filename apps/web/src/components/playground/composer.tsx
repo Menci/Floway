@@ -8,7 +8,6 @@ import {
 import {
   bingAccentForeground,
   bingAccentForegroundHover,
-  bingSchemed,
   bingAccentGradient,
   bingAccentWashActive,
   bingAccentWashHover,
@@ -144,7 +143,8 @@ const useStyles = makeStyles({
   imageButton: {
     height: bingComposerButtonSize,
     width: bingComposerButtonSize,
-    ...bingSchemed(bingAccentForeground, color => ({ color })),
+    color: bingAccentForeground.light,
+    '@media (prefers-color-scheme: dark)': { color: bingAccentForeground.dark },
     backgroundColor: 'transparent',
     border: 0,
     // A button carries the browser's own `1px 6px`, leaving a content box

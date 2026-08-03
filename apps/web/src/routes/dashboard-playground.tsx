@@ -17,7 +17,7 @@ import type { ApiKey, ControlPlaneModel } from '../api/types';
 import { indexCatalog } from '../components/models/catalog-index';
 import { ModelInfoBadges } from '../components/models/info-badges';
 import { effectiveUpstreamCap, reachableModels } from '../components/models/reachability';
-import { bingAccentForeground, bingAccentForegroundHover, bingSchemed } from '../components/playground/bing-chat-tokens';
+import { bingAccentForeground, bingAccentForegroundHover } from '../components/playground/bing-chat-tokens';
 import { PlaygroundComposer } from '../components/playground/composer';
 import { PlaygroundEditDialog, type PlaygroundMessageDraft } from '../components/playground/edit-dialog';
 import { PlaygroundMarkdown } from '../components/playground/markdown';
@@ -108,10 +108,24 @@ const useStyles = makeStyles({
   // No third foreground step exists upstream, so the hover accent is held
   // through the press. Fluent clears forced-color-adjust on a reached button,
   // so the forced-colours Highlight pairing has to be restated here.
+  //
+  // The scheme reaches the paint as a custom property rather than as a second
+  // set of painting rules: Griffel keeps every at-rule in one bucket and orders
+  // that bucket's sheets by comparing the conditions as strings, so a
+  // `prefers-color-scheme` rule sorts after `forced-colors` and, painting the
+  // same property on the same selector with the same `!important`, would take
+  // the Highlight pairing back on a high-contrast dark theme.
+  // https://github.com/microsoft/griffel/blob/%40griffel/core_v1.21.3/packages/core/src/renderer/createDOMRenderer.ts#L24
   brandIconAction: {
-    [ENABLED]: bingSchemed(bingAccentForeground, color => ({ color: takenBack(color) })),
-    [HOVER]: bingSchemed(bingAccentForegroundHover, reachedPaint),
-    [PRESSED]: bingSchemed(bingAccentForegroundHover, reachedPaint),
+    '--playground-accent': bingAccentForeground.light,
+    '--playground-accent-reached': bingAccentForegroundHover.light,
+    '@media (prefers-color-scheme: dark)': {
+      '--playground-accent': bingAccentForeground.dark,
+      '--playground-accent-reached': bingAccentForegroundHover.dark,
+    },
+    [ENABLED]: { color: takenBack('var(--playground-accent)') },
+    [HOVER]: reachedPaint('var(--playground-accent-reached)'),
+    [PRESSED]: reachedPaint('var(--playground-accent-reached)'),
     '@media (forced-colors: active)': {
       [HOVER]: reachedPaint('Highlight'),
       [PRESSED]: reachedPaint('Highlight'),

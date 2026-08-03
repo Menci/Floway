@@ -35,18 +35,6 @@ export const bingAccentWashActive = wash(0.2);
 export const bingAccentForeground = { light: '#174AE4', dark: '#A2B7F4' };
 export const bingAccentForegroundHover = { light: '#1543CD', dark: '#A2B7F4' };
 
-/** A value Bing states once per theme. */
-export interface BingSchemePair { light: string; dark: string }
-
-// Griffel takes the scheme as an at-rule, so a rule built from a pair states
-// itself twice rather than reaching for a colour function that resolves one.
-// Callers that wrap the colour -- an `!important`, a second slot for an icon --
-// hand that work in as `build` and keep taking a plain colour.
-export const bingSchemed = <T extends object>(pair: BingSchemePair, build: (color: string) => T) => ({
-  ...build(pair.light),
-  '@media (prefers-color-scheme: dark)': build(pair.dark),
-});
-
 // `cib-color-foreground-on-accent-selected`, the compose button's own label
 // slot. Fluent's on-brand token cannot stand in: WinUI's accent is light in
 // dark mode, so its text-on-accent is dark, and what sits under this text is
@@ -112,7 +100,6 @@ export const bingComposerMaxHeight = '50vh';
 // the entire dark-mode edge mechanism. In forced colors both drop out together,
 // `box-shadow` computing to `none` whatever it holds:
 // https://www.w3.org/TR/css-color-adjust-1/#forced-colors-properties
-// Each theme states only the layers it has.
 export const bingCardShadow = {
   boxShadow: [
     '0px 0.3px 0.9px rgba(0, 0, 0, 0.12)',
@@ -124,7 +111,7 @@ export const bingCardShadow = {
 };
 
 // `cib-shadow-elevation-4`, which a user bubble takes instead of the card
-// shadow. Stated the same way: each theme carries only its own two layers.
+// shadow.
 // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/globals.scss#L178-L179
 // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/dark.scss#L155
 export const bingElevation4 = {
