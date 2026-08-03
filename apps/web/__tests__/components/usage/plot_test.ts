@@ -164,7 +164,6 @@ describe('search chart', () => {
   });
   const searchChart = (records: ReturnType<typeof searchRecord>[]) => buildSearchChart({
     search: { records, keys: [{ id: 'key-1', name: 'Key 1' }] },
-    hiddenKeys: new Set(),
     redactKeys: false,
     range: 'today',
     buckets: [bucket],
