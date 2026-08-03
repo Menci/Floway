@@ -26,7 +26,6 @@ import { SummaryMetrics } from '../components/usage/summary-metrics';
 import type { UsageMetric, UsageRange, UsageView } from '../components/usage/types';
 import { parseUsageUrlState, serializeUsageUrlState, type UsageUrlState } from '../components/usage/url-state';
 import { fluentComponents } from '../fluent';
-import { errorMessage } from '../lib/error-message';
 import { formatCount } from '../lib/format-number';
 import { useEntryRewrite } from '../lib/page-navigation';
 import { useLocale } from '../lib/use-locale';
@@ -77,20 +76,15 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const reload = useCallback(async (signal: AbortSignal, { background }: { background: boolean }, arrived: () => void) => {
     const requestedAt = Date.now();
     if (!background) setError(null);
-    try {
-      const next = await loadUsagePageData(query.view, query.range, requestedAt, signal);
-      if (signal.aborted) return;
-      setUsage(next.usage);
-      setSearch(next.search);
-      setModels(next.models);
-      setLoadedRange(query.range);
-      setLoadedAt(requestedAt);
-      arrived();
-      setError(next.error);
-    } catch (error) {
-      if (signal.aborted) return;
-      setError({ status: 0, message: errorMessage(error) });
-    }
+    const next = await loadUsagePageData(query.view, query.range, requestedAt, signal);
+    if (signal.aborted) return;
+    setUsage(next.usage);
+    setSearch(next.search);
+    setModels(next.models);
+    setLoadedRange(query.range);
+    setLoadedAt(requestedAt);
+    arrived();
+    setError(next.error);
   }, [query]);
 
   const { poll, refresh, refreshing } = useRefreshOnChange(query, reload);
