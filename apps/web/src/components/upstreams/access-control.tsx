@@ -29,7 +29,10 @@ interface UpstreamAccessRow {
   modelCount: number | null;
   name: string;
   selected: boolean;
-  // Null where the key still grants an id whose upstream has been deleted.
+  // Null where a granted id is absent from `available`. A deleted upstream is
+  // not that case: every read path projects a stored cap through the live
+  // catalog first. What survives is a grant that outlived the viewer's own cap
+  // being narrowed, which prunes neither the key nor its owner's other grants.
   upstream: { hue: number; kind: UpstreamOption['kind'] } | null;
   upstreamEnabled: boolean;
 }

@@ -44,10 +44,10 @@ export const providerLabel = (kind: UpstreamProviderKind) => providerLabels[kind
 export function ProviderBadge({ label, title, upstream }: {
   label?: string;
   title?: string;
-  // Null where an id is still referenced but the upstream behind it is gone,
-  // which leaves nothing to name a provider or paint a hue with. The badge
-  // then carries no identity at all and reads as the neutral chip every other
-  // piece of metadata is stated in.
+  // Null where a row names an upstream id the caller has nothing to render it
+  // from, which leaves neither a provider to name nor a hue to paint. The
+  // badge then carries no identity at all and reads as the neutral chip every
+  // other piece of metadata is stated in.
   upstream: { hue: number; kind: UpstreamProviderKind } | null;
 }) {
   const { t } = useTranslation();
