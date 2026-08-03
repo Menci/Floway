@@ -1,4 +1,4 @@
-import type { UsageMetric } from './types';
+import type { TokenSummary, UsageMetric } from './types';
 
 export const metricConfig: Record<
   UsageMetric,
@@ -24,6 +24,22 @@ export const metricConfig: Record<
     kind: 'percent',
   },
 };
+
+// A metric id is the reader's vocabulary and a summary field is the algebra's;
+// this pairing is the only place the two vocabularies meet, so what a metric
+// sums stays defined once, in `summarizeCounters`.
+export const summaryFieldForMetric = {
+  requests: 'requests',
+  cost: 'cost',
+  total: 'total',
+  input: 'prompt',
+  output: 'output',
+  prefill: 'prefill',
+  cached: 'cacheRead',
+  cacheCreation: 'cacheCreation',
+  cachedRate: 'cachedRate',
+  cacheHitRate: 'cacheHitRate',
+} as const satisfies Record<UsageMetric, keyof TokenSummary>;
 
 export const summaryMetrics: UsageMetric[][] = [
   ['requests', 'cost'],
