@@ -12,9 +12,20 @@
 // ./choice.css.ts writes down for every check box.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L358-L359
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L110-L136
+import { checkboxSurfaceCss } from './checkbox-surface';
 import { REVEAL_HEADROOM, revealAnimation } from './reveal';
 import { selectionPill } from './selection-pill';
-import { reducedMotion } from './selectors';
+import { nested, reducedMotion } from './selectors';
+
+// The multiselect option's check box, addressed through the option that owns
+// it: Fluent writes the state on the option as ARIA, and the box has no state
+// of its own to read.
+const checkIcon = '.fui-Option__checkIcon.fui-Option__checkIcon';
+const optionBox = (option: string) => `.fui-Option${option} ${checkIcon}`;
+const uncheckedOption = "[aria-checked='false']";
+const checkedOption = "[aria-checked='true']";
+const enabledOption = ":not([aria-disabled='true'])";
+const disabledOption = "[aria-disabled='true']";
 
 export const selectCss = `
 /* The rest fill, and the neutralisation of the token Fluent paints a rejected
@@ -418,77 +429,30 @@ ${reducedMotion(
    keeps its checkbox.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L759
    https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Option/useOption.tsx#L115-L117 */
-.fui-Option[aria-selected] .fui-Option__checkIcon.fui-Option__checkIcon {
+${optionBox('[aria-selected]')} {
   display: none;
 }
 
-/* The check box a multiselect option keeps, on WinUI's own state table. Once
-   checked, the stroke IS the accent fill, so the box reads as a filled square
-   with no outline.
+/* The check box a multiselect option keeps, on the shared table
+   ./checkbox-surface.ts states. An option carries its box in a slot of its own
+   and spells every state as an ARIA attribute on the option rather than as a
+   pseudo-class on an input, so only the selectors are stated here.
 
-   Colour is confined to the not-forced-colours query below, for the reason
-   ./choice.css.ts writes down for every check box: an accent-filled indicator
-   under forced colours also needs forced-color-adjust: none, which this layer
-   does not take on. ./choice.css.ts states the same table for the check box
-   control; an option draws its box from a different slot, so it is restated
-   here rather than inherited.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L41-L44
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L45-L48
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L53-L56
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L57-L60
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L69-L72 */
+   Colour is confined to the not-forced-colours query, for the reason
+   ./choice.css.ts writes down for every check box.
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Option/useOption.tsx#L115-L117 */
 @media not (forced-colors: active) {
-  .fui-Option[aria-checked='false'] .fui-Option__checkIcon.fui-Option__checkIcon {
-    background-color: var(--winui-control-alt-fill-secondary);
-    border-color: var(--winui-control-strong-stroke-default);
-  }
-
-  .fui-Option[aria-checked='false']:not([aria-disabled='true']):hover
-    .fui-Option__checkIcon.fui-Option__checkIcon {
-    background-color: var(--winui-control-alt-fill-tertiary);
-    border-color: var(--winui-control-strong-stroke-default);
-  }
-
-  .fui-Option[aria-checked='false']:not([aria-disabled='true']):active
-    .fui-Option__checkIcon.fui-Option__checkIcon {
-    background-color: var(--winui-control-alt-fill-quarternary);
-    border-color: var(--winui-control-strong-stroke-disabled);
-  }
-
-  .fui-Option[aria-checked='true'] .fui-Option__checkIcon.fui-Option__checkIcon {
-    background-color: var(--winui-accent-fill-default);
-    border-color: var(--winui-accent-fill-default);
-    color: var(--winui-text-on-accent-fill-primary);
-  }
-
-  .fui-Option[aria-checked='true']:not([aria-disabled='true']):hover
-    .fui-Option__checkIcon.fui-Option__checkIcon {
-    background-color: var(--winui-accent-fill-secondary);
-    border-color: var(--winui-accent-fill-secondary);
-  }
-
-  .fui-Option[aria-checked='true']:not([aria-disabled='true']):active
-    .fui-Option__checkIcon.fui-Option__checkIcon {
-    background-color: var(--winui-accent-fill-tertiary);
-    border-color: var(--winui-accent-fill-tertiary);
-    color: var(--winui-text-on-accent-fill-secondary);
-  }
-
-  .fui-Option[aria-checked][aria-disabled='true']
-    .fui-Option__checkIcon.fui-Option__checkIcon {
-    border-color: var(--winui-control-strong-stroke-disabled);
-    color: var(--winui-text-on-accent-fill-disabled);
-  }
-
-  .fui-Option[aria-checked='false'][aria-disabled='true']
-    .fui-Option__checkIcon.fui-Option__checkIcon {
-    background-color: var(--winui-control-alt-fill-disabled);
-  }
-
-  .fui-Option[aria-checked='true'][aria-disabled='true']
-    .fui-Option__checkIcon.fui-Option__checkIcon {
-    background-color: var(--winui-accent-fill-disabled);
-  }
+${nested(checkboxSurfaceCss({
+  unchecked: optionBox(uncheckedOption),
+  uncheckedHovered: optionBox(`${uncheckedOption}${enabledOption}:hover`),
+  uncheckedPressed: optionBox(`${uncheckedOption}${enabledOption}:active`),
+  uncheckedDisabled: optionBox(`${uncheckedOption}${disabledOption}`),
+  selected: optionBox(checkedOption),
+  selectedHovered: optionBox(`${checkedOption}${enabledOption}:hover`),
+  selectedPressed: optionBox(`${checkedOption}${enabledOption}:active`),
+  disabled: optionBox(`[aria-checked]${disabledOption}`),
+  selectedDisabled: optionBox(`${checkedOption}${disabledOption}`),
+}))}
 }
 
 /* The drop-down's reveal. WinUI runs SplitOpenThemeAnimation, which holds the
