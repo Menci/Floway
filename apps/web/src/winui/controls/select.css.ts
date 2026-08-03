@@ -13,6 +13,7 @@
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L358-L359
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L110-L136
 import { REVEAL_HEADROOM, revealAnimation } from './reveal';
+import { selectionPill } from './selection-pill';
 import { reducedMotion } from './selectors';
 
 export const selectCss = `
@@ -100,12 +101,13 @@ export const selectCss = `
 }
 
 /* Keyboard focus. WinUI lights a detached highlight border inset by -4px plus
-   the accent pill on the faceplate's leading edge. An outline at 2px offset
-   reproduces that border -- the ring is carried by an outline rather than by
-   the ::after freed below -- except at the corner, where an outline takes the
-   field's radius plus its offset and so lands a pixel tighter than WinUI's
-   fixed 7px. The shadow fills the two offset pixels with HighlightBackground,
-   which coincides with the stroke in light and parts from it in dark.
+   the accent pill on the faceplate's leading edge. An outline of the primary
+   thickness held off the field by that same thickness reproduces that border --
+   the ring is carried by an outline rather than by the ::after freed below --
+   except at the corner, where an outline takes the field's radius plus its
+   offset and so lands a pixel tighter than WinUI's fixed 7px. The shadow fills
+   the two offset pixels with HighlightBackground, which coincides with the
+   stroke in light and parts from it in dark.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L32
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L37
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L38
@@ -118,9 +120,12 @@ export const selectCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L328 */
 .fui-Dropdown.fui-Dropdown:has([data-fui-focus-visible]),
 .fui-Combobox.fui-Combobox:has([data-fui-focus-visible]) {
-  box-shadow: var(--floway-select-focus-shadow, 0 0 0 2px var(--winui-control-fill-default));
-  outline: 2px solid var(--winui-focus-stroke-outer);
-  outline-offset: var(--floway-select-focus-offset, 2px);
+  box-shadow: var(
+    --floway-select-focus-shadow,
+    0 0 0 var(--winui-focus-visual-primary-thickness) var(--winui-control-fill-default)
+  );
+  outline: var(--winui-focus-visual-primary-thickness) solid var(--winui-focus-stroke-outer);
+  outline-offset: var(--floway-select-focus-offset, var(--winui-focus-visual-primary-thickness));
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L324
@@ -365,12 +370,11 @@ export const selectCss = `
   background-color: var(--winui-subtle-fill-secondary);
 }
 
-/* The accent selection pill, drawn as ::before because Fluent spends ::after on
-   the active-descendant focus ring. A multiselect option gets no pill: WinUI's
-   ComboBox has no multiselect form, and Fluent's checkbox there already reads
-   the state. WinUI fixes the pill at 16px on its 32px item; a quarter inset at
-   each end reproduces that exactly while keeping it in proportion when an Option
-   carries multi-line content.
+/* The accent selection pill, on the shared geometry and drawn as ::before
+   because Fluent spends ::after on the active-descendant focus ring. The corner
+   radius is ComboBoxItemPillCornerRadius, the full round-off of the shared 3px
+   bar. A multiselect option gets no pill: WinUI's ComboBox has no multiselect
+   form, and Fluent's checkbox there already reads the state.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L106
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L324
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L325
@@ -378,25 +382,27 @@ export const selectCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L759 */
 .fui-Option.fui-Option[aria-selected='true']::before {
   background-color: var(--winui-accent-fill-default);
-  border-radius: 1.5px;
   content: '';
-  inset-block: 25%;
+${selectionPill('1.5px')}
   inset-inline-start: 0;
   pointer-events: none;
   position: absolute;
-  width: 3px;
 }
 
 /* Pressing a selected item shortens its pill to ComboBoxItemPillMinScale. The
    timing rides the pressed rule rather than the pill's own, because WinUI
    registers a key frame on the way in and none on the way out: the scale snaps
-   back when the state ends.
+   back when the state ends. ComboBoxItemScaleAnimationDuration and the key
+   spline it rides are ControlFastAnimationDuration and
+   ControlFastOutSlowInKeySpline, so both come from the motion tokens.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L326
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L330
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L726-L728 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L726-L728
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L602
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L604 */
 .fui-Option.fui-Option[aria-selected='true']:not([aria-disabled='true']):active::before {
   scale: 1 0.625;
-  transition: scale 167ms cubic-bezier(0, 0, 0, 1);
+  transition: scale var(--winui-control-fast-animation-duration) var(--winui-control-fast-out-slow-in-easing);
 }
 
 ${reducedMotion(
