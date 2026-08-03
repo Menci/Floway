@@ -1,5 +1,5 @@
 import { toPublicModel } from '../../data-plane/models/load.ts';
-import { MODEL_LISTING_FAILURE_CODE, MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
+import { MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
 import { type AddressableIdEntry, enumerateAddressableModelIds, listedRealModels } from '../../data-plane/shared/listing/addressable.ts';
 import { mergeAliasesIntoModels } from '../../data-plane/shared/listing/alias.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
@@ -147,7 +147,7 @@ export const controlPlaneModels = async (c: CtxWithQuery<typeof modelsQuery>) =>
     // Genuine upstream HTTP/parse failures are squashed to a generic 502 so
     // the control plane does not leak provider identity.
     if (e instanceof ProviderModelsUnavailableError) {
-      return c.json({ error: { message: MODEL_LISTING_FAILURE_MESSAGE, type: 'api_error', code: MODEL_LISTING_FAILURE_CODE } }, 502);
+      return c.json({ error: { message: MODEL_LISTING_FAILURE_MESSAGE, type: 'api_error' } }, 502);
     }
     return c.json({ error: { message: e instanceof Error ? e.message : String(e), type: 'api_error' } }, 502);
   }
