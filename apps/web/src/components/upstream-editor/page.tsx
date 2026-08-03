@@ -22,7 +22,7 @@ import { UpstreamWorkspace } from './workspace';
 import { api, callApi } from '../../api/client';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
-import { pageNavigation, useEntryRewrite } from '../../lib/page-navigation';
+import { useEntryRewrite } from '../../lib/page-navigation';
 import { BackNavigationButton } from '../ui/back-navigation-button';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { PANE_GAP_CLASS } from '../ui/layout';
@@ -182,15 +182,13 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     setSaveError(null);
   })();
 
-  const leave = () => void navigate('/dashboard/providers/upstreams', pageNavigation);
-
   return <FormProvider {...form}>
     {/* A column rather than a row template: the error bar is only sometimes
         there, and a named row for it leaves an empty one and a gap when it
         is not. */}
     <div className="flex flex-col gap-[14px] h-full min-h-0">
       <header className="flex items-center gap-3 min-w-0">
-        <BackNavigationButton onClick={leave}>{t('dashboard.upstreamEditor.actions.back')}</BackNavigationButton>
+        <BackNavigationButton to="/dashboard/providers/upstreams">{t('dashboard.upstreamEditor.actions.back')}</BackNavigationButton>
         {hasUnsavedChanges && <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.unsaved')}</Text>}
         {/* Disabled on a clean form only in edit mode: a create form opens on a
             prefilled blueprint and is clean at first render, yet still has

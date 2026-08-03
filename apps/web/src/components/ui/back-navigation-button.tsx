@@ -1,6 +1,7 @@
 import { ArrowLeftRegular } from '@fluentui/react-icons';
-import type { ReactNode } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 
+import { useRouteAddress } from './route-link';
 import { fluentComponents } from '../../fluent';
 
 const { Button, makeStyles } = fluentComponents;
@@ -24,7 +25,28 @@ const useStyles = makeStyles({
   },
 });
 
-export function BackNavigationButton({ children, onClick }: { children: ReactNode; onClick: () => void }) {
+// `to` is for the back that leaves the page rather than the one that steps back
+// within it: an anchor there is what a middle click can open, and Fluent's
+// anchor root keeps Enter and Space through react-aria's button props.
+// https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-aria/library/src/button/useARIAButtonProps.ts#L84-L120
+export function BackNavigationButton(props: { children: ReactNode } & (
+  | { onClick: () => void; to?: never }
+  | { onClick?: never; to: string }
+)) {
+  return props.to === undefined
+    ? <BackButton>{props.children}</BackButton>
+    : <AddressedBackButton to={props.to}>{props.children}</AddressedBackButton>;
+}
+
+function AddressedBackButton({ children, to }: { children: ReactNode; to: string }) {
+  const address = useRouteAddress(to);
+  return <BackButton {...address}>{children}</BackButton>;
+}
+
+function BackButton({ children, href, onClick }: { children: ReactNode; href?: string; onClick?: (event: MouseEvent<HTMLElement>) => void }) {
   const styles = useStyles();
-  return <Button appearance="subtle" className={styles.root} icon={<ArrowLeftRegular />} onClick={onClick}>{children}</Button>;
+  const shared = { appearance: 'subtle', className: styles.root, icon: <ArrowLeftRegular />, onClick } as const;
+  return href === undefined
+    ? <Button {...shared}>{children}</Button>
+    : <Button {...shared} as="a" href={href}>{children}</Button>;
 }

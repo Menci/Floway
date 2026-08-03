@@ -21,6 +21,7 @@ import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { ReorderButtons } from '../components/ui/reorder-buttons';
 import { ResourceListActions, ResourceListEmptyState, ResourceListPanel } from '../components/ui/resource-list';
+import { RouteMenuItem } from '../components/ui/route-menu-item';
 import { rowTitleClass } from '../components/ui/row-title';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { TABLE_ACTIONS_WIDTH, TableActions, TableCentredCell, TableCentredHeader, TableTrailingHeader } from '../components/ui/table-actions';
@@ -38,7 +39,6 @@ import type { UpstreamProviderKind } from '@floway-dev/provider/model';
 
 const {
   Menu,
-  MenuItem,
   MenuList,
   MenuPopover,
   MenuTrigger,
@@ -85,6 +85,10 @@ const menuRank = (kind: UpstreamProviderKind) => {
 };
 
 const providers = ALL_PROVIDER_KINDS.toSorted((a, b) => menuRank(a) - menuRank(b));
+
+// Both affordances that open a record — the row's name and its edit button —
+// address it from here, so the two cannot come apart.
+const upstreamEditorPath = (record: UpstreamRecord) => `/dashboard/providers/upstreams/${encodeURIComponent(record.id)}`;
 
 const loadPageData = async (signal?: AbortSignal): Promise<LoaderData> => {
   const [upstreamsResult, modelsResult] = await Promise.all([
@@ -263,17 +267,17 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
               <MenuPopover>
                 <MenuList>
                   {providers.map(kind => (
-                    <MenuItem
+                    <RouteMenuItem
                       icon={{
                         children: <ProviderIcon kind={kind} className="h-5 w-5" />,
                         className: 'self-center',
                       }}
                       key={kind}
-                      onClick={() => void navigate(`/dashboard/providers/upstreams/new/${kind}`, pageNavigation)}
                       subText={t(`dashboard.upstreams.providers.${kind}`)}
+                      to={`/dashboard/providers/upstreams/new/${kind}`}
                     >
                       {t(`provider.${kind}`)}
-                    </MenuItem>
+                    </RouteMenuItem>
                   ))}
                 </MenuList>
               </MenuPopover>
@@ -304,7 +308,6 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
           busy={busy}
           mutation={mutation}
           onDelete={openDeleteDialog}
-          onEdit={record => void navigate(`/dashboard/providers/upstreams/${encodeURIComponent(record.id)}`, pageNavigation)}
           onMove={(record, direction) => void move(record, direction)}
           onToggle={(record, enabled) => void setEnabled(record, enabled)}
           pendingEnabled={pendingEnabled}
@@ -332,7 +335,6 @@ function UpstreamsTable({
   data,
   mutation,
   onDelete,
-  onEdit,
   onMove,
   onToggle,
   pendingEnabled,
@@ -341,7 +343,6 @@ function UpstreamsTable({
   data: LoaderData;
   mutation: Mutation | null;
   onDelete: (record: UpstreamRecord) => void;
-  onEdit: (record: UpstreamRecord) => void;
   onMove: (record: UpstreamRecord, direction: -1 | 1) => void;
   onToggle: (record: UpstreamRecord, enabled: boolean) => void;
   pendingEnabled: { id: string; enabled: boolean } | null;
@@ -400,7 +401,7 @@ function UpstreamsTable({
                     <Link
                       {...pageNavigation}
                       className={rowTitleClass}
-                      to={`/dashboard/providers/upstreams/${encodeURIComponent(record.id)}`}
+                      to={upstreamEditorPath(record)}
                     >
                       {record.name}
                     </Link>
@@ -424,7 +425,7 @@ function UpstreamsTable({
                     disabled={busy}
                     icon={<EditRegular />}
                     label={t('dashboard.upstreams.actions.editNamed', { name: record.name })}
-                    onClick={() => onEdit(record)}
+                    to={upstreamEditorPath(record)}
                   />
                   <TooltipIconButton
                     danger
