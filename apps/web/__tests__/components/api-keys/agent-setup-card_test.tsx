@@ -48,19 +48,21 @@ const apiKey = (id: string): ApiKey => ({
 
 const clipboard = { copy: vi.fn(), outcomeFor: () => 'idle' as const };
 
-let pickKey: (id: string) => void = () => {};
+const PICK_SECOND_KEY = 'pick the second key';
 
 const Host = () => {
   const [keyId, setKeyId] = useState('key-1');
-  pickKey = setKeyId;
-  return <AgentSetupCard
-    clipboard={clipboard}
-    initialApiKeyId="key-1"
-    initialError={null}
-    initialLease={lease('key-1')}
-    models={[]}
-    selectedKey={apiKey(keyId)}
-  />;
+  return <>
+    <button onClick={() => setKeyId('key-2')} type="button">{PICK_SECOND_KEY}</button>
+    <AgentSetupCard
+      clipboard={clipboard}
+      initialApiKeyId="key-1"
+      initialError={null}
+      initialLease={lease('key-1')}
+      models={[]}
+      selectedKey={apiKey(keyId)}
+    />
+  </>;
 };
 
 const shownSettings = () => ({
@@ -83,7 +85,7 @@ describe('Agent Setup card fields', () => {
     // is what the card used to spend showing a stale local copy of the form.
     vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})));
     renderInApp(<Host />);
-    act(() => { pickKey('key-2'); });
+    act(() => { screen.getByRole('button', { name: PICK_SECOND_KEY }).click(); });
     expect(shownSettings()).toEqual({ effort: 'high', modelDiscovery: false, attributionOptOut: true });
     vi.unstubAllGlobals();
   });
