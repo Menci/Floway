@@ -59,7 +59,6 @@ const useStyles = makeStyles({
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L600-L603
 const NAV_INDICATOR_INSET = 0;
 
-
 function SidebarLink({ children, icon, onNavigate, pending, to }: {
   children: ReactNode;
   icon: NavItemProps['icon'];
