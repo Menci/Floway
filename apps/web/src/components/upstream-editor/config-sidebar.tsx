@@ -1,5 +1,5 @@
 import { DeleteRegular } from '@fluentui/react-icons';
-import { useId, useMemo, useState } from 'react';
+import { useId, useMemo } from 'react';
 import { Controller, useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
@@ -9,11 +9,12 @@ import { ApiPathsSection, ProviderConfigSection } from './provider-config';
 import { EditorSection } from './section';
 import type { ProxyRecord, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
-import { Combobox, Dropdown, Input } from '../ui/fluent-form-controls';
+import { Dropdown, Input } from '../ui/fluent-form-controls';
 import { PANEL_INSET_CLASS } from '../ui/panel';
 import { ReorderButtons } from '../ui/reorder-buttons';
 import { ScrollArea } from '../ui/scroll-area';
 import { StatusBadge } from '../ui/status-badge';
+import { TagCombobox } from '../ui/tag-combobox';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { UpstreamColorPicker } from '../upstreams/color-picker';
 import type { UpstreamModelConfig } from '@floway-dev/provider';
@@ -143,36 +144,25 @@ function DisabledModelsCombobox({ catalogAvailable, discovered }: { catalogAvail
   const { control, setValue } = useFormContext<UpstreamEditorValues>();
   const disabled = useWatch({ control, name: 'disabledPublicModelIds' });
   const manual = useWatch({ control, name: 'manualModels' });
-  const [query, setQuery] = useState('');
   const options = useMemo(
     () => buildDisabledModelOptions(discovered, manual, disabled, catalogAvailable),
     [catalogAvailable, disabled, discovered, manual],
   );
-  const filtered = options.filter(option => option.id.toLowerCase().includes(query.trim().toLowerCase()));
   const missing = options.filter(option => option.missing).map(option => option.id);
   return <div className="grid gap-3">
-    <Combobox
-      aria-label={t('dashboard.upstreamEditor.sections.disabledModels')}
-      multiselect
-      onChange={event => setQuery(event.target.value)}
-      onOpenChange={(_, data) => { if (!data.open) setQuery(''); }}
-      onOptionSelect={(_, data) => {
-        setValue('disabledPublicModelIds', data.selectedOptions, { shouldDirty: true });
-        setQuery('');
-      }}
+    <TagCombobox
+      ariaLabel={t('dashboard.upstreamEditor.sections.disabledModels')}
+      onChange={next => setValue('disabledPublicModelIds', next, { shouldDirty: true })}
+      options={options.map(option => option.id)}
       placeholder={disabled.length === 0
         ? t('dashboard.upstreamEditor.disabledModelsPlaceholder')
         : t('dashboard.upstreamEditor.disabledModelsSelected', { count: disabled.length })}
-      selectedOptions={disabled}
-      value={query}
-    >
-      {filtered.map(option => <Option key={option.id} text={option.id} value={option.id}>
-        <span className="flex items-center justify-between gap-3 min-w-0 w-full">
-          <span className="font-mono min-w-0 truncate">{option.id}</span>
-          {option.missing && <StatusBadge tone="warning">{t('dashboard.upstreamEditor.disabledModelsUnavailable')}</StatusBadge>}
-        </span>
-      </Option>)}
-    </Combobox>
+      renderOption={id => <span className="flex items-center justify-between gap-3 min-w-0 w-full">
+        <span className="font-mono min-w-0 truncate">{id}</span>
+        {missing.includes(id) && <StatusBadge tone="warning">{t('dashboard.upstreamEditor.disabledModelsUnavailable')}</StatusBadge>}
+      </span>}
+      value={disabled}
+    />
     {missing.length > 0 && <MessageBar intent="warning" layout="multiline">
       <MessageBarBody>{t('dashboard.upstreamEditor.disabledModelsMissing', { models: missing.join(', ') })}</MessageBarBody>
     </MessageBar>}
@@ -211,37 +201,19 @@ function ProxyFallbackEditor({ proxies, runtime }: { proxies: ProxyRecord[]; run
 
 function ColoCombobox({ current, onChange, value }: { current: string; onChange: (value: string[] | undefined) => void; value: string[] }) {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const options = [...new Set([current, ...COMMON_COLO_LOCATIONS, ...value])]
-    .filter(location => location.toLowerCase().includes(query.trim().toLowerCase()));
-  const commit = (locations: readonly string[]) => {
-    const normalized = [...new Set(locations.map(location => location.trim().toUpperCase()).filter(Boolean))];
-    onChange(normalized.length === 0 ? undefined : normalized);
-  };
-  return <Combobox
-    aria-label={t('dashboard.upstreamEditor.proxy.colos')}
+  return <TagCombobox
+    ariaLabel={t('dashboard.upstreamEditor.proxy.colos')}
     freeform
-    multiselect
-    onChange={event => setQuery(event.target.value)}
-    onKeyDown={event => {
-      if (event.key !== 'Enter' || query.trim() === '') return;
-      event.preventDefault();
-      commit([...value, query]);
-      setQuery('');
-    }}
-    onOpenChange={(_, data) => { setOpen(data.open); setQuery(''); }}
-    onOptionSelect={(_, data) => { commit(data.selectedOptions); setQuery(''); }}
+    normalizeValue={location => location.trim().toUpperCase()}
+    // An empty whitelist is the absence of the field, not a field holding none.
+    onChange={next => onChange(next.length === 0 ? undefined : next)}
+    options={[...new Set([current, ...COMMON_COLO_LOCATIONS, ...value])]}
     placeholder={value.length === 0
       ? t('dashboard.upstreamEditor.proxy.allColos')
       : t('dashboard.upstreamEditor.proxy.colosSelected', { count: value.length })}
-    selectedOptions={value}
-    value={open ? query : ''}
-  >
-    {options.map(location => <Option key={location} text={location} value={location}>
-      <span className="flex items-center justify-between gap-2 w-full"><span className="font-mono">{location}</span>{location === current && <StatusBadge tone="neutral">{t('dashboard.upstreamEditor.proxy.currentColo')}</StatusBadge>}</span>
-    </Option>)}
-  </Combobox>;
+    renderOption={location => <span className="flex items-center justify-between gap-2 w-full"><span className="font-mono">{location}</span>{location === current && <StatusBadge tone="neutral">{t('dashboard.upstreamEditor.proxy.currentColo')}</StatusBadge>}</span>}
+    value={value}
+  />;
 }
 
 function ModelPrefixEditor() {

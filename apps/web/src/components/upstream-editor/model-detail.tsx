@@ -1,5 +1,5 @@
 import { DeleteRegular } from '@fluentui/react-icons';
-import { useId, useState } from 'react';
+import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { ModelRow } from './data';
@@ -14,9 +14,10 @@ import { EditorSection } from './section';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { ChoiceGroup } from '../ui/choice-group';
-import { Checkbox, Combobox, Dropdown, Input, Switch } from '../ui/fluent-form-controls';
+import { Checkbox, Dropdown, Input, Switch } from '../ui/fluent-form-controls';
 import { CHECKBOX_LIST_CLASS, PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { SectionHeader } from '../ui/section-header';
+import { TagCombobox } from '../ui/tag-combobox';
 import { modelsField, type UpstreamChatModelConfig, type UpstreamModelConfig } from '@floway-dev/provider';
 
 const {
@@ -206,49 +207,23 @@ function NumberField({ label, onChange, placeholder, readOnly, value }: { label:
 }
 
 function EffortEditor({ effort, onChange, readOnly, t }: { readOnly: boolean; effort: NonNullable<UpstreamChatModelConfig['reasoning']>['effort'] & {}; onChange: (effort: NonNullable<UpstreamChatModelConfig['reasoning']>['effort']) => void; t: ReturnType<typeof useTranslation>['t'] }) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
   const supported = effort.supported;
-  const options = [...new Set([...reasoningPresets, ...supported])]
-    .filter(level => level.toLowerCase().includes(query.trim().toLowerCase()));
-  const setSupported = (next: readonly string[]) => {
-    const values = [...next];
-    onChange({
-      supported: values,
-      default: values.includes(effort.default) ? effort.default : values[0] ?? '',
-    });
-  };
-  const add = (raw: string) => {
-    const level = raw.trim();
-    if (level && !supported.includes(level)) setSupported([...supported, level]);
-    setQuery('');
-  };
+  const setSupported = (values: readonly string[]) => onChange({
+    supported: [...values],
+    default: values.includes(effort.default) ? effort.default : values[0] ?? '',
+  });
   return <div className={`grid grid-cols-[minmax(0,1fr)_minmax(180px,0.45fr)] ${PANE_GAP_CLASS} max-[760px]:grid-cols-1`}>
     <Field label={t('dashboard.upstreamEditor.models.supportedEfforts')}>
-      <Combobox
-        readOnly={readOnly}
+      <TagCombobox
+        closedLabel={supported.join(', ')}
         freeform
-        multiselect
-        onChange={event => setQuery(event.target.value)}
-        onKeyDown={event => {
-          if (event.key !== 'Enter' || query.trim() === '') return;
-          event.preventDefault();
-          add(query);
-        }}
-        onOpenChange={(_, data) => {
-          setOpen(data.open);
-          setQuery('');
-        }}
-        onOptionSelect={(_, data) => {
-          setSupported(data.selectedOptions);
-          setQuery('');
-        }}
+        normalizeValue={level => level.trim()}
+        onChange={setSupported}
+        options={[...new Set([...reasoningPresets, ...supported])]}
         placeholder={t('dashboard.upstreamEditor.models.effortPlaceholder')}
-        selectedOptions={[...supported]}
-        value={open ? query : supported.join(', ')}
-      >
-        {options.map(level => <Option key={level} text={level} value={level}>{level}</Option>)}
-      </Combobox>
+        readOnly={readOnly}
+        value={supported}
+      />
     </Field>
     <Field label={t('dashboard.upstreamEditor.models.defaultEffort')}>
       <Dropdown disabled={supported.length === 0} readOnly={readOnly} selectedOptions={[effort.default]} value={effort.default} onOptionSelect={(_, data) => data.optionValue !== undefined && onChange({ ...effort, default: data.optionValue })}>
