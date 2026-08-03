@@ -41,7 +41,7 @@ export async function clientLoader() {
 // The signed-in check is its own component so everything below takes a user
 // rather than a user-or-null: a hook cannot run behind a condition.
 export default function Dashboard({}: Route.ComponentProps) {
-  const user = useAuthStore(state => state.user);
+  const user = useAuthStore(state => state.session?.user ?? null);
   if (!user) return <Navigate replace to="/" />;
   return <DashboardShell user={user} />;
 }

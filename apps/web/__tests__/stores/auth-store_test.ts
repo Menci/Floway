@@ -43,23 +43,20 @@ describe('auth store request ownership', () => {
     setSessionToken('old-token');
     const pending = useAuthStore.getState().initialize();
 
-    setSessionToken('new-token');
     useAuthStore.getState().primeFromLogin({ token: 'new-token', user: newUser });
     resolveRequest({ data: { user: oldUser, viaApiKey: false, apiKey: null } });
     await pending;
 
-    expect(useAuthStore.getState().user).toEqual(newUser);
-    expect(useAuthStore.getState().token).toBe('new-token');
+    expect(useAuthStore.getState().session).toEqual({ token: 'new-token', user: newUser });
   });
 
   it('keeps the authenticated identity when a forced refresh fails transiently', async () => {
-    setSessionToken('current-token');
     useAuthStore.getState().primeFromLogin({ token: 'current-token', user: newUser });
     mocks.getCurrentSession.mockResolvedValue({ error: { status: 503, message: 'Unavailable' } });
 
     await useAuthStore.getState().refresh();
 
-    expect(useAuthStore.getState().user).toEqual(newUser);
+    expect(useAuthStore.getState().session?.user).toEqual(newUser);
     expect(useAuthStore.getState().error).toEqual({ status: 503, message: 'Unavailable' });
   });
 

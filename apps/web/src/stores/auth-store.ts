@@ -3,17 +3,24 @@ import type { StoreApi } from 'zustand';
 
 import { getCurrentSession, type AuthUser, type LoginResponse } from '../api/auth';
 import { api, type GlobalError } from '../api/client';
-import { clearSessionToken, getSessionToken, onSessionInvalidated } from '../auth/session';
+import { clearSessionToken, getSessionToken, onSessionInvalidated, setSessionToken } from '../auth/session';
+
+// ../auth/session.ts owns the token. The store holds only what the gateway
+// answered for one, and holds the two together, so a cached user can never be
+// read against a token it did not come from.
+interface AuthSession {
+  token: string;
+  user: AuthUser;
+}
 
 interface AuthStore {
-  token: string | null;
-  user: AuthUser | null;
+  session: AuthSession | null;
   error: GlobalError | null;
   clear: () => void;
   logout: () => Promise<void>;
   initialize: () => Promise<AuthUser | null>;
   refresh: () => Promise<AuthUser | null>;
-  primeFromLogin: (session: LoginResponse) => void;
+  primeFromLogin: (login: LoginResponse) => void;
 }
 
 let sessionRequest: {
@@ -21,6 +28,11 @@ let sessionRequest: {
   token: string;
   promise: Promise<AuthUser | null>;
 } | null = null;
+
+const sessionFor = (get: StoreApi<AuthStore>['getState'], token: string | null): AuthSession | null => {
+  const { session } = get();
+  return session?.token === token ? session : null;
+};
 
 const loadSession = (
   set: StoreApi<AuthStore>['setState'],
@@ -33,33 +45,29 @@ const loadSession = (
     return Promise.resolve(null);
   }
 
-  const state = get();
+  const cached = sessionFor(get, token);
   // The in-flight check comes first: a pending request keeps the previous user
   // in place when the token is unchanged, so the cached-session fast path below
   // would otherwise resolve a caller from an identity the request may replace.
   if (sessionRequest?.token === token) return sessionRequest.promise;
-  if (!force && state.token === token && state.user) {
-    return Promise.resolve(state.user);
-  }
+  if (!force && cached) return Promise.resolve(cached.user);
 
-  set({ token, user: state.token === token ? state.user : null, error: null });
+  set({ session: cached, error: null });
   const requestId = {};
   const promise = getCurrentSession().then(result => {
     if (sessionRequest?.id !== requestId || getSessionToken() !== token) {
-      const current = get();
-      return current.token === getSessionToken() ? current.user : null;
+      return sessionFor(get, getSessionToken())?.user ?? null;
     }
     sessionRequest = null;
     if (result.data) {
-      set({ token, user: result.data.user, error: null });
+      set({ session: { token, user: result.data.user }, error: null });
       return result.data.user;
     }
     if (result.error.status === 401) {
       get().clear();
       return null;
     }
-    const current = get();
-    set({ token, user: current.token === token ? current.user : null, error: result.error });
+    set({ session: sessionFor(get, token), error: result.error });
     return null;
   });
   sessionRequest = { id: requestId, token, promise };
@@ -67,16 +75,14 @@ const loadSession = (
 };
 
 export const useAuthStore = create<AuthStore>((set, get) => ({
-  token: null,
-  user: null,
+  session: null,
   error: null,
 
   clear: () => {
     sessionRequest = null;
     clearSessionToken();
     set({
-      token: null,
-      user: null,
+      session: null,
       error: null,
     });
   },
@@ -97,11 +103,11 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   initialize: () => loadSession(set, get, false),
   refresh: () => loadSession(set, get, true),
 
-  primeFromLogin: session => {
+  primeFromLogin: login => {
     sessionRequest = null;
+    setSessionToken(login.token);
     set({
-      token: session.token,
-      user: session.user,
+      session: { token: login.token, user: login.user },
       error: null,
     });
   },
