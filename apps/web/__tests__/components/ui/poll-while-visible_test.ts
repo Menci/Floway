@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { usePollWhileVisible } from '../../../src/components/ui/use-poll-while-visible';
+import { advance } from '../../settle';
 
 // happy-dom reports a document that is always visible, so the tab state is
 // what the suite drives.
@@ -11,8 +12,6 @@ const setVisibility = async (next: DocumentVisibilityState) => {
   visibility = next;
   await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
 };
-
-const tick = async (ms: number) => { await act(async () => { vi.advanceTimersByTime(ms); }); };
 
 describe('polling while visible', () => {
   beforeEach(() => {
@@ -30,10 +29,10 @@ describe('polling while visible', () => {
     const poll = vi.fn().mockResolvedValue(undefined);
     renderHook(() => { usePollWhileVisible(poll, 60_000); });
 
-    await tick(59_999);
+    await advance(59_999);
     expect(poll).not.toHaveBeenCalled();
 
-    await tick(1);
+    await advance(1);
     expect(poll.mock.calls).toEqual([[{ background: true }]]);
   });
 
@@ -42,7 +41,7 @@ describe('polling while visible', () => {
     renderHook(() => { usePollWhileVisible(poll, 60_000); });
 
     await setVisibility('hidden');
-    await tick(180_000);
+    await advance(180_000);
 
     expect(poll).not.toHaveBeenCalled();
   });
@@ -64,7 +63,7 @@ describe('polling while visible', () => {
     const { unmount } = renderHook(() => { usePollWhileVisible(poll, 60_000); });
 
     unmount();
-    await tick(180_000);
+    await advance(180_000);
     await setVisibility('hidden');
     await setVisibility('visible');
 
