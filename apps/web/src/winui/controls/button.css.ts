@@ -30,7 +30,7 @@
 // both modes.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L53-L101
 
-import { nested } from './selectors';
+import { disabledStates, nested, notDisabled } from './selectors';
 
 // A suffix on a selector list attaches to its last item alone, so appending a
 // state to an already joined string silently leaves every variant but the last
@@ -43,19 +43,6 @@ const expand = (
 ) => variants
   .flatMap(variant => states.map(state => `${base(variant)}${state}`))
   .join(',\n');
-
-// Fluent's `disabledFocusable` keeps the element enabled to the browser and
-// says so with `aria-disabled`, so both spellings name the disabled visual.
-const disabledStates = [':disabled', `[aria-disabled='true']`];
-
-// WinUI's VisualStateManager never leaves Disabled, so no interaction keyframe
-// can run over a disabled button. CSS has no such exclusivity: a pressed
-// selector carries two pseudo-classes where the disabled one carries a single
-// class-level part, so it outranks the disabled rule and source order cannot
-// rescue it. Every interactive state therefore excludes both disabled
-// spellings in the state itself, which keeps the exclusion attached to the
-// state rather than to each rule that happens to notice the collision.
-const notDisabled = disabledStates.map(state => `:not(${state})`).join('');
 
 const restState = notDisabled;
 

@@ -31,3 +31,20 @@ export const pressedRoots = (root: string, input: string) => [
   `${root}:active`,
   `${root}:has(${input}:active)`,
 ];
+
+/**
+ * Fluent's disabledFocusable keeps the element enabled to the browser and says
+ * so with aria-disabled, so both spellings name the disabled visual.
+ */
+export const disabledStates = [':disabled', `[aria-disabled='true']`];
+
+/**
+ * WinUI's VisualStateManager never leaves Disabled, so no interaction keyframe
+ * can run over a disabled control. CSS has no such exclusivity: a pressed
+ * selector carries two pseudo-classes where the disabled one carries a single
+ * class-level part, so it outranks the disabled rule and source order cannot
+ * rescue it. Every interactive state therefore excludes both disabled
+ * spellings in the state itself, which keeps the exclusion attached to the
+ * state rather than to each rule that happens to notice the collision.
+ */
+export const notDisabled = disabledStates.map(state => `:not(${state})`).join('');

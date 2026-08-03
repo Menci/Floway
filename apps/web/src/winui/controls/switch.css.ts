@@ -42,7 +42,7 @@
 // knob's travel apply in both modes.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L64-L123
 
-import { nested, pressedRoots as pressedUnion, under } from './selectors';
+import { nested, notDisabled, pressedRoots as pressedUnion, under } from './selectors';
 
 // The two pointer states are answered from the root, never from the input:
 // Fluent's input covers the track alone, so a label beside it is hovered
@@ -59,16 +59,16 @@ const pressedRoots = [
   '.fui-Switch[data-winui-switch-dragging]',
 ];
 
-const enabledKnob = `.fui-Switch__input:enabled:not([aria-disabled='true'])`
+const enabledKnob = `.fui-Switch__input${notDisabled}`
   + ' ~ .fui-Switch__indicator.fui-Switch__indicator > svg';
 
-const enabledCheckedKnob = `.fui-Switch__input:enabled:checked:not([aria-disabled='true'])`
+const enabledCheckedKnob = `.fui-Switch__input${notDisabled}:checked`
   + ' ~ .fui-Switch__indicator.fui-Switch__indicator > svg';
 
-const offTrack = `.fui-Switch__input:enabled:not(:checked):not([aria-disabled='true'])`
+const offTrack = `.fui-Switch__input${notDisabled}:not(:checked)`
   + ' ~ .fui-Switch__indicator.fui-Switch__indicator::before';
 
-const onTrack = `.fui-Switch__input:enabled:checked:not([aria-disabled='true'])`
+const onTrack = `.fui-Switch__input${notDisabled}:checked`
   + ' ~ .fui-Switch__indicator.fui-Switch__indicator::after';
 
 export const switchCss = `
@@ -283,12 +283,12 @@ ${under(pressedRoots, [enabledCheckedKnob])} {
      outside the capsule's own, which appears in that same window when a drag
      settles back to off. */
   .fui-Switch__indicator.fui-Switch__indicator,
-  .fui-Switch__input:enabled:not(:checked):not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator,
-  .fui-Switch__input:enabled:not(:checked):not([aria-disabled='true']):hover ~ .fui-Switch__indicator.fui-Switch__indicator,
-  .fui-Switch__input:enabled:not(:checked):not([aria-disabled='true']):hover:active ~ .fui-Switch__indicator.fui-Switch__indicator,
-  .fui-Switch__input:enabled:checked:not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator,
-  .fui-Switch__input:enabled:checked:not([aria-disabled='true']):hover ~ .fui-Switch__indicator.fui-Switch__indicator,
-  .fui-Switch__input:enabled:checked:not([aria-disabled='true']):hover:active ~ .fui-Switch__indicator.fui-Switch__indicator,
+  .fui-Switch__input${notDisabled}:not(:checked) ~ .fui-Switch__indicator.fui-Switch__indicator,
+  .fui-Switch__input${notDisabled}:not(:checked):hover ~ .fui-Switch__indicator.fui-Switch__indicator,
+  .fui-Switch__input${notDisabled}:not(:checked):hover:active ~ .fui-Switch__indicator.fui-Switch__indicator,
+  .fui-Switch__input${notDisabled}:checked ~ .fui-Switch__indicator.fui-Switch__indicator,
+  .fui-Switch__input${notDisabled}:checked:hover ~ .fui-Switch__indicator.fui-Switch__indicator,
+  .fui-Switch__input${notDisabled}:checked:hover:active ~ .fui-Switch__indicator.fui-Switch__indicator,
   .fui-Switch__input:disabled:not(:checked) ~ .fui-Switch__indicator.fui-Switch__indicator,
   .fui-Switch__input[aria-disabled='true']:not(:checked) ~ .fui-Switch__indicator.fui-Switch__indicator,
   .fui-Switch__input:disabled:checked ~ .fui-Switch__indicator.fui-Switch__indicator,

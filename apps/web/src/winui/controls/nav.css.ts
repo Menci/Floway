@@ -6,13 +6,7 @@
 // do so because the value is painted from a keyframe stop, which outranks every
 // normal rule; the variable that stop reads is the one remaining input. See
 // ./tokens.ts for the selector convention.
-//
-// WinUI's VisualStateManager never leaves Disabled, so no pointer state is
-// reachable from it. In CSS a state pseudo-class only adds weight, so a
-// selected item's pointer rule would outrank a plain disabled rule; the
-// pointer states therefore exclude both disabled spellings themselves rather
-// than being settled by the disabled rules that follow them.
-const notDisabled = ":not(:disabled):not([aria-disabled='true'])";
+import { notDisabled } from './selectors';
 
 export const navCss = `
 /* No seam on the pane's inline-end edge: WinUI draws that hairline from the

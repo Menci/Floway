@@ -11,6 +11,8 @@
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L122-L129
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L144-L151
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L185-L192
+import { notDisabled } from './selectors';
+
 export const accordionCss = `
 /* The fill, the stroke and the radius belong on the button rather than the
    header root: Fluent's button slot resets background-color to inherit, so a
@@ -130,14 +132,14 @@ export const accordionCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L16
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L166-L184
    https://github.com/tropicaaal/fluent-svelte/blob/ba1813ecc0797117be0e1b24be3a3c4905111ba7/src/lib/Expander/Expander.scss#L89-L95 */
-.fui-AccordionHeader__button:enabled:not([aria-disabled='true']):hover .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
+.fui-AccordionHeader__button${notDisabled}:hover .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
   background-color: var(--winui-subtle-fill-secondary);
 }
 
 /* WinUI's pressed subtle fill is lighter than its pointer-over fill, so the
    chevron recedes rather than deepens on press.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L17 */
-.fui-AccordionHeader__button:enabled:not([aria-disabled='true']):active .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
+.fui-AccordionHeader__button${notDisabled}:active .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
   background-color: var(--winui-subtle-fill-tertiary);
 }
 
@@ -160,14 +162,14 @@ export const accordionCss = `
     border: 2px solid ButtonText;
   }
 
-  .fui-AccordionHeader__button.fui-AccordionHeader__button:enabled:not([aria-disabled='true']):hover,
-  .fui-AccordionHeader__button.fui-AccordionHeader__button:enabled:not([aria-disabled='true']):active {
+  .fui-AccordionHeader__button.fui-AccordionHeader__button${notDisabled}:hover,
+  .fui-AccordionHeader__button.fui-AccordionHeader__button${notDisabled}:active {
     color: Highlight;
     border-color: Highlight;
   }
 
-  .fui-AccordionHeader__button:enabled:not([aria-disabled='true']):hover .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon,
-  .fui-AccordionHeader__button:enabled:not([aria-disabled='true']):active .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
+  .fui-AccordionHeader__button${notDisabled}:hover .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon,
+  .fui-AccordionHeader__button${notDisabled}:active .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
     border-color: Highlight;
   }
 }
