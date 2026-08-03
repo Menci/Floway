@@ -145,7 +145,7 @@ describe('createCodexProvider', () => {
     const instance = createCodexProvider(recordWithOverride);
     const models = await instance.instance.getProvidedModels(directFetcher);
     for (const m of models) {
-      expect(m.enabledFlags.has('promote-system-to-developer')).toBe(true);
+      expect(m.enabledFlags.has('rewrite-system-to-developer')).toBe(true);
       expect(m.enabledFlags.has('responses-web-search-shim')).toBe(true);
     }
   });

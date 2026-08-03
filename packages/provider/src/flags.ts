@@ -28,9 +28,9 @@ export const OPTIONAL_FLAG_IDS = [
   'responses-image-generation-shim',
   'responses-compact-shim',
   'disable-reasoning-on-forced-tool-choice',
-  'demote-interleaved-system-to-user',
-  'demote-developer-to-system',
-  'promote-system-to-developer',
+  'rewrite-mid-conv-system-to-user',
+  'rewrite-developer-to-system',
+  'rewrite-system-to-developer',
   'strip-billing-attribution',
   'strip-prompt-cache-key',
   'usage-exclusive-cached-tokens',
@@ -116,7 +116,7 @@ export const parseFlagOverridesWire = (value: unknown): FlagOverrides =>
 //      Never both, since an auto/manual row cannot be the other.
 //
 // Placing per-model last lets provider-declared technical necessities
-// (e.g. Copilot forcing demote-interleaved-system-to-user on for
+// (e.g. Copilot forcing rewrite-mid-conv-system-to-user on for
 // Claude < 4.8, whose Vertex backend rejects inline `role:'system'`)
 // survive an upstream-wide operator override. Operators who genuinely
 // want to opt out of a provider's per-model call switch the row to

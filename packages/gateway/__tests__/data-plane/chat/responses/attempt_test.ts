@@ -216,9 +216,9 @@ test('generate applies role compatibility flags in target-chain order', async ()
     };
   });
   const candidate = makeCandidate(callResponses, new Set([
-    'demote-developer-to-system',
-    'demote-interleaved-system-to-user',
-    'promote-system-to-developer',
+    'rewrite-developer-to-system',
+    'rewrite-mid-conv-system-to-user',
+    'rewrite-system-to-developer',
   ]));
 
   const result = await responsesAttempt.generate({
@@ -244,7 +244,7 @@ test('generate applies role compatibility flags in target-chain order', async ()
   ]);
 });
 
-test('generate defers role promotion until after translation to Chat Completions', async () => {
+test('generate defers the role rewrite until after translation to Chat Completions', async () => {
   installRepo();
   let observedBody: Omit<ChatCompletionsPayload, 'model'> | undefined;
   const callChatCompletions = vi.fn(async (
@@ -299,7 +299,7 @@ test('generate defers role promotion until after translation to Chat Completions
       providerModels: {
         [upstream]: stubProviderModel({
           endpoints,
-          enabledFlags: new Set(['promote-system-to-developer']),
+          enabledFlags: new Set(['rewrite-system-to-developer']),
         }),
       },
     }, upstream),

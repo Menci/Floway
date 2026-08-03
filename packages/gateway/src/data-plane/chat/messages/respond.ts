@@ -10,7 +10,7 @@ import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { forwardUpstreamHeaders, mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
-import { type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
+import { eventFrame, type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
 import { messagesProtocolFrameToSSEFrame, MESSAGES_MISSING_TERMINAL_MESSAGE, collectMessagesProtocolEventsToResult } from '@floway-dev/protocols/messages';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
@@ -68,7 +68,7 @@ export const respondMessages = async (
   return streamSSE(c, async stream => {
     let completion: StreamCompletion = 'error';
     try {
-      completion = await writeSSEFrames(stream, messagesSseFrames(frames, state), {
+      completion = await writeSSEFrames(stream, messagesSseFrames(frames, state, ctx), {
         keepAlive: { frame: sseFrame(JSON.stringify({ type: 'ping' }), 'ping') },
         ...(ctx.downstreamAbortController !== undefined ? { downstreamAbortController: ctx.downstreamAbortController } : {}),
       });
@@ -117,7 +117,7 @@ const observeMessagesFrames = async function* (
   throw new Error(MESSAGES_MISSING_TERMINAL_MESSAGE);
 };
 
-const messagesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>, state: SourceStreamState) {
+const messagesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>, state: SourceStreamState, ctx: GatewayCtx) {
   try {
     for await (const frame of frames) {
       const sse = messagesProtocolFrameToSSEFrame(frame);
@@ -125,6 +125,8 @@ const messagesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<M
     }
   } catch (error) {
     state.failed = true;
-    yield sseFrame(JSON.stringify(internalMessagesErrorPayload(toInternalDebugError(error))), 'error');
+    const event = internalMessagesErrorPayload(toInternalDebugError(error)) as unknown as MessagesStreamEvent;
+    ctx.dump?.frame(eventFrame(event));
+    yield sseFrame(JSON.stringify(event), 'error');
   }
 };

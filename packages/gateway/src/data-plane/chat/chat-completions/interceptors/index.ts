@@ -24,8 +24,8 @@ import { withVendorQwenChatCompletionsNormalize } from './vendor-qwen-normalize.
 //     `disable-reasoning-on-forced-tool-choice`. Emits the gateway's canonical
 //     "no reasoning" sentinel only; vendor wire form is the vendor's job.
 //   - withRoleCompatibilityApplied: applies role flags in the fixed order
-//     `system → developer → system → user`; later demotions are authoritative
-//     when flags overlap, and the final step affects only interleaved system.
+//     `system → developer → system → user`; later rewrites are authoritative
+//     when flags overlap, and the final step affects only mid-conversation system.
 //   - withPromptCacheKeyStripped: gated by `strip-prompt-cache-key`. Drops
 //     the top-level `prompt_cache_key` field for upstreams that reject it as
 //     an unknown argument (e.g. Azure DeepSeek). Runs before vendor

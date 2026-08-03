@@ -3,7 +3,7 @@ import { providerModelOf } from '@floway-dev/provider';
 
 export const withRoleCompatibilityApplied: MessagesPayloadInterceptor = (ctx, _gatewayCtx, run) => {
   if (ctx.targetApi !== 'messages') return run();
-  if (!providerModelOf(ctx.candidate).enabledFlags.has('demote-interleaved-system-to-user')) return run();
+  if (!providerModelOf(ctx.candidate).enabledFlags.has('rewrite-mid-conv-system-to-user')) return run();
 
   ctx.payload = {
     ...ctx.payload,

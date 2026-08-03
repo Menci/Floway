@@ -10,9 +10,9 @@ export const AZURE_DEFAULT_FLAGS: FlagDefaults = {
   // Azure exposes native /responses/compact.
   'responses-compact-shim': false,
   'disable-reasoning-on-forced-tool-choice': false,
-  'demote-interleaved-system-to-user': false,
-  'demote-developer-to-system': false,
-  'promote-system-to-developer': false,
+  'rewrite-mid-conv-system-to-user': false,
+  'rewrite-developer-to-system': false,
+  'rewrite-system-to-developer': false,
   'strip-billing-attribution': true,
   'strip-prompt-cache-key': false,
   'usage-exclusive-cached-tokens': false,

@@ -75,7 +75,7 @@ export const respondResponses = async (
   const response = streamSSE(c, async stream => {
     let completion: StreamCompletion = 'error';
     try {
-      completion = await writeSSEFrames(stream, responsesSseFrames(frames, state), {
+      completion = await writeSSEFrames(stream, responsesSseFrames(frames, state, ctx), {
         keepAlive: { frame: sseCommentFrame('keepalive') },
         ...(ctx.downstreamAbortController !== undefined ? { downstreamAbortController: ctx.downstreamAbortController } : {}),
       });
@@ -114,22 +114,19 @@ const internalResponsesErrorResponse = (status: number, error: InternalDebugErro
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L170-L177
 // https://github.com/openai/openai-node/blob/d77cf24d9f3885739c6cba76bc009abf0ab97428/src/core/streaming.ts#L69-L71
 // https://github.com/openai/openai-python/blob/3844843c277f42b0b18beaa58152cfda61df524a/src/openai/_streaming.py#L87-L98
-const internalResponsesStreamErrorFrame = (error: unknown) => {
+const internalResponsesStreamErrorEvent = (error: unknown): ClientResponsesStreamEvent => {
   const debug = toInternalDebugError(error);
-  return sseFrame(
-    JSON.stringify({
-      type: 'error',
-      error: {
-        message: debug.message,
-        code: debug.type,
-        name: debug.name,
-        stack: debug.stack,
-        cause: debug.cause,
-        target_api: debug.target_api,
-      },
-    }),
-    'error',
-  );
+  return {
+    type: 'error',
+    error: {
+      message: debug.message,
+      code: debug.type,
+      name: debug.name,
+      stack: debug.stack,
+      cause: debug.cause,
+      target_api: debug.target_api,
+    },
+  } as unknown as ClientResponsesStreamEvent;
 };
 
 // --- frame observation ---
@@ -151,15 +148,15 @@ const observeResponsesFrames = async function* (frames: AsyncIterable<ProtocolFr
 // "Any error incurred while streaming will be followed by a `response.failed`
 // event."
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L430
-const responsesFailedFrame = (resource: ClientResponseResource, error: unknown) => {
+const responsesFailedEvent = (resource: ClientResponseResource, error: unknown): ClientResponsesStreamEvent => {
   const debug = toInternalDebugError(error);
-  return responsesProtocolFrameToSSEFrame(eventFrame({
+  return {
     type: 'response.failed',
     response: { ...resource, status: 'failed', error: { code: debug.type, message: debug.message } },
-  } as ClientResponsesStreamEvent));
+  } as ClientResponsesStreamEvent;
 };
 
-const responsesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<ClientResponsesStreamEvent>>, state: SourceStreamState) {
+const responsesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<ClientResponsesStreamEvent>>, state: SourceStreamState, ctx: GatewayCtx) {
   let announced: ClientResponseResource | undefined;
   try {
     for await (const frame of frames) {
@@ -171,7 +168,13 @@ const responsesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<
     yield responsesProtocolFrameToSSEFrame(doneFrame());
   } catch (error) {
     state.failed = true;
-    yield internalResponsesStreamErrorFrame(error);
-    if (announced !== undefined) yield responsesFailedFrame(announced, error);
+    const errorEvent = internalResponsesStreamErrorEvent(error);
+    ctx.dump?.frame(eventFrame(errorEvent));
+    yield sseFrame(JSON.stringify(errorEvent), 'error');
+    if (announced !== undefined) {
+      const failedFrame = eventFrame(responsesFailedEvent(announced, error));
+      ctx.dump?.frame(failedFrame);
+      yield responsesProtocolFrameToSSEFrame(failedFrame);
+    }
   }
 };
