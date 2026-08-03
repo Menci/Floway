@@ -89,14 +89,14 @@ export const drawerCss = `
    layout cell; otherwise a one-pixel rounding overflow exposes a second native
    scrollbar beside the OverlayScrollbars viewport. Fluent adds its block padding
    back only on a first or last child, so a body following a DrawerHeader gets
-   none and the clip cuts the focus ring of a control at that edge; squaring it
-   at 25px gives the clip the same room on both ends. A production body passes
-   !p-0 and nests its own padded ScrollArea, so this reaches the plain bodies
-   alone.
+   none and the clip cuts the focus ring of a control at that edge; restating
+   Fluent's own first-and-last term on both ends gives the clip the same room at
+   each. A production body passes !p-0 and nests its own padded ScrollArea, so
+   this reaches the plain bodies alone.
    https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-drawer/library/src/components/DrawerBody/useDrawerBodyStyles.styles.ts#L16-L31 */
 .fui-DrawerBody.fui-DrawerBody {
   min-height: 0;
   overflow: hidden;
-  padding-block: 25px;
+  padding-block: calc(var(--spacingHorizontalXXL) + 1px);
 }
 `;
