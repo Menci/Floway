@@ -16,10 +16,10 @@ import type {
   PublicModelLimits,
 } from '@floway-dev/protocols/common';
 import type { UpstreamModelConfig } from '@floway-dev/provider';
-import type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind } from '@floway-dev/provider/model';
+import type { UpstreamProviderKind } from '@floway-dev/provider/model';
 
 export type { BillingMetric, ModelEndpoints, ModelKind, ModelPricing };
-export type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind };
+export type { UpstreamProviderKind };
 export type { UpstreamModelConfig };
 export type {
   AliasSelection, AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ModelAlias,

@@ -390,7 +390,7 @@ function UpstreamsTable({
                   />
                 </div>
               </TableCell>
-              <TableCell><ProviderBadge color={record.color} kind={record.kind} /></TableCell>
+              <TableCell><ProviderBadge hue={record.hue} kind={record.kind} /></TableCell>
               <TableCell className="overflow-hidden">
                 <TableCellLayout
                   className="max-w-[520px]"

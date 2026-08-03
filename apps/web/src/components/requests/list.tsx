@@ -219,7 +219,7 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
           </Text>
         </Tooltip>
         {record.upstream && <ProviderBadge
-          color={record.upstream.color}
+          hue={record.upstream.hue}
           kind={record.upstream.kind}
           label={record.upstream.name}
           title={`${record.upstream.kind}, ${record.upstream.id}`}

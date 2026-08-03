@@ -61,6 +61,8 @@
   },
   "devDependencies": {
     "@floway-dev/test-utils": "workspace:*",
+    "@types/culori": "^4.0.1",
+    "culori": "^4.0.2",
     "sql.js": "^1.14.1"
   }
 }

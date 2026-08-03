@@ -1,9 +1,6 @@
-import { UPSTREAM_COLOR_HEX_REGEX } from '@floway-dev/provider/model';
-import type { UpstreamColor } from '@floway-dev/provider/model';
-
-// Aliased so the picker validates hex against the same rule the control-plane
-// schema enforces.
-export const HEX_RE = UPSTREAM_COLOR_HEX_REGEX;
+// Uppercase-or-lowercase #RRGGBB only; shorthand and 8-digit alpha are not
+// forms anything here writes.
+const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 
 export const hsvToRgb = (h: number, s: number, v: number): [number, number, number] => {
   const c = v * s;
@@ -104,8 +101,6 @@ export const readableTone = (hex: string, surface: string): string => {
   // black and white multiply to exactly 21, so the larger is never below 4.58.
   return rgbToHex(...(darken ? BLACK : WHITE));
 };
-
-export const isHexColor = (color: UpstreamColor | null): color is `#${string}` => color?.startsWith('#') === true;
 
 // The hardest end of each scheme's badge-surface range: in light the selected
 // request row (Fluent brand 160); in dark a card washed by
