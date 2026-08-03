@@ -8,7 +8,7 @@ vi.mock('../../../src/data-plane/providers/models-cache.ts', () => ({
   clearInFlightForTesting: () => {},
 }));
 
-import { buildCopilotUpstreamRecord, requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { buildCopilotUpstreamRecord, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const githubUser = {
@@ -42,7 +42,7 @@ test('/api/upstreams/copilot/oauth/device-login/start starts GitHub device flow'
 // wire — the exchange endpoint only reads `id`, `kind`, and
 // `proxy_fallback_list` from the envelope, so a minimal literal keeps the
 // test focused on the exchange semantics.
-const copilotBlueprintEnvelope = { id: '', kind: 'copilot', config: null, state: null };
+const copilotBlueprintEnvelope = { id: '', kind: 'copilot', config: null, state: null, proxy_fallback_list: MOCKED_FETCH_EGRESS };
 
 test('/api/upstreams/copilot/oauth/device-login/poll returns a config+state patch and identity from the token exchange', async () => {
   const { repo, adminSession } = await setupAppTest();
@@ -223,7 +223,7 @@ test('/api/upstreams/copilot/oauth/device-login/poll targeted-patches config+sta
           'content-type': 'application/json',
           'x-floway-session': adminSession,
         },
-        body: JSON.stringify({ record: { id: 'up_existing_copilot', kind: 'copilot', config: null, state: null }, deviceCode: 'device' }),
+        body: JSON.stringify({ record: { ...copilotBlueprintEnvelope, id: 'up_existing_copilot' }, deviceCode: 'device' }),
       });
       assertEquals(response.status, 200);
       const body = (await response.json()) as { status: string; patch: { config: { githubToken: string } } };

@@ -374,9 +374,9 @@ describe('createFetcher', () => {
     expect(calls).toEqual(['b']);
   });
 
-  it('collapses to implicit ["direct_fetch"] when every entry is colo-filtered out', async () => {
+  it('collapses to implicit ["direct_connect"] when every entry is colo-filtered out', async () => {
     const repo = new InMemoryRepo();
-    let directCalled = false;
+    let directConnectCalled = false;
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
@@ -387,13 +387,13 @@ describe('createFetcher', () => {
       runtimeLocation: 'HKG',
       proxyById: new Map([['a', proxyA], ['b', proxyB]]),
       runProxied: async () => new Response('proxy'),
-      runDirectFetch: async () => { directCalled = true; return new Response('direct'); },
-      runDirectConnect: async () => new Response('direct connect'),
+      runDirectFetch: async () => new Response('direct fetch'),
+      runDirectConnect: async () => { directConnectCalled = true; return new Response('direct connect'); },
       socketDial: () => stubSocketDial,
     });
     const res = await fetcher('https://api.openai.com', { method: 'GET' });
-    expect(directCalled).toBe(true);
-    expect(await res.text()).toBe('direct');
+    expect(directConnectCalled).toBe(true);
+    expect(await res.text()).toBe('direct connect');
   });
 
   it('rethrows AbortError without continuing the chain', async () => {

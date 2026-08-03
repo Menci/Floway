@@ -6,8 +6,8 @@ import { initRepo } from '../../src/repo/index.ts';
 import type { ApiKey } from '../../src/repo/types.ts';
 import { initBackgroundSchedulerResolver } from '../../src/runtime/background.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
-import { createInMemoryImageProcessor, initEnv, initExternalResourceFetcher, initFileStore, initImageProcessor, MemoryFileStore } from '@floway-dev/platform';
-import type { UpstreamRecord } from '@floway-dev/provider';
+import { createInMemoryImageProcessor, initEnv, initExternalResourceFetcher, initFileStore, initImageProcessor, initSocketDial, MemoryFileStore } from '@floway-dev/platform';
+import type { ProxyFallbackEntry, UpstreamRecord } from '@floway-dev/provider';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 
 interface SetupOptions {
@@ -49,6 +49,12 @@ interface SSEChunk {
 
 const TEST_UPSTREAM_TIMESTAMP = '2026-03-15T00:00:00.000Z';
 
+// The gateway's default egress is direct_connect, whose seam is a SocketDial.
+// These suites dispatch every upstream call through a mocked `globalThis.fetch`,
+// so the fixtures they build pin the fetch transport explicitly — otherwise the
+// mock is not on the path at all.
+export const MOCKED_FETCH_EGRESS: ProxyFallbackEntry[] = [{ id: 'direct_fetch' }];
+
 export const buildCopilotUpstreamRecord = (githubAccount: CopilotAccountFixture, overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
   const config = {
     githubToken: githubAccount.token,
@@ -67,7 +73,7 @@ export const buildCopilotUpstreamRecord = (githubAccount: CopilotAccountFixture,
     state: null,
     flagOverrides: {},
     disabledPublicModelIds: [],
-    proxyFallbackList: [],
+    proxyFallbackList: MOCKED_FETCH_EGRESS,
     modelPrefix: null,
     modelsCache: null,
     color: null,
@@ -96,7 +102,7 @@ export const buildCustomUpstreamRecord = (overrides: Partial<UpstreamRecord> = {
     state: null,
     flagOverrides: {},
     disabledPublicModelIds: [],
-    proxyFallbackList: [],
+    proxyFallbackList: MOCKED_FETCH_EGRESS,
     modelPrefix: null,
     modelsCache: null,
     color: null,
@@ -111,6 +117,12 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
   initExternalResourceFetcher(() => Promise.resolve(new Response(null, { status: 404 })));
   initFileStore(new MemoryFileStore());
   initImageProcessor(createInMemoryImageProcessor());
+  // Direct-connect egress terminates in userspace TLS, which no in-process
+  // stub can serve, so these suites pin `MOCKED_FETCH_EGRESS` on any upstream
+  // they actually dial. Installing a refusing dial keeps the default transport
+  // reachable — a test that asserts on the empty-policy path gets a real
+  // `tcp connect to <host>:<port> failed` rather than a missing-platform crash.
+  initSocketDial({ connect: (host, port) => Promise.reject(new Error(`refused by the app-test SocketDial: ${host}:${port}`)) });
   // Route background promises through the shared tracker so flushBackground()
   // can deterministically await them — see test-utils/background-tracker.ts.
   initBackgroundSchedulerResolver(_c => trackBackground);
