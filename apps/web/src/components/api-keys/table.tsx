@@ -107,7 +107,7 @@ export function KeysTable({
     {sort.sort(getRows()).map(({ item: key }) => {
       const copyTag = `key-${key.id}`;
       const lastUsed = key.last_used_at
-        ? relativeTime(key.last_used_at, locale, { now }) ?? t('dashboard.apiKeys.table.usedOn', { date: shortDate(key.last_used_at, locale) })
+        ? relativeTime(key.last_used_at, locale, { now }) ?? shortDate(key.last_used_at, locale)
         : t('dashboard.apiKeys.table.never');
       return <ListItem checkmark={null} className={s.mobileItem} disabledSelection={disabled} key={key.id} value={key.id}>
         <div className="flex items-start gap-2 min-w-0 w-full">
@@ -231,7 +231,7 @@ export function KeysTable({
                 {key.last_used_at
                   ? <Tooltip content={dateTime(key.last_used_at, locale)} relationship="description">
                       <span className="winui-focus-rect" tabIndex={0}>
-                        {relativeTime(key.last_used_at, locale, { now }) ?? t('dashboard.apiKeys.table.usedOn', { date: shortDate(key.last_used_at, locale) })}
+                        {relativeTime(key.last_used_at, locale, { now }) ?? shortDate(key.last_used_at, locale)}
                       </span>
                     </Tooltip>
                   : <span>{t('dashboard.apiKeys.table.never')}</span>}
