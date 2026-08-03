@@ -207,8 +207,8 @@ describe('readableTone', () => {
     }
   });
 
-  it('leaves a value it cannot parse alone', () => {
-    expect(readableTone('not a colour', CARD_LIGHT)).toBe('not a colour');
+  it('rejects a value it cannot parse', () => {
+    expect(() => readableTone('not a colour', CARD_LIGHT)).toThrow(TypeError);
   });
 });
 
@@ -223,8 +223,9 @@ describe('blendHex', () => {
     expect(blendHex('#C239B3', 0.1, '#373737')).toBe('#453743');
   });
 
-  it('falls back to the backdrop when either side is unparseable', () => {
-    expect(blendHex('nope', 0.5, '#FFFFFF')).toBe('#FFFFFF');
+  it('rejects an unparseable value on either side', () => {
+    expect(() => blendHex('nope', 0.5, '#FFFFFF')).toThrow(TypeError);
+    expect(() => blendHex('#FF0000', 0.5, 'nope')).toThrow(TypeError);
   });
 });
 

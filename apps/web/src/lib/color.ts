@@ -1,8 +1,8 @@
 import { UPSTREAM_COLOR_HEX_REGEX } from '@floway-dev/provider/model';
 import type { UpstreamColor } from '@floway-dev/provider/model';
 
-// Aliased so the picker validates hex against the same rule the control-plane
-// schema enforces.
+// Aliased so the dashboard validates hex against the same rule the
+// control-plane schema enforces.
 export const HEX_RE = UPSTREAM_COLOR_HEX_REGEX;
 
 export const hsvToRgb = (h: number, s: number, v: number): [number, number, number] => {
@@ -30,6 +30,15 @@ export const hexToRgb = (hex: string): [number, number, number] | null => {
     parseInt(hex.slice(3, 5), 16),
     parseInt(hex.slice(5, 7), 16),
   ];
+};
+
+// The nullable parse above answers the picker, which reads a half-typed draft.
+// Everything that composites holds a colour the schema already validated, so an
+// unparseable value there is a fault rather than a shade to invent.
+const requireRgb = (hex: string): [number, number, number] => {
+  const rgb = hexToRgb(hex);
+  if (rgb === null) throw new TypeError(`Not a #RRGGBB colour: ${hex}`);
+  return rgb;
 };
 
 export const rgbToHsv = (r: number, g: number, b: number): [number, number, number] => {
@@ -62,9 +71,8 @@ const contrastRatio = (a: [number, number, number], b: [number, number, number])
 };
 
 export const blendHex = (hex: string, alpha: number, backdrop: string): string => {
-  const top = hexToRgb(hex);
-  const bottom = hexToRgb(backdrop);
-  if (!top || !bottom) return backdrop;
+  const top = requireRgb(hex);
+  const bottom = requireRgb(backdrop);
   return rgbToHex(...(top.map((channel, index) =>
     Math.round(channel * alpha + bottom[index]! * (1 - alpha))) as [number, number, number]));
 };
@@ -80,9 +88,8 @@ const WHITE: [number, number, number] = [255, 255, 255];
  * reach the floor.
  */
 export const readableTone = (hex: string, surface: string): string => {
-  const rgb = hexToRgb(hex);
-  const surfaceRgb = hexToRgb(surface);
-  if (!rgb || !surfaceRgb) return hex;
+  const rgb = requireRgb(hex);
+  const surfaceRgb = requireRgb(surface);
   if (contrastRatio(rgb, surfaceRgb) >= TEXT_CONTRAST_FLOOR) return hex;
 
   const [h, s, v] = rgbToHsv(...rgb);
@@ -105,7 +112,7 @@ export const readableTone = (hex: string, surface: string): string => {
   return rgbToHex(...(darken ? BLACK : WHITE));
 };
 
-export const isHexColor = (color: UpstreamColor | null): color is `#${string}` => color?.startsWith('#') === true;
+export const isHexColor = (color: UpstreamColor | null): color is `#${string}` => HEX_RE.test(color ?? '');
 
 // The hardest end of each scheme's badge-surface range: in light the selected
 // request row (Fluent brand 160); in dark a card washed by
