@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { buildAgentClaudeSnippet, buildAgentCodexSnippet } from '../../../src/components/api-keys/agent-setup';
 import { filterModelOptions, modelOptions } from '../../../src/components/api-keys/agent-setup-models';
 import { agentSetupCommand } from '../../../src/components/api-keys/use-agent-setup';
-import { chatModel } from '../../api/model-fixture';
+import { catalogModel } from '../../api/model-fixture';
 
 describe('Agent Setup', () => {
   it('builds origin-scoped Unix and Windows commands', () => {
@@ -15,9 +15,9 @@ describe('Agent Setup', () => {
 
   it('offers the full chat catalog while ranking the requested family', () => {
     const options = modelOptions([
-      chatModel('gpt-5.6', { contextWindow: 400_000 }),
-      chatModel('claude-opus-4.6', { contextWindow: 1_000_000 }),
-      chatModel('other-chat', { contextWindow: 100_000 }),
+      catalogModel('gpt-5.6', { contextWindow: 400_000 }),
+      catalogModel('claude-opus-4.6', { contextWindow: 1_000_000 }),
+      catalogModel('other-chat', { contextWindow: 100_000 }),
     ], 'claude', 'opus');
     expect(options.map(option => option.value)).toEqual([
       'claude-opus-4.6[1m]',
@@ -28,8 +28,8 @@ describe('Agent Setup', () => {
 
   it('searches the label case-insensitively and the value the label does not spell', () => {
     const options = modelOptions([
-      chatModel('claude-opus-4.6', { contextWindow: 1_000_000 }),
-      chatModel('gpt-5.6', { contextWindow: 400_000 }),
+      catalogModel('claude-opus-4.6', { contextWindow: 1_000_000 }),
+      catalogModel('gpt-5.6', { contextWindow: 400_000 }),
     ], 'claude', 'default');
 
     expect(filterModelOptions(options, 'OPUS').map(option => option.label))
