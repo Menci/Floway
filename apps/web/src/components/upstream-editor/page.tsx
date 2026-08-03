@@ -1,6 +1,6 @@
 import { SaveRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FormProvider, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useBlocker, useNavigate, type BlockerFunction } from 'react-router';
@@ -40,6 +40,16 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const rewrite = useEntryRewrite();
   const toasts = useOutcomeToasts();
   const [record, setRecord] = useState(data.record);
+  // Two provider patches can be in flight at once -- refreshing a credential
+  // and probing a quota are separate buttons, neither disabling the other -- so
+  // the second one's continuation holds the render the first was dispatched
+  // from. The ref is written where the record is, so a patch merges into what
+  // the previous one recorded rather than into what its own render captured.
+  const recordRef = useRef(record);
+  const updateRecord = useCallback((next: UpstreamRecord) => {
+    recordRef.current = next;
+    setRecord(next);
+  }, []);
   const [discovered, setDiscovered] = useState(data.discovered);
   const [modelsError, setModelsError] = useState<ModelListingFailure | null>(data.modelsError);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -131,19 +141,20 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     if (signal.aborted) return;
     setModelsError(catalog.modelsError);
     if (catalog.discovered) setDiscovered(catalog.discovered);
-    if (catalog.refreshed) setRecord(current => ({ ...current, modelsCache: catalog.refreshed!.modelsCache } as UpstreamRecord));
-  }, [getValues, record]));
+    if (catalog.refreshed) updateRecord({ ...recordRef.current, modelsCache: catalog.refreshed.modelsCache } as UpstreamRecord);
+  }, [getValues, record, updateRecord]));
 
   const applyProviderPatch = (patch: { config?: unknown; state?: unknown }, persisted = false) => {
     if (patch.config !== undefined) setValue('config', patch.config as UpstreamEditorValues['config'], { shouldDirty: !persisted });
     if (patch.state !== undefined) setValue('state', patch.state as UpstreamEditorValues['state'], { shouldDirty: !persisted });
     const changes = { ...(patch.config !== undefined ? { config: patch.config } : {}), ...(patch.state !== undefined ? { state: patch.state } : {}) };
-    setRecord(current => ({ ...current, ...changes } as UpstreamRecord));
+    const patched = { ...recordRef.current, ...changes } as UpstreamRecord;
+    updateRecord(patched);
     // A patch the provider has already stored is not an edit, so it moves the
     // saved state the form measures itself against instead of counting as one.
     // Everything but that baseline is held: the fields keep what the operator
     // has typed into them, and only the dirty flag is re-derived.
-    if (persisted) reset(valuesFromRecord({ ...record, ...changes } as UpstreamRecord), {
+    if (persisted) reset(valuesFromRecord(patched), {
       keepDirtyValues: true,
       keepErrors: true,
       keepIsSubmitSuccessful: true,
@@ -169,7 +180,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       const full = await callApi(() => api.api.upstreams[':id'].$get({ param: { id: record.id } }));
       if (!full.error) saved = full.data;
     }
-    setRecord(saved);
+    updateRecord(saved);
     reset(valuesFromRecord(saved));
     handle.succeed(t('dashboard.upstreamEditor.toast.saved'));
     // `saving` is left set on create: the created record's loader probes the
