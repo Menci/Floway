@@ -106,6 +106,36 @@ const prismComponentsEsm = (): Plugin => ({
   },
 });
 
+// Fontsource writes every static face with a WOFF source behind the WOFF2 one,
+// so importing one of its stylesheets pulls a second, larger copy of each face
+// into the bundle:
+// https://github.com/fontsource/fontsource/blob/e50a906d3026beac81ebc47b5436c9d7c2e3a070/packages/core/src/css/face-rule.ts#L26-L44
+// No browser this app is built for can ask for it. `build.target` is left at
+// Vite's default `baseline-widely-available`, which at this version resolves to
+// chrome111, edge111, firefox114, safari16.4 and ios16.4
+// (https://github.com/vitejs/vite/blob/v8.1.5/packages/vite/src/node/constants.ts#L90-L96),
+// while WOFF2 has been answered since Chrome 36, Firefox 39, Safari 10 and iOS
+// 10 (https://caniuse.com/woff2).
+//
+// Dropping the source before `vite:css` resolves it, rather than transcribing
+// the rules by hand, leaves the family, weights, subset, style and
+// `font-display` upstream's to state, so no copy of them can drift from the
+// installed package.
+const fontsourceWoff2Only = (): Plugin => ({
+  name: 'fontsource-woff2-only',
+  enforce: 'pre',
+  transform(code, id) {
+    const path = id.split('?', 1)[0]!.replaceAll('\\', '/');
+    if (!/\/@fontsource(?:-variable)?\/[^/]+\/[^/]+\.css$/.test(path)) return;
+    const woff2Only = code.replaceAll(/,\s*url\([^()]+\.woff\)\s*format\(['"]?woff['"]?\)/g, '');
+    // A rewrite of the rule upstream would otherwise put the fallback back
+    // silently, since the strip that no longer matches anything looks the same
+    // from here as a sheet that never carried one.
+    if (/\.woff\b/.test(woff2Only)) throw new Error(`${path} still declares a WOFF source`);
+    return woff2Only;
+  },
+});
+
 // The Worker runs at 8788 in `wrangler dev`. Vite proxies every path the Worker
 // owns so the SPA can call relative URLs in both dev and prod. Anything not
 // matched falls through to the Vite dev server, which serves the SPA itself.
@@ -161,7 +191,7 @@ export default defineConfig({
       'prismjs/components/prism-typescript',
     ],
   },
-  plugins: [prismComponentsEsm(), typescriptStylesheets(), reactRouter()],
+  plugins: [fontsourceWoff2Only(), prismComponentsEsm(), typescriptStylesheets(), reactRouter()],
   // Fluent's ESM facade imports named exports from its provider packages,
   // whose `node` export condition points at CommonJS. Dev SSR must transform
   // the whole family together; externalizing the nested provider lets Node
