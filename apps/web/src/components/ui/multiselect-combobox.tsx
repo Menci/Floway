@@ -75,7 +75,7 @@ export function MultiselectCombobox({
     onOptionSelect={(_, data) => commit(data.optionValue === '' ? [] : data.selectedOptions)}
     placeholder={placeholder}
     readOnly={readOnly}
-    selectedOptions={[...value]}
+    selectedOptions={clearLabel && value.length === 0 ? [''] : [...value]}
     value={open ? query : closedLabel}
   >
     {clearLabel && needle === '' && <Option text={clearLabel} value="">{clearLabel}</Option>}

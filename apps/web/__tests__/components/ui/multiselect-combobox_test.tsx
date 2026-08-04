@@ -23,8 +23,11 @@ describe('multiselect combobox', () => {
     fireEvent.click(screen.getByRole('combobox', { name: 'Models' }));
 
     expect(await screen.findByRole('menuitemcheckbox', { name: 'retired-model' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'All models' }));
+    const clear = screen.getByRole('menuitemcheckbox', { name: 'All models' });
+    expect(clear.getAttribute('aria-checked')).toBe('false');
+    fireEvent.click(clear);
     expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Models' }).placeholder).toBe('All models');
+    expect(screen.getByRole('menuitemcheckbox', { name: 'All models' }).getAttribute('aria-checked')).toBe('true');
   });
 
   it('selects a substring search result with Enter without activating clear', async () => {
