@@ -9,7 +9,7 @@ import { SqlRepo } from '../../src/repo/sql.ts';
 import type { ApiKey, StoredResponsesItem } from '../../src/repo/types.ts';
 import { sweepExpirations } from '../../src/scheduled/expiration-sweeps.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
-import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename } from '../repo/test-sqlite.ts';
+import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename, wrapSqlJsDatabase } from '../repo/test-sqlite.ts';
 import { initFileStore, MemoryFileStore } from '@floway-dev/platform';
 
 afterEach(() => vi.useRealTimers());
@@ -248,6 +248,39 @@ test('migration 0066 bounds existing-row discovery and tracks older dump files o
     db.run("DELETE FROM dump_records WHERE key_id = 'key-old-dump'");
     expect(db.exec("SELECT file_key, owner_kind, state FROM spilled_files WHERE owner_key = json_array('key-old-dump', '01K00000000000000000OLD0')")[0].values)
       .toEqual([['dumps/v1/key-old-dump/old.req.gz', 'dump-request', 'retired']]);
+  } finally {
+    db.close();
+  }
+});
+
+test('expiration backfill rejects malformed legacy dump descriptors with row context', async () => {
+  const db = await createSqlJsDatabase();
+  try {
+    for (const [filename, sql] of migrationSqlByFilename) {
+      if (filename === '0066_expiration_sweeps.sql') break;
+      db.run(sql);
+    }
+    db.run(
+      `INSERT INTO api_keys
+       (id, user_id, name, key, created_at, upstream_ids, deleted_at, dump_retention_seconds, server_secret, responses_retention_seconds)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ['key-legacy', 1, 'Legacy', 'raw-legacy', '2026-01-01T00:00:00Z', null, null, 3600, '66'.repeat(32), 0],
+    );
+    const recordId = '01K00000000000000000BAD0';
+    db.run(
+      `INSERT INTO dump_records
+       (key_id, id, created_at, upstream_id, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor)
+       VALUES (?, ?, ?, NULL, '{}', '[]', NULL, ?, NULL)`,
+      ['key-legacy', recordId, 1_000, JSON.stringify({ key: 'dumps/v1/key-legacy/old.req.gz', type: 'chunks' })],
+    );
+    const migration = migrationSqlByFilename.find(([filename]) => filename === '0066_expiration_sweeps.sql');
+    if (migration === undefined) throw new Error('missing migration 0066_expiration_sweeps.sql');
+    db.run(migration[1]);
+
+    const repo = new SqlRepo(wrapSqlJsDatabase(db));
+    await expect(repo.expirationSweeps.backfillCleanupTracking(500)).rejects.toThrow(
+      new RegExp(`Invalid dump record key-legacy/${recordId} request body descriptor during expiration backfill.*type`, 'su'),
+    );
   } finally {
     db.close();
   }
