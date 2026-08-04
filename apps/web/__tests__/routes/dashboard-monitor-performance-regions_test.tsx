@@ -19,7 +19,7 @@ const overview: PerformanceOverviewResponse = {
   keys: [],
 };
 
-const renderPage = (regionAvailable: boolean | null) => {
+const renderPage = (regionAvailable: boolean | null, groupBy: 'model' | 'runtimeLocation' = 'model') => {
   const router = createMemoryRouter([{
     path: '/',
     Component: () => <DashboardMonitorPerformance
@@ -31,7 +31,7 @@ const renderPage = (regionAvailable: boolean | null) => {
         state: {
           metric: 'ttft',
           percentile: 'p95',
-          groupBy: 'model',
+          groupBy,
           range: 'today',
           filters: { model: [], upstream: [], operation: [], runtimeLocation: [], userId: [], keyId: [] },
           hidden: [],
@@ -91,5 +91,27 @@ describe('Performance Region dimensions', () => {
     await waitFor(() => expect(screen.getByText('Unavailable')).toBeTruthy());
     expect(screen.getByRole('combobox', { name: 'Group by' })).toBeTruthy();
     expect(screen.queryByRole('combobox', { name: 'Region' })).toBeNull();
+  });
+
+  it('stays unavailable when the normalized overview fails', async () => {
+    let overviewRequests = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost').pathname;
+      if (path === '/api/runtime-info') return Response.json({ kind: 'node', runtimeLocation: 'LOCAL' });
+      if (path === '/api/performance/overview') {
+        overviewRequests += 1;
+        return overviewRequests === 1
+          ? Response.json(overview)
+          : Response.json({ error: 'Corrected overview failed' }, { status: 500 });
+      }
+      throw new Error(`Unexpected request to ${path}`);
+    }));
+    renderPage(null, 'runtimeLocation');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh performance' }));
+
+    await waitFor(() => expect(screen.getByText('Corrected overview failed')).toBeTruthy());
+    expect(screen.getByText('This view could not be loaded')).toBeTruthy();
+    expect(screen.queryByRole('combobox', { name: 'Group by' })).toBeNull();
   });
 });

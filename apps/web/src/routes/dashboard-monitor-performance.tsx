@@ -160,14 +160,15 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       if (result.error) setError(result.error);
       return;
     }
-    setRegionAvailable(nextRegionAvailable);
-    if (result.error) setError(result.error);
-    else {
-      setOverview(result.data);
-      setLoadedRange(query.range);
-      setLoadedAt(requestedAt);
-      arrived();
+    if (result.error) {
+      setError(result.error);
+      return;
     }
+    setRegionAvailable(nextRegionAvailable);
+    setOverview(result.data);
+    setLoadedRange(query.range);
+    setLoadedAt(requestedAt);
+    arrived();
   }, [hiddenSeries, query, regionAvailable]);
 
   const { poll, refresh, refreshing } = useRefreshOnChange(query, reload);
