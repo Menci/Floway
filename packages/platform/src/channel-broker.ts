@@ -22,6 +22,7 @@ export const iterateReadableStream = <T>(stream: ReadableStream<T>): AsyncIterab
     const reader = stream.getReader();
     let state: 'open' | 'terminal' | 'released' = 'open';
     let pendingReads = 0;
+    let cancellation: Promise<{ ok: true } | { ok: false; error: unknown }> | null = null;
     let resolveReleased!: () => void;
     const released = new Promise<void>(resolve => { resolveReleased = resolve; });
     const releaseWhenIdle = (): void => {
@@ -47,22 +48,21 @@ export const iterateReadableStream = <T>(stream: ReadableStream<T>): AsyncIterab
           releaseWhenIdle();
         }
       },
-      async return(): Promise<IteratorResult<T>> {
-        if (state === 'released') return { done: true, value: undefined };
-
-        let cancellation: { error: unknown } | null = null;
+      async return(value?: unknown): Promise<IteratorResult<T>> {
         if (state === 'open') {
+          cancellation = reader.cancel(value).then(
+            () => ({ ok: true as const }),
+            error => ({ ok: false as const, error }),
+          );
           state = 'terminal';
-          try {
-            await reader.cancel();
-          } catch (error) {
-            cancellation = { error };
-          }
           releaseWhenIdle();
         }
-        await released;
-        if (cancellation) throw cancellation.error;
-        return { done: true, value: undefined };
+        if (state !== 'released') await released;
+        if (cancellation) {
+          const result = await cancellation;
+          if (!result.ok) throw result.error;
+        }
+        return { done: true, value };
       },
     };
   },
