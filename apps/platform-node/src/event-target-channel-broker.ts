@@ -29,75 +29,69 @@ export class EventTargetChannelBroker<T> implements ChannelBroker<T> {
   }
 
   subscribe(channelId: string, signal: AbortSignal): AsyncIterable<T> {
-    return iterateFromTarget<T>(this.targetFor(channelId), signal, this.codec);
+    if (signal.aborted) return closedStream<T>();
+    return streamFromTarget<T>(this.targetFor(channelId), signal, this.codec);
   }
 }
 
-// Listener registration happens eagerly inside `iterateFromTarget` so that a
+const closedStream = <T>(): ReadableStream<T> => new ReadableStream({
+  start: controller => controller.close(),
+});
+
+// Listener registration happens eagerly inside `streamFromTarget` so that a
 // caller who awaits subscribe and then publishes before draining the iterator
 // still receives the buffered frame. A generator that registers in its body
 // would miss the publish because the body doesn't run until the first
 // `.next()` call.
-const iterateFromTarget = <T>(
+const streamFromTarget = <T>(
   target: EventTarget,
   signal: AbortSignal,
   codec: ChannelCodec<T>,
-): AsyncIterable<T> => {
-  const queue: T[] = [];
-  let resolveNext: ((value: IteratorResult<T>) => void) | null = null;
-  let closed = false;
+): ReadableStream<T> => {
+  let cancel = (): void => {};
 
-  const deliver = (value: IteratorResult<T>): void => {
-    if (resolveNext) {
-      const r = resolveNext;
-      resolveNext = null;
-      r(value);
-    } else if (!value.done) {
-      queue.push(value.value);
-    }
-  };
+  return new ReadableStream<T>({
+    start(controller) {
+      let terminated = false;
 
-  const onFrame = (event: Event): void => {
-    if (closed) return;
-    const payload = (event as CustomEvent<string>).detail;
-    deliver({ value: codec.decode(payload), done: false });
-  };
-  const onClose = (): void => {
-    if (closed) return;
-    closed = true;
-    detach();
-    deliver({ value: undefined as never, done: true });
-  };
-  const onAbort = (): void => {
-    if (closed) return;
-    closed = true;
-    detach();
-    deliver({ value: undefined as never, done: true });
-  };
-  const detach = (): void => {
-    target.removeEventListener('frame', onFrame);
-    target.removeEventListener('close', onClose);
-    signal.removeEventListener('abort', onAbort);
-  };
-
-  target.addEventListener('frame', onFrame);
-  target.addEventListener('close', onClose);
-  signal.addEventListener('abort', onAbort, { once: true });
-
-  return {
-    [Symbol.asyncIterator]: (): AsyncIterator<T> => ({
-      async next(): Promise<IteratorResult<T>> {
-        if (queue.length > 0) return { value: queue.shift()!, done: false };
-        if (closed) return { value: undefined as never, done: true };
-        return await new Promise<IteratorResult<T>>(resolve => { resolveNext = resolve; });
-      },
-      async return(): Promise<IteratorResult<T>> {
-        if (!closed) {
-          closed = true;
-          detach();
+      const detach = (): void => {
+        target.removeEventListener('frame', onFrame);
+        target.removeEventListener('close', onClose);
+        signal.removeEventListener('abort', onAbort);
+      };
+      const close = (): void => {
+        if (terminated) return;
+        terminated = true;
+        detach();
+        controller.close();
+      };
+      const fail = (error: unknown): void => {
+        if (terminated) return;
+        terminated = true;
+        detach();
+        controller.error(error);
+      };
+      const onFrame = (event: Event): void => {
+        if (terminated) return;
+        try {
+          controller.enqueue(codec.decode((event as CustomEvent<string>).detail));
+        } catch (error) {
+          fail(error);
         }
-        return { value: undefined as never, done: true };
-      },
-    }),
-  };
+      };
+      const onClose = (): void => close();
+      const onAbort = (): void => close();
+
+      cancel = (): void => {
+        if (terminated) return;
+        terminated = true;
+        detach();
+      };
+
+      target.addEventListener('frame', onFrame);
+      target.addEventListener('close', onClose);
+      signal.addEventListener('abort', onAbort, { once: true });
+    },
+    cancel: () => cancel(),
+  });
 };

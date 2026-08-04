@@ -43,91 +43,79 @@ const iterateFromBroadcastSocket = <T>(
   stub: BroadcastStub,
   signal: AbortSignal,
   codec: ChannelCodec<T>,
-): AsyncIterable<T> => {
-  const queue: T[] = [];
-  let resolveNext: ((value: IteratorResult<T>) => void) | null = null;
-  let pendingError: unknown = null;
-  let closed = false;
+): ReadableStream<T> => {
+  let cancel = async (): Promise<void> => {};
 
-  const deliver = (value: IteratorResult<T>): void => {
-    if (resolveNext) {
-      const r = resolveNext;
-      resolveNext = null;
-      r(value);
-    } else if (!value.done) {
-      queue.push(value.value);
-    }
-  };
-
-  const openPromise = (async (): Promise<WebSocket> => {
-    const response = await stub.fetch(new Request('https://broadcast.do/subscribe', {
-      headers: { Upgrade: 'websocket' },
-    }));
-    if (response.status !== 101) {
-      throw new Error(`BroadcastDO subscribe returned HTTP ${response.status} instead of 101`);
-    }
-    const socket = response.webSocket;
-    if (!socket) throw new Error('BroadcastDO returned 101 without a webSocket');
-    socket.accept();
-    socket.addEventListener('message', event => {
-      if (closed) return;
-      try {
-        const raw = event.data as string | ArrayBuffer;
-        const text = typeof raw === 'string' ? raw : new TextDecoder().decode(raw);
-        deliver({ value: codec.decode(text), done: false });
-      } catch (err) {
-        pendingError = err;
-        void closeAndEnd();
+  return new ReadableStream<T>({
+    start(controller) {
+      if (signal.aborted) {
+        controller.close();
+        return;
       }
-    });
-    socket.addEventListener('close', () => {
-      closed = true;
-      deliver({ value: undefined as never, done: true });
-    });
-    socket.addEventListener('error', () => {
-      if (pendingError === null) pendingError = new Error('BroadcastDO socket error');
-      void closeAndEnd();
-    });
-    return socket;
-  })();
-  openPromise.catch(err => {
-    pendingError = err;
-    closed = true;
-    deliver({ value: undefined as never, done: true });
-  });
 
-  // Every path that flips `closed` must close the upstream socket too,
-  // otherwise each aborted or errored subscriber leaks one WS in the DO's
-  // hibernation registry. Awaiting `openPromise` handles a teardown that
-  // races the still-handshaking open.
-  const closeAndEnd = async (): Promise<void> => {
-    if (closed) return;
-    closed = true;
-    deliver({ value: undefined as never, done: true });
-    const s = await openPromise.catch(() => null);
-    if (s) s.close(1000, 'subscriber done');
-  };
+      let socket: WebSocket | null = null;
+      let terminated = false;
 
-  signal.addEventListener('abort', () => {
-    void closeAndEnd();
-  }, { once: true });
-
-  return {
-    [Symbol.asyncIterator]: (): AsyncIterator<T> => ({
-      async next(): Promise<IteratorResult<T>> {
-        if (queue.length > 0) return { value: queue.shift()!, done: false };
-        if (closed) {
-          if (pendingError) throw pendingError;
-          return { value: undefined as never, done: true };
+      const detach = (): void => {
+        signal.removeEventListener('abort', onAbort);
+        socket?.removeEventListener('message', onMessage);
+        socket?.removeEventListener('close', onClose);
+        socket?.removeEventListener('error', onError);
+      };
+      const openPromise = (async (): Promise<void> => {
+        const response = await stub.fetch(new Request('https://broadcast.do/subscribe', {
+          headers: { Upgrade: 'websocket' },
+        }));
+        if (response.status !== 101) {
+          throw new Error(`BroadcastDO subscribe returned HTTP ${response.status} instead of 101`);
         }
-        const result = await new Promise<IteratorResult<T>>(resolve => { resolveNext = resolve; });
-        if (result.done && pendingError) throw pendingError;
-        return result;
-      },
-      async return(): Promise<IteratorResult<T>> {
-        await closeAndEnd();
-        return { value: undefined as never, done: true };
-      },
-    }),
-  };
+        const openedSocket = response.webSocket;
+        if (!openedSocket) throw new Error('BroadcastDO returned 101 without a webSocket');
+
+        socket = openedSocket;
+        if (!terminated) {
+          socket.addEventListener('message', onMessage);
+          socket.addEventListener('close', onClose);
+          socket.addEventListener('error', onError);
+        }
+        socket.accept();
+      })();
+      const closeSocket = async (): Promise<void> => {
+        await openPromise.catch(() => {});
+        socket?.close(1000, 'subscriber done');
+      };
+      const finish = (error?: unknown, closeUpstream = true): void => {
+        if (terminated) return;
+        terminated = true;
+        detach();
+        if (error === undefined) controller.close();
+        else controller.error(error);
+        if (closeUpstream) void closeSocket();
+      };
+      const onMessage = (event: MessageEvent): void => {
+        if (terminated) return;
+        try {
+          const raw = event.data as string | ArrayBuffer;
+          const text = typeof raw === 'string' ? raw : new TextDecoder().decode(raw);
+          controller.enqueue(codec.decode(text));
+        } catch (error) {
+          finish(error);
+        }
+      };
+      const onClose = (): void => finish(undefined, false);
+      const onError = (): void => finish(new Error('BroadcastDO socket error'));
+      const onAbort = (): void => finish();
+
+      cancel = async (): Promise<void> => {
+        if (terminated) return;
+        terminated = true;
+        detach();
+        await closeSocket();
+      };
+
+      signal.addEventListener('abort', onAbort, { once: true });
+      void openPromise.catch(error => finish(error, false));
+    },
+    cancel: () => cancel(),
+  });
 };
