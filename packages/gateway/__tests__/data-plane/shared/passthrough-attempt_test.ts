@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { test } from 'vitest';
 
-import type { AuthedContext } from '../../../src/middleware/auth.ts';
+import type { AuthVars } from '../../../src/middleware/auth.ts';
 import { passthroughAttempt } from '../../../src/data-plane/shared/passthrough-attempt.ts';
 import { mockGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import type { ProviderCall } from '@floway-dev/provider';
@@ -13,10 +13,10 @@ const observedHeadersForCall = async (providerCall: ProviderCall): Promise<Heade
     provider: { ...base.provider, kind: 'claude-code' },
   });
   let observed: Headers | undefined;
-  const app = new Hono();
+  const app = new Hono<{ Variables: AuthVars }>();
   app.post('/test', async c => {
     await passthroughAttempt({
-      c: c as AuthedContext,
+      c,
       ctx: mockGatewayCtx(),
       candidate,
       operation: 'text_completion',
