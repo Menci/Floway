@@ -1,6 +1,6 @@
 import { ChevronDownRegular, DeleteRegular, WarningRegular } from '@fluentui/react-icons';
 import { useId, useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../../i18n/translation';
 
 import { computeModelWarning, computeRuleWarnings } from './warnings';
 import { fluentComponents } from '../../fluent';

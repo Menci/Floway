@@ -1,6 +1,6 @@
 import { ServerRegular } from '@fluentui/react-icons';
 import type { RefCallback } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../../i18n/translation';
 
 import azureIconUrl from '../../assets/azure-color.svg?no-inline';
 import claudeIconUrl from '../../assets/claude-color.svg?no-inline';

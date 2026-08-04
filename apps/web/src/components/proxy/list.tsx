@@ -1,5 +1,5 @@
 import { DeleteRegular, EditRegular } from '@fluentui/react-icons';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../../i18n/translation';
 
 import { hostPortLabel, KIND_HUES } from './config';
 import type { ProxyRecord } from '../../api/types';

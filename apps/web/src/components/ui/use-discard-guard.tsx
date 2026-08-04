@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../../i18n/translation';
 
 import { ConfirmDialog } from './confirm-dialog';
 import { useDialogInvocation } from './use-dialog-invocation';

@@ -11,6 +11,7 @@ import {
 import { numberFormatter } from './number-format';
 import { loadLocale } from './resources';
 import { shellResources } from './shell';
+import type { TFunction } from './translation';
 
 // Translation data is the larger part of what the dashboard has to load before
 // it can paint, and half of that again is a language the visitor is not
@@ -59,3 +60,8 @@ export const setLanguage = async (next: SupportedLanguage): Promise<void> => {
 };
 
 export { i18n };
+
+// The same signature the components reach through `useTranslation`, for the
+// callers that hold no React context: a helper taking `t` as a parameter, and
+// the suites that exercise one.
+export const t = i18n.t.bind(i18n) as unknown as TFunction;

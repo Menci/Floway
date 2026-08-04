@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { Trans, useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from '../i18n/translation';
 import { useFetcher } from 'react-router';
 import { z } from 'zod';
 

@@ -1,6 +1,6 @@
 import { ArrowResetRegular } from '@fluentui/react-icons';
 import { useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../../i18n/translation';
 
 import { api, callApi } from '../../api/client';
 import type { BackoffRow } from '../../api/types';

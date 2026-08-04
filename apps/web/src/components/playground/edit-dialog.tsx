@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../../i18n/translation';
 
 import type { PlaygroundMessage } from './request';
 import { fluentComponents } from '../../fluent';

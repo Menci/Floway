@@ -1,6 +1,6 @@
 import { DismissRegular } from '@fluentui/react-icons';
 import { useCallback, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../i18n/translation';
 import { useNavigate, useSearchParams } from 'react-router';
 
 import type { Route } from './+types/dashboard-monitor-requests';

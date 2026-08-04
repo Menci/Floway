@@ -1,5 +1,5 @@
 import { SelectAllOffRegular, SelectAllOnRegular, SquareMultipleRegular } from '@fluentui/react-icons';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../../i18n/translation';
 
 import { chartHeight } from './layout';
 import { colorForSlot } from './palette';

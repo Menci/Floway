@@ -2,7 +2,7 @@ import type { NavItemProps } from '@fluentui/react-components';
 import { DismissRegular, ShareIos20Color } from '@fluentui/react-icons';
 import { useId, useRef } from 'react';
 import type { MouseEventHandler, ReactNode } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../../i18n/translation';
 import { useLinkClickHandler, useLocation, useNavigation } from 'react-router';
 
 import type { AuthUser } from '../../api/auth';

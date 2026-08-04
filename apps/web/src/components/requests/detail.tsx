@@ -4,7 +4,7 @@ import {
 } from '@fluentui/react-icons';
 import { useMemo, useState } from 'react';
 import type { PropsWithChildren, ReactNode } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../../i18n/translation';
 
 import { contentTypeOf, EMPTY_BODY, renderBody, type RenderedBody } from './body-render';
 import { errorLabel, requestSeverity } from './format';

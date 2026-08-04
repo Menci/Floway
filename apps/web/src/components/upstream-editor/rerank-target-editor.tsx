@@ -1,4 +1,4 @@
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../../i18n/translation';
 
 import { fluentComponents } from '../../fluent';
 import { Dropdown, Input } from '../ui/fluent-form-controls';

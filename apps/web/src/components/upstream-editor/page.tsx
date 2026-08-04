@@ -2,7 +2,7 @@ import { SaveRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FormProvider, useForm } from 'react-hook-form';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../../i18n/translation';
 import { useBlocker, useNavigate, type BlockerFunction } from 'react-router';
 import { z } from 'zod';
 

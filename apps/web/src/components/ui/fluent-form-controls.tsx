@@ -2,7 +2,7 @@ import type { ListboxProps } from '@fluentui/react-components';
 import { ChevronDown12Regular } from '@fluentui/react-icons';
 import { Children, createElement, forwardRef } from 'react';
 import type { ComponentProps, ElementType, MouseEvent, ReactNode, Ref } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../../i18n/translation';
 
 import { useScrollAreaHost } from './scroll-area';
 import { fluentComponents } from '../../fluent';

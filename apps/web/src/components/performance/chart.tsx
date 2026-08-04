@@ -1,7 +1,7 @@
 import { LineChart, type CustomizedCalloutData } from '@fluentui/react-charts';
 import { useCallback, useMemo } from 'react';
 import type { ReactElement } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../../i18n/translation';
 
 import type { PerformancePlot, PerformanceChartPointDetails } from './plot';
 import { fluentComponents } from '../../fluent';

@@ -2,7 +2,7 @@ import { AddRegular, Eye24Regular, Info24Regular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback, useMemo, useState } from 'react';
 import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../../i18n/translation';
 import { z } from 'zod';
 
 import { computeAnnouncedMetadata } from './announced-metadata';

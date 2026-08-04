@@ -1,6 +1,6 @@
 import { ProhibitedRegular, ShieldKeyhole24Regular } from '@fluentui/react-icons';
 import { useCallback, useId, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../../i18n/translation';
 
 import { ProviderBadge } from './provider-badge';
 import type { ControlPlaneModel, UpstreamOption } from '../../api/types';

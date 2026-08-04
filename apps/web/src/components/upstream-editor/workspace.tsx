@@ -9,7 +9,7 @@ import {
 } from '@fluentui/react-icons';
 import { lazy, Suspense, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Controller, useFieldArray, useFormContext, useWatch } from 'react-hook-form';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../../i18n/translation';
 import { useSearchParams } from 'react-router';
 
 import type { ModelListingFailure, ModelRow, UpstreamEditorValues } from './data';

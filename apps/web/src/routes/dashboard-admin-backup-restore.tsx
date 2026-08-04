@@ -1,6 +1,6 @@
 import { ArrowDownloadRegular, ArrowUploadRegular } from '@fluentui/react-icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../i18n/translation';
 
 import { requireDashboardAdmin } from './guards';
 import { api, callApi } from '../api/client';

@@ -7,7 +7,7 @@ import {
 } from '@fluentui/react-icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Controller, useFormContext, useWatch } from 'react-hook-form';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../../i18n/translation';
 
 import { ClaudeCodeAccountCard } from './claude-code-account-card';
 import { CodexAccountCard } from './codex-account-card';

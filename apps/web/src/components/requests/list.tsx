@@ -7,7 +7,7 @@ import {
 } from '@fluentui/react-icons';
 import { useCallback, useMemo, useState } from 'react';
 import type { CSSProperties, KeyboardEvent } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../../i18n/translation';
 import { List } from 'react-window';
 import type { ListImperativeAPI, RowComponentProps } from 'react-window';
 

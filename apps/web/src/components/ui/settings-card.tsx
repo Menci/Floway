@@ -1,6 +1,6 @@
 import { useId, useState } from 'react';
 import type { ReactNode } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../../i18n/translation';
 
 import { Switch } from './fluent-form-controls';
 import { fluentComponents } from '../../fluent';

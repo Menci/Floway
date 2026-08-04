@@ -1,5 +1,5 @@
 import type { FieldErrors } from 'react-hook-form';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../../i18n/translation';
 
 import { DEFAULT_DIAL_TIMEOUT_SECONDS, FORM_KINDS, PROXY_CONFIG_ISSUE_FIELDS, SS2022_METHOD_OPTIONS, SS_METHOD_OPTIONS, formKindFromConfig, formKindLabelKey, orUndef, proxyUrlPlaceholder, type ProxyConfigIssueField, type ProxyFormValues } from './config';
 import { fluentComponents } from '../../fluent';

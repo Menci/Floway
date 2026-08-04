@@ -1,6 +1,6 @@
 import { AreaChart, LineChart, type CustomizedCalloutData } from '@fluentui/react-charts';
 import { useCallback, useLayoutEffect, useMemo, type ComponentProps } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../../i18n/translation';
 
 import { UsageChartCallout } from './callout';
 import type { CalloutPoint, UsageChartModel } from './types';

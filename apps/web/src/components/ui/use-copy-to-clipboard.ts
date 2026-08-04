@@ -1,7 +1,7 @@
 import { CheckmarkRegular, CopyRegular, DismissRegular } from '@fluentui/react-icons';
 import { createElement, useCallback, useState } from 'react';
 import type { ReactElement } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../../i18n/translation';
 
 import { copyToClipboard } from './copy-to-clipboard';
 

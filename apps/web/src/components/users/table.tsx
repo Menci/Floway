@@ -1,5 +1,5 @@
 import { DeleteRegular, EditRegular, KeyRegular } from '@fluentui/react-icons';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../../i18n/translation';
 
 import type { ControlPlaneUser } from '../../api/types';
 import { fluentComponents } from '../../fluent';

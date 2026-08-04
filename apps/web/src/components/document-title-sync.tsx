@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../i18n/translation';
 import { useLocation } from 'react-router';
 
 import { pageLabelKeys } from './sidebar/pages';

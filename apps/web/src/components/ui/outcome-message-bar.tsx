@@ -1,6 +1,6 @@
 import { DismissRegular } from '@fluentui/react-icons';
 import { Children, type ReactNode } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../../i18n/translation';
 
 import { fluentComponents } from '../../fluent';
 

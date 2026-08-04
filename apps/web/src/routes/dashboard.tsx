@@ -1,6 +1,6 @@
 import { NavigationRegular } from '@fluentui/react-icons';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../i18n/translation';
 import {
   Navigate,
   redirect,

@@ -1,7 +1,7 @@
 import { DeleteRegular } from '@fluentui/react-icons';
 import { useId, useMemo } from 'react';
 import { Controller, useFieldArray, useFormContext, useWatch } from 'react-hook-form';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../../i18n/translation';
 
 import type { RuntimeInfo, UpstreamEditorValues } from './data';
 import { modelPrefixIsValid, publicModelId } from './data';

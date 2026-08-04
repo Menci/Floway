@@ -1,4 +1,4 @@
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../../i18n/translation';
 
 import { formatCompactDecimalCount, formatRatePercent } from './format';
 import { bucketKeyForCallout, summarizeCounters } from './plot';

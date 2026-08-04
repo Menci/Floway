@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../i18n/translation';
 
 // A domain validator is keyed by its own field vocabulary, which is not always a
 // path in the form values, so react-hook-form nests the schema's issues under

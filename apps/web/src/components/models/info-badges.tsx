@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Trans, useTranslation } from 'react-i18next';
+import { Trans, type TFunction, useTranslation } from '../../i18n/translation';
 
 import { effectiveUpstreams, modelBadges, type ModelBadge } from './badges';
 import type { CatalogIndex } from './catalog-index';
@@ -22,7 +22,7 @@ const budgetTokens = (value: Extract<ModelBadge, { kind: 'rule' }>['value']): nu
 
 const ruleBadgeContent = (
   badge: Extract<ModelBadge, { kind: 'rule' }>,
-  t: ReturnType<typeof useTranslation>['t'],
+  t: TFunction,
 ): ReactNode => {
   if (badge.varies) {
     switch (badge.field) {
@@ -50,7 +50,7 @@ const ruleBadgeContent = (
 
 const badgeContent = (
   badge: Exclude<ModelBadge, { kind: 'limit' }>,
-  t: ReturnType<typeof useTranslation>['t'],
+  t: TFunction,
 ): ReactNode => {
   const strong = { strong: <strong /> };
   switch (badge.kind) {
