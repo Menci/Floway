@@ -1,5 +1,6 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+import { stringify } from 'uuid';
 
 import type { MessagesBoundaryCtx } from './types.ts';
 import type { MessagesMessage, MessagesPayload } from '@floway-dev/protocols/messages';
@@ -73,11 +74,9 @@ const firstUserMessageText = (messages: MessagesMessage[]): string => {
 
 const sha256Hex = (input: string): string => bytesToHex(sha256(new TextEncoder().encode(input)));
 
-// Same UUIDv4 stamping trick `sha256Uuid` in provider-codex/ids.ts uses:
-// stamp the sha256 hex with the version-4 nibble inline and overwrite the
-// variant nibble so the output validates as a real UUIDv4.
 const sha256Uuidv4 = (input: string): string => {
-  const hex = sha256Hex(input);
-  const variantNibble = ((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16);
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${variantNibble}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+  const bytes = sha256(new TextEncoder().encode(input)).slice(0, 16);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  return stringify(bytes);
 };
