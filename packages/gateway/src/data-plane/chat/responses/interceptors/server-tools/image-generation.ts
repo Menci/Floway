@@ -20,7 +20,7 @@ import {
   type ResponsesOutputImageGenerationCall,
   type ResponsesTool,
 } from '@floway-dev/protocols/responses';
-import { NO_UPSTREAM_REQUEST_HINTS, providerModelOf, type Fetcher, type ImagesEditsRequest, type Provider, type ModelCandidate, type ProviderModel } from '@floway-dev/provider';
+import { providerModelOf, type Fetcher, type ImagesEditsRequest, type Provider, type ModelCandidate, type ProviderModel } from '@floway-dev/provider';
 
 export const SHIM_TOOL_NAME = 'image_generation';
 
@@ -1087,7 +1087,6 @@ const issueImageCall = async (
       fetcher,
       waitUntil: state.backgroundScheduler,
       headers: new Headers(),
-      requestHints: NO_UPSTREAM_REQUEST_HINTS,
       // Stamp this image sub-call's OWN perf slot — never ctx.attempt —
       // so the outer Responses turn's upstream-call stamp is preserved.
       // Perf recording lives at the sub-call's terminal boundary in

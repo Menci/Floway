@@ -1,11 +1,7 @@
 import type { Context } from 'hono';
 
-import { inboundHeaderAllowlistForKind } from '../providers/registry.ts';
-import { parseAnthropicBetaHeader } from '@floway-dev/protocols/messages';
-import type { InboundHeaderMatcher, UpstreamProviderKind, UpstreamRequestHints } from '@floway-dev/provider';
-
-// https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/beta/beta.ts#L622-L635
-const CONTEXT_1M_BETA = 'context-1m-2025-08-07';
+import { inboundHeaderAllowlistForCall } from '../providers/registry.ts';
+import type { InboundHeaderMatcher, ProviderCall, UpstreamProviderKind } from '@floway-dev/provider';
 
 export const inboundHeaders = (c: Context): Headers => new Headers(c.req.raw.headers);
 
@@ -31,8 +27,5 @@ export const filterInboundHeaders = (
 export const filterInboundHeadersForProvider = (
   headers: Headers,
   providerKind: UpstreamProviderKind,
-): Headers => filterInboundHeaders(headers, inboundHeaderAllowlistForKind(providerKind));
-
-export const requestHintsFromInboundHeaders = (headers: Headers): UpstreamRequestHints => ({
-  oneMillionContext: parseAnthropicBetaHeader(headers.get('anthropic-beta')).includes(CONTEXT_1M_BETA),
-});
+  call: ProviderCall,
+): Headers => filterInboundHeaders(headers, inboundHeaderAllowlistForCall(providerKind, call));

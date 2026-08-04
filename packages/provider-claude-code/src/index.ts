@@ -5,21 +5,23 @@ import type { ProviderModule } from '@floway-dev/provider';
 export const claudeCodeProviderModule: ProviderModule = {
   create: createClaudeCodeProvider,
   // https://github.com/Wei-Shaw/sub2api/blob/4a5665da5b2c6b83c4597844ea6e573746c821b1/backend/internal/service/gateway_service.go#L421-L444
-  inboundHeaderAllowlist: [
-    'accept',
-    /^x-stainless-(?:retry-count|timeout|lang|package-version|os|arch|runtime|runtime-version|helper-method)$/,
-    'anthropic-dangerous-direct-browser-access',
-    'anthropic-version',
-    'x-app',
-    'anthropic-beta',
-    'accept-language',
-    'sec-fetch-mode',
-    'user-agent',
-    'content-type',
-    'accept-encoding',
-    'x-claude-code-session-id',
-    'x-client-request-id',
-  ],
+  inboundHeaderAllowlist: {
+    callMessages: [
+      'accept',
+      /^x-stainless-(?:retry-count|timeout|lang|package-version|os|arch|runtime|runtime-version|helper-method)$/,
+      'anthropic-dangerous-direct-browser-access',
+      'anthropic-version',
+      'x-app',
+      'anthropic-beta',
+      'accept-language',
+      'sec-fetch-mode',
+      'user-agent',
+      'content-type',
+      'accept-encoding',
+      'x-claude-code-session-id',
+      'x-client-request-id',
+    ],
+  },
   defaultFlags: CLAUDE_CODE_DEFAULT_FLAGS,
 };
 

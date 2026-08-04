@@ -4,7 +4,13 @@ import type { ProviderModule } from '@floway-dev/provider';
 
 export const copilotProviderModule: ProviderModule = {
   create: createCopilotProvider,
-  inboundHeaderAllowlist: [],
+  // Copilot's Messages boundary consumes this value for raw-variant selection
+  // and emits only its supported subset on the wire.
+  // https://github.com/microsoft/vscode/blob/a234109a108ad2ca78b7d0883688b0a84e3fab42/extensions/copilot/src/extension/chatSessions/claude/node/claudeLanguageModelServer.ts#L413-L427
+  inboundHeaderAllowlist: {
+    callMessages: ['anthropic-beta'],
+    callMessagesCountTokens: ['anthropic-beta'],
+  },
   defaultFlags: COPILOT_DEFAULT_FLAGS,
 };
 

@@ -1,5 +1,5 @@
 import { getRepo } from '../../repo/index.ts';
-import type { FlagDefaults, Provider, ProviderModule, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import type { FlagDefaults, InboundHeaderMatcher, Provider, ProviderCall, ProviderModule, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { azureProviderModule } from '@floway-dev/provider-azure';
 import { claudeCodeProviderModule } from '@floway-dev/provider-claude-code';
 import { codexProviderModule } from '@floway-dev/provider-codex';
@@ -22,8 +22,11 @@ export const createProvider = (record: UpstreamRecord): Provider =>
 export const flagDefaultsForKind = (kind: UpstreamProviderKind): FlagDefaults =>
   providersByKind[kind].defaultFlags;
 
-export const inboundHeaderAllowlistForKind = (kind: UpstreamProviderKind): ProviderModule['inboundHeaderAllowlist'] =>
-  providersByKind[kind].inboundHeaderAllowlist;
+export const inboundHeaderAllowlistForCall = (
+  kind: UpstreamProviderKind,
+  call: ProviderCall,
+): readonly InboundHeaderMatcher[] =>
+  providersByKind[kind].inboundHeaderAllowlist[call] ?? [];
 
 // The upstream scope is a required argument across the catalog-assembly chain
 // (this, `enumerateAddressableModelIds`, `enumerateModelCandidates`) so a

@@ -52,7 +52,7 @@ export const messagesAttempt = {
           providerModelOf(candidate),
           body,
           ctx.abortSignal,
-          buildUpstreamCallOptions(candidate, ctx, invocation.headers),
+          buildUpstreamCallOptions(candidate, ctx, invocation.headers, 'callMessages'),
         );
         return await providerStreamResultToExecuteResult(providerResult, candidate, targetApi, ctx, createMessagesBillableUsageReader());
       }
@@ -99,7 +99,7 @@ export const messagesAttempt = {
         providerModelOf(candidate),
         body,
         ctx.abortSignal,
-        buildUpstreamCallOptions(candidate, ctx, invocation.headers),
+        buildUpstreamCallOptions(candidate, ctx, invocation.headers, 'callMessagesCountTokens'),
       );
       return response;
     });

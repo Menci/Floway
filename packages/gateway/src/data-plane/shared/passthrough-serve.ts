@@ -28,7 +28,7 @@ import type { TokenUsage } from '../../repo/types.ts';
 import { enumerateModelCandidates } from '../providers/resolution.ts';
 import { doneFrame, eventFrame, type ModelKind, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
-import type { PerformanceOperation, PerformanceTelemetryContext, InternalModel, Provider, ProviderCallResult, ProviderModel, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
+import type { PerformanceOperation, PerformanceTelemetryContext, InternalModel, Provider, ProviderCall, ProviderCallResult, ProviderModel, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
 
 // `json` (embeddings, images): single-shot body, `extractBilling` reads
 // usage / metadata off the parsed root. `sse` (/v1/completions): frame
@@ -64,6 +64,7 @@ interface PassthroughServeContext {
   readonly ctx: GatewayCtx;
   readonly sourceApi: PassthroughServeApiName;
   readonly operation: PerformanceOperation;
+  readonly providerCall: ProviderCall;
   // Already-validated public model id the client requested. The helper
   // resolves it against the provider registry; if no upstream serves the
   // id with the requested kind, the client sees a 404 with the standard
@@ -89,7 +90,7 @@ export const passthroughApiError = (c: Context, message: string, status: Content
   c.json({ error: { message, type: 'api_error' } }, status);
 
 export const passthroughServe = async (input: PassthroughServeContext): Promise<Response> => {
-  const { c, ctx, sourceApi, operation, model, kind, modelServesEndpoint, call, response: responseHandling } = input;
+  const { c, ctx, sourceApi, operation, providerCall, model, kind, modelServesEndpoint, call, response: responseHandling } = input;
 
   try {
     // The shared resolver returns every candidate of the requested kind:
@@ -146,7 +147,8 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       viable,
       'passthroughServe',
       ctx,
-      operation,
+          operation,
+          providerCall,
       candidate => passthroughAttempt({
         c, ctx, candidate, operation,
         call,

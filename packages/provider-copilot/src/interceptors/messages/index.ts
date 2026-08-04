@@ -5,9 +5,9 @@
 import { withTopLevelCacheControlApplied } from './apply-top-level-cache-control.ts';
 import { withInlineImagesCompressed } from './compress-images.ts';
 import { withSpeedFast } from './handle-speed-fast.ts';
+import { withAnthropicBetaNormalized } from './normalize-anthropic-beta.ts';
 import { withThinkingDisplayPromoted } from './promote-thinking-display.ts';
 import { rewriteContextWindowError } from './rewrite-context-window-error.ts';
-import { withAnthropicBetaHeaderSet } from './set-anthropic-beta-header.ts';
 import { withClaudeAgentHeadersSet } from './set-claude-agent-headers.ts';
 import { withCompactHeadersSet } from './set-compact-headers.ts';
 import { withInitiatorHeaderSet } from './set-initiator-header.ts';
@@ -61,7 +61,7 @@ export const COPILOT_MESSAGES_BOUNDARY = [
   withEagerInputStreamingStripped,
   withVisionHeaderSet,
   withInitiatorHeaderSet,
-  withAnthropicBetaHeaderSet,
+  withAnthropicBetaNormalized,
 ] as const satisfies readonly CopilotMessagesBoundaryInterceptor[];
 
 // /v1/messages/count_tokens is a one-shot HTTP exchange that returns the raw
@@ -80,5 +80,5 @@ export const COPILOT_MESSAGES_COUNT_TOKENS_BOUNDARY = [
   withInlineImagesCompressed,
   withVisionHeaderSet,
   withInitiatorHeaderSet,
-  withAnthropicBetaHeaderSet,
+  withAnthropicBetaNormalized,
 ] as const satisfies readonly CopilotMessagesCountTokensBoundaryInterceptor[];

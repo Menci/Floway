@@ -1,6 +1,9 @@
 import { copilotRawModelId, stripClaudeDateSuffix } from './model-name.ts';
 import type { CopilotModelsResponse, CopilotRawModel } from './types.ts';
 
+// https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/beta/beta.ts#L622-L635
+export const CONTEXT_1M_BETA = 'context-1m-2025-08-07';
+
 const STANDARD_CLAUDE_BASE_ID = /^claude-[a-z0-9-]+-\d+(?:\.\d+)?$/;
 const KNOWN_CLAUDE_VARIANT_SUFFIXES = new Set(['high', 'xhigh', '1m', '1m-internal', 'fast']);
 

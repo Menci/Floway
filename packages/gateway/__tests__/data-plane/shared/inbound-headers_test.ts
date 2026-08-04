@@ -76,17 +76,31 @@ describe('filterInboundHeaders', () => {
 });
 
 describe('provider inbound header policies', () => {
-  test.each<UpstreamProviderKind>(['custom', 'azure', 'ollama', 'copilot'])(
+  test.each<UpstreamProviderKind>(['custom', 'azure', 'ollama'])(
     '%s accepts no client headers',
     kind => {
       const filtered = filterInboundHeadersForProvider(new Headers({
         'anthropic-beta': 'context-1m',
         authorization: 'Bearer secret',
         'x-client-request-id': 'request-1',
-      }), kind);
+      }), kind, 'callMessages');
       expect([...filtered]).toEqual([]);
     },
   );
+
+  test('Copilot accepts anthropic-beta only on Messages surfaces', () => {
+    const source = new Headers({
+      'anthropic-beta': 'context-1m-2025-08-07',
+      authorization: 'Bearer secret',
+    });
+    expect(headerRecord(filterInboundHeadersForProvider(source, 'copilot', 'callMessages'))).toEqual({
+      'anthropic-beta': 'context-1m-2025-08-07',
+    });
+    expect(headerRecord(filterInboundHeadersForProvider(source, 'copilot', 'callMessagesCountTokens'))).toEqual({
+      'anthropic-beta': 'context-1m-2025-08-07',
+    });
+    expect([...filterInboundHeadersForProvider(source, 'copilot', 'callResponses')]).toEqual([]);
+  });
 
   test('Claude Code accepts only its declared fingerprint', () => {
     const accepted = {
@@ -119,7 +133,7 @@ describe('provider inbound header policies', () => {
       'x-stainless-future': 'discard',
     });
 
-    const filtered = filterInboundHeadersForProvider(source, 'claude-code');
+    const filtered = filterInboundHeadersForProvider(source, 'claude-code', 'callMessages');
     expect(headerRecord(filtered)).toEqual(accepted);
   });
 
@@ -136,7 +150,7 @@ describe('provider inbound header policies', () => {
       'x-codex-window-id': 'window-1',
     });
 
-    const filtered = filterInboundHeadersForProvider(source, 'codex');
+    const filtered = filterInboundHeadersForProvider(source, 'codex', 'callResponses');
     expect(headerRecord(filtered)).toEqual({
       'session-id': 'session-1',
       session_id: 'session-legacy',
@@ -160,8 +174,8 @@ describe('provider inbound header policies', () => {
     });
     const ctx = mockGatewayCtx();
 
-    const custom = buildUpstreamCallOptions(stubModelCandidate({ provider: provider('custom') }), ctx, source);
-    const claude = buildUpstreamCallOptions(stubModelCandidate({ provider: provider('claude-code') }), ctx, source);
+    const custom = buildUpstreamCallOptions(stubModelCandidate({ provider: provider('custom') }), ctx, source, 'callMessages');
+    const claude = buildUpstreamCallOptions(stubModelCandidate({ provider: provider('claude-code') }), ctx, source, 'callMessages');
     custom.headers.set('x-client-request-id', 'candidate-mutation');
 
     expect([...custom.headers]).toEqual([['x-client-request-id', 'candidate-mutation']]);
@@ -172,17 +186,21 @@ describe('provider inbound header policies', () => {
     expect(source.get('x-client-request-id')).toBe('request-1');
   });
 
-  test('normalizes 1M intent before stripping every Copilot header', () => {
+  test('passes Copilot Messages beta intent without exposing it to other surfaces', () => {
     const base = stubModelCandidate();
     const candidate = stubModelCandidate({
       provider: { ...base.provider, kind: 'copilot' },
     });
-    const options = buildUpstreamCallOptions(candidate, mockGatewayCtx(), new Headers({
+    const source = new Headers({
       'anthropic-beta': 'other-beta, context-1m-2025-08-07',
       authorization: 'Bearer secret',
-    }));
+    });
+    const messages = buildUpstreamCallOptions(candidate, mockGatewayCtx(), source, 'callMessages');
+    const responses = buildUpstreamCallOptions(candidate, mockGatewayCtx(), source, 'callResponses');
 
-    expect([...options.headers]).toEqual([]);
-    expect(options.requestHints).toEqual({ oneMillionContext: true });
+    expect(headerRecord(messages.headers)).toEqual({
+      'anthropic-beta': 'other-beta, context-1m-2025-08-07',
+    });
+    expect([...responses.headers]).toEqual([]);
   });
 });

@@ -17,7 +17,7 @@ import type { PerformanceTelemetryContext } from './telemetry/performance.ts';
 import { buildUpstreamCallOptions } from './upstream-call-options.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import { providerModelOf } from '@floway-dev/provider';
-import type { ModelCandidate, PerformanceOperation, Provider, ProviderCallResult, ProviderModel, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
+import type { ModelCandidate, PerformanceOperation, Provider, ProviderCall, ProviderCallResult, ProviderModel, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
 
 // Enlarged `plain` shape: `iterateCandidates` reads `type` + `status`;
 // the passthrough serve reads the rest to forward the response and
@@ -37,6 +37,7 @@ export interface PassthroughAttemptArgs {
   readonly ctx: GatewayCtx;
   readonly candidate: ModelCandidate;
   readonly operation: PerformanceOperation;
+  readonly providerCall: ProviderCall;
   // Delegated to the passthrough caller so each endpoint keeps its
   // request-body shaping (`{ model: _, ...body }`) local. Any throw here
   // is preserved and the serve layer turns it into a 502 with the
@@ -45,11 +46,11 @@ export interface PassthroughAttemptArgs {
 }
 
 export const passthroughAttempt = async (args: PassthroughAttemptArgs): Promise<PassthroughAttemptResult> => {
-  const { c, ctx, candidate, operation, call } = args;
+  const { c, ctx, candidate, operation, providerCall, call } = args;
   const { response, modelKey } = await call(
     candidate.provider,
     providerModelOf(candidate),
-    buildUpstreamCallOptions(candidate, ctx, inboundHeaders(c)),
+    buildUpstreamCallOptions(candidate, ctx, inboundHeaders(c), providerCall),
   );
   return {
     type: 'plain',

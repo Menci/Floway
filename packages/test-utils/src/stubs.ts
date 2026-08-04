@@ -1,4 +1,4 @@
-import { directFetcher, type FlagId, type InternalModel, type PerformanceTelemetryContext, type ProviderInstance, type Provider, type ProviderModel, type ModelCandidate, NO_UPSTREAM_REQUEST_HINTS, type TelemetryModelIdentity, type UpstreamCallOptions, identityWrapUpstreamCall } from '@floway-dev/provider';
+import { directFetcher, type FlagId, type InternalModel, type PerformanceTelemetryContext, type ProviderInstance, type Provider, type ProviderModel, type ModelCandidate, type TelemetryModelIdentity, type UpstreamCallOptions, identityWrapUpstreamCall } from '@floway-dev/provider';
 
 // No-op UpstreamCallOptions factory for tests calling provider methods
 // directly: the fetcher uses runtime fetch so `globalThis.fetch` spies still
@@ -9,7 +9,6 @@ export const noopUpstreamCallOptions = (overrides: Partial<UpstreamCallOptions> 
   fetcher: directFetcher,
   waitUntil: () => {},
   headers: new Headers(),
-  requestHints: NO_UPSTREAM_REQUEST_HINTS,
   wrapUpstreamCall: identityWrapUpstreamCall,
   ...overrides,
 });
