@@ -24,13 +24,16 @@ export interface PerformanceDisplayRecord {
 }
 
 export interface PerformanceFilters {
-  model: string;
-  upstream: string;
-  operation: string;
-  runtimeLocation: string;
-  userId: string;
-  keyId: string;
+  model: string[];
+  upstream: string[];
+  operation: string[];
+  runtimeLocation: string[];
+  userId: string[];
+  keyId: string[];
 }
+
+export const emptyPerformanceFilters = (): PerformanceFilters =>
+  ({ model: [], upstream: [], operation: [], runtimeLocation: [], userId: [], keyId: [] });
 
 export interface PerformanceUrlState {
   metric: PerformanceMetric;
@@ -56,31 +59,24 @@ export interface PerformanceOverviewResponse {
   keys: Array<{ id: string; name: string; createdAt: string }>;
 }
 
+// The Hono client appends one occurrence per array entry and nothing at all for
+// an empty array, so an unset filter leaves the query string untouched.
 export const buildPerformanceQuery = (
-  view: PerformanceView,
   range: PerformanceRange,
   groupBy: PerformanceGroupBy,
   filters: PerformanceFilters,
   nowMs: number,
-): URLSearchParams => {
-  const window = dashboardRangeQuery(range, nowMs);
-  const search = new URLSearchParams({
-    ...window,
-    view,
-    group_by: groupBy,
-    timezone_offset_minutes: String(new Date(nowMs).getTimezoneOffset()),
-  });
-  const values: Array<[string, string]> = [
-    ['filter_model', filters.model],
-    ['filter_upstream', filters.upstream],
-    ['filter_operation', filters.operation],
-    ['filter_runtime_location', filters.runtimeLocation],
-    ['filter_user_id', filters.userId],
-    ['filter_key_id', filters.keyId],
-  ];
-  for (const [key, value] of values) if (value) search.set(key, value);
-  return search;
-};
+): Record<string, string | string[]> => ({
+  ...dashboardRangeQuery(range, nowMs),
+  group_by: groupBy,
+  timezone_offset_minutes: String(new Date(nowMs).getTimezoneOffset()),
+  filter_model: filters.model,
+  filter_upstream: filters.upstream,
+  filter_operation: filters.operation,
+  filter_runtime_location: filters.runtimeLocation,
+  filter_user_id: filters.userId,
+  filter_key_id: filters.keyId,
+});
 
 export const performanceValue = (
   record: PerformanceDisplayRecord,

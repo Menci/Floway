@@ -737,22 +737,34 @@ export const webSearchUsageQuery = z.object({
   provider: z.string().optional(),
 });
 
+// A multi-select filter travels as a repeated query parameter. Hono hands one
+// occurrence through as a bare string and several as an array, so each filter
+// reads through this single coercion into the list shape the handler wants.
+// An empty occurrence is a client that serialized an unset filter instead of
+// omitting it; it is rejected rather than silently read as "no filter".
+const filterValues = (item: z.ZodType<string>) =>
+  z.union([item, z.array(item)])
+    .transform(value => (typeof value === 'string' ? [value] : value))
+    .optional();
+
+const filterValue = z.string().min(1, 'filter values must not be empty');
+// User ids are auto-increment starting at 1, so zero and leading-zero forms
+// can never resolve and are rejected up front rather than silently returning
+// an empty result.
+const filterUserId = z.string().regex(/^[1-9]\d*$/, 'filter_user_id must be a positive integer');
+
 export const performanceQuery = z.object({
   start: z.string().optional(),
   end: z.string().optional(),
   group_by: z.enum(['keyId', 'userId', 'model', 'upstream', 'operation', 'runtimeLocation']).optional(),
   bucket: z.enum(['hour', '4h', '8h', 'day', 'all']).optional(),
   timezone_offset_minutes: z.string().optional(),
-  // Cross-cutting filters applied to raw records before aggregation. Each is
-  // a single value (dashboard dropdown is single-select); combining filters
-  // is AND.
-  filter_model: z.string().optional(),
-  filter_upstream: z.string().optional(),
-  filter_operation: z.string().optional(),
-  filter_runtime_location: z.string().optional(),
-  // User ids are auto-increment starting at 1, so zero and leading-zero forms
-  // can never resolve and are rejected up front rather than silently returning
-  // an empty result.
-  filter_user_id: z.union([z.literal(''), z.string().regex(/^[1-9]\d*$/, 'filter_user_id must be a positive integer')]).optional(),
-  filter_key_id: z.string().optional(),
+  // Cross-cutting filters applied to raw records before aggregation. Values
+  // within one filter are OR'd, and the filters themselves AND together.
+  filter_model: filterValues(filterValue),
+  filter_upstream: filterValues(filterValue),
+  filter_operation: filterValues(filterValue),
+  filter_runtime_location: filterValues(filterValue),
+  filter_user_id: filterValues(filterUserId),
+  filter_key_id: filterValues(filterValue),
 });
