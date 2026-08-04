@@ -147,10 +147,9 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       viable,
       'passthroughServe',
       ctx,
-          operation,
-          providerCall,
+      operation,
       candidate => passthroughAttempt({
-        c, ctx, candidate, operation,
+        c, ctx, candidate, operation, providerCall,
         call,
       }),
     );
