@@ -1,55 +1,120 @@
 /**
- * Restores a minified `error.stack` to the positions its source map names.
+ * Restores a minified `error.stack` to the positions its source maps name.
  *
- * The stack string is not standardized and the engines disagree about the
- * shape of a frame, but every engine that reports a position at all ends the
- * frame with `<url>:<line>:<column>`: V8 writes `    at fn (url:l:c)` or
- * `    at url:l:c`, SpiderMonkey and JavaScriptCore write `fn@url:l:c`.
- * Matching only that tail carries whatever the engine prefixed -- `at async`,
- * `at new`, `at Object.<anonymous>` -- across untouched, and a frame naming no
- * position at all (V8's `at async Promise.all (index 0)`, JavaScriptCore's
- * `[native code]`) never matches and so survives verbatim.
+ * The stack string is not standardized and no engine exposes its frames as
+ * data: TC39's error-stacks proposal was blocked at the 2024-12-03 plenary for
+ * defining a string format, and its successor deliberately returns "an
+ * implementation-defined string"
+ * (https://github.com/tc39/proposal-error-stack-accessor). ECMA-426 declines
+ * the whole subject: "Stack tracing mapping without knowledge of the source
+ * language is not covered by this document" (Annex B.1).
+ *
+ * So the frames are parsed, and parsed conservatively. Every engine that
+ * reports a position at all ends the frame with `<url>:<line>:<column>`: V8
+ * writes `    at fn (url:l:c)` or `    at url:l:c`, SpiderMonkey and
+ * JavaScriptCore write `fn@url:l:c`. Matching only that tail carries whatever
+ * the engine prefixed -- `at async`, `at new`, `at Object.<anonymous>` --
+ * across untouched, and a frame naming no position at all (V8's
+ * `at async Promise.all (index 0)`, which returns before appending any
+ * location, or JavaScriptCore's `[native code]`) never matches and survives
+ * verbatim.
  */
 
 import { useEffect, useState } from 'react';
 
 // The line is 1-based in every engine's stack and in `originalPositionFor`, so
 // it passes through. The column is 1-based in the stack and 0-based in a source
-// map (https://tc39.es/ecma426/#sec-source-map-format), so the query subtracts
-// one and the restored column adds it back.
+// map, so the query subtracts one and the restored column adds it back.
+//
+// V8 adds the 1 at the boundary that formats the stack --
+// `int column_number = position_info.column + 1`
+// (https://github.com/v8/v8/blob/0218677be4a45d5394faa541b6ec74b05def1261/src/objects/call-site-info.cc#L146-L181);
+// SpiderMonkey states "column numbers are represented as 1-origin"
+// (https://github.com/mozilla/gecko-dev/blob/5836a062726f715fda621338a17b51aff30d0a8c/js/public/ColumnNumber.h#L6-L25).
+// Every source map field is 0-based, per the decoding algorithm in ECMA-426
+// (https://github.com/tc39/ecma426/blob/62f8e694b62f5e6708523dc97563580bbf17591c/spec.emu#L798-L802).
+// Both browser-side libraries in the wild -- `sourcemapped-stacktrace` and
+// `stacktrace-gps` -- omit this shift, which their nearest-preceding-segment
+// search hides until the position lands on a segment boundary.
 const COLUMN_ORIGIN_SHIFT = 1;
+
+// A stack is attacker-influenced through the message an engine prints above the
+// frames, and this pattern is two lazy quantifiers deep. Sentry caps a frame at
+// the same 1024 characters after a report of quadratic backtracking
+// (https://github.com/getsentry/sentry-javascript/issues/2286).
+const LONGEST_FRAME = 1024;
 
 const FRAME =
   /^(?<head>.*?)(?<url>[a-z][a-z\d+.-]*:\/\/\S+?):(?<line>\d+):(?<column>\d+)(?<tail>\)?)$/i;
 
-const MAP_COMMENT = /\/\/# sourceMappingURL=(\S+)$/;
+// Generators emit only `//#`, consumers accept both, per ECMA-426 §11.1.2.1.1.
+// Last match wins: the annotation is defined as the last one in the resource,
+// and a chunk carries a second comment after it.
+const MAP_COMMENT = /\/\/[#@] ?sourceMappingURL=([^\s'"]+)\s*$/gm;
+
+// Rolldown writes the same id into the chunk and into its map, which is the
+// only way to tell a map apart from one built for a different revision of a
+// chunk whose content hash did not change.
+// https://github.com/rolldown/rolldown/blob/83ee59a3965937ff17e34f4bda708bc581937ea3/crates/rolldown/src/utils/process_code_and_sourcemap.rs#L122-L135
+const DEBUG_ID_COMMENT = /^\/\/# debugId=(\S+)\s*$/m;
+
+const lastMatch = (pattern: RegExp, text: string) => [...text.matchAll(pattern)].at(-1);
+
+const frameIn = (line: string) =>
+  line.length <= LONGEST_FRAME ? FRAME.exec(line)?.groups : undefined;
 
 // Only this origin's scripts are restored: the maps that ship are this app's,
-// and a frame from an extension or another origin is one whose map we could
-// not fetch even if it had one.
+// and a frame from an extension or another origin is one whose map could not
+// be fetched even if it had one. Extensions do interleave frames with the
+// page's own -- an MV3 content script in the main world, or Safari's
+// `webkit-masked-url://hidden/`.
 const ownScript = (url: string) => URL.parse(url)?.origin === window.location.origin;
 
 const scriptsIn = (stack: string): string[] => [
   ...new Set(
     stack
       .split('\n')
-      .map(line => FRAME.exec(line)?.groups?.url)
+      .map(line => frameIn(line)?.url)
       .filter(url => url !== undefined)
       .filter(ownScript),
   ),
 ];
 
+interface LoadedMap {
+  json: object;
+  url: string;
+}
+
 /** Null when the script carries no map, which is not a failure to restore. */
-const loadMap = async (scriptUrl: string): Promise<{ json: unknown; url: string } | null> => {
-  const script = await fetch(scriptUrl);
+const loadMap = async (scriptUrl: string): Promise<LoadedMap | null> => {
+  // The chunk is in the HTTP cache already -- it was fetched to be run -- and
+  // Workers Static Assets serves it `must-revalidate`, so anything short of
+  // `force-cache` spends a round trip per chunk to be told nothing changed.
+  const script = await fetch(scriptUrl, { cache: 'force-cache' });
   if (!script.ok) throw new Error(`${scriptUrl} responded ${script.status}`);
-  const comment = MAP_COMMENT.exec((await script.text()).trimEnd());
+  const text = (await script.text()).trimEnd();
+
+  const comment = lastMatch(MAP_COMMENT, text);
   if (!comment) return null;
 
   const url = new URL(comment[1]!, scriptUrl).href;
-  const map = await fetch(url);
-  if (!map.ok) throw new Error(`${url} responded ${map.status}`);
-  return { json: await map.json(), url };
+  const response = await fetch(url);
+  // An asset this app does not have is answered with the SPA shell rather than
+  // a 404, so a map that was not deployed arrives as HTML with a 200.
+  if (!response.ok) throw new Error(`${url} responded ${response.status}`);
+  if (!response.headers.get('content-type')?.includes('json')) {
+    throw new Error(`${url} is not a source map`);
+  }
+  const json: object = await response.json();
+
+  if ('sections' in json) throw new Error(`${url} is an index map`);
+
+  const scriptDebugId = DEBUG_ID_COMMENT.exec(text)?.[1];
+  if (scriptDebugId !== undefined && 'debugId' in json && json.debugId !== scriptDebugId) {
+    throw new Error(`${url} was built for another revision of ${scriptUrl}`);
+  }
+
+  return { json, url };
 };
 
 // `sources` are URLs relative to the map, and TraceMap resolves them against
@@ -72,28 +137,30 @@ export const restoreStack = async (stack: string): Promise<string> => {
 
   const traced = new Map(
     maps
-      .filter(([, map]) => map !== null)
+      .filter((entry): entry is [string, LoadedMap] => entry[1] !== null)
       .map(([script, map]) => [
         script,
-        new TraceMap(map!.json as ConstructorParameters<typeof TraceMap>[0], map!.url),
+        new TraceMap(map.json as ConstructorParameters<typeof TraceMap>[0], map.url),
       ] as const),
   );
 
   return stack
     .split('\n')
     .map(line => {
-      const groups = FRAME.exec(line)?.groups;
-      const map = groups && traced.get(groups.url!);
-      if (!groups || !map) return line;
+      const frame = frameIn(line);
+      const map = frame && traced.get(frame.url!);
+      if (!frame || !map) return line;
 
-      const original = originalPositionFor(map, {
-        column: Number(groups.column) - COLUMN_ORIGIN_SHIFT,
-        line: Number(groups.line),
-      });
-      if (original.source === null || original.line === null) return line;
+      // An engine writes 0 where it has no information, and `originalPositionFor`
+      // throws on a line below 1 or a column below 0.
+      const position = { column: Number(frame.column) - COLUMN_ORIGIN_SHIFT, line: Number(frame.line) };
+      if (position.line < 1 || position.column < 0) return line;
+
+      const original = originalPositionFor(map, position);
+      if (original.source === null) return line;
 
       const column = original.column + COLUMN_ORIGIN_SHIFT;
-      return `${groups.head}${displaySource(original.source)}:${original.line}:${column}${groups.tail}`;
+      return `${frame.head}${displaySource(original.source)}:${original.line}:${column}${frame.tail}`;
     })
     .join('\n');
 };

@@ -154,7 +154,14 @@ const webPort = Number(process.env.FLOWAY_DEV_WEB_PORT ?? '5174');
 // directory and rejects any file over 25 MiB, so carrying the text is also
 // what would eventually break the deploy. The cost is that devtools resolves a
 // frame to a file and line it cannot then display.
-const sourceMapOutput = { sourcemapExcludeSources: true } as const;
+const sourceMapOutput = {
+  // The same id is written into the chunk and into its map, which is what lets
+  // the runtime restore refuse a map built for a different revision of a chunk
+  // whose content hash did not change -- a comment-only edit produces exactly
+  // that pair.
+  sourcemapDebugIds: true,
+  sourcemapExcludeSources: true,
+} as const;
 
 export default defineConfig({
   // React Router discovers route modules lazily. Pre-bundle their browser
