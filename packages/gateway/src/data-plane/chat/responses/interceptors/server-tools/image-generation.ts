@@ -177,7 +177,7 @@ const decodeInlineImage = (
   } else {
     if (dataUrlMatch[2] === undefined) return null;
     payload = dataUrlMatch[3];
-    mimeType = mediaTypeEssence(dataUrlMatch[1] ?? fallbackMime) ?? fallbackMime;
+    mimeType = dataUrlMatch[1] ?? fallbackMime;
   }
 
   // A generated result is bare base64 on its first appearance and a data URL

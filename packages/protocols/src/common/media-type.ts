@@ -27,32 +27,36 @@ export const parseMediaType = (value: string | null | undefined): ParsedMediaTyp
 export const mediaTypeEssence = (value: string | null | undefined): string | null =>
   parseMediaType(value)?.essence ?? null;
 
-export const isMediaType = (value: string | null | undefined, essence: string): boolean =>
+const isMediaType = (value: string | null | undefined, essence: string): boolean =>
   mediaTypeEssence(value) === essence;
 
 const hasStructuredSuffix = (subtype: string, suffix: string): boolean =>
   subtype.length > suffix.length + 1 && subtype.endsWith(`+${suffix}`);
 
+const isParsedJsonMediaType = (parsed: ParsedMediaType): boolean =>
+  parsed.essence === 'application/json' || hasStructuredSuffix(parsed.subtype, 'json');
+
 export const isJsonMediaType = (value: string | null | undefined): boolean => {
   const parsed = parseMediaType(value);
-  return parsed !== null
-    && (parsed.essence === 'application/json' || hasStructuredSuffix(parsed.subtype, 'json'));
+  return parsed !== null && isParsedJsonMediaType(parsed);
 };
+
+const isParsedXmlMediaType = (parsed: ParsedMediaType): boolean =>
+  parsed.essence === 'application/xml'
+  || parsed.essence === 'text/xml'
+  || hasStructuredSuffix(parsed.subtype, 'xml');
 
 export const isXmlMediaType = (value: string | null | undefined): boolean => {
   const parsed = parseMediaType(value);
-  return parsed !== null
-    && (parsed.essence === 'application/xml'
-      || parsed.essence === 'text/xml'
-      || hasStructuredSuffix(parsed.subtype, 'xml'));
+  return parsed !== null && isParsedXmlMediaType(parsed);
 };
 
 export const isTextualMediaType = (value: string | null | undefined): boolean => {
   const parsed = parseMediaType(value);
   return parsed !== null
     && (parsed.type === 'text'
-      || isJsonMediaType(parsed.essence)
-      || isXmlMediaType(parsed.essence)
+      || isParsedJsonMediaType(parsed)
+      || isParsedXmlMediaType(parsed)
       || parsed.essence === 'application/javascript'
       || parsed.essence === 'application/x-www-form-urlencoded');
 };
