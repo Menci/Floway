@@ -60,6 +60,7 @@
     "es-toolkit": "^1.49.0",
     "hono": "^4",
     "jsonrepair": "^3.14.0",
+    "ulid": "^3.0.2",
     "zod": "^4.4.3"
   },
   "devDependencies": {
