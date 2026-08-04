@@ -10,12 +10,26 @@
    https://learn.microsoft.com/en-us/typography/font-list/segoe-ui-variable
 
    Microsoft mirrors Learn's static tree byte-for-byte on Azure China, and we
-   point at the mirror: learn.microsoft.com is fronted by Akamai, which maps
+   ask the mirror first: learn.microsoft.com is fronted by Akamai, which maps
    mainland clients onto European and US edges, while this host stays on
    Microsoft's own AS8075 -- 1.0 s against 3.4 s from China Telecom in Nanjing.
 
+   Learn follows as a second source, because the mirror is a single host on a
+   single network and a mainland resolver that answers SERVFAIL for it would
+   otherwise cost the typeface. The two URLs are the same bytes -- both hosts
+   return x-ms-blob-content-md5 0z9O1Vho99UFoTkPuyg75g== and the downloads
+   compare equal -- so the second entry buys reachability and nothing else, and a source list is walked lazily enough for
+   that to be free: measured in Chromium 151, Firefox 153 and WebKit 26.5, the
+   second URL is fetched when and only when the first face errors, whether the
+   host does not resolve, refuses the connection, answers 404 or 500, returns a
+   body that is not a font, or omits the CORS header. It is never touched when
+   the mirror answers. The one shape this does not cover is a mirror that
+   accepts the connection and then never replies: the face stays pending rather
+   than failing, so nothing advances the list and `font-display: swap` holds the
+   system stack for as long as the request does.
+
    TrueType is the only container upstream; there is no woff2 of the variable
-   face on this host, and it costs less than it looks -- the CDN gzips it to
+   face on either host, and it costs less than it looks -- the CDN gzips it to
    1.05 MB against the 949 KB woff2 on microsoft.design, which answers a large
    share of mainland requests with a Cloudflare challenge instead of the font.
    Declaring no font-variation-settings is deliberate: the face carries an
@@ -23,7 +37,9 @@
    from the used font size continuously rather than at two pinned stops. */
 @font-face {
   font-family: 'Segoe UI Variable Web';
-  src: url('https://docs.azure.cn/static/third-party/SegoeUIVariable/SegoeUI-VF.ttf?floway-vf=2.02') format('truetype');
+  src:
+    url('https://docs.azure.cn/static/third-party/SegoeUIVariable/SegoeUI-VF.ttf?floway-vf=2.02') format('truetype'),
+    url('https://learn.microsoft.com/static/third-party/SegoeUIVariable/SegoeUI-VF.ttf?floway-vf=2.02') format('truetype');
   font-style: normal;
   font-weight: 300 700;
   font-display: swap;
