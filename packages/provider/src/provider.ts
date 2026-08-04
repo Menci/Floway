@@ -25,10 +25,16 @@ export type ResponsesAction = 'generate' | 'compact';
 
 export type InboundHeaderMatcher = string | RegExp;
 
+export interface IngressHeaderRule {
+  readonly matcher: InboundHeaderMatcher;
+  readonly value: string | null;
+}
+
 export interface Provider {
   upstreamId: string;
   kind: UpstreamProviderKind;
   name: string;
+  ingressHeaderRules: readonly IngressHeaderRule[];
   disabledPublicModelIds: readonly string[];
   // Per-upstream model name prefix policy mirrored from the source upstream
   // record so registry helpers — routing and listing — read it from the

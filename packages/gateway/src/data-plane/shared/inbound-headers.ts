@@ -1,31 +1,33 @@
 import type { Context } from 'hono';
 
 import { inboundHeaderAllowlistForCall } from '../providers/registry.ts';
-import type { InboundHeaderMatcher, ProviderCall, UpstreamProviderKind } from '@floway-dev/provider';
+import type { InboundHeaderMatcher, IngressHeaderRule, Provider, ProviderCall } from '@floway-dev/provider';
 
 export const inboundHeaders = (c: Context): Headers => new Headers(c.req.raw.headers);
 
 const regexpMatches = (regexp: RegExp, value: string): boolean =>
   new RegExp(regexp.source, regexp.flags).test(value);
 
-export const filterInboundHeaders = (
+const matcherMatches = (matcher: InboundHeaderMatcher, name: string): boolean =>
+  typeof matcher === 'string' ? matcher.toLowerCase() === name : regexpMatches(matcher, name);
+
+export const resolveIngressHeaders = (
   headers: Headers,
   allowlist: readonly InboundHeaderMatcher[],
+  rules: readonly IngressHeaderRule[],
 ): Headers => {
-  const exactNames = new Set(allowlist.flatMap(entry => typeof entry === 'string' ? [entry.toLowerCase()] : []));
-  const regexps = allowlist.filter((entry): entry is RegExp => entry instanceof RegExp);
   const filtered = new Headers();
   for (const [name, value] of headers) {
     const normalizedName = name.toLowerCase();
-    if (exactNames.has(normalizedName) || regexps.some(regexp => regexpMatches(regexp, normalizedName))) {
-      filtered.append(name, value);
-    }
+    const rule = rules.find(candidate => matcherMatches(candidate.matcher, normalizedName));
+    if (rule !== undefined) filtered.append(name, rule.value ?? value);
+    else if (allowlist.some(matcher => matcherMatches(matcher, normalizedName))) filtered.append(name, value);
   }
   return filtered;
 };
 
-export const filterInboundHeadersForProvider = (
+export const resolveIngressHeadersForProvider = (
   headers: Headers,
-  providerKind: UpstreamProviderKind,
+  provider: Provider,
   call: ProviderCall,
-): Headers => filterInboundHeaders(headers, inboundHeaderAllowlistForCall(providerKind, call));
+): Headers => resolveIngressHeaders(headers, inboundHeaderAllowlistForCall(provider.kind, call), provider.ingressHeaderRules);

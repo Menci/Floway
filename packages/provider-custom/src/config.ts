@@ -52,6 +52,11 @@ export interface CustomModelsFetch {
   endpoint?: string;
 }
 
+export interface CustomIngressHeaderRule {
+  key: string;
+  value: string | null;
+}
+
 // Fields shared by every auth style. The discriminated branches below add
 // `apiKey` only on the styles that actually send one, so consumers cannot
 // reach for `config.apiKey` on a 'none' upstream.
@@ -59,6 +64,7 @@ interface CustomUpstreamConfigBase {
   baseUrl: string;
   endpoints: ModelEndpoints;
   pathOverrides?: Partial<Record<CustomPathOverrideKey, string>>;
+  ingressHeadersRules: CustomIngressHeaderRule[];
   modelsFetch: CustomModelsFetch;
   models: UpstreamModelConfig[];
 }
@@ -82,6 +88,37 @@ const authStyleField = (value: unknown): CustomAuthStyle => {
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const HTTP_FIELD_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+
+const ingressHeadersRulesField = (value: unknown): CustomIngressHeaderRule[] => {
+  if (!Array.isArray(value)) throw new Error('Malformed custom upstream config: ingressHeadersRules must be an array');
+  const seen = new Set<string>();
+  return value.map((raw, index) => {
+    if (!isRecord(raw) || Object.keys(raw).some(key => key !== 'key' && key !== 'value')) {
+      throw new Error(`Malformed custom upstream config: ingressHeadersRules[${index}] must contain only key and value`);
+    }
+    if (typeof raw.key !== 'string' || !HTTP_FIELD_NAME_PATTERN.test(raw.key.trim())) {
+      throw new Error(`Malformed custom upstream config: ingressHeadersRules[${index}].key must be a valid HTTP header name`);
+    }
+    const key = raw.key.trim().toLowerCase();
+    if (seen.has(key)) {
+      throw new Error(`Malformed custom upstream config: ingressHeadersRules contains duplicate key ${key}`);
+    }
+    seen.add(key);
+    if (raw.value !== null && typeof raw.value !== 'string') {
+      throw new Error(`Malformed custom upstream config: ingressHeadersRules[${index}].value must be a string or null`);
+    }
+    if (raw.value === null) return { key, value: null };
+    const headers = new Headers();
+    try {
+      headers.set(key, raw.value);
+    } catch {
+      throw new Error(`Malformed custom upstream config: ingressHeadersRules[${index}].value is not a valid HTTP header value`);
+    }
+    return { key, value: headers.get(key)! };
+  });
+};
 
 const nonEmptyStringField = (value: unknown, field: string): string => {
   if (typeof value !== 'string' || value.trim() === '') throw new Error(`Malformed custom upstream config: ${field} must be a non-empty string`);
@@ -147,6 +184,7 @@ export const assertCustomUpstreamRecord = (record: UpstreamRecord): CustomUpstre
     baseUrl: baseUrlField(raw.baseUrl),
     endpoints: endpointsField(raw.endpoints, 'custom upstream config: endpoints', { allowEmpty: true }),
     ...(raw.pathOverrides !== undefined ? { pathOverrides: pathOverridesField(raw.pathOverrides) } : {}),
+    ingressHeadersRules: ingressHeadersRulesField(raw.ingressHeadersRules),
     modelsFetch: modelsFetchField(raw.modelsFetch),
     models: modelsField(raw.models ?? [], 'custom'),
   };

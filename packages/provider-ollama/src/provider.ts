@@ -192,6 +192,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     upstreamId: record.id,
     kind: 'ollama',
     name: record.name,
+    ingressHeaderRules: [],
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,
     modelsCache: record.modelsCache,

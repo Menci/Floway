@@ -182,6 +182,10 @@ const customConfigSchema = z.object({
   // PATCH passes `null` to explicitly clear pathOverrides; nullable() keeps
   // that escape hatch.
   pathOverrides: z.record(z.string(), z.string()).nullable().optional(),
+  ingressHeadersRules: z.array(z.object({
+    key: z.string(),
+    value: z.string().nullable(),
+  }).strict()),
   // Live upstream /models fetch. `endpoint` parsing happens in the runtime.
   modelsFetch: z.object({ enabled: z.boolean(), endpoint: z.string().optional() }).optional(),
   // Statically configured per-model overrides merged with the live fetch.
@@ -688,7 +692,7 @@ export const updateAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinemen
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(19, { error: 'version must be 19 — older export formats are not supported; re-export from the current deployment' }),
+  version: z.literal(20, { error: 'version must be 20 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().optional(),
 });

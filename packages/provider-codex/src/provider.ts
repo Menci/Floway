@@ -160,6 +160,7 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
     upstreamId: record.id,
     kind: 'codex',
     name: record.name,
+    ingressHeaderRules: [],
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,
     modelsCache: record.modelsCache,
