@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 
 import { reactRouter } from '@react-router/dev/vite';
+import MagicString from 'magic-string';
 import { defineConfig, runnerImport, type Plugin } from 'vite';
 
 import { wranglerProxiedPaths } from './gateway-paths';
@@ -102,7 +103,12 @@ const prismComponentsEsm = (): Plugin => ({
   transform(code, id) {
     const path = id.split('?', 1)[0]!.replaceAll('\\', '/');
     if (!/\/prismjs\/components\/prism-[^/]+\.js$/.test(path)) return;
-    return `import Prism from "prismjs";\n${code}`;
+    const transformed = new MagicString(code);
+    transformed.prepend('import Prism from "prismjs";\n');
+    return {
+      code: transformed.toString(),
+      map: transformed.generateMap({ hires: true, includeContent: true, source: id }),
+    };
   },
 });
 
