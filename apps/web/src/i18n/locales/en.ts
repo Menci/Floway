@@ -32,6 +32,8 @@ const en = {
         unexpectedTitle: 'Something went wrong',
         unexpectedDescription: 'An unexpected error occurred',
         notFound: 'The requested page could not be found',
+        sourceMapLoading: 'Loading source maps…',
+        sourceMapFailed: 'Source maps could not be loaded',
       },
     },
     auth: {

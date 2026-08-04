@@ -30,6 +30,8 @@ const zhHansCN = {
         unexpectedTitle: '出现错误',
         unexpectedDescription: '发生了意外错误',
         notFound: '找不到请求的页面',
+        sourceMapLoading: '正在加载源代码映射…',
+        sourceMapFailed: '源代码映射加载失败',
       },
     },
     auth: {
