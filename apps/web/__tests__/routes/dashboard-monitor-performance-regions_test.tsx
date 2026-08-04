@@ -95,9 +95,13 @@ describe('Performance Region dimensions', () => {
 
   it('stays unavailable when the normalized overview fails', async () => {
     let overviewRequests = 0;
+    let runtimeRequests = 0;
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost').pathname;
-      if (path === '/api/runtime-info') return Response.json({ kind: 'node', runtimeLocation: 'LOCAL' });
+      if (path === '/api/runtime-info') {
+        runtimeRequests += 1;
+        return Response.json({ kind: 'node', runtimeLocation: 'LOCAL' });
+      }
       if (path === '/api/performance/overview') {
         overviewRequests += 1;
         return overviewRequests === 1
@@ -113,6 +117,7 @@ describe('Performance Region dimensions', () => {
     await waitFor(() => expect(screen.getByText('Corrected overview failed')).toBeTruthy());
     expect(screen.getByText('This view could not be loaded')).toBeTruthy();
     expect(screen.queryByRole('combobox', { name: 'Group by' })).toBeNull();
+    expect(runtimeRequests).toBe(1);
   });
 
   it('publishes recovered capability when the existing overview still matches', async () => {

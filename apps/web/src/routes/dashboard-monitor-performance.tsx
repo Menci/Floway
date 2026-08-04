@@ -119,6 +119,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set(initialState.hidden));
   const [overview, setOverview] = useState<PerformanceOverviewResponse | null>(loaderData.overview);
   const [overviewQueryPending, setOverviewQueryPending] = useState(false);
+  const [pendingRegionAvailable, setPendingRegionAvailable] = useState<boolean | null>(null);
   const [upstreamNames] = useState(() => loaderData.upstreamNames && new Map(loaderData.upstreamNames.map(record => [record.id, record.name])));
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
   const query = useMemo(() => ({ filters, groupBy, range }), [filters, groupBy, range]);
@@ -134,21 +135,29 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
         { query: search },
         { init: { signal } },
       )),
-      callApi(() => api.api['runtime-info'].$get({}, { init: { signal } })),
+      pendingRegionAvailable === null
+        ? callApi(() => api.api['runtime-info'].$get({}, { init: { signal } }))
+        : null,
     ]);
     if (signal.aborted) return;
-    if (runtime.error) {
-      if (regionAvailable !== null && !result.error) {
-        setOverview(result.data);
-        setOverviewQueryPending(false);
-        setLoadedRange(query.range);
-        setLoadedAt(requestedAt);
-        arrived();
+    let nextRegionAvailable: boolean;
+    if (pendingRegionAvailable === null) {
+      if (runtime === null) throw new Error('Runtime capability request was not started');
+      if (runtime.error) {
+        if (regionAvailable !== null && !result.error) {
+          setOverview(result.data);
+          setOverviewQueryPending(false);
+          setLoadedRange(query.range);
+          setLoadedAt(requestedAt);
+          arrived();
+        }
+        setError(result.error ?? runtime.error);
+        return;
       }
-      setError(result.error ?? runtime.error);
-      return;
+      nextRegionAvailable = runtime.data.kind === 'cloudflare';
+    } else {
+      nextRegionAvailable = pendingRegionAvailable;
     }
-    const nextRegionAvailable = runtime.data.kind === 'cloudflare';
     const normalized = normalizePerformanceDimensionsForRuntime({
       groupBy: query.groupBy,
       filters: query.filters,
@@ -156,6 +165,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     }, nextRegionAvailable);
     if (normalized.groupBy !== query.groupBy || normalized.filters !== query.filters) {
       setRegionAvailable(null);
+      setPendingRegionAvailable(nextRegionAvailable);
       setOverviewQueryPending(true);
       setGroupBy(normalized.groupBy);
       setFilters(normalized.filters);
@@ -169,12 +179,13 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       return;
     }
     setRegionAvailable(nextRegionAvailable);
+    setPendingRegionAvailable(null);
     setOverview(result.data);
     setOverviewQueryPending(false);
     setLoadedRange(query.range);
     setLoadedAt(requestedAt);
     arrived();
-  }, [hiddenSeries, overviewQueryPending, query, regionAvailable]);
+  }, [hiddenSeries, overviewQueryPending, pendingRegionAvailable, query, regionAvailable]);
 
   const { poll, refresh, refreshing } = useRefreshOnChange(query, reload);
 
