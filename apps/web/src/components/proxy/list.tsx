@@ -11,6 +11,7 @@ import { ScrollArea } from '../ui/scroll-area';
 import { TABLE_ACTIONS_WIDTH, TableActions, TableTrailingHeader } from '../ui/table-actions';
 import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
+import { TruncationTooltip } from '../ui/truncation-tooltip';
 import { kindFromUri } from '@floway-dev/proxy/url-kind';
 
 const {
@@ -21,7 +22,6 @@ const {
   TableHeaderCell,
   TableRow,
   Text,
-  Tooltip,
 } = fluentComponents;
 
 export function ProxyList({
@@ -65,17 +65,17 @@ export function ProxyList({
                     <Chip className="flex-none" style={badgeHueStyle(hue)}>
                       {t(`dashboard.proxy.kind.${kind}` as never, kind)}
                     </Chip>
-                    <Tooltip content={proxy.name} relationship="label">
-                      <Text block className="winui-focus-rect min-w-0" tabIndex={0} truncate wrap={false}>{proxy.name}</Text>
-                    </Tooltip>
+                    <TruncationTooltip content={proxy.name} relationship="label">
+                      {measureRef => <Text block className="winui-focus-rect min-w-0" ref={measureRef} tabIndex={0} truncate wrap={false}>{proxy.name}</Text>}
+                    </TruncationTooltip>
                   </div>
                 </TableCell>
                 <TableCell className="overflow-hidden">
-                  <Tooltip content={address} relationship="label">
-                    <Text block className="winui-focus-rect text-fui-fg2" tabIndex={0} truncate wrap={false}>
+                  <TruncationTooltip content={address} relationship="label">
+                    {measureRef => <Text block className="winui-focus-rect text-fui-fg2" ref={measureRef} tabIndex={0} truncate wrap={false}>
                       {address}
-                    </Text>
-                  </Tooltip>
+                    </Text>}
+                  </TruncationTooltip>
                 </TableCell>
                 <TableCell>
                   <TableActions>

@@ -25,6 +25,7 @@ import { Dropdown } from '../ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useRouteAddress } from '../ui/route-link';
 import { useScrollAreaHost } from '../ui/scroll-area';
+import { TruncationTooltip } from '../ui/truncation-tooltip';
 import { ProviderBadge } from '../upstreams/provider-badge';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 
@@ -258,9 +259,9 @@ function RequestRowContent({ addressOfRecord, index, now, onSelect, record, reco
           </span>
         </Tooltip>
         {rowError
-          ? <Tooltip content={rowError} relationship="label">
-              <Text size={200} className={mergeClasses('ml-auto', s.error)} truncate wrap={false}>{rowError}</Text>
-            </Tooltip>
+          ? <TruncationTooltip content={rowError} relationship="label">
+              {measureRef => <Text size={200} className={mergeClasses('ml-auto', s.error)} ref={measureRef} truncate wrap={false}>{rowError}</Text>}
+            </TruncationTooltip>
           : <Text size={200} className="ml-auto text-fui-fg3" truncate wrap={false}>
               {tokens === null ? NO_READING : `${formatCompactCount(tokens, locale)} tok`}
             </Text>}

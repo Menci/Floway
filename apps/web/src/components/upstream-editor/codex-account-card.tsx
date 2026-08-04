@@ -9,9 +9,10 @@ import { clampPercent, percentText } from '../../lib/percent';
 import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
 import { StatusBadge } from '../ui/status-badge';
+import { TruncationTooltip } from '../ui/truncation-tooltip';
 import { ProviderIcon } from '../upstreams/provider-badge';
 
-const { Badge, ProgressBar, Text, Tooltip } = fluentComponents;
+const { Badge, ProgressBar, Text } = fluentComponents;
 
 export function CodexAccountCard({ record }: { record: CodexRecord }) {
   const { t } = useTranslation();
@@ -42,9 +43,9 @@ export function CodexAccountCard({ record }: { record: CodexRecord }) {
             : credits?.credits_balance !== undefined && <Badge appearance="outline" size="large">
               {t('dashboard.upstreamEditor.codex.credits', { balance: credits.credits_balance })}
             </Badge>}
-          <Tooltip content={account.chatgptAccountId} relationship="description">
-            <Text size={200} className="winui-focus-rect text-fui-fg3 font-mono mono-size-xs" tabIndex={0}>{shortAccountId(account.chatgptAccountId)}</Text>
-          </Tooltip>
+          <TruncationTooltip content={account.chatgptAccountId} relationship="description">
+            {measureRef => <Text size={200} className="winui-focus-rect text-fui-fg3 font-mono mono-size-xs" ref={measureRef} tabIndex={0}>{shortAccountId(account.chatgptAccountId)}</Text>}
+          </TruncationTooltip>
         </div>
       </div>
       <StatusBadge tone={status.tone}>{statusLabel}</StatusBadge>
@@ -56,9 +57,9 @@ export function CodexAccountCard({ record }: { record: CodexRecord }) {
       ? <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.codex.noSnapshot')}</Text>
       : entries.map(entry => <section className="grid gap-3 border-0 border-t border-solid border-fui-divider py-3 first:border-t-0" key={entry.key}>
           <div className="flex items-baseline justify-between gap-3 min-w-0">
-            <Tooltip content={entry.label} relationship="label">
-              <Text block className="winui-focus-rect" truncate weight="semibold" tabIndex={0} wrap={false}>{entry.label}</Text>
-            </Tooltip>
+            <TruncationTooltip content={entry.label} relationship="label">
+              {measureRef => <Text block className="winui-focus-rect" ref={measureRef} truncate weight="semibold" tabIndex={0} wrap={false}>{entry.label}</Text>}
+            </TruncationTooltip>
             <Text size={200} className="text-fui-fg3 shrink-0 uppercase tracking-wide">{t('dashboard.upstreamEditor.codex.activeLimit')}</Text>
           </div>
           {entry.windows.map(item => {

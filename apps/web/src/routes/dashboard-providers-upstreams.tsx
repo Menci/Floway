@@ -27,6 +27,7 @@ import { ScrollArea } from '../components/ui/scroll-area';
 import { TABLE_ACTIONS_WIDTH, TableActions, TableCentredCell, TableCentredHeader, TableTrailingHeader } from '../components/ui/table-actions';
 import { TableColumns } from '../components/ui/table-columns';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
+import { TruncationTooltip, useTruncation } from '../components/ui/truncation-tooltip';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { useRefresh } from '../components/ui/use-refresh';
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
@@ -330,6 +331,32 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   );
 }
 
+// The name is clipped by the layout's `main` slot rather than by the link
+// inside it, so that slot is what the tooltip has to measure.
+function UpstreamNameCell({ record }: { record: UpstreamRecord }) {
+  const { t } = useTranslation();
+  const name = useTruncation(record.name, 'label');
+
+  return <TableCellLayout
+    className="max-w-[520px]"
+    description={<TruncationTooltip content={upstreamSummary(record, t)} relationship="label">
+      {measureRef => <Text block className="winui-focus-rect" ref={measureRef} tabIndex={0} truncate wrap={false}>{upstreamSummary(record, t)}</Text>}
+    </TruncationTooltip>}
+    main={{ ref: name.measureRef }}
+    truncate
+  >
+    <Tooltip {...name.tooltipProps}>
+      <Link
+        {...pageNavigation}
+        className={rowTitleClass}
+        to={upstreamEditorPath(record)}
+      >
+        {record.name}
+      </Link>
+    </Tooltip>
+  </TableCellLayout>;
+}
+
 function UpstreamsTable({
   busy,
   data,
@@ -389,25 +416,7 @@ function UpstreamsTable({
                 </div>
               </TableCell>
               <TableCell><ProviderBadge upstream={record} /></TableCell>
-              <TableCell className="overflow-hidden">
-                <TableCellLayout
-                  className="max-w-[520px]"
-                  description={<Tooltip content={upstreamSummary(record, t)} relationship="label">
-                    <Text block className="winui-focus-rect" tabIndex={0} truncate wrap={false}>{upstreamSummary(record, t)}</Text>
-                  </Tooltip>}
-                  truncate
-                >
-                  <Tooltip content={record.name} relationship="label">
-                    <Link
-                      {...pageNavigation}
-                      className={rowTitleClass}
-                      to={upstreamEditorPath(record)}
-                    >
-                      {record.name}
-                    </Link>
-                  </Tooltip>
-                </TableCellLayout>
-              </TableCell>
+              <TableCell className="overflow-hidden"><UpstreamNameCell record={record} /></TableCell>
               <TableCell>
                 <ModelStatus count={modelCounts.get(record.id)!} record={record} />
               </TableCell>
