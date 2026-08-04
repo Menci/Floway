@@ -1,9 +1,18 @@
 import { screen } from '@testing-library/react';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import DashboardMonitorUsage from '../../src/routes/dashboard-monitor-usage';
+import DashboardMonitorUsage, { clientLoader } from '../../src/routes/dashboard-monitor-usage';
+import { useAuthStore } from '../../src/stores/auth-store';
+import { stubLocalStorage } from '../local-storage-stub';
 import { renderInApp } from '../render';
+
+stubLocalStorage();
+
+afterEach(() => {
+  useAuthStore.getState().clear();
+  vi.unstubAllGlobals();
+});
 
 const loadedAt = Date.UTC(2026, 7, 5, 12);
 const loaderData = {
@@ -56,5 +65,29 @@ describe('usage dimension controls', () => {
     expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(1);
     expect(screen.getByRole('heading', { level: 2, name: 'By User' })).toBeTruthy();
     expect(screen.queryByRole('heading', { level: 2, name: 'By Model' })).toBeNull();
+  });
+
+  it('retains the upstream coordinate loaded from the dashboard response', async () => {
+    useAuthStore.getState().primeFromLogin({
+      token: 'admin-session',
+      user: { id: 1, username: 'admin', isAdmin: true, upstreamIds: null },
+    });
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost').pathname;
+      if (path === '/api/token-usage') return Response.json({
+        view: 'all-by-user',
+        records: [{ userId: 2, model: 'gpt-5', upstream: 'up-1', hour: '2026-08-05T11', requests: 1, metrics: [], cost: null }],
+        users: [{ id: 2, username: 'Alice' }],
+      });
+      if (path === '/api/search-usage') return Response.json({ view: 'all-by-user', records: [], users: [] });
+      if (path === '/api/models') return Response.json({ data: [] });
+      if (path === '/api/upstream-options') return Response.json([{ id: 'up-1', name: 'Copilot seat', kind: 'copilot', enabled: true, color: null, cachedModelCount: 1 }]);
+      throw new Error(`Unexpected request to ${path}`);
+    }));
+
+    const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/usage') } as never);
+
+    expect(data.usage?.records[0]).toMatchObject({ keyId: 'user-2', upstream: 'up-1' });
+    expect(data.upstreams).toEqual([{ id: 'up-1', name: 'Copilot seat' }]);
   });
 });
