@@ -10,6 +10,7 @@ import { revalidateOnPathnameChange } from './revalidation';
 import type { GlobalError } from '../api/client';
 import type { ControlPlaneModel } from '../api/types';
 import { SEARCH_PROVIDER_LABEL_KEYS } from '../components/search/provider';
+import { TelemetryDimensionControls, type TelemetryDimension } from '../components/telemetry/dimension-controls';
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
@@ -21,10 +22,11 @@ import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
 import { useRefreshOnChange } from '../components/ui/use-refresh';
 import { UsageChartSection } from '../components/usage/chart-section';
 import { loadUsagePageData } from '../components/usage/data';
+import { clearGroupedUsageFilter, filterUsageRecords, usageUpstreamValue } from '../components/usage/dimensions';
 import { formatMetricValue } from '../components/usage/format';
 import { buildSearchChart, buildTokenChart, dashboardBuckets, summarizeUsage } from '../components/usage/plot';
 import { SummaryMetrics } from '../components/usage/summary-metrics';
-import type { UsageMetric, UsageRange, UsageView } from '../components/usage/types';
+import type { UsageFilters, UsageGroupBy, UsageMetric, UsageRange, UsageView } from '../components/usage/types';
 import { parseUsageUrlState, serializeUsageUrlState, type UsageUrlState } from '../components/usage/url-state';
 import { fluentComponents } from '../fluent';
 import { formatCount } from '../lib/format-number';
@@ -40,9 +42,13 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   const state = parseUsageUrlState(new URL(request.url).searchParams);
   const view: UsageView = user.isAdmin ? state.view : 'self-by-key';
   const loadedAt = Date.now();
+  const identityState = view === state.view
+    ? { filters: state.filters, hiddenKeys: state.hiddenKeys }
+    : { filters: { ...state.filters, identity: [] }, hiddenKeys: [] };
   return {
     ...await loadUsagePageData(view, state.range, loadedAt),
     ...state,
+    ...identityState,
     loadedAt,
     view,
   };
@@ -62,10 +68,14 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const [usage, setUsage] = useState(loaderData.usage);
   const [search, setSearch] = useState(loaderData.search);
   const [models, setModels] = useState<ControlPlaneModel[] | null>(loaderData.models);
+  const [upstreams, setUpstreams] = useState(loaderData.upstreams);
   const [metric, setMetric] = useState<UsageMetric>(loaderData.metric);
+  const [groupBy, setGroupBy] = useState<UsageGroupBy>(loaderData.groupBy);
+  const [filters, setFilters] = useState<UsageFilters>(loaderData.filters);
   const [redactKeys, setRedactKeys] = useState(loaderData.redactKeys);
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(() => new Set(loaderData.hiddenKeys));
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(() => new Set(loaderData.hiddenModels));
+  const [hiddenUpstreams, setHiddenUpstreams] = useState<Set<string>>(() => new Set(loaderData.hiddenUpstreams));
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
   const query = useMemo(() => ({ range, view }), [range, view]);
 
@@ -82,6 +92,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     setUsage(next.usage);
     setSearch(next.search);
     setModels(next.models);
+    setUpstreams(next.upstreams);
     setLoadedRange(query.range);
     setLoadedAt(requestedAt);
     arrived();
@@ -93,8 +104,8 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   usePollWhileVisible(poll);
 
   const urlState = useMemo<UsageUrlState>(
-    () => ({ view, range, metric, redactKeys, hiddenKeys: [...hiddenKeys], hiddenModels: [...hiddenModels] }),
-    [hiddenKeys, hiddenModels, metric, range, redactKeys, view],
+    () => ({ view, range, groupBy, filters, metric, redactKeys, hiddenKeys: [...hiddenKeys], hiddenModels: [...hiddenModels], hiddenUpstreams: [...hiddenUpstreams] }),
+    [filters, groupBy, hiddenKeys, hiddenModels, hiddenUpstreams, metric, range, redactKeys, view],
   );
 
   useEffect(() => {
@@ -110,23 +121,24 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     [loadedAt, loadedRange, locale],
   );
 
+  const filteredRecords = useMemo(
+    () => usage && filterUsageRecords(usage.records, filters),
+    [filters, usage],
+  );
+
   const summary = useMemo(
-    () => usage && summarizeUsage(
-      usage.records.filter(
-        record =>
-          !hiddenKeys.has(record.keyId) && !hiddenModels.has(record.model),
-      ),
-    ),
-    [hiddenKeys, hiddenModels, usage],
+    () => filteredRecords && summarizeUsage(filteredRecords),
+    [filteredRecords],
   );
 
-  const byKeyChart = useMemo(
-    () => usage && models && buildTokenChart({
-      records: usage.records,
+  const tokenChart = useMemo(
+    () => usage && filteredRecords && models && upstreams && buildTokenChart({
+      records: filteredRecords,
       metadata: usage.keys,
       models,
-      groupKey: 'keyId',
-      hiddenOther: hiddenModels,
+      groupBy,
+      upstreams,
+      noUpstreamLabel: t('dashboard.usage.filters.noUpstream'),
       redactKeys,
       metric,
       range: loadedRange,
@@ -134,34 +146,14 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     }),
     [
       buckets,
-      hiddenModels,
+      filteredRecords,
+      groupBy,
       loadedRange,
       metric,
       models,
       redactKeys,
-      usage,
-    ],
-  );
-
-  const byModelChart = useMemo(
-    () => usage && models && buildTokenChart({
-      records: usage.records,
-      metadata: usage.keys,
-      models,
-      groupKey: 'model',
-      hiddenOther: hiddenKeys,
-      redactKeys,
-      metric,
-      range: loadedRange,
-      buckets,
-    }),
-    [
-      buckets,
-      hiddenKeys,
-      loadedRange,
-      metric,
-      models,
-      redactKeys,
+      t,
+      upstreams,
       usage,
     ],
   );
@@ -180,10 +172,65 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   // An unavailable half still gets its panel: "no search traffic" is not
   // something a failed fetch establishes.
   const showSearch = searchChart === null || searchChart.entries.length > 0;
-  const chartTitle =
-    view === 'all-by-user'
-      ? t('dashboard.usage.charts.byUser')
-      : t('dashboard.usage.charts.byKey');
+  const dimensions = useMemo<Array<TelemetryDimension<UsageGroupBy>> | null>(() => {
+    if (!usage || !upstreams) return null;
+    const identityNames = new Map(usage.keys.map(key => [key.id, key.name]));
+    const upstreamNames = new Map(upstreams.map(upstream => [usageUpstreamValue(upstream.id), upstream.name]));
+    const options = (values: string[], labels: ReadonlyMap<string, string>) => [...new Set(values)]
+      .sort((left, right) => (labels.get(left) ?? left).localeCompare(labels.get(right) ?? right))
+      .map(value => ({ value, label: labels.get(value) ?? value }));
+    const identityIsUser = view === 'all-by-user';
+    return [
+      {
+        key: 'identity',
+        groupLabel: t(identityIsUser ? 'dashboard.usage.charts.byUser' : 'dashboard.usage.charts.byKey'),
+        filterLabel: t(identityIsUser ? 'dashboard.usage.filters.user' : 'dashboard.usage.filters.key'),
+        allLabel: t(identityIsUser ? 'dashboard.usage.filters.allUsers' : 'dashboard.usage.filters.allKeys'),
+        options: options(usage.records.map(record => record.keyId), identityNames),
+      },
+      {
+        key: 'model',
+        groupLabel: t('dashboard.usage.charts.byModel'),
+        filterLabel: t('dashboard.usage.filters.model'),
+        allLabel: t('dashboard.usage.filters.allModels'),
+        options: options(usage.records.map(record => record.model), new Map()),
+      },
+      {
+        key: 'upstream',
+        groupLabel: t('dashboard.usage.charts.byUpstream'),
+        filterLabel: t('dashboard.usage.filters.upstream'),
+        allLabel: t('dashboard.usage.filters.allUpstreams'),
+        options: options(
+          usage.records.map(record => usageUpstreamValue(record.upstream)),
+          new Map([...upstreamNames, [usageUpstreamValue(null), t('dashboard.usage.filters.noUpstream')]]),
+        ),
+      },
+    ];
+  }, [t, upstreams, usage, view]);
+  const chartTitle = dimensions?.find(dimension => dimension.key === groupBy)?.groupLabel ?? '';
+  const hiddenSeries = groupBy === 'identity' ? hiddenKeys : groupBy === 'model' ? hiddenModels : hiddenUpstreams;
+  const setHiddenSeries = (next: Set<string>) => {
+    if (groupBy === 'identity') setHiddenKeys(next);
+    else if (groupBy === 'model') setHiddenModels(next);
+    else setHiddenUpstreams(next);
+  };
+  const changeGroupBy = (next: UsageGroupBy) => {
+    if (next === groupBy) return;
+    setGroupBy(next);
+    setFilters(current => clearGroupedUsageFilter(current, next));
+  };
+  const changeView = (next: UsageView) => {
+    if (next === view) return;
+    setView(next);
+    setFilters(current => ({ ...current, identity: [] }));
+    setHiddenKeys(new Set());
+  };
+  const setFilter = (key: UsageGroupBy, values: string[]) => setFilters(current => ({ ...current, [key]: values }));
+  const viewAddress = (next: UsageView) => addressOf({
+    view: next,
+    filters: { ...filters, identity: [] },
+    hiddenKeys: [],
+  });
   const redactLabel =
     view === 'all-by-user'
       ? t('dashboard.usage.actions.redactUsers')
@@ -205,6 +252,15 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
       {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error.message}</OutcomeMessageBar>}
 
       <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
+        {dimensions && <TelemetryDimensionControls
+          dimensions={dimensions}
+          filters={filters}
+          groupBy={groupBy}
+          groupByLabel={t('dashboard.usage.groupBy')}
+          onFilterChange={setFilter}
+          onGroupByChange={changeGroupBy}
+          selectedLabel={count => t('dashboard.usage.filters.selected', { count })}
+        />}
         <div className={`${HEADER_ROW_CLASS} gap-3`}>
           <div className="flex items-center flex-wrap gap-2.5 min-w-0">
             {canSwitchView && (
@@ -214,15 +270,15 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
                   {
                     value: 'all-by-user',
                     label: t('dashboard.usage.view.allByUser'),
-                    to: addressOf({ view: 'all-by-user' }),
+                    to: viewAddress('all-by-user'),
                   },
                   {
                     value: 'self-by-key',
                     label: t('dashboard.usage.view.myKeys'),
-                    to: addressOf({ view: 'self-by-key' }),
+                    to: viewAddress('self-by-key'),
                   },
                 ]}
-                onChange={value => setView(value as UsageView)}
+                onChange={value => changeView(value as UsageView)}
                 value={view}
               />
             )}
@@ -248,28 +304,18 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
           />
         </div>
 
-        {byKeyChart === null || byModelChart === null || summary === null ? (
+        {tokenChart === null || summary === null || dimensions === null ? (
           <EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine>
         ) : (
           <>
             <UsageChartSection
-              chart={byKeyChart}
+              chart={tokenChart}
               detailsLabel={chartTitle}
-              hidden={hiddenKeys}
-              onHiddenChange={setHiddenKeys}
+              hidden={hiddenSeries}
+              onHiddenChange={setHiddenSeries}
               title={chartTitle}
               valueFormatter={value => formatMetricValue(value, metric, locale)}
             />
-
-            <UsageChartSection
-              chart={byModelChart}
-              detailsLabel={t('dashboard.usage.charts.byModel')}
-              hidden={hiddenModels}
-              onHiddenChange={setHiddenModels}
-              title={t('dashboard.usage.charts.byModel')}
-              valueFormatter={value => formatMetricValue(value, metric, locale)}
-            />
-
             <SummaryMetrics metric={metric} onMetricChange={setMetric} summary={summary} />
           </>
         )}

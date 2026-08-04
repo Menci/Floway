@@ -915,6 +915,20 @@ const en = {
       usage: {
         empty: 'No usage records in this range',
         callout: { requests: 'Req', cost: 'Cost', total: 'Total', cached: 'Cached', cachedRate: 'Cached%', prefill: 'Prefill', output: 'Output', hitRate: 'Hit%' },
+        groupBy: 'Group by',
+        filters: {
+          key: 'API Key',
+          user: 'User',
+          model: 'Model',
+          upstream: 'Upstream',
+          allKeys: 'All API keys',
+          allUsers: 'All users',
+          allModels: 'All models',
+          allUpstreams: 'All upstreams',
+          noUpstream: 'No upstream',
+          selected_one: '{{count, number}} selected',
+          selected_other: '{{count, number}} selected',
+        },
         view: {
           label: 'Usage view',
           allByUser: 'All by user',
@@ -935,6 +949,7 @@ const en = {
           byUser: 'By User',
           byKey: 'By API Key',
           byModel: 'By Model',
+          byUpstream: 'By Upstream',
           search: 'Search Usage',
           searchWithProvider: 'Search Usage ({{provider}})',
         },

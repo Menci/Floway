@@ -872,6 +872,19 @@ const zhHansCN = {
       usage: {
         empty: '此时间范围内没有使用记录',
         callout: { requests: '请求', cost: '费用', total: '总量', cached: '缓存', cachedRate: '缓存率', prefill: '预填充', output: '输出', hitRate: '命中率' },
+        groupBy: '分组依据',
+        filters: {
+          key: 'API 密钥',
+          user: '用户',
+          model: '模型',
+          upstream: '上游',
+          allKeys: '全部 API 密钥',
+          allUsers: '全部用户',
+          allModels: '全部模型',
+          allUpstreams: '全部上游',
+          noUpstream: '无上游',
+          selected_other: '已选择 {{count, number}} 项',
+        },
         view: {
           label: '使用量视图',
           allByUser: '全部用户',
@@ -892,6 +905,7 @@ const zhHansCN = {
           byUser: '按用户',
           byKey: '按 API 密钥',
           byModel: '按模型',
+          byUpstream: '按上游',
           search: '搜索使用量',
           searchWithProvider: '搜索使用量（{{provider}}）',
         },
