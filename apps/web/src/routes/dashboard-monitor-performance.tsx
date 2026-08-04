@@ -233,10 +233,10 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     { key: 'userId', groupLabel: t('dashboard.performance.groupBy.userId'), filterLabel: t('dashboard.performance.filters.userId'), allLabel: t('dashboard.performance.filters.all.userId'), options: overview?.dimensionValues.userIds.map(value => ({ value: String(value), label: labels?.users.get(String(value)) ?? `user ${value}` })) ?? [] },
     { key: 'keyId', groupLabel: t('dashboard.performance.groupBy.keyId'), filterLabel: t('dashboard.performance.filters.keyId'), allLabel: t('dashboard.performance.filters.all.keyId'), options: overview?.dimensionValues.keyIds.map(value => ({ value, label: labels?.keys.get(value) ?? value })) ?? [] },
   ];
-  const availableDimensions = dimensions.filter(dimension =>
+  const availableDimensions = dimensions.filter(dimension => (
     (dimension.key !== 'runtimeLocation' || regionAvailable !== false)
-    && (dimension.key !== 'userId' || view === 'all-by-user'),
-  );
+    && (dimension.key !== 'userId' || view === 'all-by-user')
+  ));
   const filterDimensions = availableDimensions.filter(dimension => (
     !((dimension.key === 'userId' || dimension.key === 'keyId') && (groupBy === 'userId' || groupBy === 'keyId'))
   ));
