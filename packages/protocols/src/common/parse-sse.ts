@@ -1,5 +1,6 @@
-import { type SseFrame, sseFrame } from './sse.ts';
 import { createParser } from 'eventsource-parser';
+
+import { type SseFrame, sseFrame } from './sse.ts';
 
 interface ParseSSEStreamOptions {
   signal?: AbortSignal;
