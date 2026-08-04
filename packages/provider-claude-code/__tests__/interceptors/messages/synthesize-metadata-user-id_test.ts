@@ -1,4 +1,5 @@
 import { test } from 'vitest';
+import { parse, validate, version } from 'uuid';
 
 import { parseMetadataUserID } from '../../../src/detection.ts';
 import { hoistUserSystemToMessages } from '../../../src/interceptors/messages/hoist-user-system-to-messages.ts';
@@ -33,8 +34,10 @@ test('fills metadata.user_id with the new JSON shape when absent', async () => {
   if (!parsed?.isNewFormat) throw new Error(`expected new-format user_id, got ${userId}`);
   assertEquals(parsed.accountUuid, '');
   assertEquals(parsed.deviceId.length, 64);
-  // session_id is a UUIDv4 shape: 8-4-4-4-12 hex.
-  assertEquals(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(parsed.sessionId), true);
+  assertEquals(parsed.sessionId, '80fb0a05-3393-495f-99f1-686f0c95e983');
+  assertEquals(validate(parsed.sessionId), true);
+  assertEquals(version(parsed.sessionId), 4);
+  assertEquals(parse(parsed.sessionId)[8] & 0xc0, 0x80);
 });
 
 test('device_id is stable per upstream id', async () => {
