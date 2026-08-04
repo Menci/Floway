@@ -1089,7 +1089,7 @@ const zhHansCN = {
           shortId: 'Short ID（可选）',
           shortIdPlaceholder: '十六进制，最多 16 位',
           timeout: '拨号超时',
-          timeoutPlaceholder: '{{seconds}}（默认）',
+          timeoutPlaceholder: '{{seconds, number}}（默认）',
           timeoutHint: '单位为秒。留空使用默认 10 秒超时。',
         },
         validation: {
