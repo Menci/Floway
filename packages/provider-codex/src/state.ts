@@ -12,7 +12,10 @@ export type CodexAccountCredentialHealth = 'active' | 'session_terminated' | 're
 // (and its expiry) belong in state alongside it.
 export interface CodexAccessTokenEntry {
   token: string;
-  expiresAt: number;       // unix ms
+  // Unix ms, or null when the import source did not state the bearer's expiry
+  // and the token itself is opaque. A null expiry is not "expired" — it means
+  // the upstream's rejection is the only signal we have.
+  expiresAt: number | null;
   refreshedAt: string;     // ISO 8601
 }
 
@@ -29,10 +32,14 @@ export type CodexQuotaSnapshotEntryMap = Record<string, CodexQuotaSnapshotEntry>
 // One account's autonomous credential state, joined back to its identity in
 // CodexUpstreamConfig.accounts via `chatgptAccountId`.
 export interface CodexAccountCredential {
-  chatgptAccountId: string;
+  // Null when no import source could name the account. Under the one-account-
+  // per-upstream invariant that is still a stable slot: the config carries the
+  // same null and the two join on it like any other value.
+  chatgptAccountId: string | null;
   // OpenAI rotates refresh_token on every /oauth/token call. Stored in D1
-  // (not KV) so KV eviction never forces operator re-import.
-  refresh_token: string;
+  // (not KV) so KV eviction never forces operator re-import. Null marks an
+  // access-only credential that cannot be renewed at all.
+  refresh_token: string | null;
   state: CodexAccountCredentialHealth;
   state_message?: string;
   // ISO 8601, written on every state transition (initial import, rotation,
@@ -59,7 +66,7 @@ export interface CodexUpstreamState {
   accounts: CodexAccountCredential[];
 }
 
-export const findCodexAccountIndex = (state: CodexUpstreamState, accountId: string): number =>
+export const findCodexAccountIndex = (state: CodexUpstreamState, accountId: string | null): number =>
   state.accounts.findIndex(account => account.chatgptAccountId === accountId);
 
 export const replaceCodexAccount = (
@@ -110,8 +117,8 @@ const assertCodexAccessTokenEntry = (value: unknown, where: string): void => {
   if (typeof obj.token !== 'string' || obj.token === '') {
     throw new TypeError(`${where}.token must be a non-empty string`);
   }
-  if (typeof obj.expiresAt !== 'number' || !Number.isFinite(obj.expiresAt)) {
-    throw new TypeError(`${where}.expiresAt must be a finite number`);
+  if (obj.expiresAt !== null && (typeof obj.expiresAt !== 'number' || !Number.isFinite(obj.expiresAt))) {
+    throw new TypeError(`${where}.expiresAt must be a finite number or null`);
   }
   if (typeof obj.refreshedAt !== 'string' || obj.refreshedAt === '') {
     throw new TypeError(`${where}.refreshedAt must be a non-empty string`);
@@ -165,11 +172,11 @@ const assertCodexAccountCredential = (value: unknown, where: string): void => {
       throw new TypeError(`${where} has unexpected key '${key}'`);
     }
   }
-  if (typeof obj.chatgptAccountId !== 'string' || obj.chatgptAccountId === '') {
-    throw new TypeError(`${where}.chatgptAccountId must be a non-empty string`);
+  if (obj.chatgptAccountId !== null && (typeof obj.chatgptAccountId !== 'string' || obj.chatgptAccountId === '')) {
+    throw new TypeError(`${where}.chatgptAccountId must be a non-empty string or null`);
   }
-  if (typeof obj.refresh_token !== 'string' || obj.refresh_token === '') {
-    throw new TypeError(`${where}.refresh_token must be a non-empty string`);
+  if (obj.refresh_token !== null && (typeof obj.refresh_token !== 'string' || obj.refresh_token === '')) {
+    throw new TypeError(`${where}.refresh_token must be a non-empty string or null`);
   }
   if (obj.state !== 'active' && obj.state !== 'session_terminated' && obj.state !== 'refresh_failed') {
     throw new TypeError(`${where}.state must be one of 'active' | 'session_terminated' | 'refresh_failed', got ${String(obj.state)}`);
