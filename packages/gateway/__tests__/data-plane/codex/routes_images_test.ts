@@ -20,7 +20,7 @@ const saveAzureImages = async (repo: InMemoryRepo): Promise<void> => {
     proxyFallbackList: MOCKED_FETCH_EGRESS,
     modelPrefix: null,
     modelsCache: null,
-    color: null,
+    hue: 210,
     config: {
       endpoint: 'https://example.openai.azure.com/openai/v1',
       apiKey: 'azkey',

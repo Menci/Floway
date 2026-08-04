@@ -33,7 +33,7 @@ const azureUpstream = (id: string, sortOrder: number, modelIds: string[], endpoi
   proxyFallbackList: [],
   modelPrefix: null,
   modelsCache: null,
-  color: null,
+  hue: 210,
 });
 
 describe('chatTargetPicker', () => {

@@ -26,7 +26,7 @@ const registerAudioModel = async (
     proxyFallbackList: MOCKED_FETCH_EGRESS,
     modelPrefix: null,
     modelsCache: null,
-    color: null,
+    hue: 210,
     config: {
       baseUrl: 'https://audio.example.com',
       authStyle: 'bearer',

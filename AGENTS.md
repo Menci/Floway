@@ -349,9 +349,11 @@ The dashboard imports Fluent components through `apps/web/src/fluent.ts` and
 form controls through `components/ui/fluent-form-controls.tsx`, which applies
 the shared minimum-width reset. One Fluent `Field` wraps exactly one control; a
 composite editor uses `role="group"` with `aria-labelledby`. Shared surfaces and
-type use the `fui-*` UnoCSS tokens; provider identity colors come from typed
-upstream color metadata and the owning Fluent components. Generic primitives
-live in `components/ui/`, and ESLint keeps them from importing Floway domain
+type use the `fui-*` UnoCSS tokens. An upstream's identity is one hue the
+operator picks, stored as an OKLCH hue angle; `lib/hue.ts` derives the badge's
+light and dark tone from it at a fixed lightness and chroma, so every hue reads
+with the same weight and none has to be gamut-mapped. Generic primitives live
+in `components/ui/`, and ESLint keeps them from importing Floway domain
 modules.
 
 `apps/web/src/winui/` restyles Fluent 2 for Web onto WinUI 3, so the dashboard

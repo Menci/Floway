@@ -52,6 +52,7 @@ const copilotConfig = {
 const createBody = (overrides: Record<string, unknown> = {}) => ({
   kind: 'custom',
   name: 'Test custom upstream',
+  hue: 210,
   config: customConfig,
   flag_overrides: {},
   proxy_fallback_list: MOCKED_FETCH_EGRESS,
@@ -180,6 +181,7 @@ test('POST /api/upstreams rejects a codex create with null state', async () => {
   const resp = await requestApp('/api/upstreams', authed(adminSession, {
     kind: 'codex',
     name: 'Codex',
+    hue: 210,
     config: patch.config,
     state: null,
     flag_overrides: {},
@@ -205,6 +207,7 @@ test('POST /api/upstreams rejects a claude-code create with null state', async (
   const resp = await requestApp('/api/upstreams', authed(adminSession, {
     kind: 'claude-code',
     name: 'Claude Code',
+    hue: 210,
     config: patch.config,
     state: null,
     flag_overrides: {},
@@ -312,7 +315,7 @@ test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () =>
     proxyFallbackList: [],
     modelPrefix: null,
     modelsCache: null,
-    color: null,
+    hue: 210,
     config: {
       endpoint: 'https://example.openai.azure.com/openai/v1',
       apiKey: 'az-secret',
@@ -359,7 +362,7 @@ test('PATCH /api/upstreams round-trips a flat per-model flagOverrides map', asyn
     proxyFallbackList: [],
     modelPrefix: null,
     modelsCache: null,
-    color: null,
+    hue: 210,
     config: {
       endpoint: 'https://example.openai.azure.com/openai/v1',
       apiKey: 'az-secret',
@@ -404,7 +407,7 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
     proxyFallbackList: [],
     modelPrefix: null,
     modelsCache: null,
-    color: null,
+    hue: 210,
     config: { baseUrl: 'https://a.example.com', authStyle: 'bearer', apiKey: 'x', endpoints: { chatCompletions: {} } },
     state: null,
   };
@@ -453,7 +456,7 @@ test('GET /api/upstream-options returns the minimal picker shape to admin and no
     proxyFallbackList: [],
     modelPrefix: null,
     modelsCache: null,
-    color: null,
+    hue: 210,
     config: { baseUrl: 'https://custom.example.com', authStyle: 'bearer', apiKey: 'sk-secret', endpoints: { chatCompletions: {} } },
     state: null,
   });
@@ -469,8 +472,8 @@ test('GET /api/upstream-options returns the minimal picker shape to admin and no
   });
 
   const expected = [
-    { id: 'up_copilot', name: 'GitHub Copilot (tester)', kind: 'copilot', enabled: true, color: null, cachedModelCount: null },
-    { id: 'up_disabled_custom', name: 'Disabled Custom', kind: 'custom', enabled: false, color: null, cachedModelCount: 2 },
+    { id: 'up_copilot', name: 'GitHub Copilot (tester)', kind: 'copilot', enabled: true, hue: 210, cachedModelCount: null },
+    { id: 'up_disabled_custom', name: 'Disabled Custom', kind: 'custom', enabled: false, hue: 210, cachedModelCount: 2 },
   ];
 
   const adminResp = await requestApp('/api/upstream-options', { headers: { 'x-floway-session': adminSession } });
@@ -483,7 +486,7 @@ test('GET /api/upstream-options returns the minimal picker shape to admin and no
   assertEquals(userBody, expected);
   // No secret-bearing or operator-only fields leak through this endpoint.
   for (const row of userBody) {
-    assertEquals(Object.keys(row).sort(), ['cachedModelCount', 'color', 'enabled', 'id', 'kind', 'name']);
+    assertEquals(Object.keys(row).sort(), ['cachedModelCount', 'enabled', 'hue', 'id', 'kind', 'name']);
   }
 });
 
@@ -636,7 +639,7 @@ test('POST /api/upstreams/list-models with a persisted id forces a fresh upstrea
     proxyFallbackList: MOCKED_FETCH_EGRESS,
     modelPrefix: null,
     modelsCache: null,
-    color: null,
+    hue: 210,
     config: { ...customConfig, apiKey: 'sk-refresh' },
     state: null,
   };
@@ -821,6 +824,7 @@ const createCodexUpstreamViaExchange = async (adminSession: string, overrides: R
   const create = await requestApp('/api/upstreams', authed(adminSession, {
     kind: 'codex',
     name: 'ChatGPT Codex',
+    hue: 210,
     config: patch.config,
     state: patch.state,
     proxy_fallback_list: MOCKED_FETCH_EGRESS,
@@ -1060,6 +1064,7 @@ const createClaudeCodeUpstreamViaExchange = async (
   const create = await requestApp('/api/upstreams', authed(adminSession, {
     kind: 'claude-code',
     name: 'Claude Code',
+    hue: 210,
     config: patch.config,
     state: patch.state,
     proxy_fallback_list: MOCKED_FETCH_EGRESS,
@@ -1614,6 +1619,7 @@ const createClaudeCodeSetupTokenUpstreamViaExchange = async (
   const create = await requestApp('/api/upstreams', authed(adminSession, {
     kind: 'claude-code',
     name: 'Claude Code',
+    hue: 210,
     config: patch.config,
     state: patch.state,
     proxy_fallback_list: MOCKED_FETCH_EGRESS,
@@ -2120,7 +2126,7 @@ test('spec invariant (3): POST /api/upstreams/list-models ignores record.name mu
     proxyFallbackList: [],
     modelPrefix: null,
     modelsCache: null,
-    color: null,
+    hue: 210,
     config: {
       endpoint: 'https://invariant.openai.azure.com',
       apiKey: 'sk-invariant',

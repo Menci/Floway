@@ -1,6 +1,7 @@
 import { withRoleCompatibilityApplied } from './apply-role-compatibility.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
 import { withUsageStreamOptionsIncluded } from './include-usage-stream-options.ts';
+import { withExclusiveCachedTokensNormalized } from './normalize-exclusive-cached-tokens.ts';
 import { withUsageNormalized } from './normalize-usage.ts';
 import { withPromptCacheKeyStripped } from './strip-prompt-cache-key.ts';
 import type { ChatCompletionsInterceptor } from './types.ts';
@@ -30,6 +31,14 @@ import { withVendorQwenChatCompletionsNormalize } from './vendor-qwen-normalize.
 //     an unknown argument (e.g. Azure DeepSeek). Runs before vendor
 //     normalizers so vendor-specific translation sees the already-stripped
 //     canonical payload.
+//   - withExclusiveCachedTokensNormalized: unconditional on a Chat
+//     Completions target. Folds the cache buckets back into `prompt_tokens`
+//     whenever `total_tokens` witnesses that the upstream reports them
+//     alongside it, and consults `usage-exclusive-cached-tokens` for the
+//     responses whose totals witness nothing — so the flag is a declaration
+//     input rather than a gate. Registered before the vendor normalizers so
+//     that on the inbound path it runs after them, on usage whose cache fields
+//     already carry OpenAI's names.
 //   - withVendor*ChatCompletionsNormalize: gated by `vendor-<X>`. Registered
 //     LAST so that on the outbound path each gets the final say on the wire
 //     body and on the inbound path each gets the first say on the upstream
@@ -43,6 +52,7 @@ export const chatCompletionsInterceptors: readonly ChatCompletionsInterceptor[] 
   withReasoningDisabledOnForcedToolChoice,
   withRoleCompatibilityApplied,
   withPromptCacheKeyStripped,
+  withExclusiveCachedTokensNormalized,
   withVendorDeepSeekChatCompletionsNormalize,
   withVendorQwenChatCompletionsNormalize,
   withVendorKimiChatCompletionsNormalize,

@@ -46,7 +46,7 @@ const setupRepo = async (): Promise<InMemoryRepo> => {
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
-    color: null,
+    hue: 210,
   });
   return repo;
 };

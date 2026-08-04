@@ -20,7 +20,7 @@ const commonFields = {
   disabled_public_model_ids: [],
   proxy_fallback_list: [],
   model_prefix: null,
-  color: null,
+  hue: 210,
   modelsCache: { fetchedAt: null, lastError: null, modelCount: null },
 } satisfies Omit<UpstreamRecord, 'id' | 'kind' | 'config' | 'state'>;
 

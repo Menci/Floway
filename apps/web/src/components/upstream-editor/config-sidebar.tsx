@@ -16,7 +16,7 @@ import { ScrollArea } from '../ui/scroll-area';
 import { StatusBadge } from '../ui/status-badge';
 import { TagCombobox } from '../ui/tag-combobox';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
-import { UpstreamColorPicker } from '../upstreams/color-picker';
+import { HuePicker } from '../upstreams/hue-picker';
 import type { UpstreamModelConfig } from '@floway-dev/provider';
 import { MODEL_PREFIX_MAX_LENGTH } from '@floway-dev/provider/model-prefix';
 
@@ -32,7 +32,6 @@ const COMMON_COLO_LOCATIONS = [
 export function UpstreamConfigSidebar({
   catalogAvailable,
   discovered,
-  onColorValidityChange,
   onPatch,
   onRefreshModels,
   proxies,
@@ -41,7 +40,6 @@ export function UpstreamConfigSidebar({
 }: {
   catalogAvailable: boolean;
   discovered: UpstreamModelConfig[];
-  onColorValidityChange: (invalid: boolean) => void;
   onPatch: (patch: { config?: unknown; state?: unknown }, persisted?: boolean) => void;
   onRefreshModels: () => void;
   proxies: ProxyRecord[];
@@ -76,12 +74,11 @@ export function UpstreamConfigSidebar({
           />
         </EditorSection>
         <EditorSection
-          error={errors.color?.message ? t(errors.color.message) : undefined}
           inline
-          title={t('dashboard.upstreamEditor.sections.color')}
-          description={t('dashboard.upstreamEditor.color.description')}
+          title={t('dashboard.upstreamEditor.sections.hue')}
+          description={t('dashboard.upstreamEditor.hue.description')}
         >
-          <UpstreamColorEditor kind={record.kind} onValidityChange={onColorValidityChange} />
+          <UpstreamHueEditor kind={record.kind} />
         </EditorSection>
         <EditorSection
           error={errors.config?.message ? t(errors.config.message) : undefined}
@@ -111,16 +108,11 @@ export function UpstreamConfigSidebar({
   </ScrollArea>;
 }
 
-function UpstreamColorEditor({ kind, onValidityChange }: { kind: UpstreamRecord['kind']; onValidityChange: (invalid: boolean) => void }) {
+function UpstreamHueEditor({ kind }: { kind: UpstreamRecord['kind'] }) {
   const { control } = useFormContext<UpstreamEditorValues>();
-  return <Controller control={control} name="color" render={({ field }) => <div className="grid gap-3">
-    <UpstreamColorPicker
-      kind={kind}
-      value={field.value}
-      onChange={field.onChange}
-      onValidityChange={onValidityChange}
-    />
-  </div>} />;
+  return <Controller control={control} name="hue" render={({ field }) => (
+    <HuePicker kind={kind} hue={field.value} onChange={field.onChange} />
+  )} />;
 }
 
 // The sorted union of every model id this upstream can disable, which

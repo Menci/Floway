@@ -52,7 +52,6 @@ const zhHansCN = {
       codex: 'Codex',
       'claude-code': 'Claude Code',
       ollama: 'Ollama',
-      unknown: '未知',
     },
     dashboard: {
       title: 'Dashboard',
@@ -276,7 +275,6 @@ const zhHansCN = {
         models: '模型',
         modelCount_other: '{{count, number}} 个模型',
         modelCountUnknown: '数量不可用',
-        unknownUpstream: '未知（{{id}}）',
         upstreamDisabled: '上游已停用',
         validation: '至少选择一个上游，或关闭限制。',
       },
@@ -488,22 +486,15 @@ const zhHansCN = {
         },
         sections: {
           connection: '连接与认证',
-          color: '徽章颜色',
+          hue: '徽章颜色',
           proxy: '代理路由',
           apiPaths: 'API 路径',
           prefix: '模型名称前缀',
           disabledModels: '禁用的模型',
         },
-        color: {
+        hue: {
           description: '选择在控制台中区分此上游的颜色。',
-          inherit: '提供商默认值',
-          custom: '自定义十六进制',
-          'label': '徽章颜色',
-          'hue': '色相',
-          'saturation': '饱和度',
-          'brightness': '明度',
-          'invalidHex': '请输入 #RRGGBB',
-          preset: { amber: '琥珀', emerald: '翠绿', cyan: '青色', violet: '紫罗兰', rose: '玫红', orange: '橙色' },
+          label: '徽章颜色',
         },
         fields: {
           name: '上游名称',
@@ -613,6 +604,11 @@ const zhHansCN = {
               label: '去除 Prompt Cache Key',
               description:
                   'OpenAI API 支持通过 `prompt_cache_key` 标识可复用的提示词前缀，但部分上游并不支持，可能导致拒绝请求（如 Azure 提供的 DeepSeek 模型）。\n开启此开关，以在请求上游前移除顶层的 `prompt_cache_key` 字段。',
+            },
+            'usage-exclusive-cached-tokens': {
+              label: '缓存 Token 不计入输入 Token',
+              description:
+                  'OpenAI API 将缓存命中的 Token 计入输入 Token 总数，但部分上游会将两者分开上报，使输入 Token 仅表示未命中缓存的部分。这是 Anthropic 的约定。\n开启此开关，以将缓存读取与缓存写入的 Token 数加回输入 Token 总数，使用量与费用得以正确记录。\n当上游上报的 `total_tokens` 足以判定采用的是哪一种约定时，Floway 会据此自行处理，无需开启此开关。当上游的 `total_tokens` 无法区分两种约定时，才需要开启。',
             },
           },
         },
@@ -815,7 +811,6 @@ const zhHansCN = {
           name: '上游名称不能为空。',
           prefix: '至少保留一种可路由的模型前缀形式。',
           models: '一个或多个模型配置无效。',
-          color: '请输入有效的自定义颜色后再保存。',
           copilot: '请先完成 GitHub 设备授权。',
           credential: '请先导入凭据。',
         },

@@ -30,7 +30,7 @@ const upstream: UpstreamRecord = {
   proxyFallbackList: [],
   modelPrefix: null,
   modelsCache: null,
-  color: null,
+  hue: 210,
   config: {
     githubToken: 'ghu_test',
     user: { id: 1, login: 'tester', name: null, avatar_url: 'https://example.com/avatar.png' },

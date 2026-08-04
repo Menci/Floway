@@ -33,13 +33,11 @@ export type {
   InternalModel,
   ProviderModel,
   ProxyFallbackEntry,
-  UpstreamColor,
-  UpstreamColorPreset,
   UpstreamModelsCache,
   UpstreamProviderKind,
   UpstreamRecord,
 } from './model.ts';
-export { ALL_PROVIDER_KINDS, assertUpstreamProviderKind, normalizeUpstreamColor, UPSTREAM_COLOR_HEX_REGEX, UPSTREAM_COLOR_PRESETS } from './model.ts';
+export { ALL_PROVIDER_KINDS, assertUpstreamProviderKind, normalizeUpstreamHue, UPSTREAM_HUE_DEGREES } from './model.ts';
 export type { PerformanceOperation, PerformanceTelemetryContext, TelemetryModelIdentity } from './telemetry.ts';
 export { parsePerformanceOperation, PERFORMANCE_OPERATIONS } from './telemetry.ts';
 

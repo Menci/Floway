@@ -17,7 +17,7 @@ const upstreamRecord = () => ({
   proxyFallbackList: [],
   modelPrefix: null,
   modelsCache: null,
-  color: null,
+  hue: 210,
   config: {
     baseUrl: 'https://custom.example.com',
     authStyle: 'bearer',

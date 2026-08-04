@@ -1,4 +1,3 @@
-import initSqlJs from 'sql.js';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { initDumpStore } from '../../src/dump/registry.ts';
@@ -10,7 +9,7 @@ import { SqlRepo } from '../../src/repo/sql.ts';
 import type { ApiKey, StoredResponsesItem } from '../../src/repo/types.ts';
 import { sweepExpirations } from '../../src/scheduled/expiration-sweeps.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
-import { createSqliteTestDb, migrationSqlByFilename } from '../repo/test-sqlite.ts';
+import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename } from '../repo/test-sqlite.ts';
 import { initFileStore, MemoryFileStore } from '@floway-dev/platform';
 
 afterEach(() => vi.useRealTimers());
@@ -185,8 +184,7 @@ test('partial completion yields even when a concurrent Responses row bumps the r
 });
 
 test('migration 0066 bounds existing-row discovery and tracks older dump files on deletion', async () => {
-  const SQL = await initSqlJs();
-  const db = new SQL.Database();
+  const db = await createSqlJsDatabase();
   try {
     for (const [filename, sql] of migrationSqlByFilename) {
       if (filename === '0066_expiration_sweeps.sql') break;

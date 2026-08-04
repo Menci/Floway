@@ -4,7 +4,6 @@ import type {
   FlagOverrides,
   ModelPrefixConfig,
   ProxyFallbackEntry,
-  UpstreamColor,
   UpstreamModelConfig,
   UpstreamProviderKind,
 } from '@floway-dev/provider';
@@ -134,7 +133,7 @@ interface SerializedUpstreamRecordBase {
   disabled_public_model_ids: string[];
   proxy_fallback_list: ProxyFallbackEntry[];
   model_prefix: ModelPrefixConfig | null;
-  color: UpstreamColor | null;
+  hue: number;
 }
 
 type RedactedCustomConfig = CustomConfigFields & { apiKeySet: boolean };
@@ -173,13 +172,17 @@ export type FullSerializedUpstreamRecord =
   | (SerializedUpstreamRecordBase & { kind: 'claude-code'; config: StoredClaudeCodeUpstreamConfig; state: StoredClaudeCodeUpstreamState })
   | (SerializedUpstreamRecordBase & { kind: 'ollama'; config: StoredOllamaUpstreamConfig; state: null });
 
+// A blueprint is an unsaved upstream, so it carries no hue: the dashboard
+// picks one distinct from the hues already in use and sends it on create.
+type BlueprintUpstreamRecordBase = Omit<SerializedUpstreamRecordBase, 'hue'>;
+
 export type BlueprintSerializedUpstreamRecord =
-  | (SerializedUpstreamRecordBase & { kind: 'custom'; config: StoredCustomUpstreamConfig; state: null })
-  | (SerializedUpstreamRecordBase & { kind: 'azure'; config: StoredAzureUpstreamConfig; state: null })
-  | (SerializedUpstreamRecordBase & { kind: 'copilot'; config: StoredCopilotUpstreamConfig; state: null })
-  | (SerializedUpstreamRecordBase & { kind: 'codex'; config: { accounts: CodexAccountIdentity[] }; state: { accounts: CodexAccountCredential[] } })
-  | (SerializedUpstreamRecordBase & { kind: 'claude-code'; config: { accounts: ClaudeCodeAccountIdentity[] }; state: { accounts: ClaudeCodeAccountCredential[] } })
-  | (SerializedUpstreamRecordBase & { kind: 'ollama'; config: StoredOllamaUpstreamConfig; state: null });
+  | (BlueprintUpstreamRecordBase & { kind: 'custom'; config: StoredCustomUpstreamConfig; state: null })
+  | (BlueprintUpstreamRecordBase & { kind: 'azure'; config: StoredAzureUpstreamConfig; state: null })
+  | (BlueprintUpstreamRecordBase & { kind: 'copilot'; config: StoredCopilotUpstreamConfig; state: null })
+  | (BlueprintUpstreamRecordBase & { kind: 'codex'; config: { accounts: CodexAccountIdentity[] }; state: { accounts: CodexAccountCredential[] } })
+  | (BlueprintUpstreamRecordBase & { kind: 'claude-code'; config: { accounts: ClaudeCodeAccountIdentity[] }; state: { accounts: ClaudeCodeAccountCredential[] } })
+  | (BlueprintUpstreamRecordBase & { kind: 'ollama'; config: StoredOllamaUpstreamConfig; state: null });
 
 export interface ModelsCacheStatus {
   fetchedAt: number | null;

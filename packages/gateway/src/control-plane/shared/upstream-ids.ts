@@ -34,13 +34,28 @@ export const unknownUpstreamIdsError = (ids: readonly string[] | null, known: Re
 };
 
 // Deleting an upstream leaves its id behind in every user and api-key cap that
-// named it — nothing cascades, and the data plane treats such an id as inert.
-// Reads project a stored cap through the live catalog so the dashboard never
-// renders a dangling entry and never re-submits one into the write path, which
-// rejects unknown ids. A cap whose ids are all gone projects to an empty list:
-// that is what it grants now. Widening it to null would read as "inherit" and
-// hand the principal the entire catalog.
-export const pruneDeletedUpstreamIds = (
+// named it, and narrowing a user's cap leaves it behind in that user's keys —
+// nothing cascades either way, and the data plane treats both as inert: it
+// routes on the intersection of a key's cap with its user's. Reads project a
+// stored cap through what the principal can actually reach, so the dashboard
+// never renders an entry it cannot resolve and never re-submits one into the
+// write path, which rejects both. A cap whose ids are all gone projects to an
+// empty list: that is what it grants now. Widening it to null would read as
+// "inherit" and hand the principal the entire catalog.
+export const pruneUnreachableUpstreamIds = (
   ids: readonly string[] | null,
+  reachable: ReadonlySet<string>,
+): string[] | null => ids === null ? null : ids.filter(id => reachable.has(id));
+
+// What a key of this user's can grant: the live catalog, capped by the user's
+// own grant when they have one. `loadKnownUpstreamIds` stays the set the write
+// path validates against, so an id that exists but is out of the user's reach
+// still earns its own error rather than "Unknown upstream(s)".
+export const reachableUpstreamIds = (
   known: ReadonlySet<string>,
-): string[] | null => ids === null ? null : ids.filter(id => known.has(id));
+  userCap: readonly string[] | null,
+): ReadonlySet<string> => {
+  if (userCap === null) return known;
+  const cap = new Set(userCap);
+  return new Set([...known].filter(id => cap.has(id)));
+};

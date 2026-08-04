@@ -78,6 +78,93 @@ const firstNumber = (candidates: readonly unknown[]): number => {
   return 0;
 };
 
+// Which convention the upstream's own `total_tokens` corroborates, or null
+// when the totals cannot separate the two.
+//
+// OpenAI counts the cache buckets inside the input total; Anthropic counts
+// them alongside it, and a gateway projecting an Anthropic-shaped upstream
+// onto an OpenAI-shaped wire can carry that convention across. `total_tokens`
+// is the one field that witnesses which one the rest of the payload was
+// computed under, because only one of the two sums can reach it: with a
+// non-zero cache count the inclusive sum and the exclusive sum differ by
+// exactly that count, so at most one matches. With no cache count the two
+// conventions coincide and there is nothing to decide.
+//
+// This is a statement about one response, not a classification of the
+// upstream. That is enough, because the two conventions agree on every
+// response where the verdict is unavailable.
+export type CachedTokenConvention = 'inclusive' | 'exclusive';
+
+export const cachedTokenConventionFromTotals = (counts: {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly totalTokens: number | undefined;
+  readonly cacheRead: number;
+  readonly cacheWrite: number;
+}): CachedTokenConvention | null => {
+  const { inputTokens, outputTokens, totalTokens, cacheRead, cacheWrite } = counts;
+  const cached = cacheRead + cacheWrite;
+  if (totalTokens === undefined || cached === 0) return null;
+  const inclusive = inputTokens + outputTokens === totalTokens;
+  const exclusive = inputTokens + cached + outputTokens === totalTokens;
+  // Neither sum reaching the total means the upstream computes it on some
+  // third basis and witnesses nothing.
+  if (inclusive === exclusive) return null;
+  return inclusive ? 'inclusive' : 'exclusive';
+};
+
+export interface CachedTokenCounts {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly totalTokens: number | undefined;
+  readonly cacheRead: number;
+  readonly cacheWrite: number;
+}
+
+// Decides whether to fold the cache buckets back into the input total.
+//
+// Positive evidence folds on its own: a response whose totals witness the
+// exclusive convention is repaired whether or not anyone flagged the upstream,
+// because the alternative is either a torn stream or an input count silently
+// short by the cached prefix. The flag is what settles the responses whose
+// totals witness nothing — an upstream that omits `total_tokens` or computes
+// it on some third basis.
+//
+// The two remaining states are both errors, and neither may pass silently.
+// Evidence that contradicts the declaration means the flag is set on an
+// upstream that does not want it, and folding there over-charges the operator
+// for cached input at the full input rate. A cache count larger than the input
+// total with nothing to explain it underflows the split downstream regardless;
+// raising it here names the flag, which the underflow at the split cannot do
+// without the gateway's flag vocabulary leaking into `protocols`.
+//
+// An upstream that reported the input total exclusively AND recomputed
+// `total_tokens` to match it would read as inclusive here and raise even
+// though the flag is right for it. No such upstream has been observed: the two
+// producers of the exclusive shape both leave a total that witnesses it —
+// Portkey sums all four buckets
+// (https://github.com/Portkey-AI/gateway/blob/669825cbe89ee51569918b8f78a9db486fd69dd4/src/providers/anthropic/chatComplete.ts#L612-L627),
+// and Charm Hyper passes the upstream's own total through untouched. Should
+// one appear, it announces itself as this error rather than as a wrong bill.
+export const foldsExclusiveCacheTokens = (
+  declaredExclusive: boolean,
+  counts: CachedTokenCounts,
+  identity: string,
+): boolean => {
+  const verdict = cachedTokenConventionFromTotals(counts);
+  const cached = counts.cacheRead + counts.cacheWrite;
+  const figures = `${identity}: input=${counts.inputTokens} cached=${cached} output=${counts.outputTokens} total=${counts.totalTokens ?? 'absent'}`;
+
+  if (declaredExclusive && verdict === 'inclusive') {
+    throw new RangeError(`usage-exclusive-cached-tokens is enabled, but total_tokens says this upstream already counts the cache buckets inside the input total; folding would over-charge input by ${cached} tokens — turn the flag off for ${figures}`);
+  }
+  if (declaredExclusive || verdict === 'exclusive') return true;
+  if (cached > counts.inputTokens) {
+    throw new RangeError(`cache counts exceed the input total and total_tokens does not say the cache buckets are reported outside it; if they are, enable usage-exclusive-cached-tokens for ${figures}`);
+  }
+  return false;
+};
+
 export interface UsageMeasurement {
   readonly quantities: UsageQuantities;
   readonly pricingFacts: PricingRuntimeFacts;
