@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildPerformanceQuery, clearGroupedFilter, normalizePerformanceUrlStateForRuntime, parsePerformanceUrlState, performanceLabels, performanceValue, serializePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewResponse } from '../../../src/components/performance/overview';
+import { buildPerformanceQuery, clearGroupedFilter, normalizePerformanceDimensionsForRuntime, parsePerformanceUrlState, performanceLabels, performanceValue, serializePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewResponse } from '../../../src/components/performance/overview';
 import { buildPerformanceChart } from '../../../src/components/performance/plot';
 
 const emptyOverview = (): PerformanceOverviewResponse => ({
@@ -47,12 +47,12 @@ describe('performance overview query', () => {
 
   it('removes Region state outside the Cloudflare runtime', () => {
     const state = parsePerformanceUrlState(new URLSearchParams('g=runtimeLocation&fm=gpt-5&fr=SJC&hide=SJC'));
-    expect(normalizePerformanceUrlStateForRuntime(state, false)).toMatchObject({
+    expect(normalizePerformanceDimensionsForRuntime(state, false)).toMatchObject({
       groupBy: 'model',
       filters: { model: [], runtimeLocation: [] },
       hidden: [],
     });
-    expect(normalizePerformanceUrlStateForRuntime(state, true)).toBe(state);
+    expect(normalizePerformanceDimensionsForRuntime(state, true)).toBe(state);
   });
 });
 

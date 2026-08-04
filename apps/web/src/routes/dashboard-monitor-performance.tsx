@@ -11,7 +11,7 @@ import { PerformanceChartSection } from '../components/performance/chart';
 import {
   buildPerformanceQuery,
   clearGroupedFilter,
-  normalizePerformanceUrlStateForRuntime,
+  normalizePerformanceDimensionsForRuntime,
   parsePerformanceUrlState,
   performanceLabels,
   serializePerformanceUrlState,
@@ -57,7 +57,7 @@ interface LoaderData {
   // Null on the same terms: without the names, a group labels itself with an
   // upstream id the page would be presenting as a name.
   upstreamNames: UpstreamName[] | null;
-  regionAvailable: boolean;
+  regionAvailable: boolean | null;
   view: PerformanceView;
 }
 
@@ -79,10 +79,10 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
     callApi(() => api.api['upstream-options'].$get()),
     callApi(() => api.api['runtime-info'].$get()),
   ]);
-  // Only a successful Node response proves Region unavailable. A failed probe
-  // must not rewrite a Cloudflare URL into a permanently narrower state.
-  const regionAvailable = runtime.error !== undefined || runtime.data.kind === 'cloudflare';
-  const state = normalizePerformanceUrlStateForRuntime(requestedState, regionAvailable);
+  const regionAvailable = runtime.error ? null : runtime.data.kind === 'cloudflare';
+  const state = regionAvailable === null
+    ? requestedState
+    : normalizePerformanceDimensionsForRuntime(requestedState, regionAvailable);
   const overview = state === requestedState
     ? initialOverview
     : await callApi(() => api.api.performance.overview.$get({
@@ -107,7 +107,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const rewrite = useEntryRewrite();
   const initialState = loaderData.state;
   const view: PerformanceView = loaderData.view;
-  const regionAvailable = loaderData.regionAvailable;
+  const [regionAvailable, setRegionAvailable] = useState(loaderData.regionAvailable);
   const [range, setRange] = useState<PerformanceRange>(initialState.range);
   const [loadedRange, setLoadedRange] = useState<PerformanceRange>(initialState.range);
   const [loadedAt, setLoadedAt] = useState(loaderData.loadedAt);
@@ -128,11 +128,33 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     const requestedAt = Date.now();
     if (!background) setError(null);
     const search = buildPerformanceQuery(query.range, query.groupBy, query.filters, requestedAt);
-    const result = await callApi(() => api.api.performance.overview.$get(
-      { query: search },
-      { init: { signal } },
-    ));
+    const [result, runtime] = await Promise.all([
+      callApi(() => api.api.performance.overview.$get(
+        { query: search },
+        { init: { signal } },
+      )),
+      callApi(() => api.api['runtime-info'].$get({}, { init: { signal } })),
+    ]);
     if (signal.aborted) return;
+    if (runtime.error) {
+      setRegionAvailable(null);
+      setError(result.error ?? runtime.error);
+      return;
+    }
+    const nextRegionAvailable = runtime.data.kind === 'cloudflare';
+    setRegionAvailable(nextRegionAvailable);
+    const normalized = normalizePerformanceDimensionsForRuntime({
+      groupBy: query.groupBy,
+      filters: query.filters,
+      hidden: [...hiddenSeries],
+    }, nextRegionAvailable);
+    if (normalized.groupBy !== query.groupBy || normalized.filters !== query.filters) {
+      setGroupBy(normalized.groupBy);
+      setFilters(normalized.filters);
+      setHiddenSeries(new Set(normalized.hidden));
+      if (result.error) setError(result.error);
+      return;
+    }
     if (result.error) setError(result.error);
     else {
       setOverview(result.data);
@@ -140,7 +162,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       setLoadedAt(requestedAt);
       arrived();
     }
-  }, [query]);
+  }, [hiddenSeries, query]);
 
   const { poll, refresh, refreshing } = useRefreshOnChange(query, reload);
 
@@ -193,7 +215,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     { key: 'keyId', groupLabel: t('dashboard.performance.groupBy.keyId'), filterLabel: t('dashboard.performance.filters.keyId'), allLabel: t('dashboard.performance.filters.all.keyId'), options: overview?.dimensionValues.keyIds.map(value => ({ value, label: labels?.keys.get(value) ?? value })) ?? [] },
   ];
   const availableDimensions = dimensions.filter(dimension =>
-    (dimension.key !== 'runtimeLocation' || regionAvailable)
+    (dimension.key !== 'runtimeLocation' || regionAvailable !== false)
     && (dimension.key !== 'userId' || view === 'all-by-user'),
   );
   const filterDimensions = availableDimensions.filter(dimension => (
@@ -211,7 +233,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       title={t('dashboard.nav.performance')}
     />
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error.message}</OutcomeMessageBar>}
-    {overview === null || chart === null || labels === null || activeBreakdown === undefined ? <Panel><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel> : <>
+    {overview === null || chart === null || labels === null || activeBreakdown === undefined || regionAvailable === null ? <Panel><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel> : <>
       <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
         <TelemetryDimensionControls
           dimensions={availableDimensions}
