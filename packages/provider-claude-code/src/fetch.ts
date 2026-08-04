@@ -26,12 +26,10 @@ export interface CallClaudeCodeMessagesOptions {
   model: ProviderModel;
   body: Omit<MessagesPayload, 'model'>;
   // `shaped: true` means the inbound request already looks like real CC
-  // traffic (operator's CC client sent through verbatim). The wire header
-  // surface is rebuilt from `opts.call.headers` through a tight
-  // whitelist that matches sub2api's `allowedHeaders`
-  // (gateway_service.go:422-444), preserving the operator's genuine
-  // X-Stainless-* / anthropic-beta / x-claude-code-session-id fingerprint
-  // end-to-end. Only Authorization is swapped for our cached OAuth token.
+  // traffic. The gateway has reduced `opts.call.headers` to the provider
+  // module's allowlist, so the wire path preserves that genuine X-Stainless-* /
+  // anthropic-beta / x-claude-code-session-id fingerprint and swaps only
+  // Authorization for the cached OAuth token.
   // `shaped: false` means the gateway's re-mimicry chain rebuilt the
   // payload's system blocks / metadata / model id — replace headers with
   // the pinned CC set so the wire shape matches end-to-end.

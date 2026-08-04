@@ -1,13 +1,10 @@
 import { copilotRawModelId, stripClaudeDateSuffix } from './model-name.ts';
 import type { CopilotModelsResponse, CopilotRawModel } from './types.ts';
 
-export const CONTEXT_1M_BETA = 'context-1m-2025-08-07';
-
 const STANDARD_CLAUDE_BASE_ID = /^claude-[a-z0-9-]+-\d+(?:\.\d+)?$/;
 const KNOWN_CLAUDE_VARIANT_SUFFIXES = new Set(['high', 'xhigh', '1m', '1m-internal', 'fast']);
 
 export interface ModelSelectionHints {
-  context1m?: boolean;
   reasoningEffort?: string;
   fast?: boolean;
 }
@@ -73,22 +70,14 @@ const narrow = (pool: readonly CopilotRawModel[], predicate: (model: CopilotRawM
 
 const chooseClaudeVariant = (candidates: readonly CopilotRawModel[], exactBase: CopilotRawModel | undefined, hints: ModelSelectionHints): CopilotRawModel | undefined => {
   const effort = hints.reasoningEffort;
-  if (!hints.context1m && !effort && !hints.fast) {
+  if (!effort && !hints.fast) {
     return exactBase ?? firstPreferred(candidates);
   }
 
   // Fast Mode narrows the pool first because it has the strongest contract.
-  // 1m and effort then layer on top: 1m runs as an explicit branch (pair
-  // the 1m filter with effort, fall back to bare-1m on miss); the
-  // effort-only branch implicitly prefers 1m variants within its narrowed
-  // pool because 1m models tend to advertise broader effort coverage.
+  // Effort then layers on top and prefers 1m variants within its narrowed
+  // pool because those models tend to advertise broader effort coverage.
   const pool = hints.fast ? narrow(candidates, supportsFastMode) : candidates;
-
-  if (hints.context1m) {
-    const oneMillion = pool.filter(supportsOneMillionContext);
-    const oneMillionWithEffort = oneMillion.filter(model => supportsReasoningEffort(model, effort));
-    return firstPreferred(oneMillionWithEffort) ?? firstPreferred(oneMillion) ?? firstPreferred(pool) ?? exactBase ?? firstPreferred(candidates);
-  }
 
   const withEffort = pool.filter(model => supportsReasoningEffort(model, effort));
   return firstPreferred(withEffort.filter(supportsOneMillionContext)) ?? firstPreferred(withEffort) ?? firstPreferred(pool) ?? exactBase ?? firstPreferred(candidates);

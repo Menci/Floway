@@ -47,15 +47,16 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
         upstreamId: record.id,
       };
 
-      // Detection runs on the inbound, unmodified payload + client headers.
+      // Detection runs on the unmodified payload plus the Claude Code
+      // fingerprint admitted by the provider module's header allowlist.
       // The re-mimicry chain would clobber operator-supplied `system` content
       // and overwrite the wire shape — exactly what a CC-shaped passthrough
       // needs to preserve. So the chain only runs on the unshaped path; the
       // shaped path skips straight to the terminal call, which preserves the
       // caller's own system blocks, metadata and tool shape rather than
-      // re-deriving them. The call still rebuilds the header surface through
-      // the allowlist in `fetch.ts`, swaps Authorization for our cached OAuth
-      // token, and restamps the resolved model id.
+      // re-deriving them. The call preserves that filtered fingerprint, swaps
+      // Authorization for our cached OAuth token, and restamps the resolved
+      // model id.
       const looksShaped = isClaudeCodeShapedRequest({
         headers: opts.headers,
         body: ctx.payload,

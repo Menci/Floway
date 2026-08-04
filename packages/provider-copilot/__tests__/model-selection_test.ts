@@ -34,9 +34,9 @@ const models = (...data: CopilotRawModel[]): CopilotModelsResponse => ({
 });
 
 test('resolveCopilotRawModel strips Claude date aliases before variant selection', () => {
-  const resolved = resolveCopilotRawModel(models(model('claude-haiku-4.5'), model('claude-haiku-4.5-1m', { contextWindow: 1_000_000 })), 'claude-haiku-4-5-20251001', { context1m: true });
+  const resolved = resolveCopilotRawModel(models(model('claude-haiku-4.5'), model('claude-haiku-4.5-1m', { contextWindow: 1_000_000 })), 'claude-haiku-4-5-20251001');
 
-  assertEquals(resolved?.id, 'claude-haiku-4.5-1m');
+  assertEquals(resolved?.id, 'claude-haiku-4.5');
 });
 
 test('resolveCopilotRawModel keeps explicit suffix models as exact upstream ids', () => {
@@ -50,7 +50,7 @@ test('resolveCopilotRawModel keeps explicit suffix models as exact upstream ids'
       }),
     ),
     'claude-opus-4.7-xhigh',
-    { context1m: true, reasoningEffort: 'medium' },
+    { reasoningEffort: 'medium' },
   );
 
   assertEquals(resolved?.id, 'claude-opus-4.7-xhigh');
@@ -67,16 +67,16 @@ test('resolveCopilotRawModel strips date aliases before explicit suffix exact ma
       }),
     ),
     'claude-opus-4-7-xhigh-20251001',
-    { context1m: true, reasoningEffort: 'medium' },
+    { reasoningEffort: 'medium' },
   );
 
   assertEquals(resolved?.id, 'claude-opus-4.7-xhigh');
 });
 
 test('resolveCopilotRawModel supports integer-version Claude date aliases', () => {
-  const resolved = resolveCopilotRawModel(models(model('claude-sonnet-4'), model('claude-sonnet-4-1m', { contextWindow: 1_000_000 })), 'claude-sonnet-4-20250514', { context1m: true });
+  const resolved = resolveCopilotRawModel(models(model('claude-sonnet-4'), model('claude-sonnet-4-1m', { contextWindow: 1_000_000 })), 'claude-sonnet-4-20250514');
 
-  assertEquals(resolved?.id, 'claude-sonnet-4-1m');
+  assertEquals(resolved?.id, 'claude-sonnet-4');
 });
 
 test('resolveCopilotRawModel strips integer-version date aliases before explicit suffix exact match', () => {
@@ -101,23 +101,6 @@ test('resolveCopilotRawModel prefers 1m variants when they satisfy requested rea
   );
 
   assertEquals(resolved?.id, 'claude-opus-4.7-1m-internal');
-});
-
-test('resolveCopilotRawModel prioritizes explicit 1m intent even when effort cannot be met', () => {
-  const resolved = resolveCopilotRawModel(
-    models(
-      model('claude-opus-4.6', { reasoningEfforts: ['low', 'medium', 'high'] }),
-      model('claude-opus-4.6-xhigh', { reasoningEfforts: ['xhigh'] }),
-      model('claude-opus-4.6-1m', {
-        contextWindow: 1_000_000,
-        reasoningEfforts: ['low', 'medium', 'high'],
-      }),
-    ),
-    'claude-opus-4-6',
-    { context1m: true, reasoningEffort: 'xhigh' },
-  );
-
-  assertEquals(resolved?.id, 'claude-opus-4.6-1m');
 });
 
 test('resolveCopilotRawModel keeps the base Claude id when there is no routing intent', () => {

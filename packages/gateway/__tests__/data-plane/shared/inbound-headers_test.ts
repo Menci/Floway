@@ -5,8 +5,6 @@ import { inboundHeaders, filterInboundHeaders, filterInboundHeadersForProvider }
 import { buildUpstreamCallOptions } from '../../../src/data-plane/shared/upstream-call-options.ts';
 import { mockGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import type { UpstreamProviderKind } from '@floway-dev/provider';
-import { claudeCodeProviderModule } from '@floway-dev/provider-claude-code';
-import { codexProviderModule } from '@floway-dev/provider-codex';
 import { stubModelCandidate, stubProvider } from '@floway-dev/test-utils';
 
 const headerRecord = (headers: Headers): Record<string, string> => Object.fromEntries(headers);
@@ -91,33 +89,45 @@ describe('provider inbound header policies', () => {
   );
 
   test('Claude Code accepts only its declared fingerprint', () => {
-    const source = new Headers({
+    const accepted = {
       accept: 'application/json',
-      authorization: 'Bearer secret',
+      'accept-encoding': 'identity',
+      'accept-language': 'en-US',
       'anthropic-beta': 'claude-code-20250219',
+      'anthropic-dangerous-direct-browser-access': 'true',
+      'anthropic-version': '2023-06-01',
       'content-type': 'application/json',
+      'sec-fetch-mode': 'cors',
       'user-agent': 'claude-cli/2.1.181',
+      'x-app': 'cli',
+      'x-claude-code-session-id': 'session-1',
       'x-client-request-id': 'request-1',
-      'x-leaky-debug': 'discard',
+      'x-stainless-arch': 'arm64',
+      'x-stainless-helper-method': 'stream',
+      'x-stainless-lang': 'js',
+      'x-stainless-os': 'Linux',
+      'x-stainless-package-version': '0.94.0',
+      'x-stainless-retry-count': '0',
+      'x-stainless-runtime': 'node',
       'x-stainless-runtime-version': '24.0.0',
+      'x-stainless-timeout': '600',
+    };
+    const source = new Headers({
+      ...accepted,
+      authorization: 'Bearer secret',
+      'x-leaky-debug': 'discard',
+      'x-stainless-future': 'discard',
     });
 
     const filtered = filterInboundHeadersForProvider(source, 'claude-code');
-    expect(headerRecord(filtered)).toEqual({
-      accept: 'application/json',
-      'anthropic-beta': 'claude-code-20250219',
-      'content-type': 'application/json',
-      'user-agent': 'claude-cli/2.1.181',
-      'x-client-request-id': 'request-1',
-      'x-stainless-runtime-version': '24.0.0',
-    });
-    expect(headerRecord(filterInboundHeaders(source, claudeCodeProviderModule.inboundHeaderAllowlist))).toEqual(headerRecord(filtered));
+    expect(headerRecord(filtered)).toEqual(accepted);
   });
 
   test('Codex accepts only request identity and turn metadata', () => {
     const source = new Headers({
       authorization: 'Bearer secret',
       'session-id': 'session-1',
+      session_id: 'session-legacy',
       'thread-id': 'thread-1',
       'user-agent': 'untrusted',
       'x-client-request-id': 'request-1',
@@ -129,12 +139,12 @@ describe('provider inbound header policies', () => {
     const filtered = filterInboundHeadersForProvider(source, 'codex');
     expect(headerRecord(filtered)).toEqual({
       'session-id': 'session-1',
+      session_id: 'session-legacy',
       'thread-id': 'thread-1',
       'x-client-request-id': 'request-1',
       'x-codex-turn-metadata': '{}',
       'x-codex-window-id': 'window-1',
     });
-    expect(headerRecord(filterInboundHeaders(source, codexProviderModule.inboundHeaderAllowlist))).toEqual(headerRecord(filtered));
   });
 
   test('buildUpstreamCallOptions filters independently for each failover candidate', () => {
