@@ -10,12 +10,16 @@ const loadUlid = async () => {
   return (await import('../../src/shared/ulid.ts')).ulid;
 };
 
-test('ulid produces a canonical identifier for an explicit epoch timestamp', async () => {
+test('ulid produces canonical, increasing ids for an explicit epoch timestamp', async () => {
   const ulid = await loadUlid();
-  const id = ulid(0);
+  const a = ulid(0);
+  const b = ulid(0);
 
-  assertEquals(/^[0-9A-HJKMNP-TV-Z]{26}$/.test(id), true);
-  assertEquals(decodeTime(id), 0);
+  assertEquals(/^[0-9A-HJKMNP-TV-Z]{26}$/.test(a), true);
+  assertEquals(/^[0-9A-HJKMNP-TV-Z]{26}$/.test(b), true);
+  assertEquals(a < b, true);
+  assertEquals(decodeTime(a), 0);
+  assertEquals(decodeTime(b), 0);
 });
 
 test('ulid produces strictly increasing ids within the same millisecond', async () => {
