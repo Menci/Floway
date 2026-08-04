@@ -956,6 +956,52 @@ const fastModelCatalog = () =>
     },
   ]);
 
+test('Copilot consumes Messages beta intent before serializing its supported wire subset', async () => {
+  const { copilotUpstream } = await setupCopilotTest();
+  const provider = createCopilotProvider(copilotUpstream).instance;
+  let upstreamModel: unknown;
+  let upstreamBeta: string | null = null;
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([
+          { id: 'claude-opus-4.6', supported_endpoints: ['/v1/messages'], maxContextWindowTokens: 200_000 },
+          { id: 'claude-opus-4.6-1m', supported_endpoints: ['/v1/messages'], maxContextWindowTokens: 1_000_000 },
+        ]));
+      }
+      if (url.pathname === '/v1/messages') {
+        upstreamModel = ((await request.json()) as Record<string, unknown>).model;
+        upstreamBeta = request.headers.get('anthropic-beta');
+        return sseResponse(messagesSseBody());
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const [providerModel] = await provider.getProvidedModels(directFetcher);
+      const result = await provider.callMessages(
+        providerModel,
+        { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
+        undefined,
+        noopUpstreamCallOptions({
+          headers: new Headers({
+            'anthropic-beta': 'context-1m-2025-08-07,advanced-tool-use-2025-11-20,unknown-beta',
+          }),
+        }),
+      );
+      assertEquals(result.modelKey, 'claude-opus-4.6-1m');
+    },
+  );
+
+  assertEquals(upstreamModel, 'claude-opus-4.6-1m');
+  assertEquals(upstreamBeta, 'advanced-tool-use-2025-11-20');
+});
+
 test('Copilot provider routes speed=fast to the -fast raw variant and stamps usage.speed on the way out', async () => {
   const { copilotUpstream } = await setupCopilotTest();
   const instance = createCopilotProvider(copilotUpstream);
