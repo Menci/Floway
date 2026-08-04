@@ -50,18 +50,18 @@ export const iterateReadableStream = <T>(stream: ReadableStream<T>): AsyncIterab
       async return(): Promise<IteratorResult<T>> {
         if (state === 'released') return { done: true, value: undefined };
 
-        let cancelError: unknown;
+        let cancellation: { error: unknown } | null = null;
         if (state === 'open') {
           state = 'terminal';
           try {
             await reader.cancel();
           } catch (error) {
-            cancelError = error;
+            cancellation = { error };
           }
           releaseWhenIdle();
         }
         await released;
-        if (cancelError !== undefined) throw cancelError;
+        if (cancellation) throw cancellation.error;
         return { done: true, value: undefined };
       },
     };
