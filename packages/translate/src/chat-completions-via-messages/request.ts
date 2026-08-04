@@ -1,6 +1,7 @@
 import { messagesThinkingBlockFromChatCompletionsScalarReasoning } from '../shared/chat-completions-and-messages/reasoning.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-messages/cache-breakpoints.ts';
 import { resolveImageUrlToMessagesImage, unavailableRemoteImageLoader } from '../shared/via-messages/remote-images.ts';
+import { messagesReasoningFieldsFromEffort } from '../shared/via-messages/reasoning-effort.ts';
 import { messagesServiceTierFieldsFromOpenAI } from '../shared/via-messages/service-tier.ts';
 import { parseToolArgumentsObject } from '../shared/via-messages/tool-arguments.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
@@ -212,12 +213,13 @@ export const buildTargetRequest = async (payload: ChatCompletionsPayload, option
 
   // Merge Chat `reasoning_effort` + `response_format` into a single Messages
   // `output_config` so a chat-source structured-output request survives
-  // routing through a Messages target.
+  // routing through a Messages target. `reasoning_effort: 'none'` lands on
+  // `thinking` instead of `output_config`, and `format` still rides along.
   //
   // Chat nests json_schema details (`response_format = { type: 'json_schema',
   // json_schema: { schema } }`); `json_object` / `text` / absent have no
   // Messages equivalent and drop.
-  const reasoningEffort = payload.reasoning_effort && payload.reasoning_effort !== 'none' ? payload.reasoning_effort : undefined;
+  const { thinking, effort: reasoningEffort } = messagesReasoningFieldsFromEffort(payload.reasoning_effort);
   const responseFormat = payload.response_format;
   const jsonSchema = responseFormat?.type === 'json_schema' ? (responseFormat.json_schema as Record<string, unknown> | undefined) : undefined;
   const formatSchema =
@@ -246,6 +248,7 @@ export const buildTargetRequest = async (payload: ChatCompletionsPayload, option
     stream: true,
     ...(tools ? { tools } : {}),
     ...(payload.tool_choice != null ? { tool_choice: translateChatCompletionsToolChoice(payload.tool_choice) } : {}),
+    ...(thinking ? { thinking } : {}),
     ...(hasOutputConfig ? { output_config: outputConfig } : {}),
     ...serviceTierFields,
   };
