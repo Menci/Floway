@@ -1,7 +1,7 @@
 import { messagesThinkingBlockFromChatCompletionsScalarReasoning } from '../shared/chat-completions-and-messages/reasoning.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-messages/cache-breakpoints.ts';
-import { resolveImageUrlToMessagesImage, unavailableRemoteImageLoader } from '../shared/via-messages/remote-images.ts';
 import { messagesReasoningFieldsFromEffort } from '../shared/via-messages/reasoning-effort.ts';
+import { resolveImageUrlToMessagesImage, unavailableRemoteImageLoader } from '../shared/via-messages/remote-images.ts';
 import { messagesServiceTierFieldsFromOpenAI } from '../shared/via-messages/service-tier.ts';
 import { parseToolArgumentsObject } from '../shared/via-messages/tool-arguments.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
