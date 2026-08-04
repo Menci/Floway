@@ -36,7 +36,7 @@ const hasStructuredSuffix = (subtype: string, suffix: string): boolean =>
 const isParsedJsonMediaType = (parsed: ParsedMediaType): boolean =>
   parsed.essence === 'application/json' || hasStructuredSuffix(parsed.subtype, 'json');
 
-export const isJsonMediaType = (value: string | null | undefined): boolean => {
+export const isJsonMediaType = (value: string | null | undefined): value is string => {
   const parsed = parseMediaType(value);
   return parsed !== null && isParsedJsonMediaType(parsed);
 };
@@ -46,12 +46,12 @@ const isParsedXmlMediaType = (parsed: ParsedMediaType): boolean =>
   || parsed.essence === 'text/xml'
   || hasStructuredSuffix(parsed.subtype, 'xml');
 
-export const isXmlMediaType = (value: string | null | undefined): boolean => {
+export const isXmlMediaType = (value: string | null | undefined): value is string => {
   const parsed = parseMediaType(value);
   return parsed !== null && isParsedXmlMediaType(parsed);
 };
 
-export const isTextualMediaType = (value: string | null | undefined): boolean => {
+export const isTextualMediaType = (value: string | null | undefined): value is string => {
   const parsed = parseMediaType(value);
   return parsed !== null
     && (parsed.type === 'text'
@@ -61,11 +61,11 @@ export const isTextualMediaType = (value: string | null | undefined): boolean =>
       || parsed.essence === 'application/x-www-form-urlencoded');
 };
 
-export const isEventStreamMediaType = (value: string | null | undefined): boolean =>
+export const isEventStreamMediaType = (value: string | null | undefined): value is string =>
   isMediaType(value, 'text/event-stream');
 
-export const isImageMediaType = (value: string | null | undefined): boolean =>
+export const isImageMediaType = (value: string | null | undefined): value is string =>
   parseMediaType(value)?.type === 'image';
 
-export const isMultipartFormDataMediaType = (value: string | null | undefined): boolean =>
+export const isMultipartFormDataMediaType = (value: string | null | undefined): value is string =>
   isMediaType(value, 'multipart/form-data');
