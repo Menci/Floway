@@ -16,6 +16,7 @@ import { prepareJsonModelRequest } from '../shared/passthrough-request.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
 import { isOpenAIUsageOnlyEventShape, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ProviderModel } from '@floway-dev/provider';
 
 export const completions = async (c: Context): Promise<Response> => {
   const requestBody = await readRequestBody(c);
@@ -51,6 +52,12 @@ export const completions = async (c: Context): Promise<Response> => {
   // lets the tier override land regardless of which chunk carried it.
   let streamingUsageBlock: unknown = null;
   let streamingServiceTier: string | null | undefined;
+  // The scaffold picks the upstream after these closures are built, and this
+  // endpoint has no interceptor chain to normalize usage on the way in, so
+  // the serving model is staked here for the billing read to consult.
+  let serving: { model: ProviderModel; upstreamId: string } | undefined;
+  const declaredExclusive = (): boolean => serving?.model.enabledFlags.has('usage-exclusive-cached-tokens') === true;
+  const servingIdentity = (): string => serving === undefined ? 'unresolved upstream' : `${serving.upstreamId}/${serving.model.id}`;
   const transformFrame = (frame: ProtocolFrame<unknown>): ProtocolFrame<unknown> | null => {
     if (frame.type !== 'event') return frame;
     const eventRoot = frame.event as { service_tier?: string | null; usage?: unknown };
@@ -60,7 +67,7 @@ export const completions = async (c: Context): Promise<Response> => {
     return clientWantsUsageChunk ? frame : null;
   };
   const settleUsage = (): TokenUsage | null =>
-    streamingUsageBlock === null ? null : tokenUsageFromCompletionsUsage(streamingUsageBlock, streamingServiceTier);
+    streamingUsageBlock === null ? null : tokenUsageFromCompletionsUsage(streamingUsageBlock, streamingServiceTier, declaredExclusive(), servingIdentity());
 
   const response = await passthroughServe({
     c,
@@ -70,8 +77,10 @@ export const completions = async (c: Context): Promise<Response> => {
     model: request.model,
     kind: 'chat',
     modelServesEndpoint: model => model.endpoints.completions !== undefined,
-    call: (provider, model, opts) =>
-      provider.instance.callCompletions(model, upstreamBody, ctx.abortSignal, opts),
+    call: (provider, model, opts) => {
+      serving = { model, upstreamId: provider.upstreamId };
+      return provider.instance.callCompletions(model, upstreamBody, ctx.abortSignal, opts);
+    },
     response: wantsStream
       ? { format: 'sse', transformFrame, settleUsage }
       : {
@@ -79,7 +88,7 @@ export const completions = async (c: Context): Promise<Response> => {
           extractBilling: (body: unknown) => {
             if (!body || typeof body !== 'object') return null;
             const { usage, service_tier: tier } = body as { usage?: unknown; service_tier?: string | null };
-            return tokenUsageFromCompletionsUsage(usage, tier);
+            return tokenUsageFromCompletionsUsage(usage, tier, declaredExclusive(), servingIdentity());
           },
         },
   });

@@ -895,6 +895,10 @@ function ToastSection() {
         'warning',
       )}>Wrapping body</Button>
       <Button onClick={() => fire(
+        <Toast><ToastTitle>{wrappingTitle}</ToastTitle></Toast>,
+        'error',
+      )}>Wrapping title only</Button>
+      <Button onClick={() => fire(
         <Toast><ToastTitle>{wrappingTitle}</ToastTitle><ToastBody>Retrying in 30 seconds.</ToastBody></Toast>,
         'error',
       )}>Wrapping title</Button>

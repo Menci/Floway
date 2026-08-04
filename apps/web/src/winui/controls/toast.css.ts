@@ -74,12 +74,20 @@ ${severityCss({ card: '.fui-Toast', icon: '.fui-ToastTitle__media', ground: 'var
    panel spends on its first child either way.
 
    A title-only card is InfoBar's horizontal orientation, whose panel padding is
-   zero on every side: 14 + the 20px line + InfoBarMinHeight's remaining 14 is
-   the whole box. A card with a body below it is the vertical orientation, and
-   the trailing 18 of that padding closes it.
+   zero on every side: 14 + the 20px line + a trailing 14 is InfoBarMinHeight
+   exactly. The trailing step is stated rather than left to the min-height,
+   because a toast wraps where an InfoBar's single row does not: over two lines
+   the title alone outgrows the 48 and the height that supplied that step is
+   gone, closing the card on the text. The two agree on one line, so the rule
+   changes nothing there. A card with a body below it is the vertical
+   orientation, and the trailing 18 of that padding closes it instead.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L79-L82 */
 .fui-ToastTitle.fui-ToastTitle {
   padding-top: 14px;
+}
+
+.fui-Toast.fui-Toast:not(:has(.fui-ToastBody, .fui-ToastFooter)) .fui-ToastTitle {
+  padding-bottom: 14px;
 }
 
 .fui-Toast.fui-Toast:has(.fui-ToastBody, .fui-ToastFooter) {

@@ -167,8 +167,8 @@ function ProxyFallbackEditor({ proxies, runtime }: { proxies: ProxyRecord[]; run
   const { control } = useFormContext<UpstreamEditorValues>();
   const { fields, append, move, remove } = useFieldArray({ control, name: 'proxyFallbackList' });
   const available = [
-    { id: 'direct_fetch', name: t('dashboard.upstreamEditor.proxy.directFetch') },
     { id: 'direct_connect', name: t('dashboard.upstreamEditor.proxy.directConnect') },
+    { id: 'direct_fetch', name: t('dashboard.upstreamEditor.proxy.directFetch') },
     ...proxies,
   ];
   const hint = runtime.kind === 'cloudflare' ? t('dashboard.upstreamEditor.proxy.colo', { colo: runtime.runtimeLocation }) : null;
@@ -186,7 +186,7 @@ function ProxyFallbackEditor({ proxies, runtime }: { proxies: ProxyRecord[]; run
       </div>
       {runtime.kind === 'cloudflare' && <Controller control={control} name={`proxyFallbackList.${index}.colos`} render={({ field: item }) => <ColoCombobox current={runtime.runtimeLocation} onChange={item.onChange} value={item.value ?? []} />} />}
     </div>)}
-    <Button onClick={() => append({ id: 'direct_fetch' })}>{t('dashboard.upstreamEditor.proxy.add')}</Button>
+    <Button onClick={() => append({ id: 'direct_connect' })}>{t('dashboard.upstreamEditor.proxy.add')}</Button>
     {hint && <Text id={`${idPrefix}-hint`} size={200} className="text-fui-fg2">{hint}</Text>}
   </div>;
 }

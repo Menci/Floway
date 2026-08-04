@@ -1,6 +1,6 @@
 import type { ProxyEntry } from './proxy-catalog.ts';
 import { createReplayableRequest, type ReplayableRequest } from './replayable-request.ts';
-import { DIRECT_CONNECT_ID, DIRECT_FETCH_ID, entryMatchesColo } from '../repo/proxy-fallback-list.ts';
+import { DIRECT_CONNECT_ID, DIRECT_FETCH_ID, entryMatchesColo, isDirectFallbackId } from '../repo/proxy-fallback-list.ts';
 import type { Repo } from '../repo/types.ts';
 import type { HttpRequest } from '@floway-dev/http';
 import type { Fetcher, ProxyFallbackEntry } from '@floway-dev/provider';
@@ -55,11 +55,28 @@ interface CreateFetcherInput {
 // it; the direct-fetch-only fast path passes `init` straight to runtime `fetch`,
 // which is how non-buffered shapes like FormData stay supported.
 export const createFetcher = (input: CreateFetcherInput): Fetcher => {
-  // Colo filter precedes the implicit direct-fetch collapse so a fully-excluded
-  // list behaves like an empty list and gets the direct-fetch fallback, rather than
+  // An unset policy means direct egress, and direct egress defaults to raw TCP
+  // rather than the runtime's `fetch`, because both runtimes' `fetch` abandon a
+  // response whose body goes quiet for long enough. Cloudflare routes a Worker
+  // `fetch` body through its HTTP proxy path, whose Proxy Read Timeout bounds
+  // the gap between two consecutive reads of the upstream response at 120s;
+  // Node's `fetch` is undici, whose `bodyTimeout` "monitors time between
+  // receiving body data" and defaults to 300s. Either one kills a Copilot
+  // Responses stream that has already returned HTTP 200 and then thinks —
+  // measured silences run past both bounds (120s and 300.113s observed on the
+  // same workload), and neither limit is reachable from here. A raw socket has
+  // no such bound: the same workload survived 233s of measured upstream silence
+  // and completed cleanly (https://github.com/Menci/Floway/pull/221).
+  // `direct_fetch` keeps the runtime connection pool and HTTP/2, so it stays
+  // selectable, but an operator has to ask for it.
+  //   https://developers.cloudflare.com/cache/how-to/cache-rules/settings/#proxy-read-timeout-enterprise-only
+  //   https://github.com/nodejs/undici/blob/7392d6f9f565e550e9047458c275ae77aeaefbb9/docs/docs/api/Client.md?plain=1#L20
+  //
+  // Colo filter precedes the implicit direct-connect collapse so a fully-excluded
+  // list behaves like an empty list and gets the direct-connect fallback, rather than
   // throwing because pass 1 had no candidates.
   const matched = input.fallbackList.filter(entry => entryMatchesColo(entry, input.runtimeLocation));
-  const list = matched.length > 0 ? matched.map(entry => entry.id) : [DIRECT_FETCH_ID];
+  const list = matched.length > 0 ? matched.map(entry => entry.id) : [DIRECT_CONNECT_ID];
   // If direct-fetch precedes any materialized transport, runtime fetch may take
   // ownership of `init.body` and consume its underlying stream/Blob.
   // Buffer the body up-front so a runtime that re-streams a Blob can't
@@ -98,9 +115,16 @@ const runFallbacks = async (
   if (directFetchBeforeMaterialized) await request.materialized();
   const errors: unknown[] = [];
 
-  const active = await input.repo.proxyBackoffs.listForUpstream(input.upstreamId);
-  const now = Math.floor(Date.now() / 1000);
-  const skip = new Set(active.filter(b => b.expiresAt > now).map(b => b.proxyId));
+  // Backoff rows only ever exist for operator-managed proxies, so a list made
+  // entirely of built-in transports has nothing to look up. Skipping the read
+  // keeps the direct-only path — which is what an unset policy resolves to —
+  // free of a per-request store round-trip.
+  const skip = new Set<string>();
+  if (list.some(id => !isDirectFallbackId(id))) {
+    const active = await input.repo.proxyBackoffs.listForUpstream(input.upstreamId);
+    const now = Math.floor(Date.now() / 1000);
+    for (const b of active) if (b.expiresAt > now) skip.add(b.proxyId);
+  }
 
   // Track which entries have already been attempted in this call so the
   // second pass only retries the ones we actively skipped. Without this,

@@ -24,6 +24,7 @@ const flagGroupById = {
   'rewrite-mid-conv-system-to-user': 'apiCompatibility',
   'rewrite-developer-to-system': 'apiCompatibility',
   'rewrite-system-to-developer': 'apiCompatibility',
+  'usage-exclusive-cached-tokens': 'apiCompatibility',
   'strip-billing-attribution': 'sanitization',
   'strip-prompt-cache-key': 'sanitization',
 } as const satisfies Record<FlagId, FlagGroupId>;

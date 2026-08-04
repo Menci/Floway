@@ -2,7 +2,7 @@ import { createFetcher } from '../../dial/fetcher.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { loadProxyCatalog } from '../../dial/proxy-catalog.ts';
 import { getRepo } from '../../repo/index.ts';
-import { DIRECT_CONNECT_ID, isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
+import { isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import { getSocketDial } from '@floway-dev/platform';
 import { directFetcher, type Fetcher, type ProxyFallbackEntry } from '@floway-dev/provider';
 import { runDirectConnectRequest, runProxiedRequest } from '@floway-dev/proxy';
@@ -23,7 +23,10 @@ export const resolveControlPlaneFetcher = async (opts: {
   if (opts.upstreamId !== undefined) {
     return (await createPerRequestFetcher(opts.runtimeLocation))(opts.upstreamId);
   }
-  return directFetcher;
+  // Neither an in-progress edit nor a persisted row to read a policy from.
+  // That is the same "no policy" state an empty list expresses, so route it
+  // through the same builder instead of hard-coding a transport here.
+  return await buildOverrideFetcher([], 'draft', opts.runtimeLocation);
 };
 
 const buildOverrideFetcher = async (
@@ -33,9 +36,6 @@ const buildOverrideFetcher = async (
 ): Promise<Fetcher> => {
   const list = normalizeProxyFallbackList(rawList);
   const referenced = new Set(list.filter(entry => !isDirectFallbackId(entry.id)).map(entry => entry.id));
-  if (referenced.size === 0 && !list.some(entry => entry.id === DIRECT_CONNECT_ID)) {
-    return directFetcher;
-  }
 
   const repo = getRepo();
   const { proxyById, parseErrors } = await loadProxyCatalog(repo, referenced);

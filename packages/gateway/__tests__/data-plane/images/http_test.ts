@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
-import { buildCustomUpstreamRecord, copilotModels, flushAsyncWork, requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { buildCustomUpstreamRecord, copilotModels, flushAsyncWork, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
 
@@ -194,7 +194,7 @@ test('/v1/images/edits forwards a multipart request through an Azure model and r
     updatedAt: '2026-05-25T00:00:00Z',
     flagOverrides: {},
     disabledPublicModelIds: [],
-    proxyFallbackList: [],
+    proxyFallbackList: MOCKED_FETCH_EGRESS,
     modelPrefix: null,
     modelsCache: null,
     hue: 210,

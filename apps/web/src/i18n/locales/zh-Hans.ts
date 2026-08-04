@@ -511,7 +511,7 @@ const zhHansCN = {
         proxy: {
           directFetch: '直连（Fetch）',
           directConnect: '直连（TCP connect）',
-          empty: '未配置回退出口时，流量使用直连 Fetch。',
+          empty: '未配置回退出口时，流量使用直连 TCP connect。',
           add: '添加回退出口',
           colo: '当前 Cloudflare colo：{{colo}}',
           colos: 'Colo 白名单',
@@ -604,6 +604,11 @@ const zhHansCN = {
               label: '去除 Prompt Cache Key',
               description:
                   'OpenAI API 支持通过 `prompt_cache_key` 标识可复用的提示词前缀，但部分上游并不支持，可能导致拒绝请求（如 Azure 提供的 DeepSeek 模型）。\n开启此开关，以在请求上游前移除顶层的 `prompt_cache_key` 字段。',
+            },
+            'usage-exclusive-cached-tokens': {
+              label: '缓存 Token 不计入输入 Token',
+              description:
+                  'OpenAI API 将缓存命中的 Token 计入输入 Token 总数，但部分上游会将两者分开上报，使输入 Token 仅表示未命中缓存的部分。这是 Anthropic 的约定。\n开启此开关，以将缓存读取与缓存写入的 Token 数加回输入 Token 总数，使用量与费用得以正确记录。\n当上游上报的 `total_tokens` 足以判定采用的是哪一种约定时，Floway 会据此自行处理，无需开启此开关。当上游的 `total_tokens` 无法区分两种约定时，才需要开启。',
             },
           },
         },

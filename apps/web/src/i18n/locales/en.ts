@@ -538,7 +538,7 @@ const en = {
         proxy: {
           directFetch: 'Direct (Fetch)',
           directConnect: 'Direct (TCP connect)',
-          empty: 'Without a fallback entry, traffic uses direct Fetch.',
+          empty: 'Without a fallback entry, traffic uses direct TCP connect.',
           add: 'Add fallback entry',
           colo: 'Current Cloudflare colo: {{colo}}',
           colos: 'Colo whitelist',
@@ -632,6 +632,11 @@ const en = {
               label: 'Remove Prompt Cache Key',
               description:
                   'The OpenAI API supports `prompt_cache_key` for identifying reusable prompt prefixes, but some upstreams do not support this field and may reject the request (for example, DeepSeek models provided through Azure).\nEnable this option to remove the top-level `prompt_cache_key` field before sending the request upstream.',
+            },
+            'usage-exclusive-cached-tokens': {
+              label: 'Cached Tokens Reported Outside Input Tokens',
+              description:
+                  'The OpenAI API counts cached tokens as part of the input token total, but some upstreams report them separately, so that the input token count covers only what the cache did not serve. This is the Anthropic convention.\nEnable this option to add the cache read and cache write counts back into the input token total, so that usage and cost are recorded correctly.\nWhen the upstream reports a `total_tokens` that settles the question, Floway follows it and this option is not needed. Enable it for an upstream whose totals leave the two conventions indistinguishable.',
             },
           },
         },

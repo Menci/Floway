@@ -33,6 +33,7 @@ export const OPTIONAL_FLAG_IDS = [
   'rewrite-system-to-developer',
   'strip-billing-attribution',
   'strip-prompt-cache-key',
+  'usage-exclusive-cached-tokens',
 ] as const;
 
 export type FlagId = (typeof OPTIONAL_FLAG_IDS)[number];

@@ -33,6 +33,15 @@ export const TWO_COLUMN_FORM_CLASS = 'grid grid-cols-2 max-[680px]:grid-cols-1';
 // comes with the token and a shell needs no breakpoint of its own.
 export const PANE_GAP_CLASS = 'gap-[var(--floway-page-inset)]';
 
+// A box that fills its scrollport and carries the inset of what it holds.
+// `height: 100%` alone is enough only while the content fits: anything with a
+// floor of its own -- a pane that stops shrinking, a control that cannot get
+// shorter -- overflows a box whose height is already settled, and the overflow
+// escapes past the padding edge, so the trailing inset is not in the scrollable
+// overflow and cannot be scrolled to. `min-height: max-content` lets the box
+// grow to what it could not fit, which puts that inset back.
+export const SCROLLPORT_FILL_CLASS = 'h-full min-h-max';
+
 // 34px is the control-row height every field takes from
 // ../../winui/controls/text-input.css.ts, and ../../winui/controls/choice.css.ts
 // and ../../winui/controls/switch.css.ts follow it. Fluent's Button derives 33
