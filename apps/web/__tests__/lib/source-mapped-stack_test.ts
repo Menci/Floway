@@ -123,9 +123,18 @@ describe('a stack restored from the maps its chunks name', () => {
       .rejects.toThrow('responded 503');
   });
 
-  it('leaves a frame whose position an engine did not know', async () => {
+  // An engine writes 0 where it has no information, and each half of the guard
+  // stands alone: `originalPositionFor` throws on a line below 1, and on the
+  // column the shift is what turns a reported 0 into an out-of-range -1.
+  it('leaves a frame whose line an engine did not know', async () => {
     wholeApp();
-    const frame = `    at handler (${SCRIPT}:0:0)`;
+    const frame = `    at handler (${SCRIPT}:0:1)`;
+    expect(await restoreStack(`Error: boom\n${frame}`)).toBe(`Error: boom\n${frame}`);
+  });
+
+  it('leaves a frame whose column an engine did not know', async () => {
+    wholeApp();
+    const frame = `    at handler (${SCRIPT}:1:0)`;
     expect(await restoreStack(`Error: boom\n${frame}`)).toBe(`Error: boom\n${frame}`);
   });
 });
