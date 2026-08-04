@@ -146,6 +146,16 @@ const fontsourceWoff2Only = (): Plugin => ({
 const wranglerOrigin = process.env.FLOWAY_DEV_GATEWAY_ORIGIN ?? 'http://127.0.0.1:8788';
 const webPort = Number(process.env.FLOWAY_DEV_WEB_PORT ?? '5174');
 
+// Restoring a position needs `mappings`, `sources` and `names`;
+// `sourcesContent` is the original text, which nothing here reads. Measured
+// over one build of this app: 42.53 MiB of maps, of which 34.16 MiB is
+// `sourcesContent`, and the largest single map falls from 18.1 MiB to 1.3 MiB
+// -- Workers Static Assets uploads every file under the client output
+// directory and rejects any file over 25 MiB, so carrying the text is also
+// what would eventually break the deploy. The cost is that devtools resolves a
+// frame to a file and line it cannot then display.
+const sourceMapOutput = { sourcemapExcludeSources: true } as const;
+
 export default defineConfig({
   // React Router discovers route modules lazily. Pre-bundle their browser
   // dependencies at startup so the first visit to a route never makes Vite
@@ -239,6 +249,11 @@ export default defineConfig({
   preview: {
     host: '127.0.0.1',
   },
+  // A `?worker` import is bundled by its own rolldown pass, which the client
+  // environment's output options do not reach.
+  worker: {
+    rolldownOptions: { output: sourceMapOutput },
+  },
   environments: {
     client: {
       build: {
@@ -253,16 +268,7 @@ export default defineConfig({
         sourcemap: true,
         rolldownOptions: {
           output: {
-            // Restoring a position needs `mappings`, `sources` and `names`;
-            // `sourcesContent` is the original text, which nothing here reads.
-            // Measured over one build of this app: 42.53 MiB of maps, of which
-            // 34.16 MiB is `sourcesContent`, and the largest single map falls
-            // from 18.1 MiB to 1.3 MiB -- Workers Static Assets uploads every
-            // file under the client output directory and rejects any file over
-            // 25 MiB, so carrying the text is also what would eventually break
-            // the deploy. The cost is that devtools resolves a frame to a file
-            // and line it cannot then display.
-            sourcemapExcludeSources: true,
+            ...sourceMapOutput,
             codeSplitting: {
               groups: [
                 // The charts are excluded because they are the one part of
