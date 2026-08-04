@@ -1,3 +1,5 @@
+import { customAlphabet } from 'nanoid';
+
 // The generation choice offered on POST /api/keys and POST /api/keys/:id/rotate.
 // Not a persisted attribute — each create/rotate call carries the choice for
 // that single write. 'generate' means the gateway mints a fresh
@@ -15,4 +17,3 @@ const randomBase62 = customAlphabet(BASE62, 20);
 
 export const generateApiKeyToken = (): string =>
   `sk-${randomBase62()}T3BlbkFJ${randomBase62()}`;
-import { customAlphabet } from 'nanoid';
