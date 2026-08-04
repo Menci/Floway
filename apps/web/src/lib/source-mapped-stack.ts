@@ -58,8 +58,6 @@ const MAP_COMMENT = /\/\/[#@] ?sourceMappingURL=([^\s'"]+)\s*$/gm;
 // https://github.com/rolldown/rolldown/blob/83ee59a3965937ff17e34f4bda708bc581937ea3/crates/rolldown/src/utils/process_code_and_sourcemap.rs#L122-L135
 const DEBUG_ID_COMMENT = /^\/\/# debugId=(\S+)\s*$/m;
 
-const lastMatch = (pattern: RegExp, text: string) => [...text.matchAll(pattern)].at(-1);
-
 // `URL.parse` says exactly this and says it without a throw, but it arrived in
 // Chrome 126, Firefox 126 and Safari 18
 // (https://developer.mozilla.org/en-US/docs/Web/API/URL/parse_static#browser_compatibility),
@@ -108,7 +106,7 @@ const loadMap = async (scriptUrl: string): Promise<LoadedMap | null> => {
   if (!script.ok) throw new Error(`${scriptUrl} responded ${script.status}`);
   const text = (await script.text()).trimEnd();
 
-  const comment = lastMatch(MAP_COMMENT, text);
+  const comment = [...text.matchAll(MAP_COMMENT)].at(-1);
   if (!comment) return null;
 
   const url = new URL(comment[1]!, scriptUrl).href;
