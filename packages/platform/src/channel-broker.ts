@@ -20,28 +20,48 @@ export interface ChannelBroker<T> {
 export const iterateReadableStream = <T>(stream: ReadableStream<T>): AsyncIterable<T> => ({
   [Symbol.asyncIterator]() {
     const reader = stream.getReader();
-    let active = true;
-    const release = (): void => {
-      if (!active) return;
-      active = false;
+    let state: 'open' | 'terminal' | 'released' = 'open';
+    let pendingReads = 0;
+    let resolveReleased!: () => void;
+    const released = new Promise<void>(resolve => { resolveReleased = resolve; });
+    const releaseWhenIdle = (): void => {
+      if (state !== 'terminal' || pendingReads !== 0) return;
+      state = 'released';
       reader.releaseLock();
+      resolveReleased();
     };
 
     return {
       async next(): Promise<IteratorResult<T>> {
-        if (!active) return { done: true, value: undefined };
-        const result = await reader.read();
-        if (result.done) release();
-        return result;
+        if (state !== 'open') return { done: true, value: undefined };
+        pendingReads += 1;
+        try {
+          const result = await reader.read();
+          if (result.done) state = 'terminal';
+          return result;
+        } catch (error) {
+          state = 'terminal';
+          throw error;
+        } finally {
+          pendingReads -= 1;
+          releaseWhenIdle();
+        }
       },
       async return(): Promise<IteratorResult<T>> {
-        if (active) {
+        if (state === 'released') return { done: true, value: undefined };
+
+        let cancelError: unknown;
+        if (state === 'open') {
+          state = 'terminal';
           try {
             await reader.cancel();
-          } finally {
-            release();
+          } catch (error) {
+            cancelError = error;
           }
+          releaseWhenIdle();
         }
+        await released;
+        if (cancelError !== undefined) throw cancelError;
         return { done: true, value: undefined };
       },
     };

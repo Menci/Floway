@@ -49,10 +49,12 @@ const streamFromTarget = <T>(
   codec: ChannelCodec<T>,
 ): ReadableStream<T> => {
   let cancel = (): void => {};
+  let pull = (): void => {};
 
   return new ReadableStream<T>({
     start(controller) {
       let terminated = false;
+      let pendingError: { error: unknown } | null = null;
 
       const detach = (): void => {
         target.removeEventListener('frame', onFrame);
@@ -65,11 +67,18 @@ const streamFromTarget = <T>(
         detach();
         controller.close();
       };
+      const flushError = (): void => {
+        if (!pendingError || (controller.desiredSize ?? 0) <= 0) return;
+        const { error } = pendingError;
+        pendingError = null;
+        controller.error(error);
+      };
       const fail = (error: unknown): void => {
         if (terminated) return;
         terminated = true;
         detach();
-        controller.error(error);
+        pendingError = { error };
+        flushError();
       };
       const onFrame = (event: Event): void => {
         if (terminated) return;
@@ -87,11 +96,13 @@ const streamFromTarget = <T>(
         terminated = true;
         detach();
       };
+      pull = flushError;
 
       target.addEventListener('frame', onFrame);
       target.addEventListener('close', onClose);
       signal.addEventListener('abort', onAbort, { once: true });
     },
     cancel: () => cancel(),
+    pull: () => pull(),
   });
 };

@@ -45,6 +45,7 @@ const iterateFromBroadcastSocket = <T>(
   codec: ChannelCodec<T>,
 ): ReadableStream<T> => {
   let cancel = async (): Promise<void> => {};
+  let pull = (): void => {};
 
   return new ReadableStream<T>({
     start(controller) {
@@ -56,6 +57,7 @@ const iterateFromBroadcastSocket = <T>(
       let socket: WebSocket | null = null;
       let terminated = false;
       let openPromise: Promise<void>;
+      let pendingError: { error: unknown } | null = null;
 
       const detach = (): void => {
         signal.removeEventListener('abort', onAbort);
@@ -67,12 +69,25 @@ const iterateFromBroadcastSocket = <T>(
         await openPromise.catch(() => {});
         socket?.close(1000, 'subscriber done');
       };
-      const finish = (error?: unknown, closeUpstream = true): void => {
+      const close = (closeUpstream = true): void => {
         if (terminated) return;
         terminated = true;
         detach();
-        if (error === undefined) controller.close();
-        else controller.error(error);
+        controller.close();
+        if (closeUpstream) void closeSocket();
+      };
+      const flushError = (): void => {
+        if (!pendingError || (controller.desiredSize ?? 0) <= 0) return;
+        const { error } = pendingError;
+        pendingError = null;
+        controller.error(error);
+      };
+      const fail = (error: unknown, closeUpstream = true): void => {
+        if (terminated) return;
+        terminated = true;
+        detach();
+        pendingError = { error };
+        flushError();
         if (closeUpstream) void closeSocket();
       };
       const onMessage = (event: MessageEvent): void => {
@@ -82,12 +97,12 @@ const iterateFromBroadcastSocket = <T>(
           const text = typeof raw === 'string' ? raw : new TextDecoder().decode(raw);
           controller.enqueue(codec.decode(text));
         } catch (error) {
-          finish(error);
+          fail(error);
         }
       };
-      const onClose = (): void => finish(undefined, false);
-      const onError = (): void => finish(new Error('BroadcastDO socket error'));
-      const onAbort = (): void => finish();
+      const onClose = (): void => close(false);
+      const onError = (): void => fail(new Error('BroadcastDO socket error'));
+      const onAbort = (): void => close();
 
       cancel = async (): Promise<void> => {
         if (terminated) return;
@@ -95,6 +110,7 @@ const iterateFromBroadcastSocket = <T>(
         detach();
         await closeSocket();
       };
+      pull = flushError;
 
       openPromise = (async (): Promise<void> => {
         const response = await stub.fetch(new Request('https://broadcast.do/subscribe', {
@@ -115,8 +131,9 @@ const iterateFromBroadcastSocket = <T>(
         socket.accept();
       })();
       signal.addEventListener('abort', onAbort, { once: true });
-      void openPromise.catch(error => finish(error, false));
+      void openPromise.catch(error => fail(error, false));
     },
     cancel: () => cancel(),
+    pull: () => pull(),
   });
 };
