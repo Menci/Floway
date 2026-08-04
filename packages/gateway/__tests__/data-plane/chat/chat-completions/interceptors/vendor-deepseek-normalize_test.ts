@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import type { ChatCompletionsInvocation } from '../../../../../src/data-plane/chat/chat-completions/interceptors/types.ts';
 import { withVendorDeepSeekChatCompletionsNormalize } from '../../../../../src/data-plane/chat/chat-completions/interceptors/vendor-deepseek-normalize.ts';
@@ -341,6 +341,19 @@ test('replaces array-shaped prompt_tokens_details without copying array indices'
   if (frame.type !== 'event') throw new Error('expected event frame');
   const usage = usageRecord(frame.event.usage!);
   assertEquals(usage.prompt_tokens_details, { cached_tokens: 70 });
+});
+
+test('propagates upstream stream errors unchanged', async () => {
+  const failure = new Error('upstream stream failed');
+  const result = await withVendorDeepSeekChatCompletionsNormalize(invocation(baseRequest()), stubCtx, () =>
+    Promise.resolve(eventResult(
+      (async function* () {
+        throw failure;
+      })(),
+      testTelemetryModelIdentity,
+    )));
+
+  await expect(collectFrames(result)).rejects.toBe(failure);
 });
 
 // ── Pass-through ──
