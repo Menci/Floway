@@ -1,6 +1,7 @@
+import { stringify } from 'uuid';
+
 import { parseUserIdMetadata } from './detect-claude-code-metadata.ts';
 import type { CopilotMessagesBoundaryInterceptor } from './types.ts';
-import { stringify } from 'uuid';
 
 /**
  * Copilot's `x-interaction-id` header threads a conversation through its

@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, test, vi } from 'vitest';
 import { parse, validate, version } from 'uuid';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { sha256Uuid, uuidV7 } from '../src/ids.ts';
 

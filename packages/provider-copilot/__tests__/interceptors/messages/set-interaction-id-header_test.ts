@@ -1,5 +1,5 @@
-import { test } from 'vitest';
 import { parse, validate, version } from 'uuid';
+import { test } from 'vitest';
 
 import { withInteractionIdHeaderSet } from '../../../src/interceptors/messages/set-interaction-id-header.ts';
 import type { MessagesBoundaryCtx } from '../../../src/interceptors/messages/types.ts';

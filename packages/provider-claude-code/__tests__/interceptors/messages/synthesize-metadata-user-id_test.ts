@@ -1,5 +1,5 @@
-import { test } from 'vitest';
 import { parse, validate, version } from 'uuid';
+import { test } from 'vitest';
 
 import { parseMetadataUserID } from '../../../src/detection.ts';
 import { hoistUserSystemToMessages } from '../../../src/interceptors/messages/hoist-user-system-to-messages.ts';
