@@ -61,7 +61,7 @@ describe('where the performance page reads upstream names from', () => {
 
     const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/performance?g=runtimeLocation&fr=SJC') } as never);
 
-    expect(data.regionAvailable).toBeNull();
+    expect(data.regionAvailable).toBe(true);
     expect(data.state.groupBy).toBe('runtimeLocation');
     expect(data.state.filters.runtimeLocation).toEqual(['SJC']);
     expect(fetch.mock.calls.filter(([input]) => new URL(String(input), 'http://localhost').pathname === '/api/performance/overview')).toHaveLength(1);
@@ -79,7 +79,7 @@ describe('where the performance page reads upstream names from', () => {
 
     const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/performance?g=runtimeLocation&fr=SJC') } as never);
 
-    expect(data.regionAvailable).toBe(true);
+    expect(data.regionAvailable).toBeNull();
     expect(data.state.groupBy).toBe('runtimeLocation');
     expect(data.state.filters.runtimeLocation).toEqual(['SJC']);
     expect(data.error?.message).toBe('Unavailable');
