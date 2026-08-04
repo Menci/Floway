@@ -118,6 +118,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const [filters, setFilters] = useState<PerformanceFilters>(initialState.filters);
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set(initialState.hidden));
   const [overview, setOverview] = useState<PerformanceOverviewResponse | null>(loaderData.overview);
+  const [overviewQueryPending, setOverviewQueryPending] = useState(false);
   const [upstreamNames] = useState(() => loaderData.upstreamNames && new Map(loaderData.upstreamNames.map(record => [record.id, record.name])));
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
   const query = useMemo(() => ({ filters, groupBy, range }), [filters, groupBy, range]);
@@ -139,6 +140,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     if (runtime.error) {
       if (regionAvailable !== null && !result.error) {
         setOverview(result.data);
+        setOverviewQueryPending(false);
         setLoadedRange(query.range);
         setLoadedAt(requestedAt);
         arrived();
@@ -154,6 +156,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     }, nextRegionAvailable);
     if (normalized.groupBy !== query.groupBy || normalized.filters !== query.filters) {
       setRegionAvailable(null);
+      setOverviewQueryPending(true);
       setGroupBy(normalized.groupBy);
       setFilters(normalized.filters);
       setHiddenSeries(new Set(normalized.hidden));
@@ -161,15 +164,17 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       return;
     }
     if (result.error) {
+      if (!overviewQueryPending) setRegionAvailable(nextRegionAvailable);
       setError(result.error);
       return;
     }
     setRegionAvailable(nextRegionAvailable);
     setOverview(result.data);
+    setOverviewQueryPending(false);
     setLoadedRange(query.range);
     setLoadedAt(requestedAt);
     arrived();
-  }, [hiddenSeries, query, regionAvailable]);
+  }, [hiddenSeries, overviewQueryPending, query, regionAvailable]);
 
   const { poll, refresh, refreshing } = useRefreshOnChange(query, reload);
 

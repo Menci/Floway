@@ -114,4 +114,20 @@ describe('Performance Region dimensions', () => {
     expect(screen.getByText('This view could not be loaded')).toBeTruthy();
     expect(screen.queryByRole('combobox', { name: 'Group by' })).toBeNull();
   });
+
+  it('publishes recovered capability when the existing overview still matches', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost').pathname;
+      if (path === '/api/runtime-info') return Response.json({ kind: 'node', runtimeLocation: 'LOCAL' });
+      if (path === '/api/performance/overview') return Response.json({ error: 'Refresh failed' }, { status: 500 });
+      throw new Error(`Unexpected request to ${path}`);
+    }));
+    renderPage(null);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh performance' }));
+
+    await waitFor(() => expect(screen.getByText('Refresh failed')).toBeTruthy());
+    expect(screen.getByRole('combobox', { name: 'Group by' })).toBeTruthy();
+    expect(screen.queryByRole('combobox', { name: 'Region' })).toBeNull();
+  });
 });
