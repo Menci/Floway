@@ -183,12 +183,14 @@ export const winuiTokenCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Materials/Acrylic/AcrylicBrush_themeresources.xaml#L96 */
 :root {
   --winui-acrylic-in-app-fill-default: #f9f9f9;
+  --winui-acrylic-in-app-fill-default-rgb: 249, 249, 249;
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Materials/Acrylic/AcrylicBrush_themeresources.xaml#L44 */
 @media (prefers-color-scheme: dark) {
   :root {
     --winui-acrylic-in-app-fill-default: #2c2c2c;
+    --winui-acrylic-in-app-fill-default-rgb: 44, 44, 44;
   }
 }
 
@@ -311,53 +313,60 @@ export const winuiTokenCss = `
 :root {
   --winui-system-accent-light-3: #99ebff;
   --winui-system-accent-light-2: #4cc2ff;
+  --winui-system-accent-light-2-rgb: 76, 194, 255;
   --winui-system-accent: #0078d4;
   --winui-system-accent-dark-1: #0067c0;
+  --winui-system-accent-dark-1-rgb: 0, 103, 192;
   --winui-system-accent-dark-2: #003e92;
   --winui-system-accent-dark-3: #001a68;
   --winui-accent-base: var(--winui-system-accent-dark-1);
+  --winui-accent-base-rgb: var(--winui-system-accent-dark-1-rgb);
   --winui-accent-fill-default: var(--winui-accent-base);
-  --winui-accent-fill-secondary: color-mix(in srgb, var(--winui-accent-base) 90%, transparent);
-  --winui-accent-fill-tertiary: color-mix(in srgb, var(--winui-accent-base) 80%, transparent);
+  --winui-accent-fill-secondary: rgba(var(--winui-accent-base-rgb), 0.9);
+  --winui-accent-fill-tertiary: rgba(var(--winui-accent-base-rgb), 0.8);
   --winui-accent-text-fill-primary: var(--winui-system-accent-dark-2);
   --winui-accent-text-fill-secondary: var(--winui-system-accent-dark-3);
   --winui-accent-text-fill-tertiary: var(--winui-system-accent-dark-1);
-  --winui-accent-tint-amount: 8%;
+  /* A departure of ours. Fluent carries a second brand ramp for surfaces that
+     wear the brand as a wash rather than as a fill -- a tint badge, a selected
+     tab chip -- and WinUI states no tinted-accent surface to map it onto. Left
+     unmapped it stays Microsoft's fixed blue beside the accent the operator
+     picked; mapped onto the accent fills it turns every washed surface into a
+     solid pill. So the wash is derived: the accent laid over the surface the
+     washed control sits on, which is the topmost solid fill rather than the page
+     behind it -- mixing into the page instead greys the result, because the page
+     is already a step down from white.
+
+     Light is Fluent's own recipe with our accent substituted, and lands within a
+     couple of levels of it: the default accent at 8 percent over white gives
+     #ebf3fa against Fluent's #ebf3fc, and the stroke weight likewise. Dark is
+     not: Fluent darkens there, to a navy below its own surface, while an accent
+     wash on a dark WinUI surface lightens toward the accent the way every other
+     dark WinUI fill does. The weight is raised there because a light accent needs
+     more of itself to read against a dark ground.
+     https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/tokens/src/global/brandColors.ts */
+  /* --winui-accent-base over --winui-solid-background-fill-quarternary at 8%,
+     12%, 16% and 30%. */
+  --winui-accent-tint-fill-default: #ebf3fa;
+  --winui-accent-tint-fill-secondary: #e0edf7;
+  --winui-accent-tint-fill-tertiary: #d6e7f5;
+  --winui-accent-tint-stroke: #b3d1ec;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --winui-accent-base: var(--winui-system-accent-light-2);
+    --winui-accent-base-rgb: var(--winui-system-accent-light-2-rgb);
     --winui-accent-text-fill-primary: var(--winui-system-accent-light-3);
     --winui-accent-text-fill-secondary: var(--winui-system-accent-light-3);
     --winui-accent-text-fill-tertiary: var(--winui-system-accent-light-2);
-    --winui-accent-tint-amount: 14%;
+    /* --winui-accent-base over --winui-solid-background-fill-quarternary at
+       14%, 21%, 28% and 52.5%. */
+    --winui-accent-tint-fill-default: #30414a;
+    --winui-accent-tint-fill-secondary: #334c58;
+    --winui-accent-tint-fill-tertiary: #355667;
+    --winui-accent-tint-stroke: #3d7b9b;
   }
-}
-
-/* A departure of ours. Fluent carries a second brand ramp for surfaces that
-   wear the brand as a wash rather than as a fill -- a tint badge, a selected
-   tab chip -- and WinUI states no tinted-accent surface to map it onto. Left
-   unmapped it stays Microsoft's fixed blue beside the accent the operator
-   picked; mapped onto the accent fills it turns every washed surface into a
-   solid pill. So the wash is derived: the accent laid over the surface the
-   washed control sits on, which is the topmost solid fill rather than the page
-   behind it -- mixing into the page instead greys the result, because the page
-   is already a step down from white.
-
-   Light is Fluent's own recipe with our accent substituted, and lands within a
-   couple of levels of it: the default accent at 8 percent over white gives
-   #ebf3fa against Fluent's #ebf3fc, and the stroke weight likewise. Dark is
-   not: Fluent darkens there, to a navy below its own surface, while an accent
-   wash on a dark WinUI surface lightens toward the accent the way every other
-   dark WinUI fill does. The weight is raised there because a light accent needs
-   more of itself to read against a dark ground.
-   https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/tokens/src/global/brandColors.ts */
-:root {
-  --winui-accent-tint-fill-default: color-mix(in srgb, var(--winui-accent-base) var(--winui-accent-tint-amount), var(--winui-solid-background-fill-quarternary));
-  --winui-accent-tint-fill-secondary: color-mix(in srgb, var(--winui-accent-base) calc(var(--winui-accent-tint-amount) * 1.5), var(--winui-solid-background-fill-quarternary));
-  --winui-accent-tint-fill-tertiary: color-mix(in srgb, var(--winui-accent-base) calc(var(--winui-accent-tint-amount) * 2), var(--winui-solid-background-fill-quarternary));
-  --winui-accent-tint-stroke: color-mix(in srgb, var(--winui-accent-base) calc(var(--winui-accent-tint-amount) * 3.75), var(--winui-solid-background-fill-quarternary));
 }
 
 /* The selection highlight behind selected text. Both dictionaries key it to

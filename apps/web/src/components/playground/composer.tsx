@@ -54,7 +54,7 @@ const useStyles = makeStyles({
     // https://www.w3.org/TR/css-color-adjust-1/#forced-colors-properties
     border: 0,
     outline: '1px solid transparent',
-    boxShadow: bingCardShadow,
+    ...bingCardShadow,
     borderRadius: bingComposerRadiusResting,
     paddingBlock: bingComposerPaddingBlock,
     paddingInline: `${bingComposerLeadingInset} ${bingComposerTrailingInset}`,
@@ -143,7 +143,8 @@ const useStyles = makeStyles({
   imageButton: {
     height: bingComposerButtonSize,
     width: bingComposerButtonSize,
-    color: bingAccentForeground,
+    color: bingAccentForeground.light,
+    '@media (prefers-color-scheme: dark)': { color: bingAccentForeground.dark },
     backgroundColor: 'transparent',
     border: 0,
     // A button carries the browser's own `1px 6px`, leaving a content box
@@ -160,11 +161,16 @@ const useStyles = makeStyles({
     // A disabled button still matches `:hover` and `:active`; the original
     // never has to say so, because it takes the pointer away from the whole bar.
     '&:enabled:hover': {
-      color: bingAccentForegroundHover,
-      backgroundColor: 'light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.06))',
+      color: bingAccentForegroundHover.light,
+      backgroundColor: 'rgba(0, 0, 0, 0.06)',
+      '@media (prefers-color-scheme: dark)': {
+        color: bingAccentForegroundHover.dark,
+        backgroundColor: 'rgba(255, 255, 255, 0.06)',
+      },
     },
     '&:enabled:active': {
-      backgroundColor: 'light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.1))',
+      backgroundColor: 'rgba(0, 0, 0, 0.1)',
+      '@media (prefers-color-scheme: dark)': { backgroundColor: 'rgba(255, 255, 255, 0.1)' },
     },
     // Focus is the user agent's ring, as in the original: nothing here writes
     // an outline for the ring to lose to.
@@ -238,7 +244,7 @@ const useStyles = makeStyles({
     // not survive -- `background-image` computes to `none` without a `url()`.
     // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/globals.scss#L121
     // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/dark.scss#L107
-    '&:focus-visible': { outline: '2px solid light-dark(#111111, #FAF9F8)' },
+    '&:focus-visible': { outline: '2px solid #111111', '@media (prefers-color-scheme: dark)': { outline: '2px solid #FAF9F8' } },
     // Held to `:enabled` above, so a disabled button neither darkens nor
     // scales.
     '&:disabled': { opacity: 0.5, cursor: 'not-allowed' },

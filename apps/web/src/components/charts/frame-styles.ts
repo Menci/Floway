@@ -43,7 +43,7 @@ export const useChartFrame = makeStyles({
     // page and wrong here.
     '& .fui-PopoverSurface': {
       backdropFilter: 'blur(8px)',
-      backgroundColor: 'color-mix(in srgb, var(--winui-acrylic-in-app-fill-default) 86%, transparent)',
+      backgroundColor: 'rgba(var(--winui-acrylic-in-app-fill-default-rgb), 0.86)',
       padding: '6px 9px 8px 9px',
       pointerEvents: 'none',
     },

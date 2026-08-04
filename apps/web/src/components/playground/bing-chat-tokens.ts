@@ -32,8 +32,8 @@ export const bingAccentWashActive = wash(0.2);
 // `cib-color-foreground-accent-balanced-{primary,secondary}`. Dark resolves
 // both steps to the same value in Bing's own table, so an accent glyph does not
 // change colour on hover there.
-export const bingAccentForeground = 'light-dark(#174AE4, #A2B7F4)';
-export const bingAccentForegroundHover = 'light-dark(#1543CD, #A2B7F4)';
+export const bingAccentForeground = { light: '#174AE4', dark: '#A2B7F4' };
+export const bingAccentForegroundHover = { light: '#1543CD', dark: '#A2B7F4' };
 
 // `cib-color-foreground-on-accent-selected`, the compose button's own label
 // slot. Fluent's on-brand token cannot stand in: WinUI's accent is light in
@@ -100,25 +100,32 @@ export const bingComposerMaxHeight = '50vh';
 // the entire dark-mode edge mechanism. In forced colors both drop out together,
 // `box-shadow` computing to `none` whatever it holds:
 // https://www.w3.org/TR/css-color-adjust-1/#forced-colors-properties
-// `light-dark()` takes only colours, so both themes' layers are written out and
-// the ones that do not apply are made transparent.
-export const bingCardShadow = [
-  '0px 0px 0px 1px light-dark(transparent, rgba(255, 255, 255, 0.2))',
-  '0px 0.3px 0.9px light-dark(rgba(0, 0, 0, 0.12), transparent)',
-  '0px 1.6px 3.6px light-dark(rgba(0, 0, 0, 0.16), transparent)',
-].join(', ');
+export const bingCardShadow = {
+  boxShadow: [
+    '0px 0.3px 0.9px rgba(0, 0, 0, 0.12)',
+    '0px 1.6px 3.6px rgba(0, 0, 0, 0.16)',
+  ].join(', '),
+  '@media (prefers-color-scheme: dark)': {
+    boxShadow: '0px 0px 0px 1px rgba(255, 255, 255, 0.2)',
+  },
+};
 
 // `cib-shadow-elevation-4`, which a user bubble takes instead of the card
-// shadow. Written the same way, with the layers that do not apply to a theme
-// spelled out transparent so `light-dark()` takes only colours.
+// shadow.
 // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/globals.scss#L178-L179
 // https://github.com/weaigc/bingo/blob/6d6d74220b343cbbd3c6eadc0b9cb39a9aedd1f3/src/app/dark.scss#L155
-export const bingElevation4 = [
-  '0px 0.3px 0.9px light-dark(rgba(0, 0, 0, 0.12), transparent)',
-  '0px 1.6px 3.6px light-dark(rgba(0, 0, 0, 0.16), transparent)',
-  '0px 2px 4px light-dark(transparent, rgba(0, 0, 0, 0.28))',
-  '0px 0px 2px light-dark(transparent, rgba(0, 0, 0, 0.24))',
-].join(', ');
+export const bingElevation4 = {
+  boxShadow: [
+    '0px 0.3px 0.9px rgba(0, 0, 0, 0.12)',
+    '0px 1.6px 3.6px rgba(0, 0, 0, 0.16)',
+  ].join(', '),
+  '@media (prefers-color-scheme: dark)': {
+    boxShadow: [
+      '0px 2px 4px rgba(0, 0, 0, 0.28)',
+      '0px 0px 2px rgba(0, 0, 0, 0.24)',
+    ].join(', '),
+  },
+};
 
 // `cib-border-radius-extra-large`, the corner of a transcript bubble, as a pixel
 // constant: a rem step would move with the root size.
