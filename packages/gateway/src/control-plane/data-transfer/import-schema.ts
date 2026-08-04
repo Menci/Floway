@@ -134,7 +134,7 @@ const upstreamWireShapeSchema = z.object({
   hue: parsedBy(normalizeUpstreamHue),
   config: z.unknown(),
   state: z.unknown().optional(),
-}).loose().superRefine((wire, ctx) => {
+}).superRefine((wire, ctx) => {
   if (isLegacyUpstreamIdentity(wire.id)) {
     addIssue(ctx, 'id must use a raw upstream id, not a legacy provider-prefixed identity');
   }
