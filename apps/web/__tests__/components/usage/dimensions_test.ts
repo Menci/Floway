@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { clearGroupedUsageFilter, filterUsageRecords, usageUpstreamValue } from '../../../src/components/usage/dimensions';
+import { clearGroupedUsageFilter, filterUsageRecords, usageUpstreamValue, visibleUsageRecords } from '../../../src/components/usage/dimensions';
 import type { DisplayUsageRecord } from '../../../src/components/usage/types';
 
 const record = (keyId: string, model: string, upstream: string | null): DisplayUsageRecord => ({
@@ -31,5 +31,10 @@ describe('usage dimensions', () => {
   it('clears the active grouping dimension only', () => {
     expect(clearGroupedUsageFilter({ identity: ['key-1'], model: ['gpt-5'], upstream: ['upstream:up-1'] }, 'model'))
       .toEqual({ identity: ['key-1'], model: [], upstream: ['upstream:up-1'] });
+  });
+
+  it('excludes hidden series from the visible summary records', () => {
+    const records = [record('key-1', 'gpt-5', 'up-1'), record('key-2', 'gpt-5', 'up-1')];
+    expect(visibleUsageRecords(records, 'identity', new Set(['key-1']))).toEqual([records[1]]);
   });
 });

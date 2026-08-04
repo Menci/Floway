@@ -11,12 +11,12 @@ describe('usage URL state', () => {
       range: '7d',
       metric: 'cost',
       groupBy: 'upstream',
-      filters: { identity: ['key-1'], model: ['gpt-5'], upstream: ['upstream:up-1'] },
+      filters: { identity: ['key-1'], model: ['gpt-5'], upstream: [] },
       hiddenUpstreams: ['upstream:up-2'],
     });
     const serialized = serializeUsageUrlState(state);
     expect(serialized.get('group')).toBe('upstream');
     expect(serialized.getAll('filterKey')).toEqual(['key-1']);
-    expect(serialized.getAll('filterUpstream')).toEqual(['upstream:up-1']);
+    expect(serialized.getAll('filterUpstream')).toEqual([]);
   });
 });

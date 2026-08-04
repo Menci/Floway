@@ -27,6 +27,12 @@ export const filterUsageRecords = (
   && (filters.upstream.length === 0 || filters.upstream.includes(usageUpstreamValue(record.upstream)))
 ));
 
+export const visibleUsageRecords = (
+  records: readonly DisplayUsageRecord[],
+  groupBy: UsageGroupBy,
+  hidden: ReadonlySet<string>,
+): DisplayUsageRecord[] => records.filter(record => !hidden.has(usageDimensionValue(record, groupBy)));
+
 export const clearGroupedUsageFilter = (filters: UsageFilters, groupBy: UsageGroupBy): UsageFilters => ({
   ...filters,
   [groupBy]: [],

@@ -22,7 +22,7 @@ import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
 import { useRefreshOnChange } from '../components/ui/use-refresh';
 import { UsageChartSection } from '../components/usage/chart-section';
 import { loadUsagePageData } from '../components/usage/data';
-import { clearGroupedUsageFilter, filterUsageRecords, usageUpstreamValue } from '../components/usage/dimensions';
+import { clearGroupedUsageFilter, filterUsageRecords, upstreamFromUsageValue, usageUpstreamValue, visibleUsageRecords } from '../components/usage/dimensions';
 import { formatMetricValue } from '../components/usage/format';
 import { buildSearchChart, buildTokenChart, dashboardBuckets, summarizeUsage } from '../components/usage/plot';
 import { SummaryMetrics } from '../components/usage/summary-metrics';
@@ -125,14 +125,19 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     () => usage && filterUsageRecords(usage.records, filters),
     [filters, usage],
   );
+  const hiddenSeries = groupBy === 'identity' ? hiddenKeys : groupBy === 'model' ? hiddenModels : hiddenUpstreams;
+  const visibleRecords = useMemo(
+    () => filteredRecords && visibleUsageRecords(filteredRecords, groupBy, hiddenSeries),
+    [filteredRecords, groupBy, hiddenSeries],
+  );
 
   const summary = useMemo(
-    () => filteredRecords && summarizeUsage(filteredRecords),
-    [filteredRecords],
+    () => visibleRecords && summarizeUsage(visibleRecords),
+    [visibleRecords],
   );
 
   const tokenChart = useMemo(
-    () => usage && filteredRecords && models && upstreams && buildTokenChart({
+    () => usage && filteredRecords && models && buildTokenChart({
       records: filteredRecords,
       metadata: usage.keys,
       models,
@@ -173,13 +178,17 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   // something a failed fetch establishes.
   const showSearch = searchChart === null || searchChart.entries.length > 0;
   const dimensions = useMemo<Array<TelemetryDimension<UsageGroupBy>> | null>(() => {
-    if (!usage || !upstreams) return null;
+    if (!usage) return null;
     const identityNames = new Map(usage.keys.map(key => [key.id, key.name]));
     const upstreamNames = new Map(upstreams.map(upstream => [usageUpstreamValue(upstream.id), upstream.name]));
     const options = (values: string[], labels: ReadonlyMap<string, string>) => [...new Set(values)]
       .sort((left, right) => (labels.get(left) ?? left).localeCompare(labels.get(right) ?? right))
       .map(value => ({ value, label: labels.get(value) ?? value }));
     const identityIsUser = view === 'all-by-user';
+    const noUpstreamLabel = t('dashboard.usage.filters.noUpstream');
+    for (const value of new Set(usage.records.map(record => usageUpstreamValue(record.upstream)))) {
+      if (!upstreamNames.has(value)) upstreamNames.set(value, upstreamFromUsageValue(value) ?? noUpstreamLabel);
+    }
     return [
       {
         key: 'identity',
@@ -202,13 +211,12 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
         allLabel: t('dashboard.usage.filters.allUpstreams'),
         options: options(
           usage.records.map(record => usageUpstreamValue(record.upstream)),
-          new Map([...upstreamNames, [usageUpstreamValue(null), t('dashboard.usage.filters.noUpstream')]]),
+          upstreamNames,
         ),
       },
     ];
   }, [t, upstreams, usage, view]);
   const chartTitle = dimensions?.find(dimension => dimension.key === groupBy)?.groupLabel ?? '';
-  const hiddenSeries = groupBy === 'identity' ? hiddenKeys : groupBy === 'model' ? hiddenModels : hiddenUpstreams;
   const setHiddenSeries = (next: Set<string>) => {
     if (groupBy === 'identity') setHiddenKeys(next);
     else if (groupBy === 'model') setHiddenModels(next);

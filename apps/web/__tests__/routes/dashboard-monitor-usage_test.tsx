@@ -76,6 +76,7 @@ describe('usage dimension controls', () => {
       const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost').pathname;
       if (path === '/api/token-usage') return Response.json({
         view: 'all-by-user',
+        dimensions: ['upstream'],
         records: [{ userId: 2, model: 'gpt-5', upstream: 'up-1', hour: '2026-08-05T11', requests: 1, metrics: [], cost: null }],
         users: [{ id: 2, username: 'Alice' }],
       });

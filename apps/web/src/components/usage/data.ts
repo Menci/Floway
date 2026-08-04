@@ -9,16 +9,16 @@ import type {
 import { api, callApi, type ApiResult } from '../../api/client';
 import { dashboardRangeQuery } from '../charts/dashboard-time';
 import type {
+  DashboardTokenUsageByKeyResponse,
+  DashboardTokenUsageByUserResponse,
   SearchUsageByKeyResponse,
   SearchUsageByUserResponse,
-  TokenUsageByKeyResponse,
-  TokenUsageByUserResponse,
 } from '@floway-dev/gateway/control-plane/usage-types';
 
 const userBucketId = (userId: number) => `user-${userId}`;
 
 export const metricsFromWire = (
-  metrics: TokenUsageByKeyResponse['records'][number]['metrics'],
+  metrics: DashboardTokenUsageByKeyResponse['records'][number]['metrics'],
 ): DisplayUsageRecord['metrics'] => Object.fromEntries(
   metrics.map(({ metric, quantity }) => [metric, quantity]),
 );
@@ -39,7 +39,7 @@ const forRequestedView = <T extends { view: UsageView }>(
   return data;
 };
 
-const tokenUsageForDisplay = (data: TokenUsageByKeyResponse | TokenUsageByUserResponse): UsageResponse =>
+const tokenUsageForDisplay = (data: DashboardTokenUsageByKeyResponse | DashboardTokenUsageByUserResponse): UsageResponse =>
   data.view === 'all-by-user'
     ? {
         records: data.records.map(({ userId, ...record }) => ({
@@ -69,10 +69,10 @@ const fetchUsageForView = async (view: UsageView, start: string, end: string, si
     ? { start, end, include_user_metadata: '1', view }
     : { start, end, include_key_metadata: '1', view };
   const [usageRes, searchRes] = await Promise.all([
-    callApi(() => api.api['token-usage'].$get({ query }, { init: { signal } })),
+    callApi(() => api.api['token-usage'].$get({ query: { ...query, include_upstream_dimension: '1' } }, { init: { signal } })),
     callApi(() => api.api['search-usage'].$get({ query }, { init: { signal } })),
   ]);
-  const usageData = forRequestedView<TokenUsageByKeyResponse | TokenUsageByUserResponse>(usageRes, view, 'Token usage');
+  const usageData = forRequestedView<DashboardTokenUsageByKeyResponse | DashboardTokenUsageByUserResponse>(usageRes, view, 'Token usage');
   const searchData = forRequestedView<SearchUsageByKeyResponse | SearchUsageByUserResponse>(searchRes, view, 'Search usage');
   return {
     usage: usageData && tokenUsageForDisplay(usageData),
@@ -96,7 +96,7 @@ export const loadUsagePageData = async (
   return {
     ...usageData,
     models: modelsResult.data?.data ?? null,
-    upstreams: upstreamsResult.data?.map(({ id, name }) => ({ id, name } satisfies UsageUpstream)) ?? null,
+    upstreams: upstreamsResult.data?.map(({ id, name }) => ({ id, name } satisfies UsageUpstream)) ?? [],
     error: usageData.error ?? modelsResult.error ?? upstreamsResult.error ?? null,
   };
 };

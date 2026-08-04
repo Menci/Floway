@@ -720,7 +720,10 @@ const usageBaseQuery = {
   view: z.enum(['all-by-user', 'self-by-key'], { error: "view must be 'all-by-user' or 'self-by-key'" }),
 };
 
-export const tokenUsageQuery = z.object(usageBaseQuery);
+export const tokenUsageQuery = z.object({
+  ...usageBaseQuery,
+  include_upstream_dimension: z.literal('1').optional(),
+});
 
 // Dashboard `/api/models` accepts two query knobs. `aliases=false` skips the
 // alias-merge pass — the alias edit dialog and shadow detection need the

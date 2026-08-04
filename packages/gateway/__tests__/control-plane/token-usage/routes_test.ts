@@ -78,7 +78,34 @@ test('/api/token-usage self-by-key surfaces soft-deleted keys metadata to their 
   // active-only would have hidden it.
   const matched = body.records.find((r: { keyId: string }) => r.keyId === apiKey.id);
   assertEquals(matched?.keyName, apiKey.name);
-  assertEquals(matched?.upstream, 'up_test');
+  assertEquals('upstream' in matched, false);
+});
+
+test('/api/token-usage exposes upstream-split dashboard records only by explicit opt-in', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  const shared = {
+    keyId: apiKey.id,
+    model: 'gpt-5',
+    modelKey: 'gpt-5',
+    hour: '2026-04-30T10',
+    pricingSelector: {},
+    requests: 1,
+    metrics: tokenUsageMetrics({ input: 10 }, null),
+  };
+  await repo.usage.set({ ...shared, upstream: 'up-1' });
+  await repo.usage.set({ ...shared, upstream: 'up-2' });
+
+  const legacy = await requestApp('/api/token-usage?start=2026-04-30T00&end=2026-05-01T00&include_key_metadata=1&view=self-by-key', { headers: { 'x-api-key': apiKey.key } });
+  const dashboard = await requestApp('/api/token-usage?start=2026-04-30T00&end=2026-05-01T00&include_key_metadata=1&include_upstream_dimension=1&view=self-by-key', { headers: { 'x-api-key': apiKey.key } });
+
+  assertEquals(legacy.status, 200);
+  const legacyBody = await legacy.json();
+  assertEquals(legacyBody.records.length, 1);
+  assertEquals('upstream' in legacyBody.records[0], false);
+  assertEquals(dashboard.status, 200);
+  const dashboardBody = await dashboard.json();
+  assertEquals(dashboardBody.dimensions, ['upstream']);
+  assertEquals(dashboardBody.records.map((record: { upstream: string }) => record.upstream), ['up-1', 'up-2']);
 });
 
 test('/api/token-usage scopes to the actor\'s keys when called with an API key', async () => {
