@@ -131,7 +131,7 @@ export const parsePerformanceUrlState = (search: URLSearchParams): PerformanceUr
     model: search.get('fm') ?? '', upstream: search.get('fu') ?? '', operation: search.get('fo') ?? '',
     runtimeLocation: search.get('fr') ?? '', userId: search.get('fusr') ?? '', keyId: search.get('fk') ?? '',
   },
-  hidden: (search.get('hide') ?? '').split(',').map(decodeURIComponent).filter(Boolean),
+  hidden: search.getAll('hide'),
 });
 
 export const serializePerformanceUrlState = (state: PerformanceUrlState): URLSearchParams => {
@@ -142,7 +142,7 @@ export const serializePerformanceUrlState = (state: PerformanceUrlState): URLSea
   if (state.range !== 'today') search.set('r', state.range);
   const filters: Array<[string, string]> = [['fm', state.filters.model], ['fu', state.filters.upstream], ['fo', state.filters.operation], ['fr', state.filters.runtimeLocation], ['fusr', state.filters.userId], ['fk', state.filters.keyId]];
   for (const [key, value] of filters) if (value) search.set(key, value);
-  if (state.hidden.length) search.set('hide', state.hidden.map(encodeURIComponent).join(','));
+  for (const id of [...state.hidden].sort()) search.append('hide', id);
   return search;
 };
 

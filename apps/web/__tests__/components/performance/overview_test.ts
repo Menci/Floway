@@ -36,10 +36,29 @@ describe('performance overview query', () => {
   });
 
   it('round-trips non-default dashboard state through the URL', () => {
-    const state = parsePerformanceUrlState(new URLSearchParams('m=tokPerSec&pct=p99&g=upstream&r=30d&fm=gpt-5&hide=a%252Cb,c'));
-    expect(state).toMatchObject({ metric: 'tokPerSec', percentile: 'p99', groupBy: 'upstream', range: '30d', filters: { model: 'gpt-5' }, hidden: ['a,b', 'c'] });
+    const search = new URLSearchParams('m=tokPerSec&pct=p99&g=upstream&r=30d&fm=gpt-5');
+    for (const id of ['a,b', '100%', '模型', 'duplicate', 'duplicate']) search.append('hide', id);
+    const state = parsePerformanceUrlState(search);
+    expect(state).toMatchObject({
+      metric: 'tokPerSec',
+      percentile: 'p99',
+      groupBy: 'upstream',
+      range: '30d',
+      filters: { model: 'gpt-5' },
+      hidden: ['a,b', '100%', '模型', 'duplicate', 'duplicate'],
+    });
     expect(serializePerformanceUrlState(state).get('m')).toBe('tokPerSec');
     expect(serializePerformanceUrlState(state).get('fm')).toBe('gpt-5');
+  });
+
+  it('serializes hidden series as stable repeated parameters', () => {
+    const state = parsePerformanceUrlState(new URLSearchParams());
+    const first = serializePerformanceUrlState({ ...state, hidden: ['模型', 'duplicate', '100%', 'a,b', 'duplicate'] });
+    const second = serializePerformanceUrlState({ ...state, hidden: ['duplicate', 'a,b', '模型', '100%', 'duplicate'] });
+
+    expect(first.toString()).toBe(second.toString());
+    expect(first.getAll('hide')).toEqual(['100%', 'a,b', 'duplicate', 'duplicate', '模型']);
+    expect(parsePerformanceUrlState(first).hidden).toEqual(['100%', 'a,b', 'duplicate', 'duplicate', '模型']);
   });
 });
 
