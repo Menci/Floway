@@ -885,6 +885,75 @@ test('import rejects invalid records before clearing existing data', async () =>
   assertEquals(await repo.webSearchUsage.listAll(), [WEB_SEARCH_USAGE_1]);
 });
 
+test('import strips unknown fields at transferable record boundaries', async () => {
+  const { app, repo } = setup();
+  const result = await doImport(app, 'replace', latestImportData({
+    users: [{ ...SEED_ADMIN, smuggled: true }],
+    apiKeys: [{ ...KEY_A, smuggled: true }],
+    upstreams: [{ ...upstreamRecordToFullJson(CUSTOM_UPSTREAM), smuggled: true }],
+    proxies: [{ id: 'p1', name: 'Proxy', url: HTTP_PROXY_URL, dial_timeout_seconds: null, smuggled: true }],
+    usage: [{
+      ...USAGE_1,
+      smuggled: true,
+      metrics: USAGE_1.metrics.map(metric => ({ ...metric, smuggled: true })),
+    }],
+    searchUsage: [{ ...WEB_SEARCH_USAGE_1, smuggled: true }],
+    performanceIncluded: true,
+    performance: [{
+      ...PERFORMANCE_1,
+      smuggled: true,
+      buckets: PERFORMANCE_1.buckets.map(bucket => ({ ...bucket, smuggled: true })),
+    }],
+  }));
+
+  assertEquals(result.status, 200);
+  for (const record of [
+    ...(await repo.users.listIncludingDeleted()),
+    ...(await repo.apiKeys.listIncludingDeleted()),
+    ...(await repo.upstreams.list()),
+    ...(await repo.proxies.list()),
+    ...(await repo.usage.listAll()),
+    ...(await repo.webSearchUsage.listAll()),
+    ...(await repo.performance.listAll()),
+  ]) {
+    assertEquals('smuggled' in record, false);
+  }
+  assertEquals((await repo.usage.listAll())[0].metrics.some(metric => 'smuggled' in metric), false);
+  assertEquals((await repo.performance.listAll())[0].buckets.some(bucket => 'smuggled' in bucket), false);
+});
+
+test('import reports the earliest duplicate before later malformed records', async () => {
+  const { app } = setup();
+  const duplicateUser = await doImport(app, 'replace', latestImportData({
+    users: [SEED_ADMIN, { ...USER_BOB, id: SEED_ADMIN.id }, { ...USER_BOB, deletedAt: 42 }],
+  }));
+  const duplicateMetric = await doImport(app, 'replace', latestImportData({
+    usage: [{
+      ...USAGE_1,
+      metrics: [
+        { metric: 'input_tokens', quantity: '1', unitPrice: null },
+        { metric: 'input_tokens', quantity: '2', unitPrice: null },
+        { metric: 'output_tokens', quantity: -1, unitPrice: null },
+      ],
+    }],
+  }));
+  const duplicateBucket = await doImport(app, 'replace', latestImportData({
+    performanceIncluded: true,
+    performance: [{
+      ...PERFORMANCE_1,
+      buckets: [
+        { metric: 'ttft_ms', lower: 0, upper: 1_000, count: 1 },
+        { metric: 'ttft_ms', lower: 0, upper: 1_000, count: 1 },
+        { metric: 'tpot_us', lower: -1, upper: null, count: 1 },
+      ],
+    }],
+  }));
+
+  assertEquals(duplicateUser.body.error, 'invalid users at index 1: duplicate user id 1');
+  assertEquals(duplicateMetric.body.error, 'invalid usage at index 0: duplicate usage metric: input_tokens');
+  assertEquals(duplicateBucket.body.error, 'invalid performance record at index 0: duplicate bucket entry for {metric: ttft_ms, lower: 0}');
+});
+
 test('import rejects api key unique identity conflicts before mutating', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);
