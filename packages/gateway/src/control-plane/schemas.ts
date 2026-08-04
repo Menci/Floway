@@ -741,7 +741,7 @@ export const webSearchUsageQuery = z.object({
 // occurrence through as a bare string and several as an array, so each filter
 // reads through this single coercion into the list shape the handler wants.
 // Empty occurrences preserve the existing API meaning of an unset filter.
-const filterValues = (item: z.ZodType<string>) =>
+const filterValues = (item: z.ZodString) =>
   z.union([z.string(), z.array(z.string())])
     .transform(value => (typeof value === 'string' ? [value] : value).filter(Boolean))
     .pipe(z.array(item))
