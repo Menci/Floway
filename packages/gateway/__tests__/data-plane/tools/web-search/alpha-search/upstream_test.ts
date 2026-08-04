@@ -1,7 +1,7 @@
 import { test, vi } from 'vitest';
 
 import type { ModelCandidate } from '@floway-dev/provider';
-import { assertEquals, stubModelCandidate, stubProvider } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, stubModelCandidate, stubProvider } from '@floway-dev/test-utils';
 
 let resolvedCandidate: ModelCandidate | undefined;
 vi.mock('../../../../../src/data-plane/providers/resolution.ts', async importOriginal => {
@@ -50,7 +50,9 @@ test('Codex Alpha Search receives only its declared turn metadata', async () => 
     'x-debug': 'discard',
   }));
 
-  assertEquals(Object.fromEntries(observedHeaders() ?? []), {
+  const headers = observedHeaders();
+  assertExists(headers);
+  assertEquals(Object.fromEntries(headers), {
     'x-codex-turn-metadata': '{"turn_id":"turn-1"}',
   });
 });
@@ -63,5 +65,7 @@ test('Custom Alpha Search receives no client headers', async () => {
     'x-debug': 'discard',
   }));
 
-  assertEquals([...(observedHeaders() ?? [])], []);
+  const headers = observedHeaders();
+  assertExists(headers);
+  assertEquals([...headers], []);
 });
