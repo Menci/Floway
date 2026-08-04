@@ -52,7 +52,7 @@ const PERFORMANCE_METRICS = ['ttft_ms', 'tpot_us'] as const satisfies readonly P
 const hasOwn = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
 const isLegacyUpstreamIdentity = (value: string): boolean => LEGACY_UPSTREAM_PREFIXES.some(prefix => value.startsWith(prefix));
 const messageFor = (cause: unknown): string => cause instanceof Error ? cause.message : String(cause);
-const addIssue = (ctx: z.RefinementCtx, message: string, path?: PropertyKey[]) => ctx.addIssue({ code: 'custom', message, path });
+const addIssue = (ctx: z.RefinementCtx, message: string) => ctx.addIssue({ code: 'custom', message });
 
 const parsedBy = <T>(parser: (value: unknown) => T) => z.unknown().transform((value, ctx): T => {
   try {
@@ -241,6 +241,34 @@ const userSchema = z.object({
   deletedAt: nullableStringSchema('deletedAt'),
 });
 
+const sequentialArraySchema = <T>(
+  schema: z.ZodType<T>,
+  arrayError: string,
+  validateRecord?: (record: T, index: number, prior: readonly T[]) => string | null,
+) => z.unknown().transform((value, ctx): T[] => {
+  const array = z.array(z.unknown(), { error: arrayError }).safeParse(value);
+  if (!array.success) {
+    addIssue(ctx, array.error.issues[0].message);
+    return z.NEVER;
+  }
+
+  const records: T[] = [];
+  for (let index = 0; index < array.data.length; index++) {
+    const result = schema.safeParse(array.data[index]);
+    if (!result.success) {
+      addIssue(ctx, result.error.issues[0].message);
+      return z.NEVER;
+    }
+    const validationError = validateRecord?.(result.data, index, records);
+    if (validationError) {
+      addIssue(ctx, validationError);
+      return z.NEVER;
+    }
+    records.push(result.data);
+  }
+  return records;
+});
+
 const metricSchema = z.object({
   metric: z.unknown().transform((value, ctx): BillingMetric => {
     if (typeof value !== 'string' || !BILLING_METRICS.includes(value as BillingMetric)) {
@@ -261,14 +289,13 @@ const metricSchema = z.object({
   }),
 }, { error: 'metrics must contain objects' });
 
-const metricsSchema = z.array(metricSchema, { error: 'metrics must be an array' }).superRefine((metrics, ctx) => {
-  const seen = new Set<BillingMetric>();
-  for (let index = 0; index < metrics.length; index++) {
-    const metric = metrics[index].metric;
-    if (seen.has(metric)) addIssue(ctx, `duplicate usage metric: ${metric}`, [index]);
-    seen.add(metric);
-  }
-});
+const metricsSchema = sequentialArraySchema(
+  metricSchema,
+  'metrics must be an array',
+  (row, _index, prior) => prior.some(candidate => candidate.metric === row.metric)
+    ? `duplicate usage metric: ${row.metric}`
+    : null,
+);
 
 const invalidUsageField = 'record has invalid usage fields';
 const usageSchema = z.object({
@@ -324,6 +351,14 @@ const performanceBucketSchema = z.object({
   }
 });
 
+const performanceBucketsSchema = sequentialArraySchema(
+  performanceBucketSchema,
+  malformedPerformance,
+  (bucket, _index, prior) => prior.some(candidate => candidate.metric === bucket.metric && candidate.lower === bucket.lower)
+    ? `duplicate bucket entry for {metric: ${bucket.metric}, lower: ${bucket.lower}}`
+    : null,
+);
+
 const performanceSchema = z.object({
   hour: z.string({ error: malformedPerformance }).regex(SEARCH_USAGE_HOUR_PATTERN, { error: malformedPerformance }),
   keyId: nonEmptyStringWithError(malformedPerformance),
@@ -345,7 +380,7 @@ const performanceSchema = z.object({
   tpotSamples: performanceInteger,
   ttftMsSum: performanceInteger,
   tpotUsSum: performanceInteger,
-  buckets: z.array(performanceBucketSchema, { error: malformedPerformance }),
+  buckets: performanceBucketsSchema,
 }, { error: 'record is not an object' }).superRefine((record, ctx) => {
   const ttftSamples = record.ttftSamplesOk + record.errorsWithOutput;
   if (ttftSamples + record.errorsNoOutput + record.neutral !== record.requests) {
@@ -357,16 +392,9 @@ const performanceSchema = z.object({
     return;
   }
 
-  const bucketKeys = new Set<string>();
   let ttftBucketCount = 0;
   let tpotBucketCount = 0;
   for (const bucket of record.buckets) {
-    const dedupKey = `${bucket.metric}\0${bucket.lower}`;
-    if (bucketKeys.has(dedupKey)) {
-      addIssue(ctx, `duplicate bucket entry for {metric: ${bucket.metric}, lower: ${bucket.lower}}`);
-      return;
-    }
-    bucketKeys.add(dedupKey);
     if (bucket.metric === 'ttft_ms') ttftBucketCount += bucket.count;
     else tpotBucketCount += bucket.count;
   }
