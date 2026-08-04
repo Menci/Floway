@@ -58,7 +58,7 @@ const badgeContent = (
     return <Trans components={{ model: <strong className={modelValueClassName} /> }} i18nKey="dashboard.models.badges.aliasOfModel" values={{ target: badge.target }} />;
   case 'aliasOfCount':
     return badge.reachable === badge.total ? (
-      <Trans components={strong} count={badge.total} i18nKey="dashboard.models.badges.aliasOfCount" values={{ count: badge.total }} />
+      <Trans components={strong} count={badge.total} i18nKey="dashboard.models.badges.aliasOfCount" />
     ) : (
       <Trans components={strong} i18nKey="dashboard.models.badges.aliasOfPartial" values={{ reachable: badge.reachable, total: badge.total }} />
     );

@@ -147,12 +147,13 @@ function SearchSettings({ config, models, upstreams }: {
   // unrecognized id is named verbatim rather than collapsed onto a familiar one,
   // and its key field stays shut: this build has no field to store that key in,
   // so every keystroke into it would be discarded on save.
-  const providerLabel = (provider: string) => {
+  const knownProviderLabel = (provider: string) => {
     const option = PROVIDER_OPTIONS.find(candidate => candidate.value === provider);
-    return option ? t(SEARCH_PROVIDER_LABEL_KEYS[option.value]) : t('dashboard.searchConfig.unavailable', { id: provider });
+    return option ? t(SEARCH_PROVIDER_LABEL_KEYS[option.value]) : undefined;
   };
   const activeOption = PROVIDER_OPTIONS.find(option => option.value === draft.provider);
-  const activeProviderLabel = providerLabel(draft.provider);
+  const activeProviderLabel = knownProviderLabel(draft.provider)
+    ?? t('dashboard.searchConfig.unavailable', { id: draft.provider });
   const eligibleUpstreams = useMemo(() => eligibleSearchUpstreams(upstreams, models), [models, upstreams]);
   const modelsForSelectedUpstream = useMemo(
     () => models.filter(model => servesChatFor(model, draft.passthroughOpenAiSearch.upstreamId)),
@@ -403,7 +404,9 @@ function SearchSettings({ config, models, upstreams }: {
               {testResult.ok ? t('dashboard.searchConfig.testBadge.ok') : t('dashboard.searchConfig.testBadge.error')}
             </StatusBadge>
             <Text size={200} className="text-fui-fg3">
-              {t('dashboard.searchConfig.testedProvider', { provider: providerLabel(testResult.provider) })}
+              {t('dashboard.searchConfig.testedProvider', {
+                provider: knownProviderLabel(testResult.provider) ?? testResult.provider,
+              })}
             </Text>
             {testResult.query && <Text size={200} className="text-fui-fg3">
               {t('dashboard.searchConfig.testedQuery', { query: testResult.query })}

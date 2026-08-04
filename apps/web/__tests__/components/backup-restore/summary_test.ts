@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { recordSummary } from '../../../src/components/backup-restore/summary';
-import { i18n, setLanguage, t } from '../../../src/i18n';
+import { i18n, setLanguage } from '../../../src/i18n';
 import { defaultLanguage, localeForLanguage } from '../../../src/i18n/languages';
+import type { TFunction } from '../../../src/i18n/translation';
 
 // The sentence the operator is left with after an import. It is assembled from
 // three separate mechanisms -- i18next's plural categories, `formatNumber`'s
@@ -12,7 +13,7 @@ import { defaultLanguage, localeForLanguage } from '../../../src/i18n/languages'
 // the function: the grouping is our formatter rather than i18next's built-in
 // Intl, and the two resolve a locale differently.
 const summary = (counts: Record<string, number>) =>
-  recordSummary(counts, t, localeForLanguage(i18n.language));
+  recordSummary(counts, i18n.t.bind(i18n) as unknown as TFunction, localeForLanguage(i18n.language));
 
 describe('what an import reports it took', () => {
   afterEach(async () => { await setLanguage(defaultLanguage); });

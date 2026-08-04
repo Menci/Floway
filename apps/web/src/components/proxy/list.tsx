@@ -104,13 +104,14 @@ export function ProxyList({
 // row inside the table's map cannot call.
 function KindChip({ kind }: { kind: ReturnType<typeof kindFromUri> }) {
   const { t } = useTranslation();
+  const labelKey: string = `dashboard.proxy.kind.${kind}`;
   // A kind the table has no hue for is still a proxy, so it takes a mid grey
   // and is painted by the same algorithm rather than left unpainted.
   const hue = useBadgeHue(KIND_HUES[kind] ?? '#616161');
 
   return (
     <Chip className={`flex-none ${hue.className}`} style={hue.style}>
-      {t(`dashboard.proxy.kind.${kind}` as never, kind)}
+      {t(labelKey, kind)}
     </Chip>
   );
 }

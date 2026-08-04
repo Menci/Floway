@@ -325,15 +325,27 @@ const config: Linter.Config[] = [
     },
   },
   {
-    // Initialization owns the i18next React plugin, and the typed translation
-    // boundary owns the React hooks and component. Every consumer is covered
-    // by the restriction above.
-    files: [
-      'apps/web/src/i18n/index.ts',
-      'apps/web/src/i18n/translation.tsx',
-    ],
+    files: ['apps/web/src/i18n/index.ts'],
     rules: {
       'no-restricted-imports': ['error', {
+        paths: [{
+          name: 'react-i18next',
+          allowImportNames: ['initReactI18next'],
+          message: 'i18n initialization owns only the React plugin; hooks and components belong to translation.tsx.',
+        }],
+        patterns: WEB_RESTRICTED_IMPORT_PATTERNS,
+      }],
+    },
+  },
+  {
+    files: ['apps/web/src/i18n/translation.tsx'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [{
+          name: 'react-i18next',
+          allowImportNames: ['Trans', 'useTranslation'],
+          message: 'The typed translation boundary owns only Trans and useTranslation.',
+        }],
         patterns: WEB_RESTRICTED_IMPORT_PATTERNS,
       }],
     },

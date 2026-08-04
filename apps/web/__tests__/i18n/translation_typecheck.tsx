@@ -10,6 +10,9 @@ t('dashboard.models.badges.aliasOfCount', { count: 2 });
 declare const dynamicKey: string;
 t(dynamicKey, { upstreamValue: true });
 
+declare const mixedInterpolationKey: 'common.cancel' | 'dashboard.apiKeys.configuration.usingKey';
+t(mixedInterpolationKey, { name: 'key' });
+
 // @ts-expect-error -- A string without placeholders does not accept a values object.
 t('common.cancel', {});
 // @ts-expect-error -- A bare placeholder requires its string value.
@@ -24,11 +27,23 @@ t('dashboard.proxy.form.timeoutPlaceholder', { seconds: '30' });
 t('dashboard.models.badges.aliasOfCount');
 // @ts-expect-error -- Plural selection requires a numeric count.
 t('dashboard.models.badges.aliasOfCount', { count: '2' });
+// @ts-expect-error -- A literal absent from the catalogue is a typo, not a dynamic key.
+t('common.cacnel');
+// @ts-expect-error -- Every member of a union must belong to the catalogue.
+t('common.cancel' as 'common.cancel' | 'common.cacnel');
+// @ts-expect-error -- Values must satisfy every possible member of a union key.
+t(mixedInterpolationKey);
 
 void <Trans i18nKey="dashboard.apiKeys.configuration.usingKey" values={{ name: 'key' }} />;
-void <Trans count={2} i18nKey="dashboard.models.badges.aliasOfCount" values={{ count: 2 }} />;
+void <Trans count={2} i18nKey="dashboard.models.badges.aliasOfCount" />;
 
 // @ts-expect-error -- Trans uses the same string interpolation contract as t.
 void <Trans i18nKey="dashboard.apiKeys.configuration.usingKey" values={{ name: 1 }} />;
-// @ts-expect-error -- Trans uses the same numeric interpolation contract as t.
-void <Trans count={2} i18nKey="dashboard.models.badges.aliasOfCount" values={{ count: '2' }} />;
+// @ts-expect-error -- A plural Trans requires the count that selects its form.
+void <Trans i18nKey="dashboard.models.badges.aliasOfCount" />;
+// @ts-expect-error -- Trans plural selection requires a numeric count.
+void <Trans count="2" i18nKey="dashboard.models.badges.aliasOfCount" />;
+// @ts-expect-error -- The count prop owns plural interpolation; values must not duplicate it.
+void <Trans count={2} i18nKey="dashboard.models.badges.aliasOfCount" values={{ count: 2 }} />;
+// @ts-expect-error -- Trans accepts catalogue keys only.
+void <Trans i18nKey="common.cacnel" />;

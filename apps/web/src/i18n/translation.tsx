@@ -4,12 +4,13 @@ import { Trans as I18nextTrans, useTranslation as useI18nextTranslation } from '
 
 import type { NumberFormat } from './number-format';
 
-// The dashboard reaches i18next through this module and nowhere else, and this
-// is why: `alwaysFormat` sends every interpolation through
-// ./number-format, which throws on a number that names no format. That throw
-// happens during render, so a bare `{{seconds}}` handed a number takes the
-// whole route down to the error boundary. react-i18next types interpolation
-// values as `unknown`, so nothing before the browser could see it coming.
+// React consumers reach react-i18next's hooks and component through this
+// module; initialization remains in ./index. `alwaysFormat` sends every
+// interpolation through ./number-format, which throws on a number that names
+// no format. That throw happens during render, so a bare `{{seconds}}` handed a
+// number takes the whole route down to the error boundary. react-i18next types
+// interpolation values as `unknown`, so nothing before the browser could see
+// it coming.
 //
 // Everything below derives what a key needs from the English strings
 // themselves. `locales/en` is `as const`, so each string survives into the type
@@ -41,7 +42,9 @@ type Texts = { [E in Leaf<Translation> as E['key']]: E['text'] };
 // https://www.unicode.org/reports/tr35/tr35-numbers.html#Language_Plural_Rules
 type PluralBase<K> = K extends `${infer Base}_other` ? Base : never;
 
-export type TranslationKey = keyof Texts | PluralBase<keyof Texts>;
+type PluralKey = PluralBase<keyof Texts>;
+
+export type TranslationKey = keyof Texts | PluralKey;
 
 // One entry per `{{…}}` in the string. The scan is left to right: the head
 // swallows everything up to the first `{{`, the body runs to the first `}}`,
@@ -62,40 +65,38 @@ type ValuesFor<K> = K extends keyof Texts
     ? ValuesOf<Texts[`${K & string}_other`]> & { count: number }
     : never;
 
-// A key built from a template (`` t(`a.b.${x}`) ``) resolves to a union when
-// `x` is a union of literals and to nothing at all when it is a bare `string`.
-// The first is checked like any other key; the second is what this arm is for,
-// and it is deliberately permissive rather than an error, because the key that
-// reaches i18next is not knowable here.
-type Unresolvable<K> = [K] extends [TranslationKey] ? false : true;
+// Schema and server messages can carry a key whose type is only `string`. Its
+// resource and values are unknowable here, so that genuinely dynamic boundary
+// remains permissive. A non-catalogue literal is still rejected as a typo.
+type IsDynamicKey<K> = string extends K ? true : false;
+type AcceptedKey<K extends string> = K extends TranslationKey
+  ? K
+  : IsDynamicKey<K> extends true ? K : never;
+
+type UnionToIntersection<U> = (
+  U extends unknown ? (value: U) => void : never
+) extends (value: infer I) => void ? I : never;
 
 // A template key whose expression is a union of literals resolves to a union of
 // keys, and the strings behind them need not agree on what they interpolate.
-// The distribution is deliberate: values are required as soon as one member of
-// the union needs them, and the argument type is the union of what each member
-// needs. Asking `keyof ValuesFor<K>` directly would instead intersect the keys
-// and clear a call site that passes nothing to a string that wants two things.
-type RequiresValues<K> = K extends unknown ? (keyof ValuesFor<K> extends never ? false : true) : never;
-
-// The same distribution decides what an individual member contributes to the
-// argument type. A member that interpolates nothing contributes `undefined`,
-// which is what a call site holding a discriminated union passes when the
-// branch it is on carries no values.
-type ValuesArgument<K> = K extends unknown
-  ? (keyof ValuesFor<K> extends never ? undefined : ValuesFor<K>)
-  : never;
+// A caller cannot correlate two separate function arguments, so the values
+// object satisfies every possible member. A branch with no placeholders adds
+// an empty object; incompatible requirements correctly make the call
+// impossible until the caller narrows the key.
+type ValuesArgument<K> = UnionToIntersection<K extends unknown ? ValuesFor<K> : never>;
+type RequiresValues<K> = keyof ValuesArgument<K> extends never ? false : true;
 
 // i18next also accepts a plain string second argument as the fallback text for
 // a key with no string behind it. It is only offered where the key needs no
 // values, since the two cannot be passed together.
-type Arguments<K> = Unresolvable<K> extends true
+type Arguments<K> = IsDynamicKey<K> extends true
   ? [values?: Record<string, unknown> | string]
-  : true extends RequiresValues<K>
+  : RequiresValues<K> extends true
     ? [values: ValuesArgument<K>]
     : [values?: string];
 
 export interface TFunction {
-  <K extends string>(key: K, ...values: Arguments<K>): string;
+  <const K extends string>(key: AcceptedKey<K>, ...values: Arguments<K>): string;
 }
 
 // react-i18next types `t` from its own resource declarations, which the
@@ -106,17 +107,21 @@ export const useTranslation = (): { t: TFunction; i18n: I18n } => {
   return { t: t as unknown as TFunction, i18n };
 };
 
-type TransValues<K> = Unresolvable<K> extends true
-  ? { values?: Record<string, unknown> }
-  : true extends RequiresValues<K>
-    ? { values: ValuesArgument<K> }
-    : { values?: undefined };
+type TransMemberValues<K> = K extends PluralKey ? Omit<ValuesFor<K>, 'count'> : ValuesFor<K>;
+type TransValuesArgument<K> = UnionToIntersection<K extends unknown ? TransMemberValues<K> : never>;
+type TransValues<K> = keyof TransValuesArgument<K> extends never
+  ? { values?: undefined }
+  : { values: TransValuesArgument<K> };
 
-type TransProps<K> = {
+type IsPlural<K> = K extends PluralKey ? true : false;
+type TransCount<K> = true extends (K extends unknown ? IsPlural<K> : never)
+  ? { count: number }
+  : { count?: never };
+
+type TransProps<K extends TranslationKey> = {
   i18nKey: K;
   components?: ComponentProps<typeof I18nextTrans>['components'];
-  count?: number;
-} & TransValues<K>;
+} & TransCount<K> & TransValues<K>;
 
-export const Trans = <K extends string>(props: TransProps<K>): ReactElement =>
+export const Trans = <const K extends TranslationKey>(props: TransProps<K>): ReactElement =>
   <I18nextTrans {...props as ComponentProps<typeof I18nextTrans>} />;
