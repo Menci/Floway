@@ -16,7 +16,6 @@ import {
   serializePerformanceUrlState,
   type PerformanceFilters,
   type PerformanceGroupBy,
-  type PerformanceLabels,
   type PerformanceMetric,
   type PerformanceOverviewResponse,
   type PerformancePercentile,
@@ -183,9 +182,9 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     { key: 'keyId', groupLabel: t('dashboard.performance.groupBy.keyId'), filterLabel: t('dashboard.performance.filters.keyId'), allLabel: t('dashboard.performance.filters.all.keyId'), options: overview?.dimensionValues.keyIds.map(value => ({ value, label: labels?.keys.get(value) ?? value })) ?? [] },
   ];
   const availableDimensions = dimensions.filter(dimension => dimension.key !== 'userId' || view === 'all-by-user');
-  const filterDimensions = availableDimensions.filter(dimension =>
-    !((dimension.key === 'userId' || dimension.key === 'keyId') && (groupBy === 'userId' || groupBy === 'keyId')),
-  );
+  const filterDimensions = availableDimensions.filter(dimension => (
+    !((dimension.key === 'userId' || dimension.key === 'keyId') && (groupBy === 'userId' || groupBy === 'keyId'))
+  ));
 
   return <section className="dashboard-page">
     <DashboardPageHeader

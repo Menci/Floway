@@ -1,7 +1,7 @@
 import type { ChartProps } from '@fluentui/react-charts';
 
-import { metricConfig, summaryFieldForMetric } from './metrics';
 import { upstreamFromUsageValue, usageDimensionValue, usageUpstreamValue } from './dimensions';
+import { metricConfig, summaryFieldForMetric } from './metrics';
 import type { DisplayUsageRecord, SearchChartModel, SearchUsageResponse, TokenChartModel, TokenCounters, TokenSummary, UsageGroupBy, UsageMetric, UsageRange, UsageResponse, UsageUpstream } from './types';
 import type { ControlPlaneModel } from '../../api/types';
 import { decimalStringToPlottableNumber, sumDecimalStrings } from '../../lib/decimal-display';

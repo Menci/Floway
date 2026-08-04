@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 
+import { fluentComponents } from '../../fluent';
 import { Dropdown } from '../ui/fluent-form-controls';
 import { MultiselectCombobox, type MultiselectOption } from '../ui/multiselect-combobox';
-import { fluentComponents } from '../../fluent';
 
 const { Field, Option } = fluentComponents;
 

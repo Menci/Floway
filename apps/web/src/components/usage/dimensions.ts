@@ -21,11 +21,11 @@ export const usageDimensionValue = (record: DisplayUsageRecord, dimension: Usage
 export const filterUsageRecords = (
   records: readonly DisplayUsageRecord[],
   filters: UsageFilters,
-): DisplayUsageRecord[] => records.filter(record =>
+): DisplayUsageRecord[] => records.filter(record => (
   (filters.identity.length === 0 || filters.identity.includes(record.keyId))
   && (filters.model.length === 0 || filters.model.includes(record.model))
-  && (filters.upstream.length === 0 || filters.upstream.includes(usageUpstreamValue(record.upstream))),
-);
+  && (filters.upstream.length === 0 || filters.upstream.includes(usageUpstreamValue(record.upstream)))
+));
 
 export const clearGroupedUsageFilter = (filters: UsageFilters, groupBy: UsageGroupBy): UsageFilters => ({
   ...filters,
