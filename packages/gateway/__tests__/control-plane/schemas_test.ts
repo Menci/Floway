@@ -5,6 +5,7 @@ import { createUpstreamBody } from '../../src/control-plane/schemas.ts';
 const baseAzure = {
   kind: 'azure' as const,
   name: 'azure',
+  hue: 210,
   config: {
     endpoint: 'https://a.example.com',
     apiKey: 'k',
@@ -136,6 +137,7 @@ describe('upstreamModelSchema rerank', () => {
   const customRerank = () => ({
     kind: 'custom' as const,
     name: 'rerank',
+    hue: 210,
     config: {
       baseUrl: 'https://rerank.example.com',
       authStyle: 'bearer' as const,

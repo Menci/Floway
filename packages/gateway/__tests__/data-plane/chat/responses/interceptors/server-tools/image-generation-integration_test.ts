@@ -45,7 +45,7 @@ const defaultCandidates = vi.hoisted(() => () => [{
     disabledPublicModelIds: [],
     modelPrefix: null,
     modelsCache: null,
-    color: null,
+    hue: 210,
     instance: {
       callImagesGenerations: async (_model: unknown, body: Record<string, unknown>) => {
         stub.generationsCalls.push(body);
@@ -209,7 +209,7 @@ beforeEach(async () => {
     proxyFallbackList: [],
     modelPrefix: null,
     modelsCache: null,
-    color: null,
+    hue: 210,
     config: {
       baseUrl: 'https://unused.example.com',
       authStyle: 'bearer',

@@ -28,7 +28,7 @@ const custom: UpstreamRecord = {
   proxyFallbackList: [],
   modelPrefix: null,
   modelsCache: null,
-  color: null,
+  hue: 210,
   config: {
     baseUrl: 'https://api.example.com',
     authStyle: 'bearer',
@@ -196,7 +196,7 @@ const claudeCodeBase = (overrides: { config?: unknown; state?: unknown }): Upstr
   proxyFallbackList: [],
   modelPrefix: null,
   modelsCache: null,
-  color: null,
+  hue: 210,
   config: overrides.config ?? claudeCodeConfig,
   state: overrides.state ?? null,
 } as unknown as UpstreamRecord);
@@ -214,7 +214,7 @@ const codexBase = (overrides: { config?: unknown; state?: unknown }): UpstreamRe
   proxyFallbackList: [],
   modelPrefix: null,
   modelsCache: null,
-  color: null,
+  hue: 210,
   config: overrides.config ?? { accounts: [{ email: 'a@example.com', chatgptAccountId: 'account', chatgptUserId: 'user', planType: 'plus' }] },
   state: overrides.state ?? null,
 } as unknown as UpstreamRecord);

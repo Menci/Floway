@@ -1,8 +1,7 @@
-import initSqlJs from 'sql.js';
 import { describe, expect, test } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
-import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
+import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename } from './test-sqlite.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { Repo } from '../../src/repo/types.ts';
 import { type AgentSetupConfiguration, AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
@@ -18,8 +17,7 @@ const backends: ReadonlyArray<readonly [string, RepoFactory]> = [
 ];
 
 test('migration 0061 adds optional Claude settings without replacing existing choices', async () => {
-  const SQL = await initSqlJs();
-  const db = new SQL.Database();
+  const db = await createSqlJsDatabase();
   try {
     for (const [filename, sql] of migrationSqlByFilename) {
       if (filename === '0061_agent_setup_claude_settings.sql') break;
@@ -74,8 +72,7 @@ test('migration 0061 adds optional Claude settings without replacing existing ch
 });
 
 test('migration 0068 adds the Claude fable override without replacing existing choices', async () => {
-  const SQL = await initSqlJs();
-  const db = new SQL.Database();
+  const db = await createSqlJsDatabase();
   try {
     for (const [filename, sql] of migrationSqlByFilename) {
       if (filename === '0068_agent_setup_fable_model.sql') break;

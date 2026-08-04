@@ -346,6 +346,9 @@ const makeUsageChunk = (
   state: ResponsesToChatCompletionsStreamState,
   usage: NonNullable<ResponsesResult['usage']>,
 ): ChatCompletionsStreamEvent => {
+  // Validated, not consumed: Chat Completions names the same three input
+  // buckets Responses does, so the counts cross unchanged. The assertion is
+  // this package's own, on the contract its output type declares.
   splitInclusiveInputTokens(
     usage.input_tokens,
     usage.input_tokens_details?.cached_tokens,

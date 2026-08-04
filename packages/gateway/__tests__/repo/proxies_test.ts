@@ -32,7 +32,7 @@ const upstreamFixture = (id: string, proxyFallbackList: ProxyFallbackEntry[]): U
   proxyFallbackList,
   modelPrefix: null,
   modelsCache: null,
-  color: null,
+  hue: 210,
 });
 
 for (const [backend, makeRepo] of REPO_BACKENDS) {

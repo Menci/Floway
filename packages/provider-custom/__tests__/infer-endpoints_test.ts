@@ -117,7 +117,7 @@ test('Custom provider projects gpt-image-* models with kind=image and both image
     proxyFallbackList: [],
     modelPrefix: null,
     modelsCache: null,
-    color: null,
+    hue: 210,
   };
   await withMockedFetch(
     request => {

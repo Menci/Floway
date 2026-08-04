@@ -54,7 +54,6 @@ const en = {
       codex: 'Codex',
       'claude-code': 'Claude Code',
       ollama: 'Ollama',
-      unknown: 'Unknown',
     },
     dashboard: {
       title: 'Dashboard',
@@ -290,7 +289,6 @@ const en = {
         modelCount_one: '{{count, number}} model',
         modelCount_other: '{{count, number}} models',
         modelCountUnknown: 'Count unavailable',
-        unknownUpstream: 'Unknown ({{id}})',
         upstreamDisabled: 'Upstream disabled',
         validation: 'Select at least one upstream, or turn off the limit.',
       },
@@ -515,22 +513,15 @@ const en = {
         },
         sections: {
           connection: 'Connection and authentication',
-          color: 'Badge color',
+          hue: 'Badge color',
           proxy: 'Proxy routing',
           apiPaths: 'API paths',
           prefix: 'Model name prefix',
           disabledModels: 'Disabled models',
         },
-        color: {
+        hue: {
           description: 'Choose how this upstream is distinguished across the console.',
-          inherit: 'Provider default',
-          custom: 'Custom hex',
           label: 'Badge color',
-          hue: 'Hue',
-          saturation: 'Saturation',
-          brightness: 'Brightness',
-          invalidHex: 'Enter #RRGGBB',
-          preset: { amber: 'Amber', emerald: 'Emerald', cyan: 'Cyan', violet: 'Violet', rose: 'Rose', orange: 'Orange' },
         },
         fields: {
           name: 'Upstream name',
@@ -641,6 +632,11 @@ const en = {
               label: 'Remove Prompt Cache Key',
               description:
                   'The OpenAI API supports `prompt_cache_key` for identifying reusable prompt prefixes, but some upstreams do not support this field and may reject the request (for example, DeepSeek models provided through Azure).\nEnable this option to remove the top-level `prompt_cache_key` field before sending the request upstream.',
+            },
+            'usage-exclusive-cached-tokens': {
+              label: 'Cached Tokens Reported Outside Input Tokens',
+              description:
+                  'The OpenAI API counts cached tokens as part of the input token total, but some upstreams report them separately, so that the input token count covers only what the cache did not serve. This is the Anthropic convention.\nEnable this option to add the cache read and cache write counts back into the input token total, so that usage and cost are recorded correctly.\nWhen the upstream reports a `total_tokens` that settles the question, Floway follows it and this option is not needed. Enable it for an upstream whose totals leave the two conventions indistinguishable.',
             },
           },
         },
@@ -858,7 +854,6 @@ const en = {
           name: 'Upstream name is required.',
           prefix: 'At least one model prefix form must remain addressable.',
           models: 'One or more models have an invalid configuration.',
-          color: 'Enter a valid custom color before saving.',
           copilot: 'Complete GitHub device authorization before saving.',
           credential: 'Import a credential before saving.',
         },

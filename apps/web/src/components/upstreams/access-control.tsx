@@ -23,14 +23,13 @@ const {
 } = fluentComponents;
 
 interface UpstreamAccessRow {
-  color: UpstreamOption['color'];
   id: string;
-  kind: UpstreamOption['kind'] | null;
-  // Null is a count nobody knows: the upstream is gone, or it is disabled and
-  // never cached a catalog while it was on.
+  // Null is a count nobody knows: the upstream is disabled and never cached a
+  // catalog while it was on.
   modelCount: number | null;
   name: string;
   selected: boolean;
+  upstream: { hue: number; kind: UpstreamOption['kind'] };
   upstreamEnabled: boolean;
 }
 
@@ -54,7 +53,7 @@ export function UpstreamAccessControl({
   const { t } = useTranslation();
   const dangerText = useDangerTextClass();
   const errorId = useId();
-  const rows = useMemo(() => accessRows(available, ids, models, t), [available, ids, models, t]);
+  const rows = useMemo(() => accessRows(available, ids, models), [available, ids, models]);
 
   // Opening on an empty selection would fail validation before the operator has
   // touched a row, so it opens on everything the scope can see.
@@ -113,7 +112,7 @@ export function UpstreamAccessControl({
               return <TableRow key={row.id}>
                 <TableCell><Checkbox aria-label={`${t('dashboard.upstreamAccess.enabled')}: ${row.name}`} checked={row.selected} disabled={disabled || !override} onChange={(_, data) => toggleUpstream(row.id, !!data.checked)} /></TableCell>
                 <TableCell><div className="inline-flex items-center gap-1"><ReorderButtons disabled={disabled || !override} downLabel={t('dashboard.upstreams.actions.moveDown', { name: row.name })} isFirst={index <= 0} isLast={index === -1 || index >= ids.length - 1} onMove={direction => moveUpstream(row.id, direction)} upLabel={t('dashboard.upstreams.actions.moveUp', { name: row.name })} /></div></TableCell>
-                <TableCell><ProviderBadge color={row.color} kind={row.kind} label={row.name} /></TableCell>
+                <TableCell><ProviderBadge label={row.name} upstream={row.upstream} /></TableCell>
                 <TableCell><span className="inline-flex items-center gap-1.5 min-w-0">
                   {!row.upstreamEnabled && <ProhibitedRegular className="block flex-none text-fui-fg2" aria-label={t('dashboard.upstreamAccess.upstreamDisabled')} />}
                   {row.modelCount === null
@@ -133,7 +132,6 @@ const accessRows = (
   available: UpstreamOption[],
   ids: string[],
   models: ControlPlaneModel[],
-  t: ReturnType<typeof useTranslation>['t'],
 ): UpstreamAccessRow[] => {
   const selected = new Set(ids);
   const byId = new Map(available.map(upstream => [upstream.id, upstream]));
@@ -146,20 +144,20 @@ const accessRows = (
   // A disabled upstream contributes nothing to the live catalog these counts
   // come from, so it reports the size of the catalog it stored while it was on.
   const rowFor = (upstream: UpstreamOption, isSelected: boolean): UpstreamAccessRow => ({
-    color: upstream.color,
     id: upstream.id,
-    kind: upstream.kind,
     modelCount: upstream.enabled ? (modelCounts.get(upstream.id) ?? 0) : upstream.cachedModelCount,
     name: upstream.name,
     selected: isSelected,
+    upstream: { hue: upstream.hue, kind: upstream.kind },
     upstreamEnabled: upstream.enabled,
   });
+  // Selected first, in the order the cap states, then the rest. An id absent
+  // from `available` has none: the control plane serves a cap already projected
+  // through what the principal can reach, so every id here resolves.
   return [
-    ...ids.map(id => {
+    ...ids.flatMap(id => {
       const upstream = byId.get(id);
-      return upstream
-        ? rowFor(upstream, true)
-        : { id, name: t('dashboard.upstreamAccess.unknownUpstream', { id }), kind: null, color: null, modelCount: null, selected: true, upstreamEnabled: true };
+      return upstream ? [rowFor(upstream, true)] : [];
     }),
     ...available.filter(upstream => !selected.has(upstream.id)).map(upstream => rowFor(upstream, false)),
   ];

@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { HEX_RE, blendHex, hexToRgb, hsvToRgb, readableTone, rgbToHex, rgbToHsv } from '../../src/lib/color';
+import { blendHex, hexToRgb, hsvToRgb, readableTone, rgbToHex, rgbToHsv } from '../../src/lib/color';
+import { hueBadgeTone } from '../../src/lib/hue';
 
 // The subject decides by contrast, so the assertions compute it independently
 // rather than borrowing the function under test.
 const contrast = (a: string, b: string) => {
   const luminance = (hex: string) => {
-    const [r, g, b2] = hexToRgb(hex)!;
+    const [r, g, b2] = hexToRgb(hex);
     const channel = (value: number) => {
       const s = value / 255;
       return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
@@ -17,33 +18,13 @@ const contrast = (a: string, b: string) => {
   return x > y ? x / y : y / x;
 };
 
-describe('HEX_RE', () => {
-  it('accepts 6-digit hex in either case', () => {
-    expect(HEX_RE.test('#00E5FF')).toBe(true);
-    expect(HEX_RE.test('#00e5ff')).toBe(true);
-    expect(HEX_RE.test('#ABCDEF')).toBe(true);
-  });
-
-  it('rejects 3-digit shorthand', () => {
-    expect(HEX_RE.test('#F00')).toBe(false);
-  });
-
-  it('rejects 8-digit RGBA', () => {
-    expect(HEX_RE.test('#00E5FFAA')).toBe(false);
-  });
-
-  it('rejects the empty string and missing hash', () => {
-    expect(HEX_RE.test('')).toBe(false);
-    expect(HEX_RE.test('00E5FF')).toBe(false);
-  });
-
-  it('rejects non-hex characters', () => {
-    expect(HEX_RE.test('#GGGGGG')).toBe(false);
-    expect(HEX_RE.test('#00 5FF')).toBe(false);
-  });
-});
-
 describe('hexToRgb', () => {
+  it('rejects everything that is not 6-digit hex', () => {
+    for (const value of ['#F00', '#00E5FFAA', '', '00E5FF', '#GGGGGG', '#00 5FF', '#XYZXYZ']) {
+      expect(() => hexToRgb(value), value).toThrow(TypeError);
+    }
+  });
+
   it('parses uppercase and lowercase to the same tuple', () => {
     expect(hexToRgb('#00E5FF')).toEqual([0, 229, 255]);
     expect(hexToRgb('#00e5ff')).toEqual([0, 229, 255]);
@@ -52,12 +33,6 @@ describe('hexToRgb', () => {
   it('parses the black and white boundaries', () => {
     expect(hexToRgb('#000000')).toEqual([0, 0, 0]);
     expect(hexToRgb('#FFFFFF')).toEqual([255, 255, 255]);
-  });
-
-  it('returns null on invalid hex (guards HSV seed against undefined)', () => {
-    expect(hexToRgb('#F00')).toBeNull();
-    expect(hexToRgb('#XYZXYZ')).toBeNull();
-    expect(hexToRgb('')).toBeNull();
   });
 });
 
@@ -141,9 +116,7 @@ describe('HSV/RGB/HEX round-trip', () => {
 
   it('hex -> rgb -> hex is exact for canonical uppercase input', () => {
     for (const hex of ['#000000', '#FFFFFF', '#00E5FF', '#8B5CF6', '#F43F5E']) {
-      const rgb = hexToRgb(hex);
-      expect(rgb).not.toBeNull();
-      expect(rgbToHex(...rgb!)).toBe(hex);
+      expect(rgbToHex(...hexToRgb(hex))).toBe(hex);
     }
   });
 });
@@ -168,13 +141,13 @@ describe('readableTone', () => {
     expect(contrast('#C239B3', chip('#C239B3', CARD_DARK))).toBeLessThan(4.5);
     expect(contrast(light, chip('#C239B3', CARD_LIGHT))).toBeGreaterThanOrEqual(4.5);
     expect(contrast(dark, chip('#C239B3', CARD_DARK))).toBeGreaterThanOrEqual(4.5);
-    expect(hexToRgb(light)![0]).toBeLessThan(hexToRgb('#C239B3')![0]);
-    expect(hexToRgb(dark)![0]).toBeGreaterThan(hexToRgb('#C239B3')![0]);
+    expect(hexToRgb(light)[0]).toBeLessThan(hexToRgb('#C239B3')[0]);
+    expect(hexToRgb(dark)[0]).toBeGreaterThan(hexToRgb('#C239B3')[0]);
   });
 
   it('holds the hue while it moves value', () => {
-    const [sourceHue] = rgbToHsv(...hexToRgb('#00E5FF')!);
-    const [tonedHue] = rgbToHsv(...hexToRgb(toned('#00E5FF', CARD_LIGHT))!);
+    const [sourceHue] = rgbToHsv(...hexToRgb('#00E5FF'));
+    const [tonedHue] = rgbToHsv(...hexToRgb(toned('#00E5FF', CARD_LIGHT)));
     expect(Math.abs(tonedHue - sourceHue)).toBeLessThan(1);
   });
 
@@ -183,8 +156,8 @@ describe('readableTone', () => {
     // yellow, which looks like the hard case, is solved by value alone.
     const result = toned('#FFD740', CARD_LIGHT);
     expect(contrast(result, chip('#FFD740', CARD_LIGHT))).toBeGreaterThanOrEqual(4.5);
-    const [, sourceSaturation] = rgbToHsv(...hexToRgb('#FFD740')!);
-    const [, resultSaturation] = rgbToHsv(...hexToRgb(result)!);
+    const [, sourceSaturation] = rgbToHsv(...hexToRgb('#FFD740'));
+    const [, resultSaturation] = rgbToHsv(...hexToRgb(result));
     expect(resultSaturation).toBeCloseTo(sourceSaturation, 1);
   });
 
@@ -194,16 +167,16 @@ describe('readableTone', () => {
     const result = toned('#0000FF', CARD_DARK);
     expect(contrast('#0000FF', chip('#0000FF', CARD_DARK))).toBeLessThan(1.5);
     expect(contrast(result, chip('#0000FF', CARD_DARK))).toBeGreaterThanOrEqual(4.5);
-    const [, sourceSaturation] = rgbToHsv(...hexToRgb('#0000FF')!);
-    const [, resultSaturation] = rgbToHsv(...hexToRgb(result)!);
+    const [, sourceSaturation] = rgbToHsv(...hexToRgb('#0000FF'));
+    const [, resultSaturation] = rgbToHsv(...hexToRgb(result));
     expect(resultSaturation).toBeLessThan(sourceSaturation);
   });
 
-  it('reaches the floor for every preset the picker offers, in both schemes', () => {
-    for (const preset of ['#FFD740', '#00E676', '#00E5FF', '#A78BFA', '#FF5252', '#FF9800']) {
-      for (const card of [CARD_LIGHT, CARD_DARK]) {
-        expect(contrast(toned(preset, card), chip(preset, card))).toBeGreaterThanOrEqual(4.5);
-      }
+  it('reaches the floor for every tone a hue can produce, in both schemes', () => {
+    for (let hue = 0; hue < 360; hue += 1) {
+      const tone = hueBadgeTone(hue);
+      expect(contrast(toned(tone.light, CARD_LIGHT), chip(tone.light, CARD_LIGHT))).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(toned(tone.dark, CARD_DARK), chip(tone.dark, CARD_DARK))).toBeGreaterThanOrEqual(4.5);
     }
   });
 

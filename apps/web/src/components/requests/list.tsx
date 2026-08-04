@@ -236,8 +236,7 @@ function RequestRowContent({ addressOfRecord, index, now, onSelect, record, reco
           </Text>
         </Tooltip>
         {record.upstream && <ProviderBadge
-          color={record.upstream.color}
-          kind={record.upstream.kind}
+          upstream={record.upstream}
           label={record.upstream.name}
           title={`${record.upstream.kind}, ${record.upstream.id}`}
         />}

@@ -11,7 +11,7 @@ describe('OpenAI search passthrough eligibility', () => {
       { id: 'ollama', kind: 'ollama', enabled: true },
     ] as UpstreamRecord[];
     const models = [{
-      id: 'gpt-5', kind: 'chat', upstreams: [{ id: 'codex', kind: 'codex', name: 'Codex', color: null }],
+      id: 'gpt-5', kind: 'chat', upstreams: [{ id: 'codex', kind: 'codex', name: 'Codex', hue: 210 }],
     }] as ControlPlaneModel[];
     expect(eligibleSearchUpstreams(upstreams, models).map(upstream => upstream.id)).toEqual(['codex']);
   });

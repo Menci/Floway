@@ -1,8 +1,7 @@
-import initSqlJs from 'sql.js';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
-import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
+import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename } from './test-sqlite.ts';
 import { initRepo } from '../../src/repo/index.ts';
 import { hashResponsesJson } from '../../src/repo/responses-hash.ts';
 import { prepareStoredResponsesPayload } from '../../src/repo/responses-payload.ts';
@@ -396,8 +395,7 @@ test('a collector claim prevents a staged file from being adopted', async () => 
 });
 
 test('migration 0065 performs one direct cutover to disabled rolling state', async () => {
-  const SQL = await initSqlJs();
-  const db = new SQL.Database();
+  const db = await createSqlJsDatabase();
   try {
     for (const [filename, sql] of migrationSqlByFilename) {
       if (filename === '0065_responses_state.sql') break;

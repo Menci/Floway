@@ -3,8 +3,8 @@
 // error attribution and validation policy stay uniform across SELECT
 // shapes.
 
-import type { UpstreamColor, UpstreamProviderKind } from '@floway-dev/provider';
-import { assertUpstreamProviderKind, normalizeUpstreamColor } from '@floway-dev/provider';
+import type { UpstreamProviderKind } from '@floway-dev/provider';
+import { assertUpstreamProviderKind, normalizeUpstreamHue } from '@floway-dev/provider';
 
 export const parseUpstreamKind = (id: string, value: string | null): UpstreamProviderKind => {
   try {
@@ -14,10 +14,10 @@ export const parseUpstreamKind = (id: string, value: string | null): UpstreamPro
   }
 };
 
-export const parseUpstreamColor = (id: string, value: string | null): UpstreamColor | null => {
+export const parseUpstreamHue = (id: string, value: unknown): number => {
   try {
-    return normalizeUpstreamColor(value);
+    return normalizeUpstreamHue(value);
   } catch (cause) {
-    throw new Error(`Invalid upstream color for ${id}`, { cause });
+    throw new Error(`Invalid upstream hue for ${id}`, { cause });
   }
 };

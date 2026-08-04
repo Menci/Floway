@@ -34,6 +34,10 @@ const mapUsage = (
   const cachedTokens = usage.prompt_tokens_details?.cached_tokens;
   const cacheWriteTokens = usage.prompt_tokens_details?.cache_creation_input_tokens
     ?? usage.prompt_tokens_details?.cache_write_tokens;
+  // Validated, not consumed: Gemini's `promptTokenCount` carries the same
+  // inclusive total and `cachedContentTokenCount` the same subset of it, so
+  // there is nothing to recompute. The assertion is this package's own, on the
+  // contract its output type declares.
   splitInclusiveInputTokens(usage.prompt_tokens, cachedTokens, cacheWriteTokens);
   const { output: candidatesTokenCount, reasoning: thoughtsTokenCount } = splitInclusiveOutputTokens(
     usage.completion_tokens,

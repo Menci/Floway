@@ -202,7 +202,7 @@ test('disabledPublicModelIds hides models from the catalog and routing, per upst
     proxyFallbackList: [],
     modelPrefix: null,
     modelsCache: null,
-    color: null,
+    hue: 210,
   });
 
   // up_a disables a solo model and a shared one (by public id, including a
