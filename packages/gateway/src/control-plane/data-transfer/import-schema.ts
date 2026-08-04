@@ -241,14 +241,6 @@ const userSchema = z.object({
   deletedAt: nullableStringSchema('deletedAt'),
 });
 
-const usersSchema = z.array(userSchema, { error: 'users must be an array' }).superRefine((users, ctx) => {
-  const seen = new Set<number>();
-  for (let index = 0; index < users.length; index++) {
-    if (seen.has(users[index].id)) addIssue(ctx, `duplicate user id ${users[index].id}`, [index]);
-    seen.add(users[index].id);
-  }
-});
-
 const metricSchema = z.object({
   metric: z.unknown().transform((value, ctx): BillingMetric => {
     if (typeof value !== 'string' || !BILLING_METRICS.includes(value as BillingMetric)) {
@@ -385,28 +377,49 @@ const performanceSchema = z.object({
   }
 });
 
-const apiKeysSchema = z.array(apiKeySchema, { error: 'apiKeys must be an array' });
-const upstreamsSchema = z.array(upstreamWireSchema, { error: 'upstreams must be an array' });
-const proxiesSchema = z.array(proxySchema, { error: 'proxies must be an array' }).optional().default([]);
-const usageRecordsSchema = z.array(usageSchema, { error: 'usage must be an array' });
-const searchUsageRecordsSchema = z.array(searchUsageSchema, { error: 'searchUsage must be an array' });
-const performanceRecordsSchema = z.array(performanceSchema, { error: 'performance must be an array when included' });
+interface CollectionOptions<T> {
+  arrayError: string;
+  optional?: boolean;
+  validateRecord?: (record: T, index: number, prior: readonly T[]) => string | null;
+}
 
-const parseCollection = <T>(label: string, schema: z.ZodType<T[]>, value: unknown): { type: 'ok'; records: T[] } | { type: 'invalid'; error: string } => {
-  const result = schema.safeParse(value);
-  if (result.success) return { type: 'ok', records: result.data };
-  const issue = result.error.issues[0];
-  const index = typeof issue.path[0] === 'number' ? issue.path[0] : -1;
-  const location = index >= 0 ? ` at index ${index}` : '';
-  return { type: 'invalid', error: `invalid ${label}${location}: ${issue.message}` };
+// Zod reports every invalid array element in one result. Imports historically
+// stop at the first record, so parse each element independently after Zod owns
+// the array boundary; this retains deterministic index and error precedence.
+const parseCollection = <T>(
+  label: string,
+  schema: z.ZodType<T>,
+  value: unknown,
+  options: CollectionOptions<T>,
+): { type: 'ok'; records: T[] } | { type: 'invalid'; error: string } => {
+  if (options.optional && value === undefined) return { type: 'ok', records: [] };
+  const array = z.array(z.unknown(), { error: options.arrayError }).safeParse(value);
+  if (!array.success) return { type: 'invalid', error: `invalid ${label}: ${array.error.issues[0].message}` };
+
+  const records: T[] = [];
+  for (let index = 0; index < array.data.length; index++) {
+    const result = schema.safeParse(array.data[index]);
+    if (!result.success) {
+      return { type: 'invalid', error: `invalid ${label} at index ${index}: ${result.error.issues[0].message}` };
+    }
+    const validationError = options.validateRecord?.(result.data, index, records);
+    if (validationError) return { type: 'invalid', error: `invalid ${label} at index ${index}: ${validationError}` };
+    records.push(result.data);
+  }
+  return { type: 'ok', records };
 };
 
 export const parseImportData = (value: unknown): ImportDataParseResult => {
   if (!isRecord(value)) return { type: 'invalid', error: 'data is required' };
 
-  const apiKeys = parseCollection('apiKeys', apiKeysSchema, value.apiKeys);
+  const apiKeys = parseCollection('apiKeys', apiKeySchema, value.apiKeys, { arrayError: 'apiKeys must be an array' });
   if (apiKeys.type === 'invalid') return apiKeys;
-  const users = parseCollection('users', usersSchema, value.users);
+  const users = parseCollection('users', userSchema, value.users, {
+    arrayError: 'users must be an array',
+    validateRecord: (user, _index, prior) => prior.some(candidate => candidate.id === user.id)
+      ? `duplicate user id ${user.id}`
+      : null,
+  });
   if (users.type === 'invalid') return users;
   if (!users.records.some(user => user.id === SEED_ADMIN_USER_ID)) {
     return { type: 'invalid', error: 'invalid users: payload must include user 1 (the seed admin)' };
@@ -418,11 +431,11 @@ export const parseImportData = (value: unknown): ImportDataParseResult => {
     }
   }
 
-  const usage = parseCollection('usage', usageRecordsSchema, value.usage);
+  const usage = parseCollection('usage', usageSchema, value.usage, { arrayError: 'usage must be an array' });
   if (usage.type === 'invalid') return usage;
-  const upstreams = parseCollection('upstreams', upstreamsSchema, value.upstreams);
+  const upstreams = parseCollection('upstreams', upstreamWireSchema, value.upstreams, { arrayError: 'upstreams must be an array' });
   if (upstreams.type === 'invalid') return upstreams;
-  const proxies = parseCollection('proxies', proxiesSchema, value.proxies);
+  const proxies = parseCollection('proxies', proxySchema, value.proxies, { arrayError: 'proxies must be an array', optional: true });
   if (proxies.type === 'invalid') return proxies;
   const proxyIds = new Map<string, number>();
   for (let index = 0; index < proxies.records.length; index++) {
@@ -433,7 +446,7 @@ export const parseImportData = (value: unknown): ImportDataParseResult => {
     proxyIds.set(proxies.records[index].id, index);
   }
 
-  const searchUsage = parseCollection('searchUsage', searchUsageRecordsSchema, value.searchUsage);
+  const searchUsage = parseCollection('searchUsage', searchUsageSchema, value.searchUsage, { arrayError: 'searchUsage must be an array' });
   if (searchUsage.type === 'invalid') return searchUsage;
 
   let searchConfig: WebSearchConfig;
@@ -451,7 +464,7 @@ export const parseImportData = (value: unknown): ImportDataParseResult => {
   }
   let performance: PerformanceTelemetryRecord[] = [];
   if (value.performanceIncluded) {
-    const parsed = parseCollection('performance', performanceRecordsSchema, value.performance);
+    const parsed = parseCollection('performance', performanceSchema, value.performance, { arrayError: 'performance must be an array when included' });
     if (parsed.type === 'invalid') {
       return { type: 'invalid', error: parsed.error.replace(/^invalid performance at index /, 'invalid performance record at index ') };
     }
