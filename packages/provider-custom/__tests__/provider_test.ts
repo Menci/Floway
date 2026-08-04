@@ -4,7 +4,7 @@ import { createCustomProvider } from '../src/provider.ts';
 import type { ModelPricing } from '@floway-dev/protocols/common';
 import { parseRerankRequest } from '@floway-dev/protocols/rerank';
 import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
-import { directFetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
+import { directFetcher } from '@floway-dev/provider';
 import { assertEquals, assertExists, assertRejects, jsonResponse, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 interface BuildOptions {
