@@ -30,6 +30,7 @@ import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { TruncationTooltip, useTruncation } from '../components/ui/truncation-tooltip';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { useRefresh } from '../components/ui/use-refresh';
+import { shortAccountId } from '../components/upstream-editor/account-id';
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
 import { fluentComponents } from '../fluent';
 import { dateTime } from '../lib/format-time';
@@ -538,7 +539,11 @@ const upstreamSummary = (record: UpstreamRecord, t: ReturnType<typeof useTransla
   case 'copilot': return record.config.user.login ? `@${record.config.user.login}` : t('dashboard.upstreams.summary.copilot');
   case 'codex': {
     const account = record.config.accounts[0];
-    return account ? [account.email, account.planType].filter(Boolean).join(' - ') : t('dashboard.upstreams.summary.noAccount');
+    if (!account) return t('dashboard.upstreams.summary.noAccount');
+    const identity = account.email
+      ?? (account.chatgptAccountId === null ? null : shortAccountId(account.chatgptAccountId));
+    return [identity, account.planType].filter(Boolean).join(' - ')
+      || t('dashboard.upstreams.summary.noAccount');
   }
   case 'claude-code': {
     const account = record.config.accounts[0];

@@ -30,13 +30,19 @@ export interface QuotaEntry {
 
 export type CredentialLookup =
   | { kind: 'present'; credential: CodexAccountCredentialState }
-  | { kind: 'account-id-mismatch'; expectedAccountId: string };
+  | { kind: 'account-id-mismatch'; expectedAccountId: string | null };
 
 export const findCredential = (record: CodexRecord): CredentialLookup => {
   const expectedAccountId = record.config.accounts[0].chatgptAccountId;
   const credential = record.state.accounts.find(account => account.chatgptAccountId === expectedAccountId);
   return credential ? { kind: 'present', credential } : { kind: 'account-id-mismatch', expectedAccountId };
 };
+
+// The editor renders both the redacted row the list returns and the raw patch
+// an import merges into the draft, and those two name the same fact
+// differently.
+export const codexRenewable = (credential: CodexAccountCredentialState): boolean =>
+  credential.refresh_token_set ?? (typeof credential.refresh_token === 'string' && credential.refresh_token.length > 0);
 
 const window = (
   key: QuotaWindow['key'],

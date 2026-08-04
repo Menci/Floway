@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 
 import { shortAccountId } from './account-id';
-import { accountStatus, type CodexRecord, findCredential, latestCredits, quotaEntries } from './codex-account';
+import { accountStatus, type CodexRecord, codexRenewable, findCredential, latestCredits, quotaEntries } from './codex-account';
 import { quotaBarColor, WALL_CLOCK_REFRESH_MS } from './subscription-account-quota';
 import { fluentComponents } from '../../fluent';
 import { dateTime } from '../../lib/format-time';
@@ -31,27 +31,43 @@ export function CodexAccountCard({ record }: { record: CodexRecord }) {
       ? t('dashboard.upstreamEditor.codex.status.rateLimited', { time: dateTime(status.until, locale) })
       : t(`dashboard.upstreamEditor.codex.status.${status.reason}`);
 
+  const renewable = credential === null ? null : codexRenewable(credential);
+  const accountId = account.chatgptAccountId;
+  const expiresAt = credential?.accessToken?.expiresAt ?? null;
+  const bearerLabel = expiresAt !== null
+    ? t('dashboard.upstreamEditor.codex.expires', { time: dateTime(new Date(expiresAt).toISOString(), locale) })
+    : renewable === false
+      ? t('dashboard.upstreamEditor.codex.expiryUnknownAccessOnly')
+      : t('dashboard.upstreamEditor.codex.expiryUnknown');
+
   return <section className="grid gap-4">
     <div className="flex items-start gap-3">
       <ProviderIcon kind="codex" className="h-8 w-8 shrink-0" />
       <div className="grid gap-1 min-w-0 flex-1">
-        <Text block weight="semibold" truncate wrap={false}>{account.email}</Text>
+        <Text block weight="semibold" truncate wrap={false}>{account.email ?? t('dashboard.upstreamEditor.codex.unknownEmail')}</Text>
         <div className="flex flex-wrap items-center gap-2">
-          <StatusBadge tone="accent">{account.planType}</StatusBadge>
+          <StatusBadge tone="accent">{account.planType ?? t('dashboard.upstreamEditor.codex.unknownPlan')}</StatusBadge>
+          {renewable !== null && <StatusBadge tone={renewable ? 'success' : 'warning'}>
+            {t(renewable ? 'dashboard.upstreamEditor.codex.renewable' : 'dashboard.upstreamEditor.codex.accessOnly')}
+          </StatusBadge>}
           {credits?.credits_has_credits === false
             ? <StatusBadge tone="danger">{t('dashboard.upstreamEditor.codex.noCredits')}</StatusBadge>
             : credits?.credits_balance !== undefined && <Badge appearance="outline" size="large">
               {t('dashboard.upstreamEditor.codex.credits', { balance: credits.credits_balance })}
             </Badge>}
-          <TruncationTooltip content={account.chatgptAccountId} relationship="description">
-            {measureRef => <Text size={200} className="winui-focus-rect text-fui-fg3 font-mono mono-size-xs" ref={measureRef} tabIndex={0}>{shortAccountId(account.chatgptAccountId)}</Text>}
-          </TruncationTooltip>
+          {accountId === null
+            ? <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.codex.unknownAccountId')}</Text>
+            : <TruncationTooltip content={accountId} relationship="description">
+                {measureRef => <Text size={200} className="winui-focus-rect text-fui-fg3 font-mono mono-size-xs" ref={measureRef} tabIndex={0}>{shortAccountId(accountId)}</Text>}
+              </TruncationTooltip>}
         </div>
       </div>
       <StatusBadge tone={status.tone}>{statusLabel}</StatusBadge>
     </div>
 
     {status.tone === 'danger' && status.detail && <Text size={200} className="text-fui-fg2">{status.detail}</Text>}
+
+    {credential && <Text size={200} className="text-fui-fg3">{bearerLabel}</Text>}
 
     {entries.length === 0
       ? <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.codex.noSnapshot')}</Text>

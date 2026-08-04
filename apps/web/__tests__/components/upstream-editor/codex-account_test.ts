@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CodexQuotaSnapshotMap, UpstreamRecord } from '../../../src/api/types';
-import { accountStatus, findCredential, latestCredits, quotaEntries } from '../../../src/components/upstream-editor/codex-account';
+import { accountStatus, codexRenewable, findCredential, latestCredits, quotaEntries } from '../../../src/components/upstream-editor/codex-account';
 
 type CodexRecord = Extract<UpstreamRecord, { kind: 'codex' }>;
 
@@ -109,5 +109,42 @@ describe('codex account status', () => {
   it('marks a config/state account mismatch as dangerous', () => {
     expect(accountStatus({ kind: 'account-id-mismatch', expectedAccountId: ACCOUNT_ID }, []))
       .toEqual({ tone: 'danger', reason: 'account-id-mismatch' });
+  });
+});
+
+describe('codex renewability', () => {
+  it('reads the redacted flag the list hands back', () => {
+    expect(codexRenewable({ ...activeCredential, refresh_token_set: true })).toBe(true);
+    expect(codexRenewable({ ...activeCredential, refresh_token_set: false })).toBe(false);
+  });
+
+  it('reads the raw token an import merges into the draft', () => {
+    expect(codexRenewable({ ...activeCredential, refresh_token: 'rt' })).toBe(true);
+    expect(codexRenewable({ ...activeCredential, refresh_token: null })).toBe(false);
+    expect(codexRenewable(activeCredential)).toBe(false);
+  });
+});
+
+describe('codex credential lookup without an account id', () => {
+  it('joins config and state on a shared null', () => {
+    const nullIdRecord = {
+      id: 'up_1',
+      kind: 'codex',
+      config: { accounts: [{ email: null, chatgptAccountId: null, chatgptUserId: null, planType: null }] },
+      state: { accounts: [{ chatgptAccountId: null, state: 'active', state_updated_at: PAST, refresh_token_set: false }] },
+    } as unknown as CodexRecord;
+    const lookup = findCredential(nullIdRecord);
+    expect(lookup.kind).toBe('present');
+    if (lookup.kind === 'present') expect(codexRenewable(lookup.credential)).toBe(false);
+  });
+
+  it('still reports a mismatch when state names an account the config does not', () => {
+    const mismatched = {
+      id: 'up_1',
+      kind: 'codex',
+      config: { accounts: [{ email: null, chatgptAccountId: null, chatgptUserId: null, planType: null }] },
+      state: { accounts: [{ chatgptAccountId: ACCOUNT_ID, state: 'active', state_updated_at: PAST }] },
+    } as unknown as CodexRecord;
+    expect(findCredential(mismatched)).toEqual({ kind: 'account-id-mismatch', expectedAccountId: null });
   });
 });

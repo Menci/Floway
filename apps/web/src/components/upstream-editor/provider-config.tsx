@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 
 import { ClaudeCodeAccountCard } from './claude-code-account-card';
 import { CodexAccountCard } from './codex-account-card';
+import { CodexImportForm } from './codex-import';
 import { CopilotQuotaCard } from './copilot-quota-card';
 import type { UpstreamEditorValues } from './data';
 import { isPersisted, previewRecord } from './data';
@@ -387,7 +388,7 @@ function OAuthConfig({ record, onPatch }: {
     if (result.error) { setError(result.error.message); return; }
     onPatch(result.data.patch, isPersisted(record));
   };
-  const [tab, setTab] = useState(record.kind === 'codex' ? 'json' : 'oauth');
+  const [tab, setTab] = useState('oauth');
   const [json, setJson] = useState('');
   const [callback, setCallback] = useState('');
   const [authorizeUrl, setAuthorizeUrl] = useState<string | null>(null);
@@ -411,18 +412,16 @@ function OAuthConfig({ record, onPatch }: {
     if (generation.current !== mine) return;
     stashPkce(record.kind, flowKind, { verifier: pkce.verifier, state: pkce.state });
     const body = { record: previewRecord(record, getValues()), challenge: pkce.challenge, state: pkce.state };
-    const result = record.kind === 'codex'
-      ? await callApi(() => api.api.upstreams.codex.oauth['authorize-url'].$post({ json: body }))
-      : tab === 'setup'
-        ? await callApi(() => api.api.upstreams['claude-code']['setup-token']['authorize-url'].$post({ json: body }))
-        : await callApi(() => api.api.upstreams['claude-code'].oauth['authorize-url'].$post({ json: body }));
+    const result = tab === 'setup'
+      ? await callApi(() => api.api.upstreams['claude-code']['setup-token']['authorize-url'].$post({ json: body }))
+      : await callApi(() => api.api.upstreams['claude-code'].oauth['authorize-url'].$post({ json: body }));
     if (generation.current !== mine) return;
     setBusy(false);
     if (result.error) { setError(result.error.message); return; }
     setAuthorizeUrl(result.data.authorize_url);
   }, [flowKind, getValues, record, tab]);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- Opening the panel starts an authorize-url request; the pending flag is the start of that work.
-  useEffect(() => { if (open && tab !== 'json' && !authorizeUrl) void prepare(); }, [authorizeUrl, open, prepare, tab]);
+  useEffect(() => { if (open && record.kind !== 'codex' && tab !== 'json' && !authorizeUrl) void prepare(); }, [authorizeUrl, open, prepare, record.kind, tab]);
 
   const submit = async () => {
     setBusy(true); setError(null);
@@ -431,28 +430,20 @@ function OAuthConfig({ record, onPatch }: {
     try {
       if (tab === 'json') {
         JSON.parse(json);
-        result = record.kind === 'codex'
-          ? await callApi(() => api.api.upstreams.codex.oauth.exchange.$post({
-              json: { record: editorRecord, auth_json: json },
-            }))
-          : await callApi(() => api.api.upstreams['claude-code'].oauth.exchange.$post({
-              json: { record: editorRecord, credentials_json: json },
-            }));
+        result = await callApi(() => api.api.upstreams['claude-code'].oauth.exchange.$post({
+          json: { record: editorRecord, credentials_json: json },
+        }));
       } else {
         const parsed = parseCallbackPaste(callback);
         const recalled = recallPkce(record.kind, flowKind, parsed.state);
         if (!recalled) throw new Error(t('dashboard.upstreamEditor.oauth.unrecognized'));
-        result = record.kind === 'codex'
-          ? await callApi(() => api.api.upstreams.codex.oauth.exchange.$post({
-              json: { record: editorRecord, callback: { code: parsed.code, verifier: recalled.verifier } },
+        result = tab === 'setup'
+          ? await callApi(() => api.api.upstreams['claude-code']['setup-token'].exchange.$post({
+              json: { record: editorRecord, callback: { code: parsed.code, verifier: recalled.verifier, state: parsed.state } },
             }))
-          : tab === 'setup'
-            ? await callApi(() => api.api.upstreams['claude-code']['setup-token'].exchange.$post({
-                json: { record: editorRecord, callback: { code: parsed.code, verifier: recalled.verifier, state: parsed.state } },
-              }))
-            : await callApi(() => api.api.upstreams['claude-code'].oauth.exchange.$post({
-                json: { record: editorRecord, callback: { code: parsed.code, verifier: recalled.verifier, state: parsed.state } },
-              }));
+          : await callApi(() => api.api.upstreams['claude-code'].oauth.exchange.$post({
+              json: { record: editorRecord, callback: { code: parsed.code, verifier: recalled.verifier, state: parsed.state } },
+            }));
       }
     } catch (error) {
       setBusy(false); setError(errorMessage(error)); return;
@@ -480,16 +471,22 @@ function OAuthConfig({ record, onPatch }: {
       <Button onClick={() => setOpen(value => !value)}>{open ? t('common.cancel') : t('dashboard.upstreamEditor.oauth.reimport')}</Button>
     </div>}
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
-    {open && <>
-      <TabList aria-label={t('dashboard.upstreamEditor.oauth.importMethod')} selectedValue={tab} onTabSelect={(_, data) => { setTab(String(data.value)); setAuthorizeUrl(null); }}>
-        {record.kind === 'codex' ? <><Tab value="json">auth.json</Tab><Tab value="oauth">OAuth</Tab></> : <><Tab value="oauth">OAuth</Tab><Tab value="setup">Setup Token</Tab><Tab value="json">credentials.json</Tab></>}
-      </TabList>
-      {tab === 'json' ? <Field label={t('dashboard.upstreamEditor.oauth.credentialJson')}><Textarea className="font-mono" rows={8} value={json} onChange={(_, data) => setJson(data.value)} /></Field> : <div className="grid gap-3">
-        {busy && !authorizeUrl ? <Spinner label={t('dashboard.upstreamEditor.oauth.preparing')} /> : authorizeUrl && <div className="flex items-center gap-2 min-w-0"><Link href={authorizeUrl} target="_blank" rel="noopener noreferrer"><OpenLinkLabel>{t('dashboard.upstreamEditor.oauth.openAuthorize')}</OpenLinkLabel></Link><TooltipIconButton icon={copyOutcomeIcon(outcomeFor())} label={copyLabel(outcomeFor(), t('dashboard.upstreamEditor.oauth.copy'))} onClick={() => copy(authorizeUrl)} /></div>}
-        <Field label={t('dashboard.upstreamEditor.oauth.callback')}><Textarea className="font-mono" rows={3} value={callback} onChange={(_, data) => setCallback(data.value)} /></Field>
-      </div>}
-      <Button appearance="primary" disabledFocusable={busy} icon={busy ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />} onClick={() => void submit()}>{hasAccount ? t('dashboard.upstreamEditor.oauth.reimport') : t('dashboard.upstreamEditor.oauth.import')}</Button>
-    </>}
+    {open && (record.kind === 'codex'
+      ? <CodexImportForm
+          hasAccount={hasAccount}
+          onImported={patch => { onPatch(patch, isPersisted(record)); setOpen(false); }}
+          record={{ ...record, kind: 'codex', config: config as Extract<UpstreamRecord, { kind: 'codex' }>['config'], state: values.state as Extract<UpstreamRecord, { kind: 'codex' }>['state'] }}
+        />
+      : <>
+          <TabList aria-label={t('dashboard.upstreamEditor.oauth.importMethod')} selectedValue={tab} onTabSelect={(_, data) => { setTab(String(data.value)); setAuthorizeUrl(null); }}>
+            <Tab value="oauth">OAuth</Tab><Tab value="setup">Setup Token</Tab><Tab value="json">credentials.json</Tab>
+          </TabList>
+          {tab === 'json' ? <Field label={t('dashboard.upstreamEditor.oauth.credentialJson')}><Textarea className="font-mono" rows={8} value={json} onChange={(_, data) => setJson(data.value)} /></Field> : <div className="grid gap-3">
+            {busy && !authorizeUrl ? <Spinner label={t('dashboard.upstreamEditor.oauth.preparing')} /> : authorizeUrl && <div className="flex items-center gap-2 min-w-0"><Link href={authorizeUrl} target="_blank" rel="noopener noreferrer"><OpenLinkLabel>{t('dashboard.upstreamEditor.oauth.openAuthorize')}</OpenLinkLabel></Link><TooltipIconButton icon={copyOutcomeIcon(outcomeFor())} label={copyLabel(outcomeFor(), t('dashboard.upstreamEditor.oauth.copy'))} onClick={() => copy(authorizeUrl)} /></div>}
+            <Field label={t('dashboard.upstreamEditor.oauth.callback')}><Textarea className="font-mono" rows={3} value={callback} onChange={(_, data) => setCallback(data.value)} /></Field>
+          </div>}
+          <Button appearance="primary" disabledFocusable={busy} icon={busy ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />} onClick={() => void submit()}>{hasAccount ? t('dashboard.upstreamEditor.oauth.reimport') : t('dashboard.upstreamEditor.oauth.import')}</Button>
+        </>)}
   </div>;
 }
 
