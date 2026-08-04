@@ -18,15 +18,28 @@
    single network and a mainland resolver that answers SERVFAIL for it would
    otherwise cost the typeface. The two URLs are the same bytes -- both hosts
    return x-ms-blob-content-md5 0z9O1Vho99UFoTkPuyg75g== and the downloads
-   compare equal -- so the second entry buys reachability and nothing else, and a source list is walked lazily enough for
-   that to be free: measured in Chromium 151, Firefox 153 and WebKit 26.5, the
-   second URL is fetched when and only when the first face errors, whether the
-   host does not resolve, refuses the connection, answers 404 or 500, returns a
-   body that is not a font, or omits the CORS header. It is never touched when
-   the mirror answers. The one shape this does not cover is a mirror that
-   accepts the connection and then never replies: the face stays pending rather
-   than failing, so nothing advances the list and `font-display: swap` holds the
-   system stack for as long as the request does.
+   compare equal -- so the second entry buys reachability and nothing else. It
+   also costs nothing on the common path, because a source list is walked
+   lazily: the user agent takes "the first one it can successfully parse and
+   activate", and activation is defined to include downloading the file.
+   https://drafts.csswg.org/css-fonts-4/#src-desc
+   Measured in Chromium 151, Firefox 153 and WebKit 26.5, the second URL is
+   fetched when and only when the first face errors, whether the host does not
+   resolve, refuses the connection, answers 404 or 500, returns a body that is
+   not a font, or omits the CORS header. It is never touched when the mirror
+   answers.
+
+   Two constraints hold this together, and both are easy to break from a
+   distance. `font-display` must stay at a value that waits for the face:
+   under `fallback` or `optional` the display timer expires before a slow
+   failure does, the face is abandoned, and the second URL is never requested
+   at all -- measured in Chromium against an unroutable primary, where `swap`
+   moves on at 5.2 s and neither of the other two ever moves. And the failure
+   has to be one the network reports: a mirror that accepts the connection and
+   then goes silent leaves the face pending rather than errored, so nothing
+   advances the list and the system stack stands in for as long as the request
+   does. SERVFAIL, refusal and reset are all reported, so the case this exists
+   for is covered.
 
    TrueType is the only container upstream; there is no woff2 of the variable
    face on either host, and it costs less than it looks -- the CDN gzips it to
