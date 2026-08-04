@@ -46,10 +46,10 @@ describe('performance overview query', () => {
   });
 
   it('removes Region state outside the Cloudflare runtime', () => {
-    const state = parsePerformanceUrlState(new URLSearchParams('g=runtimeLocation&fr=SJC&hide=SJC'));
+    const state = parsePerformanceUrlState(new URLSearchParams('g=runtimeLocation&fm=gpt-5&fr=SJC&hide=SJC'));
     expect(normalizePerformanceUrlStateForRuntime(state, false)).toMatchObject({
       groupBy: 'model',
-      filters: { runtimeLocation: [] },
+      filters: { model: [], runtimeLocation: [] },
       hidden: [],
     });
     expect(normalizePerformanceUrlStateForRuntime(state, true)).toBe(state);

@@ -47,8 +47,6 @@ const { Button, Tab, TabList, Text, Tooltip } = fluentComponents;
 
 interface UpstreamName { id: string; name: string }
 
-const allGroupByValues: PerformanceGroupBy[] = ['model', 'upstream', 'operation', 'runtimeLocation', 'keyId', 'userId'];
-
 interface LoaderData {
   error: GlobalError | null;
   loadedAt: number;
@@ -81,7 +79,9 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
     callApi(() => api.api['upstream-options'].$get()),
     callApi(() => api.api['runtime-info'].$get()),
   ]);
-  const regionAvailable = runtime.data?.kind === 'cloudflare';
+  // Only a successful Node response proves Region unavailable. A failed probe
+  // must not rewrite a Cloudflare URL into a permanently narrower state.
+  const regionAvailable = runtime.error !== undefined || runtime.data.kind === 'cloudflare';
   const state = normalizePerformanceUrlStateForRuntime(requestedState, regionAvailable);
   const overview = state === requestedState
     ? initialOverview
@@ -184,11 +184,6 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     ['ttftP99', formatDuration(summary?.ttftMsP99 ?? null)],
     ['speedP99', formatTokenRateFromTpot(summary?.tpotUsP99 ?? null)],
   ] as const;
-  const groupByValues = allGroupByValues.filter(key => key !== 'runtimeLocation' || regionAvailable);
-  const breakdowns = overview === null ? [] : groupByValues
-    .filter(key => key !== 'userId' || view === 'all-by-user')
-    .map(key => ({ key, rows: overview.axes[key] }));
-  const activeBreakdown = breakdowns.find(item => item.key === breakdownGroup) ?? breakdowns[0];
   const dimensions: Array<TelemetryDimension<PerformanceGroupBy>> = [
     { key: 'model', groupLabel: t('dashboard.performance.groupBy.model'), filterLabel: t('dashboard.performance.filters.model'), allLabel: t('dashboard.performance.filters.all.model'), options: overview?.dimensionValues.models.map(value => ({ value, label: value })) ?? [] },
     { key: 'upstream', groupLabel: t('dashboard.performance.groupBy.upstream'), filterLabel: t('dashboard.performance.filters.upstream'), allLabel: t('dashboard.performance.filters.all.upstream'), options: overview?.dimensionValues.upstreams.map(value => ({ value, label: labels?.upstreams.get(value) ?? value })) ?? [] },
@@ -204,6 +199,10 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const filterDimensions = availableDimensions.filter(dimension => (
     !((dimension.key === 'userId' || dimension.key === 'keyId') && (groupBy === 'userId' || groupBy === 'keyId'))
   ));
+  const breakdowns = overview === null
+    ? []
+    : availableDimensions.map(({ key }) => ({ key, rows: overview.axes[key] }));
+  const activeBreakdown = breakdowns.find(item => item.key === breakdownGroup) ?? breakdowns[0];
 
   return <section className="dashboard-page">
     <DashboardPageHeader

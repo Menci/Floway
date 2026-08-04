@@ -153,10 +153,13 @@ export const normalizePerformanceUrlStateForRuntime = (
   cloudflare: boolean,
 ): PerformanceUrlState => {
   if (cloudflare || (state.groupBy !== 'runtimeLocation' && state.filters.runtimeLocation.length === 0)) return state;
+  const groupedByRegion = state.groupBy === 'runtimeLocation';
+  const groupBy = groupedByRegion ? 'model' : state.groupBy;
+  const filtersWithoutRegion = { ...state.filters, runtimeLocation: [] };
   return {
     ...state,
-    groupBy: state.groupBy === 'runtimeLocation' ? 'model' : state.groupBy,
-    filters: { ...state.filters, runtimeLocation: [] },
-    hidden: state.groupBy === 'runtimeLocation' ? [] : state.hidden,
+    groupBy,
+    filters: groupedByRegion ? clearGroupedFilter(filtersWithoutRegion, groupBy) : filtersWithoutRegion,
+    hidden: groupedByRegion ? [] : state.hidden,
   };
 };

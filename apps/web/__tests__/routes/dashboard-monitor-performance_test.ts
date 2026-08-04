@@ -66,4 +66,23 @@ describe('where the performance page reads upstream names from', () => {
     expect(data.state.filters.runtimeLocation).toEqual(['SJC']);
     expect(fetch.mock.calls.filter(([input]) => new URL(String(input), 'http://localhost').pathname === '/api/performance/overview')).toHaveLength(1);
   });
+
+  it('preserves Region state when runtime capability cannot be determined', async () => {
+    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, upstreamIds: null } });
+    const fetch = vi.fn((input: RequestInfo | URL) => {
+      const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost').pathname;
+      return path === '/api/runtime-info'
+        ? Promise.resolve(Response.json({ error: 'Unavailable' }, { status: 500 }))
+        : gatewayForOperator(input);
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/performance?g=runtimeLocation&fr=SJC') } as never);
+
+    expect(data.regionAvailable).toBe(true);
+    expect(data.state.groupBy).toBe('runtimeLocation');
+    expect(data.state.filters.runtimeLocation).toEqual(['SJC']);
+    expect(data.error?.message).toBe('Unavailable');
+    expect(fetch.mock.calls.filter(([input]) => new URL(String(input), 'http://localhost').pathname === '/api/performance/overview')).toHaveLength(1);
+  });
 });
