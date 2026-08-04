@@ -26,17 +26,23 @@ export const metricsFromWire = (
 // `null` on failure: a failed fetch did not report zero usage, and a zeroed
 // chart beside a dismissible bar reads as a quiet gateway. A body in the other
 // view's shape is a broken contract rather than something to render around.
+interface UsageViewEnvelope {
+  view: UsageView;
+  dimensions?: unknown;
+}
+
 const forRequestedView = <T extends { view: UsageView }>(
-  result: ApiResult<T | unknown[], unknown>,
+  result: ApiResult<UsageViewEnvelope | unknown[], unknown>,
   view: UsageView,
   what: string,
+  accepts: (data: UsageViewEnvelope) => boolean = () => true,
 ): T | null => {
   if (result.error) return null;
   const data = result.data;
-  if (Array.isArray(data) || data.view !== view) {
+  if (Array.isArray(data) || data.view !== view || !accepts(data)) {
     throw new TypeError(`${what} response does not match the requested ${view} view`);
   }
-  return data;
+  return data as T;
 };
 
 const tokenUsageForDisplay = (data: DashboardTokenUsageByKeyResponse | DashboardTokenUsageByUserResponse): UsageResponse =>
@@ -72,7 +78,12 @@ const fetchUsageForView = async (view: UsageView, start: string, end: string, si
     callApi(() => api.api['token-usage'].$get({ query: { ...query, include_upstream_dimension: '1' } }, { init: { signal } })),
     callApi(() => api.api['search-usage'].$get({ query }, { init: { signal } })),
   ]);
-  const usageData = forRequestedView<DashboardTokenUsageByKeyResponse | DashboardTokenUsageByUserResponse>(usageRes, view, 'Token usage');
+  const usageData = forRequestedView<DashboardTokenUsageByKeyResponse | DashboardTokenUsageByUserResponse>(
+    usageRes,
+    view,
+    'Token usage',
+    data => Array.isArray(data.dimensions) && data.dimensions.length === 1 && data.dimensions[0] === 'upstream',
+  );
   const searchData = forRequestedView<SearchUsageByKeyResponse | SearchUsageByUserResponse>(searchRes, view, 'Search usage');
   return {
     usage: usageData && tokenUsageForDisplay(usageData),
