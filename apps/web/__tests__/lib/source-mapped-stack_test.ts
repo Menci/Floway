@@ -2,12 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { restoreStack } from '../../src/lib/source-mapped-stack';
 
-// The fixture is a single generated line holding two statements, which is the
-// shape a bundler emits and the shape that makes the column the only thing
-// distinguishing two frames.
+// The fixture is a single generated line, which is the shape a bundler emits
+// and the shape that makes the column the only thing distinguishing two frames.
+// Its two segments are adjacent -- generated columns 0 and 1 -- so a query off
+// by one column lands on the wrong one. That is the only arrangement that can
+// see the shift the module applies on the way in: a nearest-preceding-segment
+// search absorbs the error everywhere else, which is exactly why the two
+// libraries that omit the shift appear to work.
 //
-//   generated: `const a=1;const b=2;`
-//              column 1 -> first.ts 1:1, column 11 -> second.ts 5:3
+//   generated column 0 -> first.ts 1:1
+//   generated column 1 -> second.ts 5:3
 const MAP = {
   version: 3,
   file: 'chunk.js',
@@ -15,7 +19,7 @@ const MAP = {
   // build emits, and what makes the restored path resolve above `/assets/`.
   sources: ['../../../src/first.ts', '../../../src/second.ts'],
   names: [],
-  mappings: 'AAAA,UCIE',
+  mappings: 'AAAA,CCIE',
   debugId: 'a1b2c3d4',
 };
 
@@ -55,7 +59,7 @@ describe('a stack restored from the maps its chunks name', () => {
     const restored = await restoreStack([
       'Error: boom',
       `    at handler (${SCRIPT}:1:1)`,
-      `    at ${SCRIPT}:1:11`,
+      `    at ${SCRIPT}:1:2`,
     ].join('\n'));
 
     expect(restored).toBe([
