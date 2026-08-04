@@ -7,8 +7,11 @@ const { Text } = fluentComponents;
 
 export function ErrorShell({ action, children, message, title }: PropsWithChildren<{
   action?: ReactNode;
-  /** Omitted when a trace is shown: the trace's first line is this sentence. */
-  message?: string;
+  /**
+   * Omitted when a trace is shown and it needs nothing said about it: the
+   * trace's first line is this sentence.
+   */
+  message?: ReactNode;
   title: string;
 }>) {
   return (
@@ -22,7 +25,11 @@ export function ErrorShell({ action, children, message, title }: PropsWithChildr
               text-align atom regardless, and Griffel injects at runtime, so an
               equal-weight rule here always loses the tie. */}
           <Text align="center" as="h1" size={700} weight="semibold">{title}</Text>
-          {message !== undefined && <Text align="center" as="p" className="text-fui-fg2" size={300}>{message}</Text>}
+          {message !== undefined && (
+            // A flex row so a status indicator can sit beside the sentence;
+            // `align` still governs how the sentence itself wraps.
+            <Text align="center" as="p" className="flex items-center justify-center gap-2 text-fui-fg2" size={300}>{message}</Text>
+          )}
         </div>
         {children}
         {action !== undefined && <div className="floway-error-shell-actions">{action}</div>}
