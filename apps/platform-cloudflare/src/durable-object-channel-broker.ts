@@ -1,4 +1,4 @@
-import type { ChannelBroker, ChannelCodec } from '@floway-dev/platform';
+import { iterateReadableStream, type ChannelBroker, type ChannelCodec } from '@floway-dev/platform';
 
 // Minimal namespace surface for BROADCAST_DO — declared locally so this
 // file stays off `@cloudflare/workers-types`.
@@ -32,7 +32,7 @@ export class DurableObjectChannelBroker<T> implements ChannelBroker<T> {
   }
 
   subscribe(channelId: string, signal: AbortSignal): AsyncIterable<T> {
-    return iterateFromBroadcastSocket<T>(this.stub(channelId), signal, this.codec);
+    return iterateReadableStream(iterateFromBroadcastSocket<T>(this.stub(channelId), signal, this.codec));
   }
 }
 
