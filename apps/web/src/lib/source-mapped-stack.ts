@@ -60,6 +60,20 @@ const DEBUG_ID_COMMENT = /^\/\/# debugId=(\S+)\s*$/m;
 
 const lastMatch = (pattern: RegExp, text: string) => [...text.matchAll(pattern)].at(-1);
 
+// `URL.parse` says exactly this and says it without a throw, but it arrived in
+// Chrome 126, Firefox 126 and Safari 18
+// (https://developer.mozilla.org/en-US/docs/Web/API/URL/parse_static#browser_compatibility),
+// well above the floor `build.target` declares for this app. Reaching for it
+// would make the whole restore throw on a browser the app otherwise supports,
+// and report it as a missing map.
+const parseUrl = (value: string): URL | undefined => {
+  try {
+    return new URL(value);
+  } catch {
+    return undefined;
+  }
+};
+
 const frameIn = (line: string) =>
   line.length <= LONGEST_FRAME ? FRAME.exec(line)?.groups : undefined;
 
@@ -68,7 +82,7 @@ const frameIn = (line: string) =>
 // be fetched even if it had one. Extensions do interleave frames with the
 // page's own -- an MV3 content script in the main world, or Safari's
 // `webkit-masked-url://hidden/`.
-const ownScript = (url: string) => URL.parse(url)?.origin === window.location.origin;
+const ownScript = (url: string) => parseUrl(url)?.origin === window.location.origin;
 
 const scriptsIn = (stack: string): string[] => [
   ...new Set(
@@ -121,7 +135,7 @@ const loadMap = async (scriptUrl: string): Promise<LoadedMap | null> => {
 // the map's own URL, which puts every one of this app's sources back under this
 // origin. The path alone is what a reader wants; anything else keeps its URL.
 const displaySource = (source: string) => {
-  const url = URL.parse(source);
+  const url = parseUrl(source);
   return url?.origin === window.location.origin ? url.pathname : source;
 };
 
