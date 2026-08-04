@@ -2,7 +2,6 @@ import { fireEvent, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { TruncationTooltip } from '../../../src/components/ui/truncation-tooltip';
-import { stubFontLoading } from '../../font-loading-stub';
 import { renderInApp } from '../../render';
 import { advance, settle } from '../../settle';
 
@@ -52,7 +51,6 @@ const hover = async (trigger: HTMLElement) => {
 };
 
 describe('a tooltip restoring text its trigger cannot show', () => {
-  stubFontLoading();
   stubTextMetrics();
 
   beforeEach(() => { vi.useFakeTimers(); });
