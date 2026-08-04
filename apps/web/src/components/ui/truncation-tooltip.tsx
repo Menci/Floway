@@ -5,10 +5,12 @@ import { fluentComponents } from '../../fluent';
 const { Tooltip } = fluentComponents;
 
 // `scrollWidth` and `clientWidth` are integers, so a box whose layout lands on
-// a fraction can report a pixel of scrollable overflow while every glyph is
-// painted. Measured in Chromium against this dashboard's own tables: text that
-// fits reports a difference of 0 or 1, text that carries an ellipsis reports
-// tens of pixels.
+// a fraction can report scrollable overflow while every glyph is painted.
+// Measured in Chromium over ~1800 fractional widths of a flex child and of a
+// fixed-layout table cell: text that fits reports 0, and a box short of its
+// text by under 2px reports 0, 1 or 2. So this pixel is the margin kept for
+// engines whose rounding was not measured, and it forgives nothing wider than
+// a box one pixel short of its own text.
 // https://drafts.csswg.org/cssom-view/#dom-element-scrollwidth
 const OVERFLOW_TOLERANCE_PX = 1;
 

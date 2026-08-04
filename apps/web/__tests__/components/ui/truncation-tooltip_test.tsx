@@ -38,7 +38,7 @@ const Trigger = ({ clientWidth, content, scrollWidth, text }: {
 }) => (
   <TruncationTooltip content={content} relationship="label">
     {measureRef => (
-      <span data-client-width={clientWidth} data-scroll-width={scrollWidth} ref={measureRef} tabIndex={0}>
+      <span className="winui-focus-rect" data-client-width={clientWidth} data-scroll-width={scrollWidth} ref={measureRef} tabIndex={0}>
         {text ?? content}
       </span>
     )}
@@ -112,8 +112,8 @@ describe('a tooltip restoring text its trigger cannot show', () => {
     expect(screen.getByRole('tooltip').textContent).toBe('Claude Code on a long account');
   });
 
-  // A fractional layout reports a pixel of scrollable overflow on text that is
-  // fully painted, which is the whole of the tolerance the measurement carries.
+  // The margin the measurement keeps for an engine that rounds the two box
+  // properties in opposite directions.
   it('treats a pixel of overflow as text that fits', async () => {
     renderInApp(<Trigger clientWidth={120} content="Copilot" scrollWidth={121} />);
     await settle();
