@@ -40,16 +40,24 @@ const scriptsIn = (stack: string): string[] => [
 ];
 
 /** Null when the script carries no map, which is not a failure to restore. */
-const loadMap = async (scriptUrl: string): Promise<unknown> => {
+const loadMap = async (scriptUrl: string): Promise<{ json: unknown; url: string } | null> => {
   const script = await fetch(scriptUrl);
   if (!script.ok) throw new Error(`${scriptUrl} responded ${script.status}`);
   const comment = MAP_COMMENT.exec((await script.text()).trimEnd());
   if (!comment) return null;
 
-  const mapUrl = new URL(comment[1]!, scriptUrl);
-  const map = await fetch(mapUrl);
-  if (!map.ok) throw new Error(`${mapUrl.href} responded ${map.status}`);
-  return await map.json();
+  const url = new URL(comment[1]!, scriptUrl).href;
+  const map = await fetch(url);
+  if (!map.ok) throw new Error(`${url} responded ${map.status}`);
+  return { json: await map.json(), url };
+};
+
+// `sources` are URLs relative to the map, and TraceMap resolves them against
+// the map's own URL, which puts every one of this app's sources back under this
+// origin. The path alone is what a reader wants; anything else keeps its URL.
+const displaySource = (source: string) => {
+  const url = URL.parse(source);
+  return url?.origin === window.location.origin ? url.pathname : source;
 };
 
 /** Rejects when a map this app ships cannot be read. */
@@ -65,7 +73,10 @@ export const restoreStack = async (stack: string): Promise<string> => {
   const traced = new Map(
     maps
       .filter(([, map]) => map !== null)
-      .map(([url, map]) => [url, new TraceMap(map as ConstructorParameters<typeof TraceMap>[0])] as const),
+      .map(([script, map]) => [
+        script,
+        new TraceMap(map!.json as ConstructorParameters<typeof TraceMap>[0], map!.url),
+      ] as const),
   );
 
   return stack
@@ -82,7 +93,7 @@ export const restoreStack = async (stack: string): Promise<string> => {
       if (original.source === null || original.line === null) return line;
 
       const column = original.column + COLUMN_ORIGIN_SHIFT;
-      return `${groups.head}${original.source}:${original.line}:${column}${groups.tail}`;
+      return `${groups.head}${displaySource(original.source)}:${original.line}:${column}${groups.tail}`;
     })
     .join('\n');
 };
