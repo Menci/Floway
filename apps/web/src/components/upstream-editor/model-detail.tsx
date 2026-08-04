@@ -17,7 +17,7 @@ import { ChoiceGroup } from '../ui/choice-group';
 import { Checkbox, Dropdown, Input, Switch } from '../ui/fluent-form-controls';
 import { CHECKBOX_LIST_CLASS, PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { SectionHeader } from '../ui/section-header';
-import { TagCombobox } from '../ui/tag-combobox';
+import { MultiselectCombobox, valuesAsOptions } from '../ui/multiselect-combobox';
 import { modelsField, type UpstreamChatModelConfig, type UpstreamModelConfig } from '@floway-dev/provider';
 
 const {
@@ -214,12 +214,12 @@ function EffortEditor({ effort, onChange, readOnly, t }: { readOnly: boolean; ef
   });
   return <div className={`grid grid-cols-[minmax(0,1fr)_minmax(180px,0.45fr)] ${PANE_GAP_CLASS} max-[760px]:grid-cols-1`}>
     <Field label={t('dashboard.upstreamEditor.models.supportedEfforts')}>
-      <TagCombobox
+      <MultiselectCombobox
         closedLabel={supported.join(', ')}
         freeform
         normalizeValue={level => level.trim()}
         onChange={setSupported}
-        options={[...new Set([...reasoningPresets, ...supported])]}
+        options={valuesAsOptions([...new Set([...reasoningPresets, ...supported])])}
         placeholder={t('dashboard.upstreamEditor.models.effortPlaceholder')}
         readOnly={readOnly}
         value={supported}
