@@ -45,6 +45,10 @@ describe('winui token channel order', () => {
     const companioned = new Set(bodies.flatMap(declared => [...declared.keys()])
       .filter(name => name.endsWith('-rgb'))
       .map(name => name.slice(0, -'-rgb'.length)));
+    // Tied to the raw text so a block the parser skips shows up here rather
+    // than as a subject that quietly holds nothing.
+    expect(companioned).toEqual(new Set([...winuiTokenCss.matchAll(/(--winui-[a-z0-9-]+)-rgb:/g)].map(([, name]) => name)));
+    expect(companioned.size).toBeGreaterThan(0);
 
     const faults: string[] = [];
     for (const declared of bodies) {

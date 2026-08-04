@@ -4,11 +4,11 @@ import { blendHex, hexToRgb } from '../../src/lib/color';
 import { listCss } from '../../src/winui/controls/list.css';
 import { winuiTokenCss } from '../../src/winui/tokens';
 
-// `color-mix()` derived these at paint time, so they could not drift from the
-// tokens they come from. They are folded constants now, with the recipe stated
-// beside them, which leaves the recipe unchecked: retuning an accent step or a
-// surface would repaint every accent fill while the wash beside it kept the old
-// blue. The values stay folded; what follows is the check that they still hold.
+// These are folded constants with the recipe stated beside them, which leaves
+// the recipe unchecked: retuning an accent step or a surface would repaint
+// every accent fill while the wash beside it kept the old blue. Each value is
+// checked against its recipe here.
+//
 // The sheet carries many `:root` blocks, one per token group, and restates the
 // ones a scheme overrides inside a dark media query. Each scheme is therefore
 // every block that applies to it, merged in source order the way the cascade
