@@ -133,11 +133,12 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   // runtime, so a rule on the Text itself always loses the tie.
   const note = restoration.status === 'loading'
     ? (
-      <span className="inline-flex items-center gap-2 align-middle">
-        <Spinner size="tiny" />
-        {t('common.errors.sourceMapLoading')}
-      </span>
-    )
+        <span className="inline-flex items-center gap-2 align-middle">
+          {/* The message slot is a paragraph, which may hold no `div`. */}
+          <Spinner as="span" size="tiny" />
+          {t('common.errors.sourceMapLoading')}
+        </span>
+      )
     : restoration.status === 'failed'
       ? t('common.errors.sourceMapFailed')
       : undefined;
