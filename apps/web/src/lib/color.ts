@@ -57,11 +57,21 @@ export const readableTone = (hex: string, surface: string): string => {
   const STEPS = 100;
 
   for (let saturation = s; saturation >= 0; saturation -= 0.1) {
-    for (let step = 1; step <= STEPS; step += 1) {
+    let first = 1;
+    let last = STEPS;
+    let readable: RgbTuple | undefined;
+    while (first <= last) {
+      const step = Math.floor((first + last) / 2);
       const value = darken ? v * (1 - step / STEPS) : v + (1 - v) * (step / STEPS);
       const candidate = hsvToRgb(h, saturation, value);
-      if (wcagContrast(linearRgb(candidate), surfaceLinear) >= TEXT_CONTRAST_FLOOR) return rgbToHex(...candidate);
+      if (wcagContrast(linearRgb(candidate), surfaceLinear) >= TEXT_CONTRAST_FLOOR) {
+        readable = candidate;
+        last = step - 1;
+      } else {
+        first = step + 1;
+      }
     }
+    if (readable) return rgbToHex(...readable);
   }
   // Reachable: the saturation ladder stops short of zero unless the saturation is
   // a multiple of a tenth. The extreme always clears -- a surface's ratios against

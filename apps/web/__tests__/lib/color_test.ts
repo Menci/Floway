@@ -178,6 +178,32 @@ describe('readableTone', () => {
     expect(resultSaturation).toBeLessThan(sourceSaturation);
   });
 
+  it.each([
+    ['#C239B3', CARD_LIGHT],
+    ['#C239B3', CARD_DARK],
+    ['#FFD740', CARD_LIGHT],
+    ['#0000FF', CARD_DARK],
+    ['#0000FF', '#787878'],
+  ])('selects the first readable discrete candidate for %s on %s', (hex, surface) => {
+    const source = hexToRgb(hex);
+    const [h, s, v] = rgbToHsv(...source);
+    const darken = contrast('#000000', surface) > contrast('#FFFFFF', surface);
+
+    let expected: string | undefined;
+    for (let saturation = s; saturation >= 0 && expected === undefined; saturation -= 0.1) {
+      for (let step = 1; step <= 100; step += 1) {
+        const value = darken ? v * (1 - step / 100) : v + (1 - v) * (step / 100);
+        const candidate = rgbToHex(...hsvToRgb(h, saturation, value));
+        if (contrast(candidate, surface) >= 4.5) {
+          expected = candidate;
+          break;
+        }
+      }
+    }
+
+    expect(readableTone(hex, surface)).toBe(expected);
+  });
+
   it('reaches the floor for every tone a hue can produce, in both schemes', () => {
     for (let hue = 0; hue < 360; hue += 1) {
       const tone = hueBadgeTone(hue);
