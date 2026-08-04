@@ -44,8 +44,18 @@ const COLUMN_ORIGIN_SHIFT = 1;
 // (https://github.com/getsentry/sentry-javascript/issues/2286).
 const LONGEST_FRAME = 1024;
 
-const FRAME =
-  /^(?<head>.*?)(?<url>[a-z][a-z\d+.-]*:\/\/\S+?):(?<line>\d+):(?<column>\d+)(?<tail>\)?)$/i;
+const V8_FRAME =
+  /^(?<head>\s+at .*?)(?<url>[a-z][a-z\d+.-]*:\/\/\S+?):(?<line>\d+):(?<column>\d+)(?<tail>\)?)$/i;
+const SPIDERMONKEY_OR_JSC_FRAME =
+  /^(?<head>.*@)(?<url>[a-z][a-z\d+.-]*:\/\/\S+?):(?<line>\d+):(?<column>\d+)$/i;
+
+interface Frame {
+  column: string;
+  head: string;
+  line: string;
+  tail: string;
+  url: string;
+}
 
 // Generators emit only `//#`, consumers accept both, per ECMA-426 §11.1.2.1.1.
 // Last match wins: the annotation is defined as the last one in the resource,
@@ -72,8 +82,15 @@ const parseUrl = (value: string): URL | undefined => {
   }
 };
 
-const frameIn = (line: string) =>
-  line.length <= LONGEST_FRAME ? FRAME.exec(line)?.groups : undefined;
+const frameIn = (line: string): Frame | undefined => {
+  if (line.length > LONGEST_FRAME) return;
+  const v8 = V8_FRAME.exec(line)?.groups;
+  if (v8) return v8 as unknown as Frame;
+  const spiderMonkeyOrJsc = SPIDERMONKEY_OR_JSC_FRAME.exec(line)?.groups;
+  return spiderMonkeyOrJsc
+    ? { ...spiderMonkeyOrJsc, tail: '' } as unknown as Frame
+    : undefined;
+};
 
 // Only this origin's scripts are restored: the maps that ship are this app's,
 // and a frame from an extension or another origin is one whose map could not

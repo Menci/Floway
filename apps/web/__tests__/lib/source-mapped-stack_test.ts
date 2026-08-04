@@ -69,6 +69,19 @@ describe('a stack restored from the maps its chunks name', () => {
     ].join('\n'));
   });
 
+  it('restores a SpiderMonkey or JavaScriptCore frame', async () => {
+    wholeApp();
+    expect(await restoreStack(`Error: boom\nhandler@${SCRIPT}:1:1`))
+      .toBe('Error: boom\nhandler@/src/first.ts:1:1');
+  });
+
+  it('does not treat a URL position in the error message as a frame', async () => {
+    wholeApp();
+    const message = 'Error: request failed at https://gateway.test/reported:1:1';
+    expect(await restoreStack(`${message}\n    at handler (${SCRIPT}:1:1)`))
+      .toBe(`${message}\n    at handler (/src/first.ts:1:1)`);
+  });
+
   it('leaves a frame that carries no position of its own', async () => {
     wholeApp();
     const restored = await restoreStack([
