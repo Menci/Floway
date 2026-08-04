@@ -1,6 +1,5 @@
 import { ServerRegular } from '@fluentui/react-icons';
 import type { RefCallback } from 'react';
-import { useTranslation } from '../../i18n/translation';
 
 import azureIconUrl from '../../assets/azure-color.svg?no-inline';
 import claudeIconUrl from '../../assets/claude-color.svg?no-inline';
@@ -8,6 +7,7 @@ import githubCopilotIconUrl from '../../assets/githubcopilot.svg?no-inline';
 import ollamaIconUrl from '../../assets/ollama.svg?no-inline';
 import openaiIconUrl from '../../assets/openai.svg?no-inline';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { hueBadgeTone } from '../../lib/hue';
 import { useBadgeHue } from '../ui/badge-hue';
 import { Chip } from '../ui/chip';

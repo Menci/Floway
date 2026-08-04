@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { Trans, useTranslation } from '../../i18n/translation';
 
 import {
   buildAgentClaudeSnippet,
@@ -17,6 +16,7 @@ import type { ApiKey, ControlPlaneModel } from '../../api/types';
 import claudeIconUrl from '../../assets/claude-color.svg';
 import codexIconUrl from '../../assets/codex.svg';
 import { fluentComponents } from '../../fluent';
+import { Trans, useTranslation } from '../../i18n/translation';
 import { filterModelOptions } from '../../lib/model-query';
 import { CodeBlock } from '../ui/code-block';
 import { Combobox, Dropdown, Switch } from '../ui/fluent-form-controls';

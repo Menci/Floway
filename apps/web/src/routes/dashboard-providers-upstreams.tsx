@@ -7,9 +7,9 @@ import {
   WarningRegular,
 } from '@fluentui/react-icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { type TFunction, useTranslation } from '../i18n/translation';
 import { Link, useLocation, useNavigate } from 'react-router';
 
+import { type TFunction, useTranslation } from '../i18n/translation';
 import type { Route } from './+types/dashboard-providers-upstreams';
 import { requireDashboardAdmin } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';

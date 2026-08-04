@@ -1,6 +1,5 @@
 import { ArrowDownloadRegular, ArrowUploadRegular } from '@fluentui/react-icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from '../i18n/translation';
 
 import { requireDashboardAdmin } from './guards';
 import { api, callApi } from '../api/client';
@@ -16,6 +15,7 @@ import { Panel } from '../components/ui/panel';
 import { SectionHeader } from '../components/ui/section-header';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { fluentComponents } from '../fluent';
+import { useTranslation } from '../i18n/translation';
 import { formatCount } from '../lib/format-number';
 import { useLocale } from '../lib/use-locale';
 

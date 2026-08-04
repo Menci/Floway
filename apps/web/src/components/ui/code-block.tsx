@@ -1,11 +1,11 @@
 import { useMemo } from 'react';
 import type { ReactNode } from 'react';
-import { useTranslation } from '../../i18n/translation';
 
 import { highlight, prismTokenStyles } from './prism';
 import { ScrollArea } from './scroll-area';
 import { copyOutcomeIcon, useCopyLabel, type CopyOutcome } from './use-copy-to-clipboard';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 
 const { Button, makeStyles, mergeClasses } = fluentComponents;
 

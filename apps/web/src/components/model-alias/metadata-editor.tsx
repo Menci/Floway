@@ -1,7 +1,6 @@
-import { useTranslation } from '../../i18n/translation';
-
 import type { AnnouncedMetadataField, AnnouncedMetadataIssues } from './validation';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { Dropdown, Input, Switch } from '../ui/fluent-form-controls';
 import { SECTION_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { SectionHeader } from '../ui/section-header';

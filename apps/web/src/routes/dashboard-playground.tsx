@@ -7,8 +7,8 @@ import {
   SettingsRegular,
 } from '@fluentui/react-icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from '../i18n/translation';
 
+import { useTranslation } from '../i18n/translation';
 import type { Route } from './+types/dashboard-playground';
 import { useDashboardOutletContext } from './dashboard';
 import { requireDashboardSession } from './guards';

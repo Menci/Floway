@@ -1,10 +1,10 @@
 import { useCallback, useState } from 'react';
-import { useTranslation } from '../../i18n/translation';
 
 import { quotaBarColor } from './subscription-account-quota';
 import { api, callApi } from '../../api/client';
 import type { CopilotQuotaSnapshot, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { dateTime, shortDate } from '../../lib/format-time';
 import { clampPercent } from '../../lib/percent';
 import { useLocale } from '../../lib/use-locale';

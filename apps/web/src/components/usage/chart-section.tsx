@@ -1,7 +1,6 @@
-import { useTranslation } from '../../i18n/translation';
-
 import { UsageChart } from './chart';
 import type { UsageChartModel } from './types';
+import { useTranslation } from '../../i18n/translation';
 import { ChartSection } from '../charts/section';
 
 export function UsageChartSection({

@@ -1,9 +1,9 @@
 import { ArrowClockwiseRegular, DeleteRegular, EditRegular, MoreHorizontalRegular } from '@fluentui/react-icons';
 import { useMemo } from 'react';
-import { type TFunction, useTranslation } from '../../i18n/translation';
 
 import type { ApiKey, UpstreamOption } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { type TFunction, useTranslation } from '../../i18n/translation';
 import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
 import { useMediaQuery } from '../../lib/use-media-query';

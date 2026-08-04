@@ -1,9 +1,9 @@
 import { ChevronDownRegular, DeleteRegular, WarningRegular } from '@fluentui/react-icons';
 import { useId, useMemo, useState } from 'react';
-import { useTranslation } from '../../i18n/translation';
 
 import { computeModelWarning, computeRuleWarnings } from './warnings';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { filterModelOptions } from '../../lib/model-query';
 import type { CatalogIndex } from '../models/catalog-index';
 import { useDangerTextClass } from '../ui/danger';

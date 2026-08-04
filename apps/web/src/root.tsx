@@ -1,5 +1,4 @@
 import { useSyncExternalStore } from 'react';
-import { useTranslation } from './i18n/translation';
 import {
   isRouteErrorResponse,
   Links,
@@ -19,6 +18,7 @@ import { ErrorShell, ErrorStack } from './components/ui/error-shell';
 import { AppLoadingScreen } from './components/ui/loading-screen';
 import { fluentComponents } from './fluent';
 import { defaultLanguage, htmlLanguageFor } from './i18n/languages';
+import { useTranslation } from './i18n/translation';
 import { DARK_SCHEME_QUERY, useMediaQuery } from './lib/use-media-query';
 import { winuiDarkTheme, winuiLightTheme } from './winui/theme';
 import './i18n';

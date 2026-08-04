@@ -2,7 +2,6 @@ import { Database24Regular, History24Regular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback, useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
-import { type TFunction, useTranslation } from '../../i18n/translation';
 import { z } from 'zod';
 
 import { RetentionField, parsedRetention, type RetentionValue } from './retention-field';
@@ -11,6 +10,7 @@ import { KeySourceControl } from './source-field';
 import { api, callApi } from '../../api/client';
 import type { ApiKey, ControlPlaneModel, UpstreamOption } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { type TFunction, useTranslation } from '../../i18n/translation';
 import { DialogShell } from '../ui/dialog-shell';
 import { Input } from '../ui/fluent-form-controls';
 import { OpenLinkLabel } from '../ui/open-link-label';

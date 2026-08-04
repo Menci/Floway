@@ -1,7 +1,6 @@
-import { useTranslation } from '../../i18n/translation';
-
 import { ProviderBadge } from './provider-badge';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { HUE_RAIL_GRADIENT } from '../../lib/hue';
 import type { UpstreamProviderKind } from '@floway-dev/provider/model';
 

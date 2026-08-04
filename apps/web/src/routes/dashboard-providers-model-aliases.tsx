@@ -1,7 +1,7 @@
 import { DeleteRegular, EditRegular, WarningRegular } from '@fluentui/react-icons';
 import { useCallback, useMemo, useState } from 'react';
-import { useTranslation } from '../i18n/translation';
 
+import { useTranslation } from '../i18n/translation';
 import type { Route } from './+types/dashboard-providers-model-aliases';
 import { requireDashboardAdmin } from './guards';
 import { api, callApi, callApiNoContent } from '../api/client';

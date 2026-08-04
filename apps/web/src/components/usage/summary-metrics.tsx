@@ -1,9 +1,8 @@
-import { useTranslation } from '../../i18n/translation';
-
 import { formatSummaryMetric } from './format';
 import { metricConfig, summaryMetrics } from './metrics';
 import type { TokenSummary, UsageMetric } from './types';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { useLocale } from '../../lib/use-locale';
 const { Text, ToggleButton, makeStyles, mergeClasses } = fluentComponents;
 

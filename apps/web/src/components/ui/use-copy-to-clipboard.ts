@@ -1,9 +1,9 @@
 import { CheckmarkRegular, CopyRegular, DismissRegular } from '@fluentui/react-icons';
 import { createElement, useCallback, useState } from 'react';
 import type { ReactElement } from 'react';
-import { useTranslation } from '../../i18n/translation';
 
 import { copyToClipboard } from './copy-to-clipboard';
+import { useTranslation } from '../../i18n/translation';
 
 const COPIED_MS = 1500;
 const FAILED_MS = 2000;

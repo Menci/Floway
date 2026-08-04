@@ -1,6 +1,5 @@
 import { DeleteRegular } from '@fluentui/react-icons';
 import { useId } from 'react';
-import { type TFunction, useTranslation } from '../../i18n/translation';
 
 import type { ModelRow } from './data';
 import { publicModelId } from './data';
@@ -13,6 +12,7 @@ import { RerankTargetEditor } from './rerank-target-editor';
 import { EditorSection } from './section';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { type TFunction, useTranslation } from '../../i18n/translation';
 import { ChoiceGroup } from '../ui/choice-group';
 import { Checkbox, Dropdown, Input, Switch } from '../ui/fluent-form-controls';
 import { CHECKBOX_LIST_CLASS, PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';

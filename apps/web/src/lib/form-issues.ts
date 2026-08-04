@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+
 import { useTranslation } from '../i18n/translation';
 
 // A domain validator is keyed by its own field vocabulary, which is not always a

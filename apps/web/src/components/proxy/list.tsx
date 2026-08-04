@@ -1,9 +1,9 @@
 import { DeleteRegular, EditRegular } from '@fluentui/react-icons';
-import { useTranslation } from '../../i18n/translation';
 
 import { hostPortLabel, KIND_HUES } from './config';
 import type { ProxyRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { useBadgeHue } from '../ui/badge-hue';
 import { Chip } from '../ui/chip';
 import { ResourceListEmptyState } from '../ui/resource-list';

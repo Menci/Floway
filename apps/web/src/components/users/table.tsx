@@ -1,8 +1,8 @@
 import { DeleteRegular, EditRegular, KeyRegular } from '@fluentui/react-icons';
-import { useTranslation } from '../../i18n/translation';
 
 import type { ControlPlaneUser } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { dateTime, shortDate } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
 import { ResourceListEmptyState } from '../ui/resource-list';

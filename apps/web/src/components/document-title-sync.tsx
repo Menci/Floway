@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
-import { useTranslation } from '../i18n/translation';
 import { useLocation } from 'react-router';
 
+import { useTranslation } from '../i18n/translation';
 import { pageLabelKeys } from './sidebar/pages';
 
 const titleKeyForPathname = (pathname: string) => {

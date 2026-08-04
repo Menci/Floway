@@ -1,9 +1,9 @@
 import { useId, useState } from 'react';
 import type { ReactNode } from 'react';
-import { useTranslation } from '../../i18n/translation';
 
 import { Switch } from './fluent-form-controls';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 
 const { Text, makeStyles, mergeClasses, shorthands } = fluentComponents;
 

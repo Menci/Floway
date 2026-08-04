@@ -2,7 +2,6 @@ import { AddRegular, Eye24Regular, Info24Regular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback, useMemo, useState } from 'react';
 import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
-import { useTranslation } from '../../i18n/translation';
 import { z } from 'zod';
 
 import { computeAnnouncedMetadata } from './announced-metadata';
@@ -14,6 +13,7 @@ import { computeAliasWarnings, realModelIdsOfKind } from './warnings';
 import { api, callApi } from '../../api/client';
 import type { ControlPlaneModel } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { issuesFromErrors } from '../../lib/form-issues';
 import { indexCatalog } from '../models/catalog-index';
 import { ChoiceGroup } from '../ui/choice-group';

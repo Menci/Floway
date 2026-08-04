@@ -1,8 +1,7 @@
-import { useTranslation } from '../../i18n/translation';
-
 import { formatCompactDecimalCount, formatRatePercent } from './format';
 import { bucketKeyForCallout, summarizeCounters } from './plot';
 import type { CalloutPoint, UsageChartModel } from './types';
+import { useTranslation } from '../../i18n/translation';
 import { formatUsd } from '../../lib/decimal-display';
 import { formatCount } from '../../lib/format-number';
 import { useLocale } from '../../lib/use-locale';

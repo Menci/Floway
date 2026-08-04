@@ -1,6 +1,6 @@
-import { Trans as I18nextTrans, useTranslation as useI18nextTranslation } from 'react-i18next';
-import type { ComponentProps, ReactElement } from 'react';
 import type { i18n as I18n } from 'i18next';
+import type { ComponentProps, ReactElement } from 'react';
+import { Trans as I18nextTrans, useTranslation as useI18nextTranslation } from 'react-i18next';
 
 import type { NumberFormat } from './number-format';
 

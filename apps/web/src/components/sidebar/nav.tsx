@@ -2,7 +2,6 @@ import type { NavItemProps } from '@fluentui/react-components';
 import { DismissRegular, ShareIos20Color } from '@fluentui/react-icons';
 import { useId, useRef } from 'react';
 import type { MouseEventHandler, ReactNode } from 'react';
-import { useTranslation } from '../../i18n/translation';
 import { useLinkClickHandler, useLocation, useNavigation } from 'react-router';
 
 import type { AuthUser } from '../../api/auth';
@@ -11,6 +10,7 @@ import { pageNavigation } from '../../lib/page-navigation';
 import { FlowayLogo } from '../logo';
 import { NavSelectionIndicator } from './nav-selection-indicator';
 import { accountPage, dashboardPages, navGroups } from './pages';
+import { useTranslation } from '../../i18n/translation';
 import { useAuthStore } from '../../stores/auth-store';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { ScrollArea } from '../ui/scroll-area';

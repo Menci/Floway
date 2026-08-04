@@ -1,6 +1,5 @@
-import type { TFunction } from '../../i18n/translation';
-
 import type { BackupFileData } from './file';
+import type { TFunction } from '../../i18n/translation';
 
 export const PREVIEW_LABEL_KEYS = [
   'users',

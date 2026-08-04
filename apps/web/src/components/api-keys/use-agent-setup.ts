@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from '../../i18n/translation';
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
 
@@ -11,6 +10,7 @@ import {
   type AgentSetupLease,
 } from './agent-setup';
 import { api, callApi, type ApiCallResult } from '../../api/client';
+import { useTranslation } from '../../i18n/translation';
 import { isAbortError } from '../../lib/error-message';
 
 interface ActiveRequest {

@@ -1,8 +1,8 @@
 import { useCallback, useState } from 'react';
-import { useTranslation } from '../../i18n/translation';
 
 import type { PlaygroundMessage } from './request';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { DialogShell } from '../ui/dialog-shell';
 import { Input, Textarea } from '../ui/fluent-form-controls';
 import { useDiscardGuard } from '../ui/use-discard-guard';

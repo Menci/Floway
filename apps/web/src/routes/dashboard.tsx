@@ -1,6 +1,5 @@
 import { NavigationRegular } from '@fluentui/react-icons';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from '../i18n/translation';
 import {
   Navigate,
   redirect,
@@ -9,6 +8,7 @@ import {
   useOutletContext,
 } from 'react-router';
 
+import { useTranslation } from '../i18n/translation';
 import type { Route } from './+types/dashboard';
 import { requireDashboardSession } from './guards';
 import type { AuthUser } from '../api/auth';

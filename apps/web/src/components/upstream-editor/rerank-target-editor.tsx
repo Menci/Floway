@@ -1,6 +1,5 @@
-import { useTranslation } from '../../i18n/translation';
-
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
 import { TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import type { RerankProtocol, RerankTarget } from '@floway-dev/protocols/common';

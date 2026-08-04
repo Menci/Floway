@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
-import { useTranslation } from '../../i18n/translation';
 
 import { resolvePerformanceGroup, type PerformanceDisplayRecord, type PerformanceGroupBy, type PerformanceLabels } from './overview';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { formatDuration } from '../../lib/format-duration';
 import { formatCount, formatTokenRateFromTpot } from '../../lib/format-number';
 import { useLocale } from '../../lib/use-locale';

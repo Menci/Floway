@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react';
-import { Trans, type TFunction, useTranslation } from '../../i18n/translation';
 
 import { effectiveUpstreams, modelBadges, type ModelBadge } from './badges';
 import type { CatalogIndex } from './catalog-index';
 import type { ControlPlaneModel } from '../../api/types';
+import { Trans, type TFunction, useTranslation } from '../../i18n/translation';
 import { Chip } from '../ui/chip';
 import { ProviderBadge } from '../upstreams/provider-badge';
 
