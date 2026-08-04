@@ -120,7 +120,7 @@ const messagesBoundaryContext = (
   headers: Headers,
 ): MessagesBoundaryCtx => {
   const boundaryHeaders = new Headers(headers);
-  const anthropicBeta = parseAnthropicBetaHeader(boundaryHeaders.get('anthropic-beta'));
+  const anthropicBeta = [...parseAnthropicBetaHeader(boundaryHeaders.get('anthropic-beta'))];
   boundaryHeaders.delete('anthropic-beta');
   return {
     payload: { ...body, model: model.id },
