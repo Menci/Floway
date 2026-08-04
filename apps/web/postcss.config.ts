@@ -25,9 +25,9 @@ const functionArgument = (node: valueParser.FunctionNode): string | undefined =>
 };
 
 const hasUnclosedNode = (nodes: valueParser.Node[]): boolean =>
-  nodes.some(node =>
-    ('unclosed' in node && node.unclosed === true)
-    || (node.type === 'function' && hasUnclosedNode(node.nodes)),
+  nodes.some(
+    node => ('unclosed' in node && node.unclosed === true)
+      || (node.type === 'function' && hasUnclosedNode(node.nodes)),
   );
 
 const isWoffSource = (nodes: valueParser.Node[]): boolean => {
@@ -71,8 +71,8 @@ const stripWoffSources = (value: string, source: string): string => {
   const retained = sources.filter(({ nodes }) => !isWoffSource(nodes));
   if (retained.length === 0) throw new Error(`${source} does not declare a non-WOFF font source`);
 
-  parsed.nodes = retained.flatMap(({ delimiterBefore, nodes }, index) =>
-    index === 0 ? nodes : [delimiterBefore!, ...nodes],
+  parsed.nodes = retained.flatMap(
+    ({ delimiterBefore, nodes }, index) => index === 0 ? nodes : [delimiterBefore!, ...nodes],
   );
   if (isWoffSource(parsed.nodes)) throw new Error(`${source} still declares a WOFF source`);
   return valueParser.stringify(parsed.nodes);
