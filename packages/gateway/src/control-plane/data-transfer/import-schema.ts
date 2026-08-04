@@ -1,20 +1,20 @@
 import { z } from 'zod';
 
-import { parseWebSearchConfigStrict } from '../../../data-plane/tools/web-search/config.ts';
-import type { WebSearchConfig } from '../../../data-plane/tools/web-search/types.ts';
-import { parseDisabledPublicModelIdsWire } from '../../../repo/disabled-public-models.ts';
-import { isDirectFallbackId, normalizeProxyFallbackList } from '../../../repo/proxy-fallback-list.ts';
-import { isResponsesRetentionSeconds, RESPONSES_RETENTION_MAX_SECONDS, RESPONSES_RETENTION_MIN_SECONDS } from '../../../repo/responses-retention.ts';
-import { SEED_ADMIN_USER_ID } from '../../../repo/seed-admin.ts';
-import type { ApiKey, PerformanceMetric, PerformanceTelemetryRecord, UsageRecord, User, WebSearchUsageRecord } from '../../../repo/types.ts';
-import { PASSWORD_HASH_SCHEME } from '../../../shared/passwords.ts';
-import { RETENTION_MAX_SECONDS } from '../../../shared/retention.ts';
-import { parseServerSecret } from '../../../shared/server-secret.ts';
-import { isWebSearchProviderName } from '../../../shared/web-search-providers.ts';
-import { USERNAME_PATTERN } from '../../schemas.ts';
-import { isRecord } from '../../shared/field-validators.ts';
-import { parseUpstreamIdsValue } from '../../shared/upstream-ids.ts';
-import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, parseNonNegativeDecimalString } from '@floway-dev/protocols/common';
+import { parseWebSearchConfigStrict } from '../../data-plane/tools/web-search/config.ts';
+import type { WebSearchConfig } from '../../data-plane/tools/web-search/types.ts';
+import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
+import { isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
+import { isResponsesRetentionSeconds, RESPONSES_RETENTION_MAX_SECONDS, RESPONSES_RETENTION_MIN_SECONDS } from '../../repo/responses-retention.ts';
+import { SEED_ADMIN_USER_ID } from '../../repo/seed-admin.ts';
+import type { ApiKey, PerformanceMetric, PerformanceTelemetryRecord, UsageRecord, User, WebSearchUsageRecord } from '../../repo/types.ts';
+import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
+import { RETENTION_MAX_SECONDS } from '../../shared/retention.ts';
+import { parseServerSecret } from '../../shared/server-secret.ts';
+import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
+import { USERNAME_PATTERN } from '../schemas.ts';
+import { isRecord } from '../shared/field-validators.ts';
+import { parseUpstreamIdsValue } from '../shared/upstream-ids.ts';
+import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, parseNonNegativeDecimalString, type PricingSelector } from '@floway-dev/protocols/common';
 import { ALL_PROVIDER_KINDS, normalizeModelPrefix, normalizeUpstreamHue, parseFlagOverridesWire, parsePerformanceOperation, type ProxyFallbackEntry, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
@@ -52,19 +52,20 @@ const PERFORMANCE_METRICS = ['ttft_ms', 'tpot_us'] as const satisfies readonly P
 const hasOwn = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
 const isLegacyUpstreamIdentity = (value: string): boolean => LEGACY_UPSTREAM_PREFIXES.some(prefix => value.startsWith(prefix));
 const messageFor = (cause: unknown): string => cause instanceof Error ? cause.message : String(cause);
-const addIssue = (ctx: z.RefinementCtx, input: unknown, message: string) => ctx.addIssue({ code: 'custom', input, message });
+const addIssue = (ctx: z.RefinementCtx, message: string, path?: PropertyKey[]) => ctx.addIssue({ code: 'custom', message, path });
 
 const parsedBy = <T>(parser: (value: unknown) => T) => z.unknown().transform((value, ctx): T => {
   try {
     return parser(value);
   } catch (cause) {
-    addIssue(ctx, value, messageFor(cause));
+    addIssue(ctx, messageFor(cause));
     return z.NEVER;
   }
 });
 
 const nonEmptyStringSchema = (field: string) => z.string({ error: `${field} must be a non-empty string` })
   .min(1, { error: `${field} must be a non-empty string` });
+const nonEmptyStringWithError = (message: string) => z.string({ error: message }).min(1, { error: message });
 const nullableStringSchema = (field: string) => z.union([
   z.string(),
   z.null(),
@@ -135,10 +136,10 @@ const upstreamWireSchema = z.object({
   state: z.unknown().optional(),
 }).loose().superRefine((wire, ctx) => {
   if (hasOwn(wire, 'enabled_fixes')) {
-    addIssue(ctx, wire.enabled_fixes, "legacy 'enabled_fixes' field is no longer supported; re-export with current code");
+    addIssue(ctx, "legacy 'enabled_fixes' field is no longer supported; re-export with current code");
   }
   if (isLegacyUpstreamIdentity(wire.id)) {
-    addIssue(ctx, wire.id, 'id must use a raw upstream id, not a legacy provider-prefixed identity');
+    addIssue(ctx, 'id must use a raw upstream id, not a legacy provider-prefixed identity');
   }
 }).transform((wire, ctx): UpstreamRecord => {
   try {
@@ -161,7 +162,7 @@ const upstreamWireSchema = z.object({
     };
     return { ...record, config: normalizeUpstreamConfig(record) };
   } catch (cause) {
-    addIssue(ctx, wire, messageFor(cause));
+    addIssue(ctx, messageFor(cause));
     return z.NEVER;
   }
 });
@@ -176,7 +177,7 @@ const proxySchema = z.object({
       parseProxyUri(url);
       return url;
     } catch (cause) {
-      addIssue(ctx, url, `url did not parse: ${messageFor(cause)}`);
+      addIssue(ctx, `url did not parse: ${messageFor(cause)}`);
       return z.NEVER;
     }
   }),
@@ -231,7 +232,7 @@ const userSchema = z.object({
 const usersSchema = z.array(userSchema, { error: 'users must be an array' }).superRefine((users, ctx) => {
   const seen = new Set<number>();
   for (let index = 0; index < users.length; index++) {
-    if (seen.has(users[index].id)) addIssue(ctx, users[index].id, `duplicate user id ${users[index].id}`);
+    if (seen.has(users[index].id)) addIssue(ctx, `duplicate user id ${users[index].id}`, [index]);
     seen.add(users[index].id);
   }
 });
@@ -239,7 +240,7 @@ const usersSchema = z.array(userSchema, { error: 'users must be an array' }).sup
 const metricSchema = z.object({
   metric: z.unknown().transform((value, ctx): BillingMetric => {
     if (typeof value !== 'string' || !BILLING_METRICS.includes(value as BillingMetric)) {
-      addIssue(ctx, value, `unknown usage metric: ${JSON.stringify(value)}`);
+      addIssue(ctx, `unknown usage metric: ${JSON.stringify(value)}`);
       return z.NEVER;
     }
     return value as BillingMetric;
@@ -250,7 +251,7 @@ const metricSchema = z.object({
     try {
       return parseNonNegativeDecimalString(value, 'metric unitPrice');
     } catch (cause) {
-      addIssue(ctx, value, messageFor(cause));
+      addIssue(ctx, messageFor(cause));
       return z.NEVER;
     }
   }),
@@ -260,23 +261,23 @@ const metricsSchema = z.array(metricSchema, { error: 'metrics must be an array' 
   const seen = new Set<BillingMetric>();
   for (let index = 0; index < metrics.length; index++) {
     const metric = metrics[index].metric;
-    if (seen.has(metric)) addIssue(ctx, metric, `duplicate usage metric: ${metric}`);
+    if (seen.has(metric)) addIssue(ctx, `duplicate usage metric: ${metric}`, [index]);
     seen.add(metric);
   }
 });
 
 const invalidUsageField = 'record has invalid usage fields';
 const usageSchema = z.object({
-  keyId: nonEmptyStringSchema(invalidUsageField),
-  model: nonEmptyStringSchema(invalidUsageField),
+  keyId: nonEmptyStringWithError(invalidUsageField),
+  model: nonEmptyStringWithError(invalidUsageField),
   upstream: z.union([z.string(), z.null()], { error: invalidUsageField }),
-  modelKey: nonEmptyStringSchema(invalidUsageField),
+  modelKey: nonEmptyStringWithError(invalidUsageField),
   hour: z.string({ error: invalidUsageField }).regex(SEARCH_USAGE_HOUR_PATTERN, { error: invalidUsageField }),
   pricingSelector: z.record(z.string(), z.unknown(), { error: 'pricingSelector must be an object' }).transform((selector, ctx) => {
     try {
-      return canonicalizePricingSelector(selector);
+      return canonicalizePricingSelector(selector as PricingSelector);
     } catch (cause) {
-      addIssue(ctx, selector, `invalid pricingSelector: ${messageFor(cause)}`);
+      addIssue(ctx, `invalid pricingSelector: ${messageFor(cause)}`);
       return z.NEVER;
     }
   }),
@@ -284,14 +285,14 @@ const usageSchema = z.object({
   metrics: metricsSchema,
 }, { error: 'record must be an object' }).superRefine((record, ctx) => {
   if (typeof record.upstream === 'string' && isLegacyUpstreamIdentity(record.upstream)) {
-    addIssue(ctx, record.upstream, 'upstream must use a raw upstream id, not a legacy provider-prefixed identity');
+    addIssue(ctx, 'upstream must use a raw upstream id, not a legacy provider-prefixed identity');
   }
 });
 
 const searchUsageSchema = z.object({
   provider: z.unknown().transform((value, ctx) => {
     if (!isWebSearchProviderName(value)) {
-      addIssue(ctx, value, 'invalid provider');
+      addIssue(ctx, 'invalid provider');
       return z.NEVER;
     }
     return value;
@@ -315,15 +316,15 @@ const performanceBucketSchema = z.object({
   count: nonNegativeSafeIntegerSchema('bucket metric/lower/upper/count fields are missing or malformed'),
 }, { error: 'bucket is not an object' }).superRefine((bucket, ctx) => {
   if (bucket.upper !== null && bucket.upper <= bucket.lower) {
-    addIssue(ctx, bucket.upper, 'bucket metric/lower/upper/count fields are missing or malformed');
+    addIssue(ctx, 'bucket metric/lower/upper/count fields are missing or malformed');
   }
 });
 
 const performanceSchema = z.object({
   hour: z.string({ error: malformedPerformance }).regex(SEARCH_USAGE_HOUR_PATTERN, { error: malformedPerformance }),
-  keyId: nonEmptyStringSchema(malformedPerformance),
-  model: nonEmptyStringSchema(malformedPerformance),
-  upstream: nonEmptyStringSchema(malformedPerformance).refine(value => !isLegacyUpstreamIdentity(value), { error: malformedPerformance }),
+  keyId: nonEmptyStringWithError(malformedPerformance),
+  model: nonEmptyStringWithError(malformedPerformance),
+  upstream: nonEmptyStringWithError(malformedPerformance).refine(value => !isLegacyUpstreamIdentity(value), { error: malformedPerformance }),
   operation: parsedBy(value => {
     try {
       return parsePerformanceOperation(value);
@@ -331,7 +332,7 @@ const performanceSchema = z.object({
       throw new Error(malformedPerformance);
     }
   }),
-  runtimeLocation: nonEmptyStringSchema(malformedPerformance),
+  runtimeLocation: nonEmptyStringWithError(malformedPerformance),
   requests: performanceInteger,
   ttftSamplesOk: performanceInteger,
   errorsWithOutput: performanceInteger,
@@ -344,11 +345,11 @@ const performanceSchema = z.object({
 }, { error: 'record is not an object' }).superRefine((record, ctx) => {
   const ttftSamples = record.ttftSamplesOk + record.errorsWithOutput;
   if (ttftSamples + record.errorsNoOutput + record.neutral !== record.requests) {
-    addIssue(ctx, record.requests, 'ttftSamplesOk + errorsWithOutput + errorsNoOutput + neutral must equal requests');
+    addIssue(ctx, 'ttftSamplesOk + errorsWithOutput + errorsNoOutput + neutral must equal requests');
     return;
   }
   if (record.tpotSamples > ttftSamples) {
-    addIssue(ctx, record.tpotSamples, 'tpotSamples must not exceed ttftSamplesOk + errorsWithOutput');
+    addIssue(ctx, 'tpotSamples must not exceed ttftSamplesOk + errorsWithOutput');
     return;
   }
 
@@ -358,7 +359,7 @@ const performanceSchema = z.object({
   for (const bucket of record.buckets) {
     const dedupKey = `${bucket.metric}\0${bucket.lower}`;
     if (bucketKeys.has(dedupKey)) {
-      addIssue(ctx, bucket, `duplicate bucket entry for {metric: ${bucket.metric}, lower: ${bucket.lower}}`);
+      addIssue(ctx, `duplicate bucket entry for {metric: ${bucket.metric}, lower: ${bucket.lower}}`);
       return;
     }
     bucketKeys.add(dedupKey);
@@ -366,9 +367,9 @@ const performanceSchema = z.object({
     else tpotBucketCount += bucket.count;
   }
   if (ttftBucketCount !== ttftSamples) {
-    addIssue(ctx, record.buckets, `ttft_ms bucket sum (${ttftBucketCount}) must equal ttftSamplesOk + errorsWithOutput (${ttftSamples})`);
+    addIssue(ctx, `ttft_ms bucket sum (${ttftBucketCount}) must equal ttftSamplesOk + errorsWithOutput (${ttftSamples})`);
   } else if (tpotBucketCount !== record.tpotSamples) {
-    addIssue(ctx, record.buckets, `tpot_us bucket sum (${tpotBucketCount}) must equal tpotSamples (${record.tpotSamples})`);
+    addIssue(ctx, `tpot_us bucket sum (${tpotBucketCount}) must equal tpotSamples (${record.tpotSamples})`);
   }
 });
 
