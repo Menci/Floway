@@ -4,6 +4,8 @@ type RgbTuple = [number, number, number];
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 
+// Culori can place a mathematically exact half-byte one floating-point step
+// below the tie. Correct that conversion noise at our integer-byte boundary.
 const rgbTuple = ({ r, g, b }: { r: number; g: number; b: number }): RgbTuple =>
   [r, g, b].map(channel => Math.round((channel + Number.EPSILON) * 255)) as RgbTuple;
 
@@ -57,6 +59,8 @@ export const readableTone = (hex: string, surface: string): string => {
   const STEPS = 100;
 
   for (let saturation = s; saturation >= 0; saturation -= 0.1) {
+    // Luminance is monotonic as HSV value moves toward the chosen black/white
+    // extreme, so this finds the same first rung as a linear walk of all 100.
     let first = 1;
     let last = STEPS;
     let readable: RgbTuple | undefined;
