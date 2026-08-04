@@ -45,7 +45,12 @@ class FakeServerSocket {
   }
 }
 
-const buildNamespace = (socket: FakeServerSocket, broadcasts: string[] = [], closeAlls: string[] = []) => {
+const buildNamespace = (
+  socket: FakeServerSocket,
+  broadcasts: string[] = [],
+  closeAlls: string[] = [],
+  fetches?: { count: number },
+) => {
   const ns: BroadcastNamespace = {
     idFromName(_name) { return {}; },
     get(_id) {
@@ -53,6 +58,7 @@ const buildNamespace = (socket: FakeServerSocket, broadcasts: string[] = [], clo
         broadcast: async payload => { broadcasts.push(payload); },
         closeAll: async reason => { closeAlls.push(reason); },
         fetch: async () => {
+          if (fetches) fetches.count += 1;
           // Real CF returns 101; Node's `Response` rejects status 101 in its
           // constructor, so synthesise it by overriding `status` after the
           // fact. The broker only reads `status` and `webSocket`.
@@ -92,6 +98,38 @@ test('DurableObjectChannelBroker.subscribe drives payloads through the broadcast
   assertEquals(socket.closed?.code, 1000);
 });
 
+test('DurableObjectChannelBroker.subscribe does not open a socket for an already-aborted signal', async () => {
+  const socket = new FakeServerSocket();
+  const fetches = { count: 0 };
+  const broker = new DurableObjectChannelBroker<string>(buildNamespace(socket, [], [], fetches), stringCodec);
+  const controller = new AbortController();
+  controller.abort();
+
+  const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
+
+  assertEquals((await iter.next()).done, true);
+  assertEquals(fetches.count, 0);
+  assertEquals(socket.closed, null);
+});
+
+test('DurableObjectChannelBroker.subscribe resolves concurrent reads in socket order', async () => {
+  const socket = new FakeServerSocket();
+  const broker = new DurableObjectChannelBroker<string>(buildNamespace(socket), stringCodec);
+  const controller = new AbortController();
+  const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
+  const first = iter.next();
+  const second = iter.next();
+
+  await Promise.resolve();
+  await Promise.resolve();
+  socket.emit('message', new MessageEvent('message', { data: 'a1' }));
+  socket.emit('message', new MessageEvent('message', { data: 'a2' }));
+
+  assertEquals((await first).value, 'a1');
+  assertEquals((await second).value, 'a2');
+  controller.abort();
+});
+
 test('DurableObjectChannelBroker.publish encodes the payload through the codec', async () => {
   const broadcasts: string[] = [];
   const ns = buildNamespace(new FakeServerSocket(), broadcasts);
@@ -110,24 +148,23 @@ test('DurableObjectChannelBroker.closeChannel forwards the reason to the actor',
   assertEquals(closeAlls[0], 'custom-reason');
 });
 
-test('DurableObjectChannelBroker.subscribe surfaces a codec decode failure by throwing from .next()', async () => {
+test('DurableObjectChannelBroker.subscribe rejects every pending read when decoding fails', async () => {
   const socket = new FakeServerSocket();
   const broker = new DurableObjectChannelBroker<string>(buildNamespace(socket), stringCodec);
   const controller = new AbortController();
   const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
 
+  const first = iter.next();
+  const second = iter.next();
+
   await Promise.resolve();
   await Promise.resolve();
   socket.emit('message', new MessageEvent('message', { data: 'bad:payload' }));
 
-  let caught: unknown = null;
-  try {
-    await iter.next();
-  } catch (err) {
-    caught = err;
-  }
-  assertEquals(caught instanceof Error, true);
-  assertEquals((caught as Error).message.includes('bad:payload'), true);
+  const results = await Promise.allSettled([first, second]);
+  assertEquals(results.map(result => result.status), ['rejected', 'rejected']);
+  assertEquals((results[0] as PromiseRejectedResult).reason.message, 'stringCodec rejected payload: bad:payload');
+  assertEquals((results[1] as PromiseRejectedResult).reason.message, 'stringCodec rejected payload: bad:payload');
 });
 
 test('DurableObjectChannelBroker.subscribe ends the iterator on a server-initiated socket close', async () => {
@@ -178,4 +215,18 @@ test('DurableObjectChannelBroker.subscribe delivers a frame buffered before the 
   socket.emit('message', new MessageEvent('message', { data: 'pre-buffered' }));
   const first = await iter.next();
   assertEquals(first.value, 'pre-buffered');
+});
+
+test('DurableObjectChannelBroker.subscribe closes the socket when the iterator returns', async () => {
+  const socket = new FakeServerSocket();
+  const broker = new DurableObjectChannelBroker<string>(buildNamespace(socket), stringCodec);
+  const controller = new AbortController();
+  const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
+
+  await iter.return?.();
+
+  assertEquals(socket.closed?.code, 1000);
+  assertEquals(socket.listeners.get('message')?.size, 0);
+  assertEquals(socket.listeners.get('close')?.size, 0);
+  assertEquals(socket.listeners.get('error')?.size, 0);
 });
