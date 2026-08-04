@@ -122,7 +122,10 @@ const useStyles = makeStyles({
         borderBottomColor: 'var(--winui-control-stroke-default)',
       },
     },
-    '&:active': {
+    // `:has` alongside each pointer state: the expander's own press lands on the
+    // overlay inside the row, and a row that reacts only to a press on itself
+    // would hold its rest fill while the reader is holding it down.
+    '&:active, &:has(> :active)': {
       backgroundColor: 'var(--winui-control-fill-tertiary)',
       ...shorthands.borderColor('var(--winui-control-stroke-default)'),
     },
@@ -142,7 +145,11 @@ const useStyles = makeStyles({
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L441-L451
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/DependencyObject/DependencyProperty.cpp#L22-L25
     // https://drafts.csswg.org/css-color-adjust/#forced-colors-properties
-    '&:focus-visible': {
+    //
+    // The expander's row wears the ring for the disclosure inside it: the
+    // element taking focus is a stretched overlay, and a ring on the overlay
+    // would sit inside the row's own edge rather than around it.
+    '&:focus-visible, &:has(> :focus-visible)': {
       boxShadow: '0 0 0 1px var(--winui-focus-stroke-inner)',
       outlineColor: 'var(--winui-focus-stroke-outer)',
       outlineOffset: '1px',
@@ -206,6 +213,7 @@ const useStyles = makeStyles({
   // same brushes its unchecked ones do.
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml#L420-L501
   expanderHeader: {
+    position: 'relative',
     backgroundColor: 'var(--winui-card-background-fill-default)',
     ...shorthands.borderColor('var(--winui-card-stroke-default)'),
     fontFamily: 'inherit',
@@ -238,6 +246,9 @@ const useStyles = makeStyles({
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L453-L458
   action: {
     '--floway-select-min-width': '200px',
+    // Above the disclosure's stretched target, so the control it holds keeps its
+    // own clicks rather than opening the row.
+    position: 'relative',
     [WRAPPED]: {
       flexBasis: `calc(100% - ${ICON_COLUMN_VAR})`,
       marginInlineStart: ICON_COLUMN_VAR,
@@ -245,6 +256,23 @@ const useStyles = makeStyles({
     },
   },
   expanderHeaderOpen: { borderEndStartRadius: 0, borderEndEndRadius: 0 },
+  // The disclosure paints nothing and lays out nothing: it carries the row's
+  // click target, stretched over the row from behind, and takes its name from
+  // the header the row already renders, so the action keeps its own place in
+  // the flex line and its own clicks.
+  expanderDisclosure: {
+    appearance: 'none',
+    // The row paints the ring; see the interactive style above.
+    ':focus-visible': { outline: 'none' },
+    background: 'none',
+    ...shorthands.borderWidth(0),
+    cursor: 'pointer',
+    inset: 0,
+    margin: 0,
+    padding: 0,
+    position: 'absolute',
+  },
+
   // The edge shared with the header above is suppressed rather than drawn twice.
   content: {
     backgroundColor: 'var(--winui-card-background-fill-secondary)',
@@ -450,25 +478,32 @@ export function SettingsExpander({ action, children, defaultOpen = false, descri
   }
   const contentId = useId();
   const headerId = useId();
+  // The toolkit nests the trailing control inside the header's own click target,
+  // which HTML forbids: a button may not contain a button, and the row's action
+  // slot takes whatever the caller passes -- a switch is an input, a select is a
+  // button. So the disclosure is its own element beside the action rather than
+  // around it, and reaches the rest of the row through a stretched overlay,
+  // which leaves the action a sibling that sits above it.
+  // https://html.spec.whatwg.org/multipage/form-elements.html#the-button-element
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml
   return <div className={styles.row}>
-    <button
-      aria-controls={contentId}
-      aria-expanded={open}
-      className={mergeClasses(styles.card, styles.interactive, styles.expanderHeader, open && styles.expanderHeaderOpen)}
-      onClick={() => setOpen(value => !value)}
-      type="button"
-    >
+    <div className={mergeClasses(styles.card, styles.interactive, styles.expanderHeader, open && styles.expanderHeaderOpen)}>
+      <button
+        aria-controls={contentId}
+        aria-expanded={open}
+        aria-labelledby={headerId}
+        className={styles.expanderDisclosure}
+        onClick={() => setOpen(value => !value)}
+        type="button"
+      />
       <CardText description={description} header={header} icon={icon} id={headerId} />
-      {/* The trailing control is nested inside the button as the toolkit nests
-          it too, so the click has to be stopped here -- a routed event stops at
-          the control that handled it, a DOM one carries on to the header. */}
-      {action !== undefined && <span className={styles.action} onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>{action}</span>}
+      {action !== undefined && <span className={styles.action}>{action}</span>}
       <span aria-hidden className={styles.chevron}>
         <svg className={mergeClasses(styles.chevronGlyph, open && styles.chevronOpen)} width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
           <path d="M3.15 5.65c.2-.2.5-.2.7 0L8 9.79l4.15-4.14a.5.5 0 0 1 .7.7l-4.5 4.5a.5.5 0 0 1-.7 0l-4.5-4.5a.5.5 0 0 1 0-.7Z" />
         </svg>
       </span>
-    </button>
+    </div>
     <div className={mergeClasses(styles.contentFrame, open && styles.contentFrameOpen)}>
       <div className={styles.contentClip}>
         {/* Closed, the region is inert rather than hidden: `hidden` is
