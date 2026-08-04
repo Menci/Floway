@@ -58,6 +58,7 @@
     "jiti": "2.6.1",
     "jsonc-parser": "^3.3.1",
     "magic-string": "^1.1.0",
+    "postcss-value-parser": "^4.2.0",
     "unocss": "^66.7.5",
     "vite": "^8.1.5",
     "vitest": "4.1.10"
