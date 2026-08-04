@@ -118,7 +118,7 @@ const normalizeUpstreamState = (kind: UpstreamProviderKind, value: unknown): unk
   return value;
 };
 
-const upstreamWireSchema = z.object({
+const upstreamWireShapeSchema = z.object({
   id: nonEmptyStringSchema('id'),
   kind: z.enum(ALL_PROVIDER_KINDS, { error: `kind must be one of ${ALL_PROVIDER_KINDS.join(', ')}` }),
   name: nonEmptyStringSchema('name'),
@@ -135,9 +135,6 @@ const upstreamWireSchema = z.object({
   config: z.unknown(),
   state: z.unknown().optional(),
 }).loose().superRefine((wire, ctx) => {
-  if (hasOwn(wire, 'enabled_fixes')) {
-    addIssue(ctx, "legacy 'enabled_fixes' field is no longer supported; re-export with current code");
-  }
   if (isLegacyUpstreamIdentity(wire.id)) {
     addIssue(ctx, 'id must use a raw upstream id, not a legacy provider-prefixed identity');
   }
@@ -166,6 +163,14 @@ const upstreamWireSchema = z.object({
     return z.NEVER;
   }
 });
+
+const upstreamWireSchema = z.unknown().transform((value, ctx) => {
+  if (isRecord(value) && hasOwn(value, 'enabled_fixes')) {
+    addIssue(ctx, "legacy 'enabled_fixes' field is no longer supported; re-export with current code");
+    return z.NEVER;
+  }
+  return value;
+}).pipe(upstreamWireShapeSchema);
 
 const proxySchema = z.object({
   id: nonEmptyStringSchema('id').refine(id => !isDirectFallbackId(id), {
@@ -220,11 +225,18 @@ const userSchema = z.object({
   username: z.string({ error: 'username must match ^[a-zA-Z0-9_.-]{1,64}$' })
     .regex(USERNAME_PATTERN, { error: 'username must match ^[a-zA-Z0-9_.-]{1,64}$' }),
   passwordHash: z.union([
-    z.string().refine(value => value.startsWith(`${PASSWORD_HASH_SCHEME}$`)),
+    z.string().refine(value => value.startsWith(`${PASSWORD_HASH_SCHEME}$`), {
+      error: `passwordHash must be null or start with ${PASSWORD_HASH_SCHEME}$`,
+    }),
     z.null(),
   ], { error: `passwordHash must be null or start with ${PASSWORD_HASH_SCHEME}$` }),
   isAdmin: z.boolean({ error: 'isAdmin must be a boolean' }),
-  upstreamIds: upstreamIdsSchema,
+  upstreamIds: parsedBy(value => {
+    if (value === undefined) throw new Error('upstreamIds must be present (null or array)');
+    const result = parseUpstreamIdsValue(value);
+    if (!result.ok) throw new Error(result.error);
+    return result.value;
+  }),
   createdAt: nonEmptyStringSchema('createdAt'),
   deletedAt: nullableStringSchema('deletedAt'),
 });
