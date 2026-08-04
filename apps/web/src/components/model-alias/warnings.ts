@@ -1,4 +1,5 @@
 import type { ControlPlaneModel } from '../../api/types';
+import type { TFunction } from '../../i18n/translation';
 import type { CatalogIndex } from '../models/catalog-index';
 import type { AliasTarget, ChatAliasRules, ModelKind } from '@floway-dev/protocols/common';
 
@@ -13,11 +14,13 @@ export type RuleWarningField =
   | 'reasoning.budget_tokens'
   | 'reasoning.adaptive';
 
-export interface RuleWarning {
-  field: RuleWarningField;
-  key: string;
-  values?: Record<string, string | number>;
-}
+export type RuleWarning =
+  | { field: 'reasoning.effort'; key: 'notAdvertisedEffort' }
+  | { field: 'reasoning.effort'; key: 'unsupportedEffort'; values: { values: string } }
+  | { field: 'reasoning.budget_tokens'; key: 'adaptiveBudgetConflict' }
+  | { field: 'reasoning.budget_tokens'; key: 'notAdvertisedBudget' }
+  | { field: 'reasoning.budget_tokens'; key: 'budgetBelow' | 'budgetAbove'; values: { value: number } }
+  | { field: 'reasoning.adaptive'; key: 'notAdvertisedAdaptive' };
 
 export const computeRuleWarnings = (rules: ChatAliasRules, model: ControlPlaneModel | undefined): RuleWarning[] => {
   const warnings: RuleWarning[] = [];
@@ -46,7 +49,15 @@ export const computeRuleWarnings = (rules: ChatAliasRules, model: ControlPlaneMo
   return warnings;
 };
 
-export const computeModelWarning = (id: string, model: ControlPlaneModel | undefined, kind: ModelKind) => {
+export type ModelWarning =
+  | { key: 'unknownTarget'; values: { id: string } }
+  | { key: 'wrongKind'; values: { id: string; actual: ModelKind; expected: ModelKind } };
+
+export const computeModelWarning = (
+  id: string,
+  model: ControlPlaneModel | undefined,
+  kind: ModelKind,
+): ModelWarning | null => {
   if (!id) return null;
   if (!model) return { key: 'unknownTarget', values: { id } };
   if (model.kind !== kind) return { key: 'wrongKind', values: { id, actual: model.kind, expected: kind } };
@@ -74,4 +85,23 @@ export const computeAliasWarnings = (
     warnings.push({ type: 'no-target', key: 'noTarget' });
   }
   return warnings;
+};
+
+export const modelAliasWarningText = (
+  warning: AliasWarning | ModelWarning | RuleWarning,
+  t: TFunction,
+): string => {
+  switch (warning.key) {
+  case 'shadow': return t('dashboard.modelAliases.warnings.shadow', warning.values);
+  case 'noTarget': return t('dashboard.modelAliases.warnings.noTarget');
+  case 'unknownTarget': return t('dashboard.modelAliases.warnings.unknownTarget', warning.values);
+  case 'wrongKind': return t('dashboard.modelAliases.warnings.wrongKind', warning.values);
+  case 'notAdvertisedEffort': return t('dashboard.modelAliases.warnings.notAdvertisedEffort');
+  case 'unsupportedEffort': return t('dashboard.modelAliases.warnings.unsupportedEffort', warning.values);
+  case 'adaptiveBudgetConflict': return t('dashboard.modelAliases.warnings.adaptiveBudgetConflict');
+  case 'notAdvertisedBudget': return t('dashboard.modelAliases.warnings.notAdvertisedBudget');
+  case 'budgetBelow': return t('dashboard.modelAliases.warnings.budgetBelow', warning.values);
+  case 'budgetAbove': return t('dashboard.modelAliases.warnings.budgetAbove', warning.values);
+  case 'notAdvertisedAdaptive': return t('dashboard.modelAliases.warnings.notAdvertisedAdaptive');
+  }
 };

@@ -309,7 +309,7 @@ const keyFormDefaults = (apiKey: ApiKey | null): KeyFormValues => {
 const retentionWarningText = (
   previous: number | null,
   next: number | null | 'invalid',
-  prefix: string,
+  prefix: 'dashboard.apiKeys.retention.warning' | 'dashboard.apiKeys.retention.responsesWarning',
   t: TFunction,
 ) => {
   if (previous === null || previous === 0 || next === 'invalid') return null;

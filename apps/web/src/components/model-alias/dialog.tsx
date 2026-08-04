@@ -9,7 +9,7 @@ import { aliasBody, aliasDefaults, blankTarget, kindAnnouncesMetadata, metadataF
 import { MetadataEditor } from './metadata-editor';
 import { AliasTargetRow } from './target-row';
 import { announcedMetadataIssues, targetIssue, ANNOUNCED_METADATA_FIELDS } from './validation';
-import { computeAliasWarnings, realModelIdsOfKind } from './warnings';
+import { computeAliasWarnings, modelAliasWarningText, realModelIdsOfKind } from './warnings';
 import { api, callApi } from '../../api/client';
 import type { ControlPlaneModel } from '../../api/types';
 import { fluentComponents } from '../../fluent';
@@ -140,7 +140,7 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
     >
       <MetadataEditor disabled={saving} issues={issuesFromErrors(errors.announcedMetadata, ANNOUNCED_METADATA_FIELDS)} kind={kind} readOnly={!values.manualMetadata} value={values.manualMetadata ? values.announcedMetadata : automaticMetadata} onChange={value => setValue('announcedMetadata', value, { shouldValidate: true })} />
     </SettingsExpander>}
-    {aliasWarnings.length > 0 && <OutcomeMessageBar intent="warning">{aliasWarnings.map(warning => <Text key={warning.type}>{t(`dashboard.modelAliases.warnings.${warning.key}`, warning.values)}</Text>)}</OutcomeMessageBar>}
+    {aliasWarnings.length > 0 && <OutcomeMessageBar intent="warning">{aliasWarnings.map(warning => <Text key={warning.type}>{modelAliasWarningText(warning, t)}</Text>)}</OutcomeMessageBar>}
     <SettingsCard
       action={<SettingsSwitch checked={values.visible} disabled={saving} label={t('dashboard.modelAliases.form.visible')} onChange={checked => setValue('visible', checked)} />}
       description={t('dashboard.modelAliases.form.visibleHint')}

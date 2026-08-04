@@ -74,12 +74,15 @@ export function ApiDocsContent() {
                 <TableHeaderCell>{t('dashboard.apiDocs.columns.description')}</TableHeaderCell>
                 <TableTrailingHeader>{t('dashboard.apiDocs.columns.docs')}</TableTrailingHeader>
               </TableRow></TableHeader>
-              <TableBody>{endpoints.map(endpoint => <TableRow key={`${endpoint.method} ${endpoint.path}`}>
-                <TableCell><HttpMethodBadge method={endpoint.method} /></TableCell>
-                <TableCell><code translate="no">{endpoint.path}</code></TableCell>
-                <TableCell>{t(`dashboard.apiDocs.endpointNames.${endpoint.name}`)}</TableCell>
-                <TableTrailingCell><Link href={endpoint.docs} target="_blank" rel="noopener noreferrer"><OpenLinkLabel>{t('dashboard.apiDocs.docsLink')}</OpenLinkLabel></Link></TableTrailingCell>
-              </TableRow>)}</TableBody>
+              <TableBody>{endpoints.map(endpoint => {
+                const nameKey: string = `dashboard.apiDocs.endpointNames.${endpoint.name}`;
+                return <TableRow key={`${endpoint.method} ${endpoint.path}`}>
+                  <TableCell><HttpMethodBadge method={endpoint.method} /></TableCell>
+                  <TableCell><code translate="no">{endpoint.path}</code></TableCell>
+                  <TableCell>{t(nameKey)}</TableCell>
+                  <TableTrailingCell><Link href={endpoint.docs} target="_blank" rel="noopener noreferrer"><OpenLinkLabel>{t('dashboard.apiDocs.docsLink')}</OpenLinkLabel></Link></TableTrailingCell>
+                </TableRow>;
+              })}</TableBody>
             </Table>
           </ScrollArea>
         </section>;

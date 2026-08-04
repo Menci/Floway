@@ -24,8 +24,11 @@ export const issuesFromErrors = <Field extends string>(
 export const useIssueText = () => {
   const { i18n, t } = useTranslation();
   return useCallback(
-    (message: string | undefined) =>
-      message === undefined ? undefined : i18n.exists(message) ? t(message) : message,
+    (message: string | undefined) => {
+      if (message === undefined || !i18n.exists(message)) return message;
+      const key: string = message;
+      return t(key);
+    },
     [i18n, t],
   );
 };
