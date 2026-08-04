@@ -29,6 +29,7 @@ const record = (metrics: DisplayUsageRecord['metrics']): DisplayUsageRecord => (
   keyId: 'key-1',
   keyName: 'Key 1',
   model: 'model-1',
+  upstream: 'up-1',
   hour: RECORD_HOUR,
   requests: 1,
   metrics,
@@ -39,8 +40,9 @@ const chart = (metrics: DisplayUsageRecord['metrics']) => buildTokenChart({
   records: [record(metrics)],
   metadata: [{ id: 'key-1', name: 'Key 1' }],
   models: [],
-  groupKey: 'keyId',
-  hiddenOther: new Set(),
+  groupBy: 'identity',
+  upstreams: [],
+  noUpstreamLabel: 'No upstream',
   redactKeys: false,
   metric: 'cachedRate',
   range: 'today',
@@ -64,8 +66,9 @@ describe('cost chart series', () => {
       records: [record({ input_tokens: '10' })],
       metadata: [{ id: 'key-1', name: 'Key 1' }],
       models: [],
-      groupKey: 'keyId',
-      hiddenOther: new Set(),
+      groupBy: 'identity',
+      upstreams: [],
+      noUpstreamLabel: 'No upstream',
       redactKeys: false,
       metric: 'cost',
       range: 'today',
@@ -88,8 +91,9 @@ describe('redacted series labels', () => {
       records,
       metadata: [{ id: 'user-10', name: 'Alice' }, { id: 'user-11', name: 'Bob' }],
       models: [],
-      groupKey: 'keyId',
-      hiddenOther: new Set(),
+      groupBy: 'identity',
+      upstreams: [],
+      noUpstreamLabel: 'No upstream',
       redactKeys: true,
       metric: 'total',
       range: 'today',
@@ -110,8 +114,9 @@ describe('series identity', () => {
       records,
       metadata: [{ id: 'key-1', name: 'Shared name' }, { id: 'key-2', name: 'Shared name' }],
       models: [],
-      groupKey: 'keyId',
-      hiddenOther: new Set(),
+      groupBy: 'identity',
+      upstreams: [],
+      noUpstreamLabel: 'No upstream',
       redactKeys: false,
       metric: 'total',
       range: 'today',
@@ -121,6 +126,34 @@ describe('series identity', () => {
     expect(model.entries.map(entry => entry.label)).toEqual(['Shared name', 'Shared name']);
     expect(model.entries.map(entry => entry.id)).toEqual(['key-1', 'key-2']);
     expect(areaPlot(model.plot).lineChartData?.map(series => series.legend)).toEqual(['Shared name (1)', 'Shared name (2)']);
+  });
+});
+
+describe('upstream chart series', () => {
+  it('uses upstream names while keeping nullable and deleted upstreams addressable', () => {
+    const records = [
+      { ...record({ input_tokens: '1' }), upstream: 'up-1' },
+      { ...record({ input_tokens: '2' }), upstream: 'up-deleted' },
+      { ...record({ input_tokens: '3' }), upstream: null },
+    ];
+    const model = buildTokenChart({
+      records,
+      metadata: [{ id: 'key-1', name: 'Key 1' }],
+      models: [],
+      groupBy: 'upstream',
+      upstreams: [{ id: 'up-1', name: 'Copilot seat' }],
+      noUpstreamLabel: 'No upstream',
+      redactKeys: false,
+      metric: 'total',
+      range: 'today',
+      buckets: [bucket],
+    });
+
+    expect(model.entries.map(entry => [entry.id, entry.label])).toEqual([
+      ['upstream:up-1', 'Copilot seat'],
+      ['none', 'No upstream'],
+      ['upstream:up-deleted', 'up-deleted'],
+    ]);
   });
 });
 

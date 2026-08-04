@@ -1,7 +1,8 @@
 import type { ChartProps } from '@fluentui/react-charts';
 
 import { metricConfig, summaryFieldForMetric } from './metrics';
-import type { DisplayUsageRecord, SearchChartModel, SearchUsageResponse, TokenChartModel, TokenCounters, TokenSummary, UsageMetric, UsageRange, UsageResponse } from './types';
+import { upstreamFromUsageValue, usageDimensionValue, usageUpstreamValue } from './dimensions';
+import type { DisplayUsageRecord, SearchChartModel, SearchUsageResponse, TokenChartModel, TokenCounters, TokenSummary, UsageGroupBy, UsageMetric, UsageRange, UsageResponse, UsageUpstream } from './types';
 import type { ControlPlaneModel } from '../../api/types';
 import { decimalStringToPlottableNumber, sumDecimalStrings } from '../../lib/decimal-display';
 import type { ChartBucket } from '../charts/dashboard-time';
@@ -46,8 +47,9 @@ export const buildTokenChart = ({
   records,
   metadata,
   models,
-  groupKey,
-  hiddenOther,
+  groupBy,
+  upstreams,
+  noUpstreamLabel,
   redactKeys,
   metric,
   range,
@@ -56,21 +58,21 @@ export const buildTokenChart = ({
   records: DisplayUsageRecord[];
   metadata: UsageResponse['keys'];
   models: ControlPlaneModel[];
-  groupKey: 'keyId' | 'model';
-  hiddenOther: Set<string>;
+  groupBy: UsageGroupBy;
+  upstreams: UsageUpstream[];
+  noUpstreamLabel: string;
   redactKeys: boolean;
   metric: UsageMetric;
   range: UsageRange;
   buckets: ChartBucket[];
 }): TokenChartModel => {
-  const otherKey = groupKey === 'keyId' ? 'model' : 'keyId';
-  const valueRecords = records.filter(record => !hiddenOther.has(record[otherKey]));
-  const { values, details } = aggregateTokenRecords(valueRecords, groupKey, metric, range, buckets);
-  const presentGroups = new Set(records.map(record => record[groupKey]));
-  const entries =
-    groupKey === 'keyId'
-      ? keyChartEntries([...presentGroups], metadata, records, redactKeys)
-      : modelChartEntries([...presentGroups], models);
+  const { values, details } = aggregateTokenRecords(records, groupBy, metric, range, buckets);
+  const presentGroups = [...new Set(records.map(record => usageDimensionValue(record, groupBy)))];
+  const entries = groupBy === 'identity'
+    ? keyChartEntries(presentGroups, metadata, records, redactKeys)
+    : groupBy === 'model'
+      ? modelChartEntries(presentGroups, models)
+      : upstreamChartEntries(presentGroups, upstreams, noUpstreamLabel);
 
   const isPercent = metricConfig[metric].kind === 'percent';
   const series = entries
@@ -171,6 +173,7 @@ export const buildSearchChart = ({
       requests: record.requests,
       metrics: {},
       cost: null,
+      upstream: null,
     })),
     redactKeys,
   );
@@ -192,7 +195,7 @@ export const buildSearchChart = ({
 
 const aggregateTokenRecords = (
   records: DisplayUsageRecord[],
-  groupKey: 'keyId' | 'model',
+  groupBy: UsageGroupBy,
   metric: UsageMetric,
   range: UsageRange,
   buckets: ChartBucket[],
@@ -208,7 +211,7 @@ const aggregateTokenRecords = (
     const bucket = dashboardBucketKeyForUtcHour(range, record.hour);
     if (!values.has(bucket)) continue;
 
-    const group = record[groupKey];
+    const group = usageDimensionValue(record, groupBy);
     const bucketDetails = details.get(bucket)!;
     const detail = bucketDetails.get(group) ?? emptyCounters();
     addRecordToCounters(detail, record);
@@ -282,6 +285,28 @@ const modelChartEntries = (
     .sort()
     .map((id, colorSlot) => ({ id, label: id, colorSlot }))
     .filter(entry => present.has(entry.id)));
+};
+
+const upstreamChartEntries = (
+  presentIds: string[],
+  upstreams: UsageUpstream[],
+  noUpstreamLabel: string,
+): ChartSeries[] => {
+  const nameById = new Map(upstreams.map(upstream => [usageUpstreamValue(upstream.id), upstream.name]));
+  const orderedIds = upstreams.map(upstream => usageUpstreamValue(upstream.id));
+  const slotById = new Map(orderedIds.map((id, index) => [id, index]));
+  [...new Set(presentIds)]
+    .filter(id => !slotById.has(id))
+    .sort()
+    .forEach((id, index) => slotById.set(id, orderedIds.length + index));
+
+  return withUniqueSeriesLegends([...new Set(presentIds)]
+    .map(id => ({
+      id,
+      label: nameById.get(id) ?? (upstreamFromUsageValue(id) ?? noUpstreamLabel),
+      colorSlot: slotById.get(id)!,
+    }))
+    .sort((left, right) => left.colorSlot - right.colorSlot));
 };
 
 export const summarizeUsage = (records: DisplayUsageRecord[]): TokenSummary => {
