@@ -22,8 +22,8 @@ describe('multiselect combobox', () => {
     renderInApp(<Host />);
     fireEvent.click(screen.getByRole('combobox', { name: 'Models' }));
 
-    expect(await screen.findByRole('option', { name: 'retired-model' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('option', { name: 'All models' }));
+    expect(await screen.findByRole('menuitemcheckbox', { name: 'retired-model' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'All models' }));
     expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Models' }).placeholder).toBe('All models');
   });
 });
