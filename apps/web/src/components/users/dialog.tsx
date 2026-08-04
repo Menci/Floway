@@ -2,12 +2,12 @@ import { PersonKey24Regular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback, useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
-import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 
 import { api, callApi } from '../../api/client';
 import type { ControlPlaneModel, ControlPlaneUser, UpstreamOption } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { DialogShell } from '../ui/dialog-shell';
 import { Input } from '../ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';

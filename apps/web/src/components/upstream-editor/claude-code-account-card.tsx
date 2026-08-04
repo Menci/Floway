@@ -1,5 +1,4 @@
 import { ArrowClockwiseRegular } from '@fluentui/react-icons';
-import { useTranslation } from 'react-i18next';
 
 import { shortAccountId } from './account-id';
 import {
@@ -14,6 +13,7 @@ import {
 } from './claude-code-account';
 import { quotaBarColor, WALL_CLOCK_REFRESH_MS } from './subscription-account-quota';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { dateTime, relativeTime } from '../../lib/format-time';
 import { clampPercent, percentText } from '../../lib/percent';
 import { useLocale } from '../../lib/use-locale';

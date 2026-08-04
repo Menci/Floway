@@ -11,11 +11,16 @@ import { formatBytes, formatCount, formatNumber } from '../lib/format-number';
 // interpolation rather than only the ones that name a format. A number with no
 // format is therefore a throw at render, not a message that quietly disagrees
 // with the component next to it.
-export const numberFormats: Record<string, (value: number, locale: string) => string> = {
+export const numberFormats = {
   number: formatNumber,
   count: formatCount,
   bytes: formatBytes,
-};
+} satisfies Record<string, (value: number, locale: string) => string>;
+
+// The set a locale string may name after the comma. ./translation reads it to
+// decide which interpolations take a number, so the table above is the only
+// place a format is declared.
+export type NumberFormat = keyof typeof numberFormats;
 
 const format: FormatFunction = (value, name, language, options) => {
   const key = String((options as { interpolationkey?: string } | undefined)?.interpolationkey ?? '?');
@@ -30,7 +35,7 @@ const format: FormatFunction = (value, name, language, options) => {
     return value as string;
   }
 
-  const formatter = numberFormats[name];
+  const formatter = Object.hasOwn(numberFormats, name) ? numberFormats[name as NumberFormat] : undefined;
   if (formatter === undefined) throw new TypeError(`Interpolation {{${key}, ${name}}} names an unknown format.`);
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     throw new TypeError(`Interpolation {{${key}, ${name}}} needs a finite number, received ${String(value)}.`);

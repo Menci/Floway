@@ -1,5 +1,4 @@
 import { useSyncExternalStore } from 'react';
-import { useTranslation } from 'react-i18next';
 import {
   isRouteErrorResponse,
   Links,
@@ -19,6 +18,7 @@ import { ErrorShell, ErrorStack } from './components/ui/error-shell';
 import { AppLoadingScreen } from './components/ui/loading-screen';
 import { fluentComponents } from './fluent';
 import { defaultLanguage, htmlLanguageFor } from './i18n/languages';
+import { useTranslation } from './i18n/translation';
 import { useSourceMappedStack } from './lib/source-mapped-stack';
 import { DARK_SCHEME_QUERY, useMediaQuery } from './lib/use-media-query';
 import { winuiDarkTheme, winuiLightTheme } from './winui/theme';
@@ -36,11 +36,14 @@ const { Button, FluentProvider, Spinner } = fluentComponents;
 // The version query isolates the cross-origin response from a bare-path Azure
 // CDN cache entry stored with docs.azure.cn as its sole allowed origin and no
 // `Vary: Origin`.
-const SEGOE_UI_VARIABLE_URL = 'https://docs.azure.cn/static/third-party/SegoeUIVariable/SegoeUI-VF.ttf?floway-vf=2.02';
+// Only the mirror is warmed. ./global.css names learn.microsoft.com behind it as
+// a second source, and preloading that too would spend a second megabyte on
+// every visit to save a fraction of the visits where the mirror is unreachable.
+const SEGOE_UI_VARIABLE_MIRROR_URL = 'https://docs.azure.cn/static/third-party/SegoeUIVariable/SegoeUI-VF.ttf?floway-vf=2.02';
 
 export const links: Route.LinksFunction = () => [
   { rel: 'preconnect', href: 'https://docs.azure.cn', crossOrigin: 'anonymous' },
-  { rel: 'preload', as: 'font', type: 'font/ttf', href: SEGOE_UI_VARIABLE_URL, crossOrigin: 'anonymous' },
+  { rel: 'preload', as: 'font', type: 'font/ttf', href: SEGOE_UI_VARIABLE_MIRROR_URL, crossOrigin: 'anonymous' },
 ];
 
 const useSystemTheme = () => useMediaQuery(DARK_SCHEME_QUERY) ? winuiDarkTheme : winuiLightTheme;

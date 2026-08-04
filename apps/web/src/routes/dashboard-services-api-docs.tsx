@@ -1,8 +1,7 @@
-import { useTranslation } from 'react-i18next';
-
 import { requireDashboardSession } from './guards';
 import { ApiDocsContent } from '../components/api-docs/content';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
+import { useTranslation } from '../i18n/translation';
 
 export async function clientLoader() {
   requireDashboardSession();

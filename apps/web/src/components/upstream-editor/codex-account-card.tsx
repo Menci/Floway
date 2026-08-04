@@ -1,9 +1,8 @@
-import { useTranslation } from 'react-i18next';
-
 import { shortAccountId } from './account-id';
 import { accountStatus, type CodexRecord, findCredential, latestCredits, quotaEntries } from './codex-account';
 import { quotaBarColor, WALL_CLOCK_REFRESH_MS } from './subscription-account-quota';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { dateTime } from '../../lib/format-time';
 import { clampPercent, percentText } from '../../lib/percent';
 import { useLocale } from '../../lib/use-locale';

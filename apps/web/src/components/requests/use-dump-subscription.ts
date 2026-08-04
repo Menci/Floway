@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 
 import { getCurrentSession } from '../../api/auth';
 import { api, callApi } from '../../api/client';
 import { getSessionToken } from '../../auth/session';
+import { useTranslation } from '../../i18n/translation';
 import { errorMessage } from '../../lib/error-message';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 
