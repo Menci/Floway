@@ -19,6 +19,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { isJsonMediaType } from '@floway-dev/protocols/common';
 
 // The line is 1-based in every engine's stack and in `originalPositionFor`, so
 // it passes through. The column is 1-based in the stack and 0-based in a source
@@ -137,7 +138,7 @@ const loadMap = async (scriptUrl: string): Promise<LoadedMap | null> => {
   // An asset this app does not have is answered with the SPA shell rather than
   // a 404, so a map that was not deployed arrives as HTML with a 200.
   if (!response.ok) throw new Error(`${url} responded ${response.status}`);
-  if (!response.headers.get('content-type')?.includes('json')) {
+  if (!isJsonMediaType(response.headers.get('content-type'))) {
     throw new Error(`${url} is not a source map`);
   }
   const json: object = await response.json();

@@ -16,7 +16,7 @@ import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata } from '../shared/respond.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import { isJsonMediaType, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { RESPONSES_MISSING_TERMINAL_MESSAGE } from '@floway-dev/protocols/responses';
 import { isResponsesTerminalEvent, type CanonicalResponsesPayload, type ClientResponsesStreamEvent, type ResponsesRequestPayload, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
@@ -652,7 +652,7 @@ const createDownstreamSequence = (): DownstreamSequence => {
 
 const parseMaybeJson = (body: Uint8Array, headers: Headers): unknown => {
   const text = new TextDecoder().decode(body);
-  if (!(headers.get('content-type') ?? '').includes('application/json')) return { message: text };
+  if (!isJsonMediaType(headers.get('content-type'))) return { message: text };
   try {
     return JSON.parse(text) as unknown;
   } catch {

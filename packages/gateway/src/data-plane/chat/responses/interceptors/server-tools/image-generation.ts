@@ -7,7 +7,7 @@ import { recordTokenUsage, tokenUsageFromImagesBody } from '../../../../shared/t
 import { createExternalImageFetcher, type ExternalImageFetchResult } from '../../../shared/external-image-loader.ts';
 import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
 import { dimensionsFromBytes, getImageProcessor, type BackgroundScheduler } from '@floway-dev/platform';
-import { parseSSEStream } from '@floway-dev/protocols/common';
+import { isImageMediaType, mediaTypeEssence, parseSSEStream } from '@floway-dev/protocols/common';
 import {
   createRandomResponsesItemId,
   type ResponsesFunctionCallOutputItem,
@@ -177,7 +177,7 @@ const decodeInlineImage = (
   } else {
     if (dataUrlMatch[2] === undefined) return null;
     payload = dataUrlMatch[3];
-    mimeType = dataUrlMatch[1] ?? fallbackMime;
+    mimeType = mediaTypeEssence(dataUrlMatch[1] ?? fallbackMime) ?? fallbackMime;
   }
 
   // A generated result is bare base64 on its first appearance and a data URL
@@ -214,9 +214,10 @@ const decodeInputImageDataUrl = (
   const dataUrlMatch = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(imageUrl);
   if (dataUrlMatch === null) return { ok: false, reason: 'invalid_format' };
 
-  const mimeType = dataUrlMatch[1] ?? '';
-  if (!mimeType.toLowerCase().startsWith('image/')) {
-    return { ok: false, reason: 'unsupported_mime', mimeType };
+  const suppliedMimeType = dataUrlMatch[1] ?? '';
+  const mimeType = mediaTypeEssence(suppliedMimeType);
+  if (!isImageMediaType(mimeType) || mimeType === null) {
+    return { ok: false, reason: 'unsupported_mime', mimeType: suppliedMimeType };
   }
   if (dataUrlMatch[2] === undefined) return { ok: false, reason: 'missing_base64_separator' };
 
