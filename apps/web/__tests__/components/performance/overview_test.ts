@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildPerformanceQuery, clearGroupedFilter, parsePerformanceUrlState, performanceLabels, performanceValue, serializePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewResponse } from '../../../src/components/performance/overview';
+import { buildPerformanceQuery, clearGroupedFilter, normalizePerformanceUrlStateForRuntime, parsePerformanceUrlState, performanceLabels, performanceValue, serializePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewResponse } from '../../../src/components/performance/overview';
 import { buildPerformanceChart } from '../../../src/components/performance/plot';
 
 const emptyOverview = (): PerformanceOverviewResponse => ({
@@ -43,6 +43,16 @@ describe('performance overview query', () => {
     const serialized = serializePerformanceUrlState(state);
     expect(serialized.get('m')).toBe('tokPerSec');
     expect(serialized.getAll('fm')).toEqual(['gpt-5', 'claude-opus-4-7']);
+  });
+
+  it('removes Region state outside the Cloudflare runtime', () => {
+    const state = parsePerformanceUrlState(new URLSearchParams('g=runtimeLocation&fr=SJC&hide=SJC'));
+    expect(normalizePerformanceUrlStateForRuntime(state, false)).toMatchObject({
+      groupBy: 'model',
+      filters: { runtimeLocation: [] },
+      hidden: [],
+    });
+    expect(normalizePerformanceUrlStateForRuntime(state, true)).toBe(state);
   });
 });
 

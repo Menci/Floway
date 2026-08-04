@@ -147,3 +147,16 @@ export const clearGroupedFilter = (filters: PerformanceFilters, groupBy: Perform
   ...(groupBy === 'runtimeLocation' ? { runtimeLocation: [] } : {}),
   ...(groupBy === 'userId' || groupBy === 'keyId' ? { userId: [], keyId: [] } : {}),
 });
+
+export const normalizePerformanceUrlStateForRuntime = (
+  state: PerformanceUrlState,
+  cloudflare: boolean,
+): PerformanceUrlState => {
+  if (cloudflare || (state.groupBy !== 'runtimeLocation' && state.filters.runtimeLocation.length === 0)) return state;
+  return {
+    ...state,
+    groupBy: state.groupBy === 'runtimeLocation' ? 'model' : state.groupBy,
+    filters: { ...state.filters, runtimeLocation: [] },
+    hidden: state.groupBy === 'runtimeLocation' ? [] : state.hidden,
+  };
+};

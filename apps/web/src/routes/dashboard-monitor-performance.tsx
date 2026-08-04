@@ -11,6 +11,7 @@ import { PerformanceChartSection } from '../components/performance/chart';
 import {
   buildPerformanceQuery,
   clearGroupedFilter,
+  normalizePerformanceUrlStateForRuntime,
   parsePerformanceUrlState,
   performanceLabels,
   serializePerformanceUrlState,
@@ -46,7 +47,7 @@ const { Button, Tab, TabList, Text, Tooltip } = fluentComponents;
 
 interface UpstreamName { id: string; name: string }
 
-const groupByValues: PerformanceGroupBy[] = ['model', 'upstream', 'operation', 'runtimeLocation', 'keyId', 'userId'];
+const allGroupByValues: PerformanceGroupBy[] = ['model', 'upstream', 'operation', 'runtimeLocation', 'keyId', 'userId'];
 
 interface LoaderData {
   error: GlobalError | null;
@@ -58,28 +59,41 @@ interface LoaderData {
   // Null on the same terms: without the names, a group labels itself with an
   // upstream id the page would be presenting as a name.
   upstreamNames: UpstreamName[] | null;
+  regionAvailable: boolean;
   view: PerformanceView;
 }
 
 export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise<LoaderData> {
   const user = await requireDashboardUser();
-  const state = parsePerformanceUrlState(new URL(request.url).searchParams);
+  const parsedState = parsePerformanceUrlState(new URL(request.url).searchParams);
   const view: PerformanceView = user.isAdmin ? 'all-by-user' : 'self-by-key';
-  const groupBy = state.groupBy === 'userId' && view !== 'all-by-user' ? 'model' : state.groupBy;
+  const requestedState: PerformanceUrlState = {
+    ...parsedState,
+    groupBy: parsedState.groupBy === 'userId' && view !== 'all-by-user' ? 'model' : parsedState.groupBy,
+  };
   const loadedAt = Date.now();
-  const query = buildPerformanceQuery(state.range, groupBy, state.filters, loadedAt);
+  const query = buildPerformanceQuery(requestedState.range, requestedState.groupBy, requestedState.filters, loadedAt);
   // The page opens for every signed-in account, so the names come from the
   // non-admin upstream picker; /api/upstreams answers 403 to an operator and
   // would leave the whole page unavailable to them.
-  const [overview, upstreams] = await Promise.all([
+  const [initialOverview, upstreams, runtime] = await Promise.all([
     callApi(() => api.api.performance.overview.$get({ query })),
     callApi(() => api.api['upstream-options'].$get()),
+    callApi(() => api.api['runtime-info'].$get()),
   ]);
+  const regionAvailable = runtime.data?.kind === 'cloudflare';
+  const state = normalizePerformanceUrlStateForRuntime(requestedState, regionAvailable);
+  const overview = state === requestedState
+    ? initialOverview
+    : await callApi(() => api.api.performance.overview.$get({
+        query: buildPerformanceQuery(state.range, state.groupBy, state.filters, loadedAt),
+      }));
   return {
-    error: overview.error ?? upstreams.error ?? null,
+    error: overview.error ?? upstreams.error ?? runtime.error ?? null,
     loadedAt,
     overview: overview.data ?? null,
-    state: { ...state, groupBy },
+    regionAvailable,
+    state,
     upstreamNames: upstreams.data?.map(({ id, name }) => ({ id, name })) ?? null,
     view,
   };
@@ -93,6 +107,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const rewrite = useEntryRewrite();
   const initialState = loaderData.state;
   const view: PerformanceView = loaderData.view;
+  const regionAvailable = loaderData.regionAvailable;
   const [range, setRange] = useState<PerformanceRange>(initialState.range);
   const [loadedRange, setLoadedRange] = useState<PerformanceRange>(initialState.range);
   const [loadedAt, setLoadedAt] = useState(loaderData.loadedAt);
@@ -169,6 +184,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     ['ttftP99', formatDuration(summary?.ttftMsP99 ?? null)],
     ['speedP99', formatTokenRateFromTpot(summary?.tpotUsP99 ?? null)],
   ] as const;
+  const groupByValues = allGroupByValues.filter(key => key !== 'runtimeLocation' || regionAvailable);
   const breakdowns = overview === null ? [] : groupByValues
     .filter(key => key !== 'userId' || view === 'all-by-user')
     .map(key => ({ key, rows: overview.axes[key] }));
@@ -181,7 +197,10 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     { key: 'userId', groupLabel: t('dashboard.performance.groupBy.userId'), filterLabel: t('dashboard.performance.filters.userId'), allLabel: t('dashboard.performance.filters.all.userId'), options: overview?.dimensionValues.userIds.map(value => ({ value: String(value), label: labels?.users.get(String(value)) ?? `user ${value}` })) ?? [] },
     { key: 'keyId', groupLabel: t('dashboard.performance.groupBy.keyId'), filterLabel: t('dashboard.performance.filters.keyId'), allLabel: t('dashboard.performance.filters.all.keyId'), options: overview?.dimensionValues.keyIds.map(value => ({ value, label: labels?.keys.get(value) ?? value })) ?? [] },
   ];
-  const availableDimensions = dimensions.filter(dimension => dimension.key !== 'userId' || view === 'all-by-user');
+  const availableDimensions = dimensions.filter(dimension =>
+    (dimension.key !== 'runtimeLocation' || regionAvailable)
+    && (dimension.key !== 'userId' || view === 'all-by-user'),
+  );
   const filterDimensions = availableDimensions.filter(dimension => (
     !((dimension.key === 'userId' || dimension.key === 'keyId') && (groupBy === 'userId' || groupBy === 'keyId'))
   ));
