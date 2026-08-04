@@ -1,6 +1,6 @@
 import type { GatewayCtx } from './gateway-ctx.ts';
 import { stampUpstreamCallStart } from './gateway-ctx.ts';
-import { filterInboundHeadersForProvider } from './inbound-headers.ts';
+import { filterInboundHeadersForProvider, requestHintsFromInboundHeaders } from './inbound-headers.ts';
 import type { ModelCandidate, UpstreamCallOptions } from '@floway-dev/provider';
 
 // See UpstreamCallOptions in `@floway-dev/provider` for the contract on each
@@ -13,5 +13,6 @@ export const buildUpstreamCallOptions = (
   fetcher: candidate.fetcher,
   waitUntil: ctx.backgroundScheduler,
   headers: filterInboundHeadersForProvider(headers, candidate.provider.kind),
+  requestHints: requestHintsFromInboundHeaders(headers),
   wrapUpstreamCall: stampUpstreamCallStart(ctx.attempt),
 });

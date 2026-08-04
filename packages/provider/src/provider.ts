@@ -25,6 +25,14 @@ export type ResponsesAction = 'generate' | 'compact';
 
 export type InboundHeaderMatcher = string | RegExp;
 
+export interface UpstreamRequestHints {
+  readonly oneMillionContext: boolean;
+}
+
+export const NO_UPSTREAM_REQUEST_HINTS: UpstreamRequestHints = {
+  oneMillionContext: false,
+};
+
 export interface Provider {
   upstreamId: string;
   kind: UpstreamProviderKind;
@@ -105,6 +113,7 @@ export interface UpstreamCallOptions {
   fetcher: Fetcher;
   waitUntil: (promise: Promise<unknown>) => void;
   headers: Headers;
+  requestHints: UpstreamRequestHints;
   // Providers wrap the dispatch that fires the outbound fetch. The wrap
   // runs synchronously and stamps `attempt.upstreamCallStartedAt` before
   // invoking the factory, so the stamp fires ahead of dial + TLS + CONNECT

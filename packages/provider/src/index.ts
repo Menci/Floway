@@ -55,7 +55,9 @@ export type {
   ProviderStreamResult,
   ResponsesAction,
   UpstreamCallOptions,
+  UpstreamRequestHints,
 } from './provider.ts';
+export { NO_UPSTREAM_REQUEST_HINTS } from './provider.ts';
 export type { ImagesEditsRequest, ImagesEditsSource } from './images.ts';
 export { serializeOpenAIImagesEditsRequest } from './images.ts';
 export type { AudioTranscriptionFormEntry, AudioTranscriptionRequest } from './audio.ts';

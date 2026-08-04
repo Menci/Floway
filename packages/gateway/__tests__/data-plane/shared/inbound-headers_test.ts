@@ -171,4 +171,18 @@ describe('provider inbound header policies', () => {
     });
     expect(source.get('x-client-request-id')).toBe('request-1');
   });
+
+  test('normalizes 1M intent before stripping every Copilot header', () => {
+    const base = stubModelCandidate();
+    const candidate = stubModelCandidate({
+      provider: { ...base.provider, kind: 'copilot' },
+    });
+    const options = buildUpstreamCallOptions(candidate, mockGatewayCtx(), new Headers({
+      'anthropic-beta': 'other-beta, context-1m-2025-08-07',
+      authorization: 'Bearer secret',
+    }));
+
+    expect([...options.headers]).toEqual([]);
+    expect(options.requestHints).toEqual({ oneMillionContext: true });
+  });
 });
