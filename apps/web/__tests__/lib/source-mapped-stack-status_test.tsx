@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { act, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useSourceMappedStack } from '../../src/lib/source-mapped-stack';
@@ -80,5 +80,35 @@ describe('what the error page is told about its trace', () => {
     const second = `Error: later\n    at other (${SCRIPT}:1:1)`;
     rerender(<Probe stack={second} />);
     expect(read()).toEqual({ status: 'loading', stack: second });
+  });
+
+  it('ignores a superseded restoration that finishes after the current one', async () => {
+    vi.stubEnv('DEV', false);
+    let releaseFirst = (_response: Response) => {};
+    const firstResponse = new Promise<Response>(resolve => { releaseFirst = resolve; });
+    let scriptRequestCount = 0;
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+      if (String(input).endsWith('.map')) {
+        return Promise.resolve(new Response(JSON.stringify(MAP), {
+          headers: { 'content-type': 'application/json' },
+        }));
+      }
+      scriptRequestCount += 1;
+      return scriptRequestCount === 1
+        ? firstResponse
+        : Promise.resolve(new Response('const a=1;\n//# sourceMappingURL=chunk.js.map'));
+    }));
+
+    const { rerender } = renderInApp(<Probe stack={RAW} />);
+    const second = `Error: later\n    at other (${SCRIPT}:1:1)`;
+    rerender(<Probe stack={second} />);
+    await settle();
+    expect(read()).toEqual({ status: 'settled', stack: 'Error: later\n    at other (/src/first.ts:1:1)' });
+
+    await act(async () => {
+      releaseFirst(new Response('const a=1;\n//# sourceMappingURL=chunk.js.map'));
+    });
+    await settle();
+    expect(read()).toEqual({ status: 'settled', stack: 'Error: later\n    at other (/src/first.ts:1:1)' });
   });
 });
