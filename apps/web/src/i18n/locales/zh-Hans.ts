@@ -124,6 +124,8 @@ const zhHansCN = {
         errors: {
           imageUnsupported: '当前模型不支持图片输入。',
           imageUrl: '请输入有效的绝对图片 URL。',
+          customInvalid: '请输入有效的 JSON。',
+          customObject: '请输入 JSON 对象。',
           customReserved: '请移除保留字段：{{fields}}。',
         },
       },

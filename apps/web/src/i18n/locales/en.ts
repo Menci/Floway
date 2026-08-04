@@ -134,6 +134,8 @@ const en = {
         errors: {
           imageUnsupported: 'This model does not support image input.',
           imageUrl: 'Enter a valid absolute image URL.',
+          customInvalid: 'Enter valid JSON.',
+          customObject: 'Enter a JSON object.',
           customReserved: 'Remove reserved fields: {{fields}}.',
         },
       },

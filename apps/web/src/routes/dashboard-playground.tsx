@@ -241,8 +241,8 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
       const message = customResult.error === 'reserved'
         ? t('dashboard.playground.errors.customReserved', { fields: customResult.fields.join(', ') })
         : t(customResult.error === 'invalid'
-          ? 'dashboard.playground.errors.customInvalid'
-          : 'dashboard.playground.errors.customObject');
+            ? 'dashboard.playground.errors.customInvalid'
+            : 'dashboard.playground.errors.customObject');
       setCustomError(message);
       return;
     }
