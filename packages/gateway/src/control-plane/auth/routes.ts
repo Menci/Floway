@@ -5,11 +5,10 @@ import { SEED_ADMIN_USER_ID } from '../../repo/seed-admin.ts';
 import type { User } from '../../repo/types.ts';
 import { isProductionRequest } from '../../runtime/is-production-request.ts';
 import { dummyPasswordHash, verifyPassword } from '../../shared/passwords.ts';
-import { timingSafeEqual } from '../../shared/timing-safe-equal.ts';
 import type { authLoginBody } from '../schemas.ts';
 import { loadKnownUpstreamIds } from '../shared/upstream-ids.ts';
 import { userToSessionWire } from '../users/wire.ts';
-import { getEnvOptional } from '@floway-dev/platform';
+import { getEnvOptional, timingSafeEqual } from '@floway-dev/platform';
 
 const resolveLoginUser = async (c: CtxWithJson<typeof authLoginBody>): Promise<User | null> => {
   const { username, password } = c.req.valid('json');
