@@ -63,9 +63,10 @@ than in pairwise translators.
 - Claude Code Messages has two provider-owned paths. A request recognized as
   Claude Code-shaped skips the re-mimicry envelope. At the candidate boundary,
   the gateway reduces inbound headers to the Messages-call allowlist exported
-  by that provider module; the fetch path then replaces Authorization, stamps
-  the dated provider model id, and forces streaming. Other clients and translated
-  sources run the ordered re-mimicry chain before that fetch path. See the
+  by that provider module; the fetch path supplies Content-Type and
+  provider-owned Authorization, stamps the dated provider model id, and forces
+  streaming. Other clients and translated sources run the ordered re-mimicry
+  chain before that fetch path. See the
   [provider branch](../packages/provider-claude-code/src/provider.ts),
   [boundary registration](../packages/provider-claude-code/src/interceptors/messages/index.ts),
   and [wire call](../packages/provider-claude-code/src/fetch.ts).

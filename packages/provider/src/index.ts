@@ -57,7 +57,6 @@ export type {
   ResponsesAction,
   UpstreamCallOptions,
 } from './provider.ts';
-export { PROVIDER_CALLS } from './provider.ts';
 export type { ImagesEditsRequest, ImagesEditsSource } from './images.ts';
 export { serializeOpenAIImagesEditsRequest } from './images.ts';
 export type { AudioTranscriptionFormEntry, AudioTranscriptionRequest } from './audio.ts';

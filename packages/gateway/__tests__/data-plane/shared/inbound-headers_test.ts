@@ -4,10 +4,25 @@ import { describe, expect, test } from 'vitest';
 import { inboundHeaders, filterInboundHeaders, filterInboundHeadersForProvider } from '../../../src/data-plane/shared/inbound-headers.ts';
 import { buildUpstreamCallOptions } from '../../../src/data-plane/shared/upstream-call-options.ts';
 import { mockGatewayCtx } from '../../test-utils/gateway-ctx.ts';
-import { ALL_PROVIDER_KINDS, PROVIDER_CALLS, type ProviderCall, type UpstreamProviderKind } from '@floway-dev/provider';
+import { ALL_PROVIDER_KINDS, type ProviderCall, type UpstreamProviderKind } from '@floway-dev/provider';
 import { stubModelCandidate, stubProvider } from '@floway-dev/test-utils';
 
 const headerRecord = (headers: Headers): Record<string, string> => Object.fromEntries(headers);
+
+const providerCallInventory = {
+  callAlphaSearch: null,
+  callCompletions: null,
+  callChatCompletions: null,
+  callResponses: null,
+  callMessages: null,
+  callMessagesCountTokens: null,
+  callEmbeddings: null,
+  callImagesGenerations: null,
+  callImagesEdits: null,
+  callAudioTranscriptions: null,
+  callRerank: null,
+} satisfies Record<ProviderCall, null>;
+const providerCalls = Object.keys(providerCallInventory) as ProviderCall[];
 
 describe('inboundHeaders', () => {
   test('copies the complete request bag for candidate-specific filtering', async () => {
@@ -88,7 +103,7 @@ describe('provider inbound header policies', () => {
     return [];
   };
 
-  test.each(ALL_PROVIDER_KINDS.flatMap(kind => PROVIDER_CALLS.map(call => ({ kind, call }))))(
+  test.each(ALL_PROVIDER_KINDS.flatMap(kind => providerCalls.map(call => ({ kind, call }))))(
     '$kind $call admits only its declared probe headers',
     ({ kind, call }) => {
       const filtered = filterInboundHeadersForProvider(new Headers({

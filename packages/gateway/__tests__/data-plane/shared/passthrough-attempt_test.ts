@@ -4,27 +4,32 @@ import { test } from 'vitest';
 import { passthroughAttempt } from '../../../src/data-plane/shared/passthrough-attempt.ts';
 import type { AuthVars } from '../../../src/middleware/auth.ts';
 import { mockGatewayCtx } from '../../test-utils/gateway-ctx.ts';
-import type { ProviderCall } from '@floway-dev/provider';
-import { assertEquals, assertExists, stubModelCandidate } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, stubModelCandidate, stubProvider } from '@floway-dev/test-utils';
 
-const observedHeadersForCall = async (providerCall: ProviderCall): Promise<Headers> => {
+test('passthroughAttempt binds ingress filtering to the invoked provider method', async () => {
+  let observed: Headers | undefined;
   const base = stubModelCandidate();
   const candidate = stubModelCandidate({
-    provider: { ...base.provider, kind: 'claude-code' },
+    provider: {
+      ...base.provider,
+      kind: 'custom',
+      instance: stubProvider({
+        callEmbeddings: async (_model, _body, _signal, opts) => {
+          observed = opts.headers;
+          return { response: new Response('{}'), modelKey: 'test-model' };
+        },
+      }),
+    },
   });
-  let observed: Headers | undefined;
   const app = new Hono<{ Variables: AuthVars }>();
   app.post('/test', async c => {
     await passthroughAttempt({
       c,
       ctx: mockGatewayCtx(),
       candidate,
-      operation: 'text_completion',
-      providerCall,
-      call: async (_provider, _model, opts) => {
-        observed = opts.headers;
-        return { response: new Response('{}'), modelKey: 'test-model' };
-      },
+      operation: 'embeddings',
+      providerCall: 'callEmbeddings',
+      call: (provider, model, opts) => provider.instance.callEmbeddings(model, { input: 'hi' }, undefined, opts),
     });
     return c.text('ok');
   });
@@ -32,18 +37,11 @@ const observedHeadersForCall = async (providerCall: ProviderCall): Promise<Heade
     method: 'POST',
     headers: {
       authorization: 'Bearer secret',
-      'user-agent': 'claude-cli/2.1.181',
+      'x-client-request-id': 'request-1',
       'x-debug': 'discard',
     },
   });
+
   assertExists(observed);
-  return observed;
-};
-
-test('passthroughAttempt applies the call surface selected by passthroughServe', async () => {
-  const messages = await observedHeadersForCall('callMessages');
-  const responses = await observedHeadersForCall('callResponses');
-
-  assertEquals(Object.fromEntries(messages), { 'user-agent': 'claude-cli/2.1.181' });
-  assertEquals([...responses], []);
+  assertEquals([...observed], []);
 });

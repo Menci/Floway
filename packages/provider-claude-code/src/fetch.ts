@@ -28,8 +28,8 @@ export interface CallClaudeCodeMessagesOptions {
   // `shaped: true` means the inbound request already looks like real CC
   // traffic. The gateway has reduced `opts.call.headers` to the provider
   // module's allowlist, so the wire path preserves that genuine X-Stainless-* /
-  // anthropic-beta / x-claude-code-session-id fingerprint and swaps only
-  // Authorization for the cached OAuth token.
+  // anthropic-beta / x-claude-code-session-id fingerprint. The wire path
+  // supplies a default Content-Type when absent and sets cached OAuth auth.
   // `shaped: false` means the gateway's re-mimicry chain rebuilt the
   // payload's system blocks / metadata / model id — replace headers with
   // the pinned CC set so the wire shape matches end-to-end.
@@ -365,7 +365,8 @@ const performUpstreamCall = async (
   let headers: Record<string, string>;
   if (opts.shaped) {
     // The gateway already reduced this bag to the Claude Code module's
-    // allowlist. This path preserves that fingerprint and replaces auth.
+    // allowlist. This path preserves that fingerprint, fills Content-Type
+    // when absent, and sets provider-owned OAuth auth.
     const passthrough = Object.fromEntries(opts.call.headers);
     // Sub2api always sets Content-Type when the inbound omits it
     // (`gateway_service.go` request-forwarding path), so the upstream

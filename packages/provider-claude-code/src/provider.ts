@@ -54,9 +54,9 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
       // needs to preserve. So the chain only runs on the unshaped path; the
       // shaped path skips straight to the terminal call, which preserves the
       // caller's own system blocks, metadata and tool shape rather than
-      // re-deriving them. The call preserves that filtered fingerprint, swaps
-      // Authorization for our cached OAuth token, and restamps the resolved
-      // model id.
+      // re-deriving them. The call preserves that filtered fingerprint,
+      // supplies the provider-owned OAuth auth, and restamps the resolved model
+      // id.
       const looksShaped = isClaudeCodeShapedRequest({
         headers: opts.headers,
         body: ctx.payload,

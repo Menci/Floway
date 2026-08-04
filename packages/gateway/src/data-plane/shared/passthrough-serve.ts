@@ -18,7 +18,7 @@ import type { PassthroughServeApiName } from './api-names.ts';
 import { appendFailedUpstreams } from './failed-upstreams.ts';
 import type { GatewayCtx } from './gateway-ctx.ts';
 import { iterateCandidates } from './iterate-candidates.ts';
-import { passthroughAttempt } from './passthrough-attempt.ts';
+import { passthroughAttempt, type PassthroughProvider, type PassthroughProviderCall } from './passthrough-attempt.ts';
 import { type StreamCompletion, writeSSEFrames } from './sse.ts';
 import { recordFailedRequest } from './telemetry/performance.ts';
 import { settle } from './telemetry/settle.ts';
@@ -28,7 +28,7 @@ import type { TokenUsage } from '../../repo/types.ts';
 import { enumerateModelCandidates } from '../providers/resolution.ts';
 import { doneFrame, eventFrame, type ModelKind, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
-import type { PerformanceOperation, PerformanceTelemetryContext, InternalModel, Provider, ProviderCall, ProviderCallResult, ProviderModel, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
+import type { PerformanceOperation, PerformanceTelemetryContext, InternalModel, ProviderCallResult, ProviderModel, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
 
 // `json` (embeddings, images): single-shot body, `extractBilling` reads
 // usage / metadata off the parsed root. `sse` (/v1/completions): frame
@@ -59,12 +59,12 @@ export interface PassthroughResponseStrategyContext {
   readonly identity: TelemetryModelIdentity;
 }
 
-interface PassthroughServeContext {
+interface PassthroughServeContext<TCall extends PassthroughProviderCall> {
   readonly c: AuthedContext;
   readonly ctx: GatewayCtx;
   readonly sourceApi: PassthroughServeApiName;
   readonly operation: PerformanceOperation;
-  readonly providerCall: ProviderCall;
+  readonly providerCall: TCall;
   // Already-validated public model id the client requested. The helper
   // resolves it against the provider registry; if no upstream serves the
   // id with the requested kind, the client sees a 404 with the standard
@@ -81,7 +81,7 @@ interface PassthroughServeContext {
   readonly modelServesEndpoint: (model: InternalModel) => boolean;
   // Any throw here is preserved and becomes a 502 with the internal-debug
   // envelope. `model` is the emitting upstream's `ProviderModel`.
-  readonly call: (provider: Provider, model: ProviderModel, opts: UpstreamCallOptions) => Promise<ProviderCallResult>;
+  readonly call: (provider: PassthroughProvider<TCall>, model: ProviderModel, opts: UpstreamCallOptions) => Promise<ProviderCallResult>;
   readonly response: PassthroughResponseHandling;
 }
 
@@ -89,7 +89,7 @@ interface PassthroughServeContext {
 export const passthroughApiError = (c: Context, message: string, status: ContentfulStatusCode): Response =>
   c.json({ error: { message, type: 'api_error' } }, status);
 
-export const passthroughServe = async (input: PassthroughServeContext): Promise<Response> => {
+export const passthroughServe = async <TCall extends PassthroughProviderCall>(input: PassthroughServeContext<TCall>): Promise<Response> => {
   const { c, ctx, sourceApi, operation, providerCall, model, kind, modelServesEndpoint, call, response: responseHandling } = input;
 
   try {
