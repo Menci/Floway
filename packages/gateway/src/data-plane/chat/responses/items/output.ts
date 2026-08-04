@@ -4,7 +4,7 @@ import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type ResponsesCompactionResult, type ResponsesOutputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
-// Floway treats completed item lifecycles as the canonical output because a
+// Floway treats closed item lifecycles as the canonical output because a
 // terminal envelope may only partially restate them: a captured Codex turn
 // closed `reasoning` and `message` but stated only `reasoning`, while a
 // compaction turn stated no output. Resolve that partial restatement before
