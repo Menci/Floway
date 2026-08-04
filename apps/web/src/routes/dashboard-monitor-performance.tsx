@@ -26,12 +26,11 @@ import {
 } from '../components/performance/overview';
 import { buildPerformanceChart, performanceBuckets } from '../components/performance/plot';
 import { PerformanceTable } from '../components/performance/table';
+import { TelemetryDimensionControls, type TelemetryDimension } from '../components/telemetry/dimension-controls';
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
-import { Dropdown } from '../components/ui/fluent-form-controls';
 import { CONTROL_ROW_CLASS, PANEL_STACK_CLASS } from '../components/ui/layout';
-import { MultiselectCombobox } from '../components/ui/multiselect-combobox';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { ResourceListActions } from '../components/ui/resource-list';
@@ -44,7 +43,7 @@ import { formatCount, formatTokenRateFromTpot } from '../lib/format-number';
 import { useEntryRewrite } from '../lib/page-navigation';
 import { useLocale } from '../lib/use-locale';
 
-const { Button, Field, Option, Tab, TabList, Text, Tooltip } = fluentComponents;
+const { Button, Tab, TabList, Text, Tooltip } = fluentComponents;
 
 interface UpstreamName { id: string; name: string }
 
@@ -175,6 +174,18 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     .filter(key => key !== 'userId' || view === 'all-by-user')
     .map(key => ({ key, rows: overview.axes[key] }));
   const activeBreakdown = breakdowns.find(item => item.key === breakdownGroup) ?? breakdowns[0];
+  const dimensions: Array<TelemetryDimension<PerformanceGroupBy>> = [
+    { key: 'model', groupLabel: t('dashboard.performance.groupBy.model'), filterLabel: t('dashboard.performance.filters.model'), allLabel: t('dashboard.performance.filters.all.model'), options: overview?.dimensionValues.models.map(value => ({ value, label: value })) ?? [] },
+    { key: 'upstream', groupLabel: t('dashboard.performance.groupBy.upstream'), filterLabel: t('dashboard.performance.filters.upstream'), allLabel: t('dashboard.performance.filters.all.upstream'), options: overview?.dimensionValues.upstreams.map(value => ({ value, label: labels?.upstreams.get(value) ?? value })) ?? [] },
+    { key: 'operation', groupLabel: t('dashboard.performance.groupBy.operation'), filterLabel: t('dashboard.performance.filters.operation'), allLabel: t('dashboard.performance.filters.all.operation'), options: overview?.dimensionValues.operations.map(value => ({ value, label: value })) ?? [] },
+    { key: 'runtimeLocation', groupLabel: t('dashboard.performance.groupBy.runtimeLocation'), filterLabel: t('dashboard.performance.filters.runtimeLocation'), allLabel: t('dashboard.performance.filters.all.runtimeLocation'), options: overview?.dimensionValues.runtimeLocations.map(value => ({ value, label: value })) ?? [] },
+    { key: 'userId', groupLabel: t('dashboard.performance.groupBy.userId'), filterLabel: t('dashboard.performance.filters.userId'), allLabel: t('dashboard.performance.filters.all.userId'), options: overview?.dimensionValues.userIds.map(value => ({ value: String(value), label: labels?.users.get(String(value)) ?? `user ${value}` })) ?? [] },
+    { key: 'keyId', groupLabel: t('dashboard.performance.groupBy.keyId'), filterLabel: t('dashboard.performance.filters.keyId'), allLabel: t('dashboard.performance.filters.all.keyId'), options: overview?.dimensionValues.keyIds.map(value => ({ value, label: labels?.keys.get(value) ?? value })) ?? [] },
+  ];
+  const availableDimensions = dimensions.filter(dimension => dimension.key !== 'userId' || view === 'all-by-user');
+  const filterDimensions = availableDimensions.filter(dimension =>
+    !((dimension.key === 'userId' || dimension.key === 'keyId') && (groupBy === 'userId' || groupBy === 'keyId')),
+  );
 
   return <section className="dashboard-page">
     <DashboardPageHeader
@@ -185,31 +196,24 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error.message}</OutcomeMessageBar>}
     {overview === null || chart === null || labels === null || activeBreakdown === undefined ? <Panel><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel> : <>
       <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
-        <div className="flex items-end gap-3 min-w-0 flex-wrap">
-          <Field className="w-[160px] flex-none" label={t('dashboard.performance.groupBy.label')}>
-            <div className="flex items-center gap-2">
-              <Dropdown
-                className="flex-1"
-                selectedOptions={[groupBy]}
-                value={t(`dashboard.performance.groupBy.${groupBy}`)}
-                onOptionSelect={(_, data) => data.optionValue !== undefined && changeGroupBy(data.optionValue as PerformanceGroupBy)}
-              >
-                {groupByValues.filter(value => value !== 'userId' || view === 'all-by-user').map(value => <Option key={value} value={value}>{t(`dashboard.performance.groupBy.${value}`)}</Option>)}
-              </Dropdown>
-              {groupBy === 'keyId' && (
-                <Tooltip content={t('dashboard.performance.apiKeyScopeInfo')} relationship="description">
-                  <Button
-                    appearance="subtle"
-                    aria-label={t('dashboard.performance.apiKeyScopeLabel')}
-                    className={CONTROL_ROW_CLASS}
-                    icon={<InfoRegular />}
-                  />
-                </Tooltip>
-              )}
-            </div>
-          </Field>
-          <PerformanceFilterFields filters={filters} groupBy={groupBy} labels={labels} overview={overview} view={view} onChange={setFilter} />
-        </div>
+        <TelemetryDimensionControls
+          dimensions={availableDimensions}
+          filterDimensions={filterDimensions}
+          filters={filters}
+          groupBy={groupBy}
+          groupByAdornment={groupBy === 'keyId' && <Tooltip content={t('dashboard.performance.apiKeyScopeInfo')} relationship="description">
+            <Button
+              appearance="subtle"
+              aria-label={t('dashboard.performance.apiKeyScopeLabel')}
+              className={CONTROL_ROW_CLASS}
+              icon={<InfoRegular />}
+            />
+          </Tooltip>}
+          groupByLabel={t('dashboard.performance.groupBy.label')}
+          onFilterChange={setFilter}
+          onGroupByChange={changeGroupBy}
+          selectedLabel={count => t('dashboard.performance.filters.selected', { count })}
+        />
         <div className="grid gap-2.5 grid-cols-8 max-[1150px]:grid-cols-4 max-[620px]:grid-cols-2">
           {summaryCards.map(([label, value]) => <div className="grid gap-1 min-w-0 px-2 py-1" key={label}>
             <Text size={200} weight="semibold" className="text-fui-fg2">{t(`dashboard.performance.summary.${label}`)}</Text>
@@ -241,38 +245,4 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       </Panel>
     </>}
   </section>;
-}
-
-function PerformanceFilterFields({ filters, groupBy, labels, onChange, overview, view }: {
-  filters: PerformanceFilters; groupBy: PerformanceGroupBy; labels: PerformanceLabels;
-  onChange: (key: keyof PerformanceFilters, value: string[]) => void;
-  overview: PerformanceOverviewResponse; view: PerformanceView;
-}) {
-  const { t } = useTranslation();
-  const entries: Array<{ key: keyof PerformanceFilters; values: Array<{ value: string; label: string }> }> = [
-    { key: 'model', values: overview.dimensionValues.models.map(value => ({ value, label: value })) },
-    { key: 'upstream', values: overview.dimensionValues.upstreams.map(value => ({ value, label: labels.upstreams.get(value) ?? value })) },
-    { key: 'operation', values: overview.dimensionValues.operations.map(value => ({ value, label: value })) },
-    { key: 'runtimeLocation', values: overview.dimensionValues.runtimeLocations.map(value => ({ value, label: value })) },
-    { key: 'userId', values: overview.dimensionValues.userIds.map(value => ({ value: String(value), label: labels.users.get(String(value)) ?? `user ${value}` })) },
-    { key: 'keyId', values: overview.dimensionValues.keyIds.map(value => ({ value, label: labels.keys.get(value) ?? value })) },
-  ];
-  return <>
-    {entries.filter(({ key }) => {
-      if (key === 'userId' && view !== 'all-by-user') return false;
-      if ((key === 'userId' || key === 'keyId') && (groupBy === 'userId' || groupBy === 'keyId')) return false;
-      return key !== groupBy;
-    }).map(({ key, values }) => <Field className="min-w-[150px] flex-[1_1_150px]" key={key} label={t(`dashboard.performance.filters.${key}`)}>
-      <MultiselectCombobox
-        className="w-full"
-        clearLabel={t(`dashboard.performance.filters.all.${key}`)}
-        onChange={value => onChange(key, value)}
-        options={values}
-        placeholder={filters[key].length === 0
-          ? t(`dashboard.performance.filters.all.${key}`)
-          : t('dashboard.performance.filters.selected', { count: filters[key].length })}
-        value={filters[key]}
-      />
-    </Field>)}
-  </>;
 }
