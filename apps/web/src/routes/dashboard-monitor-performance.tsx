@@ -127,7 +127,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       setLoadedAt(requestedAt);
       arrived();
     }
-  }, [query, view]);
+  }, [query]);
 
   const { poll, refresh, refreshing } = useRefreshOnChange(query, reload);
 
@@ -156,12 +156,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     setFilters(current => clearGroupedFilter(current, next));
     setHiddenSeries(new Set());
   };
-  const setFilter = (key: keyof PerformanceFilters, value: string[]) => setFilters(current => {
-    const previous = current[key];
-    return previous.length === value.length && previous.every((entry, index) => entry === value[index])
-      ? current
-      : { ...current, [key]: value };
-  });
+  const setFilter = (key: keyof PerformanceFilters, value: string[]) => setFilters(current => ({ ...current, [key]: value }));
   const buckets = useMemo(() => performanceBuckets(loadedRange, loadedAt, locale), [loadedAt, loadedRange, locale]);
   const labels = useMemo(() => overview && upstreamNames && performanceLabels(overview, upstreamNames), [overview, upstreamNames]);
   const chart = useMemo(() => overview && labels && buildPerformanceChart(overview.series, metric, percentile, groupBy, labels, buckets, loadedRange), [buckets, groupBy, labels, loadedRange, metric, overview, percentile]);
@@ -270,6 +265,7 @@ function PerformanceFilterFields({ filters, groupBy, labels, onChange, overview,
     }).map(({ key, values }) => <Field className="min-w-[150px] flex-[1_1_150px]" key={key} label={t(`dashboard.performance.filters.${key}`)}>
       <MultiselectCombobox
         className="w-full"
+        clearLabel={t(`dashboard.performance.filters.all.${key}`)}
         onChange={value => onChange(key, value)}
         options={values}
         placeholder={filters[key].length === 0

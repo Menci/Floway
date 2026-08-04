@@ -115,14 +115,17 @@ export const resolvePerformanceGroup = (
   return group;
 };
 
+const filterValuesFromUrl = (search: URLSearchParams, key: string): string[] =>
+  [...new Set(search.getAll(key).filter(Boolean))];
+
 export const parsePerformanceUrlState = (search: URLSearchParams): PerformanceUrlState => ({
   metric: oneOf(search.get('m'), ['ttft', 'tokPerSec'], 'ttft'),
   percentile: oneOf(search.get('pct'), ['p50', 'p95', 'p99'], 'p95'),
   groupBy: oneOf(search.get('g'), ['model', 'upstream', 'operation', 'runtimeLocation', 'keyId', 'userId'], 'model'),
   range: oneOf(search.get('r'), ['today', '7d', '30d'], 'today'),
   filters: {
-    model: search.getAll('fm'), upstream: search.getAll('fu'), operation: search.getAll('fo'),
-    runtimeLocation: search.getAll('fr'), userId: search.getAll('fusr'), keyId: search.getAll('fk'),
+    model: filterValuesFromUrl(search, 'fm'), upstream: filterValuesFromUrl(search, 'fu'), operation: filterValuesFromUrl(search, 'fo'),
+    runtimeLocation: filterValuesFromUrl(search, 'fr'), userId: filterValuesFromUrl(search, 'fusr'), keyId: filterValuesFromUrl(search, 'fk'),
   },
   hidden: (search.get('hide') ?? '').split(',').map(decodeURIComponent).filter(Boolean),
 });

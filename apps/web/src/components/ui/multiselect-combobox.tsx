@@ -12,18 +12,15 @@ export interface MultiselectOption {
 }
 
 const sameValues = (left: readonly string[], right: readonly string[]) =>
-  left.length === right.length && left.every((entry, index) => entry === right[index]);
+  left.length === right.length && new Set(right).size === right.length && left.every(entry => right.includes(entry));
 
-// A multiselect field over a set of values, each carrying the label it reads as
-// -- an id whose name lives elsewhere shows the name and searches by it. The
-// query lives only while the list is open, so a closed field shows its own
-// summary rather than what was last typed into it; a freeform field also
-// commits the query on Enter, taking it as both value and label. Every route out
-// -- picking an option, typing one -- passes through one normalisation, so a
-// typed value and a picked one cannot land in different shapes.
+// Values and visible labels stay separate so an id can display and search by a
+// human-readable name. The query exists only while the list is open; every
+// selection and freeform entry passes through the same normalization.
 export function MultiselectCombobox({
   ariaLabel,
   className,
+  clearLabel,
   closedLabel = '',
   freeform = false,
   normalizeValue = entry => entry,
@@ -36,6 +33,7 @@ export function MultiselectCombobox({
 }: {
   ariaLabel?: string;
   className?: string;
+  clearLabel?: string;
   closedLabel?: string;
   freeform?: boolean;
   normalizeValue?: (entry: string) => string;
@@ -49,7 +47,12 @@ export function MultiselectCombobox({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const needle = query.trim().toLowerCase();
-  const visible = options.filter(option => option.label.toLowerCase().includes(needle));
+  const optionValues = new Set(options.map(option => option.value));
+  const completeOptions = [
+    ...options,
+    ...[...new Set(value)].filter(entry => !optionValues.has(entry)).map(entry => ({ value: entry, label: entry })),
+  ];
+  const visible = completeOptions.filter(option => option.label.toLowerCase().includes(needle));
 
   const commit = (next: readonly string[]) => {
     const normalized = [...new Set(next.map(normalizeValue).filter(Boolean))];
@@ -69,12 +72,13 @@ export function MultiselectCombobox({
       commit([...value, query]);
     } : undefined}
     onOpenChange={(_, data) => { setOpen(data.open); setQuery(''); }}
-    onOptionSelect={(_, data) => commit(data.selectedOptions)}
+    onOptionSelect={(_, data) => commit(data.optionValue === '' ? [] : data.selectedOptions)}
     placeholder={placeholder}
     readOnly={readOnly}
     selectedOptions={[...value]}
     value={open ? query : closedLabel}
   >
+    {clearLabel && <Option text={clearLabel} value="">{clearLabel}</Option>}
     {visible.map(option => <Option key={option.value} text={option.label} value={option.value}>
       {renderOption ? renderOption(option) : option.label}
     </Option>)}

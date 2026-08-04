@@ -38,7 +38,7 @@ describe('performance overview query', () => {
   });
 
   it('round-trips non-default dashboard state through the URL', () => {
-    const state = parsePerformanceUrlState(new URLSearchParams('m=tokPerSec&pct=p99&g=upstream&r=30d&fm=gpt-5&fm=claude-opus-4-7&hide=a%252Cb,c'));
+    const state = parsePerformanceUrlState(new URLSearchParams('m=tokPerSec&pct=p99&g=upstream&r=30d&fm=&fm=gpt-5&fm=gpt-5&fm=claude-opus-4-7&hide=a%252Cb,c'));
     expect(state).toMatchObject({ metric: 'tokPerSec', percentile: 'p99', groupBy: 'upstream', range: '30d', filters: { model: ['gpt-5', 'claude-opus-4-7'] }, hidden: ['a,b', 'c'] });
     const serialized = serializePerformanceUrlState(state);
     expect(serialized.get('m')).toBe('tokPerSec');
