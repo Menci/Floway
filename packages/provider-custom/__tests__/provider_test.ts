@@ -32,6 +32,7 @@ const buildCustomUpstream = (options: BuildOptions = {}): UpstreamRecord => ({
     authStyle: 'bearer',
     apiKey: 'sk-test',
     endpoints: { chatCompletions: {} },
+    ingressHeadersRules: [],
     modelsFetch: { enabled: options.modelsFetchEnabled ?? true },
     models: options.models ?? [],
   },

@@ -17,6 +17,7 @@ const baseRecord: UpstreamRecord = {
     authStyle: 'bearer',
     apiKey: 'sk-test',
     endpoints: { chatCompletions: {} },
+    ingressHeadersRules: [],
   },
   state: null,
   flagOverrides: {},
@@ -43,6 +44,44 @@ test('assertCustomUpstreamRecord parses modelsFetch and models', () => {
   assertEquals(config.models.length, 1);
   assertEquals(config.models[0].upstreamModelId, 'pinned');
   assertEquals(config.models[0].display_name, 'Pinned');
+});
+
+test('assertCustomUpstreamRecord canonicalizes ingress header rules without collapsing empty values', () => {
+  const { config } = assertCustomUpstreamRecord({
+    ...baseRecord,
+    config: {
+      ...(baseRecord.config as Record<string, unknown>),
+      ingressHeadersRules: [
+        { key: ' X-Request-ID ', value: null },
+        { key: 'X-Empty', value: '' },
+        { key: 'X-Route', value: ' configured ' },
+      ],
+    },
+  });
+
+  assertEquals(config.ingressHeadersRules, [
+    { key: 'x-request-id', value: null },
+    { key: 'x-empty', value: '' },
+    { key: 'x-route', value: 'configured' },
+  ]);
+});
+
+test('assertCustomUpstreamRecord rejects invalid or duplicate ingress header rules', () => {
+  for (const [rules, message] of [
+    [[{ key: 'X-Route', value: null }, { key: 'x-route', value: 'other' }], 'duplicate key x-route'],
+    [[{ key: 'bad header', value: null }], 'must be a valid HTTP header name'],
+    [[{ key: 'x-route', value: 'ok\r\nnot-ok' }], 'value is not a valid HTTP header value'],
+    [[{ key: 'x-route', value: null, extra: true }], 'must contain only key and value'],
+  ] as const) {
+    assertThrows(
+      () => assertCustomUpstreamRecord({
+        ...baseRecord,
+        config: { ...(baseRecord.config as Record<string, unknown>), ingressHeadersRules: rules },
+      }),
+      Error,
+      message,
+    );
+  }
 });
 
 test('assertCustomUpstreamRecord defaults modelsFetch to enabled when absent', () => {
@@ -134,6 +173,7 @@ test('assertCustomUpstreamRecord accepts authStyle "none" with no apiKey', () =>
       baseUrl: 'https://internal.example.com',
       authStyle: 'none',
       endpoints: { chatCompletions: {} },
+      ingressHeadersRules: [],
     },
   });
   assertEquals(config.authStyle, 'none');
@@ -167,6 +207,7 @@ test('assertCustomUpstreamRecord rejects authStyle "bearer" with no apiKey', () 
           baseUrl: 'https://custom.example.com',
           authStyle: 'bearer',
           endpoints: { chatCompletions: {} },
+          ingressHeadersRules: [],
         },
       }),
     Error,
