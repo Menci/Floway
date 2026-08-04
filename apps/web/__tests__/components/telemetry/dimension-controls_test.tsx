@@ -19,7 +19,8 @@ describe('telemetry dimension controls', () => {
       selectedLabel={count => `${count} selected`}
     />);
 
-    expect(screen.getByRole('group', { name: 'Group by' })).toBeTruthy();
+    const group = screen.getByRole('group', { name: 'Group by' });
+    expect(document.getElementById(group.getAttribute('aria-labelledby')!)?.textContent).toBe('Group by');
     expect(screen.getByRole('combobox', { name: 'Group by' })).toBeTruthy();
     expect(screen.getByRole('combobox', { name: 'Upstream' })).toBeTruthy();
     expect(screen.queryByRole('combobox', { name: 'Model' })).toBeNull();

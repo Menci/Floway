@@ -13,6 +13,8 @@ import type {
   DashboardTokenUsageByUserResponse,
   SearchUsageByKeyResponse,
   SearchUsageByUserResponse,
+  TokenUsageByKeyResponse,
+  TokenUsageByUserResponse,
 } from '@floway-dev/gateway/control-plane/usage-types';
 
 const userBucketId = (userId: number) => `user-${userId}`;
@@ -26,23 +28,34 @@ export const metricsFromWire = (
 // `null` on failure: a failed fetch did not report zero usage, and a zeroed
 // chart beside a dismissible bar reads as a quiet gateway. A body in the other
 // view's shape is a broken contract rather than something to render around.
-interface UsageViewEnvelope {
-  view: UsageView;
-  dimensions?: unknown;
-}
-
 const forRequestedView = <T extends { view: UsageView }>(
-  result: ApiResult<UsageViewEnvelope | unknown[], unknown>,
+  result: ApiResult<T | unknown[], unknown>,
   view: UsageView,
   what: string,
-  accepts: (data: UsageViewEnvelope) => boolean = () => true,
 ): T | null => {
   if (result.error) return null;
   const data = result.data;
-  if (Array.isArray(data) || data.view !== view || !accepts(data)) {
+  if (Array.isArray(data) || data.view !== view) {
     throw new TypeError(`${what} response does not match the requested ${view} view`);
   }
-  return data as T;
+  return data;
+};
+
+type TokenUsageEnvelope =
+  | DashboardTokenUsageByKeyResponse
+  | DashboardTokenUsageByUserResponse
+  | TokenUsageByKeyResponse
+  | TokenUsageByUserResponse;
+
+const requireUpstreamDimension = (
+  data: TokenUsageEnvelope | null,
+  view: UsageView,
+): DashboardTokenUsageByKeyResponse | DashboardTokenUsageByUserResponse | null => {
+  if (data === null) return null;
+  if (!('dimensions' in data) || data.dimensions.length !== 1 || data.dimensions[0] !== 'upstream') {
+    throw new TypeError(`Token usage response does not carry the requested upstream dimension for ${view} view`);
+  }
+  return data;
 };
 
 const tokenUsageForDisplay = (data: DashboardTokenUsageByKeyResponse | DashboardTokenUsageByUserResponse): UsageResponse =>
@@ -78,11 +91,9 @@ const fetchUsageForView = async (view: UsageView, start: string, end: string, si
     callApi(() => api.api['token-usage'].$get({ query: { ...query, include_upstream_dimension: '1' } }, { init: { signal } })),
     callApi(() => api.api['search-usage'].$get({ query }, { init: { signal } })),
   ]);
-  const usageData = forRequestedView<DashboardTokenUsageByKeyResponse | DashboardTokenUsageByUserResponse>(
-    usageRes,
+  const usageData = requireUpstreamDimension(
+    forRequestedView<TokenUsageEnvelope>(usageRes, view, 'Token usage'),
     view,
-    'Token usage',
-    data => Array.isArray(data.dimensions) && data.dimensions.length === 1 && data.dimensions[0] === 'upstream',
   );
   const searchData = forRequestedView<SearchUsageByKeyResponse | SearchUsageByUserResponse>(searchRes, view, 'Search usage');
   return {

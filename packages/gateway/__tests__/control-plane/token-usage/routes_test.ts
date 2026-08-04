@@ -96,7 +96,7 @@ test('/api/token-usage exposes upstream-split dashboard records only by explicit
   await repo.usage.set({ ...shared, upstream: 'up-2' });
 
   const legacy = await requestApp('/api/token-usage?start=2026-04-30T00&end=2026-05-01T00&include_key_metadata=1&view=self-by-key', { headers: { 'x-api-key': apiKey.key } });
-  const dashboard = await requestApp('/api/token-usage?start=2026-04-30T00&end=2026-05-01T00&include_key_metadata=1&include_upstream_dimension=1&view=self-by-key', { headers: { 'x-api-key': apiKey.key } });
+  const dashboard = await requestApp('/api/token-usage?start=2026-04-30T00&end=2026-05-01T00&include_upstream_dimension=1&view=self-by-key', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(legacy.status, 200);
   const legacyBody = await legacy.json();
@@ -106,6 +106,19 @@ test('/api/token-usage exposes upstream-split dashboard records only by explicit
   const dashboardBody = await dashboard.json();
   assertEquals(dashboardBody.dimensions, ['upstream']);
   assertEquals(dashboardBody.records.map((record: { upstream: string }) => record.upstream), ['up-1', 'up-2']);
+});
+
+test('/api/token-usage upstream dimension includes user metadata in all-by-user view', async () => {
+  const { repo, adminSession, apiKey } = await setupAppTest();
+  await seedUsage(repo, apiKey.id, '2026-04-30T10', 'gpt-5', 1);
+
+  const response = await requestApp('/api/token-usage?start=2026-04-30T00&end=2026-05-01T00&include_upstream_dimension=1&view=all-by-user', { headers: { 'x-floway-session': adminSession } });
+
+  assertEquals(response.status, 200);
+  const body = await response.json();
+  assertEquals(body.dimensions, ['upstream']);
+  assertEquals(body.records[0].upstream, 'up_test');
+  assertEquals(body.users.some((user: { id: number }) => user.id === apiKey.userId), true);
 });
 
 test('/api/token-usage scopes to the actor\'s keys when called with an API key', async () => {

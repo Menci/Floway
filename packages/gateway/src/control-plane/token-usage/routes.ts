@@ -33,7 +33,7 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
       repo.apiKeys.listIncludingDeleted(),
     ]);
     const keyToUser = buildKeyToUserMap(keys);
-    if (query.include_user_metadata !== '1') {
+    if (query.include_user_metadata !== '1' && query.include_upstream_dimension !== '1') {
       return c.json(aggregateUsageByUserForDisplay(rawRecords, keyToUser));
     }
     const userMetadata = users
@@ -59,11 +59,11 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
   const filtered = explicitKeyId ? rawRecords : rawRecords.filter(r => ownedSet.has(r.keyId));
   const keyMap = new Map(keys.map(k => [k.id, k]));
   const withKeyMetadata = <Record extends { keyId: string }>(records: Record[]) => records.map(r => {
-      const k = keyMap.get(r.keyId);
-      if (!k) throw new Error(`telemetry row references unknown key ${r.keyId} for user ${resolved.scopeUserId}`);
-      return { ...r, keyName: k.name, keyCreatedAt: k.createdAt };
-    });
-  if (query.include_key_metadata !== '1') {
+    const k = keyMap.get(r.keyId);
+    if (!k) throw new Error(`telemetry row references unknown key ${r.keyId} for user ${resolved.scopeUserId}`);
+    return { ...r, keyName: k.name, keyCreatedAt: k.createdAt };
+  });
+  if (query.include_key_metadata !== '1' && query.include_upstream_dimension !== '1') {
     return c.json(withKeyMetadata(aggregateUsageForDisplay(filtered)));
   }
 

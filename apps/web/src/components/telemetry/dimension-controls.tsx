@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 
 import { fluentComponents } from '../../fluent';
 import { Dropdown } from '../ui/fluent-form-controls';
@@ -35,12 +35,13 @@ export function TelemetryDimensionControls<Key extends string>({
   onGroupByChange: (key: Key) => void;
   selectedLabel: (count: number) => string;
 }) {
+  const groupByLabelId = useId();
   const selectedGroup = dimensions.find(dimension => dimension.key === groupBy);
   if (!selectedGroup) throw new RangeError(`Unknown telemetry grouping dimension: ${groupBy}`);
 
   return <div className="flex items-end gap-3 min-w-0 flex-wrap">
-    <Field className="w-[160px] flex-none" label={groupByLabel}>
-      <div aria-label={groupByLabel} className="flex items-center gap-2" role="group">
+    <Field className="w-[160px] flex-none" label={<span id={groupByLabelId}>{groupByLabel}</span>}>
+      <div aria-labelledby={groupByLabelId} className="flex items-center gap-2" role="group">
         <Dropdown
           aria-label={groupByLabel}
           className="flex-1"
