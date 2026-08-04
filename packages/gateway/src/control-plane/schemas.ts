@@ -428,16 +428,37 @@ export const codexOAuthAuthorizeUrlBody = z.object({
   state: z.string().min(1),
 });
 
-export const codexOAuthExchangeBody = z.object({
+// Preview takes no record: it reads a pasted document and reports what is in
+// it, without touching any upstream.
+export const codexImportPreviewBody = z.object({
+  raw_json: z.string().min(1),
+});
+
+export const codexImportExchangeBody = z.object({
   record: upstreamRecordEnvelope,
-  auth_json: z.string().min(1).optional(),
+  json: z.object({
+    raw_json: z.string().min(1),
+    source_index: z.number().int().nonnegative(),
+  }).optional(),
   callback: z.object({
     code: z.string().min(1),
     verifier: z.string().min(1),
   }).optional(),
+  // Only the bearer is required. Every other field is the operator stating
+  // something the tokens cannot say, so `null` and an omitted key mean the
+  // same thing and the provider decides what a value is worth.
+  manual: z.object({
+    access_token: z.string().min(1),
+    refresh_token: z.string().nullable().optional(),
+    id_token: z.string().nullable().optional(),
+    account_id: z.string().nullable().optional(),
+    email: z.string().nullable().optional(),
+    plan_type: z.string().nullable().optional(),
+    expires_at: z.union([z.number(), z.string()]).nullable().optional(),
+  }).optional(),
 }).refine(
-  b => (b.auth_json !== undefined) !== (b.callback !== undefined),
-  { message: 'Provide exactly one of auth_json or callback' },
+  b => [b.json, b.callback, b.manual].filter(value => value !== undefined).length === 1,
+  { message: 'Provide exactly one of json, callback, or manual' },
 );
 
 export const codexOAuthRefreshBody = recordOnlyBody;

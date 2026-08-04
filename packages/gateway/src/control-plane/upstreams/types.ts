@@ -87,7 +87,7 @@ export type CodexAccountCredentialState = Pick<
   'chatgptAccountId' | 'state' | 'state_message' | 'state_updated_at'
 > & {
   accessToken?: CodexAccountCredential['accessToken'];
-  refresh_token?: string;
+  refresh_token?: string | null;
   refresh_token_set?: boolean;
 };
 

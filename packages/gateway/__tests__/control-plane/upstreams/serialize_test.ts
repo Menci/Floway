@@ -246,6 +246,39 @@ test('upstreamRecordToJson throws when claude-code state.accounts is not an arra
   expect(() => upstreamRecordToJson(record)).toThrow(/accounts must be an array/);
 });
 
+test('upstreamRecordToJson exposes Codex capability and bearer timing without the bearer', () => {
+  const result = upstreamRecordToJson(codexBase({
+    config: {
+      accounts: [{ email: null, chatgptAccountId: null, chatgptUserId: null, planType: null }],
+    },
+    state: {
+      accounts: [{
+        chatgptAccountId: null,
+        refresh_token: null,
+        state: 'active',
+        state_updated_at: timestamp,
+        openaiDeviceId: 'device',
+        accessToken: { token: 'bearer-secret', expiresAt: null, refreshedAt: timestamp },
+        quotaSnapshot: null,
+      }],
+    },
+  }));
+  const configAccount = (result.config as unknown as { accounts: Array<Record<string, unknown>> }).accounts[0];
+  const account = (result.state as unknown as { accounts: Array<Record<string, unknown>> }).accounts[0];
+  assertEquals(configAccount.chatgptAccountId, null);
+  assertEquals(account.chatgptAccountId, null);
+  assertEquals(account.refresh_token_set, false);
+  assertEquals(account.accessToken, { expiresAt: null, refreshedAt: timestamp });
+  assertEquals(JSON.stringify(result).includes('bearer-secret'), false);
+});
+
+test('upstreamRecordToJson throws when codex state.accessToken is a string', () => {
+  const record = codexBase({
+    state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: null, state: 'active', state_updated_at: timestamp, openaiDeviceId: 'device', accessToken: 'not-an-object', quotaSnapshot: null }] },
+  });
+  expect(() => upstreamRecordToJson(record)).toThrow(/accessToken must be a plain object/);
+});
+
 test('upstreamRecordToJson throws when codex config.accounts is not an array', () => {
   const record = codexBase({ config: { accounts: 'not-an-array' } });
   expect(() => upstreamRecordToJson(record)).toThrow(/accounts must be an array/);
