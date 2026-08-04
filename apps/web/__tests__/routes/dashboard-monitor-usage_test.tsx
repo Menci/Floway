@@ -15,7 +15,7 @@ const loaderData = {
   hiddenUpstreams: [],
   loadedAt,
   metric: 'total' as const,
-  models: [{ id: 'gpt-5', object: 'model' as const, created: 0, owned_by: 'floway', kind: 'chat' as const, upstreams: [] }],
+  models: [],
   range: 'today' as const,
   redactKeys: false,
   search: { records: [], keys: [] },
