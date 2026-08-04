@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { describe, expect, test } from 'vitest';
 
-import { inboundHeaders, filterInboundHeaders, filterInboundHeadersForProvider } from '../../../src/data-plane/shared/inbound-headers.ts';
+import { inboundHeaders, resolveIngressHeaders, resolveIngressHeadersForProvider } from '../../../src/data-plane/shared/inbound-headers.ts';
 import { buildUpstreamCallOptions } from '../../../src/data-plane/shared/upstream-call-options.ts';
 import { mockGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { ALL_PROVIDER_KINDS, type ProviderCall, type UpstreamProviderKind } from '@floway-dev/provider';
@@ -50,7 +50,7 @@ describe('inboundHeaders', () => {
   });
 });
 
-describe('filterInboundHeaders', () => {
+describe('resolveIngressHeaders', () => {
   test('matches exact names case-insensitively and strips every other name', () => {
     const source = new Headers({
       authorization: 'Bearer secret',
@@ -58,7 +58,7 @@ describe('filterInboundHeaders', () => {
       'x-debug': 'discard',
     });
 
-    expect(headerRecord(filterInboundHeaders(source, ['X-Client-Request-ID']))).toEqual({
+    expect(headerRecord(resolveIngressHeaders(source, ['X-Client-Request-ID'], []))).toEqual({
       'x-client-request-id': 'request-1',
     });
     expect(headerRecord(source)).toEqual({
@@ -70,11 +70,11 @@ describe('filterInboundHeaders', () => {
 
   test('matches regular expressions against lowercase names without retaining matcher state', () => {
     const matcher = /^x-trace-(?:one|two)$/g;
-    const filtered = filterInboundHeaders(new Headers({
+    const filtered = resolveIngressHeaders(new Headers({
       'x-trace-one': '1',
       'x-trace-two': '2',
       'x-trace-three': '3',
-    }), [matcher]);
+    }), [matcher], []);
 
     expect(headerRecord(filtered)).toEqual({ 'x-trace-one': '1', 'x-trace-two': '2' });
     expect(matcher.lastIndex).toBe(0);
@@ -82,8 +82,8 @@ describe('filterInboundHeaders', () => {
 
   test('returns a fresh empty bag for an empty allowlist', () => {
     const source = new Headers({ 'x-client-request-id': 'request-1' });
-    const first = filterInboundHeaders(source, []);
-    const second = filterInboundHeaders(source, []);
+    const first = resolveIngressHeaders(source, [], []);
+    const second = resolveIngressHeaders(source, [], []);
 
     expect([...first]).toEqual([]);
     expect(first).not.toBe(second);
@@ -91,6 +91,12 @@ describe('filterInboundHeaders', () => {
 });
 
 describe('provider inbound header policies', () => {
+  const provider = (kind: UpstreamProviderKind, ingressHeaderRules = stubModelCandidate().provider.ingressHeaderRules) => ({
+    ...stubModelCandidate().provider,
+    kind,
+    ingressHeaderRules,
+  });
+
   const expectedProbeNames = (kind: UpstreamProviderKind, call: ProviderCall): string[] => {
     if (kind === 'copilot' && (call === 'callMessages' || call === 'callMessagesCountTokens')) return ['anthropic-beta'];
     if (kind === 'claude-code' && call === 'callMessages') {
@@ -106,7 +112,7 @@ describe('provider inbound header policies', () => {
   test.each(ALL_PROVIDER_KINDS.flatMap(kind => providerCalls.map(call => ({ kind, call }))))(
     '$kind $call admits only its declared probe headers',
     ({ kind, call }) => {
-      const filtered = filterInboundHeadersForProvider(new Headers({
+      const filtered = resolveIngressHeadersForProvider(new Headers({
         accept: 'application/json',
         'anthropic-beta': 'context-1m-2025-08-07',
         authorization: 'Bearer secret',
@@ -119,7 +125,7 @@ describe('provider inbound header policies', () => {
         'x-codex-window-id': 'window-1',
         'x-debug': 'discard',
         'x-stainless-runtime': 'node',
-      }), kind, call);
+      }), provider(kind), call);
       expect([...filtered.keys()]).toEqual(expectedProbeNames(kind, call));
     },
   );
@@ -129,13 +135,13 @@ describe('provider inbound header policies', () => {
       'anthropic-beta': 'context-1m-2025-08-07',
       authorization: 'Bearer secret',
     });
-    expect(headerRecord(filterInboundHeadersForProvider(source, 'copilot', 'callMessages'))).toEqual({
+    expect(headerRecord(resolveIngressHeadersForProvider(source, provider('copilot'), 'callMessages'))).toEqual({
       'anthropic-beta': 'context-1m-2025-08-07',
     });
-    expect(headerRecord(filterInboundHeadersForProvider(source, 'copilot', 'callMessagesCountTokens'))).toEqual({
+    expect(headerRecord(resolveIngressHeadersForProvider(source, provider('copilot'), 'callMessagesCountTokens'))).toEqual({
       'anthropic-beta': 'context-1m-2025-08-07',
     });
-    expect([...filterInboundHeadersForProvider(source, 'copilot', 'callResponses')]).toEqual([]);
+    expect([...resolveIngressHeadersForProvider(source, provider('copilot'), 'callResponses')]).toEqual([]);
   });
 
   test('Claude Code accepts only its declared fingerprint', () => {
@@ -169,7 +175,7 @@ describe('provider inbound header policies', () => {
       'x-stainless-future': 'discard',
     });
 
-    const filtered = filterInboundHeadersForProvider(source, 'claude-code', 'callMessages');
+    const filtered = resolveIngressHeadersForProvider(source, provider('claude-code'), 'callMessages');
     expect(headerRecord(filtered)).toEqual(accepted);
   });
 
@@ -186,7 +192,7 @@ describe('provider inbound header policies', () => {
       'x-codex-window-id': 'window-1',
     });
 
-    const filtered = filterInboundHeadersForProvider(source, 'codex', 'callResponses');
+    const filtered = resolveIngressHeadersForProvider(source, provider('codex'), 'callResponses');
     expect(headerRecord(filtered)).toEqual({
       'session-id': 'session-1',
       session_id: 'session-legacy',
@@ -197,21 +203,58 @@ describe('provider inbound header policies', () => {
     });
   });
 
+  test('Custom rules passthrough or overwrite only matching ingress headers', () => {
+    const source = new Headers({
+      'x-empty': 'client-empty',
+      'x-overwrite': 'client-overwrite',
+      'x-passthrough': 'client-passthrough',
+      'x-unlisted': 'discard',
+    });
+    const custom = provider('custom', [
+      { matcher: 'X-Passthrough', value: null },
+      { matcher: 'x-overwrite', value: 'configured' },
+      { matcher: 'x-empty', value: '' },
+      { matcher: 'x-missing', value: 'not-injected' },
+    ]);
+
+    expect(headerRecord(resolveIngressHeadersForProvider(source, custom, 'callResponses'))).toEqual({
+      'x-empty': '',
+      'x-overwrite': 'configured',
+      'x-passthrough': 'client-passthrough',
+    });
+    expect(headerRecord(source)).toEqual({
+      'x-empty': 'client-empty',
+      'x-overwrite': 'client-overwrite',
+      'x-passthrough': 'client-passthrough',
+      'x-unlisted': 'discard',
+    });
+  });
+
+  test('resolves instance rules independently for same-kind failover candidates', () => {
+    const source = new Headers({ 'x-route': 'client' });
+    const first = resolveIngressHeadersForProvider(source, provider('custom', [{ matcher: 'x-route', value: 'first' }]), 'callResponses');
+    const second = resolveIngressHeadersForProvider(source, provider('custom', [{ matcher: 'x-route', value: 'second' }]), 'callResponses');
+
+    expect(first.get('x-route')).toBe('first');
+    expect(second.get('x-route')).toBe('second');
+    expect(source.get('x-route')).toBe('client');
+  });
+
   test('buildUpstreamCallOptions filters independently for each failover candidate', () => {
     const source = new Headers({
       authorization: 'Bearer secret',
       'user-agent': 'claude-cli/2.1.181',
       'x-client-request-id': 'request-1',
     });
-    const provider = (kind: UpstreamProviderKind) => ({
+    const providerWithInstance = (kind: UpstreamProviderKind) => ({
       ...stubModelCandidate().provider,
       kind,
       instance: stubProvider(),
     });
     const ctx = mockGatewayCtx();
 
-    const custom = buildUpstreamCallOptions(stubModelCandidate({ provider: provider('custom') }), ctx, source, 'callMessages');
-    const claude = buildUpstreamCallOptions(stubModelCandidate({ provider: provider('claude-code') }), ctx, source, 'callMessages');
+    const custom = buildUpstreamCallOptions(stubModelCandidate({ provider: providerWithInstance('custom') }), ctx, source, 'callMessages');
+    const claude = buildUpstreamCallOptions(stubModelCandidate({ provider: providerWithInstance('claude-code') }), ctx, source, 'callMessages');
     custom.headers.set('x-client-request-id', 'candidate-mutation');
 
     expect([...custom.headers]).toEqual([['x-client-request-id', 'candidate-mutation']]);
