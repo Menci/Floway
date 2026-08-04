@@ -19,6 +19,7 @@ import { clampPercent, percentText } from '../../lib/percent';
 import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
 import { StatusBadge } from '../ui/status-badge';
+import { TruncationTooltip } from '../ui/truncation-tooltip';
 import { ProviderIcon } from '../upstreams/provider-badge';
 
 const {
@@ -65,9 +66,9 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
           </Tooltip>}
           {subscription && <StatusBadge tone="accent">{subscription}</StatusBadge>}
           {account.rateLimitTier && <Badge appearance="outline" size="large">{account.rateLimitTier}</Badge>}
-          <Tooltip content={account.accountUuid} relationship="description">
-            <Text size={200} className="winui-focus-rect text-fui-fg3 font-mono mono-size-xs" tabIndex={0}>{accountUuidShort}</Text>
-          </Tooltip>
+          <TruncationTooltip content={account.accountUuid} relationship="description">
+            {measureRef => <Text size={200} className="winui-focus-rect text-fui-fg3 font-mono mono-size-xs" ref={measureRef} tabIndex={0}>{accountUuidShort}</Text>}
+          </TruncationTooltip>
           {account.email === null && <Tooltip content={t('dashboard.upstreamEditor.claudeCode.noEmailScopeHint')} relationship="description">
             <Text size={200} className="winui-focus-rect text-fui-fg3" tabIndex={0}>{t('dashboard.upstreamEditor.claudeCode.noEmailScope')}</Text>
           </Tooltip>}
@@ -155,12 +156,12 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
 function EntryList({ entries }: { entries: [string, string][] }) {
   return <dl className="grid gap-1 m-0">
     {entries.map(([key, value]) => <div key={key} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-3">
-      <Tooltip content={key} relationship="label">
-        <dt className="winui-focus-rect truncate font-mono mono-size-xs text-fui-fg3" tabIndex={0}>{key}</dt>
-      </Tooltip>
-      <Tooltip content={value} relationship="label">
-        <dd className="winui-focus-rect truncate font-mono mono-size-xs text-fui-fg2 m-0" tabIndex={0}>{value}</dd>
-      </Tooltip>
+      <TruncationTooltip content={key} relationship="label">
+        {measureRef => <dt className="winui-focus-rect truncate font-mono mono-size-xs text-fui-fg3" ref={measureRef} tabIndex={0}>{key}</dt>}
+      </TruncationTooltip>
+      <TruncationTooltip content={value} relationship="label">
+        {measureRef => <dd className="winui-focus-rect truncate font-mono mono-size-xs text-fui-fg2 m-0" ref={measureRef} tabIndex={0}>{value}</dd>}
+      </TruncationTooltip>
     </div>)}
   </dl>;
 }

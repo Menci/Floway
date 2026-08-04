@@ -4,6 +4,7 @@ import { agentMessageContent } from '../shared/responses-via/agent-message.ts';
 import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-wrap.ts';
 import { rejectProgramCaller, rejectProgrammaticResponsesPayload } from '../shared/responses-via/programmatic-tooling.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-messages/cache-breakpoints.ts';
+import { messagesReasoningFieldsFromEffort } from '../shared/via-messages/reasoning-effort.ts';
 import { resolveImageUrlToMessagesImage, unavailableRemoteImageLoader } from '../shared/via-messages/remote-images.ts';
 import { messagesServiceTierFieldsFromOpenAI } from '../shared/via-messages/service-tier.ts';
 import { parseToolArgumentsObject } from '../shared/via-messages/tool-arguments.ts';
@@ -477,12 +478,11 @@ export const buildTargetRequest = async (source: ResponsesRequestPayload, option
     responsesFormat?.type === 'json_schema' && responsesFormat.schema && typeof responsesFormat.schema === 'object' && !Array.isArray(responsesFormat.schema)
       ? (responsesFormat.schema as Record<string, unknown>)
       : undefined;
+  const { thinking, effort: outputConfigEffort } = messagesReasoningFieldsFromEffort(effort);
   const outputConfig: NonNullable<MessagesPayload['output_config']> = {};
-  if (effort && effort !== 'none') outputConfig.effort = effort;
+  if (outputConfigEffort !== undefined) outputConfig.effort = outputConfigEffort;
   if (formatSchema) outputConfig.format = { type: 'json_schema', schema: formatSchema };
   const hasOutputConfig = Object.keys(outputConfig).length > 0;
-
-  const thinking = effort === 'none' ? { type: 'disabled' as const } : undefined;
 
   const serviceTierFields = messagesServiceTierFieldsFromOpenAI(payload.service_tier);
 

@@ -108,10 +108,25 @@ const useStyles = makeStyles({
   // No third foreground step exists upstream, so the hover accent is held
   // through the press. Fluent clears forced-color-adjust on a reached button,
   // so the forced-colours Highlight pairing has to be restated here.
+  //
+  // The scheme reaches the paint as a custom property rather than as a second
+  // set of painting rules: Griffel groups every media query into one bucket and
+  // orders that bucket's sheets by comparing the conditions as strings, so a
+  // `prefers-color-scheme` rule sorts after `forced-colors` and, painting the
+  // same property on the same selector with the same `!important`, would take
+  // the Highlight pairing back on a high-contrast dark theme.
+  // https://github.com/microsoft/griffel/blob/fd8b4efb6b788e7844012740df4fc1227f621305/packages/core/src/renderer/createDOMRenderer.ts#L60
+  // https://github.com/microsoft/griffel/blob/fd8b4efb6b788e7844012740df4fc1227f621305/packages/core/src/types.ts#L75-L104
   brandIconAction: {
-    [ENABLED]: { color: takenBack(bingAccentForeground) },
-    [HOVER]: reachedPaint(bingAccentForegroundHover),
-    [PRESSED]: reachedPaint(bingAccentForegroundHover),
+    '--floway-playground-accent': bingAccentForeground.light,
+    '--floway-playground-accent-reached': bingAccentForegroundHover.light,
+    '@media (prefers-color-scheme: dark)': {
+      '--floway-playground-accent': bingAccentForeground.dark,
+      '--floway-playground-accent-reached': bingAccentForegroundHover.dark,
+    },
+    [ENABLED]: { color: takenBack('var(--floway-playground-accent)') },
+    [HOVER]: reachedPaint('var(--floway-playground-accent-reached)'),
+    [PRESSED]: reachedPaint('var(--floway-playground-accent-reached)'),
     '@media (forced-colors: active)': {
       [HOVER]: reachedPaint('Highlight'),
       [PRESSED]: reachedPaint('Highlight'),

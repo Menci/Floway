@@ -30,7 +30,7 @@ already own.
    remaining rows with NULL `active_backoff_expires_at` in fallback order, then
    retries the active-backoff rows in fallback order. If every persisted entry is
    excluded, record that production collapses the list to an implicit
-   `direct_fetch` before probing.
+   `direct_connect` before probing.
 4. Treat the PAT as a secret: do not echo it into commit messages, code comments,
    or the chat transcript.
 
@@ -38,7 +38,7 @@ already own.
 
 Return one row per fallback entry instead of selecting the first proxy row that
 happens to join. An empty persisted list is expanded to the runtime's implicit
-`direct_fetch` candidate so direct egress is always visible.
+`direct_connect` candidate so direct egress is always visible.
 
 The query carries both single-quoted SQL literals and a double-quoted JSON
 literal, so no inline shell quoting survives it. Feed it to `--command` through a
@@ -58,7 +58,7 @@ FROM upstreams u
 JOIN json_each(
   CASE
     WHEN json_array_length(u.proxy_fallback_list_json) = 0
-      THEN '[{"id":"direct_fetch"}]'
+      THEN '[{"id":"direct_connect"}]'
     ELSE u.proxy_fallback_list_json
   END
 ) AS j

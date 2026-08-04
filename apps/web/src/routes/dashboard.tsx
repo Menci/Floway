@@ -15,6 +15,7 @@ import type { AuthUser } from '../api/auth';
 import { FlowayLogo } from '../components/logo';
 import { usePageFrames } from '../components/page-frames';
 import { Sidebar } from '../components/sidebar/nav';
+import { SCROLLPORT_FILL_CLASS } from '../components/ui/layout';
 import { OutcomeToastProvider } from '../components/ui/outcome-toast';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { fluentComponents } from '../fluent';
@@ -86,9 +87,7 @@ function DashboardShell({ user }: { user: AuthUser }) {
     contentClassName={workspace ? 'h-full' : 'min-h-full'}
     noTabIndex
   >
-    <div className={workspace
-      ? 'h-full min-h-0 p-[22px_var(--floway-page-inset)_var(--floway-page-inset)] max-[680px]:p-4'
-      : 'p-[22px_var(--floway-page-inset)_var(--floway-page-inset)] max-[680px]:p-4'}>{outlet}</div>
+    <div className={`${workspace ? SCROLLPORT_FILL_CLASS : ''} p-[22px_var(--floway-page-inset)_var(--floway-page-inset)] max-[680px]:p-4`}>{outlet}</div>
   </ScrollArea>;
   const frames = usePageFrames(page);
 

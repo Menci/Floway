@@ -1309,3 +1309,41 @@ test('buildTargetRequest does not emit thinking or fast-mode fields for a bare p
   assertEquals(result.speed, undefined);
   assertEquals(result.service_tier, undefined);
 });
+
+test('buildTargetRequest maps reasoning_effort none to thinking.disabled', async () => {
+  const result = await buildTargetRequest(
+    mkPayload({
+      messages: [{ role: 'user', content: 'Hi' }],
+      reasoning_effort: 'none',
+    }),
+  );
+
+  assertEquals(result.thinking, { type: 'disabled' });
+  assertFalse('output_config' in result);
+});
+
+test('buildTargetRequest keeps a structured-output format alongside thinking.disabled', async () => {
+  const schema = { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false };
+  const result = await buildTargetRequest(
+    mkPayload({
+      messages: [{ role: 'user', content: 'Hi' }],
+      reasoning_effort: 'none',
+      response_format: { type: 'json_schema', json_schema: { schema } },
+    }),
+  );
+
+  assertEquals(result.thinking, { type: 'disabled' });
+  assertEquals(result.output_config, { format: { type: 'json_schema', schema } });
+});
+
+test('buildTargetRequest leaves thinking absent when reasoning_effort is not none', async () => {
+  const result = await buildTargetRequest(
+    mkPayload({
+      messages: [{ role: 'user', content: 'Hi' }],
+      reasoning_effort: 'high',
+    }),
+  );
+
+  assertFalse('thinking' in result);
+  assertEquals(result.output_config, { effort: 'high' });
+});

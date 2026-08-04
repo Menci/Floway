@@ -32,7 +32,7 @@ const shadeHex = (scheme: keyof typeof BADGE_SHADE, hue: number): string => {
   return formatHex(toRgb({ mode: 'oklch', l: lightness, c: baseChromaByHue(hue) * chromaMultiplier, h: hue }));
 };
 
-/** The light/dark pair `badgeHueStyle` paints an upstream's hue with. */
+/** The light/dark pair `useBadgeHue` paints an upstream's hue with. */
 export const hueBadgeTone = (hue: number): { light: string; dark: string } => ({
   light: shadeHex('light', hue),
   dark: shadeHex('dark', hue),

@@ -14,6 +14,7 @@ import { ScrollArea } from '../ui/scroll-area';
 import { TABLE_ACTIONS_WIDTH, TableActions, TableTrailingHeader, stopRowSelection } from '../ui/table-actions';
 import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
+import { TruncationTooltip } from '../ui/truncation-tooltip';
 import { copyOutcomeIcon, useCopyLabel, type ClipboardCopy } from '../ui/use-copy-to-clipboard';
 
 const {
@@ -115,9 +116,9 @@ export function KeysTable({
         <div className="flex items-start gap-2 min-w-0 w-full">
           <div className="grid gap-0.5 min-w-0 flex-1">
             <Text block truncate size={300} wrap={false}>{key.name}</Text>
-            <Tooltip content={key.key} relationship="label">
-              <code className="winui-focus-rect block truncate" tabIndex={0}>{key.key}</code>
-            </Tooltip>
+            <TruncationTooltip content={key.key} relationship="label">
+              {measureRef => <code className="winui-focus-rect block truncate" ref={measureRef} tabIndex={0}>{key.key}</code>}
+            </TruncationTooltip>
             <Tooltip content={upstreamsTitle(key, upstreamById, t)} relationship="description">
               <Text block truncate size={200} className="winui-focus-rect text-fui-fg2" tabIndex={0} wrap={false}>{upstreamsText(key, upstreamById, t)}</Text>
             </Tooltip>
@@ -199,9 +200,9 @@ export function KeysTable({
               <TableCell className="overflow-hidden"><TableCellLayout truncate>{key.name}</TableCellLayout></TableCell>
               <TableCell className="overflow-hidden">
                 <span className="flex items-center gap-1 min-w-0">
-                  <Tooltip content={key.key} relationship="label">
-                    <code className="winui-focus-rect w-[144px] flex-none truncate" tabIndex={0}>{key.key}</code>
-                  </Tooltip>
+                  <TruncationTooltip content={key.key} relationship="label">
+                    {measureRef => <code className="winui-focus-rect w-[144px] flex-none truncate" ref={measureRef} tabIndex={0}>{key.key}</code>}
+                  </TruncationTooltip>
                   <span className="flex-none" {...stopRowSelection}><TooltipIconButton
                     disabled={disabled}
                     icon={copyOutcomeIcon(clipboard.outcomeFor(copyTag))}

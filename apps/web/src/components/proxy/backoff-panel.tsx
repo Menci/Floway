@@ -10,8 +10,9 @@ import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
+import { TruncationTooltip } from '../ui/truncation-tooltip';
 
-const { Button, Text, Tooltip } = fluentComponents;
+const { Button, Text } = fluentComponents;
 
 export function ProxyBackoffPanel({ backoffs, onReset, proxyId }: {
   backoffs: readonly BackoffRow[];
@@ -63,18 +64,18 @@ export function ProxyBackoffPanel({ backoffs, onReset, proxyId }: {
       {active.map(row => {
         const remaining = row.expires_at - nowSeconds;
         return <li className="flex items-center gap-3 rounded-md bg-fui-bg2 px-3 py-2" key={`${row.proxy_id}:${row.upstream_id}`}>
-          <Tooltip content={row.upstream_id} relationship="label">
-            <Text block size={200} className="winui-focus-rect min-w-0 flex-1 font-mono mono-size-xs" tabIndex={0} truncate wrap={false}>{row.upstream_id}</Text>
-          </Tooltip>
+          <TruncationTooltip content={row.upstream_id} relationship="label">
+            {measureRef => <Text block size={200} className="winui-focus-rect min-w-0 flex-1 font-mono mono-size-xs" ref={measureRef} tabIndex={0} truncate wrap={false}>{row.upstream_id}</Text>}
+          </TruncationTooltip>
           <Text size={200} className="text-fui-fg2">
             {remaining <= 0
               ? t('dashboard.proxy.backoff.expiring')
               : t('dashboard.proxy.backoff.remaining', { duration: formatCountdown(remaining, locale) })}
           </Text>
           <Text size={200} className="text-fui-fg3">{t('dashboard.proxy.backoff.failures', { count: row.fail_count })}</Text>
-          {row.last_error && <Tooltip content={row.last_error} relationship="label">
-            <Text block size={200} className="winui-focus-rect max-w-[220px] text-fui-fg3" tabIndex={0} truncate wrap={false}>{row.last_error}</Text>
-          </Tooltip>}
+          {row.last_error && <TruncationTooltip content={row.last_error} relationship="label">
+            {measureRef => <Text block size={200} className="winui-focus-rect max-w-[220px] text-fui-fg3" ref={measureRef} tabIndex={0} truncate wrap={false}>{row.last_error}</Text>}
+          </TruncationTooltip>}
           <Button appearance="subtle" disabledFocusable={resetting} onClick={() => void reset(row.upstream_id)} size="small">
             {t('dashboard.proxy.backoff.reset')}
           </Button>

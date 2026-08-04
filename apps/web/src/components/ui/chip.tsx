@@ -1,4 +1,4 @@
-import type { ComponentProps, CSSProperties, ReactElement, ReactNode } from 'react';
+import type { ComponentProps, CSSProperties, ReactElement, ReactNode, Ref } from 'react';
 
 import { fluentComponents } from '../../fluent';
 
@@ -33,11 +33,14 @@ type ChipTriggerProps = Omit<
 
 // Fluent's `small` is the 24px step, which every badge in the dashboard stands
 // on -- `StatusBadge` reaches the same height through Badge's `large`.
-export function Chip({ children, className, icon, style, ...trigger }: {
+export function Chip({ children, className, icon, style, textRef, ...trigger }: {
   children: ReactNode;
   className?: string;
   icon?: ReactElement;
   style?: CSSProperties;
+  // The text slot is the box that clips, so it is the one a caller has to
+  // reach to measure what the chip shows.
+  textRef?: Ref<HTMLSpanElement>;
 } & ChipTriggerProps) {
   const styles = useStyles();
 
@@ -48,7 +51,7 @@ export function Chip({ children, className, icon, style, ...trigger }: {
       size="small"
       className={mergeClasses(styles.root, className)}
       icon={icon}
-      primaryText={{ className: styles.text }}
+      primaryText={{ className: styles.text, ref: textRef }}
       style={style}
       {...trigger}
     >

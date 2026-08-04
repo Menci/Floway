@@ -511,7 +511,7 @@ const zhHansCN = {
         proxy: {
           directFetch: '直连（Fetch）',
           directConnect: '直连（TCP connect）',
-          empty: '未配置回退出口时，流量使用直连 Fetch。',
+          empty: '未配置回退出口时，流量使用直连 TCP connect。',
           add: '添加回退出口',
           colo: '当前 Cloudflare colo：{{colo}}',
           colos: 'Colo 白名单',

@@ -198,8 +198,8 @@ interface ModelCandidate {
   optional per-model flag overrides, rerank target, and pricing schedule.
   `providerModelOf(candidate)` is the only dispatch accessor.
 - `fetcher` runs this upstream's proxy fallback chain, collapsing to direct
-  fetch when the configured list is empty or fully excluded by the request's
-  runtime location.
+  TCP connect when the configured list is empty or fully excluded by the
+  request's runtime location.
 - `rules` is absent on direct candidates and present on alias candidates,
   including `{}` for an alias target with no overlay.
 

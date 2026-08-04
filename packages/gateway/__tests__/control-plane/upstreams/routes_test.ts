@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { blueprintUpstreamRecord, upstreamRecordToFullJson } from '../../../src/control-plane/upstreams/serialize.ts';
 import { MODEL_LISTING_FAILURE_CODE } from '../../../src/data-plane/models/shared.ts';
 import { MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
-import { requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -16,6 +16,7 @@ const envelopeFromRecord = (record: UpstreamRecord): Record<string, unknown> => 
 
 const blueprintEnvelope = (kind: UpstreamProviderKind, overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   ...blueprintUpstreamRecord(kind),
+  proxy_fallback_list: MOCKED_FETCH_EGRESS,
   ...overrides,
 });
 
@@ -54,6 +55,7 @@ const createBody = (overrides: Record<string, unknown> = {}) => ({
   hue: 210,
   config: customConfig,
   flag_overrides: {},
+  proxy_fallback_list: MOCKED_FETCH_EGRESS,
   ...overrides,
 });
 
@@ -634,7 +636,7 @@ test('POST /api/upstreams/list-models with a persisted id forces a fresh upstrea
     updatedAt: '2026-05-22T00:00:00.000Z',
     flagOverrides: {},
     disabledPublicModelIds: [],
-    proxyFallbackList: [],
+    proxyFallbackList: MOCKED_FETCH_EGRESS,
     modelPrefix: null,
     modelsCache: null,
     hue: 210,
@@ -825,6 +827,7 @@ const createCodexUpstreamViaExchange = async (adminSession: string, overrides: R
     hue: 210,
     config: patch.config,
     state: patch.state,
+    proxy_fallback_list: MOCKED_FETCH_EGRESS,
   }));
   if (create.status !== 201) throw new Error(`codex create failed: ${create.status} ${await create.text()}`);
   return (await create.json()) as { id: string };
@@ -1064,6 +1067,7 @@ const createClaudeCodeUpstreamViaExchange = async (
     hue: 210,
     config: patch.config,
     state: patch.state,
+    proxy_fallback_list: MOCKED_FETCH_EGRESS,
   }));
   if (create.status !== 201) throw new Error(`claude-code create failed: ${create.status} ${await create.text()}`);
   return (await create.json()) as { id: string };
@@ -1366,7 +1370,7 @@ test('PATCH /api/upstreams sets proxy_fallback_list', async () => {
   await repo.upstreams.deleteAll();
   await repo.proxies.insert({ id: 'p_fallback', name: 'Fallback', url: 'socks5://198.51.100.10:1080', dialTimeoutSeconds: null });
 
-  const create = await requestApp('/api/upstreams', authed(adminSession, createBody()));
+  const create = await requestApp('/api/upstreams', authed(adminSession, createBody({ proxy_fallback_list: [] })));
   const created = (await create.json()) as { id: string; proxy_fallback_list: { id: string; colos?: string[] }[] };
   assertEquals(created.proxy_fallback_list, []);
 
@@ -1482,24 +1486,22 @@ test('POST /api/upstreams/codex/oauth/refresh honors the record.proxy_fallback_l
   assertEquals(body.error.toLowerCase().includes('unknown proxy id'), true);
 });
 
-test('POST /api/upstreams/claude-code/oauth/refresh with an empty record.proxy_fallback_list short-circuits to direct egress', async () => {
+test('POST /api/upstreams/claude-code/oauth/refresh resolves an empty record.proxy_fallback_list to direct-connect egress', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
   const created = await createClaudeCodeUpstreamViaExchange(adminSession);
 
-  // Empty list on the envelope → direct egress → mocked fetch serves the
-  // refresh response. A successful 200 proves the empty list did not
-  // engage proxy-catalog validation.
-  await withMockedFetch(
-    () => jsonResponse(claudeCodeTokenBody({ access_token: 'at_rotated', refresh_token: 'rt_rotated' })),
-    async () => {
-      const resp = await requestApp('/api/upstreams/claude-code/oauth/refresh', authed(adminSession, {
-        record: envelopeFromRecord(await getRecord(repo, created.id)),
-      }));
-      assertEquals(resp.status, 200);
-    },
-  );
+  // An empty list is the "no policy" state, not a config error: it never
+  // engages proxy-catalog validation (which would answer 400) and instead
+  // resolves to the default direct-connect transport. The app-test SocketDial
+  // refuses, so the dial reaching the OAuth host is the proof it got there.
+  const resp = await requestApp('/api/upstreams/claude-code/oauth/refresh', authed(adminSession, {
+    record: { ...envelopeFromRecord(await getRecord(repo, created.id)), proxy_fallback_list: [] },
+  }));
+  assertEquals(resp.status, 502);
+  const body = (await resp.json()) as { error: string };
+  assertEquals(body.error.includes('tcp connect to platform.claude.com:443 failed'), true);
 });
 
 test('POST /api/upstreams/copilot/oauth/device-login/poll honors the record.proxy_fallback_list', async () => {
@@ -1620,6 +1622,7 @@ const createClaudeCodeSetupTokenUpstreamViaExchange = async (
     hue: 210,
     config: patch.config,
     state: patch.state,
+    proxy_fallback_list: MOCKED_FETCH_EGRESS,
   }));
   if (create.status !== 201) throw new Error(`Setup-token create failed: ${create.status} ${await create.text()}`);
   return (await create.json()) as { id: string };
@@ -1724,24 +1727,21 @@ test('POST /api/upstreams/claude-code/setup-token/exchange in edit state replace
   assertEquals(storedState.accounts[0].accessToken?.token, 'st_v2');
 });
 
-test('POST /api/upstreams/codex/oauth/refresh with an empty record.proxy_fallback_list short-circuits to direct egress', async () => {
+test('POST /api/upstreams/codex/oauth/refresh resolves an empty record.proxy_fallback_list to direct-connect egress', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
   const created = await createCodexUpstreamViaExchange(adminSession);
 
-  // Empty list on the envelope → direct egress → the mocked fetch serves
-  // the refresh response. A 200 proves the empty list did not engage
-  // proxy-catalog validation.
-  await withMockedFetch(
-    () => jsonResponse({ access_token: 'at_rotated', refresh_token: 'rt_rotated', id_token: fakeIdToken({}), expires_in: 600 }),
-    async () => {
-      const resp = await requestApp('/api/upstreams/codex/oauth/refresh', authed(adminSession, {
-        record: envelopeFromRecord(await getRecord(repo, created.id)),
-      }));
-      assertEquals(resp.status, 200);
-    },
-  );
+  // Same boundary as the claude-code case: an empty list is accepted as
+  // "no policy" and resolves to direct-connect, rather than being rejected
+  // as an unknown proxy id.
+  const resp = await requestApp('/api/upstreams/codex/oauth/refresh', authed(adminSession, {
+    record: { ...envelopeFromRecord(await getRecord(repo, created.id)), proxy_fallback_list: [] },
+  }));
+  assertEquals(resp.status, 502);
+  const body = (await resp.json()) as { error: string };
+  assertEquals(body.error.includes('tcp connect to auth.openai.com:443 failed'), true);
 });
 
 // --- POST /api/upstreams/claude-code/probe ---

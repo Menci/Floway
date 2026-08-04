@@ -4,13 +4,14 @@ import { useTranslation } from 'react-i18next';
 import { hostPortLabel, KIND_HUES } from './config';
 import type { ProxyRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
-import { badgeHueStyle } from '../../lib/color';
+import { useBadgeHue } from '../ui/badge-hue';
 import { Chip } from '../ui/chip';
 import { ResourceListEmptyState } from '../ui/resource-list';
 import { ScrollArea } from '../ui/scroll-area';
 import { TABLE_ACTIONS_WIDTH, TableActions, TableTrailingHeader } from '../ui/table-actions';
 import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
+import { TruncationTooltip } from '../ui/truncation-tooltip';
 import { kindFromUri } from '@floway-dev/proxy/url-kind';
 
 const {
@@ -21,7 +22,6 @@ const {
   TableHeaderCell,
   TableRow,
   Text,
-  Tooltip,
 } = fluentComponents;
 
 export function ProxyList({
@@ -55,27 +55,24 @@ export function ProxyList({
         <TableBody>
           {proxies.map(proxy => {
             const kind = kindFromUri(proxy.url);
-            const hue = KIND_HUES[kind] ?? '#616161';
             const address = hostPortLabel(proxy.url) ?? t('dashboard.proxy.unknownAddress');
 
             return (
               <TableRow key={proxy.id}>
                 <TableCell className="overflow-hidden">
                   <div className="flex items-center gap-2 min-w-0">
-                    <Chip className="flex-none" style={badgeHueStyle(hue)}>
-                      {t(`dashboard.proxy.kind.${kind}` as never, kind)}
-                    </Chip>
-                    <Tooltip content={proxy.name} relationship="label">
-                      <Text block className="winui-focus-rect min-w-0" tabIndex={0} truncate wrap={false}>{proxy.name}</Text>
-                    </Tooltip>
+                    <KindChip kind={kind} />
+                    <TruncationTooltip content={proxy.name} relationship="label">
+                      {measureRef => <Text block className="winui-focus-rect min-w-0" ref={measureRef} tabIndex={0} truncate wrap={false}>{proxy.name}</Text>}
+                    </TruncationTooltip>
                   </div>
                 </TableCell>
                 <TableCell className="overflow-hidden">
-                  <Tooltip content={address} relationship="label">
-                    <Text block className="winui-focus-rect text-fui-fg2" tabIndex={0} truncate wrap={false}>
+                  <TruncationTooltip content={address} relationship="label">
+                    {measureRef => <Text block className="winui-focus-rect text-fui-fg2" ref={measureRef} tabIndex={0} truncate wrap={false}>
                       {address}
-                    </Text>
-                  </Tooltip>
+                    </Text>}
+                  </TruncationTooltip>
                 </TableCell>
                 <TableCell>
                   <TableActions>
@@ -100,5 +97,20 @@ export function ProxyList({
         </TableBody>
       </Table>
     </ScrollArea>
+  );
+}
+
+// Its own component because the hue reaches the chip through a hook, which a
+// row inside the table's map cannot call.
+function KindChip({ kind }: { kind: ReturnType<typeof kindFromUri> }) {
+  const { t } = useTranslation();
+  // A kind the table has no hue for is still a proxy, so it takes a mid grey
+  // and is painted by the same algorithm rather than left unpainted.
+  const hue = useBadgeHue(KIND_HUES[kind] ?? '#616161');
+
+  return (
+    <Chip className={`flex-none ${hue.className}`} style={hue.style}>
+      {t(`dashboard.proxy.kind.${kind}` as never, kind)}
+    </Chip>
   );
 }

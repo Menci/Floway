@@ -10,6 +10,18 @@ Impact levels:
 
 Hard and minor entries may include recommended actions; those actions do not need a separate advisory entry.
 
+## 2026-08-04 · advisory
+
+### Direct egress now defaults to a TCP connection
+
+An upstream whose Proxy Fallback List is empty — or whose every entry is excluded by the current runtime location — used to egress through the runtime's `fetch()`. It now egresses through **Direct (TCP connect)**: a raw TCP socket with userspace TLS and HTTP/1.1. No stored configuration changes, and any list that names its own entries is dispatched exactly as before.
+
+Both runtimes' `fetch()` abandon a response whose body goes quiet for long enough, and neither limit is reachable from Floway. On Cloudflare the request leaves through Cloudflare's HTTP proxy path, which bounds the gap between two consecutive reads of the upstream response body at 120 seconds. On Node, `fetch()` is undici, whose `bodyTimeout` monitors the same gap and defaults to 300 seconds. Either one kills a long-thinking Copilot Responses stream that has already returned HTTP 200 — on Cloudflare it surfaces as `Network connection lost.` with no terminal event — and measured silences on this workload run past both bounds, the longest at 300.113 seconds. A raw socket has no such bound: the same workload survived 233 seconds of measured upstream silence and completed cleanly.
+
+The transport is not free. Workers bill CPU time, and workerd performs native TLS off the billed thread while Floway's userspace TLS runs on it — a 5 MiB upload measured at 49 ms billed CPU through `fetch()` against 750 ms through a userspace-TLS socket. Small chat requests are nowhere near that shape, but an upstream that regularly carries multi-megabyte bodies will cost measurably more on this transport than it did.
+
+Review each upstream and decide whether it should keep the new default. Add **Direct (Fetch)** as the first entry of that upstream's Proxy Fallback List where you want the old transport back — in particular when the upstream's hostname resolves to a Cloudflare-owned address, which Workers refuse to dial over `connect()`, when the upstream regularly receives large request bodies, or when you depend on the runtime's connection pool and HTTP/2 rather than a fresh HTTP/1.1 connection per request. Both transports remain selectable and orderable, so an upstream can also list **Direct (TCP connect)** first and fall back to **Direct (Fetch)**.
+
 ## 2026-07-24 · advisory
 
 ### Audit dump files created before payload-file tracking

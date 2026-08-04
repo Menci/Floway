@@ -10,9 +10,10 @@ import { EmptyStateLine } from '../ui/empty-state';
 import { ScrollArea } from '../ui/scroll-area';
 import { TableTrailingCell, TableTrailingHeader } from '../ui/table-actions';
 import { TableColumns } from '../ui/table-columns';
+import { TruncationTooltip } from '../ui/truncation-tooltip';
 
 const {
-  Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Tooltip,
+  Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow,
 } = fluentComponents;
 
 export function PerformanceTable({ groupBy, labels, rows }: { groupBy: PerformanceGroupBy; labels: PerformanceLabels; rows: PerformanceDisplayRecord[] }) {
@@ -37,7 +38,7 @@ export function PerformanceTable({ groupBy, labels, rows }: { groupBy: Performan
           to the name, the only column whose content has no bound. */}
       <TableColumns widths={[null, '112px', '88px', '112px', '160px']} />
       <TableHeader><TableRow><TableHeaderCell sortable sortDirection={sortDirection('group')} onClick={() => sortBy('group')}>{t(`dashboard.performance.filters.${groupBy}`)}</TableHeaderCell><TableTrailingHeader sortable sortDirection={sortDirection('requests')} onClick={() => sortBy('requests')} className="whitespace-nowrap">{t('dashboard.performance.tables.requests')}</TableTrailingHeader><TableTrailingHeader sortable sortDirection={sortDirection('errors')} onClick={() => sortBy('errors')} className="whitespace-nowrap">{t('dashboard.performance.tables.errors')}</TableTrailingHeader><TableTrailingHeader sortable sortDirection={sortDirection('ttft')} onClick={() => sortBy('ttft')} className="whitespace-nowrap">{t('dashboard.performance.tables.ttftP95')}</TableTrailingHeader><TableTrailingHeader sortable sortDirection={sortDirection('speed')} onClick={() => sortBy('speed')} className="whitespace-nowrap">{t('dashboard.performance.tables.speedP95')}</TableTrailingHeader></TableRow></TableHeader>
-      <TableBody>{sortedRows.length ? sortedRows.map(row => <TableRow key={row.group}><TableCell><Tooltip content={row.group} relationship="description"><span className="winui-focus-rect block overflow-hidden text-ellipsis whitespace-nowrap" tabIndex={0}>{resolvePerformanceGroup(row.group, groupBy, labels)}</span></Tooltip></TableCell><TableTrailingCell className="tabular-nums">{formatCount(row.requests, locale)}</TableTrailingCell><TableTrailingCell className="tabular-nums">{formatCount(row.errors, locale)}</TableTrailingCell><TableTrailingCell className="tabular-nums">{formatDuration(row.ttftMsP95)}</TableTrailingCell><TableTrailingCell className="tabular-nums">{formatTokenRateFromTpot(row.tpotUsP95)}</TableTrailingCell></TableRow>) : <TableRow><TableCell colSpan={5}><EmptyStateLine>{t('dashboard.performance.empty')}</EmptyStateLine></TableCell></TableRow>}</TableBody>
+      <TableBody>{sortedRows.length ? sortedRows.map(row => <TableRow key={row.group}><TableCell><TruncationTooltip content={row.group} relationship="description">{measureRef => <span className="winui-focus-rect block overflow-hidden text-ellipsis whitespace-nowrap" ref={measureRef} tabIndex={0}>{resolvePerformanceGroup(row.group, groupBy, labels)}</span>}</TruncationTooltip></TableCell><TableTrailingCell className="tabular-nums">{formatCount(row.requests, locale)}</TableTrailingCell><TableTrailingCell className="tabular-nums">{formatCount(row.errors, locale)}</TableTrailingCell><TableTrailingCell className="tabular-nums">{formatDuration(row.ttftMsP95)}</TableTrailingCell><TableTrailingCell className="tabular-nums">{formatTokenRateFromTpot(row.tpotUsP95)}</TableTrailingCell></TableRow>) : <TableRow><TableCell colSpan={5}><EmptyStateLine>{t('dashboard.performance.empty')}</EmptyStateLine></TableCell></TableRow>}</TableBody>
     </Table></ScrollArea>
   </section>;
 }

@@ -27,6 +27,7 @@ import { CONTROL_ROW_CLASS, PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SectionHeader } from '../ui/section-header';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
+import { TruncationTooltip } from '../ui/truncation-tooltip';
 import { PRICING_AXES, type BillingMetric, type ModelKind, type ModelPricing, type ModelPricingIssue } from '@floway-dev/protocols/common';
 
 const { Button, Field, List, ListItem, Option, Text, Toolbar, ToolbarButton, Tooltip, makeStyles } = fluentComponents;
@@ -192,9 +193,9 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
           return <ListItem checkmark={null} className={styles.rule} key={draft.id} value={draft.id}>
             <span className="grid min-w-0 gap-0.5 text-left">
               <span className="flex min-w-0 items-center gap-2">
-                <Tooltip content={displayLabel} relationship="label">
-                  <Text block className="winui-focus-rect" truncate size={300} weight="semibold" tabIndex={0} wrap={false}>{displayLabel}</Text>
-                </Tooltip>
+                <TruncationTooltip content={displayLabel} relationship="label">
+                  {measureRef => <Text block className="winui-focus-rect" ref={measureRef} truncate size={300} weight="semibold" tabIndex={0} wrap={false}>{displayLabel}</Text>}
+                </TruncationTooltip>
                 {issues.some(issue => issueAffectsEntry(issue, index)) && <WarningRegular aria-label={t('dashboard.upstreamEditor.models.pricingErrors')} fontSize={16} />}
               </span>
               <Text block truncate size={200} className="text-fui-fg2" wrap={false}>

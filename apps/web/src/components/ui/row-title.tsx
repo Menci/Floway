@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 
 import { fluentComponents } from '../../fluent';
 
@@ -26,8 +26,16 @@ export const rowTitleClass = 'winui-focus-rect text-fui-fg1 no-underline hover:u
 // The leading is stated because truncation brings `overflow: hidden` with it,
 // and a button's own line box is tight enough to clip a descender. The sibling
 // cell that truncates a model id states the same step for the same reason.
-export function RowTitleButton({ children, onClick }: { children: ReactNode; onClick: () => void }) {
-  return <button className={mergeClasses(rowTitleClass, 'block bg-transparent border-0 cursor-pointer leading-[var(--lineHeightBase300)] min-w-0 max-w-full truncate p-0 text-fui-base300 text-left')} onClick={onClick} type="button">
+// Fluent clones a Tooltip's trigger element, so any prop this button drops --
+// the ref, the pointer and focus handlers, the aria attribute tying the two
+// together -- leaves the tooltip with nothing to open on.
+type RowTitleTriggerProps = Omit<ComponentProps<'button'>, 'children' | 'className' | 'onClick' | 'type'>;
+
+export function RowTitleButton({ children, onClick, ...trigger }: {
+  children: ReactNode;
+  onClick: () => void;
+} & RowTitleTriggerProps) {
+  return <button className={mergeClasses(rowTitleClass, 'block bg-transparent border-0 cursor-pointer leading-[var(--lineHeightBase300)] min-w-0 max-w-full truncate p-0 text-fui-base300 text-left')} onClick={onClick} type="button" {...trigger}>
     {children}
   </button>;
 }
