@@ -1,10 +1,4 @@
-import { converter, formatHex, modeOklch, modeRgb, useMode as registerMode } from 'culori/fn';
-
-// culori's tree-shakeable entry only knows the color spaces that were
-// registered, and `converter` resolves its path through that registry.
-registerMode(modeRgb);
-registerMode(modeOklch);
-const toRgb = converter('rgb');
+import { formatHex, toRgb } from './culori';
 
 // How much chroma a hue can carry before it reads heavier than its neighbours.
 // Red takes the most and cyan the least, which is why a flat chroma leaves half

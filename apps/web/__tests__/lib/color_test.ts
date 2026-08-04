@@ -94,6 +94,12 @@ describe('hsvToRgb', () => {
     expect(hsvToRgb(0, 0, 1)).toEqual([255, 255, 255]);
     expect(hsvToRgb(180, 0, 0.5)).toEqual([128, 128, 128]);
   });
+
+  it('normalizes hues around the colour circle', () => {
+    expect(hsvToRgb(-60, 1, 1)).toEqual(hsvToRgb(300, 1, 1));
+    expect(hsvToRgb(360, 1, 1)).toEqual(hsvToRgb(0, 1, 1));
+    expect(hsvToRgb(780, 1, 1)).toEqual(hsvToRgb(60, 1, 1));
+  });
 });
 
 describe('HSV/RGB/HEX round-trip', () => {
@@ -194,6 +200,11 @@ describe('blendHex', () => {
   it('composites a tenth of the hue onto both cards', () => {
     expect(blendHex('#C239B3', 0.1, '#FFFFFF')).toBe('#F9EBF7');
     expect(blendHex('#C239B3', 0.1, '#373737')).toBe('#453743');
+  });
+
+  it('preserves the byte-rounded alpha compositing boundary', () => {
+    expect(blendHex('#010203', 0.5, '#040506')).toBe('#030405');
+    expect(blendHex('#ABCDEF', 0.333, '#123456')).toBe('#456789');
   });
 
   it('rejects an unparseable value on either side', () => {
