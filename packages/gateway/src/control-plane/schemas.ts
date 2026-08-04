@@ -740,11 +740,11 @@ export const webSearchUsageQuery = z.object({
 // A multi-select filter travels as a repeated query parameter. Hono hands one
 // occurrence through as a bare string and several as an array, so each filter
 // reads through this single coercion into the list shape the handler wants.
-// An empty occurrence is a client that serialized an unset filter instead of
-// omitting it; it is rejected rather than silently read as "no filter".
+// Empty occurrences preserve the existing API meaning of an unset filter.
 const filterValues = (item: z.ZodType<string>) =>
-  z.union([item, z.array(item)])
-    .transform(value => (typeof value === 'string' ? [value] : value))
+  z.union([z.string(), z.array(z.string())])
+    .transform(value => (typeof value === 'string' ? [value] : value).filter(Boolean))
+    .pipe(z.array(item))
     .optional();
 
 const filterValue = z.string().min(1, 'filter values must not be empty');
