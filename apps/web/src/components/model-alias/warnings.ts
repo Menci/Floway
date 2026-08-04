@@ -9,11 +9,6 @@ export const realModelIdsOfKind = (models: readonly ControlPlaneModel[] | null |
     .map(model => model.id);
 };
 
-export type RuleWarningField =
-  | 'reasoning.effort'
-  | 'reasoning.budget_tokens'
-  | 'reasoning.adaptive';
-
 export type RuleWarning =
   | { field: 'reasoning.effort'; key: 'notAdvertisedEffort' }
   | { field: 'reasoning.effort'; key: 'unsupportedEffort'; values: { values: string } }
@@ -21,6 +16,8 @@ export type RuleWarning =
   | { field: 'reasoning.budget_tokens'; key: 'notAdvertisedBudget' }
   | { field: 'reasoning.budget_tokens'; key: 'budgetBelow' | 'budgetAbove'; values: { value: number } }
   | { field: 'reasoning.adaptive'; key: 'notAdvertisedAdaptive' };
+
+export type RuleWarningField = RuleWarning['field'];
 
 export const computeRuleWarnings = (rules: ChatAliasRules, model: ControlPlaneModel | undefined): RuleWarning[] => {
   const warnings: RuleWarning[] = [];
