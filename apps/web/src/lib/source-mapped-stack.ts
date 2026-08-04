@@ -85,10 +85,18 @@ const parseUrl = (value: string): URL | undefined => {
 const frameIn = (line: string): Frame | undefined => {
   if (line.length > LONGEST_FRAME) return;
   const v8 = V8_FRAME.exec(line)?.groups;
-  if (v8) return v8 as unknown as Frame;
+  if (v8) {
+    return { column: v8.column!, head: v8.head!, line: v8.line!, tail: v8.tail!, url: v8.url! };
+  }
   const spiderMonkeyOrJsc = SPIDERMONKEY_OR_JSC_FRAME.exec(line)?.groups;
   return spiderMonkeyOrJsc
-    ? { ...spiderMonkeyOrJsc, tail: '' } as unknown as Frame
+    ? {
+        column: spiderMonkeyOrJsc.column!,
+        head: spiderMonkeyOrJsc.head!,
+        line: spiderMonkeyOrJsc.line!,
+        tail: '',
+        url: spiderMonkeyOrJsc.url!,
+      }
     : undefined;
 };
 
