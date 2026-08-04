@@ -55,6 +55,7 @@ const iterateFromBroadcastSocket = <T>(
 
       let socket: WebSocket | null = null;
       let terminated = false;
+      let openPromise: Promise<void>;
 
       const detach = (): void => {
         signal.removeEventListener('abort', onAbort);
@@ -62,24 +63,6 @@ const iterateFromBroadcastSocket = <T>(
         socket?.removeEventListener('close', onClose);
         socket?.removeEventListener('error', onError);
       };
-      const openPromise = (async (): Promise<void> => {
-        const response = await stub.fetch(new Request('https://broadcast.do/subscribe', {
-          headers: { Upgrade: 'websocket' },
-        }));
-        if (response.status !== 101) {
-          throw new Error(`BroadcastDO subscribe returned HTTP ${response.status} instead of 101`);
-        }
-        const openedSocket = response.webSocket;
-        if (!openedSocket) throw new Error('BroadcastDO returned 101 without a webSocket');
-
-        socket = openedSocket;
-        if (!terminated) {
-          socket.addEventListener('message', onMessage);
-          socket.addEventListener('close', onClose);
-          socket.addEventListener('error', onError);
-        }
-        socket.accept();
-      })();
       const closeSocket = async (): Promise<void> => {
         await openPromise.catch(() => {});
         socket?.close(1000, 'subscriber done');
@@ -113,6 +96,24 @@ const iterateFromBroadcastSocket = <T>(
         await closeSocket();
       };
 
+      openPromise = (async (): Promise<void> => {
+        const response = await stub.fetch(new Request('https://broadcast.do/subscribe', {
+          headers: { Upgrade: 'websocket' },
+        }));
+        if (response.status !== 101) {
+          throw new Error(`BroadcastDO subscribe returned HTTP ${response.status} instead of 101`);
+        }
+        const openedSocket = response.webSocket;
+        if (!openedSocket) throw new Error('BroadcastDO returned 101 without a webSocket');
+
+        socket = openedSocket;
+        if (!terminated) {
+          socket.addEventListener('message', onMessage);
+          socket.addEventListener('close', onClose);
+          socket.addEventListener('error', onError);
+        }
+        socket.accept();
+      })();
       signal.addEventListener('abort', onAbort, { once: true });
       void openPromise.catch(error => finish(error, false));
     },
