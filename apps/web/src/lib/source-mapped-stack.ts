@@ -2,22 +2,20 @@
  * Restores a minified `error.stack` to the positions its source maps name.
  *
  * The stack string is not standardized and no engine exposes its frames as
- * data: TC39's error-stacks proposal was blocked at the 2024-12-03 plenary for
- * defining a string format, and its successor deliberately returns "an
- * implementation-defined string"
- * (https://github.com/tc39/proposal-error-stack-accessor). ECMA-426 declines
- * the whole subject: "Stack tracing mapping without knowledge of the source
- * language is not covered by this document" (Annex B.1).
+ * data. TC39 rejected standardizing the string format, and the successor
+ * proposal deliberately returns "an implementation-defined string":
+ * https://github.com/tc39/notes/blob/7b866c528fe398780f63454e2b5db9c917e806d8/meetings/2024-12/december-03.md#L796-L847
+ * https://github.com/tc39/proposal-error-stack-accessor/blob/4d0a932d27eb45dd44e416c33b26eb4d555f1e22/spec.emu#L29-L33
+ * ECMA-426 likewise excludes language-neutral stack mapping:
+ * https://github.com/tc39/ecma426/blob/62f8e694b62f5e6708523dc97563580bbf17591c/spec.emu#L1554-L1558
  *
- * So the frames are parsed, and parsed conservatively. Every engine that
- * reports a position at all ends the frame with `<url>:<line>:<column>`: V8
- * writes `    at fn (url:l:c)` or `    at url:l:c`, SpiderMonkey and
- * JavaScriptCore write `fn@url:l:c`. Matching only that tail carries whatever
- * the engine prefixed -- `at async`, `at new`, `at Object.<anonymous>` --
- * across untouched, and a frame naming no position at all (V8's
- * `at async Promise.all (index 0)`, which returns before appending any
- * location, or JavaScriptCore's `[native code]`) never matches and survives
- * verbatim.
+ * The browser formats are therefore parsed conservatively: V8 writes
+ * `    at fn (url:l:c)` or `    at url:l:c`, while SpiderMonkey and
+ * JavaScriptCore write `fn@url:l:c`:
+ * https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error/stack#description
+ * Requiring the engine's frame prefix keeps the error message above the frames
+ * opaque. Everything before the URL is retained, and a line without a source
+ * position never matches and survives verbatim.
  */
 
 import { useEffect, useState } from 'react';
@@ -57,9 +55,9 @@ interface Frame {
   url: string;
 }
 
-// Generators emit only `//#`, consumers accept both, per ECMA-426 §11.1.2.1.1.
-// Last match wins: the annotation is defined as the last one in the resource,
-// and a chunk carries a second comment after it.
+// ECMA-426 accepts both `//#` and the legacy `//@`, and searches comments in
+// reverse source order, so the last matching annotation wins.
+// https://github.com/tc39/ecma426/blob/62f8e694b62f5e6708523dc97563580bbf17591c/spec.emu#L1348-L1409
 const MAP_COMMENT = /\/\/[#@] ?sourceMappingURL=([^\s'"]+)\s*$/gm;
 
 // Rolldown writes the same id into the chunk and into its map, which is the
@@ -124,9 +122,9 @@ interface LoadedMap {
 
 /** Null when the script carries no map, which is not a failure to restore. */
 const loadMap = async (scriptUrl: string): Promise<LoadedMap | null> => {
-  // The chunk is in the HTTP cache already -- it was fetched to be run -- and
-  // Workers Static Assets serves it `must-revalidate`, so anything short of
-  // `force-cache` spends a round trip per chunk to be told nothing changed.
+  // The chunk was already fetched to be run. `force-cache` reuses that HTTP
+  // cache entry without a validation request when one exists.
+  // https://developer.mozilla.org/en-US/docs/Web/API/Request/cache#force-cache
   const script = await fetch(scriptUrl, { cache: 'force-cache' });
   if (!script.ok) throw new Error(`${scriptUrl} responded ${script.status}`);
   const text = (await script.text()).trimEnd();

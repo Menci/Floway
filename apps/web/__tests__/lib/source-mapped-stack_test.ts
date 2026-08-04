@@ -7,8 +7,7 @@ import { restoreStack } from '../../src/lib/source-mapped-stack';
 // Its two segments are adjacent -- generated columns 0 and 1 -- so a query off
 // by one column lands on the wrong one. That is the only arrangement that can
 // see the shift the module applies on the way in: a nearest-preceding-segment
-// search absorbs the error everywhere else, which is exactly why the two
-// libraries that omit the shift appear to work.
+// search absorbs the error everywhere else.
 //
 //   generated column 0 -> first.ts 1:1
 //   generated column 1 -> second.ts 5:3

@@ -160,12 +160,15 @@ const webPort = Number(process.env.FLOWAY_DEV_WEB_PORT ?? '5174');
 // directory and rejects any file over 25 MiB, so carrying the text is also
 // what would eventually break the deploy. The cost is that devtools resolves a
 // frame to a file and line it cannot then display.
+// https://github.com/cloudflare/cloudflare-docs/blob/96f2d1edbca7d722c47e0f633f56a970750c48a0/src/content/docs/workers/platform/limits.mdx#L32-L35
 const sourceMapOutput = {
   // The same id is written into the chunk and into its map, which is what lets
   // the runtime restore refuse a map built for a different revision of a chunk
   // whose content hash did not change -- a comment-only edit produces exactly
   // that pair.
+  // https://github.com/rolldown/rolldown/blob/872b98ac7476eb7d5892a2913e4ba010d124c6ac/packages/rolldown/src/options/output-options.ts#L206-L215
   sourcemapDebugIds: true,
+  // https://github.com/rolldown/rolldown/blob/872b98ac7476eb7d5892a2913e4ba010d124c6ac/packages/rolldown/src/options/output-options.ts#L266-L277
   sourcemapExcludeSources: true,
 } as const;
 
@@ -264,6 +267,7 @@ export default defineConfig({
   },
   // A `?worker` import is bundled by its own rolldown pass, which the client
   // environment's output options do not reach.
+  // https://github.com/vitejs/vite/blob/v8.1.5/packages/vite/src/node/plugins/worker.ts#L162-L232
   worker: {
     rolldownOptions: { output: sourceMapOutput },
   },
