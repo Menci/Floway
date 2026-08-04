@@ -90,6 +90,13 @@ describe('a stack restored from the maps its chunks name', () => {
     expect(await restoreStack(`Error: boom\n${frame}`)).toBe(`Error: boom\n${frame}`);
   });
 
+  it('leaves an oversized frame unparsed, and asks it for nothing', async () => {
+    vi.stubGlobal('fetch', vi.fn());
+    const frame = `    at ${'nested.'.repeat(170)}handler (${SCRIPT}:1:1)`;
+    expect(await restoreStack(`Error: boom\n${frame}`)).toBe(`Error: boom\n${frame}`);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('leaves a stack whose script declares no map', async () => {
     respondWith({ [SCRIPT]: script('const a=1;') });
     const frame = `    at handler (${SCRIPT}:1:1)`;
@@ -107,6 +114,14 @@ describe('a stack restored from the maps its chunks name', () => {
       .rejects.toThrow('is not a source map');
   });
 
+  it('says so when a chunk names an index map', async () => {
+    wholeApp({
+      'https://gateway.test/assets/chunk.js.map': json({ version: 3, sections: [] }),
+    });
+    await expect(restoreStack(`Error: boom\n    at handler (${SCRIPT}:1:1)`))
+      .rejects.toThrow('is an index map');
+  });
+
   it('says so when the map was built for another revision of the chunk', async () => {
     wholeApp({
       'https://gateway.test/assets/chunk.js.map': json({ ...MAP, debugId: 'stale' }),
@@ -121,6 +136,12 @@ describe('a stack restored from the maps its chunks name', () => {
     });
     await expect(restoreStack(`Error: boom\n    at handler (${SCRIPT}:1:1)`))
       .rejects.toThrow('responded 503');
+  });
+
+  it('says so when the chunk cannot be fetched', async () => {
+    respondWith({ [SCRIPT]: () => new Response('', { status: 503 }) });
+    await expect(restoreStack(`Error: boom\n    at handler (${SCRIPT}:1:1)`))
+      .rejects.toThrow(`${SCRIPT} responded 503`);
   });
 
   // An engine writes 0 where it has no information, and each half of the guard
