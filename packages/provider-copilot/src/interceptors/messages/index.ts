@@ -38,9 +38,10 @@ import type { CopilotMessagesBoundaryInterceptor, CopilotMessagesCountTokensBoun
 //   client's `speed` field (already consumed by callMessages for raw-variant
 //   selection) and post-`run()` stamps `usage.speed='fast'` onto outbound
 //   message_start/message_delta events when Fast Mode was requested. The
-//   header lane closes by deriving `anthropic-beta` from the final thinking
-//   and context-management shape. `withInitiatorHeaderSet` re-derives x-initiator
-//   from the final last-message structure and may overwrite the
+//   header lane closes by normalizing admitted caller beta intent, then adding
+//   tokens required by the final thinking and context-management shape.
+//   `withInitiatorHeaderSet` re-derives x-initiator from the final last-message
+//   structure and may overwrite the
 //   compact-tagged value above — that mirrors the pre-boundary target-side
 //   override.
 //
@@ -66,8 +67,8 @@ export const COPILOT_MESSAGES_BOUNDARY = [
 
 // /v1/messages/count_tokens is a one-shot HTTP exchange that returns the raw
 // upstream Response. The Copilot provider applies vision detection,
-// x-initiator classification and payload-derived anthropic-beta headers to
-// both chat and count_tokens.
+// x-initiator classification and normalized caller/payload beta intent to both
+// chat and count_tokens.
 //
 // withInlineImagesCompressed runs first so count_tokens sizes the same
 // WebP-recompressed payload the chat path sends, keeping the estimate

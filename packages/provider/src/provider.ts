@@ -145,7 +145,21 @@ export interface ProviderInstance {
   callRerank(model: ProviderModel, request: CanonicalRerankRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderRerankCallResult>;
 }
 
-export type ProviderCall = Exclude<keyof ProviderInstance, 'getProvidedModels'>;
+export const PROVIDER_CALLS = [
+  'callAlphaSearch',
+  'callCompletions',
+  'callChatCompletions',
+  'callResponses',
+  'callMessages',
+  'callMessagesCountTokens',
+  'callEmbeddings',
+  'callImagesGenerations',
+  'callImagesEdits',
+  'callAudioTranscriptions',
+  'callRerank',
+] as const satisfies readonly Exclude<keyof ProviderInstance, 'getProvidedModels'>[];
+
+export type ProviderCall = typeof PROVIDER_CALLS[number];
 
 // Static, module-shaped surface each provider package exports. The gateway
 // registry keeps a Record<UpstreamProviderKind, ProviderModule> so every

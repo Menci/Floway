@@ -4,7 +4,7 @@ import { describe, expect, test } from 'vitest';
 import { inboundHeaders, filterInboundHeaders, filterInboundHeadersForProvider } from '../../../src/data-plane/shared/inbound-headers.ts';
 import { buildUpstreamCallOptions } from '../../../src/data-plane/shared/upstream-call-options.ts';
 import { mockGatewayCtx } from '../../test-utils/gateway-ctx.ts';
-import type { UpstreamProviderKind } from '@floway-dev/provider';
+import { ALL_PROVIDER_KINDS, PROVIDER_CALLS, type ProviderCall, type UpstreamProviderKind } from '@floway-dev/provider';
 import { stubModelCandidate, stubProvider } from '@floway-dev/test-utils';
 
 const headerRecord = (headers: Headers): Record<string, string> => Object.fromEntries(headers);
@@ -76,15 +76,36 @@ describe('filterInboundHeaders', () => {
 });
 
 describe('provider inbound header policies', () => {
-  test.each<UpstreamProviderKind>(['custom', 'azure', 'ollama'])(
-    '%s accepts no client headers',
-    kind => {
+  const expectedProbeNames = (kind: UpstreamProviderKind, call: ProviderCall): string[] => {
+    if (kind === 'copilot' && (call === 'callMessages' || call === 'callMessagesCountTokens')) return ['anthropic-beta'];
+    if (kind === 'claude-code' && call === 'callMessages') {
+      return ['accept', 'anthropic-beta', 'user-agent', 'x-client-request-id', 'x-stainless-runtime'];
+    }
+    if (kind === 'codex' && call === 'callAlphaSearch') return ['x-codex-turn-metadata'];
+    if (kind === 'codex' && call === 'callResponses') {
+      return ['session-id', 'session_id', 'thread-id', 'x-client-request-id', 'x-codex-turn-metadata', 'x-codex-window-id'];
+    }
+    return [];
+  };
+
+  test.each(ALL_PROVIDER_KINDS.flatMap(kind => PROVIDER_CALLS.map(call => ({ kind, call }))))(
+    '$kind $call admits only its declared probe headers',
+    ({ kind, call }) => {
       const filtered = filterInboundHeadersForProvider(new Headers({
-        'anthropic-beta': 'context-1m',
+        accept: 'application/json',
+        'anthropic-beta': 'context-1m-2025-08-07',
         authorization: 'Bearer secret',
+        'session-id': 'session-1',
+        session_id: 'session-legacy',
+        'thread-id': 'thread-1',
+        'user-agent': 'client',
         'x-client-request-id': 'request-1',
-      }), kind, 'callMessages');
-      expect([...filtered]).toEqual([]);
+        'x-codex-turn-metadata': '{}',
+        'x-codex-window-id': 'window-1',
+        'x-debug': 'discard',
+        'x-stainless-runtime': 'node',
+      }), kind, call);
+      expect([...filtered.keys()]).toEqual(expectedProbeNames(kind, call));
     },
   );
 
