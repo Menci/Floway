@@ -1,10 +1,15 @@
-import { screen } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { PerformanceOverviewResponse } from '../../src/components/performance/overview';
 import DashboardMonitorPerformance from '../../src/routes/dashboard-monitor-performance';
+import { stubLocalStorage } from '../local-storage-stub';
 import { renderInApp } from '../render';
+
+stubLocalStorage();
+
+afterEach(() => { vi.unstubAllGlobals(); });
 
 const overview: PerformanceOverviewResponse = {
   series: [],
@@ -14,7 +19,7 @@ const overview: PerformanceOverviewResponse = {
   keys: [],
 };
 
-const renderPage = (regionAvailable: boolean) => {
+const renderPage = (regionAvailable: boolean | null) => {
   const router = createMemoryRouter([{
     path: '/',
     Component: () => <DashboardMonitorPerformance
@@ -54,5 +59,21 @@ describe('Performance Region dimensions', () => {
 
     expect(screen.getByRole('combobox', { name: 'Region' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'By Region' })).toBeTruthy();
+  });
+
+  it('retries an unknown runtime through the page refresh action', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost').pathname;
+      if (path === '/api/runtime-info') return Response.json({ kind: 'node', runtimeLocation: 'LOCAL' });
+      if (path === '/api/performance/overview') return Response.json(overview);
+      throw new Error(`Unexpected request to ${path}`);
+    }));
+    renderPage(null);
+
+    expect(screen.getByText('This view could not be loaded')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh performance' }));
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Group by' })).toBeTruthy());
+    expect(screen.queryByRole('combobox', { name: 'Region' })).toBeNull();
   });
 });
