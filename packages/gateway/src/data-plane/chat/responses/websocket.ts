@@ -7,7 +7,7 @@ import { responsesServe } from './serve.ts';
 import type { DumpAccumulator } from '../../../dump/accumulator.ts';
 import { apiKeyFromContext, authenticateApiKey, type AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
-import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
+import { inboundHeaders } from '../../shared/inbound-headers.ts';
 import { takeRequestBody } from '../../shared/request-body.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
@@ -284,7 +284,7 @@ const handleClientMessage = async (
 
     let result;
     try {
-      result = await responsesServe.generate({ payload, ctx, headers: inboundHeadersForUpstream(c) });
+      result = await responsesServe.generate({ payload, ctx, headers: inboundHeaders(c) });
     } catch (error) {
       if (signal.aborted || isClosed()) return;
       // The HTTP entry renders this verbatim envelope as a 400; WS surfaces the

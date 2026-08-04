@@ -40,38 +40,6 @@ export interface CallClaudeCodeMessagesOptions {
   call: UpstreamCallOptions;
 }
 
-// Sub2api's `allowedHeaders` allowlist verbatim
-// (gateway_service.go:422-444). On the shaped passthrough path we only
-// forward inbound headers whose lowercased name appears here; everything
-// else (e.g. ad-hoc debug headers, `host`, `cookie`) is dropped before
-// hitting Anthropic. `authorization` is intentionally excluded — we set
-// our own from the cached OAuth token. `content-type` is forwarded when
-// the inbound carries one; the call site defaults it to
-// `application/json` otherwise.
-const SHAPED_PASSTHROUGH_HEADER_ALLOWLIST = new Set<string>([
-  'accept',
-  'x-stainless-retry-count',
-  'x-stainless-timeout',
-  'x-stainless-lang',
-  'x-stainless-package-version',
-  'x-stainless-os',
-  'x-stainless-arch',
-  'x-stainless-runtime',
-  'x-stainless-runtime-version',
-  'x-stainless-helper-method',
-  'anthropic-dangerous-direct-browser-access',
-  'anthropic-version',
-  'x-app',
-  'anthropic-beta',
-  'accept-language',
-  'sec-fetch-mode',
-  'user-agent',
-  'content-type',
-  'accept-encoding',
-  'x-claude-code-session-id',
-  'x-client-request-id',
-]);
-
 const synthetic503 = (message: string): Response =>
   new Response(
     JSON.stringify({ error: { type: 'claude_code_upstream_unavailable', message } }),
@@ -398,15 +366,9 @@ const performUpstreamCall = async (
 ): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
   let headers: Record<string, string>;
   if (opts.shaped) {
-    // Shaped path: forward the operator's inbound CC fingerprint through a
-    // tight whitelist (see SHAPED_PASSTHROUGH_HEADER_ALLOWLIST). `opts.call.headers`
-    // is always present per the UpstreamCallOptions contract; an empty bag
-    // still produces a working passthrough (just content-type + authorization).
-    const inbound = opts.call.headers;
-    const passthrough: Record<string, string> = {};
-    for (const [name, value] of inbound.entries()) {
-      if (SHAPED_PASSTHROUGH_HEADER_ALLOWLIST.has(name)) passthrough[name] = value;
-    }
+    // The gateway already reduced this bag to the Claude Code module's
+    // allowlist. This path preserves that fingerprint and replaces auth.
+    const passthrough = Object.fromEntries(opts.call.headers);
     // Sub2api always sets Content-Type when the inbound omits it
     // (`gateway_service.go` request-forwarding path), so the upstream
     // never receives a body-bearing request without a media type.

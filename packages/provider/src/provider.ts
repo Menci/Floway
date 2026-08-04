@@ -95,12 +95,10 @@ export type ProviderResponsesResult =
 // already stopped waiting on.
 //
 // `headers` is the single inbound-headers conduit from gateway to provider.
-// The gateway seeds it from the source request's headers. Providers with no
-// boundary scrubbing (Azure, custom) thread `opts.headers` straight to the
-// upstream wire; providers that scrub (Copilot, Codex) clone via
-// `new Headers(opts.headers)` into the boundary ctx so their interceptor
-// chain mutates the clone instead of the caller's bag. The gateway owns
-// the bag and the provider must not retain a reference past the call.
+// The gateway filters the source request through the provider module's
+// `inboundHeaderAllowlist` before constructing this bag. A provider may clone
+// and mutate it for request-specific wire shaping, but must not retain the
+// gateway-owned reference past the call.
 export interface UpstreamCallOptions {
   fetcher: Fetcher;
   waitUntil: (promise: Promise<unknown>) => void;
@@ -130,12 +128,9 @@ export interface ProviderInstance {
   // those upstreams; the rejecting stubs in those providers are pure
   // defense-in-depth.
   callCompletions(model: ProviderModel, body: Omit<CompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
-  // Same `opts.headers` shape across every protocol so provider impls never
-  // branch on the protocol when reading inbound headers. `anthropic-beta`
-  // lives on `opts.headers` like any other header; providers that need the
-  // parsed slice for variant selection (Copilot picks a raw upstream variant
-  // before the wire header is filtered down to the Copilot allow-list)
-  // re-parse it from `opts.headers.get('anthropic-beta')` themselves.
+  // The same allowlisted `opts.headers` shape crosses every protocol. A
+  // provider reads only names declared by its static module surface, so
+  // protocol methods do not carry parallel header parameters.
   callChatCompletions(model: ProviderModel, body: Omit<ChatCompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
   callResponses(model: ProviderModel, body: Omit<CanonicalResponsesPayload, 'model'>, action: ResponsesAction, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderResponsesResult>;
   callMessages(model: ProviderModel, body: Omit<MessagesPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<MessagesStreamEvent>>;
@@ -160,6 +155,12 @@ export interface ProviderModule {
   // fetch) happens on demand inside the per-request methods on the
   // returned ProviderInstance.
   create: (record: UpstreamRecord) => Provider;
+  // Client-authored headers this provider can consume. Strings are exact,
+  // ASCII-case-insensitive names; regular expressions run against the
+  // normalized lowercase name. The gateway applies this allowlist at the
+  // candidate boundary before any ProviderInstance method can observe the
+  // inbound bag.
+  inboundHeaderAllowlist: readonly (string | RegExp)[];
   // Exhaustive default map over every catalog flag id for a fresh
   // upstream of this kind; see each provider package's `defaults.ts`.
   defaultFlags: FlagDefaults;
