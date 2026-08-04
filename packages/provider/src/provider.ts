@@ -97,10 +97,10 @@ export type ProviderResponsesResult =
 // already stopped waiting on.
 //
 // `headers` is the single inbound-headers conduit from gateway to provider.
-// The gateway filters the source request through the provider module's
-// `inboundHeaderAllowlist` before constructing this bag. A provider may clone
-// and mutate it for request-specific wire shaping, but must not retain the
-// gateway-owned reference past the call.
+// The gateway filters the source request through this provider method's entry
+// in `inboundHeaderAllowlist` before constructing the bag. A provider may
+// clone and mutate it for request-specific wire shaping, but must not retain
+// the gateway-owned reference past the call.
 export interface UpstreamCallOptions {
   fetcher: Fetcher;
   waitUntil: (promise: Promise<unknown>) => void;
@@ -130,9 +130,8 @@ export interface ProviderInstance {
   // those upstreams; the rejecting stubs in those providers are pure
   // defense-in-depth.
   callCompletions(model: ProviderModel, body: Omit<CompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
-  // The same allowlisted `opts.headers` shape crosses every protocol. A
-  // provider reads only names declared by its static module surface, so
-  // protocol methods do not carry parallel header parameters.
+  // Each protocol receives only the headers declared for this method by the
+  // provider's static module surface.
   callChatCompletions(model: ProviderModel, body: Omit<ChatCompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
   callResponses(model: ProviderModel, body: Omit<CanonicalResponsesPayload, 'model'>, action: ResponsesAction, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderResponsesResult>;
   callMessages(model: ProviderModel, body: Omit<MessagesPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<MessagesStreamEvent>>;

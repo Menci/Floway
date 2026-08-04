@@ -141,8 +141,8 @@ const rejectUnsupported = (capability: string) => (): Promise<never> =>
 
 const rawModelFor = (model: ProviderModel, endpoint: ModelEndpointKey, hints: ModelSelectionHints = {}): CopilotRawModel => {
   // Copilot exposes one canonical public Claude model id per family. Raw
-  // variant selection is derived from request body fields such as reasoning
-  // effort, not from the client's original model alias string or headers.
+  // variant selection is derived from request body fields and parsed Messages
+  // beta intent, not from the client's original model alias string.
   const rawModels = (model.providerData as CopilotProviderData).rawModels.filter(rawModel => rawModelSupportsEndpoint(rawModel, endpoint));
   if (rawModels.length === 0) {
     throw new Error(`Copilot provider exposed ${endpoint} for ${model.id}, but no raw variant supports that endpoint`);
