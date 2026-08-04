@@ -1,19 +1,25 @@
 import { decodeTime } from 'ulid';
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 
-import { ulid } from '../../src/shared/ulid.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const TIMESTAMP = 2_000_000_000_000;
 
-test('ulid produces a canonical identifier for an explicit epoch timestamp', () => {
+const loadUlid = async () => {
+  vi.resetModules();
+  return (await import('../../src/shared/ulid.ts')).ulid;
+};
+
+test('ulid produces a canonical identifier for an explicit epoch timestamp', async () => {
+  const ulid = await loadUlid();
   const id = ulid(0);
 
   assertEquals(/^[0-9A-HJKMNP-TV-Z]{26}$/.test(id), true);
   assertEquals(decodeTime(id), 0);
 });
 
-test('ulid produces strictly increasing ids within the same millisecond', () => {
+test('ulid produces strictly increasing ids within the same millisecond', async () => {
+  const ulid = await loadUlid();
   const a = ulid(TIMESTAMP);
   const b = ulid(TIMESTAMP);
   const c = ulid(TIMESTAMP);
@@ -25,7 +31,8 @@ test('ulid produces strictly increasing ids within the same millisecond', () => 
   assertEquals(decodeTime(c), TIMESTAMP);
 });
 
-test('ulid encodes and orders consecutive milliseconds', () => {
+test('ulid encodes and orders consecutive milliseconds', async () => {
+  const ulid = await loadUlid();
   const a = ulid(TIMESTAMP + 1);
   const b = ulid(TIMESTAMP + 2);
 
@@ -34,7 +41,8 @@ test('ulid encodes and orders consecutive milliseconds', () => {
   assertEquals(decodeTime(b), TIMESTAMP + 2);
 });
 
-test('ulid produces strictly increasing ids when the clock rewinds', () => {
+test('ulid produces strictly increasing ids when the clock rewinds', async () => {
+  const ulid = await loadUlid();
   const a = ulid(TIMESTAMP + 3);
   const b = ulid(TIMESTAMP - 1_000);
   const c = ulid(TIMESTAMP - 2_000);
