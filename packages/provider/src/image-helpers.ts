@@ -1,19 +1,15 @@
-const BASE64_CHUNK = 0x8000;
+import { base64 } from '@scure/base';
 
-export const base64ToBytes = (base64: string): Uint8Array<ArrayBuffer> => {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  return bytes;
+const ASCII_WHITESPACE = /[\t\n\f\r ]/g;
+
+export const base64ToBytes = (value: string): Uint8Array<ArrayBuffer> => {
+  const normalized = value.replace(ASCII_WHITESPACE, '');
+  return new Uint8Array(base64.decode(
+    normalized.padEnd(normalized.length + (4 - normalized.length % 4) % 4, '='),
+  ));
 };
 
-export const bytesToBase64 = (bytes: Uint8Array): string => {
-  let binary = '';
-  for (let offset = 0; offset < bytes.length; offset += BASE64_CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + BASE64_CHUNK));
-  }
-  return btoa(binary);
-};
+export const bytesToBase64 = (bytes: Uint8Array): string => base64.encode(bytes);
 
 const BASE64_DATA_URL = /^data:([^;,]+)(?:;[^,;]*)*;base64,(.*)$/is;
 

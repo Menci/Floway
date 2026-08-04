@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@floway-dev/protocols": "workspace:*"
+    "@floway-dev/protocols": "workspace:*",
+    "@scure/base": "^2.2.0"
   },
   "devDependencies": {
     "@floway-dev/test-utils": "workspace:*"

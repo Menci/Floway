@@ -1,3 +1,5 @@
+import { base64 } from '@scure/base';
+
 // Tiny byte-buffer primitives. Buffers come in from a transport-owned
 // ReadableStream — those buffers may be pooled or reused by the runtime
 // (most visibly on Node), so anything we enqueue downstream or retain past
@@ -56,13 +58,4 @@ export const findDoubleCrlfFrom = (buf: Uint8Array, from: number): number => {
  */
 export const utf8Bytes = (s: string): Uint8Array => new TextEncoder().encode(s);
 
-/**
- * Base64-encode a raw byte buffer. `btoa` requires a binary-string input
- * (one code-unit per byte), so we map each byte to its corresponding
- * Latin-1 code unit via `String.fromCharCode` before calling btoa.
- */
-export const base64EncodeBytes = (bytes: Uint8Array): string => {
-  let bin = '';
-  for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]!);
-  return btoa(bin);
-};
+export const base64EncodeBytes = (bytes: Uint8Array): string => base64.encode(bytes);

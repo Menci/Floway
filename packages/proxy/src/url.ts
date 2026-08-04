@@ -19,6 +19,7 @@
 // percent-encoding, and SS-2022 base64 padding may vary.
 
 import { ProxyUriError } from './errors.ts';
+import { base64DecodeBytes, base64EncodeBytes } from './bytes.ts';
 import {
   type HttpProxyConfig,
   type ProxyConfig,
@@ -178,10 +179,10 @@ const parseSs = (
   // alphabet contains no ':' so the URL parser leaves the whole blob in
   // url.username and never splits it across username/password. Decode
   // through the pctDecoded `username` so `=` padding (which the WHATWG
-  // URL constructor percent-encodes inside userinfo) reaches `atob` raw.
+  // URL constructor percent-encodes inside userinfo) reaches the decoder raw.
   let decoded: string;
   try {
-    decoded = atob(username);
+    decoded = latin1StringFromBytes(base64DecodeBytes(username));
   } catch (cause) {
     throw new ProxyUriError('malformed ss userinfo (invalid base64)', { cause });
   }
@@ -366,11 +367,27 @@ const formatSocks5 = (config: Socks5ProxyConfig): string => {
 
 const formatSs = (config: ShadowsocksProxyConfig): string => {
   // Legacy SS userinfo is the entire base64-encoded `method:password`;
-  // `btoa` handles only Latin-1 input, which matches every byte SS allows
-  // in either field.
-  const userinfo = btoa(`${config.method}:${config.password}`);
+  // its wire text is Latin-1, which matches every byte SS allows in either
+  // field.
+  const userinfo = base64EncodeBytes(latin1Bytes(`${config.method}:${config.password}`));
   return `ss://${userinfo}@${config.host}:${config.port}${
     formatFragment(config.name, config.host, config.port)}`;
+};
+
+const latin1Bytes = (value: string): Uint8Array => {
+  const bytes = new Uint8Array(value.length);
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit > 0xff) throw new TypeError('Legacy Shadowsocks userinfo must contain only Latin-1 characters');
+    bytes[index] = codeUnit;
+  }
+  return bytes;
+};
+
+const latin1StringFromBytes = (bytes: Uint8Array): string => {
+  let value = '';
+  for (const byte of bytes) value += String.fromCharCode(byte);
+  return value;
 };
 
 const formatSs2022 = (config: Shadowsocks2022ProxyConfig): string => {

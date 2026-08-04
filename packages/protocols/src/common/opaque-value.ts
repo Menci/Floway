@@ -67,34 +67,10 @@ export const splitOpaqueTrailer = (value: string, minimumTrailerBytes = 1): Spli
   };
 };
 
-const bytesToBase64 = (bytes: Uint8Array): string => {
-  let binary = '';
-  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
-  }
-  return btoa(binary);
-};
-
-const base64ToBytes = (value: string): Uint8Array => {
-  const binary = atob(value);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  return bytes;
-};
-
-const bytesToBase64url = (bytes: Uint8Array): string =>
-  bytesToBase64(bytes).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
-
-const base64urlToBytes = (value: string): Uint8Array => {
-  const standard = value.replaceAll('-', '+').replaceAll('_', '/');
-  const padding = (4 - standard.length % 4) % 4;
-  return base64ToBytes(`${standard}${'='.repeat(padding)}`);
-};
-
 const decodeCanonicalBase64 = (value: string): Uint8Array | null => {
   try {
-    const bytes = base64ToBytes(value);
-    return bytesToBase64(bytes) === value ? bytes : null;
+    const bytes = base64.decode(value);
+    return base64.encode(bytes) === value ? bytes : null;
   } catch {
     return null;
   }
@@ -102,12 +78,16 @@ const decodeCanonicalBase64 = (value: string): Uint8Array | null => {
 
 const decodeCanonicalBase64url = (value: string): Uint8Array | null => {
   try {
-    const bytes = base64urlToBytes(value);
-    return bytesToBase64url(bytes) === value ? bytes : null;
+    const bytes = base64urlnopad.decode(value);
+    return base64urlnopad.encode(bytes) === value ? bytes : null;
   } catch {
     return null;
   }
 };
+
+const bytesToBase64 = (bytes: Uint8Array): string => base64.encode(bytes);
+
+const bytesToBase64url = (bytes: Uint8Array): string => base64urlnopad.encode(bytes);
 
 const rawStringToBytes = (value: string): Uint8Array => {
   const bytes = new Uint8Array(value.length * 2);
@@ -127,3 +107,4 @@ const rawStringFromBytes = (bytes: Uint8Array): string => {
   }
   return value;
 };
+import { base64, base64urlnopad } from '@scure/base';

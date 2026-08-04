@@ -23,6 +23,20 @@ test('small Responses payloads stay inline without a file relation', async () =>
   await expect(parseStoredResponsesPayload('msg_payload', prepared.payloadJson, null)).resolves.toEqual(expected);
 });
 
+test('reads an inline Responses payload persisted by the original Web base64 codec', async () => {
+  initFileStore(new MemoryFileStore());
+  const expected = {
+    item: { type: 'message', id: 'msg_legacy', role: 'assistant', content: 'persisted' },
+  };
+  const descriptor = JSON.stringify({
+    version: 1,
+    storage: 'inline',
+    encoding: 'gzip',
+    payload: 'H4sIAAAAAAAAExXKywlAIRBD0V6yfhXYjAwaRPCHMxsRe3+6yz1kIxsr3IatQThUqkoiPuT4UpMvTBLWldnLu4hqVpNml0JvxrscBudjRpzzAz9kxBlWAAAA',
+  });
+  await expect(parseStoredResponsesPayload('msg_legacy', descriptor, null)).resolves.toEqual(expected);
+});
+
 test('large Responses payloads use an external file whose key is not embedded in payload JSON', async () => {
   const files = new MemoryFileStore();
   initFileStore(files);

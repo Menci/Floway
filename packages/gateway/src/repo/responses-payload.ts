@@ -1,4 +1,5 @@
 import type { StoredResponsesItemPayload } from './types.ts';
+import { decodeWebBase64, encodeBase64, encodeBase64url } from '../shared/base-encoding.ts';
 import { getFileStore, sha256Hex } from '@floway-dev/platform';
 
 type StoredResponsesPayloadJson =
@@ -44,7 +45,7 @@ export const prepareStoredResponsesPayload = async (
     version: 1,
     storage: 'inline',
     encoding: 'gzip',
-    payload: bytesToBase64(gzippedBytes),
+    payload: encodeBase64(gzippedBytes),
   } satisfies StoredResponsesPayloadJson);
   if (encoder.encode(inlineJson).byteLength <= INLINE_PAYLOAD_LIMIT_BYTES) {
     return { payloadJson: inlineJson, file: null };
@@ -86,7 +87,7 @@ export const parseStoredResponsesPayload = async (
   const descriptor = parseDescriptor(id, raw);
   if (descriptor.storage === 'inline') {
     if (fileKey !== null) throw new Error(`Inline Responses payload unexpectedly owns a file for id=${id}`);
-    return parseInlinePayloadJson(id, await ungzipToString(base64ToBytes(descriptor.payload)));
+    return parseInlinePayloadJson(id, await ungzipToString(decodeWebBase64(descriptor.payload)));
   }
 
   if (fileKey === null) throw new Error(`Stored Responses payload file key missing for id=${id}`);
@@ -159,28 +160,10 @@ const ungzipToString = async (bytes: Uint8Array): Promise<string> => {
   return decoder.decode(await new Response(stream).arrayBuffer());
 };
 
-// btoa/atob operate on latin1; using fromCharCode in 32 KB chunks avoids the
-// argument-count blow-up large payloads would otherwise hit.
-const bytesToBase64 = (bytes: Uint8Array): string => {
-  let binary = '';
-  const CHUNK = 0x8000;
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-  }
-  return btoa(binary);
-};
-
 const randomFileSuffix = (): string => {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
-  return bytesToBase64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/u, '');
-};
-
-const base64ToBytes = (base64: string): Uint8Array => {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
+  return encodeBase64url(bytes);
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

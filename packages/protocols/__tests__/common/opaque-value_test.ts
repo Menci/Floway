@@ -10,6 +10,12 @@ test('opaque values preserve canonical Base64 alphabets byte-for-byte', () => {
   assertEquals(encodeOpaqueValue(new Uint8Array([0x00, 0xff, 0x80]), 'base64url'), 'AP-A');
 });
 
+test('non-canonical encodings remain raw opaque values', () => {
+  for (const value of [' AP+A', 'AP-A=', 'AB==']) {
+    assertEquals(decodeOpaqueValue(value).origin, 'raw');
+  }
+});
+
 test('raw opaque values freeze UTF-16 code units including lone surrogates', () => {
   const raw = 'raw:\u0000\ud800';
   const decoded = decodeOpaqueValue(raw);

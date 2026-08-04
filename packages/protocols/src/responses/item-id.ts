@@ -24,5 +24,6 @@ export const createRandomResponsesItemId = (type: GeneratedResponsesItemType): s
   const prefix = generatedItemPrefixes[type];
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
-  return `${prefix}_${[...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('')}`;
+  return `${prefix}_${hex.encode(bytes)}`;
 };
+import { hex } from '@scure/base';

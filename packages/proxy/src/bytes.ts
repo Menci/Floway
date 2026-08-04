@@ -3,6 +3,10 @@
 // Buffers read from a transport-owned ReadableStream may be pooled or reused
 // by the runtime, so retained or downstream-enqueued bytes must own their memory.
 
+import { base64, hex } from '@scure/base';
+
+const ASCII_WHITESPACE = /[\t\n\f\r ]/g;
+
 /**
  * Allocate a fresh ArrayBuffer-backed Uint8Array detached from any
  * transport-owned backing storage so the consumer can hold or mutate it
@@ -60,21 +64,7 @@ export const randomBytes = (n: number): Uint8Array<ArrayBuffer> => {
  * silently write the byte slot as 0 and let a typo through wire framing.
  */
 export const hexDecode = (s: string): Uint8Array<ArrayBuffer> => {
-  if (s.length % 2 !== 0) throw new Error(`hex: odd length ${s.length}`);
-  const out = new Uint8Array(s.length / 2);
-  for (let i = 0; i < out.byteLength; i++) {
-    const hi = hexNibble(s.charCodeAt(i * 2));
-    const lo = hexNibble(s.charCodeAt(i * 2 + 1));
-    out[i] = (hi << 4) | lo;
-  }
-  return out;
-};
-
-const hexNibble = (code: number): number => {
-  if (code >= 0x30 && code <= 0x39) return code - 0x30;       // '0'..'9'
-  if (code >= 0x61 && code <= 0x66) return code - 0x61 + 10;  // 'a'..'f'
-  if (code >= 0x41 && code <= 0x46) return code - 0x41 + 10;  // 'A'..'F'
-  throw new Error(`hex: non-hex character 0x${code.toString(16)}`);
+  return new Uint8Array(hex.decode(s));
 };
 
 /**
@@ -97,32 +87,21 @@ export const findDoubleCrlfFrom = (buf: Uint8Array, from: number): number => {
   return -1;
 };
 
-/**
- * Base64-encode a raw byte buffer. RFC 7617 §2.1 mandates UTF-8 bytes for
- * HTTP Basic auth credentials: the caller encodes the credential string to
- * UTF-8 with TextEncoder, then base64s those bytes (NOT the JS string code
- * units of the original credentials, which would emit Latin-1 bytes and
- * crash on code points > U+00FF). `btoa` requires a binary-string input
- * (one code-unit per byte), so we map each byte to its corresponding
- * Latin-1 code unit via `String.fromCharCode` before calling btoa.
- */
-export const base64EncodeBytes = (bytes: Uint8Array): string => {
-  let bin = '';
-  for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]!);
-  return btoa(bin);
-};
+export const base64EncodeBytes = (bytes: Uint8Array): string => base64.encode(bytes);
 
 /**
- * Base64-decode the inverse of {@link base64EncodeBytes}. `atob` returns
- * a Latin-1 binary string; map each code unit back to its byte value.
- * Throws (via `atob`) on invalid base64.
+ * Base64-decode the inverse of {@link base64EncodeBytes}. Existing proxy URIs
+ * accept the Web `atob` input policy: ASCII whitespace and omitted padding.
  */
 export const base64DecodeBytes = (s: string): Uint8Array<ArrayBuffer> => {
-  const bin = atob(s);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
+  const normalized = s.replace(ASCII_WHITESPACE, '');
+  return new Uint8Array(base64.decode(
+    normalized.padEnd(normalized.length + (4 - normalized.length % 4) % 4, '='),
+  ));
 };
+
+export const base64UrlDecodeBytes = (s: string): Uint8Array<ArrayBuffer> =>
+  base64DecodeBytes(s.replaceAll('-', '+').replaceAll('_', '/'));
 
 /**
  * Parse an IPv4 dotted-quad literal into 4 octets, or return null if `s`

@@ -2,6 +2,8 @@
 // skipped: the token reached us over TLS from auth.openai.com itself; spending
 // effort on signature-validating a token we just fetched would be theatre.
 
+import { base64urlnopad } from '@scure/base';
+
 export interface CodexIdTokenIdentity {
   email: string;
   chatgptAccountId: string;
@@ -41,14 +43,8 @@ export const parseCodexIdTokenClaims = (idToken: string): CodexIdTokenIdentity =
   };
 };
 
-// atob rejects unpadded base64; OpenAI id_tokens arrive unpadded, so we pad.
 const decodeBase64UrlToUtf8 = (value: string): string => {
-  const standard = value.replace(/-/g, '+').replace(/_/g, '/');
-  const padded = standard + '='.repeat((4 - (standard.length % 4)) % 4);
-  const binary = atob(padded);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  return new TextDecoder().decode(bytes);
+  return new TextDecoder().decode(base64urlnopad.decode(value));
 };
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);

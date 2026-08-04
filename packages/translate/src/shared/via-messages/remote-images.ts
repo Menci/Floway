@@ -1,4 +1,5 @@
 import type { RemoteImageLoader } from '../../types.ts';
+import { base64 } from '@scure/base';
 import type { MessagesImageBlock } from '@floway-dev/protocols/messages';
 
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
@@ -27,16 +28,6 @@ const inferMediaTypeFromUrl = (url: string): string | null => {
   return null;
 };
 
-const uint8ArrayToBase64 = (bytes: Uint8Array): string => {
-  let binary = '';
-
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-
-  return btoa(binary);
-};
-
 const resolveRemoteImage = async (url: string, loadRemoteImage: RemoteImageLoader): Promise<MessagesImageBlock | null> => {
   const image = await loadRemoteImage(url);
   if (!image) return null;
@@ -52,7 +43,7 @@ const resolveRemoteImage = async (url: string, loadRemoteImage: RemoteImageLoade
     source: {
       type: 'base64',
       media_type: mediaType as MessagesImageBlock['source']['media_type'],
-      data: uint8ArrayToBase64(image.data),
+      data: base64.encode(image.data),
     },
   };
 };

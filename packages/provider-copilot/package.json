@@ -13,7 +13,8 @@
     "@floway-dev/interceptor": "workspace:*",
     "@floway-dev/platform": "workspace:*",
     "@floway-dev/protocols": "workspace:*",
-    "@floway-dev/provider": "workspace:*"
+    "@floway-dev/provider": "workspace:*",
+    "@scure/base": "^2.2.0"
   },
   "devDependencies": {
     "@floway-dev/test-utils": "workspace:*"

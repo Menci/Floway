@@ -57,6 +57,7 @@
     "@floway-dev/proxy": "workspace:*",
     "@floway-dev/translate": "workspace:*",
     "@hono/zod-validator": "^0.8.0",
+    "@scure/base": "^2.2.0",
     "es-toolkit": "^1.49.0",
     "hono": "^4",
     "jsonrepair": "^3.14.0",

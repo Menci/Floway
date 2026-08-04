@@ -1,4 +1,5 @@
 import { errorMessage } from '../../lib/error-message';
+import { decodeWebBase64, encodeBase64 } from '../../lib/base-encoding';
 import type { DumpBody } from '@floway-dev/gateway/dump-types';
 
 export interface RenderedBody {
@@ -26,8 +27,7 @@ export const renderBody = (body: DumpBody, contentType: string): RenderedBody =>
   let text = body.data;
   if (body.encoding === 'base64') {
     try {
-      const binary = atob(body.data);
-      const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+      const bytes = decodeWebBase64(body.data);
       text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
     } catch (error) {
       return {
@@ -53,13 +53,13 @@ const renderMultipart = (base64: string, contentType: string): string | null => 
   if (!boundary) return null;
 
   try {
-    // The wire stays the binary string atob returns, one code unit per byte, so
-    // slicing it and encoding a part back with btoa round-trips. Decoding it
+    // The wire stays a binary string with one code unit per byte, so slicing it
+    // and encoding a part back through the byte codec round-trips. Decoding it
     // through a text encoding first does not: the Encoding Standard resolves
     // latin1 to windows-1252 (https://encoding.spec.whatwg.org/#names-and-labels),
     // which maps 0x80-0x9F -- a PNG signature leads with 0x89 -- to code points
-    // above 255 that btoa then rejects.
-    const wire = atob(base64);
+    // above 255.
+    const wire = binaryStringFromBytes(decodeWebBase64(base64));
     const chunks = wire.split(`--${boundary}`);
     if (chunks.length < 3) return null;
 
@@ -72,11 +72,20 @@ const renderMultipart = (base64: string, contentType: string): string | null => 
       const type = /^content-type:\s*(.+)$/im.exec(headers)?.[1]?.trim() ?? '';
       const textual = !type || /^(text\/|application\/(json|.*\+json|xml|.*\+xml|x-www-form-urlencoded))/i.test(type);
       if (textual) return `${headers}\r\n\r\n${new TextDecoder().decode(Uint8Array.from(data, c => c.charCodeAt(0)))}`;
-      const encoded = btoa(data).replace(/.{76}(?=.)/g, '$&\n');
+      const encoded = encodeBase64(bytesFromBinaryString(data)).replace(/.{76}(?=.)/g, '$&\n');
       return `${headers}\r\n\r\n[binary, ${data.length} bytes, content-type=${type}]\r\n${encoded}`;
     });
     return `--${boundary}\r\n${rendered.join(`\r\n--${boundary}\r\n`)}\r\n--${boundary}--\r\n`;
   } catch {
     return null;
   }
+};
+
+const bytesFromBinaryString = (value: string): Uint8Array =>
+  Uint8Array.from(value, character => character.charCodeAt(0));
+
+const binaryStringFromBytes = (bytes: Uint8Array): string => {
+  let value = '';
+  for (const byte of bytes) value += String.fromCharCode(byte);
+  return value;
 };

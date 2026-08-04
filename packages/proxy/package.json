@@ -32,6 +32,7 @@
     "@floway-dev/http": "workspace:*",
     "@noble/ciphers": "^2.2.0",
     "@noble/hashes": "^2.2.0",
-    "@reclaimprotocol/tls": "0.1.2"
+    "@reclaimprotocol/tls": "0.1.2",
+    "@scure/base": "^2.2.0"
   }
 }
