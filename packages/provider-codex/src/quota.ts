@@ -109,7 +109,7 @@ export const computeCodexQuotaTtlMs = (snapshot: CodexQuotaSnapshot, now: Date):
 // computeCodexQuotaTtlMs.
 export const getCodexQuota = async (
   upstreamId: string,
-  accountId: string,
+  accountId: string | null,
 ): Promise<CodexQuotaSnapshotMap | null> => {
   const fresh = await getProviderRepo().upstreams.getById(upstreamId);
   if (!fresh) return null;
@@ -127,7 +127,7 @@ export const getCodexQuota = async (
 
 export const putCodexQuota = async (
   upstreamId: string,
-  accountId: string,
+  accountId: string | null,
   snapshot: CodexQuotaSnapshot,
 ): Promise<void> => {
   // Stamped before the write so a replay against a winning sibling produces

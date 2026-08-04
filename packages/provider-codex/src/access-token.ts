@@ -4,13 +4,32 @@ import { getProviderRepo, UpstreamGoneError, type Fetcher } from '@floway-dev/pr
 
 export type { CodexAccessTokenEntry };
 
-// Refresh window: a cached token within this much of expiry counts as
-// already-expired so the next call mints a fresh one rather than racing the
-// upstream clock. Matches the data-plane's pre-call freshness gate.
+// An access-only credential has no refresh token, so there is nothing to
+// re-mint from. Distinct from a session termination: the credential was never
+// renewable, and the only recovery is a re-import.
+export class CodexAccessOnlyCredentialError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CodexAccessOnlyCredentialError';
+  }
+}
+
+// Refresh window: a renewable credential's cached token within this much of
+// expiry counts as already-expired so the next call mints a fresh one rather
+// than racing the upstream clock. Matches the data-plane's pre-call freshness
+// gate.
 const REFRESH_SKEW_MS = 5 * 60 * 1000;
 
-const isAccessTokenFresh = (entry: CodexAccessTokenEntry): boolean =>
-  entry.expiresAt > Date.now() + REFRESH_SKEW_MS;
+// An access-only credential gets no skew — spending the last five minutes of
+// a bearer it cannot replace is strictly better than discarding it — and an
+// unknown expiry reads as usable, because the upstream's rejection is the only
+// expiry signal such a credential has. For a renewable credential the same
+// unknown expiry reads as unusable instead: it can just mint a new one, and a
+// token of unknown remaining life is not worth a request.
+const isAccessTokenUsable = (entry: CodexAccessTokenEntry, renewable: boolean): boolean => {
+  if (entry.expiresAt === null) return !renewable;
+  return entry.expiresAt > Date.now() + (renewable ? REFRESH_SKEW_MS : 0);
+};
 
 // The whole change is expressed against the state the repo hands us, so a
 // write that loses its race is simply replayed against the winner's document
@@ -18,7 +37,7 @@ const isAccessTokenFresh = (entry: CodexAccessTokenEntry): boolean =>
 // surfaces them rather than silently running on a stale cached token.
 const persistAccessToken = async (
   upstreamId: string,
-  accountId: string,
+  accountId: string | null,
   entry: CodexAccessTokenEntry | null,
   where: string,
 ): Promise<void> => {
@@ -54,13 +73,13 @@ const persistAccessToken = async (
 
 export const putCodexAccessToken = async (
   upstreamId: string,
-  accountId: string,
+  accountId: string | null,
   entry: CodexAccessTokenEntry,
 ): Promise<void> => { await persistAccessToken(upstreamId, accountId, entry, 'putCodexAccessToken'); };
 
 export const invalidateCodexAccessToken = async (
   upstreamId: string,
-  accountId: string,
+  accountId: string | null,
 ): Promise<void> => { await persistAccessToken(upstreamId, accountId, null, 'invalidateCodexAccessToken'); };
 
 // Reads, mints, and persists. The mint callback is responsible for routing
@@ -95,7 +114,7 @@ const inFlightEnsures = new Map<string, Promise<CodexAccessTokenEntry>>();
 
 export const ensureCodexAccessToken = async (
   upstreamId: string,
-  accountId: string,
+  accountId: string | null,
   mint: (refreshToken: string) => Promise<CodexAccessTokenEntry>,
   // When true, skip the "cached access_token is still fresh" fast-path and
   // always mint a fresh one. Dashboard's Refresh button sets this so the
@@ -103,7 +122,9 @@ export const ensureCodexAccessToken = async (
   // it false so a live request served from cache stays cheap.
   force = false,
 ): Promise<CodexAccessTokenEntry> => {
-  const key = `${upstreamId}:${accountId}:${force ? 'force' : 'lazy'}`;
+  // `null` is a legitimate account id, so the key has to keep it distinct from
+  // the string "null" a template would produce.
+  const key = JSON.stringify([upstreamId, accountId, force]);
   const existing = inFlightEnsures.get(key);
   if (existing) return await existing;
   const promise = ensureCodexAccessTokenInner(upstreamId, accountId, mint, true, force);
@@ -117,7 +138,7 @@ export const ensureCodexAccessToken = async (
 
 const ensureCodexAccessTokenInner = async (
   upstreamId: string,
-  accountId: string,
+  accountId: string | null,
   mint: (refreshToken: string) => Promise<CodexAccessTokenEntry>,
   recoveryAllowed: boolean,
   force: boolean,
@@ -127,16 +148,30 @@ const ensureCodexAccessTokenInner = async (
   const state = readCodexUpstreamState(fresh.state);
   const account = state.accounts.find(a => a.chatgptAccountId === accountId);
   if (!account) throw new Error(`Codex account ${accountId} not found in upstream ${upstreamId}`);
-  if (account.accessToken && isAccessTokenFresh(account.accessToken) && !force) {
+  const renewable = account.refresh_token !== null;
+  if (account.accessToken && isAccessTokenUsable(account.accessToken, renewable) && !force) {
     return account.accessToken;
   }
+  // Nothing left to try for an access-only credential: the bearer in hand is
+  // all there is, and it is either expired or absent. Say which, because the
+  // operator's fix is the same but the reason changes what they check.
+  if (account.refresh_token === null) {
+    if (force) {
+      throw new CodexAccessOnlyCredentialError('Codex access-only credentials cannot be refreshed; re-import the credential');
+    }
+    if (account.accessToken !== null && account.accessToken.expiresAt !== null && account.accessToken.expiresAt <= Date.now()) {
+      throw new CodexAccessOnlyCredentialError('Codex access token has expired and cannot be refreshed; re-import the credential');
+    }
+    throw new CodexAccessOnlyCredentialError('Codex access-only credential has no usable access token; re-import the credential');
+  }
 
+  const refreshToken = account.refresh_token;
   let minted;
   try {
-    minted = await mint(account.refresh_token);
+    minted = await mint(refreshToken);
   } catch (err) {
     if (err instanceof CodexOAuthSessionTerminatedError && err.code === 'invalid_grant' && recoveryAllowed) {
-      const recovered = await recoverFromRefreshRace(upstreamId, accountId, account.refresh_token, mint);
+      const recovered = await recoverFromRefreshRace(upstreamId, accountId, refreshToken, mint);
       if (recovered) return recovered;
     }
     throw err;
@@ -155,7 +190,7 @@ const ensureCodexAccessTokenInner = async (
 // a real session termination.
 const recoverFromRefreshRace = async (
   upstreamId: string,
-  accountId: string,
+  accountId: string | null,
   usedRefreshToken: string,
   mint: (refreshToken: string) => Promise<CodexAccessTokenEntry>,
 ): Promise<CodexAccessTokenEntry | null> => {
@@ -169,7 +204,7 @@ const recoverFromRefreshRace = async (
   console.info(
     `Codex refresh-race recovered for upstream ${upstreamId} account ${accountId}: sibling rotated, using their access token`,
   );
-  if (rereadAccount.accessToken && isAccessTokenFresh(rereadAccount.accessToken)) {
+  if (rereadAccount.accessToken && isAccessTokenUsable(rereadAccount.accessToken, rereadAccount.refresh_token !== null)) {
     return rereadAccount.accessToken;
   }
   // Sibling rotated the refresh token but no usable access token sits in

@@ -1,5 +1,6 @@
-import { ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken, putCodexAccessToken } from './access-token.ts';
+import { CodexAccessOnlyCredentialError, ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken, putCodexAccessToken } from './access-token.ts';
 import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
+import { isObject } from './auth/parse-helpers.ts';
 import {
   CODEX_BACKEND_BASE,
   CODEX_ALPHA_SEARCH_PATH,
@@ -92,6 +93,12 @@ const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true;
       await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage);
       return { ok: false, response: synthetic503(`Codex refresh failed: ${err.upstreamMessage}`) };
     }
+    // An access-only credential with nothing usable left is a configuration
+    // problem, not an upstream one, so it reaches the client as our 503 with
+    // the re-import instruction rather than as a bare failure.
+    if (err instanceof CodexAccessOnlyCredentialError) {
+      return { ok: false, response: synthetic503(err.message) };
+    }
     throw err;
   }
 };
@@ -137,9 +144,6 @@ const trimHeader = (headers: Headers, name: string): string | null => {
   return value.length > 0 ? value : null;
 };
 
-const isPlainObject = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === 'object' && !Array.isArray(value);
-
 const stringField = (record: Record<string, unknown> | null, key: string): string | null => {
   if (record === null) return null;
   const value = record[key];
@@ -149,16 +153,16 @@ const stringField = (record: Record<string, unknown> | null, key: string): strin
 };
 
 const clientCodexClientMetadata = (body: unknown): Record<string, unknown> => {
-  if (!isPlainObject(body)) return {};
+  if (!isObject(body)) return {};
   const candidate = body.client_metadata;
-  return isPlainObject(candidate) ? candidate : {};
+  return isObject(candidate) ? candidate : {};
 };
 
 const parseClientTurnMetadataJson = (raw: string | null): Record<string, unknown> | null => {
   if (raw === null) return null;
   try {
     const parsed = JSON.parse(raw) as unknown;
-    return isPlainObject(parsed) ? parsed : null;
+    return isObject(parsed) ? parsed : null;
   } catch {
     return null;
   }
@@ -309,9 +313,11 @@ const buildCodexResponsesBody = (
 // classification. The returned Response is what the caller relays:
 //   - 2xx: caller decodes the body (SSE for /responses, JSON for /responses/compact)
 //   - 429: quota is already snapshotted; return verbatim
-//   - 401: a `token_invalidated` error is mapped to a synthetic 503; any
-//     other 401 is rebuilt with a re-readable body so the caller can decide
-//     to retry with a fresh access token
+//   - 401: an access-only credential preserves the upstream response verbatim
+//     and flips the row terminal, because it has nothing to retry with; on a
+//     renewable credential `token_invalidated` maps to a synthetic 503 and any
+//     other 401 is rebuilt with a re-readable body so the caller can decide to
+//     retry with a fresh access token
 //   - other: returned verbatim
 const dispatchCodexHttpCall = async (
   opts: CodexBackendCallBase,
@@ -324,7 +330,11 @@ const dispatchCodexHttpCall = async (
 ): Promise<Response> => {
   const headers = new Headers();
   headers.set('authorization', `Bearer ${accessToken}`);
-  headers.set('chatgpt-account-id', opts.account.chatgptAccountId);
+  // A null account id omits the header rather than sending an empty one: the
+  // upstream reads absence as "whichever account this bearer belongs to".
+  if (opts.account.chatgptAccountId !== null) {
+    headers.set('chatgpt-account-id', opts.account.chatgptAccountId);
+  }
   headers.set('originator', CODEX_ORIGINATOR);
   headers.set('user-agent', CODEX_USER_AGENT);
   headers.set('accept', accept);
@@ -359,11 +369,23 @@ const dispatchCodexHttpCall = async (
   if (response.status === 401) {
     const bodyText = await response.text();
     const { code, message } = parseUpstreamError(bodyText);
+    if (opts.account.refresh_token === null) {
+      // An access-only credential cannot recover from a rejected bearer, so
+      // the row is marked best-effort — but a storage failure must never
+      // replace the upstream status, headers, or body the caller needs to
+      // diagnose what happened.
+      try {
+        await opts.effects.persistTerminalState('session_terminated', message);
+      } catch {
+        // The upstream response remains authoritative.
+      }
+      return new Response(bodyText, { status: 401, statusText: response.statusText, headers: response.headers });
+    }
     if (code === 'token_invalidated') {
       await opts.effects.persistTerminalState('session_terminated', message);
       return synthetic503(`Codex session terminated: ${message}`);
     }
-    return new Response(bodyText, { status: 401, headers: response.headers });
+    return new Response(bodyText, { status: 401, statusText: response.statusText, headers: response.headers });
   }
 
   return response;
@@ -379,9 +401,13 @@ const dispatchCodexHttpCall = async (
 // unconditionally sidesteps that window, and persisting best-effort is enough
 // because the next request re-mints if its read still sees the dead token.
 const refreshAccessTokenForRetry = async (opts: CodexBackendCallBase): Promise<{ ok: true; accessToken: string } | { ok: false; response: Response }> => {
+  const refreshToken = opts.account.refresh_token;
+  if (refreshToken === null) {
+    return { ok: false, response: synthetic503('Codex access-only credentials cannot be refreshed; re-import the credential') };
+  }
   await invalidateCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId);
   try {
-    const minted = await mintAccessToken(opts, opts.account.refresh_token);
+    const minted = await mintAccessToken(opts, refreshToken);
     registerBackgroundWrite(opts, putCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, minted));
     return { ok: true, accessToken: minted.token };
   } catch (err) {
@@ -415,7 +441,7 @@ const performStreamingResponsesCall = async (
 
   const result = await streamingProviderCall(upstreamFetch, parseResponsesStream, opts.model.id, opts.signal);
 
-  if (!result.ok && result.response.status === 401 && !alreadyRetried) {
+  if (!result.ok && result.response.status === 401 && opts.account.refresh_token !== null && !alreadyRetried) {
     const fresh = await refreshAccessTokenForRetry(opts);
     if (!fresh.ok) return { ok: false, modelKey: opts.model.id, response: fresh.response };
     return await performStreamingResponsesCall(opts, fresh.accessToken, true);
@@ -444,7 +470,7 @@ const performUnaryCompactCall = async (
     turnMetadataJson,
   );
 
-  if (response.status === 401 && !alreadyRetried) {
+  if (response.status === 401 && opts.account.refresh_token !== null && !alreadyRetried) {
     const fresh = await refreshAccessTokenForRetry(opts);
     if (!fresh.ok) return { ok: false, modelKey: opts.model.id, response: fresh.response };
     return await performUnaryCompactCall(opts, fresh.accessToken, true);
@@ -482,7 +508,7 @@ const performAlphaSearchCall = async (
     turnMetadataJson,
   );
 
-  if (response.status === 401 && !alreadyRetried) {
+  if (response.status === 401 && opts.account.refresh_token !== null && !alreadyRetried) {
     const fresh = await refreshAccessTokenForRetry(opts);
     if (!fresh.ok) return { modelKey: opts.model.id, response: fresh.response };
     return await performAlphaSearchCall(opts, fresh.accessToken, true);

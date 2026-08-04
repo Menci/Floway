@@ -8,6 +8,7 @@ export const codexProviderModule: ProviderModule = {
 };
 
 export * from './access-token.ts';
+export * from './auth/credential.ts';
 export * from './auth/import.ts';
 export * from './auth/oauth.ts';
 export * from './constants.ts';
