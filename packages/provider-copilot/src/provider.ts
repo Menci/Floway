@@ -415,6 +415,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       // Both the native Messages call and count_tokens select the same raw
       // `messages` variant; they differ only in the upstream endpoint path.
       const rawModel = rawModelFor(model, 'messages', {
+        context1m: opts.requestHints.oneMillionContext,
         reasoningEffort: messagesReasoningEffort(body),
         fast: body.speed === 'fast',
       });
@@ -433,6 +434,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
     },
     callMessagesCountTokens: async (model, body, signal, opts) => {
       const rawModel = rawModelFor(model, 'messages', {
+        context1m: opts.requestHints.oneMillionContext,
         reasoningEffort: messagesReasoningEffort(body),
       });
       const ctx: MessagesBoundaryCtx = {

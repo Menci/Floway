@@ -233,7 +233,7 @@ test('callRerank uses the model target protocol, raw model id, and canonical pat
         model,
         parseRerankRequest('cohere-v1', { model: 'public-reranker', query: 'query', documents: ['one'], top_n: 1 }).request,
         undefined,
-        { fetcher: directFetcher, waitUntil: () => {}, headers: new Headers(), wrapUpstreamCall: identityWrapUpstreamCall },
+        noopUpstreamCallOptions(),
       );
       assertEquals(result.target, { protocol: 'cohere-v2' });
       assertEquals(result.modelKey, 'raw-reranker');
@@ -266,7 +266,7 @@ test('callRerank honors the per-model path without adding an upstream path overr
         model,
         parseRerankRequest('jina-v1', { model: 'raw-reranker', query: 'query', documents: ['one'] }).request,
         undefined,
-        { fetcher: directFetcher, waitUntil: () => {}, headers: new Headers(), wrapUpstreamCall: identityWrapUpstreamCall },
+        noopUpstreamCallOptions(),
       );
     },
   );

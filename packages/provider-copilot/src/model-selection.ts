@@ -5,6 +5,7 @@ const STANDARD_CLAUDE_BASE_ID = /^claude-[a-z0-9-]+-\d+(?:\.\d+)?$/;
 const KNOWN_CLAUDE_VARIANT_SUFFIXES = new Set(['high', 'xhigh', '1m', '1m-internal', 'fast']);
 
 export interface ModelSelectionHints {
+  context1m?: boolean;
   reasoningEffort?: string;
   fast?: boolean;
 }
@@ -70,14 +71,22 @@ const narrow = (pool: readonly CopilotRawModel[], predicate: (model: CopilotRawM
 
 const chooseClaudeVariant = (candidates: readonly CopilotRawModel[], exactBase: CopilotRawModel | undefined, hints: ModelSelectionHints): CopilotRawModel | undefined => {
   const effort = hints.reasoningEffort;
-  if (!effort && !hints.fast) {
+  if (!hints.context1m && !effort && !hints.fast) {
     return exactBase ?? firstPreferred(candidates);
   }
 
   // Fast Mode narrows the pool first because it has the strongest contract.
-  // Effort then layers on top and prefers 1m variants within its narrowed
-  // pool because those models tend to advertise broader effort coverage.
+  // 1m and effort then layer on top: an explicit 1m request stays within
+  // that context family even when its effort cannot be met; effort-only
+  // selection prefers 1m variants because they tend to advertise broader
+  // effort coverage.
   const pool = hints.fast ? narrow(candidates, supportsFastMode) : candidates;
+
+  if (hints.context1m) {
+    const oneMillion = pool.filter(supportsOneMillionContext);
+    const oneMillionWithEffort = oneMillion.filter(model => supportsReasoningEffort(model, effort));
+    return firstPreferred(oneMillionWithEffort) ?? firstPreferred(oneMillion) ?? firstPreferred(pool) ?? exactBase ?? firstPreferred(candidates);
+  }
 
   const withEffort = pool.filter(model => supportsReasoningEffort(model, effort));
   return firstPreferred(withEffort.filter(supportsOneMillionContext)) ?? firstPreferred(withEffort) ?? firstPreferred(pool) ?? exactBase ?? firstPreferred(candidates);
