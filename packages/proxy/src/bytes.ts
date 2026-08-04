@@ -3,6 +3,8 @@
 // Buffers read from a transport-owned ReadableStream may be pooled or reused
 // by the runtime, so retained or downstream-enqueued bytes must own their memory.
 
+import ipaddr from 'ipaddr.js';
+
 /**
  * Allocate a fresh ArrayBuffer-backed Uint8Array detached from any
  * transport-owned backing storage so the consumer can hold or mutate it
@@ -124,69 +126,39 @@ export const base64DecodeBytes = (s: string): Uint8Array<ArrayBuffer> => {
   return out;
 };
 
-/**
- * Parse an IPv4 dotted-quad literal into 4 octets, or return null if `s`
- * isn't a literal IPv4. Strict: each component must be a decimal in
- * 0..255 with no leading zeros (the "no leading zeros" rule prevents
- * "0123" being read as 123 — some resolvers interpret leading zeros as
- * octal).
- */
-const parseIpv4Literal = (s: string): Uint8Array | null => {
-  if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(s)) return null;
-  const parts = s.split('.');
-  const out = new Uint8Array(4);
-  for (let i = 0; i < 4; i++) {
-    const p = parts[i]!;
-    if (p.length > 1 && p.startsWith('0')) return null;
-    const n = Number(p);
-    if (n > 255) return null;
-    out[i] = n;
-  }
-  return out;
-};
+type IpLiteral =
+  | { kind: 'ipv4'; bytes: Uint8Array<ArrayBuffer> }
+  | { kind: 'ipv6'; bytes: Uint8Array<ArrayBuffer> };
 
 /**
- * Parse an IPv6 literal into 16 octets, or return null if `s` isn't a
- * literal IPv6. Defers to the WHATWG `URL` parser, which has a fully
- * spec-compliant IPv6 grammar and handles `::`, IPv4-mapped suffixes
- * (`::ffff:1.2.3.4`), and the all-the-shapes cases that a regex couldn't
- * cover.
+ * Parse a canonical wire-safe IP literal. IPv4 remains restricted to four
+ * decimal components without leading zeroes: ipaddr.js intentionally accepts
+ * historical short, octal, and hexadecimal forms through its general parser,
+ * while proxy targets must not reinterpret those resolver-dependent strings.
+ * IPv6 zone IDs identify a local interface rather than an address that can be
+ * carried meaningfully to a remote proxy, so they stay on the domain path.
  */
-const parseIpv6Literal = (s: string): Uint8Array | null => {
-  // A plain IPv4 would parse as a `URL` hostname too but without colons —
-  // filter that out so this helper only ever returns IPv6 octets.
-  if (!s.includes(':')) return null;
-  let url: URL;
-  try {
-    url = new URL(`http://[${s}]/`);
-  } catch {
-    return null;
+const parseIpLiteral = (host: string): IpLiteral | null => {
+  if (ipaddr.IPv4.isValidFourPartDecimal(host)) {
+    return {
+      kind: 'ipv4',
+      bytes: Uint8Array.from(ipaddr.IPv4.parse(host).toByteArray()),
+    };
   }
-  // `url.hostname` is normalised — `[::1]` → `[::1]`. Strip the brackets,
-  // then expand to 16 octets via `ipv6StringToBytes` below.
-  const norm = url.hostname.slice(1, -1);
-  return ipv6StringToBytes(norm);
-};
 
-const ipv6StringToBytes = (s: string): Uint8Array => {
-  // Input always arrives via parseIpv6Literal → `new URL('http://[…]/').hostname`,
-  // and the WHATWG URL serializer collapses any IPv4-mapped tail into hex groups
-  // (`::ffff:1.2.3.4` → `[::ffff:102:304]`). The expansion below is therefore a
-  // pure hex-group parser.
-  const [left, right] = s.includes('::') ? s.split('::', 2) as [string, string] : [s, ''];
-  const leftParts = left === '' ? [] : left.split(':');
-  const rightParts = right === '' ? [] : right.split(':');
-  const groups: number[] = [];
-  for (const p of leftParts) groups.push(parseInt(p, 16));
-  const zerosNeeded = 8 - leftParts.length - rightParts.length;
-  for (let i = 0; i < zerosNeeded; i++) groups.push(0);
-  for (const p of rightParts) groups.push(parseInt(p, 16));
-  const out = new Uint8Array(16);
-  for (let i = 0; i < groups.length; i++) {
-    out[i * 2] = (groups[i]! >> 8) & 0xff;
-    out[i * 2 + 1] = groups[i]! & 0xff;
+  if (host.includes('%') || !ipaddr.IPv6.isValid(host)) return null;
+
+  // ipaddr.js accepts the same historical IPv4 spellings in an IPv6
+  // transitional tail. Keep the tail aligned with the strict IPv4 contract.
+  if (host.includes('.')) {
+    const ipv4Tail = host.slice(host.lastIndexOf(':') + 1);
+    if (!ipaddr.IPv4.isValidFourPartDecimal(ipv4Tail)) return null;
   }
-  return out;
+
+  return {
+    kind: 'ipv6',
+    bytes: Uint8Array.from(ipaddr.IPv6.parse(host).toByteArray()),
+  };
 };
 
 /**
@@ -216,18 +188,11 @@ export const encodeAtypAddress = (
   host: string,
   atyp: AtypBytes,
 ): Uint8Array<ArrayBuffer> => {
-  const v4 = parseIpv4Literal(host);
-  if (v4) {
-    const out = new Uint8Array(1 + 4);
-    out[0] = atyp.v4;
-    out.set(v4, 1);
-    return out;
-  }
-  const v6 = parseIpv6Literal(host);
-  if (v6) {
-    const out = new Uint8Array(1 + 16);
-    out[0] = atyp.v6;
-    out.set(v6, 1);
+  const literal = parseIpLiteral(host);
+  if (literal) {
+    const out = new Uint8Array(1 + literal.bytes.byteLength);
+    out[0] = literal.kind === 'ipv4' ? atyp.v4 : atyp.v6;
+    out.set(literal.bytes, 1);
     return out;
   }
   const dom = utf8Bytes(host);

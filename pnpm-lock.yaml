@@ -529,6 +529,9 @@ importers:
       '@reclaimprotocol/tls':
         specifier: 0.1.2
         version: 0.1.2(patch_hash=8ed07af54e914cbcc2cea19ce7109635092cbbe35b9d2ad1bf55e3dfef1b8fd6)
+      ipaddr.js:
+        specifier: 2.5.0
+        version: 2.5.0
 
   packages/test-utils:
     dependencies:
@@ -3672,6 +3675,10 @@ packages:
   internmap@2.0.3:
     resolution: {integrity: sha512-5Hh7Y1wQbvY5ooGgPbDaL5iYLAPzMTUrjMulskHLH6wnv/A+1q5rgEaiuqEjB+oxGXIVZs1FF+R/KPN3ZSQYYg==}
     engines: {node: '>=12'}
+
+  ipaddr.js@2.5.0:
+    resolution: {integrity: sha512-aq+t5NAc+cS6rZQQVWC2x98CPqGtKKTMDd4Gaodv0wShnItdKg/51djkGJ1hqH+Oy0ivDftCbSLCQob8zso01w==}
+    engines: {node: '>= 10'}
 
   is-alphabetical@2.0.1:
     resolution: {integrity: sha512-FWyyY60MeTNyeSRpkM2Iry0G9hpr7/9kD40mD/cGQEuilcZYS4okz8SN2Q6rLCJ8gbCt6fN+rC+6tMGS99LaxQ==}
@@ -8854,6 +8861,8 @@ snapshots:
   internmap@1.0.1: {}
 
   internmap@2.0.3: {}
+
+  ipaddr.js@2.5.0: {}
 
   is-alphabetical@2.0.1: {}
 
