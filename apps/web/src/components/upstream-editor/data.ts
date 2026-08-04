@@ -61,7 +61,7 @@ export interface ModelRow {
 export interface UpstreamEditorValues {
   name: string;
   enabled: boolean;
-  color: UpstreamRecord['color'];
+  hue: UpstreamRecord['hue'];
   proxyFallbackList: UpstreamRecord['proxy_fallback_list'];
   modelPrefix: UpstreamRecord['model_prefix'];
   disabledPublicModelIds: string[];
@@ -219,7 +219,7 @@ export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues =
   return {
     name: record.name,
     enabled: record.enabled,
-    color: record.color,
+    hue: record.hue,
     proxyFallbackList: structuredClone(record.proxy_fallback_list).map(entry => withRegisteredKey('colos', entry)),
     modelPrefix: structuredClone(record.model_prefix),
     disabledPublicModelIds: [...record.disabled_public_model_ids],
@@ -265,7 +265,7 @@ export const previewRecord = (record: UpstreamRecord, values: UpstreamEditorValu
     ...record,
     name: values.name.trim(),
     enabled: values.enabled,
-    color: values.color,
+    hue: values.hue,
     config: configFromValues(record, values, { preserveStoredSecret: true }),
     state: values.state,
     proxy_fallback_list: values.proxyFallbackList,
@@ -282,7 +282,7 @@ export const createBody = (record: UpstreamRecord, values: UpstreamEditorValues)
     kind: record.kind,
     name: values.name.trim(),
     enabled: values.enabled,
-    color: values.color,
+    hue: values.hue,
     flag_overrides: values.flagOverrides,
     disabled_public_model_ids: values.disabledPublicModelIds,
     proxy_fallback_list: values.proxyFallbackList,
@@ -298,7 +298,7 @@ export const updateBody = (record: UpstreamRecord, values: UpstreamEditorValues)
   return {
     name: values.name.trim(),
     enabled: values.enabled,
-    color: values.color,
+    hue: values.hue,
     flag_overrides: values.flagOverrides,
     disabled_public_model_ids: values.disabledPublicModelIds,
     proxy_fallback_list: values.proxyFallbackList,

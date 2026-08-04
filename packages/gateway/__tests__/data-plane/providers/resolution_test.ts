@@ -209,7 +209,7 @@ test('enumerateRealModelCandidates rejects a model id disabled on that upstream 
     proxyFallbackList: [],
     modelPrefix: null,
     modelsCache: null,
-    color: null,
+    hue: 210,
     state: null,
   });
 

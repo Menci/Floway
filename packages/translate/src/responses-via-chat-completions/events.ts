@@ -11,6 +11,11 @@ const mapChatCompletionsUsageToResponsesUsage = (usage: ChatCompletionsResult['u
   const cacheWriteTokens = usage.prompt_tokens_details?.cache_creation_input_tokens
     ?? usage.prompt_tokens_details?.cache_write_tokens;
   const reasoningTokens = usage.completion_tokens_details?.reasoning_tokens;
+  // Validated, not consumed. Responses names the same three input buckets
+  // Chat Completions does, so the counts cross unchanged and there is nothing
+  // to recompute — but this package is the one asserting that what it emits
+  // satisfies the inclusive contract its own output type declares, rather than
+  // relying on whoever happens to read the usage next.
   splitInclusiveInputTokens(usage.prompt_tokens, cachedTokens, cacheWriteTokens);
   return {
     input_tokens: usage.prompt_tokens,

@@ -1,8 +1,7 @@
-import initSqlJs from 'sql.js';
 import { test } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
-import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
+import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename } from './test-sqlite.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { ApiKey, Repo } from '../../src/repo/types.ts';
 import type { SqlBindValue, SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
@@ -146,8 +145,7 @@ test('[sql] targeted API key updates use SQLite-bindable scalar values', async (
 });
 
 test('migration 0057 backfills distinct server secrets and enforces their canonical form', async () => {
-  const SQL = await initSqlJs();
-  const db = new SQL.Database();
+  const db = await createSqlJsDatabase();
   try {
     for (const [filename, sql] of migrationSqlByFilename) {
       if (filename === '0057_api_key_server_secret.sql') break;
