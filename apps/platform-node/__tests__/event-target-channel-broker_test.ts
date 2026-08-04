@@ -15,7 +15,8 @@ const stringCodec: ChannelCodec<string> = {
 const rejectingStringCodec: ChannelCodec<string> = {
   encode: value => value,
   decode: payload => {
-    throw new Error(`rejected payload: ${payload}`);
+    if (payload === 'bad') throw new Error(`rejected payload: ${payload}`);
+    return payload;
   },
 };
 
@@ -83,6 +84,20 @@ test('EventTargetChannelBroker rejects every pending read when decoding fails', 
   assertEquals(results.map(result => result.status), ['rejected', 'rejected']);
   assertEquals((results[0] as PromiseRejectedResult).reason.message, 'rejected payload: bad');
   assertEquals((results[1] as PromiseRejectedResult).reason.message, 'rejected payload: bad');
+});
+
+test('EventTargetChannelBroker drains buffered payloads before surfacing a decode failure', async () => {
+  const broker = new EventTargetChannelBroker<string>(rejectingStringCodec);
+  const controller = new AbortController();
+  const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
+
+  await broker.publish('k', 'good');
+  await broker.publish('k', 'bad');
+
+  assertEquals((await iter.next()).value, 'good');
+  const failed = await Promise.allSettled([iter.next()]);
+  assertEquals(failed[0].status, 'rejected');
+  assertEquals((failed[0] as PromiseRejectedResult).reason.message, 'rejected payload: bad');
 });
 
 test('EventTargetChannelBroker isolates traffic across channels', async () => {

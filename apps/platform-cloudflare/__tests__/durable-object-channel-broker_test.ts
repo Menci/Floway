@@ -167,6 +167,23 @@ test('DurableObjectChannelBroker.subscribe rejects every pending read when decod
   assertEquals((results[1] as PromiseRejectedResult).reason.message, 'stringCodec rejected payload: bad:payload');
 });
 
+test('DurableObjectChannelBroker.subscribe drains buffered payloads before surfacing a decode failure', async () => {
+  const socket = new FakeServerSocket();
+  const broker = new DurableObjectChannelBroker<string>(buildNamespace(socket), stringCodec);
+  const controller = new AbortController();
+  const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
+
+  await Promise.resolve();
+  await Promise.resolve();
+  socket.emit('message', new MessageEvent('message', { data: 'good' }));
+  socket.emit('message', new MessageEvent('message', { data: 'bad:payload' }));
+
+  assertEquals((await iter.next()).value, 'good');
+  const failed = await Promise.allSettled([iter.next()]);
+  assertEquals(failed[0].status, 'rejected');
+  assertEquals((failed[0] as PromiseRejectedResult).reason.message, 'stringCodec rejected payload: bad:payload');
+});
+
 test('DurableObjectChannelBroker.subscribe ends the iterator on a server-initiated socket close', async () => {
   const socket = new FakeServerSocket();
   const broker = new DurableObjectChannelBroker<string>(buildNamespace(socket), stringCodec);
