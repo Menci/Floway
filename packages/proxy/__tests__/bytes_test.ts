@@ -33,7 +33,7 @@ describe('encodeAtypAddress — strict IP literal boundaries', () => {
   it.each([
     ['::', new Array<number>(16).fill(0)],
     ['::1', [...new Array<number>(15).fill(0), 1]],
-    ['2001:db8:0:1:2:3:4:5', [0x20, 0x01, 0x0d, 0xb8, 0, 1, 0, 2, 0, 3, 0, 4, 0, 5]],
+    ['2001:db8:0:1:2:3:4:5', [0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 1, 0, 2, 0, 3, 0, 4, 0, 5]],
     ['ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff', new Array<number>(16).fill(0xff)],
     ['::ffff:192.0.2.128', [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 192, 0, 2, 128]],
   ] as const)('encodes IPv6 %s as 16 network-order octets', (host, octets) => {
