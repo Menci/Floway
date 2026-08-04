@@ -19,6 +19,7 @@ import { ErrorShell, ErrorStack } from './components/ui/error-shell';
 import { AppLoadingScreen } from './components/ui/loading-screen';
 import { fluentComponents } from './fluent';
 import { defaultLanguage, htmlLanguageFor } from './i18n/languages';
+import { useSourceMappedStack } from './lib/source-mapped-stack';
 import { DARK_SCHEME_QUERY, useMediaQuery } from './lib/use-media-query';
 import { winuiDarkTheme, winuiLightTheme } from './winui/theme';
 import './i18n';
@@ -27,7 +28,7 @@ import '@fontsource/maple-mono/600.css';
 import '@fontsource/maple-mono/700.css';
 import './global.css';
 
-const { Button, FluentProvider } = fluentComponents;
+const { Button, FluentProvider, Spinner } = fluentComponents;
 
 // Fonts are fetched in CORS mode whatever the crossOrigin value, and a preload
 // whose mode disagrees with the real request is fetched twice.
@@ -108,7 +109,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   const hydrated = useSyncExternalStore(subscribeNever, isClient, isServer);
   let message = t('common.errors.unexpectedTitle');
   let details = t('common.errors.unexpectedDescription');
-  let stack: string | undefined;
+  let rawStack: string | undefined;
 
   if (isRouteErrorResponse(error)) {
     message = error.status === 404 ? '404' : t('common.errors.title');
@@ -118,10 +119,21 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
         : error.statusText || details;
   } else if (error instanceof Error) {
     details = error.message;
-    stack = error.stack;
+    rawStack = error.stack;
   }
 
+  const restoration = useSourceMappedStack(rawStack);
+
   if (!hydrated) return <AppLoadingScreen label={t('common.loading')} />;
+
+  const stack = restoration.stack;
+  // While the trace is the minified one, the sentence the trace replaced is
+  // given over to saying so.
+  const note = restoration.status === 'loading'
+    ? <><Spinner size="tiny" />{t('common.errors.sourceMapLoading')}</>
+    : restoration.status === 'failed'
+      ? t('common.errors.sourceMapFailed')
+      : undefined;
 
   return (
     <ErrorShell
@@ -135,7 +147,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
           <Button onClick={() => window.history.back()}>{t('common.errors.back')}</Button>
         </>
       }
-      message={stack ? undefined : details}
+      message={stack ? note : details}
       title={message}
     >
       {stack && <ErrorStack>{stack}</ErrorStack>}
