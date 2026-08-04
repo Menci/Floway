@@ -17,7 +17,7 @@ test('decimal strings canonicalize without floating-point conversion', () => {
   assertThrows(() => parseDecimalString('.1'), TypeError, 'must be a decimal string');
   assertThrows(() => parseDecimalString('1.'), TypeError, 'must be a decimal string');
   assertEquals(parseDecimalString(`1.${'0'.repeat(509)}`), '1');
-  assertThrows(() => parseDecimalString(`1.${'0'.repeat(510)}`), TypeError, 'at most 512 characters');
+  assertThrows(() => parseDecimalString(`1.${'0'.repeat(511)}`), TypeError, 'at most 512 characters');
   assertEquals(parseDecimalString('1e399'), `1${'0'.repeat(399)}`);
   assertThrows(() => parseDecimalString('1e400'), RangeError, '400-digit integer');
   assertEquals(parseDecimalString('1e-400'), `0.${'0'.repeat(399)}1`);
