@@ -40,7 +40,7 @@ test('iterateReadableStream releases its reader before pending cancellation fini
   const returned = iter.return?.('subscriber done')!;
   let returnSettled = false;
   void returned.then(() => { returnSettled = true; });
-  await pendingRead;
+  assertEquals((await pendingRead).done, true);
   await Promise.resolve();
 
   assertEquals(cancelReason, 'subscriber done');
