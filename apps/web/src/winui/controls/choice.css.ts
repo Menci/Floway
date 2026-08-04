@@ -96,8 +96,36 @@ const COMPOSITION_MS = 26666666 / 10000;
 const CHECK_ON_MS = `${exact((0.2128125 - 0.0940625) * COMPOSITION_MS)}ms`;
 const CHECK_OFF_MS = `${exact(0.0253125 * COMPOSITION_MS)}ms`;
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedVisuals/AnimatedAcceptVisualSource.cpp#L1471-L1479
-const CHECK_ON_EASING = 'cubic-bezier(0.55, 0, 0, 1)';
+const CHECK_ON_BEZIER = [0.55, 0, 0, 1] as const;
+const CHECK_ON_EASING = `cubic-bezier(${CHECK_ON_BEZIER.join(', ')})`;
 const CHECK_OFF_EASING = 'cubic-bezier(0.167, 0.167, 0.833, 0.833)';
+
+const cubicCoordinate = (time: number, first: number, second: number) =>
+  3 * (1 - time) ** 2 * time * first + 3 * (1 - time) * time ** 2 * second + time ** 3;
+
+const cubicOutputAt = ([x1, y1, x2, y2]: readonly [number, number, number, number], progress: number) => {
+  let low = 0;
+  let high = 1;
+  for (let iteration = 0; iteration < 60; iteration += 1) {
+    const time = (low + high) / 2;
+    if (cubicCoordinate(time, x1, x2) < progress) low = time; else high = time;
+  }
+  return cubicCoordinate((low + high) / 2, y1, y2);
+};
+
+// Chromium 150-152 can loop forever while finding the range of this cubic
+// timing function for a composited clip-path transition. Forty straight
+// segments keep the largest progress error below 0.005 -- under 0.06px across
+// this mark -- while routing supporting browsers through LinearTimingFunction.
+// The cubic remains the fallback for engines that do not parse linear().
+// https://issues.chromium.org/issues/536936875
+// https://chromium-review.googlesource.com/c/chromium/src/+/8152879
+// https://drafts.csswg.org/css-easing-2/#the-linear-easing-function
+const CHECK_ON_LINEAR_SEGMENTS = 40;
+const CHECK_ON_LINEAR_EASING = `linear(${Array.from(
+  { length: CHECK_ON_LINEAR_SEGMENTS + 1 },
+  (_, index) => exact(cubicOutputAt(CHECK_ON_BEZIER, index / CHECK_ON_LINEAR_SEGMENTS)),
+).join(', ')})`;
 
 // The tri-state check box is named by the data-winui-checked stamp
 // ../appearance.ts applies, never by :indeterminate -- that module carries why
@@ -295,6 +323,12 @@ ${nested(checkboxSurfaceCss({
     clip-path: inset(0 0 0 0);
     transition-duration: ${CHECK_ON_MS};
     transition-timing-function: ${CHECK_ON_EASING};
+  }
+
+  @supports (transition-timing-function: linear(0, 1)) {
+    .fui-Checkbox__input:checked ~ .fui-Checkbox__indicator.fui-Checkbox__indicator::before {
+      transition-timing-function: ${CHECK_ON_LINEAR_EASING};
+    }
   }
 
   /* The indeterminate states name single frames rather than a transition pair,
