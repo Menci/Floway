@@ -189,7 +189,7 @@ describe('readableTone', () => {
     const [h, s, v] = rgbToHsv(...source);
     const darken = contrast('#000000', surface) > contrast('#FFFFFF', surface);
 
-    let expected: string | undefined;
+    let expected = contrast(hex, surface) >= 4.5 ? hex : undefined;
     for (let saturation = s; saturation >= 0 && expected === undefined; saturation -= 0.1) {
       for (let step = 1; step <= 100; step += 1) {
         const value = darken ? v * (1 - step / 100) : v + (1 - v) * (step / 100);
