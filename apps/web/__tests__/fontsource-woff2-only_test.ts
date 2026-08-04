@@ -57,7 +57,7 @@ describe('Fontsource WOFF2-only transform', () => {
     await expect(process(`@font-face { src: url('./example.woff2') format('woff2'),; }`))
       .rejects.toThrow('contains an empty font source');
     await expect(process(`@font-face { src: url('./example.woff') format('woff' }`))
-      .rejects.toThrow('contains an unclosed font source');
+      .rejects.toThrow('Unclosed bracket');
     await expect(process(`@font-face { src: url('./example.woff') format('woff'); }`))
       .rejects.toThrow('does not declare a non-WOFF font source');
   });
