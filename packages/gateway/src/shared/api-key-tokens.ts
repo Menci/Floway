@@ -11,11 +11,8 @@ export const CUSTOM_API_KEY_MAX_LENGTH = 4096;
 
 const BASE62 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 
-const randomBase62 = (length: number): string => {
-  const bytes = new Uint8Array(length);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, b => BASE62[b % BASE62.length]).join('');
-};
+const randomBase62 = customAlphabet(BASE62, 20);
 
 export const generateApiKeyToken = (): string =>
-  `sk-${randomBase62(20)}T3BlbkFJ${randomBase62(20)}`;
+  `sk-${randomBase62()}T3BlbkFJ${randomBase62()}`;
+import { customAlphabet } from 'nanoid';
