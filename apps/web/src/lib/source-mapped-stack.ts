@@ -176,29 +176,29 @@ export type StackRestoration =
  * paths, so there is nothing to restore and nothing to say about it.
  */
 export const useSourceMappedStack = (stack: string | undefined): StackRestoration => {
-  const [restored, setRestored] = useState<string>();
-  const [failure, setFailure] = useState<unknown>();
+  // The outcome carries the trace it belongs to, so a new trace is pending
+  // again without the effect having to clear anything.
+  const [outcome, setOutcome] = useState<{ of: string; restored?: string }>();
 
   useEffect(() => {
     if (stack === undefined || import.meta.env.DEV) return;
     let active = true;
-    setRestored(undefined);
-    setFailure(undefined);
     restoreStack(stack).then(
-      next => { if (active) setRestored(next); },
-      error => {
+      restored => { if (active) setOutcome({ of: stack, restored }); },
+      (error: unknown) => {
         if (!active) return;
         // The line under the trace says a map is missing; only the console can
         // say which one and why.
         console.error('Restoring the stack from its source maps failed', error);
-        setFailure(error);
+        setOutcome({ of: stack });
       },
     );
     return () => { active = false; };
   }, [stack]);
 
   if (stack === undefined || import.meta.env.DEV) return { status: 'settled', stack };
-  if (restored !== undefined) return { status: 'settled', stack: restored };
-  if (failure !== undefined) return { status: 'failed', stack };
-  return { status: 'loading', stack };
+  if (outcome?.of !== stack) return { status: 'loading', stack };
+  return outcome.restored === undefined
+    ? { status: 'failed', stack }
+    : { status: 'settled', stack: outcome.restored };
 };
