@@ -294,6 +294,7 @@ test('rewrites prompt_cache_hit_tokens/prompt_cache_miss_tokens into prompt_toke
             total_tokens: 120,
             prompt_cache_hit_tokens: 70,
             prompt_cache_miss_tokens: 30,
+            prompt_tokens_details: { upstream_metric: 'preserved' },
           } as unknown as ChatCompletionsStreamEvent['usage'],
         });
       })(),
@@ -306,7 +307,7 @@ test('rewrites prompt_cache_hit_tokens/prompt_cache_miss_tokens into prompt_toke
   if (frame.type !== 'event') throw new Error('expected event frame');
   const usage = usageRecord(frame.event.usage!);
   assertEquals(usage.prompt_tokens, 100);
-  assertEquals(usage.prompt_tokens_details, { cached_tokens: 70 });
+  assertEquals(usage.prompt_tokens_details, { upstream_metric: 'preserved', cached_tokens: 70 });
   assertEquals('prompt_cache_hit_tokens' in usage, false);
   assertEquals('prompt_cache_miss_tokens' in usage, false);
 });
