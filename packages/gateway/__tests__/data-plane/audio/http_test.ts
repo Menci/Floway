@@ -85,7 +85,7 @@ test('/v1/audio/transcriptions preserves multipart fields, headers, JSON body, a
         text: 'hello world',
         usage: { type: 'tokens', input_tokens: 14, input_token_details: { text_tokens: 4, audio_tokens: 10 }, output_tokens: 45, total_tokens: 59 },
       }), {
-        headers: { 'content-type': 'application/json', 'x-provider-trace': 'trace-a' },
+        headers: { 'content-type': 'Application/Vnd.OpenAI+JSON; charset=utf-8', 'x-provider-trace': 'trace-a' },
       });
     },
     async () => {
@@ -339,7 +339,7 @@ test('/v1/audio/transcriptions streams through transcript.text.done without addi
       '',
       'data: {"type":"transcript.text.done","text":"hello","usage":{"type":"tokens","input_tokens":3,"output_tokens":1,"total_tokens":4}}',
       '',
-    ].join('\n'), { headers: { 'content-type': 'text/event-stream', 'x-stream-trace': 'trace-sse' } }),
+    ].join('\n'), { headers: { 'content-type': 'Text/Event-Stream; charset=utf-8', 'x-stream-trace': 'trace-sse' } }),
     async () => {
       const response = await requestApp('/v1/audio/transcriptions', {
         method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['stream', 'true']]),
