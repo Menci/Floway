@@ -16,8 +16,8 @@ import { fluentComponents } from '../../fluent';
 import { ChoiceGroup } from '../ui/choice-group';
 import { Checkbox, Dropdown, Input, Switch } from '../ui/fluent-form-controls';
 import { CHECKBOX_LIST_CLASS, PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
-import { SectionHeader } from '../ui/section-header';
 import { MultiselectCombobox, valuesAsOptions } from '../ui/multiselect-combobox';
+import { SectionHeader } from '../ui/section-header';
 import { modelsField, type UpstreamChatModelConfig, type UpstreamModelConfig } from '@floway-dev/provider';
 
 const {

@@ -78,7 +78,7 @@ export function MultiselectCombobox({
     selectedOptions={[...value]}
     value={open ? query : closedLabel}
   >
-    {clearLabel && <Option text={clearLabel} value="">{clearLabel}</Option>}
+    {clearLabel && needle === '' && <Option text={clearLabel} value="">{clearLabel}</Option>}
     {visible.map(option => <Option key={option.value} text={option.label} value={option.value}>
       {renderOption ? renderOption(option) : option.label}
     </Option>)}

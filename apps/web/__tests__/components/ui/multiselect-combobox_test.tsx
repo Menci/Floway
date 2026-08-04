@@ -26,4 +26,27 @@ describe('multiselect combobox', () => {
     fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'All models' }));
     expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Models' }).placeholder).toBe('All models');
   });
+
+  it('selects a substring search result with Enter without activating clear', async () => {
+    function Host() {
+      const [value, setValue] = useState(['retired-model']);
+      return <MultiselectCombobox
+        ariaLabel="Models"
+        clearLabel="All models"
+        onChange={setValue}
+        options={[{ value: 'current-model', label: 'Current model' }]}
+        placeholder={`${value.length} selected`}
+        value={value}
+      />;
+    }
+
+    renderInApp(<Host />);
+    const input = screen.getByRole('combobox', { name: 'Models' });
+    fireEvent.click(input);
+    fireEvent.change(input, { target: { value: 'urrent' } });
+    expect(screen.queryByRole('menuitemcheckbox', { name: 'All models' })).toBeNull();
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(input.getAttribute('placeholder')).toBe('2 selected');
+  });
 });
