@@ -148,10 +148,12 @@ export const clearGroupedFilter = (filters: PerformanceFilters, groupBy: Perform
   ...(groupBy === 'userId' || groupBy === 'keyId' ? { userId: [], keyId: [] } : {}),
 });
 
-export const normalizePerformanceDimensionsForRuntime = <State extends Pick<PerformanceUrlState, 'groupBy' | 'filters' | 'hidden'>>(
+type PerformanceDimensionState = Pick<PerformanceUrlState, 'groupBy' | 'filters' | 'hidden'>;
+
+export const normalizePerformanceDimensionsForRuntime = <State extends PerformanceDimensionState>(
   state: State,
   cloudflare: boolean,
-): State => {
+): Omit<State, keyof PerformanceDimensionState> & PerformanceDimensionState => {
   if (cloudflare || (state.groupBy !== 'runtimeLocation' && state.filters.runtimeLocation.length === 0)) return state;
   const groupedByRegion = state.groupBy === 'runtimeLocation';
   const groupBy = groupedByRegion ? 'model' : state.groupBy;

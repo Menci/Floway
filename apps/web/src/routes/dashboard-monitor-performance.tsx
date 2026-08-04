@@ -137,24 +137,30 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     ]);
     if (signal.aborted) return;
     if (runtime.error) {
-      setRegionAvailable(null);
+      if (regionAvailable !== null && !result.error) {
+        setOverview(result.data);
+        setLoadedRange(query.range);
+        setLoadedAt(requestedAt);
+        arrived();
+      }
       setError(result.error ?? runtime.error);
       return;
     }
     const nextRegionAvailable = runtime.data.kind === 'cloudflare';
-    setRegionAvailable(nextRegionAvailable);
     const normalized = normalizePerformanceDimensionsForRuntime({
       groupBy: query.groupBy,
       filters: query.filters,
       hidden: [...hiddenSeries],
     }, nextRegionAvailable);
     if (normalized.groupBy !== query.groupBy || normalized.filters !== query.filters) {
+      setRegionAvailable(null);
       setGroupBy(normalized.groupBy);
       setFilters(normalized.filters);
       setHiddenSeries(new Set(normalized.hidden));
       if (result.error) setError(result.error);
       return;
     }
+    setRegionAvailable(nextRegionAvailable);
     if (result.error) setError(result.error);
     else {
       setOverview(result.data);
@@ -162,7 +168,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       setLoadedAt(requestedAt);
       arrived();
     }
-  }, [hiddenSeries, query]);
+  }, [hiddenSeries, query, regionAvailable]);
 
   const { poll, refresh, refreshing } = useRefreshOnChange(query, reload);
 
