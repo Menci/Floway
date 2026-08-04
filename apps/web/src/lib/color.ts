@@ -1,4 +1,4 @@
-import { blend, formatHex, parseHex, toHsv, toRgb, wcagContrast } from './culori';
+import { blend, formatHex, parseHex, toHsv, toLrgb, toRgb, wcagContrast } from './culori';
 
 type RgbTuple = [number, number, number];
 
@@ -25,7 +25,7 @@ export const rgbToHsv = (r: number, g: number, b: number): [number, number, numb
   return [h, s, v];
 };
 
-const contrastRatio = (a: RgbTuple, b: RgbTuple): number => wcagContrast(rgbColor(a), rgbColor(b));
+const linearRgb = (rgb: RgbTuple) => toLrgb(rgbColor(rgb))!;
 
 export const blendHex = (hex: string, alpha: number, backdrop: string): string => {
   const top = hexToRgb(hex);
@@ -46,20 +46,21 @@ const WHITE: RgbTuple = [255, 255, 255];
 export const readableTone = (hex: string, surface: string): string => {
   const rgb = hexToRgb(hex);
   const surfaceRgb = hexToRgb(surface);
-  if (contrastRatio(rgb, surfaceRgb) >= TEXT_CONTRAST_FLOOR) return hex;
+  const surfaceLinear = linearRgb(surfaceRgb);
+  if (wcagContrast(linearRgb(rgb), surfaceLinear) >= TEXT_CONTRAST_FLOOR) return hex;
 
   const [h, s, v] = rgbToHsv(...rgb);
   // Which extreme actually clears the floor, not whether the surface is light:
   // between luminance 0.183 and 0.5 white misses the floor while black clears
   // it, so a lightness test would search the direction that cannot arrive.
-  const darken = contrastRatio(BLACK, surfaceRgb) > contrastRatio(WHITE, surfaceRgb);
+  const darken = wcagContrast(linearRgb(BLACK), surfaceLinear) > wcagContrast(linearRgb(WHITE), surfaceLinear);
   const STEPS = 100;
 
   for (let saturation = s; saturation >= 0; saturation -= 0.1) {
     for (let step = 1; step <= STEPS; step += 1) {
       const value = darken ? v * (1 - step / STEPS) : v + (1 - v) * (step / STEPS);
       const candidate = hsvToRgb(h, saturation, value);
-      if (contrastRatio(candidate, surfaceRgb) >= TEXT_CONTRAST_FLOOR) return rgbToHex(...candidate);
+      if (wcagContrast(linearRgb(candidate), surfaceLinear) >= TEXT_CONTRAST_FLOOR) return rgbToHex(...candidate);
     }
   }
   // Reachable: the saturation ladder stops short of zero unless the saturation is

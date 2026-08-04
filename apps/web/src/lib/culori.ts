@@ -21,6 +21,7 @@ registerMode(modeOklch);
 
 export const toRgb = converter('rgb');
 export const toHsv = converter('hsv');
+export const toLrgb = converter('lrgb');
 export const toOklch = converter('oklch');
 
 export { blend, formatHex, parseHex, wcagContrast };
