@@ -10,8 +10,8 @@ import {
   encodeDumpStreamEvents,
   encodePersistedDumpMetadata,
 } from '../dump/storage-codec.ts';
-import type { DumpListOptions, DumpStore } from '../dump/store-contract.ts';
 import type { DumpBodyDescriptor } from '../dump/storage-codec.ts';
+import type { DumpListOptions, DumpStore } from '../dump/store-contract.ts';
 import type {
   DumpMetadata,
   DumpRecordId,

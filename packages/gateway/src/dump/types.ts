@@ -9,13 +9,14 @@
 //
 // `DumpMetadata` and `DumpStreamEvent` are body-free and shared verbatim.
 
+import type { z } from 'zod';
+
 import type {
   dumpErrorSchema,
   dumpMetadataSchema,
   dumpStreamEventSchema,
   dumpUpstreamRefSchema,
 } from './schemas.ts';
-import type { z } from 'zod';
 
 export type DumpRecordId = string;
 

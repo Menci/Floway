@@ -1,11 +1,11 @@
 import { expect, test } from 'vitest';
 
+import { fakeMeta } from './test-fixtures.ts';
 import { dumpCodec } from '../../src/dump/codec.ts';
 import {
   decodeDumpHeaders,
   encodeDumpHeaders,
 } from '../../src/dump/storage-codec.ts';
-import { fakeMeta } from './test-fixtures.ts';
 
 test('dump storage headers preserve duplicate pairs and their order', () => {
   const headers: Array<[string, string]> = [

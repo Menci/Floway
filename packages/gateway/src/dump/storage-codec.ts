@@ -1,3 +1,5 @@
+import type { z } from 'zod';
+
 import {
   dumpBodyDescriptorSchema,
   dumpHeadersSchema,
@@ -5,7 +7,6 @@ import {
   dumpStreamEventsSchema,
 } from './schemas.ts';
 import type { DumpMetadata, DumpStreamEvent } from './types.ts';
-import type { z } from 'zod';
 
 export type DumpBodyDescriptor = z.infer<typeof dumpBodyDescriptorSchema>;
 type PersistedDumpMetadata = z.infer<typeof persistedDumpMetadataSchema>;
