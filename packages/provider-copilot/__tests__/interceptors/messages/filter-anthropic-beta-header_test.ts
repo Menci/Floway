@@ -23,7 +23,7 @@ const invocation = (payload: MessagesPayload, anthropicBeta?: readonly string[])
   };
 };
 
-test('keeps only allow-listed anthropic-beta values when caller supplied a header', async () => {
+test('keeps only allow-listed anthropic-beta values produced by the provider chain', async () => {
   const ctx = invocation(
     { model: 'claude-test', max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] },
     ['interleaved-thinking-2025-05-14', 'unknown-beta', 'context-management-2025-06-27'],
@@ -34,7 +34,7 @@ test('keeps only allow-listed anthropic-beta values when caller supplied a heade
   assertEquals(ctx.headers.get('anthropic-beta'), 'interleaved-thinking-2025-05-14,context-management-2025-06-27');
 });
 
-test('forwards inbound interleaved-thinking unchanged when paired with non-adaptive budget thinking', async () => {
+test('keeps provider-derived interleaved-thinking when paired with non-adaptive budget thinking', async () => {
   const ctx = invocation(
     {
       model: 'claude-test',
@@ -50,7 +50,7 @@ test('forwards inbound interleaved-thinking unchanged when paired with non-adapt
   assertEquals(ctx.headers.get('anthropic-beta'), 'interleaved-thinking-2025-05-14');
 });
 
-test('respects the caller and does NOT auto-add interleaved-thinking when caller supplied only other betas', async () => {
+test('does not auto-add interleaved-thinking when the provider chain supplied another beta', async () => {
   const ctx = invocation(
     {
       model: 'claude-test',
@@ -63,16 +63,14 @@ test('respects the caller and does NOT auto-add interleaved-thinking when caller
 
   await withAnthropicBetaHeaderFiltered(ctx, stubRequest, okEvents);
 
-  // Even though non-adaptive thinking + budget_tokens would auto-add
-  // interleaved in the no-inbound branch, the caller already expressed
-  // intent by sending its own anthropic-beta header. Match VSCode behavior:
-  // do not silently inflate the caller's beta set.
+  // A prior provider decision is authoritative, so this stage does not
+  // silently inflate its beta set.
   assertEquals(ctx.headers.get('anthropic-beta'), 'context-management-2025-06-27');
 });
 
-test('keeps inbound interleaved-thinking even when adaptive thinking is requested', async () => {
+test('keeps provider-derived interleaved-thinking even when adaptive thinking is requested', async () => {
   // caozhiyuan's buildAnthropicBetaHeader only filters against the allow-list
-  // on the inbound branch; it never drops interleaved on adaptive thinking.
+  // on the prepopulated-header branch; it never drops interleaved on adaptive thinking.
   // We match that behavior rather than carrying a private exclusion rule.
   const ctx = invocation(
     {
@@ -89,7 +87,7 @@ test('keeps inbound interleaved-thinking even when adaptive thinking is requeste
   assertEquals(ctx.headers.get('anthropic-beta'), 'interleaved-thinking-2025-05-14,context-management-2025-06-27');
 });
 
-test('auto-adds interleaved-thinking when caller sent no header and budget_tokens is set without adaptive thinking', async () => {
+test('auto-adds interleaved-thinking when the provider chain set no header and budget_tokens is non-adaptive', async () => {
   const ctx = invocation({
     model: 'claude-test',
     max_tokens: 10,
@@ -102,7 +100,7 @@ test('auto-adds interleaved-thinking when caller sent no header and budget_token
   assertEquals(ctx.headers.get('anthropic-beta'), 'interleaved-thinking-2025-05-14');
 });
 
-test('does not auto-add interleaved-thinking when caller sent no header and thinking is adaptive', async () => {
+test('does not auto-add interleaved-thinking when the provider chain set no header and thinking is adaptive', async () => {
   const ctx = invocation({
     model: 'claude-test',
     max_tokens: 10,
@@ -115,7 +113,7 @@ test('does not auto-add interleaved-thinking when caller sent no header and thin
   assertEquals(ctx.headers.has('anthropic-beta'), false);
 });
 
-test('does not set the header when the inbound caller header has nothing allow-listed', async () => {
+test('drops a provider-derived header whose values are all unsupported', async () => {
   const ctx = invocation(
     { model: 'claude-test', max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] },
     ['unknown-beta-only'],

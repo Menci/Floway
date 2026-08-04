@@ -23,6 +23,8 @@ import type { CanonicalResponsesPayload, ResponsesCompactionResult, ResponsesStr
 // turn against the SUMMARIZATION_PROMPT).
 export type ResponsesAction = 'generate' | 'compact';
 
+export type InboundHeaderMatcher = string | RegExp;
+
 export interface Provider {
   upstreamId: string;
   kind: UpstreamProviderKind;
@@ -160,7 +162,7 @@ export interface ProviderModule {
   // normalized lowercase name. The gateway applies this allowlist at the
   // candidate boundary before any ProviderInstance method can observe the
   // inbound bag.
-  inboundHeaderAllowlist: readonly (string | RegExp)[];
+  inboundHeaderAllowlist: readonly InboundHeaderMatcher[];
   // Exhaustive default map over every catalog flag id for a fresh
   // upstream of this kind; see each provider package's `defaults.ts`.
   defaultFlags: FlagDefaults;

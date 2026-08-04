@@ -484,29 +484,3 @@ test('Custom provider with a manual override sharing an upstream id wins over th
     },
   );
 });
-
-test('Custom provider forwards inbound anthropic-beta header through opts.headers', async () => {
-  const provider = createCustomProvider(buildCustomUpstream()).instance;
-  const seen: Array<string | null> = [];
-
-  await withMockedFetch(
-    request => {
-      const path = new URL(request.url).pathname;
-      if (path === '/v1/models') return jsonResponse({ object: 'list', data: [{ id: 'echo', object: 'model' }] });
-      seen.push(request.headers.get('anthropic-beta'));
-      if (path === '/v1/messages') return sseResponse();
-      if (path === '/v1/messages/count_tokens') return jsonResponse({ input_tokens: 1 });
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const [model] = await provider.getProvidedModels(directFetcher);
-      const opts = noopUpstreamCallOptions();
-      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, { ...opts, headers: new Headers({ 'anthropic-beta': 'oauth-2025-04-20,interleaved-thinking-2025-05-14' }) });
-      await provider.callMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, { ...opts, headers: new Headers({ 'anthropic-beta': 'oauth-2025-04-20' }) });
-      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
-      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
-    },
-  );
-
-  assertEquals(seen, ['oauth-2025-04-20,interleaved-thinking-2025-05-14', 'oauth-2025-04-20', null, null]);
-});

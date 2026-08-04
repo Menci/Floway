@@ -1,20 +1,16 @@
 import type { Context } from 'hono';
 
 import { inboundHeaderAllowlistForKind } from '../providers/registry.ts';
-import type { UpstreamProviderKind } from '@floway-dev/provider';
+import type { InboundHeaderMatcher, UpstreamProviderKind } from '@floway-dev/provider';
 
 export const inboundHeaders = (c: Context): Headers => new Headers(c.req.raw.headers);
 
-const regexpMatches = (regexp: RegExp, value: string): boolean => {
-  regexp.lastIndex = 0;
-  const matches = regexp.test(value);
-  regexp.lastIndex = 0;
-  return matches;
-};
+const regexpMatches = (regexp: RegExp, value: string): boolean =>
+  new RegExp(regexp.source, regexp.flags).test(value);
 
 export const filterInboundHeaders = (
   headers: Headers,
-  allowlist: readonly (string | RegExp)[],
+  allowlist: readonly InboundHeaderMatcher[],
 ): Headers => {
   const exactNames = new Set(allowlist.flatMap(entry => typeof entry === 'string' ? [entry.toLowerCase()] : []));
   const regexps = allowlist.filter((entry): entry is RegExp => entry instanceof RegExp);

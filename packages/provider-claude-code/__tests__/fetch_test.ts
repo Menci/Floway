@@ -171,7 +171,7 @@ describe('callClaudeCodeMessages — pre-fetch gates', () => {
 });
 
 describe('callClaudeCodeMessages — header surface', () => {
-  test('shaped:true forwards inbound client headers through the whitelist and swaps Authorization', async () => {
+  test('shaped:true forwards the gateway-allowlisted fingerprint and sets Authorization', async () => {
     seedAccount({ accessToken: freshAccessTokenEntry });
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     await callClaudeCodeMessages({
@@ -187,10 +187,6 @@ describe('callClaudeCodeMessages — header surface', () => {
           'x-stainless-package-version': '0.94.0',
           'x-claude-code-session-id': 'sess-abc',
           'x-client-request-id': 'req-xyz',
-          // Authorization is dropped by the whitelist; ours replaces it.
-          authorization: 'Bearer client-side-token',
-          // Not on the whitelist; must not reach the wire.
-          'x-leaky-debug': 'should-be-dropped',
         }),
       },
     });
@@ -204,7 +200,6 @@ describe('callClaudeCodeMessages — header surface', () => {
     expect(wireHeaders.get('x-stainless-package-version')).toBe('0.94.0');
     expect(wireHeaders.get('x-claude-code-session-id')).toBe('sess-abc');
     expect(wireHeaders.get('x-client-request-id')).toBe('req-xyz');
-    expect(wireHeaders.get('x-leaky-debug')).toBeNull();
   });
 
   test('shaped:true defaults Content-Type to application/json when the inbound omits it', async () => {

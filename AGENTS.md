@@ -285,8 +285,13 @@ Ollama depend on `provider` + `protocols`; Claude Code and Codex add
 `interceptor`; Copilot adds `interceptor` + `platform`. `test-utils` depends on
 `provider` and is consumed as a test dependency by the rest of the workspace.
 Vendor credentials, catalog projection, and wire behavior stay in the vendor
-packages. The gateway owns the control-plane handlers that call those vendor
-APIs and maps their results onto Floway HTTP responses.
+packages. Each package's static `ProviderModule` surface also declares the
+case-insensitive exact names and lowercase-name regular expressions for client
+headers that provider accepts. The gateway applies that allowlist after it
+selects a candidate and before it calls the provider, so failover candidates
+never share a filtered or mutated header bag. The gateway owns the
+control-plane handlers that call vendor APIs and maps their results onto Floway
+HTTP responses.
 
 `gateway` depends on `agent-setup` + `http` + `interceptor` + `platform` +
 `protocols` + `provider` + every `provider-*` package + `proxy` + `translate`.

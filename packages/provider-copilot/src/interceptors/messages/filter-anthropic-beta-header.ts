@@ -5,21 +5,17 @@ import { parseAnthropicBetaHeader } from '@floway-dev/protocols/messages';
  * Copilot's Messages upstream is strict about the `anthropic-beta` header:
  * unknown beta flags cause hard 400s. Our policy:
  *
- *   - When the client supplies its own `anthropic-beta`: filter against the
- *     Copilot allow-list and forward what remains. The client opted into a
- *     specific set of betas; we do not silently add more.
- *   - When the client supplies no `anthropic-beta` AND requested extended
+ *   - When an earlier provider interceptor supplies `anthropic-beta`: filter
+ *     against the Copilot allow-list and forward what remains.
+ *   - When no provider interceptor supplies `anthropic-beta` AND the payload requested extended
  *     thinking via `thinking.budget_tokens` AND did not request adaptive
  *     thinking: synthesize `interleaved-thinking-2025-05-14` so Copilot
  *     returns thinking blocks alongside the answer.
  *   - Otherwise: emit no `anthropic-beta` header.
  *
- * The split between "client supplied a header" and "we synthesize one" is
- * the load-bearing rule: respect the caller's intent when they expressed
- * one, and only paper over silent omissions with the VSCode default. This
- * also means a client that ships only `context-management-2025-06-27` will
- * not have interleaved auto-added even with non-adaptive budget thinking —
- * matching VSCode Copilot Chat.
+ * The gateway does not admit client headers into Copilot. This interceptor
+ * therefore normalizes only provider-derived state and synthesizes the
+ * VSCode default when the provider chain has not already chosen a beta.
  *
  * Generic in the run-result type because the Copilot provider historically
  * applied this filter to every Messages HTTP exchange (chat AND count_tokens).
@@ -47,18 +43,12 @@ export const withAnthropicBetaHeaderFiltered = async <TResult>(
   _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
-  // Read the caller's untouched intent before deleting the raw header —
-  // `ctx.headers` is the same bag the wire fetch will see, so leaving the
-  // pre-filter value behind would either be the value Copilot 400s on or
-  // would clobber the filtered set we are about to write.
+  // Read the provider-derived value before rebuilding the wire header.
   const inbound = parseAnthropicBetaHeader(ctx.headers.get('anthropic-beta'));
   ctx.headers.delete('anthropic-beta');
 
-  // Branch 1: caller supplied betas — filter to the Copilot allow-list and
-  // forward exactly what survives, including no header at all when nothing
-  // survives. Do NOT auto-add interleaved-thinking here, even when the
-  // payload's thinking shape would otherwise warrant it: the caller already
-  // expressed an opinion about which betas to enable.
+  // Branch 1: an earlier interceptor supplied betas — forward exactly the
+  // supported subset and do not add another provider default.
   if (inbound.length > 0) {
     const filtered = inbound.filter(value => ALLOWED_ANTHROPIC_BETAS.has(value));
     const unique = [...new Set(filtered)];

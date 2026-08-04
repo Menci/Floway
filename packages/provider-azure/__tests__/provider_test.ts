@@ -236,40 +236,6 @@ test('createAzureProvider supports native Azure Anthropic Messages models', asyn
   ]);
 });
 
-test('createAzureProvider forwards inbound anthropic-beta header through opts.headers', async () => {
-  const instance = createAzureProvider(
-    azureRecord({
-      config: {
-        endpoint: 'https://example.services.ai.azure.com/anthropic/v1',
-        apiKey: 'az-key',
-        models: [{ upstreamModelId: 'claude-prod', endpoints: { messages: {} } }],
-      },
-    }),
-  );
-  const [providerModel] = await instance.instance.getProvidedModels(directFetcher);
-  const seen: Array<string | null> = [];
-
-  await withMockedFetch(
-    request => {
-      seen.push(request.headers.get('anthropic-beta'));
-      return Promise.resolve(sseResponse());
-    },
-    async () => {
-      // The data plane plumbs the inbound `anthropic-beta` header straight
-      // through `opts.headers`. Azure has no boundary filter, so whatever
-      // arrives on `opts.headers` is what the wire sees.
-      await instance.instance.callMessages(providerModel, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, { ...noopUpstreamCallOptions(), headers: new Headers({ 'anthropic-beta': 'context-1m-2025-08-07,interleaved-thinking-2025-05-14' }) });
-      await instance.instance.callMessagesCountTokens(providerModel, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, { ...noopUpstreamCallOptions(), headers: new Headers({ 'anthropic-beta': 'context-1m-2025-08-07' }) });
-      // No beta header → no header on the wire (the regression guard for the
-      // pre-86ef9aa drop).
-      await instance.instance.callMessages(providerModel, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, noopUpstreamCallOptions());
-      await instance.instance.callMessages(providerModel, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, noopUpstreamCallOptions());
-    },
-  );
-
-  assertEquals(seen, ['context-1m-2025-08-07,interleaved-thinking-2025-05-14', 'context-1m-2025-08-07', null, null]);
-});
-
 test('createAzureProvider applies per-model flag overrides on top of the upstream layer', async () => {
   const instance = createAzureProvider(
     azureRecord({

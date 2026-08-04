@@ -13,14 +13,14 @@ import type { ResponsesBoundaryCtx } from './interceptors/responses/types.ts';
 import { emptyKnownModels, mergeKnownModels, projectKnownModels } from './known-models.ts';
 import { mergeClaudeVariants } from './merge-claude-variants.ts';
 import { copilotPublicModelId } from './model-name.ts';
-import { CONTEXT_1M_BETA, copilotModelSupportsFastMode, type ModelSelectionHints, resolveCopilotRawModel } from './model-selection.ts';
+import { copilotModelSupportsFastMode, type ModelSelectionHints, resolveCopilotRawModel } from './model-selection.ts';
 import { pricingForCopilotPublicModelId } from './pricing.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
 import type { CopilotRawModel } from './types.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import { parseChatCompletionsStream, type ChatCompletionsPayload, type ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { type ModelEndpointKey, type ModelEndpoints, type ProtocolFrame, kindForEndpoints } from '@floway-dev/protocols/common';
-import { parseAnthropicBetaHeader, parseMessagesStream, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import { parseMessagesStream, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type CanonicalResponsesPayload, type ResponsesResult } from '@floway-dev/protocols/responses';
 import { eventResult, getProviderRepo, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, resolveEffectiveFlags, type ExecuteResult, type FlagOverrides, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 
@@ -119,8 +119,8 @@ const rejectUnsupported = (capability: string) => (): Promise<never> =>
 
 const rawModelFor = (model: ProviderModel, endpoint: ModelEndpointKey, hints: ModelSelectionHints = {}): CopilotRawModel => {
   // Copilot exposes one canonical public Claude model id per family. Raw
-  // variant selection is derived from request fields such as reasoning effort
-  // and anthropic-beta, not from the client's original model alias string.
+  // variant selection is derived from request body fields such as reasoning
+  // effort, not from the client's original model alias string or headers.
   const rawModels = (model.providerData as CopilotProviderData).rawModels.filter(rawModel => rawModelSupportsEndpoint(rawModel, endpoint));
   if (rawModels.length === 0) {
     throw new Error(`Copilot provider exposed ${endpoint} for ${model.id}, but no raw variant supports that endpoint`);
@@ -414,12 +414,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
 
       // Both the native Messages call and count_tokens select the same raw
       // `messages` variant; they differ only in the upstream endpoint path.
-      // Variant selection runs BEFORE the boundary chain's allow-list filter
-      // mutates `anthropic-beta` on the wire, so we read the caller's
-      // untouched intent here.
-      const betas = parseAnthropicBetaHeader(opts.headers.get('anthropic-beta'));
       const rawModel = rawModelFor(model, 'messages', {
-        context1m: betas.includes(CONTEXT_1M_BETA),
         reasoningEffort: messagesReasoningEffort(body),
         fast: body.speed === 'fast',
       });
@@ -437,9 +432,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       return lowerToStream(result, rawModel.id);
     },
     callMessagesCountTokens: async (model, body, signal, opts) => {
-      const betas = parseAnthropicBetaHeader(opts.headers.get('anthropic-beta'));
       const rawModel = rawModelFor(model, 'messages', {
-        context1m: betas.includes(CONTEXT_1M_BETA),
         reasoningEffort: messagesReasoningEffort(body),
       });
       const ctx: MessagesBoundaryCtx = {

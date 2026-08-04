@@ -405,10 +405,7 @@ test('compact returns the clean upstream result for source-edge affinity and sto
   assertEquals(result.result.id, compactionResult.id);
 });
 
-// In-attempt test asserting the narrow header-inheritance contract: when an
-// outer protocol passes invocation headers, the translated Messages call sees
-// them on the wire.
-test('generate inherits headers and injects external image loading across translation to Messages', async () => {
+test('generate strips disallowed headers and injects external image loading across translation to Messages', async () => {
   installRepo();
   initExternalResourceFetcher(url => {
     assertEquals(url.href, 'https://example.com/image.png');
@@ -464,7 +461,7 @@ test('generate inherits headers and injects external image loading across transl
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
-  assertEquals(observedHeaders?.get('x-test'), 'abc');
+  assertEquals(observedHeaders?.get('x-test'), null);
   const message = observedBody?.messages[0];
   assert(message?.role === 'user' && Array.isArray(message.content));
   const image = message.content.find(block => block.type === 'image');
