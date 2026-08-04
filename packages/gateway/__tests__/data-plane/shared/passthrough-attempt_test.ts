@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
 import { test } from 'vitest';
 
-import type { AuthVars } from '../../../src/middleware/auth.ts';
 import { passthroughAttempt } from '../../../src/data-plane/shared/passthrough-attempt.ts';
+import type { AuthVars } from '../../../src/middleware/auth.ts';
 import { mockGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import type { ProviderCall } from '@floway-dev/provider';
 import { assertEquals, assertExists, stubModelCandidate } from '@floway-dev/test-utils';
