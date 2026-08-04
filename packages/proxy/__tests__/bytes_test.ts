@@ -23,7 +23,7 @@ describe('encodeAtypAddress — strict IP literal boundaries', () => {
     '0x7f.0.0.1',
     '127.00.0.1',
     '256.0.0.1',
-  ])('does not reinterpret non-canonical IPv4 %s as an address literal', (host) => {
+  ])('does not reinterpret non-canonical IPv4 %s as an address literal', host => {
     const encoded = encodeAtypAddress(host, SOCKS_ATYP);
     expect(encoded[0]).toBe(0x03);
     expect(encoded[1]).toBe(host.length);
@@ -45,7 +45,7 @@ describe('encodeAtypAddress — strict IP literal boundaries', () => {
     'fe80::1%25eth0',
     '::ffff:192.168.001.1',
     '::ffff:0xc0.168.1.1',
-  ])('keeps scoped or non-canonical IPv6 %s off the literal path', (host) => {
+  ])('keeps scoped or non-canonical IPv6 %s off the literal path', host => {
     const encoded = encodeAtypAddress(host, SOCKS_ATYP);
     expect(encoded[0]).toBe(0x03);
     expect(new TextDecoder().decode(encoded.subarray(2))).toBe(host);
