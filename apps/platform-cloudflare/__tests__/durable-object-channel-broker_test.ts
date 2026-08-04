@@ -223,6 +223,8 @@ test('DurableObjectChannelBroker.subscribe closes the socket when the iterator r
   const controller = new AbortController();
   const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
 
+  await Promise.resolve();
+  await Promise.resolve();
   await iter.return?.();
 
   assertEquals(socket.closed?.code, 1000);
