@@ -32,6 +32,8 @@ const en = {
         unexpectedTitle: 'Something went wrong',
         unexpectedDescription: 'An unexpected error occurred',
         notFound: 'The requested page could not be found',
+        sourceMapLoading: 'Loading source maps…',
+        sourceMapFailed: 'Source maps could not be loaded',
       },
     },
     auth: {
@@ -134,6 +136,8 @@ const en = {
         errors: {
           imageUnsupported: 'This model does not support image input.',
           imageUrl: 'Enter a valid absolute image URL.',
+          customInvalid: 'Enter valid JSON.',
+          customObject: 'Enter a JSON object.',
           customReserved: 'Remove reserved fields: {{fields}}.',
         },
       },

@@ -4,7 +4,6 @@ import {
 } from '@fluentui/react-icons';
 import { useMemo, useState } from 'react';
 import type { PropsWithChildren, ReactNode } from 'react';
-import { useTranslation } from 'react-i18next';
 
 import { contentTypeOf, EMPTY_BODY, renderBody, type RenderedBody } from './body-render';
 import { errorLabel, requestSeverity } from './format';
@@ -16,6 +15,7 @@ import {
   type CollectedStream,
 } from './stream-render';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { useDangerTextClass } from '../ui/danger';
 import { EmptyStateLine } from '../ui/empty-state';
 import { HttpMethodBadge, HttpStatusBadge } from '../ui/http-badge';

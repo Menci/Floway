@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react';
-import { Trans, useTranslation } from 'react-i18next';
 
 import { effectiveUpstreams, modelBadges, type ModelBadge } from './badges';
 import type { CatalogIndex } from './catalog-index';
 import type { ControlPlaneModel } from '../../api/types';
+import { Trans, type TFunction, useTranslation } from '../../i18n/translation';
 import { Chip } from '../ui/chip';
 import { ProviderBadge } from '../upstreams/provider-badge';
 
@@ -22,7 +22,7 @@ const budgetTokens = (value: Extract<ModelBadge, { kind: 'rule' }>['value']): nu
 
 const ruleBadgeContent = (
   badge: Extract<ModelBadge, { kind: 'rule' }>,
-  t: ReturnType<typeof useTranslation>['t'],
+  t: TFunction,
 ): ReactNode => {
   if (badge.varies) {
     switch (badge.field) {
@@ -50,7 +50,7 @@ const ruleBadgeContent = (
 
 const badgeContent = (
   badge: Exclude<ModelBadge, { kind: 'limit' }>,
-  t: ReturnType<typeof useTranslation>['t'],
+  t: TFunction,
 ): ReactNode => {
   const strong = { strong: <strong /> };
   switch (badge.kind) {
@@ -58,7 +58,7 @@ const badgeContent = (
     return <Trans components={{ model: <strong className={modelValueClassName} /> }} i18nKey="dashboard.models.badges.aliasOfModel" values={{ target: badge.target }} />;
   case 'aliasOfCount':
     return badge.reachable === badge.total ? (
-      <Trans components={strong} count={badge.total} i18nKey="dashboard.models.badges.aliasOfCount" values={{ count: badge.total }} />
+      <Trans components={strong} count={badge.total} i18nKey="dashboard.models.badges.aliasOfCount" />
     ) : (
       <Trans components={strong} i18nKey="dashboard.models.badges.aliasOfPartial" values={{ reachable: badge.reachable, total: badge.total }} />
     );

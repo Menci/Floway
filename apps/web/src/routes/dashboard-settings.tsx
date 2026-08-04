@@ -1,10 +1,10 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { useTranslation } from 'react-i18next';
 import { useFetcher } from 'react-router';
 import { z } from 'zod';
 
+import { useTranslation } from '../i18n/translation';
 import type { Route } from './+types/dashboard-settings';
 import { requireDashboardSession } from './guards';
 import { changeOwnPassword } from '../api/auth';

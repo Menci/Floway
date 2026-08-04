@@ -7,8 +7,11 @@ const { Text } = fluentComponents;
 
 export function ErrorShell({ action, children, message, title }: PropsWithChildren<{
   action?: ReactNode;
-  /** Omitted when a trace is shown: the trace's first line is this sentence. */
-  message?: string;
+  /**
+   * Omitted when a trace is shown and it needs nothing said about it: the
+   * trace's first line is this sentence.
+   */
+  message?: ReactNode;
   title: string;
 }>) {
   return (

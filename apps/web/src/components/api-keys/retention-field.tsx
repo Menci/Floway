@@ -1,9 +1,9 @@
 import { useId, useState } from 'react';
 import type { ReactNode } from 'react';
-import { useTranslation } from 'react-i18next';
 
 import { formatDurationInput, parseDuration } from './duration-input';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { useDangerTextClass } from '../ui/danger';
 import { Combobox, LISTBOX_POSITIONING } from '../ui/fluent-form-controls';
 import { SettingsCard, SettingsExpander } from '../ui/settings-card';

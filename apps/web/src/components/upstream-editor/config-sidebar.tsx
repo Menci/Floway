@@ -1,7 +1,6 @@
 import { DeleteRegular } from '@fluentui/react-icons';
 import { useId, useMemo } from 'react';
 import { Controller, useFieldArray, useFormContext, useWatch } from 'react-hook-form';
-import { useTranslation } from 'react-i18next';
 
 import type { RuntimeInfo, UpstreamEditorValues } from './data';
 import { modelPrefixIsValid, publicModelId } from './data';
@@ -9,6 +8,7 @@ import { ApiPathsSection, ProviderConfigSection } from './provider-config';
 import { EditorSection } from './section';
 import type { ProxyRecord, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
 import { PANEL_INSET_CLASS } from '../ui/panel';
 import { ReorderButtons } from '../ui/reorder-buttons';

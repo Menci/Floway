@@ -30,6 +30,8 @@ const zhHansCN = {
         unexpectedTitle: '出现错误',
         unexpectedDescription: '发生了意外错误',
         notFound: '找不到请求的页面',
+        sourceMapLoading: '正在加载源代码映射…',
+        sourceMapFailed: '源代码映射加载失败',
       },
     },
     auth: {
@@ -124,6 +126,8 @@ const zhHansCN = {
         errors: {
           imageUnsupported: '当前模型不支持图片输入。',
           imageUrl: '请输入有效的绝对图片 URL。',
+          customInvalid: '请输入有效的 JSON。',
+          customObject: '请输入 JSON 对象。',
           customReserved: '请移除保留字段：{{fields}}。',
         },
       },

@@ -47,6 +47,16 @@ const RESTRICTED_IMPORT_PATTERNS = [
   },
 ];
 
+const WEB_RESTRICTED_IMPORT_PATTERNS = [
+  ...RESTRICTED_IMPORT_PATTERNS,
+  {
+    // Match the bare specifier only, not the `/url`, `/url-kind`, etc.
+    // subpaths the dashboard is allowed to import.
+    regex: '^@floway-dev/proxy$',
+    message: 'apps/web must reach @floway-dev/proxy only via its /url, /url-kind, /proxy-config, or /constants subpath exports — the root pulls in dialers and userspace TLS.',
+  },
+];
+
 const projectList = [
   './tsconfig.scripts.json',
   './apps/platform-cloudflare/tsconfig.json',
@@ -254,15 +264,13 @@ const config: Linter.Config[] = [
     files: ['apps/web/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': ['error', {
-        patterns: [
-          ...RESTRICTED_IMPORT_PATTERNS,
+        paths: [
           {
-            // Match the bare specifier only, not the `/url`, `/url-kind`,
-            // etc. subpaths the dashboard is allowed to import.
-            regex: '^@floway-dev/proxy$',
-            message: 'apps/web must reach @floway-dev/proxy only via its /url, /url-kind, /proxy-config, or /constants subpath exports — the root pulls in dialers and userspace TLS.',
+            name: 'react-i18next',
+            message: 'Reach react-i18next through src/i18n/translation.tsx so locale keys and interpolation values remain type-checked.',
           },
         ],
+        patterns: WEB_RESTRICTED_IMPORT_PATTERNS,
       }],
       // Block runtime `import { ... } from '@floway-dev/gateway[/...]'`
       // — apps/web may only type-import from the gateway package (`import
@@ -313,6 +321,32 @@ const config: Linter.Config[] = [
         // `truncate` contributes `text-overflow: ellipsis` and nothing else.
         selector: 'JSXOpeningElement[name.name="Text"]:has(JSXAttribute[name.name="truncate"]):not(:has(JSXAttribute[name.name="wrap"]))',
         message: 'Fluent\'s `truncate` only adds the ellipsis. The single line and the clip come from `wrap={false}`, and the clip needs a block display, so a Text that trims states all three.',
+      }],
+    },
+  },
+  {
+    files: ['apps/web/src/i18n/index.ts'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [{
+          name: 'react-i18next',
+          allowImportNames: ['initReactI18next'],
+          message: 'i18n initialization owns only the React plugin; hooks and components belong to translation.tsx.',
+        }],
+        patterns: WEB_RESTRICTED_IMPORT_PATTERNS,
+      }],
+    },
+  },
+  {
+    files: ['apps/web/src/i18n/translation.tsx'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [{
+          name: 'react-i18next',
+          allowImportNames: ['Trans', 'useTranslation'],
+          message: 'The typed translation boundary owns only Trans and useTranslation.',
+        }],
+        patterns: WEB_RESTRICTED_IMPORT_PATTERNS,
       }],
     },
   },

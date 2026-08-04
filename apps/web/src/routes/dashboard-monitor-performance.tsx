@@ -1,8 +1,8 @@
 import { InfoRegular } from '@fluentui/react-icons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router';
 
+import { useTranslation } from '../i18n/translation';
 import type { Route } from './+types/dashboard-monitor-performance';
 import { requireDashboardUser } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
