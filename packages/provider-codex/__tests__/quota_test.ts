@@ -136,6 +136,18 @@ describe('getCodexQuota', () => {
     expect(await getCodexQuota(upstreamId, accountId)).toEqual({ premium: snap });
   });
 
+  test('reads quota from the null account slot', async () => {
+    const snap: CodexQuotaSnapshot = { observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'premium' };
+    current = makeRecord({
+      accounts: [{
+        ...baseAccount,
+        chatgptAccountId: null,
+        quotaSnapshot: { premium: { fetchedAt: Date.now(), data: snap } },
+      }],
+    });
+    expect(await getCodexQuota(upstreamId, null)).toEqual({ premium: snap });
+  });
+
   test('returns null when every bucket is past its TTL window', async () => {
     const snap: CodexQuotaSnapshot = { observed_at: '2026-06-01T00:00:00.000Z' };
     const fetchedAt = Date.now() - 2 * 24 * 60 * 60 * 1000;
@@ -173,6 +185,15 @@ describe('putCodexQuota', () => {
     expect(written?.premium?.data).toEqual(snap);
     expect(typeof written?.premium?.fetchedAt).toBe('number');
     expect({ ...(current!.state as CodexUpstreamState).accounts[0], quotaSnapshot: null }).toEqual({ ...baseAccount });
+  });
+
+  test('persists quota into the null account slot', async () => {
+    current = makeRecord({ accounts: [{ ...baseAccount, chatgptAccountId: null }] });
+    const snap: CodexQuotaSnapshot = { observed_at: 'now', active_limit: 'premium' };
+    await putCodexQuota(upstreamId, null, snap);
+    const written = (current!.state as CodexUpstreamState).accounts[0];
+    expect(written.chatgptAccountId).toBeNull();
+    expect(written.quotaSnapshot?.premium.data).toEqual(snap);
   });
 
   test('preserves other active-limit buckets and replaces the matching bucket', async () => {

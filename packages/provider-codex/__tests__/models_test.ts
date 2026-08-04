@@ -34,6 +34,14 @@ describe('fetchCodexCatalog', () => {
     expect(headers.get('openai-beta')).toBeNull();
   });
 
+  test('omits the account header when the account ID is unknown', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({ models: [] }));
+    await fetchCodexCatalog({ accessToken: 'at', accountId: null, fetcher: directFetcher });
+    const headers = new Headers((spy.mock.calls[0][1] as RequestInit).headers);
+    expect(headers.get('authorization')).toBe('Bearer at');
+    expect(headers.get('chatgpt-account-id')).toBeNull();
+  });
+
   test('throws when upstream returns non-2xx (caller handles 401 retry)', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"error":"unauthorized"}', { status: 401 }));
     await expect(fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher })).rejects.toThrow(/401/);

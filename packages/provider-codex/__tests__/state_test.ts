@@ -28,11 +28,20 @@ describe('assertCodexUpstreamState', () => {
     const { state_updated_at: _drop, ...withoutTimestamp } = goodAccount;
     expect(() => assertCodexUpstreamState({ accounts: [withoutTimestamp] })).toThrow(/state_updated_at/);
   });
-  test('rejects empty refresh_token', () => {
+  test('accepts null refresh_token and rejects an empty string', () => {
+    expect(() => assertCodexUpstreamState({ accounts: [{ ...goodAccount, refresh_token: null }] })).not.toThrow();
     expect(() => assertCodexUpstreamState({ accounts: [{ ...goodAccount, refresh_token: '' }] })).toThrow(/refresh_token/);
   });
-  test('rejects empty chatgptAccountId', () => {
-    expect(() => assertCodexUpstreamState({ accounts: [{ ...goodAccount, chatgptAccountId: '' }] })).toThrow(/chatgptAccountId/);
+  test('accepts a null chatgptAccountId and rejects missing or empty values', () => {
+    expect(() => assertCodexUpstreamState({
+      accounts: [{ ...goodAccount, chatgptAccountId: null }],
+    })).not.toThrow();
+    expect(() => assertCodexUpstreamState({
+      accounts: [{ ...goodAccount, chatgptAccountId: undefined }],
+    })).toThrow(/chatgptAccountId/);
+    expect(() => assertCodexUpstreamState({
+      accounts: [{ ...goodAccount, chatgptAccountId: '' }],
+    })).toThrow(/chatgptAccountId/);
   });
   test('rejects unknown state value', () => {
     expect(() => assertCodexUpstreamState({ accounts: [{ ...goodAccount, state: 'broken' }] })).toThrow(/state/);
@@ -73,9 +82,12 @@ describe('assertCodexUpstreamState', () => {
     expect(() => assertCodexUpstreamState({ accounts: [goodAccount, { ...goodAccount, chatgptAccountId: 'acc_y' }] })).toThrow(/exactly one/);
   });
 
-  test('accepts accessToken absent / null / populated', () => {
+  test('accepts accessToken absent, null, unknown-expiry, or populated', () => {
     expect(() => assertCodexUpstreamState({ accounts: [{ ...goodAccount }] })).not.toThrow();
     expect(() => assertCodexUpstreamState({ accounts: [{ ...goodAccount, accessToken: null }] })).not.toThrow();
+    expect(() => assertCodexUpstreamState({
+      accounts: [{ ...goodAccount, accessToken: { token: 'at', expiresAt: null, refreshedAt: '2026-06-05T00:00:00Z' } }],
+    })).not.toThrow();
     expect(() => assertCodexUpstreamState({
       accounts: [{ ...goodAccount, accessToken: { token: 'at', expiresAt: 1_700_000_000_000, refreshedAt: '2026-06-05T00:00:00Z' } }],
     })).not.toThrow();

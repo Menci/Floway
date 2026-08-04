@@ -14,6 +14,7 @@ const makeEffects = (): CodexCallEffects => ({
 });
 
 const activeAccount: CodexAccountCredential = { chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'active', state_updated_at: '2026-01-01T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555', accessToken: null, quotaSnapshot: null };
+const accessOnlyAccount: CodexAccountCredential = { ...activeAccount, refresh_token: null };
 const model = stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { responses: {} } });
 
 const upstreamId = 'up_a';
@@ -157,6 +158,39 @@ describe('callCodexResponses — token freshness', () => {
     expect(new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers).get('authorization')).toBe('Bearer at_kv');
   });
 
+  test('uses an unknown-expiry access-only token until upstream rejection', async () => {
+    seedAccountState({
+      refresh_token: null,
+      accessToken: { token: 'at_only', expiresAt: null, refreshedAt: 'now' },
+    });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    const result = await callCodexResponses({
+      upstreamId, account: accessOnlyAccount,
+      model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
+    });
+    expect(result.ok).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers).get('authorization')).toBe('Bearer at_only');
+  });
+
+  test('rejects a known-expired access-only token before calling upstream', async () => {
+    seedAccountState({
+      refresh_token: null,
+      accessToken: { token: 'at_only', expiresAt: Date.now() - 1, refreshedAt: 'now' },
+    });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const result = await callCodexResponses({
+      upstreamId, account: accessOnlyAccount,
+      model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.status).toBe(503);
+      expect(await result.response.text()).toMatch(/expired.*re-import/);
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   test('persistTerminalState refresh_failed when /oauth/token returns app_session_terminated', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(errorJson(400, { error: { code: 'app_session_terminated', message: 'gone' } }));
     const effects = makeEffects();
@@ -270,6 +304,29 @@ describe('callCodexResponses — upstream classification', () => {
       turn_id: turnMetadata.turn_id,
       'x-codex-turn-metadata': turnMetadataJson,
     });
+  });
+
+  test('omits the account header when the account ID is unknown', async () => {
+    const account = { ...accessOnlyAccount, chatgptAccountId: null };
+    seedAccountState({
+      chatgptAccountId: null,
+      refresh_token: null,
+      accessToken: { token: 'at_only', expiresAt: null, refreshedAt: 'now' },
+    });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    const result = await callCodexResponses({
+      upstreamId,
+      account,
+      model,
+      body: { input: [], stream: true },
+      headers: new Headers(),
+      effects: makeEffects(),
+      call: noopUpstreamCallOptions(),
+    });
+    expect(result.ok).toBe(true);
+    const headers = new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers);
+    expect(headers.get('authorization')).toBe('Bearer at_only');
+    expect(headers.get('chatgpt-account-id')).toBeNull();
   });
 
   test('synthesized Codex identity keeps supplied session and fallback window stable while rotating turn ids', async () => {
@@ -642,6 +699,29 @@ describe('callCodexResponses — upstream classification', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(503);
     expect(effects.persistTerminalState).toHaveBeenCalledWith('session_terminated', expect.stringMatching(/session ended/));
+  });
+
+  test('access-only 401 preserves the upstream response and does not refresh', async () => {
+    seedAccountState({
+      refresh_token: null,
+      accessToken: { token: 'at_only', expiresAt: null, refreshedAt: 'now' },
+    });
+    const upstreamBody = { error: { code: 'token_invalidated', message: 're-import required' } };
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(401, upstreamBody, { 'x-upstream-marker': 'kept' }));
+    const persistTerminalState = vi.fn(async () => { throw new Error('state write failed'); });
+    const result = await callCodexResponses({
+      upstreamId, account: accessOnlyAccount,
+      model, body: { input: [], stream: true }, headers: new Headers(),
+      effects: { ...makeEffects(), persistTerminalState }, call: noopUpstreamCallOptions(),
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.status).toBe(401);
+      expect(result.response.headers.get('x-upstream-marker')).toBe('kept');
+      expect(await result.response.json()).toEqual(upstreamBody);
+    }
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(persistTerminalState).toHaveBeenCalledWith('session_terminated', 're-import required');
   });
 
   test('401 other → refresh + retry once, then bubble persistent 401', async () => {
