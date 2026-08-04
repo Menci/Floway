@@ -82,7 +82,7 @@ responses retain their upstream wire shape.
 | Provider | Connection | Model catalog |
 | --- | --- | --- |
 | GitHub Copilot | GitHub device OAuth | Fetched live from Copilot |
-| Codex | ChatGPT subscription through the Codex CLI OAuth client | Fetched live from the Codex backend |
+| Codex | ChatGPT subscription: the Codex CLI OAuth client, a pasted credential JSON, or typed token fields | Fetched live from the Codex backend |
 | Claude Code | Claude.ai Pro, Max, Team, or Enterprise subscription through the Claude Code CLI OAuth client | Fetched live from Anthropic |
 | Custom | Configurable multi-protocol HTTP endpoint and credential | Live `/models` (OpenAI, Anthropic, or superset shapes), manual models, or both |
 | Azure | Azure AI resource or Foundry project endpoint and API key | Configured models |
