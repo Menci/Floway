@@ -5,7 +5,7 @@ type RgbTuple = [number, number, number];
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 
 const rgbTuple = ({ r, g, b }: { r: number; g: number; b: number }): RgbTuple =>
-  [r, g, b].map(channel => Math.round(channel * 255)) as RgbTuple;
+  [r, g, b].map(channel => Math.round((channel + Number.EPSILON) * 255)) as RgbTuple;
 
 const rgbColor = ([r, g, b]: RgbTuple) => ({ mode: 'rgb' as const, r: r / 255, g: g / 255, b: b / 255 });
 
@@ -30,7 +30,7 @@ const linearRgb = (rgb: RgbTuple) => toLrgb(rgbColor(rgb))!;
 export const blendHex = (hex: string, alpha: number, backdrop: string): string => {
   const top = hexToRgb(hex);
   const bottom = hexToRgb(backdrop);
-  return formatHex(blend([rgbColor(bottom), { ...rgbColor(top), alpha }])).toUpperCase();
+  return rgbToHex(...rgbTuple(blend([rgbColor(bottom), { ...rgbColor(top), alpha }])));
 };
 
 const TEXT_CONTRAST_FLOOR = 4.5;

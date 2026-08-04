@@ -231,6 +231,7 @@ describe('blendHex', () => {
   it('preserves the byte-rounded alpha compositing boundary', () => {
     expect(blendHex('#010203', 0.5, '#040506')).toBe('#030405');
     expect(blendHex('#ABCDEF', 0.333, '#123456')).toBe('#456789');
+    expect(blendHex('#4CC2FF', 0.21, '#2C2C2C')).toBe('#334C58');
   });
 
   it('rejects an unparseable value on either side', () => {
