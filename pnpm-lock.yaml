@@ -449,6 +449,9 @@ importers:
       '@noble/hashes':
         specifier: ^2.2.0
         version: 2.2.0
+      uuid:
+        specifier: ^14.0.1
+        version: 14.0.1
     devDependencies:
       '@floway-dev/test-utils':
         specifier: workspace:*
@@ -465,6 +468,9 @@ importers:
       '@floway-dev/provider':
         specifier: workspace:*
         version: link:../provider
+      uuid:
+        specifier: ^14.0.1
+        version: 14.0.1
     devDependencies:
       '@floway-dev/test-utils':
         specifier: workspace:*
@@ -484,6 +490,9 @@ importers:
       '@floway-dev/provider':
         specifier: workspace:*
         version: link:../provider
+      uuid:
+        specifier: ^14.0.1
+        version: 14.0.1
     devDependencies:
       '@floway-dev/test-utils':
         specifier: workspace:*
@@ -4832,6 +4841,10 @@ packages:
     resolution: {integrity: sha512-Pp6GSwGP/NrPIrxVFAIkOQeyw8lFenOHijQWkUTrDvrF4ALqylP2C/KCkeS9dpUM3KvYRQhna5vt7IL95+ZQ9w==}
     peerDependencies:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+
+  uuid@14.0.1:
+    resolution: {integrity: sha512-6ZxzVpzDXDa3bJWaHilVayA+BH/1zmxCJoVgvmqJnid/gPoKHxUrS/aC/T6LGQtNHT+XHG9fXPJB4d+IrU30Ew==}
+    hasBin: true
 
   valibot@1.4.2:
     resolution: {integrity: sha512-gjdCvJ6d3RyHAneqxMYMW9QMCwYMb3jpOO0IyHZV1bnRHFBHrX3VkIILt5XYR0WhwHiH7Mty8ovuPZ/O3gamrg==}
@@ -10432,6 +10445,8 @@ snapshots:
   use-sync-external-store@1.6.0(react@19.2.8):
     dependencies:
       react: 19.2.8
+
+  uuid@14.0.1: {}
 
   valibot@1.4.2(typescript@5.9.3):
     optionalDependencies:
