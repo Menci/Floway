@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { aggregateUsageForDisplay } from '../../../src/control-plane/token-usage/aggregate.ts';
+import { aggregateUsageForDashboard, aggregateUsageForDisplay } from '../../../src/control-plane/token-usage/aggregate.ts';
 import type { TokenUsage, UsageRecord } from '../../../src/repo/types.ts';
 import { tokenCountsFromUsage, tokenUsageMetrics } from '../../../src/repo/usage-metrics.ts';
 import type { PriceVector } from '@floway-dev/protocols/common';
@@ -55,6 +55,20 @@ test('aggregateUsageForDisplay groups variants that share public model id', () =
   assertEquals(displayTokens(out[0]).input, 350);
   assertEquals('upstream' in out[0], false);
   assertEquals('modelKey' in out[0], false);
+});
+
+test('aggregateUsageForDashboard preserves upstream as a dashboard dimension', () => {
+  const out = aggregateUsageForDashboard([
+    baseRecord({ upstream: 'up_copilot', requests: 2 }),
+    baseRecord({ upstream: 'up_custom', requests: 3 }),
+    baseRecord({ upstream: null, requests: 4 }),
+  ]);
+
+  assertEquals(out.map(record => [record.upstream, record.requests]), [
+    [null, 4],
+    ['up_copilot', 2],
+    ['up_custom', 3],
+  ]);
 });
 
 test('aggregateUsageForDisplay applies cost from each record rate snapshot', () => {

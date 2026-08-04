@@ -24,6 +24,14 @@ export interface DisplayUsageByUserRecord {
   cost: DecimalString | null;
 }
 
+export interface DashboardUsageRecord extends DisplayUsageRecord {
+  upstream: string | null;
+}
+
+export interface DashboardUsageByUserRecord extends DisplayUsageByUserRecord {
+  upstream: string | null;
+}
+
 const recordCostUsd = (record: UsageRecord): DecimalString | null => {
   let total: DecimalString = '0';
   let priced = false;
@@ -49,20 +57,56 @@ const accumulate = (
   }
 };
 
-export function aggregateUsageForDisplay(records: readonly UsageRecord[]): DisplayUsageRecord[] {
-  const byKey = new Map<string, DisplayUsageRecord>();
+interface UsageDisplayFields {
+  model: string;
+  hour: string;
+  requests: number;
+  metrics: DisplayUsageMetric[];
+  cost: DecimalString | null;
+}
 
+const aggregateUsage = <Coordinate extends object>(
+  records: readonly UsageRecord[],
+  coordinateFor: (record: UsageRecord) => { key: string; fields: Coordinate },
+  compare: (left: UsageDisplayFields & Coordinate, right: UsageDisplayFields & Coordinate) => number,
+): Array<UsageDisplayFields & Coordinate> => {
+  const buckets = new Map<string, UsageDisplayFields & Coordinate>();
   for (const record of records) {
-    const key = `${record.keyId}\0${record.model}\0${record.hour}`;
-    let existing = byKey.get(key);
+    const coordinate = coordinateFor(record);
+    let existing = buckets.get(coordinate.key);
     if (!existing) {
-      existing = { keyId: record.keyId, model: record.model, hour: record.hour, requests: 0, metrics: [], cost: null };
-      byKey.set(key, existing);
+      existing = {
+        ...coordinate.fields,
+        model: record.model,
+        hour: record.hour,
+        requests: 0,
+        metrics: [],
+        cost: null,
+      };
+      buckets.set(coordinate.key, existing);
     }
     accumulate(existing, record);
   }
+  return [...buckets.values()].sort(compare);
+};
 
-  return [...byKey.values()].sort((a, b) => a.hour.localeCompare(b.hour) || a.keyId.localeCompare(b.keyId) || a.model.localeCompare(b.model));
+export function aggregateUsageForDisplay(records: readonly UsageRecord[]): DisplayUsageRecord[] {
+  return aggregateUsage(
+    records,
+    record => ({ key: `${record.keyId}\0${record.model}\0${record.hour}`, fields: { keyId: record.keyId } }),
+    (left, right) => left.hour.localeCompare(right.hour) || left.keyId.localeCompare(right.keyId) || left.model.localeCompare(right.model),
+  );
+}
+
+export function aggregateUsageForDashboard(records: readonly UsageRecord[]): DashboardUsageRecord[] {
+  return aggregateUsage(
+    records,
+    record => ({
+      key: `${record.keyId}\0${record.model}\0${JSON.stringify(record.upstream)}\0${record.hour}`,
+      fields: { keyId: record.keyId, upstream: record.upstream },
+    }),
+    (left, right) => left.hour.localeCompare(right.hour) || left.keyId.localeCompare(right.keyId) || left.model.localeCompare(right.model) || (left.upstream ?? '').localeCompare(right.upstream ?? ''),
+  );
 }
 
 // Aggregates per-key UsageRecords into per-(user, model, hour) rows. Records
@@ -74,18 +118,29 @@ export function aggregateUsageByUserForDisplay(
   records: readonly UsageRecord[],
   keyToUser: ReadonlyMap<string, number>,
 ): DisplayUsageByUserRecord[] {
-  const byUser = new Map<string, DisplayUsageByUserRecord>();
+  return aggregateUsage(
+    records,
+    record => {
+      const userId = keyToUser.get(record.keyId) ?? 0;
+      return { key: `${userId}\0${record.model}\0${record.hour}`, fields: { userId } };
+    },
+    (left, right) => left.hour.localeCompare(right.hour) || left.userId - right.userId || left.model.localeCompare(right.model),
+  );
+}
 
-  for (const record of records) {
-    const userId = keyToUser.get(record.keyId) ?? 0;
-    const key = `${userId}\0${record.model}\0${record.hour}`;
-    let existing = byUser.get(key);
-    if (!existing) {
-      existing = { userId, model: record.model, hour: record.hour, requests: 0, metrics: [], cost: null };
-      byUser.set(key, existing);
-    }
-    accumulate(existing, record);
-  }
-
-  return [...byUser.values()].sort((a, b) => a.hour.localeCompare(b.hour) || a.userId - b.userId || a.model.localeCompare(b.model));
+export function aggregateUsageByUserForDashboard(
+  records: readonly UsageRecord[],
+  keyToUser: ReadonlyMap<string, number>,
+): DashboardUsageByUserRecord[] {
+  return aggregateUsage(
+    records,
+    record => {
+      const userId = keyToUser.get(record.keyId) ?? 0;
+      return {
+        key: `${userId}\0${record.model}\0${JSON.stringify(record.upstream)}\0${record.hour}`,
+        fields: { userId, upstream: record.upstream },
+      };
+    },
+    (left, right) => left.hour.localeCompare(right.hour) || left.userId - right.userId || left.model.localeCompare(right.model) || (left.upstream ?? '').localeCompare(right.upstream ?? ''),
+  );
 }

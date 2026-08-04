@@ -1,5 +1,5 @@
 import type { DisplayWebSearchUsageByKeyRecord, DisplayWebSearchUsageByUserRecord } from './search-usage/aggregate.ts';
-import type { DisplayUsageByUserRecord, DisplayUsageRecord } from './token-usage/aggregate.ts';
+import type { DashboardUsageByUserRecord, DashboardUsageRecord } from './token-usage/aggregate.ts';
 
 export interface UsageKeyMetadata {
   id: string;
@@ -14,7 +14,7 @@ export interface UsageUserMetadata {
 
 export interface TokenUsageByKeyResponse {
   view: 'self-by-key';
-  records: Array<DisplayUsageRecord & {
+  records: Array<DashboardUsageRecord & {
     keyName: string;
     keyCreatedAt: string;
   }>;
@@ -23,7 +23,7 @@ export interface TokenUsageByKeyResponse {
 
 export interface TokenUsageByUserResponse {
   view: 'all-by-user';
-  records: DisplayUsageByUserRecord[];
+  records: DashboardUsageByUserRecord[];
   users: UsageUserMetadata[];
 }
 

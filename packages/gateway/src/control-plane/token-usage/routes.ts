@@ -4,7 +4,7 @@
 // returns the actor's own keys, while `all-by-user` aggregates across users and
 // is reserved for administrators.
 
-import { aggregateUsageByUserForDisplay, aggregateUsageForDisplay } from './aggregate.ts';
+import { aggregateUsageByUserForDashboard, aggregateUsageByUserForDisplay, aggregateUsageForDashboard, aggregateUsageForDisplay } from './aggregate.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { tokenUsageQuery } from '../schemas.ts';
@@ -32,9 +32,11 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
       repo.users.listIncludingDeleted(),
       repo.apiKeys.listIncludingDeleted(),
     ]);
-    const records = aggregateUsageByUserForDisplay(rawRecords, buildKeyToUserMap(keys));
-
-    if (query.include_user_metadata !== '1') return c.json(records);
+    const keyToUser = buildKeyToUserMap(keys);
+    if (query.include_user_metadata !== '1') {
+      return c.json(aggregateUsageByUserForDisplay(rawRecords, keyToUser));
+    }
+    const records = aggregateUsageByUserForDashboard(rawRecords, keyToUser);
     const userMetadata = users
       .map(u => ({ id: u.id, username: u.username }))
       .sort((a, b) => a.id - b.id);
@@ -51,7 +53,16 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
 
   const rawRecords = await repo.usage.query({ keyId: explicitKeyId, start, end });
   const filtered = explicitKeyId ? rawRecords : rawRecords.filter(r => ownedSet.has(r.keyId));
-  const records = aggregateUsageForDisplay(filtered);
+  if (query.include_key_metadata !== '1') {
+    const records = aggregateUsageForDisplay(filtered);
+    const keyMap = new Map(keys.map(k => [k.id, k]));
+    return c.json(records.map(r => {
+      const k = keyMap.get(r.keyId);
+      if (!k) throw new Error(`telemetry row references unknown key ${r.keyId} for user ${resolved.scopeUserId}`);
+      return { ...r, keyName: k.name, keyCreatedAt: k.createdAt };
+    }));
+  }
+  const records = aggregateUsageForDashboard(filtered);
 
   const keyMap = new Map(keys.map(k => [k.id, k]));
   const recordsWithKeyMetadata = records.map(r => {
@@ -59,8 +70,6 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
     if (!k) throw new Error(`telemetry row references unknown key ${r.keyId} for user ${resolved.scopeUserId}`);
     return { ...r, keyName: k.name, keyCreatedAt: k.createdAt };
   });
-
-  if (query.include_key_metadata !== '1') return c.json(recordsWithKeyMetadata);
 
   const keyMetadata = keys
     .map(k => ({ id: k.id, name: k.name, createdAt: k.createdAt }))
