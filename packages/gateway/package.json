@@ -60,7 +60,7 @@
     "es-toolkit": "^1.49.0",
     "hono": "^4",
     "jsonrepair": "^3.14.0",
-    "nanoid": "^6.0.1",
+    "nanoid": "^5.1.16",
     "zod": "^4.4.3"
   },
   "devDependencies": {
