@@ -128,9 +128,16 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
 
   const stack = restoration.stack;
   // While the trace is the minified one, the sentence the trace replaced is
-  // given over to saying so.
+  // given over to saying so. The row is declared on a span of our own: Fluent's
+  // Text carries a `display` atom of the same weight, and Griffel injects at
+  // runtime, so a rule on the Text itself always loses the tie.
   const note = restoration.status === 'loading'
-    ? <><Spinner size="tiny" />{t('common.errors.sourceMapLoading')}</>
+    ? (
+      <span className="inline-flex items-center gap-2 align-middle">
+        <Spinner size="tiny" />
+        {t('common.errors.sourceMapLoading')}
+      </span>
+    )
     : restoration.status === 'failed'
       ? t('common.errors.sourceMapFailed')
       : undefined;
