@@ -1,5 +1,4 @@
 import type { TFunction } from '../../i18n/translation';
-import type { useTranslation } from 'react-i18next';
 
 import type { BackupFileData } from './file';
 
