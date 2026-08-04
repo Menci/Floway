@@ -740,14 +740,14 @@ export const webSearchUsageQuery = z.object({
 // A multi-select filter travels as a repeated query parameter. Hono hands one
 // occurrence through as a bare string and several as an array, so each filter
 // reads through this single coercion into the list shape the handler wants.
-// Empty occurrences preserve the existing API meaning of an unset filter.
+// Empty occurrences represent an unset filter and are discarded before item
+// validation.
 const filterValues = (item: z.ZodString) =>
   z.union([z.string(), z.array(z.string())])
     .transform(value => (typeof value === 'string' ? [value] : value).filter(Boolean))
     .pipe(z.array(item))
     .optional();
 
-const filterValue = z.string().min(1, 'filter values must not be empty');
 // User ids are auto-increment starting at 1, so zero and leading-zero forms
 // can never resolve and are rejected up front rather than silently returning
 // an empty result.
@@ -761,10 +761,10 @@ export const performanceQuery = z.object({
   timezone_offset_minutes: z.string().optional(),
   // Cross-cutting filters applied to raw records before aggregation. Values
   // within one filter are OR'd, and the filters themselves AND together.
-  filter_model: filterValues(filterValue),
-  filter_upstream: filterValues(filterValue),
-  filter_operation: filterValues(filterValue),
-  filter_runtime_location: filterValues(filterValue),
+  filter_model: filterValues(z.string()),
+  filter_upstream: filterValues(z.string()),
+  filter_operation: filterValues(z.string()),
+  filter_runtime_location: filterValues(z.string()),
   filter_user_id: filterValues(filterUserId),
-  filter_key_id: filterValues(filterValue),
+  filter_key_id: filterValues(z.string()),
 });
