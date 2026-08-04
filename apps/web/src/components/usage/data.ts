@@ -3,6 +3,7 @@ import type {
   SearchUsageResponse,
   UsageRange,
   UsageResponse,
+  UsageUpstream,
   UsageView,
 } from './types';
 import { api, callApi, type ApiResult } from '../../api/client';
@@ -87,13 +88,15 @@ export const loadUsagePageData = async (
   signal?: AbortSignal,
 ) => {
   const { start, end } = dashboardRangeQuery(range, loadedAt);
-  const [usageData, modelsResult] = await Promise.all([
+  const [usageData, modelsResult, upstreamsResult] = await Promise.all([
     fetchUsageForView(view, start, end, signal),
     callApi(() => api.api.models.$get({ query: {} }, { init: { signal } })),
+    callApi(() => api.api['upstream-options'].$get({}, { init: { signal } })),
   ]);
   return {
     ...usageData,
     models: modelsResult.data?.data ?? null,
-    error: usageData.error ?? modelsResult.error ?? null,
+    upstreams: upstreamsResult.data?.map(({ id, name }) => ({ id, name } satisfies UsageUpstream)) ?? null,
+    error: usageData.error ?? modelsResult.error ?? upstreamsResult.error ?? null,
   };
 };

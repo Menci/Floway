@@ -6,6 +6,8 @@ import type { BillingMetric, DecimalString } from '@floway-dev/protocols/common'
 
 export type UsageView = 'all-by-user' | 'self-by-key';
 export type UsageRange = DashboardRange;
+export type UsageGroupBy = 'identity' | 'model' | 'upstream';
+export type UsageFilters = Record<UsageGroupBy, string[]>;
 export type UsageMetric =
   | 'requests' | 'cost' | 'total' | 'input' | 'output' | 'prefill'
   | 'cached' | 'cachedRate' | 'cacheCreation' | 'cacheHitRate';
@@ -15,6 +17,7 @@ export interface DisplayUsageRecord {
   keyName?: string;
   keyCreatedAt?: string;
   model: string;
+  upstream: string | null;
   hour: string;
   requests: number;
   metrics: Partial<Record<BillingMetric, DecimalString>>;
@@ -24,6 +27,11 @@ export interface DisplayUsageRecord {
 export interface UsageResponse {
   records: DisplayUsageRecord[];
   keys: Array<{ id: string; name: string; createdAt?: string }>;
+}
+
+export interface UsageUpstream {
+  id: string;
+  name: string;
 }
 
 export interface SearchUsageRecord {

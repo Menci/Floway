@@ -1,4 +1,4 @@
-import { oneOf } from '../../lib/search-params';
+import { oneOf, repeatedValues } from '../../lib/search-params';
 import { dashboardRangeQuery, type DashboardRange } from '../charts/dashboard-time';
 
 export type PerformanceView = 'all-by-user' | 'self-by-key';
@@ -115,17 +115,14 @@ export const resolvePerformanceGroup = (
   return group;
 };
 
-const filterValuesFromUrl = (search: URLSearchParams, key: string): string[] =>
-  [...new Set(search.getAll(key).filter(Boolean))];
-
 export const parsePerformanceUrlState = (search: URLSearchParams): PerformanceUrlState => ({
   metric: oneOf(search.get('m'), ['ttft', 'tokPerSec'], 'ttft'),
   percentile: oneOf(search.get('pct'), ['p50', 'p95', 'p99'], 'p95'),
   groupBy: oneOf(search.get('g'), ['model', 'upstream', 'operation', 'runtimeLocation', 'keyId', 'userId'], 'model'),
   range: oneOf(search.get('r'), ['today', '7d', '30d'], 'today'),
   filters: {
-    model: filterValuesFromUrl(search, 'fm'), upstream: filterValuesFromUrl(search, 'fu'), operation: filterValuesFromUrl(search, 'fo'),
-    runtimeLocation: filterValuesFromUrl(search, 'fr'), userId: filterValuesFromUrl(search, 'fusr'), keyId: filterValuesFromUrl(search, 'fk'),
+    model: repeatedValues(search, 'fm'), upstream: repeatedValues(search, 'fu'), operation: repeatedValues(search, 'fo'),
+    runtimeLocation: repeatedValues(search, 'fr'), userId: repeatedValues(search, 'fusr'), keyId: repeatedValues(search, 'fk'),
   },
   hidden: (search.get('hide') ?? '').split(',').map(decodeURIComponent).filter(Boolean),
 });
