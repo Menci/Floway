@@ -31,6 +31,7 @@ import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
 import { Dropdown } from '../components/ui/fluent-form-controls';
 import { CONTROL_ROW_CLASS, PANEL_STACK_CLASS } from '../components/ui/layout';
+import { MultiselectCombobox } from '../components/ui/multiselect-combobox';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { ResourceListActions } from '../components/ui/resource-list';
@@ -68,12 +69,12 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   const view: PerformanceView = user.isAdmin ? 'all-by-user' : 'self-by-key';
   const groupBy = state.groupBy === 'userId' && view !== 'all-by-user' ? 'model' : state.groupBy;
   const loadedAt = Date.now();
-  const query = buildPerformanceQuery(view, state.range, groupBy, state.filters, loadedAt);
+  const query = buildPerformanceQuery(state.range, groupBy, state.filters, loadedAt);
   // The page opens for every signed-in account, so the names come from the
   // non-admin upstream picker; /api/upstreams answers 403 to an operator and
   // would leave the whole page unavailable to them.
   const [overview, upstreams] = await Promise.all([
-    callApi(() => api.api.performance.overview.$get({ query: Object.fromEntries(query) })),
+    callApi(() => api.api.performance.overview.$get({ query })),
     callApi(() => api.api['upstream-options'].$get()),
   ]);
   return {
@@ -113,9 +114,9 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const reload = useCallback(async (signal: AbortSignal, { background }: { background: boolean }, arrived: () => void) => {
     const requestedAt = Date.now();
     if (!background) setError(null);
-    const search = buildPerformanceQuery(view, query.range, query.groupBy, query.filters, requestedAt);
+    const search = buildPerformanceQuery(query.range, query.groupBy, query.filters, requestedAt);
     const result = await callApi(() => api.api.performance.overview.$get(
-      { query: Object.fromEntries(search) },
+      { query: search },
       { init: { signal } },
     ));
     if (signal.aborted) return;
@@ -155,7 +156,12 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     setFilters(current => clearGroupedFilter(current, next));
     setHiddenSeries(new Set());
   };
-  const setFilter = (key: keyof PerformanceFilters, value: string) => setFilters(current => (current[key] === value ? current : { ...current, [key]: value }));
+  const setFilter = (key: keyof PerformanceFilters, value: string[]) => setFilters(current => {
+    const previous = current[key];
+    return previous.length === value.length && previous.every((entry, index) => entry === value[index])
+      ? current
+      : { ...current, [key]: value };
+  });
   const buckets = useMemo(() => performanceBuckets(loadedRange, loadedAt, locale), [loadedAt, loadedRange, locale]);
   const labels = useMemo(() => overview && upstreamNames && performanceLabels(overview, upstreamNames), [overview, upstreamNames]);
   const chart = useMemo(() => overview && labels && buildPerformanceChart(overview.series, metric, percentile, groupBy, labels, buckets, loadedRange), [buckets, groupBy, labels, loadedRange, metric, overview, percentile]);
@@ -244,7 +250,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
 
 function PerformanceFilterFields({ filters, groupBy, labels, onChange, overview, view }: {
   filters: PerformanceFilters; groupBy: PerformanceGroupBy; labels: PerformanceLabels;
-  onChange: (key: keyof PerformanceFilters, value: string) => void;
+  onChange: (key: keyof PerformanceFilters, value: string[]) => void;
   overview: PerformanceOverviewResponse; view: PerformanceView;
 }) {
   const { t } = useTranslation();
@@ -262,15 +268,15 @@ function PerformanceFilterFields({ filters, groupBy, labels, onChange, overview,
       if ((key === 'userId' || key === 'keyId') && (groupBy === 'userId' || groupBy === 'keyId')) return false;
       return key !== groupBy;
     }).map(({ key, values }) => <Field className="min-w-[150px] flex-[1_1_150px]" key={key} label={t(`dashboard.performance.filters.${key}`)}>
-      <Dropdown
+      <MultiselectCombobox
         className="w-full"
-        selectedOptions={[filters[key]]}
-        value={filters[key] === '' ? t(`dashboard.performance.filters.all.${key}`) : values.find(item => item.value === filters[key])?.label ?? filters[key]}
-        onOptionSelect={(_, data) => data.optionValue !== undefined && onChange(key, data.optionValue)}
-      >
-        <Option value="">{t(`dashboard.performance.filters.all.${key}`)}</Option>
-        {values.map(item => <Option key={item.value} value={item.value}>{item.label}</Option>)}
-      </Dropdown>
+        onChange={value => onChange(key, value)}
+        options={values}
+        placeholder={filters[key].length === 0
+          ? t(`dashboard.performance.filters.all.${key}`)
+          : t('dashboard.performance.filters.selected', { count: filters[key].length })}
+        value={filters[key]}
+      />
     </Field>)}
   </>;
 }

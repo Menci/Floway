@@ -32,9 +32,6 @@ export interface PerformanceFilters {
   keyId: string[];
 }
 
-export const emptyPerformanceFilters = (): PerformanceFilters =>
-  ({ model: [], upstream: [], operation: [], runtimeLocation: [], userId: [], keyId: [] });
-
 export interface PerformanceUrlState {
   metric: PerformanceMetric;
   percentile: PerformancePercentile;
@@ -124,8 +121,8 @@ export const parsePerformanceUrlState = (search: URLSearchParams): PerformanceUr
   groupBy: oneOf(search.get('g'), ['model', 'upstream', 'operation', 'runtimeLocation', 'keyId', 'userId'], 'model'),
   range: oneOf(search.get('r'), ['today', '7d', '30d'], 'today'),
   filters: {
-    model: search.get('fm') ?? '', upstream: search.get('fu') ?? '', operation: search.get('fo') ?? '',
-    runtimeLocation: search.get('fr') ?? '', userId: search.get('fusr') ?? '', keyId: search.get('fk') ?? '',
+    model: search.getAll('fm'), upstream: search.getAll('fu'), operation: search.getAll('fo'),
+    runtimeLocation: search.getAll('fr'), userId: search.getAll('fusr'), keyId: search.getAll('fk'),
   },
   hidden: (search.get('hide') ?? '').split(',').map(decodeURIComponent).filter(Boolean),
 });
@@ -136,17 +133,17 @@ export const serializePerformanceUrlState = (state: PerformanceUrlState): URLSea
   if (state.percentile !== 'p95') search.set('pct', state.percentile);
   if (state.groupBy !== 'model') search.set('g', state.groupBy);
   if (state.range !== 'today') search.set('r', state.range);
-  const filters: Array<[string, string]> = [['fm', state.filters.model], ['fu', state.filters.upstream], ['fo', state.filters.operation], ['fr', state.filters.runtimeLocation], ['fusr', state.filters.userId], ['fk', state.filters.keyId]];
-  for (const [key, value] of filters) if (value) search.set(key, value);
+  const filters: Array<[string, readonly string[]]> = [['fm', state.filters.model], ['fu', state.filters.upstream], ['fo', state.filters.operation], ['fr', state.filters.runtimeLocation], ['fusr', state.filters.userId], ['fk', state.filters.keyId]];
+  for (const [key, values] of filters) for (const value of values) search.append(key, value);
   if (state.hidden.length) search.set('hide', state.hidden.map(encodeURIComponent).join(','));
   return search;
 };
 
 export const clearGroupedFilter = (filters: PerformanceFilters, groupBy: PerformanceGroupBy): PerformanceFilters => ({
   ...filters,
-  ...(groupBy === 'model' ? { model: '' } : {}),
-  ...(groupBy === 'upstream' ? { upstream: '' } : {}),
-  ...(groupBy === 'operation' ? { operation: '' } : {}),
-  ...(groupBy === 'runtimeLocation' ? { runtimeLocation: '' } : {}),
-  ...(groupBy === 'userId' || groupBy === 'keyId' ? { userId: '', keyId: '' } : {}),
+  ...(groupBy === 'model' ? { model: [] } : {}),
+  ...(groupBy === 'upstream' ? { upstream: [] } : {}),
+  ...(groupBy === 'operation' ? { operation: [] } : {}),
+  ...(groupBy === 'runtimeLocation' ? { runtimeLocation: [] } : {}),
+  ...(groupBy === 'userId' || groupBy === 'keyId' ? { userId: [], keyId: [] } : {}),
 });
