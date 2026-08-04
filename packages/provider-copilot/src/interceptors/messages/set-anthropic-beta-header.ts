@@ -7,7 +7,7 @@ const CONTEXT_MANAGEMENT_BETA = 'context-management-2025-06-27';
 // Messages `anthropic-beta` header and derives both tokens from the final wire
 // payload: non-adaptive budget thinking needs interleaved-thinking, while the
 // `context_management` field is rejected unless its matching beta is present.
-// https://github.com/caozhiyuan/copilot-api/blob/b2dbf9d57612bdf75e87f71993567bd5315b22b5/src/services/copilot/create-messages.ts
+// https://github.com/microsoft/vscode/blob/a234109a108ad2ca78b7d0883688b0a84e3fab42/extensions/copilot/src/platform/endpoint/node/chatEndpoint.ts#L262-L282
 export const withAnthropicBetaHeaderSet = async <TResult>(
   ctx: MessagesBoundaryCtx,
   _env: object,
