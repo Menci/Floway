@@ -311,6 +311,37 @@ test('rewrites prompt_cache_hit_tokens/prompt_cache_miss_tokens into prompt_toke
   assertEquals('prompt_cache_miss_tokens' in usage, false);
 });
 
+test('replaces array-shaped prompt_tokens_details without copying array indices', async () => {
+  const ctx = invocation(baseRequest());
+  const result = await withVendorDeepSeekChatCompletionsNormalize(ctx, stubCtx, () =>
+    Promise.resolve(eventResult(
+      (async function* () {
+        yield eventFrame({
+          id: 'x',
+          object: 'chat.completion.chunk',
+          created: 0,
+          model: 'deepseek-test',
+          choices: [],
+          usage: {
+            prompt_tokens: 100,
+            completion_tokens: 20,
+            total_tokens: 120,
+            prompt_cache_hit_tokens: 70,
+            prompt_cache_miss_tokens: 30,
+            prompt_tokens_details: [{ cached_tokens: 1 }],
+          } as unknown as ChatCompletionsStreamEvent['usage'],
+        });
+      })(),
+      testTelemetryModelIdentity,
+    )));
+
+  const frames = await collectFrames(result);
+  const frame = frames[0];
+  if (frame.type !== 'event') throw new Error('expected event frame');
+  const usage = usageRecord(frame.event.usage!);
+  assertEquals(usage.prompt_tokens_details, { cached_tokens: 70 });
+});
+
 // ── Pass-through ──
 
 test('leaves protocol done frames untouched', async () => {
