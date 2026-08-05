@@ -293,6 +293,23 @@ test('fetchCustomModels shares one response-byte budget across pages', async () 
   assertEquals((error.cause as Error).message, `Provider model listing exceeded ${secondBytes.byteLength - 1} response bytes`);
 });
 
+test('fetchCustomModels does not request another page after exact byte-budget exhaustion', async () => {
+  const { config } = assertCustomUpstreamRecord(upstreamRecord());
+  const page = JSON.stringify({ data: [{ id: 'first' }], has_more: true, last_id: 'first' });
+  const bytes = new TextEncoder().encode(page);
+  let calls = 0;
+  const fetcher: Fetcher = () => {
+    calls++;
+    return Promise.resolve(new Response(bytes));
+  };
+  const error = await assertRejects(
+    () => fetchCustomModels(config, fetcher, { maxCatalogResponseBytes: bytes.byteLength }),
+    ProviderModelsUnavailableError,
+  );
+  assertEquals(calls, 1);
+  assertEquals((error.cause as Error).message, 'Custom /models catalog exhausted its response byte budget');
+});
+
 test('fetchCustomModels throws ProviderModelsUnavailableError with httpResponse on non-2xx', async () => {
   const { config } = assertCustomUpstreamRecord(upstreamRecord());
   let thrown: unknown;

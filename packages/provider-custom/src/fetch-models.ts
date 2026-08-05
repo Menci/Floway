@@ -177,6 +177,9 @@ export const fetchCustomModels = async (
   let afterId: string | undefined;
 
   for (let pageIndex = 0; pageIndex < MAX_CUSTOM_MODEL_PAGES; pageIndex++) {
+    if (responseByteBudget.remainingBytes === 0) {
+      throw paginationError('Custom /models catalog exhausted its response byte budget');
+    }
     const page = await fetchUpstreamModels(
       () => customFetchModels(config, { method: 'GET' }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }, afterId),
       parseCustomModelsPage,
