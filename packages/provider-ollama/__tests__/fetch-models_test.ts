@@ -186,6 +186,16 @@ test('fetchOllamaCatalog cancels discarded and oversized /api/show bodies withou
   expect(oversizedCancelled).toBe(true);
 });
 
+test('fetchOllamaCatalog rejects when every model detail lookup fails', async () => {
+  const fetcher: Fetcher = (url) => new URL(url).pathname === '/api/tags'
+    ? Promise.resolve(jsonResponse({ models: [{ name: 'first' }, { name: 'second' }] }))
+    : Promise.resolve(new Response(null, { status: 500 }));
+  await expect(fetchOllamaCatalog(config, fetcher)).rejects.toMatchObject({
+    name: 'ProviderModelsUnavailableError',
+    cause: expect.objectContaining({ message: 'Every Ollama /api/show request failed' }),
+  });
+});
+
 test('fetchOllamaCatalog propagates cancellation from /api/show fetch and body decoding', async () => {
   const cancelledShows: Array<(abort: DOMException) => Promise<Response>> = [
     abort => Promise.reject(abort),
@@ -217,10 +227,14 @@ test('fetchOllamaCatalog aborts stalled show requests and rejects systemic detai
   vi.useFakeTimers();
   try {
     let upstreamReason: unknown;
+    let showCalls = 0;
     const fetcher: Fetcher = (url, init) => {
       if (new URL(url).pathname === '/api/tags') {
-        return Promise.resolve(jsonResponse({ models: [{ name: 'stalled' }] }));
+        return Promise.resolve(jsonResponse({
+          models: Array.from({ length: 100 }, (_, index) => ({ name: `stalled-${index}` })),
+        }));
       }
+      showCalls++;
       return new Promise<Response>((_resolve, reject) => {
         init.signal?.addEventListener('abort', () => {
           upstreamReason = init.signal?.reason;
@@ -236,6 +250,7 @@ test('fetchOllamaCatalog aborts stalled show requests and rejects systemic detai
     await vi.advanceTimersByTimeAsync(35);
     await assertion;
     expect(upstreamReason).toMatchObject({ name: 'TimeoutError' });
+    expect(showCalls).toBe(8);
   } finally {
     vi.useRealTimers();
   }

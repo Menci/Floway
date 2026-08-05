@@ -174,7 +174,7 @@ export const fetchOllamaCatalog = (
   let rejectFatalAbort!: (error: unknown) => void;
   const fatalAbortPromise = new Promise<never>((_resolve, reject) => { rejectFatalAbort = reject; });
   const worker = async (): Promise<void> => {
-    while (fatalAbort === undefined) {
+    while (fatalAbort === undefined && !controller.signal.aborted) {
       const index = nextIndex++;
       if (index >= tags.length) return;
       try {
@@ -188,6 +188,7 @@ export const fetchOllamaCatalog = (
           options.totalTimeoutMs,
         );
       } catch (error) {
+        if (controller.signal.aborted) return;
         if (isAbortError(error)) {
           if (fatalAbort === undefined) {
             fatalAbort = error;
