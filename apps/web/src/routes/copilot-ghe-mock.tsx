@@ -9,6 +9,7 @@ import {
 } from '@fluentui/react-icons';
 import { useMemo, useState } from 'react';
 import { FormProvider, useForm } from 'react-hook-form';
+import { useSearchParams } from 'react-router';
 
 import type { AuthUser } from '../api/auth';
 import type { UpstreamRecord } from '../api/types';
@@ -322,7 +323,7 @@ function ReviewControls({ onChange, view }: { onChange: (view: MockView) => void
     ['connected', 'Connected'],
     ['list', 'Upstream list'],
   ];
-  return <Card className="!fixed !z-[100000] !right-4 !top-4 !p-2 !flex-row !gap-1 shadow-lg">
+  return <Card className="!fixed !z-[100000] !bottom-4 !right-4 !p-2 !flex-row !gap-1 shadow-lg">
     {entries.map(([value, label]) => <Button
       appearance={view === value ? 'primary' : 'subtle'}
       key={value}
@@ -333,12 +334,16 @@ function ReviewControls({ onChange, view }: { onChange: (view: MockView) => void
 }
 
 export default function CopilotGheMockRoute() {
-  const [view, setView] = useState<MockView>('github');
-  const [host, setHost] = useState('github.com');
+  const [params, setParams] = useSearchParams();
+  const selected = params.get('view');
+  const view: MockView = selected === 'ghe' || selected === 'waiting' || selected === 'connected' || selected === 'list'
+    ? selected
+    : 'github';
+  const [host, setHost] = useState(view === 'github' ? 'github.com' : 'octocorp.ghe.com');
   const changeView = (next: MockView) => {
     if (next === 'github') setHost('github.com');
     if (next === 'ghe' || next === 'waiting' || next === 'connected') setHost('octocorp.ghe.com');
-    setView(next);
+    setParams(next === 'github' ? {} : { view: next }, { replace: true });
   };
   return <>
     <ReviewControls onChange={changeView} view={view} />
