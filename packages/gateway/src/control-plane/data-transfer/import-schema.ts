@@ -348,7 +348,7 @@ const searchUsageSchema = parsedBy((value): WebSearchUsageRecord => {
 const malformedPerformance = 'record fields are missing or malformed';
 const performanceInteger = nonNegativeSafeIntegerSchema(malformedPerformance);
 const malformedBucket = 'bucket metric/lower/upper/count fields are missing or malformed';
-const performanceBucketSchema = parsedBy((value) => {
+const performanceBucketSchema = parsedBy(value => {
   const wire = parseValue(objectIncludingArraySchema('bucket is not an object'), value);
   const metric = parseValue(z.enum(PERFORMANCE_METRICS, { error: malformedBucket }), wire.metric);
   const lower = parseValue(nonNegativeSafeIntegerSchema(malformedBucket), wire.lower);
