@@ -14,7 +14,7 @@ import type { MessagesPayload } from '@floway-dev/protocols/messages';
 //    discrete effort level, so we deliberately do not map it onto an enum;
 //    callers who need finer control set `output_config.effort` directly.
 export const resolveMessagesReasoningEffort = (payload: MessagesPayload): string | undefined => {
-  if (payload.output_config?.effort) return payload.output_config.effort;
+  if (payload.output_config?.effort !== undefined) return payload.output_config.effort;
   if (payload.thinking?.type === 'disabled') return 'none';
   if (payload.thinking?.type === 'enabled' || payload.thinking?.type === 'adaptive') return 'medium';
   return undefined;
