@@ -79,6 +79,9 @@ export const assertOllamaUpstreamRecord = (record: UpstreamRecord): OllamaUpstre
   if (models.some(model => kindForEndpoints(model.endpoints) === 'rerank')) {
     throw new Error('Malformed ollama upstream config: rerank models require a custom upstream');
   }
+  if (models.some(model => kindForEndpoints(model.endpoints) === 'image')) {
+    throw new Error('Malformed ollama upstream config: image models require a custom or azure upstream');
+  }
   return {
     ...record,
     kind: 'ollama',

@@ -85,7 +85,7 @@ export const projectCustomModels = (
   const upstreamFlags = resolveEffectiveFlags([CUSTOM_DEFAULT_FLAGS, record.flagOverrides]);
 
   // Manual models always emit.
-  const overriddenIds = new Set(config.models.map(m => m.upstreamModelId));
+  const overriddenIds = new Set(config.models.flatMap(model => [model.upstreamModelId, publicModelId(model)]));
   const manualModels: ProviderModel[] = config.models.map(model => {
     const enabledFlags = resolveEffectiveFlags([CUSTOM_DEFAULT_FLAGS, record.flagOverrides, model.flagOverrides]);
     const endpoints = model.endpoints;

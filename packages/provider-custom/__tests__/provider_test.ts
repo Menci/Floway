@@ -153,12 +153,13 @@ test('getProvidedModels rethrows when the upstream fetch fails — no fallback i
   );
 });
 
-test('A manual model whose upstreamModelId matches an auto-fetched id overrides the auto entry', async () => {
+test('a manual model whose effective public id matches an auto-fetched id overrides the auto entry', async () => {
   const manualPricing: ModelPricing = { entries: [{ rates: { input_tokens: '1', output_tokens: '2' } }] };
   const record = buildCustomUpstream({
     models: [
       {
-        upstreamModelId: 'shared-id',
+        upstreamModelId: 'manual-raw',
+        publicModelId: 'shared-id',
         kind: 'chat',
         endpoints: { chatCompletions: {} },
         display_name: 'Manual Override',

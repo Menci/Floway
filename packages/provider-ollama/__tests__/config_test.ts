@@ -90,3 +90,23 @@ test('assertOllamaUpstreamRecord rejects rerank models', () => {
     );
   }
 });
+
+test('assertOllamaUpstreamRecord rejects endpoint-derived image models', () => {
+  for (const kind of ['image', 'chat']) {
+    assertThrows(
+      () => assertOllamaUpstreamRecord({
+        ...baseRecord,
+        config: {
+          ...(baseRecord.config as Record<string, unknown>),
+          models: [{
+            upstreamModelId: 'image-model',
+            kind,
+            endpoints: { imagesGenerations: {}, imagesEdits: {} },
+          }],
+        },
+      }),
+      Error,
+      'image models require a custom or azure upstream',
+    );
+  }
+});
