@@ -130,3 +130,78 @@ test('repository JSON codecs round-trip upstream, alias, and Responses state thr
   assertEquals((await repo.modelAliases.getById('alias_node'))?.announcedMetadata, { limits: { max_output_tokens: 4096 } });
   assertEquals((await repo.responsesSnapshots.lookup('key_node', 'resp_node', 0))?.itemIds, ['msg-a', 'msg-b']);
 }));
+
+test('opaque model dimensions round-trip embedded NUL through node:sqlite', () => withRepo(async repo => {
+  await repo.usage.set({
+    keyId: 'key_node',
+    model: 'a\0b',
+    upstream: 'c',
+    modelKey: 'd',
+    hour: '2026-08-06T00',
+    pricingSelector: {},
+    requests: 1,
+    metrics: [{ metric: 'input_tokens', quantity: '1', unitPrice: null }],
+  });
+  await repo.usage.set({
+    keyId: 'key_node',
+    model: 'a',
+    upstream: 'b',
+    modelKey: 'c\0d',
+    hour: '2026-08-06T00',
+    pricingSelector: {},
+    requests: 2,
+    metrics: [{ metric: 'output_tokens', quantity: '2', unitPrice: null }],
+  });
+  await repo.performance.recordNeutral({
+    hour: '2026-08-06T00',
+    keyId: 'key_node',
+    model: 'performance\0model',
+    upstream: 'up_node',
+    operation: 'chat',
+    runtimeLocation: 'LOCAL',
+  });
+  await repo.webSearchConfig.save({
+    provider: 'disabled',
+    tavily: { apiKey: '' },
+    microsoftWebIq: { apiKey: '' },
+    jina: { apiKey: '' },
+    passthroughOpenAiSearch: {
+      enabled: true,
+      upstreamId: 'up_node',
+      model: 'search\0model',
+    },
+  });
+
+  const usage = await repo.usage.listAll();
+  assertEquals(usage.length, 2);
+  assertEquals(usage.find(record => record.model === 'a\0b')?.modelKey, 'd');
+  assertEquals(usage.find(record => record.model === 'a')?.modelKey, 'c\0d');
+  assertEquals((await repo.performance.listAll())[0]?.model, 'performance\0model');
+  assertEquals(
+    (await repo.webSearchConfig.get() as { passthroughOpenAiSearch: { model: string } })
+      .passthroughOpenAiSearch.model,
+    'search\0model',
+  );
+}));
+
+test('Performance reads stay on one snapshot during a concurrent batch write', () => withRepo(async repo => {
+  const sample = {
+    hour: '2026-08-06T00',
+    keyId: 'key_node',
+    model: 'concurrent-model',
+    upstream: 'up_node',
+    operation: 'chat' as const,
+    runtimeLocation: 'LOCAL',
+    ttftMs: 100,
+    tpotUs: 1_000,
+    success: true,
+  };
+
+  const [snapshot] = await Promise.all([
+    repo.performance.listAll(),
+    repo.performance.recordSample(sample),
+  ]);
+
+  assertEquals(snapshot, []);
+  assertEquals((await repo.performance.listAll())[0]?.model, sample.model);
+}));

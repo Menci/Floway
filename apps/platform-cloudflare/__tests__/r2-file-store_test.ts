@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { R2FileStore, type R2BucketLike } from '../src/r2-file-store.ts';
-import { assertEquals } from '@floway-dev/test-utils';
+import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 class FakeR2Bucket implements R2BucketLike {
   store = new Map<string, Uint8Array>();
@@ -36,4 +36,37 @@ test('R2FileStore deletes exact keys in one R2 batch', async () => {
 
   assertEquals([...bucket.store.keys()], ['drop/ab']);
   assertEquals(bucket.deleteCalls, [['drop/a', 'missing']]);
+});
+
+test('R2FileStore splits deletion at the 1000-key API boundary', async () => {
+  const bucket = new FakeR2Bucket();
+  const keys = Array.from({ length: 1_001 }, (_, index) => `key-${index}`);
+
+  await new R2FileStore(bucket).deleteKeys(keys);
+
+  assertEquals(bucket.deleteCalls.map(call => call.length), [1_000, 1]);
+  assertEquals(bucket.deleteCalls.flat(), keys);
+});
+
+test('R2FileStore propagates a failed batch and does not start later batches', async () => {
+  const deleteCalls: string[][] = [];
+  const bucket: R2BucketLike = {
+    put: () => Promise.resolve(),
+    get: () => Promise.resolve(null),
+    delete(keys) {
+      const batch = Array.isArray(keys) ? keys : [keys];
+      deleteCalls.push([...batch]);
+      return deleteCalls.length === 2
+        ? Promise.reject(new Error('R2 unavailable'))
+        : Promise.resolve();
+    },
+  };
+
+  await assertRejects(
+    () => new R2FileStore(bucket).deleteKeys(Array.from({ length: 2_001 }, (_, index) => `key-${index}`)),
+    Error,
+    'R2 unavailable',
+  );
+
+  assertEquals(deleteCalls.map(call => call.length), [1_000, 1_000]);
 });

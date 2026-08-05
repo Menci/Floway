@@ -11,6 +11,15 @@ const TOKEN_METRIC_BY_USAGE_KEY = {
   output_image: 'output_image_tokens',
 } as const satisfies Record<Exclude<keyof TokenUsage, 'tier'>, BillingMetric>;
 
+export const usageBucketIdentityKey = (
+  keyId: string,
+  model: string,
+  upstream: string | null,
+  modelKey: string,
+  hour: string,
+  pricingSelectorKey: string,
+): string => JSON.stringify([keyId, model, upstream ?? '', modelKey, hour, pricingSelectorKey]);
+
 export const usageMetricRows = (record: UsageRecord): UsageMetricRecord[] => {
   const seen = new Set<BillingMetric>();
   for (const row of record.metrics) {
