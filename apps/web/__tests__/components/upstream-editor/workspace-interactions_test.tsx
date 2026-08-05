@@ -76,6 +76,17 @@ const deleteCommandStem = i18n.t('dashboard.upstreamEditor.models.deleteNamed', 
 const deleteCommands = () => screen.getAllByLabelText(new RegExp(`^${deleteCommandStem}`));
 
 describe('upstream model workspace field-array transitions', () => {
+  it('returns from a model detail to the model list', async () => {
+    renderInApp(<Harness />);
+    const table = screen.getByRole('table', { name: models('title') });
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.models.editNamed', { name: 'model-a' }) }));
+    await waitFor(() => expect(table.isConnected).toBe(false));
+
+    fireEvent.click(screen.getByRole('button', { name: models('back') }));
+    expect(await screen.findByRole('table', { name: models('title') })).toBeTruthy();
+  });
+
   it('deletes a newly appended model and applies a shorter YAML catalog', async () => {
     renderInApp(<Harness />);
     expect(deleteCommands()).toHaveLength(2);
