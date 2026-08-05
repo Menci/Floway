@@ -9,6 +9,7 @@ import { revalidateOnPathnameChange } from './revalidation';
 import type { GlobalError } from '../api/client';
 import { SEARCH_PROVIDER_LABEL_KEYS } from '../components/search/provider';
 import { TelemetryDimensionControls, type TelemetryDimension } from '../components/telemetry/dimension-controls';
+import { scopeTelemetryIdentity } from '../components/telemetry/filter-state';
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
@@ -48,15 +49,13 @@ const requiredLabel = (labels: ReadonlyMap<string, string>, value: string, dimen
 export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise<LoaderData> {
   const user = await requireDashboardUser();
   const parsed = parseUsageUrlState(new URL(request.url).searchParams);
-  const groupBy = parsed.groupBy === 'userId' && !user.isAdmin ? 'model' : parsed.groupBy;
-  const scopedFilters = user.isAdmin ? parsed.filters : { ...parsed.filters, userId: [] };
-  const filters = groupBy === parsed.groupBy ? scopedFilters : clearGroupedUsageFilter(scopedFilters, groupBy);
+  const scoped = scopeTelemetryIdentity(parsed.groupBy, parsed.filters, user.isAdmin, 'model');
   const loadedAt = Date.now();
   return {
-    ...await loadUsagePageData(user.isAdmin, parsed.range, groupBy, filters, loadedAt),
+    ...await loadUsagePageData(user.isAdmin, parsed.range, scoped.groupBy, scoped.filters, loadedAt),
     isAdmin: user.isAdmin,
     loadedAt,
-    state: { ...parsed, groupBy, filters },
+    state: { ...parsed, ...scoped },
   };
 }
 

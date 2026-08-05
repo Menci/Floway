@@ -1,4 +1,5 @@
 import { oneOf, repeatedValues } from '../../lib/search-params';
+import { clearGroupedTelemetryFilters } from '../telemetry/filter-state';
 import { dashboardRangeQuery, type DashboardRange } from '../charts/dashboard-time';
 
 export type PerformanceView = 'all-by-user' | 'self-by-key';
@@ -115,17 +116,21 @@ export const resolvePerformanceGroup = (
   return group;
 };
 
-export const parsePerformanceUrlState = (search: URLSearchParams): PerformanceUrlState => ({
-  metric: oneOf(search.get('m'), ['ttft', 'tokPerSec'], 'ttft'),
-  percentile: oneOf(search.get('pct'), ['p50', 'p95', 'p99'], 'p95'),
-  groupBy: oneOf(search.get('g'), ['model', 'upstream', 'operation', 'runtimeLocation', 'keyId', 'userId'], 'model'),
-  range: oneOf(search.get('r'), ['today', '7d', '30d'], 'today'),
-  filters: {
+export const parsePerformanceUrlState = (search: URLSearchParams): PerformanceUrlState => {
+  const groupBy = oneOf(search.get('g'), ['model', 'upstream', 'operation', 'runtimeLocation', 'keyId', 'userId'], 'model');
+  const filters = clearGroupedTelemetryFilters({
     model: repeatedValues(search, 'fm'), upstream: repeatedValues(search, 'fu'), operation: repeatedValues(search, 'fo'),
     runtimeLocation: repeatedValues(search, 'fr'), userId: repeatedValues(search, 'fusr'), keyId: repeatedValues(search, 'fk'),
-  },
-  hidden: (search.get('hide') ?? '').split(',').map(decodeURIComponent).filter(Boolean),
-});
+  }, groupBy);
+  return {
+    metric: oneOf(search.get('m'), ['ttft', 'tokPerSec'], 'ttft'),
+    percentile: oneOf(search.get('pct'), ['p50', 'p95', 'p99'], 'p95'),
+    groupBy,
+    range: oneOf(search.get('r'), ['today', '7d', '30d'], 'today'),
+    filters,
+    hidden: (search.get('hide') ?? '').split(',').map(decodeURIComponent).filter(Boolean),
+  };
+};
 
 export const serializePerformanceUrlState = (state: PerformanceUrlState): URLSearchParams => {
   const search = new URLSearchParams();
@@ -140,10 +145,5 @@ export const serializePerformanceUrlState = (state: PerformanceUrlState): URLSea
 };
 
 export const clearGroupedFilter = (filters: PerformanceFilters, groupBy: PerformanceGroupBy): PerformanceFilters => ({
-  ...filters,
-  ...(groupBy === 'model' ? { model: [] } : {}),
-  ...(groupBy === 'upstream' ? { upstream: [] } : {}),
-  ...(groupBy === 'operation' ? { operation: [] } : {}),
-  ...(groupBy === 'runtimeLocation' ? { runtimeLocation: [] } : {}),
-  ...(groupBy === 'userId' || groupBy === 'keyId' ? { userId: [], keyId: [] } : {}),
+  ...clearGroupedTelemetryFilters(filters, groupBy),
 });

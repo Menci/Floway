@@ -26,6 +26,7 @@ import {
 import { buildPerformanceChart, performanceBuckets } from '../components/performance/plot';
 import { PerformanceTable } from '../components/performance/table';
 import { TelemetryDimensionControls, type TelemetryDimension } from '../components/telemetry/dimension-controls';
+import { scopeTelemetryIdentity } from '../components/telemetry/filter-state';
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
@@ -65,9 +66,9 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   const user = await requireDashboardUser();
   const state = parsePerformanceUrlState(new URL(request.url).searchParams);
   const view: PerformanceView = user.isAdmin ? 'all-by-user' : 'self-by-key';
-  const groupBy = state.groupBy === 'userId' && view !== 'all-by-user' ? 'model' : state.groupBy;
+  const scoped = scopeTelemetryIdentity(state.groupBy, state.filters, view === 'all-by-user', 'model');
   const loadedAt = Date.now();
-  const query = buildPerformanceQuery(state.range, groupBy, state.filters, loadedAt);
+  const query = buildPerformanceQuery(state.range, scoped.groupBy, scoped.filters, loadedAt);
   // The page opens for every signed-in account, so the names come from the
   // non-admin upstream picker; /api/upstreams answers 403 to an operator and
   // would leave the whole page unavailable to them.
@@ -79,7 +80,7 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
     error: overview.error ?? upstreams.error ?? null,
     loadedAt,
     overview: overview.data ?? null,
-    state: { ...state, groupBy },
+    state: { ...state, ...scoped },
     upstreamNames: upstreams.data?.map(({ id, name }) => ({ id, name })) ?? null,
     view,
   };

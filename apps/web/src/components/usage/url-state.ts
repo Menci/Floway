@@ -1,5 +1,6 @@
 import type { UsageFilters, UsageGroupBy, UsageMetric, UsageRange } from './types';
 import { oneOf, repeatedValues } from '../../lib/search-params';
+import { clearGroupedTelemetryFilters } from '../telemetry/filter-state';
 
 export interface UsageUrlState {
   range: UsageRange;
@@ -22,16 +23,10 @@ export const parseUsageUrlState = (search: URLSearchParams): UsageUrlState => {
     userId: repeatedValues(search, 'fusr'),
     keyId: repeatedValues(search, 'fk'),
   };
-  if (groupBy === 'userId' || groupBy === 'keyId') {
-    filters.userId = [];
-    filters.keyId = [];
-  } else {
-    filters[groupBy] = [];
-  }
   return {
     range: oneOf(search.get('r'), usageRangeValues, 'today'),
     groupBy,
-    filters,
+    filters: clearGroupedTelemetryFilters(filters, groupBy),
     metric: oneOf(search.get('m'), usageMetricValues, 'total'),
     hidden: (search.get('hide') ?? '').split(',').map(decodeURIComponent).filter(Boolean),
     hiddenSearch: (search.get('hideSearch') ?? '').split(',').map(decodeURIComponent).filter(Boolean),

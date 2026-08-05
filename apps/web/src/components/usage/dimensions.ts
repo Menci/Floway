@@ -1,4 +1,5 @@
 import type { UsageFilters, UsageGroupBy } from './types';
+import { clearGroupedTelemetryFilters } from '../telemetry/filter-state';
 
 const upstreamPrefix = 'upstream:';
 const noUpstream = 'none';
@@ -12,9 +13,5 @@ export const upstreamFromUsageValue = (value: string): string | null => {
   return value.slice(upstreamPrefix.length);
 };
 
-export const clearGroupedUsageFilter = (filters: UsageFilters, groupBy: UsageGroupBy): UsageFilters => ({
-  ...filters,
-  ...(groupBy === 'userId' || groupBy === 'keyId'
-    ? { userId: [], keyId: [] }
-    : { [groupBy]: [] }),
-});
+export const clearGroupedUsageFilter = (filters: UsageFilters, groupBy: UsageGroupBy): UsageFilters =>
+  clearGroupedTelemetryFilters(filters, groupBy);
