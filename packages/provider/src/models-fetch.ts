@@ -9,6 +9,42 @@ export class ProviderModelsUnavailableError extends Error {
 }
 
 const DEFAULT_MAX_MODELS_RESPONSE_BYTES = 16 * 1024 * 1024;
+const DEFAULT_MAX_MODELS_ERROR_RESPONSE_BYTES = 64 * 1024;
+const TRUNCATED_BODY_MARKER = '...[truncated]';
+
+const bytesToText = (chunks: readonly Uint8Array[], totalBytes: number): string => {
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
+};
+
+const readErrorBody = async (response: Response, maxBytes: number): Promise<string> => {
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return bytesToText(chunks, totalBytes);
+      const remaining = maxBytes - totalBytes;
+      if (value.byteLength > remaining) {
+        if (remaining > 0) chunks.push(value.slice(0, remaining));
+        totalBytes += Math.max(remaining, 0);
+        void reader.cancel().catch(() => undefined);
+        return `${bytesToText(chunks, totalBytes)}${TRUNCATED_BODY_MARKER}`;
+      }
+      chunks.push(value);
+      totalBytes += value.byteLength;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+};
 
 const readJsonBody = async (response: Response, maxBytes: number): Promise<unknown> => {
   if (!response.body) throw new Error('Provider model listing returned an empty body');
@@ -30,13 +66,7 @@ const readJsonBody = async (response: Response, maxBytes: number): Promise<unkno
     reader.releaseLock();
   }
 
-  const bytes = new Uint8Array(totalBytes);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+  return JSON.parse(bytesToText(chunks, totalBytes)) as unknown;
 };
 
 // Reconstruct a Response from the captured upstream HTTP frame, or null
@@ -57,11 +87,12 @@ export const httpResponseToResponse = (httpResponse: ProviderModelsUnavailableEr
 export const fetchUpstreamModels = async <T>(
   doFetch: () => Promise<Response>,
   parse: (json: unknown) => T | null,
-  options: { maxResponseBytes?: number } = {},
+  options: { maxErrorResponseBytes?: number; maxResponseBytes?: number } = {},
 ): Promise<T> => {
+  const maxErrorResponseBytes = options.maxErrorResponseBytes ?? DEFAULT_MAX_MODELS_ERROR_RESPONSE_BYTES;
   const maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MAX_MODELS_RESPONSE_BYTES;
-  if (!Number.isSafeInteger(maxResponseBytes) || maxResponseBytes <= 0) {
-    throw new TypeError('maxResponseBytes must be a positive safe integer');
+  if (!Number.isSafeInteger(maxErrorResponseBytes) || maxErrorResponseBytes <= 0 || !Number.isSafeInteger(maxResponseBytes) || maxResponseBytes <= 0) {
+    throw new TypeError('model response byte limits must be positive safe integers');
   }
   let response: Response;
   try {
@@ -70,11 +101,17 @@ export const fetchUpstreamModels = async <T>(
     throw new ProviderModelsUnavailableError(null, cause);
   }
   if (!response.ok) {
-    throw new ProviderModelsUnavailableError({
+    const httpResponse: NonNullable<ProviderModelsUnavailableError['httpResponse']> = {
       status: response.status,
       headers: new Headers(response.headers),
-      body: await response.text(),
-    });
+      body: '',
+    };
+    try {
+      httpResponse.body = await readErrorBody(response, maxErrorResponseBytes);
+    } catch (cause) {
+      throw new ProviderModelsUnavailableError(httpResponse, cause);
+    }
+    throw new ProviderModelsUnavailableError(httpResponse);
   }
   let parsed: unknown;
   try {

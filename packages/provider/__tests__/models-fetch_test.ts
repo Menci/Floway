@@ -33,3 +33,32 @@ test('fetchUpstreamModels accepts the byte boundary and cancels an oversized suc
   } satisfies Partial<ProviderModelsUnavailableError>);
   expect(cancelled).toBe(true);
 });
+
+test('fetchUpstreamModels bounds non-2xx bodies while preserving status and headers', async () => {
+  let cancelled = false;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('rate-'));
+      controller.enqueue(new TextEncoder().encode('limited'));
+    },
+    cancel() {
+      cancelled = true;
+      return new Promise<void>(() => {});
+    },
+  });
+  const result = fetchUpstreamModels(
+    () => Promise.resolve(new Response(body, { status: 429, headers: { 'retry-after': '5' } })),
+    value => value,
+    { maxErrorResponseBytes: 8 },
+  );
+  await expect(result).rejects.toMatchObject({
+    name: 'ProviderModelsUnavailableError',
+    httpResponse: {
+      status: 429,
+      body: 'rate-lim...[truncated]',
+    },
+  });
+  const error = await result.catch(cause => cause as ProviderModelsUnavailableError);
+  expect(error.httpResponse?.headers.get('retry-after')).toBe('5');
+  expect(cancelled).toBe(true);
+});
