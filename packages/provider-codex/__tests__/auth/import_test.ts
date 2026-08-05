@@ -22,6 +22,7 @@ afterEach(() => vi.restoreAllMocks());
 
 describe('importCodexFromAuthJson', () => {
   test('happy path returns identity + tokens', async () => {
+    const beforeImport = Date.now();
     const authJson = JSON.stringify({
       tokens: {
         access_token: 'at1',
@@ -36,7 +37,8 @@ describe('importCodexFromAuthJson', () => {
     expect(result.state.accounts[0].refresh_token).toBe('rt1');
     expect(result.state.accounts[0].state).toBe('active');
     expect(result.state.accounts[0].accessToken?.token).toBe('at1');
-    expect(result.state.accounts[0].accessToken?.expiresAt).toBeGreaterThan(Date.now());
+    expect(result.state.accounts[0].accessToken?.expiresAt).toBeGreaterThanOrEqual(beforeImport);
+    expect(result.state.accounts[0].accessToken?.expiresAt).toBeLessThanOrEqual(Date.now());
     expect(result.state.accounts[0].openaiDeviceId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   });
 

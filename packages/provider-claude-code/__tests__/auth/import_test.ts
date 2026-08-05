@@ -236,6 +236,14 @@ describe('importClaudeCodeFromCredentialsJson', () => {
     await expect(importClaudeCodeFromCredentialsJson(raw)).rejects.toThrow(/milliseconds/);
   });
 
+  test.each([1_700_000_000_000.5, Number.MAX_SAFE_INTEGER])(
+    'rejects expiresAt that is not a representable unix-ms integer: %s',
+    async expiresAt => {
+      const raw = JSON.stringify({ claudeAiOauth: { accessToken: 'a', refreshToken: 'r', expiresAt } });
+      await expect(importClaudeCodeFromCredentialsJson(raw)).rejects.toThrow(/integer unix-ms/);
+    },
+  );
+
   test('surfaces profile API failure', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({ error: 'unauthorized' }, 401));
     const raw = JSON.stringify({
