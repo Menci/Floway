@@ -1,6 +1,6 @@
 import type { CopilotUpstreamUser } from './config.ts';
 import { githubApiOrigin, githubWebOrigin } from './github-host.ts';
-import { directFetcher, type Fetcher } from '@floway-dev/provider';
+import type { Fetcher } from '@floway-dev/provider';
 
 const GITHUB_CLIENT_ID = 'Iv1.b507a08c87ecfe98';
 const GITHUB_SCOPES = 'read:user';
@@ -13,8 +13,8 @@ interface GitHubDeviceFlowStart {
   interval: number;
 }
 
-// All GitHub egress accepts a Fetcher so the copilot auth poll can forward
-// the operator's edit-form proxy override; absent that, direct egress.
+// The control plane supplies its resolved Fetcher to every helper so device
+// authorization honors the edit-form proxy override across all GitHub calls.
 export const startGitHubDeviceFlow = async (githubHost: string, fetcher: Fetcher) => {
   const resp = await fetcher(`${githubWebOrigin(githubHost)}/login/device/code`, {
     method: 'POST',
@@ -37,7 +37,7 @@ export const startGitHubDeviceFlow = async (githubHost: string, fetcher: Fetcher
   return { ok: true as const, data };
 };
 
-export const pollGitHubDeviceFlow = async (githubHost: string, deviceCode: string, fetcher: Fetcher = directFetcher) => {
+export const pollGitHubDeviceFlow = async (githubHost: string, deviceCode: string, fetcher: Fetcher) => {
   const resp = await fetcher(`${githubWebOrigin(githubHost)}/login/oauth/access_token`, {
     method: 'POST',
     headers: {
@@ -61,7 +61,7 @@ export const pollGitHubDeviceFlow = async (githubHost: string, deviceCode: strin
   };
 };
 
-export const fetchGitHubUser = async (githubHost: string, githubToken: string, fetcher: Fetcher = directFetcher) => {
+export const fetchGitHubUser = async (githubHost: string, githubToken: string, fetcher: Fetcher) => {
   const userResp = await fetcher(`${githubApiOrigin(githubHost)}/user`, {
     headers: {
       authorization: `token ${githubToken}`,

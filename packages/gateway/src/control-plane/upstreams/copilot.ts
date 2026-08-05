@@ -27,8 +27,8 @@ import {
   type CopilotUsageResponse,
 } from '@floway-dev/provider-copilot';
 
-const githubHostFromConfig = (config: unknown): string => {
-  if (!isRecord(config) || typeof config.githubHost !== 'string') {
+const githubHostFromConfig = (config: Record<string, unknown>): string => {
+  if (typeof config.githubHost !== 'string') {
     throw new Error('Copilot config must include a GitHub host');
   }
   return normalizeGitHubHost(config.githubHost);
@@ -41,6 +41,7 @@ export const copilotOAuthDeviceLoginStart = async (c: CtxWithJson<typeof copilot
   let githubHost: string;
   let fetcher: Fetcher;
   try {
+    if (!isRecord(record.config)) throw new Error('Copilot config must include a GitHub host');
     githubHost = githubHostFromConfig(record.config);
     fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, runtimeLocation: getRuntimeLocation(c.req.raw) });
   } catch (e: unknown) {
@@ -73,6 +74,7 @@ export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
   let fetcher: Fetcher;
   let githubHost: string;
   try {
+    if (!isRecord(record.config)) throw new Error('Copilot config must include a GitHub host');
     githubHost = githubHostFromConfig(record.config);
     fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, runtimeLocation: getRuntimeLocation(c.req.raw) });
   } catch (err) {
@@ -157,9 +159,10 @@ export const copilotQuota = async (c: CtxWithJson<typeof copilotQuotaBody>) => {
   let githubToken: string;
   let fetcher: Fetcher;
   try {
-    const config = isRecord(record.config) ? record.config : null;
+    if (!isRecord(record.config)) throw new Error('Copilot config must include a GitHub host');
+    const config = record.config;
     githubHost = githubHostFromConfig(record.config);
-    if (!config || typeof config.githubToken !== 'string' || config.githubToken === '') {
+    if (typeof config.githubToken !== 'string' || config.githubToken === '') {
       return c.json({ error: 'Copilot upstream has no GitHub token' }, 400);
     }
     githubToken = config.githubToken;
