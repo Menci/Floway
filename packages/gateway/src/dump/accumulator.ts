@@ -199,6 +199,55 @@ export class DumpAccumulator {
     }
 
     const isStream = isEventStreamMediaType(response.headers.get('content-type'));
+    if (isStream) {
+      const reader = response.body.getReader();
+      let payloadBytes = 0;
+      let finalized = false;
+      const finalizeCapture = (streamError: string | null): void => {
+        if (finalized) return;
+        finalized = true;
+        this.backgroundScheduler(this.write({
+          status: responseStatus,
+          headers: responseHeaders,
+          isStream: true,
+          bytes: new Uint8Array(),
+          payloadBytes,
+          streamError,
+        }));
+      };
+      const forClient = new ReadableStream<Uint8Array>({
+        pull: async controller => {
+          try {
+            const { done, value } = await reader.read();
+            if (done) {
+              finalizeCapture(null);
+              controller.close();
+              return;
+            }
+            payloadBytes += value.byteLength;
+            controller.enqueue(value);
+          } catch (error) {
+            finalizeCapture(oneLineError(error));
+            controller.error(error);
+          }
+        },
+        cancel: async reason => {
+          let streamError: string | null = null;
+          try {
+            await reader.cancel(reason);
+          } catch (error) {
+            streamError = oneLineError(error);
+          }
+          finalizeCapture(streamError);
+        },
+      });
+      return new Response(forClient, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
+    }
+
     const [forClient, forCapture] = response.body.tee();
     this.backgroundScheduler((async () => {
       const reader = forCapture.getReader();
@@ -221,7 +270,7 @@ export class DumpAccumulator {
       await this.write({
         status: responseStatus,
         headers: responseHeaders,
-        isStream,
+        isStream: false,
         bytes,
         payloadBytes: bytes.byteLength,
         streamError,
