@@ -370,6 +370,33 @@ it('SQL Performance overview ignores out-of-scope orphan histograms under key gr
   expect(overview.axes.none[0]?.requests).toBe(1);
 });
 
+it('SQL Performance overview rejects inconsistent upper bounds for one merged histogram bucket', async () => {
+  const repo = new SqlRepo(await createSqliteTestDb());
+  await repo.apiKeys.save(apiKey('key-1', 1));
+  await repo.apiKeys.save(apiKey('key-2', 2));
+  for (const [keyId, upper] of [['key-1', 100], ['key-2', 200]] as const) {
+    await repo.performance.set({
+      hour: '2026-06-30T09', keyId, model: 'model', upstream: 'upstream',
+      operation: 'chat', runtimeLocation: 'LOCAL', requests: 1,
+      ttftSamplesOk: 1, errorsWithOutput: 0, errorsNoOutput: 0, neutral: 0,
+      tpotSamples: 0, ttftMsSum: 50, tpotUsSum: 0,
+      buckets: [{ metric: 'ttft_ms', lower: 0, upper, count: 1 }],
+    });
+  }
+
+  await expect(repo.performance.queryOverview({
+    actorUserId: 1,
+    isAdmin: true,
+    start: '2026-06-30T00',
+    end: '2026-06-30T23',
+    groupBy: 'model',
+    filters: {
+      keyIds: [], userIds: [], models: [], upstreams: [], operations: [], runtimeLocations: [],
+    },
+    bucketForHour: hour => hour,
+  })).rejects.toThrow('performance_buckets rows disagree on histogram bounds');
+});
+
 it('SQL Performance overview uses actor indexes and returns aggregate cardinality', async () => {
   const db = await createSqliteTestDb();
   const seedRepo = new SqlRepo(db);
@@ -402,7 +429,8 @@ it('SQL Performance overview uses actor indexes and returns aggregate cardinalit
     bucketForHour: () => 'one-bucket',
   });
 
-  const aggregate = completed.filter(statement => statement.query.startsWith('/* performance-overview */')).at(-1);
+  const aggregates = completed.filter(statement => statement.query.startsWith('/* performance-overview */'));
+  const aggregate = aggregates.at(-1);
   if (!aggregate) throw new Error('Performance overview SQL evidence was not captured');
   const { results } = await db.prepare(`EXPLAIN QUERY PLAN ${aggregate.query}`)
     .bind(...aggregate.binds)
@@ -412,6 +440,7 @@ it('SQL Performance overview uses actor indexes and returns aggregate cardinalit
     .first<{ count: number }>();
   expect(plan).toContain('idx_performance_summary_key_hour');
   expect(rawRows?.count).toBe(120);
+  expect(aggregates).toHaveLength(1);
   expect(aggregate.resultCount).toBeLessThan(120);
   expect(overview.axes.none[0]).toMatchObject({ requests: 40, ttftSamples: 40, tpotSamples: 40 });
 });

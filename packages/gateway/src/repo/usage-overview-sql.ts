@@ -43,6 +43,19 @@ const rangeBinds = (opts: UsageOverviewQueryOptions, scoped: boolean): SqlBindVa
   ? [opts.actorUserId, opts.start, opts.end]
   : [opts.start, opts.end];
 
+const overviewHoursSql = (scoped: boolean) => `/* usage-overview-hours */
+  SELECT hour FROM (
+    SELECT usage_requests.hour AS hour
+    FROM usage_requests
+    WHERE ${scopedRange('usage_requests', scoped)}
+    UNION ALL
+    SELECT usage.hour AS hour
+    FROM usage
+    WHERE ${scopedRange('usage', scoped)}
+  )
+  GROUP BY hour
+  ORDER BY hour`;
+
 const overviewSql = (scoped: boolean) => `/* usage-overview */
 WITH
 settings(actor_user_id, is_admin, series_group_by, unattributed_user_id, no_upstream_value, upstream_prefix) AS (
@@ -179,6 +192,14 @@ metric_terms AS MATERIALIZED (
   WHERE fact_kind = 'metric'
   GROUP BY axis, bucket, group_value, metric, quantity, unit_price
 ),
+metric_numbered AS MATERIALIZED (
+  SELECT *,
+    (ROW_NUMBER() OVER (
+      PARTITION BY axis, bucket, group_value, metric
+      ORDER BY quantity, unit_price
+    ) - 1) / 64 AS term_chunk
+  FROM metric_terms
+),
 metric_rows AS (
   SELECT 'metric' AS row_kind, axis, bucket, group_value, dimension, facet_value,
     requests_text, metric,
@@ -190,16 +211,31 @@ metric_rows AS (
     NULL AS unit_price,
     NULL AS occurrences_text,
     MIN(metric_order) AS metric_order
-  FROM metric_terms
-  GROUP BY axis, bucket, group_value, metric
+  FROM metric_numbered
+  GROUP BY axis, bucket, group_value, metric, term_chunk
+),
+validation_terms AS MATERIALIZED (
+  SELECT metric, quantity, unit_price
+  FROM scoped
+  WHERE fact_kind = 'metric'
+  GROUP BY metric, quantity, unit_price
+),
+validation_numbered AS MATERIALIZED (
+  SELECT *, (ROW_NUMBER() OVER (ORDER BY metric, quantity, unit_price) - 1) / 64 AS term_chunk
+  FROM validation_terms
 ),
 validation_rows AS (
   SELECT 'validation' AS row_kind,
     NULL AS axis, NULL AS bucket, NULL AS group_value, NULL AS dimension, NULL AS facet_value,
-    NULL AS requests_text, metric, quantity, unit_price, NULL AS occurrences_text, NULL AS metric_order
-  FROM scoped
-  WHERE fact_kind = 'metric'
-  GROUP BY metric, quantity, unit_price
+    NULL AS requests_text, NULL AS metric,
+    json_group_array(json_object(
+      'metric', metric,
+      'quantity', quantity,
+      'unitPrice', unit_price
+    )) AS quantity,
+    NULL AS unit_price, NULL AS occurrences_text, NULL AS metric_order
+  FROM validation_numbered
+  GROUP BY term_chunk
 ),
 missing_hour_rows AS (
   SELECT 'missing_hour' AS row_kind,
@@ -269,7 +305,14 @@ const finishOverview = (rows: readonly UsageOverviewSqlRow[]): UsageOverviewResu
       throw new Error('Usage overview bucket map is incomplete');
     }
     if (row.row_kind === 'validation') {
-      parseStoredMetric(row.metric, row.quantity, row.unit_price);
+      if (row.quantity === null) throw new TypeError('Stored Usage overview validation terms are missing');
+      const validationTerms: unknown = JSON.parse(row.quantity);
+      if (!Array.isArray(validationTerms)) throw new TypeError('Stored Usage overview validation terms must be an array');
+      for (const term of validationTerms) {
+        if (!term || typeof term !== 'object') throw new TypeError('Stored Usage overview validation term must be an object');
+        const values = term as Record<string, unknown>;
+        parseStoredMetric(values.metric, values.quantity, values.unitPrice);
+      }
       continue;
     }
     if (row.row_kind === 'facet') {
@@ -354,7 +397,10 @@ export const querySqlUsageOverview = async (
 ): Promise<UsageOverviewResult> => {
   const scoped = !opts.isAdmin || opts.groupBy === 'keyId';
   const range = rangeBinds(opts, scoped);
-  const buckets: Record<string, string> = {};
+  const { results: hours } = await db.prepare(overviewHoursSql(scoped))
+    .bind(...range, ...range)
+    .all<{ hour: string }>();
+  const buckets = Object.fromEntries(hours.map(({ hour }) => [hour, opts.bucketForHour(hour)]));
   while (true) {
     const binds: SqlBindValue[] = [
       opts.actorUserId,

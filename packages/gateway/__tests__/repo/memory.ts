@@ -639,16 +639,15 @@ class MemoryPerformanceRepo implements PerformanceRepo {
       userId: new Set(opts.filters.userIds.map(String)),
       keyId: new Set(opts.filters.keyIds),
     });
-    const aggregateOptions = { bucket: 'all' as const, timezoneOffsetMinutes: 0 };
     const { series, ...axes } = aggregatePerformanceForDisplay(partitioned.filtered, {
-      series: { ...aggregateOptions, groupBy: opts.groupBy, bucketForHour: opts.bucketForHour },
-      none: { ...aggregateOptions, groupBy: 'none' },
-      model: { ...aggregateOptions, groupBy: 'model' },
-      upstream: { ...aggregateOptions, groupBy: 'upstream' },
-      runtimeLocation: { ...aggregateOptions, groupBy: 'runtimeLocation' },
-      operation: { ...aggregateOptions, groupBy: 'operation' },
-      keyId: { ...aggregateOptions, groupBy: 'keyId' },
-      userId: { ...aggregateOptions, groupBy: 'userId' },
+      series: { groupBy: opts.groupBy, bucketForHour: opts.bucketForHour },
+      none: { groupBy: 'none', bucketForHour: () => 'all' },
+      model: { groupBy: 'model', bucketForHour: () => 'all' },
+      upstream: { groupBy: 'upstream', bucketForHour: () => 'all' },
+      runtimeLocation: { groupBy: 'runtimeLocation', bucketForHour: () => 'all' },
+      operation: { groupBy: 'operation', bucketForHour: () => 'all' },
+      keyId: { groupBy: 'keyId', bucketForHour: () => 'all' },
+      userId: { groupBy: 'userId', bucketForHour: () => 'all' },
     }, keyToUser, visibleKeyIds);
     return {
       series,

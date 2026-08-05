@@ -8,7 +8,7 @@ import type { SqlBindValue, SqlDatabase } from '@floway-dev/platform';
 import { parsePerformanceOperation } from '@floway-dev/provider';
 
 interface PerformanceOverviewSqlRow {
-  row_kind: 'aggregate' | 'facet' | 'missing_hour' | 'orphan';
+  row_kind: 'aggregate' | 'facet' | 'invalid_histogram' | 'missing_hour' | 'orphan';
   axis: string | null;
   bucket: string | null;
   group_value: string | null;
@@ -41,6 +41,13 @@ const scopedRange = (table: string, scoped: boolean) => scoped
 const rangeBinds = (opts: PerformanceOverviewQueryOptions, scoped: boolean): SqlBindValue[] => scoped
   ? [opts.actorUserId, opts.start, opts.end]
   : [opts.start, opts.end];
+
+const overviewHoursSql = (scoped: boolean) => `/* performance-overview-hours */
+  SELECT performance_summary.hour AS hour
+  FROM performance_summary
+  WHERE ${scopedRange('performance_summary', scoped)}
+  GROUP BY performance_summary.hour
+  ORDER BY performance_summary.hour`;
 
 const overviewSql = (scoped: boolean) => `/* performance-overview */
 WITH
@@ -166,10 +173,17 @@ projected_histogram AS MATERIALIZED (
     AND performance_buckets.operation = projected_summary.operation
     AND performance_buckets.runtime_location = projected_summary.runtime_location
 ),
-histogram AS MATERIALIZED (
-  SELECT axis, bucket, group_value, metric, lower, upper, SUM(count) AS count
+invalid_histogram_bounds AS MATERIALIZED (
+  SELECT 1 AS present
   FROM projected_histogram
-  GROUP BY axis, bucket, group_value, metric, lower, upper
+  GROUP BY axis, bucket, group_value, metric, lower
+  HAVING COUNT(DISTINCT COALESCE(CAST(upper AS TEXT), 'null')) > 1
+  LIMIT 1
+),
+histogram AS MATERIALIZED (
+  SELECT axis, bucket, group_value, metric, lower, MAX(upper) AS upper, SUM(count) AS count
+  FROM projected_histogram
+  GROUP BY axis, bucket, group_value, metric, lower
 ),
 ranked_histogram AS MATERIALIZED (
   SELECT
@@ -285,6 +299,15 @@ orphan_rows AS (
     NULL AS tpot_us_p50, NULL AS tpot_us_p95, NULL AS tpot_us_p99
   FROM orphan_buckets
 ),
+invalid_histogram_rows AS (
+  SELECT 'invalid_histogram' AS row_kind,
+    NULL AS axis, NULL AS bucket, NULL AS group_value, NULL AS dimension, NULL AS facet_value,
+    NULL AS requests_text, NULL AS errors_text, NULL AS ttft_samples_text,
+    NULL AS tpot_samples_text, NULL AS neutral_text,
+    NULL AS ttft_ms_p50, NULL AS ttft_ms_p95, NULL AS ttft_ms_p99,
+    NULL AS tpot_us_p50, NULL AS tpot_us_p95, NULL AS tpot_us_p99
+  FROM invalid_histogram_bounds
+),
 missing_hour_rows AS (
   SELECT 'missing_hour' AS row_kind,
     NULL AS axis, NULL AS bucket, NULL AS group_value, NULL AS dimension, hour AS facet_value,
@@ -300,6 +323,7 @@ wire AS (
   SELECT * FROM facet_rows
   UNION ALL SELECT * FROM aggregate_rows
   UNION ALL SELECT * FROM orphan_rows
+  UNION ALL SELECT * FROM invalid_histogram_rows
   UNION ALL SELECT * FROM missing_hour_rows
 )
 SELECT * FROM wire
@@ -327,6 +351,9 @@ const finishOverview = (rows: readonly PerformanceOverviewSqlRow[]): Performance
     }
     if (row.row_kind === 'orphan') {
       throw new Error('performance_buckets row has no matching summary');
+    }
+    if (row.row_kind === 'invalid_histogram') {
+      throw new Error('performance_buckets rows disagree on histogram bounds');
     }
     if (row.row_kind === 'facet') {
       if (row.dimension === null || row.facet_value === null || !overviewDimensions.has(row.dimension)) {
@@ -389,7 +416,10 @@ export const querySqlPerformanceOverview = async (
   }
   const scoped = opts.groupBy === 'keyId';
   const range = rangeBinds(opts, scoped);
-  const buckets: Record<string, string> = {};
+  const { results: hours } = await db.prepare(overviewHoursSql(scoped))
+    .bind(...range)
+    .all<{ hour: string }>();
+  const buckets = Object.fromEntries(hours.map(({ hour }) => [hour, opts.bucketForHour(hour)]));
   while (true) {
     const binds: SqlBindValue[] = [
       opts.actorUserId,

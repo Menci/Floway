@@ -1,13 +1,9 @@
-import { createTelemetryBucket, type TelemetryBucketGranularity } from '../../src/control-plane/shared/telemetry-bucket.ts';
 import type { PerformanceDisplayRecord, PerformanceGroupBy, PerformanceMetric, PerformanceTelemetryRecord } from '../../src/repo/types.ts';
 import { type HistogramBucket, percentileFromBuckets } from '../../src/shared/performance-histogram.ts';
 
 export interface AggregateOptions {
-  bucket: TelemetryBucketGranularity;
   groupBy: PerformanceGroupBy;
-  timeZone?: string;
-  timezoneOffsetMinutes: number;
-  bucketForHour?: (hour: string) => string;
+  bucketForHour: (hour: string) => string;
 }
 
 interface MutableAggregate {
@@ -103,7 +99,7 @@ export const aggregatePerformanceForDisplay = <K extends string>(
 ): Record<K, PerformanceDisplayRecord[]> => {
   const entries = Object.entries(axes) as [K, AggregateOptions][];
   const maps = entries.map(() => new Map<string, MutableAggregate>());
-  const bucketResolvers = entries.map(([, options]) => options.bucketForHour ?? createTelemetryBucket(options));
+  const bucketResolvers = entries.map(([, options]) => options.bucketForHour);
   for (const record of records) {
     for (let index = 0; index < entries.length; index++) {
       const options = entries[index][1];

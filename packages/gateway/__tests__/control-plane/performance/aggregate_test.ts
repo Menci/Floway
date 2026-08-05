@@ -1,18 +1,27 @@
 import { test } from 'vitest';
 
+import { createTelemetryBucket, type TelemetryBucketGranularity } from '../../../src/control-plane/shared/telemetry-bucket.ts';
 import type { PerformanceDisplayRecord, PerformanceTelemetryRecord } from '../../../src/repo/types.ts';
-import { aggregatePerformanceForDisplay, type AggregateOptions } from '../../repo/performance-overview-oracle.ts';
+import { aggregatePerformanceForDisplay } from '../../repo/performance-overview-oracle.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
-// The production aggregator is multi-axis: one traversal produces every
-// per-axis breakdown. Every case here focuses on a single axis, so unwrap
-// it through a one-axis map to keep the test surface flat.
+interface AggregateOptions {
+  bucket: TelemetryBucketGranularity;
+  groupBy: import('../../../src/repo/types.ts').PerformanceGroupBy;
+  timeZone?: string;
+  timezoneOffsetMinutes: number;
+}
+
+// The oracle is multi-axis; every case focuses on a single axis, so unwrap it
+// through a one-axis map to keep the test surface flat.
 const aggregateSingle = (
   records: readonly PerformanceTelemetryRecord[],
   options: AggregateOptions,
   keyToUser: ReadonlyMap<string, number> = new Map(),
 ): PerformanceDisplayRecord[] =>
-  aggregatePerformanceForDisplay(records, { axis: options }, keyToUser, new Set(records.map(item => item.keyId))).axis;
+  aggregatePerformanceForDisplay(records, {
+    axis: { groupBy: options.groupBy, bucketForHour: createTelemetryBucket(options) },
+  }, keyToUser, new Set(records.map(item => item.keyId))).axis;
 
 const record = (overrides: Partial<PerformanceTelemetryRecord> = {}): PerformanceTelemetryRecord => ({
   hour: '2026-04-30T10',

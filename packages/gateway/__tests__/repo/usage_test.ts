@@ -451,7 +451,7 @@ test('SQL usage overview returns grouped term cardinality rather than raw storag
   const db = await createSqliteTestDb();
   const seedRepo = new SqlRepo(db);
   await seedRepo.apiKeys.save(apiKey('key-1', 1));
-  await Promise.all(Array.from({ length: 40 }, (_, index) => seedRepo.usage.set(record({
+  await Promise.all(Array.from({ length: 80 }, (_, index) => seedRepo.usage.set(record({
     model: 'shared-model',
     modelKey: `storage-${index}`,
     pricingSelector: { serviceTier: `tier-${index}` },
@@ -472,12 +472,14 @@ test('SQL usage overview returns grouped term cardinality rather than raw storag
 
   const rawRows = await db.prepare('SELECT (SELECT COUNT(*) FROM usage) + (SELECT COUNT(*) FROM usage_requests) AS count')
     .first<{ count: number }>();
-  const aggregate = completed.filter(statement => statement.query.startsWith('/* usage-overview */')).at(-1);
+  const aggregates = completed.filter(statement => statement.query.startsWith('/* usage-overview */'));
+  const aggregate = aggregates.at(-1);
   if (!aggregate || !rawRows) throw new Error('Usage overview SQL evidence was not captured');
-  assertEquals(rawRows.count, 80);
+  assertEquals(rawRows.count, 160);
+  assertEquals(aggregates.length, 1);
   assertEquals(aggregate.resultCount < rawRows.count, true);
   assertEquals(overview.axes.none[0], {
-    bucket: 'all', group: 'all', requests: 40,
-    metrics: [{ metric: 'input_tokens', quantity: '820' }], cost: '410',
+    bucket: 'all', group: 'all', requests: 80,
+    metrics: [{ metric: 'input_tokens', quantity: '3240' }], cost: '1620',
   });
 });
