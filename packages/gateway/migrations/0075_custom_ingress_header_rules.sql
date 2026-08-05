@@ -1,6 +1,6 @@
 -- Custom upstream ingress header rules are required by the runtime parser.
--- Existing Custom rows forwarded no client headers, represented by an empty
--- rule list.
+-- Existing Custom rows receive the secure default: no configurable header
+-- admissions.
 
 UPDATE upstreams
 SET config_json = json_set(config_json, '$.ingressHeadersRules', json('[]'))

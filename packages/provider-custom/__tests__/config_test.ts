@@ -73,6 +73,9 @@ test('assertCustomUpstreamRecord rejects invalid or duplicate ingress header rul
     [[{ key: 'X-Route', value: null }, { key: 'x-route', value: 'other' }], 'duplicate key x-route'],
     [[{ key: 'bad header', value: null }], 'must be a valid HTTP header name'],
     [[{ key: 'x-route', value: 'ok\r\nnot-ok' }], 'value is not a valid HTTP header value'],
+    [[{ key: 'x-route', value: 'control\u0001byte' }], 'value is not a valid HTTP header value'],
+    [[{ key: 'x-route', value: 'delete\u007fbyte' }], 'value is not a valid HTTP header value'],
+    [[{ key: 'x-route', value: 'non-byte-\u0100' }], 'value is not a valid HTTP header value'],
     [[{ key: 'x-route', value: null, extra: true }], 'must contain only key and value'],
     ['not-an-array', 'ingressHeadersRules must be an array'],
     [[null], 'must contain only key and value'],
@@ -82,6 +85,10 @@ test('assertCustomUpstreamRecord rejects invalid or duplicate ingress header rul
     [[{ key: 'Anthropic-Beta', value: null }], 'anthropic-beta is owned by the Messages protocol'],
     [[{ key: 'Authorization', value: null }], 'authorization is owned by the HTTP transport'],
     [[{ key: 'CF-Ray', value: null }], 'cf-ray is owned by the HTTP transport'],
+    [[{ key: 'X-Forwarded-Port', value: null }], 'x-forwarded-port is owned by the HTTP transport'],
+    [[{ key: 'Sec-WebSocket-Key', value: null }], 'sec-websocket-key is owned by the HTTP transport'],
+    [[{ key: 'Proxy-Authenticate', value: null }], 'proxy-authenticate is owned by the HTTP transport'],
+    [[{ key: 'Proxy-Authentication-Info', value: null }], 'proxy-authentication-info is owned by the HTTP transport'],
   ] as const) {
     assertThrows(
       () => assertCustomUpstreamRecord({

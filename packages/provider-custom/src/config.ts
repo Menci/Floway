@@ -92,6 +92,15 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 // https://www.rfc-editor.org/rfc/rfc9110.html#section-5.6.2
 const HTTP_FIELD_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 
+// Field values admit HTAB, visible ASCII, and obs-text bytes. Fetch rejects
+// every other control byte and values that cannot undergo ByteString
+// conversion, so persisted replacements are validated before request time.
+// https://www.rfc-editor.org/rfc/rfc9110.html#section-5.5
+const isHttpFieldValue = (value: string): boolean => [...value].every(char => {
+  const code = char.charCodeAt(0);
+  return code === 0x09 || (code >= 0x20 && code <= 0x7e) || (code >= 0x80 && code <= 0xff);
+});
+
 // https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/beta/beta.ts#L622-L635
 const PROTOCOL_OWNED_INGRESS_HEADER_NAMES = new Map([
   ['anthropic-beta', 'Messages'],
@@ -103,8 +112,10 @@ const PROTOCOL_OWNED_INGRESS_HEADER_NAMES = new Map([
 // cookies, proxy/IP signals, or hop-by-hop fields leaks credentials/topology or
 // is rejected by runtime fetch.
 // https://www.rfc-editor.org/rfc/rfc9110.html#section-7.6.1
+// https://www.rfc-editor.org/rfc/rfc9110.html#section-11.7
 // https://www.rfc-editor.org/rfc/rfc7239.html
 // https://www.rfc-editor.org/rfc/rfc8586.html
+// https://www.rfc-editor.org/rfc/rfc6455.html#section-11.3
 // https://developers.cloudflare.com/fundamentals/reference/http-request-headers/
 // https://cloud.google.com/apis/docs/system-parameters
 // https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/model-provider-info/src/lib.rs#L396-L408
@@ -122,6 +133,8 @@ const PROTECTED_INGRESS_HEADER_NAMES = new Set([
   'host',
   'keep-alive',
   'proxy-authorization',
+  'proxy-authenticate',
+  'proxy-authentication-info',
   'proxy-connection',
   'te',
   'trailer',
@@ -139,6 +152,12 @@ const PROTECTED_INGRESS_HEADER_NAMES = new Set([
   'x-real-ip',
 ]);
 
+const PROTECTED_INGRESS_HEADER_PREFIXES = [
+  'cf-',
+  'sec-websocket-',
+  'x-forwarded-',
+] as const;
+
 const ingressHeadersRulesField = (value: unknown): CustomIngressHeaderRule[] => {
   if (!Array.isArray(value)) throw new Error('Malformed custom upstream config: ingressHeadersRules must be an array');
   const seen = new Set<string>();
@@ -154,7 +173,7 @@ const ingressHeadersRulesField = (value: unknown): CustomIngressHeaderRule[] => 
     if (owningProtocol !== undefined) {
       throw new Error(`Malformed custom upstream config: ingressHeadersRules[${index}].key ${key} is owned by the ${owningProtocol} protocol`);
     }
-    if (PROTECTED_INGRESS_HEADER_NAMES.has(key) || key.startsWith('cf-')) {
+    if (PROTECTED_INGRESS_HEADER_NAMES.has(key) || PROTECTED_INGRESS_HEADER_PREFIXES.some(prefix => key.startsWith(prefix))) {
       throw new Error(`Malformed custom upstream config: ingressHeadersRules[${index}].key ${key} is owned by the HTTP transport`);
     }
     if (seen.has(key)) {
@@ -165,12 +184,11 @@ const ingressHeadersRulesField = (value: unknown): CustomIngressHeaderRule[] => 
       throw new Error(`Malformed custom upstream config: ingressHeadersRules[${index}].value must be a string or null`);
     }
     if (raw.value === null) return { key, value: null };
-    const headers = new Headers();
-    try {
-      headers.set(key, raw.value);
-    } catch {
+    if (!isHttpFieldValue(raw.value)) {
       throw new Error(`Malformed custom upstream config: ingressHeadersRules[${index}].value is not a valid HTTP header value`);
     }
+    const headers = new Headers();
+    headers.set(key, raw.value);
     return { key, value: headers.get(key) as string };
   });
 };
