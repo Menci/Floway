@@ -280,11 +280,11 @@ test('/voyage/v1/rerank translates a DashScope native response', async () => {
     async request => {
       upstreamBody = await request.json();
       assertEquals(new URL(request.url).pathname, '/api/v1/services/rerank/text-rerank/text-rerank');
-      return jsonResponse({
+      return new Response(JSON.stringify({
         request_id: 'request-1',
         output: { results: [{ index: 1, relevance_score: 0.75, document: { text: 'two' } }] },
         usage: { total_tokens: 16 },
-      });
+      }), { headers: { 'content-type': 'text/plain', 'x-request-id': 'dashscope-request' } });
     },
     async () => {
       const response = await requestApp('/voyage/v1/rerank', {
@@ -299,6 +299,8 @@ test('/voyage/v1/rerank translates a DashScope native response', async () => {
         }),
       });
       assertEquals(response.status, 200);
+      assertEquals(response.headers.get('content-type'), 'application/json');
+      assertEquals(response.headers.get('x-request-id'), 'dashscope-request');
       assertEquals(await response.json(), {
         object: 'list',
         model: 'public-reranker',

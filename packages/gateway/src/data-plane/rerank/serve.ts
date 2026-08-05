@@ -163,7 +163,10 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Contex
     ctx.dump?.success(terminal.identity, null);
     settleRerank(ctx, terminal.performance, terminal.identity, measuredUsage, false);
     usageSettled = true;
-    return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response, { body: JSON.stringify(rendered) }));
+    return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response, {
+      body: JSON.stringify(rendered),
+      contentType: 'application/json',
+    }));
   } catch (error) {
     if (terminal !== undefined && !usageSettled) {
       settleRerank(ctx, terminal.performance, terminal.identity, measuredUsage, true);

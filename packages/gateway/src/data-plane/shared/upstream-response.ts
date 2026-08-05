@@ -52,6 +52,7 @@ export const mergeForwardedUpstreamHeaders = (base: HeadersInit | undefined, ups
 export interface ForwardUpstreamResponseOptions {
   readonly body?: BodyInit | null;
   readonly defaultContentType?: string | null;
+  readonly contentType?: string | null;
 }
 
 // Forward a raw or replaced body with every safe upstream header. JSON is the
@@ -61,9 +62,11 @@ export const forwardUpstreamResponse = (
   response: Response,
   options: ForwardUpstreamResponseOptions = {},
 ): Response => {
-  const { body = response.body, defaultContentType = 'application/json' } = options;
+  const { body = response.body, defaultContentType = 'application/json', contentType: contentTypeOverride } = options;
   const headers = new Headers();
-  const contentType = response.headers.get('content-type') ?? defaultContentType;
+  const contentType = contentTypeOverride !== undefined
+    ? contentTypeOverride
+    : response.headers.get('content-type') ?? defaultContentType;
   if (contentType !== null) headers.set('content-type', contentType);
   for (const [name, value] of forwardableUpstreamHeaders(response.headers)) headers.set(name, value);
   return new Response(body, { status: response.status, headers });

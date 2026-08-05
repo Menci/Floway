@@ -42,6 +42,11 @@ test('forwardUpstreamResponse supports raw and replaced bodies with configurable
 
   const replaced = forwardUpstreamResponse(upstream, { body: 'replacement' });
   expect(await replaced.text()).toBe('replacement');
+  const replacedJson = forwardUpstreamResponse(new Response('raw', { headers: { 'content-type': 'text/plain' } }), {
+    body: '{}',
+    contentType: 'application/json',
+  });
+  expect(replacedJson.headers.get('content-type')).toBe('application/json');
 
   const untyped = new Response(Uint8Array.of(1));
   expect(forwardUpstreamResponse(untyped.clone()).headers.get('content-type')).toBe('application/json');
