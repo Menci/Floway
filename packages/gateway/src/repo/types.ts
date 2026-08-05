@@ -160,9 +160,11 @@ export interface ApiKeyRepo {
   // resolves when attributing past usage.
   listByUserIdIncludingDeleted(userId: number): Promise<ApiKey[]>;
   findByRawKey(rawKey: string): Promise<ApiKey | null>;
+  findByRawKeyIncludingDeleted(rawKey: string): Promise<ApiKey | null>;
   getById(id: string): Promise<ApiKey | null>;
   save(key: ApiKey): Promise<void>;
   update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null>;
+  rotate(id: string, expectedRawKey: string, nextRawKey: string): Promise<ApiKey | null>;
   softDelete(id: string): Promise<boolean>;
   softDeleteByUserId(userId: number): Promise<number>;
   deleteAll(): Promise<void>;

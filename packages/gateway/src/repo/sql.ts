@@ -7,6 +7,7 @@ import { SqlResponsesItemsRepo, SqlResponsesSnapshotsRepo } from './responses-st
 import { generateSessionToken } from './session-tokens.ts';
 import { SqlSpilledFilesRepo } from './spilled-files-sql.ts';
 import { runStatements } from './sql-batch.ts';
+import { parseStoredJson } from './stored-json.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
@@ -59,6 +60,7 @@ import { parseUpstreamHue, parseUpstreamKind } from './upstream-parse.ts';
 import { usageMetricRows } from './usage-metrics.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
 import { parseServerSecret } from '../shared/server-secret.ts';
+import { parseUpstreamIdsValue } from '../shared/upstream-ids.ts';
 import { assertWebSearchProviderName, type WebSearchConfig } from '../shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import type { SqlBindValue, SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
@@ -92,15 +94,12 @@ const sqliteBoolean = (value: boolean): 0 | 1 => value ? 1 : 0;
 // upstream access beyond what the admin set.
 const parseUpstreamIds = (raw: string | null, label: string): string[] | null => {
   if (raw === null) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (cause) {
-    throw new Error(`upstream_ids JSON is malformed for ${label}: ${cause instanceof Error ? cause.message : String(cause)}`);
+  const parsed = parseStoredJson(raw, `upstream_ids JSON is malformed for ${label}`);
+  const result = parseUpstreamIdsValue(parsed);
+  if (!result.ok || result.value === null) {
+    throw new Error(`upstream_ids is invalid for ${label}: ${result.ok ? 'expected a stored array' : result.error}`);
   }
-  if (!Array.isArray(parsed)) throw new Error(`upstream_ids is not an array for ${label}`);
-  if (!parsed.every(item => typeof item === 'string')) throw new Error(`upstream_ids contains non-string entries for ${label}`);
-  return parsed as string[];
+  return result.value;
 };
 
 const toApiKey = (row: ApiKeyRow): ApiKey => ({
@@ -153,6 +152,14 @@ class SqlApiKeyRepo implements ApiKeyRepo {
   async findByRawKey(rawKey: string): Promise<ApiKey | null> {
     const row = await this.db
       .prepare(`SELECT ${API_KEY_COLUMNS} FROM api_keys WHERE key = ? AND deleted_at IS NULL`)
+      .bind(rawKey)
+      .first<ApiKeyRow>();
+    return row ? toApiKey(row) : null;
+  }
+
+  async findByRawKeyIncludingDeleted(rawKey: string): Promise<ApiKey | null> {
+    const row = await this.db
+      .prepare(`SELECT ${API_KEY_COLUMNS} FROM api_keys WHERE key = ?`)
       .bind(rawKey)
       .first<ApiKeyRow>();
     return row ? toApiKey(row) : null;
@@ -225,6 +232,18 @@ class SqlApiKeyRepo implements ApiKeyRepo {
         hasResponsesRetention ? 1 : 0, patch.responsesRetentionSeconds ?? null,
         id,
       )
+      .first<ApiKeyRow>();
+    return row === null ? null : toApiKey(row);
+  }
+
+  async rotate(id: string, expectedRawKey: string, nextRawKey: string): Promise<ApiKey | null> {
+    const row = await this.db
+      .prepare(
+        `UPDATE api_keys SET key = ?
+         WHERE id = ? AND key = ? AND deleted_at IS NULL
+         RETURNING ${API_KEY_COLUMNS}`,
+      )
+      .bind(nextRawKey, id, expectedRawKey)
       .first<ApiKeyRow>();
     return row === null ? null : toApiKey(row);
   }

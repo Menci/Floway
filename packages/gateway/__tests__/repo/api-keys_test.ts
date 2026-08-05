@@ -4,8 +4,7 @@ import { InMemoryRepo } from './memory.ts';
 import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename } from './test-sqlite.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { ApiKey, Repo } from '../../src/repo/types.ts';
-import type { SqlBindValue, SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
-import { assertEquals, assertThrows } from '@floway-dev/test-utils';
+import { assertEquals, assertRejects, assertThrows } from '@floway-dev/test-utils';
 
 const REPO_BACKENDS: Array<readonly [string, () => Promise<Repo>]> = [
   ['memory', async () => new InMemoryRepo()],
@@ -26,62 +25,17 @@ const baseKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
   ...overrides,
 });
 
-// Both production SQLite adapters reject JavaScript booleans at bind time.
-// sql.js accepts them, so this wrapper keeps the repository test honest about
-// the scalar contract shared by node:sqlite and Cloudflare D1.
-class ScalarOnlyPreparedStatement implements SqlPreparedStatement {
-  constructor(private readonly inner: SqlPreparedStatement) {}
-
-  bind(...values: SqlBindValue[]): SqlPreparedStatement {
-    if (values.some(value => typeof value === 'boolean')) {
-      throw new TypeError('JavaScript booleans are not SQLite-bindable values');
-    }
-    return new ScalarOnlyPreparedStatement(this.inner.bind(...values));
-  }
-
-  first<T = Record<string, unknown>>(): Promise<T | null> {
-    return this.inner.first<T>();
-  }
-
-  all<T = Record<string, unknown>>(): Promise<SqlResult<T>> {
-    return this.inner.all<T>();
-  }
-
-  run(): Promise<SqlResult> {
-    return this.inner.run();
-  }
-}
-
-class ScalarOnlySqlDatabase implements SqlDatabase {
-  constructor(private readonly inner: SqlDatabase) {}
-
-  prepare(query: string): SqlPreparedStatement {
-    return new ScalarOnlyPreparedStatement(this.inner.prepare(query));
-  }
-
-  exec(sql: string): Promise<unknown> {
-    return this.inner.exec(sql);
-  }
-}
-
 for (const [backend, makeRepo] of REPO_BACKENDS) {
-  test(`[${backend}] api keys repo defaults dumpRetentionSeconds to null on save`, async () => {
-    const repo = await makeRepo();
-    await repo.apiKeys.save(baseKey());
-    assertEquals((await repo.apiKeys.getById('key_dump'))?.dumpRetentionSeconds, null);
-  });
-
   test(`[${backend}] api keys repo round-trips and updates dumpRetentionSeconds across save/getById`, async () => {
     const repo = await makeRepo();
-    await repo.apiKeys.save(baseKey({ dumpRetentionSeconds: 86_400 }));
-    assertEquals((await repo.apiKeys.getById('key_dump'))?.dumpRetentionSeconds, 86_400);
+    await repo.apiKeys.save(baseKey({ dumpRetentionSeconds: 3600 }));
+    assertEquals((await repo.apiKeys.getById('key_dump'))?.dumpRetentionSeconds, 3600);
 
     // Positive -> null (the column survives ON CONFLICT UPDATE).
     await repo.apiKeys.save(baseKey({ dumpRetentionSeconds: null }));
     assertEquals((await repo.apiKeys.getById('key_dump'))?.dumpRetentionSeconds, null);
 
     // Positive -> different positive (overwrite, not coalesce).
-    await repo.apiKeys.save(baseKey({ dumpRetentionSeconds: 3600 }));
     await repo.apiKeys.save(baseKey({ dumpRetentionSeconds: 86_400 }));
     assertEquals((await repo.apiKeys.getById('key_dump'))?.dumpRetentionSeconds, 86_400);
   });
@@ -109,7 +63,50 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
     const secret = 'ab'.repeat(32);
     await repo.apiKeys.save(baseKey({ serverSecret: secret }));
     assertEquals((await repo.apiKeys.findByRawKey('raw_dump_key'))?.serverSecret, secret);
+  });
 
+  test(`[${backend}] API key reads and writes isolate mutable upstream id arrays`, async () => {
+    const repo = await makeRepo();
+    const input = baseKey({ upstreamIds: ['up_a'] });
+    await repo.apiKeys.save(input);
+    input.upstreamIds?.push('input-corruption');
+    assertEquals((await repo.apiKeys.getById(input.id))?.upstreamIds, ['up_a']);
+
+    const read = await repo.apiKeys.getById(input.id);
+    read?.upstreamIds?.push('output-corruption');
+    assertEquals((await repo.apiKeys.getById(input.id))?.upstreamIds, ['up_a']);
+  });
+
+  test(`[${backend}] raw keys and server secrets remain unique after soft deletion`, async () => {
+    const repo = await makeRepo();
+    await repo.apiKeys.save(baseKey());
+    await repo.apiKeys.softDelete('key_dump');
+
+    await assertRejects(
+      () => repo.apiKeys.save(baseKey({ id: 'raw-conflict', serverSecret: '11'.repeat(32) })),
+      Error,
+      'UNIQUE constraint failed: api_keys.key',
+    );
+    await assertRejects(
+      () => repo.apiKeys.save(baseKey({ id: 'secret-conflict', key: 'other-raw-key' })),
+      Error,
+      'UNIQUE constraint failed: api_keys.server_secret',
+    );
+    assertEquals(await repo.apiKeys.findByRawKey('raw_dump_key'), null);
+    assertEquals((await repo.apiKeys.findByRawKeyIncludingDeleted('raw_dump_key'))?.id, 'key_dump');
+  });
+
+  test(`[${backend}] API key rotation compares the credential and cannot revive a tombstone`, async () => {
+    const repo = await makeRepo();
+    await repo.apiKeys.save(baseKey());
+
+    const rotated = await repo.apiKeys.rotate('key_dump', 'raw_dump_key', 'rotated-key');
+    assertEquals(rotated?.key, 'rotated-key');
+    assertEquals(await repo.apiKeys.rotate('key_dump', 'raw_dump_key', 'stale-key'), null);
+
+    await repo.apiKeys.softDelete('key_dump');
+    assertEquals(await repo.apiKeys.rotate('key_dump', 'rotated-key', 'resurrected-key'), null);
+    assertEquals((await repo.apiKeys.findByRawKeyIncludingDeleted('rotated-key'))?.deletedAt === null, false);
   });
 
   test(`[${backend}] targeted Responses retention updates preserve unrelated fields`, async () => {
@@ -124,7 +121,7 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
 }
 
 test('[sql] targeted API key updates use SQLite-bindable scalar values', async () => {
-  const repo = new SqlRepo(new ScalarOnlySqlDatabase(await createSqliteTestDb()));
+  const repo = new SqlRepo(await createSqliteTestDb());
   await repo.apiKeys.save(baseKey());
 
   const updated = await repo.apiKeys.update('key_dump', {
@@ -142,6 +139,17 @@ test('[sql] targeted API key updates use SQLite-bindable scalar values', async (
   assertEquals(updated?.upstreamIds, ['upstream-a']);
   assertEquals(updated?.dumpRetentionSeconds, 3600);
   assertEquals(updated?.responsesRetentionSeconds, 7 * 24 * 60 * 60);
+});
+
+test('[sql] API key reads reject malformed and non-canonical upstream ids', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  await repo.apiKeys.save(baseKey({ upstreamIds: ['up_a'] }));
+
+  for (const raw of ['{', '{}', '[]', '[""]', '["up_a","up_a"]', '[1]']) {
+    await db.prepare('UPDATE api_keys SET upstream_ids = ? WHERE id = ?').bind(raw, 'key_dump').run();
+    await assertRejects(() => repo.apiKeys.getById('key_dump'), Error, 'upstream_ids');
+  }
 });
 
 test('migration 0057 backfills distinct server secrets and enforces their canonical form', async () => {

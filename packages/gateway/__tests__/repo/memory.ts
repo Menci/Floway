@@ -178,6 +178,19 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
 
   constructor(private readonly expirationSweeps: ExpirationSweepsRepo) {}
 
+  private clone(key: ApiKey): ApiKey {
+    return { ...key, upstreamIds: key.upstreamIds === null ? null : [...key.upstreamIds] };
+  }
+
+  private assertUnique(key: ApiKey): void {
+    if (this.keys.some(existing => existing.id !== key.id && existing.key === key.key)) {
+      throw new Error('UNIQUE constraint failed: api_keys.key');
+    }
+    if (this.keys.some(existing => existing.id !== key.id && existing.serverSecret === key.serverSecret)) {
+      throw new Error('UNIQUE constraint failed: api_keys.server_secret');
+    }
+  }
+
   private schedulePolicyChanges(previous: ApiKey, next: ApiKey): Promise<void> {
     const schedules: Promise<void>[] = [];
     if (previous.responsesRetentionSeconds !== next.responsesRetentionSeconds || previous.deletedAt !== next.deletedAt) {
@@ -190,50 +203,58 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
   }
 
   list(): Promise<ApiKey[]> {
-    return Promise.resolve(this.keys.filter(k => k.deletedAt === null).map(k => ({ ...k })));
+    return Promise.resolve(this.keys.filter(k => k.deletedAt === null).map(k => this.clone(k)));
   }
 
   listIncludingDeleted(): Promise<ApiKey[]> {
-    return Promise.resolve(this.keys.map(k => ({ ...k })));
+    return Promise.resolve(this.keys.map(k => this.clone(k)));
   }
 
   listByUserId(userId: number): Promise<ApiKey[]> {
-    return Promise.resolve(this.keys.filter(k => k.userId === userId && k.deletedAt === null).map(k => ({ ...k })));
+    return Promise.resolve(this.keys.filter(k => k.userId === userId && k.deletedAt === null).map(k => this.clone(k)));
   }
 
   listByUserIdIncludingDeleted(userId: number): Promise<ApiKey[]> {
-    return Promise.resolve(this.keys.filter(k => k.userId === userId).map(k => ({ ...k })));
+    return Promise.resolve(this.keys.filter(k => k.userId === userId).map(k => this.clone(k)));
   }
 
   findByRawKey(rawKey: string): Promise<ApiKey | null> {
     const k = this.keys.find(k => k.key === rawKey && k.deletedAt === null);
-    return Promise.resolve(k ? { ...k } : null);
+    return Promise.resolve(k ? this.clone(k) : null);
+  }
+
+  findByRawKeyIncludingDeleted(rawKey: string): Promise<ApiKey | null> {
+    const k = this.keys.find(k => k.key === rawKey);
+    return Promise.resolve(k ? this.clone(k) : null);
   }
 
   getById(id: string): Promise<ApiKey | null> {
     const k = this.keys.find(k => k.id === id && k.deletedAt === null);
-    return Promise.resolve(k ? { ...k } : null);
+    return Promise.resolve(k ? this.clone(k) : null);
   }
 
   async save(key: ApiKey): Promise<void> {
+    this.assertUnique(key);
     const i = this.keys.findIndex(k => k.id === key.id);
     if (i >= 0) {
       const previous = this.keys[i];
-      this.keys[i] = { ...key };
+      const next = this.clone(key);
+      this.keys[i] = next;
       try {
-        await this.schedulePolicyChanges(previous, key);
+        await this.schedulePolicyChanges(previous, next);
       } catch (error) {
         this.keys[i] = previous;
         throw error;
       }
-    } else this.keys.push({ ...key });
+    } else this.keys.push(this.clone(key));
   }
 
   async update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null> {
     const i = this.keys.findIndex(key => key.id === id && key.deletedAt === null);
     if (i < 0) return null;
     const previous = this.keys[i];
-    const next = { ...previous, ...patch };
+    const next = this.clone({ ...previous, ...patch });
+    this.assertUnique(next);
     this.keys[i] = next;
     try {
       await this.schedulePolicyChanges(previous, next);
@@ -241,7 +262,23 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
       this.keys[i] = previous;
       throw error;
     }
-    return { ...next };
+    return this.clone(next);
+  }
+
+  async rotate(id: string, expectedRawKey: string, nextRawKey: string): Promise<ApiKey | null> {
+    const i = this.keys.findIndex(key => key.id === id && key.key === expectedRawKey && key.deletedAt === null);
+    if (i < 0) return null;
+    const previous = this.keys[i];
+    const next = this.clone({ ...previous, key: nextRawKey });
+    this.assertUnique(next);
+    this.keys[i] = next;
+    try {
+      await this.schedulePolicyChanges(previous, next);
+    } catch (error) {
+      this.keys[i] = previous;
+      throw error;
+    }
+    return this.clone(next);
   }
 
   async softDelete(id: string): Promise<boolean> {
