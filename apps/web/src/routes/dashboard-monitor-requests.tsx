@@ -47,7 +47,7 @@ interface LoaderData {
 
 export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise<LoaderData> {
   requireDashboardSession();
-  const keysResult = await callApi(() => api.api.keys.$get());
+  const keysResult = await callApi(() => api.api.keys.$get(undefined, { init: { signal: request.signal } }));
   const keys = keysResult.data?.filter(key => key.dump_retention_seconds !== null) ?? null;
   const url = new URL(request.url);
   const requestedKeyId = url.searchParams.get('key');
@@ -59,9 +59,9 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
     return { collected: null, error: keysResult.error?.message ?? null, keys, record: null, recordError: null, records: [], recordsError: null, selectedKeyId };
   }
   const [recordsResult, recordResult] = await Promise.all([
-    callApi(() => api.api.dump.keys[':keyId'].records.$get({ param: { keyId: selectedKeyId }, query: { limit: '100' } })),
+    callApi(() => api.api.dump.keys[':keyId'].records.$get({ param: { keyId: selectedKeyId }, query: { limit: '100' } }, { init: { signal: request.signal } })),
     recordId
-      ? callApi(() => api.api.dump.keys[':keyId'].records[':recordId'].$get({ param: { keyId: selectedKeyId, recordId } }))
+      ? callApi(() => api.api.dump.keys[':keyId'].records[':recordId'].$get({ param: { keyId: selectedKeyId, recordId } }, { init: { signal: request.signal } }))
       : Promise.resolve(null),
   ]);
   const record = recordResult?.data ?? null;
