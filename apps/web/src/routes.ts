@@ -20,14 +20,8 @@ const developmentRoutes =
     ? [route('winui-gallery', 'routes/dashboard-winui-gallery.tsx')]
     : [];
 
-const developmentRootRoutes =
-  import.meta.env.MODE === 'development'
-    ? [route('copilot-ghe-mock', 'routes/copilot-ghe-mock.tsx')]
-    : [];
-
 export default [
   index('routes/home.tsx'),
-  ...developmentRootRoutes,
   route('dashboard', 'routes/dashboard.tsx', [
     index('routes/dashboard-index.tsx'),
     route('playground', 'routes/dashboard-playground.tsx'),

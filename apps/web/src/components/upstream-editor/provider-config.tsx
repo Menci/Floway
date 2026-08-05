@@ -22,7 +22,7 @@ import type { DeviceFlowStart, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { errorMessage } from '../../lib/error-message';
-import { Dropdown, Input, Textarea } from '../ui/fluent-form-controls';
+import { Combobox, Dropdown, Input, Textarea } from '../ui/fluent-form-controls';
 import { CHECKBOX_LIST_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OpenLinkLabel } from '../ui/open-link-label';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
@@ -274,6 +274,7 @@ function CopilotConfig({ record, onPatch }: {
   onPatch: (patch: { config?: unknown; state?: unknown }, persisted?: boolean) => void;
 }) {
   const { t } = useTranslation();
+  const { control } = useFormContext<ValuesForKind<'copilot'>>();
   const values = useWatch<UpstreamEditorValues>();
   const config = values.config as typeof record.config;
   const [flow, setFlow] = useState<DeviceFlowStart | null>(null);
@@ -327,20 +328,48 @@ function CopilotConfig({ record, onPatch }: {
 
   const start = async () => {
     stop(); setBusy(true); setError(null);
-    const result = await callApi(() => api.api.upstreams.copilot.oauth['device-login'].start.$post());
+    const result = await callApi(() => api.api.upstreams.copilot.oauth['device-login'].start.$post({
+      json: { record: previewRecord(record, values as UpstreamEditorValues) },
+    }));
     if (cancelled.current) return;
     if (result.error) { setBusy(false); setError(result.error.message); return; }
     setFlow(result.data);
   };
 
+  const hostField = <Field
+    hint={t('dashboard.upstreamEditor.copilot.githubHostHint')}
+    label={t('dashboard.upstreamEditor.copilot.githubHost')}
+  >
+    <Controller
+      control={control}
+      name="config.githubHost"
+      render={({ field }) => <Combobox
+        className="font-mono"
+        freeform
+        name={field.name}
+        onBlur={field.onBlur}
+        onChange={(_, data) => field.onChange(data.value)}
+        onOptionSelect={(_, data) => field.onChange(data.optionValue)}
+        readOnly={busy || flow !== null || Boolean(config.user.login)}
+        ref={field.ref}
+        selectedOptions={field.value === 'github.com' ? ['github.com'] : []}
+        value={field.value}
+      >
+        <Option text="github.com" value="github.com">github.com</Option>
+      </Combobox>}
+    />
+  </Field>;
+
   if (config.user.login) {
     return <div className="grid gap-3">
-      <AccountSummary kind="copilot" title={config.user.name ?? config.user.login} subtitle={`@${config.user.login}`} />
+      {hostField}
+      <AccountSummary kind="copilot" title={config.user.name ?? config.user.login} subtitle={`${config.githubHost}/${config.user.login}`} />
       {isPersisted(record) ? <CopilotQuotaCard record={record} /> : <ReadyToSaveHint kind="copilot" />}
     </div>;
   }
   return <div className="grid gap-3">
-    <Text size={300} className="text-fui-fg2">{t('dashboard.upstreamEditor.copilot.description')}</Text>
+    {hostField}
+    <Text size={300} className="text-fui-fg2">{t('dashboard.upstreamEditor.copilot.description', { host: config.githubHost })}</Text>
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
     {!flow ? <Button appearance="primary" disabledFocusable={busy} icon={busy ? <Spinner size="tiny" /> : <PlugConnectedRegular />} onClick={() => void start()}>{t('dashboard.upstreamEditor.copilot.connect')}</Button> : <>
       <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.copilot.deviceCode')}</Text>
