@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -160,5 +160,39 @@ describe('usage dimension controls', () => {
     expect(data.upstreams).toEqual([]);
     expect(screen.getByRole('heading', { level: 2, name: 'By Model' })).toBeTruthy();
     expect(screen.getByText('Unavailable')).toBeTruthy();
+  });
+
+  it('retries a failed grouping when the operator selects it again', async () => {
+    let overviewRequests = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost');
+      if (url.pathname === '/api/token-usage/overview') {
+        overviewRequests += 1;
+        if (overviewRequests === 1) return Response.json({ error: 'Unavailable' }, { status: 500 });
+        return Response.json({
+          series: [{ ...usageRecord, group: 'upstream:up-1', metrics: [{ metric: 'input_tokens', quantity: '10' }] }],
+          axes: { none: [], model: [], upstream: [], userId: [], keyId: [] },
+          dimensionValues: loaderData.usage.dimensionValues,
+          users: loaderData.usage.users,
+          keys: loaderData.usage.keys,
+        });
+      }
+      if (url.pathname === '/api/search-usage') return Response.json({ view: 'all-by-user', records: [], users: [] });
+      if (url.pathname === '/api/upstream-options') return Response.json([{ id: 'up-1', name: 'Copilot seat' }]);
+      throw new Error(`Unexpected request to ${url.pathname}`);
+    }));
+    renderPage(loaderData);
+
+    const chooseUpstream = () => {
+      fireEvent.click(screen.getByRole('combobox', { name: 'Group by' }));
+      fireEvent.click(screen.getByRole('option', { name: 'By Upstream' }));
+    };
+    chooseUpstream();
+    await waitFor(() => expect(overviewRequests).toBe(1));
+    expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Group by' }).value).toBe('By Model');
+
+    chooseUpstream();
+    await waitFor(() => expect(overviewRequests).toBe(2));
+    await waitFor(() => expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Group by' }).value).toBe('By Upstream'));
   });
 });

@@ -9,7 +9,7 @@ import { revalidateOnPathnameChange } from './revalidation';
 import type { GlobalError } from '../api/client';
 import { SEARCH_PROVIDER_LABEL_KEYS } from '../components/search/provider';
 import { TelemetryDimensionControls, type TelemetryDimension } from '../components/telemetry/dimension-controls';
-import { scopeTelemetryIdentity } from '../components/telemetry/filter-state';
+import { scopeTelemetryIdentity, telemetryFilterDimensions } from '../components/telemetry/filter-state';
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
@@ -81,18 +81,22 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const query = useMemo(() => ({ filters, groupBy, range }), [filters, groupBy, range]);
   const locale = useLocale();
 
-  const reload = useCallback(async (signal: AbortSignal, { background }: { background: boolean }, arrived: () => void) => {
+  const reload = useCallback(async (signal: AbortSignal, { background }: { background: boolean }) => {
     const requestedAt = Date.now();
     if (!background) setError(null);
     const next = await loadUsagePageData(loaderData.isAdmin, query.range, query.groupBy, query.filters, requestedAt, signal);
-    if (signal.aborted) return;
+    if (signal.aborted) return false;
+    if (next.usage === null) {
+      setError(next.error);
+      return false;
+    }
     setUsage(next.usage);
     setSearch(next.search);
     setUpstreams(next.upstreams);
     setLoadedRange(query.range);
     setLoadedAt(requestedAt);
-    arrived();
     setError(next.error);
+    return true;
   }, [loaderData.isAdmin, query]);
 
   const { loadedQuery, poll, refresh, refreshing } = useRefreshOnChange(query, reload);
@@ -125,10 +129,12 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     ];
   }, [t, upstreams, usage]);
   const availableDimensions = dimensions?.filter(dimension => dimension.key !== 'userId' || loaderData.isAdmin) ?? null;
-  const filterDimensions = availableDimensions?.filter(dimension => (
-    !((dimension.key === 'userId' || dimension.key === 'keyId') && (loadedQuery.groupBy === 'userId' || loadedQuery.groupBy === 'keyId'))
-  ));
-  const selectedDimension = availableDimensions?.find(dimension => dimension.key === loadedQuery.groupBy);
+  const filterDimensions = availableDimensions && telemetryFilterDimensions(availableDimensions, loadedQuery.groupBy);
+  const selectedDimension = availableDimensions === null ? null : (() => {
+    const dimension = availableDimensions.find(candidate => candidate.key === loadedQuery.groupBy);
+    if (dimension === undefined) throw new RangeError(`Unknown Usage grouping dimension: ${loadedQuery.groupBy}`);
+    return dimension;
+  })();
   const visibleSeries = useMemo(
     () => usage?.series.filter(record => !hiddenSeries.has(record.group)) ?? null,
     [hiddenSeries, usage],
@@ -155,10 +161,20 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const showSearch = searchChart === null || searchChart.entries.length > 0;
 
   const changeGroupBy = (next: UsageGroupBy) => {
-    if (next === groupBy) return;
+    if (next === groupBy) {
+      if (next !== loadedQuery.groupBy) void refresh();
+      return;
+    }
     setGroupBy(next);
     setFilters(current => clearGroupedUsageFilter(current, next));
     setHiddenSeries(new Set());
+  };
+  const changeRange = (next: UsageRange) => {
+    if (next === range) {
+      if (next !== loadedQuery.range) void refresh();
+      return;
+    }
+    setRange(next);
   };
   const setFilter = (key: UsageGroupBy, values: string[]) => setFilters(current => ({ ...current, [key]: values }));
 
@@ -197,12 +213,12 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
             { value: '7d', label: t('dashboard.usage.range.sevenDays'), to: addressOf({ range: '7d' }) },
             { value: '30d', label: t('dashboard.usage.range.thirtyDays'), to: addressOf({ range: '30d' }) },
           ]}
-          onChange={value => setRange(value as UsageRange)}
+          onChange={value => changeRange(value as UsageRange)}
           value={loadedQuery.range}
         />
       </div>
 
-      {tokenChart === null || summary === null || selectedDimension === undefined ? (
+      {tokenChart === null || summary === null || selectedDimension === null ? (
         <EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine>
       ) : <>
         <UsageChartSection

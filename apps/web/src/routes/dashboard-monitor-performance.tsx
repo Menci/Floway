@@ -26,7 +26,7 @@ import {
 import { buildPerformanceChart, performanceBuckets } from '../components/performance/plot';
 import { PerformanceTable } from '../components/performance/table';
 import { TelemetryDimensionControls, type TelemetryDimension } from '../components/telemetry/dimension-controls';
-import { scopeTelemetryIdentity } from '../components/telemetry/filter-state';
+import { scopeTelemetryIdentity, telemetryFilterDimensions } from '../components/telemetry/filter-state';
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
@@ -110,7 +110,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const locale = useLocale();
 
   // A background poll must not clear a failure the operator has not read.
-  const reload = useCallback(async (signal: AbortSignal, { background }: { background: boolean }, arrived: () => void) => {
+  const reload = useCallback(async (signal: AbortSignal, { background }: { background: boolean }) => {
     const requestedAt = Date.now();
     if (!background) setError(null);
     const search = buildPerformanceQuery(query.range, query.groupBy, query.filters, requestedAt);
@@ -118,14 +118,15 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       { query: search },
       { init: { signal } },
     ));
-    if (signal.aborted) return;
-    if (result.error) setError(result.error);
-    else {
-      setOverview(result.data);
-      setLoadedRange(query.range);
-      setLoadedAt(requestedAt);
-      arrived();
+    if (signal.aborted) return false;
+    if (result.error) {
+      setError(result.error);
+      return false;
     }
+    setOverview(result.data);
+    setLoadedRange(query.range);
+    setLoadedAt(requestedAt);
+    return true;
   }, [query]);
 
   const { loadedQuery, poll, refresh, refreshing } = useRefreshOnChange(query, reload);
@@ -150,10 +151,20 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   // axis under an operator who chose nothing.
   // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-combobox/library/src/utils/useSelection.ts#L23-L26
   const changeGroupBy = (next: PerformanceGroupBy) => {
-    if (next === groupBy) return;
+    if (next === groupBy) {
+      if (next !== loadedQuery.groupBy) void refresh();
+      return;
+    }
     setGroupBy(next);
     setFilters(current => clearGroupedFilter(current, next));
     setHiddenSeries(new Set());
+  };
+  const changeRange = (next: PerformanceRange) => {
+    if (next === range) {
+      if (next !== loadedQuery.range) void refresh();
+      return;
+    }
+    setRange(next);
   };
   const setFilter = (key: keyof PerformanceFilters, value: string[]) => setFilters(current => ({ ...current, [key]: value }));
   const buckets = useMemo(() => performanceBuckets(loadedRange, loadedAt, locale), [loadedAt, loadedRange, locale]);
@@ -183,9 +194,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     { key: 'keyId', groupLabel: t('dashboard.performance.groupBy.keyId'), filterLabel: t('dashboard.performance.filters.keyId'), allLabel: t('dashboard.performance.filters.all.keyId'), options: overview?.dimensionValues.keyIds.map(value => ({ value, label: labels?.keys.get(value) ?? value })) ?? [] },
   ];
   const availableDimensions = dimensions.filter(dimension => dimension.key !== 'userId' || view === 'all-by-user');
-  const filterDimensions = availableDimensions.filter(dimension => (
-    !((dimension.key === 'userId' || dimension.key === 'keyId') && (loadedQuery.groupBy === 'userId' || loadedQuery.groupBy === 'keyId'))
-  ));
+  const filterDimensions = telemetryFilterDimensions(availableDimensions, loadedQuery.groupBy);
 
   return <section className="dashboard-page">
     <DashboardPageHeader
@@ -228,7 +237,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
           <ChoiceGroup ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value, to: addressOf({ percentile: value }) }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} />
           <ChoiceGroup ariaLabel={t('dashboard.performance.range.label')} items={[
             { value: 'today', label: t('dashboard.performance.range.today'), to: addressOf({ range: 'today' }) }, { value: '7d', label: t('dashboard.performance.range.sevenDays'), to: addressOf({ range: '7d' }) }, { value: '30d', label: t('dashboard.performance.range.thirtyDays'), to: addressOf({ range: '30d' }) },
-          ]} onChange={value => setRange(value as PerformanceRange)} value={loadedQuery.range} />
+          ]} onChange={value => changeRange(value as PerformanceRange)} value={loadedQuery.range} />
         </div>
       </Panel>
       <Panel className="min-w-0">

@@ -76,9 +76,9 @@ describe('refresh supersession', () => {
 });
 
 test('query-driven refresh commits the query only when its response arrives', async () => {
-  const runs: Array<{ arrive: () => void; settle: () => void }> = [];
-  const reload = (_signal: AbortSignal, _options: { background: boolean }, arrive: () => void) =>
-    new Promise<void>(resolve => { runs.push({ arrive, settle: resolve }); });
+  const runs: Array<{ settle: (succeeded: boolean) => void }> = [];
+  const reload = (_signal: AbortSignal, _options: { background: boolean }) =>
+    new Promise<boolean>(resolve => { runs.push({ settle: resolve }); });
   const { result, rerender } = renderHook(
     ({ query }) => useRefreshOnChange(query, reload),
     { initialProps: { query: { groupBy: 'model' } } },
@@ -89,8 +89,26 @@ test('query-driven refresh commits the query only when its response arrives', as
   expect(result.current.loadedQuery).toEqual({ groupBy: 'model' });
 
   await act(async () => {
-    runs[0]!.arrive();
-    runs[0]!.settle();
+    runs[0]!.settle(true);
   });
   expect(result.current.loadedQuery).toEqual({ groupBy: 'upstream' });
+});
+
+test('query-driven refresh keeps the displayed query after a failed response', async () => {
+  const runs: Array<{ settle: (succeeded: boolean) => void }> = [];
+  const reload = (_signal: AbortSignal, _options: { background: boolean }) =>
+    new Promise<boolean>(resolve => { runs.push({ settle: resolve }); });
+  const { result, rerender } = renderHook(
+    ({ query }) => useRefreshOnChange(query, reload),
+    { initialProps: { query: { groupBy: 'model' } } },
+  );
+
+  rerender({ query: { groupBy: 'upstream' } });
+  await waitFor(() => expect(runs).toHaveLength(1));
+  await act(async () => { runs[0]!.settle(false); });
+
+  expect(result.current.loadedQuery).toEqual({ groupBy: 'model' });
+
+  await act(async () => { void result.current.refresh(); });
+  expect(runs).toHaveLength(2);
 });
