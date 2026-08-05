@@ -46,7 +46,8 @@ export { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, normalizeModelPrefix } fro
 
 export type {
   Provider,
-  IngressHeaderRule,
+  CustomIngressHeaderRule,
+  CustomProvider,
   InboundHeaderMatcher,
   ProviderInstance,
   ProviderCallResult,
@@ -56,6 +57,7 @@ export type {
   ProviderResponsesResult,
   ProviderStreamResult,
   ResponsesAction,
+  StandardProvider,
   UpstreamCallOptions,
 } from './provider.ts';
 export { headersForMessagesCall } from './messages.ts';

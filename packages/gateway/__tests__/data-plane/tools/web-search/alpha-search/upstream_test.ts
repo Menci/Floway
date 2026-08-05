@@ -1,6 +1,6 @@
 import { test, vi } from 'vitest';
 
-import type { IngressHeaderRule, ModelCandidate } from '@floway-dev/provider';
+import type { CustomIngressHeaderRule, ModelCandidate, Provider } from '@floway-dev/provider';
 import { assertEquals, assertExists, stubModelCandidate, stubProvider } from '@floway-dev/test-utils';
 
 let resolvedCandidate: ModelCandidate | undefined;
@@ -18,14 +18,13 @@ vi.mock('../../../../../src/data-plane/providers/resolution.ts', async importOri
 
 const { resolveAlphaSearchDispatcher } = await import('../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts');
 
-const dispatcherFor = async (kind: 'codex' | 'custom', ingressHeaderRules: readonly IngressHeaderRule[] = []) => {
+const dispatcherFor = async (kind: 'codex' | 'custom', ingressHeaderRules: readonly CustomIngressHeaderRule[] = []) => {
   let observedHeaders: Headers | undefined;
   const base = stubModelCandidate();
-  const provider = {
+  if (base.provider.kind !== 'custom') throw new Error('stubModelCandidate default must be Custom');
+  const common = {
     ...base.provider,
     upstreamId: 'search-upstream',
-    kind,
-    ingressHeaderRules,
     instance: stubProvider({
       callAlphaSearch: async (_model, _body, _signal, opts) => {
         observedHeaders = opts.headers;
@@ -33,6 +32,12 @@ const dispatcherFor = async (kind: 'codex' | 'custom', ingressHeaderRules: reado
       },
     }),
   };
+  const provider: Provider = kind === 'custom'
+    ? { ...common, kind, ingressHeaderRules }
+    : (() => {
+        const { ingressHeaderRules: _customRules, ...standard } = common;
+        return { ...standard, kind };
+      })();
   resolvedCandidate = stubModelCandidate({ provider });
   const dispatcher = await resolveAlphaSearchDispatcher({
     config: { upstreamId: provider.upstreamId, model: 'search-model' },
@@ -58,7 +63,7 @@ test('Codex Alpha Search receives only its declared turn metadata', async () => 
   });
 });
 
-test('Custom Alpha Search resolves instance passthrough and replacement rules', async () => {
+test('Custom Alpha Search admits configured names before the provider call', async () => {
   const { dispatcher, observedHeaders } = await dispatcherFor('custom', [
     { matcher: 'x-empty', value: '' },
     { matcher: 'x-overwrite', value: 'configured' },
@@ -75,8 +80,8 @@ test('Custom Alpha Search resolves instance passthrough and replacement rules', 
   const headers = observedHeaders();
   assertExists(headers);
   assertEquals(Object.fromEntries(headers), {
-    'x-empty': '',
-    'x-overwrite': 'configured',
+    'x-empty': 'client-empty',
+    'x-overwrite': 'client-overwrite',
     'x-passthrough': 'client-passthrough',
   });
 });

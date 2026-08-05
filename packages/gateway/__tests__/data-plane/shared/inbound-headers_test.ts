@@ -4,7 +4,7 @@ import { describe, expect, test } from 'vitest';
 import { inboundHeaders, resolveIngressHeaders, resolveIngressHeadersForProvider } from '../../../src/data-plane/shared/inbound-headers.ts';
 import { buildUpstreamCallOptions } from '../../../src/data-plane/shared/upstream-call-options.ts';
 import { mockGatewayCtx } from '../../test-utils/gateway-ctx.ts';
-import type { UpstreamProviderKind } from '@floway-dev/provider';
+import type { Provider, UpstreamProviderKind } from '@floway-dev/provider';
 import { stubModelCandidate, stubProvider } from '@floway-dev/test-utils';
 
 const headerRecord = (headers: Headers): Record<string, string> => Object.fromEntries(headers);
@@ -43,7 +43,7 @@ describe('resolveIngressHeaders', () => {
       'x-debug': 'discard',
     });
 
-    expect(headerRecord(resolveIngressHeaders(source, ['X-Client-Request-ID'], []))).toEqual({
+    expect(headerRecord(resolveIngressHeaders(source, ['X-Client-Request-ID']))).toEqual({
       'x-client-request-id': 'request-1',
     });
     expect(headerRecord(source)).toEqual({
@@ -59,7 +59,7 @@ describe('resolveIngressHeaders', () => {
       'x-trace-one': '1',
       'x-trace-two': '2',
       'x-trace-three': '3',
-    }), [matcher], []);
+    }), [matcher]);
 
     expect(headerRecord(filtered)).toEqual({ 'x-trace-one': '1', 'x-trace-two': '2' });
     expect(matcher.lastIndex).toBe(0);
@@ -67,14 +67,14 @@ describe('resolveIngressHeaders', () => {
 
   test('returns a fresh empty bag for an empty policy', () => {
     const source = new Headers({ 'x-client-request-id': 'request-1' });
-    const first = resolveIngressHeaders(source, [], []);
-    const second = resolveIngressHeaders(source, [], []);
+    const first = resolveIngressHeaders(source, []);
+    const second = resolveIngressHeaders(source, []);
 
     expect([...first]).toEqual([]);
     expect(first).not.toBe(second);
   });
 
-  test('composes static admissions with dynamic passthrough and replacement rules', () => {
+  test('composes static and instance admissions without transforming values', () => {
     const source = new Headers({
       'x-dynamic': 'dynamic-client',
       'x-overlap': 'overlap-client',
@@ -82,25 +82,26 @@ describe('resolveIngressHeaders', () => {
       'x-unlisted': 'discard',
     });
 
-    expect(headerRecord(resolveIngressHeaders(
-      source,
-      ['x-static', 'x-overlap'],
-      [
-        { matcher: 'x-dynamic', value: null },
-        { matcher: 'x-overlap', value: 'rule-wins' },
-      ],
-    ))).toEqual({
+    expect(headerRecord(resolveIngressHeaders(source, ['x-static', 'x-overlap', 'x-dynamic']))).toEqual({
       'x-dynamic': 'dynamic-client',
-      'x-overlap': 'rule-wins',
+      'x-overlap': 'overlap-client',
       'x-static': 'static-client',
     });
   });
 });
 
 describe('provider inbound header policies', () => {
-  const provider = (kind: UpstreamProviderKind, ingressHeaderRules = stubModelCandidate().provider.ingressHeaderRules) => ({
+  const provider = (kind: UpstreamProviderKind): Provider => {
+    const base = stubModelCandidate().provider;
+    if (base.kind !== 'custom') throw new Error('stubModelCandidate default must be Custom');
+    if (kind === 'custom') return { ...base, kind, ingressHeaderRules: [] };
+    const { ingressHeaderRules: _customRules, ...standard } = base;
+    return { ...standard, kind };
+  };
+
+  const customProvider = (ingressHeaderRules: { matcher: string; value: string | null }[]) => ({
     ...stubModelCandidate().provider,
-    kind,
+    kind: 'custom' as const,
     ingressHeaderRules,
   });
 
@@ -173,14 +174,14 @@ describe('provider inbound header policies', () => {
     });
   });
 
-  test('Custom rules passthrough or overwrite only matching ingress headers', () => {
+  test('Custom rule names extend the allowlist without transforming values', () => {
     const source = new Headers({
       'x-empty': 'client-empty',
       'x-overwrite': 'client-overwrite',
       'x-passthrough': 'client-passthrough',
       'x-unlisted': 'discard',
     });
-    const custom = provider('custom', [
+    const custom = customProvider([
       { matcher: 'X-Passthrough', value: null },
       { matcher: 'x-overwrite', value: 'configured' },
       { matcher: 'x-empty', value: '' },
@@ -188,8 +189,8 @@ describe('provider inbound header policies', () => {
     ]);
 
     expect(headerRecord(resolveIngressHeadersForProvider(source, custom))).toEqual({
-      'x-empty': '',
-      'x-overwrite': 'configured',
+      'x-empty': 'client-empty',
+      'x-overwrite': 'client-overwrite',
       'x-passthrough': 'client-passthrough',
     });
     expect(headerRecord(source)).toEqual({
@@ -200,14 +201,14 @@ describe('provider inbound header policies', () => {
     });
   });
 
-  test('resolves instance rules independently for same-kind failover candidates', () => {
-    const source = new Headers({ 'x-route': 'client' });
-    const first = resolveIngressHeadersForProvider(source, provider('custom', [{ matcher: 'x-route', value: 'first' }]));
-    const second = resolveIngressHeadersForProvider(source, provider('custom', [{ matcher: 'x-route', value: 'second' }]));
+  test('resolves instance allowlists independently for same-kind failover candidates', () => {
+    const source = new Headers({ 'x-first': 'first-client', 'x-second': 'second-client' });
+    const first = resolveIngressHeadersForProvider(source, customProvider([{ matcher: 'x-first', value: 'first' }]));
+    const second = resolveIngressHeadersForProvider(source, customProvider([{ matcher: 'x-second', value: 'second' }]));
 
-    expect(first.get('x-route')).toBe('first');
-    expect(second.get('x-route')).toBe('second');
-    expect(source.get('x-route')).toBe('client');
+    expect(headerRecord(first)).toEqual({ 'x-first': 'first-client' });
+    expect(headerRecord(second)).toEqual({ 'x-second': 'second-client' });
+    expect(headerRecord(source)).toEqual({ 'x-first': 'first-client', 'x-second': 'second-client' });
   });
 
   test('buildUpstreamCallOptions resolves independently for each failover candidate', () => {

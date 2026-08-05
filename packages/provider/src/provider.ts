@@ -25,19 +25,14 @@ export type ResponsesAction = 'generate' | 'compact';
 
 export type InboundHeaderMatcher = string | RegExp;
 
-export interface IngressHeaderRule {
+export interface CustomIngressHeaderRule {
   readonly matcher: InboundHeaderMatcher;
   readonly value: string | null;
 }
 
-export interface Provider {
+interface ProviderBase {
   upstreamId: string;
-  kind: UpstreamProviderKind;
   name: string;
-  // Candidate-specific exact/regex transformations layered over the static
-  // provider allowlist. `null` preserves a matched ingress value; a string
-  // replaces it. Rules do not create a header absent from ingress.
-  ingressHeaderRules: readonly IngressHeaderRule[];
   disabledPublicModelIds: readonly string[];
   // Per-upstream model name prefix policy mirrored from the source upstream
   // record so registry helpers — routing and listing — read it from the
@@ -49,6 +44,20 @@ export interface Provider {
   modelsCache: UpstreamModelsCache | null;
   instance: ProviderInstance;
 }
+
+export interface CustomProvider extends ProviderBase {
+  kind: 'custom';
+  // Every configured name joins this instance's ordinary-header allowlist.
+  // The Custom provider alone interprets string values as replacements after
+  // the gateway admits the matching ingress headers; null leaves them intact.
+  ingressHeaderRules: readonly CustomIngressHeaderRule[];
+}
+
+export interface StandardProvider extends ProviderBase {
+  kind: Exclude<UpstreamProviderKind, 'custom'>;
+}
+
+export type Provider = CustomProvider | StandardProvider;
 
 export interface ProviderCallResult {
   response: Response;
@@ -106,12 +115,13 @@ export type ProviderResponsesResult =
 // already stopped waiting on.
 //
 // `headers` is the ordinary inbound-headers conduit from gateway to provider.
-// The gateway combines the provider module's `inboundHeaderAllowlist` with the
-// candidate's instance rules before constructing this bag. Protocol-owned
-// metadata is carried by its owning invocation boundary and does not widen
-// this provider-level policy. A provider may clone and mutate the bag for
-// request-specific wire shaping, but must not retain the gateway-owned
-// reference past the call.
+// The gateway applies the provider module's `inboundHeaderAllowlist` before
+// constructing this bag. Custom additionally admits the exact names configured
+// on that instance, then owns any empty/custom replacement at its call boundary.
+// Protocol-owned metadata is carried by its owning invocation boundary and does
+// not widen this policy. A provider may clone and mutate the bag for
+// request-specific wire shaping, but must not retain the gateway-owned reference
+// past the call.
 export interface UpstreamCallOptions {
   fetcher: Fetcher;
   waitUntil: (promise: Promise<unknown>) => void;
