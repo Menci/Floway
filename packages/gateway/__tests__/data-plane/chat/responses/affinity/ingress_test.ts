@@ -97,7 +97,8 @@ test('forces nested agent-message ciphertext to its producer and preserves forei
   }, codec);
 
   const projectionA = acceptedAffinityEvaluation(prepared, candidateA);
-  expect(prepared.requiredTargets).toEqual([targetFor(candidateA)]);
+  expect(prepared.requiredTargets).toEqual([]);
+  expect(prepared.requiredUpstreamIds).toEqual([candidateA.provider.upstreamId]);
   expect(projectionA.materialize().input[0]).toMatchObject({
     id: 'amsg_client',
     content: [
@@ -141,8 +142,11 @@ test.each([
     input: [item(JSON.stringify({ target: '/root/worker', message: encrypted }))],
   }, codec);
 
-  expect(prepared.requiredTargets).toEqual([targetFor(candidateA)]);
+  expect(prepared.requiredTargets).toEqual([]);
+  expect(prepared.requiredUpstreamIds).toEqual([candidateA.provider.upstreamId]);
   expect(prepared.evaluateCandidate(candidateB)).toEqual({ kind: 'rejected' });
+  const sameUpstreamOtherModel = { ...candidateA, model: { ...candidateA.model, id: 'child-model' } };
+  expect(prepared.evaluateCandidate(sameUpstreamOtherModel)).toMatchObject({ kind: 'accepted', degrades: false });
   const restored = acceptedAffinityEvaluation(prepared, candidateA).materialize().input[0];
   if (restored.type !== 'function_call' && restored.type !== 'multi_agent_call') throw new Error('Expected inter-agent call');
   expect(JSON.parse(restored.arguments)).toEqual({ target: '/root/worker', message: 'gAAAA-producer-ciphertext' });
@@ -183,7 +187,8 @@ test.each(['function_call_output', 'custom_tool_call_output'] as const)(
       }],
     }, codec);
 
-    expect(prepared.requiredTargets).toEqual([targetFor(candidateA)]);
+    expect(prepared.requiredTargets).toEqual([]);
+    expect(prepared.requiredUpstreamIds).toEqual([candidateA.provider.upstreamId]);
     expect(prepared.evaluateCandidate(candidateB)).toEqual({ kind: 'rejected' });
     expect(acceptedAffinityEvaluation(prepared, candidateA).materialize().input[0]).toMatchObject({
       output: [

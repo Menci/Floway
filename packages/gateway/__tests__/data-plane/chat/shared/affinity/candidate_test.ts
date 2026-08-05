@@ -8,6 +8,7 @@ import {
   defineAffinityRequest,
   projectOptionalAffinityBlob,
   projectRequiredAffinityBlob,
+  projectUpstreamAffinityBlob,
   selectAffinityCandidates,
 } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import type { AliasRules } from '@floway-dev/protocols/common';
@@ -125,6 +126,18 @@ describe('client-carried affinity candidate selection', () => {
     )).toEqual([alias, direct]);
   });
 
+  test('upstream-scoped state permits model changes within one upstream', () => {
+    const producer = candidate('up-a', 'model-a');
+    const consumer = candidate('up-a', 'model-b');
+    const other = candidate('up-b', 'model-b');
+    const analysis = defineAffinityRequest([], value =>
+      value.provider.upstreamId === 'up-a'
+        ? { kind: 'accepted', degrades: false, materialize: () => undefined }
+        : { kind: 'rejected' }, ['up-a']);
+
+    expect(selectedCandidates([other, consumer, producer], analysis)).toEqual([consumer, producer]);
+  });
+
   test('fails unavailable and conflicting required affinity', () => {
     const first = candidate('up-a', 'model');
     const second = candidate('up-b', 'model');
@@ -160,6 +173,7 @@ describe('affinity blob projection', () => {
     const foreign = { kind: 'foreign', value: 'opaque' } as const;
     expect(projectOptionalAffinityBlob(foreign, other)).toEqual({ kind: 'preserve', value: 'opaque' });
     expect(projectRequiredAffinityBlob(foreign, other)).toEqual({ kind: 'preserve', value: 'opaque' });
+    expect(projectUpstreamAffinityBlob(foreign, other)).toEqual({ kind: 'preserve', value: 'opaque' });
   });
 
   test('removes originless metadata without degradation', () => {
@@ -179,5 +193,12 @@ describe('affinity blob projection', () => {
     const natural = ownedBlob(targetFor(exact), 'opaque');
     expect(projectRequiredAffinityBlob(natural, samePhysicalTarget)).toEqual({ kind: 'preserve', value: 'opaque' });
     expect(projectRequiredAffinityBlob(natural, other)).toEqual({ kind: 'reject', requiredTarget: targetFor(exact) });
+  });
+
+  test('upstream-scoped state survives a model change but rejects another upstream', () => {
+    const natural = ownedBlob(targetFor(exact), 'opaque');
+    const otherModel = candidate('up-a', 'other-model');
+    expect(projectUpstreamAffinityBlob(natural, otherModel)).toEqual({ kind: 'preserve', value: 'opaque' });
+    expect(projectUpstreamAffinityBlob(natural, other)).toEqual({ kind: 'reject', requiredTarget: targetFor(exact) });
   });
 });

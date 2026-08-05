@@ -6,6 +6,7 @@ import type { ModelCandidate } from '@floway-dev/provider';
 
 export interface AffinityRequestAnalysis<T> {
   readonly requiredTargets: readonly AffinityTarget[];
+  readonly requiredUpstreamIds: readonly string[];
   readonly evaluateCandidate: (candidate: ModelCandidate) => CandidateAffinityEvaluation<T>;
 }
 
@@ -63,23 +64,39 @@ export const projectRequiredAffinityBlob = (
   return { kind: 'preserve', value: decoded.value };
 };
 
+export const projectUpstreamAffinityBlob = (
+  decoded: DecodedAffinityBlob,
+  candidate: ModelCandidate,
+): RequiredAffinityBlobProjection => {
+  if (decoded.kind === 'foreign') return { kind: 'preserve', value: decoded.value };
+  if (candidate.provider.upstreamId !== decoded.affinity.upstreamId) {
+    return { kind: 'reject', requiredTarget: decoded.affinity };
+  }
+  if (decoded.value === undefined) return { kind: 'remove', degrades: false };
+  return { kind: 'preserve', value: decoded.value };
+};
+
 export const defineAffinityRequest = <T>(
   requiredTargets: readonly AffinityTarget[],
   evaluate: (candidate: ModelCandidate) => CandidateAffinityEvaluation<T>,
+  requiredUpstreamIds: readonly string[] = [],
 ): AffinityRequestAnalysis<T> => {
   const uniqueRequiredTargets: AffinityTarget[] = [];
   for (const target of requiredTargets) {
     if (!uniqueRequiredTargets.some(existing => sameRequiredTarget(existing, target))) uniqueRequiredTargets.push(target);
   }
+  const uniqueRequiredUpstreamIds = [...new Set(requiredUpstreamIds)];
   const evaluations = new WeakMap<ModelCandidate, CandidateAffinityEvaluation<T>>();
   return {
     requiredTargets: uniqueRequiredTargets,
+    requiredUpstreamIds: uniqueRequiredUpstreamIds,
     evaluateCandidate: candidate => {
       const existing = evaluations.get(candidate);
       if (existing !== undefined) return existing;
       const candidateEvaluation = evaluate(candidate);
       const satisfiesRequirements = uniqueRequiredTargets.every(target => candidateSatisfiesAffinityTarget(candidate, target));
-      if ((candidateEvaluation.kind === 'accepted') !== satisfiesRequirements) {
+      const satisfiesUpstreamRequirements = uniqueRequiredUpstreamIds.every(upstreamId => candidate.provider.upstreamId === upstreamId);
+      if ((candidateEvaluation.kind === 'accepted') !== (satisfiesRequirements && satisfiesUpstreamRequirements)) {
         throw new Error('Affinity candidate evaluation disagrees with the request requirement analysis');
       }
       if (candidateEvaluation.kind === 'rejected') {
@@ -105,10 +122,19 @@ export const selectAffinityCandidates = <T>(
   candidates: readonly ModelCandidate[],
   affinity: AffinityRequestAnalysis<T>,
 ): AffinityCandidateSelection<T> | AffinitySelectionFailure => {
-  if (affinity.requiredTargets.length > 1) {
+  const targetUpstreamId = affinity.requiredTargets[0]?.upstreamId;
+  if (
+    affinity.requiredTargets.length > 1
+    || affinity.requiredUpstreamIds.length > 1
+    || (targetUpstreamId !== undefined && affinity.requiredUpstreamIds.some(upstreamId => upstreamId !== targetUpstreamId))
+  ) {
+    const requirements = [
+      ...affinity.requiredTargets.map(target => `'${target.upstreamId}/${target.modelId}'`),
+      ...affinity.requiredUpstreamIds.map(upstreamId => `upstream '${upstreamId}'`),
+    ];
     return {
       kind: 'routing-unavailable',
-      message: `Client-carried state requires multiple incompatible targets: ${affinity.requiredTargets.map(target => `'${target.upstreamId}/${target.modelId}'`).join(', ')}.`,
+      message: `Client-carried state requires multiple incompatible targets: ${requirements.join(', ')}.`,
     };
   }
 
@@ -120,7 +146,13 @@ export const selectAffinityCandidates = <T>(
     const evaluation = affinity.evaluateCandidate(candidate);
     if (evaluation.kind === 'accepted') accepted.push({ candidate, evaluation });
   }
-  if (affinity.requiredTargets.length === 1 && accepted.length === 0) {
+  if ((affinity.requiredTargets.length === 1 || affinity.requiredUpstreamIds.length === 1) && accepted.length === 0) {
+    if (affinity.requiredTargets.length === 0) {
+      return {
+        kind: 'routing-unavailable',
+        message: `Client-carried state requires unavailable upstream '${affinity.requiredUpstreamIds[0]}'.`,
+      };
+    }
     const [required] = affinity.requiredTargets;
     return {
       kind: 'routing-unavailable',

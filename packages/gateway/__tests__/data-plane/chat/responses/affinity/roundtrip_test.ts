@@ -146,10 +146,8 @@ test('inter-agent ciphertext carries one mandatory target from parent function c
   }, codec);
 
   for (const replay of [parentReplay, childReplay]) {
-    expect(replay.requiredTargets).toEqual([{
-      upstreamId: candidateA.provider.upstreamId,
-      modelId: candidateA.model.id,
-    }]);
+    expect(replay.requiredTargets).toEqual([]);
+    expect(replay.requiredUpstreamIds).toEqual([candidateA.provider.upstreamId]);
     expect(replay.evaluateCandidate(candidateB)).toEqual({ kind: 'rejected' });
   }
   const parentInput = parentReplay.evaluateCandidate(candidateA);

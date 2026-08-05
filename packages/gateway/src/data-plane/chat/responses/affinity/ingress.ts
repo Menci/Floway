@@ -8,6 +8,7 @@ import {
   type OptionalAffinityBlobProjection,
   projectOptionalAffinityBlob,
   projectRequiredAffinityBlob,
+  projectUpstreamAffinityBlob,
 } from '../../shared/affinity/index.ts';
 import { replaceResponsesOpaqueLocations, responsesOpaqueLocations, type ResponsesOpaqueLocation } from './opaque-locations.ts';
 import type { CanonicalResponsesPayload, ResponsesInputItem } from '@floway-dev/protocols/responses';
@@ -19,7 +20,7 @@ interface ResponsesBlobLocation extends ResponsesOpaqueLocation {
 }
 
 interface ResponsesBlobAnalysis extends ResponsesBlobLocation {
-  readonly required: boolean;
+  readonly requirement: 'target' | 'upstream' | null;
 }
 
 interface ResponsesItemAnalysis {
@@ -31,6 +32,7 @@ interface ResponsesItemAnalysis {
 
 interface ResponsesRequestAnalysis {
   readonly requiredTargets: readonly AffinityTarget[];
+  readonly requiredUpstreamIds: readonly string[];
   readonly items: readonly ResponsesItemAnalysis[];
 }
 
@@ -42,11 +44,14 @@ interface ResponsesBlobCandidateProjection {
 const itemInheritsRequiredTarget = (item: ResponsesInputItem): boolean =>
   ['compaction', 'compaction_summary', 'program', 'program_output'].includes(item.type);
 
-const blobRequiresOriginalTarget = (item: ResponsesInputItem, location: ResponsesBlobLocation): boolean =>
-  (location.required && location.decoded.kind === 'owned' && location.decoded.value !== undefined)
-  || (item.type === 'context_compaction'
+const blobRequirement = (item: ResponsesInputItem, location: ResponsesBlobLocation): 'target' | 'upstream' | null => {
+  if (location.required && location.decoded.kind === 'owned' && location.decoded.value !== undefined) return 'upstream';
+  return (item.type === 'context_compaction'
     ? location.decoded.kind === 'owned' && location.decoded.value !== undefined
-    : itemInheritsRequiredTarget(item));
+    : itemInheritsRequiredTarget(item))
+    ? 'target'
+    : null;
+};
 
 const opaqueBlobLocations = async (
   items: readonly ResponsesInputItem[],
@@ -71,18 +76,20 @@ const analyzeResponsesRequest = (
 ): ResponsesRequestAnalysis => {
   const locationsByItem = Map.groupBy(locations, location => location.itemIndex);
   const requiredTargets: AffinityTarget[] = [];
+  const requiredUpstreamIds: string[] = [];
   const itemAnalyses: ResponsesItemAnalysis[] = [];
   let latestOwnedTarget: AffinityTarget | undefined;
 
   for (const [itemIndex, item] of items.entries()) {
     const itemLocations = locationsByItem.get(itemIndex) ?? [];
     const blobs = itemLocations.map(location => {
-      const required = blobRequiresOriginalTarget(item, location);
+      const requirement = blobRequirement(item, location);
       if (location.decoded.kind === 'owned') {
         latestOwnedTarget = location.decoded.affinity;
-        if (required) requiredTargets.push(latestOwnedTarget);
+        if (requirement === 'target') requiredTargets.push(latestOwnedTarget);
+        if (requirement === 'upstream') requiredUpstreamIds.push(latestOwnedTarget.upstreamId);
       }
-      return { ...location, required };
+      return { ...location, requirement };
     });
     const inheritedRequiredTarget = itemInheritsRequiredTarget(item)
       && itemLocations.length === 0
@@ -99,7 +106,7 @@ const analyzeResponsesRequest = (
     });
   }
 
-  return { requiredTargets, items: itemAnalyses };
+  return { requiredTargets, requiredUpstreamIds, items: itemAnalyses };
 };
 
 const materializeResponsesPayload = (
@@ -138,9 +145,11 @@ const evaluateResponsesCandidate = (
 
     const projections: ResponsesBlobCandidateProjection[] = [];
     for (const blob of item.blobs) {
-      const projection = blob.required
+      const projection = blob.requirement === 'target'
         ? projectRequiredAffinityBlob(blob.decoded, candidate)
-        : projectOptionalAffinityBlob(blob.decoded, candidate);
+        : blob.requirement === 'upstream'
+          ? projectUpstreamAffinityBlob(blob.decoded, candidate)
+          : projectOptionalAffinityBlob(blob.decoded, candidate);
       if (projection.kind === 'reject') {
         unsatisfiedTargets.push(projection.requiredTarget);
         continue;
@@ -172,5 +181,6 @@ export const analyzeResponsesAffinity = async (
   return defineAffinityRequest(
     analysis.requiredTargets,
     candidate => evaluateResponsesCandidate(payload, analysis, candidate),
+    analysis.requiredUpstreamIds,
   );
 };
