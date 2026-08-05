@@ -216,7 +216,7 @@ test('/v1/embeddings aborts a pending upstream request when the inbound request 
       authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-embed',
-      endpoints: {},
+      endpoints: { embeddings: {} },
     },
   }));
 
@@ -228,7 +228,7 @@ test('/v1/embeddings aborts a pending upstream request when the inbound request 
     request => {
       const url = new URL(request.url);
       if (url.pathname === '/v1/models') {
-        return jsonResponse({ object: 'list', data: [{ id: 'custom-embed-model' }] });
+        return jsonResponse({ object: 'list', data: [{ id: 'custom-embed-model', kind: 'embedding' }] });
       }
       if (url.pathname === '/v1/embeddings') {
         upstreamSignal = request.signal;

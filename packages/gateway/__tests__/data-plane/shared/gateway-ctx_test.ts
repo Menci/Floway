@@ -115,17 +115,20 @@ describe('createGatewayCtxFromHono', () => {
     assertEquals(ctx.abortSignal, ctx.downstreamAbortController.signal);
   });
 
-  test('wantsStream=false: downstreamAbortController and abortSignal are both undefined', async () => {
+  test('wantsStream=false: abortSignal is the raw request signal without a downstream controller', async () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
+    let requestSignal: AbortSignal | undefined;
     app.get('/test', c => {
+      requestSignal = c.req.raw.signal;
       ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
       return c.text('ok');
     });
     await app.request('/test');
     assertExists(ctx);
+    assertExists(requestSignal);
     assertEquals(ctx.downstreamAbortController, undefined);
-    assertEquals(ctx.abortSignal, undefined);
+    assertEquals(ctx.abortSignal, requestSignal);
   });
 
   test('caller-supplied downstreamAbortController overrides the factory-minted one (websocket path)', async () => {
