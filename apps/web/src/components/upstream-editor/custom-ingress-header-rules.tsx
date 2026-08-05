@@ -58,7 +58,7 @@ function IngressHeaderRuleRow({
   onRemove: () => void;
 }) {
   const { t } = useTranslation();
-  const { control } = useFormContext<CustomValues>();
+  const { control, trigger } = useFormContext<CustomValues>();
   const labelId = useId();
   const rowNumber = index + 1;
   const keyName = `config.ingressHeadersRules.${index}.key` as const;
@@ -89,6 +89,7 @@ function IngressHeaderRuleRow({
             field.onChange(key);
             field.onBlur();
             if (key === '' && !isBlankRow) onRemove();
+            void trigger('config.ingressHeadersRules');
           }}
           onChange={(_, data) => {
             field.onChange(data.value);
