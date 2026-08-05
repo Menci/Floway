@@ -1,4 +1,5 @@
 import { getRepo } from '../../repo/index.ts';
+import { modelsCacheGenerationFor } from './registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { Fetcher, Provider, ProviderModel } from '@floway-dev/provider';
 
@@ -60,10 +61,11 @@ const runFetch = async (
   key: string,
   loadProvidedModels?: () => Promise<ProviderModel[]>,
 ): Promise<ProviderModel[]> => {
+  const generation = modelsCacheGenerationFor(instance);
   try {
     const models = [...await (loadProvidedModels?.() ?? instance.instance.getProvidedModels(fetcher))];
     const entry = { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now(), models, lastError: null };
-    const persisted = await getRepo().upstreams.saveModelsCache(key, instance.modelsCacheGeneration, entry);
+    const persisted = await getRepo().upstreams.saveModelsCache(key, generation, entry);
     // The instance carries the row as it was read at request start, and a
     // request reaches this function more than once -- once per alias target
     // resolved. Writing the entry back keeps every later read in the request
@@ -75,7 +77,7 @@ const runFetch = async (
     // A no-op on an upstream with no cached catalog: a brand-new upstream that
     // fails its first fetch surfaces the error to the caller with nothing
     // persisted.
-    await getRepo().upstreams.saveModelsCacheError(key, instance.modelsCacheGeneration, { message: errorMessage(err), at: Date.now() });
+    await getRepo().upstreams.saveModelsCacheError(key, generation, { message: errorMessage(err), at: Date.now() });
     throw err;
   }
 };
@@ -86,7 +88,7 @@ export const fetchUpstreamModelsCached = async (
 ): Promise<ProviderModel[]> => {
   const { scheduler, fetcher, force, loadProvidedModels } = opts;
   const key = instance.upstreamId;
-  const inFlightKey = `${key}\0${instance.modelsCacheGeneration}`;
+  const inFlightKey = `${key}\0${modelsCacheGenerationFor(instance)}`;
   const now = Date.now();
 
   if (force) {

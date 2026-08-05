@@ -468,7 +468,6 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
 
   return {
     upstreamId: copilot.id,
-    modelsCacheGeneration: copilot.updatedAt,
     kind: 'copilot',
     name: copilot.name,
     disabledPublicModelIds: copilot.disabledPublicModelIds,

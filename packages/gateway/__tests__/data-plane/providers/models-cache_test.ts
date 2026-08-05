@@ -7,6 +7,16 @@ import { directFetcher, type Provider, type ProviderModel, type UpstreamModelsCa
 import { stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 const UPSTREAM_ID = 'up_a';
+const CACHE_GENERATION = vi.hoisted(() => '2026-08-01T00:00:00.000Z');
+const generationByProvider = vi.hoisted(() => new WeakMap<object, string>());
+
+vi.mock('../../../src/data-plane/providers/registry.ts', () => ({
+  modelsCacheGenerationFor: (provider: object) => {
+    const generation = generationByProvider.get(provider);
+    if (generation === undefined) throw new Error('test provider has no generation');
+    return generation;
+  },
+}));
 
 const aModel = (id: string): ProviderModel => stubProviderModel({ id });
 
@@ -16,15 +26,20 @@ const aModel = (id: string): ProviderModel => stubProviderModel({ id });
 const stubInstance = (
   fetchFn: () => Promise<ProviderModel[]>,
   modelsCache: UpstreamModelsCache | null = null,
-): Provider => ({
-  upstreamId: UPSTREAM_ID,
-  kind: 'custom',
-  name: UPSTREAM_ID,
-  disabledPublicModelIds: [],
-  modelPrefix: null,
-  modelsCache,
-  instance: stubProvider({ getProvidedModels: fetchFn }),
-});
+  generation = CACHE_GENERATION,
+): Provider => {
+  const provider: Provider = {
+    upstreamId: UPSTREAM_ID,
+    kind: 'custom',
+    name: UPSTREAM_ID,
+    disabledPublicModelIds: [],
+    modelPrefix: null,
+    modelsCache,
+    instance: stubProvider({ getProvidedModels: fetchFn }),
+  };
+  generationByProvider.set(provider, generation);
+  return provider;
+};
 
 // The cache lives on the upstream row, so every write needs a row to
 // land on.
@@ -38,7 +53,7 @@ const setupRepo = async (): Promise<InMemoryRepo> => {
     enabled: true,
     sortOrder: 0,
     createdAt: '2026-08-01T00:00:00.000Z',
-    updatedAt: '2026-08-01T00:00:00.000Z',
+    updatedAt: CACHE_GENERATION,
     config: {},
     state: null,
     modelsCache: null,
@@ -55,7 +70,7 @@ const seedCache = async (
   repo: InMemoryRepo,
   cache: { revision: number; fetchedAt: number; models: ProviderModel[] },
 ): Promise<UpstreamModelsCache> => {
-  await repo.upstreams.saveModelsCache(UPSTREAM_ID, cache);
+  await repo.upstreams.saveModelsCache(UPSTREAM_ID, CACHE_GENERATION, cache);
   const stored = (await repo.upstreams.getById(UPSTREAM_ID))?.modelsCache;
   if (!stored) throw new Error('the seeded catalog did not land on the upstream row');
   return stored;
@@ -180,6 +195,34 @@ describe('fetchUpstreamModelsCached', () => {
     expect(r1.map(m => m.id)).toEqual(['m1']);
     expect(r2.map(m => m.id)).toEqual(['m1']);
     expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  test('a superseded generation neither joins nor overwrites the current catalog', async () => {
+    const repo = await setupRepo();
+    let resolveOld: ((models: ProviderModel[]) => void) | null = null;
+    const oldFetch = vi.fn(() => new Promise<ProviderModel[]>(resolve => { resolveOld = resolve; }));
+    const oldRequest = fetchUpstreamModelsCached(
+      stubInstance(oldFetch),
+      { scheduler: () => {}, fetcher: directFetcher },
+    );
+    await Promise.resolve();
+
+    const nextGeneration = '2026-08-01T00:00:00.001Z';
+    const current = await repo.upstreams.getById(UPSTREAM_ID);
+    if (!current) throw new Error('upstream row missing');
+    await repo.upstreams.saveClearingModelsCache({ ...current, updatedAt: nextGeneration });
+    const newFetch = vi.fn(async () => [aModel('new-tenant-model')]);
+    const newRequest = fetchUpstreamModelsCached(
+      stubInstance(newFetch, null, nextGeneration),
+      { scheduler: () => {}, fetcher: directFetcher, force: true },
+    );
+
+    expect((await newRequest).map(model => model.id)).toEqual(['new-tenant-model']);
+    resolveOld!([aModel('old-tenant-model')]);
+    expect((await oldRequest).map(model => model.id)).toEqual(['old-tenant-model']);
+    expect(oldFetch).toHaveBeenCalledTimes(1);
+    expect(newFetch).toHaveBeenCalledTimes(1);
+    expect((await storedCache(repo))?.models.map(model => model.id)).toEqual(['new-tenant-model']);
   });
 
   test('background revalidate failure preserves stored row and writes lastError', async () => {

@@ -158,7 +158,6 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
 
   return {
     upstreamId: record.id,
-    modelsCacheGeneration: record.updatedAt,
     kind: 'codex',
     name: record.name,
     disabledPublicModelIds: record.disabledPublicModelIds,

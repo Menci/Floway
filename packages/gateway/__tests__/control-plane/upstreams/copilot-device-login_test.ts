@@ -317,7 +317,7 @@ test('/api/upstreams/copilot/oauth/device-login/poll clears the previous identit
   const existing = buildCopilotUpstreamRecord(githubAccount, { id: 'up_switch_identity' });
   await repo.upstreams.deleteAll();
   await repo.upstreams.save(existing);
-  await repo.upstreams.saveModelsCache(existing.id, {
+  await repo.upstreams.saveModelsCache(existing.id, existing.updatedAt, {
     revision: 1,
     fetchedAt: 1_700_000_000_000,
     models: [stubProviderModel({ id: 'old-tenant-model' })],

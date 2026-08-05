@@ -16,8 +16,19 @@ const providersByKind: Record<UpstreamProviderKind, ProviderModule> = {
   ollama: ollamaProviderModule,
 };
 
-export const createProvider = (record: UpstreamRecord): Provider =>
-  providersByKind[record.kind].create(record);
+const cacheGenerationByProvider = new WeakMap<Provider, string>();
+
+export const createProvider = (record: UpstreamRecord): Provider => {
+  const provider = providersByKind[record.kind].create(record);
+  cacheGenerationByProvider.set(provider, record.updatedAt);
+  return provider;
+};
+
+export const modelsCacheGenerationFor = (provider: Provider): string => {
+  const generation = cacheGenerationByProvider.get(provider);
+  if (generation === undefined) throw new Error(`Provider ${provider.upstreamId} has no model-cache generation`);
+  return generation;
+};
 
 export const flagDefaultsForKind = (kind: UpstreamProviderKind): FlagDefaults =>
   providersByKind[kind].defaultFlags;

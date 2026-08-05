@@ -104,7 +104,6 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
 
   return {
     upstreamId: record.id,
-    modelsCacheGeneration: record.updatedAt,
     kind: 'claude-code',
     name: record.name,
     disabledPublicModelIds: record.disabledPublicModelIds,
