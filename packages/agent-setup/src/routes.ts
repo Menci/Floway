@@ -24,7 +24,11 @@ import {
 import { renderPowerShellPrefix, renderShellPrefix } from './render.ts';
 import { type AgentSetupRecord, type AgentSetupRepository, AgentSetupTokenCollisionError } from './repository.ts';
 import { type ScriptAgent, type ScriptLanguage, SETUP_SCRIPT_BODIES } from './script-assets.ts';
-import { AGENT_SETUP_TOKEN_PREFIX_PATTERN, generateAgentSetupToken } from './token.ts';
+import {
+  AGENT_SETUP_TOKEN_PATH_PATTERN,
+  AGENT_SETUP_TOKEN_PREFIX_PATTERN,
+  generateAgentSetupToken,
+} from './token.ts';
 import { agentSetupCreateBody, agentSetupHeartbeatBody, agentSetupUpdateBody } from './wire.ts';
 
 const SETUP_LEASE_TTL_MS = 5 * 60 * 1000;
@@ -116,12 +120,17 @@ const resolveServeableLease = async (
   return { apiKey: apiKey.secret, apiKeyName: apiKey.name, configuration };
 };
 
-const publicErrorDiagnostics = (error: unknown, token: string): string => {
-  if (!(error instanceof Error)) return `Thrown value type: ${typeof error}`;
-  const lines = error.stack?.split('\n') ?? [];
-  const firstFrame = lines.findIndex(line => /^\s*at\s/.test(line));
-  const frames = firstFrame === -1 ? '(stack unavailable)' : lines.slice(firstFrame).join('\n');
-  return `${error.name}\n${frames.replaceAll(token, '[setup-token]')}`;
+const reportPublicServeFailure = (): void => {
+  // Error fields are untrusted: getters can throw, names and multiline stack
+  // prefixes can carry secrets, and a forged frame is indistinguishable from a
+  // real one. Only a locally constructed diagnostic with a fixed message may
+  // cross this public credential boundary.
+  try {
+    console.error(new Error('Agent Setup: failed to serve a public setup script'));
+  } catch {
+    // A host logger failure must not escape into the ordinary error boundary,
+    // whose detailed response would disclose the token-bearing request path.
+  }
 };
 
 export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
@@ -137,22 +146,22 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
       const prefix = language === 'sh' ? renderShellPrefix(input) : renderPowerShellPrefix(input);
       const body = prefix + SETUP_SCRIPT_BODIES[agent][language];
       return c.body(body, 200, SCRIPT_RESPONSE_HEADERS);
-    } catch (error) {
-      // Keep the unauthenticated response opaque. Operator diagnostics retain the
-      // stack frames but omit the error message, which may contain a token or key.
-      console.error('Agent Setup: failed to serve a public setup script', publicErrorDiagnostics(error, token));
+    } catch {
+      // Keep the unauthenticated response and every diagnostic path opaque.
+      reportPublicServeFailure();
       return c.json({ error: { type: 'internal_error' } }, 500, NON_CACHEABLE_HEADERS);
     }
   };
 
   const notFound = (c: Context) => c.body(null, 404, SCRIPT_RESPONSE_HEADERS);
+  const exactTokenPath = `/:token{${AGENT_SETUP_TOKEN_PATH_PATTERN}}`;
   const tokenBearingPath = `/:token{${AGENT_SETUP_TOKEN_PREFIX_PATTERN}}`;
 
   return new Hono()
-    .on(['GET', 'HEAD'], '/:token/claude.sh', serveSetupScript('claude', 'sh'))
-    .on(['GET', 'HEAD'], '/:token/claude.ps1', serveSetupScript('claude', 'ps1'))
-    .on(['GET', 'HEAD'], '/:token/codex.sh', serveSetupScript('codex', 'sh'))
-    .on(['GET', 'HEAD'], '/:token/codex.ps1', serveSetupScript('codex', 'ps1'))
+    .on(['GET', 'HEAD'], `${exactTokenPath}/claude.sh`, serveSetupScript('claude', 'sh'))
+    .on(['GET', 'HEAD'], `${exactTokenPath}/claude.ps1`, serveSetupScript('claude', 'ps1'))
+    .on(['GET', 'HEAD'], `${exactTokenPath}/codex.sh`, serveSetupScript('codex', 'sh'))
+    .on(['GET', 'HEAD'], `${exactTokenPath}/codex.ps1`, serveSetupScript('codex', 'ps1'))
     // Consume every near-miss beneath a token-shaped path before the host's
     // middleware. A mistyped filename or HTTP method still carries the live
     // credential in its URL segment and must not fall through to access logs.

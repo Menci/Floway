@@ -189,58 +189,47 @@ export const tokenUsageMeasurement = (usage: TokenUsage | null): UsageMeasuremen
   };
 };
 
-// OpenAI Images responses report usage as
-// `{input_tokens, output_tokens, total_tokens, input_tokens_details, output_tokens_details}`,
-// where the details objects split each total into `text_tokens` and
-// `image_tokens`. We map that split onto the billing metrics: bare
-// input/output for the text modality, input_image/output_image for the image
-// modality. The details splits are disjoint and sum to their respective total.
-//
-// When a details object is missing but its total is present, the whole total is
-// charged on the bare metric rather than inventing a split. A present field
-// that is a non-number is treated as a malformed upstream payload (return
-// null) rather than silently coerced.
+// ImagesUsage requires every aggregate and both input-modality counts. Output
+// tokens are image tokens; there is no output detail split in the contract.
+// Reject partial or inconsistent usage rather than recording a plausible but
+// false allocation.
+// https://github.com/openai/openai-openapi/blob/a3276900e58b8b2a92e0cb087cd2e6e005f58458/openapi.yaml#L51697-L51731
 export const tokenUsageFromImagesBody = (body: unknown): TokenUsage | null => {
-  if (!body || typeof body !== 'object') return null;
+  if (!isNonArrayObject(body)) return null;
   const { usage } = body as { usage?: unknown };
-  if (!usage || typeof usage !== 'object') return null;
-  const { input_tokens: inputTotal, output_tokens: outputTotal, input_tokens_details: inputDetails, output_tokens_details: outputDetails } = usage as ImagesUsageShape;
+  if (!isNonArrayObject(usage)) return null;
+  const {
+    total_tokens: total,
+    input_tokens: input,
+    output_tokens: output,
+    input_tokens_details: inputDetails,
+  } = usage as ImagesUsageShape;
+  if (!isTokenCount(total) || !isTokenCount(input) || !isTokenCount(output) || !isNonArrayObject(inputDetails)) return null;
 
-  if (inputTotal !== undefined && typeof inputTotal !== 'number') return null;
-  if (outputTotal !== undefined && typeof outputTotal !== 'number') return null;
-  if (inputTotal === undefined && outputTotal === undefined) return null;
+  const { text_tokens: text, image_tokens: image } = inputDetails as ImagesInputTokenDetailsShape;
+  if (!isTokenCount(text) || !isTokenCount(image)) return null;
+  if (text + image !== input || input + output !== total) return null;
 
-  const input = splitModalityCounts('input', 'input_image', inputTotal, inputDetails);
-  if (input === null) return null;
-  const output = splitModalityCounts('output', 'output_image', outputTotal, outputDetails);
-  if (output === null) return null;
-
-  return tokenUsage({ ...input, ...output });
+  return tokenUsage({ input: text, input_image: image, output_image: output });
 };
 
 interface ImagesUsageShape {
+  total_tokens?: unknown;
   input_tokens?: unknown;
   output_tokens?: unknown;
   input_tokens_details?: unknown;
-  output_tokens_details?: unknown;
 }
 
-const splitModalityCounts = (
-  textUsageKey: Exclude<keyof TokenUsage, 'tier'>,
-  imageUsageKey: Exclude<keyof TokenUsage, 'tier'>,
-  total: number | undefined,
-  details: unknown,
-): TokenUsage | null => {
-  if (total === undefined) return {};
-  if (details === undefined) return { [textUsageKey]: total };
-  if (!details || typeof details !== 'object') return null;
-  const { text_tokens: text, image_tokens: image } = details as { text_tokens?: unknown; image_tokens?: unknown };
-  if (text !== undefined && typeof text !== 'number') return null;
-  if (image !== undefined && typeof image !== 'number') return null;
-  // A details object that carries neither split is as good as absent.
-  if (text === undefined && image === undefined) return { [textUsageKey]: total };
-  return { [textUsageKey]: text ?? 0, [imageUsageKey]: image ?? 0 };
-};
+interface ImagesInputTokenDetailsShape {
+  text_tokens?: unknown;
+  image_tokens?: unknown;
+}
+
+const isNonArrayObject = (value: unknown): value is object =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
+const isTokenCount = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 
 export const recordUsage = async (
   keyId: string,

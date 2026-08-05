@@ -11,7 +11,7 @@ import { geminiStatusForHttpStatus } from '../chat/gemini/errors.ts';
 import { enumerateAddressableModelIds, listedRealModels } from '../shared/listing/addressable.ts';
 import { mergeAliasesIntoModels } from '../shared/listing/alias.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { ModelPricing } from '@floway-dev/protocols/common';
+import { endpointsSupportKind, type ModelPricing } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 import type { InternalModel, Fetcher } from '@floway-dev/provider';
 
@@ -26,12 +26,17 @@ interface GeminiModel {
   supportedGenerationMethods?: GeminiGenerationMethod[];
   inputTokenLimit?: number;
   outputTokenLimit?: number;
-  temperature?: number;
-  maxTemperature?: number;
-  topP?: number;
-  topK?: number;
   pricing?: ModelPricing;
 }
+
+const supportedGenerationMethods = (model: InternalModel): GeminiGenerationMethod[] => {
+  const methods: GeminiGenerationMethod[] = [];
+  if (model.endpoints.chatCompletions !== undefined || model.endpoints.messages !== undefined || model.endpoints.responses !== undefined) {
+    methods.push('generateContent', 'streamGenerateContent');
+  }
+  if (model.endpoints.messages !== undefined) methods.push('countTokens');
+  return methods;
+};
 
 const toGeminiModel = (model: InternalModel): GeminiModel => {
   const limits = model.limits;
@@ -42,12 +47,9 @@ const toGeminiModel = (model: InternalModel): GeminiModel => {
     name: `models/${model.id}`,
     baseModelId: model.id,
     displayName: model.display_name ?? model.id,
-    supportedGenerationMethods: ['generateContent', 'streamGenerateContent', 'countTokens'],
+    supportedGenerationMethods: supportedGenerationMethods(model),
     ...(inputTokenLimit !== undefined ? { inputTokenLimit } : {}),
     ...(outputTokenLimit !== undefined ? { outputTokenLimit } : {}),
-    temperature: 1,
-    topP: 0.95,
-    topK: 40,
     ...(model.pricing ? { pricing: model.pricing } : {}),
   };
 };
@@ -83,13 +85,12 @@ const loadGeminiModels = async (
   ]);
   const gatewayAddressableModelIds = gatewayAddressable ?? callerAddressable;
   const realModels = listedRealModels(callerAddressable);
-  // Gemini surfaces chat-kind models only; filter both the real catalog and
-  // the synthesized alias entries before the merge so the alias collision
-  // step only ever weighs chat-on-chat.
+  // Gemini surfaces models with a reachable chat endpoint. A mixed model can
+  // keep a different primary kind while remaining valid on this surface.
   const merged = mergeAliasesIntoModels({
-    realModels: realModels.filter(model => model.kind === 'chat'),
-    gatewayAddressableModelIds: gatewayAddressableModelIds.filter(entry => entry.model.kind === 'chat'),
-    callerAddressableModelIds: callerAddressable.filter(entry => entry.model.kind === 'chat'),
+    realModels: realModels.filter(model => endpointsSupportKind(model.endpoints, 'chat')),
+    gatewayAddressableModelIds: gatewayAddressableModelIds.filter(entry => endpointsSupportKind(entry.model.endpoints, 'chat')),
+    callerAddressableModelIds: callerAddressable.filter(entry => endpointsSupportKind(entry.model.endpoints, 'chat')),
     aliases: aliases.filter(alias => alias.kind === 'chat'),
     narrowTargets: true,
   });
@@ -106,13 +107,12 @@ export const serveGeminiModels = async (c: Context): Promise<Response> => {
 };
 
 export const serveGeminiModelInfo = async (c: Context): Promise<Response> => {
-  const rawModelId = c.req.param('modelId');
-  if (!rawModelId) return geminiError(404, 'Model not found: ');
+  const modelId = c.req.param('modelId');
+  if (!modelId) return geminiError(404, 'Model not found: ');
 
-  const modelId = rawModelId.replace(/^models\//, '');
   try {
     const fetcherForUpstream = await createPerRequestFetcher(getRuntimeLocation(c.req.raw));
-    const model = (await loadGeminiModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c), getRepo().modelAliases)).find(candidate => candidate.baseModelId === modelId || candidate.name === `models/${modelId}`);
+    const model = (await loadGeminiModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c), getRepo().modelAliases)).find(candidate => candidate.baseModelId === modelId);
     if (!model) return geminiError(404, `Model not found: ${modelId}`);
     return Response.json(model);
   } catch (error) {

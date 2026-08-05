@@ -45,6 +45,12 @@ class NodeSqlitePreparedStatement implements SqlPreparedStatement {
   run(): Promise<SqlResult> {
     return Promise.resolve(this.runSync());
   }
+
+  executeForBatchSync(): SqlResult {
+    if (this.stmt.columns().length === 0) return this.runSync();
+    const results = this.stmt.all(...(this.bound as never[])) as Record<string, unknown>[];
+    return { results, success: true, meta: {} };
+  }
 }
 
 class NodeSqliteDatabase implements SqlDatabase {
@@ -69,7 +75,7 @@ class NodeSqliteDatabase implements SqlDatabase {
         if (!(stmt instanceof NodeSqlitePreparedStatement) || !stmt.isOwnedBy(this.statementOwner)) {
           throw new Error('NodeSqliteDatabase.batch received a statement from a different database adapter');
         }
-        return stmt.runSync();
+        return stmt.executeForBatchSync();
       });
       this.db.exec('COMMIT');
       return Promise.resolve(results);

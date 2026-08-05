@@ -73,8 +73,10 @@ export interface AgentSetupRepository {
 
   // PUT: write configuration to exactly the (userId, token) record under
   // optimistic concurrency. On a revision match it bumps the revision and
-  // updates the configuration, expiry, and updated_at; the token never
-  // changes. An already-expired record is still writable while it exists.
+  // updates the configuration and updated_at; the token never changes. Expiry
+  // advances to the greater of its stored value and the request's extension, so
+  // a delayed write computed earlier cannot shorten a newer lease. An already-
+  // expired record is still writable while it exists.
   updateConfiguration(input: {
     userId: number;
     token: string;
@@ -84,10 +86,11 @@ export interface AgentSetupRepository {
     expiresAt: number;
   }): Promise<AgentSetupMutation>;
 
-  // Heartbeat: extend only the expiry of the (userId, token) record. It must
-  // not touch updated_at or the revision, so a heartbeat never reorders the
-  // restore selection nor collides with an in-flight edit. An expired-but-still-
-  // present record may be renewed; a swept one returns `missing`.
+  // Heartbeat: monotonically extend only the expiry of the (userId, token)
+  // record. It must not touch updated_at or the revision, so a heartbeat never
+  // reorders the restore selection nor collides with an in-flight edit. A
+  // delayed heartbeat cannot shorten a newer lease. An expired-but-still-present
+  // record may be renewed; a swept one returns `missing`.
   renewLease(input: {
     userId: number;
     token: string;

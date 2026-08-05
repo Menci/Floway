@@ -102,7 +102,7 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
     apiKeyId: apiKey.id,
     requestStartedAt: Date.now(),
     upstreamIds,
-    abortSignal: controller?.signal,
+    abortSignal: controller?.signal ?? c.req.raw.signal,
     wantsStream: opts.wantsStream,
     downstreamAbortController: controller,
     backgroundScheduler: opts.backgroundScheduler,

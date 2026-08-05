@@ -133,7 +133,19 @@ const geminiErrorResponse = (status: number, message: string, debug: GeminiError
   return Response.json({ error: { code, message, status: geminiStatusForHttpStatus(code), ...debug } }, { status: code });
 };
 
-const geminiApiErrorResponse = (error: ApiErrorResult): Response => googleRpcErrorPassthroughResponse(error) ?? geminiErrorResponse(error.status, apiErrorMessage(error));
+const geminiJsonHeaders = (upstream: Headers | undefined): Headers =>
+  mergeForwardedUpstreamHeaders({ 'content-type': 'application/json' }, upstream);
+
+const geminiApiErrorResponse = (error: ApiErrorResult): Response => {
+  const passthrough = googleRpcErrorPassthroughResponse(error);
+  if (passthrough) return passthrough;
+
+  const status = googleRpcHttpStatusCode(error.status);
+  return Response.json(geminiRpcErrorPayload(status, apiErrorMessage(error)), {
+    status,
+    headers: geminiJsonHeaders(error.headers),
+  });
+};
 
 const geminiCollectErrorResponse = (error: unknown): Response => {
   const geminiError = caughtGeminiErrorEvent(error);
@@ -165,7 +177,7 @@ const googleRpcErrorPassthroughResponse = (error: ApiErrorResult): Response | nu
 
   return new Response(error.body.slice(), {
     status: googleRpcHttpStatusCode(parsed.error.code),
-    headers: new Headers(error.headers),
+    headers: geminiJsonHeaders(error.headers),
   });
 };
 

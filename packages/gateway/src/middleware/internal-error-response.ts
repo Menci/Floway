@@ -1,4 +1,7 @@
 import type { Context } from 'hono';
+import { HTTPException } from 'hono/http-exception';
+
+import { RequestBodyTooLargeError } from './request-body-limit.ts';
 
 const MAX_SERIALIZED_ERROR_CAUSE_DEPTH = 32;
 
@@ -29,14 +32,36 @@ const serializeErrorCause = (cause: unknown, ancestors: ReadonlySet<Error>, dept
   if (cause === undefined || cause === null || typeof cause === 'string' || typeof cause === 'number' || typeof cause === 'boolean') return cause;
 
   try {
-    JSON.stringify(cause);
-    return cause;
+    const encoded = JSON.stringify(cause);
+    if (encoded !== undefined) return JSON.parse(encoded) as unknown;
   } catch {
+    // Fall through to a printable scalar when the value is cyclic or exposes a
+    // hostile serializer. Returning the original would invoke it again in c.json.
+  }
+  try {
     return String(cause);
+  } catch {
+    return { type: 'unserializable_cause' };
   }
 };
 
 export const internalErrorResponse = (error: Error, c: Context): Response => {
+  if (error instanceof RequestBodyTooLargeError) {
+    return c.json({
+      error: {
+        type: 'request_too_large',
+        message: error.message,
+        max_bytes: error.maxBytes,
+        method: c.req.method,
+        path: c.req.path,
+      },
+    }, 413);
+  }
+  if (error instanceof HTTPException) {
+    const response = error.getResponse();
+    return c.newResponse(response.body, response);
+  }
+
   console.error(error);
 
   return c.json(

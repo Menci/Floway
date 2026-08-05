@@ -9,6 +9,7 @@ import type { Context } from 'hono';
 import { respondAudioTranscription } from './respond.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
+import { singleNonEmptyMultipartTextField } from '../shared/multipart.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
 import { isMultipartFormDataMediaType } from '@floway-dev/protocols/common';
@@ -35,8 +36,8 @@ const prepareTranscription = async (bytes: Uint8Array, contentType: string | und
     return { type: 'invalid', message: 'Audio transcription request body must be valid multipart/form-data.' };
   }
 
-  const model = form.get('model');
-  if (typeof model !== 'string' || model.length === 0) {
+  const model = singleNonEmptyMultipartTextField(form, 'model');
+  if (model === undefined) {
     return { type: 'invalid', message: 'Audio transcription request body must include a model field.' };
   }
   const files = form.getAll('file');

@@ -19,7 +19,11 @@ const errorMessage = (error: unknown): string => error instanceof Error ? error.
 // Returns what the row holds afterwards so the caller can answer with the
 // freshness this warm produced rather than the snapshot it read before saving.
 // Null when the upstream fetch failed and left the row with nothing to report.
-export const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<UpstreamModelsCache | null> => {
+export const warmModelsCache = async (
+  record: UpstreamRecord,
+  c: Context,
+  options: { readBack?: boolean } = {},
+): Promise<UpstreamModelsCache | null> => {
   const scheduler = backgroundSchedulerFromContext(c);
   const provider = createProvider(record);
   const fetcher = (await createPerRequestFetcher(getRuntimeLocation(c.req.raw)))(record.id);
@@ -28,6 +32,10 @@ export const warmModelsCache = async (record: UpstreamRecord, c: Context): Promi
   } catch (error) {
     logInfo('warm_models_cache_failed', { upstream_id: record.id, error: errorMessage(error) });
   }
+  // Credential actions have already committed their authoritative patch. They
+  // use the provider instance's cache view so a follow-up repository outage
+  // cannot turn that committed action into a failed HTTP response.
+  if (options.readBack === false) return provider.modelsCache;
   // Read back rather than reconstructing: on the failure path the row keeps
   // whatever catalog it already had, annotated with this attempt's error.
   return (await getRepo().upstreams.getById(record.id))?.modelsCache ?? null;

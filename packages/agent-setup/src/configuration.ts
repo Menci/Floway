@@ -6,15 +6,17 @@
 // Optional model/effort slots are nullable, never empty strings: `null` means
 // "leave this override unset" (the installer removes the managed key), while ""
 // would ambiguously ask to write an empty value. Per the gateway's
-// protocol-opacity rule the schema rejects only the two characters an opaque
-// value cannot survive as a shell/PowerShell literal — empty and NUL — never a
-// vendor family.
+// protocol-opacity rule the schema rejects only representations an opaque value
+// cannot survive through the HTTP and shell/PowerShell boundaries — empty, NUL,
+// and ill-formed UTF-16 — never a vendor family.
 
 import { z } from 'zod';
 
+import { isScriptLiteralValue } from './script-literal.ts';
+
 const opaqueOptionalString = z.string()
   .min(1)
-  .refine(value => !value.includes('\0'), { message: 'must not contain a NUL character' })
+  .refine(isScriptLiteralValue, { message: 'must not contain NUL or an unpaired surrogate' })
   .nullable();
 
 export const agentSetupConfigurationSchema = z.object({

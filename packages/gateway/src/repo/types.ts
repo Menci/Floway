@@ -1,7 +1,7 @@
 import type { WebSearchConfig, WebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { AgentSetupRepository } from '@floway-dev/agent-setup';
 import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingMetric, DecimalString, ModelKind, PricingSelector } from '@floway-dev/protocols/common';
-import type { PerformanceTelemetryContext, UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
+import type { PerformanceTelemetryContext, UpstreamModelsCache, UpstreamProviderKind, UpstreamRecord, UpstreamStateWriteGuard } from '@floway-dev/provider';
 
 export interface ApiKey {
   id: string;
@@ -160,11 +160,16 @@ export interface ApiKeyRepo {
   // resolves when attributing past usage.
   listByUserIdIncludingDeleted(userId: number): Promise<ApiKey[]>;
   findByRawKey(rawKey: string): Promise<ApiKey | null>;
+  findByRawKeyIncludingDeleted(rawKey: string): Promise<ApiKey | null>;
   getById(id: string): Promise<ApiKey | null>;
+  // Full-row restore primitive for validated data transfer. Request paths use
+  // insertForActiveUser or update so they cannot revive a deleted key or
+  // attach one to a deleted account.
   save(key: ApiKey): Promise<void>;
+  insertForActiveUser(key: ApiKey): Promise<ApiKey | null>;
   update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null>;
+  rotate(id: string, expectedRawKey: string, nextRawKey: string): Promise<ApiKey | null>;
   softDelete(id: string): Promise<boolean>;
-  softDeleteByUserId(userId: number): Promise<number>;
   deleteAll(): Promise<void>;
 }
 
@@ -173,28 +178,46 @@ export type ApiKeyUpdate = Partial<Pick<
   'name' | 'key' | 'lastUsedAt' | 'upstreamIds' | 'dumpRetentionSeconds' | 'responsesRetentionSeconds'
 >>;
 
+export type UserUpdate = Partial<Pick<User, 'username' | 'passwordHash' | 'isAdmin' | 'upstreamIds'>>;
+export interface UserUpdateOptions {
+  keepSessionId: string | null;
+}
+export type NewUserAccount = Omit<User, 'id' | 'deletedAt'>;
+export type NewUserDefaultKey = Omit<ApiKey, 'userId' | 'deletedAt'>;
+
+export type CreateUserAccountResult =
+  | { status: 'created'; user: User }
+  | { status: 'username-taken' };
+
+export type UpdateActiveUserResult =
+  | { status: 'updated'; user: User }
+  | { status: 'missing' }
+  | { status: 'username-taken' };
+
+export type DeleteUserAccountResult =
+  | { status: 'deleted'; apiKeyIds: string[] }
+  | { status: 'missing' };
+
 export interface UsersRepo {
   list(): Promise<User[]>;
   listIncludingDeleted(): Promise<User[]>;
   getById(id: number): Promise<User | null>;
   findByUsername(username: string): Promise<User | null>;
-  // Atomic insert that allocates id = MAX(id) + 1 in a single statement so two
-  // concurrent admin creates can't compute the same id and silently overwrite
-  // each other.
-  createNewUser(template: Omit<User, 'id'>): Promise<User>;
-  // Throws when the username is already taken by another active row, so
-  // duplicate-username races surface instead of silently overwriting state.
+  createAccount(user: NewUserAccount, defaultKey: NewUserDefaultKey): Promise<CreateUserAccountResult>;
+  updateActive(id: number, patch: UserUpdate, options?: UserUpdateOptions): Promise<UpdateActiveUserResult>;
+  deleteAccount(id: number, deletedAt: string): Promise<DeleteUserAccountResult>;
+  // Full-row restore primitive for validated data transfer. Request paths use
+  // the conditional aggregate mutations above.
+  // Throws when the username is already taken by another active row.
   save(user: User): Promise<void>;
-  softDelete(id: number): Promise<boolean>;
   deleteAll(): Promise<void>;
 }
 
 export interface SessionsRepo {
   getByIdAndTouch(id: string): Promise<Session | null>;
   create(userId: number): Promise<Session>;
+  createForActiveUser(userId: number): Promise<Session | null>;
   deleteById(id: string): Promise<boolean>;
-  deleteByUserId(userId: number): Promise<number>;
-  deleteByUserIdExcept(userId: number, exceptId: string): Promise<number>;
   deleteAll(): Promise<void>;
 }
 
@@ -253,6 +276,17 @@ export interface UpstreamRepo {
   getById(id: string): Promise<UpstreamRecord | null>;
   save(upstream: UpstreamRecord): Promise<void>;
   saveClearingModelsCache(upstream: UpstreamRecord): Promise<void>;
+  // Targeted updates preserve fields owned by a concurrent control-plane
+  // action. Credential exchanges update config/state while metadata edits
+  // update only the fields present in their PATCH; neither can replay a stale
+  // whole-row snapshot over the other. The returned record is the row produced
+  // by that atomic write, so callers never need a fallible post-commit read.
+  updateFields(
+    id: string,
+    expectedKind: UpstreamProviderKind,
+    patch: UpstreamFieldsPatch,
+    options?: { clearModelsCache?: boolean },
+  ): Promise<UpstreamRecord | null>;
   delete(id: string): Promise<boolean>;
   deleteAll(): Promise<void>;
   // Upstream state write with optimistic concurrency, used both by the
@@ -260,14 +294,29 @@ export interface UpstreamRepo {
   // refresh / probe routes. The repo reads, applies `mutate`, and writes under
   // a CAS, retrying against the winner when it loses; exhausting the retries
   // throws. See UpstreamsRepoSlim in @floway-dev/provider for why the change
-  // is a function.
-  saveState(id: string, mutate: (current: unknown) => unknown): Promise<void>;
+  // is a function. The optional guard is checked in the same CAS as the state
+  // document to close provider and credential-generation replacement races.
+  saveState(id: string, mutate: (current: unknown) => unknown, guard?: UpstreamStateWriteGuard): Promise<void>;
   // Catalog-cache writes are conditional on the row generation that started
   // the fetch. A superseded provider can finish serving its own request, but
   // cannot publish models or errors under newer credentials/configuration.
   saveModelsCache(id: string, generation: ModelsCacheGeneration, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean>;
   saveModelsCacheError(id: string, generation: ModelsCacheGeneration, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean>;
 }
+
+export type UpstreamFieldsPatch = Partial<Pick<UpstreamRecord,
+  | 'name'
+  | 'enabled'
+  | 'sortOrder'
+  | 'updatedAt'
+  | 'flagOverrides'
+  | 'disabledPublicModelIds'
+  | 'proxyFallbackList'
+  | 'modelPrefix'
+  | 'hue'
+  | 'config'
+  | 'state'
+>>;
 
 export interface ModelsCacheGeneration {
   updatedAt: string;
@@ -289,14 +338,12 @@ export interface ProxyRepo {
   list(): Promise<ProxyRecord[]>;
   getById(id: string): Promise<ProxyRecord | null>;
   insert(input: { id: string; name: string; url: string; dialTimeoutSeconds: number | null }): Promise<ProxyRecord>;
-  // Returns the updated record alongside the bit `url` actually changed by
-  // this patch so callers that react to URL edits (e.g. wiping outstanding
-  // backoff rows) don't need a redundant getById round-trip.
-  patch(id: string, patch: { name?: string; url?: string; dialTimeoutSeconds?: number | null }): Promise<{ record: ProxyRecord; urlChanged: boolean } | null>;
+  patch(id: string, patch: { name?: string; url?: string; dialTimeoutSeconds?: number | null }): Promise<ProxyRecord | null>;
   // Upsert: an id collision overwrites the configurable columns (name, url,
   // dial_timeout_seconds) and refreshes updated_at; created_at belongs to the
   // local deployment and is preserved.
   save(record: { id: string; name: string; url: string; dialTimeoutSeconds: number | null }): Promise<void>;
+  // Deleting a proxy also deletes its backoff state.
   delete(id: string): Promise<boolean>;
   deleteAll(): Promise<void>;
   findUpstreamsReferencing(proxyId: string): Promise<string[]>;
@@ -313,8 +360,11 @@ export interface BackoffRow {
 }
 
 export interface ProxyBackoffRepo {
-  recordDialFailure(proxyId: string, upstreamId: string, errorMessage: string): Promise<void>;
-  recordDialSuccess(proxyId: string, upstreamId: string): Promise<void>;
+  // Apply an outcome only while the proxy still exists at the URL that was
+  // actually dialled. A request can outlive an operator URL edit or deletion;
+  // its stale outcome must not throttle or clear the replacement endpoint.
+  recordDialFailure(proxyId: string, upstreamId: string, proxyUrl: string, errorMessage: string): Promise<boolean>;
+  recordDialSuccess(proxyId: string, upstreamId: string, proxyUrl: string): Promise<boolean>;
   listForUpstream(upstreamId: string): Promise<BackoffRow[]>;
   listForProxy(proxyId: string): Promise<BackoffRow[]>;
   listAll(): Promise<BackoffRow[]>;

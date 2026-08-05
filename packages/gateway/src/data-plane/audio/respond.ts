@@ -1,6 +1,8 @@
 import { streamSSE } from 'hono/streaming';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 import { measureAudioTranscriptionUsage } from './usage.ts';
+import { observeJsonResponse } from '../shared/json-response.ts';
 import { passthroughApiError } from '../shared/passthrough-serve.ts';
 import type { PassthroughResponseStrategyContext } from '../shared/passthrough-serve.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/sse.ts';
@@ -10,25 +12,29 @@ import { forwardUpstreamHeaders, forwardUpstreamResponse } from '../shared/upstr
 import { isAudioTranscriptionDoneEvent } from '@floway-dev/protocols/audio';
 import { eventFrame, isEventStreamMediaType, isJsonMediaType, parseSSEStream, sseCommentFrame } from '@floway-dev/protocols/common';
 
-const respondNonStreaming = async ({ ctx, sourceApi, response, performance, identity }: PassthroughResponseStrategyContext): Promise<Response> => {
-  let measurement = requestOnlyUsageMeasurement();
-  if (isJsonMediaType(response.headers.get('content-type'))) {
-    let parsed: unknown;
-    try {
-      parsed = await response.clone().json();
-    } catch (error) {
-      console.warn(
-        `audio-transcription: failed to parse 2xx upstream body for ${sourceApi}; usage row will be request-only`,
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-    if (parsed !== undefined) {
-      measurement = measureAudioTranscriptionUsage(parsed, sourceApi);
-    }
+const respondNonStreaming = ({ ctx, sourceApi, response, performance, identity }: PassthroughResponseStrategyContext): Response => {
+  if (!isJsonMediaType(response.headers.get('content-type'))) {
+    const measurement = requestOnlyUsageMeasurement();
+    ctx.dump?.success(identity, null);
+    settleUsageMeasurement(ctx, performance, identity, measurement, false);
+    return forwardUpstreamResponse(response, { defaultContentType: null });
   }
-  ctx.dump?.success(identity, measurement.dumpTokenUsage);
-  settleUsageMeasurement(ctx, performance, identity, measurement, false);
-  return forwardUpstreamResponse(response, { defaultContentType: null });
+  return observeJsonResponse({
+    ctx,
+    sourceApi,
+    response,
+    performance,
+    identity,
+    observedFields: ['usage', 'duration'],
+    defaultContentType: null,
+    extractBilling: () => null,
+    settleFields: (fields, outcome) => {
+      const measurement = outcome.failed ? requestOnlyUsageMeasurement() : measureAudioTranscriptionUsage(fields, sourceApi);
+      if (outcome.failed) ctx.dump?.failed(outcome.error ?? `${sourceApi} response body did not complete`);
+      else ctx.dump?.success(identity, measurement.dumpTokenUsage);
+      settleUsageMeasurement(ctx, performance, identity, measurement, outcome.failed);
+    },
+  });
 };
 
 const respondStreaming = ({ c, ctx, sourceApi, response, performance, identity }: PassthroughResponseStrategyContext): Response => {
@@ -40,9 +46,11 @@ const respondStreaming = ({ c, ctx, sourceApi, response, performance, identity }
     return passthroughApiError(c, 'Upstream returned a streaming response with no body.', 502);
   }
   forwardUpstreamHeaders(c, response.headers);
+  c.status(response.status as ContentfulStatusCode);
   return streamSSE(c, async stream => {
     let completion: StreamCompletion = 'error';
     let streamError: unknown;
+    let protocolError: unknown;
     let terminalEventSeen = false;
     let measurement = requestOnlyUsageMeasurement();
     try {
@@ -52,12 +60,15 @@ const respondStreaming = ({ c, ctx, sourceApi, response, performance, identity }
           try {
             event = JSON.parse(frame.data) as unknown;
           } catch (error) {
-            throw new Error(`Malformed upstream ${sourceApi} SSE JSON: ${frame.data}`, { cause: error });
+            protocolError ??= new Error(`Malformed upstream ${sourceApi} SSE JSON: ${frame.data}`, { cause: error });
+            ctx.dump?.frame(eventFrame(frame.data));
+            yield frame;
+            continue;
           }
           ctx.dump?.frame(eventFrame(event));
           if (isAudioTranscriptionDoneEvent(event)) {
             terminalEventSeen = true;
-            measurement = measureAudioTranscriptionUsage(event, sourceApi);
+            if (protocolError === undefined) measurement = measureAudioTranscriptionUsage(event, sourceApi);
             yield frame;
             return;
           }
@@ -71,8 +82,8 @@ const respondStreaming = ({ c, ctx, sourceApi, response, performance, identity }
     } catch (error) {
       streamError = error;
     } finally {
-      const failed = streamError !== undefined || completion === 'error' || !terminalEventSeen;
-      if (failed) ctx.dump?.failed(streamError ?? `${sourceApi} stream ended with completion=${completion}`);
+      const failed = streamError !== undefined || protocolError !== undefined || completion === 'error' || !terminalEventSeen;
+      if (failed) ctx.dump?.failed(streamError ?? protocolError ?? `${sourceApi} stream ended with completion=${completion}`);
       else ctx.dump?.success(identity, measurement.dumpTokenUsage);
       settleUsageMeasurement(ctx, performance, identity, measurement, failed);
     }
@@ -88,5 +99,5 @@ export const respondAudioTranscription = async (context: PassthroughResponseStra
   }
   return isEventStreamMediaType(response.headers.get('content-type'))
     ? respondStreaming(context)
-    : await respondNonStreaming(context);
+    : respondNonStreaming(context);
 };

@@ -43,6 +43,13 @@ export const runInterceptors = async <Ctx, Env, Result>(
   interceptors: readonly Interceptor<Ctx, Env, Result>[],
   terminal: InterceptorRun<Result>,
 ): Promise<Result> => {
-  const run = (index: number): Promise<Result> => (index < interceptors.length ? interceptors[index](ctx, env, () => run(index + 1)) : terminal());
+  // A continuation may outlive the interceptor that received it (streaming
+  // interceptors use this to start later turns), so each invocation owns an
+  // immutable view of the chain. Dispatching through the microtask queue also
+  // prevents a long chain of eager `await run()` calls from exhausting the
+  // JavaScript call stack before the first promise can yield.
+  const chain = [...interceptors];
+  const run = (index: number): Promise<Result> => Promise.resolve().then(() =>
+    index < chain.length ? chain[index]!(ctx, env, () => run(index + 1)) : terminal());
   return await run(0);
 };

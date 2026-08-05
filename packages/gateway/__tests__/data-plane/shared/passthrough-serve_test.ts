@@ -179,7 +179,7 @@ test('passthrough-serve: non-JSON 2xx upstream body is forwarded verbatim with a
     assertEquals(usage[0].metrics, []);
     // The parse failure is observable through console.warn so operators can
     // correlate missing usage rows against upstream body shape regressions.
-    assertEquals(warnSpy.mock.calls.some(call => typeof call[0] === 'string' && call[0].includes('passthrough-serve: failed to parse 2xx upstream body for /embeddings')), true);
+    assertEquals(warnSpy.mock.calls.some(call => typeof call[0] === 'string' && call[0].includes('json-response: failed to observe 2xx upstream body for /embeddings')), true);
   } finally {
     warnSpy.mockRestore();
   }

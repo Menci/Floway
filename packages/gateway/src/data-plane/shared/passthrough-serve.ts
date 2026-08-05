@@ -18,6 +18,7 @@ import type { PassthroughServeApiName } from './api-names.ts';
 import { appendFailedUpstreams } from './failed-upstreams.ts';
 import type { GatewayCtx } from './gateway-ctx.ts';
 import { iterateCandidates } from './iterate-candidates.ts';
+import { observeJsonResponse } from './json-response.ts';
 import { passthroughAttempt } from './passthrough-attempt.ts';
 import { type StreamCompletion, writeSSEFrames } from './sse.ts';
 import { recordFailedRequest } from './telemetry/performance.ts';
@@ -69,9 +70,9 @@ interface PassthroughServeContext {
   // id with the requested kind, the client sees a 404 with the standard
   // wording.
   readonly model: string;
-  // The model kind this endpoint serves. The resolver filters candidates
-  // to `model.kind === kind`; `sawModel=true && candidates=[]` becomes
-  // the "model exists but doesn't support this endpoint" 400.
+  // The endpoint family this route serves. The resolver accepts every model
+  // whose endpoint map serves that family, including mixed-family maps;
+  // `sawModel=true && candidates=[]` becomes the unsupported-endpoint 400.
   readonly kind: ModelKind;
   // Endpoint-availability gate against a resolved candidate's `InternalModel`.
   // Reads `.endpoints` on the candidate — the row narrows to exactly one
@@ -168,20 +169,14 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     }
 
     if (responseHandling.format === 'json') {
-      // A 2xx body that fails to parse must not 502 a client whose
-      // upstream call already succeeded; we skip usage extraction and
-      // log so missing rows stay traceable.
-      let parsed: unknown;
-      try {
-        parsed = await response.clone().json();
-      } catch (e) {
-        console.warn(`passthrough-serve: failed to parse 2xx upstream body for ${sourceApi}; usage row will be skipped`, e instanceof Error ? e.message : String(e));
-        parsed = undefined;
-      }
-      const usage = parsed !== undefined ? responseHandling.extractBilling(parsed) : null;
-      ctx.dump?.success(identity, usage);
-      settle(ctx, performanceContext, identity, usage, false);
-      return forwardUpstreamResponse(response);
+      return observeJsonResponse({
+        ctx,
+        response,
+        performance: performanceContext,
+        identity,
+        sourceApi,
+        extractBilling: responseHandling.extractBilling,
+      });
     }
 
     // Hono's streamSSE owns the response — forwardable upstream
@@ -190,13 +185,14 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     const upstreamBody = response.body;
     if (!upstreamBody) {
       ctx.dump?.failed(`${sourceApi} streaming upstream returned no body`);
-      recordFailedRequest(ctx, performanceContext);
+      settle(ctx, performanceContext, identity, null, true);
       // Preserve upstream correlation headers (x-request-id, cf-ray, ...)
       // on the synthesized 502 so this rare edge case is still traceable.
       forwardUpstreamHeaders(c, response.headers);
       return passthroughApiError(c, 'Upstream returned a streaming response with no body.', 502);
     }
     forwardUpstreamHeaders(c, response.headers);
+    c.status(response.status as ContentfulStatusCode);
     return streamSSE(c, async stream => {
       let completion: StreamCompletion = 'error';
       let streamError: unknown;
@@ -216,8 +212,10 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
             ctx.dump?.frame(inputFrame);
             if (inputFrame.type === 'done') terminalFrameSeen = true;
             const outputFrame = responseHandling.transformFrame(inputFrame);
-            if (outputFrame === null) continue;
-            yield outputFrame.type === 'done' ? sseFrame('[DONE]') : sseFrame(JSON.stringify(outputFrame.event));
+            if (outputFrame !== null) {
+              yield outputFrame.type === 'done' ? sseFrame('[DONE]') : sseFrame(JSON.stringify(outputFrame.event));
+            }
+            if (inputFrame.type === 'done') return;
           }
         })();
         completion = await writeSSEFrames(stream, frames, {
@@ -227,7 +225,14 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       } catch (e) {
         streamError = e;
       } finally {
-        const usage = responseHandling.settleUsage();
+        let usage: TokenUsage | null = null;
+        try {
+          usage = responseHandling.settleUsage();
+        } catch (error) {
+          streamError = streamError === undefined
+            ? error
+            : new AggregateError([streamError, error], 'Passthrough stream and usage settlement both failed', { cause: streamError });
+        }
         const failed = streamError !== undefined || completion === 'error' || !terminalFrameSeen;
         if (failed) {
           ctx.dump?.failed(streamError ?? `${sourceApi} stream ended with completion=${completion}`);

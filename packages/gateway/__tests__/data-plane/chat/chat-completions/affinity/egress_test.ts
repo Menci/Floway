@@ -100,7 +100,7 @@ describe('Chat Completions affinity egress', () => {
     ])));
   });
 
-  test('retains the last natural opaque snapshot when an upstream repeats finish_reason', async () => {
+  test('rejects a repeated finish_reason before replacing the natural opaque snapshot', async () => {
     const wrappedValues: Array<string | undefined> = [];
     const codec: AffinityEgressCodec = {
       wrap: async value => {
@@ -108,21 +108,16 @@ describe('Chat Completions affinity egress', () => {
         return `wrapped:${value ?? 'synthetic'}`;
       },
     };
-    const output: ProtocolFrame<ChatCompletionsStreamEvent>[] = [];
-    for await (const frame of wrapChatCompletionsAffinityEgress(frames([
-      eventFrame(chunk([{ index: 0, delta: { reasoning_opaque: 'natural' }, finish_reason: 'stop' }])),
-      eventFrame(chunk([{ index: 0, delta: {}, finish_reason: 'stop' }])),
-      doneFrame(),
-    ]), { codec, affinity })) output.push(frame);
-
-    const events = async function* () {
-      for (const frame of output) if (frame.type === 'event') yield frame.event;
+    const consume = async () => {
+      for await (const _frame of wrapChatCompletionsAffinityEgress(frames([
+        eventFrame(chunk([{ index: 0, delta: { reasoning_opaque: 'natural' }, finish_reason: 'stop' }])),
+        eventFrame(chunk([{ index: 0, delta: {}, finish_reason: 'stop' }])),
+        doneFrame(),
+      ]), { codec, affinity })) { /* consume */ }
     };
-    const reassembled = await reassembleChatCompletionsEvents(events());
-    expect(wrappedValues).toEqual(['natural', 'natural']);
-    expect(reassembled.choices[0].message.reasoning_opaque).toBe('wrapped:natural');
-    expect(output.filter(frame =>
-      frame.type === 'event' && frame.event.choices[0]?.finish_reason === 'stop')).toHaveLength(2);
+
+    await expect(consume()).rejects.toThrow('Chat Completions choice 0 emitted data after finish_reason');
+    expect(wrappedValues).toEqual(['natural']);
   });
 
   test('flushes a carrier before DONE when an upstream omits finish_reason', async () => {

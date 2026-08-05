@@ -77,7 +77,7 @@ export const wrapChatCompletionsAffinityEgress = async function* (
     for (const choice of frame.event.choices) {
       const { index, delta: sourceDelta, finish_reason: finishReason, ...choiceExtras } = choice;
       const state = choices.get(index) ?? { finished: false };
-      state.finished = false;
+      if (state.finished) throw new Error(`Chat Completions choice ${index} emitted data after finish_reason`);
       choices.set(index, state);
 
       const { reasoning_opaque: opaque, ...delta } = sourceDelta;

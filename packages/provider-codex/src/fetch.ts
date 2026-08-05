@@ -1,5 +1,4 @@
-import { ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken } from './access-token.ts';
-import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
+import { CodexCredentialRefreshTerminatedError, ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken, type CodexCredentialGeneration } from './access-token.ts';
 import {
   CODEX_BACKEND_BASE,
   CODEX_ALPHA_SEARCH_PATH,
@@ -27,11 +26,11 @@ export type ProviderCompactionResult =
 // persistence are handled inside their own helpers, which write the same
 // state_json row the same way.
 export interface CodexCallEffects {
-  persistRefreshTokenRotation(newRefreshToken: string): Promise<void>;
+  persistRefreshTokenRotation(usedRefreshToken: string, newRefreshToken: string): Promise<void>;
   persistTerminalState(
     state: 'session_terminated' | 'refresh_failed',
     message: string,
-    expectedGeneration: { accessToken: string } | { refreshToken: string },
+    expectedGeneration: CodexCredentialGeneration | { accessToken: string },
   ): Promise<void>;
 }
 
@@ -88,16 +87,16 @@ const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true;
     return { ok: false, response: synthetic503(`Codex upstream is ${opts.account.state}`) };
   }
 
-  let attemptedRefreshToken = opts.account.refresh_token;
   try {
-    const entry = await ensureCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, refresh => {
-      attemptedRefreshToken = refresh;
-      return mintAccessToken(opts, refresh);
-    });
+    const entry = await ensureCodexAccessToken(
+      opts.upstreamId,
+      opts.account.chatgptAccountId,
+      refresh => mintAccessToken(opts, refresh),
+    );
     return { ok: true, accessToken: entry.token };
   } catch (err) {
-    if (err instanceof CodexOAuthSessionTerminatedError) {
-      await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage, { refreshToken: attemptedRefreshToken });
+    if (err instanceof CodexCredentialRefreshTerminatedError) {
+      await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage, err.generation);
       return { ok: false, response: synthetic503(`Codex refresh failed: ${err.upstreamMessage}`) };
     }
     throw err;
@@ -105,7 +104,7 @@ const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true;
 };
 
 const mintAccessToken = (opts: CodexBackendCallBase, refreshToken: string) =>
-  mintCodexAccessToken(refreshToken, opts.call.fetcher, opts.effects.persistRefreshTokenRotation);
+  mintCodexAccessToken(refreshToken, opts.call.fetcher, newRefreshToken => opts.effects.persistRefreshTokenRotation(refreshToken, newRefreshToken));
 
 interface CodexRequestIdentity {
   installationId: string;
@@ -383,21 +382,17 @@ const dispatchCodexHttpCall = async (
 // single-flight entry, collapsing simultaneous 401 retries onto one rotation.
 const refreshAccessTokenForRetry = async (opts: CodexBackendCallBase, rejectedAccessToken: string): Promise<{ ok: true; accessToken: string } | { ok: false; response: Response }> => {
   await invalidateCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, rejectedAccessToken);
-  let attemptedRefreshToken = opts.account.refresh_token;
   try {
     const minted = await ensureCodexAccessToken(
       opts.upstreamId,
       opts.account.chatgptAccountId,
-      refreshToken => {
-        attemptedRefreshToken = refreshToken;
-        return mintAccessToken(opts, refreshToken);
-      },
+      refreshToken => mintAccessToken(opts, refreshToken),
       true,
     );
     return { ok: true, accessToken: minted.token };
   } catch (err) {
-    if (err instanceof CodexOAuthSessionTerminatedError) {
-      await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage, { refreshToken: attemptedRefreshToken });
+    if (err instanceof CodexCredentialRefreshTerminatedError) {
+      await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage, err.generation);
       return { ok: false, response: synthetic503(`Codex refresh failed: ${err.upstreamMessage}`) };
     }
     throw err;

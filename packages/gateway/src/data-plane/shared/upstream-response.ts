@@ -9,6 +9,7 @@ const BLOCKED_UPSTREAM_HEADERS: ReadonlySet<string> = new Set([
   'keep-alive',
   'proxy-authenticate',
   'proxy-authorization',
+  'proxy-connection',
   'te',
   'trailer',
   'transfer-encoding',
@@ -23,21 +24,27 @@ const BLOCKED_UPSTREAM_HEADERS: ReadonlySet<string> = new Set([
 export const isForwardableUpstreamHeader = (name: string): boolean =>
   !BLOCKED_UPSTREAM_HEADERS.has(name.toLowerCase());
 
+const connectionSpecificHeaders = (headers: Headers): ReadonlySet<string> =>
+  new Set((headers.get('connection') ?? '').split(',').map(name => name.trim().toLowerCase()).filter(Boolean));
+
+const forwardableUpstreamHeaders = function* (headers: Headers): Generator<[string, string]> {
+  const connectionSpecific = connectionSpecificHeaders(headers);
+  for (const [name, value] of headers) {
+    if (isForwardableUpstreamHeader(name) && !connectionSpecific.has(name.toLowerCase())) yield [name, value];
+  }
+};
+
 // Stage headers on Hono before a later c.json()/streamSSE() constructs the
 // response. Content type remains owned by that response constructor.
 export const forwardUpstreamHeaders = (c: Context, headers: Headers | undefined): void => {
   if (!headers) return;
-  for (const [name, value] of headers) {
-    if (isForwardableUpstreamHeader(name)) c.header(name, value);
-  }
+  for (const [name, value] of forwardableUpstreamHeaders(headers)) c.header(name, value);
 };
 
 export const mergeForwardedUpstreamHeaders = (base: HeadersInit | undefined, upstream: Headers | undefined): Headers => {
   const merged = new Headers(base);
   if (upstream) {
-    for (const [name, value] of upstream) {
-      if (isForwardableUpstreamHeader(name)) merged.set(name, value);
-    }
+    for (const [name, value] of forwardableUpstreamHeaders(upstream)) merged.set(name, value);
   }
   return merged;
 };
@@ -45,6 +52,7 @@ export const mergeForwardedUpstreamHeaders = (base: HeadersInit | undefined, ups
 export interface ForwardUpstreamResponseOptions {
   readonly body?: BodyInit | null;
   readonly defaultContentType?: string | null;
+  readonly contentType?: string | null;
 }
 
 // Forward a raw or replaced body with every safe upstream header. JSON is the
@@ -54,12 +62,12 @@ export const forwardUpstreamResponse = (
   response: Response,
   options: ForwardUpstreamResponseOptions = {},
 ): Response => {
-  const { body = response.body, defaultContentType = 'application/json' } = options;
+  const { body = response.body, defaultContentType = 'application/json', contentType: contentTypeOverride } = options;
   const headers = new Headers();
-  const contentType = response.headers.get('content-type') ?? defaultContentType;
+  const contentType = contentTypeOverride !== undefined
+    ? contentTypeOverride
+    : response.headers.get('content-type') ?? defaultContentType;
   if (contentType !== null) headers.set('content-type', contentType);
-  for (const [name, value] of response.headers) {
-    if (isForwardableUpstreamHeader(name)) headers.set(name, value);
-  }
+  for (const [name, value] of forwardableUpstreamHeaders(response.headers)) headers.set(name, value);
   return new Response(body, { status: response.status, headers });
 };

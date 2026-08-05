@@ -1,3 +1,5 @@
+Add-Type -AssemblyName System.Net.Http
+
 function Install-SetupHomebrewCask {
   param([string]$Cask)
   $brew = Get-Command brew -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -38,12 +40,28 @@ function Invoke-SetupInterpreterBody {
   $process = New-Object System.Diagnostics.Process
   $process.StartInfo = $startInfo
   if (-not $process.Start()) { Stop-Setup "failed to start the installer interpreter." }
-  $process.StandardInput.Write($Body)
-  $process.StandardInput.WriteLine()
-  $process.StandardInput.Close()
-  if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+  $deadline = [System.Diagnostics.Stopwatch]::StartNew()
+  $timeoutMilliseconds = [Math]::Min([long][int]::MaxValue, [Math]::Max([long]0, [long]$TimeoutSeconds * 1000))
+  $timedOut = $false
+  try {
+    $write = $process.StandardInput.WriteLineAsync($Body)
+    $remaining = [Math]::Max([long]0, $timeoutMilliseconds - [long]$deadline.ElapsedMilliseconds)
+    if (-not $write.Wait([int]$remaining)) {
+      $timedOut = $true
+    } else {
+      $process.StandardInput.Close()
+      $remaining = [Math]::Max([long]0, $timeoutMilliseconds - [long]$deadline.ElapsedMilliseconds)
+      if (-not $process.WaitForExit([int]$remaining)) { $timedOut = $true }
+    }
+  } catch {
     Stop-SetupProcessTree $process
     $process.WaitForExit()
+    throw
+  }
+  if ($timedOut) {
+    Stop-SetupProcessTree $process
+    $process.WaitForExit()
+    try { $process.StandardInput.Close() } catch { }
     Stop-Setup "the installer timed out after $TimeoutSeconds seconds."
   }
   if ($process.ExitCode -ne 0) { Stop-Setup "the installer exited with status $($process.ExitCode)." }
@@ -51,8 +69,11 @@ function Invoke-SetupInterpreterBody {
 
 function Invoke-SetupPowerShellBody {
   param([string]$Body, [int]$TimeoutSeconds, [switch]$BypassExecutionPolicy)
-  $pwsh = Get-Command pwsh -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-  $exe = if ($pwsh) { $pwsh.Source } else { [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName }
+  $pwsh = if ($env:AGENT_SETUP_TEST_POWERSHELL_EXE) { $null }
+    else { Get-Command pwsh -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1 }
+  $exe = if ($env:AGENT_SETUP_TEST_POWERSHELL_EXE) { $env:AGENT_SETUP_TEST_POWERSHELL_EXE }
+    elseif ($pwsh) { $pwsh.Source }
+    else { [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName }
   $executionPolicy = if ($BypassExecutionPolicy) { '-ExecutionPolicy Bypass ' } else { '' }
   Invoke-SetupInterpreterBody -Body $Body -TimeoutSeconds $TimeoutSeconds -Exe $exe -Arguments "-NoProfile -NonInteractive ${executionPolicy}-Command -"
 }
@@ -64,14 +85,73 @@ function Invoke-SetupShellBody {
   Invoke-SetupInterpreterBody -Body $Body -TimeoutSeconds $TimeoutSeconds -Exe $bash.Source -Arguments '-s'
 }
 
+function Get-SetupRemoteInstaller {
+  param([string]$Uri)
+  $maxBytes = if ($env:AGENT_SETUP_TEST_DOWNLOAD_MAX_BYTES) { [int]$env:AGENT_SETUP_TEST_DOWNLOAD_MAX_BYTES } else { 8388608 }
+  $handler = New-Object System.Net.Http.HttpClientHandler
+  $client = New-Object System.Net.Http.HttpClient($handler)
+  $cancellation = New-Object System.Threading.CancellationTokenSource
+  $cancellation.CancelAfter([TimeSpan]::FromSeconds(60))
+  $response = $null
+  $stream = $null
+  $content = New-Object System.IO.MemoryStream
+  try {
+    # ResponseHeadersRead plus the same cancellation token on every stream read
+    # bounds memory and wall time before an installer body can execute.
+    # https://learn.microsoft.com/dotnet/api/system.net.http.httpcompletionoption
+    $response = $client.GetAsync(
+      $Uri,
+      [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead,
+      $cancellation.Token
+    ).GetAwaiter().GetResult()
+    $null = $response.EnsureSuccessStatusCode()
+    $declaredLength = $response.Content.Headers.ContentLength
+    if (($null -ne $declaredLength) -and ($declaredLength -gt $maxBytes)) {
+      Stop-Setup 'the installer download exceeded the 8 MiB size limit.'
+    }
+    $stream = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+    $buffer = New-Object byte[] 81920
+    while ($true) {
+      $read = $stream.ReadAsync($buffer, 0, $buffer.Length, $cancellation.Token).GetAwaiter().GetResult()
+      if ($read -eq 0) { break }
+      if (($content.Length + $read) -gt $maxBytes) {
+        Stop-Setup 'the installer download exceeded the 8 MiB size limit.'
+      }
+      $content.Write($buffer, 0, $read)
+    }
+    $encoding = New-Object System.Text.UTF8Encoding($false, $true)
+    $charset = $response.Content.Headers.ContentType.CharSet
+    if ($charset) {
+      try { $encoding = [System.Text.Encoding]::GetEncoding($charset.Trim('"')) } catch { }
+    }
+    $body = $encoding.GetString($content.ToArray())
+    if (($body.Length -gt 0) -and ([int]$body[0] -eq 0xfeff)) { $body = $body.Substring(1) }
+    [PSCustomObject]@{
+      Body = $body
+      ContentType = [string]$response.Content.Headers.ContentType
+    }
+  } finally {
+    if ($null -ne $stream) { $stream.Dispose() }
+    if ($null -ne $response) { $response.Dispose() }
+    $content.Dispose()
+    $cancellation.Dispose()
+    $client.Dispose()
+    $handler.Dispose()
+  }
+}
+
 # Download an installer, refuse anything that is not a script (region blocks and
 # captive portals serve HTML in place of the installer), then run it.
 function Invoke-SetupRemoteInstaller {
   param([string]$Uri, [switch]$BypassExecutionPolicy, [switch]$Shell)
-  $response = Invoke-WebRequest -Uri $Uri -UseBasicParsing -TimeoutSec 60
-  $body = [string]$response.Content
-  $contentType = [string]$response.Headers['Content-Type']
-  $looksLikeHtml = $contentType -match '(?i)^text/html(?:;|$)' -or $body -match '(?is)^\s*(?:<!doctype\s+html|<html(?:\s|>))'
+  $response = Get-SetupRemoteInstaller $Uri
+  $body = $response.Body
+  $contentType = $response.ContentType
+  $lines = $body -split '\r?\n'
+  $previewCount = [Math]::Min(20, $lines.Length)
+  $preview = if ($previewCount -eq 0) { '' } else { [string]::Join("`n", $lines[0..($previewCount - 1)]) }
+  $looksLikeHtml = $contentType -match '(?i)^text/html(?:;|$)' -or
+    $preview -match '(?im)^\s*(?:<!doctype\s+html|<html(?:\s|>)|<head(?:\s|>)|<body(?:\s|>))'
   if ([string]::IsNullOrWhiteSpace($body) -or $looksLikeHtml) {
     Stop-Setup "the installer download was HTML or empty, not an executable script (a login or region-block page?)."
   }
@@ -80,13 +160,27 @@ function Invoke-SetupRemoteInstaller {
   else { Invoke-SetupPowerShellBody -Body $body -TimeoutSeconds $timeoutSeconds -BypassExecutionPolicy:$BypassExecutionPolicy }
 }
 
+function Test-SetupApplicationFile {
+  param([string]$Path)
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
+  if (Test-SetupIsWindows) {
+    $extension = [System.IO.Path]::GetExtension($Path)
+    return ($extension -ieq '.exe') -or ($extension -ieq '.com')
+  }
+  $testExe = if ([System.IO.File]::Exists('/usr/bin/test')) { '/usr/bin/test' }
+    elseif ([System.IO.File]::Exists('/bin/test')) { '/bin/test' }
+    else { Stop-Setup 'the platform has no executable-file test utility.' }
+  & $testExe -x $Path
+  return $LASTEXITCODE -eq 0
+}
+
 function Get-SetupCliExe {
   param([string]$Name, [string]$Label, [string[]]$Candidates)
   $found = New-Object System.Collections.Generic.List[string]
   $command = Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
   if ($command) { $found.Add($command.Source) }
   foreach ($candidate in $Candidates) {
-    if ((Test-Path -LiteralPath $candidate) -and (-not $found.Contains($candidate))) { $found.Add($candidate) }
+    if ((Test-SetupApplicationFile $candidate) -and (-not $found.Contains($candidate))) { $found.Add($candidate) }
   }
   if ($found.Count -eq 0) { return $null }
   if ($found.Count -gt 1) { Write-SetupWarn "multiple $Label installations detected; using $($found[0])" }

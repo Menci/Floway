@@ -6,11 +6,12 @@ import { forwardUpstreamHeaders, forwardUpstreamResponse, isForwardableUpstreamH
 test('upstream response header policy preserves vendor metadata and blocks unsafe fields', () => {
   expect(isForwardableUpstreamHeader('x-api-warning')).toBe(true);
   expect(isForwardableUpstreamHeader('content-length')).toBe(false);
+  expect(isForwardableUpstreamHeader('proxy-connection')).toBe(false);
   expect(isForwardableUpstreamHeader('set-cookie')).toBe(false);
 
   const headers = mergeForwardedUpstreamHeaders(
     { 'x-base': 'base' },
-    new Headers({ 'x-vendor': 'vendor', 'set-cookie': 'secret=1', 'content-type': 'text/plain' }),
+    new Headers({ 'connection': 'x-hop', 'x-hop': 'hop', 'x-vendor': 'vendor', 'set-cookie': 'secret=1', 'content-type': 'text/plain' }),
   );
   expect(Object.fromEntries(headers)).toEqual({ 'x-base': 'base', 'x-vendor': 'vendor' });
 });
@@ -41,6 +42,11 @@ test('forwardUpstreamResponse supports raw and replaced bodies with configurable
 
   const replaced = forwardUpstreamResponse(upstream, { body: 'replacement' });
   expect(await replaced.text()).toBe('replacement');
+  const replacedJson = forwardUpstreamResponse(new Response('raw', { headers: { 'content-type': 'text/plain' } }), {
+    body: '{}',
+    contentType: 'application/json',
+  });
+  expect(replacedJson.headers.get('content-type')).toBe('application/json');
 
   const untyped = new Response(Uint8Array.of(1));
   expect(forwardUpstreamResponse(untyped.clone()).headers.get('content-type')).toBe('application/json');

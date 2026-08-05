@@ -207,7 +207,7 @@ describe('synthesizeListedAliases', () => {
     expect(ids).toEqual(['mid-a', 'mid-b', 'late']);
   });
 
-  test('targets whose kind disagrees with the alias are not counted as available', () => {
+  test('targets whose endpoint map does not serve the alias family are not counted as available', () => {
     const aliases = [aliasFixture({
       kind: 'chat',
       targets: [
@@ -216,11 +216,11 @@ describe('synthesizeListedAliases', () => {
       ],
     })];
     const realModels = [
-      realModel({ id: 'emb', kind: 'embedding' }),
+      realModel({ id: 'emb', kind: 'embedding', endpoints: { embeddings: {} } }),
       realModel({ id: 'chat', chat: { modalities: { input: ['text'], output: ['text'] } } }),
     ];
     const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
-    // Only the chat target backs the metadata — the embedding row never
+    // Only the chat-capable target backs the metadata — the embedding row never
     // enters the intersection / narrowing path.
     expect(entry.chat?.modalities).toEqual({ input: ['text'], output: ['text'] });
   });

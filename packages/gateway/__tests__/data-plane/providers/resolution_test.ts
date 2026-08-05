@@ -4,6 +4,7 @@ import { clearInFlightForTesting } from '../../../src/data-plane/providers/model
 import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
 import { enumerateModelCandidates, enumerateRealModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { buildCustomUpstreamRecord, copilotModels, setupAppTest } from '../../test-utils/app.ts';
+import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import { directFetcher, type InternalModel, type ProviderModel, type UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -16,7 +17,12 @@ const testScheduler = (promise: Promise<unknown>): void => {
   promise.catch(err => console.error('[background]', err));
 };
 
-const azureUpstream = (id: string, sortOrder: number, modelId: string): UpstreamRecord => ({
+const azureUpstream = (
+  id: string,
+  sortOrder: number,
+  modelId: string,
+  endpoints: ModelEndpoints = { chatCompletions: {} },
+): UpstreamRecord => ({
   id,
   kind: 'azure',
   name: id,
@@ -27,7 +33,7 @@ const azureUpstream = (id: string, sortOrder: number, modelId: string): Upstream
   config: {
     endpoint: `https://${id}.openai.azure.com`,
     apiKey: 'az-key',
-    models: [{ upstreamModelId: modelId, endpoints: { chatCompletions: {} } }],
+    models: [{ upstreamModelId: modelId, endpoints }],
   },
   state: null,
   flagOverrides: {},
@@ -245,6 +251,48 @@ test('enumerateRealModelCandidates rejects a model id disabled on that upstream 
   assertEquals(disabled.candidates.length, 0);
 });
 
+test('a Custom mixed chat and embedding model resolves once in both endpoint families', async () => {
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_mixed',
+    config: {
+      baseUrl: 'https://mixed.example.com',
+      authStyle: 'bearer',
+      apiKey: 'sk-mixed',
+      ingressHeadersRules: [],
+      endpoints: {},
+      modelsFetch: { enabled: false },
+      models: [{ upstreamModelId: 'mixed-model', endpoints: { chatCompletions: {}, embeddings: {} } }],
+    },
+  }));
+
+  const chat = await enumerateModelCandidates({ upstreamIds: null, model: 'mixed-model', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
+  const embedding = await enumerateModelCandidates({ upstreamIds: null, model: 'mixed-model', kind: 'embedding', scheduler: testScheduler, runtimeLocation: 'TEST' });
+  assertEquals(chat.candidates.map(candidate => candidate.provider.upstreamId), ['up_mixed']);
+  assertEquals(embedding.candidates.map(candidate => candidate.provider.upstreamId), ['up_mixed']);
+  assertEquals(chat.candidates[0].model.endpoints, { chatCompletions: {}, embeddings: {} });
+  assertEquals(embedding.candidates[0].model.endpoints, { chatCompletions: {}, embeddings: {} });
+});
+
+test('an Azure mixed chat and embedding model resolves once in both endpoint families', async () => {
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save(azureUpstream(
+    'up_azure_mixed',
+    1,
+    'mixed-model',
+    { messages: {}, responses: {}, embeddings: {} },
+  ));
+
+  const chat = await enumerateModelCandidates({ upstreamIds: null, model: 'mixed-model', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
+  const embedding = await enumerateModelCandidates({ upstreamIds: null, model: 'mixed-model', kind: 'embedding', scheduler: testScheduler, runtimeLocation: 'TEST' });
+  assertEquals(chat.candidates.map(candidate => candidate.provider.upstreamId), ['up_azure_mixed']);
+  assertEquals(embedding.candidates.map(candidate => candidate.provider.upstreamId), ['up_azure_mixed']);
+  assertEquals(chat.candidates[0].model.endpoints, { messages: {}, responses: {}, embeddings: {} });
+  assertEquals(embedding.candidates[0].model.endpoints, { messages: {}, responses: {}, embeddings: {} });
+});
+
 // Regression: when an upstream's force re-fetch rejects past HARD, the call
 // site asking for a model belonging to one of the *healthy* upstreams must
 // still resolve. The broken upstream's display name flows back via
@@ -400,7 +448,6 @@ test('enumerateModelCandidates rethrows AbortError without waiting for a hanging
     sortOrder: 2,
     config: { baseUrl: 'https://aborting.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
   }));
-
   const abortError = Object.assign(new Error('aborted'), { name: 'AbortError' });
   await withMockedFetch(
     request => {
@@ -423,9 +470,10 @@ test('enumerateModelCandidates rethrows AbortError without waiting for a hanging
           scheduler: testScheduler,
           runtimeLocation: 'TEST',
         });
-      } catch (e) {
-        thrown = e;
+      } catch (error) {
+        thrown = error;
       }
+
       // The thrown error chains back to our injected AbortError via .cause.
       const isAbortInChain = (err: unknown): boolean => {
         for (let cur: unknown = err; cur != null; cur = (cur as { cause?: unknown }).cause) {

@@ -73,12 +73,9 @@ test('/v1beta/models lists Copilot LLM models in Gemini model shape', async () =
           name: 'models/gpt-gemini-list',
           baseModelId: 'gpt-gemini-list',
           displayName: 'GPT Gemini List',
-          supportedGenerationMethods: ['generateContent', 'streamGenerateContent', 'countTokens'],
           inputTokenLimit: 12345,
           outputTokenLimit: 678,
-          temperature: 1,
-          topP: 0.95,
-          topK: 40,
+          supportedGenerationMethods: ['generateContent', 'streamGenerateContent'],
         },
       ]);
     },
@@ -148,7 +145,7 @@ test('/v1beta/models includes custom upstream LLM models', async () => {
       authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-custom',
-      endpoints: { chatCompletions: {} },
+      endpoints: { chatCompletions: {}, embeddings: {} },
     },
   }));
 
@@ -174,7 +171,7 @@ test('/v1beta/models includes custom upstream LLM models', async () => {
       assertEquals(list.models.length, 1);
       assertEquals(list.models[0].name, 'models/custom-llm-model');
       assertEquals(list.models[0].displayName, 'Custom LLM Model');
-      assertEquals(list.models[0].supportedGenerationMethods, ['generateContent', 'streamGenerateContent', 'countTokens']);
+      assertEquals(list.models[0].supportedGenerationMethods, ['generateContent', 'streamGenerateContent']);
 
       const getResp = await requestApp('/v1beta/models/custom-llm-model', {
         headers: { 'x-api-key': apiKey.key },
@@ -182,6 +179,42 @@ test('/v1beta/models includes custom upstream LLM models', async () => {
       assertEquals(getResp.status, 200);
       const model = await getResp.json();
       assertEquals(model.name, 'models/custom-llm-model');
+    },
+  );
+});
+
+test('/v1beta/models/:modelId preserves an encoded slash in an opaque model id', async () => {
+  const { apiKey } = await setupAppTest();
+  let modelLookups = 0;
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'copilot-access-token',
+          expires_at: 4102444800,
+          refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
+        });
+      }
+      if (url.pathname === '/models') {
+        modelLookups += 1;
+        return jsonResponse(copilotModels([{ id: 'models/opaque-id', supported_endpoints: ['/v1/messages'] }]));
+      }
+
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1beta/models/models%2Fopaque-id', {
+        headers: { 'x-api-key': apiKey.key },
+      });
+
+      assertEquals(response.status, 200);
+      assertEquals((await response.json()).name, 'models/models/opaque-id');
+      assertEquals(modelLookups, 1);
     },
   );
 });

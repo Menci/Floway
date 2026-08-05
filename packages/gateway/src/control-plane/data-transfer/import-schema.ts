@@ -7,7 +7,7 @@ import { isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy
 import { isResponsesRetentionSeconds, RESPONSES_RETENTION_MAX_SECONDS, RESPONSES_RETENTION_MIN_SECONDS } from '../../repo/responses-retention.ts';
 import { SEED_ADMIN_USER_ID } from '../../repo/seed-admin.ts';
 import type { ApiKey, PerformanceMetric, PerformanceTelemetryRecord, UsageRecord, User, WebSearchUsageRecord } from '../../repo/types.ts';
-import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
+import { isSupportedPasswordHash, PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { RETENTION_MAX_SECONDS } from '../../shared/retention.ts';
 import { parseServerSecret } from '../../shared/server-secret.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
@@ -86,6 +86,8 @@ const nullableStringSchema = (field: string) => z.union([
 ], { error: `${field} must be null or an ISO string` });
 const positiveIntegerSchema = (field: string) => z.number({ error: `${field} must be a positive integer` })
   .refine(value => Number.isInteger(value) && value > 0, { error: `${field} must be a positive integer` });
+const positiveSafeIntegerSchema = (field: string) => z.number({ error: `${field} must be a positive safe integer` })
+  .refine(value => Number.isSafeInteger(value) && value > 0, { error: `${field} must be a positive safe integer` });
 const nonNegativeSafeIntegerSchema = (message: string) => z.number({ error: message })
   .int({ error: message })
   .nonnegative({ error: message })
@@ -206,7 +208,7 @@ const responsesRetentionSchema = parsedBy((value): number => {
 const apiKeySchema = parsedBy((value): ApiKey => {
   const wire = parseRecord(value, 'record must be an object');
   const upstreamIds = parseValue(upstreamIdsSchema, wire.upstreamIds);
-  const userId = parseValue(positiveIntegerSchema('userId'), wire.userId);
+  const userId = parseValue(positiveSafeIntegerSchema('userId'), wire.userId);
   const deletedAt = parseValue(nullableStringSchema('deletedAt'), wire.deletedAt);
   const id = parseValue(nonEmptyStringSchema('id'), wire.id);
   const name = parseValue(nonEmptyStringSchema('name'), wire.name);
@@ -234,15 +236,15 @@ const apiKeySchema = parsedBy((value): ApiKey => {
 });
 
 const userSchema = z.object({
-  id: positiveIntegerSchema('id'),
+  id: positiveSafeIntegerSchema('id'),
   username: z.string({ error: 'username must match ^[a-zA-Z0-9_.-]{1,64}$' })
     .regex(USERNAME_PATTERN, { error: 'username must match ^[a-zA-Z0-9_.-]{1,64}$' }),
   passwordHash: z.union([
-    z.string().refine(value => value.startsWith(`${PASSWORD_HASH_SCHEME}$`), {
-      error: `passwordHash must be null or start with ${PASSWORD_HASH_SCHEME}$`,
+    z.string().refine(isSupportedPasswordHash, {
+      error: `passwordHash must be null or a supported ${PASSWORD_HASH_SCHEME} hash`,
     }),
     z.null(),
-  ], { error: `passwordHash must be null or start with ${PASSWORD_HASH_SCHEME}$` }),
+  ], { error: `passwordHash must be null or a supported ${PASSWORD_HASH_SCHEME} hash` }),
   isAdmin: z.boolean({ error: 'isAdmin must be a boolean' }),
   upstreamIds: parsedBy(value => {
     if (value === undefined) throw new Error('upstreamIds must be present (null or array)');
@@ -465,7 +467,7 @@ export const parseImportData = (value: unknown): ImportDataParseResult => {
     validateInput: (input, _index, prior) => {
       try {
         const wire = parseRecord(input, 'record must be an object');
-        const id = parseValue(positiveIntegerSchema('id'), wire.id);
+        const id = parseValue(positiveSafeIntegerSchema('id'), wire.id);
         return prior.some(candidate => candidate.id === id) ? `duplicate user id ${id}` : null;
       } catch (cause) {
         return messageFor(cause);

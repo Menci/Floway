@@ -11,11 +11,12 @@
 // DTO) read `limits` / `chat` / `endpoints` directly off the entry without
 // a second registry round trip.
 
-import { compareModelIds, getModelsFromProviders } from '../../providers/catalog.ts';
+import { compareModelIds, getModelsFromProviders, internalModelFromProviderModel, mergeRealModels } from '../../providers/catalog.ts';
 import { fetchUpstreamModelsCached } from '../../providers/models-cache.ts';
 import { listModelProviders } from '../../providers/registry.ts';
+import { settleUnlessAborted } from '../../providers/settle.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { isAbortError, type Fetcher, type InternalModel, type Provider, type UpstreamRecord } from '@floway-dev/provider';
+import type { Fetcher, InternalModel, Provider, UpstreamRecord } from '@floway-dev/provider';
 
 export interface AddressableIdEntry {
   // The inbound model id the data plane will accept verbatim.
@@ -45,6 +46,26 @@ export interface AddressableIdEntry {
 export const listedRealModels = (entries: readonly AddressableIdEntry[]): readonly InternalModel[] =>
   entries.filter(entry => entry.unlisted === undefined).map(entry => entry.model);
 
+const mergeUpstreams = (first: readonly Provider[], later: readonly Provider[]): Provider[] => {
+  const merged: Provider[] = [];
+  const seen = new Set<string>();
+  for (const upstream of [...first, ...later]) {
+    if (seen.has(upstream.upstreamId)) continue;
+    seen.add(upstream.upstreamId);
+    merged.push(upstream);
+  }
+  return merged;
+};
+
+const mergeAddressableEntries = (first: AddressableIdEntry, later: AddressableIdEntry): AddressableIdEntry => ({
+  id: first.id,
+  // A listed contribution keeps the merged id listed even when another
+  // upstream contributes the same id only as an addressable alternate.
+  unlisted: first.unlisted === undefined || later.unlisted === undefined ? undefined : true,
+  model: mergeRealModels(first.model, later.model),
+  upstreams: mergeUpstreams(first.upstreams, later.upstreams),
+});
+
 // Enumerate every inbound id the data plane accepts under `upstreamFilter`,
 // tagged with whether the id participates in the default `/v1/models`
 // listing. Fans out per upstream the same way `collectProviderModels` does,
@@ -68,10 +89,14 @@ export const enumerateAddressableModelIds = async (
   const byId = new Map(realModels.map(model => [model.id, model] as const));
 
   const entries: AddressableIdEntry[] = [];
-  const seen = new Set<string>();
+  const indexById = new Map<string, number>();
   const push = (entry: AddressableIdEntry): void => {
-    if (seen.has(entry.id)) return;
-    seen.add(entry.id);
+    const existingIndex = indexById.get(entry.id);
+    if (existingIndex !== undefined) {
+      entries[existingIndex] = mergeAddressableEntries(entries[existingIndex], entry);
+      return;
+    }
+    indexById.set(entry.id, entries.length);
     entries.push(entry);
   };
 
@@ -86,10 +111,9 @@ export const enumerateAddressableModelIds = async (
   //
   // A rejected per-upstream catalog refresh collapses to no addressable-
   // only contribution from THAT upstream — its listed rows already came
-  // (or were dropped) through `getModelsFromProviders`. Mirrors the `Promise.allSettled`
-  // tolerance there so a transiently-down upstream cannot tank /v1/models
-  // on a cold-start gateway.
-  const perUpstream = await Promise.allSettled(providers.map(async provider => {
+  // (or were dropped) through `getModelsFromProviders`. Ordinary failures
+  // remain isolated while caller cancellation rejects the whole fanout.
+  const perUpstream = await settleUnlessAborted(providers.map(async provider => {
     const cfg = provider.modelPrefix;
     const addressableOnly = cfg !== null ? cfg.addressable.filter(form => !cfg.listed.includes(form)) : [];
     if (cfg === null || addressableOnly.length === 0) return [] as AddressableIdEntry[];
@@ -110,10 +134,23 @@ export const enumerateAddressableModelIds = async (
         : upstreamModel.id;
       const canonical = byId.get(canonicalPublicId);
       if (canonical === undefined) continue;
-      const canonicalUpstreams = upstreamsByPublicId.get(canonicalPublicId) ?? [];
+      if (canonical.providerModels === undefined) {
+        throw new Error(`addressable catalog row for '${canonicalPublicId}' unexpectedly carries aliasedFrom`);
+      }
+      const providerModel = canonical.providerModels[provider.upstreamId];
+      if (providerModel === undefined) {
+        throw new Error(`addressable catalog row for '${canonicalPublicId}' is missing upstream ${provider.upstreamId}`);
+      }
+      // A canonical listed row may merge other upstreams that do not accept
+      // this alternate form. Narrow the contribution to the provider whose
+      // prefix policy proved the alternate addressable; later contributions
+      // under the same inbound id are merged by `push`.
+      const addressableModel = Object.keys(canonical.providerModels).length === 1
+        ? canonical
+        : internalModelFromProviderModel(providerModel, provider.upstreamId);
       for (const form of addressableOnly) {
         const id = form === 'prefixed' ? `${cfg.prefix}${upstreamModel.id}` : upstreamModel.id;
-        out.push({ id, unlisted: true, model: canonical, upstreams: canonicalUpstreams });
+        out.push({ id, unlisted: true, model: addressableModel, upstreams: [provider] });
       }
     }
 
@@ -122,12 +159,6 @@ export const enumerateAddressableModelIds = async (
 
   for (const result of perUpstream) {
     if (result.status === 'rejected') {
-      // Cancellation must propagate even from this tolerant fanout — the
-      // per-request abort signal cannot be masked by an upstream's slow
-      // rejection. Other failures (catalog 5xx, parse, transport) collapse
-      // to no addressable-only contribution from that upstream per the
-      // contract above.
-      if (isAbortError(result.reason)) throw result.reason;
       continue;
     }
     for (const entry of result.value) push(entry);

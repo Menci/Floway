@@ -13,11 +13,15 @@ const GENERATED_KEY_RETRIES = 5;
 
 type KeyWriteError = {
   ok: false;
-  status: 400 | 409 | 500;
+  status: 400 | 404 | 409 | 500;
   error: string;
 };
 
 type KeyWriteResult = { ok: true; key: ApiKey } | KeyWriteError;
+
+type KeyWriteTarget =
+  | { kind: 'create'; template: Omit<ApiKey, 'key'> }
+  | { kind: 'rotate'; current: ApiKey };
 
 const keyWriteError = (status: KeyWriteError['status'], error: string): KeyWriteError => ({ ok: false, status, error });
 
@@ -49,18 +53,32 @@ const normalizeCustomKey = (value: unknown): { ok: true; key: string } | KeyWrit
 
 const duplicateKeyError = (): KeyWriteError => keyWriteError(409, 'An API key with that raw key already exists.');
 
+const staleRotationError = (): KeyWriteError => keyWriteError(409, 'The API key changed while it was being rotated. Retry with its current credential.');
+
 const isRawKeyUniqueConstraint = (error: unknown): boolean =>
   /UNIQUE constraint failed: api_keys\.key(?:\b|$)/i.test(error instanceof Error ? error.message : String(error));
 
-const findAnyByRawKey = async (rawKey: string): Promise<ApiKey | null> =>
-  (await getRepo().apiKeys.listIncludingDeleted()).find(key => key.key === rawKey) ?? null;
+const targetId = (target: KeyWriteTarget): string => target.kind === 'create' ? target.template.id : target.current.id;
 
-const saveGeneratedKey = async (template: Omit<ApiKey, 'key'>): Promise<KeyWriteResult> => {
+const persistRawKey = async (target: KeyWriteTarget, rawKey: string): Promise<ApiKey | null> => {
+  if (target.kind === 'rotate') {
+    return await getRepo().apiKeys.rotate(target.current.id, target.current.key, rawKey);
+  }
+  const key: ApiKey = { ...target.template, key: rawKey };
+  return await getRepo().apiKeys.insertForActiveUser(key);
+};
+
+const saveGeneratedKey = async (target: KeyWriteTarget): Promise<KeyWriteResult> => {
   for (let i = 0; i < GENERATED_KEY_RETRIES; i++) {
-    const key: ApiKey = { ...template, key: generateApiKeyToken() };
-    if (await findAnyByRawKey(key.key)) continue;
+    const rawKey = generateApiKeyToken();
+    if (await getRepo().apiKeys.findByRawKeyIncludingDeleted(rawKey)) continue;
     try {
-      await getRepo().apiKeys.save(key);
+      const key = await persistRawKey(target, rawKey);
+      if (key === null) {
+        return target.kind === 'rotate'
+          ? staleRotationError()
+          : keyWriteError(404, 'The API key owner is no longer active.');
+      }
       return { ok: true, key };
     } catch (error) {
       if (isRawKeyUniqueConstraint(error)) continue;
@@ -70,12 +88,16 @@ const saveGeneratedKey = async (template: Omit<ApiKey, 'key'>): Promise<KeyWrite
   return keyWriteError(500, 'Could not allocate a unique API key; retry the request.');
 };
 
-const saveCustomKey = async (template: Omit<ApiKey, 'key'>, rawKey: string): Promise<KeyWriteResult> => {
-  const existing = await findAnyByRawKey(rawKey);
-  if (existing && existing.id !== template.id) return duplicateKeyError();
-  const key: ApiKey = { ...template, key: rawKey };
+const saveCustomKey = async (target: KeyWriteTarget, rawKey: string): Promise<KeyWriteResult> => {
+  const existing = await getRepo().apiKeys.findByRawKeyIncludingDeleted(rawKey);
+  if (existing && existing.id !== targetId(target)) return duplicateKeyError();
   try {
-    await getRepo().apiKeys.save(key);
+    const key = await persistRawKey(target, rawKey);
+    if (key === null) {
+      return target.kind === 'rotate'
+        ? staleRotationError()
+        : keyWriteError(404, 'The API key owner is no longer active.');
+    }
     return { ok: true, key };
   } catch (error) {
     if (isRawKeyUniqueConstraint(error)) return duplicateKeyError();
@@ -86,7 +108,7 @@ const saveCustomKey = async (template: Omit<ApiKey, 'key'>, rawKey: string): Pro
 // Reject custom_key on a non-custom source so a caller cannot smuggle a
 // bring-your-own key past the picker they explicitly opted out of.
 const writeKeyForRequest = async (
-  template: Omit<ApiKey, 'key'>,
+  target: KeyWriteTarget,
   body: { key_source?: KeySource; custom_key?: string },
 ): Promise<KeyWriteResult> => {
   const source = body.key_source ?? 'generate';
@@ -96,9 +118,9 @@ const writeKeyForRequest = async (
   if (source === 'custom') {
     const customKey = normalizeCustomKey(body.custom_key);
     if (!customKey.ok) return customKey;
-    return await saveCustomKey(template, customKey.key);
+    return await saveCustomKey(target, customKey.key);
   }
-  return await saveGeneratedKey(template);
+  return await saveGeneratedKey(target);
 };
 
 const validateUpstreamIdsAgainstUserCap = (
@@ -146,7 +168,7 @@ export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
     responsesRetentionSeconds: body.responses_retention_seconds ?? 0,
   } satisfies Omit<ApiKey, 'key'>;
 
-  const result = await writeKeyForRequest(template, body);
+  const result = await writeKeyForRequest({ kind: 'create', template }, body);
   if (!result.ok) return c.json({ error: result.error }, result.status);
   return c.json(apiKeyToJson(result.key, reachableUpstreamIds(knownUpstreamIds, userUpstreamIdsFromContext(c))), 201);
 };
@@ -155,11 +177,11 @@ export const deleteKey = async (c: AuthedContext) => {
   const id = c.req.param('id')!;
   const owned = await ownedKeyForUser(c, id);
   if (!owned) return c.json({ error: 'Key not found' }, 404);
-  // Cut any live SSE subscribers so the dashboard sees a clean disconnect.
-  // Broker availability shouldn't block the soft-delete — clients reconcile
-  // on the next keys refetch regardless.
-  await notifyDisabledBestEffort(id, 'deleteKey');
   await getRepo().apiKeys.softDelete(id);
+  // Revoke first so a slow broker cannot extend the credential's lifetime.
+  // The bounded notification then cuts live SSE subscribers; clients reconcile
+  // on the next keys refetch even when the broker is unavailable.
+  await notifyDisabledBestEffort(id, 'deleteKey');
   return c.json({ ok: true });
 };
 
@@ -168,9 +190,13 @@ export const rotateKey = async (c: CtxWithJson<typeof rotateKeyBody>) => {
   const owned = await ownedKeyForUser(c, id);
   if (!owned) return c.json({ error: 'Key not found' }, 404);
 
-  const result = await writeKeyForRequest(owned, c.req.valid('json'));
+  // Resolve every fallible response dependency before changing the credential:
+  // a 500 after the CAS would strand the caller without the newly minted key.
+  const knownUpstreamIds = await loadKnownUpstreamIds();
+  const reachable = reachableUpstreamIds(knownUpstreamIds, userUpstreamIdsFromContext(c));
+  const result = await writeKeyForRequest({ kind: 'rotate', current: owned }, c.req.valid('json'));
   if (!result.ok) return c.json({ error: result.error }, result.status);
-  return c.json(apiKeyToJson(result.key, reachableUpstreamIds(await loadKnownUpstreamIds(), userUpstreamIdsFromContext(c))));
+  return c.json(apiKeyToJson(result.key, reachable));
 };
 
 export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
@@ -196,12 +222,12 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
     ...(body.dump_retention_seconds !== undefined ? { dumpRetentionSeconds: body.dump_retention_seconds } : {}),
     ...(body.responses_retention_seconds !== undefined ? { responsesRetentionSeconds: body.responses_retention_seconds } : {}),
   });
-  if (updated === null) throw new Error(`API key disappeared during update: ${id}`);
+  if (updated === null) return c.json({ error: 'Key not found' }, 404);
 
-  if (body.dump_retention_seconds !== undefined && body.dump_retention_seconds !== owned.dumpRetentionSeconds) {
-    const previous = owned.dumpRetentionSeconds;
-    const next = body.dump_retention_seconds;
-    if (next === null && previous !== null) await notifyDisabledBestEffort(id, 'updateKey retention disable');
+  if (body.dump_retention_seconds === null) {
+    // Closing is idempotent, so an explicit disable retries a prior notification
+    // that timed out after the database had already committed null.
+    await notifyDisabledBestEffort(id, 'updateKey retention disable');
   }
 
   return c.json(apiKeyToJson(updated, reachableUpstreamIds(knownUpstreamIds, userUpstreamIdsFromContext(c))));

@@ -38,6 +38,7 @@ export interface DumpStubHandle {
   broker: DumpBroker;
   stored: ReadonlyArray<{ keyId: string; record: StoredDumpRecord }>;
   published: ReadonlyArray<{ keyId: string; meta: DumpMetadata }>;
+  closeChannelAttempts: ReadonlyArray<{ keyId: string; reason: string }>;
   closedChannels: ReadonlyArray<{ keyId: string; reason: string }>;
   seed: (keyId: string, record: StoredDumpRecord) => void;
   failOn: (method: DumpStubFailMethod, err: Error) => void;
@@ -52,6 +53,7 @@ export const installDumpStubs = (
   const subscribers = new Map<string, Array<(meta: DumpMetadata | null) => void>>();
   const stored: Array<{ keyId: string; record: StoredDumpRecord }> = [];
   const published: Array<{ keyId: string; meta: DumpMetadata }> = [];
+  const closeChannelAttempts: Array<{ keyId: string; reason: string }> = [];
   const closedChannels: Array<{ keyId: string; reason: string }> = [];
   const throws: Partial<Record<DumpStubFailMethod, Error>> = {};
   const storedWaiters = new Map<number, Array<() => void>>();
@@ -106,6 +108,7 @@ export const installDumpStubs = (
       for (const fn of subscribers.get(keyId) ?? []) fn(meta);
     },
     async closeChannel(keyId, reason) {
+      closeChannelAttempts.push({ keyId, reason });
       if (throws.closeChannel) throw throws.closeChannel;
       closedChannels.push({ keyId, reason });
       for (const fn of subscribers.get(keyId) ?? []) fn(null);
@@ -157,6 +160,7 @@ export const installDumpStubs = (
     broker,
     stored,
     published,
+    closeChannelAttempts,
     closedChannels,
     seed: (keyId, record) => {
       const list = records.get(keyId) ?? [];

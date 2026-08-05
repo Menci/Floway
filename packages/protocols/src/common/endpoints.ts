@@ -59,3 +59,19 @@ export const kindForEndpoints = (endpoints: ModelEndpoints): ModelKind => {
   if (endpoints.audioTranscriptions) return 'transcription';
   return 'chat';
 };
+
+// `kind` is a primary catalog classification, not an exclusivity claim. A
+// mixed endpoint map remains callable from every family it actually exposes.
+export const endpointsSupportKind = (endpoints: ModelEndpoints, kind: ModelKind): boolean => {
+  switch (kind) {
+  case 'chat':
+    return endpoints.completions !== undefined
+      || endpoints.chatCompletions !== undefined
+      || endpoints.responses !== undefined
+      || endpoints.messages !== undefined;
+  case 'embedding': return endpoints.embeddings !== undefined;
+  case 'image': return endpoints.imagesGenerations !== undefined || endpoints.imagesEdits !== undefined;
+  case 'rerank': return endpoints.rerank !== undefined;
+  case 'transcription': return endpoints.audioTranscriptions !== undefined;
+  }
+};

@@ -7,7 +7,7 @@ import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasRecord } from '../../repo/types.ts';
 import { serializeCanonicalJson } from '../../repo/upstream-json.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { ModelKind } from '@floway-dev/protocols/common';
+import { endpointsSupportKind, type ModelKind } from '@floway-dev/protocols/common';
 import type { Fetcher, ModelCandidate, ProviderModel } from '@floway-dev/provider';
 
 interface ProviderCatalogAccess {
@@ -49,10 +49,9 @@ const createProviderCatalogLoader = (
 // but a catalog that publishes both the bare and prefixed forms can match
 // twice and both go through.
 //
-// `kind` is threaded down here so a wrong-kind catalog entry never becomes
-// a candidate. `sawAnyId` is true whenever the lookup id appeared in the
-// catalog regardless of kind, so the caller can distinguish
-// "id is unknown to this upstream" from "id exists but wrong kind".
+// The requested endpoint family is threaded down so a model contributes when
+// its endpoint map serves that family, even if a different family owns its
+// primary catalog `kind`. `sawAnyId` remains family-independent.
 const enumerateOneUpstreamCandidates = async (
   provider: GatewayProvider,
   modelId: string,
@@ -79,7 +78,7 @@ const enumerateOneUpstreamCandidates = async (
     const match = providedModels.find(m => m.id === lookupId && !disabled.has(m.id));
     if (!match) continue;
     sawAnyId = true;
-    if (match.kind === kind) {
+    if (endpointsSupportKind(match.endpoints, kind)) {
       candidates.push({ provider, model: internalModelFromProviderModel(match, provider.upstreamId), fetcher });
     }
   }
@@ -94,10 +93,8 @@ const enumerateOneUpstreamCandidates = async (
 // upstream's rejection.
 //
 // `sawAnyId` aggregates the per-upstream signal: true when at least one
-// upstream's catalog carried the inbound id under any kind. The caller
-// uses it to decide whether to retry with a stripped dated suffix (no
-// point retrying if the id matched but only under the wrong kind — the
-// suffix strip cannot change kind).
+// upstream's catalog carried the inbound id under any endpoint family. The
+// caller uses it to avoid a dated-suffix retry once the literal id is known.
 export const enumerateRealModelCandidates = async (
   modelId: string,
   kind: ModelKind,

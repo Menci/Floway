@@ -1,11 +1,10 @@
 import { ensureClaudeCodeAccessToken } from './access-token.ts';
-import { assertClaudeCodeUpstreamRecord } from './config.ts';
+import { assertClaudeCodeUpstreamCredentials } from './credentials.ts';
 import { CLAUDE_CODE_DEFAULT_FLAGS } from './defaults.ts';
 import { isClaudeCodeShapedRequest } from './detection.ts';
 import { callClaudeCodeMessages } from './fetch.ts';
 import { CLAUDE_CODE_MESSAGES_BOUNDARY, type MessagesBoundaryCtx } from './interceptors/messages/index.ts';
 import { buildClaudeCodeCatalog, fetchClaudeCodeModelsList } from './models.ts';
-import { assertClaudeCodeUpstreamState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import {
@@ -35,8 +34,7 @@ const INBOUND_HEADER_ALLOWLIST = [
 ] as const;
 
 export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
-  assertClaudeCodeUpstreamRecord(record);
-  assertClaudeCodeUpstreamState(record.state);
+  assertClaudeCodeUpstreamCredentials(record);
 
   const enabledFlags = resolveEffectiveFlags([CLAUDE_CODE_DEFAULT_FLAGS, record.flagOverrides]);
 

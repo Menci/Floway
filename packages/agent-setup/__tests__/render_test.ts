@@ -63,9 +63,9 @@ describe('renderShellPrefix', () => {
     expect(prefix).toContain("SETUP_CODEX_MODEL='x\ny\t€🚀'");
   });
 
-  test('flattens control characters in the API key label before it reaches terminal metadata', () => {
-    const prefix = renderShellPrefix({ agent: 'claude', apiKey: 'key', apiKeyName: 'CI\n\x1b[2J', configuration: fullConfiguration });
-    expect(prefix).toContain("SETUP_API_KEY_NAME='CI  [2J'");
+  test('flattens seven-bit and eight-bit terminal controls in the API key label', () => {
+    const prefix = renderShellPrefix({ agent: 'claude', apiKey: 'key', apiKeyName: 'CI\n\x1b[2J\u009b31m', configuration: fullConfiguration });
+    expect(prefix).toContain("SETUP_API_KEY_NAME='CI  [2J 31m'");
   });
 
   test('renders empty values for disabled target-agent overrides', () => {
@@ -93,6 +93,15 @@ describe('renderShellPrefix', () => {
     expect(() => renderShellPrefix({
       agent: 'claude',
       apiKey: 'sk-\0-key',
+      apiKeyName: 'Primary key',
+      configuration: fullConfiguration,
+    })).toThrow();
+  });
+
+  test('rejects an unpaired surrogate before UTF-8 response encoding can replace it', () => {
+    expect(() => renderShellPrefix({
+      agent: 'claude',
+      apiKey: 'sk-\ud800-key',
       apiKeyName: 'Primary key',
       configuration: fullConfiguration,
     })).toThrow();
@@ -135,6 +144,10 @@ describe('renderPowerShellPrefix', () => {
 
   test('propagates a NUL-rejecting failure from the API key', () => {
     expect(() => renderPowerShellPrefix({ agent: 'claude', apiKey: 'sk-\0-key', apiKeyName: 'Primary key', configuration: fullConfiguration })).toThrow();
+  });
+
+  test('rejects an unpaired surrogate before UTF-8 response encoding can replace it', () => {
+    expect(() => renderPowerShellPrefix({ agent: 'claude', apiKey: 'sk-\udc00-key', apiKeyName: 'Primary key', configuration: fullConfiguration })).toThrow();
   });
 
   test('renders $false and $null for disabled target-agent overrides', () => {

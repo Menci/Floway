@@ -60,12 +60,55 @@ test('respondGemini preserves upstream Google RPC Status body', async () => {
     type: 'api-error',
     source: 'upstream',
     status: 400,
-    headers: new Headers({ 'content-type': 'application/json' }),
+    headers: new Headers({
+      'connection': 'keep-alive, x-upstream-hop',
+      'content-length': '999',
+      'content-type': 'text/plain',
+      'set-cookie': 'upstream-session=secret',
+      'transfer-encoding': 'chunked',
+      'x-request-id': 'google-rpc-request',
+      'x-upstream-hop': 'must-not-cross-hop',
+    }),
     body: encoder.encode(JSON.stringify(upstreamBody)),
   });
 
   assertEquals(response.status, 412);
+  assertEquals(response.headers.get('content-type'), 'application/json');
+  assertEquals(response.headers.get('x-request-id'), 'google-rpc-request');
+  assertEquals(response.headers.get('connection'), null);
+  assertEquals(response.headers.get('content-length'), null);
+  assertEquals(response.headers.get('set-cookie'), null);
+  assertEquals(response.headers.get('transfer-encoding'), null);
+  assertEquals(response.headers.get('x-upstream-hop'), null);
   assertEquals(await response.json(), upstreamBody);
+});
+
+test('respondGemini preserves valid non-Google error status and safe upstream headers', async () => {
+  const response = await requestGeminiResponse({
+    type: 'api-error',
+    source: 'upstream',
+    status: 418,
+    headers: new Headers({
+      'content-type': 'text/plain',
+      'retry-after': '7',
+      'set-cookie': 'upstream-session=secret',
+      'x-request-id': 'non-google-request',
+    }),
+    body: encoder.encode('upstream rejected the request'),
+  });
+
+  assertEquals(response.status, 418);
+  assertEquals(response.headers.get('content-type'), 'application/json');
+  assertEquals(response.headers.get('retry-after'), '7');
+  assertEquals(response.headers.get('x-request-id'), 'non-google-request');
+  assertEquals(response.headers.get('set-cookie'), null);
+  assertEquals(await response.json(), {
+    error: {
+      code: 418,
+      message: 'upstream rejected the request',
+      status: 'INTERNAL',
+    },
+  });
 });
 
 test('respondGemini internal errors include debug fields in Google RPC Status', async () => {

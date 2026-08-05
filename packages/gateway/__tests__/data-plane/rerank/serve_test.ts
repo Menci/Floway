@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import type { Repo } from '../../../src/repo/types.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestApp, setupAppTest } from '../../test-utils/app.ts';
@@ -39,6 +39,18 @@ const requestHeaders = (apiKey: string) => ({
   'content-type': 'application/json',
   'x-api-key': apiKey,
 });
+
+const assertFailedRequestOnlySettlement = async (repo: Repo): Promise<void> => {
+  const usage = await repo.usage.listAll();
+  assertEquals(usage.length, 1);
+  assertEquals(usage[0].requests, 1);
+  assertEquals(usage[0].metrics, []);
+  const performance = await repo.performance.listAll();
+  assertEquals(performance.length, 1);
+  assertEquals(performance[0]?.requests, 1);
+  assertEquals(performance[0]?.neutral, 0);
+  assertEquals(performance[0]?.errorsNoOutput, 1);
+};
 
 test('/v1/rerank translates Cohere v1 to v2 and records Cohere search units', async () => {
   const { apiKey, repo } = await setupAppTest();
@@ -280,11 +292,11 @@ test('/voyage/v1/rerank translates a DashScope native response', async () => {
     async request => {
       upstreamBody = await request.json();
       assertEquals(new URL(request.url).pathname, '/api/v1/services/rerank/text-rerank/text-rerank');
-      return jsonResponse({
+      return new Response(JSON.stringify({
         request_id: 'request-1',
         output: { results: [{ index: 1, relevance_score: 0.75, document: { text: 'two' } }] },
         usage: { total_tokens: 16 },
-      });
+      }), { headers: { 'content-type': 'text/plain', 'x-request-id': 'dashscope-request' } });
     },
     async () => {
       const response = await requestApp('/voyage/v1/rerank', {
@@ -299,6 +311,8 @@ test('/voyage/v1/rerank translates a DashScope native response', async () => {
         }),
       });
       assertEquals(response.status, 200);
+      assertEquals(response.headers.get('content-type'), 'application/json');
+      assertEquals(response.headers.get('x-request-id'), 'dashscope-request');
       assertEquals(await response.json(), {
         object: 'list',
         model: 'public-reranker',
@@ -484,6 +498,110 @@ test('same-protocol success forwards opaque result items while still recording u
   const usage = await repo.usage.listAll();
   assertEquals(usage[0].requests, 1);
   assertEquals(usage[0].metrics, [{ metric: 'input_tokens', quantity: '7', unitPrice: null }]);
+});
+
+test('same-protocol success streams before EOF and settles usage after completion', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveRerankUpstream(repo, { protocol: 'jina-v1' });
+  const encoder = new TextEncoder();
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let pulled = false;
+
+  await withMockedFetch(
+    () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('{"model":"raw-reranker","object":"list","results":[],'));
+      },
+      async pull(controller) {
+        if (pulled) return;
+        pulled = true;
+        await gate;
+        controller.enqueue(encoder.encode('"usage":{"total_tokens":9}}'));
+        controller.close();
+      },
+    }, { highWaterMark: 0 }), { headers: { 'content-type': 'application/json' } }),
+    async () => {
+      const response = await requestApp('/jina/v1/rerank', {
+        method: 'POST',
+        headers: requestHeaders(apiKey.key),
+        body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),
+      });
+      const reader = response.body!.getReader();
+      const first = await reader.read();
+      assertEquals(new TextDecoder().decode(first.value), '{"model":"raw-reranker","object":"list","results":[],');
+      assertEquals(await repo.usage.listAll(), []);
+      release();
+      while (!(await reader.read()).done) { /* drain */ }
+    },
+  );
+
+  await flushAsyncWork();
+  const [usage] = await repo.usage.listAll();
+  assertEquals(usage.requests, 1);
+  assertEquals(usage.metrics, [{ metric: 'input_tokens', quantity: '9', unitPrice: null }]);
+});
+
+test('same-protocol read failure discards already-observed rerank usage', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveRerankUpstream(repo, { protocol: 'jina-v1' });
+  const failure = new Error('upstream rerank JSON failed');
+  let pulls = 0;
+
+  await withMockedFetch(
+    () => new Response(new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        if (pulls === 1) {
+          controller.enqueue(new TextEncoder().encode('{"model":"raw-reranker","object":"list","results":[],"usage":{"total_tokens":9}}'));
+        } else {
+          controller.error(failure);
+        }
+      },
+    }, { highWaterMark: 0 }), { headers: { 'content-type': 'application/json' } }),
+    async () => {
+      const response = await requestApp('/jina/v1/rerank', {
+        method: 'POST',
+        headers: requestHeaders(apiKey.key),
+        body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),
+      });
+      await expect(response.text()).rejects.toBe(failure);
+    },
+  );
+
+  await flushAsyncWork();
+  await assertFailedRequestOnlySettlement(repo);
+});
+
+test('same-protocol cancellation discards already-observed rerank usage', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveRerankUpstream(repo, { protocol: 'jina-v1' });
+  let upstreamCanceled = false;
+
+  await withMockedFetch(
+    () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"model":"raw-reranker","object":"list","results":[],"usage":{"total_tokens":9}}'));
+      },
+      cancel() {
+        upstreamCanceled = true;
+      },
+    }), { headers: { 'content-type': 'application/json' } }),
+    async () => {
+      const response = await requestApp('/jina/v1/rerank', {
+        method: 'POST',
+        headers: requestHeaders(apiKey.key),
+        body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),
+      });
+      const reader = response.body!.getReader();
+      await reader.read();
+      await reader.cancel('client left');
+    },
+  );
+
+  assertEquals(upstreamCanceled, true);
+  await flushAsyncWork();
+  await assertFailedRequestOnlySettlement(repo);
 });
 
 test('cross-protocol success still validates result items before rendering', async () => {

@@ -4,13 +4,17 @@ import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestApp, setupAppTest } from '../../test-utils/app.ts';
+import type { ModelPricing } from '@floway-dev/protocols/common';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 // A custom upstream is the easiest fixture to assert /completions against:
 // the operator declares the endpoint capability per-model, and the path
 // resolves to /v1/completions through the default pathOverrides table.
-const registerCompletionsUpstream = async (repo: Awaited<ReturnType<typeof setupAppTest>>['repo']): Promise<void> => {
+const registerCompletionsUpstream = async (
+  repo: Awaited<ReturnType<typeof setupAppTest>>['repo'],
+  pricing?: ModelPricing,
+): Promise<void> => {
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
   await repo.upstreams.save(buildCustomUpstreamRecord({
@@ -27,6 +31,7 @@ const registerCompletionsUpstream = async (repo: Awaited<ReturnType<typeof setup
       models: [{
         upstreamModelId: 'davinci-002',
         endpoints: { completions: {} },
+        ...(pricing === undefined ? {} : { pricing }),
       }],
     },
   }));
@@ -91,6 +96,41 @@ test('/v1/completions non-streaming forwards body to upstream /v1/completions an
   const usageRows = await repo.usage.listAll();
   assertEquals(usageRows.length, 1);
   assertEquals(tokenCountsFromUsage(usageRows[0]!), { input: 5, output: 1 });
+});
+
+test('/v1/completions non-streaming applies the observed response service tier to pricing', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerCompletionsUpstream(repo, {
+    entries: [
+      { rates: { input_tokens: '0.1', output_tokens: '0.2' } },
+      { selector: { serviceTier: 'priority' }, rates: { input_tokens: '0.3', output_tokens: '0.4' } },
+    ],
+  });
+
+  await withMockedFetch(
+    () => jsonResponse({
+      id: 'cmpl_priority',
+      choices: [{ index: 0, text: 'done', finish_reason: 'stop' }],
+      service_tier: 'priority',
+      usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 },
+    }),
+    async () => {
+      const response = await requestApp('/v1/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({ model: 'davinci-002', prompt: 'hello' }),
+      });
+      assertEquals(response.status, 200);
+      await response.json();
+    },
+  );
+
+  await flushAsyncWork();
+  const [usage] = await repo.usage.listAll();
+  assertEquals(usage.metrics, [
+    { metric: 'input_tokens', quantity: '5', unitPrice: '0.3' },
+    { metric: 'output_tokens', quantity: '2', unitPrice: '0.4' },
+  ]);
 });
 
 test('/v1/completions streaming forces stream_options.include_usage upstream', async () => {
@@ -188,6 +228,141 @@ test('/v1/completions streaming forwards usage chunk when the client opted in', 
       assertEquals(text.includes('[DONE]'), true);
     },
   );
+});
+
+test('/v1/completions preserves streaming status and cancels upstream after the first DONE', { timeout: 2_000 }, async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerCompletionsUpstream(repo);
+  let canceledResolve!: () => void;
+  const canceled = new Promise<void>(resolve => { canceledResolve = resolve; });
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode([
+        'data: {"id":"cmpl_X","choices":[{"index":0,"text":"before"}]}\n\n',
+        'data: {"id":"cmpl_X","choices":[],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}\n\n',
+        'data: [DONE]\n\n',
+        'data: {"id":"cmpl_X","choices":[{"index":0,"text":"late"}]}\n\n',
+      ].join('')));
+    },
+    cancel() {
+      canceledResolve();
+    },
+  });
+
+  await withMockedFetch(
+    () => new Response(body, { status: 201, headers: { 'content-type': 'text/event-stream', 'x-request-id': 'completion-stream' } }),
+    async () => {
+      const response = await requestApp('/v1/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({ model: 'davinci-002', prompt: 'hello', stream: true }),
+      });
+      assertEquals(response.status, 201);
+      assertEquals(response.headers.get('x-request-id'), 'completion-stream');
+      const text = await response.text();
+      assertEquals(text.includes('before'), true);
+      assertEquals(text.includes('late'), false);
+      assertEquals(text.match(/\[DONE\]/g)?.length, 1);
+      await canceled;
+    },
+  );
+
+  await flushAsyncWork();
+  const usage = await repo.usage.listAll();
+  assertEquals(tokenCountsFromUsage(usage[0]!), { input: 2, output: 1 });
+});
+
+test('/v1/completions records malformed terminal usage as a failed request-only settlement', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  await registerCompletionsUpstream(repo);
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+  const stream = [
+    'data: {"id":"cmpl_X","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2,"prompt_tokens_details":{"cached_tokens":2}}}\n\n',
+    'data: [DONE]\n\n',
+  ].join('');
+
+  await withMockedFetch(
+    () => new Response(stream, { headers: { 'content-type': 'text/event-stream' } }),
+    async () => {
+      const response = await requestApp('/v1/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({ model: 'davinci-002', prompt: 'hello', stream: true }),
+      });
+      assertEquals(response.status, 200);
+      assertEquals((await response.text()).includes('[DONE]'), true);
+    },
+  );
+
+  await flushAsyncWork();
+  const usage = await repo.usage.listAll();
+  assertEquals(usage.length, 1);
+  assertEquals(tokenCountsFromUsage(usage[0]!), {});
+  const performance = await repo.performance.listAll();
+  assertEquals(performance.length, 1);
+  assertEquals(performance[0]?.errorsNoOutput, 1);
+  assertEquals(dumps.stored.length, 1);
+  assertEquals(dumps.stored[0]?.record.meta.error?.kind, 'failed');
+});
+
+test('/v1/completions treats EOF without DONE as failed request-only settlement', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  await registerCompletionsUpstream(repo);
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+
+  await withMockedFetch(
+    () => new Response('data: {"id":"cmpl_X","choices":[{"index":0,"text":"partial"}]}\n\n', { headers: { 'content-type': 'text/event-stream' } }),
+    async () => {
+      const response = await requestApp('/v1/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({ model: 'davinci-002', prompt: 'hello', stream: true }),
+      });
+      assertEquals((await response.text()).includes('partial'), true);
+    },
+  );
+
+  await flushAsyncWork();
+  const usage = await repo.usage.listAll();
+  assertEquals(usage.length, 1);
+  assertEquals(tokenCountsFromUsage(usage[0]!), {});
+  const performance = await repo.performance.listAll();
+  assertEquals(performance.length, 1);
+  assertEquals(performance[0]?.errorsNoOutput, 1);
+  assertEquals(dumps.stored.length, 1);
+  assertEquals(dumps.stored[0]?.record.meta.error?.kind, 'failed');
+});
+
+test('/v1/completions returns 502 for a bodyless streaming success', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  await registerCompletionsUpstream(repo);
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+
+  await withMockedFetch(
+    () => new Response(null, { status: 204, headers: { 'content-type': 'text/event-stream', 'x-request-id': 'bodyless-completion' } }),
+    async () => {
+      const response = await requestApp('/v1/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({ model: 'davinci-002', prompt: 'hello', stream: true }),
+      });
+      assertEquals(response.status, 502);
+      assertEquals(response.headers.get('x-request-id'), 'bodyless-completion');
+      assertEquals((await response.json()).error.message, 'Upstream returned a streaming response with no body.');
+    },
+  );
+  await flushAsyncWork();
+  const usage = await repo.usage.listAll();
+  assertEquals(usage.length, 1);
+  assertEquals(tokenCountsFromUsage(usage[0]!), {});
+  const performance = await repo.performance.listAll();
+  assertEquals(performance.length, 1);
+  assertEquals(performance[0]?.errorsNoOutput, 1);
+  assertEquals(dumps.stored.length, 1);
+  assertEquals(dumps.stored[0]?.record.meta.error?.kind, 'failed');
 });
 
 test('/v1/completions rejects malformed body with the standard 400', async () => {
@@ -312,6 +487,7 @@ test('/v1/completions non-streaming records usage row, performance neutral row (
 
   assertEquals(dumpStubs.stored.length, 1);
   const dump = dumpStubs.stored[0]!.record;
+  assertEquals(dump.meta.error, null);
   assertEquals(dump.meta.path, '/v1/completions');
   assertEquals(dump.meta.status, 200);
   assertEquals(dump.meta.model, 'davinci-002');
@@ -354,6 +530,7 @@ test('/v1/completions streaming records usage row, performance neutral row (text
 
   assertEquals(dumpStubs.stored.length, 1);
   const dump = dumpStubs.stored[0]!.record;
+  assertEquals(dump.meta.error, null);
   assertEquals(dump.meta.path, '/v1/completions');
   assertEquals(dump.meta.status, 200);
   assertEquals(dump.meta.model, 'davinci-002');

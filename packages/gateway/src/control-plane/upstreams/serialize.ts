@@ -6,8 +6,8 @@ import type {
 import { flagDefaultsForKind } from '../../data-plane/providers/registry.ts';
 import type { FlagOverrides, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
-import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
-import { assertCodexUpstreamRecord, assertCodexUpstreamState } from '@floway-dev/provider-codex';
+import { assertClaudeCodeUpstreamCredentials } from '@floway-dev/provider-claude-code';
+import { assertCodexUpstreamCredentials } from '@floway-dev/provider-codex';
 import { assertCopilotUpstreamRecord, assertCopilotUpstreamState } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
 import { assertOllamaUpstreamRecord } from '@floway-dev/provider-ollama';
@@ -93,8 +93,7 @@ export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializ
     };
   }
   case 'codex': {
-    assertCodexUpstreamRecord(upstream);
-    assertCodexUpstreamState(upstream.state);
+    assertCodexUpstreamCredentials(upstream);
     const state = {
       accounts: upstream.state.accounts.map(account => ({
         chatgptAccountId: account.chatgptAccountId,
@@ -107,8 +106,7 @@ export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializ
     return { ...base, kind: 'codex', config: clone(upstream.config), state };
   }
   case 'claude-code': {
-    assertClaudeCodeUpstreamRecord(upstream);
-    assertClaudeCodeUpstreamState(upstream.state);
+    assertClaudeCodeUpstreamCredentials(upstream);
     const state = {
       accounts: upstream.state.accounts.map(account => ({
         accountUuid: account.accountUuid,
@@ -155,13 +153,11 @@ export const upstreamRecordToFullJson = (upstream: UpstreamRecord): FullSerializ
     return { ...base, kind: 'copilot', config: clone(record.config), state: clone(record.state) };
   }
   case 'codex': {
-    assertCodexUpstreamRecord(upstream);
-    assertCodexUpstreamState(upstream.state);
+    assertCodexUpstreamCredentials(upstream);
     return { ...base, kind: 'codex', config: clone(upstream.config), state: clone(upstream.state) };
   }
   case 'claude-code': {
-    assertClaudeCodeUpstreamRecord(upstream);
-    assertClaudeCodeUpstreamState(upstream.state);
+    assertClaudeCodeUpstreamCredentials(upstream);
     return { ...base, kind: 'claude-code', config: clone(upstream.config), state: clone(upstream.state) };
   }
   case 'ollama': {

@@ -1,12 +1,12 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { logger } from 'hono/logger';
 
 import { AGENT_SETUP_ROUTE_PATH, agentSetupPublicRoutes } from './control-plane/agent-setup.ts';
 import { controlPlaneRoutes } from './control-plane/routes.ts';
 import { mountDataPlane } from './data-plane/routes.ts';
 import { type AuthVars, authMiddleware } from './middleware/auth.ts';
 import { internalErrorResponse } from './middleware/internal-error-response.ts';
+import { requestLogger } from './middleware/request-logger.ts';
 
 // `app` is a single chained expression so its type carries the full path/method
 // map Hono RPC needs — apps/web consumes the exported AppType as the generic of
@@ -21,7 +21,7 @@ export const app = new Hono<{ Variables: AuthVars }>()
   // per-path bypass is needed in any of those layers and a lease token never
   // reaches a log line. The package seals every failure on these routes itself.
   .route(AGENT_SETUP_ROUTE_PATH, agentSetupPublicRoutes)
-  .use('*', logger())
+  .use('*', requestLogger())
   .use('*', cors())
   .use('*', authMiddleware)
   .route('/', controlPlaneRoutes);

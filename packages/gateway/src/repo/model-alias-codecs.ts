@@ -1,42 +1,74 @@
 import { z } from 'zod';
 
 import { decodeStoredJsonPreservingProperties } from './stored-json.ts';
+import { MODEL_ALIAS_TARGET_LIMIT } from '../shared/model-aliases.ts';
 import type { AliasTarget, AnnouncedMetadata } from '@floway-dev/protocols/common';
 
 const reasoningSchema = z.object({
-  effort: z.string().optional(),
-  budget_tokens: z.number().optional(),
+  effort: z.string().min(1).optional(),
+  budget_tokens: z.number().int().nonnegative().optional(),
   adaptive: z.boolean().optional(),
-  summary: z.string().optional(),
-}).passthrough();
+  summary: z.string().min(1).optional(),
+}).passthrough().refine(
+  reasoning => !(reasoning.adaptive === true && reasoning.budget_tokens !== undefined),
+  { message: 'adaptive=true cannot be combined with budget_tokens', path: ['budget_tokens'] },
+);
 const rulesSchema = z.object({
   reasoning: reasoningSchema.optional(),
-  verbosity: z.string().optional(),
-  serviceTier: z.string().optional(),
+  verbosity: z.string().min(1).optional(),
+  serviceTier: z.string().min(1).optional(),
 }).passthrough();
 const aliasTargetsSchema = z.array(z.object({
-  target_model_id: z.string(),
+  target_model_id: z.string().min(1),
   rules: rulesSchema,
-}).passthrough());
+}).passthrough()).min(1).max(MODEL_ALIAS_TARGET_LIMIT);
 
 const limitsSchema = z.object({
   max_output_tokens: z.number().optional(),
   max_context_window_tokens: z.number().optional(),
   max_prompt_tokens: z.number().optional(),
 }).passthrough();
+
+const modalityArraySchema = z.array(z.enum(['text', 'image']))
+  .min(1)
+  .refine(modalities => new Set(modalities).size === modalities.length, 'modalities must not contain duplicates');
+
+const effortSchema = z.object({
+  supported: z.array(z.string().min(1))
+    .min(1)
+    .refine(efforts => new Set(efforts).size === efforts.length, 'effort.supported must not contain duplicates'),
+  default: z.string().min(1),
+}).passthrough().refine(
+  effort => effort.supported.includes(effort.default),
+  'effort.default must appear in effort.supported',
+);
+
+const budgetTokensSchema = z.object({
+  min: z.number().int().nonnegative().optional(),
+  max: z.number().int().nonnegative().optional(),
+}).passthrough().refine(
+  budget => budget.min === undefined || budget.max === undefined || budget.max >= budget.min,
+  'budget_tokens.max must be >= budget_tokens.min',
+);
+
+const metadataReasoningSchema = z.object({
+  effort: effortSchema.optional(),
+  budget_tokens: budgetTokensSchema.optional(),
+  adaptive: z.literal(true).optional(),
+  mandatory: z.literal(true).optional(),
+}).passthrough().refine(
+  reasoning => Object.keys(reasoning).length > 0,
+  'reasoning must not be empty',
+);
+
 const announcedMetadataSchema = z.object({
   limits: limitsSchema.optional(),
   chat: z.object({
     modalities: z.object({
-      input: z.array(z.enum(['text', 'image'])),
-      output: z.array(z.enum(['text', 'image'])),
+      input: modalityArraySchema.refine(modalities => modalities.includes('text'), "input modalities must include 'text'"),
+      output: modalityArraySchema,
     }).passthrough().optional(),
-    reasoning: z.object({
-      effort: z.object({ supported: z.array(z.string()), default: z.string() }).passthrough().optional(),
-      budget_tokens: z.object({ min: z.number().optional(), max: z.number().optional() }).passthrough().optional(),
-      adaptive: z.boolean().optional(),
-      mandatory: z.boolean().optional(),
-    }).passthrough().optional(),
+    reasoning: metadataReasoningSchema.optional(),
   }).passthrough().optional(),
 }).passthrough();
 

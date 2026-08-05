@@ -152,7 +152,7 @@ test('buildTargetRequest drops filtered-native tool_choice and rewrites assistan
   ]);
 });
 
-test.each(['xhigh', ''] as const)('buildTargetRequest maps output_config.effort %j directly to reasoning.effort', (effort) => {
+test.each(['xhigh', ''] as const)('buildTargetRequest maps output_config.effort %j directly to reasoning.effort', effort => {
   const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,

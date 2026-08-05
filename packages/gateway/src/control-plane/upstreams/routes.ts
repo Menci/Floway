@@ -1,13 +1,14 @@
 import type { Context } from 'hono';
 
 import { blueprintUpstreamRecord, upstreamRecordToFullJson, upstreamRecordToJson } from './serialize.ts';
-import { isValidProviderKind, upstreamErrorMessage as errorMessage } from './shared.ts';
+import { isValidProviderKind, nextUpstreamUpdatedAt, upstreamErrorMessage as errorMessage } from './shared.ts';
 import type { FullSerializedUpstreamRecord, ModelsCacheStatus, RedactedSerializedUpstreamRecord } from './types.ts';
 import { storedCatalogSize } from '../../data-plane/providers/catalog.ts';
 import { type AuthedContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
+import type { UpstreamFieldsPatch } from '../../repo/types.ts';
 import { shortId } from '../../shared/short-id.ts';
 import type { createUpstreamBody, updateUpstreamBody } from '../schemas.ts';
 import { isRecord } from '../shared/field-validators.ts';
@@ -22,8 +23,8 @@ import {
   type UpstreamRecord,
 } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
-import { assertClaudeCodeUpstreamRecord, readClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
-import { type CodexQuotaSnapshotMap, assertCodexUpstreamRecord, assertCodexUpstreamState, getCodexQuota } from '@floway-dev/provider-codex';
+import { assertClaudeCodeUpstreamCredentials, assertClaudeCodeUpstreamRecord } from '@floway-dev/provider-claude-code';
+import { type CodexQuotaSnapshotMap, assertCodexUpstreamCredentials, assertCodexUpstreamRecord, getCodexQuota } from '@floway-dev/provider-codex';
 import { parseCopilotUpstreamConfig, readCopilotUpstreamState } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
 import { assertOllamaUpstreamRecord } from '@floway-dev/provider-ollama';
@@ -271,8 +272,8 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
   // carry `{accounts: []}`, so an incoming null is a malformed request.
   try {
     if (upstream.kind === 'copilot') readCopilotUpstreamState(stateFromBody);
-    else if (upstream.kind === 'codex') assertCodexUpstreamState(stateFromBody);
-    else if (upstream.kind === 'claude-code') readClaudeCodeUpstreamState(stateFromBody);
+    else if (upstream.kind === 'codex') assertCodexUpstreamCredentials(upstream);
+    else if (upstream.kind === 'claude-code') assertClaudeCodeUpstreamCredentials(upstream);
   } catch (err) {
     return c.json({ error: `Invalid state for ${upstream.kind}: ${errorMessage(err)}` }, 400);
   }
@@ -307,24 +308,45 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   }
 
   const knownProxyIds = await loadKnownProxyIds();
-  let next: UpstreamRecord = { ...existing, updatedAt: new Date().toISOString() };
-  if (body.name !== undefined) next = { ...next, name: body.name };
-  if (body.enabled !== undefined) next = { ...next, enabled: body.enabled };
-  if (body.sort_order !== undefined) next = { ...next, sortOrder: body.sort_order };
-  if (body.flag_overrides !== undefined) next = { ...next, flagOverrides: body.flag_overrides };
-  if (body.disabled_public_model_ids !== undefined) next = { ...next, disabledPublicModelIds: body.disabled_public_model_ids };
+  let next: UpstreamRecord = { ...existing, updatedAt: nextUpstreamUpdatedAt(existing) };
+  const fields: UpstreamFieldsPatch = { updatedAt: next.updatedAt };
+  if (body.name !== undefined) {
+    next = { ...next, name: body.name };
+    fields.name = body.name;
+  }
+  if (body.enabled !== undefined) {
+    next = { ...next, enabled: body.enabled };
+    fields.enabled = body.enabled;
+  }
+  if (body.sort_order !== undefined) {
+    next = { ...next, sortOrder: body.sort_order };
+    fields.sortOrder = body.sort_order;
+  }
+  if (body.flag_overrides !== undefined) {
+    next = { ...next, flagOverrides: body.flag_overrides };
+    fields.flagOverrides = body.flag_overrides;
+  }
+  if (body.disabled_public_model_ids !== undefined) {
+    next = { ...next, disabledPublicModelIds: body.disabled_public_model_ids };
+    fields.disabledPublicModelIds = body.disabled_public_model_ids;
+  }
   if (body.proxy_fallback_list !== undefined) {
     const normalized = normalizeProxyFallbackList(body.proxy_fallback_list);
     const fallbackCheck = validateProxyFallbackList(normalized, knownProxyIds);
     if (!fallbackCheck.ok) return c.json({ error: fallbackCheck.error }, 400);
     next = { ...next, proxyFallbackList: normalized };
+    fields.proxyFallbackList = normalized;
   }
   if (body.model_prefix !== undefined) {
     const result = normalizeModelPrefixField(body.model_prefix);
     if (!result.ok) return c.json({ error: result.error }, 400);
     next = { ...next, modelPrefix: result.value };
+    fields.modelPrefix = result.value;
   }
-  if (body.hue !== undefined) next = { ...next, hue: body.hue };
+  if (body.hue !== undefined) {
+    next = { ...next, hue: body.hue };
+    fields.hue = body.hue;
+  }
   if (body.config !== undefined) {
     const config = mergeConfigPatch(existing.kind, existing.config, body.config);
     if (!config.ok) return c.json({ error: config.error }, 400);
@@ -334,10 +356,13 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   const config = normalizeConfig(next);
   if (!config.ok) return c.json({ error: config.error }, 400);
   next = { ...next, config: config.value };
+  if (body.config !== undefined) fields.config = config.value;
 
-  await getRepo().upstreams.save(next);
-  const modelsCache = await warmModelsCache(next, c);
-  return c.json(await serializeForResponse({ ...next, modelsCache }, knownProxyIds));
+  const repo = getRepo().upstreams;
+  const saved = await repo.updateFields(id, existing.kind, fields);
+  if (!saved) return c.json({ error: 'Upstream not found' }, 404);
+  const modelsCache = await warmModelsCache(saved, c);
+  return c.json(await serializeForResponse({ ...saved, modelsCache }, knownProxyIds));
 };
 
 export const deleteUpstream = async (c: AuthedContext<'/:id'>) => {
