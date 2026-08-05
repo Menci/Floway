@@ -3,7 +3,7 @@ import { getRepo } from '../../repo/index.ts';
 import { MODEL_CATALOG_REVISION } from '../../repo/models-cache-contract.ts';
 import { serializeStoredConfig } from '../../repo/upstream-json.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { Fetcher, ProviderModel } from '@floway-dev/provider';
+import type { Fetcher, ProviderModel, UpstreamModelsCache } from '@floway-dev/provider';
 
 // Soft TTL: a fetched row is served verbatim within this window with no
 // upstream call. Past SOFT but within HARD, the stored row is still served
@@ -31,25 +31,50 @@ export interface ModelsCacheFetchOptions {
   loadProvidedModels?: () => Promise<ProviderModel[]>;
 }
 
+interface ModelsFetchResult {
+  readonly models: ProviderModel[];
+  readonly persistedCache: UpstreamModelsCache | null;
+}
+
+interface InFlightModelsFetch {
+  readonly promise: Promise<ProviderModel[]>;
+  readonly instances: Set<GatewayProvider>;
+  backgroundScheduled: boolean;
+}
+
 // L1: per-isolate in-flight memoization. Callers join only when both their
 // actual fetch inputs and persisted-cache ownership match; different drafts
-// and superseded rows remain isolated. Not a TTL cache — the entry is removed
-// when the promise settles. The conditional delete defends against a stale
-// removal racing a later replacement.
-const inFlight = new Map<string, Promise<ProviderModel[]>>();
+// and superseded rows remain isolated. Every joining provider instance receives
+// the cache snapshot committed by the shared fetch, keeping later reads in each
+// request coherent. Not a TTL cache — the entry is removed when the promise
+// settles. The conditional delete defends against a stale removal racing a
+// later replacement.
+const inFlight = new Map<string, InFlightModelsFetch>();
 
 const memoInFlight = (
   key: string,
-  fn: () => Promise<ProviderModel[]>,
-): Promise<ProviderModel[]> => {
+  instance: GatewayProvider,
+  fn: () => Promise<ModelsFetchResult>,
+): InFlightModelsFetch => {
   const existing = inFlight.get(key);
-  if (existing) return existing;
-  const promise = fn();
-  inFlight.set(key, promise);
+  if (existing) {
+    existing.instances.add(instance);
+    return existing;
+  }
+
+  const instances = new Set([instance]);
+  const promise = fn().then(result => {
+    if (result.persistedCache !== null) {
+      for (const joined of instances) joined.modelsCache = result.persistedCache;
+    }
+    return result.models;
+  });
+  const entry: InFlightModelsFetch = { promise, instances, backgroundScheduled: false };
+  inFlight.set(key, entry);
   promise.finally(() => {
-    if (inFlight.get(key) === promise) inFlight.delete(key);
+    if (inFlight.get(key) === entry) inFlight.delete(key);
   }).catch(() => {});
-  return promise;
+  return entry;
 };
 
 const errorMessage = (err: unknown): string => err instanceof Error ? err.message : String(err);
@@ -59,19 +84,13 @@ const runFetch = async (
   fetcher: Fetcher,
   key: string,
   loadProvidedModels?: () => Promise<ProviderModel[]>,
-): Promise<ProviderModel[]> => {
+): Promise<ModelsFetchResult> => {
   const generation = instance.modelsCacheGeneration;
   try {
     const models = [...await (loadProvidedModels?.() ?? instance.instance.getProvidedModels(fetcher))];
     const entry = { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now(), models, lastError: null };
     const persisted = await getRepo().upstreams.saveModelsCache(key, generation, entry);
-    // The instance carries the row as it was read at request start, and a
-    // request reaches this function more than once -- once per alias target
-    // resolved. Writing the entry back keeps every later read in the request
-    // seeing what was just persisted, which is what re-querying the row used
-    // to give us.
-    if (persisted) instance.modelsCache = entry;
-    return models;
+    return { models, persistedCache: persisted ? entry : null };
   } catch (err) {
     // A no-op on an upstream with no cached catalog: a brand-new upstream that
     // fails its first fetch surfaces the error to the caller with nothing
@@ -92,7 +111,7 @@ export const fetchUpstreamModelsCached = async (
   const now = Date.now();
 
   if (force) {
-    return await memoInFlight(inFlightKey, () => runFetch(instance, fetcher, key, loadProvidedModels));
+    return await memoInFlight(inFlightKey, instance, () => runFetch(instance, fetcher, key, loadProvidedModels)).promise;
   }
 
   // Read off the instance rather than queried: the row that produced this
@@ -104,16 +123,19 @@ export const fetchUpstreamModelsCached = async (
   }
 
   if (cached && now - cached.fetchedAt < HARD_MS) {
-    // Joining L1 here means a second request arriving mid-flight does
-    // not enqueue a second background task. The trailing `.catch` is the
-    // sink for the background branch only — `runFetch` already persists
-    // the failure via `saveModelsCacheError` before rethrowing, so the SWR
-    // caller who got `cached.models` does not need to learn about it.
-    scheduler(memoInFlight(inFlightKey, () => runFetch(instance, fetcher, key)).catch(() => {}));
+    const inFlightFetch = memoInFlight(inFlightKey, instance, () => runFetch(instance, fetcher, key));
+    if (!inFlightFetch.backgroundScheduled) {
+      // The trailing `.catch` is the sink for the background branch only —
+      // `runFetch` already persists the failure via `saveModelsCacheError`
+      // before rethrowing, so the SWR caller who got `cached.models` does not
+      // need to learn about it.
+      scheduler(inFlightFetch.promise.catch(() => {}));
+      inFlightFetch.backgroundScheduled = true;
+    }
     return cached.models;
   }
 
-  return await memoInFlight(inFlightKey, () => runFetch(instance, fetcher, key));
+  return await memoInFlight(inFlightKey, instance, () => runFetch(instance, fetcher, key)).promise;
 };
 
 // Test-only: drop the L1 map so a test's setup is independent of any

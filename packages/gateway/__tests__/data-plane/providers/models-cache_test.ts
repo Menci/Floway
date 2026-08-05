@@ -196,6 +196,36 @@ describe('fetchUpstreamModelsCached', () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
+  test('concurrent stale callers schedule one revalidation and refresh every joining provider instance', async () => {
+    const repo = await setupRepo();
+    const cache = await seedCache(repo, { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now() - 20 * 60_000, models: [aModel('stale')] });
+    let resolveFetch: ((models: ProviderModel[]) => void) | null = null;
+    const fetchFn = vi.fn(() => new Promise<ProviderModel[]>(resolve => { resolveFetch = resolve; }));
+    const firstInstance = stubInstance(fetchFn, cache);
+    const secondInstance = stubInstance(fetchFn, cache);
+    const scheduled: Promise<unknown>[] = [];
+    const scheduler = (promise: Promise<unknown>) => { scheduled.push(promise); };
+
+    const [first, second] = await Promise.all([
+      fetchUpstreamModelsCached(firstInstance, { scheduler, fetcher: directFetcher }),
+      fetchUpstreamModelsCached(secondInstance, { scheduler, fetcher: directFetcher }),
+    ]);
+
+    expect(first.map(model => model.id)).toEqual(['stale']);
+    expect(second.map(model => model.id)).toEqual(['stale']);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(scheduled).toHaveLength(1);
+
+    resolveFetch!([aModel('fresh')]);
+    await Promise.all(scheduled);
+
+    expect(firstInstance.modelsCache?.models.map(model => model.id)).toEqual(['fresh']);
+    expect(secondInstance.modelsCache?.models.map(model => model.id)).toEqual(['fresh']);
+    expect((await fetchUpstreamModelsCached(secondInstance, { scheduler, fetcher: directFetcher })).map(model => model.id)).toEqual(['fresh']);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(scheduled).toHaveLength(1);
+  });
+
   test('a superseded generation neither joins nor overwrites the current catalog', async () => {
     const repo = await setupRepo();
     let resolveOld: ((models: ProviderModel[]) => void) | null = null;
