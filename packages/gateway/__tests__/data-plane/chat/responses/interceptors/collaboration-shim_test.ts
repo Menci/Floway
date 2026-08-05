@@ -176,7 +176,7 @@ test('uses a deterministic collision suffix and restores shared context between 
   const seenChoices: string[] = [];
   const run = async () => await withCollaborationShim(ctx, mockChatGatewayCtx(), async () => {
     seen.push((ctx.payload.tools?.[0] as { name: string }).name);
-    const choice = ctx.payload.tool_choice as { tools: Array<{ name: string }> };
+    const choice = ctx.payload.tool_choice as unknown as { tools: Array<{ name: string }> };
     seenChoices.push(choice.tools[1].name);
     return eventResult((async function* () {})(), testTelemetryModelIdentity);
   });
