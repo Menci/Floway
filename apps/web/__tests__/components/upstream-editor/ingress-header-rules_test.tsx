@@ -140,7 +140,9 @@ describe('Custom ingress header rules', () => {
     fireEvent.change(key, { target: { value: 'bad header' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save probe' }));
 
-    expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.headers.validation.invalidName'))).toBeTruthy();
+    const message = await screen.findByText(i18n.t('dashboard.upstreamEditor.headers.validation.invalidName'));
+    expect(message.style.fontSize).toBe('var(--fontSizeBase200)');
+    expect(message.style.lineHeight).toBe('var(--lineHeightBase200)');
     expect(key.getAttribute('aria-invalid')).toBe('true');
     expect(document.activeElement).toBe(key);
   });

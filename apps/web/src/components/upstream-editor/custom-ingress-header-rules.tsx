@@ -14,6 +14,10 @@ const { Field, Option, Text } = fluentComponents;
 
 const PASSTHROUGH_OPTION = 'passthrough';
 const EMPTY_OPTION = 'empty';
+const VALIDATION_MESSAGE_STYLE = {
+  fontSize: 'var(--fontSizeBase200)',
+  lineHeight: 'var(--lineHeightBase200)',
+} as const;
 
 type CustomValues = Omit<UpstreamEditorValues, 'config'> & {
   config: Extract<UpstreamRecord, { kind: 'custom' }>['config'];
@@ -68,6 +72,12 @@ function IngressHeaderRuleRow({
   const ruleErrors = (errors.config as { ingressHeadersRules?: Array<{ key?: FieldError; value?: FieldError }> } | undefined)
     ?.ingressHeadersRules?.[index];
   const valueDisabled = headerName.trim() === '';
+  const keyValidationMessage = ruleErrors?.key?.message
+    ? { children: t(ruleErrors.key.message), style: VALIDATION_MESSAGE_STYLE }
+    : undefined;
+  const valueValidationMessage = ruleErrors?.value?.message
+    ? { children: t(ruleErrors.value.message), style: VALIDATION_MESSAGE_STYLE }
+    : undefined;
 
   return <div aria-labelledby={labelId} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_32px] items-start gap-2" role="group">
     <span className="sr-only" id={labelId}>{t('dashboard.upstreamEditor.headers.row', { number: rowNumber })}</span>
@@ -76,7 +86,7 @@ function IngressHeaderRuleRow({
       name={keyName}
       render={({ field }) => <Field
         className="min-w-0"
-        validationMessage={ruleErrors?.key?.message ? t(ruleErrors.key.message) : undefined}
+        validationMessage={keyValidationMessage}
         validationState={ruleErrors?.key ? 'error' : undefined}
       >
         <Input
@@ -114,7 +124,7 @@ function IngressHeaderRuleRow({
             : undefined;
         return <Field
           className="min-w-0"
-          validationMessage={ruleErrors?.value?.message ? t(ruleErrors.value.message) : undefined}
+          validationMessage={valueValidationMessage}
           validationState={ruleErrors?.value ? 'error' : undefined}
         >
           <Combobox
