@@ -200,6 +200,7 @@ test('SQL upstream repo updateFields preserves unrelated concurrent fields and c
   assertEquals(stored?.state, nextState);
   assertEquals(stored?.modelsCache, null);
   assertEquals(await repo.updateFields(original.id, 'custom', { name: 'Wrong kind' }), null);
+  assertEquals(await repo.updateFields(original.id, 'codex', {}), null);
   assertEquals((await repo.getById(original.id))?.name, 'Concurrent rename');
 });
 
@@ -329,7 +330,7 @@ test('SQL upstream repo saveState cannot cross a provider replacement race', asy
       .run(), 1)).upstreams;
 
   await assertRejects(
-    () => racing.saveState('up_test', () => ({ copilotToken: null }), 'codex'),
+    () => racing.saveState('up_test', () => ({ copilotToken: null }), { kind: 'codex' }),
     Error,
     'changed from codex to custom',
   );

@@ -265,10 +265,14 @@ export const fetchCopilotUsage = (githubHost: string, githubToken: string, fetch
 // recently is what the dashboard shows. `fetchedAt` is stamped outside the
 // mutator: the mutator is re-run on a lost race and must return the same
 // snapshot each time.
-export const putCopilotQuota = async (upstreamId: string, snapshot: CopilotQuotaSnapshot): Promise<void> => {
+export const putCopilotQuota = async (
+  upstreamId: string,
+  snapshot: CopilotQuotaSnapshot,
+  expectedConfig?: unknown,
+): Promise<void> => {
   const fetchedAt = Date.now();
   await getProviderRepo().upstreams.saveState(upstreamId, current => ({
     ...readCopilotUpstreamState(current),
     quotaSnapshot: { fetchedAt, data: snapshot },
-  } satisfies CopilotUpstreamState), 'copilot');
+  } satisfies CopilotUpstreamState), { kind: 'copilot', ...(expectedConfig === undefined ? {} : { config: expectedConfig }) });
 };

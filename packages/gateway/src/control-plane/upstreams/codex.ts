@@ -10,6 +10,7 @@ import {
   buildCodexAuthorizeUrl,
   type CodexUpstreamConfig,
   type CodexUpstreamState,
+  CodexCredentialRefreshTerminatedError,
   CodexOAuthSessionTerminatedError,
   assertCodexUpstreamCredentials,
   assertCodexUpstreamState,
@@ -126,7 +127,7 @@ export const codexOAuthRefresh = async (c: CtxWithJson<typeof codexOAuthRefreshB
           ? { ...a, refresh_token: newRefreshToken, state_updated_at: rotatedAt }
           : a),
       } satisfies CodexUpstreamState;
-    }, 'codex');
+    }, { kind: 'codex' });
   };
 
   try {
@@ -139,24 +140,31 @@ export const codexOAuthRefresh = async (c: CtxWithJson<typeof codexOAuthRefreshB
       // clear the cached access token, mark the account refresh_failed so
       // the dashboard renders the red badge and prompts a re-import.
       const failedAt = new Date().toISOString();
+      const generation = err instanceof CodexCredentialRefreshTerminatedError
+        ? err.generation
+        : {
+            chatgptAccountId: account.chatgptAccountId,
+            refresh_token: account.refresh_token,
+            state_updated_at: account.state_updated_at,
+          };
       let credentialGenerationMoved = false;
       await repo.saveState(record.id, current => {
         assertCodexUpstreamState(current);
         return {
           accounts: current.accounts.map(a => {
-            if (a.chatgptAccountId !== account.chatgptAccountId) {
+            if (a.chatgptAccountId !== generation.chatgptAccountId) {
               credentialGenerationMoved = true;
               return a;
             }
             if (a.state !== 'active') return a;
-            if (a.refresh_token !== account.refresh_token || a.state_updated_at !== account.state_updated_at) {
+            if (a.refresh_token !== generation.refresh_token || a.state_updated_at !== generation.state_updated_at) {
               credentialGenerationMoved = true;
               return a;
             }
             return { ...a, state: 'refresh_failed' as const, state_message: err.upstreamMessage, state_updated_at: failedAt, accessToken: null };
           }),
         } satisfies CodexUpstreamState;
-      }, 'codex');
+      }, { kind: 'codex' });
       if (credentialGenerationMoved) {
         const recovered = await repo.getById(record.id);
         if (!recovered) return c.json({ error: 'Upstream not found' }, 404);

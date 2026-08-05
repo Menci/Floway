@@ -67,7 +67,7 @@ import { bucketForTtftMs, bucketForTpotUs } from '../../src/shared/performance-h
 import { assertWebSearchProviderName, type WebSearchConfig } from '../../src/shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import { addDecimalStrings, canonicalPricingSelectorKey, canonicalizePricingSelector, type BillingMetric, type DecimalString, type PricingSelector } from '@floway-dev/protocols/common';
-import { UpstreamGoneError, UpstreamKindMismatchError, type UpstreamModelsCache, type UpstreamRecord } from '@floway-dev/provider';
+import { UpstreamGenerationMismatchError, UpstreamGoneError, UpstreamKindMismatchError, type UpstreamModelsCache, type UpstreamRecord, type UpstreamStateWriteGuard } from '@floway-dev/provider';
 
 const SEED_ADMIN_USER: User = {
   id: SEED_ADMIN_USER_ID,
@@ -729,6 +729,7 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     patch: UpstreamFieldsPatch,
     options: { clearModelsCache?: boolean } = {},
   ): Promise<UpstreamRecord | null> {
+    if (Object.keys(patch).length === 0 && !options.clearModelsCache) return Promise.resolve(null);
     const existing = this.store.get(id);
     if (existing?.kind !== expectedKind) return Promise.resolve(null);
     const next = {
@@ -756,11 +757,14 @@ class MemoryUpstreamRepo implements UpstreamRepo {
   // the current state and the write always lands. Serialization still round-
   // trips through the canonical encoder so a mutator that returns its argument
   // unchanged is a no-op here too.
-  saveState(id: string, mutate: (current: unknown) => unknown, expectedKind?: UpstreamRecord['kind']): Promise<void> {
+  saveState(id: string, mutate: (current: unknown) => unknown, guard?: UpstreamStateWriteGuard): Promise<void> {
     const existing = this.store.get(id);
     if (!existing) throw new UpstreamGoneError(id);
-    if (expectedKind !== undefined && existing.kind !== expectedKind) {
-      throw new UpstreamKindMismatchError(id, expectedKind, existing.kind);
+    if (guard !== undefined && existing.kind !== guard.kind) {
+      throw new UpstreamKindMismatchError(id, guard.kind, existing.kind);
+    }
+    if (guard?.config !== undefined && serializeStoredConfig(existing.config) !== serializeStoredConfig(guard.config)) {
+      throw new UpstreamGenerationMismatchError(id);
     }
     const next = mutate(existing.state);
     const serialized = serializeStoredState(next);

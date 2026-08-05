@@ -142,7 +142,7 @@ describe('callCodexResponses — token freshness', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
     const responsesInit = fetchSpy.mock.calls[1][1] as RequestInit;
     expect(new Headers(responsesInit.headers).get('authorization')).toBe('Bearer at_new');
-    expect(effects.persistRefreshTokenRotation).toHaveBeenCalledWith('rt_v2');
+    expect(effects.persistRefreshTokenRotation).toHaveBeenCalledWith('rt_v1', 'rt_v2');
     expect((currentRecord.state as CodexUpstreamState).accounts[0].accessToken?.token).toBe('at_new');
   });
 
@@ -165,7 +165,7 @@ describe('callCodexResponses — token freshness', () => {
       model, body: { input: [], stream: true }, headers: new Headers(), effects, call: noopUpstreamCallOptions(),
     });
     expect(result.ok).toBe(false);
-    expect(effects.persistTerminalState).toHaveBeenCalledWith('refresh_failed', expect.stringMatching(/gone/));
+    expect(effects.persistTerminalState).toHaveBeenCalledWith('refresh_failed', expect.stringMatching(/gone/), expect.objectContaining({ refresh_token: 'rt_v1' }));
   });
 });
 
@@ -641,7 +641,7 @@ describe('callCodexResponses — upstream classification', () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(503);
-    expect(effects.persistTerminalState).toHaveBeenCalledWith('session_terminated', expect.stringMatching(/session ended/));
+    expect(effects.persistTerminalState).toHaveBeenCalledWith('session_terminated', expect.stringMatching(/session ended/), expect.objectContaining({ refresh_token: 'rt_v1' }));
   });
 
   test('401 other → refresh + retry once, then bubble persistent 401', async () => {
@@ -657,7 +657,7 @@ describe('callCodexResponses — upstream classification', () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(401);
-    expect(effects.persistRefreshTokenRotation).toHaveBeenCalledWith('rt_v2');
+    expect(effects.persistRefreshTokenRotation).toHaveBeenCalledWith('rt_v1', 'rt_v2');
   });
 
   test('429 → quota with ratelimited_until, return upstream 429', async () => {
@@ -807,7 +807,7 @@ describe('callCodexResponsesCompact', () => {
       body: { input: [] }, headers: new Headers(), effects, call: noopUpstreamCallOptions(),
     });
     expect(result.ok).toBe(true);
-    expect(effects.persistRefreshTokenRotation).toHaveBeenCalledWith('rt_v2');
+    expect(effects.persistRefreshTokenRotation).toHaveBeenCalledWith('rt_v1', 'rt_v2');
     // Both compact requests hit the same URL; the bearer flipped from at_kv to at2.
     expect(fetchSpy.mock.calls[0][0]).toBe('https://chatgpt.com/backend-api/codex/responses/compact');
     expect(new Headers((fetchSpy.mock.calls[2][1] as RequestInit).headers).get('authorization')).toBe('Bearer at2');
@@ -823,7 +823,7 @@ describe('callCodexResponsesCompact', () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(503);
-    expect(effects.persistTerminalState).toHaveBeenCalledWith('session_terminated', expect.stringMatching(/session ended/));
+    expect(effects.persistTerminalState).toHaveBeenCalledWith('session_terminated', expect.stringMatching(/session ended/), expect.objectContaining({ refresh_token: 'rt_v1' }));
   });
 
   test('429 → quota with ratelimited_until, return upstream 429', async () => {

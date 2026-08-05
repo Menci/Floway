@@ -1,5 +1,6 @@
 import pRetry, { AbortError as RetryAbortError } from 'p-retry';
 
+import type { CopilotUpstreamConfig } from './config.ts';
 import { githubApiOrigin } from './github-host.ts';
 import { readCopilotUpstreamState, type CopilotTokenEntry, type CopilotUpstreamState } from './state.ts';
 import { dispatchUpstreamFetch, getProviderRepo as getRepo, isAbortError, type Fetcher } from '@floway-dev/provider';
@@ -160,7 +161,7 @@ async function getCopilotToken(upstreamId: string, githubHost: string, githubTok
       await getRepo().upstreams.saveState(upstreamId, current => ({
         ...readCopilotUpstreamState(current),
         copilotToken: entry,
-      } satisfies CopilotUpstreamState), 'copilot');
+      } satisfies CopilotUpstreamState), { kind: 'copilot', config: fresh.config });
     } catch (err) {
       console.warn(`Failed to persist Copilot token for ${upstreamId}:`, err);
     }
@@ -223,6 +224,7 @@ export interface CopilotAuth {
   id: string;
   githubHost: string;
   githubToken: string;
+  config?: CopilotUpstreamConfig;
 }
 
 export async function copilotAuthedFetch(path: string, init: RequestInit, auth: CopilotAuth, options: CopilotFetchOptions): Promise<Response> {

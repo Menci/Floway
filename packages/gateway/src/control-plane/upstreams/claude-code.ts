@@ -188,12 +188,14 @@ export const claudeCodeProbe = async (c: CtxWithJson<typeof claudeCodeProbeBody>
   if (record.kind !== 'claude-code') return c.json({ error: 'Quota probe is only supported for claude-code upstreams' }, 400);
   const actor = userFromContext(c).id;
   const repo = getRepo().upstreams;
+  let persistedAccountUuid: string | null = null;
 
   if (record.id !== '') {
     const persisted = await repo.getById(record.id);
     if (!persisted) return c.json({ error: 'Upstream not found' }, 404);
     if (persisted.kind !== 'claude-code') return c.json({ error: 'Upstream is not a Claude Code upstream' }, 400);
     assertClaudeCodeUpstreamCredentials(persisted);
+    persistedAccountUuid = persisted.state.accounts[0].accountUuid;
   }
 
   let fetcher: Fetcher;
@@ -268,8 +270,12 @@ export const claudeCodeProbe = async (c: CtxWithJson<typeof claudeCodeProbeBody>
   // concurrent rotation neither loses its own write nor is overwritten by this
   // one. A draft that has never been saved has no row to write to.
   if (record.id !== '') {
-    await repo.saveState(record.id, current =>
-      mergeSnapshotInto(readClaudeCodeUpstreamState(current)), 'claude-code');
+    await repo.saveState(record.id, current => {
+      const currentState = readClaudeCodeUpstreamState(current);
+      const account = currentState.accounts[0];
+      if (account.accountUuid !== persistedAccountUuid || account.accessToken?.token !== accessToken) return currentState;
+      return mergeSnapshotInto(currentState);
+    }, { kind: 'claude-code' });
     const updated = await repo.getById(record.id);
     if (!updated) return c.json({ error: 'Upstream not found' }, 404);
     assertClaudeCodeUpstreamCredentials(updated);

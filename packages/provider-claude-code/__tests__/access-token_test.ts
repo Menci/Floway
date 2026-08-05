@@ -115,6 +115,30 @@ describe('ensureClaudeCodeAccessToken', () => {
     expect(account.state).toBe('active');
   });
 
+  test('does not persist account A refresh results over concurrently imported account B', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      current = makeRecord({
+        accounts: [{
+          ...baseAccount,
+          accountUuid: 'account-b',
+          refreshToken: 'rt_b',
+          stateUpdatedAt: '2026-06-01T00:10:00.000Z',
+          accessToken: { token: 'at_b', expiresAt: farFutureMs, refreshedAt: '2026-06-01T00:10:00.000Z' },
+        }],
+      });
+      return new Response(JSON.stringify({
+        access_token: 'at_a_new', token_type: 'Bearer', expires_in: 3600, refresh_token: 'rt_a_new', scope: 'user:inference',
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+
+    await ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher });
+    const account = (current!.state as ClaudeCodeUpstreamState).accounts[0];
+    expect(account.accountUuid).toBe('account-b');
+    expect(account.refreshToken).toBe('rt_b');
+    expect(account.accessToken?.token).toBe('at_b');
+    expect(writes).toHaveLength(0);
+  });
+
   test('rotation lands on the state a concurrent quota write left behind', async () => {
     // The row also carries values written on every data-plane response, so a
     // quota snapshot routinely lands between our read and our write. The

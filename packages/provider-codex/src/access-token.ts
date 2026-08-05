@@ -1,8 +1,17 @@
 import { CodexOAuthSessionTerminatedError, refreshCodexAccessToken } from './auth/oauth.ts';
-import { findCodexAccountIndex, readCodexUpstreamState, replaceCodexAccount, type CodexAccessTokenEntry } from './state.ts';
+import { findCodexAccountIndex, readCodexUpstreamState, replaceCodexAccount, type CodexAccessTokenEntry, type CodexAccountCredential } from './state.ts';
 import { getProviderRepo, UpstreamGoneError, type Fetcher } from '@floway-dev/provider';
 
 export type { CodexAccessTokenEntry };
+
+export type CodexCredentialGeneration = Pick<CodexAccountCredential, 'chatgptAccountId' | 'refresh_token' | 'state_updated_at'>;
+
+export class CodexCredentialRefreshTerminatedError extends CodexOAuthSessionTerminatedError {
+  constructor(error: CodexOAuthSessionTerminatedError, readonly generation: CodexCredentialGeneration) {
+    super({ code: error.code, message: error.upstreamMessage });
+    this.name = 'CodexCredentialRefreshTerminatedError';
+  }
+}
 
 // Refresh window: a cached token within this much of expiry counts as
 // already-expired so the next call mints a fresh one rather than racing the
@@ -38,7 +47,7 @@ const persistAccessToken = async (
       // a 401 retry races a concurrent refresh that already cleared the token.
       if (entry === null && state.accounts[idx].accessToken === null) return current;
       return replaceCodexAccount(state, idx, account => ({ ...account, accessToken: entry }));
-    }, 'codex');
+    }, { kind: 'codex' });
   } catch (err) {
     // A minted access token is bookkeeping the next request re-derives, so an
     // operator deleting the upstream mid-request is not worth failing that
@@ -138,6 +147,13 @@ const ensureCodexAccessTokenInner = async (
     if (err instanceof CodexOAuthSessionTerminatedError && err.code === 'invalid_grant' && recoveryAllowed) {
       const recovered = await recoverFromRefreshRace(upstreamId, accountId, account.refresh_token, mint);
       if (recovered) return recovered;
+    }
+    if (err instanceof CodexOAuthSessionTerminatedError) {
+      throw new CodexCredentialRefreshTerminatedError(err, {
+        chatgptAccountId: account.chatgptAccountId,
+        refresh_token: account.refresh_token,
+        state_updated_at: account.state_updated_at,
+      });
     }
     throw err;
   }

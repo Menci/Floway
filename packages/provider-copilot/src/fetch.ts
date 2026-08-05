@@ -23,14 +23,14 @@ export interface CopilotDataPlaneFetchOptions extends UpstreamFetchOptions {
 // path. A response with no quota headers (every 4xx we have observed, plus
 // `/models`) leaves the persisted snapshot alone rather than erasing it.
 const captureQuotaFireAndForget = (
-  upstreamId: string,
+  config: CopilotFetchConfig,
   headers: Headers,
   waitUntil: ((promise: Promise<unknown>) => void) | undefined,
 ): void => {
   const snapshot = parseCopilotQuotaHeaders(headers, new Date());
   if (snapshot === null) return;
-  const persist = putCopilotQuota(upstreamId, snapshot).catch((error: unknown) => {
-    console.warn(`Failed to persist Copilot quota snapshot for ${upstreamId}:`, error);
+  const persist = putCopilotQuota(config.id, snapshot, config.config).catch((error: unknown) => {
+    console.warn(`Failed to persist Copilot quota snapshot for ${config.id}:`, error);
   });
   waitUntil?.(persist);
 };
@@ -53,7 +53,7 @@ const copilotFetchInternal = async (
       headers: new Headers(error.headers),
     });
   });
-  captureQuotaFireAndForget(config.id, response.headers, options.waitUntil);
+  captureQuotaFireAndForget(config, response.headers, options.waitUntil);
   return response;
 };
 

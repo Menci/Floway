@@ -38,6 +38,14 @@ const REFRESH_SKEW_MS = 5 * 60 * 1000;
 const isAccessTokenFresh = (entry: ClaudeCodeAccessTokenEntry): boolean =>
   entry.expiresAt > Date.now() + REFRESH_SKEW_MS;
 
+const sameCredentialGeneration = (
+  current: ClaudeCodeAccountCredential,
+  expected: ClaudeCodeAccountCredential,
+): boolean => current.accountUuid === expected.accountUuid
+  && current.tokenKind === expected.tokenKind
+  && current.refreshToken === expected.refreshToken
+  && current.stateUpdatedAt === expected.stateUpdatedAt;
+
 export interface EnsureClaudeCodeAccessTokenArgs {
   upstreamId: string;
   repo: UpstreamsRepoSlim;
@@ -183,12 +191,15 @@ const ensureClaudeCodeAccessTokenInner = async (
   if (typeof rotatedRefreshToken !== 'string' || rotatedRefreshToken === '') {
     throw new Error('Claude Code refresh response missing refresh_token');
   }
-  await args.repo.saveState(args.upstreamId, current =>
-    replaceSoleAccount(readClaudeCodeUpstreamState(current), stored => (
+  await args.repo.saveState(args.upstreamId, current => {
+    const currentState = readClaudeCodeUpstreamState(current);
+    if (!sameCredentialGeneration(currentState.accounts[0], account)) return currentState;
+    return replaceSoleAccount(currentState, stored => (
       stored.tokenKind === 'oauth'
         ? { ...stored, refreshToken: rotatedRefreshToken, accessToken: newAccessTokenEntry }
         : stored
-    )), 'claude-code');
+    ));
+  }, { kind: 'claude-code' });
   logInfo('claude_code_refresh_token_rotated', {
     upstream_id: args.upstreamId,
     account_uuid: account.accountUuid,
@@ -220,14 +231,17 @@ const persistTerminalState = async (
   // Stamped before the write: the mutator is replayed on a lost race and must
   // return the same document each time.
   const flippedAt = new Date().toISOString();
-  await repo.saveState(upstreamId, current =>
-    replaceSoleAccount(readClaudeCodeUpstreamState(current), account => ({
+  await repo.saveState(upstreamId, current => {
+    const currentState = readClaudeCodeUpstreamState(current);
+    if (!sameCredentialGeneration(currentState.accounts[0], previousAccount)) return currentState;
+    return replaceSoleAccount(currentState, account => ({
       ...account,
       state: 'refresh_failed',
       stateMessage: fields.message,
       stateUpdatedAt: flippedAt,
       accessToken: null,
-    })), 'claude-code');
+    }));
+  }, { kind: 'claude-code' });
   logWarn('claude_code_account_state_flip', {
     upstream_id: upstreamId,
     account_uuid: previousAccount.accountUuid,
@@ -292,5 +306,5 @@ export const invalidateClaudeCodeAccessToken = async (args: {
     const state = readClaudeCodeUpstreamState(current);
     if (state.accounts[0].accessToken === null) return state;
     return replaceSoleAccount(state, account => ({ ...account, accessToken: null }));
-  }, 'claude-code');
+  }, { kind: 'claude-code' });
 };

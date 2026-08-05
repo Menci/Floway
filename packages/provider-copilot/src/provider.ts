@@ -203,7 +203,7 @@ const finalizeCopilotModels = (
 
 export const createCopilotProvider = (record: UpstreamRecord): Provider => {
   const copilot = assertCopilotUpstreamRecord(record);
-  const upstreamConfig = { id: copilot.id, githubHost: copilot.config.githubHost, githubToken: copilot.config.githubToken };
+  const upstreamConfig = { id: copilot.id, githubHost: copilot.config.githubHost, githubToken: copilot.config.githubToken, config: copilot.config };
 
   const call = async (
     transport: (config: typeof upstreamConfig, init: RequestInit, options: CopilotDataPlaneFetchOptions) => Promise<Response>,
@@ -322,7 +322,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
             ...state,
             knownModels: mergeKnownModels(state.knownModels ?? emptyKnownModels(), response, now),
           } satisfies CopilotUpstreamState;
-        }, 'copilot');
+        }, { kind: 'copilot', config: copilot.config });
       } catch (err) {
         console.warn(`Failed to persist Copilot known-models for ${copilot.id}:`, err);
       }

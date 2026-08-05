@@ -1,5 +1,4 @@
-import { ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken, putCodexAccessToken } from './access-token.ts';
-import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
+import { CodexCredentialRefreshTerminatedError, ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken, putCodexAccessToken, type CodexCredentialGeneration } from './access-token.ts';
 import {
   CODEX_BACKEND_BASE,
   CODEX_ALPHA_SEARCH_PATH,
@@ -28,8 +27,8 @@ export type ProviderCompactionResult =
 // persistence are handled inside their own helpers, which write the same
 // state_json row the same way.
 export interface CodexCallEffects {
-  persistRefreshTokenRotation(newRefreshToken: string): Promise<void>;
-  persistTerminalState(state: 'session_terminated' | 'refresh_failed', message: string): Promise<void>;
+  persistRefreshTokenRotation(usedRefreshToken: string, newRefreshToken: string): Promise<void>;
+  persistTerminalState(state: 'session_terminated' | 'refresh_failed', message: string, generation: CodexCredentialGeneration): Promise<void>;
 }
 
 // Account selection for one Codex call. Both Codex endpoints share the same
@@ -89,8 +88,8 @@ const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true;
     const entry = await ensureCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, refresh => mintAccessToken(opts, refresh));
     return { ok: true, accessToken: entry.token };
   } catch (err) {
-    if (err instanceof CodexOAuthSessionTerminatedError) {
-      await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage);
+    if (err instanceof CodexCredentialRefreshTerminatedError) {
+      await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage, err.generation);
       return { ok: false, response: synthetic503(`Codex refresh failed: ${err.upstreamMessage}`) };
     }
     throw err;
@@ -98,7 +97,7 @@ const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true;
 };
 
 const mintAccessToken = (opts: CodexBackendCallBase, refreshToken: string) =>
-  mintCodexAccessToken(refreshToken, opts.call.fetcher, opts.effects.persistRefreshTokenRotation);
+  mintCodexAccessToken(refreshToken, opts.call.fetcher, newRefreshToken => opts.effects.persistRefreshTokenRotation(refreshToken, newRefreshToken));
 
 interface CodexRequestIdentity {
   installationId: string;
@@ -361,7 +360,7 @@ const dispatchCodexHttpCall = async (
     const bodyText = await response.text();
     const { code, message } = parseUpstreamError(bodyText);
     if (code === 'token_invalidated') {
-      await opts.effects.persistTerminalState('session_terminated', message);
+      await opts.effects.persistTerminalState('session_terminated', message, opts.account);
       return synthetic503(`Codex session terminated: ${message}`);
     }
     return new Response(bodyText, { status: 401, headers: response.headers });
@@ -387,7 +386,7 @@ const refreshAccessTokenForRetry = async (opts: CodexBackendCallBase): Promise<{
     return { ok: true, accessToken: minted.token };
   } catch (err) {
     if (err instanceof CodexOAuthSessionTerminatedError) {
-      await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage);
+      await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage, opts.account);
       return { ok: false, response: synthetic503(`Codex refresh failed: ${err.upstreamMessage}`) };
     }
     throw err;

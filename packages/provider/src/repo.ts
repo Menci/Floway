@@ -12,12 +12,17 @@ import type { UpstreamProviderKind, UpstreamRecord } from './model.ts';
 // or have to re-derive the change itself. The mutator is re-run against
 // whatever state won, so both writers' changes survive. It must therefore be
 // pure, and returning the state unchanged skips the write.
-// `expectedKind` participates in the storage CAS so deleting an upstream and
-// recreating its id under another provider cannot receive the first row's
-// delayed state write.
+// The optional guard participates in the storage CAS. Its kind blocks
+// cross-provider replacement, while config binds identity-sensitive writes to
+// the credential configuration that originated the upstream operation.
 export interface UpstreamsRepoSlim {
   getById(id: string): Promise<UpstreamRecord | null>;
-  saveState(id: string, mutate: (current: unknown) => unknown, expectedKind?: UpstreamProviderKind): Promise<void>;
+  saveState(id: string, mutate: (current: unknown) => unknown, guard?: UpstreamStateWriteGuard): Promise<void>;
+}
+
+export interface UpstreamStateWriteGuard {
+  kind: UpstreamProviderKind;
+  config?: unknown;
 }
 
 // Thrown when the row a write targets no longer exists. Distinct from a
@@ -35,6 +40,13 @@ export class UpstreamKindMismatchError extends Error {
   constructor(readonly upstreamId: string, readonly expectedKind: UpstreamProviderKind, readonly actualKind: string) {
     super(`Upstream ${upstreamId} changed from ${expectedKind} to ${actualKind} before its state could be written`);
     this.name = 'UpstreamKindMismatchError';
+  }
+}
+
+export class UpstreamGenerationMismatchError extends Error {
+  constructor(readonly upstreamId: string) {
+    super(`Upstream ${upstreamId} credentials changed before its state could be written`);
+    this.name = 'UpstreamGenerationMismatchError';
   }
 }
 

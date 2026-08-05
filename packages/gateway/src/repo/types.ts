@@ -1,7 +1,7 @@
 import type { WebSearchConfig, WebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { AgentSetupRepository } from '@floway-dev/agent-setup';
 import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingMetric, DecimalString, ModelKind, PricingSelector } from '@floway-dev/protocols/common';
-import type { PerformanceTelemetryContext, UpstreamModelsCache, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import type { PerformanceTelemetryContext, UpstreamModelsCache, UpstreamProviderKind, UpstreamRecord, UpstreamStateWriteGuard } from '@floway-dev/provider';
 
 export interface ApiKey {
   id: string;
@@ -294,9 +294,9 @@ export interface UpstreamRepo {
   // refresh / probe routes. The repo reads, applies `mutate`, and writes under
   // a CAS, retrying against the winner when it loses; exhausting the retries
   // throws. See UpstreamsRepoSlim in @floway-dev/provider for why the change
-  // is a function. The optional kind is checked in the same CAS as the state
-  // document to close delete/recreate races across provider kinds.
-  saveState(id: string, mutate: (current: unknown) => unknown, expectedKind?: UpstreamProviderKind): Promise<void>;
+  // is a function. The optional guard is checked in the same CAS as the state
+  // document to close provider and credential-generation replacement races.
+  saveState(id: string, mutate: (current: unknown) => unknown, guard?: UpstreamStateWriteGuard): Promise<void>;
   // Catalog-cache writes are conditional on the row generation that started
   // the fetch. A superseded provider can finish serving its own request, but
   // cannot publish models or errors under newer credentials/configuration.

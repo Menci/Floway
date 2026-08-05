@@ -74,7 +74,7 @@ import { AgentSetupTokenCollisionError, isAgentSetupToken } from '@floway-dev/ag
 import type { SqlBindValue, SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 import { addDecimalStrings, canonicalPricingSelectorKey, parseBillingMetric, parseModelKind, parseNonNegativeDecimalString, parsePricingSelectorKey, type AliasSelection, type AnnouncedMetadata } from '@floway-dev/protocols/common';
 import type { ProxyFallbackEntry, ModelPrefixConfig, UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
-import { normalizeModelPrefix, parsePerformanceOperation, UpstreamGoneError, UpstreamKindMismatchError } from '@floway-dev/provider';
+import { normalizeModelPrefix, parsePerformanceOperation, UpstreamGenerationMismatchError, UpstreamGoneError, UpstreamKindMismatchError, type UpstreamStateWriteGuard } from '@floway-dev/provider';
 
 interface ApiKeyRow {
   id: string;
@@ -1187,15 +1187,19 @@ class SqlUpstreamRepo implements UpstreamRepo {
   // retries is not, because the caller's change — a rotated refresh token the
   // vendor has already invalidated — cannot be reconstructed later, so it
   // throws rather than returning a flag a caller can drop.
-  async saveState(id: string, mutate: (current: unknown) => unknown, expectedKind?: UpstreamRecord['kind']): Promise<void> {
+  async saveState(id: string, mutate: (current: unknown) => unknown, guard?: UpstreamStateWriteGuard): Promise<void> {
     for (let attempt = 0; attempt < UPSTREAM_STATE_WRITE_ATTEMPTS; attempt++) {
       const row = await this.db
-        .prepare('SELECT provider, state_json FROM upstreams WHERE id = ?')
+        .prepare('SELECT provider, config_json, state_json FROM upstreams WHERE id = ?')
         .bind(id)
-        .first<{ provider: string; state_json: string | null }>();
+        .first<{ provider: string; config_json: string; state_json: string | null }>();
       if (!row) throw new UpstreamGoneError(id);
-      if (expectedKind !== undefined && row.provider !== expectedKind) {
-        throw new UpstreamKindMismatchError(id, expectedKind, row.provider);
+      if (guard !== undefined && row.provider !== guard.kind) {
+        throw new UpstreamKindMismatchError(id, guard.kind, row.provider);
+      }
+      const expectedConfig = guard?.config === undefined ? null : serializeStoredConfig(guard.config);
+      if (expectedConfig !== null && serializeStoredConfig(JSON.parse(row.config_json)) !== expectedConfig) {
+        throw new UpstreamGenerationMismatchError(id);
       }
       const current = row.state_json === null ? null : decodeUpstreamState(row.state_json, id);
       const next = serializeStoredState(mutate(current));
@@ -1203,8 +1207,8 @@ class SqlUpstreamRepo implements UpstreamRepo {
       // given, which serializes back to the stored text.
       if (next === row.state_json) return;
       const result = await this.db
-        .prepare(`UPDATE upstreams SET state_json = ? WHERE id = ? AND state_json IS ?${expectedKind === undefined ? '' : ' AND provider = ?'}`)
-        .bind(next, id, row.state_json, ...(expectedKind === undefined ? [] : [expectedKind]))
+        .prepare(`UPDATE upstreams SET state_json = ? WHERE id = ? AND state_json IS ?${guard === undefined ? '' : ' AND provider = ?'}${expectedConfig === null ? '' : ' AND config_json = ?'}`)
+        .bind(next, id, row.state_json, ...(guard === undefined ? [] : [guard.kind]), ...(expectedConfig === null ? [] : [row.config_json]))
         .run();
       if ((result.meta.changes ?? 0) > 0) return;
     }

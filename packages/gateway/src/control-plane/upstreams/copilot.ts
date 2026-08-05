@@ -37,6 +37,11 @@ const parseCopilotDraftConfig = (config: unknown): { config: Record<string, unkn
 export const copilotOAuthDeviceLoginStart = async (c: CtxWithJson<typeof copilotOAuthDeviceLoginStartBody>) => {
   const { record } = c.req.valid('json');
   if (record.kind !== 'copilot') return c.json({ error: 'Upstream is not a Copilot upstream' }, 400);
+  if (record.id !== '') {
+    const persisted = await getRepo().upstreams.getById(record.id);
+    if (!persisted) return c.json({ error: 'Upstream not found' }, 404);
+    if (persisted.kind !== 'copilot') return c.json({ error: 'Upstream is not a Copilot upstream' }, 400);
+  }
 
   let githubHost: string;
   let fetcher: Fetcher;
@@ -137,7 +142,7 @@ export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
       config: configPatch,
       state: nextState,
       updatedAt: nextUpstreamUpdatedAt(dbRecord!),
-    }, { clearModelsCache: !sameIdentity });
+    }, { clearModelsCache: true });
     if (!next) return c.json({ status: 'error' as const, error: 'Upstream not found' }, 404);
     clearInProcessCopilotTokenCache();
     await warmModelsCache(next, c, { readBack: false });
@@ -170,11 +175,13 @@ export const copilotQuota = async (c: CtxWithJson<typeof copilotQuotaBody>) => {
   if (record.kind !== 'copilot') return c.json({ error: 'Upstream is not a Copilot upstream' }, 400);
 
   let configInput = record.config;
+  let persistedConfig: CopilotUpstreamConfig | undefined;
   if (record.id !== '') {
     const persisted = await getRepo().upstreams.getById(record.id);
     if (!persisted) return c.json({ error: 'Upstream not found' }, 404);
     if (persisted.kind !== 'copilot') return c.json({ error: 'Upstream is not a Copilot upstream' }, 400);
-    configInput = assertCopilotUpstreamRecord(persisted).config;
+    persistedConfig = assertCopilotUpstreamRecord(persisted).config;
+    configInput = persistedConfig;
   }
 
   let githubHost: string;
@@ -216,6 +223,6 @@ export const copilotQuota = async (c: CtxWithJson<typeof copilotQuotaBody>) => {
   // persists nor replaces what the dashboard is already showing. Storage sits
   // outside the upstream-error catch: a failed durable write is an internal
   // failure and must reach the gateway's top-level error boundary.
-  if (snapshot !== null && record.id !== '') await putCopilotQuota(record.id, snapshot);
+  if (snapshot !== null && record.id !== '') await putCopilotQuota(record.id, snapshot, persistedConfig);
   return c.json(snapshot);
 };

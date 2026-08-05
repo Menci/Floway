@@ -1876,6 +1876,10 @@ test('persisted credential actions reject another-kind id before outbound work o
   const proxy_fallback_list = [{ id: 'p_should_not_dial' }];
   const cases = [
     {
+      path: '/api/upstreams/copilot/oauth/device-login/start',
+      body: { record: blueprintEnvelope('copilot', { id: victim.id, config: { githubHost: 'github.com' }, proxy_fallback_list }) },
+    },
+    {
       path: '/api/upstreams/codex/oauth/exchange',
       body: { record: blueprintEnvelope('codex', { id: victim.id, proxy_fallback_list }), callback: { code: 'code', verifier: 'verifier' } },
     },
@@ -2135,6 +2139,42 @@ test('POST /api/upstreams/claude-code/probe returns the concurrent credential st
   assertEquals(storedState.accounts[0].refreshToken, 'rt_concurrent');
   assertEquals(storedState.accounts[0].usageProbeSnapshot?.data, usageProbeBody);
   assertEquals(typeof storedState.accounts[0].usageProbeSnapshot?.fetchedAt, 'number');
+});
+
+test('POST /api/upstreams/claude-code/probe does not attach account A usage after account B is imported', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  const created = await saveClaudeCodeUpstreamFixture(repo);
+  const envelope = envelopeFromRecord(await getRecord(repo, created.id));
+  const accountB = {
+    accountUuid: 'account-b',
+    tokenKind: 'oauth' as const,
+    state: 'active' as const,
+    stateUpdatedAt: '2026-06-01T00:10:00.000Z',
+    refreshToken: 'rt_b',
+    accessToken: { token: 'at_b', expiresAt: Date.now() + 3_600_000, refreshedAt: '2026-06-01T00:10:00.000Z' },
+    quotaSnapshot: null,
+    usageProbeSnapshot: null,
+  };
+
+  await withMockedFetch(
+    async () => {
+      await repo.upstreams.updateFields(created.id, 'claude-code', {
+        config: { accounts: [{ email: 'b@example.com', accountUuid: 'account-b', organizationUuid: null, subscriptionType: 'pro', rateLimitTier: 'default_claude_pro' }] },
+        state: { accounts: [accountB] },
+        updatedAt: new Date().toISOString(),
+      }, { clearModelsCache: true });
+      return jsonResponse(usageProbeBody);
+    },
+    async () => {
+      const response = await requestApp('/api/upstreams/claude-code/probe', authed(adminSession, { record: envelope }));
+      assertEquals(response.status, 200);
+      const body = await response.json() as { patch: { state: { accounts: Array<typeof accountB> } } };
+      assertEquals(body.patch.state.accounts[0].accountUuid, 'account-b');
+      assertEquals(body.patch.state.accounts[0].usageProbeSnapshot, null);
+    },
+  );
+  assertEquals(((await getRecord(repo, created.id)).state as { accounts: Array<typeof accountB> }).accounts[0].usageProbeSnapshot, null);
 });
 
 test('POST /api/upstreams/claude-code/probe mints a fresh access token when the cached one is stale', async () => {
@@ -2787,6 +2827,35 @@ test('POST /api/upstreams/copilot/quota cannot write after its target is replace
   assertEquals(replacement.state, null);
 });
 
+test('POST /api/upstreams/copilot/quota cannot attach an old identity snapshot after same-kind reauthentication', async () => {
+  const { repo, adminSession, copilotUpstream } = await setupAppTest();
+  const envelope = envelopeFromRecord(await getRecord(repo, copilotUpstream.id));
+  const replacementConfig = {
+    githubHost: 'github.com',
+    githubToken: 'ghu_reauthenticated',
+    user: { id: 999, login: 'replacement', name: null, avatar_url: 'https://example.com/replacement.png' },
+  };
+
+  await withMockedFetch(
+    async () => {
+      await repo.upstreams.updateFields(copilotUpstream.id, 'copilot', {
+        config: replacementConfig,
+        state: null,
+        updatedAt: new Date().toISOString(),
+      }, { clearModelsCache: true });
+      return jsonResponse(sampleCopilotQuotaBody);
+    },
+    async () => {
+      const response = await requestApp('/api/upstreams/copilot/quota', authed(adminSession, { record: envelope }));
+      assertEquals(response.status, 500);
+      assertEquals(((await response.json()) as { error: { message: string } }).error.message.includes('credentials changed'), true);
+    },
+  );
+  const replacement = await getRecord(repo, copilotUpstream.id);
+  assertEquals(replacement.config, replacementConfig);
+  assertEquals(replacement.state, null);
+});
+
 test('POST /api/upstreams/copilot/quota attributes proxy backoff to the persisted upstream', async () => {
   const { repo, adminSession, copilotUpstream } = await setupAppTest();
   await repo.proxies.insert({ id: 'p_fail', name: 'Failing proxy', url: 'socks5://127.0.0.1:9', dialTimeoutSeconds: null });
@@ -2957,7 +3026,7 @@ test('POST /api/upstreams/codex/oauth/refresh recovers as success when a sibling
   assertEquals(storedState.accounts[0].accessToken?.token, 'at_sibling_rotated');
 });
 
-test('POST /api/upstreams/codex/oauth/refresh cannot terminal-flip a concurrently re-imported credential generation', async () => {
+test('POST /api/upstreams/codex/oauth/refresh terminal-flips only the retried credential generation that failed', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
   const created = await saveCodexUpstreamFixture(repo);
@@ -2979,7 +3048,7 @@ test('POST /api/upstreams/codex/oauth/refresh cannot terminal-flip a concurrentl
               accessToken: null,
             })),
           };
-        }, 'codex');
+        }, { kind: 'codex' });
       }
       return new Response(
         JSON.stringify({ error: { code: 'invalid_grant', message: `Rejected ${refreshToken}` } }),
@@ -2990,13 +3059,13 @@ test('POST /api/upstreams/codex/oauth/refresh cannot terminal-flip a concurrentl
       const response = await requestApp('/api/upstreams/codex/oauth/refresh', authed(adminSession, {
         record: envelopeFromRecord(await getRecord(repo, created.id)),
       }));
-      assertEquals(response.status, 200);
+      assertEquals(response.status, 400);
     },
   );
 
   assertEquals(requests, 2);
   const state = (await getRecord(repo, created.id)).state as { accounts: Array<{ state: string; refresh_token: string }> };
-  assertEquals(state.accounts[0].state, 'active');
+  assertEquals(state.accounts[0].state, 'refresh_failed');
   assertEquals(state.accounts[0].refresh_token, 'rt_reimported');
 });
 
