@@ -68,7 +68,7 @@ const respondStreaming = ({ c, ctx, sourceApi, response, performance, identity }
           ctx.dump?.frame(eventFrame(event));
           if (isAudioTranscriptionDoneEvent(event)) {
             terminalEventSeen = true;
-            measurement = measureAudioTranscriptionUsage(event, sourceApi);
+            if (protocolError === undefined) measurement = measureAudioTranscriptionUsage(event, sourceApi);
             yield frame;
             return;
           }

@@ -570,7 +570,7 @@ test.each([
         '',
         'data: {not-json}',
         '',
-        'data: {"type":"transcript.text.done","text":"complete"}',
+        'data: {"type":"transcript.text.done","text":"complete","usage":{"type":"tokens","input_tokens":3,"output_tokens":2,"total_tokens":5}}',
         '',
       ].join('\n'), { headers: { 'content-type': 'text/event-stream' } }),
       verify: () => undefined,
