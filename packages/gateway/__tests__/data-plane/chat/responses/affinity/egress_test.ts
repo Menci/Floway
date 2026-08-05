@@ -69,7 +69,7 @@ describe('Responses affinity egress', () => {
     const argumentsDone = output.find((event): event is Extract<ResponsesStreamEvent, { type: 'response.function_call_arguments.done' }> =>
       event.type === 'response.function_call_arguments.done');
     const itemDone = output.find((event): event is Extract<ResponsesStreamEvent, { type: 'response.output_item.done' }> =>
-      event.type === 'response.output_item.done');
+      event.type === 'response.output_item.done' && event.item.type === 'function_call');
     const terminal = output.at(-1);
     expect(argumentsDone?.arguments).toBe(rewrittenArguments);
     expect(itemDone?.item).toMatchObject({ type: 'function_call', arguments: rewrittenArguments });
@@ -100,7 +100,9 @@ describe('Responses affinity egress', () => {
       if (frame.type === 'event') output.push(frame.event);
     }
 
-    expect(output.at(-1)).toMatchObject({ response: { output: [item] } });
+    const terminal = output.at(-1);
+    if (terminal?.type !== 'response.completed') throw new Error('Expected completed response');
+    expect(terminal.response.output.find(outputItem => outputItem.type === 'function_call')).toEqual(item);
   });
 
   test.each(['function_call_output', 'custom_tool_call_output'] as const)(

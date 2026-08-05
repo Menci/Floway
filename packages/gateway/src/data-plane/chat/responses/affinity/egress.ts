@@ -100,7 +100,9 @@ const wrapNaturalResponsesAffinity = async function* (
 };
 
 const canCarryAffinity = (item: ResponsesOutputItem): boolean =>
-  ['reasoning', 'compaction', 'compaction_summary', 'context_compaction', 'agent_message', 'program'].includes(item.type);
+  responsesOpaqueLocations(item).length > 0
+  || isEncryptedInterAgentCall(item)
+  || ['reasoning', 'compaction', 'compaction_summary', 'context_compaction', 'agent_message', 'program'].includes(item.type);
 
 const addSequenceOffset = <T extends ResponsesStreamEvent>(event: T, offset: number): T =>
   event.sequence_number === undefined ? event : { ...event, sequence_number: event.sequence_number + offset };
