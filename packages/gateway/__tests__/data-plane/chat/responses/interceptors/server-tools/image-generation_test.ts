@@ -76,7 +76,7 @@ const unresolvableSourceKinds = [
 ] as const satisfies ReadonlyArray<{
   source: string;
   image: ResponsesInputImage;
-  actions: readonly Array<'auto' | 'generate'>;
+  actions: ReadonlyArray<'auto' | 'generate'>;
 }>;
 
 const unresolvableSourceCases = Object.entries(imageInputContainers).flatMap(([container, wrap]) =>
