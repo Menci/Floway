@@ -20,7 +20,7 @@
 // upstream id.
 
 import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
-import { modelsField } from '@floway-dev/provider';
+import { isHttpFieldValue, modelsField } from '@floway-dev/provider';
 
 export interface OllamaUpstreamConfig {
   baseUrl: string;
@@ -65,7 +65,8 @@ const baseUrlField = (value: unknown): string => {
 
 const apiKeyField = (value: unknown): string | undefined => {
   if (value === undefined || value === null || value === '') return undefined;
-  if (typeof value !== 'string') throw new Error('Malformed ollama upstream config: apiKey must be a string');
+  if (typeof value !== 'string' || value.trim() === '') throw new Error('Malformed ollama upstream config: apiKey must be a non-empty string');
+  if (!isHttpFieldValue(value)) throw new Error('Malformed ollama upstream config: apiKey is not a valid HTTP header value');
   return value;
 };
 
@@ -74,7 +75,7 @@ export const assertOllamaUpstreamRecord = (record: UpstreamRecord): OllamaUpstre
   if (!isRecord(record.config)) throw new Error('Malformed ollama upstream config: config must be an object');
 
   const apiKey = apiKeyField(record.config.apiKey);
-  const models = modelsField(record.config.models ?? [], 'ollama');
+  const models = record.config.models === undefined ? [] : modelsField(record.config.models, 'ollama');
   if (models.some(model => model.endpoints.rerank !== undefined)) {
     throw new Error('Malformed ollama upstream config: rerank models require a custom upstream');
   }

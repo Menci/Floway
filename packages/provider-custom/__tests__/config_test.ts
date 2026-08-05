@@ -277,6 +277,28 @@ test('assertCustomUpstreamRecord rejects malformed opaque config instead of drop
     Error,
     'authStyle must be "bearer", "anthropic", or "none"',
   );
+
+  assertThrows(
+    () => assertCustomUpstreamRecord({
+      ...baseRecord,
+      config: { ...(baseRecord.config as Record<string, unknown>), models: null },
+    }),
+    Error,
+    'models must be an array',
+  );
+
+  for (const authStyle of ['bearer', 'anthropic']) {
+    for (const apiKey of ['bad\r\nkey', 'non-byte-\u0100']) {
+      assertThrows(
+        () => assertCustomUpstreamRecord({
+          ...baseRecord,
+          config: { ...(baseRecord.config as Record<string, unknown>), apiKey, authStyle },
+        }),
+        Error,
+        'apiKey is not a valid HTTP header value',
+      );
+    }
+  }
 });
 
 test('assertCustomUpstreamRecord accepts authStyle "none" with no apiKey', () => {

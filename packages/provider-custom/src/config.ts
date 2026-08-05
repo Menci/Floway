@@ -204,7 +204,7 @@ export const assertCustomUpstreamRecord = (record: UpstreamRecord): CustomUpstre
     ...(raw.pathOverrides !== undefined ? { pathOverrides: pathOverridesField(raw.pathOverrides) } : {}),
     ingressHeadersRules: ingressHeadersRulesField(raw.ingressHeadersRules),
     modelsFetch: modelsFetchField(raw.modelsFetch),
-    models: modelsField(raw.models ?? [], 'custom'),
+    models: raw.models === undefined ? [] : modelsField(raw.models, 'custom'),
   };
 
   if (authStyle === 'none') {
@@ -219,5 +219,8 @@ export const assertCustomUpstreamRecord = (record: UpstreamRecord): CustomUpstre
   }
 
   const apiKey = nonEmptyStringField(raw.apiKey, 'apiKey');
+  if (!isCustomIngressHeaderValue(apiKey)) {
+    throw new Error('Malformed custom upstream config: apiKey is not a valid HTTP header value');
+  }
   return { ...record, kind: 'custom', config: { ...base, authStyle, apiKey } };
 };

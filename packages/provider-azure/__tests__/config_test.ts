@@ -140,6 +140,8 @@ test('assertAzureUpstreamRecord validates Azure opaque config strictly', () => {
   for (const config of [
     { ...(baseRecord.config as Record<string, unknown>), models: [] },
     { ...(baseRecord.config as Record<string, unknown>), apiKey: '' },
+    { ...(baseRecord.config as Record<string, unknown>), apiKey: 'bad\r\nkey' },
+    { ...(baseRecord.config as Record<string, unknown>), apiKey: 'non-byte-\u0100' },
   ]) {
     assertThrows(() => assertAzureUpstreamRecord({ ...baseRecord, config }));
   }

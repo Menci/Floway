@@ -70,6 +70,17 @@ test('assertOllamaUpstreamRecord rejects malformed base URLs and suffix-swallowi
   }
 });
 
+test('assertOllamaUpstreamRecord rejects malformed optional fields', () => {
+  for (const config of [
+    { baseUrl: 'https://ollama.com', models: null },
+    { baseUrl: 'https://ollama.com', apiKey: '   ' },
+    { baseUrl: 'https://ollama.com', apiKey: 'bad\r\nkey' },
+    { baseUrl: 'https://ollama.com', apiKey: 'non-byte-\u0100' },
+  ]) {
+    assertThrows(() => assertOllamaUpstreamRecord({ ...baseRecord, config }));
+  }
+});
+
 test('assertOllamaUpstreamRecord rejects rerank models', () => {
   for (const model of [
     { upstreamModelId: 'reranker', kind: 'rerank', endpoints: { rerank: {} }, rerankTarget: { protocol: 'cohere-v2' } },
