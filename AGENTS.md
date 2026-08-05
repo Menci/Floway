@@ -237,11 +237,8 @@ middleware and do not receive a Hono `Context`/`Next` pair.
 The `@floway-dev/platform` package owns abstract runtime contracts
 (`FileStore`, `ChannelBroker`, `ImageCacheStore`, `RuntimeKind`,
 `ImageProcessor`, `ExternalResourceFetcher`, `SqlDatabase`,
-`BackgroundScheduler`, `EnvGetter`, `SocketDial`, `TimingSafeEqual`) and
-portable helpers. Each `apps/platform-*` app supplies concrete implementations
-and its own entry. The timing-safe boundary rejects unequal byte lengths before
-dispatch because both runtime primitives require equal lengths; equal-length
-secret comparison always reaches the runtime implementation.
+`BackgroundScheduler`, `EnvGetter`, `SocketDial`) and portable helpers. Each
+`apps/platform-*` app supplies concrete implementations and its own entry.
 
 ## Workspace Layout
 
@@ -307,11 +304,10 @@ Both `apps/platform-*` apps depend on `gateway` + `http` + `platform`. The
 Cloudflare app declares only the workerd surfaces it uses in local ambient
 files (`cloudflare-workers.d.ts`, `cloudflare-sockets.d.ts`, and
 `cf-websocket.d.ts`) and supplies D1, R2, Images, KV, Durable Object, socket,
-runtime-root-CA, and `crypto.subtle.timingSafeEqual` implementations. The Node
-app supplies `node:sqlite`, filesystem, `sharp`, WebSocket, socket,
-runtime-root-CA, and `node:crypto.timingSafeEqual` implementations; its migrator
-consumes the gateway's exported migration directory. These apps are the only
-deployment-target composition roots.
+and runtime-root-CA implementations. The Node app supplies `node:sqlite`,
+filesystem, `sharp`, WebSocket, socket, and runtime-root-CA implementations;
+its migrator consumes the gateway's exported migration directory. These apps
+are the only deployment-target composition roots.
 
 `apps/web` depends at runtime on `protocols`, `provider`, and `proxy`.
 Its protocol imports use `/common`, `/chat-completions`, `/completions`,
