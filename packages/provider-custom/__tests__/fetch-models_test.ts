@@ -182,14 +182,25 @@ test('fetchCustomModels drops pricing blocks with unknown rates or top-level fie
   );
 });
 
-test('fetchCustomModels skips entries whose id is not a non-empty string', async () => {
+test('fetchCustomModels skips malformed and duplicate ids and unsafe timestamps', async () => {
   const { config } = assertCustomUpstreamRecord(upstreamRecord());
   await withMockedFetch(
-    () => jsonResponse({ object: 'list', data: [{ id: 'ok' }, { id: '' }, { id: 123 }, { display_name: 'no id' }] }),
+    () => jsonResponse({
+      object: 'list',
+      data: [
+        { id: 'ok', display_name: 'first', created: Number.MAX_VALUE },
+        { id: 'ok', display_name: 'duplicate' },
+        { id: '' },
+        { id: 123 },
+        { display_name: 'no id' },
+      ],
+    }),
     async () => {
       const result = await fetchCustomModels(config, directFetcher);
       assertEquals(result.data.length, 1);
       assertEquals(result.data[0].id, 'ok');
+      assertEquals(result.data[0].display_name, 'first');
+      assertEquals(result.data[0].created, undefined);
     },
   );
 });

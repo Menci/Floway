@@ -47,6 +47,11 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 
 const optionalNumberField = (value: unknown): number | undefined => (typeof value === 'number' && Number.isFinite(value) ? value : undefined);
 
+const optionalRepresentableUnixSeconds = (value: unknown): number | undefined => {
+  const seconds = optionalNumberField(value);
+  return seconds !== undefined && !Number.isNaN(new Date(seconds * 1000).getTime()) ? seconds : undefined;
+};
+
 const optionalStringField = (value: unknown): string | undefined => (typeof value === 'string' && value !== '' ? value : undefined);
 
 const parseLimits = (value: unknown): CustomRawModel['limits'] => {
@@ -101,7 +106,7 @@ const parseRawModel = (value: unknown): CustomRawModel | null => {
   if (!isRecord(value)) return null;
   if (typeof value.id !== 'string' || value.id === '') return null;
   const model: CustomRawModel = { id: value.id };
-  const created = optionalNumberField(value.created);
+  const created = optionalRepresentableUnixSeconds(value.created);
   if (created !== undefined) model.created = created;
   const created_at = optionalStringField(value.created_at);
   if (created_at !== undefined) model.created_at = created_at;
@@ -128,9 +133,13 @@ const parseRawModel = (value: unknown): CustomRawModel | null => {
 const parseCustomModelsResponse = (value: unknown): CustomModelsResponse | null => {
   if (!isRecord(value) || !Array.isArray(value.data)) return null;
   const data: CustomRawModel[] = [];
+  const seen = new Set<string>();
   for (const item of value.data) {
     const model = parseRawModel(item);
-    if (model) data.push(model);
+    if (model && !seen.has(model.id)) {
+      seen.add(model.id);
+      data.push(model);
+    }
   }
   return { data };
 };

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { chatField, modelsField, pricingField } from '../src/model-config.ts';
+import { chatField, modelsField, pricingField, publicModelId } from '../src/model-config.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 test('pricingField parses explicit flat entries', () => {
@@ -442,4 +442,17 @@ test('modelsField rejects flagOverrides with an unknown flag id', () => {
     Error,
     'Malformed azure models[0].flagOverrides: unknown flag ids: made-up-flag',
   );
+});
+
+test('modelsField rejects duplicate effective public ids but allows distinct aliases for one upstream id', () => {
+  expect(() => modelsField([
+    { upstreamModelId: 'raw-a', publicModelId: 'same', endpoints: { chatCompletions: {} } },
+    { upstreamModelId: 'raw-b', publicModelId: ' same ', endpoints: { embeddings: {} } },
+  ], 'custom')).toThrow(/duplicate effective public model id "same".*models\[0\]/);
+
+  const models = modelsField([
+    { upstreamModelId: 'raw', publicModelId: 'first', endpoints: { chatCompletions: {} } },
+    { upstreamModelId: 'raw', publicModelId: 'second', endpoints: { chatCompletions: {} } },
+  ], 'custom');
+  expect(models.map(publicModelId)).toEqual(['first', 'second']);
 });

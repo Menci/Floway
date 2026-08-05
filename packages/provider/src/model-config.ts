@@ -304,5 +304,15 @@ const modelField = (value: unknown, label: string): UpstreamModelConfig => {
 
 export const modelsField = (value: unknown, providerLabel: string): UpstreamModelConfig[] => {
   if (!Array.isArray(value)) throw new Error(`Malformed ${providerLabel} upstream config: models must be an array`);
-  return value.map((entry, i) => modelField(entry, `${providerLabel} models[${i}]`));
+  const models = value.map((entry, i) => modelField(entry, `${providerLabel} models[${i}]`));
+  const publicIds = new Map<string, number>();
+  for (const [index, model] of models.entries()) {
+    const id = publicModelId(model);
+    const previous = publicIds.get(id);
+    if (previous !== undefined) {
+      throw new Error(`Malformed ${providerLabel} models[${index}]: duplicate effective public model id ${JSON.stringify(id)} (already used by ${providerLabel} models[${previous}])`);
+    }
+    publicIds.set(id, index);
+  }
+  return models;
 };

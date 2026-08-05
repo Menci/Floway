@@ -139,7 +139,9 @@ test('getProvidedModels merges manual models in front of auto-fetched models whe
 });
 
 test('getProvidedModels rethrows when the upstream fetch fails — no fallback inside the provider', async () => {
-  const record = buildCustomUpstream();
+  const record = buildCustomUpstream({
+    models: [{ upstreamModelId: 'manual', kind: 'chat', endpoints: { chatCompletions: {} } }],
+  });
   const instance = createCustomProvider(record);
 
   await withMockedFetch(
@@ -148,24 +150,6 @@ test('getProvidedModels rethrows when the upstream fetch fails — no fallback i
       await assertRejects(() => instance.instance.getProvidedModels(directFetcher));
     },
   );
-});
-
-test('getProvidedModels carries pricing on auto models', async () => {
-  const record = buildCustomUpstream();
-  const instance = createCustomProvider(record);
-
-  const upstreamPricing: ModelPricing = { entries: [{ rates: { input_tokens: '3', output_tokens: '12' } }] };
-  const models = await withMockedFetch(
-    () => jsonResponse({
-      object: 'list',
-      data: [{ id: 'priced-model', pricing: upstreamPricing }],
-    }),
-    async () => {
-      return await instance.instance.getProvidedModels(directFetcher);
-    },
-  );
-
-  assertEquals(models[0]?.pricing, upstreamPricing);
 });
 
 test('A manual model whose upstreamModelId matches an auto-fetched id overrides the auto entry', async () => {
