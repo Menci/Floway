@@ -160,11 +160,8 @@ const upstreamModelSchema = z.object({
   limits: limitsSchema.optional(),
   chat: chatSchema.optional(),
 }).refine(
-  m => m.chat === undefined || (
-    (m.kind === undefined || m.kind === 'chat')
-    && kindForEndpoints(m.endpoints) === 'chat'
-  ),
-  { message: 'chat metadata only allowed when declared and endpoint-derived kind are chat', path: ['chat'] },
+  m => m.chat === undefined || kindForEndpoints(m.endpoints) === 'chat',
+  { message: 'chat metadata only allowed when endpoint-derived kind is chat', path: ['chat'] },
 ).refine(
   m => kindForEndpoints(m.endpoints) !== 'rerank' || m.rerankTarget !== undefined,
   { message: 'rerankTarget is required when endpoints select rerank', path: ['rerankTarget'] },

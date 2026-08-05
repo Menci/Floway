@@ -43,6 +43,14 @@ describe('upstreamModelSchema chat', () => {
     expect(createUpstreamBody.safeParse(body).success).toBe(true);
   });
 
+  test('accepts chat metadata when chat endpoints override a stale explicit non-chat kind', () => {
+    const body = structuredClone(baseAzure);
+    const model = body.config.models[0] as Record<string, unknown>;
+    model.kind = 'embedding';
+    model.chat = { modalities: { input: ['text'], output: ['text'] } };
+    expect(createUpstreamBody.safeParse(body).success).toBe(true);
+  });
+
   test('accepts chat with budget_tokens only', () => {
     const body = structuredClone(baseAzure);
     (body.config.models[0] as Record<string, unknown>).chat = {

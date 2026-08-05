@@ -279,8 +279,8 @@ const modelField = (value: unknown, label: string): UpstreamModelConfig => {
   const effectiveKind = kindForEndpoints(endpoints);
   const chat = chatField(value.chat, `${label}.chat`);
   const rerankTarget = rerankTargetField(value.rerankTarget, `${label}.rerankTarget`);
-  if (chat !== undefined && (kind !== 'chat' || effectiveKind !== 'chat')) {
-    throw new Error(`Malformed ${label}: chat field is only allowed when declared and endpoint-derived kind are chat`);
+  if (chat !== undefined && effectiveKind !== 'chat') {
+    throw new Error(`Malformed ${label}: chat field is only allowed when endpoint-derived kind is chat`);
   }
   if (effectiveKind === 'rerank' && rerankTarget === undefined) {
     throw new Error(`Malformed ${label}: rerankTarget is required when endpoints select rerank`);
