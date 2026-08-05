@@ -93,11 +93,11 @@ function IngressHeaderRuleRow({
       name={`config.ingressHeadersRules.${index}.value`}
       render={({ field }) => {
         const custom = field.value !== null && field.value !== '';
-        const display = field.value === null
+        const placeholder = field.value === null
           ? t('dashboard.upstreamEditor.headers.passthrough')
           : field.value === ''
             ? t('dashboard.upstreamEditor.headers.empty')
-            : field.value;
+            : undefined;
         return <Combobox
           aria-label={t('dashboard.upstreamEditor.headers.valueForRow', { number: rowNumber })}
           autoComplete="off"
@@ -108,9 +108,10 @@ function IngressHeaderRuleRow({
             if (data.optionValue === PASSTHROUGH_OPTION) field.onChange(null);
             if (data.optionValue === EMPTY_OPTION) field.onChange('');
           }}
+          placeholder={placeholder}
           selectedOptions={field.value === null ? [PASSTHROUGH_OPTION] : field.value === '' ? [EMPTY_OPTION] : []}
           spellCheck={false}
-          value={display}
+          value={custom ? field.value : ''}
         >
           <Option value={PASSTHROUGH_OPTION}>{t('dashboard.upstreamEditor.headers.passthrough')}</Option>
           <Option value={EMPTY_OPTION}>{t('dashboard.upstreamEditor.headers.empty')}</Option>

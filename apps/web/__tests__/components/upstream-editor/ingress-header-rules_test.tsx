@@ -39,13 +39,15 @@ function Harness({ ingressHeadersRules = [] }: { ingressHeadersRules?: { key: st
 const label = (key: 'keyForRow' | 'valueForRow' | 'remove', number: number) =>
   i18n.t(`dashboard.upstreamEditor.headers.${key}`, { number });
 const valueOf = (element: HTMLElement) => (element as HTMLInputElement).value;
+const placeholderOf = (element: HTMLElement) => (element as HTMLInputElement).placeholder;
 const disabled = (element: HTMLElement) => (element as HTMLButtonElement).disabled;
 
 describe('Custom ingress header rules', () => {
   it('starts with one permanent blank row whose delete command is disabled', () => {
     renderInApp(<Harness />);
     expect(valueOf(screen.getByLabelText(label('keyForRow', 1)))).toBe('');
-    expect(valueOf(screen.getByLabelText(label('valueForRow', 1)))).toBe(i18n.t('dashboard.upstreamEditor.headers.passthrough'));
+    expect(valueOf(screen.getByLabelText(label('valueForRow', 1)))).toBe('');
+    expect(placeholderOf(screen.getByLabelText(label('valueForRow', 1)))).toBe(i18n.t('dashboard.upstreamEditor.headers.passthrough'));
     expect(disabled(screen.getByRole('button', { name: label('remove', 1) }))).toBe(true);
     expect(screen.getAllByRole('group', { name: /Header rule/ })).toHaveLength(1);
   });
@@ -60,9 +62,12 @@ describe('Custom ingress header rules', () => {
     const passthrough = screen.getByLabelText(label('valueForRow', 1));
     const empty = screen.getByLabelText(label('valueForRow', 2));
     const custom = screen.getByLabelText(label('valueForRow', 3));
-    expect(valueOf(passthrough)).toBe(i18n.t('dashboard.upstreamEditor.headers.passthrough'));
-    expect(valueOf(empty)).toBe(i18n.t('dashboard.upstreamEditor.headers.empty'));
+    expect(valueOf(passthrough)).toBe('');
+    expect(valueOf(empty)).toBe('');
     expect(valueOf(custom)).toBe('fast');
+    expect(placeholderOf(passthrough)).toBe(i18n.t('dashboard.upstreamEditor.headers.passthrough'));
+    expect(placeholderOf(empty)).toBe(i18n.t('dashboard.upstreamEditor.headers.empty'));
+    expect(placeholderOf(custom)).toBe('');
     expect(passthrough.closest('.font-mono')).toBeNull();
     expect(empty.closest('.font-mono')).toBeNull();
     expect(custom.closest('.font-mono')).not.toBeNull();
@@ -87,14 +92,18 @@ describe('Custom ingress header rules', () => {
     fireEvent.click(behavior);
     fireEvent.click(screen.getByRole('option', { name: i18n.t('dashboard.upstreamEditor.headers.passthrough') }));
     expect(screen.getByTestId('rules').textContent).toContain('"value":null');
+    expect(valueOf(behavior)).toBe('');
+    expect(placeholderOf(behavior)).toBe(i18n.t('dashboard.upstreamEditor.headers.passthrough'));
+    fireEvent.keyDown(behavior, { key: 'Backspace' });
+    expect(screen.getByTestId('rules').textContent).toContain('"value":null');
 
     behavior = screen.getByLabelText(label('valueForRow', 1));
     fireEvent.click(behavior);
     fireEvent.click(screen.getByRole('option', { name: i18n.t('dashboard.upstreamEditor.headers.empty') }));
     expect(screen.getByTestId('rules').textContent).toContain('"value":""');
+    expect(valueOf(behavior)).toBe('');
+    expect(placeholderOf(behavior)).toBe(i18n.t('dashboard.upstreamEditor.headers.empty'));
 
-    behavior = screen.getByLabelText(label('valueForRow', 1));
-    fireEvent.change(behavior, { target: { value: '(empt)' } });
     behavior = screen.getByLabelText(label('valueForRow', 1));
     fireEvent.change(behavior, { target: { value: '(empty)' } });
     expect(screen.getByTestId('rules').textContent).toContain('"value":"(empty)"');
