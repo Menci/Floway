@@ -265,4 +265,10 @@ export const fetchUpstreamModels = async <T>(
     throw new ProviderModelsUnavailableError(null, new Error('Invalid /models response shape'));
   }
   return result;
-}, options);
+}, options).catch((cause: unknown) => {
+  if (options.signal?.aborted) throw options.signal.reason;
+  if (cause instanceof DOMException && cause.name === 'TimeoutError') {
+    throw new ProviderModelsUnavailableError(null, cause);
+  }
+  throw cause;
+});

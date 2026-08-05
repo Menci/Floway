@@ -322,7 +322,10 @@ test('fetchCustomModels aborts a stalled page at the catalog total timeout', asy
       }, { once: true });
     });
     const stalled = fetchCustomModels(config, fetcher, { totalTimeoutMs: 40 });
-    const assertion = expect(stalled).rejects.toMatchObject({ name: 'TimeoutError' });
+    const assertion = expect(stalled).rejects.toMatchObject({
+      name: 'ProviderModelsUnavailableError',
+      cause: expect.objectContaining({ name: 'TimeoutError' }),
+    });
     await vi.advanceTimersByTimeAsync(40);
     await assertion;
     expect(upstreamReason).toMatchObject({ name: 'TimeoutError' });

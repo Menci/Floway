@@ -146,11 +146,11 @@ const fetchShowForTag = async (
   return parseShowResponse(tag.name, tag.modifiedAt, parsed);
 }, { signal, totalTimeoutMs });
 
-export const fetchOllamaCatalog = async (
+export const fetchOllamaCatalog = (
   config: OllamaUpstreamConfig,
   fetcher: Fetcher,
-  options: { idleTimeoutMs?: number; maxShowResponseBytes?: number; totalTimeoutMs?: number } = {},
-): Promise<OllamaCatalog> => {
+  options: { idleTimeoutMs?: number; maxShowResponseBytes?: number; signal?: AbortSignal; totalTimeoutMs?: number } = {},
+): Promise<OllamaCatalog> => runProviderModelsTask(async catalogSignal => {
   const maxShowResponseBytes = options.maxShowResponseBytes ?? MAX_SHOW_RESPONSE_BYTES;
   if (!Number.isSafeInteger(maxShowResponseBytes) || maxShowResponseBytes <= 0) {
     throw new TypeError('maxShowResponseBytes must be a positive safe integer');
@@ -162,10 +162,12 @@ export const fetchOllamaCatalog = async (
   const tags = await fetchUpstreamModels(
     signal => ollamaFetchTags(config, { method: 'GET', signal }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }),
     parseTagsResponse,
-    { idleTimeoutMs: options.idleTimeoutMs, totalTimeoutMs: options.totalTimeoutMs },
+    { idleTimeoutMs: options.idleTimeoutMs, signal: catalogSignal, totalTimeoutMs: options.totalTimeoutMs },
   );
   const results: Array<OllamaRawModel | null | undefined> = new Array(tags.length);
   const controller = new AbortController();
+  const onCatalogAbort = () => controller.abort(catalogSignal.reason);
+  catalogSignal.addEventListener('abort', onCatalogAbort, { once: true });
   let nextIndex = 0;
   let fatalAbort: unknown;
   let firstShowError: unknown;
@@ -204,10 +206,14 @@ export const fetchOllamaCatalog = async (
     worker,
   ));
   try {
-    await Promise.race([workers, fatalAbortPromise]);
-  } catch (error) {
-    void workers.catch(() => undefined);
-    throw error;
+    try {
+      await Promise.race([workers, fatalAbortPromise]);
+    } catch (error) {
+      void workers.catch(() => undefined);
+      throw error;
+    }
+  } finally {
+    catalogSignal.removeEventListener('abort', onCatalogAbort);
   }
 
   const data: OllamaRawModel[] = [];
@@ -221,4 +227,10 @@ export const fetchOllamaCatalog = async (
     );
   }
   return { data };
-};
+}, options).catch((cause: unknown) => {
+  if (options.signal?.aborted) throw options.signal.reason;
+  if (cause instanceof DOMException && cause.name === 'TimeoutError') {
+    throw new ProviderModelsUnavailableError(null, cause);
+  }
+  throw cause;
+});

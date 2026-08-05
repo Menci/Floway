@@ -106,7 +106,10 @@ test('fetchUpstreamModels aborts total stalls and preserves caller cancellation 
       value => value,
       { totalTimeoutMs: 50 },
     );
-    const timeoutAssertion = expect(stalled).rejects.toMatchObject({ name: 'TimeoutError' });
+    const timeoutAssertion = expect(stalled).rejects.toMatchObject({
+      name: 'ProviderModelsUnavailableError',
+      cause: expect.objectContaining({ name: 'TimeoutError' }),
+    });
     await vi.advanceTimersByTimeAsync(50);
     await timeoutAssertion;
     expect(upstreamTimeoutReason).toMatchObject({ name: 'TimeoutError' });

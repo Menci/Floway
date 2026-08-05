@@ -206,4 +206,10 @@ export const fetchCustomModels = (
   }
 
   throw paginationError(`Custom /models pagination exceeded ${MAX_CUSTOM_MODEL_PAGES} pages`);
-}, options);
+}, options).catch((cause: unknown) => {
+  if (options.signal?.aborted) throw options.signal.reason;
+  if (cause instanceof DOMException && cause.name === 'TimeoutError') {
+    throw new ProviderModelsUnavailableError(null, cause);
+  }
+  throw cause;
+});
