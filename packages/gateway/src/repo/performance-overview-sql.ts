@@ -9,7 +9,7 @@ import type { SqlBindValue, SqlDatabase } from '@floway-dev/platform';
 import { parsePerformanceOperation } from '@floway-dev/provider';
 
 interface PerformanceOverviewSqlRow {
-  row_kind: 'aggregate' | 'facet';
+  row_kind: 'aggregate' | 'facet' | 'orphan';
   axis: string | null;
   bucket: string | null;
   group_value: string | null;
@@ -85,6 +85,20 @@ scoped_summary AS MATERIALIZED (
   CROSS JOIN settings
   LEFT JOIN api_keys ON api_keys.id = performance_summary.key_id
   WHERE ${scopedRange(scoped)}
+),
+orphan_buckets AS MATERIALIZED (
+  SELECT 1 AS present
+  FROM performance_buckets
+  LEFT JOIN performance_summary ON
+    performance_summary.hour = performance_buckets.hour
+    AND performance_summary.key_id = performance_buckets.key_id
+    AND performance_summary.model = performance_buckets.model
+    AND performance_summary.upstream = performance_buckets.upstream
+    AND performance_summary.operation = performance_buckets.operation
+    AND performance_summary.runtime_location = performance_buckets.runtime_location
+  WHERE performance_buckets.hour >= ? AND performance_buckets.hour < ?
+    AND performance_summary.hour IS NULL
+  LIMIT 1
 ),
 filtered_summary AS MATERIALIZED (
   SELECT *
@@ -270,9 +284,19 @@ facet_rows AS (
     NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
   FROM scoped_summary GROUP BY runtime_location
 ),
+orphan_rows AS (
+  SELECT 'orphan' AS row_kind,
+    NULL AS axis, NULL AS bucket, NULL AS group_value, NULL AS dimension, NULL AS facet_value,
+    NULL AS requests_text, NULL AS errors_text, NULL AS ttft_samples_text,
+    NULL AS tpot_samples_text, NULL AS neutral_text,
+    NULL AS ttft_ms_p50, NULL AS ttft_ms_p95, NULL AS ttft_ms_p99,
+    NULL AS tpot_us_p50, NULL AS tpot_us_p95, NULL AS tpot_us_p99
+  FROM orphan_buckets
+),
 wire AS (
   SELECT * FROM facet_rows
   UNION ALL SELECT * FROM aggregate_rows
+  UNION ALL SELECT * FROM orphan_rows
 )
 SELECT * FROM wire
 ORDER BY row_kind, dimension, facet_value, axis, bucket, group_value`;
@@ -294,6 +318,9 @@ const finishOverview = (rows: readonly PerformanceOverviewSqlRow[]): Performance
     [...overviewDimensions].map(dimension => [dimension, new Set()]),
   );
   for (const row of rows) {
+    if (row.row_kind === 'orphan') {
+      throw new Error('performance_buckets row has no matching summary');
+    }
     if (row.row_kind === 'facet') {
       if (row.dimension === null || row.facet_value === null || !overviewDimensions.has(row.dimension)) {
         throw new TypeError('Stored Performance overview returned an invalid facet row');
@@ -350,6 +377,9 @@ export const querySqlPerformanceOverview = async (
   db: SqlDatabase,
   opts: PerformanceOverviewQueryOptions,
 ): Promise<PerformanceOverviewResult> => {
+  if (!opts.isAdmin && (opts.groupBy === 'userId' || opts.filters.userIds.length > 0)) {
+    throw new Error('Performance user attribution requires administrator privileges');
+  }
   const scoped = opts.groupBy === 'keyId';
   const range = rangeBinds(opts, scoped);
   const { results: hours } = await db.prepare(overviewHoursSql(scoped))
@@ -368,6 +398,8 @@ export const querySqlPerformanceOverview = async (
     JSON.stringify(opts.filters.keyIds),
     JSON.stringify(buckets),
     ...range,
+    opts.start,
+    opts.end,
   ];
   const { results } = await db.prepare(overviewSql(scoped)).bind(...binds).all<PerformanceOverviewSqlRow>();
   return finishOverview(results);

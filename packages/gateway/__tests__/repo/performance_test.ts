@@ -318,3 +318,26 @@ it('SQL Performance overview matches the in-memory oracle across every grouping 
   expect(await sql.performance.queryOverview({ ...options, actorUserId: 2, isAdmin: false }))
     .toEqual(await memory.performance.queryOverview({ ...options, actorUserId: 2, isAdmin: false }));
 });
+
+it('SQL Performance overview rejects a histogram row without its summary identity', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  await db.prepare(`INSERT INTO performance_buckets (
+    hour, key_id, model, upstream, operation, runtime_location, metric, lower, upper, count
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+    '2026-06-30T09', 'ghost', 'model', 'upstream', 'chat', 'LOCAL',
+    'ttft_ms', 0, 100, 1,
+  ).run();
+
+  await expect(repo.performance.queryOverview({
+    actorUserId: 1,
+    isAdmin: true,
+    start: '2026-06-30T00',
+    end: '2026-06-30T23',
+    groupBy: 'model',
+    filters: {
+      keyIds: [], userIds: [], models: [], upstreams: [], operations: [], runtimeLocations: [],
+    },
+    bucketForHour: hour => hour,
+  })).rejects.toThrow('performance_buckets row has no matching summary');
+});
