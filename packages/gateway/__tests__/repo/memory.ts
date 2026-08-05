@@ -1,4 +1,5 @@
 import { partitionTelemetryOverviewRecords } from '../../src/control-plane/shared/telemetry-overview.ts';
+import { buildKeyToUserMap } from '../../src/control-plane/shared/key-to-user.ts';
 import { usageUserIdForKey } from '../../src/control-plane/token-usage/aggregate.ts';
 import { normalizeDisabledPublicModelIds } from '../../src/repo/disabled-public-models.ts';
 import { normalizeFlagOverrides } from '../../src/repo/flag-overrides.ts';
@@ -333,10 +334,11 @@ const memoryOverviewGroup = (
   record: UsageRecord,
   axis: UsageOverviewAxis,
   opts: UsageOverviewQueryOptions,
+  keyToUser: ReadonlyMap<string, number>,
 ): string => {
   if (axis === 'none') return 'all';
   const groupBy = axis === 'series' ? opts.groupBy : axis;
-  if (groupBy === 'userId') return String(usageUserIdForKey(record.keyId, opts.keyToUser));
+  if (groupBy === 'userId') return String(usageUserIdForKey(record.keyId, keyToUser));
   if (groupBy === 'upstream') return usageUpstreamDimensionValue(record.upstream);
   return record[groupBy];
 };
@@ -344,6 +346,7 @@ const memoryOverviewGroup = (
 const aggregateMemoryOverview = (
   records: readonly UsageRecord[],
   opts: UsageOverviewQueryOptions,
+  keyToUser: ReadonlyMap<string, number>,
   visibleKeyIds: ReadonlySet<string>,
 ): Map<UsageOverviewAxis, UsageOverviewRecord[]> => {
   const axes: UsageOverviewAxis[] = ['series', 'none', 'keyId', 'userId', 'model', 'upstream'];
@@ -357,7 +360,7 @@ const aggregateMemoryOverview = (
     for (const record of records) {
       if (axis === 'keyId' && !visibleKeyIds.has(record.keyId)) continue;
       const bucket = axis === 'series' ? opts.bucketForHour(record.hour) : 'all';
-      const group = memoryOverviewGroup(record, axis, opts);
+      const group = memoryOverviewGroup(record, axis, opts, keyToUser);
       const key = `${bucket}\0${group}`;
       let aggregate = aggregates.get(key);
       if (!aggregate) {
@@ -374,6 +377,8 @@ const aggregateMemoryOverview = (
 
 class MemoryUsageRepo implements UsageRepo {
   private store = new Map<string, UsageBucketState>();
+
+  constructor(private readonly apiKeys: ApiKeyRepo) {}
 
   private key(r: UsageBucketIdentity): string {
     return [r.keyId, r.model, r.upstream ?? '', r.modelKey, r.hour, canonicalPricingSelectorKey(r.pricingSelector)].join('\0');
@@ -420,13 +425,14 @@ class MemoryUsageRepo implements UsageRepo {
   }
 
   async queryOverview(opts: UsageOverviewQueryOptions): Promise<UsageOverviewResult> {
+    const keyToUser = buildKeyToUserMap(await this.apiKeys.listIncludingDeleted());
     const records = [...this.store.values()]
       .filter(record => record.hour >= opts.start && record.hour < opts.end)
       .map(record => this.toRecord(record));
     const scoped = !opts.isAdmin || opts.groupBy === 'keyId'
-      ? records.filter(record => opts.keyToUser.get(record.keyId) === opts.actorUserId)
+      ? records.filter(record => keyToUser.get(record.keyId) === opts.actorUserId)
       : records;
-    const visibleKeyIds = new Set([...opts.keyToUser]
+    const visibleKeyIds = new Set([...keyToUser]
       .filter(([, userId]) => userId === opts.actorUserId)
       .map(([keyId]) => keyId));
     const partitioned = partitionTelemetryOverviewRecords(scoped, {
@@ -435,7 +441,7 @@ class MemoryUsageRepo implements UsageRepo {
         includeFacet: record => visibleKeyIds.has(record.keyId),
       },
       userId: {
-        value: record => String(usageUserIdForKey(record.keyId, opts.keyToUser)),
+        value: record => String(usageUserIdForKey(record.keyId, keyToUser)),
         includeFacet: () => opts.isAdmin,
       },
       model: { value: record => record.model },
@@ -446,7 +452,7 @@ class MemoryUsageRepo implements UsageRepo {
       model: new Set(opts.filters.models),
       upstream: new Set(opts.filters.upstreams),
     });
-    const aggregates = aggregateMemoryOverview(partitioned.filtered, opts, visibleKeyIds);
+    const aggregates = aggregateMemoryOverview(partitioned.filtered, opts, keyToUser, visibleKeyIds);
     return {
       series: aggregates.get('series')!,
       axes: {
@@ -1395,7 +1401,7 @@ export class InMemoryRepo implements Repo {
     this.sessions = new MemorySessionsRepo();
     this.expirationSweeps = new MemoryExpirationSweepsRepo();
     this.apiKeys = new MemoryApiKeyRepo(this.expirationSweeps);
-    this.usage = new MemoryUsageRepo();
+    this.usage = new MemoryUsageRepo(this.apiKeys);
     this.webSearchUsage = new MemoryWebSearchUsageRepo();
     this.performance = new MemoryPerformanceRepo();
     this.webSearchConfig = new MemoryWebSearchConfigRepo();

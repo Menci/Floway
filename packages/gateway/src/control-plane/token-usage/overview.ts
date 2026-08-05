@@ -67,7 +67,6 @@ export const tokenUsageOverview = async (c: Ctx) => {
       models: [...filters.model],
       upstreams: [...filters.upstream],
     },
-    keyToUser: identity.keyToUser,
     bucketForHour: createTelemetryBucket({
       bucket,
       timeZone: params.value.timeZone,

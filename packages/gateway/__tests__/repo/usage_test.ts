@@ -332,7 +332,6 @@ test('SQL usage overview matches the in-memory oracle across filters, facets, ax
     end: '2026-11-01T08',
     groupBy: 'model',
     filters: { keyIds: [], userIds: [], models: ['model-a', 'model-b'], upstreams: ['none'] },
-    keyToUser: new Map([['key-1', 1], ['key-2', 2]]),
     bucketForHour: hour => hour === '2026-11-01T05' || hour === '2026-11-01T06'
       ? '2026-11-01T01'
       : '2026-11-01T02',
@@ -404,7 +403,6 @@ test('SQL usage overview preserves request-only and metric-only storage identiti
     end: '2026-07-12T01',
     groupBy: 'model',
     filters: { keyIds: [], userIds: [], models: [], upstreams: [] },
-    keyToUser: new Map([['key-1', 1]]),
     bucketForHour: hour => hour,
   });
 
@@ -435,7 +433,6 @@ test('SQL usage overview uses key-hour indexes for an actor-scoped aggregate', a
     end: '2026-07-12T01',
     groupBy: 'keyId',
     filters: { keyIds: [], userIds: [], models: [], upstreams: [] },
-    keyToUser: new Map([['key-1', 1]]),
     bucketForHour: hour => hour,
   });
 

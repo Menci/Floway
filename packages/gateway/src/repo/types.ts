@@ -88,7 +88,6 @@ export interface UsageOverviewQueryOptions {
   end: string;
   groupBy: UsageOverviewGroupBy;
   filters: UsageOverviewFilters;
-  keyToUser: ReadonlyMap<string, number>;
   bucketForHour: (hour: string) => string;
 }
 
