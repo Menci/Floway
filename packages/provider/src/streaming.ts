@@ -7,12 +7,14 @@ export type ProviderStreamParser<TEvent> = (
 ) => AsyncIterable<ProtocolFrame<TEvent>>;
 
 const BODY_SNIPPET_CHARS = 1024;
+const BODY_SNIPPET_BYTES = BODY_SNIPPET_CHARS * 4;
 
 const readBodySnippet = async (response: Response): Promise<string> => {
   if (!response.body) return '<empty>';
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let text = '';
+  let capturedBytes = 0;
   try {
     for (;;) {
       const { done, value } = await reader.read();
@@ -20,8 +22,11 @@ const readBodySnippet = async (response: Response): Promise<string> => {
         text += decoder.decode();
         break;
       }
-      text += decoder.decode(value, { stream: true });
-      if (text.length > BODY_SNIPPET_CHARS) {
+      const remainingBytes = BODY_SNIPPET_BYTES - capturedBytes;
+      const captured = value.subarray(0, Math.max(remainingBytes, 0));
+      capturedBytes += captured.byteLength;
+      text += decoder.decode(captured, { stream: true });
+      if (captured.byteLength < value.byteLength || text.length > BODY_SNIPPET_CHARS) {
         void reader.cancel().catch(() => undefined);
         return `${text.slice(0, BODY_SNIPPET_CHARS)}...[truncated]`;
       }
