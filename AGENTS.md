@@ -288,15 +288,8 @@ Vendor credentials, catalog projection, and wire behavior stay in the vendor
 packages. Each package's static `ProviderModule` surface also declares the
 case-insensitive exact names and lowercase-name regular expressions for
 ordinary client headers that provider accepts. The gateway applies the
-module allowlist after it selects a candidate and before it calls the provider,
-so failover candidates never share a filtered header bag. Custom alone extends
-that allowlist with the exact names in `config.ingressHeadersRules`. The gateway
-only admits the matching ingress values; the Custom provider then preserves a
-value for `null` or replaces it with the configured string, including the empty
-string, at its own call boundary. A rule never synthesizes a header absent from
-the ingress request. The Custom config parser rejects Messages-owned metadata,
-gateway credentials, cookies, proxy/IP signals, body metadata, and hop-by-hop
-names because those remain owned by their protocol or the HTTP transport.
+allowlist after it selects a candidate and before it calls the provider, so
+failover candidates never share a filtered or mutated header bag.
 Protocol-owned transport metadata remains outside that generic policy:
 Messages ingress parses `anthropic-beta` into typed call metadata, passes it
 only to a native Messages target, and Copilot copies it into
