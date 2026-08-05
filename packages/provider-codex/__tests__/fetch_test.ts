@@ -204,7 +204,7 @@ describe('callCodexResponses — upstream classification', () => {
       model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
     });
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.headers.get('content-type')).toBe('text/event-stream');
+    if (result.ok) expect(result.headers?.get('content-type')).toBe('text/event-stream');
   });
 
   test('rejects a successful response that explicitly declares a non-SSE media type', async () => {

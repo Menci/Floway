@@ -14,7 +14,6 @@ import {
   putCodexQuota,
 } from './quota.ts';
 import type { CodexAccountCredential } from './state.ts';
-import { isEventStreamMediaType } from '@floway-dev/protocols/common';
 import type { CanonicalResponsesCompactPayload, CanonicalResponsesPayload, ResponsesCompactionResult, ResponsesInputItem, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { parseResponsesStream } from '@floway-dev/protocols/responses';
 import { type ProviderCallResult, type ProviderModel, type ProviderStreamResult, streamingProviderCall, type UpstreamCallOptions } from '@floway-dev/provider';
@@ -528,7 +527,6 @@ const synthetic503 = (message: string): Response => new Response(JSON.stringify(
 const ensureSseContentType = (response: Response): Response => {
   if (!response.ok) return response;
   const contentType = response.headers.get('content-type');
-  if (isEventStreamMediaType(contentType)) return response;
   if (contentType !== null && contentType.trim() !== '') return response;
   const headers = new Headers(response.headers);
   headers.set('content-type', 'text/event-stream');

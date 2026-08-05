@@ -205,8 +205,8 @@ const ensureClaudeCodeAccessTokenInner = async (
       || stored.refreshToken !== account.refreshToken
     ) return storedState;
     rotationApplied = true;
-    return replaceSoleAccount(storedState, currentAccount => ({
-      ...currentAccount,
+    return replaceSoleAccount(storedState, () => ({
+      ...stored,
       refreshToken: rotatedRefreshToken,
       accessToken: newAccessTokenEntry,
     }));
