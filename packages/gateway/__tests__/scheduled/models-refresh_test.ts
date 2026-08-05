@@ -1,43 +1,64 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { initRepo } from '../../src/repo/index.ts';
 import { MODEL_CATALOG_REVISION } from '../../src/repo/models-cache-contract.ts';
 import { refreshModelsCaches } from '../../src/scheduled/models-refresh.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
+import { withMockedFetch } from '@floway-dev/test-utils';
 
-const azure = (id: string, enabled: boolean): UpstreamRecord => ({
+const custom = (id: string, enabled: boolean): UpstreamRecord => ({
   id,
-  kind: 'azure',
+  kind: 'custom',
   name: id,
   enabled,
   sortOrder: 0,
   createdAt: '2026-08-01T00:00:00.000Z',
   updatedAt: '2026-08-01T00:00:00.000Z',
   config: {
-    endpoint: 'https://example.openai.azure.com/openai/v1',
-    apiKey: 'azkey',
-    models: [{ upstreamModelId: `${id}-wire`, publicModelId: `${id}-public`, endpoints: { chatCompletions: {} } }],
+    baseUrl: `https://${id}.example.com`,
+    authStyle: 'bearer',
+    apiKey: 'key',
+    endpoints: { chatCompletions: {} },
+    ingressHeadersRules: [],
   },
   state: null,
   modelsCache: null,
   flagOverrides: {},
   disabledPublicModelIds: [],
-  proxyFallbackList: [],
+  proxyFallbackList: [{ id: 'direct_fetch' }],
   modelPrefix: null,
   hue: 210,
 });
 
-test('scheduled maintenance triggers cold enabled upstreams and waits for their background work', async () => {
+test('scheduled maintenance submits enabled refreshes without waiting for model I/O', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
-  await repo.upstreams.save(azure('enabled', true));
-  await repo.upstreams.save(azure('disabled', false));
+  await repo.upstreams.save(custom('enabled', true));
+  await repo.upstreams.save(custom('disabled', false));
+  let resolveFetch: ((response: Response) => void) | null = null;
+  const requested: string[] = [];
 
-  await refreshModelsCaches('SCHEDULED');
+  await withMockedFetch(
+    request => {
+      requested.push(new URL(request.url).hostname);
+      return new Promise<Response>(resolve => { resolveFetch = resolve; });
+    },
+    async () => {
+      const background: Promise<unknown>[] = [];
+      await refreshModelsCaches('SCHEDULED', promise => { background.push(promise); });
 
-  const enabled = await repo.upstreams.getById('enabled');
-  expect(enabled?.modelsCache?.revision).toBe(MODEL_CATALOG_REVISION);
-  expect(enabled?.modelsCache?.models.map(model => model.id)).toEqual(['enabled-public']);
-  expect((await repo.upstreams.getById('disabled'))?.modelsCache).toBeNull();
+      expect(background).toHaveLength(1);
+      await vi.waitFor(() => expect(requested).toEqual(['enabled.example.com']));
+      expect((await repo.upstreams.getById('enabled'))?.modelsCache).toBeNull();
+
+      resolveFetch!(Response.json({ data: [{ id: 'enabled-public' }] }));
+      await background[0];
+      expect((await repo.upstreams.getById('enabled'))?.modelsCache).toMatchObject({
+        revision: MODEL_CATALOG_REVISION,
+        models: [{ id: 'enabled-public' }],
+      });
+      expect((await repo.upstreams.getById('disabled'))?.modelsCache).toBeNull();
+    },
+  );
 });

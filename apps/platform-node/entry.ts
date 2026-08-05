@@ -72,8 +72,11 @@ initRepo(new SqlRepo(db));
 // 30s delay keeps the very first request after boot from racing the sweep.
 // unref() on both timers lets the process exit cleanly on SIGINT.
 const STARTUP_DELAY_MS = 30 * 1000;
+const scheduleBackground = (promise: Promise<unknown>): void => {
+  promise.catch(err => console.error('[scheduled-maintenance background]', err));
+};
 const sweep = (): void => {
-  runScheduledMaintenance(scheduledRuntimeLocation).catch(err => {
+  runScheduledMaintenance(scheduledRuntimeLocation, scheduleBackground).catch(err => {
     console.error('[scheduled-maintenance] sweep failed:', err);
   });
 };
