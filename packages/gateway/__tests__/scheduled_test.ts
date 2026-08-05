@@ -6,6 +6,7 @@ import { initFileStore, initImageCacheStore, MemoryFileStore } from '@floway-dev
 
 test('scheduled maintenance isolates the shared expiration driver from later collectors', async () => {
   const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
   initFileStore(new MemoryFileStore());
   let imageSwept = false;
   initImageCacheStore({
@@ -27,6 +28,7 @@ test('scheduled maintenance isolates the shared expiration driver from later col
 
 test('scheduled maintenance collects exact spilled files after expiration work', async () => {
   const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
   const files = new MemoryFileStore();
   initFileStore(files);
   initImageCacheStore({ async get() { return null; }, async put() {}, async sweepExpired() {} });

@@ -50,6 +50,8 @@ interface SSEChunk {
   data: string | Record<string, unknown>;
 }
 
+const processFetch = globalThis.fetch;
+
 const TEST_UPSTREAM_TIMESTAMP = '2026-03-15T00:00:00.000Z';
 
 // The gateway's default egress is direct_connect, whose seam is a SocketDial.
@@ -307,7 +309,7 @@ export async function requestApp(path: string, init: RequestInit): Promise<Respo
       const parameter = template.indexOf('/:');
       return parameter === -1 ? pathname === template : pathname.startsWith(template.slice(0, parameter + 1));
     }));
-  if (isModelConsumer) await warmModelsForTest();
+  if (isModelConsumer && globalThis.fetch !== processFetch) await warmModelsForTest();
   return await app.request(path, init);
 }
 
