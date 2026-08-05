@@ -190,6 +190,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
 
   return {
     upstreamId: record.id,
+    modelsCacheGeneration: record.updatedAt,
     kind: 'ollama',
     name: record.name,
     disabledPublicModelIds: record.disabledPublicModelIds,

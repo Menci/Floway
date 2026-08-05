@@ -252,6 +252,7 @@ export interface UpstreamRepo {
   list(): Promise<UpstreamRecord[]>;
   getById(id: string): Promise<UpstreamRecord | null>;
   save(upstream: UpstreamRecord): Promise<void>;
+  saveClearingModelsCache(upstream: UpstreamRecord): Promise<void>;
   delete(id: string): Promise<boolean>;
   deleteAll(): Promise<void>;
   // Upstream state write with optimistic concurrency, used both by the
@@ -261,12 +262,11 @@ export interface UpstreamRepo {
   // throws. See UpstreamsRepoSlim in @floway-dev/provider for why the change
   // is a function.
   saveState(id: string, mutate: (current: unknown) => unknown): Promise<void>;
-  // Catalog-cache writes. They touch only the cache column, so a refresh and a
-  // credential write to the same row do not contend — `saveState`'s CAS
-  // predicate reads `state_json` alone.
-  clearModelsCache(id: string): Promise<void>;
-  saveModelsCache(id: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<void>;
-  saveModelsCacheError(id: string, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<void>;
+  // Catalog-cache writes are conditional on the row generation that started
+  // the fetch. A superseded provider can finish serving its own request, but
+  // cannot publish models or errors under newer credentials/configuration.
+  saveModelsCache(id: string, generation: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean>;
+  saveModelsCacheError(id: string, generation: string, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean>;
 }
 
 export interface ProxyRecord {

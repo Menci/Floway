@@ -110,8 +110,9 @@ export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
   // patch. Frontend `applyPatch` does whole-slot replacement on state, so a
   // partial slot would clobber any sibling field (e.g. draft.state.knownModels
   // hydrated by an earlier fetch). Edit state seeds the merge from the stored
-  // record; create state seeds from an empty slot so the reply is uniformly a
-  // full slot regardless of caller path.
+  // record only while the GitHub identity is unchanged. Identity changes and
+  // creates start from an empty slot, so the reply is uniformly a full slot
+  // regardless of caller path.
   let nextState: CopilotUpstreamState;
   if (record.id !== '') {
     const dbRecord = await getRepo().upstreams.getById(record.id);
@@ -121,9 +122,12 @@ export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
     const sameIdentity = previous.config.githubHost === githubHost && previous.config.user.id === cred.user.id;
     const prevState = sameIdentity ? readCopilotUpstreamState(dbRecord.state) : emptyCopilotUpstreamState();
     nextState = { ...prevState, copilotToken: cred.tokenEntry };
-    const next: UpstreamRecord = { ...dbRecord, config: configPatch, state: nextState, updatedAt: new Date().toISOString() };
-    if (!sameIdentity) await getRepo().upstreams.clearModelsCache(record.id);
-    await getRepo().upstreams.save(next);
+    const previousUpdatedAt = Date.parse(dbRecord.updatedAt);
+    if (!Number.isFinite(previousUpdatedAt)) throw new Error(`Copilot upstream ${record.id} has an invalid updatedAt timestamp`);
+    const updatedAt = new Date(Math.max(Date.now(), previousUpdatedAt + 1)).toISOString();
+    const next: UpstreamRecord = { ...dbRecord, config: configPatch, state: nextState, updatedAt };
+    if (sameIdentity) await getRepo().upstreams.save(next);
+    else await getRepo().upstreams.saveClearingModelsCache(next);
     clearInProcessCopilotTokenCache();
     await warmModelsCache(next, c);
   } else {

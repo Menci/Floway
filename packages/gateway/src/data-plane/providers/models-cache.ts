@@ -63,19 +63,19 @@ const runFetch = async (
   try {
     const models = [...await (loadProvidedModels?.() ?? instance.instance.getProvidedModels(fetcher))];
     const entry = { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now(), models, lastError: null };
-    await getRepo().upstreams.saveModelsCache(key, entry);
+    const persisted = await getRepo().upstreams.saveModelsCache(key, instance.modelsCacheGeneration, entry);
     // The instance carries the row as it was read at request start, and a
     // request reaches this function more than once -- once per alias target
     // resolved. Writing the entry back keeps every later read in the request
     // seeing what was just persisted, which is what re-querying the row used
     // to give us.
-    instance.modelsCache = entry;
+    if (persisted) instance.modelsCache = entry;
     return models;
   } catch (err) {
     // A no-op on an upstream with no cached catalog: a brand-new upstream that
     // fails its first fetch surfaces the error to the caller with nothing
     // persisted.
-    await getRepo().upstreams.saveModelsCacheError(key, { message: errorMessage(err), at: Date.now() });
+    await getRepo().upstreams.saveModelsCacheError(key, instance.modelsCacheGeneration, { message: errorMessage(err), at: Date.now() });
     throw err;
   }
 };
@@ -86,10 +86,11 @@ export const fetchUpstreamModelsCached = async (
 ): Promise<ProviderModel[]> => {
   const { scheduler, fetcher, force, loadProvidedModels } = opts;
   const key = instance.upstreamId;
+  const inFlightKey = `${key}\0${instance.modelsCacheGeneration}`;
   const now = Date.now();
 
   if (force) {
-    return await memoInFlight(key, () => runFetch(instance, fetcher, key, loadProvidedModels));
+    return await memoInFlight(inFlightKey, () => runFetch(instance, fetcher, key, loadProvidedModels));
   }
 
   // Read off the instance rather than queried: the row that produced this
@@ -106,11 +107,11 @@ export const fetchUpstreamModelsCached = async (
     // sink for the background branch only — `runFetch` already persists
     // the failure via `saveModelsCacheError` before rethrowing, so the SWR
     // caller who got `cached.models` does not need to learn about it.
-    scheduler(memoInFlight(key, () => runFetch(instance, fetcher, key)).catch(() => {}));
+    scheduler(memoInFlight(inFlightKey, () => runFetch(instance, fetcher, key)).catch(() => {}));
     return cached.models;
   }
 
-  return await memoInFlight(key, () => runFetch(instance, fetcher, key));
+  return await memoInFlight(inFlightKey, () => runFetch(instance, fetcher, key));
 };
 
 // Test-only: drop the L1 map so a test's setup is independent of any

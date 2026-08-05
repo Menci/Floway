@@ -578,6 +578,15 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     return Promise.resolve();
   }
 
+  saveClearingModelsCache(upstream: UpstreamRecord): Promise<void> {
+    const existing = this.store.get(upstream.id);
+    const next = existing
+      ? { ...upstream, createdAt: existing.createdAt, modelsCache: null }
+      : { ...upstream, modelsCache: null };
+    this.store.set(next.id, cloneUpstreamRecord(next));
+    return Promise.resolve();
+  }
+
   delete(id: string): Promise<boolean> {
     return Promise.resolve(this.store.delete(id));
   }
@@ -600,26 +609,21 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     return Promise.resolve();
   }
 
-  saveModelsCache(id: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<void> {
+  saveModelsCache(id: string, generation: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean> {
     const existing = this.store.get(id);
-    if (!existing) return Promise.resolve();
+    if (!existing || existing.updatedAt !== generation) return Promise.resolve(false);
     existing.modelsCache = { revision: cache.revision, fetchedAt: cache.fetchedAt, models: [...cache.models], lastError: null };
-    return Promise.resolve();
-  }
-
-  clearModelsCache(id: string): Promise<void> {
-    const existing = this.store.get(id);
-    if (existing) existing.modelsCache = null;
-    return Promise.resolve();
+    return Promise.resolve(true);
   }
 
   // No-op on a row that has never cached a catalog: the annotation belongs to a
   // previously-successful fetch.
-  saveModelsCacheError(id: string, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<void> {
-    const cache = this.store.get(id)?.modelsCache;
-    if (!cache) return Promise.resolve();
+  saveModelsCacheError(id: string, generation: string, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean> {
+    const existing = this.store.get(id);
+    const cache = existing?.updatedAt === generation ? existing.modelsCache : null;
+    if (!cache) return Promise.resolve(false);
     cache.lastError = error;
-    return Promise.resolve();
+    return Promise.resolve(true);
   }
 }
 

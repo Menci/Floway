@@ -27,6 +27,10 @@ export type InboundHeaderMatcher = string | RegExp;
 
 export interface Provider {
   upstreamId: string;
+  // The persisted row generation this instance was constructed from. Catalog
+  // writes use it to avoid publishing a fetch started under superseded
+  // credentials or configuration.
+  modelsCacheGeneration: string;
   kind: UpstreamProviderKind;
   name: string;
   disabledPublicModelIds: readonly string[];
