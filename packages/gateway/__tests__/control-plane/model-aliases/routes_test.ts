@@ -62,19 +62,64 @@ test('GET /api/aliases lists every row in sort order', async () => {
 
 test('POST /api/aliases creates an alias and returns the snake_case wire shape', async () => {
   const { repo, adminSession } = await setupAppTest();
-  await repo.modelAliases.deleteAll();
 
-  const resp = await requestApp('/api/aliases', authed(adminSession, baseBody()));
+  const resp = await requestApp('/api/aliases', authed(adminSession, baseBody({
+    id: 'client-chosen-id',
+    sort_order: 0,
+    created_at: '1900-01-01T00:00:00.000Z',
+    updated_at: '1900-01-01T00:00:00.000Z',
+  })));
   assertEquals(resp.status, 201);
   const created = (await resp.json()) as ModelAlias;
   assertEquals(created.id.startsWith('alias_'), true);
+  assertEquals(created.id === 'client-chosen-id', false);
   assertEquals(created.name, 'gpt-fast');
   assertEquals(created.visible_in_models_list, true);
   assertEquals(created.targets[0].target_model_id, 'gpt-5.4');
+  assertEquals(created.sort_order, 0);
+  assertEquals(created.created_at === '1900-01-01T00:00:00.000Z', false);
+  assertEquals(created.updated_at, created.created_at);
 
   const stored = await repo.modelAliases.getByName('gpt-fast');
   assertExists(stored);
   assertEquals(stored.visibleInModelsList, true);
+});
+
+test('POST /api/aliases appends after the highest sort order when omitted', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.modelAliases.insert({
+    id: 'alias_existing',
+    name: 'existing',
+    kind: 'chat',
+    selection: 'first-available',
+    displayName: null,
+    visibleInModelsList: true,
+    targets: [{ target_model_id: 'model', rules: {} }],
+    announcedMetadata: null,
+    sortOrder: 7,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  });
+
+  const response = await requestApp('/api/aliases', authed(adminSession, baseBody({ name: 'next' })));
+  assertEquals(response.status, 201);
+  assertEquals(((await response.json()) as ModelAlias).sort_order, 8);
+});
+
+test('model alias reads and writes require an admin actor', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  const headers = { 'content-type': 'application/json', 'x-api-key': apiKey.key };
+
+  const read = await requestApp('/api/aliases', { headers });
+  const write = await requestApp('/api/aliases', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(baseBody()),
+  });
+
+  assertEquals(read.status, 403);
+  assertEquals(write.status, 403);
+  assertEquals(await repo.modelAliases.list(), []);
 });
 
 test('concurrent POST /api/aliases requests leave one complete row and report one collision', async () => {

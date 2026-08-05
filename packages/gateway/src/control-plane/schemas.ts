@@ -685,8 +685,8 @@ const aliasBodyRulesRefinement = (
 };
 
 // Create and update share the same body shape — the difference is operational:
-// create rejects PK collisions, update reads the path `:name` as the old name
-// and treats a different `body.name` as a rename. Splitting them keeps the
+// create rejects PK collisions, update reads the path `:id` as the stable row
+// handle and treats a different `body.name` as a rename. Splitting them keeps the
 // type names self-documenting at the RPC-client surface.
 export const createAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinement);
 export const updateAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinement);
