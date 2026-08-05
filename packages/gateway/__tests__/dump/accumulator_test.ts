@@ -56,7 +56,8 @@ const onlyRecord = (records: ReadonlyArray<{ keyId: string; record: StoredDumpRe
 test('downstream cancellation immediately reaches an idle response source and settles its dump', async () => {
   const { accumulator, dumps, settle } = createHarness();
   const firstChunk = Uint8Array.of(1, 2, 3);
-  const cancelReason = new Error('client disconnected');
+  const firstChunkBytes = firstChunk.byteLength;
+  const cancelReason = Object.create(null) as object;
   let sourceController!: ReadableStreamDefaultController<Uint8Array>;
   let sourceCancelReason: unknown;
   let resolveSourceCancel: (() => void) | undefined;
@@ -75,7 +76,9 @@ test('downstream cancellation immediately reaches an idle response source and se
   }));
   const reader = response.body!.getReader();
 
-  assertEquals(await reader.read(), { value: firstChunk, done: false });
+  const firstRead = await reader.read();
+  assertEquals(firstRead.done, false);
+  assertEquals(Array.from(firstRead.value!), [1, 2, 3]);
   const cancellation = reader.cancel(cancelReason);
   const propagatedBeforeSourceSettled = sourceCancelReason === cancelReason;
   accumulator.frame({ type: 'event', event: { type: 'late-after-cancel' } });
@@ -94,10 +97,10 @@ test('downstream cancellation immediately reaches an idle response source and se
   assertEquals(propagatedBeforeSourceSettled, true);
   assertEquals(sourceCancelReason, cancelReason);
   const record = onlyRecord(dumps.stored);
-  assertEquals(record.meta.responseBytes, firstChunk.byteLength);
+  assertEquals(record.meta.responseBytes, firstChunkBytes);
   assertEquals(record.meta.error?.kind, 'failed');
   if (record.meta.error?.kind === 'failed') {
-    assertStringIncludes(record.meta.error.reason, 'Downstream response body canceled: client disconnected');
+    assertStringIncludes(record.meta.error.reason, 'Downstream response body canceled: [object Object]');
   }
   if (record.response.body.type !== 'stream') throw new Error('expected stream dump body');
   assertEquals(record.response.body.events, []);
@@ -105,16 +108,15 @@ test('downstream cancellation immediately reaches an idle response source and se
 
 test('response capture applies downstream backpressure and counts chunks as they are delivered', async () => {
   const { accumulator, dumps, settle } = createHarness();
-  const chunks = [Uint8Array.of(1, 2), Uint8Array.of(3, 4)];
+  const chunks = [new Uint8Array(), Uint8Array.of(1, 2), Uint8Array.of(3, 4)];
   let pulls = 0;
   const source = new ReadableStream<Uint8Array>({
-    type: 'bytes',
     pull(controller) {
       const chunk = chunks[pulls++];
       if (chunk === undefined) controller.close();
       else controller.enqueue(chunk);
     },
-  });
+  }, { highWaterMark: 0 });
   const response = accumulator.finalize(new Response(source));
 
   for (let i = 0; i < 5; i++) await Promise.resolve();
@@ -137,6 +139,7 @@ test('non-frame response capture stores a bounded prefix and reports the full de
   });
   const backing = Uint8Array.of(99, 1, 2, 3, 4, 5, 6, 99);
   const payload = backing.subarray(1, 7);
+  accumulator.failed('x'.repeat(500));
   const response = accumulator.finalize(new Response(payload));
 
   assertEquals(Array.from(new Uint8Array(await response.arrayBuffer())), [1, 2, 3, 4, 5, 6]);
@@ -215,12 +218,15 @@ test('stream event capture rejects an individually oversized canonical frame', a
   assertEquals(record.response.body.events, []);
 });
 
-test('non-serializable canonical frames fail capture without escaping into the response path', async () => {
+test('hostile canonical frame serialization failures stay inside dump capture', async () => {
   const { accumulator, dumps, settle } = createHarness();
-  const circular: Record<string, unknown> = {};
-  circular.self = circular;
+  const hostile: Record<string, unknown> = {};
+  Object.defineProperty(hostile, 'value', {
+    enumerable: true,
+    get() { throw Object.create(null); },
+  });
 
-  accumulator.frame({ type: 'event', event: circular });
+  accumulator.frame({ type: 'event', event: hostile });
   accumulator.finalize(200, [['content-type', 'text/event-stream']]);
   await settle();
 
