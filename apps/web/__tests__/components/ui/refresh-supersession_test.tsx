@@ -1,5 +1,5 @@
-import { useCallback } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { useCallback } from 'react';
 import { describe, expect, it, test, vi } from 'vitest';
 
 import { useRefresh, useRefreshOnChange } from '../../../src/components/ui/use-refresh';
@@ -123,7 +123,7 @@ test('query-driven refresh keeps the displayed query after a failed response', a
 
 test.each(['superseded-first', 'newest-first'] as const)(
   'query-driven refresh commits only the newest response when requests settle %s',
-  async (settlementOrder) => {
+  async settlementOrder => {
     const runs: Array<{
       query: { groupBy: string };
       requestedAt: number;
