@@ -1,9 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
-
-import { initTimingSafeEqual, resetTimingSafeEqualForTesting, timingSafeEqual } from '../src/timing-safe-equal.ts';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 describe('timingSafeEqual', () => {
-  it('delegates equal-length inputs to the runtime primitive', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('delegates equal-length inputs to the runtime primitive', async () => {
+    const { initTimingSafeEqual, timingSafeEqual } = await import('../src/timing-safe-equal.ts');
     const impl = vi.fn(() => true);
     const a = new Uint8Array([1, 2, 3]);
     const b = new Uint8Array([1, 2, 3]);
@@ -13,7 +16,8 @@ describe('timingSafeEqual', () => {
     expect(impl).toHaveBeenCalledWith(a, b);
   });
 
-  it('returns false for unequal lengths without calling the runtime primitive', () => {
+  it('returns false for unequal lengths without calling the runtime primitive', async () => {
+    const { initTimingSafeEqual, timingSafeEqual } = await import('../src/timing-safe-equal.ts');
     const impl = vi.fn(() => true);
     initTimingSafeEqual(impl);
 
@@ -21,8 +25,8 @@ describe('timingSafeEqual', () => {
     expect(impl).not.toHaveBeenCalled();
   });
 
-  it('exposes missing runtime initialization for equal and unequal lengths', () => {
-    resetTimingSafeEqualForTesting();
+  it('exposes missing runtime initialization for equal and unequal lengths', async () => {
+    const { timingSafeEqual } = await import('../src/timing-safe-equal.ts');
 
     expect(() => timingSafeEqual(new Uint8Array([1]), new Uint8Array([1])))
       .toThrow('TimingSafeEqual not initialized');

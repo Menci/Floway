@@ -11,7 +11,3 @@ export const timingSafeEqual = (a: Uint8Array, b: Uint8Array): boolean => {
   if (a.byteLength !== b.byteLength) return false;
   return impl(a, b);
 };
-
-export const resetTimingSafeEqualForTesting = (): void => {
-  impl = null;
-};
