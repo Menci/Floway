@@ -48,6 +48,8 @@ const invocation = (targetApi: ResponsesInvocation['targetApi'] = 'responses'): 
       tools: [
         { type: 'namespace', name: 'collaboration' },
         { type: 'function', name: 'collaboration.spawn_agent' },
+        { type: 'custom', name: 'collaboration.audit' },
+        { type: 'namespace', name: 'collaboration.audit' },
       ],
     },
   },
@@ -120,6 +122,8 @@ test('projects reserved collaboration onto a plaintext upstream namespace and re
     tools: [
       { type: 'namespace', name: 'collaboration_2' },
       { type: 'function', name: 'collaboration_2.spawn_agent' },
+      { type: 'custom', name: 'collaboration.audit' },
+      { type: 'namespace', name: 'collaboration.audit' },
     ],
   });
 
@@ -152,6 +156,8 @@ test('projects reserved collaboration onto a plaintext upstream namespace and re
     tools: [
       { type: 'namespace', name: 'collaboration' },
       { type: 'function', name: 'collaboration.spawn_agent' },
+      { type: 'custom', name: 'collaboration.audit' },
+      { type: 'namespace', name: 'collaboration.audit' },
     ],
   });
   expect(ctx.payload).toEqual(clientPayload);
