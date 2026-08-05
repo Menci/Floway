@@ -947,9 +947,11 @@ class SqlUpstreamRepo implements UpstreamRepo {
   // catalog the request happened to read, and folding that back in would let a
   // rename race a refresh.
   async saveModelsCache(id: string, generation: ModelsCacheGeneration, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean> {
+    const rawConfig = await this.modelsCacheWriteConfig(id, generation);
+    if (rawConfig === null) return false;
     const result = await this.db
       .prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ? AND updated_at = ? AND config_json = ?')
-      .bind(JSON.stringify({ ...cache, lastError: null }, modelsReplacer), id, generation.updatedAt, serializeStoredConfig(generation.config))
+      .bind(JSON.stringify({ ...cache, lastError: null }, modelsReplacer), id, generation.updatedAt, rawConfig)
       .run();
     return (result.meta.changes ?? 0) > 0;
   }
@@ -960,11 +962,24 @@ class SqlUpstreamRepo implements UpstreamRepo {
   // concurrent refresh may be rewriting, and nothing compares this column's
   // text, so the encoding SQLite produces here is immaterial.
   async saveModelsCacheError(id: string, generation: ModelsCacheGeneration, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean> {
+    const rawConfig = await this.modelsCacheWriteConfig(id, generation);
+    if (rawConfig === null) return false;
     const result = await this.db
       .prepare("UPDATE upstreams SET models_cache_json = json_set(models_cache_json, '$.lastError', json(?)) WHERE id = ? AND updated_at = ? AND config_json = ? AND models_cache_json IS NOT NULL")
-      .bind(JSON.stringify(error), id, generation.updatedAt, serializeStoredConfig(generation.config))
+      .bind(JSON.stringify(error), id, generation.updatedAt, rawConfig)
       .run();
     return (result.meta.changes ?? 0) > 0;
+  }
+
+  private async modelsCacheWriteConfig(id: string, generation: ModelsCacheGeneration): Promise<string | null> {
+    const row = await this.db
+      .prepare('SELECT updated_at, config_json FROM upstreams WHERE id = ?')
+      .bind(id)
+      .first<{ updated_at: string; config_json: string }>();
+    if (row === null || row.updated_at !== generation.updatedAt) return null;
+    return serializeStoredConfig(JSON.parse(row.config_json)) === serializeStoredConfig(generation.config)
+      ? row.config_json
+      : null;
   }
 
   // Read-modify-write under optimistic concurrency, retried against the winner

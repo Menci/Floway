@@ -1,8 +1,7 @@
 import { getRepo } from '../../repo/index.ts';
-import { modelsCacheGenerationFor } from './registry.ts';
-import { serializeStoredConfig } from '../../repo/upstream-json.ts';
+import type { GatewayProvider } from './registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { Fetcher, Provider, ProviderModel } from '@floway-dev/provider';
+import type { Fetcher, ProviderModel } from '@floway-dev/provider';
 
 // Soft TTL: a fetched row is served verbatim within this window with no
 // upstream call. Past SOFT but within HARD, the stored row is still served
@@ -58,12 +57,12 @@ const memoInFlight = (
 const errorMessage = (err: unknown): string => err instanceof Error ? err.message : String(err);
 
 const runFetch = async (
-  instance: Provider,
+  instance: GatewayProvider,
   fetcher: Fetcher,
   key: string,
   loadProvidedModels?: () => Promise<ProviderModel[]>,
 ): Promise<ProviderModel[]> => {
-  const generation = modelsCacheGenerationFor(instance);
+  const generation = instance.modelsCacheGeneration;
   try {
     const models = [...await (loadProvidedModels?.() ?? instance.instance.getProvidedModels(fetcher))];
     const entry = { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now(), models, lastError: null };
@@ -85,13 +84,12 @@ const runFetch = async (
 };
 
 export const fetchUpstreamModelsCached = async (
-  instance: Provider,
+  instance: GatewayProvider,
   opts: ModelsCacheFetchOptions,
 ): Promise<ProviderModel[]> => {
   const { scheduler, fetcher, force, loadProvidedModels } = opts;
   const key = instance.upstreamId;
-  const generation = modelsCacheGenerationFor(instance);
-  const inFlightKey = `${key}\0${generation.updatedAt}\0${serializeStoredConfig(generation.config)}`;
+  const inFlightKey = `${key}\0${instance.modelsFetchIdentity}`;
   const now = Date.now();
 
   if (force) {

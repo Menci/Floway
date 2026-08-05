@@ -3,6 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { test } from 'vitest';
 
 import { migrationSqlByFilename } from '../repo/test-sqlite.ts';
+import { serializeStoredConfig } from '../../src/repo/upstream-json.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const MIGRATION = '0075_copilot_github_host.sql';
@@ -23,6 +24,9 @@ test('the Copilot GitHub host migration materializes github.com without overwrit
 
   const rows = db.prepare('SELECT id, config_json AS config FROM upstreams ORDER BY id').all() as { id: string; config: string }[];
   db.close();
+  const migratedLegacy = rows.find(row => row.id === 'legacy');
+  if (!migratedLegacy) throw new Error('migrated legacy row missing');
+  assertEquals(migratedLegacy.config === serializeStoredConfig(JSON.parse(migratedLegacy.config)), false);
   assertEquals(rows.map(row => ({ id: row.id, config: JSON.parse(row.config) })), [
     { id: 'legacy', config: { githubToken: 'legacy-token', user: { id: 1 }, githubHost: 'github.com' } },
     { id: 'tenant', config: { githubHost: 'octocorp.ghe.com', githubToken: 'tenant-token', user: { id: 2 } } },

@@ -105,6 +105,26 @@ test('SQL upstream repo saveClearingModelsCache updates the row and removes the 
   assertEquals((await repo.getById('up_test'))?.modelsCache, null);
 });
 
+test('SQL model-cache generation accepts semantically equal noncanonical config JSON', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db).upstreams;
+  const record = baseRecord();
+  await repo.save(record);
+  const noncanonicalConfig = `{ "accounts": ${JSON.stringify((record.config as { accounts: unknown }).accounts)} }`;
+  await db.prepare('UPDATE upstreams SET config_json = ? WHERE id = ?').bind(noncanonicalConfig, record.id).run();
+  const parsed = await repo.getById(record.id);
+  if (!parsed) throw new Error('upstream row missing');
+
+  const saved = await repo.saveModelsCache(record.id, generationFor(parsed), {
+    revision: 7,
+    fetchedAt: 1_700_001_000_000,
+    models: [stubProviderModel({ id: 'cached-model' })],
+  });
+
+  assertEquals(saved, true);
+  assertEquals((await repo.getById(record.id))?.modelsCache?.models.map(model => model.id), ['cached-model']);
+});
+
 test('SQL upstream repo save leaves an existing cached catalog alone', async () => {
   const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
   await repo.save(baseRecord());
