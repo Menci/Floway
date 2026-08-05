@@ -5,12 +5,18 @@ import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 test('readCopilotUpstreamState passes through a complete new-shape entry verbatim', () => {
   const seeded = {
-    knownModels: null,
+    knownModels: {
+      fetchedAt: 1_000_000,
+      models: {
+        m1: { snapshot: { id: 'm1' }, lastSeenAt: 1_000_000 },
+      },
+    },
     copilotToken: { token: 'tok', expiresAt: 2_000_000, baseUrl: 'https://api.individual.githubcopilot.com' },
     quotaSnapshot: null,
   } satisfies CopilotUpstreamState;
   const round = readCopilotUpstreamState(JSON.parse(JSON.stringify(seeded)));
   assertEquals(round.copilotToken, seeded.copilotToken);
+  assertEquals(round.knownModels, seeded.knownModels);
 });
 
 // Regression: pre-refactor rows persisted `{token, expiresAt}` without
@@ -62,6 +68,18 @@ test('assertCopilotUpstreamState rejects an unknown key inside copilotToken', ()
     }),
     TypeError,
     "CopilotUpstreamState.copilotToken has unexpected key 'unexpected'",
+  );
+});
+
+test.each([
+  ['empty token', { token: '', expiresAt: 1, baseUrl: 'https://api.individual.githubcopilot.com' }, 'token must be a non-empty string'],
+  ['non-finite expiry', { token: 'tok', expiresAt: Number.POSITIVE_INFINITY, baseUrl: 'https://api.individual.githubcopilot.com' }, 'expiresAt must be a finite number'],
+  ['empty base URL', { token: 'tok', expiresAt: 1, baseUrl: '' }, 'baseUrl must be a non-empty string'],
+] as const)('assertCopilotUpstreamState rejects a token entry with %s', (_label, copilotToken, message) => {
+  assertThrows(
+    () => assertCopilotUpstreamState({ knownModels: null, copilotToken }),
+    TypeError,
+    `CopilotUpstreamState.copilotToken.${message}`,
   );
 });
 

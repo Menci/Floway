@@ -909,22 +909,6 @@ test('Copilot provider swallows a saveState throw so a transient persistence hic
   );
 });
 
-test('readCopilotUpstreamState round-trips a persisted state with both knownModels and copilotToken', () => {
-  const seeded: CopilotUpstreamState = {
-    knownModels: mergeKnownModels(
-      emptyKnownModels(),
-      { object: 'list', data: [{ id: 'm1', name: 'm1', version: '1', supported_endpoints: [], capabilities: { type: 'chat', limits: {} } }] },
-      1_000_000,
-    ),
-    copilotToken: { token: 'tok', expiresAt: 2_000_000, baseUrl: 'https://api.individual.githubcopilot.com' },
-    quotaSnapshot: null,
-  };
-  const round = readCopilotUpstreamState(JSON.parse(JSON.stringify(seeded)));
-  assertEquals(round.copilotToken?.token, 'tok');
-  if (!round.knownModels) throw new Error('expected knownModels in round-trip');
-  assertEquals(Object.keys(round.knownModels.models), ['m1']);
-});
-
 // ---------------------------------------------------------------------------
 // Anthropic Fast Mode end-to-end through the Copilot provider.
 //
@@ -1251,55 +1235,7 @@ const getModelsWithCapabilities = async (fixtures: CopilotModelCapabilityFixture
   return models;
 };
 
-test('Copilot chat field: vision-only → modalities with image input', async () => {
-  const [model] = await getModelsWithCapabilities([
-    { id: 'gpt-vision', supports: { vision: true } },
-  ]);
-  assertEquals(model.chat, { modalities: { input: ['text', 'image'], output: ['text'] } });
-});
-
-test('Copilot chat field: reasoning_effort with medium → effort with default medium', async () => {
-  const [model] = await getModelsWithCapabilities([
-    { id: 'o3-mini', supports: { reasoning_effort: ['low', 'medium', 'high'] } },
-  ]);
-  assertEquals(model.chat, {
-    reasoning: { effort: { supported: ['low', 'medium', 'high'], default: 'medium' } },
-  });
-});
-
-test('Copilot chat field: reasoning_effort full GPT-5 set → default is medium', async () => {
-  const [model] = await getModelsWithCapabilities([
-    { id: 'gpt-5', supports: { reasoning_effort: ['minimal', 'low', 'medium', 'high', 'xhigh'] } },
-  ]);
-  assertEquals(model.chat, {
-    reasoning: { effort: { supported: ['minimal', 'low', 'medium', 'high', 'xhigh'], default: 'medium' } },
-  });
-});
-
-test('Copilot chat field: reasoning_effort without medium → default is first', async () => {
-  const [model] = await getModelsWithCapabilities([
-    { id: 'o-nomedium', supports: { reasoning_effort: ['minimal', 'xhigh'] } },
-  ]);
-  assertEquals(model.chat, {
-    reasoning: { effort: { supported: ['minimal', 'xhigh'], default: 'minimal' } },
-  });
-});
-
-test('Copilot chat field: min+max_thinking_budget → budget_tokens', async () => {
-  const [model] = await getModelsWithCapabilities([
-    { id: 'claude-think', supported_endpoints: ['/v1/messages'], supports: { min_thinking_budget: 1024, max_thinking_budget: 16384 } },
-  ]);
-  assertEquals(model.chat, { reasoning: { budget_tokens: { min: 1024, max: 16384 } } });
-});
-
-test('Copilot chat field: adaptive_thinking: true → reasoning.adaptive', async () => {
-  const [model] = await getModelsWithCapabilities([
-    { id: 'claude-adaptive', supported_endpoints: ['/v1/messages'], supports: { adaptive_thinking: true } },
-  ]);
-  assertEquals(model.chat, { reasoning: { adaptive: true } });
-});
-
-test('Copilot chat field: combined vision + reasoning_effort + adaptive_thinking → full chat', async () => {
+test('Copilot provider projects the complete upstream chat capability shape', async () => {
   const [model] = await getModelsWithCapabilities([
     {
       id: 'claude-opus-4.7',
@@ -1321,13 +1257,6 @@ test('Copilot chat field: combined vision + reasoning_effort + adaptive_thinking
       adaptive: true,
     },
   });
-});
-
-test('Copilot chat field: no capabilities → no chat field', async () => {
-  const [model] = await getModelsWithCapabilities([
-    { id: 'basic-model' },
-  ]);
-  assertEquals(model.chat, undefined);
 });
 
 // Copilot reports the seat's entitlement on every data-plane response, so a

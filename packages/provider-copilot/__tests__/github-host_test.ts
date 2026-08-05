@@ -6,6 +6,7 @@ import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 test('normalizeGitHubHost canonicalizes supported GitHub hosts', () => {
   assertEquals(normalizeGitHubHost(' github.com '), 'github.com');
   assertEquals(normalizeGitHubHost('Octocorp.GHE.com'), 'octocorp.ghe.com');
+  assertEquals(normalizeGitHubHost(`${'a'.repeat(63)}.ghe.com`), `${'a'.repeat(63)}.ghe.com`);
 });
 
 test('GitHub origins distinguish dotcom from a GHE.com tenant', () => {
@@ -22,6 +23,9 @@ test('normalizeGitHubHost rejects URLs, API hosts, and unrelated domains', () =>
     'nested.octocorp.ghe.com',
     'github.example.com',
     'ghe.com',
+    `${'a'.repeat(64)}.ghe.com`,
+    '-octocorp.ghe.com',
+    'octocorp-.ghe.com',
   ]) {
     assertThrows(() => normalizeGitHubHost(value));
   }

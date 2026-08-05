@@ -1,7 +1,8 @@
-import { test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
-import { fetchCopilotUsage, parseCopilotQuotaHeaders, projectCopilotUsageResponse, type CopilotUsageResponse } from '../src/quota.ts';
-import { directFetcher } from '@floway-dev/provider';
+import { fetchCopilotUsage, parseCopilotQuotaHeaders, projectCopilotUsageResponse, putCopilotQuota, type CopilotQuotaSnapshot, type CopilotUsageResponse } from '../src/quota.ts';
+import type { CopilotUpstreamState } from '../src/state.ts';
+import { directFetcher, initProviderRepo } from '@floway-dev/provider';
 import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
 
 const NOW = new Date('2026-08-01T19:42:34.000Z');
@@ -74,6 +75,15 @@ test('parseCopilotQuotaHeaders drops a bucket missing a numeric field', () => {
   );
 
   assertEquals(Object.keys(snapshot?.quotas ?? {}), ['premium_interactions']);
+});
+
+test.each(['', '   ', '%20'])('parseCopilotQuotaHeaders rejects an empty numeric field encoded as %j', raw => {
+  const snapshot = parseCopilotQuotaHeaders(
+    new Headers({ 'x-quota-snapshot-chat': `ent=${raw}&ov=0&ovPerm=false&rem=100&rst=2026-09-01T00%3A00%3A00Z&totRem=200` }),
+    NOW,
+  );
+
+  assertEquals(snapshot, null);
 });
 
 test('parseCopilotQuotaHeaders ignores a prototype-polluting quota id', () => {
@@ -205,4 +215,38 @@ test('both quota sources report an unparseable reset instant as none', () => {
     NOW,
   );
   assertEquals(fromHeaders?.reset_at, null);
+});
+
+test('putCopilotQuota keeps a newer observation when an older save wins the storage race', async () => {
+  let state: unknown = null;
+  const pending: Array<() => void> = [];
+  initProviderRepo(() => ({
+    upstreams: {
+      saveState: (_id, mutate) => new Promise<void>(resolve => {
+        pending.push(() => {
+          state = mutate(state);
+          resolve();
+        });
+      }),
+    },
+  }));
+  const snapshot = (label: 'older' | 'newer'): CopilotQuotaSnapshot => ({
+    observed_at: label === 'older' ? '2026-08-01T00:00:00.000Z' : '2026-08-01T00:00:01.000Z',
+    reset_at: null,
+    quotas: {},
+  });
+  const now = vi.spyOn(Date, 'now');
+  now.mockReturnValueOnce(100).mockReturnValueOnce(200);
+
+  const older = putCopilotQuota('up_race', snapshot('older'));
+  const newer = putCopilotQuota('up_race', snapshot('newer'));
+  expect(pending).toHaveLength(2);
+  pending[1]();
+  await newer;
+  pending[0]();
+  await older;
+  now.mockRestore();
+
+  const persisted = state as CopilotUpstreamState;
+  expect(persisted.quotaSnapshot).toEqual({ fetchedAt: 200, data: snapshot('newer') });
 });

@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { compactionResponse } from '../src/compaction.ts';
 import type { ResponsesCompactionResult, ResponsesInputItem, ResponsesInputText, ResponsesResult } from '@floway-dev/protocols/responses';
@@ -116,8 +116,17 @@ test('the empty-message minimum-1-token charge prevents unbounded retention', ()
   // Empty-text messages would otherwise consume zero budget; the
   // `Math.max(tokens, 1)` floor stops them from accumulating without bound.
   // 64_001 empty messages cannot all survive the budget.
-  const empties: ResponsesInputItem[] = Array.from({ length: 64_001 }, () => ({ type: 'message', role: 'user', content: '' }));
-  const result = compactionResponse(empties, generatedResult([compaction]));
+  const empty: ResponsesInputItem = { type: 'message', role: 'user', content: '' };
+  const empties = new Array<ResponsesInputItem>(64_001).fill(empty);
+  // Random-id behavior has its own focused assertion above. Removing 64k OS
+  // entropy calls keeps this boundary test about retention accounting.
+  const random = vi.spyOn(crypto, 'getRandomValues').mockImplementation(<T extends ArrayBufferView>(array: T): T => array);
+  let result: ResponsesCompactionResult;
+  try {
+    result = compactionResponse(empties, generatedResult([compaction]));
+  } finally {
+    random.mockRestore();
+  }
 
   // The retained-message count is strictly under the input count.
   expect(result.output.length - 1).toBeLessThan(empties.length);
