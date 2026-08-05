@@ -97,24 +97,24 @@ const modelPrefixSchema = z.object({
 
 const decodeUpstreamJson = <T>(raw: string, schema: z.ZodType<T>, field: string, id: string): T =>
   decodeStoredJson(raw, schema, {
-    malformed: `Malformed upstream ${field} JSON for ${id}`,
-    invalid: `Invalid upstream ${field} JSON for ${id}`,
+    malformed: `Malformed upstream ${field} for ${id}`,
+    invalid: `Invalid upstream ${field} for ${id}`,
   });
 
 export const decodeUpstreamConfig = (raw: string, id: string): unknown =>
-  decodeUpstreamJson(raw, opaqueJsonSchema, 'config', id);
+  decodeUpstreamJson(raw, opaqueJsonSchema, 'config JSON', id);
 
 export const decodeUpstreamState = (raw: string, id: string): unknown =>
-  decodeUpstreamJson(raw, opaqueJsonSchema, 'state', id);
+  decodeUpstreamJson(raw, opaqueJsonSchema, 'state JSON', id);
 
 export const decodeUpstreamModelsCache = (raw: string, id: string): UpstreamModelsCache =>
-  decodeUpstreamJson(raw, modelsCacheSchema, 'models cache', id);
+  decodeUpstreamJson(raw, modelsCacheSchema, 'models cache JSON', id);
 
 export const decodeUpstreamFlagOverrides = (raw: string, id: string): Record<string, boolean> =>
-  decodeUpstreamJson(raw, flagOverridesRecordSchema, 'flag_overrides', id);
+  decodeUpstreamJson(raw, flagOverridesRecordSchema, 'flag_overrides JSON', id);
 
 export const decodeDisabledPublicModelIds = (raw: string, id: string): string[] =>
-  decodeUpstreamJson(raw, disabledPublicModelIdsSchema, 'disabled_public_model_ids', id);
+  decodeUpstreamJson(raw, disabledPublicModelIdsSchema, 'disabled_public_model_ids JSON', id);
 
 export const decodeProxyFallbackList = (raw: string, id: string): ProxyFallbackEntry[] =>
   decodeUpstreamJson(raw, proxyFallbackListSchema, 'proxy_fallback_list_json', id);

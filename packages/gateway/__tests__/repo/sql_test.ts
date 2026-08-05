@@ -42,6 +42,38 @@ test('SQL upstream repo round-trips the cached catalog and its revision', async 
   assertEquals(cached?.lastError, null);
 });
 
+test('SQL upstream repo rejects shape-invalid JSON in a cached catalog with row context', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db).upstreams;
+  await repo.save(baseRecord());
+  await db.prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ?')
+    .bind('{"revision":7,"fetchedAt":1700000000000,"models":[{"id":42}],"lastError":null}', 'up_test')
+    .run();
+
+  await assertRejects(
+    () => repo.getById('up_test'),
+    Error,
+    'Invalid upstream models cache JSON for up_test: models.0.id',
+  );
+});
+
+test('SQL upstream repo preserves opaque provider data while restoring only the model enabledFlags Set', async () => {
+  const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
+  await repo.save(baseRecord());
+  await repo.saveModelsCache('up_test', {
+    revision: 7,
+    fetchedAt: 1_700_000_000_000,
+    models: [stubProviderModel({
+      id: 'cached-model',
+      providerData: { enabledFlags: ['provider-private'], future: { value: true } },
+    })],
+  });
+
+  const model = (await repo.getById('up_test'))?.modelsCache?.models[0];
+  assertEquals(model?.enabledFlags instanceof Set, true);
+  assertEquals(model?.providerData, { enabledFlags: ['provider-private'], future: { value: true } });
+});
+
 test('SQL upstream repo saveModelsCacheError annotates a cached catalog and saveModelsCache clears it', async () => {
   const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
   await repo.save(baseRecord());

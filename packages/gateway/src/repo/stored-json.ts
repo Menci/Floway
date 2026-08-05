@@ -12,6 +12,11 @@ export const decodeStoredJson = <T>(
     throw new Error(messages.malformed, { cause });
   }
   const result = schema.safeParse(parsed);
-  if (!result.success) throw new Error(messages.invalid, { cause: result.error });
+  if (!result.success) {
+    const details = result.error.issues
+      .map(issue => `${issue.path.length === 0 ? '<root>' : issue.path.join('.')}: ${issue.message}`)
+      .join('; ');
+    throw new Error(`${messages.invalid}: ${details}`, { cause: result.error });
+  }
   return result.data;
 };

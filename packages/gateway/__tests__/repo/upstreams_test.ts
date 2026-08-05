@@ -304,7 +304,7 @@ test('SQL upstream repo rejects array-shaped flag_overrides with helpful message
   await assertRejects(
     () => new SqlRepo(db).upstreams.getById('up_array_fixes'),
     Error,
-    'Upstream up_array_fixes flag_overrides must be a JSON object, got array',
+    'Invalid upstream flag_overrides JSON for up_array_fixes: <root>',
   );
 });
 
@@ -331,7 +331,7 @@ test('SQL upstream repo rejects non-boolean value in flag_overrides with helpful
   await assertRejects(
     () => new SqlRepo(db).upstreams.getById('up_nonbool_fixes'),
     Error,
-    'Upstream up_nonbool_fixes flag_overrides["x"] must be a boolean, got number',
+    'Invalid upstream flag_overrides JSON for up_nonbool_fixes: x',
   );
 });
 
@@ -894,8 +894,8 @@ test('migration 0072 folds every cached catalog onto its upstream row', async ()
     // wrote: the reviver has to turn it back into a Set on the way out.
     db.run(`INSERT INTO models_cache (upstream_id, revision, fetched_at, models_json, last_error_json)
             VALUES
-              ('up_clean', 4, 1785643896263, '[{"id":"cached-model","enabledFlags":["vendor-deepseek"]}]', NULL),
-              ('up_failed', 4, 1785643797798, '[{"id":"stale-model","enabledFlags":[]}]', '{"message":"boom","at":1785643800000}')`);
+              ('up_clean', 4, 1785643896263, '[{"id":"cached-model","limits":{},"kind":"chat","endpoints":{"responses":{}},"enabledFlags":["vendor-deepseek"]}]', NULL),
+              ('up_failed', 4, 1785643797798, '[{"id":"stale-model","limits":{},"kind":"chat","endpoints":{"responses":{}},"enabledFlags":[]}]', '{"message":"boom","at":1785643800000}')`);
 
     applySqlJsFile(db, '0072_fold_models_cache.sql');
 

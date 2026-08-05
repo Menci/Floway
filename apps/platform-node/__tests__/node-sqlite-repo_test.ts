@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { applyMigrations } from '../src/migrate.ts';
 import { createNodeSqliteDatabase } from '../src/node-sqlite-database.ts';
 import { SqlRepo } from '@floway-dev/gateway';
-import { assertEquals } from '@floway-dev/test-utils';
+import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
 // The repo layer's own suite runs against sql.js, which — like D1 — coerces a
 // JS boolean to 0/1. `node:sqlite` rejects it outright, so a bind the Workers
@@ -73,4 +73,57 @@ test('expiration sweep completion lands on both discriminants', () => withRepo(a
   await repo.expirationSweeps.complete('claim-drained', drainedClaim.revision, { kind: 'drained', nextDueAt: null });
 
   assertEquals(await repo.expirationSweeps.claim('claim-empty', 20_000, 0), null);
+}));
+
+test('repository JSON codecs round-trip upstream, alias, and Responses state through node:sqlite', () => withRepo(async repo => {
+  await seedKey(repo);
+  await repo.upstreams.save({
+    id: 'up_node',
+    kind: 'custom',
+    name: 'Node upstream',
+    enabled: true,
+    sortOrder: 0,
+    createdAt: '2026-08-05T00:00:00.000Z',
+    updatedAt: '2026-08-05T00:00:00.000Z',
+    config: { opaque: { value: true } },
+    state: { cursor: ['a', 1] },
+    modelsCache: null,
+    flagOverrides: {},
+    disabledPublicModelIds: [],
+    proxyFallbackList: [],
+    modelPrefix: null,
+    hue: 210,
+  });
+  await repo.upstreams.saveModelsCache('up_node', {
+    revision: 9,
+    fetchedAt: 1_786_000_000_000,
+    models: [stubProviderModel({ id: 'node-model', enabledFlags: new Set(['vendor-kimi'] as const) })],
+  });
+  await repo.modelAliases.insert({
+    id: 'alias_node',
+    name: 'node-alias',
+    kind: 'chat',
+    selection: 'first-available',
+    displayName: null,
+    visibleInModelsList: true,
+    targets: [{ target_model_id: 'node-model', rules: { reasoning: { effort: 'high' } } }],
+    announcedMetadata: { limits: { max_output_tokens: 4096 } },
+    sortOrder: 0,
+    createdAt: '2026-08-05T00:00:00.000Z',
+    updatedAt: '2026-08-05T00:00:00.000Z',
+  });
+  await repo.responsesSnapshots.insert({
+    id: 'resp_node',
+    apiKeyId: 'key_node',
+    itemIds: ['msg-a', 'msg-b'],
+    refreshedAt: 1_786_000_000_000,
+  });
+
+  const upstream = await repo.upstreams.getById('up_node');
+  assertEquals(upstream?.config, { opaque: { value: true } });
+  assertEquals(upstream?.state, { cursor: ['a', 1] });
+  assertEquals(upstream?.modelsCache?.models[0].id, 'node-model');
+  assertEquals(upstream?.modelsCache?.models[0].enabledFlags instanceof Set, true);
+  assertEquals((await repo.modelAliases.getById('alias_node'))?.announcedMetadata, { limits: { max_output_tokens: 4096 } });
+  assertEquals((await repo.responsesSnapshots.lookup('key_node', 'resp_node', 0))?.itemIds, ['msg-a', 'msg-b']);
 }));
