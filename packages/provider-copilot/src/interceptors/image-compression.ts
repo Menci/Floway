@@ -61,7 +61,7 @@ export const mapImageCompressions = async <TInput, TOutput>(
       try {
         outputs[index] = await compress(inputs[index]);
       } catch (error) {
-        if (failure === undefined) failure = { error };
+        failure ??= { error };
       }
     }
   };
