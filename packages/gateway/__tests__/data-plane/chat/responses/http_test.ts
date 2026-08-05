@@ -271,7 +271,7 @@ test('POST /v1/responses keeps collaboration plaintext across output and history
   for (const body of observedBodies) {
     const namespace = (body.tools?.[0] as { name: string }).name;
     assert(/^floway_collaboration_[0-9a-f]{32}$/.test(namespace));
-    const messageSchema = (((body.tools?.[0] as { tools: Array<{ parameters: { properties: Record<string, Record<string, unknown>> } }> }).tools[0]
+    const messageSchema = (((body.tools?.[0] as unknown as { tools: Array<{ parameters: { properties: Record<string, Record<string, unknown>> } }> }).tools[0]
       .parameters.properties.message));
     assertEquals(messageSchema.encrypted, undefined);
   }
