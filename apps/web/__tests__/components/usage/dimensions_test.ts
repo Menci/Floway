@@ -1,40 +1,28 @@
 import { describe, expect, it } from 'vitest';
 
-import { clearGroupedUsageFilter, filterUsageRecords, usageUpstreamValue, visibleUsageRecords } from '../../../src/components/usage/dimensions';
-import type { DisplayUsageRecord } from '../../../src/components/usage/types';
+import { clearGroupedUsageFilter, upstreamFromUsageValue, usageUpstreamValue } from '../../../src/components/usage/dimensions';
 
-const record = (keyId: string, model: string, upstream: string | null): DisplayUsageRecord => ({
-  keyId,
-  model,
-  upstream,
-  hour: '2026-08-05T00',
-  requests: 1,
-  metrics: {},
-  cost: null,
-});
+const filters = {
+  model: ['gpt-5'],
+  upstream: ['upstream:up-1'],
+  userId: ['2'],
+  keyId: ['key-1'],
+};
 
 describe('usage dimensions', () => {
-  it('ORs values within a filter and ANDs dimensions', () => {
-    const records = [
-      record('key-1', 'gpt-5', 'up-1'),
-      record('key-1', 'claude-opus-4-7', 'up-1'),
-      record('key-2', 'gpt-5', 'up-2'),
-    ];
-
-    expect(filterUsageRecords(records, {
-      identity: ['key-1'],
-      model: ['gpt-5', 'claude-opus-4-7'],
-      upstream: [usageUpstreamValue('up-1')],
-    })).toEqual(records.slice(0, 2));
+  it('uses an unambiguous wire value for nullable upstreams', () => {
+    expect(usageUpstreamValue(null)).toBe('none');
+    expect(usageUpstreamValue('none')).toBe('upstream:none');
+    expect(upstreamFromUsageValue('none')).toBeNull();
+    expect(upstreamFromUsageValue('upstream:none')).toBe('none');
   });
 
-  it('clears the active grouping dimension only', () => {
-    expect(clearGroupedUsageFilter({ identity: ['key-1'], model: ['gpt-5'], upstream: ['upstream:up-1'] }, 'model'))
-      .toEqual({ identity: ['key-1'], model: [], upstream: ['upstream:up-1'] });
+  it('clears only a non-identity grouping filter', () => {
+    expect(clearGroupedUsageFilter(filters, 'model')).toEqual({ ...filters, model: [] });
   });
 
-  it('excludes hidden series from the visible summary records', () => {
-    const records = [record('key-1', 'gpt-5', 'up-1'), record('key-2', 'gpt-5', 'up-1')];
-    expect(visibleUsageRecords(records, 'identity', new Set(['key-1']))).toEqual([records[1]]);
+  it('clears user and API key filters together for either identity grouping', () => {
+    expect(clearGroupedUsageFilter(filters, 'userId')).toEqual({ ...filters, userId: [], keyId: [] });
+    expect(clearGroupedUsageFilter(filters, 'keyId')).toEqual({ ...filters, userId: [], keyId: [] });
   });
 });

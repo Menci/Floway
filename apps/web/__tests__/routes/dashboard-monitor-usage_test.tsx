@@ -2,6 +2,7 @@ import { screen } from '@testing-library/react';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { dashboardBucketFrames } from '../../src/components/charts/dashboard-time';
 import DashboardMonitorUsage, { clientLoader } from '../../src/routes/dashboard-monitor-usage';
 import { useAuthStore } from '../../src/stores/auth-store';
 import { stubLocalStorage } from '../local-storage-stub';
@@ -15,33 +16,35 @@ afterEach(() => {
 });
 
 const loadedAt = Date.UTC(2026, 7, 5, 12);
+const bucket = dashboardBucketFrames('today', loadedAt).at(-2)!.key;
+const usageRecord = { bucket, group: 'gpt-5', requests: 1, metrics: { input_tokens: '10' as const }, cost: null };
 const loaderData = {
   error: null,
-  filters: { identity: [], model: [], upstream: [] },
-  groupBy: 'identity' as const,
-  hiddenKeys: [],
-  hiddenModels: [],
-  hiddenUpstreams: [],
+  isAdmin: true,
   loadedAt,
-  metric: 'total' as const,
-  models: [],
-  range: 'today' as const,
-  redactKeys: false,
   search: { records: [], keys: [] },
+  state: {
+    filters: { model: [], upstream: [], userId: [], keyId: [] },
+    groupBy: 'model' as const,
+    hidden: [],
+    hiddenSearch: [],
+    metric: 'total' as const,
+    range: 'today' as const,
+  },
   upstreams: [{ id: 'up-1', name: 'Copilot seat' }],
   usage: {
-    keys: [{ id: 'user-2', name: 'Alice' }],
-    records: [{
-      keyId: 'user-2',
-      model: 'gpt-5',
-      upstream: 'up-1',
-      hour: '2026-08-05T11',
-      requests: 1,
-      metrics: { input_tokens: '10' as const },
-      cost: null,
-    }],
+    series: [usageRecord],
+    axes: {
+      none: [{ ...usageRecord, group: 'all' }],
+      model: [{ ...usageRecord, bucket: 'all' }],
+      upstream: [{ ...usageRecord, bucket: 'all', group: 'upstream:up-1' }],
+      userId: [{ ...usageRecord, bucket: 'all', group: '2' }],
+      keyId: [{ ...usageRecord, bucket: 'all', group: 'key-2' }],
+    },
+    dimensionValues: { models: ['gpt-5'], upstreams: ['upstream:up-1'], userIds: [2], keyIds: ['key-2'] },
+    users: [{ id: 2, username: 'Alice' }],
+    keys: [{ id: 'key-2', name: 'Alice key', createdAt: '2026-08-01T00:00:00.000Z' }],
   },
-  view: 'all-by-user' as const,
 };
 
 const renderPage = (data: Parameters<typeof DashboardMonitorUsage>[0]['loaderData']) => {
@@ -57,45 +60,61 @@ const renderPage = (data: Parameters<typeof DashboardMonitorUsage>[0]['loaderDat
   return renderInApp(<RouterProvider router={router} />);
 };
 
-const stubUsageGateway = (upstreamOptions: () => Response = () => Response.json([{ id: 'up-1', name: 'Copilot seat', kind: 'copilot', enabled: true, color: null, cachedModelCount: 1 }])) => {
+const stubUsageGateway = (upstreamOptions: () => Response = () => Response.json([{ id: 'up-1', name: 'Copilot seat', kind: 'copilot', enabled: true, hue: 210, cachedModelCount: 1 }])) => {
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
     const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost').pathname;
-    if (path === '/api/token-usage') return Response.json({
-      view: 'all-by-user',
-      dimensions: ['upstream'],
-      records: [{ userId: 2, model: 'gpt-5', upstream: 'up-1', hour: '2026-08-05T11', requests: 1, metrics: [], cost: null }],
+    if (path === '/api/token-usage/overview') return Response.json({
+      series: [{ bucket: '2026-08-05T11', group: 'gpt-5', requests: 1, metrics: [], cost: null }],
+      axes: { none: [], model: [], upstream: [], userId: [], keyId: [] },
+      dimensionValues: { models: ['gpt-5'], upstreams: ['upstream:up-1'], userIds: [2], keyIds: [] },
       users: [{ id: 2, username: 'Alice' }],
+      keys: [],
     });
     if (path === '/api/search-usage') return Response.json({ view: 'all-by-user', records: [], users: [] });
-    if (path === '/api/models') return Response.json({ data: [] });
     if (path === '/api/upstream-options') return upstreamOptions();
     throw new Error(`Unexpected request to ${path}`);
   }));
 };
 
 describe('usage dimension controls', () => {
-  it('renders one token chart for the selected grouping', () => {
+  it('matches Performance controls and removes view/redaction UI', () => {
     renderPage(loaderData);
 
-    expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Group by' }).value).toBe('By User');
-    expect(screen.getByRole('combobox', { name: 'Model' })).toBeTruthy();
+    expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Group by' }).value).toBe('By Model');
+    expect(screen.queryByRole('combobox', { name: 'Model' })).toBeNull();
     expect(screen.getByRole('combobox', { name: 'Upstream' })).toBeTruthy();
-    expect(screen.queryByRole('combobox', { name: 'User' })).toBeNull();
-    expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(1);
-    expect(screen.getByRole('heading', { level: 2, name: 'By User' })).toBeTruthy();
-    expect(screen.queryByRole('heading', { level: 2, name: 'By Model' })).toBeNull();
+    expect(screen.getByRole('combobox', { name: 'User' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: 'API Key' })).toBeTruthy();
+    expect(screen.queryByText('All by user')).toBeNull();
+    expect(screen.queryByText('My keys')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Redact/ })).toBeNull();
+    expect(screen.getByText('Last Day')).toBeTruthy();
+    expect(screen.getByText('7 Days')).toBeTruthy();
+    expect(screen.getByText('30 Days')).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 2, name: 'By Model' })).toBeTruthy();
   });
 
-  it('retains the upstream coordinate loaded from the dashboard response', async () => {
+  it('hides both identity filters while grouping by either identity dimension', () => {
+    renderPage({ ...loaderData, state: { ...loaderData.state, groupBy: 'userId' } });
+
+    expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Group by' }).value).toBe('By User');
+    expect(screen.queryByRole('combobox', { name: 'User' })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'API Key' })).toBeNull();
+    expect(screen.getByRole('combobox', { name: 'Model' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: 'Upstream' })).toBeTruthy();
+  });
+
+  it('loads the overview contract and derives Search scope from the actor', async () => {
     useAuthStore.getState().primeFromLogin({
       token: 'admin-session',
       user: { id: 1, username: 'admin', isAdmin: true, upstreamIds: null },
     });
     stubUsageGateway();
 
-    const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/usage') } as never);
+    const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/usage?g=userId') } as never);
 
-    expect(data.usage?.records[0]).toMatchObject({ keyId: 'user-2', upstream: 'up-1' });
+    expect(data.state.groupBy).toBe('userId');
+    expect(data.usage?.series[0]).toMatchObject({ group: 'gpt-5', metrics: {} });
     expect(data.upstreams).toEqual([{ id: 'up-1', name: 'Copilot seat' }]);
   });
 
@@ -110,7 +129,7 @@ describe('usage dimension controls', () => {
     renderPage(data);
 
     expect(data.upstreams).toEqual([]);
-    expect(screen.getByRole('heading', { level: 2, name: 'By User' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 2, name: 'By Model' })).toBeTruthy();
     expect(screen.getByText('Unavailable')).toBeTruthy();
   });
 });
