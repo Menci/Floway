@@ -52,6 +52,9 @@ test('passthrough-serve: usage-record failure does not turn upstream 2xx into 50
           return jsonResponse({ object: 'list', data: [{ id: 'custom-embed-model' }] });
         }
         if (url.hostname === 'passthrough.example.com' && url.pathname === '/v1/embeddings') {
+          assertEquals(request.headers.get('anthropic-beta'), null);
+          assertEquals(request.headers.get('x-client-request-id'), null);
+          assertEquals(request.headers.get('x-debug'), null);
           return jsonResponse({
             object: 'list',
             model: 'custom-embed-model',
@@ -64,7 +67,13 @@ test('passthrough-serve: usage-record failure does not turn upstream 2xx into 50
       async () => {
         const response = await requestApp('/v1/embeddings', {
           method: 'POST',
-          headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+          headers: {
+            'content-type': 'application/json',
+            'x-api-key': apiKey.key,
+            'anthropic-beta': 'context-1m-2025-08-07',
+            'x-client-request-id': 'request-1',
+            'x-debug': 'discard',
+          },
           body: JSON.stringify({ model: 'custom-embed-model', input: 'hi' }),
         });
 

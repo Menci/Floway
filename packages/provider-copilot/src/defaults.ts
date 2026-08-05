@@ -80,8 +80,8 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
 // The `anthropic-beta: mid-conversation-system-2026-04-07` header does not
 // help and can hurt: Vertex answers `Unexpected value for the 'anthropic-beta'
 // header` when it appears, and elsewhere it is a no-op for models that have
-// the feature. The gateway's allow-list drops it anyway, so the probe above
-// measures what actually goes on the wire.
+// the feature. The Messages boundary normalization drops it, so the probe
+// above measures what actually goes on the wire.
 //
 // ## Backend attribution
 //

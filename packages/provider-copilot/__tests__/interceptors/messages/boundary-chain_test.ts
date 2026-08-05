@@ -18,6 +18,7 @@ const okEvents = (): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> 
 const invocation = (payload: MessagesPayload): MessagesBoundaryCtx => ({
   payload,
   headers: new Headers(),
+  anthropicBeta: [],
   model: stubProviderModel({ endpoints: { messages: {} } }),
 });
 

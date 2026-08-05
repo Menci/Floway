@@ -22,6 +22,9 @@ export const createProvider = (record: UpstreamRecord): Provider =>
 export const flagDefaultsForKind = (kind: UpstreamProviderKind): FlagDefaults =>
   providersByKind[kind].defaultFlags;
 
+export const inboundHeaderAllowlistForKind = (kind: UpstreamProviderKind): ProviderModule['inboundHeaderAllowlist'] =>
+  providersByKind[kind].inboundHeaderAllowlist;
+
 // The upstream scope is a required argument across the catalog-assembly chain
 // (this, `enumerateAddressableModelIds`, `enumerateModelCandidates`) so a
 // caller can never omit it and silently receive the full, unscoped catalog —

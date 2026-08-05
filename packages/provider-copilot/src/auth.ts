@@ -1,3 +1,5 @@
+import pRetry, { AbortError as RetryAbortError } from 'p-retry';
+
 import { readCopilotUpstreamState, type CopilotTokenEntry, type CopilotUpstreamState } from './state.ts';
 import { githubApiOrigin } from './github-host.ts';
 import { dispatchUpstreamFetch, getProviderRepo as getRepo, isAbortError, type Fetcher } from '@floway-dev/provider';
@@ -72,45 +74,52 @@ export function clearInProcessCopilotTokenCache(): void {
   inProcessTokenCache.clear();
 }
 
-async function withRetry<T>(fn: () => Promise<T>, signal: AbortSignal | undefined, maxRetries = 3, baseDelayMs = 1000): Promise<T> {
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (e) {
-      // AbortError is a deliberate caller cancellation — propagate
-      // immediately rather than walk N retries with the same already-
-      // aborted signal, which would burn the proxy chain on each cycle.
-      if (isAbortError(e)) throw e;
-      if (isCopilotTokenFetchError(e) && isCopilotTokenFetchTerminalStatus(e.status)) {
-        throw e;
-      }
-      if (attempt >= maxRetries) throw e;
-      const delay = baseDelayMs * Math.pow(2, attempt);
-      console.warn(`Retry ${attempt + 1}/${maxRetries} after ${delay}ms: ${e instanceof Error ? e.message : String(e)}`);
-      // Honour the signal during backoff so a cancellation that fires
-      // mid-sleep also unwinds promptly. `{ once: true }` only fires-then-
-      // detaches; on the timer-resolve happy path we have to remove the
-      // listener ourselves, otherwise a long-lived caller signal (one
-      // shared across many retries / requests) accumulates one closure
-      // per sleep pinning the closed-over `reject`.
-      await new Promise<void>((resolve, reject) => {
-        let onAbort: (() => void) | null = null;
-        const timer = setTimeout(() => {
-          if (onAbort && signal) signal.removeEventListener('abort', onAbort);
-          resolve();
-        }, delay);
-        if (signal) {
-          onAbort = (): void => {
-            clearTimeout(timer);
-            reject(signal.reason ?? new DOMException('aborted', 'AbortError'));
-          };
-          signal.addEventListener('abort', onAbort, { once: true });
-        }
-      });
-    }
+class RetryableError extends Error {
+  constructor(readonly originalError: unknown) {
+    super(originalError instanceof Error ? originalError.message : String(originalError), { cause: originalError });
   }
-  throw new Error('Unreachable');
 }
+
+class NonErrorAbort extends Error {
+  constructor(readonly originalError: unknown) {
+    super(String(originalError), { cause: originalError });
+  }
+}
+
+const retryCopilotTokenFetch = async <T>(fn: () => Promise<T>, signal: AbortSignal | undefined): Promise<T> => {
+  try {
+    return await pRetry(async () => {
+      try {
+        return await fn();
+      } catch (error) {
+        if (isAbortError(error) || (isCopilotTokenFetchError(error) && isCopilotTokenFetchTerminalStatus(error.status))) {
+          throw new RetryAbortError(error instanceof Error ? error : new NonErrorAbort(error));
+        }
+
+        // p-retry rejects non-network TypeErrors immediately and normalizes
+        // non-Error rejections into terminal TypeErrors. The token exchange
+        // previously retried every non-terminal value, so both shapes travel
+        // through a retryable Error and are restored at the boundary.
+        if (!(error instanceof Error) || error instanceof TypeError) throw new RetryableError(error);
+        throw error;
+      }
+    }, {
+      retries: 3,
+      factor: 2,
+      minTimeout: 1000,
+      signal,
+      onFailedAttempt: ({ error, attemptNumber, retryDelay }) => {
+        if (retryDelay === 0) return;
+        const cause = error instanceof RetryableError ? error.originalError : error;
+        console.warn(`Retry ${attemptNumber}/3 after ${retryDelay}ms: ${cause instanceof Error ? cause.message : String(cause)}`);
+      },
+    });
+  } catch (error) {
+    if (error instanceof RetryableError) throw error.originalError;
+    if (error instanceof NonErrorAbort) throw error.originalError;
+    throw error;
+  }
+};
 
 function isTokenValid(token: string | null, expiresAt: number): boolean {
   if (!token) return false;
@@ -139,13 +148,14 @@ async function getCopilotToken(upstreamId: string, githubHost: string, githubTok
   // proxy chain that carries the data-plane traffic; without this, a working
   // Copilot proxy would still see periodic auth-refresh failures every
   // ~25 minutes per process.
-  return await withRetry(async () => {
+  return await retryCopilotTokenFetch(async () => {
     const entry = await exchangeCopilotToken(githubHost, githubToken, fetcher, signal);
     inProcessTokenCache.set(upstreamId, { entry, cachedAt: Date.now() });
     // Best-effort: the caller is about to satisfy a live request with this
     // token, so a storage failure costs the next cold isolate one extra mint
     // rather than the request. Swallowing here also keeps such a failure out
-    // of withRetry, which would otherwise answer it by minting again.
+    // of retryCopilotTokenFetch, which would otherwise answer it by minting
+    // again.
     try {
       await getRepo().upstreams.saveState(upstreamId, current => ({
         ...readCopilotUpstreamState(current),
@@ -201,8 +211,8 @@ export async function exchangeCopilotToken(githubHost: string, githubToken: stri
 export interface CopilotFetchOptions {
   headers?: Headers;
   /** Per-request proxy-aware indirection. Used for both the data-plane
-   *  request and the api.github.com token exchange so a single fallback
-   *  chain covers both paths under restricted egress. */
+   *  request and the selected GitHub host's token exchange so a single
+   *  fallback chain covers both paths under restricted egress. */
   fetcher: Fetcher;
   /** See UpstreamCallOptions.wrapUpstreamCall. Fires on the data-plane
    *  request only, after any token-exchange round trip. */
