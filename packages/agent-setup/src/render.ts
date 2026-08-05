@@ -7,8 +7,8 @@
 // the executing shell, and the fixed installer body reads it from there.
 
 import type { AgentSetupConfiguration } from './configuration.ts';
-import { assertScriptLiteralValue } from './script-literal.ts';
 import type { ScriptAgent } from './script-assets.ts';
+import { assertScriptLiteralValue } from './script-literal.ts';
 
 export interface RenderPrefixInput {
   agent: ScriptAgent;

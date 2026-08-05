@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'vitest';
-
 import type { ZodType } from 'zod';
 
 import type { AgentSetupConfiguration } from '../src/configuration.ts';

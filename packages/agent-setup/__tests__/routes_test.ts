@@ -561,11 +561,13 @@ test('a public serve failure is sealed to an opaque 500 that leaks neither token
   const lease = { token: 'a'.repeat(43) };
   const h = harness({
     publicOverrides: {
-      repository: { findByToken: () => {
-        const error = new Error(`forced failure\nsecond line leaking ${lease.token} and ${injectedSecret}`);
-        error.name = injectedSecret;
-        throw error;
-      } },
+      repository: {
+        findByToken: () => {
+          const error = new Error(`forced failure\nsecond line leaking ${lease.token} and ${injectedSecret}`);
+          error.name = injectedSecret;
+          throw error;
+        },
+      },
     },
   });
   const logged: string[] = [];
