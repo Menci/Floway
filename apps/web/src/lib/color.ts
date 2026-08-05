@@ -4,6 +4,7 @@ import {
   convertRgbToHsv,
   convertRgbToLrgb,
   formatHex,
+  formatHex8,
   modeRgb,
   parseHex,
   useMode as registerMode,
@@ -22,7 +23,8 @@ const linearRgb = (rgb: ReturnType<typeof parseRgb>) => convertRgbToLrgb(rgb);
 
 export const blendHex = (hex: string, alpha: number, backdrop: string): string => {
   const foreground = { ...parseRgb(hex), alpha };
-  return formatHex(blend([parseRgb(backdrop), foreground], 'normal', 'rgb')).toUpperCase();
+  const mixed = blend([parseRgb(backdrop), foreground], 'normal', 'rgb');
+  return (mixed.alpha !== undefined && mixed.alpha < 1 ? formatHex8(mixed) : formatHex(mixed)).toUpperCase();
 };
 
 // WCAG 2.2 requires at least 4.5:1 contrast for normal text.
