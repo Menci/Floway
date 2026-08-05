@@ -266,7 +266,7 @@ test('POST /api/keys rejects a custom key reserved by a tombstone', async () => 
 
 test('POST /api/keys maps a raced custom-key constraint to conflict', async () => {
   const { repo, apiKey } = await setupAppTest();
-  const save = vi.spyOn(repo.apiKeys, 'save').mockRejectedValueOnce(new Error('UNIQUE constraint failed: api_keys.key'));
+  const insert = vi.spyOn(repo.apiKeys, 'insertForActiveUser').mockRejectedValueOnce(new Error('UNIQUE constraint failed: api_keys.key'));
   try {
     const response = await requestApp('/api/keys', {
       method: 'POST',
@@ -274,19 +274,19 @@ test('POST /api/keys maps a raced custom-key constraint to conflict', async () =
       body: JSON.stringify({ name: 'raced-key', key_source: 'custom', custom_key: 'raced-raw-key' }),
     });
     assertEquals(response.status, 409);
-    assertEquals(save.mock.calls.length, 1);
+    assertEquals(insert.mock.calls.length, 1);
     assertEquals(await repo.apiKeys.findByRawKeyIncludingDeleted('raced-raw-key'), null);
   } finally {
-    save.mockRestore();
+    insert.mockRestore();
   }
 });
 
 test('POST /api/keys retries only raw-key collisions and eventually succeeds', async () => {
   const { repo, apiKey } = await setupAppTest();
-  const saveOriginal = repo.apiKeys.save.bind(repo.apiKeys);
-  const save = vi.spyOn(repo.apiKeys, 'save')
+  const insertOriginal = repo.apiKeys.insertForActiveUser.bind(repo.apiKeys);
+  const insert = vi.spyOn(repo.apiKeys, 'insertForActiveUser')
     .mockRejectedValueOnce(new Error('UNIQUE constraint failed: api_keys.key'))
-    .mockImplementation(saveOriginal);
+    .mockImplementation(insertOriginal);
   try {
     const response = await requestApp('/api/keys', {
       method: 'POST',
@@ -294,15 +294,15 @@ test('POST /api/keys retries only raw-key collisions and eventually succeeds', a
       body: JSON.stringify({ name: 'retry-key', key_source: 'generate' }),
     });
     assertEquals(response.status, 201);
-    assertEquals(save.mock.calls.length, 2);
+    assertEquals(insert.mock.calls.length, 2);
   } finally {
-    save.mockRestore();
+    insert.mockRestore();
   }
 });
 
 test('POST /api/keys stops after the bounded generated-key collision budget', async () => {
   const { repo, apiKey } = await setupAppTest();
-  const save = vi.spyOn(repo.apiKeys, 'save').mockRejectedValue(new Error('UNIQUE constraint failed: api_keys.key'));
+  const insert = vi.spyOn(repo.apiKeys, 'insertForActiveUser').mockRejectedValue(new Error('UNIQUE constraint failed: api_keys.key'));
   try {
     const response = await requestApp('/api/keys', {
       method: 'POST',
@@ -310,10 +310,10 @@ test('POST /api/keys stops after the bounded generated-key collision budget', as
       body: JSON.stringify({ name: 'exhausted-key', key_source: 'generate' }),
     });
     assertEquals(response.status, 500);
-    assertEquals(save.mock.calls.length, 5);
+    assertEquals(insert.mock.calls.length, 5);
     assertEquals((await response.json()).error, 'Could not allocate a unique API key; retry the request.');
   } finally {
-    save.mockRestore();
+    insert.mockRestore();
   }
 });
 
@@ -322,7 +322,7 @@ test.each([
   'CHECK constraint failed: length(server_secret) = 64',
 ])('POST /api/keys exposes non-key database constraints: %s', async message => {
   const { repo, apiKey } = await setupAppTest();
-  const save = vi.spyOn(repo.apiKeys, 'save').mockRejectedValue(new Error(message));
+  const insert = vi.spyOn(repo.apiKeys, 'insertForActiveUser').mockRejectedValue(new Error(message));
   try {
     const response = await requestApp('/api/keys', {
       method: 'POST',
@@ -332,14 +332,14 @@ test.each([
     assertEquals(response.status, 500);
     if (!(await response.text()).includes(message)) throw new Error(`expected response to expose ${message}`);
   } finally {
-    save.mockRestore();
+    insert.mockRestore();
   }
 });
 
 test('POST /api/keys does not retry a generated key after a server-secret constraint', async () => {
   const { repo, apiKey } = await setupAppTest();
   const message = 'UNIQUE constraint failed: api_keys.server_secret';
-  const save = vi.spyOn(repo.apiKeys, 'save').mockRejectedValue(new Error(message));
+  const insert = vi.spyOn(repo.apiKeys, 'insertForActiveUser').mockRejectedValue(new Error(message));
   try {
     const response = await requestApp('/api/keys', {
       method: 'POST',
@@ -347,10 +347,10 @@ test('POST /api/keys does not retry a generated key after a server-secret constr
       body: JSON.stringify({ name: 'constraint-test', key_source: 'generate' }),
     });
     assertEquals(response.status, 500);
-    assertEquals(save.mock.calls.length, 1);
+    assertEquals(insert.mock.calls.length, 1);
     if (!(await response.text()).includes(message)) throw new Error(`expected response to expose ${message}`);
   } finally {
-    save.mockRestore();
+    insert.mockRestore();
   }
 });
 
