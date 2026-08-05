@@ -62,7 +62,7 @@ describe('multipart body rendering', () => {
   const multipart = (parts: string[]) =>
     [`--${boundary}`, parts.join(`\r\n--${boundary}\r\n`), `--${boundary}--`, ''].join('\r\n');
 
-  const jsonPart = part('content-disposition: form-data; name="model"\r\ncontent-type: application/json', '{"id":1}');
+  const jsonPart = part('content-disposition: form-data; name="model"\r\ncontent-type: Application/Vnd.Floway+JSON; charset=utf-8', '{"id":1}');
   const textWire = multipart([jsonPart, part('content-disposition: form-data; name="note"', 'hello')]);
   const render = (wire: string, contentType = `multipart/form-data; boundary=${boundary}`) =>
     renderBody({ data: base64(wire), encoding: 'base64' }, contentType);

@@ -38,6 +38,16 @@ test('/auth/login with blank username + wrong ADMIN_KEY rejects', async () => {
   assertEquals(response.status, 401);
 });
 
+test('/auth/login rejects a same-length ADMIN_KEY mismatch', async () => {
+  await setupAppTest({ adminKey: 'real-admin' });
+  const response = await requestApp('/auth/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username: '', password: 'fake-admin' }),
+  });
+  assertEquals(response.status, 401);
+});
+
 // Zero-config passwordless admin login: with no ADMIN_KEY set, a brand-new
 // local instance still lets the operator in. The four cases below cover the
 // dev/prod matrix on both runtimes — dev accepts, prod refuses. Node prod

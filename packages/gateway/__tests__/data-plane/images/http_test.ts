@@ -291,7 +291,7 @@ test('/v1/images/edits forwards JSON image references through a custom provider'
     async () => {
       const response = await requestApp('/v1/images/edits', {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        headers: { 'content-type': 'Application/Vnd.OpenAI+JSON; charset=utf-8', 'x-api-key': apiKey.key },
         body: JSON.stringify({
           model: 'gpt-image-2',
           prompt: 'replace the background',
