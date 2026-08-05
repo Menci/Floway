@@ -29,6 +29,8 @@ const record = upstreamRecord('up_claude', {
 });
 
 let fetchMock: ReturnType<typeof vi.fn>;
+let authorizeResponse: (state: string) => Promise<Response>;
+let authorizeSignals: AbortSignal[];
 
 const authorizeUrlCount = () =>
   fetchMock.mock.calls.filter(([input]) => String(input).includes(AUTHORIZE_URL_PATH)).length;
@@ -41,11 +43,15 @@ const stashed = (flowKind: string) => {
 beforeEach(() => {
   pkceResolvers.length = 0;
   sessionStorage.clear();
+  authorizeSignals = [];
+  authorizeResponse = async state => Response.json({ authorize_url: `https://claude.ai/oauth/authorize?state=${state}` });
   fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const { pathname } = new URL(String(input), 'http://localhost');
     if (pathname !== AUTHORIZE_URL_PATH) throw new Error(`Unexpected request to ${pathname}`);
     const body = JSON.parse(String(init?.body)) as { state: string };
-    return Response.json({ authorize_url: `https://claude.ai/oauth/authorize?state=${body.state}` });
+    if (!init?.signal) throw new Error('Authorize URL request has no abort signal');
+    authorizeSignals.push(init.signal);
+    return await authorizeResponse(body.state);
   });
   vi.stubGlobal('fetch', fetchMock);
 });
@@ -76,5 +82,43 @@ describe('OAuth authorize-url preparation', () => {
     expect(link.getAttribute('href')).toBe('https://claude.ai/oauth/authorize?state=state-3');
     expect(stashed('oauth')).toEqual({ verifier: 'verifier-3', state: 'state-3' });
     expect(stashed('setup-token')).toBeNull();
+  });
+
+  it('keeps the newest authorize URL when an older request answers last', async () => {
+    const responses = new Map<string, (response: Response) => void>();
+    authorizeResponse = state => new Promise(resolve => { responses.set(state, resolve); });
+    renderInApp(<ProviderConfigHarness record={record} />);
+    await settle();
+
+    pkceResolvers[0]!(material(1));
+    await settle();
+    fireEvent.click(screen.getByRole('tab', { name: 'Setup Token' }));
+    await settle();
+    pkceResolvers[1]!(material(2));
+    await settle();
+
+    expect(authorizeUrlCount()).toBe(2);
+    expect(authorizeSignals[0]?.aborted).toBe(true);
+    responses.get('state-2')!(Response.json({ authorize_url: 'https://claude.ai/oauth/authorize?state=state-2' }));
+    await settle();
+    expect(screen.getByRole('link').getAttribute('href')).toBe('https://claude.ai/oauth/authorize?state=state-2');
+
+    responses.get('state-1')!(Response.json({ authorize_url: 'https://claude.ai/oauth/authorize?state=state-1' }));
+    await settle();
+    expect(screen.getByRole('link').getAttribute('href')).toBe('https://claude.ai/oauth/authorize?state=state-2');
+    expect(stashed('setup-token')).toEqual({ verifier: 'verifier-2', state: 'state-2' });
+  });
+
+  it('does not stash or request authorization when PKCE generation finishes after unmount', async () => {
+    const view = renderInApp(<ProviderConfigHarness record={record} />);
+    await settle();
+    expect(pkceResolvers).toHaveLength(1);
+
+    view.unmount();
+    pkceResolvers[0]!(material(1));
+    await settle();
+
+    expect(authorizeUrlCount()).toBe(0);
+    expect(stashed('oauth')).toBeNull();
   });
 });

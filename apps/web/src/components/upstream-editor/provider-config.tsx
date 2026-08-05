@@ -438,14 +438,21 @@ function OAuthConfig({ record, onPatch }: {
   const [error, setError] = useState<string | null>(null);
   const flowKind = tab === 'setup' ? 'setup-token' : 'oauth';
 
-  // Two authorize-url requests can be outstanding at once — a tab switch
-  // supersedes one, and the effect below re-fires on every `record` identity
-  // change. `stashPkce` writes one sessionStorage slot per (kind, flow kind),
-  // so the verifier must belong to the URL the operator actually opened: the
-  // generation is taken before the stash as well as before the URL, because a
-  // round trip separates them and an older call could otherwise stash last.
+  // A tab switch or record change supersedes the preparation already running.
+  // The generation guards the crypto work, which cannot be aborted, while the
+  // controller stops an authorize-url request that has reached the gateway.
   const generation = useRef(0);
+  const preparationController = useRef<AbortController | null>(null);
+  const cancelPreparation = () => {
+    generation.current += 1;
+    preparationController.current?.abort();
+    preparationController.current = null;
+    setBusy(false);
+  };
   const prepare = useCallback(async () => {
+    preparationController.current?.abort();
+    const controller = new AbortController();
+    preparationController.current = controller;
     const mine = ++generation.current;
     setBusy(true); setError(null);
     const pkce = await generatePkce();
@@ -453,15 +460,20 @@ function OAuthConfig({ record, onPatch }: {
     stashPkce(record.kind, flowKind, { verifier: pkce.verifier, state: pkce.state });
     const body = { record: previewRecord(record, getValues()), challenge: pkce.challenge, state: pkce.state };
     const result = record.kind === 'codex'
-      ? await callApi(() => api.api.upstreams.codex.oauth['authorize-url'].$post({ json: body }))
+      ? await callApi(() => api.api.upstreams.codex.oauth['authorize-url'].$post({ json: body }, { init: { signal: controller.signal } }))
       : tab === 'setup'
-        ? await callApi(() => api.api.upstreams['claude-code']['setup-token']['authorize-url'].$post({ json: body }))
-        : await callApi(() => api.api.upstreams['claude-code'].oauth['authorize-url'].$post({ json: body }));
+        ? await callApi(() => api.api.upstreams['claude-code']['setup-token']['authorize-url'].$post({ json: body }, { init: { signal: controller.signal } }))
+        : await callApi(() => api.api.upstreams['claude-code'].oauth['authorize-url'].$post({ json: body }, { init: { signal: controller.signal } }));
     if (generation.current !== mine) return;
+    preparationController.current = null;
     setBusy(false);
     if (result.error) { setError(result.error.message); return; }
     setAuthorizeUrl(result.data.authorize_url);
   }, [flowKind, getValues, record, tab]);
+  useEffect(() => () => {
+    generation.current += 1;
+    preparationController.current?.abort();
+  }, []);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- Opening the panel starts an authorize-url request; the pending flag is the start of that work.
   useEffect(() => { if (open && tab !== 'json' && !authorizeUrl) void prepare(); }, [authorizeUrl, open, prepare, tab]);
 
@@ -518,11 +530,11 @@ function OAuthConfig({ record, onPatch }: {
       <Button appearance="primary" disabledFocusable={refreshing} icon={refreshing ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={() => void refreshCredential()}>
         {t('dashboard.upstreamEditor.oauth.refresh')}
       </Button>
-      <Button onClick={() => setOpen(value => !value)}>{open ? t('common.cancel') : t('dashboard.upstreamEditor.oauth.reimport')}</Button>
+      <Button onClick={() => { cancelPreparation(); setOpen(value => !value); }}>{open ? t('common.cancel') : t('dashboard.upstreamEditor.oauth.reimport')}</Button>
     </div>}
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
     {open && <>
-      <TabList aria-label={t('dashboard.upstreamEditor.oauth.importMethod')} selectedValue={tab} onTabSelect={(_, data) => { setTab(String(data.value)); setAuthorizeUrl(null); }}>
+      <TabList aria-label={t('dashboard.upstreamEditor.oauth.importMethod')} selectedValue={tab} onTabSelect={(_, data) => { cancelPreparation(); setTab(String(data.value)); setAuthorizeUrl(null); }}>
         {record.kind === 'codex' ? <><Tab value="json">auth.json</Tab><Tab value="oauth">OAuth</Tab></> : <><Tab value="oauth">OAuth</Tab><Tab value="setup">Setup Token</Tab><Tab value="json">credentials.json</Tab></>}
       </TabList>
       {tab === 'json' ? <Field label={t('dashboard.upstreamEditor.oauth.credentialJson')}><Textarea className="font-mono" rows={8} value={json} onChange={(_, data) => setJson(data.value)} /></Field> : <div className="grid gap-3">
