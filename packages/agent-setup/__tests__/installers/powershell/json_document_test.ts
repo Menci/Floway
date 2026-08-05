@@ -1,4 +1,7 @@
 import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { expect, test } from 'vitest';
 
@@ -9,9 +12,13 @@ const hostPwsh = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command',
 }).status === 0 ? 'pwsh' : null;
 
 test.skipIf(hostPwsh === null)('PowerShell JSON helpers reject malformed syntax without collapsing exact-case keys', () => {
-  const result = spawnSync(hostPwsh!, ['-NoProfile', '-NonInteractive', '-Command', '-'], {
-    encoding: 'utf8',
-    input: `${SETUP_POWERSHELL_COMMON_JSON_DOCUMENT}
+  const root = mkdtempSync(join(tmpdir(), 'floway-powershell-json.'));
+  const resultPath = join(root, 'result.txt');
+  try {
+    const result = spawnSync(hostPwsh!, ['-NoProfile', '-NonInteractive', '-Command', '-'], {
+      encoding: 'utf8',
+      env: { ...process.env, FLOWAY_PS_JSON_RESULT: resultPath },
+      input: `${SETUP_POWERSHELL_COMMON_JSON_DOCUMENT}
 $cases = @(
   '{"x":1,}',
   '{"x":01}',
@@ -22,10 +29,13 @@ $cases = @(
 $results = foreach ($json in $cases) {
   try { $null = Read-SetupJsonDocument $json; 'accepted' } catch { 'rejected' }
 }
-Write-Output -NoEnumerate ($results -join ',')
+[System.IO.File]::WriteAllText($env:FLOWAY_PS_JSON_RESULT, ($results -join ','))
 `,
-  });
+    });
 
-  expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
-  expect(result.stdout.trim(), result.stderr).toBe('rejected,rejected,rejected,accepted,accepted');
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+    expect(readFileSync(resultPath, 'utf8')).toBe('rejected,rejected,rejected,accepted,accepted');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
