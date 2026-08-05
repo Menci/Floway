@@ -145,6 +145,12 @@ const ensureCodexAccessTokenInner = async (
   const state = readCodexUpstreamState(fresh.state);
   const account = state.accounts.find(a => a.chatgptAccountId === accountId);
   if (!account) throw new Error(`Codex account ${accountId} not found in upstream ${upstreamId}`);
+  if (account.state !== 'active') {
+    throw new CodexOAuthSessionTerminatedError({
+      code: account.state,
+      message: account.state_message ?? `Codex account is ${account.state}`,
+    });
+  }
   if (account.accessToken && isAccessTokenFresh(account.accessToken) && !force) {
     return { entry: account.accessToken, freshlyMinted: false };
   }

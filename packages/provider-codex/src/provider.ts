@@ -69,14 +69,19 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
     });
   };
 
-  const persistTerminalState = async (newState: 'session_terminated' | 'refresh_failed', message: string): Promise<void> => {
+  const persistTerminalState: CodexCallEffects['persistTerminalState'] = async (newState, message, expectedGeneration) => {
     const flippedAt = new Date().toISOString();
     await getProviderRepo().upstreams.saveState(record.id, current => {
       const { state, accountIndex } = locateActiveAccount(current);
+      const account = state.accounts[accountIndex]!;
+      const generationMatches = 'accessToken' in expectedGeneration
+        ? account.accessToken?.token === expectedGeneration.accessToken
+        : account.refresh_token === expectedGeneration.refreshToken;
+      if (account.state !== 'active' || !generationMatches) return state;
       // Clear any cached access token on the terminal flip — once the credential
       // is dead the cached token is dead too, and leaving it would confuse the
       // dashboard's status panel.
-      return replaceCodexAccount(state, accountIndex, account => ({ ...account, state: newState, state_message: message, state_updated_at: flippedAt, accessToken: null }));
+      return replaceCodexAccount(state, accountIndex, currentAccount => ({ ...currentAccount, state: newState, state_message: message, state_updated_at: flippedAt, accessToken: null }));
     });
   };
 
@@ -92,12 +97,15 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
       // active, then rethrow so the caller's models-cache records the
       // failure and surfaces it to the operator.
       let access;
+      let attemptedRefreshToken = locateActiveAccount(record.state).account.refresh_token;
       try {
-        access = await ensureCodexAccessToken(record.id, accountIdentity.chatgptAccountId, refreshToken =>
-          mintCodexAccessToken(refreshToken, fetcher, persistRefreshTokenRotation));
+        access = await ensureCodexAccessToken(record.id, accountIdentity.chatgptAccountId, refreshToken => {
+          attemptedRefreshToken = refreshToken;
+          return mintCodexAccessToken(refreshToken, fetcher, persistRefreshTokenRotation);
+        });
       } catch (err) {
         if (err instanceof CodexOAuthSessionTerminatedError) {
-          await persistTerminalState('refresh_failed', err.upstreamMessage);
+          await persistTerminalState('refresh_failed', err.upstreamMessage, { refreshToken: attemptedRefreshToken });
         }
         throw err;
       }

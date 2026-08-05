@@ -149,6 +149,19 @@ describe('ensureCodexAccessToken', () => {
     expect(mint).not.toHaveBeenCalled();
   });
 
+  test('refuses to mint into a terminal credential', async () => {
+    current = makeRecord({ accounts: [{
+      ...baseAccount,
+      state: 'session_terminated',
+      state_message: 'old session ended',
+    }] });
+    const mint = vi.fn();
+    await expect(ensureCodexAccessToken(upstreamId, accountId, mint))
+      .rejects.toBeInstanceOf(CodexOAuthSessionTerminatedError);
+    expect(mint).not.toHaveBeenCalled();
+    expect(repo.writes).toEqual([]);
+  });
+
   test('propagates mint errors without persisting', async () => {
     const mint = vi.fn().mockRejectedValue(new Error('oauth boom'));
     await expect(ensureCodexAccessToken(upstreamId, accountId, mint)).rejects.toThrow(/oauth boom/);

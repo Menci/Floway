@@ -207,6 +207,51 @@ describe('createCodexProvider', () => {
     if (!result.ok) expect(result.response.status).toBe(503);
   });
 
+  test('a stale terminal response cannot invalidate credentials re-imported while the request was in flight', async () => {
+    let releaseResponse!: () => void;
+    let markRequestStarted!: () => void;
+    const requestStarted = new Promise<void>(resolve => { markRequestStarted = resolve; });
+    const responseGate = new Promise<void>(resolve => { releaseResponse = resolve; });
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      markRequestStarted();
+      await responseGate;
+      return new Response(JSON.stringify({ error: { code: 'token_invalidated', message: 'old session ended' } }), {
+        status: 401,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+    const instance = createCodexProvider(baseRecord);
+    const pending = instance.instance.callResponses(
+      stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { responses: {} } }),
+      { input: [], stream: true },
+      'generate',
+      undefined,
+      noopUpstreamCallOptions(),
+    );
+    await requestStarted;
+    const reimportedAccessToken: CodexAccessTokenEntry = {
+      token: 'at_reimported',
+      expiresAt: farFutureMs,
+      refreshedAt: 'reimported',
+    };
+    current = {
+      ...recordWithAccessToken(reimportedAccessToken),
+      state: {
+        accounts: [{
+          ...(recordWithAccessToken(reimportedAccessToken).state as CodexUpstreamState).accounts[0],
+          refresh_token: 'rt_reimported',
+        }],
+      },
+    };
+    releaseResponse();
+    const result = await pending;
+    expect(result.ok).toBe(false);
+    const account = (current.state as CodexUpstreamState).accounts[0];
+    expect(account.state).toBe('active');
+    expect(account.refresh_token).toBe('rt_reimported');
+    expect(account.accessToken?.token).toBe('at_reimported');
+  });
+
   test.each([
     'callEmbeddings',
     'callImagesGenerations',

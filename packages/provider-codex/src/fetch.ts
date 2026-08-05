@@ -1,4 +1,4 @@
-import { ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken, putCodexAccessToken } from './access-token.ts';
+import { ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken } from './access-token.ts';
 import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import {
   CODEX_BACKEND_BASE,
@@ -29,7 +29,11 @@ export type ProviderCompactionResult =
 // state_json row the same way.
 export interface CodexCallEffects {
   persistRefreshTokenRotation(newRefreshToken: string): Promise<void>;
-  persistTerminalState(state: 'session_terminated' | 'refresh_failed', message: string): Promise<void>;
+  persistTerminalState(
+    state: 'session_terminated' | 'refresh_failed',
+    message: string,
+    expectedGeneration: { accessToken: string } | { refreshToken: string },
+  ): Promise<void>;
 }
 
 // Account selection for one Codex call. Both Codex endpoints share the same
@@ -85,12 +89,16 @@ const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true;
     return { ok: false, response: synthetic503(`Codex upstream is ${opts.account.state}`) };
   }
 
+  let attemptedRefreshToken = opts.account.refresh_token;
   try {
-    const entry = await ensureCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, refresh => mintAccessToken(opts, refresh));
+    const entry = await ensureCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, refresh => {
+      attemptedRefreshToken = refresh;
+      return mintAccessToken(opts, refresh);
+    });
     return { ok: true, accessToken: entry.token };
   } catch (err) {
     if (err instanceof CodexOAuthSessionTerminatedError) {
-      await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage);
+      await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage, { refreshToken: attemptedRefreshToken });
       return { ok: false, response: synthetic503(`Codex refresh failed: ${err.upstreamMessage}`) };
     }
     throw err;
@@ -361,7 +369,7 @@ const dispatchCodexHttpCall = async (
     const bodyText = await response.text();
     const { code, message } = parseUpstreamError(bodyText);
     if (code === 'token_invalidated') {
-      await opts.effects.persistTerminalState('session_terminated', message);
+      await opts.effects.persistTerminalState('session_terminated', message, { accessToken });
       return synthetic503(`Codex session terminated: ${message}`);
     }
     return new Response(bodyText, { status: 401, headers: response.headers });
@@ -370,24 +378,27 @@ const dispatchCodexHttpCall = async (
   return response;
 };
 
-// Force-mint a fresh access token after a 401, persisting it best-effort.
-// `ensureCodexAccessToken`'s read-then-maybe-mint is bypassed because a
-// re-read can still observe the token we just invalidated: a sibling that
-// minted before our 401 lands its `putCodexAccessToken` after our
-// invalidation, restoring the broken token, and Codex tokens carry multi-day
-// expiresAt so the freshness gate hands it straight back — sending us into an
-// immediate second 401 with `alreadyRetried` already flipped. Minting
-// unconditionally sidesteps that window, and persisting best-effort is enough
-// because the next request re-mints if its read still sees the dead token.
+// Force-mint a fresh access token after a 401. The forced ensure re-reads the
+// current refresh token, so a request whose initial mint rotated rt1 → rt2
+// cannot retry with its stale captured rt1. It also shares the credential's
+// single-flight entry, collapsing simultaneous 401 retries onto one rotation.
 const refreshAccessTokenForRetry = async (opts: CodexBackendCallBase): Promise<{ ok: true; accessToken: string } | { ok: false; response: Response }> => {
   await invalidateCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId);
+  let attemptedRefreshToken = opts.account.refresh_token;
   try {
-    const minted = await mintAccessToken(opts, opts.account.refresh_token);
-    registerBackgroundWrite(opts, putCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, minted));
+    const minted = await ensureCodexAccessToken(
+      opts.upstreamId,
+      opts.account.chatgptAccountId,
+      refreshToken => {
+        attemptedRefreshToken = refreshToken;
+        return mintAccessToken(opts, refreshToken);
+      },
+      true,
+    );
     return { ok: true, accessToken: minted.token };
   } catch (err) {
     if (err instanceof CodexOAuthSessionTerminatedError) {
-      await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage);
+      await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage, { refreshToken: attemptedRefreshToken });
       return { ok: false, response: synthetic503(`Codex refresh failed: ${err.upstreamMessage}`) };
     }
     throw err;
@@ -515,7 +526,10 @@ const synthetic503 = (message: string): Response => new Response(JSON.stringify(
 // content-type as a contract violation, so we synthesize the header on the
 // way through. Body stream is preserved verbatim.
 const ensureSseContentType = (response: Response): Response => {
-  if (isEventStreamMediaType(response.headers.get('content-type'))) return response;
+  if (!response.ok) return response;
+  const contentType = response.headers.get('content-type');
+  if (isEventStreamMediaType(contentType)) return response;
+  if (contentType !== null && contentType.trim() !== '') return response;
   const headers = new Headers(response.headers);
   headers.set('content-type', 'text/event-stream');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });

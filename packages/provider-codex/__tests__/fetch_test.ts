@@ -165,7 +165,11 @@ describe('callCodexResponses — token freshness', () => {
       model, body: { input: [], stream: true }, headers: new Headers(), effects, call: noopUpstreamCallOptions(),
     });
     expect(result.ok).toBe(false);
-    expect(effects.persistTerminalState).toHaveBeenCalledWith('refresh_failed', expect.stringMatching(/gone/));
+    expect(effects.persistTerminalState).toHaveBeenCalledWith(
+      'refresh_failed',
+      expect.stringMatching(/gone/),
+      { refreshToken: 'rt_v1' },
+    );
   });
 });
 
@@ -182,6 +186,29 @@ describe('callCodexResponses — upstream classification', () => {
     const stored = readQuotaEntry();
     expect(stored?.premium.data.primary_used_percent).toBe(42);
     expect(stored?.premium.data.ratelimited_until).toBeUndefined();
+  });
+
+  test('adds text/event-stream only when a successful Codex response omits content-type', async () => {
+    seedFreshAccessToken();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
+      'event: response.created\ndata: {"type":"response.created"}\n\n',
+      { status: 200 },
+    ));
+    const result = await callCodexResponses({
+      upstreamId, account: activeAccount,
+      model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.headers.get('content-type')).toBe('text/event-stream');
+  });
+
+  test('rejects a successful response that explicitly declares a non-SSE media type', async () => {
+    seedFreshAccessToken();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(200, { error: 'wrong transport' }));
+    await expect(callCodexResponses({
+      upstreamId, account: activeAccount,
+      model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
+    })).rejects.toThrow(/application\/json.*wrong transport/);
   });
 
   test('upstream body has store:false and stream:true forced even if caller passes otherwise', async () => {
@@ -641,7 +668,11 @@ describe('callCodexResponses — upstream classification', () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(503);
-    expect(effects.persistTerminalState).toHaveBeenCalledWith('session_terminated', expect.stringMatching(/session ended/));
+    expect(effects.persistTerminalState).toHaveBeenCalledWith(
+      'session_terminated',
+      expect.stringMatching(/session ended/),
+      { accessToken: 'at_kv' },
+    );
   });
 
   test('401 other → refresh + retry once, then bubble persistent 401', async () => {
@@ -660,6 +691,27 @@ describe('callCodexResponses — upstream classification', () => {
     expect(effects.persistRefreshTokenRotation).toHaveBeenCalledWith('rt_v2');
   });
 
+  test('401 after an initial mint retries with the rotated refresh token', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at1', refresh_token: 'rt_v2', id_token: 'it1', expires_in: 600 }), { status: 200 }))
+      .mockResolvedValueOnce(errorJson(401, { error: { code: 'expired_token', message: 'expired' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at2', refresh_token: 'rt_v3', id_token: 'it2', expires_in: 600 }), { status: 200 }))
+      .mockResolvedValueOnce(sseResponse());
+    const effects = makeEffects();
+    vi.mocked(effects.persistRefreshTokenRotation).mockImplementation(async refreshToken => {
+      const state = currentRecord.state as CodexUpstreamState;
+      currentRecord = makeRecord({ accounts: [{ ...state.accounts[0], refresh_token: refreshToken }] });
+    });
+    const result = await callCodexResponses({
+      upstreamId, account: activeAccount,
+      model, body: { input: [], stream: true }, headers: new Headers(), effects, call: noopUpstreamCallOptions(),
+    });
+    expect(result.ok).toBe(true);
+    const refreshTokens = [fetchSpy.mock.calls[0], fetchSpy.mock.calls[2]].map(call =>
+      new URLSearchParams((call[1] as RequestInit).body as string).get('refresh_token'));
+    expect(refreshTokens).toEqual(['rt_v1', 'rt_v2']);
+  });
+
   test('429 → quota with ratelimited_until, return upstream 429', async () => {
     seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(429, { error: { type: 'usage_limit_reached', message: 'cap reached', resets_in_seconds: 7200 } }, {
@@ -672,7 +724,10 @@ describe('callCodexResponses — upstream classification', () => {
       model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.response.status).toBe(429);
+    if (!result.ok) {
+      expect(result.response.status).toBe(429);
+      expect(result.response.headers.get('content-type')).toBe('application/json');
+    }
     await flushMicrotasks();
     const stored = readQuotaEntry();
     expect(stored?.premium.data.ratelimited_until).toBeTruthy();
@@ -680,25 +735,32 @@ describe('callCodexResponses — upstream classification', () => {
 
   test('5xx passes through without touching state', async () => {
     seedFreshAccessToken();
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(503, { error: 'unavailable' }));
+    const upstreamBody = JSON.stringify({ error: 'unavailable' });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(upstreamBody, {
+      status: 503,
+      headers: { 'content-type': 'application/problem+json' },
+    }));
     const effects = makeEffects();
     const result = await callCodexResponses({
       upstreamId, account: activeAccount,
       model, body: { input: [], stream: true }, headers: new Headers(), effects, call: noopUpstreamCallOptions(),
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.response.status).toBe(503);
+    if (!result.ok) {
+      expect(result.response.status).toBe(503);
+      expect(result.response.headers.get('content-type')).toBe('application/problem+json');
+      expect(await result.response.text()).toBe(upstreamBody);
+    }
     expect(effects.persistTerminalState).not.toHaveBeenCalled();
     expect(effects.persistRefreshTokenRotation).not.toHaveBeenCalled();
   });
 });
 
 describe('callCodexResponses — background-write registration', () => {
-  // Background state writes (quota snapshot on 2xx/429, access-token put on
-  // 401-retry) must reach the runtime's waitUntil slot so workerd does not
-  // cancel them the instant the streaming response returns to the client.
-  // Without this, freshly-minted Codex tokens and quota snapshots get dropped
-  // on the floor and the next request re-mints / re-races the upstream.
+  // Quota snapshots remain best-effort writes and must reach waitUntil so
+  // workerd does not cancel them after the streaming response returns. Access
+  // tokens are committed before a 401 retry starts, because losing that write
+  // would make the next request rotate the same credential again.
   test('2xx persists quota snapshot via opts.call.waitUntil', async () => {
     seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
@@ -711,7 +773,7 @@ describe('callCodexResponses — background-write registration', () => {
     expect(waitUntil).toHaveBeenCalledTimes(1);
   });
 
-  test('401-retry registers the freshly-minted access-token put via opts.call.waitUntil', async () => {
+  test('401 retry persists the fresh token before retry and registers only the quota write', async () => {
     seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(errorJson(401, { error: { code: 'expired_token', message: 'expired' } }))
@@ -723,9 +785,8 @@ describe('callCodexResponses — background-write registration', () => {
       model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(),
       call: { ...noopUpstreamCallOptions(), waitUntil },
     });
-    // Two writes get registered: the freshly-minted access token (401 retry
-    // path) and the quota snapshot from the successful second attempt.
-    expect(waitUntil).toHaveBeenCalledTimes(2);
+    expect(waitUntil).toHaveBeenCalledTimes(1);
+    expect((currentRecord.state as CodexUpstreamState).accounts[0].accessToken?.token).toBe('at2');
   });
 });
 
@@ -823,7 +884,11 @@ describe('callCodexResponsesCompact', () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(503);
-    expect(effects.persistTerminalState).toHaveBeenCalledWith('session_terminated', expect.stringMatching(/session ended/));
+    expect(effects.persistTerminalState).toHaveBeenCalledWith(
+      'session_terminated',
+      expect.stringMatching(/session ended/),
+      { accessToken: 'at_kv' },
+    );
   });
 
   test('429 → quota with ratelimited_until, return upstream 429', async () => {
