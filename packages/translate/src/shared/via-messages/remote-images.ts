@@ -1,4 +1,5 @@
 import type { RemoteImageLoader } from '../../types.ts';
+import { mediaTypeEssence } from '@floway-dev/protocols/common';
 import type { MessagesImageBlock } from '@floway-dev/protocols/messages';
 
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
@@ -10,7 +11,9 @@ export const unavailableRemoteImageLoader: RemoteImageLoader = () => Promise.res
 
 const parseDataUrl = (url: string): { mediaType: string; data: string } | null => {
   const match = url.match(/^data:([^;]+);base64,(.+)$/);
-  return match ? { mediaType: match[1], data: match[2] } : null;
+  if (!match) return null;
+  const mediaType = mediaTypeEssence(match[1]);
+  return mediaType === null ? null : { mediaType, data: match[2] };
 };
 
 const inferMediaTypeFromUrl = (url: string): string | null => {
@@ -41,7 +44,7 @@ const resolveRemoteImage = async (url: string, loadRemoteImage: RemoteImageLoade
   const image = await loadRemoteImage(url);
   if (!image) return null;
 
-  let mediaType = image.mediaType?.split(';')[0].trim() ?? '';
+  let mediaType = mediaTypeEssence(image.mediaType) ?? '';
   if (!ALLOWED_IMAGE_TYPES.has(mediaType)) {
     mediaType = inferMediaTypeFromUrl(url) ?? '';
   }

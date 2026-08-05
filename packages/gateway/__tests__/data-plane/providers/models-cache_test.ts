@@ -29,6 +29,7 @@ const stubInstance = (
   upstreamId: UPSTREAM_ID,
   kind: 'custom',
   name: UPSTREAM_ID,
+  inboundHeaderAllowlist: [],
   disabledPublicModelIds: [],
   modelPrefix: null,
   modelsCache,

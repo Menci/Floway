@@ -4,7 +4,6 @@ import type { ProviderModule } from '@floway-dev/provider';
 
 export const copilotProviderModule: ProviderModule = {
   create: createCopilotProvider,
-  inboundHeaderAllowlist: [],
   defaultFlags: COPILOT_DEFAULT_FLAGS,
 };
 

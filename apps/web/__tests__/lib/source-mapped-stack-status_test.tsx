@@ -31,7 +31,7 @@ describe('what the error page is told about its trace', () => {
     vi.stubGlobal('location', new URL('https://gateway.test/dashboard') as unknown as Location);
     vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) =>
       Promise.resolve(String(input).endsWith('.map')
-        ? new Response(JSON.stringify(MAP), { headers: { 'content-type': 'application/json' } })
+        ? new Response(JSON.stringify(MAP), { headers: { 'content-type': 'Application/SourceMap+JSON; charset=utf-8' } })
         : new Response('const a=1;\n//# sourceMappingURL=chunk.js.map', { headers: { 'content-type': 'text/javascript' } }))));
   });
   afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
