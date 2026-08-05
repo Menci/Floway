@@ -1,6 +1,7 @@
 import { isEqual, uniqWith } from 'es-toolkit';
 
 import { internalModelFromProviderModel } from './catalog.ts';
+import { settleCatalogTasks } from './catalog-settlement.ts';
 import { fetchUpstreamModelsCached } from './models-cache.ts';
 import { listModelProviders, type GatewayProvider } from './registry.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
@@ -8,7 +9,7 @@ import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasRecord } from '../../repo/types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelKind } from '@floway-dev/protocols/common';
-import { isAbortError, type Fetcher, type ModelCandidate } from '@floway-dev/provider';
+import type { Fetcher, ModelCandidate } from '@floway-dev/provider';
 
 // Resolve one inbound id against one upstream. The upstream's
 // `modelPrefix.addressable` configuration decides which lookup branches
@@ -81,7 +82,7 @@ export const enumerateRealModelCandidates = async (
   readonly sawAnyId: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
-  const settled = await Promise.allSettled(providers.map(provider =>
+  const settled = await settleCatalogTasks(providers.map(provider => () =>
     enumerateOneUpstreamCandidates(provider, modelId, kind, fetcherForUpstream(provider.upstreamId), scheduler)));
 
   const failedUpstreams: string[] = [];
@@ -89,8 +90,6 @@ export const enumerateRealModelCandidates = async (
   let sawAnyId = false;
   for (const [index, result] of settled.entries()) {
     if (result.status === 'rejected') {
-      const error = result.reason;
-      if (isAbortError(error)) throw error;
       failedUpstreams.push(providers[index].name);
       continue;
     }

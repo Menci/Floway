@@ -362,7 +362,7 @@ test('enumerateModelCandidates deduplicates failedUpstreams across the dated-suf
 // stale catalog. The provider's `fetchUpstreamModels` wraps the upstream
 // fetch error in a ProviderModelsUnavailableError with the AbortError as
 // its cause, so the resolver's detection walks the cause chain.
-test('enumerateModelCandidates rethrows AbortError from a per-upstream catalog fetch', async () => {
+test('enumerateModelCandidates rethrows AbortError without waiting for a pending sibling catalog', async () => {
   clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
@@ -372,29 +372,52 @@ test('enumerateModelCandidates rethrows AbortError from a per-upstream catalog f
     sortOrder: 1,
     config: { baseUrl: 'https://aborting.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
   }));
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_pending',
+    name: 'Pending',
+    sortOrder: 2,
+    config: { baseUrl: 'https://pending.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+  }));
 
   const abortError = Object.assign(new Error('aborted'), { name: 'AbortError' });
+  let pendingStarted!: () => void;
+  const started = new Promise<void>(resolve => { pendingStarted = resolve; });
+  let releasePending!: (response: Response) => void;
+  const pendingResponse = new Promise<Response>(resolve => { releasePending = resolve; });
   await withMockedFetch(
     request => {
       const url = new URL(request.url);
       if (url.hostname === 'aborting.example.com' && url.pathname === '/v1/models') {
         throw abortError;
       }
+      if (url.hostname === 'pending.example.com' && url.pathname === '/v1/models') {
+        pendingStarted();
+        return pendingResponse;
+      }
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      let thrown: unknown = null;
-      try {
-        await enumerateModelCandidates({
-          upstreamIds: null,
-          model: 'any-model',
-          kind: 'chat',
-          scheduler: testScheduler,
-          runtimeLocation: 'TEST',
-        });
-      } catch (e) {
-        thrown = e;
-      }
+      let thrownBeforeSiblingSettled: unknown = null;
+      const result = enumerateModelCandidates({
+        upstreamIds: null,
+        model: 'any-model',
+        kind: 'chat',
+        scheduler: testScheduler,
+        runtimeLocation: 'TEST',
+      }).then(
+        value => ({ status: 'fulfilled', value } as const),
+        error => {
+          thrownBeforeSiblingSettled = error;
+          return { status: 'rejected', error } as const;
+        },
+      );
+      await started;
+      await new Promise(resolve => setTimeout(resolve, 0));
+      const observed = thrownBeforeSiblingSettled;
+      releasePending(jsonResponse({ object: 'list', data: [] }));
+      const final = await result;
+      const thrown = final.status === 'rejected' ? final.error : null;
+
       // The thrown error chains back to our injected AbortError via .cause.
       const isAbortInChain = (err: unknown): boolean => {
         for (let cur: unknown = err; cur != null; cur = (cur as { cause?: unknown }).cause) {
@@ -404,6 +427,9 @@ test('enumerateModelCandidates rethrows AbortError from a per-upstream catalog f
       };
       if (!isAbortInChain(thrown)) {
         throw new Error(`expected rejection to carry an AbortError in its cause chain; got: ${thrown instanceof Error ? `${thrown.name}: ${thrown.message}` : String(thrown)}`);
+      }
+      if (!isAbortInChain(observed)) {
+        throw new Error('expected AbortError before the pending sibling catalog settled');
       }
     },
   );

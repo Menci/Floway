@@ -12,10 +12,11 @@
 // a second registry round trip.
 
 import { compareModelIds, getModelsFromProviders, internalModelFromProviderModel, mergeRealModels } from '../../providers/catalog.ts';
+import { settleCatalogTasks } from '../../providers/catalog-settlement.ts';
 import { fetchUpstreamModelsCached } from '../../providers/models-cache.ts';
 import { listModelProviders } from '../../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { isAbortError, type Fetcher, type InternalModel, type Provider, type UpstreamRecord } from '@floway-dev/provider';
+import type { Fetcher, InternalModel, Provider, UpstreamRecord } from '@floway-dev/provider';
 
 export interface AddressableIdEntry {
   // The inbound model id the data plane will accept verbatim.
@@ -110,10 +111,9 @@ export const enumerateAddressableModelIds = async (
   //
   // A rejected per-upstream catalog refresh collapses to no addressable-
   // only contribution from THAT upstream — its listed rows already came
-  // (or were dropped) through `getModelsFromProviders`. Mirrors the `Promise.allSettled`
-  // tolerance there so a transiently-down upstream cannot tank /v1/models
-  // on a cold-start gateway.
-  const perUpstream = await Promise.allSettled(providers.map(async provider => {
+  // (or were dropped) through `getModelsFromProviders`. Ordinary failures
+  // remain isolated while caller cancellation rejects the whole fanout.
+  const perUpstream = await settleCatalogTasks(providers.map(provider => async () => {
     const cfg = provider.modelPrefix;
     const addressableOnly = cfg !== null ? cfg.addressable.filter(form => !cfg.listed.includes(form)) : [];
     if (cfg === null || addressableOnly.length === 0) return [] as AddressableIdEntry[];
@@ -159,12 +159,6 @@ export const enumerateAddressableModelIds = async (
 
   for (const result of perUpstream) {
     if (result.status === 'rejected') {
-      // Cancellation must propagate even from this tolerant fanout — the
-      // per-request abort signal cannot be masked by an upstream's slow
-      // rejection. Other failures (catalog 5xx, parse, transport) collapse
-      // to no addressable-only contribution from that upstream per the
-      // contract above.
-      if (isAbortError(result.reason)) throw result.reason;
       continue;
     }
     for (const entry of result.value) push(entry);

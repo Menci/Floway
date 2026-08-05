@@ -1,9 +1,10 @@
 import { unionEndpoints } from './endpoint-union.ts';
 import { fetchUpstreamModelsCached, MODEL_CATALOG_REVISION } from './models-cache.ts';
 import type { GatewayProvider } from './registry.ts';
+import { settleCatalogTasks } from './catalog-settlement.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
-import { isAbortError, type Fetcher, type InternalModel, type Provider, type ProviderModel, type UpstreamRecord } from '@floway-dev/provider';
+import type { Fetcher, InternalModel, Provider, ProviderModel, UpstreamRecord } from '@floway-dev/provider';
 
 interface ProviderModelsResult {
   models: InternalModel[];
@@ -113,20 +114,7 @@ const collectProviderModels = async (
       fetcher: fetcherForUpstream(instance.upstreamId),
     }).then(models => ({ instance, models }));
 
-  // Preserve ordinary per-provider failures as values so a healthy provider
-  // can still produce a partial catalog, but let cancellation reject the outer
-  // Promise immediately. `Promise.allSettled` cannot express that distinction:
-  // it waits for every sibling before the loop below can observe AbortError,
-  // so one never-settling fetch can otherwise pin a cancelled request forever.
-  const settleUnlessAborted = async (instance: GatewayProvider) => {
-    try {
-      return { status: 'fulfilled', value: await fetchOne(instance) } as const;
-    } catch (reason) {
-      if (isAbortError(reason)) throw reason;
-      return { status: 'rejected', reason } as const;
-    }
-  };
-  const settled = await Promise.all(providers.map(settleUnlessAborted));
+  const settled = await settleCatalogTasks(providers.map(instance => () => fetchOne(instance)));
 
   for (const [index, result] of settled.entries()) {
     if (result.status === 'rejected') {
