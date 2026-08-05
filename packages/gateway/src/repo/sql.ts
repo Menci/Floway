@@ -74,8 +74,7 @@ import { assertWebSearchProviderName, type WebSearchConfig } from '../shared/web
 import { AgentSetupTokenCollisionError, isAgentSetupToken } from '@floway-dev/agent-setup';
 import type { SqlBindValue, SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 import { addDecimalStrings, canonicalPricingSelectorKey, parseBillingMetric, parseModelKind, parseNonNegativeDecimalString, parsePricingSelectorKey, type AliasSelection, type AnnouncedMetadata } from '@floway-dev/protocols/common';
-import type { ProxyFallbackEntry, ModelPrefixConfig, UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
-import { normalizeModelPrefix, parsePerformanceOperation, UpstreamGenerationMismatchError, UpstreamGoneError, UpstreamKindMismatchError, type UpstreamStateWriteGuard } from '@floway-dev/provider';
+import { normalizeModelPrefix, parsePerformanceOperation, UpstreamGenerationMismatchError, UpstreamGoneError, UpstreamKindMismatchError, type ModelPrefixConfig, type ProxyFallbackEntry, type UpstreamModelsCache, type UpstreamRecord, type UpstreamStateWriteGuard } from '@floway-dev/provider';
 
 interface ApiKeyRow {
   id: string;
