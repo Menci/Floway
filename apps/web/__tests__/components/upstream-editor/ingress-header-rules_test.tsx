@@ -2,11 +2,11 @@ import { fireEvent, screen } from '@testing-library/react';
 import { FormProvider, useForm, useWatch } from 'react-hook-form';
 import { describe, expect, it, vi } from 'vitest';
 
+import type { UpstreamRecord } from '../../../src/api/types';
 import type { UpstreamEditorValues } from '../../../src/components/upstream-editor/data';
 import { valuesFromRecord } from '../../../src/components/upstream-editor/data';
 import { ProviderConfigSection } from '../../../src/components/upstream-editor/provider-config';
 import { i18n } from '../../../src/i18n';
-import type { UpstreamRecord } from '../../../src/api/types';
 import { upstreamRecord } from '../../api/upstream-fixture';
 import { renderInApp } from '../../render';
 
