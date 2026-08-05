@@ -68,16 +68,22 @@ interface ResponseSnapshot {
 // `requestedModel`-set model survives across both error variants so even an
 // outright-failed turn carries model attribution.
 
-// Anthropic-style disjoint per-category counts: input excludes cache reads
-// and cache writes; sum the present ones onto the dump's single inputTokens
-// column. Missing categories stay null (not measured) instead of zero so a
-// recorded zero genuinely means "upstream said zero".
-const tokenUsageInput = (usage: TokenUsage | null): number | null => {
+const sumTokenCategories = (
+  usage: TokenUsage | null,
+  keys: readonly Exclude<keyof TokenUsage, 'tier'>[],
+): number | null => {
   if (!usage) return null;
-  const { input, input_cache_read, input_cache_write } = usage;
-  if (input === undefined && input_cache_read === undefined && input_cache_write === undefined) return null;
-  return (input ?? 0) + (input_cache_read ?? 0) + (input_cache_write ?? 0);
+  if (keys.every(key => usage[key] === undefined)) return null;
+  return keys.reduce((sum, key) => sum + (usage[key] ?? 0), 0);
 };
+
+// Protocol usage categories are disjoint. Collapse them onto the dump's two
+// summary columns without losing cache-write tiers or image modalities.
+const tokenUsageInput = (usage: TokenUsage | null): number | null =>
+  sumTokenCategories(usage, ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image']);
+
+const tokenUsageOutput = (usage: TokenUsage | null): number | null =>
+  sumTokenCategories(usage, ['output', 'output_image']);
 
 const oneLineError = (err: unknown): string => {
   const msg = (err instanceof Error ? err.message : String(err)).replace(/\s+/g, ' ').trim();
@@ -152,7 +158,7 @@ export class DumpAccumulator {
     this.model = identity.model;
     this.upstreamId = identity.upstream;
     this.inputTokens = tokenUsageInput(usage);
-    this.outputTokens = usage?.output ?? null;
+    this.outputTokens = tokenUsageOutput(usage);
   }
 
   // --- response-side: handler exit ---
