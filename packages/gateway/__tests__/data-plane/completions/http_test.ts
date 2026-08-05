@@ -308,7 +308,9 @@ test('/v1/completions records malformed terminal usage as a failed request-only 
 
 test('/v1/completions treats EOF without DONE as failed request-only settlement', async () => {
   const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   await registerCompletionsUpstream(repo);
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
 
   await withMockedFetch(
     () => new Response('data: {"id":"cmpl_X","choices":[{"index":0,"text":"partial"}]}\n\n', { headers: { 'content-type': 'text/event-stream' } }),
@@ -329,11 +331,15 @@ test('/v1/completions treats EOF without DONE as failed request-only settlement'
   const performance = await repo.performance.listAll();
   assertEquals(performance.length, 1);
   assertEquals(performance[0]?.errorsNoOutput, 1);
+  assertEquals(dumps.stored.length, 1);
+  assertEquals(dumps.stored[0]?.record.meta.error?.kind, 'failed');
 });
 
 test('/v1/completions returns 502 for a bodyless streaming success', async () => {
   const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   await registerCompletionsUpstream(repo);
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
 
   await withMockedFetch(
     () => new Response(null, { status: 204, headers: { 'content-type': 'text/event-stream', 'x-request-id': 'bodyless-completion' } }),
@@ -355,6 +361,8 @@ test('/v1/completions returns 502 for a bodyless streaming success', async () =>
   const performance = await repo.performance.listAll();
   assertEquals(performance.length, 1);
   assertEquals(performance[0]?.errorsNoOutput, 1);
+  assertEquals(dumps.stored.length, 1);
+  assertEquals(dumps.stored[0]?.record.meta.error?.kind, 'failed');
 });
 
 test('/v1/completions rejects malformed body with the standard 400', async () => {
@@ -479,6 +487,7 @@ test('/v1/completions non-streaming records usage row, performance neutral row (
 
   assertEquals(dumpStubs.stored.length, 1);
   const dump = dumpStubs.stored[0]!.record;
+  assertEquals(dump.meta.error, null);
   assertEquals(dump.meta.path, '/v1/completions');
   assertEquals(dump.meta.status, 200);
   assertEquals(dump.meta.model, 'davinci-002');
@@ -521,6 +530,7 @@ test('/v1/completions streaming records usage row, performance neutral row (text
 
   assertEquals(dumpStubs.stored.length, 1);
   const dump = dumpStubs.stored[0]!.record;
+  assertEquals(dump.meta.error, null);
   assertEquals(dump.meta.path, '/v1/completions');
   assertEquals(dump.meta.status, 200);
   assertEquals(dump.meta.model, 'davinci-002');

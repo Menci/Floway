@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import type { Repo } from '../../../src/repo/types.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestApp, setupAppTest } from '../../test-utils/app.ts';
@@ -39,6 +39,18 @@ const requestHeaders = (apiKey: string) => ({
   'content-type': 'application/json',
   'x-api-key': apiKey,
 });
+
+const assertFailedRequestOnlySettlement = async (repo: Repo): Promise<void> => {
+  const usage = await repo.usage.listAll();
+  assertEquals(usage.length, 1);
+  assertEquals(usage[0].requests, 1);
+  assertEquals(usage[0].metrics, []);
+  const performance = await repo.performance.listAll();
+  assertEquals(performance.length, 1);
+  assertEquals(performance[0]?.requests, 1);
+  assertEquals(performance[0]?.neutral, 0);
+  assertEquals(performance[0]?.errorsNoOutput, 1);
+};
 
 test('/v1/rerank translates Cohere v1 to v2 and records Cohere search units', async () => {
   const { apiKey, repo } = await setupAppTest();
@@ -528,6 +540,68 @@ test('same-protocol success streams before EOF and settles usage after completio
   const [usage] = await repo.usage.listAll();
   assertEquals(usage.requests, 1);
   assertEquals(usage.metrics, [{ metric: 'input_tokens', quantity: '9', unitPrice: null }]);
+});
+
+test('same-protocol read failure discards already-observed rerank usage', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveRerankUpstream(repo, { protocol: 'jina-v1' });
+  const failure = new Error('upstream rerank JSON failed');
+  let pulls = 0;
+
+  await withMockedFetch(
+    () => new Response(new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        if (pulls === 1) {
+          controller.enqueue(new TextEncoder().encode('{"model":"raw-reranker","object":"list","results":[],"usage":{"total_tokens":9}}'));
+        } else {
+          controller.error(failure);
+        }
+      },
+    }, { highWaterMark: 0 }), { headers: { 'content-type': 'application/json' } }),
+    async () => {
+      const response = await requestApp('/jina/v1/rerank', {
+        method: 'POST',
+        headers: requestHeaders(apiKey.key),
+        body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),
+      });
+      await expect(response.text()).rejects.toBe(failure);
+    },
+  );
+
+  await flushAsyncWork();
+  await assertFailedRequestOnlySettlement(repo);
+});
+
+test('same-protocol cancellation discards already-observed rerank usage', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveRerankUpstream(repo, { protocol: 'jina-v1' });
+  let upstreamCanceled = false;
+
+  await withMockedFetch(
+    () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"model":"raw-reranker","object":"list","results":[],"usage":{"total_tokens":9}}'));
+      },
+      cancel() {
+        upstreamCanceled = true;
+      },
+    }), { headers: { 'content-type': 'application/json' } }),
+    async () => {
+      const response = await requestApp('/jina/v1/rerank', {
+        method: 'POST',
+        headers: requestHeaders(apiKey.key),
+        body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),
+      });
+      const reader = response.body!.getReader();
+      await reader.read();
+      await reader.cancel('client left');
+    },
+  );
+
+  assertEquals(upstreamCanceled, true);
+  await flushAsyncWork();
+  await assertFailedRequestOnlySettlement(repo);
 });
 
 test('cross-protocol success still validates result items before rendering', async () => {

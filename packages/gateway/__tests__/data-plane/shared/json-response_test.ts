@@ -17,6 +17,18 @@ const deferred = () => {
   return { promise, resolve };
 };
 
+const expectFailedSettlement = async (repo: InMemoryRepo): Promise<void> => {
+  const usage = await repo.usage.listAll();
+  expect(usage).toHaveLength(1);
+  expect(usage[0].requests).toBe(1);
+  expect(tokenCountsFromUsage(usage[0])).toEqual({});
+  const performance = await repo.performance.listAll();
+  expect(performance).toHaveLength(1);
+  expect(performance[0].requests).toBe(1);
+  expect(performance[0].neutral).toBe(0);
+  expect(performance[0].errorsNoOutput).toBe(1);
+};
+
 const harness = (scheduler?: BackgroundScheduler) => {
   const repo = new InMemoryRepo();
   initRepo(repo);
@@ -49,6 +61,7 @@ test('observeJsonResponse forwards bytes before EOF and settles usage only after
   const { repo, observe, flush } = harness();
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
+  const pullStarted = deferred();
   let pulled = false;
   const upstream = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -57,6 +70,7 @@ test('observeJsonResponse forwards bytes before EOF and settles usage only after
     async pull(controller) {
       if (pulled) return;
       pulled = true;
+      pullStarted.resolve();
       await gate;
       controller.enqueue(encoder.encode('],"usage":{"prompt_tokens":3,"total_tokens":3}}'));
       controller.close();
@@ -67,9 +81,13 @@ test('observeJsonResponse forwards bytes before EOF and settles usage only after
   const reader = response.body!.getReader();
   const first = await reader.read();
   expect(new TextDecoder().decode(first.value)).toBe('{"data":[');
+  const second = reader.read();
+  await pullStarted.promise;
+  expect(pulled).toBe(true);
   expect(await repo.usage.listAll()).toEqual([]);
 
   release();
+  await second;
   while (!(await reader.read()).done) { /* drain */ }
   await flush();
 
@@ -237,12 +255,7 @@ test('observeJsonResponse cancels the upstream and settles a failed request exac
   await flush();
 
   expect(canceled).toBe(1);
-  const usage = await repo.usage.listAll();
-  expect(usage).toHaveLength(1);
-  expect(tokenCountsFromUsage(usage[0])).toEqual({});
-  const performance = await repo.performance.listAll();
-  expect(performance).toHaveLength(1);
-  expect(performance[0].errorsNoOutput).toBe(1);
+  await expectFailedSettlement(repo);
 });
 
 test('observeJsonResponse latches cancellation before a pending upstream read resolves', async () => {
@@ -269,8 +282,7 @@ test('observeJsonResponse latches cancellation before a pending upstream read re
   await flush();
 
   expect(canceled).toBe(1);
-  expect((await repo.usage.listAll())).toHaveLength(1);
-  expect((await repo.performance.listAll())[0].errorsNoOutput).toBe(1);
+  await expectFailedSettlement(repo);
 });
 
 test('observeJsonResponse settles cancellation without waiting for upstream cleanup', { timeout: 2_000 }, async () => {
@@ -291,8 +303,7 @@ test('observeJsonResponse settles cancellation without waiting for upstream clea
   await flush();
 
   expect(canceled).toBe(true);
-  expect((await repo.usage.listAll())).toHaveLength(1);
-  expect((await repo.performance.listAll())[0].errorsNoOutput).toBe(1);
+  await expectFailedSettlement(repo);
 });
 
 test('observeJsonResponse exposes upstream read failure and settles once', async () => {
@@ -310,12 +321,7 @@ test('observeJsonResponse exposes upstream read failure and settles once', async
 
   await expect(response.text()).rejects.toBe(failure);
   await flush();
-  const usage = await repo.usage.listAll();
-  expect(usage).toHaveLength(1);
-  expect(tokenCountsFromUsage(usage[0])).toEqual({});
-  const performance = await repo.performance.listAll();
-  expect(performance).toHaveLength(1);
-  expect(performance[0].errorsNoOutput).toBe(1);
+  await expectFailedSettlement(repo);
 });
 
 test('observeJsonResponse exposes a terminal settlement failure without leaving the body pending', async () => {

@@ -147,6 +147,72 @@ test('/v1/embeddings records usage under request model when upstream omits model
   assertEquals(performanceRows[0]?.errorsWithOutput, 0);
 });
 
+test('/v1/embeddings streams JSON before EOF and settles usage after completion', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  clearInProcessCopilotTokenCache();
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_embed_stream',
+    name: 'Streaming Embedding Provider',
+    config: {
+      baseUrl: 'https://embed-stream.example.com',
+      authStyle: 'bearer',
+      ingressHeadersRules: [],
+      apiKey: 'sk-embed-stream',
+      endpoints: {},
+      modelsFetch: { enabled: false },
+      models: [{
+        upstreamModelId: 'embed-stream-upstream',
+        publicModelId: 'embed-stream',
+        kind: 'embedding',
+        endpoints: { embeddings: {} },
+      }],
+    },
+  }));
+  const eofGate = deferred();
+  const eofPullStarted = deferred();
+  const encoder = new TextEncoder();
+
+  await withMockedFetch(
+    () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('{"data":['));
+      },
+      async pull(controller) {
+        eofPullStarted.resolve();
+        await eofGate.promise;
+        controller.enqueue(encoder.encode('],"usage":{"prompt_tokens":5,"total_tokens":5}}'));
+        controller.close();
+      },
+    }, { highWaterMark: 0 }), { headers: { 'content-type': 'application/json' } }),
+    async () => {
+      const response = await requestApp('/v1/embeddings', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({ model: 'embed-stream', input: 'hello' }),
+      });
+      const reader = response.body!.getReader();
+      try {
+        const first = await reader.read();
+        assertEquals(new TextDecoder().decode(first.value), '{"data":[');
+        const second = reader.read();
+        await eofPullStarted.promise;
+        assertEquals(await repo.usage.listAll(), []);
+        eofGate.resolve();
+        await second;
+        while (!(await reader.read()).done) { /* drain */ }
+      } finally {
+        eofGate.resolve();
+        await reader.cancel().catch(() => {});
+      }
+    },
+  );
+
+  await flushAsyncWork();
+  const [usage] = await repo.usage.listAll();
+  assertEquals(tokenCountsFromUsage(usage), { input: 5 });
+});
+
 test('/v1/embeddings preserves a success with malformed usage as a request-only row', async () => {
   const { apiKey, repo } = await setupAppTest();
 

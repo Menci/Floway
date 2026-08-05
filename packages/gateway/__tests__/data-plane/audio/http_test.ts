@@ -51,6 +51,12 @@ const appendTranscriptionFile = (form: FormData): void => {
   form.append('file', new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'audio/wav' }), 'meeting.wav');
 };
 
+const deferred = () => {
+  let resolve!: () => void;
+  const promise = new Promise<void>(res => { resolve = res; });
+  return { promise, resolve };
+};
+
 const transcriptionForm = (fields: readonly [string, string][] = []): FormData => {
   const form = new FormData();
   // File intentionally precedes model: multipart field order is unconstrained.
@@ -69,6 +75,7 @@ const assertFailedRequestOnlySettlement = async (repo: InMemoryRepo): Promise<vo
   const performance = await repo.performance.listAll();
   assertEquals(performance.length, 1);
   assertEquals(performance[0]?.requests, 1);
+  assertEquals(performance[0]?.neutral, 0);
   assertEquals(performance[0]?.errorsNoOutput, 1);
 };
 
@@ -202,6 +209,80 @@ test('/v1/audio/transcriptions preserves multipart fields, headers, JSON body, a
     { metric: 'input_audio_tokens', quantity: '10', unitPrice: '0.000002' },
     { metric: 'output_tokens', quantity: '45', unitPrice: '0.000004' },
   ]);
+});
+
+test('/v1/audio/transcriptions streams JSON before EOF and settles usage after completion', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerAudioModel(repo);
+  const eofGate = deferred();
+  const eofPullStarted = deferred();
+  const encoder = new TextEncoder();
+
+  await withMockedFetch(
+    () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('{"text":"hello",'));
+      },
+      async pull(controller) {
+        eofPullStarted.resolve();
+        await eofGate.promise;
+        controller.enqueue(encoder.encode('"usage":{"type":"tokens","input_tokens":4,"output_tokens":2,"total_tokens":6}}'));
+        controller.close();
+      },
+    }, { highWaterMark: 0 }), { headers: { 'content-type': 'application/json' } }),
+    async () => {
+      const response = await requestApp('/v1/audio/transcriptions', {
+        method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm(),
+      });
+      const reader = response.body!.getReader();
+      try {
+        const first = await reader.read();
+        assertEquals(new TextDecoder().decode(first.value), '{"text":"hello",');
+        const second = reader.read();
+        await eofPullStarted.promise;
+        assertEquals(await repo.usage.listAll(), []);
+        eofGate.resolve();
+        await second;
+        while (!(await reader.read()).done) { /* drain */ }
+      } finally {
+        eofGate.resolve();
+        await reader.cancel().catch(() => {});
+      }
+    },
+  );
+
+  await flushAsyncWork();
+  const [usage] = await repo.usage.listAll();
+  assertEquals(usage.metrics, [
+    { metric: 'input_tokens', quantity: '4', unitPrice: null },
+    { metric: 'output_tokens', quantity: '2', unitPrice: null },
+  ]);
+});
+
+test('/v1/audio/transcriptions discards observed JSON usage when the downstream cancels', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerAudioModel(repo);
+  let upstreamCanceled = false;
+  await withMockedFetch(
+    () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"text":"hello","usage":{"type":"tokens","input_tokens":4,"output_tokens":2,"total_tokens":6}}'));
+      },
+      cancel() {
+        upstreamCanceled = true;
+      },
+    }), { headers: { 'content-type': 'application/json' } }),
+    async () => {
+      const response = await requestApp('/v1/audio/transcriptions', {
+        method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm(),
+      });
+      const reader = response.body!.getReader();
+      await reader.read();
+      await reader.cancel('client left');
+    },
+  );
+  assertEquals(upstreamCanceled, true);
+  await assertFailedRequestOnlySettlement(repo);
 });
 
 test('/v1/audio/transcriptions rebuilds the complete multipart body for a failover candidate', async () => {

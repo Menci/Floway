@@ -479,6 +479,7 @@ test('/v1/images/generations streams before upstream EOF and settles completed-e
   const { apiKey, repo } = await setupAppTest();
   await registerImagesUpstream(repo);
   const eofGate = deferred();
+  const eofPullStarted = deferred();
   const encoder = new TextEncoder();
   let forwarded: Record<string, unknown> | undefined;
 
@@ -493,6 +494,7 @@ test('/v1/images/generations streams before upstream EOF and settles completed-e
           ].join('')));
         },
         async pull(controller) {
+          eofPullStarted.resolve();
           await eofGate.promise;
           controller.close();
         },
@@ -513,9 +515,13 @@ test('/v1/images/generations streams before upstream EOF and settles completed-e
           text += decoder.decode(chunk.value, { stream: true });
         }
         assertEquals(text.includes('image_generation.partial_image'), true);
+        const eofRead = reader.read();
+        await eofPullStarted.promise;
         assertEquals(await repo.usage.listAll(), []);
 
         eofGate.resolve();
+        const eofChunk = await eofRead;
+        if (!eofChunk.done) text += decoder.decode(eofChunk.value, { stream: true });
         while (true) {
           const chunk = await reader.read();
           if (chunk.done) break;
