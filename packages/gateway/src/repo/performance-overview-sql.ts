@@ -49,6 +49,71 @@ const overviewHoursSql = (scoped: boolean) => `/* performance-overview-hours */
   GROUP BY performance_summary.hour
   ORDER BY performance_summary.hour`;
 
+interface PerformanceAxisSql {
+  axis: PerformanceOverviewAxis;
+  bucket: string;
+  group: string;
+  where: string;
+}
+
+const seriesGroupSql = `CASE settings.series_group_by
+  WHEN 'keyId' THEN filtered_summary.key_id
+  WHEN 'userId' THEN CAST(filtered_summary.user_id AS TEXT)
+  WHEN 'model' THEN filtered_summary.model
+  WHEN 'upstream' THEN filtered_summary.upstream
+  WHEN 'operation' THEN filtered_summary.operation
+  WHEN 'runtimeLocation' THEN filtered_summary.runtime_location
+END`;
+
+const performanceAxisSql: readonly PerformanceAxisSql[] = [
+  { axis: 'series', bucket: 'bucket_map.bucket', group: seriesGroupSql, where: "settings.series_group_by != 'userId' OR filtered_summary.user_id IS NOT NULL" },
+  { axis: 'none', bucket: "'all'", group: "'all'", where: '1' },
+  { axis: 'keyId', bucket: "'all'", group: 'filtered_summary.key_id', where: 'filtered_summary.owned = 1' },
+  { axis: 'userId', bucket: "'all'", group: 'CAST(filtered_summary.user_id AS TEXT)', where: 'settings.is_admin = 1 AND filtered_summary.user_id IS NOT NULL' },
+  { axis: 'model', bucket: "'all'", group: 'filtered_summary.model', where: '1' },
+  { axis: 'upstream', bucket: "'all'", group: 'filtered_summary.upstream', where: '1' },
+  { axis: 'operation', bucket: "'all'", group: 'filtered_summary.operation', where: '1' },
+  { axis: 'runtimeLocation', bucket: "'all'", group: 'filtered_summary.runtime_location', where: '1' },
+];
+
+const summaryAggregateSql = performanceAxisSql.map(({ axis, bucket, group, where }) => `
+  SELECT
+    '${axis}' AS axis,
+    ${bucket} AS bucket,
+    ${group} AS group_value,
+    SUM(filtered_summary.requests) AS requests,
+    SUM(filtered_summary.errors_with_output) + SUM(filtered_summary.errors_no_output) AS errors,
+    SUM(filtered_summary.ttft_samples_ok) + SUM(filtered_summary.errors_with_output) AS ttft_samples,
+    SUM(filtered_summary.tpot_samples) AS tpot_samples,
+    SUM(filtered_summary.neutral) AS neutral
+  FROM filtered_summary
+  CROSS JOIN settings
+  JOIN bucket_map ON bucket_map.hour = filtered_summary.hour
+  WHERE ${where}
+  GROUP BY bucket, group_value`).join('\n  UNION ALL');
+
+const histogramAggregateSql = performanceAxisSql.map(({ axis, bucket, group, where }) => `
+  SELECT
+    '${axis}' AS axis,
+    ${bucket} AS bucket,
+    ${group} AS group_value,
+    performance_buckets.metric,
+    performance_buckets.lower,
+    MAX(performance_buckets.upper) AS upper,
+    SUM(performance_buckets.count) AS count
+  FROM filtered_summary
+  CROSS JOIN settings
+  JOIN bucket_map ON bucket_map.hour = filtered_summary.hour
+  JOIN performance_buckets ON
+    performance_buckets.hour = filtered_summary.hour
+    AND performance_buckets.key_id = filtered_summary.key_id
+    AND performance_buckets.model = filtered_summary.model
+    AND performance_buckets.upstream = filtered_summary.upstream
+    AND performance_buckets.operation = filtered_summary.operation
+    AND performance_buckets.runtime_location = filtered_summary.runtime_location
+  WHERE ${where}
+  GROUP BY bucket, group_value, performance_buckets.metric, performance_buckets.lower`).join('\n  UNION ALL');
+
 const overviewSql = (scoped: boolean) => `/* performance-overview */
 WITH
 settings(actor_user_id, is_admin, series_group_by) AS (
@@ -110,80 +175,28 @@ filtered_summary AS MATERIALIZED (
     AND (NOT EXISTS (SELECT 1 FROM user_filter) OR user_id IN (SELECT value FROM user_filter))
     AND (NOT EXISTS (SELECT 1 FROM key_filter) OR key_id IN (SELECT value FROM key_filter))
 ),
-axes(axis, grouping, bucketed, owned_only, admin_only) AS (
-  SELECT 'series', series_group_by, 1, 0, 0 FROM settings
-  UNION ALL SELECT 'none', 'none', 0, 0, 0
-  UNION ALL SELECT 'keyId', 'keyId', 0, 1, 0
-  UNION ALL SELECT 'userId', 'userId', 0, 0, 1
-  UNION ALL SELECT 'model', 'model', 0, 0, 0
-  UNION ALL SELECT 'upstream', 'upstream', 0, 0, 0
-  UNION ALL SELECT 'operation', 'operation', 0, 0, 0
-  UNION ALL SELECT 'runtimeLocation', 'runtimeLocation', 0, 0, 0
-),
-projected_summary AS MATERIALIZED (
-  SELECT
-    filtered_summary.*,
-    axes.axis,
-    CASE WHEN axes.bucketed = 1 THEN bucket_map.bucket ELSE 'all' END AS bucket,
-    CASE axes.grouping
-      WHEN 'none' THEN 'all'
-      WHEN 'keyId' THEN filtered_summary.key_id
-      WHEN 'userId' THEN CAST(filtered_summary.user_id AS TEXT)
-      WHEN 'model' THEN filtered_summary.model
-      WHEN 'upstream' THEN filtered_summary.upstream
-      WHEN 'operation' THEN filtered_summary.operation
-      WHEN 'runtimeLocation' THEN filtered_summary.runtime_location
-    END AS group_value
-  FROM filtered_summary
-  CROSS JOIN axes
-  CROSS JOIN settings
-  JOIN bucket_map ON bucket_map.hour = filtered_summary.hour
-  WHERE (axes.owned_only = 0 OR filtered_summary.owned = 1)
-    AND (axes.admin_only = 0 OR settings.is_admin = 1)
-    AND (axes.grouping != 'userId' OR filtered_summary.user_id IS NOT NULL)
-),
 summary_aggregates AS MATERIALIZED (
-  SELECT
-    axis,
-    bucket,
-    group_value,
-    SUM(requests) AS requests,
-    SUM(errors_with_output) + SUM(errors_no_output) AS errors,
-    SUM(ttft_samples_ok) + SUM(errors_with_output) AS ttft_samples,
-    SUM(tpot_samples) AS tpot_samples,
-    SUM(neutral) AS neutral
-  FROM projected_summary
-  GROUP BY axis, bucket, group_value
-),
-projected_histogram AS MATERIALIZED (
-  SELECT
-    projected_summary.axis,
-    projected_summary.bucket,
-    projected_summary.group_value,
-    performance_buckets.metric,
-    performance_buckets.lower,
-    performance_buckets.upper,
-    performance_buckets.count
-  FROM projected_summary
-  JOIN performance_buckets ON
-    performance_buckets.hour = projected_summary.hour
-    AND performance_buckets.key_id = projected_summary.key_id
-    AND performance_buckets.model = projected_summary.model
-    AND performance_buckets.upstream = projected_summary.upstream
-    AND performance_buckets.operation = projected_summary.operation
-    AND performance_buckets.runtime_location = projected_summary.runtime_location
+  ${summaryAggregateSql}
 ),
 invalid_histogram_bounds AS MATERIALIZED (
   SELECT 1 AS present
-  FROM projected_histogram
-  GROUP BY axis, bucket, group_value, metric, lower
-  HAVING COUNT(DISTINCT COALESCE(CAST(upper AS TEXT), 'null')) > 1
+  FROM filtered_summary
+  JOIN performance_buckets ON
+    performance_buckets.hour = filtered_summary.hour
+    AND performance_buckets.key_id = filtered_summary.key_id
+    AND performance_buckets.model = filtered_summary.model
+    AND performance_buckets.upstream = filtered_summary.upstream
+    AND performance_buckets.operation = filtered_summary.operation
+    AND performance_buckets.runtime_location = filtered_summary.runtime_location
+  GROUP BY performance_buckets.hour, performance_buckets.key_id,
+    performance_buckets.model, performance_buckets.upstream,
+    performance_buckets.operation, performance_buckets.runtime_location,
+    performance_buckets.metric, performance_buckets.lower
+  HAVING COUNT(DISTINCT COALESCE(CAST(performance_buckets.upper AS TEXT), 'null')) > 1
   LIMIT 1
 ),
 histogram AS MATERIALIZED (
-  SELECT axis, bucket, group_value, metric, lower, MAX(upper) AS upper, SUM(count) AS count
-  FROM projected_histogram
-  GROUP BY axis, bucket, group_value, metric, lower
+  ${histogramAggregateSql}
 ),
 ranked_histogram AS MATERIALIZED (
   SELECT
