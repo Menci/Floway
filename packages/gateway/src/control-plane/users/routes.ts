@@ -115,9 +115,13 @@ export const deleteUser = async (c: AuthedContext) => {
   // The atomic state change wins before broker delivery begins. Keep the
   // best-effort closes sequential in background so a slow broker neither
   // delays the response once per key nor creates unbounded subrequest fanout.
-  backgroundSchedulerFromContext(c)((async () => {
-    for (const keyId of result.apiKeyIds) await notifyDisabledBestEffort(keyId, 'deleteUser cascade');
-  })());
+  try {
+    backgroundSchedulerFromContext(c)((async () => {
+      for (const keyId of result.apiKeyIds) await notifyDisabledBestEffort(keyId, 'deleteUser cascade');
+    })());
+  } catch (error) {
+    console.error('[dump] background scheduling failed during deleteUser cascade', error);
+  }
   return c.json({ ok: true });
 };
 

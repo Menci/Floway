@@ -3,8 +3,9 @@ import { expect, test, vi } from 'vitest';
 import { DUMP_DISABLED_REASON } from '../../../src/dump/broker.ts';
 import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import type { ApiKey, User } from '../../../src/repo/types.ts';
+import { initBackgroundSchedulerResolver } from '../../../src/runtime/background.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
-import { flushBackground } from '../../test-utils/background-tracker.ts';
+import { flushBackground, trackBackground } from '../../test-utils/background-tracker.ts';
 import { requestControlPlane, setupControlPlaneTest, TEST_PASSWORD, TEST_PASSWORD_HASH } from '../../test-utils/control-plane.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
@@ -366,4 +367,24 @@ test('DELETE /api/users/:id responds after atomic revocation without waiting onc
   release();
   await flushBackground();
   assertEquals(attempts, ['key_1', 'key_2']);
+});
+
+test('DELETE /api/users/:id keeps its committed result when background scheduling is unavailable', async () => {
+  const { adminSession, repo } = await setupControlPlaneTest();
+  await repo.users.save(sampleUser());
+  await repo.apiKeys.save(sampleKey(3, 'key_1', '1'));
+  initBackgroundSchedulerResolver(() => { throw new Error('scheduler unavailable'); });
+  const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const response = await adminDelete(adminSession, 3);
+    assertEquals(response.status, 200);
+    expect(await repo.users.getById(3)).toBeNull();
+    expect(consoleSpy).toHaveBeenCalledWith(
+      '[dump] background scheduling failed during deleteUser cascade',
+      expect.objectContaining({ message: 'scheduler unavailable' }),
+    );
+  } finally {
+    consoleSpy.mockRestore();
+    initBackgroundSchedulerResolver(_c => trackBackground);
+  }
 });
