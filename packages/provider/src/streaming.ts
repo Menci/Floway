@@ -22,7 +22,7 @@ const readBodySnippet = async (response: Response): Promise<string> => {
       }
       text += decoder.decode(value, { stream: true });
       if (text.length > BODY_SNIPPET_CHARS) {
-        await reader.cancel();
+        void reader.cancel().catch(() => undefined);
         return `${text.slice(0, BODY_SNIPPET_CHARS)}...[truncated]`;
       }
     }

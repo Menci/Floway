@@ -106,6 +106,7 @@ test('streamingProviderCall truncates oversized bodies in the error message', as
     },
     cancel() {
       cancelled = true;
+      return new Promise<void>(() => {});
     },
   });
   const response = new Response(body, { status: 200, headers: { 'content-type': 'application/json' } });

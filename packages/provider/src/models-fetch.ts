@@ -21,7 +21,7 @@ const readJsonBody = async (response: Response, maxBytes: number): Promise<unkno
       if (done) break;
       totalBytes += value.byteLength;
       if (totalBytes > maxBytes) {
-        await reader.cancel();
+        void reader.cancel().catch(() => undefined);
         throw new Error(`Provider model listing exceeded ${maxBytes} response bytes`);
       }
       chunks.push(value);

@@ -14,10 +14,12 @@ test('fetchUpstreamModels accepts the byte boundary and cancels an oversized suc
   let cancelled = false;
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
-      controller.enqueue(bytes);
+      controller.enqueue(bytes.slice(0, 6));
+      controller.enqueue(bytes.slice(6));
     },
     cancel() {
       cancelled = true;
+      return new Promise<void>(() => {});
     },
   });
   const result = fetchUpstreamModels(
