@@ -98,7 +98,7 @@ export type ProviderResponsesResult =
 //
 // `headers` is the ordinary inbound-headers conduit from gateway to provider.
 // The gateway filters the source request through the provider module's
-// `inboundHeaderAllowlist` before constructing this bag. Source-protocol
+// `inboundHeaderAllowlist` before constructing this bag. Protocol-owned
 // metadata is carried by its owning invocation boundary and does not widen
 // this provider-level policy. A provider may clone and mutate the bag for
 // request-specific wire shaping, but must not retain the gateway-owned

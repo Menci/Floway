@@ -290,9 +290,10 @@ case-insensitive exact names and lowercase-name regular expressions for
 ordinary client headers that provider accepts. The gateway applies the
 allowlist after it selects a candidate and before it calls the provider, so
 failover candidates never share a filtered or mutated header bag.
-Source-protocol metadata remains outside that generic policy: native Messages
-carries `anthropic-beta` through its own boundary, and Copilot parses it into
-`MessagesBoundaryCtx.anthropicBeta` before its interceptor chain. The gateway
+Protocol-owned transport metadata remains outside that generic policy: a
+native Messages target carries `anthropic-beta` through its own boundary, and
+Copilot parses it into `MessagesBoundaryCtx.anthropicBeta` before its
+interceptor chain. The gateway
 owns the control-plane handlers that call vendor APIs and maps their results
 onto Floway HTTP responses.
 
