@@ -29,6 +29,7 @@ const record = upstreamRecord('up_copilot', {
 
 let pollResponse: () => Promise<Response>;
 let fetchMock: ReturnType<typeof vi.fn>;
+let startRecord: { config: { githubHost: string } } | null;
 
 const pollCount = () =>
   fetchMock.mock.calls.filter(([input]) => String(input).includes(DEVICE_LOGIN_POLL)).length;
@@ -44,9 +45,15 @@ const startFlow = async () => {
 
 beforeEach(() => {
   vi.useFakeTimers();
-  fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-    const { pathname } = new URL(String(input), 'http://localhost');
-    if (pathname === DEVICE_LOGIN_START) return Response.json(flow);
+  startRecord = null;
+  fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const request = input instanceof Request ? input : new Request(input, init);
+    const { pathname } = new URL(request.url, 'http://localhost');
+    if (pathname === DEVICE_LOGIN_START) {
+      const body = (await request.clone().json()) as { record: { config: { githubHost: string } } };
+      startRecord = body.record;
+      return Response.json({ ...flow, verification_uri: `https://${body.record.config.githubHost}/login/device` });
+    }
     if (pathname === DEVICE_LOGIN_POLL) return await pollResponse();
     throw new Error(`Unexpected request to ${pathname}`);
   });
@@ -59,6 +66,21 @@ afterEach(() => {
 });
 
 describe('Copilot device-flow polling', () => {
+  it('sends a freeform GHE host and locks it for the active device flow', async () => {
+    pollResponse = async () => Response.json({ status: 'pending' });
+    renderInApp(<ProviderConfigHarness record={record} />);
+    const host = screen.getByRole('combobox', { name: copilot('githubHost') }) as HTMLInputElement;
+
+    fireEvent.change(host, { target: { value: 'octocorp.ghe.com' } });
+    expect(screen.getByText('Connect the Copilot subscription assigned to your octocorp.ghe.com account.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: copilot('connect') }));
+    await advance(0);
+
+    expect(startRecord?.config.githubHost).toBe('octocorp.ghe.com');
+    expect(host.readOnly).toBe(true);
+    expect(screen.getByRole('link').getAttribute('href')).toBe('https://octocorp.ghe.com/login/device');
+  });
+
   it('ends the flow and surfaces the message when GitHub rejects the device code', async () => {
     pollResponse = async () => Response.json({ error: { message: 'expired_token' } }, { status: 400 });
     await startFlow();
