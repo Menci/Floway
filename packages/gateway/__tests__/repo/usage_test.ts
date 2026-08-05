@@ -368,3 +368,32 @@ test('SQL usage overview matches the in-memory oracle across filters, facets, ax
     cost: '900719925.4940992',
   });
 });
+
+test('SQL usage overview uses key-hour indexes for an actor-scoped aggregate', async () => {
+  const db = await createSqliteTestDb();
+  const seedRepo = new SqlRepo(db);
+  await seedRepo.apiKeys.save(apiKey('key-1', 1));
+  await seedRepo.usage.set(record({ keyId: 'key-1' }));
+  const captured: CapturedStatement[] = [];
+  const repo = new SqlRepo(recordBoundStatements(db, captured));
+
+  await repo.usage.queryOverview({
+    actorUserId: 1,
+    isAdmin: true,
+    start: '2026-07-12T00',
+    end: '2026-07-12T01',
+    groupBy: 'keyId',
+    filters: { keyIds: [], userIds: [], models: [], upstreams: [] },
+    keyToUser: new Map([['key-1', 1]]),
+    bucketForHour: hour => hour,
+  });
+
+  const statement = captured.find(candidate => candidate.query.startsWith('/* usage-overview */'));
+  if (!statement) throw new Error('Usage overview SQL was not captured');
+  const { results } = await db.prepare(`EXPLAIN QUERY PLAN ${statement.query}`)
+    .bind(...statement.binds)
+    .all<{ detail: string }>();
+  const plan = results.map(row => row.detail).join('\n');
+  assertEquals(plan.includes('idx_usage_metric_key_hour'), true);
+  assertEquals(plan.includes('idx_usage_requests_key_hour'), true);
+});
