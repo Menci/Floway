@@ -9,7 +9,7 @@ import type {
   ClaudeCodeUpstreamState,
 } from '../src/state.ts';
 import { initProviderRepo, type MessagesUpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
-import { noopUpstreamCallOptions, stubProviderModel } from '@floway-dev/test-utils';
+import { noopMessagesUpstreamCallOptions as noopUpstreamCallOptions, stubProviderModel } from '@floway-dev/test-utils';
 
 const upstreamId = 'up_cc';
 

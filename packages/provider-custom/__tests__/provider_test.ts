@@ -5,7 +5,7 @@ import type { ModelPricing } from '@floway-dev/protocols/common';
 import { parseRerankRequest } from '@floway-dev/protocols/rerank';
 import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
-import { assertEquals, assertExists, assertRejects, jsonResponse, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, assertRejects, jsonResponse, noopMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 interface BuildOptions {
   modelsFetchEnabled?: boolean;
@@ -297,11 +297,12 @@ test('Custom provider forces stream=true for streaming endpoints and leaves coun
     async () => {
       const [model] = await provider.getProvidedModels(directFetcher);
       assertExists(model);
-      const opts = noopUpstreamCallOptions({ anthropicBeta: ['context-1m', 'advanced-tool-use'] });
+      const opts = noopUpstreamCallOptions();
+      const messagesOpts = noopMessagesUpstreamCallOptions({ anthropicBeta: ['context-1m', 'advanced-tool-use'] });
       await provider.callChatCompletions(model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
       await provider.callResponses(model, { input: [] }, 'generate', undefined, opts);
-      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
-      await provider.callMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
+      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, messagesOpts);
+      await provider.callMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, messagesOpts);
       await provider.callEmbeddings(model, { input: 'hi' }, undefined, opts);
     },
   );

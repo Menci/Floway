@@ -5,7 +5,7 @@ import { pricingForClaudeCodeModelKey } from '../src/pricing.ts';
 import { createClaudeCodeProvider } from '../src/provider.ts';
 import type { ClaudeCodeAccessTokenEntry, ClaudeCodeAccountCredential, ClaudeCodeUpstreamState } from '../src/state.ts';
 import { initProviderRepo, type FlagId, type MessagesUpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
-import { noopUpstreamCallOptions } from '@floway-dev/test-utils';
+import { noopMessagesUpstreamCallOptions, noopUpstreamCallOptions } from '@floway-dev/test-utils';
 
 const upstreamId = 'up_cc_provider';
 
@@ -85,7 +85,7 @@ const sseResponse = (): Response => new Response(
 );
 
 const cliClientCallOpts = (overrides: Partial<MessagesUpstreamCallOptions> = {}): MessagesUpstreamCallOptions => ({
-  ...noopUpstreamCallOptions(),
+  ...noopMessagesUpstreamCallOptions(),
   headers: new Headers({
     'user-agent': 'claude-cli/2.1.181 (external, cli)',
     'x-app': 'cli',
@@ -159,7 +159,7 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
       sonnetProviderModel,
       { max_tokens: 16, messages: [{ role: 'user', content: 'hello' }] },
       undefined,
-      noopUpstreamCallOptions(),
+      noopMessagesUpstreamCallOptions(),
     );
 
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
@@ -221,7 +221,7 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
       sonnetProviderModel,
       { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
       undefined,
-      { ...noopUpstreamCallOptions(), headers: new Headers({ 'user-agent': 'claude-cli/2.1.181' }) },
+      { ...noopMessagesUpstreamCallOptions(), headers: new Headers({ 'user-agent': 'claude-cli/2.1.181' }) },
     );
 
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
