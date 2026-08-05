@@ -1638,6 +1638,19 @@ test('claude', 'PowerShell: missing CLI triggers the installer', async t => {
   t.ok(existsSync(settingsPathFor(ws)), 'settings are written after installing');
 });
 
+test('claude', 'PowerShell ignores a non-executable file at a CLI candidate path', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  const candidateDir = join(ws.home, '.local', 'bin');
+  mkdirSync(candidateDir, { recursive: true });
+  writeFileSync(join(candidateDir, 'claude'), 'not an executable application');
+
+  const run = await runPowerShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url });
+
+  t.equal(run.code, 0, `the invalid candidate must not block installation:\n${run.combined}`);
+  t.ok(existsSync(installerMarker(ws)), 'the installer runs after rejecting the invalid candidate');
+});
+
 test('claude', 'PowerShell prefers npm over the direct installer when npm is available', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();

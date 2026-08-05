@@ -153,13 +153,27 @@ function Invoke-SetupRemoteInstaller {
   else { Invoke-SetupPowerShellBody -Body $body -TimeoutSeconds $timeoutSeconds -BypassExecutionPolicy:$BypassExecutionPolicy }
 }
 
+function Test-SetupApplicationFile {
+  param([string]$Path)
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
+  if (Test-SetupIsWindows) {
+    $extension = [System.IO.Path]::GetExtension($Path)
+    return ($extension -ieq '.exe') -or ($extension -ieq '.com')
+  }
+  $testExe = if ([System.IO.File]::Exists('/usr/bin/test')) { '/usr/bin/test' }
+    elseif ([System.IO.File]::Exists('/bin/test')) { '/bin/test' }
+    else { Stop-Setup 'the platform has no executable-file test utility.' }
+  & $testExe -x $Path
+  return $LASTEXITCODE -eq 0
+}
+
 function Get-SetupCliExe {
   param([string]$Name, [string]$Label, [string[]]$Candidates)
   $found = New-Object System.Collections.Generic.List[string]
   $command = Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
   if ($command) { $found.Add($command.Source) }
   foreach ($candidate in $Candidates) {
-    if ((Test-Path -LiteralPath $candidate) -and (-not $found.Contains($candidate))) { $found.Add($candidate) }
+    if ((Test-SetupApplicationFile $candidate) -and (-not $found.Contains($candidate))) { $found.Add($candidate) }
   }
   if ($found.Count -eq 0) { return $null }
   if ($found.Count -gt 1) { Write-SetupWarn "multiple $Label installations detected; using $($found[0])" }
