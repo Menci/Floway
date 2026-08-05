@@ -86,6 +86,15 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
     assertEquals(await repo.proxies.getById('a'), null);
   });
 
+  test(`[${backend}] proxies repo delete atomically refuses a referenced row`, async () => {
+    const repo = await makeRepo();
+    await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host:1080', dialTimeoutSeconds: null });
+    await repo.upstreams.save(upstreamFixture('up', [{ id: 'a' }]));
+
+    assertEquals(await repo.proxies.delete('a'), false);
+    expect(await repo.proxies.getById('a')).not.toBeNull();
+  });
+
   test(`[${backend}] proxies repo patch returns null for unknown id`, async () => {
     const repo = await makeRepo();
     assertEquals(await repo.proxies.patch('nope', { name: 'x' }), null);
