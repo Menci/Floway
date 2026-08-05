@@ -441,23 +441,25 @@ const frameDuplexOnTransport = (
     return writerSettlement;
   };
 
-  const closePlain = (cause?: unknown): void => {
-    if (plainClosed) return;
+  let plainSettlement: Promise<void> | null = null;
+  const closePlain = (cause?: unknown): Promise<void> => {
+    if (plainSettlement) return plainSettlement;
     plainClosed = true;
     detachAbortListener?.();
     detachAbortListener = null;
-    if (cause !== undefined) {
-      try { plainController.error(cause); } catch { /* already closed */ }
-    } else {
-      try { plainController.close(); } catch { /* already closed */ }
-    }
-    void settleReader(cause);
-    // Close (or abort) the underlying writer too. Without this, every teardown
-    // path that doesn't originate from the consumer's writable.close — server
-    // close frame, transport EOF, signal abort, internal frame error — leaks
-    // the transport's write half locked under our frameWriter.
     outboundClosing = true;
-    void settleFrameWriter(cause);
+    plainSettlement = (async () => {
+      // Settle both borrowed locks before resolving a pending consumer read.
+      // This makes EOF/error a teardown certificate rather than a state that
+      // can race the transport cleanup scheduled behind it.
+      await Promise.all([settleReader(cause), settleFrameWriter(cause)]);
+      if (cause !== undefined) {
+        try { plainController.error(cause); } catch { /* already closed */ }
+      } else {
+        try { plainController.close(); } catch { /* already closed */ }
+      }
+    })();
+    return plainSettlement;
   };
 
   const sendCloseFrame = async (code: number, reason: string): Promise<void> => {
@@ -512,7 +514,7 @@ const frameDuplexOnTransport = (
       validateClosePayload(payload);
       outboundClosing = true;
       await sendCloseFrame(WS_CLOSE_NORMAL, '');
-      closePlain();
+      await closePlain();
       return false;
     }
     if (opcode === 0x9) {
@@ -591,7 +593,7 @@ const frameDuplexOnTransport = (
     try {
       plainController.enqueue(message);
     } catch (err) {
-      closePlain(err);
+      await closePlain(err);
     }
     return true;
   };
@@ -674,7 +676,7 @@ const frameDuplexOnTransport = (
           if (await handleFrame(header.fin, header.opcode, payload)) return;
         }
       } catch (err) {
-        closePlain(err);
+        await closePlain(err);
       }
     },
   });
@@ -703,15 +705,14 @@ const frameDuplexOnTransport = (
       outboundClosing = true;
       await sendCloseFrame(WS_CLOSE_INTERNAL_ERROR, String(reason ?? ''));
       const cause = reason instanceof Error ? reason : new Error(String(reason ?? 'WebSocket writable aborted'));
-      closePlain(cause);
-      await settleFrameWriter(cause);
+      await closePlain(cause);
     },
   });
 
   if (signal) {
     const captured = signal;
     const onAbort = (): void => {
-      closePlain(signalAbortReason(captured));
+      void closePlain(signalAbortReason(captured));
     };
     captured.addEventListener('abort', onAbort, { once: true });
     detachAbortListener = (): void => captured.removeEventListener('abort', onAbort);

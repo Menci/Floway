@@ -582,19 +582,7 @@ describe('wsUpgradeAndFrame — frame layer round-trip', () => {
     writer.releaseLock();
   });
 
-  it('a server close frame ends the consumer readable cleanly', async () => {
-    const fake = makeFakeDuplex();
-    const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
-    await completeHandshake(fake);
-    const stream = await upgrade;
-    fake.respond(buildServerFrame(0x8, new Uint8Array([0x03, 0xe8]))); // 1000
-    const reader = stream.readable.getReader();
-    const { done } = await reader.read();
-    expect(done).toBe(true);
-    reader.releaseLock();
-  });
-
-  it('closes the underlying transport writer after a server close frame', async () => {
+  it('answers a server Close, ends cleanly, and releases both transport locks', async () => {
     // Every server-initiated close releases the transport's write half;
     // without this teardown the underlying socket / userspace TLS stream
     // would stay locked under our frame writer until GC instead of being
@@ -602,14 +590,20 @@ describe('wsUpgradeAndFrame — frame layer round-trip', () => {
     const fake = makeFakeDuplex();
     const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
     await completeHandshake(fake);
-    await upgrade;
+    const stream = await upgrade;
+    const handshakeBytes = fake.written().byteLength;
     fake.respond(buildServerFrame(0x8, new Uint8Array([0x03, 0xe8])));
+    const reader = stream.readable.getReader();
+    expect((await reader.read()).done).toBe(true);
+    reader.releaseLock();
     await fake.waitWritableClosed();
+    const { frame } = await readClientFrame(fake, handshakeBytes);
+    expect(frame!.opcode).toBe(0x8);
     expect(fake.readable.locked).toBe(false);
     expect(fake.writable.locked).toBe(false);
   });
 
-  it('forbids data and a duplicate Close after readable cancellation', async () => {
+  it('forbids data after readable cancellation and emits one Close', async () => {
     const fake = makeFakeDuplex();
     const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
     await completeHandshake(fake);
@@ -618,7 +612,7 @@ describe('wsUpgradeAndFrame — frame layer round-trip', () => {
     await stream.readable.cancel('done');
     const writer = stream.writable.getWriter();
     await expect(writer.write(enc('late'))).rejects.toMatchObject({ code: 'BAD_HEADERS' });
-    await writer.close();
+    writer.releaseLock();
     const { frame, seen } = await readClientFrame(fake, handshakeBytes);
     expect(frame!.opcode).toBe(0x8);
     expect(fake.written().subarray(seen)).toHaveLength(0);
