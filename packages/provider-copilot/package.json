@@ -15,6 +15,7 @@
     "@floway-dev/protocols": "workspace:*",
     "@floway-dev/provider": "workspace:*",
     "@scure/base": "^2.2.0",
+    "oauth4webapi": "^3.8.6",
     "p-retry": "^8.0.0",
     "uuid": "^14.0.1"
   },

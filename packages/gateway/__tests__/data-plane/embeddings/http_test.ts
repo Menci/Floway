@@ -209,6 +209,7 @@ test('/v1/embeddings routes to custom upstream when model is only declared there
     config: {
       baseUrl: 'https://embed.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'sk-embed',
       endpoints: {},
     },
@@ -282,6 +283,7 @@ test('/v1/embeddings rejects model on custom upstream without /embeddings capabi
     config: {
       baseUrl: 'https://chat.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'sk-chat',
       endpoints: { chatCompletions: {} },
     },
@@ -340,6 +342,7 @@ test('/v1/embeddings reports the failed upstream parenthetically when /v1/models
     config: {
       baseUrl: 'https://embed.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'sk-embed',
       endpoints: {},
     },
@@ -398,6 +401,7 @@ test('/v1/embeddings reports the failed upstream even when a sibling upstream\'s
     config: {
       baseUrl: 'https://embed.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'sk-embed',
       endpoints: {},
     },

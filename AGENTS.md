@@ -285,17 +285,8 @@ Ollama depend on `provider` + `protocols`; Claude Code and Codex add
 `interceptor`; Copilot adds `interceptor` + `platform`. `test-utils` depends on
 `provider` and is consumed as a test dependency by the rest of the workspace.
 Vendor credentials, catalog projection, and wire behavior stay in the vendor
-packages. Each package's static `ProviderModule` surface also declares the
-case-insensitive exact names and lowercase-name regular expressions for
-ordinary client headers that provider accepts. The gateway applies the
-allowlist after it selects a candidate and before it calls the provider, so
-failover candidates never share a filtered or mutated header bag.
-Protocol-owned transport metadata remains outside that generic policy:
-Messages ingress parses `anthropic-beta` into typed call metadata, passes it
-only to a native Messages target, and Copilot copies it into
-`MessagesBoundaryCtx.anthropicBeta` before its interceptor chain. The gateway
-owns the control-plane handlers that call vendor APIs and maps their results
-onto Floway HTTP responses.
+packages. The gateway owns the control-plane handlers that call vendor APIs and
+maps their results onto Floway HTTP responses.
 
 `gateway` depends on `agent-setup` + `http` + `interceptor` + `platform` +
 `protocols` + `provider` + every `provider-*` package + `proxy` + `translate`.
@@ -318,12 +309,14 @@ filesystem, `sharp`, WebSocket, socket, and runtime-root-CA implementations;
 its migrator consumes the gateway's exported migration directory. These apps
 are the only deployment-target composition roots.
 
-`apps/web` depends at runtime on `protocols`, `provider`, and `proxy`.
+`apps/web` depends at runtime on `protocols`, `provider`, `provider-custom`, and
+`proxy`.
 Its protocol imports use `/common`, `/chat-completions`, `/completions`,
 `/messages`, `/responses`, `/gemini`, and `/rerank`; its provider imports use
-the root, `/flags`, `/model`, and `/model-prefix`; its proxy imports are
-restricted to `/url`, `/url-kind`, `/proxy-config`, and `/constants` so the SPA
-does not pull in dialers, userspace TLS, or Node `crypto`. It type-imports
+the root, `/flags`, `/model`, and `/model-prefix`; its provider-custom import is
+restricted to `/ingress-header-rules`; its proxy imports are restricted to
+`/url`, `/url-kind`, `/proxy-config`, and `/constants` so the SPA does not pull
+in dialers, userspace TLS, or Node `crypto`. It type-imports
 gateway contracts through `/app-type`, `/dump-types`,
 `/control-plane/performance/aggregate`, `/control-plane/upstreams/types`,
 `/control-plane/usage-types`,

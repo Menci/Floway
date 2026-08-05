@@ -1,4 +1,5 @@
 import { base64 } from '@scure/base';
+import { isImageMediaType, mediaTypeEssence } from '@floway-dev/protocols/common';
 
 const ASCII_WHITESPACE = /[\t\n\f\r ]/g;
 const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -14,9 +15,9 @@ const BASE64_DATA_URL = /^data:([^;,]+)(?:;[^,;]*)*;base64,(.*)$/is;
 
 export const parseBase64ImageDataUrl = (url: string): { mimeType: string; base64: string } | null => {
   const match = BASE64_DATA_URL.exec(url);
-  const mimeType = match?.[1];
+  const mimeType = mediaTypeEssence(match?.[1]);
   const base64 = match?.[2];
-  return mimeType?.toLowerCase().startsWith('image/') && base64 !== undefined ? { mimeType, base64 } : null;
+  return isImageMediaType(mimeType) && mimeType !== null && base64 !== undefined ? { mimeType, base64 } : null;
 };
 
 export const isBase64ImageDataUrl = (url: string): boolean =>

@@ -13,6 +13,7 @@ const stubSocketDial: SocketDial = {
 };
 
 const COPILOT_CONFIG = {
+  githubHost: 'github.com',
   githubToken: 'tok',
   user: { login: 'u', avatar_url: '', name: null, id: 1 },
 };

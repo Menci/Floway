@@ -5,9 +5,9 @@
 //      `/v1/messages` call — streaming included, where they arrive ahead of the
 //      first SSE byte. This is the passive source: it costs nothing and tracks
 //      consumption from every client sharing the seat, not just ours.
-//   2. `GET https://api.github.com/copilot_internal/user`, the operator-driven
-//      refresh. This is the only source for an upstream that has not served a
-//      request yet.
+//   2. `GET /copilot_internal/user` on the selected GitHub API origin, the
+//      operator-driven refresh. This is the only source for an upstream that
+//      has not served a request yet.
 //
 // Both project into `CopilotQuotaSnapshot` so the dashboard renders one shape
 // regardless of which path filled the slot. Field names follow the REST
@@ -27,6 +27,7 @@
 // (https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/extensions/copilot/src/platform/chat/common/chatQuotaServiceImpl.ts#L85-L153).
 
 import { githubHeaders } from './auth.ts';
+import { githubApiOrigin } from './github-host.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
 import { getProviderRepo, type Fetcher } from '@floway-dev/provider';
 
@@ -257,8 +258,8 @@ export const projectCopilotUsageResponse = (body: CopilotUsageResponse, now: Dat
   };
 };
 
-export const fetchCopilotUsage = (githubToken: string, fetcher: Fetcher): Promise<Response> =>
-  fetcher('https://api.github.com/copilot_internal/user', { headers: githubHeaders(githubToken) });
+export const fetchCopilotUsage = (githubHost: string, githubToken: string, fetcher: Fetcher): Promise<Response> =>
+  fetcher(`${githubApiOrigin(githubHost)}/copilot_internal/user`, { headers: githubHeaders(githubToken) });
 
 // Both sources land in the same slot, so whichever observed the seat most
 // recently is what the dashboard shows. `fetchedAt` is stamped outside the

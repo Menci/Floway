@@ -26,3 +26,9 @@ interface DurableObjectState {
   acceptWebSocket(server: WebSocket): void;
   getWebSockets(): WebSocket[];
 }
+
+// Cloudflare extends Web Crypto with a constant-time comparison primitive.
+// https://developers.cloudflare.com/workers/runtime-apis/web-crypto/#timingsafeequal
+interface SubtleCrypto {
+  timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean;
+}

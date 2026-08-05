@@ -11,6 +11,7 @@ import { Controller, useFormContext, useWatch } from 'react-hook-form';
 import { ClaudeCodeAccountCard } from './claude-code-account-card';
 import { CodexAccountCard } from './codex-account-card';
 import { CopilotQuotaCard } from './copilot-quota-card';
+import { CustomIngressHeaderRules } from './custom-ingress-header-rules';
 import type { UpstreamEditorValues } from './data';
 import { isPersisted, previewRecord } from './data';
 import { CHAT_ENDPOINT_KEYS, endpointOptionsFor, PATH_OVERRIDE_PATHS } from './endpoints';
@@ -23,6 +24,7 @@ import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { errorMessage } from '../../lib/error-message';
 import { Dropdown, Input, Textarea } from '../ui/fluent-form-controls';
+import { infoLabelSlot } from '../ui/info-label';
 import { CHECKBOX_LIST_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OpenLinkLabel } from '../ui/open-link-label';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
@@ -138,6 +140,7 @@ function CustomConfig({ onRefreshModels, record }: { onRefreshModels: () => void
           <Controller control={control} name="config.modelsFetch.endpoint" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="/v1/models" ref={field.ref} value={field.value ?? ''} />} />
         </Field>
       )}
+      <CustomIngressHeaderRules />
     </div>
   );
 }
@@ -274,8 +277,10 @@ function CopilotConfig({ record, onPatch }: {
   onPatch: (patch: { config?: unknown; state?: unknown }, persisted?: boolean) => void;
 }) {
   const { t } = useTranslation();
+  const { control } = useFormContext<ValuesForKind<'copilot'>>();
   const values = useWatch<UpstreamEditorValues>();
   const config = values.config as typeof record.config;
+  const githubHostEmpty = config.githubHost.trim() === '';
   const [flow, setFlow] = useState<DeviceFlowStart | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -327,27 +332,45 @@ function CopilotConfig({ record, onPatch }: {
 
   const start = async () => {
     stop(); setBusy(true); setError(null);
-    const result = await callApi(() => api.api.upstreams.copilot.oauth['device-login'].start.$post());
+    const result = await callApi(() => api.api.upstreams.copilot.oauth['device-login'].start.$post({
+      json: { record: previewRecord(record, values as UpstreamEditorValues) },
+    }));
     if (cancelled.current) return;
     if (result.error) { setBusy(false); setError(result.error.message); return; }
     setFlow(result.data);
   };
 
-  if (config.user.login) {
-    return <div className="grid gap-3">
-      <AccountSummary kind="copilot" title={config.user.name ?? config.user.login} subtitle={`@${config.user.login}`} />
-      {isPersisted(record) ? <CopilotQuotaCard record={record} /> : <ReadyToSaveHint kind="copilot" />}
-    </div>;
-  }
   return <div className="grid gap-3">
-    <Text size={300} className="text-fui-fg2">{t('dashboard.upstreamEditor.copilot.description')}</Text>
-    {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
-    {!flow ? <Button appearance="primary" disabledFocusable={busy} icon={busy ? <Spinner size="tiny" /> : <PlugConnectedRegular />} onClick={() => void start()}>{t('dashboard.upstreamEditor.copilot.connect')}</Button> : <>
-      <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.copilot.deviceCode')}</Text>
-      <code className="mono-display tracking-[0.25em] text-fui-fg1">{flow.user_code}</code>
-      <Link href={flow.verification_uri} target="_blank" rel="noopener noreferrer">{flow.verification_uri}</Link>
-      <Spinner label={t('dashboard.upstreamEditor.copilot.waiting')} labelPosition="after" size="tiny" />
-    </>}
+    <Field label={{ children: infoLabelSlot(t('dashboard.upstreamEditor.copilot.githubHost'), t('dashboard.upstreamEditor.copilot.githubHostHint')) }}>
+      <Controller
+        control={control}
+        name="config.githubHost"
+        render={({ field }) => <Input
+          className="font-mono"
+          name={field.name}
+          onBlur={field.onBlur}
+          onChange={(_, data) => field.onChange(data.value)}
+          readOnly={busy || flow !== null || Boolean(config.user.login)}
+          ref={field.ref}
+          required
+          value={field.value}
+        />}
+      />
+    </Field>
+    {config.user.login
+      ? <>
+          <AccountSummary kind="copilot" title={config.user.name ?? config.user.login} subtitle={`${config.githubHost}/${config.user.login}`} />
+          {isPersisted(record) ? <CopilotQuotaCard record={record} /> : <ReadyToSaveHint kind="copilot" />}
+        </>
+      : <>
+          {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
+          {!flow ? <Button appearance="primary" disabled={githubHostEmpty} disabledFocusable={busy} icon={busy ? <Spinner size="tiny" /> : <PlugConnectedRegular />} onClick={() => void start()}>{t('dashboard.upstreamEditor.copilot.connect')}</Button> : <>
+            <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.copilot.deviceCode')}</Text>
+            <code className="mono-display tracking-[0.25em] text-fui-fg1">{flow.user_code}</code>
+            <Link href={flow.verification_uri} target="_blank" rel="noopener noreferrer">{flow.verification_uri}</Link>
+            <Spinner className="justify-self-start" label={t('dashboard.upstreamEditor.copilot.waiting')} labelPosition="after" size="tiny" />
+          </>}
+        </>}
   </div>;
 }
 

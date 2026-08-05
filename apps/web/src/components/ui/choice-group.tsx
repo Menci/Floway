@@ -170,12 +170,14 @@ export interface ChoiceGroupItem {
 
 export function ChoiceGroup({
   ariaLabel,
+  disabled = false,
   items,
   onChange,
   readOnly,
   value,
 }: {
   ariaLabel: string;
+  disabled?: boolean;
   items: ChoiceGroupItem[];
   onChange: (value: string) => void;
   /**
@@ -197,6 +199,10 @@ export function ChoiceGroup({
     const step = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1
       : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 0;
     if (step === 0) return;
+    if (disabled) {
+      event.preventDefault();
+      return;
+    }
     const choices = [...event.currentTarget.querySelectorAll<HTMLAnchorElement>('[role="radio"]:not([aria-disabled="true"])')];
     if (choices.length === 0) return;
     event.preventDefault();
@@ -206,40 +212,45 @@ export function ChoiceGroup({
   };
 
   return <div aria-label={ariaLabel} aria-readonly={readOnly === true ? true : undefined} className={styles.root} onKeyDown={handleKeyDown} role="radiogroup">
-    {items.map((item, index) => item.to === undefined
-      ? <label
-          className={styles.item}
-          data-checked={value === item.value ? '' : undefined}
-          data-disabled={item.disabled === true ? '' : undefined}
-          key={item.value}
-        >
-          <input
+    {items.map((item, index) => {
+      const itemDisabled = disabled || item.disabled === true;
+      return item.to === undefined
+        ? <label
+            className={styles.item}
+            data-checked={value === item.value ? '' : undefined}
+            data-disabled={itemDisabled ? '' : undefined}
+            key={item.value}
+          >
+            <input
+              checked={value === item.value}
+              className={styles.input}
+              disabled={itemDisabled}
+              name={name}
+              onChange={readOnly === true ? undefined : () => onChange(item.value)}
+              onClick={readOnly === true ? refuseToggle : undefined}
+              type="radio"
+              value={item.value}
+            />
+            <span>{item.label}</span>
+          </label>
+        : <AddressedChoice
             checked={value === item.value}
-            className={styles.input}
-            disabled={item.disabled}
-            name={name}
-            onChange={readOnly === true ? undefined : () => onChange(item.value)}
-            onClick={readOnly === true ? refuseToggle : undefined}
-            type="radio"
-            value={item.value}
-          />
-          <span>{item.label}</span>
-        </label>
-      : <AddressedChoice
-          checked={value === item.value}
-          className={styles.item}
-          item={item}
-          key={item.value}
-          onChange={onChange}
-          to={item.to}
-          tabIndex={(selectedIndex === -1 ? index === 0 : value === item.value) ? 0 : -1}
-        />)}
+            className={styles.item}
+            disabled={itemDisabled}
+            item={item}
+            key={item.value}
+            onChange={onChange}
+            to={item.to}
+            tabIndex={(selectedIndex === -1 ? index === 0 : value === item.value) ? 0 : -1}
+          />;
+    })}
   </div>;
 }
 
-function AddressedChoice({ checked, className, item, onChange, tabIndex, to }: {
+function AddressedChoice({ checked, className, disabled, item, onChange, tabIndex, to }: {
   checked: boolean;
   className: string;
+  disabled: boolean;
   item: ChoiceGroupItem;
   onChange: (value: string) => void;
   tabIndex: number;
@@ -249,21 +260,22 @@ function AddressedChoice({ checked, className, item, onChange, tabIndex, to }: {
   // after it, so the address only has to say where the view lives.
   const address = useRouteAddress(to, () => onChange(item.value));
   return <a
-    {...address}
+    href={disabled ? undefined : address.href}
+    onClick={disabled ? event => event.preventDefault() : address.onClick}
     aria-checked={checked}
-    aria-disabled={item.disabled === true ? true : undefined}
+    aria-disabled={disabled ? true : undefined}
     className={className}
     data-checked={checked ? '' : undefined}
-    data-disabled={item.disabled === true ? '' : undefined}
+    data-disabled={disabled ? '' : undefined}
     // An anchor answers Enter on its own; Space is the radio's key and has to
     // be given back, and its default is the page scroll.
     onKeyDown={event => {
       if (event.key !== ' ') return;
       event.preventDefault();
-      event.currentTarget.click();
+      if (!disabled) event.currentTarget.click();
     }}
     role="radio"
-    tabIndex={tabIndex}
+    tabIndex={disabled ? -1 : tabIndex}
   >
     <span>{item.label}</span>
   </a>;

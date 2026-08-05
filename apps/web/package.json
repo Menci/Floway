@@ -13,12 +13,12 @@
   "dependencies": {
     "@floway-dev/protocols": "workspace:*",
     "@floway-dev/provider": "workspace:*",
+    "@floway-dev/provider-custom": "workspace:*",
     "@floway-dev/proxy": "workspace:*",
     "@fluentui/react-charts": "^9.3.22",
     "@fluentui/react-components": "^9.74.4",
     "@fluentui/react-icons": "^2.0.334",
     "@fluentui/react-toast": "^9.8.1",
-    "@fontsource/maple-mono": "^5.3.0",
     "@hookform/resolvers": "^5.5.7",
     "@jridgewell/trace-mapping": "^0.3.31",
     "@scure/base": "^2.2.0",
@@ -60,7 +60,6 @@
     "jsonc-parser": "^3.3.1",
     "magic-string": "^1.1.0",
     "postcss": "^8.5.23",
-    "postcss-value-parser": "^4.2.0",
     "unocss": "^66.7.5",
     "vite": "^8.1.5",
     "vitest": "4.1.10"

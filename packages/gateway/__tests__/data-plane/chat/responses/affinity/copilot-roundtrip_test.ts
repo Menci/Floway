@@ -33,6 +33,7 @@ const upstream: UpstreamRecord = {
   modelsCache: null,
   hue: 210,
   config: {
+    githubHost: 'github.com',
     githubToken: 'ghu_test',
     user: { id: 1, login: 'tester', name: null, avatar_url: 'https://example.com/avatar.png' },
   },
@@ -81,6 +82,7 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
       upstreamId: 'up-other',
       kind: 'custom',
       name: 'Other',
+      inboundHeaderAllowlist: [],
       disabledPublicModelIds: [],
       modelPrefix: null,
       modelsCache: null,

@@ -169,6 +169,7 @@ describe('/alpha/search data plane', () => {
         config: {
           baseUrl: 'https://search.example.com',
           authStyle: 'bearer',
+          ingressHeadersRules: [],
           apiKey: 'search-secret',
           endpoints: { responses: {} },
           modelsFetch: { enabled: false },

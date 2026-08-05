@@ -1,6 +1,7 @@
 import { decodeWebBase64, encodeBase64 } from '../../lib/base-encoding';
 import { errorMessage } from '../../lib/error-message';
 import type { DumpBody } from '@floway-dev/gateway/dump-types';
+import { isTextualMediaType, parseMediaType } from '@floway-dev/protocols/common';
 
 export interface RenderedBody {
   text: string;
@@ -17,7 +18,7 @@ export const contentTypeOf = (headers: Array<[string, string]>): string => {
 
 export const renderBody = (body: DumpBody, contentType: string): RenderedBody => {
   if (!body.data) return EMPTY_BODY;
-  if (contentType.toLowerCase().startsWith('multipart/') && body.encoding === 'base64') {
+  if (parseMediaType(contentType)?.type === 'multipart' && body.encoding === 'base64') {
     const multipart = renderMultipart(body.data, contentType);
     if (multipart !== null) {
       return { text: multipart, copyText: body.data, decodeError: null, isJson: false };
@@ -70,7 +71,7 @@ const renderMultipart = (base64: string, contentType: string): string | null => 
       const headers = part.slice(0, separator);
       const data = part.slice(separator + 4);
       const type = /^content-type:\s*(.+)$/im.exec(headers)?.[1]?.trim() ?? '';
-      const textual = !type || /^(text\/|application\/(json|.*\+json|xml|.*\+xml|x-www-form-urlencoded))/i.test(type);
+      const textual = !type || isTextualMediaType(type);
       if (textual) return `${headers}\r\n\r\n${new TextDecoder().decode(Uint8Array.from(data, c => c.charCodeAt(0)))}`;
       const encoded = encodeBase64(bytesFromBinaryString(data)).replace(/.{76}(?=.)/g, '$&\n');
       return `${headers}\r\n\r\n[binary, ${data.length} bytes, content-type=${type}]\r\n${encoded}`;

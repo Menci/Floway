@@ -43,7 +43,7 @@ export type { ClaudeCodeQuotaWindow, CodexQuotaSnapshot, CodexQuotaSnapshotMap, 
 
 type CustomConfigFields = Pick<
   StoredCustomUpstreamConfig,
-  'authStyle' | 'baseUrl' | 'endpoints' | 'models' | 'modelsFetch' | 'pathOverrides'
+  'authStyle' | 'baseUrl' | 'endpoints' | 'ingressHeadersRules' | 'models' | 'modelsFetch' | 'pathOverrides'
 >;
 
 export type CustomUpstreamConfig = CustomConfigFields & {

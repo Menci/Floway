@@ -18,6 +18,22 @@ import {
   type UpstreamRecord,
 } from '@floway-dev/provider';
 
+// https://github.com/Wei-Shaw/sub2api/blob/4a5665da5b2c6b83c4597844ea6e573746c821b1/backend/internal/service/gateway_service.go#L421-L444
+const INBOUND_HEADER_ALLOWLIST = [
+  'accept',
+  /^x-stainless-(?:retry-count|timeout|lang|package-version|os|arch|runtime|runtime-version|helper-method)$/,
+  'anthropic-dangerous-direct-browser-access',
+  'anthropic-version',
+  'x-app',
+  'accept-language',
+  'sec-fetch-mode',
+  'user-agent',
+  'content-type',
+  'accept-encoding',
+  'x-claude-code-session-id',
+  'x-client-request-id',
+] as const;
+
 export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
   assertClaudeCodeUpstreamRecord(record);
   assertClaudeCodeUpstreamState(record.state);
@@ -106,6 +122,7 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
     upstreamId: record.id,
     kind: 'claude-code',
     name: record.name,
+    inboundHeaderAllowlist: INBOUND_HEADER_ALLOWLIST,
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,
     modelsCache: record.modelsCache,

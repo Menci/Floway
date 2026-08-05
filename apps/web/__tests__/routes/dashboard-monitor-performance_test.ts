@@ -34,4 +34,20 @@ describe('where the performance page reads upstream names from', () => {
     expect(data.upstreamNames).toEqual([{ id: 'up-1', name: 'Copilot seat' }]);
     expect(data.error).toBeNull();
   });
+
+  it('makes API key grouping explicitly current-user scoped for an administrator', async () => {
+    useAuthStore.getState().primeFromLogin({ token: 'admin-session', user: { id: 1, username: 'admin', isAdmin: true, upstreamIds: null } });
+    const performanceQueries: URL[] = [];
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+      const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost');
+      if (url.pathname === '/api/performance/overview') performanceQueries.push(url);
+      return gatewayForOperator(input);
+    }));
+
+    const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/performance?g=keyId') } as never);
+
+    expect(data.state.groupBy).toBe('keyId');
+    expect(data.state.filters.userId).toEqual(['1']);
+    expect(performanceQueries[0].searchParams.getAll('filter_user_id')).toEqual(['1']);
+  });
 });

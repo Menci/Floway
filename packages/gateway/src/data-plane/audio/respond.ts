@@ -8,13 +8,11 @@ import { settleUsageMeasurement } from '../shared/telemetry/settle.ts';
 import { requestOnlyUsageMeasurement } from '../shared/telemetry/usage.ts';
 import { forwardUpstreamHeaders, forwardUpstreamResponse } from '../shared/upstream-response.ts';
 import { isAudioTranscriptionDoneEvent } from '@floway-dev/protocols/audio';
-import { eventFrame, parseSSEStream, sseCommentFrame } from '@floway-dev/protocols/common';
+import { eventFrame, isEventStreamMediaType, isJsonMediaType, parseSSEStream, sseCommentFrame } from '@floway-dev/protocols/common';
 
 const respondNonStreaming = async ({ ctx, sourceApi, response, performance, identity }: PassthroughResponseStrategyContext): Promise<Response> => {
   let measurement = requestOnlyUsageMeasurement();
-  const contentType = response.headers.get('content-type')?.replace(/;.*$/u, '').trim().toLowerCase();
-  const jsonMediaType = contentType === 'application/json' || contentType?.endsWith('+json') === true;
-  if (jsonMediaType) {
+  if (isJsonMediaType(response.headers.get('content-type'))) {
     let parsed: unknown;
     try {
       parsed = await response.clone().json();
@@ -88,8 +86,7 @@ export const respondAudioTranscription = async (context: PassthroughResponseStra
     ctx.dump?.error('upstream', identity.upstream);
     return forwardUpstreamResponse(response, { defaultContentType: null });
   }
-  const contentType = response.headers.get('content-type')?.replace(/;.*$/u, '').trim().toLowerCase();
-  return contentType === 'text/event-stream'
+  return isEventStreamMediaType(response.headers.get('content-type'))
     ? respondStreaming(context)
     : await respondNonStreaming(context);
 };

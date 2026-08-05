@@ -1,5 +1,5 @@
 import type { DisplayWebSearchUsageByKeyRecord, DisplayWebSearchUsageByUserRecord } from './search-usage/aggregate.ts';
-import type { DisplayUsageByUserRecord, DisplayUsageRecord } from './token-usage/aggregate.ts';
+import type { DisplayUsageByUserRecord, DisplayUsageRecord, UsageOverviewGroupBy, UsageOverviewRecord } from './token-usage/aggregate.ts';
 
 export interface UsageKeyMetadata {
   id: string;
@@ -25,6 +25,19 @@ export interface TokenUsageByUserResponse {
   view: 'all-by-user';
   records: DisplayUsageByUserRecord[];
   users: UsageUserMetadata[];
+}
+
+export interface TokenUsageOverviewResponse {
+  series: UsageOverviewRecord[];
+  axes: Record<UsageOverviewGroupBy | 'none', UsageOverviewRecord[]>;
+  dimensionValues: {
+    keyIds: string[];
+    userIds: number[];
+    models: string[];
+    upstreams: string[];
+  };
+  users: UsageUserMetadata[];
+  keys: UsageKeyMetadata[];
 }
 
 export interface SearchUsageByKeyResponse {

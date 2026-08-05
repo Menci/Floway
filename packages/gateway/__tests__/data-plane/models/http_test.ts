@@ -25,6 +25,7 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
     config: {
       baseUrl: 'https://oai.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'sk-test',
       endpoints: { chatCompletions: {} },
     },
@@ -236,6 +237,7 @@ test('/models returns the same superset payload as /v1/models', async () => {
     config: {
       baseUrl: 'https://images-proj.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'sk-images-proj',
       endpoints: {  },
     },
@@ -339,6 +341,7 @@ test('/v1/models hides upstream identity when a provider returns an invalid mode
     config: {
       baseUrl: 'https://secret.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'sk-secret',
       endpoints: { chatCompletions: {} },
     },
@@ -381,6 +384,7 @@ test('/v1/models surfaces healthy upstream models when another upstream catalog 
     config: {
       baseUrl: 'https://healthy.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'sk-h',
       endpoints: { chatCompletions: {} },
     },
@@ -392,6 +396,7 @@ test('/v1/models surfaces healthy upstream models when another upstream catalog 
     config: {
       baseUrl: 'https://broken.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'sk-b',
       endpoints: { chatCompletions: {} },
     },
@@ -432,6 +437,7 @@ test('public model list endpoints hide upstream HTTP error bodies and headers', 
     config: {
       baseUrl: 'https://http-secret.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'sk-secret',
       endpoints: { chatCompletions: {} },
     },
@@ -480,6 +486,7 @@ test('public model list endpoints hide thrown upstream request errors', async ()
     config: {
       baseUrl: 'https://throw-secret.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'sk-secret',
       endpoints: { chatCompletions: {} },
     },
@@ -521,6 +528,7 @@ test('public model list endpoints hide malformed upstream response bodies', asyn
     config: {
       baseUrl: 'https://malformed-secret.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'sk-secret',
       endpoints: { chatCompletions: {} },
     },
@@ -695,6 +703,7 @@ test('/v1/models appends visible aliases with their aliasedFrom block and folds 
     config: {
       baseUrl: 'https://oai.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'sk-test',
       endpoints: { chatCompletions: {} },
     },
@@ -800,6 +809,7 @@ test('/v1/models folds a real-id collision onto the alias even when the alias po
     config: {
       baseUrl: 'https://shadow.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'sk-shadow',
       endpoints: { chatCompletions: {} },
     },

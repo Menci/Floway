@@ -146,6 +146,7 @@ test('/v1beta/models includes custom upstream LLM models', async () => {
     config: {
       baseUrl: 'https://custom.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'sk-custom',
       endpoints: { chatCompletions: {} },
     },
@@ -198,6 +199,7 @@ test('/v1beta/models excludes custom upstream embedding-only models', async () =
     config: {
       baseUrl: 'https://embed.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'sk-embed',
       endpoints: {},
     },
@@ -240,6 +242,7 @@ test('/v1beta/models hides upstream identity when a provider returns an invalid 
     config: {
       baseUrl: 'https://gemini-secret.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'sk-secret',
       endpoints: { chatCompletions: {} },
     },
@@ -284,6 +287,7 @@ test('/v1beta/models hides upstream HTTP error bodies', async () => {
     config: {
       baseUrl: 'https://gemini-http-secret.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'sk-secret',
       endpoints: { chatCompletions: {} },
     },
@@ -331,6 +335,7 @@ test('/v1beta/models hides thrown upstream request errors', async () => {
     config: {
       baseUrl: 'https://gemini-throw-secret.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'sk-secret',
       endpoints: { chatCompletions: {} },
     },
@@ -375,6 +380,7 @@ test('/v1beta/models hides malformed upstream response bodies', async () => {
     config: {
       baseUrl: 'https://gemini-malformed-secret.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'sk-secret',
       endpoints: { chatCompletions: {} },
     },
@@ -426,6 +432,7 @@ test('/v1beta/models emits visible aliases as models/<alias-name> entries with d
     config: {
       baseUrl: 'https://custom-alias.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'sk-custom',
       endpoints: { chatCompletions: {} },
     },
