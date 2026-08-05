@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { describe, expect, it, test } from 'vitest';
+import { describe, expect, it, test, vi } from 'vitest';
 
 import { useRefresh, useRefreshOnChange } from '../../../src/components/ui/use-refresh';
 
@@ -79,8 +79,9 @@ test('query-driven refresh commits the query only when its response arrives', as
   const runs: Array<{ settle: (succeeded: boolean) => void }> = [];
   const reload = (_signal: AbortSignal, _options: { background: boolean }) =>
     new Promise<boolean>(resolve => { runs.push({ settle: resolve }); });
+  const restore = vi.fn();
   const { result, rerender } = renderHook(
-    ({ query }) => useRefreshOnChange(query, reload),
+    ({ query }) => useRefreshOnChange(query, reload, restore),
     { initialProps: { query: { groupBy: 'model' } } },
   );
 
@@ -98,8 +99,9 @@ test('query-driven refresh keeps the displayed query after a failed response', a
   const runs: Array<{ settle: (succeeded: boolean) => void }> = [];
   const reload = (_signal: AbortSignal, _options: { background: boolean }) =>
     new Promise<boolean>(resolve => { runs.push({ settle: resolve }); });
+  const restore = vi.fn();
   const { result, rerender } = renderHook(
-    ({ query }) => useRefreshOnChange(query, reload),
+    ({ query }) => useRefreshOnChange(query, reload, restore),
     { initialProps: { query: { groupBy: 'model' } } },
   );
 
@@ -108,6 +110,7 @@ test('query-driven refresh keeps the displayed query after a failed response', a
   await act(async () => { runs[0]!.settle(false); });
 
   expect(result.current.loadedQuery).toEqual({ groupBy: 'model' });
+  expect(restore).toHaveBeenCalledWith({ groupBy: 'model' });
 
   await act(async () => { void result.current.refresh(); });
   expect(runs).toHaveLength(2);

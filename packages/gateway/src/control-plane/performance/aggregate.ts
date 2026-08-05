@@ -1,8 +1,6 @@
 import type { PerformanceMetric, PerformanceTelemetryRecord } from '../../repo/types.ts';
 import { type HistogramBucket, percentileFromBuckets } from '../../shared/performance-histogram.ts';
 import { createTelemetryBucket, type TelemetryBucketGranularity } from '../shared/telemetry-bucket.ts';
-
-export type PerformanceBucketGranularity = TelemetryBucketGranularity;
 export type PerformanceGroupBy = 'none' | 'keyId' | 'userId' | 'model' | 'upstream' | 'operation' | 'runtimeLocation';
 
 // One aggregated row in the shape the dashboard consumes. `ttftMs*` render as
@@ -26,7 +24,7 @@ export interface PerformanceDisplayRecord {
 }
 
 export interface AggregateOptions {
-  bucket: PerformanceBucketGranularity;
+  bucket: TelemetryBucketGranularity;
   groupBy: PerformanceGroupBy;
   timeZone?: string;
   timezoneOffsetMinutes: number;

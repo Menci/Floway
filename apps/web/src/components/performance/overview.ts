@@ -64,19 +64,21 @@ export const buildPerformanceQuery = (
   groupBy: PerformanceGroupBy,
   filters: PerformanceFilters,
   nowMs: number,
-): Record<string, string | string[]> => ({
-  ...dashboardRangeQuery(range, nowMs),
-  bucket: 'hour',
-  group_by: groupBy,
-  timezone: 'UTC',
-  timezone_offset_minutes: '0',
-  filter_model: filters.model,
-  filter_upstream: filters.upstream,
-  filter_operation: filters.operation,
-  filter_runtime_location: filters.runtimeLocation,
-  filter_user_id: filters.userId,
-  filter_key_id: filters.keyId,
-});
+): Record<string, string | string[]> => {
+  const utcHours = range === 'today';
+  return {
+    ...dashboardRangeQuery(range, nowMs),
+    group_by: groupBy,
+    timezone: utcHours ? 'UTC' : Intl.DateTimeFormat().resolvedOptions().timeZone,
+    timezone_offset_minutes: utcHours ? '0' : String(new Date(nowMs).getTimezoneOffset()),
+    filter_model: filters.model,
+    filter_upstream: filters.upstream,
+    filter_operation: filters.operation,
+    filter_runtime_location: filters.runtimeLocation,
+    filter_user_id: filters.userId,
+    filter_key_id: filters.keyId,
+  };
+};
 
 export const performanceValue = (
   record: PerformanceDisplayRecord,
@@ -145,7 +147,3 @@ export const serializePerformanceUrlState = (state: PerformanceUrlState): URLSea
   if (state.hidden.length) search.set('hide', state.hidden.map(encodeURIComponent).join(','));
   return search;
 };
-
-export const clearGroupedFilter = (filters: PerformanceFilters, groupBy: PerformanceGroupBy): PerformanceFilters => ({
-  ...clearGroupedTelemetryFilters(filters, groupBy),
-});

@@ -18,11 +18,3 @@ export const scopeTelemetryIdentity = <Filters extends { userId: string[] }, Gro
     filters: clearGroupedTelemetryFilters(scopedFilters, fallbackGroup),
   };
 };
-
-export const telemetryFilterDimensions = <Dimension extends { key: string }>(
-  dimensions: readonly Dimension[],
-  groupBy: string,
-): Dimension[] => dimensions.filter(dimension => (
-  dimension.key !== groupBy
-  && !((dimension.key === 'userId' || dimension.key === 'keyId') && (groupBy === 'userId' || groupBy === 'keyId'))
-));

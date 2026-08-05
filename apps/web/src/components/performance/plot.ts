@@ -39,7 +39,10 @@ export const buildPerformanceChart = (
     label: resolvePerformanceGroup(group, groupBy, labels),
     colorSlot,
   })));
-  const values = new Map(records.map(record => [`${dashboardBucketKeyForUtcHour(range, record.bucket)}\0${record.group}`, record]));
+  const values = new Map(records.map(record => [
+    `${range === 'today' ? dashboardBucketKeyForUtcHour(range, record.bucket) : record.bucket}\0${record.group}`,
+    record,
+  ]));
   return {
     entries,
     buckets,

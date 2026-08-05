@@ -111,9 +111,8 @@ export function aggregateUsageForDisplay(records: readonly UsageRecord[]): Displ
   );
 }
 
-// `/api/token-usage` assigns hard-deleted key rows to synthetic user 0. The
-// overview omits those rows only from its user axis and retains them in every
-// non-user aggregate.
+// The legacy `/api/token-usage` user view assigns hard-deleted key rows to
+// synthetic user 0 because it cannot recover their former owner.
 export function aggregateUsageByUserForDisplay(
   records: readonly UsageRecord[],
   keyToUser: ReadonlyMap<string, number>,

@@ -67,15 +67,20 @@ const sameQuery = <Query extends Record<string, unknown>>(left: Query, right: Qu
 export const useRefreshOnChange = <Query extends Record<string, unknown>>(
   query: Query,
   reload: (signal: AbortSignal, options: { background: boolean }) => Promise<boolean>,
+  restore: (query: Query) => void,
 ): RefreshOnChangeControl<Query> => {
   const loadedFor = useRef(query);
   const [loadedQuery, setLoadedQuery] = useState(query);
   const control = useRefresh(useCallback(async (signal: AbortSignal, options: { background: boolean }) => {
-    if (await reload(signal, options)) {
-      loadedFor.current = query;
-      setLoadedQuery(query);
+    const succeeded = await reload(signal, options);
+    if (signal.aborted) return;
+    if (!succeeded) {
+      restore(loadedFor.current);
+      return;
     }
-  }, [query, reload]));
+    loadedFor.current = query;
+    setLoadedQuery(query);
+  }, [query, reload, restore]));
   const { cancel, refresh } = control;
 
   useEffect(() => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildPerformanceQuery, clearGroupedFilter, parsePerformanceUrlState, performanceLabels, performanceValue, serializePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewResponse } from '../../../src/components/performance/overview';
+import { buildPerformanceQuery, parsePerformanceUrlState, performanceLabels, performanceValue, serializePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewResponse } from '../../../src/components/performance/overview';
 import { buildPerformanceChart } from '../../../src/components/performance/plot';
 
 const emptyOverview = (): PerformanceOverviewResponse => ({
@@ -17,10 +17,8 @@ describe('performance overview query', () => {
       model: ['gpt-5', 'claude-opus-4-7'], upstream: ['up_1'], operation: [], runtimeLocation: ['SJC'], userId: ['2'], keyId: ['key_1'],
     }, Date.UTC(2026, 6, 12, 4));
     expect(query).toMatchObject({
-      bucket: 'hour',
+      bucket: '4h',
       group_by: 'operation',
-      timezone: 'UTC',
-      timezone_offset_minutes: '0',
       filter_model: ['gpt-5', 'claude-opus-4-7'],
       filter_upstream: ['up_1'],
       filter_runtime_location: ['SJC'],
@@ -30,14 +28,20 @@ describe('performance overview query', () => {
     expect(query).not.toHaveProperty('metric_scope');
   });
 
+  it('requests UTC hours only for the range whose repeated hours stay separate', () => {
+    const filters = { model: [], upstream: [], operation: [], runtimeLocation: [], userId: [], keyId: [] };
+
+    expect(buildPerformanceQuery('today', 'model', filters, Date.UTC(2026, 10, 1, 7))).toMatchObject({
+      bucket: 'hour',
+      timezone: 'UTC',
+      timezone_offset_minutes: '0',
+    });
+    expect(buildPerformanceQuery('30d', 'model', filters, Date.UTC(2026, 10, 1, 7)).bucket).toBe('day');
+  });
+
   it('converts TPOT microseconds to output tokens per second', () => {
     const record = { tpotUsP95: 20_000 } as Parameters<typeof performanceValue>[0];
     expect(performanceValue(record, 'tokPerSec', 'p95')).toBe(50);
-  });
-
-  it('clears filters hidden by the selected grouping', () => {
-    const filters = { model: [], upstream: [], operation: [], runtimeLocation: [], userId: ['2'], keyId: ['key_1'] };
-    expect(clearGroupedFilter(filters, 'userId')).toMatchObject({ userId: [], keyId: [] });
   });
 
   it('round-trips non-default dashboard state through the URL', () => {

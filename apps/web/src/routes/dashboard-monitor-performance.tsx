@@ -1,5 +1,5 @@
 import { InfoRegular } from '@fluentui/react-icons';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 
 import { useTranslation } from '../i18n/translation';
@@ -10,7 +10,6 @@ import { api, callApi, type GlobalError } from '../api/client';
 import { PerformanceChartSection } from '../components/performance/chart';
 import {
   buildPerformanceQuery,
-  clearGroupedFilter,
   parsePerformanceUrlState,
   performanceLabels,
   serializePerformanceUrlState,
@@ -26,7 +25,7 @@ import {
 import { buildPerformanceChart, performanceBuckets } from '../components/performance/plot';
 import { PerformanceTable } from '../components/performance/table';
 import { TelemetryDimensionControls, type TelemetryDimension } from '../components/telemetry/dimension-controls';
-import { scopeTelemetryIdentity, telemetryFilterDimensions } from '../components/telemetry/filter-state';
+import { clearGroupedTelemetryFilters, scopeTelemetryIdentity } from '../components/telemetry/filter-state';
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
@@ -103,6 +102,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const [breakdownGroup, setBreakdownGroup] = useState<PerformanceGroupBy>('model');
   const [filters, setFilters] = useState<PerformanceFilters>(initialState.filters);
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set(initialState.hidden));
+  const loadedGroupRef = useRef(groupBy);
   const [overview, setOverview] = useState<PerformanceOverviewResponse | null>(loaderData.overview);
   const [upstreamNames] = useState(() => loaderData.upstreamNames && new Map(loaderData.upstreamNames.map(record => [record.id, record.name])));
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
@@ -126,10 +126,19 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     setOverview(result.data);
     setLoadedRange(query.range);
     setLoadedAt(requestedAt);
+    if (loadedGroupRef.current !== query.groupBy) {
+      loadedGroupRef.current = query.groupBy;
+      setHiddenSeries(new Set());
+    }
     return true;
   }, [query]);
 
-  const { loadedQuery, poll, refresh, refreshing } = useRefreshOnChange(query, reload);
+  const restoreQuery = useCallback((loaded: typeof query) => {
+    setFilters(loaded.filters);
+    setGroupBy(loaded.groupBy);
+    setRange(loaded.range);
+  }, []);
+  const { loadedQuery, poll, refresh, refreshing } = useRefreshOnChange(query, reload, restoreQuery);
 
   usePollWhileVisible(poll);
 
@@ -151,19 +160,12 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   // axis under an operator who chose nothing.
   // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-combobox/library/src/utils/useSelection.ts#L23-L26
   const changeGroupBy = (next: PerformanceGroupBy) => {
-    if (next === groupBy) {
-      if (next !== loadedQuery.groupBy) void refresh();
-      return;
-    }
+    if (next === groupBy) return;
     setGroupBy(next);
-    setFilters(current => clearGroupedFilter(current, next));
-    setHiddenSeries(new Set());
+    setFilters(current => clearGroupedTelemetryFilters(current, next));
   };
   const changeRange = (next: PerformanceRange) => {
-    if (next === range) {
-      if (next !== loadedQuery.range) void refresh();
-      return;
-    }
+    if (next === range) return;
     setRange(next);
   };
   const setFilter = (key: keyof PerformanceFilters, value: string[]) => setFilters(current => ({ ...current, [key]: value }));
@@ -194,7 +196,6 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     { key: 'keyId', groupLabel: t('dashboard.performance.groupBy.keyId'), filterLabel: t('dashboard.performance.filters.keyId'), allLabel: t('dashboard.performance.filters.all.keyId'), options: overview?.dimensionValues.keyIds.map(value => ({ value, label: labels?.keys.get(value) ?? value })) ?? [] },
   ];
   const availableDimensions = dimensions.filter(dimension => dimension.key !== 'userId' || view === 'all-by-user');
-  const filterDimensions = telemetryFilterDimensions(availableDimensions, loadedQuery.groupBy);
 
   return <section className="dashboard-page">
     <DashboardPageHeader
@@ -207,7 +208,6 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
         <TelemetryDimensionControls
           dimensions={availableDimensions}
-          filterDimensions={filterDimensions}
           filters={loadedQuery.filters}
           groupBy={loadedQuery.groupBy}
           groupByAdornment={loadedQuery.groupBy === 'keyId' && <Tooltip content={t('dashboard.performance.apiKeyScopeInfo')} relationship="description">

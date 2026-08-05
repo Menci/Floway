@@ -164,13 +164,20 @@ describe('usage dimension controls', () => {
 
   it('retries a failed grouping when the operator selects it again', async () => {
     let overviewRequests = 0;
+    const requestedGroups: string[] = [];
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost');
       if (url.pathname === '/api/token-usage/overview') {
         overviewRequests += 1;
+        const groupBy = url.searchParams.get('group_by') ?? 'model';
+        requestedGroups.push(groupBy);
         if (overviewRequests === 1) return Response.json({ error: 'Unavailable' }, { status: 500 });
         return Response.json({
-          series: [{ ...usageRecord, group: 'upstream:up-1', metrics: [{ metric: 'input_tokens', quantity: '10' }] }],
+          series: [{
+            ...usageRecord,
+            group: groupBy === 'upstream' ? 'upstream:up-1' : 'gpt-5',
+            metrics: [{ metric: 'input_tokens', quantity: '10' }],
+          }],
           axes: { none: [], model: [], upstream: [], userId: [], keyId: [] },
           dimensionValues: loaderData.usage.dimensionValues,
           users: loaderData.usage.users,
@@ -191,8 +198,13 @@ describe('usage dimension controls', () => {
     await waitFor(() => expect(overviewRequests).toBe(1));
     expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Group by' }).value).toBe('By Model');
 
-    chooseUpstream();
+    fireEvent.click(screen.getByText('7 Days'));
     await waitFor(() => expect(overviewRequests).toBe(2));
+    expect(requestedGroups).toEqual(['upstream', 'model']);
+
+    chooseUpstream();
+    await waitFor(() => expect(overviewRequests).toBe(3));
+    expect(requestedGroups).toEqual(['upstream', 'model', 'upstream']);
     await waitFor(() => expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Group by' }).value).toBe('By Upstream'));
   });
 });

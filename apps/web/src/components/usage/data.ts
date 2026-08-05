@@ -8,7 +8,7 @@ import type {
   UsageRange,
   UsageUpstream,
 } from './types';
-import { api, callApi, type ApiResult } from '../../api/client';
+import { api, callApi } from '../../api/client';
 import { dashboardRangeQuery } from '../charts/dashboard-time';
 import type {
   SearchUsageByKeyResponse,
@@ -36,18 +36,6 @@ const usageOverviewForDisplay = (data: TokenUsageOverviewResponse): UsageOvervie
     records.map(usageRecordForDisplay),
   ])) as UsageOverviewResponse['axes'],
 });
-
-const forRequestedView = <T extends { view: SearchUsageView }>(
-  result: ApiResult<T | unknown[], unknown>,
-  view: SearchUsageView,
-): T | null => {
-  if (result.error) return null;
-  const data = result.data;
-  if (Array.isArray(data) || data.view !== view) {
-    throw new TypeError(`Search usage response does not match the requested ${view} view`);
-  }
-  return data;
-};
 
 const searchUsageForDisplay = (data: SearchUsageByKeyResponse | SearchUsageByUserResponse): SearchUsageResponse =>
   data.view === 'all-by-user'
@@ -93,7 +81,10 @@ export const loadUsagePageData = async (
     callApi(() => api.api['search-usage'].$get({ query: searchQuery }, { init: { signal } })),
     callApi(() => api.api['upstream-options'].$get({}, { init: { signal } })),
   ]);
-  const searchData = forRequestedView<SearchUsageByKeyResponse | SearchUsageByUserResponse>(searchResult, searchView);
+  const searchData = searchResult.error ? null : searchResult.data;
+  if (searchData !== null && (Array.isArray(searchData) || searchData.view !== searchView)) {
+    throw new TypeError(`Search usage response does not match the requested ${searchView} view`);
+  }
   return {
     usage: usageResult.data ? usageOverviewForDisplay(usageResult.data) : null,
     search: searchData ? searchUsageForDisplay(searchData) : null,

@@ -16,7 +16,6 @@ export interface TelemetryDimension<Key extends string> {
 
 export function TelemetryDimensionControls<Key extends string>({
   dimensions,
-  filterDimensions = dimensions,
   filters,
   groupBy,
   groupByAdornment,
@@ -26,7 +25,6 @@ export function TelemetryDimensionControls<Key extends string>({
   selectedLabel,
 }: {
   dimensions: readonly TelemetryDimension<Key>[];
-  filterDimensions?: readonly TelemetryDimension<Key>[];
   filters: Record<Key, readonly string[]>;
   groupBy: Key;
   groupByAdornment?: ReactNode;
@@ -54,8 +52,11 @@ export function TelemetryDimensionControls<Key extends string>({
         {groupByAdornment}
       </div>
     </Field>
-    {filterDimensions
-      .filter(dimension => dimension.key !== groupBy)
+    {dimensions
+      .filter(dimension => (
+        dimension.key !== groupBy
+        && !((dimension.key === 'userId' || dimension.key === 'keyId') && (groupBy === 'userId' || groupBy === 'keyId'))
+      ))
       .map(dimension => <Field className="min-w-[150px] flex-[1_1_150px]" key={dimension.key} label={dimension.filterLabel}>
         <MultiselectCombobox
           className="w-full"

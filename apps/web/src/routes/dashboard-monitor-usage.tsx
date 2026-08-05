@@ -1,5 +1,5 @@
 import { InfoRegular } from '@fluentui/react-icons';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 
 import { useTranslation } from '../i18n/translation';
@@ -9,7 +9,7 @@ import { revalidateOnPathnameChange } from './revalidation';
 import type { GlobalError } from '../api/client';
 import { SEARCH_PROVIDER_LABEL_KEYS } from '../components/search/provider';
 import { TelemetryDimensionControls, type TelemetryDimension } from '../components/telemetry/dimension-controls';
-import { scopeTelemetryIdentity, telemetryFilterDimensions } from '../components/telemetry/filter-state';
+import { clearGroupedTelemetryFilters, scopeTelemetryIdentity } from '../components/telemetry/filter-state';
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
@@ -21,7 +21,7 @@ import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
 import { useRefreshOnChange } from '../components/ui/use-refresh';
 import { UsageChartSection } from '../components/usage/chart-section';
 import { loadUsagePageData } from '../components/usage/data';
-import { clearGroupedUsageFilter, upstreamFromUsageValue, usageUpstreamValue } from '../components/usage/dimensions';
+import { upstreamFromUsageValue, usageUpstreamValue } from '../components/usage/dimensions';
 import { formatMetricValue } from '../components/usage/format';
 import { buildSearchChart, buildTokenChart, dashboardBuckets, summarizeUsage } from '../components/usage/plot';
 import { SummaryMetrics } from '../components/usage/summary-metrics';
@@ -76,6 +76,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const [groupBy, setGroupBy] = useState<UsageGroupBy>(initialState.groupBy);
   const [filters, setFilters] = useState<UsageFilters>(initialState.filters);
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set(initialState.hidden));
+  const loadedGroupRef = useRef(groupBy);
   const [hiddenSearch, setHiddenSearch] = useState<Set<string>>(() => new Set(initialState.hiddenSearch));
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
   const query = useMemo(() => ({ filters, groupBy, range }), [filters, groupBy, range]);
@@ -96,10 +97,19 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     setLoadedRange(query.range);
     setLoadedAt(requestedAt);
     setError(next.error);
+    if (loadedGroupRef.current !== query.groupBy) {
+      loadedGroupRef.current = query.groupBy;
+      setHiddenSeries(new Set());
+    }
     return true;
   }, [loaderData.isAdmin, query]);
 
-  const { loadedQuery, poll, refresh, refreshing } = useRefreshOnChange(query, reload);
+  const restoreQuery = useCallback((loaded: typeof query) => {
+    setFilters(loaded.filters);
+    setGroupBy(loaded.groupBy);
+    setRange(loaded.range);
+  }, []);
+  const { loadedQuery, poll, refresh, refreshing } = useRefreshOnChange(query, reload, restoreQuery);
   usePollWhileVisible(poll);
 
   const urlState = useMemo<UsageUrlState>(
@@ -129,7 +139,6 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     ];
   }, [t, upstreams, usage]);
   const availableDimensions = dimensions?.filter(dimension => dimension.key !== 'userId' || loaderData.isAdmin) ?? null;
-  const filterDimensions = availableDimensions && telemetryFilterDimensions(availableDimensions, loadedQuery.groupBy);
   const selectedDimension = availableDimensions === null ? null : (() => {
     const dimension = availableDimensions.find(candidate => candidate.key === loadedQuery.groupBy);
     if (dimension === undefined) throw new RangeError(`Unknown Usage grouping dimension: ${loadedQuery.groupBy}`);
@@ -161,19 +170,12 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const showSearch = searchChart === null || searchChart.entries.length > 0;
 
   const changeGroupBy = (next: UsageGroupBy) => {
-    if (next === groupBy) {
-      if (next !== loadedQuery.groupBy) void refresh();
-      return;
-    }
+    if (next === groupBy) return;
     setGroupBy(next);
-    setFilters(current => clearGroupedUsageFilter(current, next));
-    setHiddenSeries(new Set());
+    setFilters(current => clearGroupedTelemetryFilters(current, next));
   };
   const changeRange = (next: UsageRange) => {
-    if (next === range) {
-      if (next !== loadedQuery.range) void refresh();
-      return;
-    }
+    if (next === range) return;
     setRange(next);
   };
   const setFilter = (key: UsageGroupBy, values: string[]) => setFilters(current => ({ ...current, [key]: values }));
@@ -187,9 +189,8 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error.message}</OutcomeMessageBar>}
 
     <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
-      {availableDimensions && filterDimensions && <TelemetryDimensionControls
+      {availableDimensions && <TelemetryDimensionControls
         dimensions={availableDimensions}
-        filterDimensions={filterDimensions}
         filters={loadedQuery.filters}
         groupBy={loadedQuery.groupBy}
         groupByAdornment={loadedQuery.groupBy === 'keyId' && <Tooltip content={t('dashboard.usage.apiKeyScopeInfo')} relationship="description">

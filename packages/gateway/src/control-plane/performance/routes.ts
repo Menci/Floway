@@ -15,11 +15,12 @@
 // scoped to the actor's own keys in every breakdown, so other users' key ids
 // never surface either.
 
-import { aggregatePerformanceForDisplay, type PerformanceBucketGranularity, type PerformanceGroupBy } from './aggregate.ts';
+import { aggregatePerformanceForDisplay, type PerformanceGroupBy } from './aggregate.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { performanceQuery } from '../schemas.ts';
 import { loadTelemetryOverviewIdentity, partitionTelemetryOverviewRecords, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata } from '../shared/telemetry-overview.ts';
+import type { TelemetryBucketGranularity } from '../shared/telemetry-bucket.ts';
 
 type Ctx = CtxWithQuery<typeof performanceQuery>;
 
@@ -35,7 +36,7 @@ interface PerformanceFilters {
 interface PerformanceQueryParams {
   start: string;
   end: string;
-  bucket: PerformanceBucketGranularity;
+  bucket: TelemetryBucketGranularity;
   groupBy: PerformanceGroupBy;
   timeZone?: string;
   timezoneOffsetMinutes: number;
