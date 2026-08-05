@@ -1,13 +1,13 @@
-import { fireEvent, screen } from '@testing-library/react';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { fireEvent, screen } from '@testing-library/react';
 import { FormProvider, useForm, useWatch } from 'react-hook-form';
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import type { UpstreamRecord } from '../../../src/api/types';
+import { refineCustomIngressHeaderRules } from '../../../src/components/upstream-editor/custom-ingress-header-rules-validation';
 import type { UpstreamEditorValues } from '../../../src/components/upstream-editor/data';
 import { valuesFromRecord } from '../../../src/components/upstream-editor/data';
-import { refineCustomIngressHeaderRules } from '../../../src/components/upstream-editor/custom-ingress-header-rules-validation';
 import { ProviderConfigSection } from '../../../src/components/upstream-editor/provider-config';
 import { i18n } from '../../../src/i18n';
 import { upstreamRecord } from '../../api/upstream-fixture';

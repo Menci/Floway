@@ -19,10 +19,10 @@
 // path is part of the fetch toggle (`modelsFetch.endpoint`), not a generic
 // path override, because it only matters when fetching is enabled.
 
+import { customIngressHeaderNameIssue, isCustomIngressHeaderValue } from './ingress-header-rules.ts';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
 import { endpointsField, modelsField, validateUpstreamPath } from '@floway-dev/provider';
-import { customIngressHeaderNameIssue, isCustomIngressHeaderValue } from './ingress-header-rules.ts';
 
 export type CustomAuthStyle = 'bearer' | 'anthropic' | 'none';
 
