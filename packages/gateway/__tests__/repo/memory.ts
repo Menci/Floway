@@ -56,6 +56,7 @@ import type {
   UsageRepo,
   User,
   UserUpdate,
+  UserUpdateOptions,
   UpdateActiveUserResult,
   UsersRepo,
 } from '../../src/repo/types.ts';
@@ -140,7 +141,7 @@ class MemoryUsersRepo implements UsersRepo {
     });
   }
 
-  updateActive(id: number, patch: UserUpdate): Promise<UpdateActiveUserResult> {
+  updateActive(id: number, patch: UserUpdate, options?: UserUpdateOptions): Promise<UpdateActiveUserResult> {
     return this.mutate(() => {
       const index = this.users.findIndex(user => user.id === id && user.deletedAt === null);
       if (index < 0) return { status: 'missing' };
@@ -151,6 +152,10 @@ class MemoryUsersRepo implements UsersRepo {
       }
       const user = { ...existing, ...patch };
       this.users[index] = user;
+      if (options !== undefined) {
+        if (options.keepSessionId === null) this.sessions.deleteByUserIdNow(id);
+        else this.sessions.deleteByUserIdExceptNow(id, options.keepSessionId);
+      }
       return { status: 'updated', user: { ...user } };
     });
   }
@@ -219,20 +224,16 @@ class MemorySessionsRepo implements SessionsRepo {
     return Promise.resolve(this.sessions.length < before);
   }
 
-  deleteByUserId(userId: number): Promise<number> {
-    return Promise.resolve(this.deleteByUserIdNow(userId));
-  }
-
   deleteByUserIdNow(userId: number): number {
     const before = this.sessions.length;
     this.sessions = this.sessions.filter(s => s.userId !== userId);
     return before - this.sessions.length;
   }
 
-  deleteByUserIdExcept(userId: number, exceptId: string): Promise<number> {
+  deleteByUserIdExceptNow(userId: number, exceptId: string): number {
     const before = this.sessions.length;
     this.sessions = this.sessions.filter(s => s.userId !== userId || s.id === exceptId);
-    return Promise.resolve(before - this.sessions.length);
+    return before - this.sessions.length;
   }
 
   deleteAll(): Promise<void> {

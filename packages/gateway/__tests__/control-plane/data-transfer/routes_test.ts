@@ -1541,8 +1541,8 @@ test('replace-mode import clears sessions before writing users', async () => {
   const { app, repo } = setup();
   await repo.users.save(SEED_ADMIN);
   await repo.users.save(USER_BOB);
-  await repo.sessions.create(SEED_ADMIN.id);
-  await repo.sessions.create(USER_BOB.id);
+  const adminSession = await repo.sessions.create(SEED_ADMIN.id);
+  const bobSession = await repo.sessions.create(USER_BOB.id);
 
   const result = await doImport(app, 'replace', {
     users: [SEED_ADMIN, USER_BOB],
@@ -1555,10 +1555,8 @@ test('replace-mode import clears sessions before writing users', async () => {
   }, 20);
 
   assertEquals(result.status, 200);
-  // No public listAll on sessions; create a fresh session and check the
-  // deletion happened by directly calling deleteByUserId — both should report 0.
-  assertEquals(await repo.sessions.deleteByUserId(SEED_ADMIN.id), 0);
-  assertEquals(await repo.sessions.deleteByUserId(USER_BOB.id), 0);
+  assertEquals(await repo.sessions.getByIdAndTouch(adminSession.id), null);
+  assertEquals(await repo.sessions.getByIdAndTouch(bobSession.id), null);
 });
 
 test('v20 import rejects users[i].upstreamIds === undefined', async () => {

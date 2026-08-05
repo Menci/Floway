@@ -179,6 +179,9 @@ export type ApiKeyUpdate = Partial<Pick<
 >>;
 
 export type UserUpdate = Partial<Pick<User, 'username' | 'passwordHash' | 'isAdmin' | 'upstreamIds'>>;
+export interface UserUpdateOptions {
+  keepSessionId: string | null;
+}
 export type NewUserAccount = Omit<User, 'id' | 'deletedAt'>;
 export type NewUserDefaultKey = Omit<ApiKey, 'userId' | 'deletedAt'>;
 
@@ -201,7 +204,7 @@ export interface UsersRepo {
   getById(id: number): Promise<User | null>;
   findByUsername(username: string): Promise<User | null>;
   createAccount(user: NewUserAccount, defaultKey: NewUserDefaultKey): Promise<CreateUserAccountResult>;
-  updateActive(id: number, patch: UserUpdate): Promise<UpdateActiveUserResult>;
+  updateActive(id: number, patch: UserUpdate, options?: UserUpdateOptions): Promise<UpdateActiveUserResult>;
   deleteAccount(id: number, deletedAt: string): Promise<DeleteUserAccountResult>;
   // Full-row restore primitive for validated data transfer. Request paths use
   // the conditional aggregate mutations above.
@@ -215,8 +218,6 @@ export interface SessionsRepo {
   create(userId: number): Promise<Session>;
   createForActiveUser(userId: number): Promise<Session | null>;
   deleteById(id: string): Promise<boolean>;
-  deleteByUserId(userId: number): Promise<number>;
-  deleteByUserIdExcept(userId: number, exceptId: string): Promise<number>;
   deleteAll(): Promise<void>;
 }
 

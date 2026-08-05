@@ -88,15 +88,14 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
   if (body.password !== undefined) overrides.passwordHash = await hashPassword(body.password);
   if (body.isAdmin !== undefined) overrides.isAdmin = body.isAdmin;
   if (body.upstreamIds !== undefined) overrides.upstreamIds = body.upstreamIds;
-  const result = await repo.users.updateActive(id, overrides);
+  const sessionId = body.password === undefined ? undefined : sessionIdFromContext(c);
+  const result = await repo.users.updateActive(
+    id,
+    overrides,
+    body.password === undefined ? undefined : { keepSessionId: sessionId ?? null },
+  );
   if (result.status === 'missing') return c.json({ error: 'user not found' }, 404);
   if (result.status === 'username-taken') return c.json({ error: 'username taken' }, 400);
-
-  if (body.password !== undefined) {
-    const sessionId = sessionIdFromContext(c);
-    if (sessionId) await repo.sessions.deleteByUserIdExcept(id, sessionId);
-    else await repo.sessions.deleteByUserId(id);
-  }
 
   return c.json(userToAdminWire(result.user, knownUpstreamIds));
 };
@@ -139,9 +138,12 @@ export const changeOwnPassword = async (c: CtxWithJson<typeof changeOwnPasswordB
     return c.json({ error: 'Current password is incorrect' }, 400);
   }
 
-  const result = await repo.users.updateActive(user.id, { passwordHash: await hashPassword(newPassword) });
+  const result = await repo.users.updateActive(
+    user.id,
+    { passwordHash: await hashPassword(newPassword) },
+    { keepSessionId: sessionId },
+  );
   if (result.status === 'missing') return c.json({ error: 'Invalid session' }, 401);
   if (result.status === 'username-taken') throw new Error('Password-only user update reported a username collision');
-  await repo.sessions.deleteByUserIdExcept(user.id, sessionId);
   return c.json({ ok: true });
 };

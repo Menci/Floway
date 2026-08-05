@@ -96,6 +96,19 @@ describe.each(backends)('UsersRepo (%s)', (_label, makeRepo) => {
     expect(await repo.users.getById(2)).toMatchObject({ username: 'renamed', isAdmin: true });
   });
 
+  test('password update and session revocation commit as one account mutation', async () => {
+    const repo = await makeRepo();
+    await repo.users.save(sampleUser({ id: 2, passwordHash: null }));
+    const keep = await repo.sessions.create(2);
+    const revoke = await repo.sessions.create(2);
+
+    const result = await repo.users.updateActive(2, { passwordHash: sampleUser().passwordHash }, { keepSessionId: keep.id });
+    expect(result.status).toBe('updated');
+    expect((await repo.users.getById(2))?.passwordHash).toBe(sampleUser().passwordHash);
+    expect(await repo.sessions.getByIdAndTouch(keep.id)).not.toBeNull();
+    expect(await repo.sessions.getByIdAndTouch(revoke.id)).toBeNull();
+  });
+
   test('deleteAccount atomically removes sessions and soft-deletes all active keys', async () => {
     const repo = await makeRepo();
     await repo.users.save(sampleUser({ id: 2 }));
@@ -204,5 +217,19 @@ test('SQL deleteAccount rolls back keys and user when a middle statement fails',
   await expect(repo.users.deleteAccount(2, '2026-06-08T00:00:00.000Z')).rejects.toThrow('session deletion failed');
   expect(await repo.users.getById(2)).not.toBeNull();
   expect(await repo.apiKeys.getById(key.id)).not.toBeNull();
+  expect(await repo.sessions.getByIdAndTouch(session.id)).not.toBeNull();
+});
+
+test('SQL password update rolls back when session revocation fails', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  await repo.users.save(sampleUser({ id: 2, passwordHash: null }));
+  const session = await repo.sessions.create(2);
+  await db.exec(`CREATE TRIGGER fail_password_session_delete BEFORE DELETE ON sessions
+    BEGIN SELECT RAISE(ABORT, 'password session deletion failed'); END;`);
+
+  await expect(repo.users.updateActive(2, { passwordHash: sampleUser().passwordHash }, { keepSessionId: null }))
+    .rejects.toThrow('password session deletion failed');
+  expect((await repo.users.getById(2))?.passwordHash).toBeNull();
   expect(await repo.sessions.getByIdAndTouch(session.id)).not.toBeNull();
 });

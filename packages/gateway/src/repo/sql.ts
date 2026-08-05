@@ -48,6 +48,7 @@ import type {
   UsageRepo,
   User,
   UserUpdate,
+  UserUpdateOptions,
   UpdateActiveUserResult,
   UsersRepo,
 } from './types.ts';
@@ -410,36 +411,55 @@ class SqlUsersRepo implements UsersRepo {
     }
   }
 
-  async updateActive(id: number, patch: UserUpdate): Promise<UpdateActiveUserResult> {
+  async updateActive(id: number, patch: UserUpdate, options?: UserUpdateOptions): Promise<UpdateActiveUserResult> {
     const hasUsername = patch.username !== undefined;
     const hasPasswordHash = patch.passwordHash !== undefined;
     const hasIsAdmin = patch.isAdmin !== undefined;
     const hasUpstreamIds = patch.upstreamIds !== undefined;
-    let row: UserRow | null;
+    const update = this.db
+      .prepare(
+        `UPDATE users
+         SET username = CASE WHEN ? THEN ? ELSE username END,
+             password_hash = CASE WHEN ? THEN ? ELSE password_hash END,
+             is_admin = CASE WHEN ? THEN ? ELSE is_admin END,
+             upstream_ids = CASE WHEN ? THEN ? ELSE upstream_ids END
+         WHERE id = ? AND deleted_at IS NULL
+         RETURNING ${USER_COLUMNS}`,
+      )
+      .bind(
+        hasUsername ? 1 : 0, patch.username ?? null,
+        hasPasswordHash ? 1 : 0, patch.passwordHash ?? null,
+        hasIsAdmin ? 1 : 0, patch.isAdmin ? 1 : 0,
+        hasUpstreamIds ? 1 : 0, serializeUpstreamIds(patch.upstreamIds ?? null),
+        id,
+      );
     try {
-      row = await this.db
-        .prepare(
-          `UPDATE users
-           SET username = CASE WHEN ? THEN ? ELSE username END,
-               password_hash = CASE WHEN ? THEN ? ELSE password_hash END,
-               is_admin = CASE WHEN ? THEN ? ELSE is_admin END,
-               upstream_ids = CASE WHEN ? THEN ? ELSE upstream_ids END
-           WHERE id = ? AND deleted_at IS NULL
-           RETURNING ${USER_COLUMNS}`,
-        )
-        .bind(
-          hasUsername ? 1 : 0, patch.username ?? null,
-          hasPasswordHash ? 1 : 0, patch.passwordHash ?? null,
-          hasIsAdmin ? 1 : 0, patch.isAdmin ? 1 : 0,
-          hasUpstreamIds ? 1 : 0, serializeUpstreamIds(patch.upstreamIds ?? null),
-          id,
-        )
-        .first<UserRow>();
+      if (options === undefined) {
+        const row = await update.first<UserRow>();
+        return row ? { status: 'updated', user: toUser(row) } : { status: 'missing' };
+      }
+      const sessionDeletion = options.keepSessionId === null
+        ? this.db
+            .prepare(
+              `DELETE FROM sessions WHERE user_id = ?
+               AND EXISTS (SELECT 1 FROM users WHERE id = ? AND deleted_at IS NULL)`,
+            )
+            .bind(id, id)
+        : this.db
+            .prepare(
+              `DELETE FROM sessions WHERE user_id = ? AND id != ?
+               AND EXISTS (SELECT 1 FROM users WHERE id = ? AND deleted_at IS NULL)`,
+            )
+            .bind(id, options.keepSessionId, id);
+      const results = await this.atomicBatch([update, sessionDeletion]);
+      const rows = results[0].results as unknown as UserRow[];
+      if (rows.length === 0) return { status: 'missing' };
+      if (rows.length !== 1) throw new Error(`updateActive: atomic user update returned ${rows.length} rows`);
+      return { status: 'updated', user: toUser(rows[0]) };
     } catch (error) {
       if (isUsernameTakenError(error)) return { status: 'username-taken' };
       throw error;
     }
-    return row ? { status: 'updated', user: toUser(row) } : { status: 'missing' };
   }
 
   async deleteAccount(id: number, deletedAt: string): Promise<DeleteUserAccountResult> {
@@ -545,19 +565,6 @@ class SqlSessionsRepo implements SessionsRepo {
   async deleteById(id: string): Promise<boolean> {
     const result = await this.db.prepare('DELETE FROM sessions WHERE id = ?').bind(id).run();
     return (result.meta.changes ?? 0) > 0;
-  }
-
-  async deleteByUserId(userId: number): Promise<number> {
-    const result = await this.db.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId).run();
-    return result.meta.changes ?? 0;
-  }
-
-  async deleteByUserIdExcept(userId: number, exceptId: string): Promise<number> {
-    const result = await this.db
-      .prepare('DELETE FROM sessions WHERE user_id = ? AND id != ?')
-      .bind(userId, exceptId)
-      .run();
-    return result.meta.changes ?? 0;
   }
 
   async deleteAll(): Promise<void> {

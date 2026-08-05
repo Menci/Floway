@@ -64,26 +64,6 @@ describe.each(backends)('SessionsRepo (%s)', (_label, makeRepo) => {
     expect(await repo.sessions.getByIdAndTouch(b.id)).not.toBeNull();
   });
 
-  test('deleteByUserId removes every session for that user', async () => {
-    const repo = await makeRepo();
-    await repo.sessions.create(1);
-    await repo.sessions.create(1);
-    const other = await repo.sessions.create(2);
-    expect(await repo.sessions.deleteByUserId(1)).toBe(2);
-    expect(await repo.sessions.getByIdAndTouch(other.id)).not.toBeNull();
-  });
-
-  test('deleteByUserIdExcept keeps only the named session', async () => {
-    const repo = await makeRepo();
-    const a = await repo.sessions.create(1);
-    const keep = await repo.sessions.create(1);
-    const other = await repo.sessions.create(2);
-    expect(await repo.sessions.deleteByUserIdExcept(1, keep.id)).toBe(1);
-    expect(await repo.sessions.getByIdAndTouch(a.id)).toBeNull();
-    expect(await repo.sessions.getByIdAndTouch(keep.id)).not.toBeNull();
-    expect(await repo.sessions.getByIdAndTouch(other.id)).not.toBeNull();
-  });
-
   test('deleteAll wipes the table', async () => {
     const repo = await makeRepo();
     const a = await repo.sessions.create(1);
