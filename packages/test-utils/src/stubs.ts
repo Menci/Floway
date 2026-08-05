@@ -106,7 +106,7 @@ export const stubModelCandidate = (overrides: {
     upstreamId: 'test-upstream',
     kind: 'custom',
     name: 'Test Upstream',
-    ingressHeaderRules: [],
+    additionalInboundHeaderAllowlist: [],
     disabledPublicModelIds: [],
     modelPrefix: null,
     modelsCache: null,

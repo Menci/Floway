@@ -6,7 +6,7 @@ import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { type MessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions, type FlagId } from '@floway-dev/provider';
+import { type MessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type Provider, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions, type FlagId } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the serve exactly the provider
@@ -140,11 +140,15 @@ const makeCandidate = (overrides: {
     callResponses: overrides.callResponses,
     callMessagesCountTokens: overrides.callMessagesCountTokens,
   });
+  const providerBase = {
+    upstreamId: upstream, name: upstream,
+    disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, instance: provider,
+  };
+  const candidateProvider: Provider = kind === 'custom'
+    ? { ...providerBase, kind, additionalInboundHeaderAllowlist: [] }
+    : { ...providerBase, kind };
   return {
-    provider: {
-      upstreamId: upstream, kind, name: upstream, ingressHeaderRules: [],
-      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, instance: provider,
-    },
+    provider: candidateProvider,
     model: stubInternalModel({
       id: modelId,
       ...(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),

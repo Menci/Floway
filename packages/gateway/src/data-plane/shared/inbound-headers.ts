@@ -28,5 +28,5 @@ export const resolveIngressHeadersForProvider = (
   provider: Provider,
 ): Headers => resolveIngressHeaders(headers, [
   ...inboundHeaderAllowlistForKind(provider.kind),
-  ...(provider.kind === 'custom' ? provider.ingressHeaderRules.map(rule => rule.matcher) : []),
+  ...(provider.kind === 'custom' ? provider.additionalInboundHeaderAllowlist : []),
 ]);

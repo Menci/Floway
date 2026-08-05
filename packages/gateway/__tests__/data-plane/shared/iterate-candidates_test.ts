@@ -13,7 +13,7 @@ const stubCandidate = (id: string, upstream = 'up'): ModelCandidate =>
       upstreamId: upstream,
       kind: 'custom',
       name: upstream,
-      ingressHeaderRules: [],
+      additionalInboundHeaderAllowlist: [],
       disabledPublicModelIds: [],
       modelPrefix: null,
       modelsCache: null,

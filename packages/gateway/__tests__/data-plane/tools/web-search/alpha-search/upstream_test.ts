@@ -1,6 +1,6 @@
 import { test, vi } from 'vitest';
 
-import type { CustomIngressHeaderRule, ModelCandidate, Provider } from '@floway-dev/provider';
+import type { InboundHeaderMatcher, ModelCandidate, Provider } from '@floway-dev/provider';
 import { assertEquals, assertExists, stubModelCandidate, stubProvider } from '@floway-dev/test-utils';
 
 let resolvedCandidate: ModelCandidate | undefined;
@@ -18,7 +18,7 @@ vi.mock('../../../../../src/data-plane/providers/resolution.ts', async importOri
 
 const { resolveAlphaSearchDispatcher } = await import('../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts');
 
-const dispatcherFor = async (kind: 'codex' | 'custom', ingressHeaderRules: readonly CustomIngressHeaderRule[] = []) => {
+const dispatcherFor = async (kind: 'codex' | 'custom', additionalInboundHeaderAllowlist: readonly InboundHeaderMatcher[] = []) => {
   let observedHeaders: Headers | undefined;
   const base = stubModelCandidate();
   if (base.provider.kind !== 'custom') throw new Error('stubModelCandidate default must be Custom');
@@ -33,9 +33,9 @@ const dispatcherFor = async (kind: 'codex' | 'custom', ingressHeaderRules: reado
     }),
   };
   const provider: Provider = kind === 'custom'
-    ? { ...common, kind, ingressHeaderRules }
+    ? { ...common, kind, additionalInboundHeaderAllowlist }
     : (() => {
-        const { ingressHeaderRules: _customRules, ...standard } = common;
+        const { additionalInboundHeaderAllowlist: _customAllowlist, ...standard } = common;
         return { ...standard, kind };
       })();
   resolvedCandidate = stubModelCandidate({ provider });
@@ -65,9 +65,9 @@ test('Codex Alpha Search receives only its declared turn metadata', async () => 
 
 test('Custom Alpha Search admits configured names before the provider call', async () => {
   const { dispatcher, observedHeaders } = await dispatcherFor('custom', [
-    { matcher: 'x-empty', value: '' },
-    { matcher: 'x-overwrite', value: 'configured' },
-    { matcher: 'x-passthrough', value: null },
+    'x-empty',
+    'x-overwrite',
+    'x-passthrough',
   ]);
   await dispatcher({}, undefined, new Headers({
     authorization: 'Bearer secret',

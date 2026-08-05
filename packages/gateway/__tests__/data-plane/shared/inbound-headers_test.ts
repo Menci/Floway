@@ -94,15 +94,15 @@ describe('provider inbound header policies', () => {
   const provider = (kind: UpstreamProviderKind): Provider => {
     const base = stubModelCandidate().provider;
     if (base.kind !== 'custom') throw new Error('stubModelCandidate default must be Custom');
-    if (kind === 'custom') return { ...base, kind, ingressHeaderRules: [] };
-    const { ingressHeaderRules: _customRules, ...standard } = base;
+    if (kind === 'custom') return { ...base, kind, additionalInboundHeaderAllowlist: [] };
+    const { additionalInboundHeaderAllowlist: _customAllowlist, ...standard } = base;
     return { ...standard, kind };
   };
 
-  const customProvider = (ingressHeaderRules: { matcher: string; value: string | null }[]) => ({
+  const customProvider = (additionalInboundHeaderAllowlist: string[]) => ({
     ...stubModelCandidate().provider,
     kind: 'custom' as const,
-    ingressHeaderRules,
+    additionalInboundHeaderAllowlist,
   });
 
   test.each<UpstreamProviderKind>(['custom', 'azure', 'ollama', 'copilot'])(
@@ -181,12 +181,7 @@ describe('provider inbound header policies', () => {
       'x-passthrough': 'client-passthrough',
       'x-unlisted': 'discard',
     });
-    const custom = customProvider([
-      { matcher: 'X-Passthrough', value: null },
-      { matcher: 'x-overwrite', value: 'configured' },
-      { matcher: 'x-empty', value: '' },
-      { matcher: 'x-missing', value: 'not-injected' },
-    ]);
+    const custom = customProvider(['X-Passthrough', 'x-overwrite', 'x-empty', 'x-missing']);
 
     expect(headerRecord(resolveIngressHeadersForProvider(source, custom))).toEqual({
       'x-empty': 'client-empty',
@@ -203,8 +198,8 @@ describe('provider inbound header policies', () => {
 
   test('resolves instance allowlists independently for same-kind failover candidates', () => {
     const source = new Headers({ 'x-first': 'first-client', 'x-second': 'second-client' });
-    const first = resolveIngressHeadersForProvider(source, customProvider([{ matcher: 'x-first', value: 'first' }]));
-    const second = resolveIngressHeadersForProvider(source, customProvider([{ matcher: 'x-second', value: 'second' }]));
+    const first = resolveIngressHeadersForProvider(source, customProvider(['x-first']));
+    const second = resolveIngressHeadersForProvider(source, customProvider(['x-second']));
 
     expect(headerRecord(first)).toEqual({ 'x-first': 'first-client' });
     expect(headerRecord(second)).toEqual({ 'x-second': 'second-client' });

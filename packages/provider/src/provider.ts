@@ -25,11 +25,6 @@ export type ResponsesAction = 'generate' | 'compact';
 
 export type InboundHeaderMatcher = string | RegExp;
 
-export interface CustomIngressHeaderRule {
-  readonly matcher: InboundHeaderMatcher;
-  readonly value: string | null;
-}
-
 interface ProviderBase {
   upstreamId: string;
   name: string;
@@ -47,10 +42,9 @@ interface ProviderBase {
 
 export interface CustomProvider extends ProviderBase {
   kind: 'custom';
-  // Every configured name joins this instance's ordinary-header allowlist.
-  // The Custom provider alone interprets string values as replacements after
-  // the gateway admits the matching ingress headers; null leaves them intact.
-  ingressHeaderRules: readonly CustomIngressHeaderRule[];
+  // Every configured rule name joins this instance's ordinary-header
+  // allowlist. Rule values remain private to the Custom provider.
+  additionalInboundHeaderAllowlist: readonly InboundHeaderMatcher[];
 }
 
 export interface StandardProvider extends ProviderBase {
