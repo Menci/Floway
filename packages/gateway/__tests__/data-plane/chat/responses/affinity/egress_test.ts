@@ -118,6 +118,70 @@ describe('Responses affinity egress', () => {
     expect(doneArguments).toEqual(['wrapped:cipher-one', 'wrapped:cipher-two']);
   });
 
+  test.each([
+    ['response.output_item.done', 'completed'],
+    ['response.incomplete', 'incomplete'],
+  ] as const)('resolves encrypted argument deltas from authoritative %s state', async (authority, status) => {
+    const argumentsJson = JSON.stringify({ target: '/root/worker', message: 'ciphertext' });
+    const item = {
+      type: 'function_call' as const,
+      id: 'fc_1',
+      call_id: 'call_1',
+      namespace: 'collaboration',
+      name: 'spawn_agent',
+      arguments: argumentsJson,
+      status: 'completed' as const,
+    };
+    const source: ProtocolFrame<ResponsesStreamEvent>[] = [
+      eventFrame({ type: 'response.output_item.added', output_index: 0, item: { ...item, arguments: '', status: 'in_progress' } }),
+      eventFrame({ type: 'response.function_call_arguments.delta', item_id: item.id, output_index: 0, delta: argumentsJson }),
+      authority === 'response.output_item.done'
+        ? eventFrame({ type: authority, output_index: 0, item })
+        : eventFrame({ type: authority, response: response([item], status) }),
+    ];
+    if (authority === 'response.output_item.done') {
+      source.push(eventFrame({ type: 'response.completed', response: response([item]) }));
+    }
+    const output: ResponsesStreamEvent[] = [];
+    for await (const frame of wrapResponsesAffinityEgress(frames(source), { codec: immediateCodec, affinity })) {
+      if (frame.type === 'event') output.push(frame.event);
+    }
+
+    const delta = output.find(event => event.type === 'response.function_call_arguments.delta');
+    if (delta?.type !== 'response.function_call_arguments.delta') throw new Error('Expected rewritten arguments delta');
+    expect(JSON.parse(delta.delta).message).toBe('wrapped:ciphertext');
+  });
+
+  test.each(['error', 'response.failed', 'source EOF'] as const)(
+    'never releases raw encrypted argument deltas on %s',
+    async terminal => {
+      const argumentsJson = JSON.stringify({ target: '/root/worker', message: 'raw-ciphertext' });
+      const item = {
+        type: 'function_call' as const,
+        id: 'fc_1',
+        call_id: 'call_1',
+        namespace: 'collaboration',
+        name: 'send_message',
+        arguments: argumentsJson,
+        status: 'completed' as const,
+      };
+      const source: ProtocolFrame<ResponsesStreamEvent>[] = [
+        eventFrame({ type: 'response.output_item.added', output_index: 0, item: { ...item, arguments: '', status: 'in_progress' } }),
+        eventFrame({ type: 'response.function_call_arguments.delta', item_id: item.id, output_index: 0, delta: argumentsJson }),
+      ];
+      if (terminal === 'error') source.push(eventFrame({ type: 'error', code: 'upstream_error', message: 'failed' }));
+      if (terminal === 'response.failed') source.push(eventFrame({ type: 'response.failed', response: response([], 'failed') }));
+
+      const output: ResponsesStreamEvent[] = [];
+      for await (const frame of wrapResponsesAffinityEgress(frames(source), { codec: immediateCodec, affinity })) {
+        if (frame.type === 'event') output.push(frame.event);
+      }
+
+      expect(output.some(event => event.type === 'response.function_call_arguments.delta')).toBe(false);
+      expect(JSON.stringify(output)).not.toContain('raw-ciphertext');
+    },
+  );
+
   test('does not rewrite a collaboration call whose encrypted argument list is explicitly empty', async () => {
     const item = {
       type: 'function_call' as const,

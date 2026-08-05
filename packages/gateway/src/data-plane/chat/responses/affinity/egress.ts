@@ -81,14 +81,54 @@ const wrapNaturalResponsesAffinity = async function* (
     yield frame;
   };
 
-  let pending: {
+  interface PendingArguments {
     readonly frames: ProtocolFrame<ResponsesStreamEvent>[];
     readonly blocked: Set<number>;
     readonly argumentsByIndex: Map<number, string>;
-  } | undefined;
+  }
+  let pending: PendingArguments | undefined;
   const endsStream = (frame: ProtocolFrame<ResponsesStreamEvent>): boolean =>
     frame.type === 'event'
     && ['response.completed', 'response.incomplete', 'response.failed', 'error'].includes(frame.event.type);
+
+  const flushPending = async function* (
+    ready: PendingArguments,
+  ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+    const rewrittenByIndex = new Map<number, ReturnType<typeof rewrittenDeltas>>();
+    for (const [outputIndex, argumentsJson] of ready.argumentsByIndex) {
+      const deltas = ready.frames.flatMap(queued =>
+        queued.type === 'event'
+        && queued.event.type === 'response.function_call_arguments.delta'
+        && queued.event.output_index === outputIndex
+          ? [queued.event]
+          : []);
+      rewrittenByIndex.set(outputIndex, rewrittenDeltas(deltas, argumentsJson));
+    }
+    const deltaOffsets = new Map<number, number>();
+    for (const queued of ready.frames) {
+      let rewritten = queued;
+      let transformedPayload = false;
+      if (queued.type === 'event' && queued.event.type === 'response.function_call_arguments.delta') {
+        const deltas = rewrittenByIndex.get(queued.event.output_index);
+        if (deltas === undefined && streamedInterAgentCalls.has(queued.event.output_index)) continue;
+        if (deltas !== undefined) {
+          const offset = deltaOffsets.get(queued.event.output_index) ?? 0;
+          rewritten = eventFrame(deltas[offset]!);
+          deltaOffsets.set(queued.event.output_index, offset + 1);
+          transformedPayload = true;
+        }
+      } else if (queued.type === 'event' && queued.event.type === 'response.function_call_arguments.done') {
+        const argumentsJson = ready.argumentsByIndex.get(queued.event.output_index);
+        if (argumentsJson !== undefined) {
+          rewritten = eventFrame({ ...queued.event, arguments: argumentsJson });
+          transformedPayload = true;
+        }
+      }
+      if (transformedPayload) yield rewritten;
+      else yield* transformFrame(rewritten);
+      if (endsStream(rewritten)) return;
+    }
+  };
 
   for await (const frame of frames) {
     const event = frame.type === 'event' ? frame.event : undefined;
@@ -106,43 +146,28 @@ const wrapNaturalResponsesAffinity = async function* (
         pending.argumentsByIndex.set(event.output_index, await wrapArguments(event.output_index, event.arguments));
         pending.blocked.delete(event.output_index);
       }
-      if (pending.blocked.size > 0) continue;
+      if (event?.type === 'response.output_item.done' && event.item.type === 'function_call' && streamedInterAgentCalls.has(event.output_index)) {
+        pending.argumentsByIndex.set(event.output_index, await wrapArguments(event.output_index, event.item.arguments));
+        pending.blocked.delete(event.output_index);
+      }
+      if (
+        event?.type === 'response.completed'
+        || event?.type === 'response.incomplete'
+        || event?.type === 'response.failed'
+      ) {
+        for (const [outputIndex, call] of streamedInterAgentCalls) {
+          const item = event.response.output.find(output => output.type === 'function_call' && output.id === call.id);
+          if (item?.type !== 'function_call') continue;
+          pending.argumentsByIndex.set(outputIndex, await wrapArguments(outputIndex, item.arguments));
+          pending.blocked.delete(outputIndex);
+        }
+      }
+      if (pending.blocked.size > 0 && !endsStream(frame)) continue;
 
       const ready = pending;
       pending = undefined;
-      const rewrittenByIndex = new Map<number, ReturnType<typeof rewrittenDeltas>>();
-      for (const [outputIndex, argumentsJson] of ready.argumentsByIndex) {
-        const deltas = ready.frames.flatMap(queued =>
-          queued.type === 'event'
-          && queued.event.type === 'response.function_call_arguments.delta'
-          && queued.event.output_index === outputIndex
-            ? [queued.event]
-            : []);
-        rewrittenByIndex.set(outputIndex, rewrittenDeltas(deltas, argumentsJson));
-      }
-      const deltaOffsets = new Map<number, number>();
-      for (const queued of ready.frames) {
-        let rewritten = queued;
-        let transformedPayload = false;
-        if (queued.type === 'event' && queued.event.type === 'response.function_call_arguments.delta') {
-          const deltas = rewrittenByIndex.get(queued.event.output_index);
-          if (deltas !== undefined) {
-            const offset = deltaOffsets.get(queued.event.output_index) ?? 0;
-            rewritten = eventFrame(deltas[offset]!);
-            deltaOffsets.set(queued.event.output_index, offset + 1);
-            transformedPayload = true;
-          }
-        } else if (queued.type === 'event' && queued.event.type === 'response.function_call_arguments.done') {
-          const argumentsJson = ready.argumentsByIndex.get(queued.event.output_index);
-          if (argumentsJson !== undefined) {
-            rewritten = eventFrame({ ...queued.event, arguments: argumentsJson });
-            transformedPayload = true;
-          }
-        }
-        if (transformedPayload) yield rewritten;
-        else yield* transformFrame(rewritten);
-        if (endsStream(rewritten)) return;
-      }
+      yield* flushPending(ready);
+      if (endsStream(frame)) return;
       continue;
     }
 
@@ -151,7 +176,7 @@ const wrapNaturalResponsesAffinity = async function* (
   }
 
   if (pending !== undefined) {
-    for (const frame of pending.frames) yield* transformFrame(frame);
+    yield* flushPending(pending);
   }
 };
 
