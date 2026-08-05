@@ -191,7 +191,12 @@ describe('callCodexResponses — upstream classification', () => {
   test('adds text/event-stream only when a successful Codex response omits content-type', async () => {
     seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
-      'event: response.created\ndata: {"type":"response.created"}\n\n',
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('event: response.created\ndata: {"type":"response.created"}\n\n'));
+          controller.close();
+        },
+      }),
       { status: 200 },
     ));
     const result = await callCodexResponses({
