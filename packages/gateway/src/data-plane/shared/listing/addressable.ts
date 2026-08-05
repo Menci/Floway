@@ -11,7 +11,7 @@
 // DTO) read `limits` / `chat` / `endpoints` directly off the entry without
 // a second registry round trip.
 
-import { compareModelIds, getModelsFromProviders } from '../../providers/catalog.ts';
+import { compareModelIds, getModelsFromProviders, internalModelFromProviderModel, mergeRealModels } from '../../providers/catalog.ts';
 import { fetchUpstreamModelsCached } from '../../providers/models-cache.ts';
 import { listModelProviders } from '../../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
@@ -45,6 +45,26 @@ export interface AddressableIdEntry {
 export const listedRealModels = (entries: readonly AddressableIdEntry[]): readonly InternalModel[] =>
   entries.filter(entry => entry.unlisted === undefined).map(entry => entry.model);
 
+const mergeUpstreams = (first: readonly Provider[], later: readonly Provider[]): Provider[] => {
+  const merged: Provider[] = [];
+  const seen = new Set<string>();
+  for (const upstream of [...first, ...later]) {
+    if (seen.has(upstream.upstreamId)) continue;
+    seen.add(upstream.upstreamId);
+    merged.push(upstream);
+  }
+  return merged;
+};
+
+const mergeAddressableEntries = (first: AddressableIdEntry, later: AddressableIdEntry): AddressableIdEntry => ({
+  id: first.id,
+  // A listed contribution keeps the merged id listed even when another
+  // upstream contributes the same id only as an addressable alternate.
+  unlisted: first.unlisted === undefined || later.unlisted === undefined ? undefined : true,
+  model: mergeRealModels(first.model, later.model),
+  upstreams: mergeUpstreams(first.upstreams, later.upstreams),
+});
+
 // Enumerate every inbound id the data plane accepts under `upstreamFilter`,
 // tagged with whether the id participates in the default `/v1/models`
 // listing. Fans out per upstream the same way `collectProviderModels` does,
@@ -68,10 +88,14 @@ export const enumerateAddressableModelIds = async (
   const byId = new Map(realModels.map(model => [model.id, model] as const));
 
   const entries: AddressableIdEntry[] = [];
-  const seen = new Set<string>();
+  const indexById = new Map<string, number>();
   const push = (entry: AddressableIdEntry): void => {
-    if (seen.has(entry.id)) return;
-    seen.add(entry.id);
+    const existingIndex = indexById.get(entry.id);
+    if (existingIndex !== undefined) {
+      entries[existingIndex] = mergeAddressableEntries(entries[existingIndex], entry);
+      return;
+    }
+    indexById.set(entry.id, entries.length);
     entries.push(entry);
   };
 
@@ -110,10 +134,23 @@ export const enumerateAddressableModelIds = async (
         : upstreamModel.id;
       const canonical = byId.get(canonicalPublicId);
       if (canonical === undefined) continue;
-      const canonicalUpstreams = upstreamsByPublicId.get(canonicalPublicId) ?? [];
+      if (canonical.providerModels === undefined) {
+        throw new Error(`addressable catalog row for '${canonicalPublicId}' unexpectedly carries aliasedFrom`);
+      }
+      const providerModel = canonical.providerModels[provider.upstreamId];
+      if (providerModel === undefined) {
+        throw new Error(`addressable catalog row for '${canonicalPublicId}' is missing upstream ${provider.upstreamId}`);
+      }
+      // A canonical listed row may merge other upstreams that do not accept
+      // this alternate form. Narrow the contribution to the provider whose
+      // prefix policy proved the alternate addressable; later contributions
+      // under the same inbound id are merged by `push`.
+      const addressableModel = Object.keys(canonical.providerModels).length === 1
+        ? canonical
+        : internalModelFromProviderModel(providerModel, provider.upstreamId);
       for (const form of addressableOnly) {
         const id = form === 'prefixed' ? `${cfg.prefix}${upstreamModel.id}` : upstreamModel.id;
-        out.push({ id, unlisted: true, model: canonical, upstreams: canonicalUpstreams });
+        out.push({ id, unlisted: true, model: addressableModel, upstreams: [provider] });
       }
     }
 

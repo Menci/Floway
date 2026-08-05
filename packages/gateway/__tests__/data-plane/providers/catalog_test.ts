@@ -1,12 +1,12 @@
-import { describe, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 
 import { compareModelIds, getModelsFromProviders } from '../../../src/data-plane/providers/catalog.ts';
 import { clearInFlightForTesting } from '../../../src/data-plane/providers/models-cache.ts';
-import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
+import { listModelProviders, type GatewayProvider } from '../../../src/data-plane/providers/registry.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { buildCustomUpstreamRecord, copilotModels, setupAppTest } from '../../test-utils/app.ts';
 import { directFetcher, type InternalModel, type ProviderModel } from '@floway-dev/provider';
-import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, jsonResponse, stubProvider, withMockedFetch } from '@floway-dev/test-utils';
 
 const realProviderModels = (model: InternalModel | undefined): Record<string, ProviderModel> => {
   if (model?.providerModels === undefined) throw new Error(`expected real InternalModel with providerModels, got ${JSON.stringify(model)}`);
@@ -338,6 +338,55 @@ test('catalog assembly: a rejected provider does not block other providers', asy
       assertEquals([...catalog.map(m => m.id)].sort(), ['ok-1-model', 'ok-2-model']);
     },
   );
+});
+
+test('catalog assembly propagates AbortError without waiting for a pending sibling', async () => {
+  await setupAppTest();
+  clearInFlightForTesting();
+  const abortError = Object.assign(new Error('catalog request aborted'), { name: 'AbortError' });
+  let slowStarted!: () => void;
+  const started = new Promise<void>(resolve => { slowStarted = resolve; });
+  let releaseSlow!: (models: ProviderModel[]) => void;
+  const slowModels = new Promise<ProviderModel[]>(resolve => { releaseSlow = resolve; });
+  const provider = (upstreamId: string, getProvidedModels: () => Promise<ProviderModel[]>): GatewayProvider => ({
+    upstreamId,
+    kind: 'custom',
+    name: upstreamId,
+    inboundHeaderAllowlist: [],
+    disabledPublicModelIds: [],
+    modelPrefix: null,
+    modelsCache: null,
+    instance: stubProvider({ getProvidedModels }),
+    modelsCacheGeneration: { updatedAt: '2026-08-06T00:00:00.000Z', config: {} },
+    modelsFetchIdentity: upstreamId,
+  });
+  const slow = provider('up_pending', () => {
+    slowStarted();
+    return slowModels;
+  });
+  const aborting = provider('up_aborting', async () => { throw abortError; });
+
+  let observed: { status: 'rejected'; error: unknown } | null = null;
+  const result = getModelsFromProviders([slow, aborting], () => directFetcher, testScheduler)
+    .then(
+      () => ({ status: 'fulfilled' as const }),
+      error => ({ status: 'rejected' as const, error }),
+    );
+  void result.then(outcome => {
+    if (outcome.status === 'rejected') observed = outcome;
+  });
+
+  await started;
+  // Advance one event-loop turn while the sibling remains unresolved. Promise
+  // jobs, including cache error persistence, must have propagated the abort by
+  // this checkpoint without relying on a wall-clock race.
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const beforeSiblingSettled = observed;
+  releaseSlow([]);
+  const final = await result;
+
+  expect(beforeSiblingSettled).toEqual({ status: 'rejected', error: abortError });
+  expect(final).toEqual({ status: 'rejected', error: abortError });
 });
 
 // End-to-end listing checks for the prefix policy. The catalog walk goes

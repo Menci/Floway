@@ -33,6 +33,28 @@ export const internalModelFromProviderModel = (providerModel: ProviderModel, ups
   };
 };
 
+// Merge two real catalog rows using the same first-metadata-wins contract as
+// the public catalog. The precise endpoint surface and per-upstream dispatch
+// models accumulate across both rows; `kind` follows the merged endpoint map.
+// Addressable-id enumeration uses this too, because independently-prefixed
+// upstreams can converge on one unlisted inbound id even though their listed
+// canonical ids differ.
+export const mergeRealModels = (first: InternalModel, later: InternalModel): InternalModel => {
+  if (first.providerModels === undefined || later.providerModels === undefined) {
+    throw new Error('mergeRealModels: alias rows cannot participate in a real-model merge');
+  }
+  const endpoints = unionEndpoints([first.endpoints, later.endpoints]);
+  return {
+    ...first,
+    endpoints,
+    kind: kindForEndpoints(endpoints),
+    providerModels: {
+      ...first.providerModels,
+      ...later.providerModels,
+    },
+  };
+};
+
 // When multiple upstreams expose the same public model id, the first wins
 // for `/models` metadata and later ones union-merge their endpoint capability
 // map — the merged `endpoints` is the gateway-wide reach for that public id.
@@ -57,23 +79,10 @@ const mergeIntoCatalog = (
     upstreamsByPublicId.set(publicId, [instance]);
     return;
   }
-  // The catalog only stores real (upstream-backed) rows; alias-synthesized
-  // rows join the caller-facing catalog downstream via `mergeAliasesIntoModels`.
-  // Narrow off the discriminated union so the merge below sees a concrete
-  // `providerModels` map.
-  if (existing.providerModels === undefined) {
-    throw new Error(`mergeIntoCatalog: catalog row for '${publicId}' unexpectedly carries aliasedFrom instead of providerModels`);
-  }
-  const endpoints = unionEndpoints([existing.endpoints, surfacedModel.endpoints]);
-  byId.set(publicId, {
-    ...existing,
-    endpoints,
-    kind: kindForEndpoints(endpoints),
-    providerModels: {
-      ...existing.providerModels,
-      [instance.upstreamId]: surfacedModel,
-    },
-  });
+  byId.set(publicId, mergeRealModels(
+    existing,
+    internalModelFromProviderModel(surfacedModel, instance.upstreamId),
+  ));
   // We're on the merge branch (`existing !== undefined`), so the parallel
   // `upstreamsByPublicId` entry was populated by the earlier insertion branch
   // and must exist.
@@ -104,18 +113,24 @@ const collectProviderModels = async (
       fetcher: fetcherForUpstream(instance.upstreamId),
     }).then(models => ({ instance, models }));
 
-  const settled = await Promise.allSettled(providers.map(fetchOne));
+  // Preserve ordinary per-provider failures as values so a healthy provider
+  // can still produce a partial catalog, but let cancellation reject the outer
+  // Promise immediately. `Promise.allSettled` cannot express that distinction:
+  // it waits for every sibling before the loop below can observe AbortError,
+  // so one never-settling fetch can otherwise pin a cancelled request forever.
+  const settleUnlessAborted = async (instance: GatewayProvider) => {
+    try {
+      return { status: 'fulfilled', value: await fetchOne(instance) } as const;
+    } catch (reason) {
+      if (isAbortError(reason)) throw reason;
+      return { status: 'rejected', reason } as const;
+    }
+  };
+  const settled = await Promise.all(providers.map(settleUnlessAborted));
 
   for (const [index, result] of settled.entries()) {
     if (result.status === 'rejected') {
-      // Caller-driven cancellation must propagate. Burying it in lastError
-      // and letting an earlier sawSuccess return a partially-populated
-      // model list would mask the abort and let the rest of the data-plane
-      // request build a Response against a stale catalog. `isAbortError`
-      // walks the cause chain so an AbortError wrapped inside
-      // ProviderModelsUnavailableError still surfaces here.
       const error = result.reason;
-      if (isAbortError(error)) throw error;
       lastError = error;
       failedUpstreams.push(providers[index].name);
       continue;
