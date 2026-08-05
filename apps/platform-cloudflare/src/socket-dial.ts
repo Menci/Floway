@@ -30,8 +30,10 @@ export const cloudflareSocketDial: SocketDial = {
     );
     // Idempotent close — the runtime can reject `socket.close()` on an already
     // errored socket, and a stalled close promise must not block teardown.
-    const safeClose = async (): Promise<void> => {
-      try { await socket.close(); } catch { /* already closed/errored */ }
+    let closePromise: Promise<void> | null = null;
+    const safeClose = (): Promise<void> => {
+      closePromise ??= socket.close().catch(() => { /* already closed/errored */ });
+      return closePromise;
     };
     let abortListener: (() => void) | null = null;
     const removeAbortListener = (): void => {
