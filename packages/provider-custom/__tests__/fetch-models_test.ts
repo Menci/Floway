@@ -53,7 +53,29 @@ test('fetchCustomModels follows Anthropic cursor pages and deduplicates their mo
       regions.push(new URL(request.url).searchParams.get('region'));
       return afterId === null
         ? jsonResponse({
-            data: [{ type: 'model', id: 'claude-opus-4-5', display_name: 'Claude Opus 4.5', created_at: '2026-01-01T00:00:00Z' }],
+            data: [{
+              type: 'model',
+              id: 'claude-opus-4-5',
+              display_name: 'Claude Opus 4.5',
+              created_at: '2026-01-01T00:00:00Z',
+              max_input_tokens: 200_000,
+              max_tokens: 64_000,
+              capabilities: {
+                image_input: { supported: true },
+                effort: {
+                  supported: true,
+                  low: { supported: true },
+                  medium: { supported: true },
+                  xhigh: { supported: true },
+                  future: { supported: true },
+                },
+                thinking: {
+                  supported: true,
+                  types: { adaptive: { supported: true }, enabled: { supported: true } },
+                },
+                future_capability: { supported: true },
+              },
+            }],
             has_more: true,
             first_id: 'claude-opus-4-5',
             last_id: 'claude-opus-4-5',
@@ -77,6 +99,15 @@ test('fetchCustomModels follows Anthropic cursor pages and deduplicates their mo
       assertEquals(result.data[0].id, 'claude-opus-4-5');
       assertEquals(result.data[0].display_name, 'Claude Opus 4.5');
       assertEquals(result.data[0].created_at, '2026-01-01T00:00:00Z');
+      assertEquals(result.data[0].limits, { max_context_window_tokens: 200_000, max_output_tokens: 64_000 });
+      assertEquals(result.data[0].chat, {
+        modalities: { input: ['text', 'image'], output: ['text'] },
+        reasoning: {
+          effort: { supported: ['low', 'medium', 'xhigh', 'future'], default: 'medium' },
+          budget_tokens: {},
+          adaptive: true,
+        },
+      });
     },
   );
 });

@@ -77,6 +77,50 @@ const parseLimits = (value: unknown): CustomRawModel['limits'] => {
   return Object.keys(limits).length > 0 ? limits : undefined;
 };
 
+const parseModelLimits = (value: Record<string, unknown>): CustomRawModel['limits'] => {
+  const limits: NonNullable<CustomRawModel['limits']> = { ...(parseLimits(value.limits) ?? {}) };
+  const maxInputTokens = optionalNumberField(value.max_input_tokens);
+  if (maxInputTokens !== undefined) limits.max_context_window_tokens = maxInputTokens;
+  const maxTokens = optionalNumberField(value.max_tokens);
+  if (maxTokens !== undefined) limits.max_output_tokens = maxTokens;
+  return Object.keys(limits).length > 0 ? limits : undefined;
+};
+
+const supportedCapability = (value: unknown): boolean => isRecord(value) && value.supported === true;
+
+// https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/models.ts#L127-L245
+const chatFromAnthropicCapabilities = (value: unknown): UpstreamChatModelConfig | undefined => {
+  if (!isRecord(value)) return undefined;
+  const chat: UpstreamChatModelConfig = {};
+  if (supportedCapability(value.image_input)) {
+    chat.modalities = { input: ['text', 'image'], output: ['text'] };
+  }
+
+  const reasoning: NonNullable<UpstreamChatModelConfig['reasoning']> = {};
+  if (isRecord(value.effort) && value.effort.supported === true) {
+    const publishedLevels = Object.entries(value.effort)
+      .filter(([level, capability]) => level !== 'supported' && supportedCapability(capability))
+      .map(([level]) => level);
+    const canonicalLevels = ['low', 'medium', 'high', 'max', 'xhigh'];
+    const supported = [
+      ...canonicalLevels.filter(level => publishedLevels.includes(level)),
+      ...publishedLevels.filter(level => !canonicalLevels.includes(level)),
+    ];
+    if (supported.length > 0) {
+      reasoning.effort = {
+        supported,
+        default: supported.includes('medium') ? 'medium' : supported[0],
+      };
+    }
+  }
+  if (isRecord(value.thinking) && isRecord(value.thinking.types)) {
+    if (supportedCapability(value.thinking.types.enabled)) reasoning.budget_tokens = {};
+    if (supportedCapability(value.thinking.types.adaptive)) reasoning.adaptive = true;
+  }
+  if (Object.keys(reasoning).length > 0) chat.reasoning = reasoning;
+  return Object.keys(chat).length > 0 ? chat : undefined;
+};
+
 const parsePricing = (value: unknown): ModelPricing | undefined => {
   // Pricing is best-effort catalog metadata: malformed pricing omits only the pricing
   // block, never the enclosing model or the rest of the catalog.
@@ -127,17 +171,18 @@ const parseRawModel = (value: unknown): CustomRawModel | null => {
   if (name !== undefined) model.name = name;
   const owned_by = optionalStringField(value.owned_by);
   if (owned_by !== undefined) model.owned_by = owned_by;
-  const limits = parseLimits(value.limits);
+  const limits = parseModelLimits(value);
   if (limits !== undefined) model.limits = limits;
   const pricing = parsePricing(value.pricing);
   if (pricing !== undefined) model.pricing = pricing;
   const kind = parseKind(value.kind);
   if (kind !== undefined) model.kind = kind;
-  // Attempt to parse chat metadata; silently skip on malformed data.
+  let chat: UpstreamChatModelConfig | undefined;
   try {
-    const chat = chatField(value.chat, `${value.id}.chat`);
-    if (chat !== undefined) model.chat = chat;
+    chat = chatField(value.chat, `${value.id}.chat`);
   } catch { /* skip */ }
+  chat ??= chatFromAnthropicCapabilities(value.capabilities);
+  if (chat !== undefined) model.chat = chat;
   return model;
 };
 
