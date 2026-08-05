@@ -45,6 +45,16 @@ _bootstrap_jq() {
     rm -f "$_bj_dest"
     return 1
   fi
+  if ! _bj_size=$(wc -c < "$_bj_dest"); then
+    out_error 'could not measure the jq download.'
+    rm -f "$_bj_dest"
+    return 1
+  fi
+  if [ "$_bj_size" -gt "$_bj_max_bytes" ]; then
+    out_error 'the jq download exceeded the 8 MiB size limit.'
+    rm -f "$_bj_dest"
+    return 1
+  fi
   if command -v sha256sum >/dev/null 2>&1; then
     _bj_actual=$(sha256sum "$_bj_dest" | awk '{ print $1 }')
   elif command -v shasum >/dev/null 2>&1; then

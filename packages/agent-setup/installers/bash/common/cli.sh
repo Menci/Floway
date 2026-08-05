@@ -5,8 +5,9 @@ _download_and_run_installer() {
   _dri_url=$1
   _dri_file=$(mktemp "$SETUP_TMPDIR/install.XXXXXX") || return 1
   _dri_max_bytes=${AGENT_SETUP_TEST_DOWNLOAD_MAX_BYTES:-8388608}
-  # curl enforces the transferred-byte ceiling even when the server omits a
-  # trustworthy Content-Length. Ref: https://curl.se/docs/manpage.html#--max-filesize
+  # curl 8.4+ enforces the ceiling during unknown-length transfers; the byte
+  # count below covers older curl builds before anything executes.
+  # Ref: https://curl.se/docs/manpage.html#--max-filesize
   curl -fsSL --connect-timeout 10 --max-time 120 --max-filesize "$_dri_max_bytes" -o "$_dri_file" "$_dri_url"
   _dri_curl_rc=$?
   if [ "$_dri_curl_rc" -ne 0 ]; then
@@ -15,6 +16,16 @@ _download_and_run_installer() {
     else
       out_error "could not download the installer from $_dri_url"
     fi
+    rm -f "$_dri_file"
+    return 1
+  fi
+  if ! _dri_size=$(wc -c < "$_dri_file"); then
+    out_error 'could not measure the installer download.'
+    rm -f "$_dri_file"
+    return 1
+  fi
+  if [ "$_dri_size" -gt "$_dri_max_bytes" ]; then
+    out_error 'the installer download exceeded the 8 MiB size limit.'
     rm -f "$_dri_file"
     return 1
   fi
