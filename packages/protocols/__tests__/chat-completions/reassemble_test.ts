@@ -637,3 +637,78 @@ test('reassembleChatCompletionsEvents preserves an observed empty refusal', asyn
 
   assertEquals(result.choices[0].message, { role: 'assistant', content: null, refusal: '' });
 });
+
+test('reassembleChatCompletionsEvents preserves empty content and future finish reasons', async () => {
+  const result = await reassembleChatCompletionsEvents(makeEvents([{
+    data: {
+      id: 'cmpl_empty',
+      object: 'chat.completion.chunk',
+      created: 1000,
+      model: 'gpt-test',
+      choices: [{ index: 0, delta: { role: 'assistant', content: '' }, finish_reason: 'future_reason' }],
+    },
+  }]));
+
+  assertEquals(result.choices[0].message.content, '');
+  assertEquals(result.choices[0].finish_reason, 'future_reason');
+});
+
+test('reassembleChatCompletionsEvents rejects incomplete choices and tool calls', async () => {
+  const base = {
+    id: 'cmpl_invalid',
+    object: 'chat.completion.chunk',
+    created: 1000,
+    model: 'gpt-test',
+  };
+  await assertRejects(
+    async () => await reassembleChatCompletionsEvents(makeEvents([{
+      data: { ...base, choices: [{ index: 0, delta: { content: 'partial' }, finish_reason: null }] },
+    }])),
+    Error,
+    'ended without finish_reason',
+  );
+  await assertRejects(
+    async () => await reassembleChatCompletionsEvents(makeEvents([{
+      data: {
+        ...base,
+        choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { name: 'lookup', arguments: '{}' } }] }, finish_reason: 'tool_calls' }],
+      },
+    }])),
+    Error,
+    'ended without id',
+  );
+});
+
+test('reassembleChatCompletionsEvents rejects data after a choice finishes', async () => {
+  const chunk = (content: string, finish_reason: string | null) => ({
+    id: 'cmpl_finished',
+    object: 'chat.completion.chunk',
+    created: 1000,
+    model: 'gpt-test',
+    choices: [{ index: 0, delta: { content }, finish_reason }],
+  });
+  await assertRejects(
+    async () => await reassembleChatCompletionsEvents(makeEvents([
+      { data: chunk('done', 'stop') },
+      { data: chunk('too late', null) },
+    ])),
+    Error,
+    'emitted data after finish_reason',
+  );
+});
+
+test('reassembleChatCompletionsEvents preserves explicit null response metadata', async () => {
+  const result = await reassembleChatCompletionsEvents(makeEvents([{
+    data: {
+      id: 'cmpl_null_metadata',
+      object: 'chat.completion.chunk',
+      created: 1000,
+      model: 'gpt-test',
+      system_fingerprint: null,
+      service_tier: null,
+      choices: [{ index: 0, delta: { content: 'ok' }, finish_reason: 'stop' }],
+    },
+  }]));
+  assertEquals(result.system_fingerprint, null);
+  assertEquals(result.service_tier, null);
+});

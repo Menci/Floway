@@ -3,6 +3,12 @@ import { describe, expect, test } from 'vitest';
 import { parseRerankRequest, parseRerankResponse, parseRerankUsage, renderRerankResponse, serializeRerankRequest } from '../../src/rerank/translate.ts';
 
 describe('rerank request ingress', () => {
+  test('rejects unsupported runtime protocol discriminators', () => {
+    expect(() => parseRerankRequest('future' as never, {
+      model: 'rerank', query: 'query', documents: ['one'],
+    })).toThrow('Unsupported rerank protocol for request parsing');
+  });
+
   test('Cohere v1 retains structured documents and v1-only options', () => {
     const parsed = parseRerankRequest('cohere-v1', {
       model: 'rerank-v3.5',
@@ -251,7 +257,7 @@ describe('rerank response translation', () => {
     for (const [protocol, response] of responses) {
       expect(parseRerankUsage(protocol, response)).toEqual({});
       expect(parseRerankResponse(protocol, response).totalTokens).toBeUndefined();
-      expect(() => parseRerankUsage(protocol, { ...response, usage: {} })).toThrow('usage.total_tokens must be a finite number');
+      expect(() => parseRerankUsage(protocol, { ...response, usage: {} })).toThrow('usage.total_tokens must be a non-negative safe integer');
     }
   });
 
@@ -277,5 +283,18 @@ describe('rerank response translation', () => {
       model: 'public',
       data: [{ index: 1, relevance_score: 0.9, document: 'two' }],
     });
+  });
+
+  test('rejects fractional and unsafe integer coordinates and usage', () => {
+    const request = { model: 'rerank', query: 'query', documents: ['one'] };
+    for (const top_n of [1.5, Number.MAX_SAFE_INTEGER + 1, Number.POSITIVE_INFINITY]) {
+      expect(() => parseRerankRequest('cohere-v2', { ...request, top_n })).toThrow('positive integer in the safe range');
+    }
+    for (const total_tokens of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1, Number.POSITIVE_INFINITY]) {
+      expect(() => parseRerankUsage('jina-v1', { usage: { total_tokens } })).toThrow('non-negative safe integer');
+    }
+    expect(() => parseRerankResponse('cohere-v2', {
+      results: [{ index: Number.MAX_SAFE_INTEGER + 1, relevance_score: 0.5 }],
+    })).toThrow('non-negative safe integer');
   });
 });

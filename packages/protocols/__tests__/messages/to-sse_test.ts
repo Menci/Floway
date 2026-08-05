@@ -46,3 +46,24 @@ test('messagesProtocolFrameToSSEFrame maps search_result_location url to SSE sou
     end_block_index: 0,
   });
 });
+
+test('messagesProtocolFrameToSSEFrame preserves an explicitly empty cited_text', () => {
+  const frame = messagesProtocolFrameToSSEFrame(eventFrame({
+    type: 'content_block_delta',
+    index: 0,
+    delta: {
+      type: 'citations_delta',
+      citation: {
+        type: 'search_result_location',
+        url: 'https://example.com/empty',
+        title: 'Empty excerpt',
+        search_result_index: 0,
+        start_block_index: 0,
+        end_block_index: 0,
+        cited_text: '',
+      },
+    },
+  }));
+
+  assertEquals((JSON.parse(frame!.data) as { delta: { citation: { cited_text?: string } } }).delta.citation.cited_text, '');
+});

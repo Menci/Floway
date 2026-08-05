@@ -72,3 +72,27 @@ test('collectGeminiProtocolEventsToResult throws Gemini error events', async () 
 
   assertEquals(error.cause, errorEvent);
 });
+
+test('collectGeminiProtocolEventsToResult waits for every candidate in a staggered terminal', async () => {
+  let consumed = 0;
+  const frames = (async function* () {
+    consumed++;
+    yield eventFrame({
+      candidates: [
+        { index: 0, content: { role: 'model', parts: [{ text: 'done' }] }, finishReason: 'STOP' },
+        { index: 1, content: { role: 'model', parts: [{ text: 'A' }] } },
+      ],
+    } satisfies GeminiStreamEvent);
+    consumed++;
+    yield eventFrame({
+      candidates: [
+        { index: 0, content: { role: 'model', parts: [] }, finishReason: 'STOP' },
+        { index: 1, content: { role: 'model', parts: [{ text: 'B' }] }, finishReason: 'STOP' },
+      ],
+    } satisfies GeminiStreamEvent);
+  })();
+
+  const result = await collectGeminiProtocolEventsToResult(frames);
+  assertEquals(consumed, 2);
+  assertEquals(result.candidates?.[1]?.content.parts, [{ text: 'AB' }]);
+});

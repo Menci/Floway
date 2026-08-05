@@ -47,7 +47,7 @@ const citationToSsePayload = (citation: MessagesTextCitation): MessagesSseCitati
         search_result_index: citation.search_result_index,
         start_block_index: citation.start_block_index,
         end_block_index: citation.end_block_index,
-        ...(citation.cited_text ? { cited_text: citation.cited_text } : {}),
+        ...(citation.cited_text !== undefined ? { cited_text: citation.cited_text } : {}),
       }
     : citation;
 

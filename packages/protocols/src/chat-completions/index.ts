@@ -136,13 +136,13 @@ export interface ChatCompletionsChoiceNonStreaming {
     reasoning_items?: ChatCompletionsReasoningItem[] | null;
     refusal?: string | null;
   };
-  finish_reason: 'stop' | 'length' | 'tool_calls' | 'content_filter';
+  finish_reason: 'stop' | 'length' | 'tool_calls' | 'content_filter' | (string & {});
 }
 
 interface ChatCompletionsChoiceStreaming {
   index: number;
   delta: ChatCompletionsDelta;
-  finish_reason: 'stop' | 'length' | 'tool_calls' | 'content_filter' | null;
+  finish_reason: 'stop' | 'length' | 'tool_calls' | 'content_filter' | (string & {}) | null;
 }
 
 export interface ChatCompletionsDelta {

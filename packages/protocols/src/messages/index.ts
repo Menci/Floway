@@ -20,7 +20,7 @@ import type { MessagesUsage, MessagesUsageIteration, MessagesUsageServerToolUse 
  */
 export const MESSAGES_FALLBACK_MAX_TOKENS = 8192;
 
-export type MessagesThinkingDisplay = 'omitted' | 'summarized' | 'full';
+export type MessagesThinkingDisplay = 'omitted' | 'summarized' | 'full' | (string & {});
 
 export interface MessagesPayload {
   model: string;
@@ -333,7 +333,7 @@ export interface MessagesContentBlockStartEvent {
     })
     | MessagesServerToolUseBlock
     | MessagesWebSearchToolResultBlock
-    | { type: 'thinking'; thinking: string }
+    | MessagesThinkingBlock
     | { type: 'redacted_thinking'; data: string }
     | MessagesFallbackBlock;
 }

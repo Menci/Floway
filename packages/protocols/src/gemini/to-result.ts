@@ -6,7 +6,11 @@ export const GEMINI_MISSING_TERMINAL_MESSAGE = 'Gemini stream ended without a te
 
 export const isGeminiErrorEvent = (event: GeminiStreamEvent): event is GeminiErrorResponse => 'error' in event;
 
-const isGeminiFinishedEvent = (event: GeminiStreamEvent): boolean => 'candidates' in event && event.candidates?.some(candidate => candidate.finishReason !== undefined) === true;
+const isGeminiFinishedEvent = (event: GeminiStreamEvent): boolean =>
+  'candidates' in event
+  && event.candidates !== undefined
+  && event.candidates.length > 0
+  && event.candidates.every(candidate => candidate.finishReason !== undefined);
 
 export const isGeminiTerminalEvent = (event: GeminiStreamEvent): boolean => isGeminiErrorEvent(event) || isGeminiFinishedEvent(event);
 

@@ -4,6 +4,10 @@ import type { RerankProtocol, RerankSourceProtocol } from '../common/models.ts';
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+const unsupportedProtocol = (protocol: never, operation: string): never => {
+  throw new TypeError(`Unsupported rerank protocol for ${operation}: ${String(protocol)}`);
+};
+
 const requiredString = (value: unknown, field: string): string => {
   if (typeof value !== 'string' || value.length === 0) throw new Error(`${field} must be a non-empty string`);
   return value;
@@ -29,7 +33,7 @@ const optionalNullableFiniteNumber = (value: unknown, field: string): number | u
 
 const optionalPositiveInteger = (value: unknown, field: string): number | undefined => {
   const number = optionalFiniteNumber(value, field);
-  if (number !== undefined && (!Number.isInteger(number) || number < 1)) throw new Error(`${field} must be a positive integer`);
+  if (number !== undefined && (!Number.isSafeInteger(number) || number < 1)) throw new Error(`${field} must be a positive integer in the safe range`);
   return number;
 };
 
@@ -38,7 +42,7 @@ const optionalNullablePositiveInteger = (value: unknown, field: string): number 
 
 const optionalInteger = (value: unknown, field: string): number | undefined => {
   const number = optionalFiniteNumber(value, field);
-  if (number !== undefined && !Number.isInteger(number)) throw new Error(`${field} must be an integer`);
+  if (number !== undefined && !Number.isSafeInteger(number)) throw new Error(`${field} must be an integer in the safe range`);
   return number;
 };
 
@@ -167,6 +171,7 @@ export const parseRerankRequest = (protocol: RerankSourceProtocol, value: unknow
       },
     };
   }
+  default: return unsupportedProtocol(protocol, 'request parsing');
   }
 };
 
@@ -271,6 +276,7 @@ export const serializeRerankRequest = (
       ...(Object.keys(parameters).length === 0 ? {} : { parameters }),
     };
   }
+  default: return unsupportedProtocol(protocol, 'request serialization');
   }
 };
 
@@ -289,7 +295,7 @@ const resultDocument = (value: unknown, field: string): RerankInput => {
 
 const resultItem = (value: unknown, field: string): CanonicalRerankResult => {
   if (!isRecord(value)) throw new Error(`${field} must be an object`);
-  if (typeof value.index !== 'number' || !Number.isInteger(value.index) || value.index < 0) throw new Error(`${field}.index must be a non-negative integer`);
+  if (typeof value.index !== 'number' || !Number.isSafeInteger(value.index) || value.index < 0) throw new Error(`${field}.index must be a non-negative safe integer`);
   if (typeof value.relevance_score !== 'number' || !Number.isFinite(value.relevance_score)) throw new Error(`${field}.relevance_score must be a finite number`);
   const embedding = optionalEmbedding(value.embedding, `${field}.embedding`);
   return {
@@ -306,8 +312,8 @@ const resultsArray = (value: unknown, field: string): CanonicalRerankResult[] =>
 };
 
 const requiredTotalTokensFrom = (value: unknown): number => {
-  if (!isRecord(value) || typeof value.total_tokens !== 'number' || !Number.isFinite(value.total_tokens)) {
-    throw new Error('usage.total_tokens must be a finite number');
+  if (!isRecord(value) || typeof value.total_tokens !== 'number' || !Number.isSafeInteger(value.total_tokens)) {
+    throw new Error('usage.total_tokens must be a non-negative safe integer');
   }
   const totalTokens = value.total_tokens;
   if (totalTokens < 0) throw new Error('usage.total_tokens must not be negative');
@@ -360,6 +366,7 @@ export const parseRerankUsage = (
   case 'dashscope-compatible':
   case 'dashscope-native':
     return optionalUsage(value, requiredTotalTokensFrom);
+  default: return unsupportedProtocol(protocol, 'usage parsing');
   }
 };
 
@@ -412,6 +419,7 @@ export const parseRerankResponse = (protocol: RerankProtocol, value: unknown): C
       ...usage,
     };
   }
+  default: return unsupportedProtocol(protocol, 'response parsing');
   }
 };
 
@@ -481,5 +489,6 @@ export const renderRerankResponse = (
         ...(request.returnDocuments === true ? { document: stringInput(sourceDocument(request, result)) } : {}),
       })),
     };
+  default: return unsupportedProtocol(sourceProtocol, 'response rendering');
   }
 };

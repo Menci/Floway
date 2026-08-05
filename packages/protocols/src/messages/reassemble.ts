@@ -16,16 +16,19 @@ import { cloneMessagesUsageIterations } from './usage.ts';
 import { isJsonObject } from '../common/json.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
 
-const normalizeMessagesTextCitation = (value: unknown): MessagesTextCitation | null => {
+const normalizeMessagesTextCitation = (value: unknown): MessagesTextCitation => {
   if (!isJsonObject(value) || typeof value.type !== 'string') {
-    return null;
+    throw new TypeError('Messages text citation must be an object with a string type');
   }
 
   if (value.type === 'search_result_location') {
     const url = typeof value.url === 'string' ? value.url : typeof value.source === 'string' ? value.source : null;
 
-    if (!url || typeof value.title !== 'string' || !Number.isInteger(value.search_result_index) || !Number.isInteger(value.start_block_index) || !Number.isInteger(value.end_block_index)) {
-      return null;
+    if (!url || typeof value.title !== 'string'
+      || !Number.isSafeInteger(value.search_result_index) || (value.search_result_index as number) < 0
+      || !Number.isSafeInteger(value.start_block_index) || (value.start_block_index as number) < 0
+      || !Number.isSafeInteger(value.end_block_index) || (value.end_block_index as number) < 0) {
+      throw new TypeError('Messages search_result_location citation is malformed');
     }
 
     return {
@@ -43,7 +46,7 @@ const normalizeMessagesTextCitation = (value: unknown): MessagesTextCitation | n
     const url = typeof value.url === 'string' ? value.url : typeof value.source === 'string' ? value.source : null;
 
     if (!url || typeof value.title !== 'string' || typeof value.encrypted_index !== 'string') {
-      return null;
+      throw new TypeError('Messages web_search_result_location citation is malformed');
     }
 
     return {
@@ -55,16 +58,15 @@ const normalizeMessagesTextCitation = (value: unknown): MessagesTextCitation | n
     };
   }
 
-  return null;
+  throw new TypeError(`Unsupported Messages text citation type: ${value.type}`);
 };
 
 const normalizeMessagesTextCitations = (value: unknown): MessagesTextCitation[] =>
-  Array.isArray(value)
-    ? value.flatMap(citation => {
-        const normalized = normalizeMessagesTextCitation(citation);
-        return normalized ? [normalized] : [];
-      })
-    : [];
+  value === undefined
+    ? []
+    : Array.isArray(value)
+      ? value.map(normalizeMessagesTextCitation)
+      : (() => { throw new TypeError('Messages text citations must be an array'); })();
 
 type MessagesTextBlockAccumulator = {
   type: 'text';
@@ -77,6 +79,11 @@ type MessagesToolUseBlockAccumulator = MessagesToolUseBlock & {
 };
 
 type MessagesBlockAccumulator = (MessagesTextBlockAccumulator | MessagesToolUseBlockAccumulator | MessagesServerToolUseBlock | MessagesWebSearchToolResultBlock | MessagesThinkingBlock | MessagesRedactedThinkingBlock | MessagesFallbackBlock) & { extras?: Record<string, unknown> };
+
+interface MessagesBlockState {
+  accumulator: MessagesBlockAccumulator;
+  stopped: boolean;
+}
 
 // Field-fidelity contract — see {@link captureExtras}. Anything an upstream
 // emits on `message_start.message`, on a `content_block`, or on the assembled
@@ -104,11 +111,12 @@ const applyMessagesUsage = (usage: MessagesUsage, update: Partial<MessagesUsage>
   if (update.cache_read_input_tokens != null) {
     usage.cache_read_input_tokens = update.cache_read_input_tokens;
   }
-  if (update.cache_creation != null) usage.cache_creation = update.cache_creation;
+  if (update.cache_creation != null) usage.cache_creation = { ...update.cache_creation };
+  if (update.output_tokens_details != null) usage.output_tokens_details = { ...update.output_tokens_details };
   if (update.service_tier != null) usage.service_tier = update.service_tier;
   if (update.speed != null) usage.speed = update.speed;
   if (update.server_tool_use != null) {
-    usage.server_tool_use = update.server_tool_use;
+    usage.server_tool_use = { ...update.server_tool_use };
   }
   if (update.iterations !== undefined) {
     usage.iterations = cloneMessagesUsageIterations(update.iterations);
@@ -136,7 +144,7 @@ const createBlockAccumulator = (event: Extract<MessagesStreamEvent, { type: 'con
       type: 'tool_use',
       id: block.id,
       name: block.name,
-      input: {},
+      input: structuredClone(block.input),
       inputJson: '',
     });
   case 'server_tool_use':
@@ -144,16 +152,20 @@ const createBlockAccumulator = (event: Extract<MessagesStreamEvent, { type: 'con
       type: 'server_tool_use',
       id: block.id,
       name: block.name,
-      input: block.input,
+      input: { ...block.input },
     });
   case 'web_search_tool_result':
     return withExtras({
       type: 'web_search_tool_result',
       tool_use_id: block.tool_use_id,
-      content: block.content,
+      content: structuredClone(block.content),
     });
   case 'thinking':
-    return withExtras({ type: 'thinking', thinking: block.thinking ?? '' });
+    return withExtras({
+      type: 'thinking',
+      thinking: block.thinking ?? '',
+      ...(block.signature !== undefined ? { signature: block.signature } : {}),
+    });
   case 'redacted_thinking':
     return withExtras({ type: 'redacted_thinking', data: block.data });
   case 'fallback':
@@ -163,34 +175,35 @@ const createBlockAccumulator = (event: Extract<MessagesStreamEvent, { type: 'con
       to: { ...block.to },
       trigger: { ...block.trigger },
     });
+  default:
+    throw new TypeError(`Unsupported Messages content block type: ${(block as { type?: unknown }).type as string}`);
   }
 };
 
 const applyBlockDelta = (block: MessagesBlockAccumulator | undefined, event: Extract<MessagesStreamEvent, { type: 'content_block_delta' }>): void => {
-  if (!block) return;
+  if (!block) throw new Error(`Messages content block ${event.index} received a delta before its start event`);
 
   switch (event.delta.type) {
   case 'text_delta':
-    if (block.type !== 'text') return;
+    if (block.type !== 'text') throw new Error(`Messages ${event.delta.type} cannot update a ${block.type} block`);
     block.text += event.delta.text ?? '';
     block.citations.push(...normalizeMessagesTextCitations(event.delta.citations));
     return;
   case 'citations_delta': {
-    if (block.type !== 'text') return;
-    const citation = normalizeMessagesTextCitation(event.delta.citation);
-    if (citation) block.citations.push(citation);
+    if (block.type !== 'text') throw new Error(`Messages ${event.delta.type} cannot update a ${block.type} block`);
+    block.citations.push(normalizeMessagesTextCitation(event.delta.citation));
     return;
   }
   case 'input_json_delta':
-    if (block.type !== 'tool_use') return;
+    if (block.type !== 'tool_use') throw new Error(`Messages ${event.delta.type} cannot update a ${block.type} block`);
     block.inputJson += event.delta.partial_json ?? '';
     return;
   case 'thinking_delta':
-    if (block.type !== 'thinking') return;
+    if (block.type !== 'thinking') throw new Error(`Messages ${event.delta.type} cannot update a ${block.type} block`);
     block.thinking += event.delta.thinking ?? '';
     return;
   case 'signature_delta':
-    if (block.type !== 'thinking') return;
+    if (block.type !== 'thinking') throw new Error(`Messages ${event.delta.type} cannot update a ${block.type} block`);
     block.signature = event.delta.signature;
     return;
   }
@@ -198,17 +211,19 @@ const applyBlockDelta = (block: MessagesBlockAccumulator | undefined, event: Ext
 
 const finalizeToolUseInput = (block: MessagesBlockAccumulator | undefined): void => {
   if (block?.type !== 'tool_use' || !block.inputJson) return;
-
+  let parsed: unknown;
   try {
-    block.input = JSON.parse(block.inputJson);
-  } catch {
-    // Anthropic Messages requires `input` to be an object even when the
-    // upstream streamed malformed JSON for a tool call. Failing the whole
-    // response on a partial/garbage tool_use is more hostile to clients than
-    // surfacing an empty object; the broken arguments stay observable via
-    // the original SSE frames.
-    block.input = {};
+    parsed = JSON.parse(block.inputJson) as unknown;
+  } catch (cause) {
+    throw new SyntaxError('Malformed upstream Messages tool input JSON', { cause });
   }
+  if (!isJsonObject(parsed)) throw new TypeError('Upstream Messages tool input must be a JSON object');
+  block.input = parsed;
+};
+
+const checkedBlockIndex = (index: number): number => {
+  if (!Number.isSafeInteger(index) || index < 0) throw new RangeError(`Messages content block index must be a non-negative safe integer: ${index}`);
+  return index;
 };
 
 const finalizeContentBlock = (block: MessagesBlockAccumulator): MessagesAssistantContentBlock => {
@@ -243,12 +258,17 @@ export async function reassembleMessagesEvents(events: AsyncIterable<MessagesStr
   let stopDetails: MessagesRefusalStopDetails | null | undefined;
   let stopSequence: string | null = null;
 
-  const blocks: Array<MessagesBlockAccumulator | undefined> = [];
+  const blocks = new Map<number, MessagesBlockState>();
   const resultExtras: Record<string, unknown> = {};
+  let messageStarted = false;
+  let messageStopped = false;
 
   for await (const event of events) {
+    if (messageStopped) throw new Error(`Messages stream emitted ${event.type} after message_stop`);
     switch (event.type) {
     case 'message_start':
+      if (messageStarted) throw new Error('Messages stream emitted more than one message_start event');
+      messageStarted = true;
       id = event.message.id;
       model = event.message.model;
       stopDetails = event.message.stop_details;
@@ -256,15 +276,29 @@ export async function reassembleMessagesEvents(events: AsyncIterable<MessagesStr
       captureExtras(event.message as unknown as Record<string, unknown>, KNOWN_MESSAGE_KEYS, resultExtras);
       break;
     case 'content_block_start':
-      blocks[event.index] = createBlockAccumulator(event);
+      if (!messageStarted) throw new Error('Messages content block started before message_start');
+      checkedBlockIndex(event.index);
+      if (blocks.has(event.index)) throw new Error(`Messages content block ${event.index} started more than once`);
+      blocks.set(event.index, { accumulator: createBlockAccumulator(event), stopped: false });
       break;
-    case 'content_block_delta':
-      applyBlockDelta(blocks[event.index], event);
+    case 'content_block_delta': {
+      checkedBlockIndex(event.index);
+      const state = blocks.get(event.index);
+      if (state?.stopped) throw new Error(`Messages content block ${event.index} received a delta after its stop event`);
+      applyBlockDelta(state?.accumulator, event);
       break;
-    case 'content_block_stop':
-      finalizeToolUseInput(blocks[event.index]);
+    }
+    case 'content_block_stop': {
+      checkedBlockIndex(event.index);
+      const state = blocks.get(event.index);
+      if (!state) throw new Error(`Messages content block ${event.index} stopped before its start event`);
+      if (state.stopped) throw new Error(`Messages content block ${event.index} stopped more than once`);
+      finalizeToolUseInput(state.accumulator);
+      state.stopped = true;
       break;
+    }
     case 'message_delta':
+      if (!messageStarted) throw new Error('Messages message_delta arrived before message_start');
       if (event.delta.stop_reason != null) {
         stopReason = event.delta.stop_reason;
       }
@@ -279,12 +313,23 @@ export async function reassembleMessagesEvents(events: AsyncIterable<MessagesStr
     case 'error':
       throw new Error(`Upstream SSE error: ${event.error?.type ?? 'unknown'}: ${event.error?.message ?? JSON.stringify(event)}`);
     case 'message_stop':
+      if (!messageStarted) throw new Error('Messages message_stop arrived before message_start');
+      for (const [index, state] of blocks) {
+        if (!state.stopped) throw new Error(`Messages content block ${index} remained open at message_stop`);
+      }
+      messageStopped = true;
+      break;
     case 'ping':
       break;
     }
   }
 
-  const content = blocks.flatMap((block): MessagesAssistantContentBlock[] => (block ? [finalizeContentBlock(block)] : []));
+  if (!messageStarted) throw new Error('Messages stream ended without a message_start event');
+  const orderedBlocks = [...blocks.entries()].toSorted(([left], [right]) => left - right);
+  for (let position = 0; position < orderedBlocks.length; position++) {
+    if (orderedBlocks[position]![0] !== position) throw new Error(`Messages content block indexes must be contiguous from zero; missing index ${position}`);
+  }
+  const content = orderedBlocks.map(([, state]) => finalizeContentBlock(state.accumulator));
 
   return {
     id,

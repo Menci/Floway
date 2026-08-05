@@ -36,3 +36,15 @@ test('reassembleGeminiEvents preserves unknown candidate-level and result-level 
   assertEquals(result.promptFeedback, { safetyRatings: [] });
   assertEquals(result.this_is_a_non_standard_field_of_reasoning, 'unknown_top_value');
 });
+
+test('reassembleGeminiEvents preserves unknown fields on streamed text parts', async () => {
+  const result = await reassembleGeminiEvents(eventsFrom([
+    { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'A', vendor: 'first' } as never] } }] },
+    { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'B', vendor: 'second' } as never] }, finishReason: 'STOP' }] },
+  ]));
+
+  assertEquals(result.candidates?.[0]?.content.parts, [
+    { text: 'A', vendor: 'first' },
+    { text: 'B', vendor: 'second' },
+  ]);
+});
