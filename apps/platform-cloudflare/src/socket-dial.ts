@@ -1,6 +1,6 @@
 import { connect } from 'cloudflare:sockets';
 
-import { normalizeDialHost, throwAbort, type DialedSocket, type SocketDial } from '@floway-dev/platform';
+import { normalizeDialHost, throwAbort, validateDialPort, type DialedSocket, type SocketDial } from '@floway-dev/platform';
 
 // AbortSignal handling: cloudflare:sockets doesn't accept a signal on connect
 // itself, so we honour it ourselves. A pre-aborted signal short-circuits
@@ -17,8 +17,9 @@ export const cloudflareSocketDial: SocketDial = {
   async connect(host, port, opts): Promise<DialedSocket> {
     if (opts?.signal?.aborted) throwAbort(opts.signal);
     const dialHost = normalizeDialHost(host);
+    const dialPort = validateDialPort(port);
     const socket = connect(
-      { hostname: dialHost, port },
+      { hostname: dialHost, port: dialPort },
       {
         // Half-open is honoured for plain TCP only. On the TLS leg, close-notify
         // makes half-close fragile across TLS 1.3 implementations, so we mirror

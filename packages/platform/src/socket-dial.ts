@@ -50,7 +50,8 @@ export const resetSocketDialForTesting = (): void => {
 /** Throws using the same policy described on SocketDialOptions.signal. */
 export const throwAbort = (signal: AbortSignal): never => {
   const reason = signal.reason;
-  if (reason instanceof Error) throw reason;
+  const tag = Object.prototype.toString.call(reason);
+  if (reason instanceof Error || tag === '[object Error]' || tag === '[object DOMException]') throw reason;
   throw new DOMException(String(reason ?? 'aborted'), 'AbortError');
 };
 
@@ -58,5 +59,15 @@ export const throwAbort = (signal: AbortSignal): never => {
  * WHATWG `URL.hostname` keeps the `[...]` envelope around IPv6 literals,
  * but runtime TCP APIs reject bracketed literals as ENOTFOUND.
  */
-export const normalizeDialHost = (host: string): string =>
-  host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
+export const normalizeDialHost = (host: string): string => {
+  const normalized = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
+  if (normalized.length === 0) throw new TypeError('SocketDial host must not be empty');
+  return normalized;
+};
+
+export const validateDialPort = (port: number): number => {
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new RangeError('SocketDial port must be an integer between 1 and 65535');
+  }
+  return port;
+};

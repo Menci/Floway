@@ -100,6 +100,20 @@ describe('cloudflareSocketDial', () => {
     expect(connect).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['', 443],
+    ['[]', 443],
+    ['example.com', 0],
+    ['example.com', 65_536],
+    ['example.com', 1.5],
+  ] as const)('rejects malformed address %s:%s before opening a socket', async (host, port) => {
+    const connect = vi.fn(() => new FakeSocket());
+    installCloudflareConnect(connect);
+
+    await expect(cloudflareSocketDial.connect(host, port)).rejects.toThrow('SocketDial');
+    expect(connect).not.toHaveBeenCalled();
+  });
+
   it('closes an in-flight dial and preserves its abort reason', async () => {
     const socket = new FakeSocket();
     socket.rejectOpenOnClose = new Error('runtime close interrupted open');

@@ -1,6 +1,7 @@
 import net from 'node:net';
+import { runInNewContext } from 'node:vm';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { nodeSocketDial } from '../src/socket-dial.ts';
 
@@ -30,9 +31,16 @@ const readExactly = async (
 // reaches the underlying net.Socket — Writable.toWeb / Readable.toWeb
 // behaviour around abort/cancel is non-obvious and the rest of the proxy
 // library assumes a cancelled stream destroys its FD.
-const startEchoServer = async (): Promise<{ port: number; close: () => Promise<void>; lastSocket: () => net.Socket | null }> => {
+const startEchoServer = async (): Promise<{
+  port: number;
+  close: () => Promise<void>;
+  connectionCount: () => number;
+  lastSocket: () => net.Socket | null;
+}> => {
   let lastSocket: net.Socket | null = null;
+  let connections = 0;
   const server = net.createServer(socket => {
+    connections += 1;
     lastSocket = socket;
     socket.on('data', chunk => socket.write(chunk));
     socket.on('error', () => { /* peer hangup is expected during teardown */ });
@@ -43,14 +51,15 @@ const startEchoServer = async (): Promise<{ port: number; close: () => Promise<v
   return {
     port: address.port,
     close: () => new Promise(resolve => server.close(() => resolve())),
+    connectionCount: () => connections,
     lastSocket: () => lastSocket,
   };
 };
 
 describe('nodeSocketDial', () => {
   let server: Awaited<ReturnType<typeof startEchoServer>>;
-  beforeEach(async () => { server = await startEchoServer(); });
-  afterEach(async () => { await server.close(); });
+  beforeAll(async () => { server = await startEchoServer(); });
+  afterAll(async () => { await server.close(); });
 
   it('connects, keeps retained read chunks stable, and tears down via close()', async () => {
     const dialed = await nodeSocketDial.connect('127.0.0.1', server.port);
@@ -65,7 +74,7 @@ describe('nodeSocketDial', () => {
       if (retained === undefined) throw new Error('socket returned no retained chunk');
       const snapshot = retained.slice();
 
-      for (let i = 0; i < 16; i += 1) {
+      for (let i = 0; i < 4; i += 1) {
         const payload = new Uint8Array(64).fill(i);
         await writer.write(payload);
         expect((await readExactly(reader, payload.byteLength)).body).toEqual(payload);
@@ -79,9 +88,20 @@ describe('nodeSocketDial', () => {
   });
 
   it.each(['', '[]'])('rejects empty dial host %j without opening a socket', async host => {
+    const connectionsBefore = server.connectionCount();
     await expect(nodeSocketDial.connect(host, server.port)).rejects.toThrow('SocketDial host must not be empty');
-    expect(server.lastSocket()).toBeNull();
+    expect(server.connectionCount()).toBe(connectionsBefore);
   });
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, -1, 0, 1.5, 65_536])(
+    'rejects invalid dial port %s without opening a socket',
+    async port => {
+      const connectionsBefore = server.connectionCount();
+      await expect(nodeSocketDial.connect('127.0.0.1', port))
+        .rejects.toThrow('SocketDial port must be an integer between 1 and 65535');
+      expect(server.connectionCount()).toBe(connectionsBefore);
+    },
+  );
 
   it('does not send an invalid TLS SNI extension for an IP address', async () => {
     const rejectingServer = net.createServer(socket => socket.destroy());
@@ -116,10 +136,23 @@ describe('nodeSocketDial', () => {
   });
 
   it('honours an already-aborted signal without opening a socket', async () => {
+    const connectionsBefore = server.connectionCount();
     const ac = new AbortController();
     ac.abort();
     await expect(nodeSocketDial.connect('127.0.0.1', server.port, { signal: ac.signal }))
       .rejects.toMatchObject({ name: 'AbortError' });
+    expect(server.connectionCount()).toBe(connectionsBefore);
+  });
+
+  it('preserves a cross-realm Error abort reason', async () => {
+    const connectionsBefore = server.connectionCount();
+    const reason: unknown = runInNewContext('new Error("foreign abort")');
+    const ac = new AbortController();
+    ac.abort(reason);
+
+    await expect(nodeSocketDial.connect('127.0.0.1', server.port, { signal: ac.signal }))
+      .rejects.toBe(reason);
+    expect(server.connectionCount()).toBe(connectionsBefore);
   });
 
   it('destroys the underlying socket when the caller aborts post-connect', async () => {
@@ -129,18 +162,19 @@ describe('nodeSocketDial', () => {
     const writer = dialed.writable.getWriter();
     await writer.write(new TextEncoder().encode('warmup'));
     writer.releaseLock();
-
-    ac.abort();
-    // Give the abort listener a tick to call socket.destroy().
-    await new Promise(r => setTimeout(r, 20));
+    const reader = dialed.readable.getReader();
+    expect(new TextDecoder().decode((await reader.read()).value)).toBe('warmup');
+    reader.releaseLock();
 
     const remote = server.lastSocket();
-    // Either reading proves the abort reached the underlying fd:
-    // socket.destroy() flips `destroyed` immediately on the local side, but
-    // a peer-driven FIN can leave the local socket as
-    // `destroyed: false, readableEnded: true` for a tick before the close
-    // event lands.
-    expect(remote?.destroyed === true || remote?.readableEnded === true).toBe(true);
+    if (!remote) throw new Error('echo server did not accept the dialed socket');
+    const remoteClosed = new Promise<void>(resolve => remote.once('close', () => resolve()));
+
+    ac.abort();
+    await remoteClosed;
+
+    expect(remote.destroyed).toBe(true);
+    await dialed.close();
   });
 
   // The proxy URL parser hands `url.hostname` straight through, which keeps

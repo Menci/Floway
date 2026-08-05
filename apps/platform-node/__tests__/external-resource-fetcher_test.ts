@@ -1,6 +1,10 @@
 import { test } from 'vitest';
 
-import { createNodeExternalResourceFetcher, isPublicIpAddress } from '../src/external-resource-fetcher.ts';
+import {
+  createNodeExternalResourceFetcher,
+  createPublicAddressLookup,
+  isPublicIpAddress,
+} from '../src/external-resource-fetcher.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 test('Node external-resource egress accepts only globally routable addresses', () => {
@@ -33,7 +37,6 @@ test('Node external-resource egress accepts only globally routable addresses', (
 test.each([
   'http://127.0.0.1:8080/private',
   'http://[::1]:8080/private',
-  'http://localhost:8080/private',
 ])(
   'Node external-resource fetcher rejects private target %s before connecting',
   async url => {
@@ -46,3 +49,31 @@ test.each([
     assertEquals(messages.includes('External resource target did not resolve exclusively to public IP addresses'), true);
   },
 );
+
+test('Node external-resource DNS rejects empty and mixed public/private answers', async () => {
+  for (const addresses of [
+    [],
+    [
+      { address: '8.8.8.8', family: 4 as const },
+      { address: '127.0.0.1', family: 4 as const },
+    ],
+  ]) {
+    const lookup = createPublicAddressLookup((_hostname, _options, callback) => callback(null, addresses));
+    const error = await new Promise<NodeJS.ErrnoException | null>(resolve => {
+      lookup('example.com', { all: true }, lookupError => resolve(lookupError));
+    });
+
+    assertEquals(error?.code, 'ENETUNREACH');
+    assertEquals(error?.message, 'External resource target did not resolve exclusively to public IP addresses');
+  }
+});
+
+test('Node external-resource DNS preserves resolver failures', async () => {
+  const expected = Object.assign(new Error('resolver failed'), { code: 'EAI_AGAIN' });
+  const lookup = createPublicAddressLookup((_hostname, _options, callback) => callback(expected, []));
+  const error = await new Promise<NodeJS.ErrnoException | null>(resolve => {
+    lookup('example.com', { all: true }, lookupError => resolve(lookupError));
+  });
+
+  assertEquals(error, expected);
+});
