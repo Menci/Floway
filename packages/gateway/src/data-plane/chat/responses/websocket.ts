@@ -5,9 +5,21 @@ import { createResponsesWsSession } from './items/store.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
 import { isResponsesResponseTerminalEvent, normalizeResponsesStreamLifecycle } from './stream-lifecycle.ts';
+import {
+  prepareResponsesWebSocketMessage,
+  RESPONSES_WEBSOCKET_CONNECTION_LIMIT_ERROR,
+  RESPONSES_WEBSOCKET_LIMITS,
+  RESPONSES_WEBSOCKET_MESSAGE_TOO_LARGE_CODE,
+  RESPONSES_WEBSOCKET_QUEUE_LIMIT_CODE,
+  ResponsesWebSocketIngressBudget,
+  responsesWebSocketMessageByteLength,
+  type PreparedResponsesWebSocketMessage,
+  type ResponsesWebSocketIngressReservation,
+} from './websocket-policy.ts';
 import type { DumpAccumulator } from '../../../dump/accumulator.ts';
 import { apiKeyFromContext, authenticateApiKey, type AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
+import { utf8ByteLength } from '../../../shared/utf8.ts';
 import { inboundHeaders } from '../../shared/inbound-headers.ts';
 import { takeRequestBody } from '../../shared/request-body.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../../shared/sse.ts';
@@ -31,9 +43,8 @@ interface WorkerWebSocket extends WebSocket {
 interface ResponsesWebSocketSocket {
   readonly readyState: number;
   send(data: string): void;
+  close(code?: number, reason?: string): void;
 }
-
-const UTF8_ENCODER = new TextEncoder();
 
 // Our implementor slug prefixes the keep-alive's wire type; the spec reserves
 // every unprefixed type for itself, gives `acme:trace_event` as the form, and
@@ -47,6 +58,7 @@ const UTF8_ENCODER = new TextEncoder();
 export const KEEP_ALIVE_EVENT_TYPE = 'floway:keep_alive';
 
 interface ResponsesWebSocketHandlers {
+  onOpen(event: unknown, socket: ResponsesWebSocketSocket): void;
   onMessage(event: { readonly data: unknown }, socket: ResponsesWebSocketSocket): void;
   onClose(event: unknown, socket: ResponsesWebSocketSocket): void;
   onError(event: unknown, socket: ResponsesWebSocketSocket): void;
@@ -96,11 +108,17 @@ export const responsesWebSocket = async (c: AuthedContext): Promise<Response> =>
   const pair = new WebSocketPair();
   const client = pair[0];
   const server = pair[1];
-  server.accept();
+  // Keep binary delivery stable across compatibility dates. Cloudflare changed
+  // the default to Blob on 2026-03-17, while the gateway's bounded synchronous
+  // ingress path deliberately accepts ArrayBuffer.
+  // https://github.com/cloudflare/cloudflare-docs/blob/f8ac0aa6d9ef268d442865225c786753aa1332af/src/content/docs/workers/runtime-apis/websockets.mdx#L229-L267
+  server.binaryType = 'arraybuffer';
 
   server.addEventListener('close', event => events.onClose(event, server));
   server.addEventListener('error', event => events.onError(event, server));
   server.addEventListener('message', event => events.onMessage(event, server));
+  server.accept();
+  events.onOpen(new Event('open'), server);
 
   return new Response(null, { status: 101, webSocket: client } as ResponseInit & { readonly webSocket: WebSocket });
 };
@@ -112,9 +130,18 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
   // turn rather than freezing key/user policy at upgrade time.
   const authenticatedRawKey = apiKeyFromContext(c).key;
   const session = createResponsesWsSession();
+  const ingressBudget = new ResponsesWebSocketIngressBudget();
   let closed = false;
   let activeAbortController: AbortController | undefined;
-  let queue = Promise.resolve();
+  let activeTurn: Promise<void> | undefined;
+  let connectionLimitTimer: ReturnType<typeof setTimeout> | undefined;
+
+  interface QueuedTurn {
+    readonly prepared: Exclude<PreparedResponsesWebSocketMessage, { readonly kind: 'message-too-large' }>;
+    readonly reservation: ResponsesWebSocketIngressReservation;
+    readonly socket: ResponsesWebSocketSocket;
+  }
+  const queuedTurns: QueuedTurn[] = [];
 
   // ── Session-scoped BackgroundScheduler ──────────────────────────────────
   //
@@ -132,11 +159,11 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
   // `pendingWork`; the isolate stays alive throughout because we register
   // ONE lifetime promise up-front (while the fetch handler is still
   // running, so this waitUntil IS legal) that only resolves when the WebSocket
-  // is closed, its active message queue has finished, and pendingWork is
+  // is closed, its active turn has finished, and pendingWork is
   // drained.
   //
-  // The drain first joins the serialized message queue, then drains background
-  // work to a fixed point. The active handler can enqueue dump.finalize,
+  // The drain first joins the active turn, then drains background work to a
+  // fixed point. The active handler can enqueue dump.finalize,
   // settle, or recordFailedRequest after `sessionClosed` resolves; observing an
   // empty Set before that handler finishes would let the lifetime promise exit
   // while those writes have not even been scheduled. The fixed-point check also
@@ -153,42 +180,141 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
   backgroundSchedulerFromContext(c)((async () => {
     await sessionClosed;
     while (true) {
-      const activeQueue = queue;
-      await activeQueue;
+      const currentTurn = activeTurn;
+      if (currentTurn !== undefined) await currentTurn;
       if (pendingWork.size > 0) await Promise.allSettled([...pendingWork]);
-      if (queue === activeQueue && pendingWork.size === 0) break;
+      if (activeTurn === undefined && pendingWork.size === 0) break;
     }
   })());
 
-  const closeActiveRequest = (): void => {
+  const clearConnectionLimitTimer = (): void => {
+    if (connectionLimitTimer === undefined) return;
+    clearTimeout(connectionLimitTimer);
+    connectionLimitTimer = undefined;
+  };
+
+  const discardQueuedTurns = (): void => {
+    for (const turn of queuedTurns.splice(0)) turn.reservation.release();
+  };
+
+  const closeActiveRequest = (reason?: unknown): void => {
+    if (closed) return;
     closed = true;
-    activeAbortController?.abort();
+    clearConnectionLimitTimer();
+    discardQueuedTurns();
+    activeAbortController?.abort(reason);
     sessionClosedResolve?.();
   };
 
-  return {
-    onClose: closeActiveRequest,
-    onError: closeActiveRequest,
-    onMessage: (event, socket) => {
-      queue = queue
-        .then(async () => {
-          if (closed) return;
-          const abortController = new AbortController();
-          activeAbortController = abortController;
-          try {
-            await handleClientMessage(c, socket, session, event.data, authenticatedRawKey, abortController, () => closed, sessionScheduler);
-          } finally {
-            if (activeAbortController === abortController) activeAbortController = undefined;
-          }
-        })
-        // WS-specific top-level: Hono's onError never runs for callbacks fired off
-        // an open socket, so we serialize the error inline as the spec's
-        // WebSocket error envelope. (HTTP entries let onError handle the same case.)
-        .catch(error => {
-          if (!closed) sendError(socket, 500, serverErrorEnvelope(error));
+  const closeWithError = (
+    socket: ResponsesWebSocketSocket,
+    status: number,
+    error: Record<string, unknown>,
+    closeCode: number,
+    closeReason: string,
+  ): void => {
+    sendError(socket, status, error);
+    closeActiveRequest(new WebSocketClientMessageError(String(error.message ?? closeReason)));
+    if (socket.readyState === WebSocket.OPEN) socket.close(closeCode, closeReason);
+  };
+
+  const runQueuedTurn = (turn: QueuedTurn): void => {
+    if (closed || activeTurn !== undefined) return;
+    activeTurn = (async () => {
+      if (turn.prepared.kind === 'unsupported') {
+        sendError(turn.socket, 400, {
+          type: 'invalid_request_error',
+          code: 'invalid_request_error',
+          message: `Unsupported WebSocket message data: ${turn.prepared.description}`,
         });
+        return;
+      }
+
+      const abortController = new AbortController();
+      activeAbortController = abortController;
+      try {
+        await handleClientMessage(c, turn.socket, session, turn.prepared.bytes, authenticatedRawKey, abortController, () => closed, sessionScheduler);
+      } finally {
+        if (activeAbortController === abortController) activeAbortController = undefined;
+      }
+    })()
+      // WS-specific top-level: Hono's onError never runs for callbacks fired off
+      // an open socket, so serialize the error inline.
+      .catch(error => {
+        if (!closed) sendError(turn.socket, 500, serverErrorEnvelope(error));
+      })
+      .finally(() => {
+        turn.reservation.release();
+        activeTurn = undefined;
+        const next = queuedTurns.shift();
+        if (next !== undefined) runQueuedTurn(next);
+      });
+  };
+
+  const enqueue = (
+    prepared: Exclude<PreparedResponsesWebSocketMessage, { readonly kind: 'message-too-large' }>,
+    reservation: ResponsesWebSocketIngressReservation,
+    socket: ResponsesWebSocketSocket,
+  ): void => {
+    const turn = { prepared, reservation, socket };
+    if (activeTurn === undefined) runQueuedTurn(turn);
+    else queuedTurns.push(turn);
+  };
+
+  return {
+    onOpen: (_event, socket) => {
+      connectionLimitTimer = setTimeout(() => {
+        closeWithError(
+          socket,
+          400,
+          RESPONSES_WEBSOCKET_CONNECTION_LIMIT_ERROR,
+          1000,
+          RESPONSES_WEBSOCKET_CONNECTION_LIMIT_ERROR.code,
+        );
+      }, RESPONSES_WEBSOCKET_LIMITS.maxConnectionDurationMs);
+      unrefTimer(connectionLimitTimer);
+    },
+    onClose: (_event, socket) => {
+      closeActiveRequest();
+      // Cloudflare compatibility dates before 2026-04-07 require the Worker to
+      // send the reciprocal Close. Newer runtimes and Node silently ignore this
+      // call after their automatic reply.
+      // https://github.com/cloudflare/cloudflare-docs/blob/f8ac0aa6d9ef268d442865225c786753aa1332af/src/content/docs/workers/runtime-apis/websockets.mdx#L185-L225
+      socket.close();
+    },
+    onError: event => { closeActiveRequest(event); },
+    onMessage: (event, socket) => {
+      if (closed) return;
+      const byteLength = responsesWebSocketMessageByteLength(event.data);
+      const decision = ingressBudget.reserve(byteLength);
+      if (decision.kind === 'message-too-large') {
+        closeWithError(socket, 413, {
+          type: 'invalid_request_error',
+          code: RESPONSES_WEBSOCKET_MESSAGE_TOO_LARGE_CODE,
+          message: `WebSocket message exceeds the ${RESPONSES_WEBSOCKET_LIMITS.maxMessageBytes}-byte limit.`,
+        }, 1009, RESPONSES_WEBSOCKET_MESSAGE_TOO_LARGE_CODE);
+        return;
+      }
+      if (decision.kind === 'queue-full') {
+        closeWithError(socket, 429, {
+          type: 'rate_limit_error',
+          code: RESPONSES_WEBSOCKET_QUEUE_LIMIT_CODE,
+          message: 'Responses WebSocket queue capacity exceeded; open a new connection and retry.',
+        }, 1008, RESPONSES_WEBSOCKET_QUEUE_LIMIT_CODE);
+        return;
+      }
+
+      const prepared = prepareResponsesWebSocketMessage(event.data, RESPONSES_WEBSOCKET_LIMITS.maxMessageBytes, byteLength);
+      if (prepared.kind === 'message-too-large') throw new Error('WebSocket message size changed after ingress reservation');
+      enqueue(prepared, decision.reservation, socket);
     },
   };
+};
+
+const unrefTimer = (timer: unknown): void => {
+  if (typeof timer !== 'object' || timer === null) return;
+  const unref = Reflect.get(timer, 'unref');
+  if (typeof unref === 'function') Reflect.apply(unref, timer, []);
 };
 
 interface ResponsesWsTurnFailure {
@@ -200,7 +326,7 @@ const handleClientMessage = async (
   c: AuthedContext,
   socket: ResponsesWebSocketSocket,
   session: ReturnType<typeof createResponsesWsSession>,
-  data: unknown,
+  requestBytes: Uint8Array,
   authenticatedRawKey: string,
   downstreamAbortController: AbortController,
   isClosed: () => boolean,
@@ -243,7 +369,7 @@ const handleClientMessage = async (
     // request body when `ctx` is constructed below. Payloads that fail to
     // parse never reach ctx construction, so no dump record is emitted for
     // them — there is no api-key-scoped turn to attribute them to.
-    const requestBody = { bytes: wsDataToBytes(data), streamError: null };
+    const requestBody = { bytes: requestBytes, streamError: null };
     if (!(await authenticateApiKey(c, authenticatedRawKey))) {
       turnFailure.fail(401, {
         type: 'authentication_error',
@@ -349,13 +475,6 @@ const handleClientMessage = async (
 };
 
 class WebSocketClientMessageError extends Error {}
-
-const wsDataToBytes = (data: unknown): Uint8Array => {
-  if (typeof data === 'string') return new TextEncoder().encode(data);
-  if (data instanceof ArrayBuffer) return new Uint8Array(data);
-  if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-  throw new WebSocketClientMessageError(`Unsupported WebSocket message data: ${typeof data}`);
-};
 
 const validateClientMessage = (parsed: unknown): ResponsesWebSocketClientEvent => {
   if (!parsed || typeof parsed !== 'object' || typeof (parsed as { type?: unknown }).type !== 'string') {
@@ -780,6 +899,6 @@ const sendJson = (
   } catch (error) {
     return { ok: false, error };
   }
-  dump?.recordSentPayloadBytes(UTF8_ENCODER.encode(text).byteLength);
+  dump?.recordSentPayloadBytes(utf8ByteLength(text));
   return { ok: true };
 };

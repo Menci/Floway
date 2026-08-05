@@ -1,6 +1,5 @@
 import { serve, upgradeWebSocket } from '@hono/node-server';
 import { Agent, Pool, setGlobalDispatcher } from 'undici';
-import { WebSocketServer } from 'ws';
 
 // Copilot data-plane hosts close their keep-alive socket right after each
 // response; reusing it surfaces as UND_ERR_SOCKET or
@@ -25,6 +24,7 @@ setGlobalDispatcher(new Agent({
 
 import { bootstrapNodePlatform } from './src/bootstrap.ts';
 import { applyMigrations } from './src/migrate.ts';
+import { createResponsesWebSocketServer } from './src/responses-websocket-server.ts';
 import {
   app,
   initBackgroundSchedulerResolver,
@@ -82,7 +82,7 @@ setInterval(sweep, SCHEDULED_INTERVAL_MS).unref();
 serve({
   fetch: app.fetch,
   port,
-  websocket: { server: new WebSocketServer({ noServer: true }) },
+  websocket: { server: createResponsesWebSocketServer() },
 }, info => {
   console.log(`Floway listening on http://localhost:${info.port}`);
 });
