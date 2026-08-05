@@ -82,6 +82,10 @@ describe('readableTone', () => {
 });
 
 describe('blendHex', () => {
+  it('accepts Culori hex forms', () => {
+    expect(blendHex('#f00', 1, '#fff')).toBe('#FF0000');
+  });
+
   it('returns the backdrop at zero alpha and the top colour at one', () => {
     expect(blendHex('#FF0000', 0, '#FFFFFF')).toBe('#FFFFFF');
     expect(blendHex('#FF0000', 1, '#FFFFFF')).toBe('#FF0000');

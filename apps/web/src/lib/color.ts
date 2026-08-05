@@ -10,13 +10,12 @@ import {
   wcagContrast,
 } from 'culori/fn';
 
-const HEX_RE = /^#[0-9a-fA-F]{6}$/;
-
 registerMode(modeRgb);
 
 const parseRgb = (hex: string) => {
-  if (!HEX_RE.test(hex)) throw new TypeError(`Not a #RRGGBB colour: ${hex}`);
-  return parseHex(hex)!;
+  const rgb = parseHex(hex);
+  if (!rgb) throw new TypeError(`Not a hex colour: ${hex}`);
+  return rgb;
 };
 
 const linearRgb = (rgb: ReturnType<typeof parseRgb>) => convertRgbToLrgb(rgb);
