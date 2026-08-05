@@ -203,6 +203,18 @@ describe('Copilot token exchange retries', () => {
     expect(tokenAttempts).toBe(1);
   });
 
+  test('preserves a non-Error wrapper whose cause is an AbortError without retrying', async () => {
+    const reason = { cause: new DOMException('fetch cancelled', 'AbortError') };
+    let tokenAttempts = 0;
+    const fetcher: Fetcher = async () => {
+      tokenAttempts++;
+      throw reason;
+    };
+
+    await expect(runAuthedFetch(fetcher)).rejects.toBe(reason);
+    expect(tokenAttempts).toBe(1);
+  });
+
   test('preserves an already-aborted signal reason without starting an attempt', async () => {
     const controller = new AbortController();
     const reason = new DOMException('already cancelled', 'AbortError');

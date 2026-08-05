@@ -78,14 +78,20 @@ class RetryableError extends Error {
   }
 }
 
+class NonErrorAbort extends Error {
+  constructor(readonly originalError: unknown) {
+    super(String(originalError), { cause: originalError });
+  }
+}
+
 const retryCopilotTokenFetch = async <T>(fn: () => Promise<T>, signal: AbortSignal | undefined): Promise<T> => {
   try {
     return await pRetry(async () => {
       try {
         return await fn();
       } catch (error) {
-        if (error instanceof Error && (isAbortError(error) || (isCopilotTokenFetchError(error) && isCopilotTokenFetchTerminalStatus(error.status)))) {
-          throw new RetryAbortError(error);
+        if (isAbortError(error) || (isCopilotTokenFetchError(error) && isCopilotTokenFetchTerminalStatus(error.status))) {
+          throw new RetryAbortError(error instanceof Error ? error : new NonErrorAbort(error));
         }
 
         // p-retry rejects non-network TypeErrors immediately and normalizes
@@ -108,6 +114,7 @@ const retryCopilotTokenFetch = async <T>(fn: () => Promise<T>, signal: AbortSign
     });
   } catch (error) {
     if (error instanceof RetryableError) throw error.originalError;
+    if (error instanceof NonErrorAbort) throw error.originalError;
     throw error;
   }
 }
