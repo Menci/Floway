@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { assertCustomUpstreamRecord } from '../src/config.ts';
 import {
@@ -74,6 +74,22 @@ test('typed transports use default /v1/* paths', async () => {
     'https://custom.example.com/v1/audio/transcriptions',
     'https://custom.example.com/v1/models',
   ]);
+});
+
+test('typed transports enforce exactly one timing-wrapper dispatch', async () => {
+  const { config } = assertCustomUpstreamRecord(baseRecord);
+  let fetchCalls = 0;
+  await expect(customFetchChatCompletions(config, { method: 'POST', body: '{}' }, {
+    fetcher: () => {
+      fetchCalls++;
+      return Promise.resolve(new Response('{}'));
+    },
+    wrapUpstreamCall: async dispatch => {
+      await dispatch();
+      return await dispatch();
+    },
+  })).rejects.toThrow('invoked more than once');
+  expect(fetchCalls).toBe(1);
 });
 
 test('admin pathOverrides replace defaults and propagate to derived sub-paths', async () => {
