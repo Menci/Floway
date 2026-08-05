@@ -739,8 +739,9 @@ test('Responses WebSocket keep-alive waits for the first event and takes a slot 
 
         await tickKeepAliveIntervals(1);
 
-        enqueueSseEvent('response.output_item.done', { type: 'response.output_item.done', output_index: 0, item: reasoning, sequence_number: 1 });
-        enqueueSseEvent('response.completed', { type: 'response.completed', response, sequence_number: 2 });
+        enqueueSseEvent('response.output_item.added', { type: 'response.output_item.added', output_index: 0, item: reasoning, sequence_number: 1 });
+        enqueueSseEvent('response.output_item.done', { type: 'response.output_item.done', output_index: 0, item: reasoning, sequence_number: 2 });
+        enqueueSseEvent('response.completed', { type: 'response.completed', response, sequence_number: 3 });
         upstreamController.enqueue(encoder.encode('data: [DONE]\n\n'));
         upstreamController.close();
         assert(
@@ -753,8 +754,9 @@ test('Responses WebSocket keep-alive waits for the first event and takes a slot 
           [
             ['response.created', 0],
             [KEEP_ALIVE_EVENT_TYPE, 1],
-            ['response.output_item.done', 2],
-            ['response.completed', 3],
+            ['response.output_item.added', 2],
+            ['response.output_item.done', 3],
+            ['response.completed', 4],
           ],
           'expected the keep-alive to take a slot and shift every later event past it',
         );
