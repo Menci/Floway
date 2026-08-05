@@ -59,7 +59,9 @@ test('session token for a deleted user is invalidated', async () => {
     deletedAt: null,
   });
   const session = await repo.sessions.create(2);
-  await repo.users.softDelete(2);
+  const alice = await repo.users.getById(2);
+  expect(alice).not.toBeNull();
+  await repo.users.save({ ...alice!, deletedAt: '2026-01-02T00:00:00.000Z' });
 
   const app = authTestApp();
   const response = await app.request('/api/keys', { headers: { 'x-floway-session': session.id } });
@@ -84,7 +86,9 @@ test('API key whose owner was deleted is rejected', async () => {
     deletedAt: null,
   });
   await repo.apiKeys.save({ ...apiKey, id: 'key_alice', userId: 2, key: 'raw_alice', serverSecret: '11'.repeat(32), deletedAt: null });
-  await repo.users.softDelete(2);
+  const alice = await repo.users.getById(2);
+  expect(alice).not.toBeNull();
+  await repo.users.save({ ...alice!, deletedAt: '2026-01-02T00:00:00.000Z' });
 
   const app = authTestApp();
   const response = await app.request('/v1beta/models/gemini-test:generateContent', {

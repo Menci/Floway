@@ -13,7 +13,7 @@ const GENERATED_KEY_RETRIES = 5;
 
 type KeyWriteError = {
   ok: false;
-  status: 400 | 409 | 500;
+  status: 400 | 404 | 409 | 500;
   error: string;
 };
 
@@ -65,8 +65,7 @@ const persistRawKey = async (target: KeyWriteTarget, rawKey: string): Promise<Ap
     return await getRepo().apiKeys.rotate(target.current.id, target.current.key, rawKey);
   }
   const key: ApiKey = { ...target.template, key: rawKey };
-  await getRepo().apiKeys.save(key);
-  return key;
+  return await getRepo().apiKeys.insertForActiveUser(key);
 };
 
 const saveGeneratedKey = async (target: KeyWriteTarget): Promise<KeyWriteResult> => {
@@ -75,7 +74,12 @@ const saveGeneratedKey = async (target: KeyWriteTarget): Promise<KeyWriteResult>
     if (await getRepo().apiKeys.findByRawKeyIncludingDeleted(rawKey)) continue;
     try {
       const key = await persistRawKey(target, rawKey);
-      return key === null ? staleRotationError() : { ok: true, key };
+      if (key === null) {
+        return target.kind === 'rotate'
+          ? staleRotationError()
+          : keyWriteError(404, 'The API key owner is no longer active.');
+      }
+      return { ok: true, key };
     } catch (error) {
       if (isRawKeyUniqueConstraint(error)) continue;
       throw error;
@@ -89,7 +93,12 @@ const saveCustomKey = async (target: KeyWriteTarget, rawKey: string): Promise<Ke
   if (existing && existing.id !== targetId(target)) return duplicateKeyError();
   try {
     const key = await persistRawKey(target, rawKey);
-    return key === null ? staleRotationError() : { ok: true, key };
+    if (key === null) {
+      return target.kind === 'rotate'
+        ? staleRotationError()
+        : keyWriteError(404, 'The API key owner is no longer active.');
+    }
+    return { ok: true, key };
   } catch (error) {
     if (isRawKeyUniqueConstraint(error)) return duplicateKeyError();
     throw error;

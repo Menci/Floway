@@ -12,6 +12,8 @@ import type {
   ApiKey,
   ApiKeyRepo,
   ApiKeyUpdate,
+  CreateUserAccountResult,
+  DeleteUserAccountResult,
   ExpirationSweepsRepo,
   AgentSetupMutation,
   AgentSetupRecord,
@@ -21,6 +23,8 @@ import type {
   ModelsCacheGeneration,
   ModelAliasesRepo,
   ModelAliasRecord,
+  NewUserAccount,
+  NewUserDefaultKey,
   PerformanceBucketRow,
   PerformanceDimensions,
   PerformanceMetric,
@@ -43,6 +47,8 @@ import type {
   UsageRecord,
   UsageRepo,
   User,
+  UserUpdate,
+  UpdateActiveUserResult,
   UsersRepo,
 } from './types.ts';
 import {
@@ -63,7 +69,7 @@ import { parseServerSecret } from '../shared/server-secret.ts';
 import { parseUpstreamIdsValue } from '../shared/upstream-ids.ts';
 import { assertWebSearchProviderName, type WebSearchConfig } from '../shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError, isAgentSetupToken } from '@floway-dev/agent-setup';
-import type { SqlBindValue, SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
+import type { SqlBindValue, SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 import { addDecimalStrings, canonicalPricingSelectorKey, parseBillingMetric, parseModelKind, parseNonNegativeDecimalString, parsePricingSelectorKey, type AliasSelection, type AnnouncedMetadata } from '@floway-dev/protocols/common';
 import type { ProxyFallbackEntry, ModelPrefixConfig, UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
 import { normalizeModelPrefix, parsePerformanceOperation, UpstreamGoneError } from '@floway-dev/provider';
@@ -204,6 +210,32 @@ class SqlApiKeyRepo implements ApiKeyRepo {
       .run();
   }
 
+  async insertForActiveUser(key: ApiKey): Promise<ApiKey | null> {
+    const row = await this.db
+      .prepare(
+        `INSERT INTO api_keys (${API_KEY_COLUMNS})
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+         WHERE EXISTS (SELECT 1 FROM users WHERE id = ? AND deleted_at IS NULL)
+         RETURNING ${API_KEY_COLUMNS}`,
+      )
+      .bind(
+        key.id,
+        key.userId,
+        key.name,
+        key.key,
+        key.serverSecret,
+        key.createdAt,
+        key.lastUsedAt ?? null,
+        serializeUpstreamIds(key.upstreamIds),
+        key.deletedAt,
+        key.dumpRetentionSeconds,
+        key.responsesRetentionSeconds,
+        key.userId,
+      )
+      .first<ApiKeyRow>();
+    return row ? toApiKey(row) : null;
+  }
+
   async update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null> {
     const hasName = sqliteBoolean(patch.name !== undefined);
     const hasKey = sqliteBoolean(patch.key !== undefined);
@@ -221,6 +253,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
              dump_retention_seconds = CASE WHEN ? THEN ? ELSE dump_retention_seconds END,
              responses_retention_seconds = CASE WHEN ? THEN ? ELSE responses_retention_seconds END
          WHERE id = ? AND deleted_at IS NULL
+           AND EXISTS (SELECT 1 FROM users WHERE users.id = api_keys.user_id AND users.deleted_at IS NULL)
          RETURNING ${API_KEY_COLUMNS}`,
       )
       .bind(
@@ -241,6 +274,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
       .prepare(
         `UPDATE api_keys SET key = ?
          WHERE id = ? AND key = ? AND deleted_at IS NULL
+           AND EXISTS (SELECT 1 FROM users WHERE users.id = api_keys.user_id AND users.deleted_at IS NULL)
          RETURNING ${API_KEY_COLUMNS}`,
       )
       .bind(nextRawKey, id, expectedRawKey)
@@ -254,14 +288,6 @@ class SqlApiKeyRepo implements ApiKeyRepo {
       .bind(new Date().toISOString(), id)
       .run();
     return (result.meta.changes ?? 0) > 0;
-  }
-
-  async softDeleteByUserId(userId: number): Promise<number> {
-    const result = await this.db
-      .prepare('UPDATE api_keys SET deleted_at = ?, responses_retention_seconds = 0 WHERE user_id = ? AND deleted_at IS NULL')
-      .bind(new Date().toISOString(), userId)
-      .run();
-    return result.meta.changes ?? 0;
   }
 
   async deleteAll(): Promise<void> {
@@ -280,6 +306,9 @@ interface UserRow {
 }
 
 const USER_COLUMNS = 'id, username, password_hash, is_admin, upstream_ids, created_at, deleted_at';
+
+const isUsernameTakenError = (error: unknown): boolean =>
+  /UNIQUE constraint failed: users\.username(?:\b|$)/i.test(error instanceof Error ? error.message : String(error));
 
 const toUser = (row: UserRow): User => ({
   id: row.id,
@@ -324,15 +353,22 @@ class SqlUsersRepo implements UsersRepo {
     return row ? toUser(row) : null;
   }
 
-  async createNewUser(template: Omit<User, 'id'>): Promise<User> {
-    // INSERT ... SELECT computes id = MAX(id) + 1 in one statement, so
-    // concurrent admin creates serialize on D1's per-database write lock and
-    // pick distinct ids.
-    const row = await this.db
+  private atomicBatch(statements: SqlPreparedStatement[]): Promise<SqlResult[]> {
+    // Account lifecycle writes cannot use runStatements' sequential fallback:
+    // D1 batch is transactional, and the Node adapter supplies the same
+    // all-or-nothing contract.
+    // https://developers.cloudflare.com/d1/worker-api/d1-database/#batch
+    if (!this.db.batch) {
+      throw new Error('UsersRepo account lifecycle requires an atomic SqlDatabase.batch implementation');
+    }
+    return this.db.batch(statements);
+  }
+
+  async createAccount(template: NewUserAccount, defaultKey: NewUserDefaultKey): Promise<CreateUserAccountResult> {
+    const insertUser = this.db
       .prepare(
         `INSERT INTO users (id, username, password_hash, is_admin, upstream_ids, created_at, deleted_at)
-         SELECT COALESCE(MAX(id), 0) + 1, ?, ?, ?, ?, ?, ? FROM users
-         RETURNING id`,
+         SELECT COALESCE(MAX(id), 0) + 1, ?, ?, ?, ?, ?, NULL FROM users`,
       )
       .bind(
         template.username,
@@ -340,11 +376,103 @@ class SqlUsersRepo implements UsersRepo {
         template.isAdmin ? 1 : 0,
         serializeUpstreamIds(template.upstreamIds),
         template.createdAt,
-        template.deletedAt,
+      );
+    const insertDefaultKey = this.db
+      .prepare(
+        `INSERT INTO api_keys (${API_KEY_COLUMNS}) VALUES (
+           ?, (SELECT id FROM users WHERE username = ? AND deleted_at IS NULL), ?, ?, ?, ?, ?, ?, NULL, ?, ?
+         )`,
       )
-      .first<{ id: number }>();
-    if (!row) throw new Error('createNewUser: insert returned no rows');
-    return { ...template, id: row.id };
+      .bind(
+        defaultKey.id,
+        template.username,
+        defaultKey.name,
+        defaultKey.key,
+        defaultKey.serverSecret,
+        defaultKey.createdAt,
+        defaultKey.lastUsedAt ?? null,
+        serializeUpstreamIds(defaultKey.upstreamIds),
+        defaultKey.dumpRetentionSeconds,
+        defaultKey.responsesRetentionSeconds,
+      );
+
+    try {
+      await this.atomicBatch([insertUser, insertDefaultKey]);
+    } catch (error) {
+      if (isUsernameTakenError(error)) return { status: 'username-taken' };
+      throw error;
+    }
+
+    const userRow = await this.db
+      .prepare(
+        `SELECT users.${USER_COLUMNS.replaceAll(', ', ', users.')}
+         FROM users JOIN api_keys ON api_keys.user_id = users.id
+         WHERE api_keys.id = ?`,
+      )
+      .bind(defaultKey.id)
+      .first<UserRow>();
+    const user = userRow ? toUser(userRow) : null;
+    if (!user) throw new Error(`createAccount: committed user is missing for default key ${defaultKey.id}`);
+    return { status: 'created', user };
+  }
+
+  async updateActive(id: number, patch: UserUpdate): Promise<UpdateActiveUserResult> {
+    const hasUsername = patch.username !== undefined;
+    const hasPasswordHash = patch.passwordHash !== undefined;
+    const hasIsAdmin = patch.isAdmin !== undefined;
+    const hasUpstreamIds = patch.upstreamIds !== undefined;
+    let row: UserRow | null;
+    try {
+      row = await this.db
+        .prepare(
+          `UPDATE users
+           SET username = CASE WHEN ? THEN ? ELSE username END,
+               password_hash = CASE WHEN ? THEN ? ELSE password_hash END,
+               is_admin = CASE WHEN ? THEN ? ELSE is_admin END,
+               upstream_ids = CASE WHEN ? THEN ? ELSE upstream_ids END
+           WHERE id = ? AND deleted_at IS NULL
+           RETURNING ${USER_COLUMNS}`,
+        )
+        .bind(
+          hasUsername ? 1 : 0, patch.username ?? null,
+          hasPasswordHash ? 1 : 0, patch.passwordHash ?? null,
+          hasIsAdmin ? 1 : 0, patch.isAdmin ? 1 : 0,
+          hasUpstreamIds ? 1 : 0, serializeUpstreamIds(patch.upstreamIds ?? null),
+          id,
+        )
+        .first<UserRow>();
+    } catch (error) {
+      if (isUsernameTakenError(error)) return { status: 'username-taken' };
+      throw error;
+    }
+    return row ? { status: 'updated', user: toUser(row) } : { status: 'missing' };
+  }
+
+  async deleteAccount(id: number, deletedAt: string): Promise<DeleteUserAccountResult> {
+    const onlyWhileUserIsActive = 'EXISTS (SELECT 1 FROM users WHERE id = ? AND deleted_at IS NULL)';
+    const results = await this.atomicBatch([
+      this.db
+        .prepare(
+          `UPDATE api_keys SET deleted_at = ?, responses_retention_seconds = 0
+           WHERE user_id = ? AND deleted_at IS NULL AND ${onlyWhileUserIsActive}`,
+        )
+        .bind(deletedAt, id, id),
+      this.db
+        .prepare(`DELETE FROM sessions WHERE user_id = ? AND ${onlyWhileUserIsActive}`)
+        .bind(id, id),
+      this.db
+        .prepare('UPDATE users SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL')
+        .bind(deletedAt, id),
+    ]);
+
+    const userChanges = results.at(-1)?.meta.changes;
+    if (userChanges === undefined) throw new Error('deleteAccount: atomic batch omitted the user deletion change count');
+    if (userChanges === 0) return { status: 'missing' };
+    const { results: keyRows } = await this.db
+      .prepare('SELECT id FROM api_keys WHERE user_id = ? AND deleted_at = ? ORDER BY created_at')
+      .bind(id, deletedAt)
+      .all<{ id: string }>();
+    return { status: 'deleted', apiKeyIds: keyRows.map(row => row.id) };
   }
 
   async save(user: User): Promise<void> {
@@ -368,14 +496,6 @@ class SqlUsersRepo implements UsersRepo {
         user.deletedAt,
       )
       .run();
-  }
-
-  async softDelete(id: number): Promise<boolean> {
-    const result = await this.db
-      .prepare('UPDATE users SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL')
-      .bind(new Date().toISOString(), id)
-      .run();
-    return (result.meta.changes ?? 0) > 0;
   }
 
   async deleteAll(): Promise<void> {
@@ -414,6 +534,21 @@ class SqlSessionsRepo implements SessionsRepo {
       .bind(id, userId, now, now)
       .run();
     return { id, userId, createdAt: now, lastSeenAt: now };
+  }
+
+  async createForActiveUser(userId: number): Promise<Session | null> {
+    const id = generateSessionToken();
+    const now = new Date().toISOString();
+    const row = await this.db
+      .prepare(
+        `INSERT INTO sessions (${SESSION_COLUMNS})
+         SELECT ?, ?, ?, ?
+         WHERE EXISTS (SELECT 1 FROM users WHERE id = ? AND deleted_at IS NULL)
+         RETURNING id`,
+      )
+      .bind(id, userId, now, now, userId)
+      .first<{ id: string }>();
+    return row ? { id, userId, createdAt: now, lastSeenAt: now } : null;
   }
 
   async deleteById(id: string): Promise<boolean> {

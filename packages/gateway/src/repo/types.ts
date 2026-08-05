@@ -162,11 +162,14 @@ export interface ApiKeyRepo {
   findByRawKey(rawKey: string): Promise<ApiKey | null>;
   findByRawKeyIncludingDeleted(rawKey: string): Promise<ApiKey | null>;
   getById(id: string): Promise<ApiKey | null>;
+  // Full-row restore primitive for validated data transfer. Request paths use
+  // insertForActiveUser or update so they cannot revive a deleted key or
+  // attach one to a deleted account.
   save(key: ApiKey): Promise<void>;
+  insertForActiveUser(key: ApiKey): Promise<ApiKey | null>;
   update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null>;
   rotate(id: string, expectedRawKey: string, nextRawKey: string): Promise<ApiKey | null>;
   softDelete(id: string): Promise<boolean>;
-  softDeleteByUserId(userId: number): Promise<number>;
   deleteAll(): Promise<void>;
 }
 
@@ -175,25 +178,42 @@ export type ApiKeyUpdate = Partial<Pick<
   'name' | 'key' | 'lastUsedAt' | 'upstreamIds' | 'dumpRetentionSeconds' | 'responsesRetentionSeconds'
 >>;
 
+export type UserUpdate = Partial<Pick<User, 'username' | 'passwordHash' | 'isAdmin' | 'upstreamIds'>>;
+export type NewUserAccount = Omit<User, 'id' | 'deletedAt'>;
+export type NewUserDefaultKey = Omit<ApiKey, 'userId' | 'deletedAt'>;
+
+export type CreateUserAccountResult =
+  | { status: 'created'; user: User }
+  | { status: 'username-taken' };
+
+export type UpdateActiveUserResult =
+  | { status: 'updated'; user: User }
+  | { status: 'missing' }
+  | { status: 'username-taken' };
+
+export type DeleteUserAccountResult =
+  | { status: 'deleted'; apiKeyIds: string[] }
+  | { status: 'missing' };
+
 export interface UsersRepo {
   list(): Promise<User[]>;
   listIncludingDeleted(): Promise<User[]>;
   getById(id: number): Promise<User | null>;
   findByUsername(username: string): Promise<User | null>;
-  // Atomic insert that allocates id = MAX(id) + 1 in a single statement so two
-  // concurrent admin creates can't compute the same id and silently overwrite
-  // each other.
-  createNewUser(template: Omit<User, 'id'>): Promise<User>;
-  // Throws when the username is already taken by another active row, so
-  // duplicate-username races surface instead of silently overwriting state.
+  createAccount(user: NewUserAccount, defaultKey: NewUserDefaultKey): Promise<CreateUserAccountResult>;
+  updateActive(id: number, patch: UserUpdate): Promise<UpdateActiveUserResult>;
+  deleteAccount(id: number, deletedAt: string): Promise<DeleteUserAccountResult>;
+  // Full-row restore primitive for validated data transfer. Request paths use
+  // the conditional aggregate mutations above.
+  // Throws when the username is already taken by another active row.
   save(user: User): Promise<void>;
-  softDelete(id: number): Promise<boolean>;
   deleteAll(): Promise<void>;
 }
 
 export interface SessionsRepo {
   getByIdAndTouch(id: string): Promise<Session | null>;
   create(userId: number): Promise<Session>;
+  createForActiveUser(userId: number): Promise<Session | null>;
   deleteById(id: string): Promise<boolean>;
   deleteByUserId(userId: number): Promise<number>;
   deleteByUserIdExcept(userId: number, exceptId: string): Promise<number>;

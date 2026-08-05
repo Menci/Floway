@@ -45,7 +45,8 @@ const resolveLoginUser = async (c: CtxWithJson<typeof authLoginBody>): Promise<U
 export const authLogin = async (c: CtxWithJson<typeof authLoginBody>) => {
   const user = await resolveLoginUser(c);
   if (!user) return c.json({ error: 'Invalid username or password' }, 401);
-  const [session, knownUpstreamIds] = await Promise.all([getRepo().sessions.create(user.id), loadKnownUpstreamIds()]);
+  const [session, knownUpstreamIds] = await Promise.all([getRepo().sessions.createForActiveUser(user.id), loadKnownUpstreamIds()]);
+  if (!session) return c.json({ error: 'Invalid username or password' }, 401);
   return c.json({ token: session.id, user: userToSessionWire(user, knownUpstreamIds) });
 };
 

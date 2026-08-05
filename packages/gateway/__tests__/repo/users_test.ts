@@ -35,10 +35,10 @@ describe.each(backends)('UsersRepo (%s)', (_label, makeRepo) => {
     expect(list.map(u => u.username)).toEqual(['alice', 'bob']);
   });
 
-  test('softDelete hides from list and getById, but the *IncludingDeleted variants still return the row', async () => {
+  test('deleteAccount hides from list and getById, but the *IncludingDeleted variants still return the row', async () => {
     const repo = await makeRepo();
     await repo.users.save(sampleUser({ id: 2 }));
-    expect(await repo.users.softDelete(2)).toBe(true);
+    expect(await repo.users.deleteAccount(2, '2026-06-08T00:00:00.000Z')).toEqual({ status: 'deleted', apiKeyIds: [] });
     expect((await repo.users.list()).find(u => u.id === 2)).toBeUndefined();
     expect(await repo.users.getById(2)).toBeNull();
     const including = (await repo.users.listIncludingDeleted()).find(u => u.id === 2);
@@ -46,18 +46,18 @@ describe.each(backends)('UsersRepo (%s)', (_label, makeRepo) => {
     expect(including!.deletedAt).not.toBeNull();
   });
 
-  test('softDelete returns false for an unknown or already-deleted user', async () => {
+  test('deleteAccount reports an unknown or already-deleted user as missing', async () => {
     const repo = await makeRepo();
-    expect(await repo.users.softDelete(42)).toBe(false);
+    expect(await repo.users.deleteAccount(42, '2026-06-08T00:00:00.000Z')).toEqual({ status: 'missing' });
     await repo.users.save(sampleUser({ id: 2 }));
-    expect(await repo.users.softDelete(2)).toBe(true);
-    expect(await repo.users.softDelete(2)).toBe(false);
+    expect((await repo.users.deleteAccount(2, '2026-06-08T00:00:00.000Z')).status).toBe('deleted');
+    expect(await repo.users.deleteAccount(2, '2026-06-09T00:00:00.000Z')).toEqual({ status: 'missing' });
   });
 
   test('deleted username can be reused by a new user (partial unique index)', async () => {
     const repo = await makeRepo();
     await repo.users.save(sampleUser({ id: 2, username: 'alice' }));
-    await repo.users.softDelete(2);
+    await repo.users.deleteAccount(2, '2026-06-08T00:00:00.000Z');
     await repo.users.save(sampleUser({ id: 3, username: 'alice' }));
     expect((await repo.users.findByUsername('alice'))?.id).toBe(3);
   });
@@ -86,7 +86,7 @@ describe.each(backends)('UsersRepo (%s)', (_label, makeRepo) => {
   test('findByUsername does not return soft-deleted rows', async () => {
     const repo = await makeRepo();
     await repo.users.save(sampleUser({ id: 2, username: 'alice' }));
-    await repo.users.softDelete(2);
+    await repo.users.deleteAccount(2, '2026-06-08T00:00:00.000Z');
     expect(await repo.users.findByUsername('alice')).toBeNull();
   });
 });

@@ -4,7 +4,7 @@ import { type AuthedContext, sessionIdFromContext, userFromContext } from '../..
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { SEED_ADMIN_USER_ID } from '../../repo/seed-admin.ts';
-import type { ApiKey, User } from '../../repo/types.ts';
+import type { NewUserDefaultKey, UserUpdate } from '../../repo/types.ts';
 import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
 import { hashPassword, verifyPassword } from '../../shared/passwords.ts';
 import { generateServerSecret } from '../../shared/server-secret.ts';
@@ -35,30 +35,28 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
     if (upstreamErr) return c.json({ error: upstreamErr }, 400);
   }
 
-  const user = await repo.users.createNewUser({
+  const createdAt = new Date().toISOString();
+  const result = await repo.users.createAccount({
     username: body.username,
     passwordHash: await hashPassword(body.password),
     isAdmin: body.isAdmin ?? false,
     upstreamIds: body.upstreamIds ?? null,
-    createdAt: new Date().toISOString(),
-    deletedAt: null,
-  });
-
-  const defaultKey: ApiKey = {
+    createdAt,
+  }, {
     id: crypto.randomUUID(),
-    userId: user.id,
     name: 'Default',
     key: generateApiKeyToken(),
     serverSecret: generateServerSecret(),
-    createdAt: new Date().toISOString(),
+    createdAt,
     upstreamIds: null,
-    deletedAt: null,
     dumpRetentionSeconds: null,
     responsesRetentionSeconds: 0,
-  };
-  await repo.apiKeys.save(defaultKey);
+  } satisfies NewUserDefaultKey);
+  if (result.status === 'username-taken') {
+    return c.json({ error: 'That username is already taken (usernames are case-insensitive).' }, 400);
+  }
 
-  return c.json({ user: userToAdminWire(user, knownUpstreamIds) }, 201);
+  return c.json({ user: userToAdminWire(result.user, knownUpstreamIds) }, 201);
 };
 
 export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
@@ -85,13 +83,14 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
     if (err) return c.json({ error: err }, 400);
   }
 
-  const overrides: Partial<User> = {};
+  const overrides: UserUpdate = {};
   if (body.username !== undefined) overrides.username = body.username;
   if (body.password !== undefined) overrides.passwordHash = await hashPassword(body.password);
   if (body.isAdmin !== undefined) overrides.isAdmin = body.isAdmin;
   if (body.upstreamIds !== undefined) overrides.upstreamIds = body.upstreamIds;
-  const next: User = { ...existing, ...overrides };
-  await repo.users.save(next);
+  const result = await repo.users.updateActive(id, overrides);
+  if (result.status === 'missing') return c.json({ error: 'user not found' }, 404);
+  if (result.status === 'username-taken') return c.json({ error: 'username taken' }, 400);
 
   if (body.password !== undefined) {
     const sessionId = sessionIdFromContext(c);
@@ -99,7 +98,7 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
     else await repo.sessions.deleteByUserId(id);
   }
 
-  return c.json(userToAdminWire(next, knownUpstreamIds));
+  return c.json(userToAdminWire(result.user, knownUpstreamIds));
 };
 
 export const deleteUser = async (c: AuthedContext) => {
@@ -111,17 +110,12 @@ export const deleteUser = async (c: AuthedContext) => {
 
   const repo = getRepo();
 
-  // The broker close hook cuts any live SSE subscriber but is best-effort;
-  // broker availability never blocks the cascade.
-  const keys = await repo.apiKeys.listByUserId(id);
-  for (const key of keys) {
-    await notifyDisabledBestEffort(key.id, 'deleteUser cascade');
-  }
-
-  await repo.apiKeys.softDeleteByUserId(id);
-  await repo.sessions.deleteByUserId(id);
-  const ok = await repo.users.softDelete(id);
-  if (!ok) return c.json({ error: 'user not found' }, 404);
+  const result = await repo.users.deleteAccount(id, new Date().toISOString());
+  if (result.status === 'missing') return c.json({ error: 'user not found' }, 404);
+  // The atomic state change wins even if the broker is unavailable. Closing
+  // subscribers afterwards is a best-effort delivery hint; clients also
+  // reconcile the disabled key when they reconnect or refetch.
+  for (const keyId of result.apiKeyIds) await notifyDisabledBestEffort(keyId, 'deleteUser cascade');
   return c.json({ ok: true });
 };
 
@@ -145,7 +139,9 @@ export const changeOwnPassword = async (c: CtxWithJson<typeof changeOwnPasswordB
     return c.json({ error: 'Current password is incorrect' }, 400);
   }
 
-  await repo.users.save({ ...user, passwordHash: await hashPassword(newPassword) });
+  const result = await repo.users.updateActive(user.id, { passwordHash: await hashPassword(newPassword) });
+  if (result.status === 'missing') return c.json({ error: 'Invalid session' }, 401);
+  if (result.status === 'username-taken') throw new Error('Password-only user update reported a username collision');
   await repo.sessions.deleteByUserIdExcept(user.id, sessionId);
   return c.json({ ok: true });
 };

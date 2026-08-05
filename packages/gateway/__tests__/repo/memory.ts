@@ -15,6 +15,8 @@ import type {
   ApiKey,
   ApiKeyRepo,
   ApiKeyUpdate,
+  CreateUserAccountResult,
+  DeleteUserAccountResult,
   ExpirationDomain,
   ExpirationSweepCompletion,
   ExpirationSweepClaim,
@@ -27,6 +29,8 @@ import type {
   ModelsCacheGeneration,
   ModelAliasesRepo,
   ModelAliasRecord,
+  NewUserAccount,
+  NewUserDefaultKey,
   PerformanceDimensions,
   PerformanceRepo,
   PerformanceTelemetryRecord,
@@ -51,6 +55,8 @@ import type {
   UsageRecord,
   UsageRepo,
   User,
+  UserUpdate,
+  UpdateActiveUserResult,
   UsersRepo,
 } from '../../src/repo/types.ts';
 import { serializeStoredConfig, serializeStoredState } from '../../src/repo/upstream-json.ts';
@@ -77,8 +83,32 @@ const SEED_ADMIN_USER: User = {
 // SQLite's NOCASE.
 const usernamesMatch = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 
+class MemoryMutationCoordinator {
+  private tail: Promise<void> = Promise.resolve();
+
+  run<T>(operation: () => T | Promise<T>): Promise<T> {
+    const result = this.tail.then(operation);
+    this.tail = result.then(() => undefined, () => undefined);
+    return result;
+  }
+}
+
 class MemoryUsersRepo implements UsersRepo {
   private users: User[] = [{ ...SEED_ADMIN_USER }];
+
+  constructor(
+    private readonly apiKeys: MemoryApiKeyRepo,
+    private readonly sessions: MemorySessionsRepo,
+    private readonly mutations: MemoryMutationCoordinator,
+  ) {}
+
+  private mutate<T>(operation: () => T | Promise<T>): Promise<T> {
+    return this.mutations.run(operation);
+  }
+
+  isActive(id: number): boolean {
+    return this.users.some(user => user.id === id && user.deletedAt === null);
+  }
 
   list(): Promise<User[]> {
     return Promise.resolve(this.users.filter(u => u.deletedAt === null).map(u => ({ ...u })));
@@ -98,13 +128,45 @@ class MemoryUsersRepo implements UsersRepo {
     return Promise.resolve(u ? { ...u } : null);
   }
 
-  createNewUser(template: Omit<User, 'id'>): Promise<User> {
-    const collision = this.users.find(u => usernamesMatch(u.username, template.username) && u.deletedAt === null);
-    if (collision) throw new Error(`username taken: ${template.username}`);
-    const id = this.users.reduce((max, u) => Math.max(max, u.id), 0) + 1;
-    const user: User = { ...template, id };
-    this.users.push(user);
-    return Promise.resolve({ ...user });
+  createAccount(template: NewUserAccount, defaultKey: NewUserDefaultKey): Promise<CreateUserAccountResult> {
+    return this.mutate(() => {
+      const collision = this.users.find(u => usernamesMatch(u.username, template.username) && u.deletedAt === null);
+      if (collision) return { status: 'username-taken' };
+      const id = this.users.reduce((max, u) => Math.max(max, u.id), 0) + 1;
+      const user: User = { ...template, id, deletedAt: null };
+      this.apiKeys.insertAccountKey({ ...defaultKey, userId: id, deletedAt: null });
+      this.users.push(user);
+      return { status: 'created', user: { ...user } };
+    });
+  }
+
+  updateActive(id: number, patch: UserUpdate): Promise<UpdateActiveUserResult> {
+    return this.mutate(() => {
+      const index = this.users.findIndex(user => user.id === id && user.deletedAt === null);
+      if (index < 0) return { status: 'missing' };
+      const existing = this.users[index];
+      if (patch.username !== undefined) {
+        const collision = this.users.find(user => usernamesMatch(user.username, patch.username!) && user.deletedAt === null && user.id !== id);
+        if (collision) return { status: 'username-taken' };
+      }
+      const user = { ...existing, ...patch };
+      this.users[index] = user;
+      return { status: 'updated', user: { ...user } };
+    });
+  }
+
+  deleteAccount(id: number, deletedAt: string): Promise<DeleteUserAccountResult> {
+    return this.mutate(async () => {
+      const index = this.users.findIndex(user => user.id === id && user.deletedAt === null);
+      if (index < 0) return { status: 'missing' };
+      const keyDeletion = await this.apiKeys.prepareAccountDeletion(id, deletedAt);
+      const currentIndex = this.users.findIndex(user => user.id === id && user.deletedAt === null);
+      if (currentIndex < 0) return { status: 'missing' };
+      keyDeletion.commit();
+      this.sessions.deleteByUserIdNow(id);
+      this.users[currentIndex] = { ...this.users[currentIndex], deletedAt };
+      return { status: 'deleted', apiKeyIds: keyDeletion.apiKeyIds };
+    });
   }
 
   async save(user: User): Promise<void> {
@@ -118,13 +180,6 @@ class MemoryUsersRepo implements UsersRepo {
     else this.users.push({ ...user });
   }
 
-  async softDelete(id: number): Promise<boolean> {
-    const i = this.users.findIndex(u => u.id === id && u.deletedAt === null);
-    if (i < 0) return false;
-    this.users[i] = { ...this.users[i], deletedAt: new Date().toISOString() };
-    return true;
-  }
-
   deleteAll(): Promise<void> {
     this.users = [];
     return Promise.resolve();
@@ -133,6 +188,11 @@ class MemoryUsersRepo implements UsersRepo {
 
 class MemorySessionsRepo implements SessionsRepo {
   private sessions: Session[] = [];
+
+  constructor(
+    private readonly isUserActive: (userId: number) => boolean,
+    private readonly mutations: MemoryMutationCoordinator,
+  ) {}
 
   getByIdAndTouch(id: string): Promise<Session | null> {
     const i = this.sessions.findIndex(s => s.id === id);
@@ -149,6 +209,10 @@ class MemorySessionsRepo implements SessionsRepo {
     return Promise.resolve({ ...session });
   }
 
+  createForActiveUser(userId: number): Promise<Session | null> {
+    return this.mutations.run(() => this.isUserActive(userId) ? this.create(userId) : null);
+  }
+
   deleteById(id: string): Promise<boolean> {
     const before = this.sessions.length;
     this.sessions = this.sessions.filter(s => s.id !== id);
@@ -156,9 +220,13 @@ class MemorySessionsRepo implements SessionsRepo {
   }
 
   deleteByUserId(userId: number): Promise<number> {
+    return Promise.resolve(this.deleteByUserIdNow(userId));
+  }
+
+  deleteByUserIdNow(userId: number): number {
     const before = this.sessions.length;
     this.sessions = this.sessions.filter(s => s.userId !== userId);
-    return Promise.resolve(before - this.sessions.length);
+    return before - this.sessions.length;
   }
 
   deleteByUserIdExcept(userId: number, exceptId: string): Promise<number> {
@@ -176,7 +244,39 @@ class MemorySessionsRepo implements SessionsRepo {
 class MemoryApiKeyRepo implements ApiKeyRepo {
   private keys: ApiKey[] = [];
 
-  constructor(private readonly expirationSweeps: ExpirationSweepsRepo) {}
+  constructor(
+    private readonly expirationSweeps: ExpirationSweepsRepo,
+    private readonly isUserActive: (userId: number) => boolean,
+    private readonly mutations: MemoryMutationCoordinator,
+  ) {}
+
+  insertAccountKey(key: ApiKey): void {
+    if (this.keys.some(existing => existing.id === key.id)) {
+      throw new Error('UNIQUE constraint failed: api_keys.id');
+    }
+    if (this.keys.some(existing => existing.key === key.key)) {
+      throw new Error('UNIQUE constraint failed: api_keys.key');
+    }
+    if (this.keys.some(existing => existing.serverSecret === key.serverSecret)) {
+      throw new Error('UNIQUE constraint failed: api_keys.server_secret');
+    }
+    this.keys.push(this.clone(key));
+  }
+
+  async prepareAccountDeletion(userId: number, deletedAt: string): Promise<{ apiKeyIds: string[]; commit: () => void }> {
+    const activeKeys = this.keys.filter(key => key.userId === userId && key.deletedAt === null);
+    const nextKeys = activeKeys.map(key => ({ ...key, deletedAt, responsesRetentionSeconds: 0 }));
+    await Promise.all(nextKeys.map((next, index) => this.schedulePolicyChanges(activeKeys[index], next)));
+    return {
+      apiKeyIds: activeKeys.map(key => key.id),
+      commit: () => {
+        for (const next of nextKeys) {
+          const index = this.keys.findIndex(key => key.id === next.id && key.deletedAt === null);
+          if (index >= 0) this.keys[index] = next;
+        }
+      },
+    };
+  }
 
   private clone(key: ApiKey): ApiKey {
     return { ...key, upstreamIds: key.upstreamIds === null ? null : [...key.upstreamIds] };
@@ -249,71 +349,67 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
     } else this.keys.push(this.clone(key));
   }
 
-  async update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null> {
-    const i = this.keys.findIndex(key => key.id === id && key.deletedAt === null);
-    if (i < 0) return null;
-    const previous = this.keys[i];
-    const next = this.clone({ ...previous, ...patch });
-    this.assertUnique(next);
-    this.keys[i] = next;
-    try {
-      await this.schedulePolicyChanges(previous, next);
-    } catch (error) {
-      this.keys[i] = previous;
-      throw error;
-    }
-    return this.clone(next);
+  insertForActiveUser(key: ApiKey): Promise<ApiKey | null> {
+    return this.mutations.run(() => {
+      if (!this.isUserActive(key.userId)) return null;
+      this.insertAccountKey(key);
+      return this.clone(key);
+    });
   }
 
-  async rotate(id: string, expectedRawKey: string, nextRawKey: string): Promise<ApiKey | null> {
-    const i = this.keys.findIndex(key => key.id === id && key.key === expectedRawKey && key.deletedAt === null);
-    if (i < 0) return null;
-    const previous = this.keys[i];
-    const next = this.clone({ ...previous, key: nextRawKey });
-    this.assertUnique(next);
-    this.keys[i] = next;
-    try {
-      await this.schedulePolicyChanges(previous, next);
-    } catch (error) {
-      this.keys[i] = previous;
-      throw error;
-    }
-    return this.clone(next);
-  }
-
-  async softDelete(id: string): Promise<boolean> {
-    const i = this.keys.findIndex(k => k.id === id && k.deletedAt === null);
-    if (i < 0) return false;
-    const previous = this.keys[i];
-    const next = { ...previous, deletedAt: new Date().toISOString(), responsesRetentionSeconds: 0 };
-    this.keys[i] = next;
-    try {
-      await this.schedulePolicyChanges(previous, next);
-    } catch (error) {
-      this.keys[i] = previous;
-      throw error;
-    }
-    return true;
-  }
-
-  async softDeleteByUserId(userId: number): Promise<number> {
-    const now = new Date().toISOString();
-    const updates: Array<{ index: number; previous: ApiKey; next: ApiKey }> = [];
-    for (let i = 0; i < this.keys.length; i++) {
-      const k = this.keys[i];
-      if (k.userId === userId && k.deletedAt === null) {
-        const next = { ...k, deletedAt: now, responsesRetentionSeconds: 0 };
-        updates.push({ index: i, previous: k, next });
+  update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null> {
+    return this.mutations.run(async () => {
+      const i = this.keys.findIndex(key => key.id === id && key.deletedAt === null);
+      if (i < 0) return null;
+      const previous = this.keys[i];
+      if (!this.isUserActive(previous.userId)) return null;
+      const next = this.clone({ ...previous, ...patch });
+      this.assertUnique(next);
+      this.keys[i] = next;
+      try {
+        await this.schedulePolicyChanges(previous, next);
+      } catch (error) {
+        this.keys[i] = previous;
+        throw error;
       }
-    }
-    for (const update of updates) this.keys[update.index] = update.next;
-    try {
-      await Promise.all(updates.map(update => this.schedulePolicyChanges(update.previous, update.next)));
-    } catch (error) {
-      for (const update of updates) this.keys[update.index] = update.previous;
-      throw error;
-    }
-    return updates.length;
+      return this.clone(next);
+    });
+  }
+
+  rotate(id: string, expectedRawKey: string, nextRawKey: string): Promise<ApiKey | null> {
+    return this.mutations.run(async () => {
+      const i = this.keys.findIndex(key => key.id === id && key.key === expectedRawKey && key.deletedAt === null);
+      if (i < 0) return null;
+      const previous = this.keys[i];
+      if (!this.isUserActive(previous.userId)) return null;
+      const next = this.clone({ ...previous, key: nextRawKey });
+      this.assertUnique(next);
+      this.keys[i] = next;
+      try {
+        await this.schedulePolicyChanges(previous, next);
+      } catch (error) {
+        this.keys[i] = previous;
+        throw error;
+      }
+      return this.clone(next);
+    });
+  }
+
+  softDelete(id: string): Promise<boolean> {
+    return this.mutations.run(async () => {
+      const i = this.keys.findIndex(k => k.id === id && k.deletedAt === null);
+      if (i < 0) return false;
+      const previous = this.keys[i];
+      const next = this.clone({ ...previous, deletedAt: new Date().toISOString(), responsesRetentionSeconds: 0 });
+      this.keys[i] = next;
+      try {
+        await this.schedulePolicyChanges(previous, next);
+      } catch (error) {
+        this.keys[i] = previous;
+        throw error;
+      }
+      return true;
+    });
   }
 
   async deleteAll(): Promise<void> {
@@ -1318,10 +1414,16 @@ export class InMemoryRepo implements Repo {
   agentSetup: AgentSetupRepository;
 
   constructor() {
-    this.users = new MemoryUsersRepo();
-    this.sessions = new MemorySessionsRepo();
+    const mutations = new MemoryMutationCoordinator();
+    let users: MemoryUsersRepo;
+    const isUserActive = (userId: number) => users.isActive(userId);
+    const sessions = new MemorySessionsRepo(isUserActive, mutations);
     this.expirationSweeps = new MemoryExpirationSweepsRepo();
-    this.apiKeys = new MemoryApiKeyRepo(this.expirationSweeps);
+    const apiKeys = new MemoryApiKeyRepo(this.expirationSweeps, isUserActive, mutations);
+    users = new MemoryUsersRepo(apiKeys, sessions, mutations);
+    this.users = users;
+    this.sessions = sessions;
+    this.apiKeys = apiKeys;
     this.usage = new MemoryUsageRepo();
     this.webSearchUsage = new MemoryWebSearchUsageRepo();
     this.performance = new MemoryPerformanceRepo();
