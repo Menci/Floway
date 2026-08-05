@@ -1,7 +1,8 @@
-import { describe, expect, test, vi } from 'vitest';
+import { describe, expect, test } from 'vitest';
 
 import { wrapMessagesAffinityEgress } from '../../../../../src/data-plane/chat/messages/affinity/egress.ts';
 import type { AffinityCodec, AffinityTarget } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { createDeferredAffinityCodec } from '../../shared/affinity/helpers.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
@@ -16,21 +17,13 @@ const frames = async function* (values: ProtocolFrame<MessagesStreamEvent>[]) {
   yield* values;
 };
 
-class DelayedCodec implements AffinityEgressCodec {
-  readonly calls: Array<{ value: string | undefined; resolve: (value: string) => void }> = [];
-
-  wrap(value: string | undefined): Promise<string> {
-    return new Promise(resolve => this.calls.push({ value, resolve }));
-  }
-}
-
 const immediateCodec: AffinityEgressCodec = {
   wrap: async value => `wrapped:${value ?? 'synthetic'}`,
 };
 
 describe('Messages affinity egress', () => {
   test('streams readable thinking and wraps the latest signature snapshot at block stop', async () => {
-    const codec = new DelayedCodec();
+    const codec = createDeferredAffinityCodec();
     const output = wrapMessagesAffinityEgress(frames([
       eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } }),
       eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'visible' } }),
@@ -50,8 +43,9 @@ describe('Messages affinity egress', () => {
     expect(codec.calls).toHaveLength(0);
 
     const signaturePending = output.next();
-    await vi.waitFor(() => expect(codec.calls.map(call => call.value)).toEqual(['latest']));
-    codec.calls[0].resolve('wrapped-latest');
+    const wrapCall = await codec.nextCall();
+    expect(wrapCall.value).toBe('latest');
+    wrapCall.resolve('wrapped-latest');
     expect((await signaturePending).value).toEqual(eventFrame({
       type: 'content_block_delta',
       index: 0,

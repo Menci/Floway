@@ -6,7 +6,7 @@ import type { ApiErrorResult, ExecuteResult, PerformanceTelemetryContext } from 
 
 export type ResponsesServeFailure = ChatServeFailure | { readonly kind: 'item-not-found'; readonly itemId: string };
 
-// Caller-input violations discovered by translation or the source affinity
+// Caller-input violations discovered by translation or the native source-preparation
 // membrane share the Responses 400 envelope. `performance` retains candidate
 // attribution when validation fires after attempt dispatch.
 export const responsesInputErrorResult = (

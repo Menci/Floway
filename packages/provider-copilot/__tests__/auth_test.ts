@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
-import { copilotAuthedFetch } from '../src/auth.ts';
+import { copilotAuthedFetch, exchangeCopilotToken } from '../src/auth.ts';
 import { clearInProcessCopilotTokenCache } from '../src/index.ts';
 import type { CopilotUpstreamState } from '../src/state.ts';
 import { initProviderRepo, directFetcher, type Fetcher, type UpstreamRecord, identityWrapUpstreamCall } from '@floway-dev/provider';
@@ -248,6 +248,145 @@ describe('Copilot token exchange retries', () => {
     await rejection;
     expect(tokenAttempts).toBe(1);
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+test.each([
+  { body: [], message: 'must be an object' },
+  { body: { expires_at: 4_102_444_800, endpoints: { api: TOKEN_BASE_URL } }, message: 'missing token' },
+  { body: { token: '', expires_at: 4_102_444_800, endpoints: { api: TOKEN_BASE_URL } }, message: 'missing token' },
+  { body: { token: 'tok', expires_at: null, endpoints: { api: TOKEN_BASE_URL } }, message: 'finite expires_at' },
+  { body: { token: 'tok', expires_at: 4_102_444_800, endpoints: [] }, message: 'endpoints.api' },
+])('exchangeCopilotToken rejects malformed success body %#', async ({ body, message }) => {
+  await expect(exchangeCopilotToken('github.com', 'ghu_test', async () => jsonResponse(body))).rejects.toThrow(message);
+});
+
+test('concurrent cache misses share one Copilot token exchange', async () => {
+  await installRepoAndClearCache();
+  let releaseExchange: (() => void) | undefined;
+  const exchangeGate = new Promise<void>(resolve => { releaseExchange = resolve; });
+  let notifyExchangeStarted: (() => void) | undefined;
+  const exchangeStarted = new Promise<void>(resolve => { notifyExchangeStarted = resolve; });
+  let tokenAttempts = 0;
+  let dataPlaneAttempts = 0;
+  const fetcher: Fetcher = async url => {
+    if (new URL(url).pathname === '/copilot_internal/v2/token') {
+      tokenAttempts += 1;
+      notifyExchangeStarted?.();
+      await exchangeGate;
+      return tokenResponse();
+    }
+    dataPlaneAttempts += 1;
+    return jsonResponse({});
+  };
+  const call = () => copilotAuthedFetch(
+    '/v1/messages',
+    { method: 'POST', body: '{}' },
+    { id: UPSTREAM_ID, githubHost: 'github.com', githubToken: 'ghu_test' },
+    { fetcher, wrapUpstreamCall: identityWrapUpstreamCall },
+  );
+
+  const first = call();
+  const second = call();
+  await exchangeStarted;
+  expect(tokenAttempts).toBe(1);
+  releaseExchange?.();
+
+  await expect(Promise.all([first, second])).resolves.toHaveLength(2);
+  expect(tokenAttempts).toBe(1);
+  expect(dataPlaneAttempts).toBe(2);
+});
+
+test('one cancelled waiter does not abort a token refresh another request still needs', async () => {
+  await installRepoAndClearCache();
+  let releaseExchange: (() => void) | undefined;
+  const exchangeGate = new Promise<void>(resolve => { releaseExchange = resolve; });
+  let notifyExchangeStarted: (() => void) | undefined;
+  const exchangeStarted = new Promise<void>(resolve => { notifyExchangeStarted = resolve; });
+  let tokenAttempts = 0;
+  let dataPlaneAttempts = 0;
+  const fetcher: Fetcher = async url => {
+    if (new URL(url).pathname === '/copilot_internal/v2/token') {
+      tokenAttempts += 1;
+      notifyExchangeStarted?.();
+      await exchangeGate;
+      return tokenResponse();
+    }
+    dataPlaneAttempts += 1;
+    return jsonResponse({});
+  };
+  const firstController = new AbortController();
+  const call = (signal?: AbortSignal) => copilotAuthedFetch(
+    '/v1/messages',
+    { method: 'POST', body: '{}', signal },
+    { id: UPSTREAM_ID, githubHost: 'github.com', githubToken: 'ghu_test' },
+    { fetcher, wrapUpstreamCall: identityWrapUpstreamCall },
+  );
+
+  const first = call(firstController.signal);
+  const second = call();
+  await exchangeStarted;
+  expect(tokenAttempts).toBe(1);
+  const reason = new DOMException('first caller left', 'AbortError');
+  firstController.abort(reason);
+  await expect(first).rejects.toBe(reason);
+  releaseExchange?.();
+
+  await expect(second).resolves.toMatchObject({ status: 200 });
+  expect(tokenAttempts).toBe(1);
+  expect(dataPlaneAttempts).toBe(1);
+});
+
+test('a request arriving after the sole waiter cancels starts a fresh token exchange', async () => {
+  await installRepoAndClearCache();
+  let notifyExchangeStarted: (() => void) | undefined;
+  const exchangeStarted = new Promise<void>(resolve => { notifyExchangeStarted = resolve; });
+  let tokenAttempts = 0;
+  const fetcher: Fetcher = async (url, init) => {
+    if (new URL(url).pathname !== '/copilot_internal/v2/token') return jsonResponse({});
+    tokenAttempts += 1;
+    if (tokenAttempts > 1) return tokenResponse();
+    notifyExchangeStarted?.();
+    const signal = init.signal;
+    if (!signal) throw new Error('shared token exchange omitted its abort signal');
+    return await new Promise<Response>((_resolve, reject) => {
+      if (signal.aborted) reject(signal.reason);
+      else signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    });
+  };
+  const firstController = new AbortController();
+  const call = (signal?: AbortSignal) => copilotAuthedFetch(
+    '/v1/messages',
+    { method: 'POST', body: '{}', signal },
+    { id: UPSTREAM_ID, githubHost: 'github.com', githubToken: 'ghu_test' },
+    { fetcher, wrapUpstreamCall: identityWrapUpstreamCall },
+  );
+
+  const first = call(firstController.signal);
+  await exchangeStarted;
+  const reason = new DOMException('only caller left', 'AbortError');
+  firstController.abort(reason);
+  await expect(first).rejects.toBe(reason);
+
+  await expect(call()).resolves.toMatchObject({ status: 200 });
+  expect(tokenAttempts).toBe(2);
+});
+
+test('copilotAuthedFetch pins the complete authenticated request identity and correlates its request ids', async () => {
+  await mockTokenAndCapture(undefined, headers => {
+    expect(headers.get('authorization')).toBe('Bearer tok-test');
+    expect(headers.get('content-type')).toBe('application/json');
+    expect(headers.get('editor-version')).toBe('vscode/1.124.2');
+    expect(headers.get('editor-plugin-version')).toBe('copilot-chat/0.52.0');
+    expect(headers.get('editor-device-id')).toMatch(/^[0-9a-f-]{36}$/);
+    expect(headers.get('user-agent')).toBe('GitHubCopilotChat/0.52.0');
+    expect(headers.get('x-github-api-version')).toBe('2026-06-01');
+    expect(headers.get('x-vscode-user-agent-library-version')).toBe('electron-fetch');
+    expect(headers.get('x-request-id')).toMatch(/^[0-9a-f-]{36}$/);
+    expect(headers.get('x-agent-task-id')).toBe(headers.get('x-request-id'));
+    expect(headers.get('copilot-integration-id')).toBe('vscode-chat');
+    expect(headers.get('openai-intent')).toBe('conversation-agent');
+    expect(headers.get('x-interaction-type')).toBe('conversation-agent');
   });
 });
 

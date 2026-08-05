@@ -42,6 +42,35 @@ const memoize = <TInput extends string, TOutput>(
   };
 };
 
+// Native image encoders can hold several full-resolution decoded rasters per
+// call. Keep unique images parallel without letting an adversarial multipart
+// request multiply that peak by its entire image count.
+const MAX_CONCURRENT_IMAGE_COMPRESSIONS = 4;
+
+export const mapImageCompressions = async <TInput, TOutput>(
+  inputs: readonly TInput[],
+  compress: (input: TInput) => Promise<TOutput>,
+): Promise<TOutput[]> => {
+  const outputs = new Array<TOutput>(inputs.length);
+  let nextIndex = 0;
+  let failure: { readonly error: unknown } | undefined;
+  const worker = async (): Promise<void> => {
+    while (!failure && nextIndex < inputs.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      try {
+        outputs[index] = await compress(inputs[index]);
+      } catch (error) {
+        failure ??= { error };
+      }
+    }
+  };
+  const workers = Math.min(inputs.length, MAX_CONCURRENT_IMAGE_COMPRESSIONS);
+  await Promise.all(Array.from({ length: workers }, worker));
+  if (failure) throw failure.error;
+  return outputs;
+};
+
 export const memoizedDataUrlCompressor = (
   calculator: ImageSizeCalculator,
 ): ((url: string) => Promise<string>) =>

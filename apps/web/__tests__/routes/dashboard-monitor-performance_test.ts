@@ -1,15 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { clientLoader } from '../../src/routes/dashboard-monitor-performance';
-import { useAuthStore } from '../../src/stores/auth-store';
-import { stubLocalStorage } from '../local-storage-stub';
-
-stubLocalStorage();
+import { loadPerformancePageData } from '../../src/components/performance/data';
 
 afterEach(() => {
-  useAuthStore.getState().clear();
   vi.unstubAllGlobals();
 });
+
+const operator = { id: 2, username: 'operator', isAdmin: false, upstreamIds: null };
+const admin = { id: 1, username: 'admin', isAdmin: true, upstreamIds: null };
 
 // The gateway admin-gates every /api/upstreams route; an operator's session
 // gets 403 there and 200 from the upstream picker.
@@ -26,17 +24,15 @@ const gatewayForOperator = (input: RequestInfo | URL) => {
 
 describe('where the performance page reads upstream names from', () => {
   it('names an upstream for an operator, whose session may not read the admin upstream list', async () => {
-    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, upstreamIds: null } });
     vi.stubGlobal('fetch', vi.fn(gatewayForOperator));
 
-    const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/performance') } as never);
+    const data = await loadPerformancePageData(new Request('http://localhost/dashboard/monitor/performance'), operator);
 
     expect(data.upstreamNames).toEqual([{ id: 'up-1', name: 'Copilot seat' }]);
     expect(data.error).toBeNull();
   });
 
   it('makes API key grouping explicitly current-user scoped for an administrator', async () => {
-    useAuthStore.getState().primeFromLogin({ token: 'admin-session', user: { id: 1, username: 'admin', isAdmin: true, upstreamIds: null } });
     const performanceQueries: URL[] = [];
     vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
       const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost');
@@ -44,10 +40,26 @@ describe('where the performance page reads upstream names from', () => {
       return gatewayForOperator(input);
     }));
 
-    const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/performance?g=keyId') } as never);
+    const data = await loadPerformancePageData(new Request('http://localhost/dashboard/monitor/performance?g=keyId'), admin);
 
     expect(data.state.groupBy).toBe('keyId');
     expect(data.state.filters.userId).toEqual(['1']);
     expect(performanceQueries[0].searchParams.getAll('filter_user_id')).toEqual(['1']);
+  });
+
+  it('threads navigation cancellation through every initial request', async () => {
+    const controller = new AbortController();
+    const request = new Request('http://localhost/dashboard/monitor/performance', { signal: controller.signal });
+    const signals: AbortSignal[] = [];
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.signal) signals.push(init.signal);
+      return gatewayForOperator(input);
+    }));
+
+    await loadPerformancePageData(request, operator);
+    controller.abort();
+
+    expect(signals).toHaveLength(2);
+    expect(signals.every(signal => signal === request.signal && signal.aborted)).toBe(true);
   });
 });

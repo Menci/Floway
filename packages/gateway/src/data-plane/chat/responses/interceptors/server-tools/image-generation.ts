@@ -575,7 +575,7 @@ const remoteInputError = (source: RemoteImageSource, failure: RemoteImageFailure
 // image downloads, so account each memoized result once across sources and the
 // mask.
 // https://platform.openai.com/docs/guides/images-vision#image-input-requirements
-const MAX_REMOTE_IMAGE_TOTAL_BYTES = 50 * 1024 * 1024;
+export const MAX_REMOTE_IMAGE_TOTAL_BYTES = 50 * 1024 * 1024;
 
 const supportedImageMimeFromBytes = (bytes: Uint8Array): string | null => {
   if (dimensionsFromBytes(bytes) === null) return null;
@@ -603,7 +603,10 @@ const supportedImageMimeFromBytes = (bytes: Uint8Array): string | null => {
   return null;
 };
 
-const createRemoteImageMaterializer = (requestSignal: AbortSignal | undefined) => {
+const createRemoteImageMaterializer = (
+  requestSignal: AbortSignal | undefined,
+  maxRemoteImageTotalBytes: number,
+) => {
   const fetchImage = createExternalImageFetcher(requestSignal);
   const materialized = new Map<string, ImageSource>();
   const materializedByData = new Map<Uint8Array, ImageSource>();
@@ -620,7 +623,7 @@ const createRemoteImageMaterializer = (requestSignal: AbortSignal | undefined) =
 
     const mimeType = supportedImageMimeFromBytes(fetched.data);
     if (mimeType === null) return { ok: false, failure: { type: 'invalid-image' } };
-    if (materializedBytes + fetched.data.byteLength > MAX_REMOTE_IMAGE_TOTAL_BYTES) {
+    if (materializedBytes + fetched.data.byteLength > maxRemoteImageTotalBytes) {
       return { ok: false, failure: { type: 'aggregate-too-large' } };
     }
 
@@ -1390,7 +1393,9 @@ export const transformInputItemsForImageGeneration = (
   return out;
 };
 
-export const imageGenerationServerTool: ServerToolRegistration = async (invocation, gatewayCtx) => {
+export const createImageGenerationServerTool = (
+  maxRemoteImageTotalBytes: number,
+): ServerToolRegistration => async (invocation, gatewayCtx) => {
   if (invocation.targetApi === 'responses' && !providerModelOf(invocation.candidate).enabledFlags.has('responses-image-generation-shim')) {
     return { type: 'inactive' };
   }
@@ -1428,7 +1433,7 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
     };
   }
 
-  const materializer = createRemoteImageMaterializer(gatewayCtx.abortSignal);
+  const materializer = createRemoteImageMaterializer(gatewayCtx.abortSignal, maxRemoteImageTotalBytes);
   const remoteInputs = initialInspection.sources.filter(isRemoteImageSource);
   const materializedInputs = await materializer.inputs(remoteInputs);
   if (!materializedInputs.ok) {
@@ -1549,3 +1554,5 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
     },
   };
 };
+
+export const imageGenerationServerTool = createImageGenerationServerTool(MAX_REMOTE_IMAGE_TOTAL_BYTES);

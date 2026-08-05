@@ -1,3 +1,4 @@
+import { orderedCalloutRows } from './callout-rows';
 import { formatCompactDecimalCount, formatRatePercent } from './format';
 import { bucketKeyForCallout, summarizeCounters } from './plot';
 import type { CalloutPoint, UsageChartModel } from './types';
@@ -17,8 +18,7 @@ export function UsageChartCallout({ chart, labelByTime, point, valueFormatter }:
   const bucketDetails = chart.kind === 'token' && bucketKey ? chart.details.get(bucketKey) : undefined;
   // Zero-height bar segments only preserve stack position. A line point at 0%
   // is a measured value and remains visible in its callout.
-  const rows = (chart.plot.form === 'area' ? point.rows.filter(row => row.value > 0) : point.rows)
-    .sort((a, b) => b.value - a.value);
+  const rows = orderedCalloutRows(chart.plot.form === 'area' ? point.rows.filter(row => row.value > 0) : point.rows);
   if (rows.length === 0) return null;
   const title = formatCalloutTitle(point.x, labelByTime, chart.range, locale);
   return (

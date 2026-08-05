@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import { providerStreamResultToExecuteResult } from '../../../../src/data-plane/chat/shared/provider-stream-result.ts';
 import { mockGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
@@ -84,4 +84,25 @@ test('an abandoned stream still settles its metadata instead of hanging the call
   abort.abort();
 
   expect((await result.finalMetadata!).modelIdentity).toBeDefined();
+});
+
+test('an already-aborted abandoned stream settles metadata without waiting for another abort event', async () => {
+  const abort = new AbortController();
+  abort.abort();
+  const ctx = { ...mockGatewayCtx(), abortSignal: abort.signal };
+  const result = await providerStreamResultToExecuteResult(
+    okStreamResult(iter([{ type: 'event', event: { type: 'response.created' } }])),
+    stubModelCandidate(),
+    'responses',
+    ctx,
+    () => null,
+  );
+  expect(result.type).toBe('events');
+  if (result.type !== 'events') return;
+
+  const settled = vi.fn();
+  void result.finalMetadata!.then(settled);
+  await Promise.resolve();
+
+  expect(settled).toHaveBeenCalledOnce();
 });

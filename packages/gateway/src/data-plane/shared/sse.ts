@@ -17,6 +17,7 @@ interface SseStreamOptions {
 type ResolvedSseKeepAliveOptions = Required<SseKeepAliveOptions>;
 
 type NextFrameResult = { type: 'frame'; result: IteratorResult<SseFrame> } | { type: 'next-error'; error: unknown } | { type: 'keep-alive' } | { type: 'abort' };
+type StreamFailure = { readonly error: unknown };
 
 export type StreamCompletion = 'eof' | 'error' | 'cancel';
 
@@ -87,6 +88,11 @@ const nextFrameOrKeepAlive = async (
   }
 };
 
+const cleanupFailure = (failure: StreamFailure, cleanupError: unknown): AggregateError => {
+  const message = failure.error instanceof Error ? failure.error.message : String(failure.error);
+  return new AggregateError([failure.error, cleanupError], message, { cause: failure.error });
+};
+
 const drainSSEFrames = async (
   stream: SSEStreamingApi,
   events: AsyncIterable<SseFrame>,
@@ -106,6 +112,7 @@ const drainSSEFrames = async (
   let pendingNext = pendingFrameResult(iterator.next());
   let completed = false;
   let stoppedByDownstream = false;
+  let failure: StreamFailure | undefined;
 
   const stopForDownstream = () => {
     stoppedByDownstream = true;
@@ -146,14 +153,30 @@ const drainSSEFrames = async (
       await writeSSEFrame(stream, next.result.value);
       pendingNext = pendingFrameResult(iterator.next());
     }
+  } catch (error) {
+    failure = { error };
+    abortDownstream();
+    throw error;
   } finally {
     if (!completed) {
-      const stopped = iterator.return?.();
-      // Downstream already cancelled; cleanup errors from the upstream
-      // iterator have nowhere to surface to. Awaiting the rejection would
-      // leak it as an unhandled rejection.
-      if (stoppedByDownstream) stopped?.catch(() => {});
-      else await stopped;
+      // A downstream cancellation must not wait behind an iterator whose
+      // current next() never settles. Start its cleanup, consume any rejection,
+      // and let the transport finish immediately because it has nowhere to
+      // report a cleanup failure.
+      if (stoppedByDownstream) {
+        try {
+          iterator.return?.().catch(() => {});
+        } catch {
+          // A synchronous cleanup failure is equally unactionable here.
+        }
+      } else {
+        try {
+          await iterator.return?.();
+        } catch (cleanupError) {
+          if (failure !== undefined) throw cleanupFailure(failure, cleanupError);
+          throw cleanupError;
+        }
+      }
     }
   }
 };

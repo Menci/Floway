@@ -687,3 +687,25 @@ test('snapshot retains completed streamed items omitted from the terminal output
   expect((await repo.responsesSnapshots.lookup('key-a', 'resp_public', 0))?.itemIds).toEqual([call.id]);
   expect((await repo.responsesItems.lookupMany('key-a', [call.id], 0))[0].payload.item).toEqual(call);
 });
+
+test('compaction_summary output replaces staged history like canonical compaction', async () => {
+  const { repo, store } = memoryOutputHarness();
+  await store.stageInputItems([{ type: 'message', role: 'user', content: 'discarded history' }]);
+  const summary = {
+    type: 'compaction_summary',
+    id: 'cmp_summary',
+    encrypted_content: 'opaque',
+  } as unknown as ResponsesResult['output'][number];
+  const response = responseFor([summary]);
+  const input = (async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: summary });
+    yield eventFrame({ type: 'response.completed', response });
+  })();
+
+  for await (const _frame of wrapResponsesClientOutput(input, {
+    store,
+    responseId: 'resp_compaction_summary',
+  })) { /* drain */ }
+
+  expect((await repo.responsesSnapshots.lookup('key-a', 'resp_compaction_summary', 0))?.itemIds).toEqual([summary.id]);
+});

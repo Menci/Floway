@@ -173,7 +173,7 @@ export const buildTargetRequest = (payload: GeminiPayload, model: string): Canon
     stream: true,
     input: [],
   };
-  const unmatchedToolCallIds: GeminiToolCallIds = {};
+  const unmatchedToolCallIds: GeminiToolCallIds = new Map();
 
   const instructions = geminiText(payload.systemInstruction);
   if (instructions !== null) request.instructions = instructions;

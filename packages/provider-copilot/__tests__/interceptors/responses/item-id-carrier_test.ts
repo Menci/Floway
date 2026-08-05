@@ -21,7 +21,7 @@ describe('Copilot item id carrier', () => {
   });
 
   test.each(['\ud800', '\udfff', `a\ud800${String.fromCodePoint(0x1f600)}\udfffz`])(
-    'round-trips raw UTF-16 code units exactly',
+    'round-trips raw UTF-16 code units exactly (case %#)',
     original => {
       expect(unwrapCopilotItemId(wrapCopilotItemId(original, 'rs_raw'))).toMatchObject({
         kind: 'owned',

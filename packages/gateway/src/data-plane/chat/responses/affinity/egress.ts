@@ -8,6 +8,9 @@ const canonicalItemType = (itemType: string): string =>
 const carrierDomain = (itemType: string, slot: string): string =>
   `responses.${canonicalItemType(itemType)}.${slot}`;
 
+const carrierCacheKey = (...dimensions: readonly (number | string)[]): string =>
+  JSON.stringify(dimensions);
+
 const opaqueSlots = (item: ResponsesOutputItem): Array<{ key: string; value: string }> => {
   const slots: Array<{ key: string; value: string }> = [];
   const record = item as unknown as Record<string, unknown>;
@@ -54,10 +57,11 @@ const wrapNaturalResponsesAffinity = async function* (
   const wrapItem = async (item: ResponsesOutputItem, outputIndex: number): Promise<ResponsesOutputItem> => {
     const replacements = new Map<string, string>();
     await Promise.all(opaqueSlots(item).map(async slot => {
-      const cacheKey = `${outputIndex}\0${slot.key}\0${slot.value}`;
+      const domain = carrierDomain(item.type, slot.key);
+      const cacheKey = carrierCacheKey(outputIndex, domain, slot.value);
       let replacement = wrapped.get(cacheKey);
       if (replacement === undefined) {
-        replacement = options.codec.wrap(slot.value, options.affinity, carrierDomain(item.type, slot.key));
+        replacement = options.codec.wrap(slot.value, options.affinity, domain);
         wrapped.set(cacheKey, replacement);
       }
       replacements.set(slot.key, await replacement);
@@ -93,7 +97,6 @@ const wrapNaturalResponsesAffinity = async function* (
       continue;
     }
     yield frame;
-    if (event.type === 'error') return;
   }
 };
 
@@ -117,6 +120,16 @@ const wrapResponsesFirstCarrier = async function* (
   let prefix: SyntheticPrefix | undefined;
   let sequenceOffset = 0;
 
+  const syntheticCarrierFor = (outputIndex: number, domain: string): Promise<string> => {
+    const cacheKey = carrierCacheKey(outputIndex, domain);
+    let carrier = syntheticCarriers.get(cacheKey);
+    if (carrier === undefined) {
+      carrier = options.codec.wrap(undefined, options.affinity, domain);
+      syntheticCarriers.set(cacheKey, carrier);
+    }
+    return carrier;
+  };
+
   const outputIndexOffset = (outputIndex: number): number =>
     prefix !== undefined && outputIndex >= prefix.originalOutputIndex ? 1 : 0;
 
@@ -133,33 +146,19 @@ const wrapResponsesFirstCarrier = async function* (
 
     if (item.type === 'program') {
       const slot = 'fingerprint';
-      const cacheKey = `${outputIndex}\0${slot}`;
-      let fingerprint = syntheticCarriers.get(cacheKey);
-      if (fingerprint === undefined) {
-        fingerprint = options.codec.wrap(undefined, options.affinity, carrierDomain(item.type, slot));
-        syntheticCarriers.set(cacheKey, fingerprint);
-      }
-      return { ...item, fingerprint: await fingerprint };
+      return { ...item, fingerprint: await syntheticCarrierFor(outputIndex, carrierDomain(item.type, slot)) };
     }
     if (item.type === 'agent_message') {
       const slot = `content.${item.content.length}.encrypted_content`;
-      const cacheKey = `${outputIndex}\0${slot}`;
-      let encrypted = syntheticCarriers.get(cacheKey);
-      if (encrypted === undefined) {
-        encrypted = options.codec.wrap(undefined, options.affinity, carrierDomain(item.type, slot));
-        syntheticCarriers.set(cacheKey, encrypted);
-      }
-      return { ...item, content: [...item.content, { type: 'encrypted_content', encrypted_content: await encrypted }] };
+      const encryptedContent = await syntheticCarrierFor(outputIndex, carrierDomain(item.type, slot));
+      return { ...item, content: [...item.content, { type: 'encrypted_content', encrypted_content: encryptedContent }] };
     }
 
     const slot = 'encrypted_content';
-    const cacheKey = `${outputIndex}\0${slot}`;
-    let encrypted = syntheticCarriers.get(cacheKey);
-    if (encrypted === undefined) {
-      encrypted = options.codec.wrap(undefined, options.affinity, carrierDomain(item.type, slot));
-      syntheticCarriers.set(cacheKey, encrypted);
-    }
-    return { ...item, encrypted_content: await encrypted } as ResponsesOutputItem;
+    return {
+      ...item,
+      encrypted_content: await syntheticCarrierFor(outputIndex, carrierDomain(item.type, slot)),
+    } as ResponsesOutputItem;
   };
 
   const insertPrefix = async function* (
@@ -289,7 +288,6 @@ const wrapResponsesFirstCarrier = async function* (
     }
 
     yield eventFrame(shifted(event));
-    if (event.type === 'error') return;
   }
 };
 

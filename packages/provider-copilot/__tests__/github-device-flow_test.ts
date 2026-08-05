@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../src/github-device-flow.ts';
+import { fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../src/github-device-flow.ts';
 import type { Fetcher } from '@floway-dev/provider';
 import { assertEquals, assertRejects, jsonResponse } from '@floway-dev/test-utils';
 
@@ -111,5 +111,18 @@ test('pollGitHubDeviceFlow rejects malformed token and HTTP responses', async ()
     () => pollGitHubDeviceFlow('github.com', 'device', async () => new Response('bad gateway', { status: 502 })),
     Error,
     'unexpected HTTP status code',
+  );
+});
+
+test.each([
+  ['a scalar', null, 'user must be an object'],
+  ['a missing login', { id: 1, avatar_url: '', name: null }, 'user.login must be a string'],
+  ['a fractional id', { id: 1.5, login: 'octo', avatar_url: '', name: null }, 'user.id must be an integer'],
+  ['a non-null non-string name', { id: 1, login: 'octo', avatar_url: '', name: 42 }, 'user.name must be a string or null'],
+] as const)('fetchGitHubUser rejects %s success body', async (_label, body, message) => {
+  await assertRejects(
+    () => fetchGitHubUser('github.com', 'ghu_test', async () => jsonResponse(body)),
+    TypeError,
+    message,
   );
 });

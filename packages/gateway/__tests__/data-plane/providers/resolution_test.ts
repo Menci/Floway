@@ -1,10 +1,10 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import { clearInFlightForTesting } from '../../../src/data-plane/providers/models-cache.ts';
 import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
 import { enumerateModelCandidates, enumerateRealModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { buildCustomUpstreamRecord, copilotModels, setupAppTest } from '../../test-utils/app.ts';
-import { directFetcher, type InternalModel, type ProviderModel } from '@floway-dev/provider';
+import { directFetcher, type InternalModel, type ProviderModel, type UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const realProviderModels = (model: InternalModel | undefined): Record<string, ProviderModel> => {
@@ -15,6 +15,28 @@ const realProviderModels = (model: InternalModel | undefined): Record<string, Pr
 const testScheduler = (promise: Promise<unknown>): void => {
   promise.catch(err => console.error('[background]', err));
 };
+
+const azureUpstream = (id: string, sortOrder: number, modelId: string): UpstreamRecord => ({
+  id,
+  kind: 'azure',
+  name: id,
+  enabled: true,
+  sortOrder,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+  config: {
+    endpoint: `https://${id}.openai.azure.com`,
+    apiKey: 'az-key',
+    models: [{ upstreamModelId: modelId, endpoints: { chatCompletions: {} } }],
+  },
+  state: null,
+  flagOverrides: {},
+  disabledPublicModelIds: [],
+  proxyFallbackList: [],
+  modelPrefix: null,
+  modelsCache: null,
+  hue: 210,
+});
 
 test('enumerateModelCandidates strips an -YYYYMMDD suffix when nothing matched and retries across every visible upstream', async () => {
   const { repo } = await setupAppTest();
@@ -362,14 +384,20 @@ test('enumerateModelCandidates deduplicates failedUpstreams across the dated-suf
 // stale catalog. The provider's `fetchUpstreamModels` wraps the upstream
 // fetch error in a ProviderModelsUnavailableError with the AbortError as
 // its cause, so the resolver's detection walks the cause chain.
-test('enumerateModelCandidates rethrows AbortError from a per-upstream catalog fetch', async () => {
+test('enumerateModelCandidates rethrows AbortError without waiting for a hanging sibling', { timeout: 1_000 }, async () => {
   clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_hanging',
+    name: 'Hanging',
+    sortOrder: 1,
+    config: { baseUrl: 'https://hanging.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+  }));
+  await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_aborting',
     name: 'Aborting',
-    sortOrder: 1,
+    sortOrder: 2,
     config: { baseUrl: 'https://aborting.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
   }));
 
@@ -377,6 +405,9 @@ test('enumerateModelCandidates rethrows AbortError from a per-upstream catalog f
   await withMockedFetch(
     request => {
       const url = new URL(request.url);
+      if (url.hostname === 'hanging.example.com' && url.pathname === '/v1/models') {
+        return new Promise<Response>(() => {});
+      }
       if (url.hostname === 'aborting.example.com' && url.pathname === '/v1/models') {
         throw abortError;
       }
@@ -405,8 +436,35 @@ test('enumerateModelCandidates rethrows AbortError from a per-upstream catalog f
       if (!isAbortInChain(thrown)) {
         throw new Error(`expected rejection to carry an AbortError in its cause chain; got: ${thrown instanceof Error ? `${thrown.name}: ${thrown.message}` : String(thrown)}`);
       }
+      clearInFlightForTesting();
     },
   );
+});
+
+test('enumerateModelCandidates uses one upstream snapshot for fetchers and providers', async () => {
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save(azureUpstream('up_a', 1, 'model-a'));
+  await repo.upstreams.save(azureUpstream('up_b', 2, 'model-b'));
+  const rows = await repo.upstreams.list();
+  const firstSnapshot = rows.filter(row => row.id === 'up_a');
+  const list = vi.spyOn(repo.upstreams, 'list')
+    .mockResolvedValueOnce(firstSnapshot)
+    .mockResolvedValue(rows);
+
+  try {
+    const resolved = await enumerateModelCandidates({
+      upstreamIds: null,
+      model: 'model-b',
+      kind: 'chat',
+      scheduler: testScheduler,
+      runtimeLocation: 'TEST',
+    });
+    expect(resolved).toEqual({ candidates: [], sawModel: false, failedUpstreams: [] });
+    expect(list).toHaveBeenCalledTimes(1);
+  } finally {
+    list.mockRestore();
+  }
 });
 
 // Empty visible upstream list: a caller cap pinned to an empty set yields
@@ -420,17 +478,26 @@ test('enumerateModelCandidates returns the empty triple when the visible upstrea
   // A populated catalog is the case under test: the empty cap, not an empty
   // catalog, is what yields the empty triple.
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_a', name: 'A', sortOrder: 1 }));
+  const list = vi.spyOn(repo.upstreams, 'list');
+  const getAlias = vi.spyOn(repo.modelAliases, 'getByName');
 
-  const resolved = await enumerateModelCandidates({
-    upstreamIds: [],
-    model: 'any-model',
-    kind: 'chat',
-    scheduler: testScheduler,
-    runtimeLocation: 'TEST',
-  });
-  assertEquals(resolved.candidates, []);
-  assertEquals(resolved.sawModel, false);
-  assertEquals(resolved.failedUpstreams, []);
+  try {
+    const resolved = await enumerateModelCandidates({
+      upstreamIds: [],
+      model: 'any-model',
+      kind: 'chat',
+      scheduler: testScheduler,
+      runtimeLocation: 'TEST',
+    });
+    assertEquals(resolved.candidates, []);
+    assertEquals(resolved.sawModel, false);
+    assertEquals(resolved.failedUpstreams, []);
+    expect(list).not.toHaveBeenCalled();
+    expect(getAlias).not.toHaveBeenCalled();
+  } finally {
+    list.mockRestore();
+    getAlias.mockRestore();
+  }
 });
 
 // The alias walk visits every target, tags each real-catalog candidate
@@ -499,7 +566,7 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
     );
   });
 
-  test('shuffles the outer walk for random selection but keeps intra-target order', async () => {
+  test('random selection can reverse target blocks without mutating stored declaration order', async () => {
     clearInFlightForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
@@ -516,23 +583,27 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
     await withMockedFetch(
       buildCatalogFetch({ up_a: ['gpt-5', 'claude'], up_b: ['gpt-5', 'claude'] }),
       async () => {
-        const resolved = await enumerateModelCandidates({
-          upstreamIds: null, model: 'random-alias', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST',
-        });
-        // Each target contributes two candidates (up_a before up_b, the
-        // configured sort order). The two two-candidate blocks stay together
-        // regardless of the outer shuffle.
-        const grouped = [resolved.candidates.slice(0, 2), resolved.candidates.slice(2, 4)];
-        for (const block of grouped) {
-          expect(block.map(c => c.provider.upstreamId)).toEqual(['up_a', 'up_b']);
+        const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+        try {
+          const resolved = await enumerateModelCandidates({
+            upstreamIds: null, model: 'random-alias', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST',
+          });
+          expect(resolved.candidates.map(candidate => `${candidate.model.id}@${candidate.provider.upstreamId}`)).toEqual([
+            'claude@up_a',
+            'claude@up_b',
+            'gpt-5@up_a',
+            'gpt-5@up_b',
+          ]);
+          expect((await repo.modelAliases.getByName('random-alias'))?.targets.map(target => target.target_model_id))
+            .toEqual(['gpt-5', 'claude']);
+        } finally {
+          random.mockRestore();
         }
-        const targetOrder = grouped.map(block => block[0]?.model.id);
-        expect(new Set(targetOrder)).toEqual(new Set(['gpt-5', 'claude']));
       },
     );
   });
 
-  test('dedups (model, upstream, rules) when two targets hit the same binding with identical rules', async () => {
+  test('dedups semantically equal rule objects regardless of property insertion order', async () => {
     clearInFlightForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
@@ -540,8 +611,8 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
       id: 'alias_dup-alias',
       name: 'dup-alias', kind: 'chat', selection: 'first-available',
       targets: [
-        { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low' } } },
-        { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low' } } },
+        { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low', summary: 'detailed' }, verbosity: 'medium' } },
+        { target_model_id: 'gpt-5', rules: { verbosity: 'medium', reasoning: { summary: 'detailed', effort: 'low' } } },
       ],
       ...aliasCommon,
     });
@@ -641,6 +712,49 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
         // contributes one candidate carrying its own rule overlay.
         assertEquals(resolved.candidates.length, 1);
         assertEquals(resolved.candidates[0]!.rules?.verbosity, 'high');
+      },
+    );
+  });
+
+  test('reuses one rejected cold catalog fetch across every alias target', async () => {
+    clearInFlightForTesting();
+    const { repo } = await setupAppTest();
+    await repo.upstreams.deleteAll();
+    await repo.upstreams.save(buildCustomUpstreamRecord({
+      id: 'up_broken',
+      name: 'Broken',
+      sortOrder: 1,
+      config: { baseUrl: 'https://broken.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+    }));
+    await repo.modelAliases.insert({
+      id: 'alias_broken-targets',
+      name: 'broken-targets',
+      kind: 'chat',
+      selection: 'first-available',
+      targets: ['one', 'two', 'three'].map(target_model_id => ({ target_model_id, rules: {} })),
+      ...aliasCommon,
+    });
+    let catalogFetches = 0;
+
+    await withMockedFetch(
+      request => {
+        const url = new URL(request.url);
+        if (url.hostname === 'broken.example.com' && url.pathname === '/v1/models') {
+          catalogFetches++;
+          return jsonResponse({ error: 'down' }, 502);
+        }
+        throw new Error(`Unhandled fetch ${request.url}`);
+      },
+      async () => {
+        const resolved = await enumerateModelCandidates({
+          upstreamIds: null,
+          model: 'broken-targets',
+          kind: 'chat',
+          scheduler: testScheduler,
+          runtimeLocation: 'TEST',
+        });
+        expect(resolved).toEqual({ candidates: [], sawModel: false, failedUpstreams: ['Broken'] });
+        expect(catalogFetches).toBe(1);
       },
     );
   });

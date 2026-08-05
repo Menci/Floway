@@ -442,6 +442,42 @@ test('translateChatCompletionsChunkToMessagesEvents defers content that shares a
   ]);
 });
 
+test('translateChatCompletionsChunkToMessagesEvents serializes parallel tool calls into valid block lifecycles', () => {
+  const state = createChatCompletionsToMessagesStreamState();
+  const events = [
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({
+      tool_calls: [
+        { index: 0, id: 'call_a', type: 'function', function: { name: 'a', arguments: '{"a":' } },
+        { index: 1, id: 'call_b', type: 'function', function: { name: 'b', arguments: '{"b":' } },
+      ],
+    }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({
+      tool_calls: [
+        { index: 0, function: { arguments: '1}' } },
+        { index: 1, function: { arguments: '2}' } },
+      ],
+    }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({}, 'tool_calls'), state),
+    ...flushChatCompletionsToMessagesEvents(state),
+  ];
+
+  assertEquals(events.slice(1), [
+    { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'call_a', name: 'a', input: {} } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"a":' } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '1}' } },
+    { type: 'content_block_stop', index: 0 },
+    { type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 'call_b', name: 'b', input: {} } },
+    { type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: '{"b":2}' } },
+    { type: 'content_block_stop', index: 1 },
+    {
+      type: 'message_delta',
+      delta: { stop_reason: 'tool_use', stop_sequence: null },
+      usage: { input_tokens: 0, output_tokens: 0 },
+    },
+    { type: 'message_stop' },
+  ]);
+});
+
 test('translateChatCompletionsChunkToMessagesEvents ignores empty tool_calls arrays', () => {
   const state = createChatCompletionsToMessagesStreamState();
   // First chunk with role: "assistant" and empty tool_calls.

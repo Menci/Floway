@@ -20,7 +20,7 @@ test('buildTargetRequest preserves scalar and content-part assistant refusals', 
   ]);
 });
 
-test('buildTargetRequest uses rs-prefixed ids for reasoning input items', () => {
+test('buildTargetRequest preserves scalar reasoning text and opaque state', () => {
   const result = buildTargetRequest({
     model: 'gpt-test',
     messages: [
@@ -35,8 +35,12 @@ test('buildTargetRequest uses rs-prefixed ids for reasoning input items', () => 
 
   if (!Array.isArray(result.input)) throw new Error('expected input array');
   const reasoning = result.input[0] as ResponsesInputReasoning;
-  assertEquals(reasoning.type, 'reasoning');
-  expect(reasoning.id).toMatch(/^rs_[0-9a-f]{32}$/);
+  assertEquals(reasoning, {
+    type: 'reasoning',
+    id: expect.stringMatching(/^rs_[0-9a-f]{32}$/),
+    summary: [{ type: 'summary_text', text: 'trace' }],
+    encrypted_content: 'enc',
+  });
 });
 
 test('buildTargetRequest preserves text-only scalar reasoning', () => {

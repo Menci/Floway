@@ -1,9 +1,8 @@
-import { act } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider, useLocation, useNavigate, type NavigateOptions } from 'react-router';
 import { describe, expect, it } from 'vitest';
 
 import { isPageChange, pageNavigation, useEntryRewrite } from '../../src/lib/page-navigation';
-import { renderInApp } from '../render';
 
 // What decides the page transition is the render after the commit, so this
 // reads the mark the way `page-frames.tsx` does -- through `useLocation` on a
@@ -24,7 +23,7 @@ const renderRouter = () => {
     ['/upstreams', '/upstreams/new', '/keys'].map(path => ({ path, Component: Probe })),
     { initialEntries: ['/upstreams'] },
   );
-  return { router, ...renderInApp(<RouterProvider router={router} />) };
+  return { router, ...render(<RouterProvider router={router} />) };
 };
 
 type Router = ReturnType<typeof renderRouter>['router'];

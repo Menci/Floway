@@ -1,9 +1,10 @@
 import { unionEndpoints } from './endpoint-union.ts';
 import { fetchUpstreamModelsCached, MODEL_CATALOG_REVISION } from './models-cache.ts';
 import type { GatewayProvider } from './registry.ts';
+import { settleUnlessAborted } from './settle.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
-import { isAbortError, type Fetcher, type InternalModel, type Provider, type ProviderModel, type UpstreamRecord } from '@floway-dev/provider';
+import type { Fetcher, InternalModel, Provider, ProviderModel, UpstreamRecord } from '@floway-dev/provider';
 
 interface ProviderModelsResult {
   models: InternalModel[];
@@ -98,24 +99,19 @@ const collectProviderModels = async (
   // the SOFT-fresh row without an upstream round trip, so the parallel walk
   // is cheap on the warm path and bounded by `max(per-upstream fetch)` on
   // the cold path.
-  const fetchOne = (instance: GatewayProvider) =>
-    fetchUpstreamModelsCached(instance, {
+  const fetchOne = async (instance: GatewayProvider) => {
+    const models = await fetchUpstreamModelsCached(instance, {
       scheduler,
       fetcher: fetcherForUpstream(instance.upstreamId),
-    }).then(models => ({ instance, models }));
+    });
+    return { instance, models };
+  };
 
-  const settled = await Promise.allSettled(providers.map(fetchOne));
+  const settled = await settleUnlessAborted(providers.map(fetchOne));
 
   for (const [index, result] of settled.entries()) {
     if (result.status === 'rejected') {
-      // Caller-driven cancellation must propagate. Burying it in lastError
-      // and letting an earlier sawSuccess return a partially-populated
-      // model list would mask the abort and let the rest of the data-plane
-      // request build a Response against a stale catalog. `isAbortError`
-      // walks the cause chain so an AbortError wrapped inside
-      // ProviderModelsUnavailableError still surfaces here.
       const error = result.reason;
-      if (isAbortError(error)) throw error;
       lastError = error;
       failedUpstreams.push(providers[index].name);
       continue;
