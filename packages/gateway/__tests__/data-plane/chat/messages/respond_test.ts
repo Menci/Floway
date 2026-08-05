@@ -3,8 +3,8 @@ import { test } from 'vitest';
 
 import { respondMessages } from '../../../../src/data-plane/chat/messages/respond.ts';
 import { createMessagesBillableUsageReader } from '../../../../src/data-plane/chat/messages/usage.ts';
-import { providerStreamResultToExecuteResult } from '../../../../src/data-plane/chat/shared/provider-stream-result.ts';
 import type { ChatGatewayCtx } from '../../../../src/data-plane/chat/shared/gateway-ctx.ts';
+import { providerStreamResultToExecuteResult } from '../../../../src/data-plane/chat/shared/provider-stream-result.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import { tokenCountsFromUsage } from '../../../../src/repo/usage-metrics.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';

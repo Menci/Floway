@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
 import { expect, test } from 'vitest';
 
-import { internalErrorResponse } from '../../../src/middleware/internal-error-response.ts';
 import { readRequestBody, takeRequestBody } from '../../../src/data-plane/shared/request-body.ts';
+import { internalErrorResponse } from '../../../src/middleware/internal-error-response.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 test('takeRequestBody transfers bytes and clears the source owner', () => {

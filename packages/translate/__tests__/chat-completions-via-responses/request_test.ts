@@ -281,7 +281,7 @@ test('buildTargetRequest forwards reasoning_effort and service_tier onto the nat
   assertEquals(result.service_tier, 'priority');
 });
 
-test.each(['none', ''] as const)('buildTargetRequest forwards open reasoning_effort value %j verbatim', (effort) => {
+test.each(['none', ''] as const)('buildTargetRequest forwards open reasoning_effort value %j verbatim', effort => {
   const result = buildTargetRequest({
     model: 'gpt-test',
     messages: [{ role: 'user', content: 'hi' }],
