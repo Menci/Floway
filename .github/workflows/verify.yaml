@@ -30,6 +30,8 @@ jobs:
             run: pnpm run test:agent-setup-installers
           - name: generated-assets
             run: pnpm --filter @floway-dev/agent-setup run generate-assets --check
+          - name: agent-protocol
+            run: pnpm run check:agent-protocol
           # `build.yaml` builds the SPA image, but only on `main` and on a
           # schedule. Building here is what puts the bundler and the build
           # output assertions in front of a pull request.
