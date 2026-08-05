@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import { clearInFlightForTesting } from '../../../../src/data-plane/providers/models-cache.ts';
 import { enumerateAddressableModelIds } from '../../../../src/data-plane/shared/listing/addressable.ts';
-import { buildCustomUpstreamRecord, setupAppTest } from '../../../test-utils/app.ts';
+import { buildCustomUpstreamRecord, setupAppTest, warmModelsForTest } from '../../../test-utils/app.ts';
 import { directFetcher } from '@floway-dev/provider';
 import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -26,6 +26,7 @@ describe('enumerateAddressableModelIds', () => {
         throw new Error(`Unhandled fetch ${request.url}`);
       },
       async () => {
+        await warmModelsForTest();
         const surface = await enumerateAddressableModelIds(null, () => directFetcher, noBackground);
         expect(surface.map(e => ({ id: e.id, unlisted: e.unlisted }))).toEqual([
           { id: 'shared-model', unlisted: undefined },
@@ -55,6 +56,7 @@ describe('enumerateAddressableModelIds', () => {
         throw new Error(`Unhandled fetch ${request.url}`);
       },
       async () => {
+        await warmModelsForTest();
         const surface = await enumerateAddressableModelIds(null, () => directFetcher, noBackground);
         const byId = new Map(surface.map(e => [e.id, e]));
         expect(byId.get('cust/gpt-5.4')?.unlisted).toBeUndefined();

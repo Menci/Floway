@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import { chatTargetPicker } from '../../../../src/data-plane/chat/shared/target-picker.ts';
 import { enumerateModelCandidates } from '../../../../src/data-plane/providers/resolution.ts';
-import { setupAppTest } from '../../../test-utils/app.ts';
+import { setupAppTest, warmModelsForTest } from '../../../test-utils/app.ts';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
@@ -78,6 +78,7 @@ describe('enumerateModelCandidates + chatTargetPicker', () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
     await repo.upstreams.save(azureUpstream('up_multi', 10, ['test-model'], { messages: {}, responses: {} }));
+    await warmModelsForTest();
 
     const { candidates } = await enumerateModelCandidates({
       upstreamIds: null,
@@ -100,6 +101,7 @@ describe('enumerateModelCandidates + chatTargetPicker', () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
     await repo.upstreams.save(azureUpstream('up_chat', 10, ['test-model'], { chatCompletions: {} }));
+    await warmModelsForTest();
 
     const { candidates } = await enumerateModelCandidates({
       upstreamIds: null,

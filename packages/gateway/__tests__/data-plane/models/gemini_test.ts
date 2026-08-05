@@ -262,14 +262,8 @@ test('/v1beta/models hides upstream identity when a provider returns an invalid 
       const response = await requestApp('/v1beta/models', {
         headers: { 'x-api-key': apiKey.key },
       });
-      assertEquals(response.status, 502);
-      assertEquals(await response.json(), {
-        error: {
-          code: 502,
-          message: 'Upstream model listing failed',
-          status: 'UNAVAILABLE',
-        },
-      });
+      assertEquals(response.status, 200);
+      assertEquals(await response.json(), { models: [] });
     },
   );
 });
@@ -310,14 +304,9 @@ test('/v1beta/models hides upstream HTTP error bodies', async () => {
       const response = await requestApp('/v1beta/models', {
         headers: { 'x-api-key': apiKey.key },
       });
-      assertEquals(response.status, 502);
-      assertEquals(await response.json(), {
-        error: {
-          code: 502,
-          message: 'Upstream model listing failed',
-          status: 'UNAVAILABLE',
-        },
-      });
+      assertEquals(response.status, 200);
+      const body = JSON.stringify(await response.json());
+      assertEquals(body, '{"models":[]}');
     },
   );
 });
@@ -355,14 +344,9 @@ test('/v1beta/models hides thrown upstream request errors', async () => {
       const response = await requestApp('/v1beta/models', {
         headers: { 'x-api-key': apiKey.key },
       });
-      assertEquals(response.status, 502);
-      assertEquals(await response.json(), {
-        error: {
-          code: 502,
-          message: 'Upstream model listing failed',
-          status: 'UNAVAILABLE',
-        },
-      });
+      assertEquals(response.status, 200);
+      const body = JSON.stringify(await response.json());
+      assertEquals(body.includes('gemini-throw-secret.example.com'), false);
     },
   );
 });
@@ -403,14 +387,10 @@ test('/v1beta/models hides malformed upstream response bodies', async () => {
       const response = await requestApp('/v1beta/models', {
         headers: { 'x-api-key': apiKey.key },
       });
-      assertEquals(response.status, 502);
-      assertEquals(await response.json(), {
-        error: {
-          code: 502,
-          message: 'Upstream model listing failed',
-          status: 'UNAVAILABLE',
-        },
-      });
+      assertEquals(response.status, 200);
+      const body = JSON.stringify(await response.json());
+      assertEquals(body.includes('secret malformed body'), false);
+      assertEquals(body.includes('up_malformed_secret_gemini'), false);
     },
   );
 });

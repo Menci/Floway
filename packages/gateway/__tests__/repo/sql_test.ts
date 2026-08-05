@@ -138,13 +138,18 @@ test('SQL upstream repo saveModelsCacheError annotates a cached catalog and save
   assertEquals((await repo.getById('up_test'))?.modelsCache?.lastError, null);
 });
 
-test('SQL upstream repo saveModelsCacheError is a no-op on a row that never cached a catalog', async () => {
+test('SQL upstream repo saveModelsCacheError persists an immediately-stale empty catalog on first failure', async () => {
   const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
   await repo.save(baseRecord());
 
   await repo.saveModelsCacheError('up_test', generationFor(baseRecord()), { message: 'boom', at: 1_700_000_500_000 });
 
-  assertEquals((await repo.getById('up_test'))?.modelsCache, null);
+  assertEquals((await repo.getById('up_test'))?.modelsCache, {
+    revision: MODEL_CATALOG_REVISION,
+    fetchedAt: 0,
+    models: [],
+    lastError: { message: 'boom', at: 1_700_000_500_000 },
+  });
 });
 
 test('SQL upstream repo saveClearingModelsCache updates the row and removes the cached catalog atomically', async () => {
