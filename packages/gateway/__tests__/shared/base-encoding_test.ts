@@ -26,7 +26,9 @@ describe('base encoding', () => {
   });
 
   test('preserves forgiving-base64 decoding of non-zero trailing padding bits', () => {
-    expect(new TextDecoder().decode(decodeWebBase64('YWVzLTEyOC1nY206cB=='))).toBe('aes-128-gcm:p');
+    expect(new TextDecoder().decode(decodeWebBase64('Zh=='))).toBe('f');
+    expect(decodeWebBase64url('-x')).toEqual(new Uint8Array([0xfb]));
+    expect(() => decodeWebBase64('Zg=')).toThrow();
   });
 
   test('round-trips a buffer larger than JavaScript argument-count limits', () => {

@@ -1,5 +1,3 @@
-import { hex } from '@scure/base';
-
 import { parseUserIdMetadata } from './detect-claude-code-metadata.ts';
 import type { CopilotMessagesBoundaryInterceptor } from './types.ts';
 
@@ -26,8 +24,8 @@ const sessionUuid = async (input: string): Promise<string> => {
   // variant 10 in the high two bits of byte 8.
   digest[6] = (digest[6] & 0x0f) | 0x40;
   digest[8] = (digest[8] & 0x3f) | 0x80;
-  const encoded = hex.encode(digest);
-  return `${encoded.slice(0, 8)}-${encoded.slice(8, 12)}-${encoded.slice(12, 16)}-${encoded.slice(16, 20)}-${encoded.slice(20)}`;
+  const hex = Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 };
 
 export const withInteractionIdHeaderSet: CopilotMessagesBoundaryInterceptor = async (ctx, _env, run) => {

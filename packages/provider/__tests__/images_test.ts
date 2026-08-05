@@ -87,7 +87,8 @@ describe('image base64 helpers', () => {
   });
 
   test('preserves forgiving-base64 trailing-bit acceptance', () => {
-    expect(new TextDecoder().decode(base64ToBytes('YWVzLTEyOC1nY206cB=='))).toBe('aes-128-gcm:p');
+    expect(new TextDecoder().decode(base64ToBytes('Zh=='))).toBe('f');
+    expect(() => base64ToBytes('Zg=')).toThrow();
   });
 
   test('round-trips large image buffers', () => {
