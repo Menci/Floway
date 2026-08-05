@@ -36,7 +36,7 @@ export const rgbToHsv = (r: number, g: number, b: number): [number, number, numb
 };
 
 export const hsvToRgb = (h: number, s: number, v: number): RgbTuple =>
-  rgbTuple(convertHsvToRgb({ mode: 'hsv', h, s, v }));
+  rgbTuple(convertHsvToRgb({ h, s, v }));
 
 const linearRgb = (rgb: RgbTuple) => convertRgbToLrgb(rgbColor(rgb));
 

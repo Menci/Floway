@@ -15,7 +15,7 @@ const SURFACE_LIGHT = [0.133, 0.973] as const;
 const SURFACE_DARK = [0.652, 0.361] as const;
 
 const tone = (hue: number, [saturation, value]: readonly [number, number]) =>
-  formatHex(convertHsvToRgb({ mode: 'hsv', h: hue, s: saturation, v: value }));
+  formatHex(convertHsvToRgb({ h: hue, s: saturation, v: value }));
 
 // A style attribute cannot carry a media query, so the root class below picks
 // between the two tones.
