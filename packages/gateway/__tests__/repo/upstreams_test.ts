@@ -901,6 +901,34 @@ test('migration 0072 folds every cached catalog onto its upstream row', async ()
     applySqlJsFile(db, '0072_fold_models_cache.sql');
 
     assertEquals(sqlJsRows<{ name: string }>(db, "SELECT name FROM sqlite_master WHERE name = 'models_cache'"), []);
+    const folded = sqlJsRows<{ id: string; models_cache_json: string | null }>(
+      db,
+      'SELECT id, models_cache_json FROM upstreams ORDER BY id',
+    );
+    assertEquals(folded.map(row => ({
+      id: row.id,
+      cache: row.models_cache_json === null ? null : JSON.parse(row.models_cache_json),
+    })), [
+      {
+        id: 'up_clean',
+        cache: {
+          revision: 4,
+          fetchedAt: 1785643896263,
+          models: [{ id: 'cached-model', limits: {}, kind: 'chat', endpoints: { responses: {} }, enabledFlags: ['vendor-deepseek'] }],
+          lastError: null,
+        },
+      },
+      { id: 'up_cold', cache: null },
+      {
+        id: 'up_failed',
+        cache: {
+          revision: 4,
+          fetchedAt: 1785643797798,
+          models: [{ id: 'stale-model', limits: {}, kind: 'chat', endpoints: { responses: {} }, enabledFlags: [] }],
+          lastError: { message: 'boom', at: 1785643800000 },
+        },
+      },
+    ]);
 
     // The folded cache is read back through the production repository, which
     // selects the columns the current schema has, so the rest of the corpus
