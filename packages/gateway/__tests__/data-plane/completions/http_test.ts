@@ -4,13 +4,17 @@ import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestApp, setupAppTest } from '../../test-utils/app.ts';
+import type { ModelPricing } from '@floway-dev/protocols/common';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 // A custom upstream is the easiest fixture to assert /completions against:
 // the operator declares the endpoint capability per-model, and the path
 // resolves to /v1/completions through the default pathOverrides table.
-const registerCompletionsUpstream = async (repo: Awaited<ReturnType<typeof setupAppTest>>['repo']): Promise<void> => {
+const registerCompletionsUpstream = async (
+  repo: Awaited<ReturnType<typeof setupAppTest>>['repo'],
+  pricing?: ModelPricing,
+): Promise<void> => {
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
   await repo.upstreams.save(buildCustomUpstreamRecord({
@@ -27,6 +31,7 @@ const registerCompletionsUpstream = async (repo: Awaited<ReturnType<typeof setup
       models: [{
         upstreamModelId: 'davinci-002',
         endpoints: { completions: {} },
+        ...(pricing === undefined ? {} : { pricing }),
       }],
     },
   }));
@@ -91,6 +96,41 @@ test('/v1/completions non-streaming forwards body to upstream /v1/completions an
   const usageRows = await repo.usage.listAll();
   assertEquals(usageRows.length, 1);
   assertEquals(tokenCountsFromUsage(usageRows[0]!), { input: 5, output: 1 });
+});
+
+test('/v1/completions non-streaming applies the observed response service tier to pricing', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerCompletionsUpstream(repo, {
+    entries: [
+      { rates: { input_tokens: '0.1', output_tokens: '0.2' } },
+      { selector: { serviceTier: 'priority' }, rates: { input_tokens: '0.3', output_tokens: '0.4' } },
+    ],
+  });
+
+  await withMockedFetch(
+    () => jsonResponse({
+      id: 'cmpl_priority',
+      choices: [{ index: 0, text: 'done', finish_reason: 'stop' }],
+      service_tier: 'priority',
+      usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 },
+    }),
+    async () => {
+      const response = await requestApp('/v1/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({ model: 'davinci-002', prompt: 'hello' }),
+      });
+      assertEquals(response.status, 200);
+      await response.json();
+    },
+  );
+
+  await flushAsyncWork();
+  const [usage] = await repo.usage.listAll();
+  assertEquals(usage.metrics, [
+    { metric: 'input_tokens', quantity: '5', unitPrice: '0.3' },
+    { metric: 'output_tokens', quantity: '2', unitPrice: '0.4' },
+  ]);
 });
 
 test('/v1/completions streaming forces stream_options.include_usage upstream', async () => {
@@ -234,7 +274,9 @@ test('/v1/completions preserves streaming status and cancels upstream after the 
 
 test('/v1/completions records malformed terminal usage as a failed request-only settlement', async () => {
   const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   await registerCompletionsUpstream(repo);
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
   const stream = [
     'data: {"id":"cmpl_X","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2,"prompt_tokens_details":{"cached_tokens":2}}}\n\n',
     'data: [DONE]\n\n',
@@ -260,6 +302,8 @@ test('/v1/completions records malformed terminal usage as a failed request-only 
   const performance = await repo.performance.listAll();
   assertEquals(performance.length, 1);
   assertEquals(performance[0]?.errorsNoOutput, 1);
+  assertEquals(dumps.stored.length, 1);
+  assertEquals(dumps.stored[0]?.record.meta.error?.kind, 'failed');
 });
 
 test('/v1/completions treats EOF without DONE as failed request-only settlement', async () => {
@@ -279,6 +323,9 @@ test('/v1/completions treats EOF without DONE as failed request-only settlement'
   );
 
   await flushAsyncWork();
+  const usage = await repo.usage.listAll();
+  assertEquals(usage.length, 1);
+  assertEquals(tokenCountsFromUsage(usage[0]!), {});
   const performance = await repo.performance.listAll();
   assertEquals(performance.length, 1);
   assertEquals(performance[0]?.errorsNoOutput, 1);
@@ -301,6 +348,13 @@ test('/v1/completions returns 502 for a bodyless streaming success', async () =>
       assertEquals((await response.json()).error.message, 'Upstream returned a streaming response with no body.');
     },
   );
+  await flushAsyncWork();
+  const usage = await repo.usage.listAll();
+  assertEquals(usage.length, 1);
+  assertEquals(tokenCountsFromUsage(usage[0]!), {});
+  const performance = await repo.performance.listAll();
+  assertEquals(performance.length, 1);
+  assertEquals(performance[0]?.errorsNoOutput, 1);
 });
 
 test('/v1/completions rejects malformed body with the standard 400', async () => {
