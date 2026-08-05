@@ -67,6 +67,14 @@ interface InFlightTokenRefresh {
 const inFlightTokenRefreshes = new Map<string, InFlightTokenRefresh>();
 let tokenCacheGeneration = 0;
 
+const reusableTokenRefresh = (upstreamId: string): InFlightTokenRefresh | undefined => {
+  const refresh = inFlightTokenRefreshes.get(upstreamId);
+  if (!refresh) return undefined;
+  if (!refresh.settled && !refresh.controller.signal.aborted) return refresh;
+  inFlightTokenRefreshes.delete(upstreamId);
+  return undefined;
+};
+
 export class CopilotTokenFetchError extends Error {
   constructor(readonly status: number, readonly body: string, readonly headers: Headers) {
     super(`Copilot token fetch failed: ${status} ${body}`);
@@ -173,7 +181,7 @@ const refreshCopilotToken = (
   githubToken: string,
   fetcher: Fetcher,
 ): InFlightTokenRefresh => {
-  const existing = inFlightTokenRefreshes.get(upstreamId);
+  const existing = reusableTokenRefresh(upstreamId);
   if (existing) return existing;
 
   const controller = new AbortController();
@@ -222,7 +230,7 @@ async function getCopilotToken(upstreamId: string, githubHost: string, githubTok
     return cached.entry;
   }
 
-  const activeRefresh = inFlightTokenRefreshes.get(upstreamId);
+  const activeRefresh = reusableTokenRefresh(upstreamId);
   if (activeRefresh) return await awaitRefresh(activeRefresh, signal);
 
   const fresh = await getRepo().upstreams.getById(upstreamId);

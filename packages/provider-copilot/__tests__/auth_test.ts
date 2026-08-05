@@ -337,6 +337,41 @@ test('one cancelled waiter does not abort a token refresh another request still 
   expect(dataPlaneAttempts).toBe(1);
 });
 
+test('a request arriving after the sole waiter cancels starts a fresh token exchange', async () => {
+  await installRepoAndClearCache();
+  let notifyExchangeStarted: (() => void) | undefined;
+  const exchangeStarted = new Promise<void>(resolve => { notifyExchangeStarted = resolve; });
+  let tokenAttempts = 0;
+  const fetcher: Fetcher = async (url, init) => {
+    if (new URL(url).pathname !== '/copilot_internal/v2/token') return jsonResponse({});
+    tokenAttempts += 1;
+    if (tokenAttempts > 1) return tokenResponse();
+    notifyExchangeStarted?.();
+    const signal = init.signal;
+    if (!signal) throw new Error('shared token exchange omitted its abort signal');
+    return await new Promise<Response>((_resolve, reject) => {
+      if (signal.aborted) reject(signal.reason);
+      else signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    });
+  };
+  const firstController = new AbortController();
+  const call = (signal?: AbortSignal) => copilotAuthedFetch(
+    '/v1/messages',
+    { method: 'POST', body: '{}', signal },
+    { id: UPSTREAM_ID, githubHost: 'github.com', githubToken: 'ghu_test' },
+    { fetcher, wrapUpstreamCall: identityWrapUpstreamCall },
+  );
+
+  const first = call(firstController.signal);
+  await exchangeStarted;
+  const reason = new DOMException('only caller left', 'AbortError');
+  firstController.abort(reason);
+  await expect(first).rejects.toBe(reason);
+
+  await expect(call()).resolves.toMatchObject({ status: 200 });
+  expect(tokenAttempts).toBe(2);
+});
+
 test('copilotAuthedFetch pins the complete authenticated request identity and correlates its request ids', async () => {
   await mockTokenAndCapture(undefined, headers => {
     expect(headers.get('authorization')).toBe('Bearer tok-test');
