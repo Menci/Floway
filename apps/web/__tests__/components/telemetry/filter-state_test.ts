@@ -37,6 +37,13 @@ describe('telemetry filter state', () => {
     });
   });
 
+  it('normalizes active filters when state is restored directly from an address', () => {
+    expect(scopeTelemetryIdentity('userId', filters, context)).toEqual({
+      groupBy: 'userId',
+      filters: { model: ['gpt-5'], upstream: ['up-1'], userId: [], keyId: [] },
+    });
+  });
+
   it('leaves API key grouping and clears key filters when another user is selected', () => {
     expect(changeTelemetryFilter({
       groupBy: 'keyId',
