@@ -48,6 +48,7 @@ initResponsesWebSocketUpgradeResolver((c, events) =>
 
 const { db } = bootstrapNodePlatform();
 const port = Number(getEnvOptional('PORT', '8788'));
+const scheduledRuntimeLocation = getEnvOptional('RUNTIME_LOCATION', 'LOCAL').toUpperCase();
 
 // Passwordless admin login is a dev-only shortcut (empty ADMIN_KEY on a
 // local instance grants seed-admin access). Refuse to boot the Node
@@ -72,7 +73,7 @@ initRepo(new SqlRepo(db));
 // unref() on both timers lets the process exit cleanly on SIGINT.
 const STARTUP_DELAY_MS = 30 * 1000;
 const sweep = (): void => {
-  runScheduledMaintenance().catch(err => {
+  runScheduledMaintenance(scheduledRuntimeLocation).catch(err => {
     console.error('[scheduled-maintenance] sweep failed:', err);
   });
 };
