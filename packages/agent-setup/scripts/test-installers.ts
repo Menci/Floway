@@ -22,6 +22,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSyn
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { stripVTControlCharacters } from 'node:util';
 
 import type { AgentSetupConfiguration } from '../src/configuration.ts';
 import { renderPowerShellPrefix, renderShellPrefix } from '../src/render.ts';
@@ -2325,16 +2326,28 @@ test('codex', 'end-to-end against the real pinned Codex 0.144.5 app-server write
 
 // --- output contract --------------------------------------------------------
 
-// Escape sequences are stripped and CRLF normalized; each line is right-trimmed
+// VT control sequences are stripped and CRLF normalized; each line is right-trimmed
 // and trailing blank lines dropped. Interior blank lines remain part of the
 // heading/status output contract.
-const ANSI_PATTERN = /\[[0-9;]*m/g;
-const stripAnsi = (text: string): string => text.replace(ANSI_PATTERN, '');
 const normalizeLines = (text: string): string =>
-  stripAnsi(text).replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '').replace(/\n+$/, '');
+  stripVTControlCharacters(text).replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '').replace(/\n+$/, '');
 const normalizeWorkspace = (text: string, workspace: Workspace): string =>
   normalizeLines(text).replaceAll(workspace.root, '<workspace>');
-const hasAnsi = (text: string): boolean => new RegExp('\\x1b\\[[0-9;]*m').test(text);
+const hasVTControlCharacters = (text: string): boolean => stripVTControlCharacters(text) !== text;
+
+test('claude', 'output normalization strips VT controls and preserves control-like text', t => {
+  const decorated = [
+    '\u001B[31mred\u001B[0m',
+    '\u001B[2A\u001B[3Ccursor',
+    '\u001B]8;;https://floway.dev\u0007link\u001B]8;;\u0007',
+  ].join(' ');
+  t.equal(normalizeLines(decorated), 'red cursor link', 'SGR, cursor CSI, and OSC hyperlink sequences are stripped');
+  t.ok(hasVTControlCharacters(decorated), 'VT detection agrees with native stripping');
+
+  const plain = 'literal [31m, [2A, and ]8;;https://floway.dev text';
+  t.equal(normalizeLines(plain), plain, 'control-like ordinary text is unchanged');
+  t.ok(!hasVTControlCharacters(plain), 'control-like ordinary text is not reported as VT control data');
+});
 
 // A hermetic single-agent run needs the harness to fully control discovery. The
 // Codex CLI is discovered at absolute paths the sandbox cannot hide, so a host
@@ -2379,7 +2392,7 @@ test('claude', 'a fully successful run keeps stderr empty and emits no escape co
   const bash = await runShellInstaller({ workspace: bashWs, baseUrl: modelServer.url, configuration: claudeConfig() });
   t.equal(bash.code, 0, `should succeed:\n${bash.combined}`);
   t.equal(bash.stderr.trim(), '', 'a clean Bash run writes nothing to stderr');
-  t.ok(!hasAnsi(bash.combined), 'captured Bash output carries no escape sequences');
+  t.ok(!hasVTControlCharacters(bash.combined), 'captured Bash output carries no VT control sequences');
 
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   modelServer.reset();
@@ -2388,7 +2401,7 @@ test('claude', 'a fully successful run keeps stderr empty and emits no escape co
   const ps = await runPowerShellInstaller({ workspace: psWs, baseUrl: modelServer.url, configuration: claudeConfig() });
   t.equal(ps.code, 0, `should succeed:\n${ps.combined}`);
   t.equal(ps.stderr.trim(), '', 'a clean PowerShell run writes nothing to stderr');
-  t.ok(!hasAnsi(ps.combined), 'captured PowerShell output carries no escape sequences');
+  t.ok(!hasVTControlCharacters(ps.combined), 'captured PowerShell output carries no VT control sequences');
 });
 
 test('claude', 'Bash styles agent notices while leaving metadata plain', async t => {
@@ -2405,13 +2418,13 @@ test('claude', 'Bash styles agent notices while leaving metadata plain', async t
   t.includes(forced.stdout, '[34m==>[0m [1mConfiguring: Claude Code[0m', 'the configuration section uses the notice style');
   t.includes(forced.stdout, '[34m==>[0m [1mCompleted Agent Setup: Claude Code[0m', 'the successful result uses the notice style');
   t.excludes(forced.stdout, '[92m', 'success does not use green ANSI styling');
-  t.ok(!hasAnsi(forced.stderr), 'a successful run leaves stderr escape-free even under forced color');
+  t.ok(!hasVTControlCharacters(forced.stderr), 'a successful run leaves stderr free of VT controls even under forced color');
 
   const suppressed = makeWorkspace();
   placeFakeClaude(suppressed.binDir);
   const noColor = await runShellInstaller({ workspace: suppressed, baseUrl: modelServer.url, configuration: claudeConfig(), forceColor: true, noColor: true });
   t.equal(noColor.code, 0, `NO_COLOR run should succeed:\n${noColor.combined}`);
-  t.ok(!hasAnsi(noColor.combined), 'NO_COLOR wins over forced color on both streams');
+  t.ok(!hasVTControlCharacters(noColor.combined), 'NO_COLOR wins over forced color on both streams');
   t.includes(noColor.stdout, 'Claude Code', 'the plain heading is still present without color');
 });
 
@@ -2443,7 +2456,7 @@ test('claude', 'PowerShell colors stderr under forced color, keeps stdout escape
     forceColor: true,
   });
   t.ok(forced.code !== 0, 'invalid settings must fail the agent');
-  t.ok(!hasAnsi(forced.stdout), 'host-colored stdout never carries escape codes even under forced color');
+  t.ok(!hasVTControlCharacters(forced.stdout), 'host-colored stdout never carries VT controls even under forced color');
   t.includes(forced.stderr, '[91mError:[0m ', 'stderr colors the primary error label');
 
   const suppressed = makeWorkspace();
@@ -2455,7 +2468,7 @@ test('claude', 'PowerShell colors stderr under forced color, keeps stdout escape
     forceColor: true, noColor: true,
   });
   t.ok(noColor.code !== 0, 'the failure still occurs');
-  t.ok(!hasAnsi(noColor.combined), 'NO_COLOR wins over forced color on stderr too');
+  t.ok(!hasVTControlCharacters(noColor.combined), 'NO_COLOR wins over forced color on stderr too');
   t.includes(noColor.stderr, 'Error: ', 'the plain error is still on stderr');
 });
 

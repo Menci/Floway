@@ -1,7 +1,8 @@
 import { expect, test } from 'vitest';
 
-import { prepareGeminiAffinity } from '../../../../../src/data-plane/chat/gemini/affinity/ingress.ts';
+import { analyzeGeminiAffinity } from '../../../../../src/data-plane/chat/gemini/affinity/ingress.ts';
 import { AffinityCodec, type AffinityTarget } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import type { ModelCandidate } from '@floway-dev/provider';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
@@ -26,7 +27,7 @@ const candidateB = candidate('upstream-b');
 
 test('removes originless affinity by protocol shape and preserves visible content and foreign signatures', async () => {
   const synthetic = await codec.wrap(undefined, targetFor(candidateA), 'gemini.part.thoughtSignature');
-  const prepared = await prepareGeminiAffinity({
+  const prepared = await analyzeGeminiAffinity({
     contents: [{
       role: 'model',
       parts: [
@@ -38,7 +39,7 @@ test('removes originless affinity by protocol shape and preserves visible conten
     }],
   }, codec);
 
-  expect(prepared.payloadForCandidate(candidateA).contents?.[0].parts).toEqual([
+  expect(acceptedAffinityEvaluation(prepared, candidateA).materialize().contents?.[0].parts).toEqual([
     { text: 'answer' },
     { text: 'synthetic on content' },
     { text: 'foreign', thoughtSignature: 'not-floway' },
@@ -50,17 +51,17 @@ test.each([
   { thought: true },
 ])('removes metadata-only remnants after stripping an incompatible owned signature', async metadata => {
   const owned = await codec.wrap('natural', targetFor(candidateA), 'gemini.part.thoughtSignature');
-  const prepared = await prepareGeminiAffinity({
+  const prepared = await analyzeGeminiAffinity({
     contents: [{ role: 'model', parts: [{ ...metadata, thoughtSignature: owned }] }],
   }, codec);
 
-  expect(prepared.payloadForCandidate(candidateB).contents).toEqual([]);
+  expect(acceptedAffinityEvaluation(prepared, candidateB).materialize().contents).toEqual([]);
 });
 
 test('preserves unrelated empty model contents', async () => {
-  const prepared = await prepareGeminiAffinity({
+  const prepared = await analyzeGeminiAffinity({
     contents: [{ role: 'model', parts: [] }],
   }, codec);
 
-  expect(prepared.payloadForCandidate(candidateA).contents).toEqual([{ role: 'model', parts: [] }]);
+  expect(acceptedAffinityEvaluation(prepared, candidateA).materialize().contents).toEqual([{ role: 'model', parts: [] }]);
 });

@@ -25,11 +25,12 @@ import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 // the CLI switches that pick to the 1M-context window — only reaches the
 // picker when the discovered id itself carries the suffix; the CLI does
 // not synthesize the variant on discovered ids in gateway mode. So we
-// rewrite the id of every 1M-capable model on the wire. Provider-side
-// routing is unaffected: the CLI strips `[1m]` before every inference
-// request and pairs it with `anthropic-beta: context-1m-2025-08-07`,
-// which providers already honor (Copilot's `context1m` variant selector;
-// Claude Code passes it through to the upstream).
+// rewrite the id of every 1M-capable model on the wire. On inference, the CLI
+// strips `[1m]` from the model id and pairs the request with
+// `anthropic-beta: context-1m-2025-08-07`. Native Messages dispatch carries
+// that protocol signal independently of ordinary provider header allowlists;
+// the suffix remains a discovery-protocol representation of the advertised
+// context limit, not a cross-provider header-forwarding policy.
 //
 // (2) Mirroring the official shape (instead of the OpenAI-Anthropic
 // superset the handler serves everyone else) also lets any future
