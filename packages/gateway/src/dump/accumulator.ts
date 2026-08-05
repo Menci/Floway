@@ -58,7 +58,29 @@ const DEFAULT_CAPTURE_LIMITS: DumpCaptureLimits = {
   streamEventBytes: 8 * 1024 * 1024,
   streamEvents: 10_000,
 };
-const UTF8_ENCODER = new TextEncoder();
+
+const utf8ByteLength = (value: string): number => {
+  let bytes = 0;
+  for (let index = 0; index < value.length; index++) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit <= 0x7F) {
+      bytes += 1;
+    } else if (codeUnit <= 0x7FF) {
+      bytes += 2;
+    } else if (codeUnit >= 0xD800 && codeUnit <= 0xDBFF) {
+      const next = value.charCodeAt(index + 1);
+      if (next >= 0xDC00 && next <= 0xDFFF) {
+        bytes += 4;
+        index += 1;
+      } else {
+        bytes += 3;
+      }
+    } else {
+      bytes += 3;
+    }
+  }
+  return bytes;
+};
 
 const assertCaptureLimit = (name: keyof DumpCaptureLimits, value: number): void => {
   if (!Number.isSafeInteger(value) || value < 0) {
@@ -221,7 +243,7 @@ export class DumpAccumulator {
   }
 
   failed(reason: unknown): void {
-    this.errorMeta = { kind: 'failed', reason: typeof reason === 'string' ? reason : oneLineError(reason) };
+    this.errorMeta = { kind: 'failed', reason: oneLineError(reason) };
   }
 
   // Records one protocol frame. Stored as the canonical ProtocolFrame so
@@ -239,7 +261,7 @@ export class DumpAccumulator {
       const serialized = JSON.stringify(event);
       if (serialized === undefined) throw new TypeError('event is not JSON-serializable');
       const delimiterBytes = this.events.length === 0 ? 0 : 1;
-      const eventBytes = UTF8_ENCODER.encode(serialized).byteLength;
+      const eventBytes = utf8ByteLength(serialized);
       if (
         this.events.length >= this.captureLimits.streamEvents
         || this.capturedEventBytes + delimiterBytes + eventBytes > this.captureLimits.streamEventBytes
