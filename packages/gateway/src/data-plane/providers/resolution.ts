@@ -29,10 +29,13 @@ const enumerateOneUpstreamCandidates = async (
   provider: GatewayProvider,
   modelId: string,
   kind: ModelKind,
-  catalogFetcher: Fetcher,
-  candidateFetcher: Fetcher,
-  scheduler: BackgroundScheduler,
+  context: {
+    catalogFetcher: Fetcher;
+    candidateFetcher: Fetcher;
+    scheduler: BackgroundScheduler;
+  },
 ): Promise<{ candidates: ModelCandidate[]; sawAnyId: boolean; modelsError: boolean }> => {
+  const { catalogFetcher, candidateFetcher, scheduler } = context;
   const cfg = provider.modelPrefix;
   const lookupIds: string[] = [];
   if (cfg === null) {
@@ -75,24 +78,30 @@ export const enumerateRealModelCandidates = async (
   modelId: string,
   kind: ModelKind,
   providers: readonly GatewayProvider[],
-  fetcherForUpstream: (upstreamId: string) => Fetcher,
-  scheduler: BackgroundScheduler,
-  clientDisconnectSignal?: AbortSignal,
-  candidateFetcherForUpstream: (upstreamId: string) => Fetcher = fetcherForUpstream,
+  context: {
+    catalogFetcherForUpstream: (upstreamId: string) => Fetcher;
+    candidateFetcherForUpstream?: (upstreamId: string) => Fetcher;
+    scheduler: BackgroundScheduler;
+    clientDisconnectSignal?: AbortSignal;
+  },
 ): Promise<{
   readonly candidates: readonly ModelCandidate[];
   readonly sawAnyId: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
+  const { catalogFetcherForUpstream, scheduler, clientDisconnectSignal } = context;
+  const candidateFetcherForUpstream = context.candidateFetcherForUpstream ?? catalogFetcherForUpstream;
   const settled = await Promise.allSettled(providers.map(provider => {
     clientDisconnectSignal?.throwIfAborted();
     return enumerateOneUpstreamCandidates(
       provider,
       modelId,
       kind,
-      fetcherForUpstream(provider.upstreamId),
-      candidateFetcherForUpstream(provider.upstreamId),
-      scheduler,
+      {
+        catalogFetcher: catalogFetcherForUpstream(provider.upstreamId),
+        candidateFetcher: candidateFetcherForUpstream(provider.upstreamId),
+        scheduler,
+      },
     );
   }));
 
@@ -130,21 +139,18 @@ const resolveRealCandidates = async (
   modelId: string,
   kind: ModelKind,
   providers: readonly GatewayProvider[],
-  fetcherForUpstream: (upstreamId: string) => Fetcher,
-  scheduler: BackgroundScheduler,
-  clientDisconnectSignal?: AbortSignal,
-  candidateFetcherForUpstream: (upstreamId: string) => Fetcher = fetcherForUpstream,
+  context: Parameters<typeof enumerateRealModelCandidates>[3],
 ): Promise<{
   readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
-  const first = await enumerateRealModelCandidates(modelId, kind, providers, fetcherForUpstream, scheduler, clientDisconnectSignal, candidateFetcherForUpstream);
+  const first = await enumerateRealModelCandidates(modelId, kind, providers, context);
   if (first.candidates.length > 0 || first.sawAnyId || !DATED_SUFFIX.test(modelId)) {
     return { candidates: first.candidates, sawModel: first.sawAnyId, failedUpstreams: first.failedUpstreams };
   }
   const stripped = modelId.replace(DATED_SUFFIX, '');
-  const second = await enumerateRealModelCandidates(stripped, kind, providers, fetcherForUpstream, scheduler, clientDisconnectSignal, candidateFetcherForUpstream);
+  const second = await enumerateRealModelCandidates(stripped, kind, providers, context);
   return {
     candidates: second.candidates,
     sawModel: second.sawAnyId,
@@ -229,10 +235,16 @@ export const enumerateModelCandidates = async ({
       : retainUpstreamFetcher(fetcher, clientDisconnectSignal, scheduler);
   };
   const providers = await listModelProviders(upstreamIds);
+  const resolutionContext = {
+    catalogFetcherForUpstream: createFetcherForUpstream,
+    candidateFetcherForUpstream,
+    scheduler,
+    clientDisconnectSignal,
+  };
 
   const alias = await getRepo().modelAliases.getByName(model);
   if (alias === null) {
-    return await resolveRealCandidates(model, kind, providers, createFetcherForUpstream, scheduler, clientDisconnectSignal, candidateFetcherForUpstream);
+    return await resolveRealCandidates(model, kind, providers, resolutionContext);
   }
 
   // Walk every target, tag each returned candidate with the target's rule
@@ -244,7 +256,7 @@ export const enumerateModelCandidates = async ({
   let sawAny = false;
   const flat: ModelCandidate[] = [];
   for (const target of orderAliasTargets(alias)) {
-    const result = await resolveRealCandidates(target.target_model_id, kind, providers, createFetcherForUpstream, scheduler, clientDisconnectSignal, candidateFetcherForUpstream);
+    const result = await resolveRealCandidates(target.target_model_id, kind, providers, resolutionContext);
     for (const name of result.failedUpstreams) aggregatedFailed.add(name);
     if (result.sawModel) sawAny = true;
     for (const candidate of result.candidates) {
