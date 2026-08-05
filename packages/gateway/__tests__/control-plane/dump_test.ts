@@ -153,7 +153,7 @@ test('GET /api/dump/keys/:keyId/stream emits event: error when broker throws mid
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
   initDumpBroker({
     ...stubs.broker,
-    subscribe(_keyId, _signal) {
+    async subscribe(_keyId, _signal) {
       return (async function*() {
         throw new Error('broker exploded');
       })();
@@ -169,26 +169,32 @@ test('GET /api/dump/keys/:keyId/stream emits event: error when broker throws mid
   assertExists(frames.find(frame => frame.includes('event: error') && frame.includes('broker exploded')));
 });
 
-test('GET /api/dump/keys/:keyId/stream delivers a frame appended between snapshot SELECT and subscribe arm', async () => {
-  // A record published during the snapshot read must surface as an `appended`
-  // frame after the snapshot frame — proving the subscribe was already armed
-  // when the publish landed (so the buffered-subscribe path delivered it
-  // rather than the snapshot picking it up post-hoc).
+test('GET /api/dump/keys/:keyId/stream awaits subscription readiness before reading its snapshot', async () => {
+  // The live transport must be ready before the snapshot begins. A record
+  // published while that snapshot is blocked must then surface as an appended
+  // frame, closing both sides of the snapshot-to-live handoff race.
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  // Hold the snapshot read on a gate so the publish lands in the window
-  // between subscribe-arm and snapshot-return; release the gate only after
-  // the publish completes. Also wrap subscribe so the test can wait for the
-  // handler to arm before publishing — without that, a publish run before
-  // subscribe is registered goes nowhere.
+  // Hold both asynchronous phases on separate gates. This establishes that
+  // list() cannot begin while subscribe() is still opening its transport, then
+  // holds list() so the publish lands after readiness and before snapshot return.
   let releaseSnapshot: (() => void) | null = null;
   const snapshotGate = new Promise<void>(resolve => { releaseSnapshot = resolve; });
+  let snapshotStarted = false;
+  let onSnapshotStarted: (() => void) | null = null;
+  const snapshotStartedSignal = new Promise<void>(resolve => { onSnapshotStarted = resolve; });
+  let releaseSubscription: (() => void) | null = null;
+  const subscriptionGate = new Promise<void>(resolve => { releaseSubscription = resolve; });
+  let onSubscribeStarted: (() => void) | null = null;
+  const subscribeStarted = new Promise<void>(resolve => { onSubscribeStarted = resolve; });
   let onSubscribed: (() => void) | null = null;
   const subscribedSignal = new Promise<void>(resolve => { onSubscribed = resolve; });
   const slowStore: DumpStore = {
     ...stubs.store,
     list: async (keyId, opts) => {
+      snapshotStarted = true;
+      onSnapshotStarted!();
       await snapshotGate;
       return await stubs.store.list(keyId, opts);
     },
@@ -196,8 +202,10 @@ test('GET /api/dump/keys/:keyId/stream delivers a frame appended between snapsho
   initDumpStore(slowStore);
   initDumpBroker({
     ...stubs.broker,
-    subscribe: (keyId, signal) => {
-      const iter = stubs.broker.subscribe(keyId, signal);
+    subscribe: async (keyId, signal) => {
+      onSubscribeStarted!();
+      await subscriptionGate;
+      const iter = await stubs.broker.subscribe(keyId, signal);
       onSubscribed!();
       return iter;
     },
@@ -207,7 +215,12 @@ test('GET /api/dump/keys/:keyId/stream delivers a frame appended between snapsho
   const responsePromise = requestApp(`/api/dump/keys/${apiKey.id}/stream`, {
     headers: { 'x-api-key': apiKey.key },
   });
+  await subscribeStarted;
+  assertEquals(snapshotStarted, false);
+  releaseSubscription!();
   await subscribedSignal;
+  await snapshotStartedSignal;
+  assertEquals(snapshotStarted, true);
   await stubs.broker.publish(apiKey.id, fakeMeta('01HZZ0000000000000000000A2', 2000));
   releaseSnapshot!();
 

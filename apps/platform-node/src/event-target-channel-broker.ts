@@ -1,4 +1,5 @@
 import {
+  abortChannelSubscription,
   channelSubscriptionQueueIsEmpty,
   channelSubscriptionQueuingStrategy,
   enqueueChannelValue,
@@ -49,7 +50,7 @@ export class EventTargetChannelBroker<T> implements ChannelBroker<T> {
     this.targets.delete(channelId);
   }
 
-  subscribe(channelId: string, signal: AbortSignal): AsyncIterable<T> {
+  async subscribe(channelId: string, signal: AbortSignal): Promise<AsyncIterable<T>> {
     if (signal.aborted) return iterateReadableStream(closedStream<T>());
     const target = this.acquireTarget(channelId);
     return iterateReadableStream(streamFromTarget<T>(
@@ -121,7 +122,12 @@ const streamFromTarget = <T>(
         }
       };
       const onClose = (): void => close();
-      const onAbort = (): void => close();
+      const onAbort = (): void => {
+        if (terminated) return;
+        terminated = true;
+        detach();
+        abortChannelSubscription(controller);
+      };
 
       cancel = (): void => {
         if (terminated) return;

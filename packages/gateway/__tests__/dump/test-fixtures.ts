@@ -99,7 +99,7 @@ export const installDumpStubs = (
       closedChannels.push({ keyId, reason });
       for (const fn of subscribers.get(keyId) ?? []) fn(null);
     },
-    subscribe(keyId, signal) {
+    async subscribe(keyId, signal) {
       // Eager listener registration mirrors production: a publish between
       // subscribe() and the iterator's first read still lands in the queue.
       const queue: DumpMetadata[] = [];

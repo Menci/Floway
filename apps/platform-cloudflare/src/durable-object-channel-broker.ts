@@ -1,4 +1,5 @@
 import {
+  abortChannelSubscription,
   channelSubscriptionQueueIsEmpty,
   channelSubscriptionQueuingStrategy,
   enqueueChannelValue,
@@ -38,26 +39,44 @@ export class DurableObjectChannelBroker<T> implements ChannelBroker<T> {
     await this.stub(channelId).closeAll(reason);
   }
 
-  subscribe(channelId: string, signal: AbortSignal): AsyncIterable<T> {
-    return iterateReadableStream(iterateFromBroadcastSocket<T>(this.stub(channelId), signal, this.codec));
+  async subscribe(channelId: string, signal: AbortSignal): Promise<AsyncIterable<T>> {
+    const opening = iterateFromBroadcastSocket<T>(this.stub(channelId), signal, this.codec);
+    try {
+      await opening.opened;
+    } catch (error) {
+      if (signal.aborted) return iterateReadableStream(closedStream<T>());
+      throw error;
+    }
+    return iterateReadableStream(opening.stream);
   }
 }
 
-// Listener registration and socket open run eagerly so a broadcast that races
-// against the iterator drain still buffers into the queue and lands on the
-// next read.
+const closedStream = <T>(): ReadableStream<T> => new ReadableStream({
+  start: controller => controller.close(),
+});
+
+interface OpeningBroadcastStream<T> {
+  readonly stream: ReadableStream<T>;
+  readonly opened: Promise<void>;
+}
+
+// subscribe() awaits `opened`, so callers can finish the transport handshake
+// before taking a snapshot whose live handoff depends on this listener already
+// being registered.
 const iterateFromBroadcastSocket = <T>(
   stub: BroadcastStub,
   signal: AbortSignal,
   codec: ChannelCodec<T>,
-): ReadableStream<T> => {
+): OpeningBroadcastStream<T> => {
   let cancel = async (): Promise<void> => {};
   let pull = (): void => {};
+  let opened!: Promise<void>;
 
-  return new ReadableStream<T>({
+  const stream = new ReadableStream<T>({
     start(controller) {
       if (signal.aborted) {
         controller.close();
+        opened = Promise.resolve();
         return;
       }
 
@@ -112,9 +131,22 @@ const iterateFromBroadcastSocket = <T>(
           fail(error);
         }
       };
-      const onClose = (): void => close(false);
+      const onClose = (event: CloseEvent): void => {
+        try {
+          socket?.close(event.code, event.reason);
+          close(false);
+        } catch (error) {
+          fail(error, false);
+        }
+      };
       const onError = (): void => fail(new Error('BroadcastDO socket error'));
-      const onAbort = (): void => close();
+      const onAbort = (): void => {
+        if (terminated) return;
+        terminated = true;
+        detach();
+        abortChannelSubscription(controller);
+        void closeSocket();
+      };
 
       cancel = async (): Promise<void> => {
         if (terminated) return;
@@ -127,6 +159,7 @@ const iterateFromBroadcastSocket = <T>(
       const openPromise = (async (): Promise<void> => {
         const response = await stub.fetch(new Request('https://broadcast.do/subscribe', {
           headers: { Upgrade: 'websocket' },
+          signal,
         }));
         if (response.status !== 101) {
           throw new Error(`BroadcastDO subscribe returned HTTP ${response.status} instead of 101`);
@@ -142,10 +175,14 @@ const iterateFromBroadcastSocket = <T>(
         }
         socket.accept();
       })();
+      opened = openPromise.catch(error => {
+        fail(error);
+        throw error;
+      });
       signal.addEventListener('abort', onAbort, { once: true });
-      void openPromise.catch(error => fail(error, false));
     },
     cancel: () => cancel(),
     pull: () => pull(),
   }, channelSubscriptionQueuingStrategy<T>());
+  return { stream, opened };
 };

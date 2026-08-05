@@ -31,8 +31,8 @@ test('EventTargetChannelBroker retains state only while a channel has subscriber
   await broker.publish('without-subscribers', 'discarded');
   assertEquals(activeChannelCount(broker), 0);
 
-  const first = broker.subscribe('k', new AbortController().signal)[Symbol.asyncIterator]();
-  const second = broker.subscribe('k', new AbortController().signal)[Symbol.asyncIterator]();
+  const first = (await broker.subscribe('k', new AbortController().signal))[Symbol.asyncIterator]();
+  const second = (await broker.subscribe('k', new AbortController().signal))[Symbol.asyncIterator]();
   assertEquals(activeChannelCount(broker), 1);
 
   await first.return?.();
@@ -43,7 +43,7 @@ test('EventTargetChannelBroker retains state only while a channel has subscriber
 
 test('EventTargetChannelBroker terminates a slow subscriber at the bounded queue capacity', async () => {
   const broker = new EventTargetChannelBroker<string>(stringCodec);
-  const iter = broker.subscribe('k', new AbortController().signal)[Symbol.asyncIterator]();
+  const iter = (await broker.subscribe('k', new AbortController().signal))[Symbol.asyncIterator]();
 
   for (let i = 0; i <= CHANNEL_SUBSCRIPTION_BUFFER_CAPACITY; i += 1) {
     await broker.publish('k', `frame-${i}`);
@@ -60,18 +60,15 @@ test('EventTargetChannelBroker terminates a slow subscriber at the bounded queue
   );
 });
 
-test('EventTargetChannelBroker buffers published payloads before the first read', async () => {
+test('EventTargetChannelBroker discards buffered payloads when the subscriber aborts', async () => {
   const broker = new EventTargetChannelBroker<string>(stringCodec);
   const controller = new AbortController();
-  const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
+  const iter = (await broker.subscribe('k', controller.signal))[Symbol.asyncIterator]();
 
   await broker.publish('k', 'a1');
   await broker.publish('k', 'a2');
   controller.abort();
 
-  // Two seeded items + the abort-induced terminal value.
-  assertEquals((await iter.next()).value, 'a1');
-  assertEquals((await iter.next()).value, 'a2');
   assertEquals((await iter.next()).done, true);
 });
 
@@ -87,7 +84,7 @@ test('EventTargetChannelBroker does not attach listeners for an already-aborted 
     const controller = new AbortController();
     controller.abort();
 
-    const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
+    const iter = (await broker.subscribe('k', controller.signal))[Symbol.asyncIterator]();
 
     assertEquals((await iter.next()).done, true);
     assertEquals(adds, 0);
@@ -99,7 +96,7 @@ test('EventTargetChannelBroker does not attach listeners for an already-aborted 
 test('EventTargetChannelBroker resolves concurrent reads in publish order', async () => {
   const broker = new EventTargetChannelBroker<string>(stringCodec);
   const controller = new AbortController();
-  const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
+  const iter = (await broker.subscribe('k', controller.signal))[Symbol.asyncIterator]();
   const first = iter.next();
   const second = iter.next();
 
@@ -114,7 +111,7 @@ test('EventTargetChannelBroker resolves concurrent reads in publish order', asyn
 test('EventTargetChannelBroker rejects every pending read when decoding fails', async () => {
   const broker = new EventTargetChannelBroker<string>(rejectingStringCodec);
   const controller = new AbortController();
-  const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
+  const iter = (await broker.subscribe('k', controller.signal))[Symbol.asyncIterator]();
   const first = iter.next();
   const second = iter.next();
 
@@ -129,7 +126,7 @@ test('EventTargetChannelBroker rejects every pending read when decoding fails', 
 test('EventTargetChannelBroker drains buffered payloads before surfacing a decode failure', async () => {
   const broker = new EventTargetChannelBroker<string>(rejectingStringCodec);
   const controller = new AbortController();
-  const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
+  const iter = (await broker.subscribe('k', controller.signal))[Symbol.asyncIterator]();
 
   await broker.publish('k', 'good');
   await broker.publish('k', 'bad');
@@ -143,13 +140,13 @@ test('EventTargetChannelBroker drains buffered payloads before surfacing a decod
 test('EventTargetChannelBroker isolates traffic across channels', async () => {
   const broker = new EventTargetChannelBroker<string>(stringCodec);
   const controller = new AbortController();
-  const iter = broker.subscribe('k1', controller.signal)[Symbol.asyncIterator]();
+  const iter = (await broker.subscribe('k1', controller.signal))[Symbol.asyncIterator]();
   await broker.publish('k2', 'foreign');
   await broker.publish('k1', 'local');
-  controller.abort();
 
   const first = await iter.next();
   assertEquals(first.value, 'local');
+  controller.abort();
   assertEquals((await iter.next()).done, true);
 });
 
@@ -157,8 +154,8 @@ test('EventTargetChannelBroker.closeChannel ends every subscriber on the channel
   const broker = new EventTargetChannelBroker<string>(stringCodec);
   const c1 = new AbortController();
   const c2 = new AbortController();
-  const i1 = broker.subscribe('k', c1.signal)[Symbol.asyncIterator]();
-  const i2 = broker.subscribe('k', c2.signal)[Symbol.asyncIterator]();
+  const i1 = (await broker.subscribe('k', c1.signal))[Symbol.asyncIterator]();
+  const i2 = (await broker.subscribe('k', c2.signal))[Symbol.asyncIterator]();
 
   await broker.closeChannel('k', 'shut down');
   assertEquals((await i1.next()).done, true);
@@ -178,7 +175,7 @@ test('EventTargetChannelBroker detaches its EventTarget listeners when the subsc
   try {
     const broker = new EventTargetChannelBroker<string>(stringCodec);
     const controller = new AbortController();
-    broker.subscribe('k', controller.signal);
+    await broker.subscribe('k', controller.signal);
     // Snapshot the removal counter immediately before the abort so the test
     // scopes the assertion to the listeners this subscribe actually owns.
     const removesBefore = removes;
@@ -201,7 +198,7 @@ test('EventTargetChannelBroker detaches its EventTarget listeners when the itera
   try {
     const broker = new EventTargetChannelBroker<string>(stringCodec);
     const controller = new AbortController();
-    const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
+    const iter = (await broker.subscribe('k', controller.signal))[Symbol.asyncIterator]();
     const removesBefore = removes;
 
     await iter.return?.();

@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import { ownedKeyForUser } from './shared/owned-key.ts';
 import { getDumpBroker, getDumpStore } from '../dump/registry.ts';
+import type { DumpMetadata } from '../dump/types.ts';
 import { dumpRecordToWire } from '../dump/wire.ts';
 import { zValidator } from '../middleware/zod-validator.ts';
 
@@ -54,9 +55,10 @@ export const dumpRoutes = new Hono()
     // Subscribe first, then read the snapshot, so the live broker covers
     // anything new while the snapshot supplies history.
     const controller = new AbortController();
-    const subscription = getDumpBroker().subscribe(owned.id, controller.signal);
-    let snapshot;
+    let subscription: AsyncIterable<DumpMetadata>;
+    let snapshot: DumpMetadata[];
     try {
+      subscription = await getDumpBroker().subscribe(owned.id, controller.signal);
       snapshot = await getDumpStore().list(owned.id, { limit: LIST_LIMIT_DEFAULT });
     } catch (err) {
       controller.abort();

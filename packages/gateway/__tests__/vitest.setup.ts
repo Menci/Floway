@@ -31,7 +31,7 @@ const noopStore: DumpStore = {
 const noopBroker: DumpBroker = {
   async publish(): Promise<void> { /* noop */ },
   async closeChannel(): Promise<void> { /* noop */ },
-  subscribe(): AsyncIterable<DumpMetadata> { return (async function*() {})(); },
+  async subscribe(): Promise<AsyncIterable<DumpMetadata>> { return (async function*() {})(); },
 };
 initDumpStore(noopStore);
 initDumpBroker(noopBroker);

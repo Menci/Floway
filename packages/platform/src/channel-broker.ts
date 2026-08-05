@@ -8,7 +8,7 @@ export interface ChannelCodec<T> {
 
 export interface ChannelBroker<T> {
   publish(channelId: string, payload: T): Promise<void>;
-  subscribe(channelId: string, signal: AbortSignal): AsyncIterable<T>;
+  subscribe(channelId: string, signal: AbortSignal): Promise<AsyncIterable<T>>;
   closeChannel(channelId: string, reason: string): Promise<void>;
 }
 
@@ -40,6 +40,16 @@ export const enqueueChannelValue = <T>(
   controller.enqueue(value);
 };
 
+const CHANNEL_SUBSCRIPTION_ABORTED = new Error('Channel subscription aborted');
+
+// ReadableStream.close() preserves queued frames. Subscriber cancellation must
+// release that memory immediately, so the producer errors the stream with a
+// private sentinel and the iterator translates only that sentinel into normal
+// completion.
+export const abortChannelSubscription = <T>(
+  controller: ReadableStreamDefaultController<T>,
+): void => controller.error(CHANNEL_SUBSCRIPTION_ABORTED);
+
 // The built-in ReadableStream async iterator serializes next() calls. A stream
 // error can therefore reject the active call and complete a concurrently queued
 // call. Channel consumers may issue concurrent reads, so each next() maps
@@ -70,6 +80,9 @@ export const iterateReadableStream = <T>(stream: ReadableStream<T>): AsyncIterab
           return result;
         } catch (error) {
           state = 'terminal';
+          if (error === CHANNEL_SUBSCRIPTION_ABORTED) {
+            return { done: true, value: undefined };
+          }
           throw error;
         } finally {
           pendingReads -= 1;
