@@ -1,6 +1,6 @@
-import { readCopilotUpstreamState, type CopilotTokenEntry, type CopilotUpstreamState } from './state.ts';
 import { dispatchUpstreamFetch, getProviderRepo as getRepo, isAbortError, type Fetcher } from '@floway-dev/provider';
 import pRetry, { AbortError as RetryAbortError } from 'p-retry';
+import { readCopilotUpstreamState, type CopilotTokenEntry, type CopilotUpstreamState } from './state.ts';
 
 // Version constants pinned to a known-good fingerprint that mirrors what a
 // current VSCode Copilot Chat install sends. The Copilot Chat plugin version,
@@ -117,7 +117,7 @@ const retryCopilotTokenFetch = async <T>(fn: () => Promise<T>, signal: AbortSign
     if (error instanceof NonErrorAbort) throw error.originalError;
     throw error;
   }
-}
+};
 
 function isTokenValid(token: string | null, expiresAt: number): boolean {
   if (!token) return false;

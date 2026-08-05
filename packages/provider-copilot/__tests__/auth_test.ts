@@ -86,7 +86,7 @@ const mockTokenAndCapture = async (
 
 const runAuthedFetch = async (fetcher: Fetcher, signal?: AbortSignal): Promise<Response> => {
   await installRepoAndClearCache();
-  return copilotAuthedFetch(
+  return await copilotAuthedFetch(
     '/v1/messages',
     { method: 'POST', body: '{}', signal },
     { id: UPSTREAM_ID, githubToken: 'ghu_test' },
