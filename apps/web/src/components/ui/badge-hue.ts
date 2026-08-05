@@ -39,7 +39,10 @@ const useStyles = makeStyles({
   },
 });
 
-const alpha = (hex: string, fraction: number): string => formatRgb({ ...parseHex(hex)!, alpha: fraction })!;
+const alpha = (hex: string, fraction: number): string => {
+  const rgb = parseHex(hex)!;
+  return formatRgb({ ...rgb, alpha: (rgb.alpha ?? 1) * fraction })!;
+};
 
 /**
  * A badge painted in an arbitrary hue. The label is resolved against the fill
