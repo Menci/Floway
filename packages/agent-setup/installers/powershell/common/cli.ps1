@@ -38,12 +38,28 @@ function Invoke-SetupInterpreterBody {
   $process = New-Object System.Diagnostics.Process
   $process.StartInfo = $startInfo
   if (-not $process.Start()) { Stop-Setup "failed to start the installer interpreter." }
-  $process.StandardInput.Write($Body)
-  $process.StandardInput.WriteLine()
-  $process.StandardInput.Close()
-  if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+  $deadline = [System.Diagnostics.Stopwatch]::StartNew()
+  $timeoutMilliseconds = [Math]::Min([long][int]::MaxValue, [Math]::Max([long]0, [long]$TimeoutSeconds * 1000))
+  $timedOut = $false
+  try {
+    $write = $process.StandardInput.WriteLineAsync($Body)
+    $remaining = [Math]::Max([long]0, $timeoutMilliseconds - [long]$deadline.ElapsedMilliseconds)
+    if (-not $write.Wait([int]$remaining)) {
+      $timedOut = $true
+    } else {
+      $process.StandardInput.Close()
+      $remaining = [Math]::Max([long]0, $timeoutMilliseconds - [long]$deadline.ElapsedMilliseconds)
+      if (-not $process.WaitForExit([int]$remaining)) { $timedOut = $true }
+    }
+  } catch {
     Stop-SetupProcessTree $process
     $process.WaitForExit()
+    throw
+  }
+  if ($timedOut) {
+    Stop-SetupProcessTree $process
+    $process.WaitForExit()
+    try { $process.StandardInput.Close() } catch { }
     Stop-Setup "the installer timed out after $TimeoutSeconds seconds."
   }
   if ($process.ExitCode -ne 0) { Stop-Setup "the installer exited with status $($process.ExitCode)." }

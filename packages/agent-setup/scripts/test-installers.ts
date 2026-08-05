@@ -337,7 +337,7 @@ writeFileSync(FAKE_CODEX_INSTALLER_SCRIPT, FAKE_CODEX_INSTALLER, { mode: 0o755 }
 
 type ModelServerMode =
   | 'ok'
-  | 'installer-sh' | 'installer-ps1' | 'installer-html'
+  | 'installer-sh' | 'installer-ps1' | 'installer-large-ps1' | 'installer-html'
   | 'installer-codex-sh' | 'installer-codex-ps1';
 interface ModelServer {
   url: string;
@@ -440,6 +440,11 @@ const startModelServer = async (): Promise<ModelServer> => {
       if (state.mode === 'installer-ps1') {
         res.writeHead(200, { 'content-type': 'text/plain' });
         res.end(PS1_FAKE_INSTALLER_BODY('claude', 'FAKE_CLAUDE_SRC'));
+        return;
+      }
+      if (state.mode === 'installer-large-ps1') {
+        res.writeHead(200, { 'content-type': 'text/plain' });
+        res.end(`Write-Output 'large installer'\n${'#'.repeat(256 * 1024)}`);
         return;
       }
       if (state.mode === 'installer-codex-ps1') {
@@ -1720,6 +1725,33 @@ test('claude', 'PowerShell downloaded installer is bounded', async t => {
   t.ok(existsSync(installerChildPid(ws)), 'PowerShell fixture must record a child PID');
   const childPid = Number(readFileSync(installerChildPid(ws), 'utf8').trim());
   t.ok(!processExists(childPid), `timed-out PowerShell installer child ${childPid} must be dead`);
+});
+
+test('claude', 'PowerShell bounds stdin delivery to an interpreter that never reads', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  writeFileSync(join(ws.binDir, 'pwsh'), `#!/bin/bash
+printf '%s' "$$" > "$FAKE_INSTALLER_CHILD_PID_FILE"
+sleep 12
+`, { mode: 0o755 });
+  modelServer.mode = 'installer-large-ps1';
+  const started = Date.now();
+
+  const run = await runPowerShellInstaller({
+    workspace: ws,
+    configuration: claudeConfig(),
+    baseUrl: modelServer.url,
+    withInstallHook: false,
+    installerUrl: `${modelServer.url}/install.ps1`,
+    timeoutSeconds: 2,
+  });
+
+  t.ok(run.code !== 0, 'blocked stdin delivery must fail the setup');
+  t.ok(Date.now() - started < 8_000, 'stdin delivery shares the interpreter deadline');
+  t.includes(run.combined, 'installer timed out after 2 seconds', 'the failure identifies the shared deadline');
+  t.ok(existsSync(installerChildPid(ws)), 'the non-reading interpreter records its PID');
+  const childPid = Number(readFileSync(installerChildPid(ws), 'utf8'));
+  t.ok(!processExists(childPid), `timed-out non-reading interpreter ${childPid} must be dead`);
 });
 
 test('claude', 'PowerShell claude --version is bounded', async t => {
