@@ -952,7 +952,12 @@ test('import trims every formerly normalized non-empty string field', async () =
   assertEquals((await repo.upstreams.list())[0].name, CUSTOM_UPSTREAM.name);
   assertEquals((await repo.upstreams.list())[0].createdAt, CUSTOM_UPSTREAM.createdAt);
   assertEquals((await repo.upstreams.list())[0].updatedAt, CUSTOM_UPSTREAM.updatedAt);
-  assertEquals(await repo.proxies.list(), [{ id: 'p1', name: 'Proxy', url: HTTP_PROXY_URL, dialTimeoutSeconds: null }]);
+  assertEquals((await repo.proxies.list()).map(proxy => ({
+    id: proxy.id,
+    name: proxy.name,
+    url: proxy.url,
+    dialTimeoutSeconds: proxy.dialTimeoutSeconds,
+  })), [{ id: 'p1', name: 'Proxy', url: HTTP_PROXY_URL, dialTimeoutSeconds: null }]);
 
   const whitespaceOnly = await doImport(app, 'merge', latestImportData({ apiKeys: [{ ...KEY_A, key: '   ' }] }));
   assertEquals(whitespaceOnly.body.error, 'invalid apiKeys at index 0: key must be a non-empty string');
