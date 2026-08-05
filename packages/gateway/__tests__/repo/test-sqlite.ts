@@ -33,18 +33,23 @@ export const createSqlJsDatabase = async (data?: Uint8Array): Promise<SqlJsDatab
   return db;
 };
 
-const migratedDatabaseImage = (async (): Promise<Uint8Array> => {
-  const db = await createSqlJsDatabase();
-  try {
-    for (const [, sql] of migrationSqlByFilename) db.run(sql);
-    return new Uint8Array(db.export());
-  } finally {
-    db.close();
-  }
-})();
+let migratedDatabaseImage: Promise<Uint8Array> | undefined;
+
+const getMigratedDatabaseImage = (): Promise<Uint8Array> => {
+  migratedDatabaseImage ??= (async () => {
+    const db = await createSqlJsDatabase();
+    try {
+      for (const [, sql] of migrationSqlByFilename) db.run(sql);
+      return new Uint8Array(db.export());
+    } finally {
+      db.close();
+    }
+  })();
+  return migratedDatabaseImage;
+};
 
 export const createSqliteTestDb = async (): Promise<SqlDatabase> => {
-  return wrapSqlJsDatabase(await createSqlJsDatabase(await migratedDatabaseImage));
+  return wrapSqlJsDatabase(await createSqlJsDatabase(await getMigratedDatabaseImage()));
 };
 
 // sql.js binds through JavaScript and happily takes values neither deployment
