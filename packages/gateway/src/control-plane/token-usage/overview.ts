@@ -1,9 +1,10 @@
-import { aggregateUsageForOverview, usageUpstreamDimension, type UsageOverviewGroupBy } from './aggregate.ts';
+import { aggregateUsageForOverview, type UsageOverviewGroupBy } from './aggregate.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { tokenUsageOverviewQuery } from '../schemas.ts';
 import { loadTelemetryOverviewIdentity, partitionTelemetryOverviewRecords, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata } from '../shared/telemetry-overview.ts';
 import type { TokenUsageOverviewResponse } from '../usage-types.ts';
+import { usageUpstreamDimensionValue } from '@floway-dev/protocols/common';
 
 type Ctx = CtxWithQuery<typeof tokenUsageOverviewQuery>;
 
@@ -68,7 +69,7 @@ export const tokenUsageOverview = async (c: Ctx) => {
       includeFacet: () => identity.actor.isAdmin,
     },
     model: { value: record => record.model },
-    upstream: { value: record => usageUpstreamDimension(record.upstream) },
+    upstream: { value: record => usageUpstreamDimensionValue(record.upstream) },
   }, filters);
   const { filtered } = partitioned;
   const dimensionValues = {

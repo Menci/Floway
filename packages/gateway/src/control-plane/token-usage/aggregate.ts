@@ -1,6 +1,6 @@
 import type { UsageRecord } from '../../repo/types.ts';
 import { createTelemetryBucket, type TelemetryBucketGranularity } from '../shared/telemetry-bucket.ts';
-import { addDecimalStrings, multiplyDecimalStrings, type BillingMetric, type DecimalString } from '@floway-dev/protocols/common';
+import { addDecimalStrings, multiplyDecimalStrings, usageUpstreamDimensionValue, type BillingMetric, type DecimalString } from '@floway-dev/protocols/common';
 
 export interface DisplayUsageMetric {
   metric: BillingMetric;
@@ -41,9 +41,6 @@ export interface UsageOverviewAggregateOptions {
   timeZone?: string;
   timezoneOffsetMinutes: number;
 }
-
-export const usageUpstreamDimension = (upstream: string | null): string =>
-  upstream === null ? 'none' : `upstream:${upstream}`;
 
 const recordCostUsd = (record: UsageRecord): DecimalString | null => {
   let total: DecimalString = '0';
@@ -111,7 +108,7 @@ export function aggregateUsageForDisplay(records: readonly UsageRecord[]): Displ
   );
 }
 
-// The legacy `/api/token-usage` user view assigns hard-deleted key rows to
+// The `/api/token-usage` all-by-user view assigns hard-deleted key rows to
 // synthetic user 0 because it cannot recover their former owner.
 export function aggregateUsageByUserForDisplay(
   records: readonly UsageRecord[],
@@ -137,7 +134,7 @@ const overviewGroup = (
     const userId = keyToUser.get(record.keyId);
     return userId === undefined ? null : String(userId);
   }
-  if (groupBy === 'upstream') return usageUpstreamDimension(record.upstream);
+  if (groupBy === 'upstream') return usageUpstreamDimensionValue(record.upstream);
   return record[groupBy];
 };
 

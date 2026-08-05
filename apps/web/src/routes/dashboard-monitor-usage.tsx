@@ -21,7 +21,6 @@ import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
 import { useRefreshOnChange } from '../components/ui/use-refresh';
 import { UsageChartSection } from '../components/usage/chart-section';
 import { loadUsagePageData } from '../components/usage/data';
-import { upstreamFromUsageValue, usageUpstreamValue } from '../components/usage/dimensions';
 import { formatMetricValue } from '../components/usage/format';
 import { buildSearchChart, buildTokenChart, dashboardBuckets, summarizeUsage } from '../components/usage/plot';
 import { SummaryMetrics } from '../components/usage/summary-metrics';
@@ -31,6 +30,7 @@ import { fluentComponents } from '../fluent';
 import { formatCount } from '../lib/format-number';
 import { useEntryRewrite } from '../lib/page-navigation';
 import { useLocale } from '../lib/use-locale';
+import { usageUpstreamDimensionValue, usageUpstreamFromDimensionValue } from '@floway-dev/protocols/common';
 
 const { Button, Tooltip } = fluentComponents;
 
@@ -124,10 +124,10 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const buckets = useMemo(() => dashboardBuckets(loadedRange, loadedAt, locale), [loadedAt, loadedRange, locale]);
   const dimensions = useMemo<Array<TelemetryDimension<UsageGroupBy>> | null>(() => {
     if (!usage) return null;
-    const upstreamNames = new Map(upstreams.map(upstream => [usageUpstreamValue(upstream.id), upstream.name]));
+    const upstreamNames = new Map(upstreams.map(upstream => [usageUpstreamDimensionValue(upstream.id), upstream.name]));
     const noUpstreamLabel = t('dashboard.usage.filters.noUpstream');
     for (const value of usage.dimensionValues.upstreams) {
-      if (!upstreamNames.has(value)) upstreamNames.set(value, upstreamFromUsageValue(value) ?? noUpstreamLabel);
+      if (!upstreamNames.has(value)) upstreamNames.set(value, usageUpstreamFromDimensionValue(value) ?? noUpstreamLabel);
     }
     const users = new Map(usage.users.map(user => [String(user.id), user.username]));
     const keys = new Map(usage.keys.map(key => [key.id, key.name]));
