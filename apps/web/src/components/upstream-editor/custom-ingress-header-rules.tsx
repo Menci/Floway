@@ -1,12 +1,12 @@
 import { DeleteRegular } from '@fluentui/react-icons';
 import { useId } from 'react';
 import { Controller, useFieldArray, useFormContext } from 'react-hook-form';
-import { useTranslation } from 'react-i18next';
 
 import type { UpstreamEditorValues } from './data';
 import { EditorSection } from './section';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { Combobox, Input } from '../ui/fluent-form-controls';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 
