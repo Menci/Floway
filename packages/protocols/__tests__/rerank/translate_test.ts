@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { parseRerankRequest, parseRerankResponse, parseRerankUsage, renderRerankResponse, serializeRerankRequest } from '../../src/rerank/translate.ts';
+import { parseRerankRequest, parseRerankResponse, parseRerankUsage, renderRerankResponse, rerankRequestIncompatibility, serializeRerankRequest } from '../../src/rerank/translate.ts';
 
 describe('rerank request ingress', () => {
   test('rejects unsupported runtime protocol discriminators', () => {
@@ -14,6 +14,7 @@ describe('rerank request ingress', () => {
     expect(() => serializeRerankRequest('future' as never, 'raw', { ...request, sourceProtocol: 'future' as never }))
       .toThrow('Unsupported rerank protocol for request serialization');
     expect(() => parseRerankUsage('future' as never, null)).toThrow('Unsupported rerank protocol for usage parsing');
+    expect(() => rerankRequestIncompatibility('future' as never, request)).toThrow('Unsupported rerank protocol for compatibility checking');
     expect(() => renderRerankResponse('future' as never, 'future' as never, {
       raw: {}, results: [],
     }, { ...request, sourceProtocol: 'future' as never })).toThrow('Unsupported rerank protocol for response rendering');

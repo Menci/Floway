@@ -195,6 +195,8 @@ export const rerankRequestIncompatibility = (
   protocol: RerankProtocol,
   request: CanonicalRerankRequest,
 ): string | null => {
+  assertRerankProtocol(protocol, 'compatibility checking');
+  assertRerankSourceProtocol(request.sourceProtocol, 'compatibility checking');
   const hasJinaImageInput = request.sourceProtocol === 'jina-v1'
     && [request.query, ...request.documents].some(input => typeof input !== 'string' && typeof input.image === 'string');
   if (hasJinaImageInput && protocol !== 'jina-v1' && protocol !== 'dashscope-native') {
