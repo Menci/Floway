@@ -75,6 +75,11 @@ test('fitWithin never enlarges past the source', () => {
   assertEquals(fitWithin({ width: 100, height: 100 }, { maxLongEdge: 4096 }), { width: 100, height: 100 });
 });
 
+test('fitWithin keeps both edges encodable for extreme aspect ratios', () => {
+  assertEquals(fitWithin({ width: 10_000, height: 1 }, { maxLongEdge: 1_000 }), { width: 1_000, height: 1 });
+  assertEquals(fitWithin({ width: 1, height: 10_000 }, { maxLongEdge: 1_000 }), { width: 1, height: 1_000 });
+});
+
 test('compressBytesToWebp reads source dimensions, runs the calculator, and forwards the resolved target', async () => {
   const calls: { input: Uint8Array; target: ImageDimensions | null }[] = [];
   const processor: ImageProcessor = {
