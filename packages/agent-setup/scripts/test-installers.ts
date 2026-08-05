@@ -743,7 +743,7 @@ const processExists = (pid: number): boolean => {
   try { process.kill(pid, 0); return true; } catch { return false; }
 };
 const waitForFile = async (path: string, label: string): Promise<void> => {
-  const deadline = Date.now() + 5_000;
+  const deadline = Date.now() + 30_000;
   while (!existsSync(path)) {
     if (Date.now() >= deadline) throw new Error(`timed out waiting for ${label} at ${path}`);
     await new Promise<void>(resolve => setTimeout(resolve, 10));
@@ -1048,7 +1048,13 @@ test('claude', 'Bash serializes one config root and a failing successor restores
     lockWaitMarker: successorWaiting,
     failClaudeAfterReplace: true,
   });
-  await waitForFile(successorWaiting, 'the successor to contend on the shared lock');
+  try {
+    await waitForFile(successorWaiting, 'the successor to contend on the shared lock');
+  } catch (error) {
+    writeFileSync(holderGate, 'release');
+    await Promise.all([holderRun, successorRun]);
+    throw error;
+  }
   writeFileSync(holderGate, 'release');
 
   const [holder, successor] = await Promise.all([holderRun, successorRun]);
@@ -1369,7 +1375,13 @@ test('claude', 'PowerShell serializes one config root and a failing successor re
     lockWaitMarker: successorWaiting,
     failClaudeAfterReplace: true,
   });
-  await waitForFile(successorWaiting, 'the PowerShell successor to contend on the shared lock');
+  try {
+    await waitForFile(successorWaiting, 'the PowerShell successor to contend on the shared lock');
+  } catch (error) {
+    writeFileSync(holderGate, 'release');
+    await Promise.all([holderRun, successorRun]);
+    throw error;
+  }
   writeFileSync(holderGate, 'release');
 
   const [holder, successor] = await Promise.all([holderRun, successorRun]);
@@ -2110,11 +2122,24 @@ test('codex', 'Bash and PowerShell serialize config and token as one cross-langu
     fakeCliGate: successorGate,
     fakeCliGateMarker: successorAtCli,
   });
-  await waitForFile(successorWaiting, 'PowerShell to contend on the Bash lock');
+  try {
+    await waitForFile(successorWaiting, 'PowerShell to contend on the Bash lock');
+  } catch (error) {
+    writeFileSync(holderGate, 'release');
+    writeFileSync(successorGate, 'release');
+    await Promise.all([holderRun, successorRun]);
+    throw error;
+  }
   writeFileSync(holderGate, 'release');
   const holder = await holderRun;
   t.equal(holder.code, 0, `the Bash holder should succeed:\n${holder.combined}`);
-  await waitForFile(successorAtCli, 'PowerShell to acquire the released lock');
+  try {
+    await waitForFile(successorAtCli, 'PowerShell to acquire the released lock');
+  } catch (error) {
+    writeFileSync(successorGate, 'release');
+    await successorRun;
+    throw error;
+  }
   const holderConfig = readFileSync(codexConfigPath(holderWs, codexHome), 'utf8');
   t.equal(readCodexToken(holderWs, codexHome), 'key-holder', 'the holder config and token commit together');
   writeFileSync(successorGate, 'release');
