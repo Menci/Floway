@@ -550,6 +550,13 @@ const en = {
           remove: 'Remove header rule {{number, number}}',
           passthrough: '(passthrough)',
           empty: '(empty)',
+          validation: {
+            invalidName: 'Enter a valid HTTP header name.',
+            duplicateName: 'Each header name can appear only once.',
+            messagesOwned: 'The Messages protocol manages this header.',
+            transportOwned: 'Floway’s HTTP transport manages this header.',
+            invalidValue: 'Enter a valid HTTP header value without control characters.',
+          },
         },
         proxy: {
           directFetch: 'Direct (Fetch)',

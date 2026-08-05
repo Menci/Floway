@@ -1,6 +1,6 @@
 import { DeleteRegular } from '@fluentui/react-icons';
 import { useId } from 'react';
-import { Controller, useFieldArray, useFormContext, useWatch } from 'react-hook-form';
+import { Controller, type FieldError, useFieldArray, useFormContext, useFormState, useWatch } from 'react-hook-form';
 
 import type { UpstreamEditorValues } from './data';
 import { EditorSection } from './section';
@@ -10,7 +10,7 @@ import { useTranslation } from '../../i18n/translation';
 import { Combobox, Input } from '../ui/fluent-form-controls';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 
-const { Option, Text } = fluentComponents;
+const { Field, Option, Text } = fluentComponents;
 
 const PASSTHROUGH_OPTION = 'passthrough';
 const EMPTY_OPTION = 'empty';
@@ -61,38 +61,49 @@ function IngressHeaderRuleRow({
   const { control } = useFormContext<CustomValues>();
   const labelId = useId();
   const rowNumber = index + 1;
-  const headerName = useWatch({ control, name: `config.ingressHeadersRules.${index}.key` });
+  const keyName = `config.ingressHeadersRules.${index}.key` as const;
+  const valueName = `config.ingressHeadersRules.${index}.value` as const;
+  const headerName = useWatch({ control, name: keyName });
+  const { errors } = useFormState({ control, name: [keyName, valueName] });
+  const ruleErrors = (errors.config as { ingressHeadersRules?: Array<{ key?: FieldError; value?: FieldError }> } | undefined)
+    ?.ingressHeadersRules?.[index];
   const valueDisabled = headerName.trim() === '';
 
-  return <div aria-labelledby={labelId} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_32px] items-center gap-2" role="group">
+  return <div aria-labelledby={labelId} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_32px] items-start gap-2" role="group">
     <span className="sr-only" id={labelId}>{t('dashboard.upstreamEditor.headers.row', { number: rowNumber })}</span>
     <Controller
       control={control}
-      name={`config.ingressHeadersRules.${index}.key`}
-      render={({ field }) => <Input
-        aria-label={t('dashboard.upstreamEditor.headers.keyForRow', { number: rowNumber })}
-        autoComplete="off"
-        className="font-mono"
-        name={field.name}
-        onBlur={() => {
-          const key = field.value.trim().toLowerCase();
-          field.onChange(key);
-          field.onBlur();
-          if (key === '' && !isBlankRow) onRemove();
-        }}
-        onChange={(_, data) => {
-          field.onChange(data.value);
-          if (isBlankRow && data.value.trim() !== '') appendBlank();
-        }}
-        placeholder="x-client-request-id"
-        ref={field.ref}
-        spellCheck={false}
-        value={field.value}
-      />}
+      name={keyName}
+      render={({ field }) => <Field
+        className="min-w-0"
+        validationMessage={ruleErrors?.key?.message ? t(ruleErrors.key.message) : undefined}
+        validationState={ruleErrors?.key ? 'error' : undefined}
+      >
+        <Input
+          aria-label={t('dashboard.upstreamEditor.headers.keyForRow', { number: rowNumber })}
+          autoComplete="off"
+          className="font-mono"
+          name={field.name}
+          onBlur={() => {
+            const key = field.value.trim().toLowerCase();
+            field.onChange(key);
+            field.onBlur();
+            if (key === '' && !isBlankRow) onRemove();
+          }}
+          onChange={(_, data) => {
+            field.onChange(data.value);
+            if (isBlankRow && data.value.trim() !== '') appendBlank();
+          }}
+          placeholder="x-client-request-id"
+          ref={field.ref}
+          spellCheck={false}
+          value={field.value}
+        />
+      </Field>}
     />
     <Controller
       control={control}
-      name={`config.ingressHeadersRules.${index}.value`}
+      name={valueName}
       render={({ field }) => {
         const custom = field.value !== null && field.value !== '';
         const placeholder = field.value === null
@@ -100,25 +111,33 @@ function IngressHeaderRuleRow({
           : field.value === ''
             ? t('dashboard.upstreamEditor.headers.empty')
             : undefined;
-        return <Combobox
-          aria-label={t('dashboard.upstreamEditor.headers.valueForRow', { number: rowNumber })}
-          autoComplete="off"
-          className={custom ? 'font-mono' : undefined}
-          disabled={valueDisabled}
-          freeform
-          onChange={event => field.onChange(event.target.value)}
-          onOptionSelect={(_, data) => {
-            if (data.optionValue === PASSTHROUGH_OPTION) field.onChange(null);
-            if (data.optionValue === EMPTY_OPTION) field.onChange('');
-          }}
-          placeholder={valueDisabled ? undefined : placeholder}
-          selectedOptions={field.value === null ? [PASSTHROUGH_OPTION] : field.value === '' ? [EMPTY_OPTION] : []}
-          spellCheck={false}
-          value={field.value ?? ''}
+        return <Field
+          className="min-w-0"
+          validationMessage={ruleErrors?.value?.message ? t(ruleErrors.value.message) : undefined}
+          validationState={ruleErrors?.value ? 'error' : undefined}
         >
-          <Option value={PASSTHROUGH_OPTION}>{t('dashboard.upstreamEditor.headers.passthrough')}</Option>
-          <Option value={EMPTY_OPTION}>{t('dashboard.upstreamEditor.headers.empty')}</Option>
-        </Combobox>;
+          <Combobox
+            aria-label={t('dashboard.upstreamEditor.headers.valueForRow', { number: rowNumber })}
+            autoComplete="off"
+            className={custom ? 'font-mono' : undefined}
+            disabled={valueDisabled}
+            freeform
+            onBlur={field.onBlur}
+            onChange={event => field.onChange(event.target.value)}
+            onOptionSelect={(_, data) => {
+              if (data.optionValue === PASSTHROUGH_OPTION) field.onChange(null);
+              if (data.optionValue === EMPTY_OPTION) field.onChange('');
+            }}
+            placeholder={valueDisabled ? undefined : placeholder}
+            ref={field.ref}
+            selectedOptions={field.value === null ? [PASSTHROUGH_OPTION] : field.value === '' ? [EMPTY_OPTION] : []}
+            spellCheck={false}
+            value={field.value ?? ''}
+          >
+            <Option value={PASSTHROUGH_OPTION}>{t('dashboard.upstreamEditor.headers.passthrough')}</Option>
+            <Option value={EMPTY_OPTION}>{t('dashboard.upstreamEditor.headers.empty')}</Option>
+          </Combobox>
+        </Field>;
       }}
     />
     <TooltipIconButton

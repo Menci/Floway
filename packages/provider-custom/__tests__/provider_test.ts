@@ -61,6 +61,7 @@ test('Custom applies empty and override rules after admitted headers reach the p
       const [model] = await provider.instance.getProvidedModels(directFetcher);
       const opts = noopUpstreamCallOptions({
         headers: new Headers({
+          'x-admitted-by-gateway': 'gateway-value',
           'x-passthrough': 'client-pass',
           'x-empty': 'client-empty',
           'x-override': 'client-override',
@@ -71,6 +72,7 @@ test('Custom applies empty and override rules after admitted headers reach the p
   );
 
   assertExists(observed);
+  assertEquals(observed.get('x-admitted-by-gateway'), 'gateway-value');
   assertEquals(observed.get('x-passthrough'), 'client-pass');
   assertEquals(observed.get('x-empty'), '');
   assertEquals(observed.get('x-override'), 'configured');

@@ -523,6 +523,13 @@ const zhHansCN = {
           remove: '删除标头规则 {{number, number}}',
           passthrough: '（透传）',
           empty: '（空值）',
+          validation: {
+            invalidName: '请输入有效的 HTTP 标头名称。',
+            duplicateName: '同一个标头名称只能出现一次。',
+            messagesOwned: '此标头由 Messages 协议管理。',
+            transportOwned: '此标头由 Floway 的 HTTP 传输层管理。',
+            invalidValue: '请输入不含控制字符的有效 HTTP 标头值。',
+          },
         },
         proxy: {
           directFetch: '直连（Fetch）',
