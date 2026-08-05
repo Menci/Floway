@@ -10,7 +10,7 @@ test('headersForMessagesCall replaces an ordinary collision with ordered typed b
     'anthropic-beta': 'context-1m,advanced-tool-use',
     'x-request-id': 'request-1',
   });
-  expect(ordinary.has('anthropic-beta')).toBe(false);
+  expect(ordinary.get('anthropic-beta')).toBe('ordinary-must-not-win');
 });
 
 test('headersForMessagesCall removes an ordinary collision when the typed token list is empty', () => {
