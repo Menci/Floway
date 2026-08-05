@@ -32,7 +32,6 @@ const customRawToProviderModel = (model: CustomRawModel): Omit<ProviderModel, 'k
   const display = model.display_name ?? model.name;
   if (display !== undefined) partial.display_name = display;
   if (model.pricing) partial.pricing = model.pricing;
-  if (model.chat) partial.chat = model.chat;
   return partial;
 };
 
@@ -61,12 +60,14 @@ const finalizeCustomModels = (
     // only a manual row with rerankTarget enters the routable provider catalog.
     if (rawModel.kind === 'rerank') continue;
     const endpoints = autoModelEndpoints(rawModel, configuredEndpoints);
+    const kind = kindForEndpoints(endpoints);
     models.push({
       ...customRawToProviderModel(rawModel),
-      kind: kindForEndpoints(endpoints),
+      kind,
       endpoints,
       providerData: rawModel.id,
       enabledFlags,
+      ...(kind === 'chat' && rawModel.chat ? { chat: rawModel.chat } : {}),
     });
   }
   return models;

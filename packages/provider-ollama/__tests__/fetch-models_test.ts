@@ -144,11 +144,20 @@ test('fetchOllamaCatalog bounds /api/show concurrency and deduplicates repeated 
   expect(catalog.data.map(model => model.id)).toEqual(names);
 });
 
-test('fetchOllamaCatalog propagates cancellation from /api/show', async () => {
-  const abort = new DOMException('cancelled', 'AbortError');
-  const fetcher: Fetcher = (url) => new URL(url).pathname === '/api/tags'
-    ? Promise.resolve(jsonResponse({ models: [{ name: 'first' }, { name: 'second' }] }))
-    : Promise.reject(abort);
-
-  await expect(fetchOllamaCatalog(config, fetcher)).rejects.toBe(abort);
+test('fetchOllamaCatalog propagates cancellation from /api/show fetch and body decoding', async () => {
+  const cancelledShows: Array<(abort: DOMException) => Promise<Response>> = [
+    abort => Promise.reject(abort),
+    abort => Promise.resolve(new Response(new ReadableStream({
+      start(controller) {
+        controller.error(abort);
+      },
+    }))),
+  ];
+  for (const cancelledShow of cancelledShows) {
+    const abort = new DOMException('cancelled', 'AbortError');
+    const fetcher: Fetcher = (url) => new URL(url).pathname === '/api/tags'
+      ? Promise.resolve(jsonResponse({ models: [{ name: 'first' }, { name: 'second' }] }))
+      : cancelledShow(abort);
+    await expect(fetchOllamaCatalog(config, fetcher)).rejects.toBe(abort);
+  }
 });

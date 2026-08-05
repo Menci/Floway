@@ -213,13 +213,15 @@ describe('modelsField metadata integration', () => {
     expect(model.endpoints).toEqual({ audioTranscriptions: {} });
   });
 
-  test('rejects chat on non-chat kind', () => {
-    expect(() => modelsField([{
-      upstreamModelId: 'm',
-      kind: 'embedding',
-      endpoints: { embeddings: {} },
-      chat: { modalities: { input: ['text'], output: ['text'] } },
-    }], 'p')).toThrow(/chat .* only allowed when kind/);
+  test('rejects chat whenever endpoints derive a non-chat runtime kind', () => {
+    for (const kind of ['embedding', 'chat']) {
+      expect(() => modelsField([{
+        upstreamModelId: 'm',
+        kind,
+        endpoints: { embeddings: {} },
+        chat: { modalities: { input: ['text'], output: ['text'] } },
+      }], 'p')).toThrow(/chat field is only allowed when endpoints select chat/);
+    }
   });
 
   test('accepts chat on chat kind', () => {

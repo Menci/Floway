@@ -20,7 +20,7 @@ const appendSubpath = (path: string, suffix: string): string => {
   return `${pathname.replace(/\/+$/, '')}${suffix}${query}`;
 };
 
-const customFetchInternal = async (
+const customFetchInternal = (
   config: CustomUpstreamConfig,
   path: string,
   init: RequestInit,
@@ -42,7 +42,7 @@ const customFetchInternal = async (
   if (options.extraHeaders) {
     for (const [k, v] of options.extraHeaders) headers.set(k, v);
   }
-  return await dispatchUpstreamFetch(options, joinBaseAndPath(config.baseUrl, path), { ...init, headers });
+  return dispatchUpstreamFetch(options, joinBaseAndPath(config.baseUrl, path), { ...init, headers });
 };
 
 export const customFetchRerank = (config: CustomUpstreamConfig, path: string, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>

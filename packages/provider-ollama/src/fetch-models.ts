@@ -130,7 +130,8 @@ const fetchShowForTag = async (
   let parsed: unknown;
   try {
     parsed = await response.json();
-  } catch {
+  } catch (error) {
+    if (isAbortError(error)) throw error;
     return null;
   }
   return parseShowResponse(tag.name, tag.modifiedAt, parsed);

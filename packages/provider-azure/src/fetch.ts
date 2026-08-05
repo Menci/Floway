@@ -2,7 +2,7 @@ import type { AzureUpstreamConfig } from './config.ts';
 import { azureAnthropicBaseUrl, azureOpenAiV1BaseUrl } from './endpoint.ts';
 import { dispatchUpstreamFetch, type UpstreamFetchOptions, joinBaseAndPath } from '@floway-dev/provider';
 
-const azureFetchUrl = async (
+const azureFetchUrl = (
   config: AzureUpstreamConfig,
   surface: 'openai' | 'anthropic',
   url: string,
@@ -22,10 +22,10 @@ const azureFetchUrl = async (
   if (options.extraHeaders) {
     for (const [key, value] of options.extraHeaders) headers.set(key, value);
   }
-  return await dispatchUpstreamFetch(options, url, { ...init, headers });
+  return dispatchUpstreamFetch(options, url, { ...init, headers });
 };
 
-const azureFetchInternal = async (
+const azureFetchInternal = (
   config: AzureUpstreamConfig,
   surface: 'openai' | 'anthropic',
   path: string,
@@ -36,13 +36,13 @@ const azureFetchInternal = async (
   const baseUrl = surface === 'openai' ? azureOpenAiV1BaseUrl(config.endpoint) : azureAnthropicBaseUrl(config.endpoint);
   const url = joinBaseAndPath(baseUrl, path);
   if (!query) {
-    return await azureFetchUrl(config, surface, url, init, options);
+    return azureFetchUrl(config, surface, url, init, options);
   }
   // Append per-endpoint query through URL.searchParams so a future path
   // that itself carries a query suffix does not produce `path?a?b`.
   const parsed = new URL(url);
   for (const [key, value] of new URLSearchParams(query).entries()) parsed.searchParams.append(key, value);
-  return await azureFetchUrl(config, surface, parsed.href, init, options);
+  return azureFetchUrl(config, surface, parsed.href, init, options);
 };
 
 const azureDeploymentScopedAudioTranscriptionUrl = (config: AzureUpstreamConfig, deployment: string): string => {
