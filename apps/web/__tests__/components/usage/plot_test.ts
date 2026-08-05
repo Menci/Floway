@@ -61,6 +61,16 @@ describe('cost chart series', () => {
 });
 
 describe('series identity', () => {
+  it('rejects a series group missing from the overview dimension values', () => {
+    expect(() => buildTokenChart({
+      records: [record({ input_tokens: '1' }, 'missing')],
+      dimensionOptions: [{ value: 'known', label: 'Known' }],
+      metric: 'total',
+      range: 'today',
+      buckets: [bucket],
+    })).toThrow('Usage overview series group is missing from dimension values: missing');
+  });
+
   it('keeps duplicate display names as independently addressable series', () => {
     const model = buildTokenChart({
       records: [record({ input_tokens: '1' }, 'key-1'), record({ input_tokens: '2' }, 'key-2')],

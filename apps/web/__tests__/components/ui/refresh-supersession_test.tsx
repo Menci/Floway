@@ -1,7 +1,7 @@
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { useRefresh } from '../../../src/components/ui/use-refresh';
+import { useRefresh, useRefreshOnChange } from '../../../src/components/ui/use-refresh';
 
 interface Run { background: boolean; settle: () => void; signal: AbortSignal }
 
@@ -73,4 +73,24 @@ describe('refresh supersession', () => {
 
     expect(runs.map(run => run.background)).toEqual([true, false]);
   });
+});
+
+test('query-driven refresh commits the query only when its response arrives', async () => {
+  const runs: Array<{ arrive: () => void; settle: () => void }> = [];
+  const reload = (_signal: AbortSignal, _options: { background: boolean }, arrive: () => void) =>
+    new Promise<void>(resolve => { runs.push({ arrive, settle: resolve }); });
+  const { result, rerender } = renderHook(
+    ({ query }) => useRefreshOnChange(query, reload),
+    { initialProps: { query: { groupBy: 'model' } } },
+  );
+
+  rerender({ query: { groupBy: 'upstream' } });
+  await waitFor(() => expect(runs).toHaveLength(1));
+  expect(result.current.loadedQuery).toEqual({ groupBy: 'model' });
+
+  await act(async () => {
+    runs[0]!.arrive();
+    runs[0]!.settle();
+  });
+  expect(result.current.loadedQuery).toEqual({ groupBy: 'upstream' });
 });

@@ -104,6 +104,27 @@ describe('usage dimension controls', () => {
     expect(screen.getByRole('combobox', { name: 'Upstream' })).toBeTruthy();
   });
 
+  it('discloses that API key grouping is account-scoped', () => {
+    renderPage({ ...loaderData, state: { ...loaderData.state, groupBy: 'keyId' } });
+
+    expect(screen.getByRole('button', { name: 'About API key telemetry scope' })).toBeTruthy();
+  });
+
+  it('uses the ungrouped axis for stable summary totals', () => {
+    renderPage({
+      ...loaderData,
+      usage: {
+        ...loaderData.usage,
+        axes: {
+          ...loaderData.usage.axes,
+          none: [{ ...loaderData.usage.axes.none[0], metrics: { input_tokens: '99' } }],
+        },
+      },
+    });
+
+    expect(screen.getByText('99')).toBeTruthy();
+  });
+
   it('loads the overview contract and derives Search scope from the actor', async () => {
     useAuthStore.getState().primeFromLogin({
       token: 'admin-session',
