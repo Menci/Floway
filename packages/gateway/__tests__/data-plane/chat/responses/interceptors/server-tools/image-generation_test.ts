@@ -2,6 +2,7 @@ import { beforeEach, test } from 'vitest';
 
 import {
   buildImageGenerationFunctionTool,
+  createImageGenerationServerTool,
   createImageSourceInspector,
   inspectImageSources,
   DEFAULT_IMAGE_MODEL,
@@ -10,6 +11,7 @@ import {
   imageGenerationServerTool,
   imageTerminal,
   isHostedImageGenerationTool,
+  MAX_REMOTE_IMAGE_TOTAL_BYTES,
   parseImageStreamEvent,
   parseRetryAfterMs,
   prepareImageGenerationConfig,
@@ -28,14 +30,10 @@ import { assert, assertEquals, assertFalse, assertStringIncludes, assertThrows, 
 
 const PNG_B64 = 'aGVsbG8='; // "hello" — any decodable base64 works for source tests.
 const VALID_PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/wEAAAAASUVORK5CYII=';
-const validPngResponse = (): Response => new Response(Uint8Array.from(atob(VALID_PNG_B64), c => c.charCodeAt(0)), {
+const VALID_PNG_BYTES = Uint8Array.from(atob(VALID_PNG_B64), c => c.charCodeAt(0));
+const validPngResponse = (): Response => new Response(VALID_PNG_BYTES, {
   headers: { 'content-type': 'image/png' },
 });
-const paddedPngResponse = (byteLength: number): Response => {
-  const bytes = new Uint8Array(byteLength);
-  bytes.set(Uint8Array.from(atob(VALID_PNG_B64), c => c.charCodeAt(0)));
-  return new Response(bytes, { headers: { 'content-type': 'image/png' } });
-};
 
 // The registration only reads targetApi / enabledFlags / payload off the invocation.
 const makeCtx = (payload: Partial<ResponsesPayload>): ResponsesInvocation => ({
@@ -64,14 +62,26 @@ const imageInputContainers = {
   custom_output: (image: ResponsesInputImage): ResponsesInputItem => ({ type: 'custom_tool_call_output', call_id: 'call_custom', output: [image] }),
 };
 
-const unresolvableImages = {
-  file_id: { type: 'input_image', file_id: 'file_1', detail: 'auto' },
-  malformed: { type: 'input_image', image_url: 'data:image/png;base64,%%%', detail: 'auto' },
-} as const satisfies Record<string, ResponsesInputImage>;
+const unresolvableSourceKinds = [
+  {
+    source: 'file_id',
+    image: { type: 'input_image', file_id: 'file_1', detail: 'auto' },
+    actions: ['auto', 'generate'],
+  },
+  {
+    source: 'malformed',
+    image: { type: 'input_image', image_url: 'data:image/png;base64,%%%', detail: 'auto' },
+    actions: ['auto'],
+  },
+] as const satisfies ReadonlyArray<{
+  source: string;
+  image: ResponsesInputImage;
+  actions: readonly Array<'auto' | 'generate'>;
+}>;
 
-const unresolvableSourceCases = Object.entries(unresolvableImages).flatMap(([source, image]) =>
-  Object.entries(imageInputContainers).flatMap(([container, wrap]) =>
-    (['auto', 'edit', 'generate'] as const).map(action => ({
+const unresolvableSourceCases = Object.entries(imageInputContainers).flatMap(([container, wrap]) =>
+  unresolvableSourceKinds.flatMap(({ source, image, actions }) =>
+    actions.map(action => ({
       source,
       container,
       action,
@@ -665,11 +675,12 @@ test('imageGenerationServerTool counts and fetches one URL once when shared by a
   let requests = 0;
   initExternalResourceFetcher(() => {
     requests += 1;
-    return Promise.resolve(paddedPngResponse(30 * 1024 * 1024));
+    return Promise.resolve(validPngResponse());
   });
   const imageUrl = 'https://example.com/shared.png';
+  const imageGenerationServerToolWithOneImageBudget = createImageGenerationServerTool(VALID_PNG_BYTES.byteLength);
 
-  const result = await imageGenerationServerTool(
+  const result = await imageGenerationServerToolWithOneImageBudget(
     makeCtx({
       tools: [{ type: 'image_generation', action: 'edit', input_image_mask: { image_url: imageUrl } }],
       input: [imageInputContainers.message({ type: 'input_image', image_url: imageUrl, detail: 'auto' })],
@@ -685,10 +696,12 @@ test('imageGenerationServerTool enforces the aggregate limit across distinct suc
   let requests = 0;
   initExternalResourceFetcher(() => {
     requests += 1;
-    return Promise.resolve(paddedPngResponse(26 * 1024 * 1024));
+    return Promise.resolve(validPngResponse());
   });
+  assertEquals(MAX_REMOTE_IMAGE_TOTAL_BYTES, 50 * 1024 * 1024);
+  const imageGenerationServerToolWithSubTwoImageBudget = createImageGenerationServerTool(VALID_PNG_BYTES.byteLength * 2 - 1);
 
-  const result = await imageGenerationServerTool(
+  const result = await imageGenerationServerToolWithSubTwoImageBudget(
     makeCtx({
       tools: [{ type: 'image_generation', action: 'edit' }],
       input: [

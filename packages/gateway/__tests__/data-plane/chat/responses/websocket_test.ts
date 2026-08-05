@@ -444,8 +444,10 @@ test('Responses WebSocket starts capturing on the next turn when dump retention 
       const client = await connectResponsesWebSocket(apiKey.key);
       await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
 
+      const storedDump = dumps.waitForStored();
       await completeResponsesTurn(client, 'capture-after-enable');
-      await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
+      await storedDump;
+      assertEquals(dumps.stored.length, 1);
 
       const stored = dumps.stored[0];
       assertExists(stored);
@@ -473,8 +475,10 @@ test('Responses WebSocket stops capturing on the next turn when dump retention i
   await withSuccessfulResponsesUpstream(
     async () => await withWorkerWebSocketRuntime(async () => {
       const client = await connectResponsesWebSocket(apiKey.key);
+      const storedDump = dumps.waitForStored();
       await completeResponsesTurn(client, 'captured-before-disable');
-      await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
+      await storedDump;
+      assertEquals(dumps.stored.length, 1);
 
       await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: null });
       await completeResponsesTurn(client, 'not-captured-after-disable');
@@ -495,8 +499,10 @@ test('Responses WebSocket dump responseBytes equals the UTF-8 payload bytes sent
       const client = await connectResponsesWebSocket(apiKey.key);
       const recorded = recordRawMessages(client);
       try {
+        const storedDump = dumps.waitForStored();
         await completeResponsesTurn(client, '响应-byte-count');
-        await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
+        await storedDump;
+        assertEquals(dumps.stored.length, 1);
 
         const expectedBytes = recorded.messages.reduce(
           (total, message) => total + new TextEncoder().encode(message).byteLength,
@@ -914,6 +920,7 @@ test('Responses WebSocket dump responseBytes counts an error envelope sent downs
       const recorded = recordRawMessages(client);
       try {
         const received = waitForMessages(client, messages => messages.length === 1);
+        const storedDump = dumps.waitForStored();
         client.send(JSON.stringify({
           type: 'response.create',
           event_id: '错误-byte-count',
@@ -924,7 +931,8 @@ test('Responses WebSocket dump responseBytes counts an error envelope sent downs
         }));
 
         assertEquals((await received)[0]?.status, 404);
-        await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
+        await storedDump;
+        assertEquals(dumps.stored.length, 1);
         const expectedBytes = recorded.messages.reduce(
           (total, message) => total + new TextEncoder().encode(message).byteLength,
           0,
