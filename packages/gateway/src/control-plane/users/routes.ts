@@ -5,6 +5,7 @@ import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { SEED_ADMIN_USER_ID } from '../../repo/seed-admin.ts';
 import type { NewUserDefaultKey, UserUpdate } from '../../repo/types.ts';
+import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
 import { hashPassword, verifyPassword } from '../../shared/passwords.ts';
 import { generateServerSecret } from '../../shared/server-secret.ts';
@@ -111,10 +112,12 @@ export const deleteUser = async (c: AuthedContext) => {
 
   const result = await repo.users.deleteAccount(id, new Date().toISOString());
   if (result.status === 'missing') return c.json({ error: 'user not found' }, 404);
-  // The atomic state change wins even if the broker is unavailable. Closing
-  // subscribers afterwards is a best-effort delivery hint; clients also
-  // reconcile the disabled key when they reconnect or refetch.
-  for (const keyId of result.apiKeyIds) await notifyDisabledBestEffort(keyId, 'deleteUser cascade');
+  // The atomic state change wins before broker delivery begins. Keep the
+  // best-effort closes sequential in background so a slow broker neither
+  // delays the response once per key nor creates unbounded subrequest fanout.
+  backgroundSchedulerFromContext(c)((async () => {
+    for (const keyId of result.apiKeyIds) await notifyDisabledBestEffort(keyId, 'deleteUser cascade');
+  })());
   return c.json({ ok: true });
 };
 
