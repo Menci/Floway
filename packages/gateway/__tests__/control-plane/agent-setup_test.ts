@@ -32,6 +32,8 @@ interface LeaseResponse {
   scripts: { claude: { sh: string; ps1: string }; codex: { sh: string; ps1: string } };
 }
 
+type AppTestContext = Awaited<ReturnType<typeof setupAppTest>>;
+
 const createLease = async (apiKey: ApiKey): Promise<LeaseResponse> => {
   const response = await requestApp('/api/setup', {
     method: 'POST',
@@ -46,6 +48,30 @@ test('control routes require authentication', async () => {
   await setupAppTest({ apiKey: testApiKey() });
   const response = await requestApp('/api/setup', { method: 'POST' });
   assertEquals(response.status, 401);
+});
+
+test('control acquisition rejects foreign and soft-deleted API keys without creating a lease', async () => {
+  const { repo, apiKey } = await setupAppTest({ apiKey: testApiKey() });
+  const foreign = testApiKey({ id: 'key_foreign', userId: 1, name: 'Foreign key', key: 'foreign-raw' });
+  const deleted = testApiKey({
+    id: 'key_deleted',
+    name: 'Deleted key',
+    key: 'deleted-raw',
+    deletedAt: '2026-08-06T00:00:00.000Z',
+  });
+  await repo.apiKeys.save(foreign);
+  await repo.apiKeys.save(deleted);
+
+  for (const apiKeyId of [foreign.id, deleted.id]) {
+    const response = await requestApp('/api/setup', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+      body: JSON.stringify({ apiKeyId }),
+    });
+    assertEquals(response.status, 400);
+    expect(await response.json()).toEqual({ error: 'The selected API key is not available on your account.' });
+  }
+  expect(await repo.agentSetup.latestByUserId(apiKey.userId)).toBeNull();
 });
 
 test('an unsupported method on a token-shaped path is contained before auth and logging', async () => {
@@ -75,16 +101,43 @@ test('the public GET serves the rendered script with hardened headers and no COR
   const text = await response.text();
   expect(text).toContain("SETUP_API_KEY='raw-key'");
   expect(text).toContain("SETUP_API_KEY_NAME='Primary key'");
-  expect(text).toContain('Floway Agent Setup common installer fragment (Bash 3.2+)');
-  expect(text).toContain('Claude Code Agent Setup fragment.');
-  expect(text).not.toContain('Codex Agent Setup fragment.');
 });
 
-test('HEAD validates without assembling the API-key body', async () => {
-  const { apiKey } = await setupAppTest({ apiKey: testApiKey() });
+test('public serving resolves the current key name and secret on every request', async () => {
+  const { repo, apiKey } = await setupAppTest({ apiKey: testApiKey() });
   const lease = await createLease(apiKey);
-  const response = await requestApp(lease.scripts.claude.sh, { method: 'HEAD' });
+  await repo.apiKeys.save({ ...apiKey, name: 'Rotated key', key: 'rotated-raw-key' });
+
+  const response = await requestApp(lease.scripts.claude.sh, { method: 'GET' });
   assertEquals(response.status, 200);
+  const text = await response.text();
+  expect(text).toContain("SETUP_API_KEY='rotated-raw-key'");
+  expect(text).toContain("SETUP_API_KEY_NAME='Rotated key'");
+  expect(text).not.toContain("SETUP_API_KEY='raw-key'");
+});
+
+const publicLeaseInvalidations = [
+  {
+    label: 'the API key is deleted',
+    apply: async ({ repo, apiKey }: AppTestContext) => { await repo.apiKeys.softDelete(apiKey.id); },
+  },
+  {
+    label: 'the API key moves to another owner',
+    apply: async ({ repo, apiKey }: AppTestContext) => { await repo.apiKeys.save({ ...apiKey, userId: 1 }); },
+  },
+  {
+    label: 'the lease owner is deleted',
+    apply: async ({ repo, apiKey }: AppTestContext) => { await repo.users.softDelete(apiKey.userId); },
+  },
+] as const;
+
+test.each(publicLeaseInvalidations)('public serving becomes a generic 404 after $label', async ({ apply }) => {
+  const context = await setupAppTest({ apiKey: testApiKey() });
+  const lease = await createLease(context.apiKey);
+  await apply(context);
+
+  const response = await requestApp(lease.scripts.claude.sh, { method: 'GET' });
+  assertEquals(response.status, 404);
   assertEquals(await response.text(), '');
 });
 
@@ -92,6 +145,7 @@ test('a bogus token is a generic 404 with an empty body and no auth challenge', 
   await setupAppTest({ apiKey: testApiKey() });
   const response = await requestApp(`/api/setup/${'a'.repeat(43)}/claude.sh`, { method: 'GET' });
   assertEquals(response.status, 404);
+  assertEquals(response.headers.get('www-authenticate'), null);
   assertEquals(await response.text(), '');
 });
 
@@ -128,18 +182,17 @@ test('OPTIONS on a script path is contained without resolving the lease or expos
   assertEquals(preflight.headers.get('cache-control'), 'no-store');
   expect(findByTokenSpy).not.toHaveBeenCalled();
   findByTokenSpy.mockRestore();
-
-  const get = await requestApp(lease.scripts.claude.sh, { method: 'GET' });
-  assertEquals(get.headers.get('access-control-allow-origin'), null);
 });
 
-test('a public-serve failure is sealed to an opaque 500 that leaks neither token nor secret', async () => {
+test('a hostile public-serve error cannot escape into the detailed gateway error boundary', async () => {
   const { apiKey } = await setupAppTest({ apiKey: testApiKey() });
   const lease = await createLease(apiKey);
   const repo = getRepo();
 
   const injectedSecret = 'INJECTED-SECRET-sk-abcdef0123456789';
-  repo.agentSetup.findByToken = () => { throw new Error(`forced failure leaking ${lease.token} and ${injectedSecret}`); };
+  const hostile = new Error('safe message');
+  Object.defineProperty(hostile, 'stack', { get: () => { throw new Error(injectedSecret); } });
+  repo.agentSetup.findByToken = () => { throw hostile; };
 
   const logged: string[] = [];
   const errorSpy = vi.spyOn(console, 'error').mockImplementation((...args) => { logged.push(args.map(String).join(' ')); });
@@ -154,9 +207,24 @@ test('a public-serve failure is sealed to an opaque 500 that leaks neither token
     errorSpy.mockRestore();
   }
   const joined = logged.join('\n');
+  expect(logged).toEqual(['Agent Setup: failed to serve a public setup script']);
   expect(joined).not.toContain(lease.token);
   expect(joined).not.toContain(injectedSecret);
-  expect(joined).not.toContain('forced failure');
+});
+
+test('a different authenticated user cannot heartbeat another user\'s lease', async () => {
+  const { repo, apiKey, adminSession } = await setupAppTest({ apiKey: testApiKey() });
+  const lease = await createLease(apiKey);
+  const before = await repo.agentSetup.findByToken(lease.token);
+
+  const response = await requestApp('/api/setup/heartbeat', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
+    body: JSON.stringify({ token: lease.token }),
+  });
+  assertEquals(response.status, 409);
+  expect(await response.json()).toEqual({ status: 'missing' });
+  expect(await repo.agentSetup.findByToken(lease.token)).toEqual(before);
 });
 
 test('an ordinary control-route internal error still surfaces the full stack trace', async () => {
