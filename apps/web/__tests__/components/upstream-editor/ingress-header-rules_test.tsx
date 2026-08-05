@@ -47,7 +47,7 @@ describe('Custom ingress header rules', () => {
     renderInApp(<Harness />);
     expect(valueOf(screen.getByLabelText(label('keyForRow', 1)))).toBe('');
     expect(valueOf(screen.getByLabelText(label('valueForRow', 1)))).toBe('');
-    expect(placeholderOf(screen.getByLabelText(label('valueForRow', 1)))).toBe(i18n.t('dashboard.upstreamEditor.headers.passthrough'));
+    expect(placeholderOf(screen.getByLabelText(label('valueForRow', 1)))).toBe('');
     expect(disabled(screen.getByLabelText(label('valueForRow', 1)))).toBe(true);
     expect(disabled(screen.getByRole('button', { name: label('remove', 1) }))).toBe(true);
     expect(screen.getAllByRole('group', { name: /Header rule/ })).toHaveLength(1);
@@ -86,8 +86,10 @@ describe('Custom ingress header rules', () => {
     fireEvent.change(draft, { target: { value: 'X-Route' } });
     expect(document.activeElement).toBe(draft);
     expect(disabled(screen.getByLabelText(label('valueForRow', 1)))).toBe(false);
+    expect(placeholderOf(screen.getByLabelText(label('valueForRow', 1)))).toBe(i18n.t('dashboard.upstreamEditor.headers.passthrough'));
     expect(valueOf(screen.getByLabelText(label('keyForRow', 2)))).toBe('');
     expect(disabled(screen.getByLabelText(label('valueForRow', 2)))).toBe(true);
+    expect(placeholderOf(screen.getByLabelText(label('valueForRow', 2)))).toBe('');
     fireEvent.blur(draft);
     expect(valueOf(draft)).toBe('x-route');
   });

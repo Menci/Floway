@@ -111,7 +111,7 @@ function IngressHeaderRuleRow({
             if (data.optionValue === PASSTHROUGH_OPTION) field.onChange(null);
             if (data.optionValue === EMPTY_OPTION) field.onChange('');
           }}
-          placeholder={placeholder}
+          placeholder={valueDisabled ? undefined : placeholder}
           selectedOptions={field.value === null ? [PASSTHROUGH_OPTION] : field.value === '' ? [EMPTY_OPTION] : []}
           spellCheck={false}
           value={field.value ?? ''}
