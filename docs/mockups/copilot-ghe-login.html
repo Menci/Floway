@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Floway · Copilot GHE login UI mock</title>
+  <title>Floway — Copilot GHE login UI mock</title>
   <style>
     :root {
       color-scheme: light dark;
@@ -238,6 +238,45 @@
     .switch { width: 38px; height: 20px; border-radius: 12px; background: var(--accent); padding: 2px; }
     .switch::after { content: ""; display: block; width: 16px; height: 16px; border-radius: 50%; background: var(--accent-text); margin-left: 18px; }
 
+    .list-page { height: 100%; }
+    .list-header { display: flex; align-items: start; margin-bottom: 18px; }
+    .list-title { font-size: 28px; line-height: 1.15; font-weight: 600; margin-bottom: 4px; }
+    .new-wrap { margin-left: auto; position: relative; }
+    .new-menu {
+      position: absolute;
+      z-index: 5;
+      top: 38px;
+      right: 0;
+      width: 238px;
+      padding: 4px;
+      border: 1px solid var(--stroke);
+      border-radius: 7px;
+      background: color-mix(in srgb, var(--layer) 96%, transparent);
+      backdrop-filter: blur(22px);
+      box-shadow: 0 8px 28px #0003;
+    }
+    .menu-item { height: 34px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border-radius: 4px; }
+    .menu-item:hover, .menu-item.active { background: var(--subtle); }
+    .copilot-mark { width: 18px; height: 18px; }
+    .resource-panel { overflow: visible; }
+    .resource-toolbar { height: 52px; display: flex; align-items: center; padding: 0 16px; border-bottom: 1px solid var(--stroke); }
+    .resource-toolbar .button { margin-left: auto; }
+    .resource-table { width: 100%; border-collapse: collapse; }
+    .resource-table th { height: 38px; color: var(--muted); font-size: 12px; text-align: left; font-weight: 400; background: var(--subtle); }
+    .resource-table th, .resource-table td { padding: 0 14px; border-bottom: 1px solid var(--stroke); }
+    .resource-table td { height: 58px; }
+    .resource-table tr:last-child td { border-bottom: 0; }
+    .provider-cell { display: flex; align-items: center; gap: 10px; }
+    .provider-icon-wrap { width: 31px; height: 31px; display: grid; place-items: center; border-radius: 6px; background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
+    .provider-icon-wrap .copilot-mark { width: 21px; height: 21px; }
+    .resource-name { font-weight: 600; }
+    .resource-summary { color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .status { display: inline-flex; align-items: center; gap: 6px; }
+    .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #107c10; }
+    .row-actions { display: flex; justify-content: end; gap: 4px; }
+    .row-action { border: 0; width: 30px; height: 30px; border-radius: 4px; background: transparent; }
+    .row-action:hover { background: var(--subtle); }
+
     @media (max-width: 1050px) {
       body { overflow: auto; height: auto; }
       .app { height: auto; grid-template-columns: 210px minmax(0,1fr); }
@@ -250,13 +289,14 @@
 </head>
 <body>
   <div class="review-bar">
-    <div class="review-title">Copilot GHE login · UI mock</div>
+    <div class="review-title">Copilot GHE login UI mock</div>
     <div class="review-note">Review controls only — not part of the product UI</div>
     <div class="segmented" aria-label="Mock state">
       <button class="segment" data-state="github" aria-pressed="true">GitHub.com</button>
       <button class="segment" data-state="ghe" aria-pressed="false">GHE</button>
       <button class="segment" data-state="waiting" aria-pressed="false">Waiting</button>
       <button class="segment" data-state="connected" aria-pressed="false">Connected</button>
+      <button class="segment" data-state="list" aria-pressed="false">Upstream list</button>
     </div>
     <button class="icon-button" id="theme" title="Toggle light/dark theme" aria-label="Toggle light/dark theme">◐</button>
   </div>
@@ -277,7 +317,7 @@
     </nav>
 
     <main>
-      <div class="page">
+      <div class="page" id="editor-page">
         <header class="page-header">
           <button class="back" aria-label="Back">←</button>
           <span id="page-title">New GitHub Copilot upstream</span>
@@ -309,12 +349,10 @@
                       <div class="input-wrap combobox">
                         <input class="input mono" id="host" value="github.com" list="github-hosts" spellcheck="false" autocomplete="off" role="combobox" aria-autocomplete="list" aria-describedby="host-hint">
                         <datalist id="github-hosts">
-                          <option value="github.com">GitHub.com</option>
-                          <option value="msft.ghe.com">Microsoft GHE</option>
-                          <option value="microsoft.ghe.com">Microsoft GHE</option>
+                          <option value="github.com"></option>
                         </datalist>
                       </div>
-                      <div class="hint" id="host-hint">Choose a host or enter any GitHub hostname. Defaults to github.com.</div>
+                      <div class="hint" id="host-hint">Choose a host or enter any GitHub hostname.</div>
                     </div>
 
                     <div id="unconnected">
@@ -328,7 +366,7 @@
                       <div class="device">
                         <div class="device-label">Device code</div>
                         <code class="device-code mono">B7F2-E91C</code>
-                        <a class="device-link mono" id="verification" href="#">https://msft.ghe.com/login/device</a>
+                        <a class="device-link mono" id="verification" href="#">https://octocorp.ghe.com/login/device</a>
                         <div class="spinner-row"><span class="spinner"></span>Waiting for authorization…</div>
                       </div>
                     </div>
@@ -340,9 +378,10 @@
                           <span>
                             <span class="account-title">Alex Morgan</span><br>
                             <span class="account-subtitle">@alexm</span><br>
-                            <span class="host-pill mono" id="account-host">msft.ghe.com</span>
+                            <span class="host-pill mono" id="account-host">octocorp.ghe.com</span>
                           </span>
                         </div>
+                        <button class="button wide" id="change-account">⇄&nbsp; Change account</button>
                         <div class="quota">
                           <div class="quota-head"><span class="quota-title">Quota</span><button class="button">↻&nbsp; Refresh</button></div>
                           <div class="quota-empty">No quota observed yet. This upstream’s first request will provide one, or refresh to fetch one now.</div>
@@ -378,6 +417,42 @@
           </section>
         </div>
       </div>
+
+      <div class="list-page" id="list-page" hidden>
+        <header class="list-header">
+          <div><div class="list-title">Upstreams</div><div class="description">Connect provider accounts and manage their model catalogs.</div></div>
+          <div class="new-wrap">
+            <button class="button primary">＋&nbsp; New upstream&nbsp;⌄</button>
+            <div class="new-menu">
+              <div class="menu-item">◈&nbsp; Custom provider</div>
+              <div class="menu-item">▦&nbsp; Azure AI</div>
+              <div class="menu-item active">
+                <svg class="copilot-mark" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19.245 5.364c1.322 1.36 1.877 3.216 2.11 5.817.622 0 1.2.135 1.592.654l.73.964c.21.278.323.61.323.955v2.62c0 .339-.173.669-.453.868C20.239 19.602 16.157 21.5 12 21.5c-4.6 0-9.205-2.583-11.547-4.258-.28-.2-.452-.53-.453-.868v-2.62c0-.345.113-.679.321-.956l.73-.963c.392-.517.974-.654 1.593-.654l.029-.297c.25-2.446.81-4.213 2.082-5.52C7.216 2.824 10.465 2.513 11.901 2.5h.198c1.436.013 4.685.323 7.146 2.864zM9.476 13.705a.964.964 0 0 0-.976.951v1.752c0 .525.437.95.976.95s.976-.425.976-.95v-1.753a.964.964 0 0 0-.976-.95zm5 0a.964.964 0 0 0-.976.951v1.752c0 .525.437.95.976.95s.976-.425.976-.95v-1.753a.964.964 0 0 0-.976-.95z"/></svg>
+                GitHub Copilot account
+              </div>
+              <div class="menu-item">◇&nbsp; Codex subscription</div>
+              <div class="menu-item">◆&nbsp; Claude Code subscription</div>
+              <div class="menu-item">◉&nbsp; Ollama</div>
+            </div>
+          </div>
+        </header>
+        <section class="panel resource-panel">
+          <div class="resource-toolbar"><strong>2 upstreams</strong><button class="button">↻&nbsp; Refresh</button></div>
+          <table class="resource-table">
+            <thead><tr><th>Upstream</th><th>Provider</th><th>Models</th><th>Enabled</th><th></th></tr></thead>
+            <tbody>
+              <tr>
+                <td><div class="provider-cell"><span class="provider-icon-wrap"><svg class="copilot-mark" viewBox="0 0 24 24" fill="currentColor"><path d="M19.245 5.364c1.322 1.36 1.877 3.216 2.11 5.817.622 0 1.2.135 1.592.654l.73.964c.21.278.323.61.323.955v2.62c0 .339-.173.669-.453.868C20.239 19.602 16.157 21.5 12 21.5c-4.6 0-9.205-2.583-11.547-4.258-.28-.2-.452-.53-.453-.868v-2.62c0-.345.113-.679.321-.956l.73-.963c.392-.517.974-.654 1.593-.654l.029-.297c.25-2.446.81-4.213 2.082-5.52C7.216 2.824 10.465 2.513 11.901 2.5h.198c1.436.013 4.685.323 7.146 2.864zM9.476 13.705a.964.964 0 0 0-.976.951v1.752c0 .525.437.95.976.95s.976-.425.976-.95v-1.753a.964.964 0 0 0-.976-.95zm5 0a.964.964 0 0 0-.976.951v1.752c0 .525.437.95.976.95s.976-.425.976-.95v-1.753a.964.964 0 0 0-.976-.95z"/></svg></span><span><div class="resource-name">Copilot (personal)</div><div class="resource-summary">@alexm</div><div class="resource-summary mono">github.com</div></span></div></td>
+                <td>GitHub Copilot</td><td><span class="status">14 models</span></td><td><span class="switch"></span></td><td><div class="row-actions"><button class="row-action">✎</button><button class="row-action">⋯</button></div></td>
+              </tr>
+              <tr>
+                <td><div class="provider-cell"><span class="provider-icon-wrap"><svg class="copilot-mark" viewBox="0 0 24 24" fill="currentColor"><path d="M19.245 5.364c1.322 1.36 1.877 3.216 2.11 5.817.622 0 1.2.135 1.592.654l.73.964c.21.278.323.61.323.955v2.62c0 .339-.173.669-.453.868C20.239 19.602 16.157 21.5 12 21.5c-4.6 0-9.205-2.583-11.547-4.258-.28-.2-.452-.53-.453-.868v-2.62c0-.345.113-.679.321-.956l.73-.963c.392-.517.974-.654 1.593-.654l.029-.297c.25-2.446.81-4.213 2.082-5.52C7.216 2.824 10.465 2.513 11.901 2.5h.198c1.436.013 4.685.323 7.146 2.864zM9.476 13.705a.964.964 0 0 0-.976.951v1.752c0 .525.437.95.976.95s.976-.425.976-.95v-1.753a.964.964 0 0 0-.976-.95zm5 0a.964.964 0 0 0-.976.951v1.752c0 .525.437.95.976.95s.976-.425.976-.95v-1.753a.964.964 0 0 0-.976-.95z"/></svg></span><span><div class="resource-name">Copilot (work)</div><div class="resource-summary">@alexm</div><div class="resource-summary mono mock-change">octocorp.ghe.com</div></span></div></td>
+                <td>GitHub Copilot</td><td><span class="status">12 models</span></td><td><span class="switch"></span></td><td><div class="row-actions"><button class="row-action">✎</button><button class="row-action">⋯</button></div></td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      </div>
     </main>
   </div>
 
@@ -393,6 +468,8 @@
     const description = document.querySelector('#description');
     const pageTitle = document.querySelector('#page-title');
     const unsaved = document.querySelector('#unsaved');
+    const editorPage = document.querySelector('#editor-page');
+    const listPage = document.querySelector('#list-page');
 
     const normalizeHost = value => value.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '') || 'github.com';
     const updateHostCopy = () => {
@@ -408,6 +485,9 @@
 
     const showState = state => {
       segments.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.state === state)));
+      editorPage.hidden = state === 'list';
+      listPage.hidden = state !== 'list';
+      if (state === 'list') return;
       unconnected.hidden = state === 'waiting' || state === 'connected';
       waiting.hidden = state !== 'waiting';
       connected.hidden = state !== 'connected';
@@ -415,13 +495,14 @@
       pageTitle.textContent = state === 'connected' ? 'Copilot (work)' : 'New GitHub Copilot upstream';
       unsaved.hidden = state === 'connected';
       if (state === 'github') host.value = 'github.com';
-      if (state === 'ghe' || state === 'waiting' || state === 'connected') host.value = 'msft.ghe.com';
+      if (state === 'ghe' || state === 'waiting' || state === 'connected') host.value = 'octocorp.ghe.com';
       updateHostCopy();
     };
 
     segments.forEach(button => button.addEventListener('click', () => showState(button.dataset.state)));
     host.addEventListener('input', updateHostCopy);
     connect.addEventListener('click', () => showState('waiting'));
+    document.querySelector('#change-account').addEventListener('click', () => showState('ghe'));
     document.querySelector('#theme').addEventListener('click', () => {
       document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? '' : 'dark';
     });
