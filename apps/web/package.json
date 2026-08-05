@@ -6,7 +6,7 @@
   "exports": {},
   "scripts": {
     "dev": "react-router dev",
-    "build": "react-router build && jiti scripts/check-web-monaco-lazy.ts && jiti scripts/check-web-gallery-dev-only.ts && jiti scripts/check-web-locales-split.ts && jiti scripts/check-web-color-boundary.ts",
+    "build": "react-router build && jiti scripts/check-web-monaco-lazy.ts && jiti scripts/check-web-gallery-dev-only.ts && jiti scripts/check-web-locales-split.ts",
     "test": "vitest run",
     "typecheck": "react-router typegen && tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json"
   },

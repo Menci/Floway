@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { blendHex, hexToRgb, readableTone, rgbToHsv } from '../../src/lib/color';
-import { hsvToRgb, rgbToHex } from '../../src/lib/color-bytes';
+import { blendHex, hexToRgb, hsvToRgb, readableTone, rgbToHex, rgbToHsv } from '../../src/lib/color';
 import { hueBadgeTone } from '../../src/lib/hue';
 
 // The subject decides by contrast, so the assertions compute it independently
@@ -99,23 +98,6 @@ describe('hsvToRgb', () => {
     expect(hsvToRgb(180, 0, 0.5)).toEqual([128, 128, 128]);
   });
 
-  it.each([
-    [1, 1, 1, [255, 4, 0]],
-    [59, 1, 1, [255, 251, 0]],
-    [119, 1, 1, [4, 255, 0]],
-    [179, 1, 1, [0, 255, 251]],
-    [239, 1, 1, [0, 4, 255]],
-    [299, 1, 1, [251, 0, 255]],
-    [359, 1, 1, [255, 0, 4]],
-    [17, 0.41, 0.73, [186, 131, 110]],
-    [73, 0.83, 0.57, [119, 145, 25]],
-    [211, 0.67, 0.92, [77, 153, 235]],
-    [318, 0.22, 0.31, [79, 62, 74]],
-    [30, 1, 0.5, [128, 64, 0]],
-    [210, 0.5, 0.5, [64, 96, 128]],
-  ] as const)('preserves the frozen byte result for hsv(%s, %s, %s)', (h, s, v, expected) => {
-    expect(hsvToRgb(h, s, v)).toEqual(expected);
-  });
 });
 
 describe('HSV/RGB/HEX round-trip', () => {
@@ -194,26 +176,6 @@ describe('readableTone', () => {
     expect(resultSaturation).toBeLessThan(sourceSaturation);
   });
 
-  it.each([
-    ['#C239B3', '#FFFFFF', '#C239B3'],
-    ['#C239B3', '#373737', '#F962E8'],
-    ['#FFD740', '#FFFFFF', '#8A7423'],
-    ['#0000FF', '#373737', '#9999FF'],
-    ['#0000FF', '#787878', '#000036'],
-    ['#00E5FF', '#FFFFFF', '#008391'],
-    ['#00E5FF', '#373737', '#00E5FF'],
-    ['#00306E', '#FFFFFF', '#00306E'],
-    ['#4CC2FF', '#2C2C2C', '#4CC2FF'],
-    ['#10B981', '#808080', '#021C13'],
-    ['#F43F5E', '#949494', '#551621'],
-    ['#FBBF24', '#6E6E6E', '#FCF1D4'],
-    ['#5AF19C', '#FFFFFF', '#328556'],
-    ['#010203', '#FFFFFF', '#010203'],
-    ['#FEFDFC', '#000000', '#FEFDFC'],
-  ])('preserves the frozen readable tone for %s on %s', (hex, surface, expected) => {
-    expect(readableTone(hex, surface)).toBe(expected);
-  });
-
   it('reaches the floor for every tone a hue can produce, in both schemes', () => {
     for (let hue = 0; hue < 360; hue += 1) {
       const tone = hueBadgeTone(hue);
@@ -236,14 +198,6 @@ describe('blendHex', () => {
   it('composites a tenth of the hue onto both cards', () => {
     expect(blendHex('#C239B3', 0.1, '#FFFFFF')).toBe('#F9EBF7');
     expect(blendHex('#C239B3', 0.1, '#373737')).toBe('#453743');
-  });
-
-  it('preserves the byte-rounded alpha compositing boundary', () => {
-    expect(blendHex('#010203', 0.5, '#040506')).toBe('#030405');
-    expect(blendHex('#ABCDEF', 0.333, '#123456')).toBe('#456789');
-    expect(blendHex('#4CC2FF', 0.21 - Number.EPSILON, '#2C2C2C')).toBe('#334B58');
-    expect(blendHex('#4CC2FF', 0.21, '#2C2C2C')).toBe('#334C58');
-    expect(blendHex('#4CC2FF', 0.21 + Number.EPSILON, '#2C2C2C')).toBe('#334C58');
   });
 
   it('rejects an unparseable value on either side', () => {

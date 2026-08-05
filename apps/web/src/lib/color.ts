@@ -1,38 +1,48 @@
-import { convertRgbToHsv, convertRgbToLrgb, parseHex, wcagContrast } from 'culori/fn';
-
-import { hsvToRgb, rgbToHex, type RgbTuple } from './color-bytes';
+import {
+  blend,
+  convertHsvToRgb,
+  convertRgbToHsv,
+  convertRgbToLrgb,
+  formatHex,
+  modeRgb,
+  parseHex,
+  useMode as registerMode,
+  wcagContrast,
+} from 'culori/fn';
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+export type RgbTuple = [number, number, number];
+
+registerMode(modeRgb);
 
 const rgbTuple = ({ r, g, b }: { r: number; g: number; b: number }): RgbTuple =>
   [r, g, b].map(channel => Math.round(channel * 255)) as RgbTuple;
 
 const rgbColor = ([r, g, b]: RgbTuple) => ({ mode: 'rgb' as const, r: r / 255, g: g / 255, b: b / 255 });
 
-export const hexToRgb = (hex: string): RgbTuple => {
+const parseRgb = (hex: string) => {
   if (!HEX_RE.test(hex)) throw new TypeError(`Not a #RRGGBB colour: ${hex}`);
-  return rgbTuple(parseHex(hex)!);
+  return parseHex(hex)!;
 };
 
+export const hexToRgb = (hex: string): RgbTuple => rgbTuple(parseRgb(hex));
+
+export const rgbToHex = (r: number, g: number, b: number): string =>
+  formatHex(rgbColor([r, g, b])).toUpperCase();
+
 export const rgbToHsv = (r: number, g: number, b: number): [number, number, number] => {
-  const { h, v } = convertRgbToHsv(rgbColor([r, g, b]));
-  // Culori's equivalent `1 - min / max` changes the last bit for byte inputs,
-  // which can move readableTone across a byte-rounding boundary.
-  const channels = [r / 255, g / 255, b / 255];
-  const max = Math.max(...channels);
-  const s = max === 0 ? 0 : (max - Math.min(...channels)) / max;
+  const { h, s, v } = convertRgbToHsv(rgbColor([r, g, b]));
   return [h ?? 0, s, v];
 };
+
+export const hsvToRgb = (h: number, s: number, v: number): RgbTuple =>
+  rgbTuple(convertHsvToRgb({ mode: 'hsv', h, s, v }));
 
 const linearRgb = (rgb: RgbTuple) => convertRgbToLrgb(rgbColor(rgb));
 
 export const blendHex = (hex: string, alpha: number, backdrop: string): string => {
-  const top = hexToRgb(hex);
-  const bottom = hexToRgb(backdrop);
-  // Culori composites normalized channels and can land one floating-point step
-  // below an exact half-byte. This API's integer formula is its rounding contract.
-  return rgbToHex(...(top.map((channel, index) =>
-    Math.round(channel * alpha + bottom[index]! * (1 - alpha))) as RgbTuple));
+  const foreground = { ...parseRgb(hex), alpha };
+  return formatHex(blend([parseRgb(backdrop), foreground], 'normal', 'rgb')).toUpperCase();
 };
 
 // WCAG 2.2 requires at least 4.5:1 contrast for normal text.
