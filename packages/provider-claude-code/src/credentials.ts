@@ -4,9 +4,9 @@ import type { UpstreamRecord } from '@floway-dev/provider';
 
 export type ValidatedClaudeCodeUpstreamRecord = ClaudeCodeUpstreamRecord & { state: ClaudeCodeUpstreamState };
 
-export const assertClaudeCodeUpstreamCredentials = (
+export function assertClaudeCodeUpstreamCredentials(
   record: UpstreamRecord,
-): asserts record is ValidatedClaudeCodeUpstreamRecord => {
+): asserts record is ValidatedClaudeCodeUpstreamRecord {
   assertClaudeCodeUpstreamRecord(record);
   assertClaudeCodeUpstreamState(record.state);
   const identity = record.config.accounts[0];
@@ -16,4 +16,4 @@ export const assertClaudeCodeUpstreamCredentials = (
       `Claude Code account identity ${identity.accountUuid} does not match credential ${credential.accountUuid}`,
     );
   }
-};
+}

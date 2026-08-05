@@ -4,9 +4,9 @@ import type { UpstreamRecord } from '@floway-dev/provider';
 
 export type ValidatedCodexUpstreamRecord = CodexUpstreamRecord & { state: CodexUpstreamState };
 
-export const assertCodexUpstreamCredentials = (
+export function assertCodexUpstreamCredentials(
   record: UpstreamRecord,
-): asserts record is ValidatedCodexUpstreamRecord => {
+): asserts record is ValidatedCodexUpstreamRecord {
   assertCodexUpstreamRecord(record);
   assertCodexUpstreamState(record.state);
   const identity = record.config.accounts[0];
@@ -16,4 +16,4 @@ export const assertCodexUpstreamCredentials = (
       `Codex account identity ${identity.chatgptAccountId} does not match credential ${credential.chatgptAccountId}`,
     );
   }
-};
+}
