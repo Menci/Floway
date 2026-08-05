@@ -7,7 +7,7 @@ export const hasLoneSurrogate = (value: string): boolean => {
     const codeUnit = value.charCodeAt(index);
     if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
       const next = value.charCodeAt(index + 1);
-      if (next < 0xdc00 || next > 0xdfff) return true;
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return true;
       index += 1;
     } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
       return true;
