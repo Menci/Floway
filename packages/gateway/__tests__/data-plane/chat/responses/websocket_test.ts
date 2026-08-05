@@ -1919,6 +1919,10 @@ test('Responses WebSocket send failures close downstream delivery and drain the 
       type: 'response.create',
       response: { model: 'gpt-direct-responses', input: 'fail the first send' },
     }));
+    client.send(JSON.stringify({
+      type: 'response.create',
+      response: { model: 'gpt-direct-responses', input: 'must never dispatch' },
+    }));
     const events = await promiseWithin(
       turn.events,
       'Responses WebSocket did not create the controlled send-failure stream',
@@ -1936,7 +1940,11 @@ test('Responses WebSocket send failures close downstream delivery and drain the 
 
     assertEquals(signal.aborted, true);
     assert(signal.reason === sendFailure, 'expected the original send error to become the abort reason');
-    client.close();
+    assertEquals(client.readyState, WebSocket.CLOSED);
+    assertEquals(client.closeCode, 1011);
+    assertEquals(client.closeReason, 'downstream_send_failed');
+    await flushAsyncWork();
+    assertEquals(turn.calls(), 1);
   });
 });
 

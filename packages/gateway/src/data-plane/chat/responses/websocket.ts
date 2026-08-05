@@ -57,6 +57,9 @@ interface ResponsesWebSocketSocket {
 // https://github.com/openai/openai-node/blob/d77cf24d9f3885739c6cba76bc009abf0ab97428/src/resources/responses/ws-base.ts#L346-L371
 export const KEEP_ALIVE_EVENT_TYPE = 'floway:keep_alive';
 
+const DOWNSTREAM_FAILURE_CLOSE_CODE = 1011;
+const DOWNSTREAM_FAILURE_CLOSE_REASON = 'downstream_send_failed';
+
 interface ResponsesWebSocketHandlers {
   onOpen(event: unknown, socket: ResponsesWebSocketSocket): void;
   onMessage(event: { readonly data: unknown }, socket: ResponsesWebSocketSocket): void;
@@ -206,6 +209,16 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
     sessionClosedResolve?.();
   };
 
+  const closeAfterDownstreamLoss = (
+    socket: ResponsesWebSocketSocket,
+    reason?: unknown,
+  ): void => {
+    closeActiveRequest(reason);
+    if (socket.readyState === WebSocket.OPEN) {
+      socket.close(DOWNSTREAM_FAILURE_CLOSE_CODE, DOWNSTREAM_FAILURE_CLOSE_REASON);
+    }
+  };
+
   const closeWithError = (
     socket: ResponsesWebSocketSocket,
     status: number,
@@ -222,18 +235,29 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
     if (closed || activeTurn !== undefined) return;
     activeTurn = (async () => {
       if (turn.prepared.kind === 'unsupported') {
-        sendError(turn.socket, 400, {
+        const sent = sendError(turn.socket, 400, {
           type: 'invalid_request_error',
           code: 'invalid_request_error',
           message: `Unsupported WebSocket message data: ${turn.prepared.description}`,
         });
+        if (!sent.ok) closeAfterDownstreamLoss(turn.socket, sent.error);
         return;
       }
 
       const clientDisconnectController = new AbortController();
       activeClientDisconnectController = clientDisconnectController;
       try {
-        await handleClientMessage(c, turn.socket, session, turn.prepared.bytes, authenticatedRawKey, clientDisconnectController, () => closed, sessionScheduler);
+        await handleClientMessage(
+          c,
+          turn.socket,
+          session,
+          turn.prepared.bytes,
+          authenticatedRawKey,
+          clientDisconnectController,
+          () => closed,
+          reason => closeAfterDownstreamLoss(turn.socket, reason),
+          sessionScheduler,
+        );
       } finally {
         if (activeClientDisconnectController === clientDisconnectController) activeClientDisconnectController = undefined;
       }
@@ -241,7 +265,9 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
       // WS-specific top-level: Hono's onError never runs for callbacks fired off
       // an open socket, so serialize the error inline.
       .catch(error => {
-        if (!closed) sendError(turn.socket, 500, serverErrorEnvelope(error));
+        if (closed) return;
+        const sent = sendError(turn.socket, 500, serverErrorEnvelope(error));
+        if (!sent.ok) closeAfterDownstreamLoss(turn.socket, sent.error);
       })
       .finally(() => {
         turn.reservation.release();
@@ -330,6 +356,7 @@ const handleClientMessage = async (
   authenticatedRawKey: string,
   clientDisconnectController: AbortController,
   isClosed: () => boolean,
+  onDownstreamLoss: (reason?: unknown) => void,
   backgroundScheduler: BackgroundScheduler,
 ): Promise<void> => {
   const signal = clientDisconnectController.signal;
@@ -360,7 +387,8 @@ const handleClientMessage = async (
     },
     fail: (status, error) => {
       turnFailure.evict();
-      sendError(socket, status, error, eventId, ctx?.dump);
+      const sent = sendError(socket, status, error, eventId, ctx?.dump);
+      if (!sent.ok) onDownstreamLoss(sent.error);
     },
   };
 
@@ -440,7 +468,7 @@ const handleClientMessage = async (
       throw error;
     }
 
-    await respondResponsesWebSocket({ socket, eventId, clientDisconnectController, isClosed, result, ctx, payload, turnFailure });
+    await respondResponsesWebSocket({ socket, eventId, clientDisconnectController, isClosed, onDownstreamLoss, result, ctx, payload, turnFailure });
   } catch (error) {
     if (signal.aborted && error === signal.reason) return;
     if (error instanceof TranslatorInputError) {
@@ -492,12 +520,13 @@ const respondResponsesWebSocket = async (input: {
   readonly eventId: string | undefined;
   readonly clientDisconnectController: AbortController;
   readonly isClosed: () => boolean;
+  readonly onDownstreamLoss: (reason?: unknown) => void;
   readonly result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>;
   readonly ctx: ChatGatewayCtx;
   readonly payload: CanonicalResponsesPayload;
   readonly turnFailure: ResponsesWsTurnFailure;
 }): Promise<void> => {
-  const { socket, eventId, clientDisconnectController, isClosed, result, ctx, payload, turnFailure } = input;
+  const { socket, eventId, clientDisconnectController, isClosed, onDownstreamLoss, result, ctx, payload, turnFailure } = input;
   const { signal } = clientDisconnectController;
   if (result.type === 'api-error') {
     recordFailedRequest(ctx, result.performance);
@@ -530,12 +559,10 @@ const respondResponsesWebSocket = async (input: {
     const sequence = createDownstreamSequence();
 
     const recordClientDisconnect = (reason?: unknown): void => {
+      if (clientDisconnected) return;
       clientDisconnected = true;
       completion = 'cancel';
-      if (!signal.aborted) {
-        if (reason === undefined) clientDisconnectController.abort();
-        else clientDisconnectController.abort(reason);
-      }
+      onDownstreamLoss(reason);
     };
 
     try {
@@ -853,9 +880,7 @@ const sendError = (
   error: Record<string, unknown>,
   eventId?: string,
   dump?: DumpAccumulator | null,
-): void => {
-  sendJson(socket, { type: 'error', status, error }, eventId, dump);
-};
+): WebSocketSendResult => sendJson(socket, { type: 'error', status, error }, eventId, dump);
 
 // A turn's own frames go out through this entry, which accepts only a stream
 // event whose response resource has already passed the client-facing egress
