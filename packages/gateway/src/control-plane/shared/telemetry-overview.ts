@@ -107,6 +107,8 @@ export interface TelemetryDimensionSpec<Row> {
   includeFacet?: (row: Row, value: string) => boolean;
 }
 
+// Facets come from unfiltered rows so applying one constraint never narrows a
+// filter menu. Values within a dimension are OR'd; dimensions are AND'd.
 export const partitionTelemetryOverviewRecords = <Row, Dimension extends string>(
   rows: readonly Row[],
   dimensions: Record<Dimension, TelemetryDimensionSpec<Row>>,

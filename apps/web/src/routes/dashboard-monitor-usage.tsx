@@ -162,6 +162,8 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     () => search && buildSearchChart({ search, range: loadedQuery.range, buckets }),
     [buckets, loadedQuery.range, search],
   );
+  // Recorded search traffic stays visible after the operator turns search off.
+  // A failed fetch does not establish that there was no search traffic.
   const showSearch = searchChart === null || searchChart.entries.length > 0;
 
   const changeGroupBy = (next: UsageGroupBy) => {
