@@ -49,10 +49,11 @@ test('PATCH /api/keys/:id changes only the rolling Responses duration', async ()
 });
 
 test('PATCH /api/keys/:id rejects unsupported Responses retention values', async () => {
-  const { apiKey } = await setupAppTest();
+  const { apiKey, repo } = await setupAppTest();
   for (const value of [-1, 1, 3600, 86_401, 315_360_001, 86_400.5]) {
     assertEquals((await ownerPatch(apiKey.id, { responses_retention_seconds: value }, apiKey.key)).status, 400);
   }
+  assertEquals(await repo.apiKeys.getById(apiKey.id), apiKey);
 });
 
 test('PATCH /api/keys/:id accepts a custom upstream whitelist + order', async () => {
@@ -417,6 +418,42 @@ test('POST /api/keys/:id/rotate accepts a caller-provided key when key_source is
   assertEquals((await repo.apiKeys.getById(apiKey.id))?.key, 'new-custom-key');
 });
 
+test('POST /api/keys/:id/rotate retries a raced generated-key collision through CAS', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const rotateOriginal = repo.apiKeys.rotate.bind(repo.apiKeys);
+  const rotate = vi.spyOn(repo.apiKeys, 'rotate')
+    .mockRejectedValueOnce(new Error('UNIQUE constraint failed: api_keys.key'))
+    .mockImplementation(rotateOriginal);
+  try {
+    const response = await requestApp(`/api/keys/${apiKey.id}/rotate`, {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    assertEquals(response.status, 200);
+    assertEquals(rotate.mock.calls.length, 2);
+    assertEquals((await repo.apiKeys.getById(apiKey.id))?.key, ((await response.json()) as { key: string }).key);
+  } finally {
+    rotate.mockRestore();
+  }
+});
+
+test('POST /api/keys/:id/rotate maps a raced custom-key collision without changing the credential', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const rotate = vi.spyOn(repo.apiKeys, 'rotate').mockRejectedValueOnce(new Error('UNIQUE constraint failed: api_keys.key'));
+  try {
+    const response = await requestApp(`/api/keys/${apiKey.id}/rotate`, {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
+      body: JSON.stringify({ key_source: 'custom', custom_key: 'raced-custom-key' }),
+    });
+    assertEquals(response.status, 409);
+    assertEquals((await repo.apiKeys.getById(apiKey.id))?.key, apiKey.key);
+  } finally {
+    rotate.mockRestore();
+  }
+});
+
 test('POST /api/keys/:id/rotate loads response projection before changing the credential', async () => {
   const { apiKey, repo } = await setupAppTest();
   const list = vi.spyOn(repo.upstreams, 'list').mockRejectedValue(new Error('catalog unavailable'));
@@ -489,9 +526,10 @@ test('PATCH /api/keys/:id sets dump_retention_seconds on the column', async () =
 });
 
 test('PATCH /api/keys/:id rejects zero and negative dump_retention_seconds', async () => {
-  const { apiKey } = await setupAppTest();
+  const { apiKey, repo } = await setupAppTest();
   assertEquals((await ownerPatch(apiKey.id, { dump_retention_seconds: 0 }, apiKey.key)).status, 400);
   assertEquals((await ownerPatch(apiKey.id, { dump_retention_seconds: -1 }, apiKey.key)).status, 400);
+  assertEquals(await repo.apiKeys.getById(apiKey.id), apiKey);
 });
 
 test('DELETE /api/keys/:id soft-deletes the key', async () => {
