@@ -96,10 +96,12 @@ describe('provider inbound header policies', () => {
     });
     const ctx = mockGatewayCtx();
     const first = buildUpstreamCallOptions(stubModelCandidate({ provider: provider([]) }), ctx, source);
-    const second = buildUpstreamCallOptions(stubModelCandidate({ provider: {
-      ...provider(['user-agent', 'x-client-request-id']),
-      instance: stubProvider(),
-    } }), ctx, source);
+    const second = buildUpstreamCallOptions(stubModelCandidate({
+      provider: {
+        ...provider(['user-agent', 'x-client-request-id']),
+        instance: stubProvider(),
+      },
+    }), ctx, source);
     first.headers.set('x-client-request-id', 'candidate-mutation');
 
     expect([...first.headers]).toEqual([['x-client-request-id', 'candidate-mutation']]);
