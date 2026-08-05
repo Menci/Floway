@@ -100,8 +100,7 @@ function AccountSummary({ host }: { host: string }) {
     <ProviderIcon kind="copilot" className="h-8 w-8" />
     <div className="grid gap-0.5 min-w-0">
       <Text weight="semibold" truncate wrap={false}>Alex Morgan</Text>
-      <Text className="text-fui-fg2" size={200}>@alexm</Text>
-      <Text className="font-mono text-fui-fg3" size={200}>{host}</Text>
+      <Text className="text-fui-fg2" size={200}>{host}/alexm</Text>
     </div>
   </div>;
 }
@@ -134,7 +133,6 @@ function Connection({ host, onHostChange, onViewChange, view }: {
     {view === 'connected'
       ? <div className="grid gap-3">
           <AccountSummary host={host} />
-          <Button onClick={() => onViewChange(host === 'github.com' ? 'github' : 'ghe')}>Change connection</Button>
           <CopilotQuotaCard record={connectedRecord(host)} />
         </div>
       : view === 'waiting'
@@ -297,10 +295,7 @@ function ListMock() {
             <TableCell><ProviderBadge upstream={{ kind: 'copilot', hue: row.hue }} /></TableCell>
             <TableCell className="overflow-hidden">
               <TableCellLayout
-                description={<span className="grid">
-                  <Text className="text-fui-fg2" size={200}>@{row.login}</Text>
-                  <Text className="font-mono text-fui-fg3" size={200}>{row.host}</Text>
-                </span>}
+                description={<Text className="text-fui-fg2" size={200}>{row.host}/{row.login}</Text>}
                 truncate
               >
                 <Text weight="semibold">{row.name}</Text>
