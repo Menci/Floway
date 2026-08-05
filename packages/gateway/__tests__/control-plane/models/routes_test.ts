@@ -132,18 +132,6 @@ test('/api/models is scoped to the caller\'s effective upstreams — a removed u
   });
 });
 
-test('/api/models appends visible alias entries with aliasedFrom alongside real catalog rows', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_custom_models', sortOrder: 100 }));
-
-  await withMockedFetch(modelsFetchHandler, async () => {
-    const response = await requestApp('/api/models', { headers: { 'x-api-key': apiKey.key } });
-    assertEquals(response.status, 200);
-    const body = (await response.json()) as { data: Array<{ id: string; display_name: string; upstreams: Array<{ kind: string; id: string; name: string }> }> };
-    assertEquals(body.data.some(model => model.id === 'custom-model'), true);
-  });
-});
-
 test('/api/models for an admin session returns the gateway-wide catalog, bypassing the admin\'s own user.upstreamIds cap', async () => {
   const { adminSession, repo } = await setupAppTest();
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_custom_models', sortOrder: 100 }));
@@ -213,13 +201,22 @@ test('/api/models — admin sees raw alias.targets; non-admin sees the caller-na
   await withMockedFetch(modelsFetchHandler, async () => {
     const adminResponse = await requestApp('/api/models', { headers: { 'x-floway-session': adminSession } });
     assertEquals(adminResponse.status, 200);
-    const adminBody = (await adminResponse.json()) as { data: Array<{ id: string; aliasedFrom?: { targets: Array<{ target_model_id: string }> } }> };
+    const adminBody = (await adminResponse.json()) as { data: Array<{ id: string; upstreams: unknown[]; aliasedFrom?: { selection: string; targets: Array<{ target_model_id: string }> } }> };
     const adminMix = adminBody.data.find(m => m.id === 'mix');
     assert(adminMix !== undefined);
+    assertEquals(adminBody.data.some(model => model.id === 'custom-model'), true);
+    assertEquals(adminMix.upstreams, []);
+    assertEquals(adminMix.aliasedFrom?.selection, 'first-available');
     assertEquals(
       adminMix!.aliasedFrom?.targets.map(t => t.target_model_id),
       ['custom-model', 'typo-no-such-model'],
     );
+
+    const rawResponse = await requestApp('/api/models?aliases=false', { headers: { 'x-floway-session': adminSession } });
+    assertEquals(rawResponse.status, 200);
+    const rawIds = ((await rawResponse.json()) as { data: Array<{ id: string }> }).data.map(model => model.id);
+    assertEquals(rawIds.includes('custom-model'), true);
+    assertEquals(rawIds.includes('mix'), false);
 
     const nonAdminResponse = await requestApp('/api/models', { headers: { 'x-floway-session': nonAdminSession } });
     assertEquals(nonAdminResponse.status, 200);
