@@ -30,6 +30,7 @@ const record = upstreamRecord('up_copilot', {
 let pollResponse: () => Promise<Response>;
 let fetchMock: ReturnType<typeof vi.fn>;
 let startRecord: { config: { githubHost: string } } | null;
+let startResponse: typeof flow;
 
 const pollCount = () =>
   fetchMock.mock.calls.filter(([input]) => String(input).includes(DEVICE_LOGIN_POLL)).length;
@@ -46,13 +47,14 @@ const startFlow = async () => {
 beforeEach(() => {
   vi.useFakeTimers();
   startRecord = null;
+  startResponse = flow;
   fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const request = input instanceof Request ? input : new Request(input, init);
-    const { pathname } = new URL(request.url, 'http://localhost');
+    const url = input instanceof Request ? input.url : String(input);
+    const { pathname } = new URL(url, 'http://localhost');
     if (pathname === DEVICE_LOGIN_START) {
-      const body = (await request.clone().json()) as { record: { config: { githubHost: string } } };
+      const body = JSON.parse(String(init?.body)) as { record: { config: { githubHost: string } } };
       startRecord = body.record;
-      return Response.json({ ...flow, verification_uri: `https://${body.record.config.githubHost}/login/device` });
+      return Response.json({ ...startResponse, verification_uri: `https://${body.record.config.githubHost}/login/device` });
     }
     if (pathname === DEVICE_LOGIN_POLL) return await pollResponse();
     throw new Error(`Unexpected request to ${pathname}`);
@@ -113,6 +115,19 @@ describe('Copilot device-flow polling', () => {
     expect(pollCount()).toBe(2);
     expect(screen.getByText(flow.user_code)).toBeTruthy();
     expect(screen.queryByText('Bad Gateway')).toBeNull();
+  });
+
+  it('stops at the advertised expiry when GitHub keeps the device code pending', async () => {
+    startResponse = { ...flow, expires_in: INTERVAL_SECONDS };
+    pollResponse = async () => Response.json({ status: 'pending' });
+    await startFlow();
+
+    await advance(INTERVAL_SECONDS * 1000);
+    expect(pollCount()).toBe(1);
+    expect(screen.queryByText(flow.user_code)).toBeNull();
+
+    await advance(INTERVAL_SECONDS * 1000 * 4);
+    expect(pollCount()).toBe(1);
   });
 
   it('does not schedule another tick when the panel unmounts while a poll is in flight', async () => {
