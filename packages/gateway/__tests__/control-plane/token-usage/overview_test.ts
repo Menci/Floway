@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
-import { tokenUsageMetrics } from '../../../src/repo/usage-metrics.ts';
 import type { ApiKey } from '../../../src/repo/types.ts';
+import { tokenUsageMetrics } from '../../../src/repo/usage-metrics.ts';
 import { requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 

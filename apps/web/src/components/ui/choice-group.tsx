@@ -211,33 +211,33 @@ export function ChoiceGroup({
     {items.map((item, index) => {
       const itemDisabled = disabled || item.disabled === true;
       return item.to === undefined
-      ? <label
-          className={styles.item}
-          data-checked={value === item.value ? '' : undefined}
-          data-disabled={itemDisabled ? '' : undefined}
-          key={item.value}
-        >
-          <input
+        ? <label
+            className={styles.item}
+            data-checked={value === item.value ? '' : undefined}
+            data-disabled={itemDisabled ? '' : undefined}
+            key={item.value}
+          >
+            <input
+              checked={value === item.value}
+              className={styles.input}
+              disabled={itemDisabled}
+              name={name}
+              onChange={readOnly === true ? undefined : () => onChange(item.value)}
+              onClick={readOnly === true ? refuseToggle : undefined}
+              type="radio"
+              value={item.value}
+            />
+            <span>{item.label}</span>
+          </label>
+        : <AddressedChoice
             checked={value === item.value}
-            className={styles.input}
-            disabled={itemDisabled}
-            name={name}
-            onChange={readOnly === true ? undefined : () => onChange(item.value)}
-            onClick={readOnly === true ? refuseToggle : undefined}
-            type="radio"
-            value={item.value}
-          />
-          <span>{item.label}</span>
-        </label>
-      : <AddressedChoice
-          checked={value === item.value}
-          className={styles.item}
-          item={{ ...item, disabled: itemDisabled }}
-          key={item.value}
-          onChange={onChange}
-          to={item.to}
-          tabIndex={(selectedIndex === -1 ? index === 0 : value === item.value) ? 0 : -1}
-        />;
+            className={styles.item}
+            item={{ ...item, disabled: itemDisabled }}
+            key={item.value}
+            onChange={onChange}
+            to={item.to}
+            tabIndex={(selectedIndex === -1 ? index === 0 : value === item.value) ? 0 : -1}
+          />;
     })}
   </div>;
 }

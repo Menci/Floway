@@ -19,8 +19,8 @@ import { aggregatePerformanceForDisplay, type PerformanceGroupBy } from './aggre
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { performanceQuery } from '../schemas.ts';
-import { loadTelemetryOverviewIdentity, partitionTelemetryOverviewRecords, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata } from '../shared/telemetry-overview.ts';
 import type { TelemetryBucketGranularity } from '../shared/telemetry-bucket.ts';
+import { loadTelemetryOverviewIdentity, partitionTelemetryOverviewRecords, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata } from '../shared/telemetry-overview.ts';
 
 type Ctx = CtxWithQuery<typeof performanceQuery>;
 

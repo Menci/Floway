@@ -1,10 +1,10 @@
 import type { Context } from 'hono';
 
+import { buildKeyToUserMap } from './key-to-user.ts';
+import type { TelemetryBucketGranularity } from './telemetry-bucket.ts';
 import { userFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey, User } from '../../repo/types.ts';
-import { buildKeyToUserMap } from './key-to-user.ts';
-import type { TelemetryBucketGranularity } from './telemetry-bucket.ts';
 
 interface TelemetryOverviewQuery {
   start?: string;
