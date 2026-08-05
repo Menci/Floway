@@ -366,7 +366,12 @@ const runWithServerHandshakeOptions = async (
 
   const result = await dialPromise;
   const reader = result.readable.getReader();
-  return await reader.read();
+  try {
+    return await reader.read();
+  } catch (error) {
+    expect(srv.closed()).toBe(true);
+    throw error;
+  }
 };
 
 const sendServerHandshake = (
