@@ -124,6 +124,7 @@ test('query-driven refresh keeps the displayed query after a failed response', a
 test.each(['superseded-first', 'newest-first'] as const)(
   'query-driven refresh commits only the newest response when requests settle %s',
   async settlementOrder => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(101);
     const runs: Array<{
       query: { groupBy: string };
       requestedAt: number;
@@ -150,9 +151,11 @@ test.each(['superseded-first', 'newest-first'] as const)(
 
     rerender({ query: { groupBy: 'upstream' } });
     await waitFor(() => expect(runs).toHaveLength(1));
+    now.mockReturnValue(202);
     rerender({ query: { groupBy: 'keyId' } });
     await waitFor(() => expect(runs).toHaveLength(2));
 
+    expect(runs.map(run => run.requestedAt)).toEqual([101, 202]);
     expect(runs[0]!.signal.aborted).toBe(true);
     expect(runs[1]!.signal.aborted).toBe(false);
     const first = settlementOrder === 'superseded-first' ? runs[0]! : runs[1]!;
@@ -174,5 +177,6 @@ test.each(['superseded-first', 'newest-first'] as const)(
     expect(restore).not.toHaveBeenCalled();
     expect(onCommit).toHaveBeenCalledTimes(1);
     expect(onCommit).toHaveBeenCalledWith({ groupBy: 'model' }, { groupBy: 'keyId' });
+    now.mockRestore();
   },
 );
