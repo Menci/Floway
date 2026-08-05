@@ -19,7 +19,6 @@
 // A manual `models[]` entry wins over an auto-fetched row carrying the same
 // upstream id.
 
-import { kindForEndpoints } from '@floway-dev/protocols/common';
 import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
 import { modelsField } from '@floway-dev/provider';
 
@@ -76,10 +75,10 @@ export const assertOllamaUpstreamRecord = (record: UpstreamRecord): OllamaUpstre
 
   const apiKey = apiKeyField(record.config.apiKey);
   const models = modelsField(record.config.models ?? [], 'ollama');
-  if (models.some(model => kindForEndpoints(model.endpoints) === 'rerank')) {
+  if (models.some(model => model.endpoints.rerank !== undefined)) {
     throw new Error('Malformed ollama upstream config: rerank models require a custom upstream');
   }
-  if (models.some(model => kindForEndpoints(model.endpoints) === 'image')) {
+  if (models.some(model => model.endpoints.imagesGenerations !== undefined || model.endpoints.imagesEdits !== undefined)) {
     throw new Error('Malformed ollama upstream config: image models require a custom or azure upstream');
   }
   return {

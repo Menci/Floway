@@ -71,18 +71,17 @@ test('assertOllamaUpstreamRecord rejects malformed base URLs and suffix-swallowi
 });
 
 test('assertOllamaUpstreamRecord rejects rerank models', () => {
-  for (const kind of ['rerank', 'chat']) {
+  for (const model of [
+    { upstreamModelId: 'reranker', kind: 'rerank', endpoints: { rerank: {} }, rerankTarget: { protocol: 'cohere-v2' } },
+    { upstreamModelId: 'reranker', kind: 'chat', endpoints: { rerank: {} }, rerankTarget: { protocol: 'cohere-v2' } },
+    { upstreamModelId: 'mixed', kind: 'embedding', endpoints: { embeddings: {}, rerank: {} } },
+  ]) {
     assertThrows(
       () => assertOllamaUpstreamRecord({
         ...baseRecord,
         config: {
           ...(baseRecord.config as Record<string, unknown>),
-          models: [{
-            upstreamModelId: 'reranker',
-            kind,
-            endpoints: { rerank: {} },
-            rerankTarget: { protocol: 'cohere-v2' },
-          }],
+          models: [model],
         },
       }),
       Error,
@@ -92,17 +91,17 @@ test('assertOllamaUpstreamRecord rejects rerank models', () => {
 });
 
 test('assertOllamaUpstreamRecord rejects endpoint-derived image models', () => {
-  for (const kind of ['image', 'chat']) {
+  for (const model of [
+    { upstreamModelId: 'image-model', kind: 'image', endpoints: { imagesGenerations: {}, imagesEdits: {} } },
+    { upstreamModelId: 'image-model', kind: 'chat', endpoints: { imagesGenerations: {}, imagesEdits: {} } },
+    { upstreamModelId: 'mixed', kind: 'embedding', endpoints: { embeddings: {}, imagesGenerations: {} } },
+  ]) {
     assertThrows(
       () => assertOllamaUpstreamRecord({
         ...baseRecord,
         config: {
           ...(baseRecord.config as Record<string, unknown>),
-          models: [{
-            upstreamModelId: 'image-model',
-            kind,
-            endpoints: { imagesGenerations: {}, imagesEdits: {} },
-          }],
+          models: [model],
         },
       }),
       Error,

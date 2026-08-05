@@ -146,18 +146,17 @@ test('assertAzureUpstreamRecord validates Azure opaque config strictly', () => {
 });
 
 test('assertAzureUpstreamRecord rejects rerank models', () => {
-  for (const kind of ['rerank', 'chat']) {
+  for (const model of [
+    { upstreamModelId: 'reranker', kind: 'rerank', endpoints: { rerank: {} }, rerankTarget: { protocol: 'cohere-v2' } },
+    { upstreamModelId: 'reranker', kind: 'chat', endpoints: { rerank: {} }, rerankTarget: { protocol: 'cohere-v2' } },
+    { upstreamModelId: 'mixed', kind: 'embedding', endpoints: { embeddings: {}, rerank: {} } },
+  ]) {
     assertThrows(
       () => assertAzureUpstreamRecord({
         ...baseRecord,
         config: {
           ...(baseRecord.config as Record<string, unknown>),
-          models: [{
-            upstreamModelId: 'reranker',
-            kind,
-            endpoints: { rerank: {} },
-            rerankTarget: { protocol: 'cohere-v2' },
-          }],
+          models: [model],
         },
       }),
       Error,
