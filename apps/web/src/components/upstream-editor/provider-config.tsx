@@ -290,6 +290,24 @@ function CopilotConfig({ record, onPatch }: {
   const cancelled = useRef(false);
   const stop = () => { if (timer.current !== null) window.clearTimeout(timer.current); timer.current = null; };
 
+  const expire = () => {
+    timer.current = null;
+    setBusy(false);
+    setFlow(null);
+  };
+
+  const schedulePoll = (deviceCode: string, interval: number, secondsLeft: number) => {
+    if (secondsLeft <= 0) { expire(); return; }
+    if (interval > secondsLeft) {
+      timer.current = window.setTimeout(expire, secondsLeft * 1000);
+      return;
+    }
+    timer.current = window.setTimeout(() => {
+      timer.current = null;
+      void pollRef.current(deviceCode, interval, secondsLeft - interval);
+    }, interval * 1000);
+  };
+
   const poll = async (deviceCode: string, interval: number, secondsLeft: number) => {
     const result = await callApi(() => api.api.upstreams.copilot.oauth['device-login'].poll.$post({
       json: { record: previewRecord(record, values as UpstreamEditorValues), deviceCode },
@@ -302,16 +320,16 @@ function CopilotConfig({ record, onPatch }: {
       // https://www.rfc-editor.org/rfc/rfc8628#section-3.5
       const transient = result.error.status === 0 || result.error.status === 502;
       if (!transient || secondsLeft <= 0) { setBusy(false); setFlow(null); setError(result.error.message); return; }
-      timer.current = window.setTimeout(() => void pollRef.current(deviceCode, interval, secondsLeft - interval), interval * 1000);
+      schedulePoll(deviceCode, interval, secondsLeft);
       return;
     }
     if (result.data.status === 'complete') { setBusy(false); onPatch(result.data.patch, isPersisted(record)); return; }
     if (result.data.status === 'slow_down') {
       const next = interval + DEVICE_FLOW_SLOW_DOWN_SECONDS;
-      timer.current = window.setTimeout(() => void pollRef.current(deviceCode, next, secondsLeft - next), next * 1000);
+      schedulePoll(deviceCode, next, secondsLeft);
       return;
     }
-    timer.current = window.setTimeout(() => void pollRef.current(deviceCode, interval, secondsLeft - interval), interval * 1000);
+    schedulePoll(deviceCode, interval, secondsLeft);
   };
 
   // A flow outlives the render that armed it — its code lives a quarter of an
@@ -326,7 +344,7 @@ function CopilotConfig({ record, onPatch }: {
   // re-schedule the tick rather than show a live code with nothing polling it.
   useEffect(() => {
     cancelled.current = false;
-    if (flow) timer.current = window.setTimeout(() => void pollRef.current(flow.device_code, flow.interval, flow.expires_in - flow.interval), flow.interval * 1000);
+    if (flow) schedulePoll(flow.device_code, flow.interval, flow.expires_in);
     return () => { cancelled.current = true; stop(); };
   }, [flow]);
 
