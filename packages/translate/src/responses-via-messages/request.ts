@@ -36,6 +36,8 @@ import {
   type ResponsesToolOutputContent,
 } from '@floway-dev/protocols/responses';
 
+const INTER_AGENT_MESSAGE_ACTIONS = new Set<string>(RESPONSES_INTER_AGENT_MESSAGE_ACTIONS);
+
 interface BuildTargetRequestOptions {
   loadRemoteImage?: RemoteImageLoader;
   /**
@@ -245,6 +247,14 @@ const translateResponsesInput = async (
       }, loadRemoteImage));
       break;
     case 'function_call': {
+      if (
+        item.namespace === 'collaboration'
+        && INTER_AGENT_MESSAGE_ACTIONS.has(item.name)
+        && item.encrypted_function_args !== undefined
+        && (!Array.isArray(item.encrypted_function_args) || item.encrypted_function_args.length > 0)
+      ) {
+        throw new TranslatorInputError(`Cannot translate encrypted collaboration history '${item.name}' to Messages.`);
+      }
       const sourceName = item.namespace === undefined ? item.name : `${item.namespace}.${item.name}`;
       appendAssistantBlock(messages, {
         type: 'tool_use',
@@ -309,8 +319,6 @@ const translateResponsesInput = async (
 
 const namespaceTargetName = (namespace: string, tool: string): string =>
   `${namespace}_${tool}`.replaceAll(/[^a-zA-Z0-9_-]/g, '_');
-
-const INTER_AGENT_MESSAGE_ACTIONS = new Set<string>(RESPONSES_INTER_AGENT_MESSAGE_ACTIONS);
 
 const plaintextNamespaceParameters = (
   namespace: string,
@@ -460,7 +468,10 @@ const translateToolChoice = (
   // Both function and wrapped custom tools land on the target as named tool
   // choices since they share the function-tool wire shape after translation.
   if (toolChoice.type === 'function' || toolChoice.type === 'custom') {
-    return toolChoice.name ? { type: 'tool', name: namespaceSourceToTarget.get(toolChoice.name) ?? toolChoice.name } : undefined;
+    if (!toolChoice.name) return undefined;
+    const namespace = (toolChoice as ResponsesToolChoice & { namespace?: unknown }).namespace;
+    const sourceName = typeof namespace === 'string' ? `${namespace}.${toolChoice.name}` : toolChoice.name;
+    return { type: 'tool', name: namespaceSourceToTarget.get(sourceName) ?? toolChoice.name };
   }
   return undefined;
 };

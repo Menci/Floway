@@ -622,6 +622,97 @@ test('generate excludes chat-completions targets for collaboration namespaces', 
   assertEquals(callChatCompletions.mock.calls.length, 0);
 });
 
+test.each(['item_reference', 'previous_response_id'] as const)(
+  'generate discovers collaboration in hydrated %s state before candidate selection',
+  async source => {
+    const repo = installRepo();
+    const itemId = 'tso_collaboration';
+    await repo.responsesItems.insertMany([{
+      id: itemId,
+      apiKeyId: API_KEY_ID,
+      itemHash: 'collaboration-tools-hash',
+      payload: {
+        item: {
+          type: 'tool_search_output',
+          id: itemId,
+          tools: [{
+            type: 'namespace',
+            name: 'collaboration',
+            tools: [{ type: 'function', name: 'spawn_agent', parameters: { type: 'object' } }],
+          } as ResponsesTool],
+        },
+      },
+      refreshedAt: Date.now(),
+    }], 0);
+    if (source === 'previous_response_id') {
+      await repo.responsesSnapshots.insert({
+        id: 'resp_collaboration',
+        apiKeyId: API_KEY_ID,
+        itemIds: [itemId],
+        refreshedAt: Date.now(),
+      });
+    }
+    const callChatCompletions = vi.fn();
+    const callMessages = vi.fn();
+    const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
+      action: 'generate',
+      ok: true,
+      events: makeProtocolFrames([{
+        type: 'response.completed',
+        sequence_number: 0,
+        response: makeResponsesResult(),
+      }]),
+      modelKey: 'responses-key',
+      headers: new Headers(),
+    }));
+    queueResolution([
+      makeCandidate({ upstream: 'up_c', endpoints: { chatCompletions: {} }, callChatCompletions }),
+      makeCandidate({ upstream: 'up_m', endpoints: { messages: {} }, callMessages }),
+      makeCandidate({ upstream: 'up_r', endpoints: { responses: {} }, callResponses }),
+    ]);
+
+    const result = await responsesServe.generate({
+      payload: source === 'item_reference'
+        ? makePayload({ input: [{ type: 'item_reference', id: itemId }] })
+        : makePayload({ previous_response_id: 'resp_collaboration' }),
+      ctx: makeGatewayCtx(),
+      headers: new Headers(),
+    });
+
+    assertEquals(result.type, 'events');
+    if (result.type === 'events') await collectEvents(result.events);
+    assertEquals(callChatCompletions.mock.calls.length, 0);
+    assertEquals(callMessages.mock.calls.length, 0);
+    assertEquals(callResponses.mock.calls.length, 1);
+  },
+);
+
+test('generate excludes Messages targets for collaboration allowed_tools choices', async () => {
+  installRepo();
+  const callMessages = vi.fn();
+  queueResolution([makeCandidate({ upstream: 'up_m', endpoints: { messages: {} }, callMessages })]);
+
+  const result = await responsesServe.generate({
+    payload: makePayload({
+      tools: [{
+        type: 'namespace',
+        name: 'collaboration',
+        tools: [{ type: 'function', name: 'spawn_agent', parameters: { type: 'object' } }],
+      } as ResponsesTool],
+      tool_choice: {
+        type: 'allowed_tools',
+        mode: 'required',
+        tools: [{ type: 'namespace', name: 'collaboration' }],
+      },
+    }),
+    ctx: makeGatewayCtx(),
+    headers: new Headers(),
+  });
+
+  assert(result.type !== 'events');
+  assertEquals(callMessages.mock.calls.length, 0);
+});
+
 test('alias resolution swaps the inbound model id for the target and overlays rules onto the Responses IR', async () => {
   installRepo();
   const capturedBodies: ResponsesPayload[] = [];

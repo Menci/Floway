@@ -629,7 +629,7 @@ test('buildTargetRequest flattens namespace functions collision-safely and maps 
       { type: 'function', name: 'web_run', parameters: { type: 'object' }, strict: false },
       namespaceTool,
     ],
-    tool_choice: { type: 'function', name: 'web.run' },
+    tool_choice: { type: 'function', name: 'run', namespace: 'web' } as ResponsesToolChoice & { namespace: string },
   });
 
   assertEquals(result.namespaceToolNames.sourceToTarget, new Map([['web.run', 'web_run_2']]));
@@ -686,6 +686,33 @@ test('buildTargetRequest removes collaboration message encryption from Messages 
     properties: { message: { type: 'string' } },
   });
 });
+
+test.each([null, ['message']] as const)(
+  'buildTargetRequest rejects encrypted collaboration history marker %j',
+  async marker => {
+    await assertRejects(
+      () => buildTargetRequest({
+        ...minimalPayload,
+        input: [{
+          type: 'function_call',
+          call_id: 'call_1',
+          namespace: 'collaboration',
+          name: 'send_message',
+          arguments: '{"target":"worker","message":"opaque"}',
+          encrypted_function_args: marker === null ? null : [...marker],
+          status: 'completed',
+        }],
+        tools: [{
+          type: 'namespace',
+          name: 'collaboration',
+          tools: [{ type: 'function', name: 'send_message', parameters: { type: 'object' } }],
+        } as ResponsesTool],
+      }),
+      Error,
+      'Cannot translate encrypted collaboration history',
+    );
+  },
+);
 
 test('buildTargetRequest gives a schema-less function tool the empty object schema', async () => {
   const result = await buildTargetRequest({

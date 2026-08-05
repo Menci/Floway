@@ -106,12 +106,14 @@ Every response snapshot and echoed tool inventory restores the client namespace
 and encrypted schema. HTTP, SSE, WebSocket, Stateful Responses persistence, and
 history replay all consume this same attempt-level membrane.
 
-Messages targets flatten the namespace, remove the same schema marker, and
-restore the collaboration identity plus the empty plaintext marker. Chat
-Completions cannot represent namespace tools and is removed from the candidate
-set for a Responses request that declares collaboration. Legacy
-`agent_message.encrypted_content` cannot be converted to plaintext and passes
-through as opaque input.
+Messages targets flatten a top-level namespace, remove the same schema marker,
+and restore the collaboration identity plus the empty plaintext marker. A
+deferred collaboration inventory or an `allowed_tools`/namespace choice cannot
+be represented faithfully and removes Messages from the candidate set. Chat
+Completions cannot represent namespace tools and is always removed for a
+Responses request that declares collaboration. Legacy
+`agent_message.encrypted_content` cannot be converted to plaintext: it stays
+opaque on native Responses and is rejected at translated protocol boundaries.
 
 Copilot audits build their inventory from provider registration/default code
 and the `audit-copilot-workarounds` skill, including auth, model shaping,
