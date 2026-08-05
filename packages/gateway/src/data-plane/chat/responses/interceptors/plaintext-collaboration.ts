@@ -4,6 +4,7 @@ import {
   RESPONSES_INTER_AGENT_MESSAGE_ACTIONS,
   type CanonicalResponsesPayload,
   type ResponsesInputItem,
+  type ResponsesHostedTool,
   type ResponsesOutputItem,
   type ResponsesResult,
   type ResponsesStreamEvent,
@@ -15,7 +16,7 @@ const CLIENT_NAMESPACE = 'collaboration';
 const UPSTREAM_NAMESPACE_PREFIX = 'floway_collaboration_';
 const MESSAGE_ACTIONS = new Set<string>(RESPONSES_INTER_AGENT_MESSAGE_ACTIONS);
 
-type NamespaceTool = Extract<ResponsesTool, { type: 'namespace' }> & {
+type NamespaceTool = ResponsesHostedTool & {
   name: string;
   tools: ResponsesTool[];
 };
@@ -138,7 +139,7 @@ const clientResponse = (response: ResponsesResult, upstreamNamespace: string): R
   ...response,
   output: response.output.map(item => clientItem(item, upstreamNamespace)),
   ...(response.tools !== undefined
-    ? { tools: rewriteTools(response.tools, upstreamNamespace, CLIENT_NAMESPACE, true) }
+    ? { tools: rewriteTools(response.tools, upstreamNamespace, CLIENT_NAMESPACE, true) ?? undefined }
     : {}),
   ...(response.tool_choice !== undefined
     ? { tool_choice: rewriteToolChoice(response.tool_choice, upstreamNamespace, CLIENT_NAMESPACE) }
