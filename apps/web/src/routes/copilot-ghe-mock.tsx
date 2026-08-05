@@ -113,7 +113,6 @@ function Connection({ host, onHostChange, onViewChange, view }: {
   view: MockView;
 }) {
   const locked = view === 'waiting' || view === 'connected';
-  const enterprise = host !== 'github.com';
   return <div className="grid gap-3">
     <Field
       hint="Choose a host or enter any GitHub hostname."
@@ -135,7 +134,7 @@ function Connection({ host, onHostChange, onViewChange, view }: {
     {view === 'connected'
       ? <div className="grid gap-3">
           <AccountSummary host={host} />
-          <Button onClick={() => onViewChange(enterprise ? 'ghe' : 'github')}>Change connection</Button>
+          <Button onClick={() => onViewChange(host === 'github.com' ? 'github' : 'ghe')}>Change connection</Button>
           <CopilotQuotaCard record={connectedRecord(host)} />
         </div>
       : view === 'waiting'
@@ -152,9 +151,7 @@ function Connection({ host, onHostChange, onViewChange, view }: {
           </div>
         : <>
             <Text className="text-fui-fg2" size={300}>
-              {enterprise
-                ? `Connect the Copilot subscription assigned to your ${host} account.`
-                : 'Connect a GitHub Copilot subscription using GitHub device authorization.'}
+              Connect the Copilot subscription assigned to your {host} account.
             </Text>
             <Button
               appearance="primary"
