@@ -101,6 +101,74 @@ test('assertCustomUpstreamRecord rejects invalid or duplicate ingress header rul
   }
 });
 
+test('assertCustomUpstreamRecord reserves every transport-owned header name and family', () => {
+  const exactNames = [
+    'accept-encoding',
+    'authorization',
+    'cdn-loop',
+    'connection',
+    'content-encoding',
+    'content-length',
+    'content-type',
+    'cookie',
+    'expect',
+    'forwarded',
+    'host',
+    'keep-alive',
+    'proxy-authenticate',
+    'proxy-authentication-info',
+    'proxy-authorization',
+    'proxy-connection',
+    'te',
+    'trailer',
+    'transfer-encoding',
+    'true-client-ip',
+    'upgrade',
+    'x-api-key',
+    'x-client-ip',
+    'x-floway-session',
+    'x-forwarded-for',
+    'x-forwarded-host',
+    'x-forwarded-proto',
+    'x-goog-api-key',
+    'x-openai-actor-authorization',
+    'x-real-ip',
+  ];
+  const familyMembers = ['cf-future-field', 'sec-websocket-future-field', 'x-forwarded-future-field'];
+
+  for (const key of [...exactNames, ...familyMembers]) {
+    assertThrows(
+      () => assertCustomUpstreamRecord({
+        ...baseRecord,
+        config: {
+          ...(baseRecord.config as Record<string, unknown>),
+          ingressHeadersRules: [{ key: key.toUpperCase(), value: null }],
+        },
+      }),
+      Error,
+      `${key} is owned by the HTTP transport`,
+    );
+  }
+});
+
+test('assertCustomUpstreamRecord preserves valid HTAB and obs-text field-value bytes', () => {
+  const { config } = assertCustomUpstreamRecord({
+    ...baseRecord,
+    config: {
+      ...(baseRecord.config as Record<string, unknown>),
+      ingressHeadersRules: [
+        { key: 'x-tab', value: 'left\tright' },
+        { key: 'x-obs-text', value: '\u0080\u00ff' },
+      ],
+    },
+  });
+
+  assertEquals(config.ingressHeadersRules, [
+    { key: 'x-tab', value: 'left\tright' },
+    { key: 'x-obs-text', value: '\u0080\u00ff' },
+  ]);
+});
+
 test('assertCustomUpstreamRecord requires ingressHeadersRules on persisted config', () => {
   const config = { ...(baseRecord.config as Record<string, unknown>) };
   delete config.ingressHeadersRules;
