@@ -11,7 +11,133 @@ import { installDumpStubs } from '../../../dump/test-fixtures.ts';
 import { FakeTime } from '../../../test-time.ts';
 import { copilotModels, flushAsyncWork, setupAppTest, sseResponse, sseResponsesResponse } from '../../../test-utils/app.ts';
 import { installWorkerWebSocketRuntime, type TestWorkerWebSocket } from '../../../test-utils/worker-websocket.ts';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { EventResult, TelemetryModelIdentity } from '@floway-dev/provider';
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+
+type ResponsesFrame = ProtocolFrame<ResponsesStreamEvent>;
+
+interface Deferred<T> {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+}
+
+const deferred = <T>(): Deferred<T> => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(res => { resolve = res; });
+  return { promise, resolve };
+};
+
+const TEST_MODEL_IDENTITY = {
+  model: 'gpt-direct-responses',
+  upstream: 'up_ws_cleanup',
+  modelKey: 'gpt-direct-responses',
+  pricing: null,
+} satisfies TelemetryModelIdentity;
+
+const closedResponsesIteratorResult = (): IteratorResult<ResponsesFrame> => ({
+  done: true,
+  value: undefined,
+});
+
+const createControlledResponsesEvents = (
+  firstFrame?: ResponsesFrame,
+  settlePendingOnAbort?: AbortSignal,
+) => {
+  let first = firstFrame;
+  let pendingNext: Deferred<IteratorResult<ResponsesFrame>> | undefined;
+  let nextCalls = 0;
+  let returnCalled = false;
+
+  const events: AsyncIterable<ResponsesFrame> = {
+    [Symbol.asyncIterator]() {
+      return {
+        next(): Promise<IteratorResult<ResponsesFrame>> {
+          nextCalls += 1;
+          if (first !== undefined) {
+            const value = first;
+            first = undefined;
+            return Promise.resolve({ done: false, value });
+          }
+
+          const pending = deferred<IteratorResult<ResponsesFrame>>();
+          pendingNext = pending;
+          if (settlePendingOnAbort?.aborted) pending.resolve(closedResponsesIteratorResult());
+          else settlePendingOnAbort?.addEventListener('abort', () => pending.resolve(closedResponsesIteratorResult()), { once: true });
+          return pending.promise;
+        },
+        return(): Promise<IteratorResult<ResponsesFrame>> {
+          returnCalled = true;
+          pendingNext?.resolve(closedResponsesIteratorResult());
+          return Promise.resolve(closedResponsesIteratorResult());
+        },
+      };
+    },
+  };
+
+  return {
+    events,
+    nextCalls: () => nextCalls,
+    returnCalled: () => returnCalled,
+  };
+};
+
+type ControlledResponsesEvents = ReturnType<typeof createControlledResponsesEvents>;
+
+const responseCreatedFrame = (): ResponsesFrame => eventFrame({
+  type: 'response.created',
+  sequence_number: 0,
+  response: {
+    id: 'resp_ws_cleanup_upstream',
+    object: 'response',
+    model: 'gpt-direct-responses',
+    status: 'in_progress',
+    output: [],
+    output_text: '',
+  },
+});
+
+const controlledEventResult = (
+  events: AsyncIterable<ResponsesFrame>,
+  metadataRead: () => void,
+): EventResult<ResponsesFrame> => ({
+  type: 'events',
+  events,
+  modelIdentity: TEST_MODEL_IDENTITY,
+  get finalMetadata() {
+    metadataRead();
+    return Promise.resolve({ modelIdentity: TEST_MODEL_IDENTITY });
+  },
+});
+
+const mockControlledResponsesTurn = (
+  createEvents: (signal: AbortSignal) => ControlledResponsesEvents,
+) => {
+  let turnSignal: AbortSignal | undefined;
+  let controlledEvents: ControlledResponsesEvents | undefined;
+  let metadataRead = false;
+  const generate = vi.spyOn(responsesServe, 'generate').mockImplementation(async ({ ctx }) => {
+    const signal = ctx.abortSignal;
+    assertExists(signal);
+    turnSignal = signal;
+    controlledEvents = createEvents(signal);
+    return controlledEventResult(controlledEvents.events, () => { metadataRead = true; });
+  });
+  onTestFinished(() => generate.mockRestore());
+
+  return {
+    signal: (): AbortSignal => {
+      assertExists(turnSignal);
+      return turnSignal;
+    },
+    events: (): ControlledResponsesEvents => {
+      assertExists(controlledEvents);
+      return controlledEvents;
+    },
+    metadataRead: () => metadataRead,
+  };
+};
 
 const waitForMessages = async (
   socket: TestWorkerWebSocket,
@@ -50,6 +176,14 @@ const recordRawMessages = (socket: TestWorkerWebSocket) => {
 
 const waitForMicrotasks = async (): Promise<void> => {
   for (let i = 0; i < 10; i++) await Promise.resolve();
+};
+
+const waitForMicrotaskCondition = async (condition: () => boolean, failureMessage: string): Promise<void> => {
+  for (let i = 0; i < 200; i++) {
+    if (condition()) return;
+    await Promise.resolve();
+  }
+  throw new Error(failureMessage);
 };
 
 const isTerminalResponseEvent = (message: Record<string, unknown>): boolean =>
@@ -1492,6 +1626,103 @@ test('Responses WebSocket aborts the in-flight Responses request when the client
       await upstreamAborted;
     }),
   );
+});
+
+test('Responses WebSocket close interrupts an idle frame wait before the keep-alive deadline', async () => {
+  const { apiKey } = await setupAppTest();
+  const turn = mockControlledResponsesTurn(() => createControlledResponsesEvents());
+
+  await withWorkerWebSocketRuntime(async () => {
+    const client = await connectResponsesWebSocket(apiKey.key);
+    const time = new FakeTime();
+    onTestFinished(() => time.restore());
+    client.send(JSON.stringify({
+      type: 'response.create',
+      response: { model: 'gpt-direct-responses', input: 'idle until closed' },
+    }));
+
+    await waitForMicrotaskCondition(
+      () => turn.events().nextCalls() === 1,
+      'Responses WebSocket did not begin its idle frame wait',
+    );
+    client.close();
+    await waitForMicrotaskCondition(
+      turn.metadataRead,
+      'Responses WebSocket did not settle the closed turn before the keep-alive timer',
+    );
+
+    assertEquals(turn.signal().aborted, true);
+  });
+});
+
+test('Responses WebSocket send failures abort the turn before another iterator read', async () => {
+  const { apiKey } = await setupAppTest();
+  const sendFailure = new Error('simulated downstream send failure');
+  const turn = mockControlledResponsesTurn(() => createControlledResponsesEvents(responseCreatedFrame()));
+
+  await withWorkerWebSocketRuntime(async () => {
+    const client = await connectResponsesWebSocket(apiKey.key);
+    const pair = activeRuntime().pairs.at(-1);
+    assertExists(pair);
+    pair.server.send = () => { throw sendFailure; };
+
+    client.send(JSON.stringify({
+      type: 'response.create',
+      response: { model: 'gpt-direct-responses', input: 'fail the first send' },
+    }));
+    await waitForMicrotaskCondition(
+      turn.metadataRead,
+      'Responses WebSocket did not settle the failed downstream send',
+    );
+    await waitForMicrotaskCondition(
+      () => turn.events().returnCalled(),
+      'Responses WebSocket did not close the upstream iterator after the failed send',
+    );
+
+    assertEquals(turn.events().nextCalls(), 1);
+    assertEquals(turn.signal().aborted, true);
+    assert(turn.signal().reason === sendFailure, 'expected the original send error to become the abort reason');
+    client.close();
+  });
+});
+
+test('Responses WebSocket keep-alive readiness failures abort the pending turn', async () => {
+  const { apiKey } = await setupAppTest();
+  const turn = mockControlledResponsesTurn(signal =>
+    createControlledResponsesEvents(responseCreatedFrame(), signal));
+
+  await withWorkerWebSocketRuntime(async () => {
+    const client = await connectResponsesWebSocket(apiKey.key);
+    const pair = activeRuntime().pairs.at(-1);
+    assertExists(pair);
+    const time = new FakeTime();
+    onTestFinished(() => time.restore());
+    const send = pair.server.send.bind(pair.server);
+    let sendCalls = 0;
+    pair.server.send = data => {
+      sendCalls += 1;
+      send(data);
+      pair.server.readyState = WebSocket.CLOSED;
+    };
+
+    client.send(JSON.stringify({
+      type: 'response.create',
+      response: { model: 'gpt-direct-responses', input: 'fail the keep-alive readiness check' },
+    }));
+    await waitForMicrotaskCondition(
+      () => turn.events().nextCalls() === 2,
+      'Responses WebSocket did not resume its frame wait after the first event',
+    );
+    await time.tickAsync(DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS);
+    await waitForMicrotaskCondition(
+      turn.metadataRead,
+      'Responses WebSocket did not settle the failed keep-alive send',
+    );
+
+    assertEquals(sendCalls, 1);
+    assertEquals(turn.signal().aborted, true);
+    client.close();
+  });
 });
 
 // The four chat HTTP transports render a mid-attempt throw (interceptor

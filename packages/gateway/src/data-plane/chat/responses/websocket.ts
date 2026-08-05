@@ -311,7 +311,7 @@ const handleClientMessage = async (
       throw error;
     }
 
-    await respondResponsesWebSocket({ socket, eventId, signal, isClosed, result, ctx, payload, turnFailure });
+    await respondResponsesWebSocket({ socket, eventId, downstreamAbortController, isClosed, result, ctx, payload, turnFailure });
   } catch (error) {
     if (signal.aborted || isClosed()) return;
     if (error instanceof TranslatorInputError) {
@@ -368,14 +368,15 @@ const responsesPayloadFromClientSource = (source: object): CanonicalResponsesPay
 const respondResponsesWebSocket = async (input: {
   readonly socket: ResponsesWebSocketSocket;
   readonly eventId: string | undefined;
-  readonly signal: AbortSignal;
+  readonly downstreamAbortController: AbortController;
   readonly isClosed: () => boolean;
   readonly result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>;
   readonly ctx: ChatGatewayCtx;
   readonly payload: CanonicalResponsesPayload;
   readonly turnFailure: ResponsesWsTurnFailure;
 }): Promise<void> => {
-  const { socket, eventId, signal, isClosed, result, ctx, payload, turnFailure } = input;
+  const { socket, eventId, downstreamAbortController, isClosed, result, ctx, payload, turnFailure } = input;
+  const { signal } = downstreamAbortController;
   if (result.type === 'api-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.error(result.source, result.upstreamId);
@@ -399,15 +400,20 @@ const respondResponsesWebSocket = async (input: {
     const observed = observeResponsesWebSocketFrames(normalizeResponsesStreamLifecycle(result.events), state, ctx);
     const output = wrapResponsesClientEgress(observed, ctx, payload);
     const iterator = output[Symbol.asyncIterator]();
-    let pendingNext = pendingWsFrameResult(iterator.next());
+    const abortResult = wsAbortResult(signal);
+    let pendingNext: Promise<WsFrameRaceResult> | undefined;
     let completed = false;
     let stoppedByDownstream = false;
     let streamed = false;
     const sequence = createDownstreamSequence();
 
-    const stopForDownstream = (): void => {
+    const stopForDownstream = (reason?: unknown): void => {
       stoppedByDownstream = true;
       completion = 'cancel';
+      if (!signal.aborted) {
+        if (reason === undefined) downstreamAbortController.abort();
+        else downstreamAbortController.abort(reason);
+      }
     };
 
     try {
@@ -417,8 +423,13 @@ const respondResponsesWebSocket = async (input: {
           return;
         }
 
-        const next = await nextFrameOrKeepAlive(pendingNext);
+        pendingNext ??= pendingWsFrameResult(iterator.next());
+        const next = await nextFrameOrKeepAlive(pendingNext, abortResult);
 
+        if (next.type === 'abort') {
+          stopForDownstream();
+          return;
+        }
         if (next.type === 'keep-alive') {
           // Extended reasoning turns go completely silent: upstream sends SSE
           // `ping` events, `parseResponsesStream` drops them, and no frame at
@@ -484,12 +495,14 @@ const respondResponsesWebSocket = async (input: {
           // https://github.com/openai/openai-python/blob/3844843c277f42b0b18beaa58152cfda61df524a/src/openai/resources/responses/responses.py#L4493-L4502
           // https://github.com/openai/codex/blob/e6cfd40c3f444aadd6017c9eeab01db70f48961a/codex-rs/codex-api/src/sse/responses.rs#L466-L472
           if (!streamed) continue;
-          if (!sendJson(socket, { type: KEEP_ALIVE_EVENT_TYPE, sequence_number: sequence.take() }, eventId, ctx.dump)) {
-            stopForDownstream();
+          const sent = sendJson(socket, { type: KEEP_ALIVE_EVENT_TYPE, sequence_number: sequence.take() }, eventId, ctx.dump);
+          if (!sent.ok) {
+            stopForDownstream(sent.error);
             return;
           }
           continue;
         }
+        pendingNext = undefined;
         if (next.type === 'next-error') throw next.error;
         if (next.result.done) {
           completed = true;
@@ -497,7 +510,6 @@ const respondResponsesWebSocket = async (input: {
         }
 
         const frame = next.result.value;
-        pendingNext = pendingWsFrameResult(iterator.next());
         if (frame.type !== 'event') continue;
 
         const event = frame.event;
@@ -524,8 +536,9 @@ const respondResponsesWebSocket = async (input: {
           continue;
         }
 
-        if (!sendResponsesEvent(socket, sequence.renumber(event), eventId, ctx.dump)) {
-          stopForDownstream();
+        const sent = sendResponsesEvent(socket, sequence.renumber(event), eventId, ctx.dump);
+        if (!sent.ok) {
+          stopForDownstream(sent.error);
           return;
         }
         streamed = true;
@@ -544,8 +557,9 @@ const respondResponsesWebSocket = async (input: {
     // Renumbered here rather than where it was buffered: keep-alives can still
     // fire while the generator drains behind the terminal event, and each of
     // those takes a slot that has to land before the terminal event's own.
-    if (!sendResponsesEvent(socket, sequence.renumber(terminalEvent), eventId, ctx.dump)) {
-      completion = 'cancel';
+    const sent = sendResponsesEvent(socket, sequence.renumber(terminalEvent), eventId, ctx.dump);
+    if (!sent.ok) {
+      stopForDownstream(sent.error);
       return;
     }
     completion = 'eof';
@@ -594,13 +608,21 @@ const observeResponsesWebSocketFrames = async function* (
 type WsFrameRaceResult =
   | { type: 'frame'; result: IteratorResult<ProtocolFrame<ClientResponsesStreamEvent>> }
   | { type: 'next-error'; error: unknown }
-  | { type: 'keep-alive' };
+  | { type: 'keep-alive' }
+  | { type: 'abort' };
 
 const pendingWsFrameResult = (pendingNext: Promise<IteratorResult<ProtocolFrame<ClientResponsesStreamEvent>>>): Promise<WsFrameRaceResult> =>
   pendingNext.then(
     (result): WsFrameRaceResult => ({ type: 'frame', result }),
     (error): WsFrameRaceResult => ({ type: 'next-error', error }),
   );
+
+const wsAbortResult = (signal: AbortSignal): Promise<WsFrameRaceResult> => {
+  if (signal.aborted) return Promise.resolve({ type: 'abort' });
+  return new Promise(resolve => {
+    signal.addEventListener('abort', () => resolve({ type: 'abort' }), { once: true });
+  });
+};
 
 // The interval is the one already shared with SSE rather than a WebSocket
 // constant of its own. Widening the gap between server data frames on a
@@ -610,13 +632,16 @@ const pendingWsFrameResult = (pendingNext: Promise<IteratorResult<ProtocolFrame<
 // is ~70 bytes, and the earliest unprotected idle teardown seen on that same
 // path was 215.8 s, so an interval chosen for economy would spend a real
 // margin against a stochastic teardown to save nothing.
-const nextFrameOrKeepAlive = async (pendingFrame: Promise<WsFrameRaceResult>): Promise<WsFrameRaceResult> => {
+const nextFrameOrKeepAlive = async (
+  pendingFrame: Promise<WsFrameRaceResult>,
+  pendingAbort: Promise<WsFrameRaceResult>,
+): Promise<WsFrameRaceResult> => {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const keepAlive = new Promise<WsFrameRaceResult>(resolve => {
     timeoutId = setTimeout(() => resolve({ type: 'keep-alive' }), DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS);
   });
   try {
-    return await Promise.race([pendingFrame, keepAlive]);
+    return await Promise.race([pendingFrame, pendingAbort, keepAlive]);
   } finally {
     if (timeoutId !== undefined) clearTimeout(timeoutId);
   }
@@ -731,15 +756,17 @@ const sendResponsesEvent = (
   event: ClientResponsesStreamEvent,
   eventId?: string,
   dump?: DumpAccumulator | null,
-): boolean => sendJson(socket, event, eventId, dump);
+): WebSocketSendResult => sendJson(socket, event, eventId, dump);
+
+type WebSocketSendResult = { ok: true } | { ok: false; error?: unknown };
 
 const sendJson = (
   socket: ResponsesWebSocketSocket,
   value: unknown,
   eventId?: string,
   dump?: DumpAccumulator | null,
-): boolean => {
-  if (socket.readyState !== 1) return false;
+): WebSocketSendResult => {
+  if (socket.readyState !== 1) return { ok: false };
   const payload = eventId === undefined || !value || typeof value !== 'object'
     ? value
     : { ...value, event_id: eventId };
@@ -747,9 +774,9 @@ const sendJson = (
   try {
     text = JSON.stringify(payload);
     socket.send(text);
-  } catch {
-    return false;
+  } catch (error) {
+    return { ok: false, error };
   }
   dump?.recordSentPayloadBytes(UTF8_ENCODER.encode(text).byteLength);
-  return true;
+  return { ok: true };
 };
