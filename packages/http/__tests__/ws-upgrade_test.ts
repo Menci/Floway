@@ -111,9 +111,7 @@ describe('wsUpgradeAndFrame — handshake', () => {
   it('sends a valid GET … HTTP/1.1 upgrade with a fresh 16-byte base64 key', async () => {
     const fake = makeFakeDuplex();
     const upgrade = wsUpgradeAndFrame(fake, { host: 'vless.local', path: '/ws' });
-    // give the request bytes time to land
-    await new Promise(r => setTimeout(r, 0));
-    const written = fake.written();
+    const written = await fake.waitForWritten(1);
     const req = parseUpgradeRequest(written);
     expect(req.method).toBe('GET');
     expect(req.path).toBe('/ws');
@@ -135,7 +133,7 @@ describe('wsUpgradeAndFrame — handshake', () => {
   it('accepts a 101 with the right Sec-WebSocket-Accept', async () => {
     const fake = makeFakeDuplex();
     const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
-    await new Promise(r => setTimeout(r, 0));
+    await fake.waitForWritten(1);
     const key = parseUpgradeRequest(fake.written()).headers.get('sec-websocket-key')!;
     fake.respond(standardHandshakeReply(key));
     await upgrade;
@@ -144,7 +142,7 @@ describe('wsUpgradeAndFrame — handshake', () => {
   it('rejects a non-101 status', async () => {
     const fake = makeFakeDuplex();
     const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
-    await new Promise(r => setTimeout(r, 0));
+    await fake.waitForWritten(1);
     fake.respond('HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n');
     await expect(upgrade).rejects.toMatchObject({
       name: 'HttpProtocolError',
@@ -156,7 +154,7 @@ describe('wsUpgradeAndFrame — handshake', () => {
   it('rejects a missing Sec-WebSocket-Accept header', async () => {
     const fake = makeFakeDuplex();
     const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
-    await new Promise(r => setTimeout(r, 0));
+    await fake.waitForWritten(1);
     fake.respond('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n');
     await expect(upgrade).rejects.toMatchObject({
       code: 'BAD_HEADERS',
@@ -167,7 +165,7 @@ describe('wsUpgradeAndFrame — handshake', () => {
   it('rejects a wrong Sec-WebSocket-Accept value', async () => {
     const fake = makeFakeDuplex();
     const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
-    await new Promise(r => setTimeout(r, 0));
+    await fake.waitForWritten(1);
     fake.respond([
       'HTTP/1.1 101 Switching Protocols',
       'Upgrade: websocket',
@@ -185,7 +183,7 @@ describe('wsUpgradeAndFrame — handshake', () => {
   it('rejects a missing Upgrade: websocket header', async () => {
     const fake = makeFakeDuplex();
     const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
-    await new Promise(r => setTimeout(r, 0));
+    await fake.waitForWritten(1);
     const key = parseUpgradeRequest(fake.written()).headers.get('sec-websocket-key')!;
     fake.respond([
       'HTTP/1.1 101 Switching Protocols',
@@ -283,7 +281,7 @@ describe('wsUpgradeAndFrame — handshake', () => {
 
 describe('wsUpgradeAndFrame — frame layer round-trip', () => {
   const completeHandshake = async (fake: ReturnType<typeof makeFakeDuplex>): Promise<void> => {
-    await new Promise(r => setTimeout(r, 0));
+    await fake.waitForWritten(1);
     const key = parseUpgradeRequest(fake.written()).headers.get('sec-websocket-key')!;
     fake.respond(standardHandshakeReply(key));
   };
@@ -295,11 +293,13 @@ describe('wsUpgradeAndFrame — frame layer round-trip', () => {
     fake: ReturnType<typeof makeFakeDuplex>,
     seen: number,
   ): Promise<{ frame: ReturnType<typeof parseClientFrame>; seen: number }> => {
+    let minBytes = seen + 1;
     while (true) {
-      const written = fake.written().subarray(seen);
+      const allWritten = await fake.waitForWritten(minBytes);
+      const written = allWritten.subarray(seen);
       const f = parseClientFrame(written);
       if (f) return { frame: f, seen: seen + f.consumed };
-      await new Promise(r => setTimeout(r, 5));
+      minBytes = allWritten.byteLength + 1;
     }
   };
 
@@ -548,16 +548,23 @@ describe('wsUpgradeAndFrame — frame layer round-trip', () => {
   });
 
   it('rejects a fragmented message whose accumulated size would exceed the cap', async () => {
-    // Two non-final frames each just under the cap: the first fits, the
-    // second pushes the running total over.
+    // A one-byte first fragment plus a continuation that announces exactly
+    // the cap exercises the cross-frame sum without allocating or copying
+    // tens of MiB in the test process.
     const fake = makeFakeDuplex();
     const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
     await completeHandshake(fake);
     const stream = await upgrade;
     const reader = stream.readable.getReader();
-    const half = 40 * 1024 * 1024;
-    fake.respond(buildServerFrame(0x2, new Uint8Array(half), false));
-    fake.respond(buildServerFrame(0x0, new Uint8Array(half), true));
+    fake.respond(buildServerFrame(0x2, new Uint8Array([0x01]), false));
+    const announced = 64 * 1024 * 1024;
+    const hi = Math.floor(announced / 0x100000000);
+    const lo = announced >>> 0;
+    fake.respond(new Uint8Array([
+      0x80, 127,
+      (hi >> 24) & 0xff, (hi >> 16) & 0xff, (hi >> 8) & 0xff, hi & 0xff,
+      (lo >>> 24) & 0xff, (lo >>> 16) & 0xff, (lo >>> 8) & 0xff, lo & 0xff,
+    ]));
     await expect(reader.read()).rejects.toMatchObject({
       code: 'WS_MESSAGE_TOO_LARGE',
     });
