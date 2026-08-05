@@ -1,6 +1,8 @@
 import { test, vi } from 'vitest';
 
-import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
+import { DUMP_NOTIFICATION_TIMEOUT_MS, initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
+import { CUSTOM_API_KEY_MAX_LENGTH } from '../../../src/shared/api-key-tokens.ts';
+import { RETENTION_MAX_SECONDS, SECONDS_PER_DAY } from '../../../src/shared/retention.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { buildCustomUpstreamRecord, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
@@ -38,10 +40,12 @@ test('POST /api/keys defaults durable Responses persistence off', async () => {
 
 test('PATCH /api/keys/:id changes only the rolling Responses duration', async () => {
   const { repo, apiKey } = await setupAppTest();
-  const enabled = await ownerPatch(apiKey.id, { responses_retention_seconds: 7 * 24 * 60 * 60 }, apiKey.key);
-  assertEquals(enabled.status, 200);
-  assertEquals(((await enabled.json()) as { responses_retention_seconds: number }).responses_retention_seconds, 7 * 24 * 60 * 60);
-  assertEquals((await repo.apiKeys.getById(apiKey.id))?.responsesRetentionSeconds, 7 * 24 * 60 * 60);
+  for (const value of [SECONDS_PER_DAY, RETENTION_MAX_SECONDS]) {
+    const enabled = await ownerPatch(apiKey.id, { responses_retention_seconds: value }, apiKey.key);
+    assertEquals(enabled.status, 200);
+    assertEquals(((await enabled.json()) as { responses_retention_seconds: number }).responses_retention_seconds, value);
+    assertEquals((await repo.apiKeys.getById(apiKey.id))?.responsesRetentionSeconds, value);
+  }
 
   const disabled = await ownerPatch(apiKey.id, { responses_retention_seconds: 0 }, apiKey.key);
   assertEquals(disabled.status, 200);
@@ -49,10 +53,11 @@ test('PATCH /api/keys/:id changes only the rolling Responses duration', async ()
 });
 
 test('PATCH /api/keys/:id rejects unsupported Responses retention values', async () => {
-  const { apiKey } = await setupAppTest();
+  const { apiKey, repo } = await setupAppTest();
   for (const value of [-1, 1, 3600, 86_401, 315_360_001, 86_400.5]) {
     assertEquals((await ownerPatch(apiKey.id, { responses_retention_seconds: value }, apiKey.key)).status, 400);
   }
+  assertEquals(await repo.apiKeys.getById(apiKey.id), apiKey);
 });
 
 test('PATCH /api/keys/:id accepts a custom upstream whitelist + order', async () => {
@@ -198,7 +203,6 @@ test('POST /api/keys creates a key under the actor with optional upstream_ids', 
   });
   assertEquals(response.status, 201);
   const body = (await response.json()) as { id: string; key: string; upstream_ids: string[] | null } & Record<string, unknown>;
-  assertEquals(/^sk-[A-Za-z0-9]{20}T3BlbkFJ[A-Za-z0-9]{20}$/.test(body.key), true);
   assertEquals(body.upstream_ids, ['up_x']);
   assertEquals(Object.hasOwn(body, 'serverSecret'), false);
   assertEquals(Object.hasOwn(body, 'server_secret'), false);
@@ -225,7 +229,7 @@ test('POST /api/keys mints a generated key when key_source is generate', async (
   assertEquals(stored.dumpRetentionSeconds, 3600);
 });
 
-test('POST /api/keys stores a custom key verbatim and rejects duplicates', async () => {
+test('POST /api/keys trims a custom key and rejects active duplicates', async () => {
   const { repo, apiKey } = await setupAppTest();
   const response = await requestApp('/api/keys', {
     method: 'POST',
@@ -245,6 +249,98 @@ test('POST /api/keys stores a custom key verbatim and rejects duplicates', async
     body: JSON.stringify({ name: 'duplicate-key', key_source: 'custom', custom_key: 'bring-your-own-key' }),
   });
   assertEquals(duplicate.status, 409);
+  assertEquals((await duplicate.json()).error, 'An API key with that raw key already exists.');
+  assertEquals((await repo.apiKeys.listByUserId(apiKey.userId)).length, 2);
+});
+
+test('POST /api/keys enforces the custom-key resource boundary exactly', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  const atLimit = 'k'.repeat(CUSTOM_API_KEY_MAX_LENGTH);
+  const accepted = await requestApp('/api/keys', {
+    method: 'POST',
+    headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'maximum-key', key_source: 'custom', custom_key: atLimit }),
+  });
+  assertEquals(accepted.status, 201);
+  assertEquals(((await accepted.json()) as { key: string }).key.length, CUSTOM_API_KEY_MAX_LENGTH);
+
+  for (const customKey of ['   ', `${atLimit}k`]) {
+    const rejected = await requestApp('/api/keys', {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'invalid-key', key_source: 'custom', custom_key: customKey }),
+    });
+    assertEquals(rejected.status, 400);
+  }
+  assertEquals((await repo.apiKeys.listByUserId(apiKey.userId)).length, 2);
+});
+
+test('POST /api/keys rejects a custom key reserved by a tombstone', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, id: 'deleted-key', key: 'retired-raw-key', serverSecret: '11'.repeat(32) });
+  await repo.apiKeys.softDelete('deleted-key');
+
+  const response = await requestApp('/api/keys', {
+    method: 'POST',
+    headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'duplicate-key', key_source: 'custom', custom_key: 'retired-raw-key' }),
+  });
+
+  assertEquals(response.status, 409);
+  assertEquals((await repo.apiKeys.listIncludingDeleted()).length, 2);
+});
+
+test('POST /api/keys maps a raced custom-key constraint to conflict', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  const insert = vi.spyOn(repo.apiKeys, 'insertForActiveUser').mockRejectedValueOnce(new Error('UNIQUE constraint failed: api_keys.key'));
+  try {
+    const response = await requestApp('/api/keys', {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'raced-key', key_source: 'custom', custom_key: 'raced-raw-key' }),
+    });
+    assertEquals(response.status, 409);
+    assertEquals(insert.mock.calls.length, 1);
+    assertEquals(await repo.apiKeys.findByRawKeyIncludingDeleted('raced-raw-key'), null);
+  } finally {
+    insert.mockRestore();
+  }
+});
+
+test('POST /api/keys retries only raw-key collisions and eventually succeeds', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  const insertOriginal = repo.apiKeys.insertForActiveUser.bind(repo.apiKeys);
+  const insert = vi.spyOn(repo.apiKeys, 'insertForActiveUser')
+    .mockRejectedValueOnce(new Error('UNIQUE constraint failed: api_keys.key'))
+    .mockImplementation(insertOriginal);
+  try {
+    const response = await requestApp('/api/keys', {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'retry-key', key_source: 'generate' }),
+    });
+    assertEquals(response.status, 201);
+    assertEquals(insert.mock.calls.length, 2);
+  } finally {
+    insert.mockRestore();
+  }
+});
+
+test('POST /api/keys stops after the bounded generated-key collision budget', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  const insert = vi.spyOn(repo.apiKeys, 'insertForActiveUser').mockRejectedValue(new Error('UNIQUE constraint failed: api_keys.key'));
+  try {
+    const response = await requestApp('/api/keys', {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'exhausted-key', key_source: 'generate' }),
+    });
+    assertEquals(response.status, 500);
+    assertEquals(insert.mock.calls.length, 5);
+    assertEquals((await response.json()).error, 'Could not allocate a unique API key; retry the request.');
+  } finally {
+    insert.mockRestore();
+  }
 });
 
 test.each([
@@ -252,7 +348,7 @@ test.each([
   'CHECK constraint failed: length(server_secret) = 64',
 ])('POST /api/keys exposes non-key database constraints: %s', async message => {
   const { repo, apiKey } = await setupAppTest();
-  const save = vi.spyOn(repo.apiKeys, 'save').mockRejectedValue(new Error(message));
+  const insert = vi.spyOn(repo.apiKeys, 'insertForActiveUser').mockRejectedValue(new Error(message));
   try {
     const response = await requestApp('/api/keys', {
       method: 'POST',
@@ -262,14 +358,14 @@ test.each([
     assertEquals(response.status, 500);
     if (!(await response.text()).includes(message)) throw new Error(`expected response to expose ${message}`);
   } finally {
-    save.mockRestore();
+    insert.mockRestore();
   }
 });
 
 test('POST /api/keys does not retry a generated key after a server-secret constraint', async () => {
   const { repo, apiKey } = await setupAppTest();
   const message = 'UNIQUE constraint failed: api_keys.server_secret';
-  const save = vi.spyOn(repo.apiKeys, 'save').mockRejectedValue(new Error(message));
+  const insert = vi.spyOn(repo.apiKeys, 'insertForActiveUser').mockRejectedValue(new Error(message));
   try {
     const response = await requestApp('/api/keys', {
       method: 'POST',
@@ -277,10 +373,10 @@ test('POST /api/keys does not retry a generated key after a server-secret constr
       body: JSON.stringify({ name: 'constraint-test', key_source: 'generate' }),
     });
     assertEquals(response.status, 500);
-    assertEquals(save.mock.calls.length, 1);
+    assertEquals(insert.mock.calls.length, 1);
     if (!(await response.text()).includes(message)) throw new Error(`expected response to expose ${message}`);
   } finally {
-    save.mockRestore();
+    insert.mockRestore();
   }
 });
 
@@ -317,14 +413,18 @@ test('POST /api/keys/:id/rotate mints a generated key by default', async () => {
   });
   assertEquals(response.status, 200);
   const body = (await response.json()) as { key: string } & Record<string, unknown>;
-  assertEquals(/^sk-[A-Za-z0-9]{20}T3BlbkFJ[A-Za-z0-9]{20}$/.test(body.key), true);
+  assertEquals(body.key === apiKey.key, false);
   assertEquals(Object.hasOwn(body, 'serverSecret'), false);
   assertEquals(Object.hasOwn(body, 'server_secret'), false);
-  assertEquals((await repo.apiKeys.getById(apiKey.id))?.serverSecret, apiKey.serverSecret);
+  const stored = await repo.apiKeys.getById(apiKey.id);
+  assertEquals(stored?.key, body.key);
+  assertEquals(stored?.serverSecret, apiKey.serverSecret);
+  assertEquals((await requestApp('/api/keys', { headers: { 'x-api-key': apiKey.key } })).status, 401);
+  assertEquals((await requestApp('/api/keys', { headers: { 'x-api-key': body.key } })).status, 200);
 });
 
 test('POST /api/keys/:id/rotate accepts a caller-provided key when key_source is custom', async () => {
-  const { apiKey } = await setupAppTest();
+  const { apiKey, repo } = await setupAppTest();
 
   const missing = await requestApp(`/api/keys/${apiKey.id}/rotate`, {
     method: 'POST',
@@ -341,6 +441,122 @@ test('POST /api/keys/:id/rotate accepts a caller-provided key when key_source is
   assertEquals(rotated.status, 200);
   const body = (await rotated.json()) as { key: string };
   assertEquals(body.key, 'new-custom-key');
+  assertEquals((await repo.apiKeys.getById(apiKey.id))?.key, 'new-custom-key');
+});
+
+test('POST /api/keys/:id/rotate retries a raced generated-key collision through CAS', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const rotateOriginal = repo.apiKeys.rotate.bind(repo.apiKeys);
+  const rotate = vi.spyOn(repo.apiKeys, 'rotate')
+    .mockRejectedValueOnce(new Error('UNIQUE constraint failed: api_keys.key'))
+    .mockImplementation(rotateOriginal);
+  try {
+    const response = await requestApp(`/api/keys/${apiKey.id}/rotate`, {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    assertEquals(response.status, 200);
+    assertEquals(rotate.mock.calls.length, 2);
+    assertEquals((await repo.apiKeys.getById(apiKey.id))?.key, ((await response.json()) as { key: string }).key);
+  } finally {
+    rotate.mockRestore();
+  }
+});
+
+test('POST /api/keys/:id/rotate maps a raced custom-key collision without changing the credential', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const rotate = vi.spyOn(repo.apiKeys, 'rotate').mockRejectedValueOnce(new Error('UNIQUE constraint failed: api_keys.key'));
+  try {
+    const response = await requestApp(`/api/keys/${apiKey.id}/rotate`, {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
+      body: JSON.stringify({ key_source: 'custom', custom_key: 'raced-custom-key' }),
+    });
+    assertEquals(response.status, 409);
+    assertEquals((await repo.apiKeys.getById(apiKey.id))?.key, apiKey.key);
+  } finally {
+    rotate.mockRestore();
+  }
+});
+
+test('POST /api/keys/:id/rotate loads response projection before changing the credential', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const list = vi.spyOn(repo.upstreams, 'list').mockRejectedValue(new Error('catalog unavailable'));
+  try {
+    const response = await requestApp(`/api/keys/${apiKey.id}/rotate`, {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    assertEquals(response.status, 500);
+    assertEquals((await repo.apiKeys.getById(apiKey.id))?.key, apiKey.key);
+  } finally {
+    list.mockRestore();
+  }
+});
+
+test('POST /api/keys/:id/rotate cannot resurrect a concurrently deleted key', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const rotateOriginal = repo.apiKeys.rotate.bind(repo.apiKeys);
+  const rotate = vi.spyOn(repo.apiKeys, 'rotate').mockImplementationOnce(async (...args) => {
+    await repo.apiKeys.softDelete(apiKey.id);
+    return await rotateOriginal(...args);
+  });
+  try {
+    const response = await requestApp(`/api/keys/${apiKey.id}/rotate`, {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    assertEquals(response.status, 409);
+    assertEquals(await repo.apiKeys.getById(apiKey.id), null);
+    assertEquals((await repo.apiKeys.findByRawKeyIncludingDeleted(apiKey.key))?.deletedAt === null, false);
+  } finally {
+    rotate.mockRestore();
+  }
+});
+
+test('concurrent rotations never report two successful credentials', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const rotate = () => requestApp(`/api/keys/${apiKey.id}/rotate`, {
+    method: 'POST',
+    headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+
+  const responses = await Promise.all([rotate(), rotate()]);
+  assertEquals(responses.map(response => response.status).toSorted(), [200, 409]);
+  const successful = responses.find(response => response.status === 200);
+  if (successful === undefined) throw new Error('expected one successful rotation');
+  assertEquals((await repo.apiKeys.getById(apiKey.id))?.key, ((await successful.json()) as { key: string }).key);
+});
+
+test('PATCH /api/keys/:id rejects an empty update without mutating the key', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const response = await ownerPatch(apiKey.id, {}, apiKey.key);
+  assertEquals(response.status, 400);
+  assertEquals(await repo.apiKeys.getById(apiKey.id), apiKey);
+});
+
+test('PATCH /api/keys/:id does not resurrect a concurrently deleted key', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const updateOriginal = repo.apiKeys.update.bind(repo.apiKeys);
+  const update = vi.spyOn(repo.apiKeys, 'update').mockImplementationOnce(async (...args) => {
+    await repo.apiKeys.softDelete(apiKey.id);
+    return await updateOriginal(...args);
+  });
+  try {
+    const response = await ownerPatch(apiKey.id, { name: 'raced rename' }, apiKey.key);
+    assertEquals(response.status, 404);
+    assertEquals(await response.json(), { error: 'Key not found' });
+    assertEquals(await repo.apiKeys.getById(apiKey.id), null);
+    const tombstone = await repo.apiKeys.findByRawKeyIncludingDeleted(apiKey.key);
+    assertEquals(tombstone?.name, apiKey.name);
+    assertEquals(tombstone?.deletedAt === null, false);
+  } finally {
+    update.mockRestore();
+  }
 });
 
 test('PATCH /api/keys/:id sets dump_retention_seconds on the column', async () => {
@@ -355,22 +571,15 @@ test('PATCH /api/keys/:id sets dump_retention_seconds on the column', async () =
   assertEquals(stored.dumpRetentionSeconds, 3600);
 });
 
-test('PATCH /api/keys/:id clears dump_retention_seconds back to null', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-
-  const response = await ownerPatch(apiKey.id, { dump_retention_seconds: null }, apiKey.key);
-  assertEquals(response.status, 200);
-
-  const stored = await repo.apiKeys.getById(apiKey.id);
-  assertExists(stored);
-  assertEquals(stored.dumpRetentionSeconds, null);
-});
-
-test('PATCH /api/keys/:id rejects zero and negative dump_retention_seconds', async () => {
-  const { apiKey } = await setupAppTest();
-  assertEquals((await ownerPatch(apiKey.id, { dump_retention_seconds: 0 }, apiKey.key)).status, 400);
-  assertEquals((await ownerPatch(apiKey.id, { dump_retention_seconds: -1 }, apiKey.key)).status, 400);
+test('PATCH /api/keys/:id enforces dump retention boundaries without partial mutation', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  for (const value of [1, RETENTION_MAX_SECONDS]) {
+    assertEquals((await ownerPatch(apiKey.id, { dump_retention_seconds: value }, apiKey.key)).status, 200);
+  }
+  for (const value of [0, -1, RETENTION_MAX_SECONDS + 1, 1.5]) {
+    assertEquals((await ownerPatch(apiKey.id, { dump_retention_seconds: value }, apiKey.key)).status, 400);
+  }
+  assertEquals((await repo.apiKeys.getById(apiKey.id))?.dumpRetentionSeconds, RETENTION_MAX_SECONDS);
 });
 
 test('DELETE /api/keys/:id soft-deletes the key', async () => {
@@ -389,6 +598,45 @@ test('DELETE /api/keys/:id soft-deletes the key', async () => {
   const deleted = allKeys.find(k => k.id === apiKey.id);
   assertExists(deleted);
   assertEquals(typeof deleted.deletedAt, 'string');
+  assertEquals(deleted.responsesRetentionSeconds, 0);
+  assertEquals((await requestApp('/api/keys', { headers: { 'x-api-key': apiKey.key } })).status, 401);
+});
+
+test('DELETE /api/keys/:id revokes the key before closing its dump channel', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  const close = vi.spyOn(stubs.broker, 'closeChannel').mockImplementation(async () => {
+    assertEquals(await repo.apiKeys.getById(apiKey.id), null);
+  });
+  try {
+    const response = await requestApp(`/api/keys/${apiKey.id}`, {
+      method: 'DELETE',
+      headers: { 'x-api-key': apiKey.key },
+    });
+    assertEquals(response.status, 200);
+    assertEquals(close.mock.calls.length, 1);
+  } finally {
+    close.mockRestore();
+  }
+});
+
+test('DELETE /api/keys/:id bounds a dump broker that never settles', async () => {
+  vi.useFakeTimers();
+  try {
+    const { repo, apiKey } = await setupAppTest();
+    const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+    vi.spyOn(stubs.broker, 'closeChannel').mockImplementation(() => new Promise(() => {}));
+
+    const responsePromise = requestApp(`/api/keys/${apiKey.id}`, {
+      method: 'DELETE',
+      headers: { 'x-api-key': apiKey.key },
+    });
+    await vi.advanceTimersByTimeAsync(DUMP_NOTIFICATION_TIMEOUT_MS);
+    assertEquals((await responsePromise).status, 200);
+    assertEquals(await repo.apiKeys.getById(apiKey.id), null);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test('DELETE /api/keys/:id succeeds when the broker close hook throws — broker outage must not block soft-delete', async () => {
@@ -413,16 +661,30 @@ test('PATCH /api/keys/:id positive→null closes the channel', async () => {
   const response = await ownerPatch(apiKey.id, { dump_retention_seconds: null }, apiKey.key);
   assertEquals(response.status, 200);
   assertEquals(stubs.closedChannels.some(c => c.keyId === apiKey.id), true);
+  assertEquals((await repo.apiKeys.getById(apiKey.id))?.dumpRetentionSeconds, null);
 });
 
-test('PATCH /api/keys/:id positive→null succeeds when the broker close hook throws', async () => {
+test('PATCH /api/keys/:id retries an idempotent close after the first notification fails', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  stubs.failOn('closeChannel', new Error('broker down'));
+  const closeOriginal = stubs.broker.closeChannel.bind(stubs.broker);
+  const close = vi.spyOn(stubs.broker, 'closeChannel')
+    .mockRejectedValueOnce(new Error('broker down'))
+    .mockImplementation(closeOriginal);
 
-  const response = await ownerPatch(apiKey.id, { dump_retention_seconds: null }, apiKey.key);
-  assertEquals(response.status, 200);
+  try {
+    const first = await ownerPatch(apiKey.id, { dump_retention_seconds: null }, apiKey.key);
+    assertEquals(first.status, 200);
+    assertEquals((await repo.apiKeys.getById(apiKey.id))?.dumpRetentionSeconds, null);
+
+    const retry = await ownerPatch(apiKey.id, { dump_retention_seconds: null }, apiKey.key);
+    assertEquals(retry.status, 200);
+    assertEquals(close.mock.calls.length, 2);
+    assertEquals(stubs.closedChannels.some(channel => channel.keyId === apiKey.id), true);
+  } finally {
+    close.mockRestore();
+  }
 });
 
 test('PATCH /api/keys/:id positive→smaller positive keeps the channel open', async () => {
@@ -433,4 +695,5 @@ test('PATCH /api/keys/:id positive→smaller positive keeps the channel open', a
   const response = await ownerPatch(apiKey.id, { dump_retention_seconds: 1800 }, apiKey.key);
   assertEquals(response.status, 200);
   assertEquals(stubs.closedChannels.some(c => c.keyId === apiKey.id), false);
+  assertEquals((await repo.apiKeys.getById(apiKey.id))?.dumpRetentionSeconds, 1800);
 });

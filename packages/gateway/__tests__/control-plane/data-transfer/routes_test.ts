@@ -67,7 +67,7 @@ const SEED_ADMIN: User = {
 const USER_BOB: User = {
   id: 2,
   username: 'bob',
-  passwordHash: 'pbkdf2-sha256$600000$c2FsdA==$aGFzaA==',
+  passwordHash: 'pbkdf2-sha256$1000$AAECAwQFBgcICQoLDA0ODw==$rep5GM+JZ4GSYa/Qxf4tY9KFd/PnYjJdCeYGWosl/ug=',
   isAdmin: false,
   upstreamIds: null,
   createdAt: '2026-02-01T00:00:00.000Z',
@@ -989,17 +989,26 @@ test('import retains optional defaults from the v20 wire contract', async () => 
   assertEquals((await repo.upstreams.list())[0].modelPrefix, null);
 });
 
-test('positive-integer import fields preserve Number.isInteger semantics', async () => {
+test('account ids require safe integers while unrelated positive-integer fields retain their contract', async () => {
   const { app, repo } = setup();
   const beyondSafeInteger = Number.MAX_SAFE_INTEGER + 1;
-  const result = await doImport(app, 'replace', latestImportData({
+
+  const unsafeUser = await doImport(app, 'replace', latestImportData({
     users: [SEED_ADMIN, { ...USER_BOB, id: beyondSafeInteger }],
+  }));
+  assertEquals(unsafeUser.status, 400);
+  assertEquals(String(unsafeUser.body.error).includes('id must be a positive safe integer'), true);
+
+  const unsafeKeyOwner = await doImport(app, 'replace', latestImportData({
     apiKeys: [{ ...KEY_A, userId: beyondSafeInteger }],
+  }));
+  assertEquals(unsafeKeyOwner.status, 400);
+  assertEquals(String(unsafeKeyOwner.body.error).includes('userId must be a positive safe integer'), true);
+
+  const proxy = await doImport(app, 'replace', latestImportData({
     proxies: [{ id: 'p1', name: 'Proxy', url: HTTP_PROXY_URL, dial_timeout_seconds: beyondSafeInteger }],
   }));
-
-  assertEquals(result.status, 200);
-  assertEquals((await repo.apiKeys.listIncludingDeleted())[0].userId, beyondSafeInteger);
+  assertEquals(proxy.status, 200);
   assertEquals((await repo.proxies.list())[0].dialTimeoutSeconds, beyondSafeInteger);
 });
 
@@ -1418,7 +1427,7 @@ test('import replace wipes proxy_upstream_backoffs alongside the proxies it cool
   const { app, repo } = setup();
   await repo.proxies.save({ id: 'p_old', name: 'Old', url: HTTP_PROXY_URL, dialTimeoutSeconds: null });
   await repo.upstreams.save(CUSTOM_UPSTREAM);
-  await repo.proxyBackoffs.recordDialFailure('p_old', CUSTOM_UPSTREAM.id, 'transport reset');
+  await repo.proxyBackoffs.recordDialFailure('p_old', CUSTOM_UPSTREAM.id, HTTP_PROXY_URL, 'transport reset');
   assertEquals((await repo.proxyBackoffs.listAll()).length, 1);
 
   const result = await doImport(app, 'replace', latestImportData({
@@ -1485,17 +1494,24 @@ test('v20 import rejects malformed users (bad username, bad password_hash)', asy
   assertEquals(badUsername.status, 400);
   assertEquals(String(badUsername.body.error).startsWith('invalid users at index 0:'), true);
 
-  const badHash = await doImport(app, 'replace', {
-    users: [{ ...USER_BOB, passwordHash: 'argon2$10000$$' }],
-    apiKeys: [],
-    upstreams: [],
-    usage: [],
-    searchUsage: [],
-    performanceIncluded: false,
-    searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
-  }, 20);
-  assertEquals(badHash.status, 400);
-  assertEquals(String(badHash.body.error).includes('passwordHash'), true);
+  for (const passwordHash of [
+    'argon2$10000$$',
+    USER_BOB.passwordHash!.replace('$1000$', '$100001$'),
+    USER_BOB.passwordHash!.replace('AAECAwQFBgcICQoLDA0ODw==', 'AAECAwQFBgcICQoLDA0O'),
+    USER_BOB.passwordHash!.replace('rep5GM+JZ4GSYa/Qxf4tY9KFd/PnYjJdCeYGWosl/ug=', 'rep5GM+JZ4GSYa/Qxf4tY9KFd/PnYjJdCeYGWosl'),
+  ]) {
+    const badHash = await doImport(app, 'replace', {
+      users: [{ ...USER_BOB, passwordHash }],
+      apiKeys: [],
+      upstreams: [],
+      usage: [],
+      searchUsage: [],
+      performanceIncluded: false,
+      searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
+    }, 20);
+    assertEquals(badHash.status, 400);
+    assertEquals(String(badHash.body.error).includes('passwordHash'), true);
+  }
 });
 
 test('import rejects a pre-accounts v3 export instead of coercing its legacy api_keys', async () => {
@@ -1525,8 +1541,8 @@ test('replace-mode import clears sessions before writing users', async () => {
   const { app, repo } = setup();
   await repo.users.save(SEED_ADMIN);
   await repo.users.save(USER_BOB);
-  await repo.sessions.create(SEED_ADMIN.id);
-  await repo.sessions.create(USER_BOB.id);
+  const adminSession = await repo.sessions.create(SEED_ADMIN.id);
+  const bobSession = await repo.sessions.create(USER_BOB.id);
 
   const result = await doImport(app, 'replace', {
     users: [SEED_ADMIN, USER_BOB],
@@ -1539,10 +1555,8 @@ test('replace-mode import clears sessions before writing users', async () => {
   }, 20);
 
   assertEquals(result.status, 200);
-  // No public listAll on sessions; create a fresh session and check the
-  // deletion happened by directly calling deleteByUserId — both should report 0.
-  assertEquals(await repo.sessions.deleteByUserId(SEED_ADMIN.id), 0);
-  assertEquals(await repo.sessions.deleteByUserId(USER_BOB.id), 0);
+  assertEquals(await repo.sessions.getByIdAndTouch(adminSession.id), null);
+  assertEquals(await repo.sessions.getByIdAndTouch(bobSession.id), null);
 });
 
 test('v20 import rejects users[i].upstreamIds === undefined', async () => {

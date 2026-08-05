@@ -131,5 +131,5 @@ export const putCodexQuota = async (
       ...account,
       quotaSnapshot: { ...account.quotaSnapshot ?? {}, [codexQuotaActiveLimitKey(snapshot)]: { fetchedAt, data: snapshot } },
     }));
-  });
+  }, { kind: 'codex' });
 };

@@ -55,7 +55,24 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
   test(`[${backend}] insert with a name another row already holds throws`, async () => {
     const repo = await freshRepo();
     await repo.modelAliases.insert(aliasFixture());
-    await assertRejects(() => repo.modelAliases.insert(aliasFixture({ id: 'alias_second' })));
+    await assertRejects(
+      () => repo.modelAliases.insert(aliasFixture({ id: 'alias_second' })),
+      Error,
+      'UNIQUE constraint failed: model_aliases.name',
+    );
+  });
+
+  test(`[${backend}] insert with an existing id rejects without replacing the row`, async () => {
+    const repo = await freshRepo();
+    const original = aliasFixture({ id: 'alias_same', name: 'original' });
+    await repo.modelAliases.insert(original);
+
+    await assertRejects(
+      () => repo.modelAliases.insert(aliasFixture({ id: 'alias_same', name: 'replacement' })),
+      Error,
+      'UNIQUE constraint failed: model_aliases.id',
+    );
+    assertEquals(await repo.modelAliases.getById('alias_same'), original);
   });
 
   test(`[${backend}] getByName returns null when no row matches`, async () => {
@@ -103,7 +120,11 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
     const repo = await freshRepo();
     await repo.modelAliases.insert(aliasFixture({ name: 'gpt-fast' }));
     await repo.modelAliases.insert(aliasFixture({ name: 'gpt-slow' }));
-    await assertRejects(() => repo.modelAliases.update(aliasFixture({ id: 'alias_gpt-fast', name: 'gpt-slow' })));
+    await assertRejects(
+      () => repo.modelAliases.update(aliasFixture({ id: 'alias_gpt-fast', name: 'gpt-slow' })),
+      Error,
+      'UNIQUE constraint failed: model_aliases.name',
+    );
     assertExists(await repo.modelAliases.getByName('gpt-fast'));
     assertExists(await repo.modelAliases.getByName('gpt-slow'));
   });

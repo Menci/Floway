@@ -1,3 +1,5 @@
+import { ProxyDialError, type ProxyConfig, type SocketDial } from '@floway-dev/proxy';
+
 // IP-echo anchors over HTTPS. ipify and AWS checkip return v4 by default
 // (when the proxy egress carries a v4 route); 6.ident.me forces v6, useful
 // when an operator wants to confirm a proxy actually has a v6 path.
@@ -9,13 +11,96 @@ export const ANCHORS = {
 
 export type AnchorName = keyof typeof ANCHORS;
 
+type RunProxiedRequest = typeof import('@floway-dev/proxy').runProxiedRequest;
+
+export interface EgressProbeDependencies {
+  runProxiedRequest: RunProxiedRequest;
+  socketDial: SocketDial;
+}
+
+interface EgressProbeInput {
+  config: ProxyConfig;
+  anchorName: AnchorName;
+  dialTimeoutSeconds?: number | null;
+}
+
+export type EgressProbeResult =
+  | { ok: true; egress_ip: string }
+  | { ok: false; error: string };
+
+const PROBE_BODY_LIMIT_BYTES = 256;
+
+// Read only the prefix that can reach the validation/error surface. Cancelling
+// at the boundary also tears down a peer that keeps streaming after the useful
+// bytes, so a broken echo service cannot retain a socket or grow our heap.
+const readProbeBodyPrefix = async (response: Response): Promise<string> => {
+  if (response.body === null) return '';
+
+  const reader = response.body.getReader();
+  const bytes = new Uint8Array(PROBE_BODY_LIMIT_BYTES);
+  let length = 0;
+  try {
+    while (length < bytes.byteLength) {
+      const result = await reader.read();
+      if (result.done) break;
+      const copyLength = Math.min(result.value.byteLength, bytes.byteLength - length);
+      bytes.set(result.value.subarray(0, copyLength), length);
+      length += copyLength;
+    }
+    if (length === bytes.byteLength) {
+      await reader.cancel(`proxy probe response body reached ${PROBE_BODY_LIMIT_BYTES}-byte limit`);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return new TextDecoder().decode(bytes.subarray(0, length));
+};
+
+export const probeProxyEgress = async (
+  input: EgressProbeInput,
+  dependencies: EgressProbeDependencies,
+): Promise<EgressProbeResult> => {
+  const anchor = ANCHORS[input.anchorName];
+  try {
+    const response = await dependencies.runProxiedRequest(
+      input.config,
+      { host: anchor.host, port: anchor.port, tls: true },
+      {
+        method: 'GET',
+        path: anchor.path,
+        headers: { 'User-Agent': 'floway-proxy-test/1' },
+      },
+      {
+        socketDial: dependencies.socketDial,
+        ...(input.dialTimeoutSeconds == null ? {} : { dialTimeoutMs: input.dialTimeoutSeconds * 1000 }),
+      },
+    );
+    if (!response.ok) {
+      await response.body?.cancel(`proxy probe anchor returned status ${response.status}`);
+      return { ok: false, error: `anchor returned status ${response.status}` };
+    }
+
+    const truncated = (await readProbeBodyPrefix(response)).trim();
+    if (!isIpV4(truncated) && !isIpV6(truncated)) {
+      return { ok: false, error: `anchor returned non-IP body: ${truncated.slice(0, 80)}` };
+    }
+    // The v6-only DNS name normally prevents a v4 response. Keep the shape
+    // check for DNS64/NAT64 deployments and for an upstream record change.
+    if (input.anchorName === 'ident.me-v6' && !truncated.includes(':')) {
+      return { ok: false, error: `v6 anchor returned a v4 address (${truncated}); proxy has no v6 path` };
+    }
+    return { ok: true, egress_ip: truncated };
+  } catch (error) {
+    if (error instanceof ProxyDialError) {
+      return { ok: false, error: `[${error.stage}] ${error.message}` };
+    }
+    throw error;
+  }
+};
+
 // IP-echo anchors return either an IPv4 in dot-notation or an IPv6 in mixed
-// hex/colon (with an optional embedded IPv4 tail). Cap the response at 256
-// chars before sniffing — a misbehaving anchor could otherwise feed an
-// arbitrary HTML page into the test-response payload. We validate octet
-// ranges and canonical v6 shape (one optional `::` shorthand, 1-4 hex
-// digits per group, RFC 4291 group counts), so anchor strings like
-// `999.999.999.999` or `aaaa::bbbb::cccc` cannot pass.
+// hex/colon (with an optional embedded IPv4 tail). Validate octet ranges and
+// canonical v6 shape so an HTML page or malformed address cannot pass.
 export const isIpV4 = (s: string): boolean => {
   const octets = s.split('.');
   if (octets.length !== 4) return false;

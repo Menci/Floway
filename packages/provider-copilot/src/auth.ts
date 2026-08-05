@@ -1,5 +1,6 @@
 import pRetry, { AbortError as RetryAbortError } from 'p-retry';
 
+import type { CopilotUpstreamConfig } from './config.ts';
 import { githubApiOrigin } from './github-host.ts';
 import { readCopilotUpstreamState, type CopilotTokenEntry, type CopilotUpstreamState } from './state.ts';
 import { dispatchUpstreamFetch, getProviderRepo as getRepo, isAbortError, type Fetcher } from '@floway-dev/provider';
@@ -179,6 +180,7 @@ const refreshCopilotToken = (
   upstreamId: string,
   githubHost: string,
   githubToken: string,
+  expectedConfig: unknown,
   fetcher: Fetcher,
 ): InFlightTokenRefresh => {
   const existing = reusableTokenRefresh(upstreamId);
@@ -203,7 +205,7 @@ const refreshCopilotToken = (
           ...state,
           copilotToken: entry,
         } satisfies CopilotUpstreamState;
-      });
+      }, { kind: 'copilot', config: expectedConfig });
     } catch (err) {
       console.warn(`Failed to persist Copilot token for ${upstreamId}:`, err);
     }
@@ -249,7 +251,7 @@ async function getCopilotToken(upstreamId: string, githubHost: string, githubTok
   // ~25 minutes per process. Concurrent misses share one exchange. Each caller
   // retains independent cancellation; the shared fetch is cancelled only after
   // its final waiter leaves.
-  return await awaitRefresh(refreshCopilotToken(upstreamId, githubHost, githubToken, fetcher), signal);
+  return await awaitRefresh(refreshCopilotToken(upstreamId, githubHost, githubToken, fresh.config, fetcher), signal);
 }
 
 // Pure exchange against /copilot_internal/v2/token — no caching, no
@@ -314,6 +316,7 @@ export interface CopilotAuth {
   id: string;
   githubHost: string;
   githubToken: string;
+  config?: CopilotUpstreamConfig;
 }
 
 export async function copilotAuthedFetch(path: string, init: RequestInit, auth: CopilotAuth, options: CopilotFetchOptions): Promise<Response> {

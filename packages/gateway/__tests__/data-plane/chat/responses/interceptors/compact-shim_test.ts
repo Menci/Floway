@@ -303,7 +303,7 @@ test('compact + flag on: upstream incomplete status propagates onto the synthesi
     };
     return Promise.resolve(eventResult(
       (async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
-        yield eventFrame({ type: 'response.completed', sequence_number: 0, response });
+        yield eventFrame({ type: 'response.incomplete', sequence_number: 0, response });
         yield doneFrame();
       })(),
       testTelemetryModelIdentity,

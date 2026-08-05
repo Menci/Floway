@@ -1,16 +1,18 @@
 import { resolveControlPlaneFetcher } from './proxy-resolution.ts';
-import { upstreamErrorMessage as errorMessage } from './shared.ts';
+import { nextUpstreamUpdatedAt, upstreamErrorMessage as errorMessage } from './shared.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { codexOAuthAuthorizeUrlBody, codexOAuthExchangeBody, codexOAuthRefreshBody } from '../schemas.ts';
 import { warmModelsCache } from '../shared/warm-models-cache.ts';
-import type { Fetcher, UpstreamRecord } from '@floway-dev/provider';
+import type { Fetcher } from '@floway-dev/provider';
 import {
   buildCodexAuthorizeUrl,
   type CodexUpstreamConfig,
   type CodexUpstreamState,
+  CodexCredentialRefreshTerminatedError,
   CodexOAuthSessionTerminatedError,
+  assertCodexUpstreamCredentials,
   assertCodexUpstreamState,
   ensureCodexAccessToken,
   importCodexFromAuthJson,
@@ -31,6 +33,10 @@ export const codexOAuthExchange = async (c: CtxWithJson<typeof codexOAuthExchang
   const body = c.req.valid('json');
   const { record } = body;
   if (record.kind !== 'codex') return c.json({ error: 'Upstream is not a Codex upstream' }, 400);
+  const repo = getRepo().upstreams;
+  const dbRecord = record.id === '' ? null : await repo.getById(record.id);
+  if (record.id !== '' && dbRecord === null) return c.json({ error: 'Upstream not found' }, 404);
+  if (dbRecord !== null && dbRecord.kind !== 'codex') return c.json({ error: 'Upstream is not a Codex upstream' }, 400);
 
   let fetcher: Fetcher;
   try {
@@ -58,17 +64,13 @@ export const codexOAuthExchange = async (c: CtxWithJson<typeof codexOAuthExchang
   // Edit state: overwrite the credential slice of the stored record.
   // Single-account convention — exchange REPLACES accounts[0], no append.
   if (record.id !== '') {
-    const dbRecord = await getRepo().upstreams.getById(record.id);
-    if (!dbRecord) return c.json({ error: 'Upstream not found' }, 404);
-    if (dbRecord.kind !== 'codex') return c.json({ error: 'Upstream is not a Codex upstream' }, 400);
-    const next: UpstreamRecord = {
-      ...dbRecord,
+    const next = await repo.updateFields(record.id, 'codex', {
       config: ingestion.config,
       state: ingestion.state,
-      updatedAt: new Date().toISOString(),
-    };
-    await getRepo().upstreams.save(next);
-    await warmModelsCache(next, c);
+      updatedAt: nextUpstreamUpdatedAt(dbRecord!),
+    }, { clearModelsCache: true });
+    if (!next) return c.json({ error: 'Upstream not found' }, 404);
+    await warmModelsCache(next, c, { readBack: false });
   }
 
   return c.json({
@@ -89,8 +91,12 @@ export const codexOAuthRefresh = async (c: CtxWithJson<typeof codexOAuthRefreshB
   // brand-new refresh_token that has no reason to rotate yet, and the
   // front-end does not surface the button until Save lands the row.
   if (record.id === '') return c.json({ error: 'refresh requires a persisted upstream' }, 400);
-  assertCodexUpstreamState(record.state);
-  const account = record.state.accounts[0];
+  const repo = getRepo().upstreams;
+  const persisted = await repo.getById(record.id);
+  if (!persisted) return c.json({ error: 'Upstream not found' }, 404);
+  if (persisted.kind !== 'codex') return c.json({ error: 'Upstream is not a Codex upstream' }, 400);
+  assertCodexUpstreamCredentials(persisted);
+  const account = persisted.state.accounts[0];
   if (account.state !== 'active') {
     return c.json({ error: `Codex upstream is ${account.state}; re-run OAuth exchange to recover` }, 400);
   }
@@ -114,14 +120,14 @@ export const codexOAuthRefresh = async (c: CtxWithJson<typeof codexOAuthRefreshB
   // won and throws if it cannot.
   const persistRefreshTokenRotation = async (newRefreshToken: string): Promise<void> => {
     const rotatedAt = new Date().toISOString();
-    await getRepo().upstreams.saveState(record.id, current => {
+    await repo.saveState(record.id, current => {
       assertCodexUpstreamState(current);
       return {
         accounts: current.accounts.map(a => a.chatgptAccountId === account.chatgptAccountId
           ? { ...a, refresh_token: newRefreshToken, state_updated_at: rotatedAt }
           : a),
       } satisfies CodexUpstreamState;
-    });
+    }, { kind: 'codex' });
   };
 
   try {
@@ -134,20 +140,42 @@ export const codexOAuthRefresh = async (c: CtxWithJson<typeof codexOAuthRefreshB
       // clear the cached access token, mark the account refresh_failed so
       // the dashboard renders the red badge and prompts a re-import.
       const failedAt = new Date().toISOString();
-      await getRepo().upstreams.saveState(record.id, current => {
+      const generation = err instanceof CodexCredentialRefreshTerminatedError
+        ? err.generation
+        : {
+            chatgptAccountId: account.chatgptAccountId,
+            refresh_token: account.refresh_token,
+            state_updated_at: account.state_updated_at,
+          };
+      let credentialGenerationMoved = false;
+      await repo.saveState(record.id, current => {
         assertCodexUpstreamState(current);
         return {
-          accounts: current.accounts.map(a => a.chatgptAccountId === account.chatgptAccountId
-            ? { ...a, state: 'refresh_failed' as const, state_message: err.upstreamMessage, state_updated_at: failedAt, accessToken: null }
-            : a),
+          accounts: current.accounts.map(a => {
+            if (a.chatgptAccountId !== generation.chatgptAccountId) {
+              credentialGenerationMoved = true;
+              return a;
+            }
+            if (a.state !== 'active') return a;
+            if (a.refresh_token !== generation.refresh_token || a.state_updated_at !== generation.state_updated_at) {
+              credentialGenerationMoved = true;
+              return a;
+            }
+            return { ...a, state: 'refresh_failed' as const, state_message: err.upstreamMessage, state_updated_at: failedAt, accessToken: null };
+          }),
         } satisfies CodexUpstreamState;
-      });
+      }, { kind: 'codex' });
+      if (credentialGenerationMoved) {
+        const recovered = await repo.getById(record.id);
+        if (!recovered) return c.json({ error: 'Upstream not found' }, 404);
+        return c.json({ patch: { state: recovered.state } });
+      }
       return c.json({ error: `Codex refresh failed: ${err.upstreamMessage}. Re-run OAuth exchange to recover.` }, 400);
     }
     return c.json({ error: errorMessage(err) }, 502);
   }
 
-  const updated = await getRepo().upstreams.getById(record.id);
+  const updated = await repo.getById(record.id);
   if (!updated) return c.json({ error: 'Upstream not found' }, 404);
   return c.json({ patch: { state: updated.state } });
 };

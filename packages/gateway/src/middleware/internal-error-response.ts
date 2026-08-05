@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 
 import { RequestBodyTooLargeError } from './request-body-limit.ts';
 
@@ -55,6 +56,10 @@ export const internalErrorResponse = (error: Error, c: Context): Response => {
         path: c.req.path,
       },
     }, 413);
+  }
+  if (error instanceof HTTPException) {
+    const response = error.getResponse();
+    return c.newResponse(response.body, response);
   }
 
   console.error(error);

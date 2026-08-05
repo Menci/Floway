@@ -1,213 +1,99 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { hashPassword } from '../../../src/shared/passwords.ts';
-import { requestApp, setupAppTest } from '../../test-utils/app.ts';
-import { initRuntimeKind } from '@floway-dev/platform';
-import { assertEquals } from '@floway-dev/test-utils';
+import { requestControlPlane, setupControlPlaneTest, TEST_PASSWORD, TEST_PASSWORD_HASH } from '../../test-utils/control-plane.ts';
+import { initRuntimeKind, initTimingSafeEqual } from '@floway-dev/platform';
+import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
-// vitest.setup pins the runtime kind to 'node'; the CF-side tests below
-// re-init and this restores the default so they don't leak.
+const login = (username: string, password: string) => requestControlPlane('/auth/login', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ username, password }),
+});
+
 afterEach(() => {
   initRuntimeKind('node');
+  initTimingSafeEqual((a, b) => a.every((byte, index) => byte === b[index]));
   vi.unstubAllEnvs();
 });
 
-test('/auth/login with blank username + ADMIN_KEY logs in as user 1', async () => {
-  const { adminKey } = await setupAppTest();
-  const response = await requestApp('/auth/login', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: '', password: adminKey }),
-  });
+test('/auth/login authenticates ADMIN_KEY without leaking the stored user row', async () => {
+  const { adminKey } = await setupControlPlaneTest({ adminKey: 'real-admin' });
+  const compare = vi.fn((a: Uint8Array, b: Uint8Array) => a.every((byte, index) => byte === b[index]));
+  initTimingSafeEqual(compare);
 
+  for (const password of ['fake-admin', 'x']) {
+    const rejected = await login('', password);
+    assertEquals(rejected.status, 401);
+    assertEquals(await rejected.json(), { error: 'Invalid username or password' });
+  }
+
+  const response = await login('', adminKey);
   assertEquals(response.status, 200);
-  const body = (await response.json()) as { token: string; user: { id: number; isAdmin: boolean; username: string } };
+  const body = await response.json() as { token: string; user: unknown };
   expect(body.token).toMatch(/^[0-9a-f]{64}$/);
-  assertEquals(body.user.id, 1);
-  assertEquals(body.user.isAdmin, true);
-  assertEquals(body.user.username, 'admin');
+  assertEquals(body.user, { id: 1, username: 'admin', isAdmin: true, upstreamIds: null });
+  assertEquals(Object.keys(body).toSorted(), ['token', 'user']);
+  expect(compare).toHaveBeenCalledTimes(3);
+  for (const [candidate, expected] of compare.mock.calls) {
+    expect(candidate).toHaveLength(32);
+    expect(expected).toHaveLength(32);
+  }
 });
 
-test('/auth/login with blank username + wrong ADMIN_KEY rejects', async () => {
-  await setupAppTest({ adminKey: 'real-admin' });
-  const response = await requestApp('/auth/login', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: '', password: 'wrong-admin' }),
-  });
-  assertEquals(response.status, 401);
-});
-
-test('/auth/login rejects a same-length ADMIN_KEY mismatch', async () => {
-  await setupAppTest({ adminKey: 'real-admin' });
-  const response = await requestApp('/auth/login', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: '', password: 'fake-admin' }),
-  });
-  assertEquals(response.status, 401);
-});
-
-// Zero-config passwordless admin login: with no ADMIN_KEY set, a brand-new
-// local instance still lets the operator in. The four cases below cover the
-// dev/prod matrix on both runtimes — dev accepts, prod refuses. Node prod
-// additionally hard-fails at boot (see apps/platform-node/entry.ts), but
-// this per-request guard is the Cloudflare-side gate and Node
-// defence-in-depth.
-
-test('/auth/login on Node dev (empty ADMIN_KEY, NODE_ENV != production) grants passwordless admin login', async () => {
-  await setupAppTest({ adminKey: '' });
-  const response = await requestApp('/auth/login', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: '', password: '' }),
-  });
-  assertEquals(response.status, 200);
-  const body = (await response.json()) as { user: { id: number; isAdmin: boolean } };
-  assertEquals(body.user.id, 1);
-  assertEquals(body.user.isAdmin, true);
-});
-
-test('/auth/login on Node with NODE_ENV=production refuses passwordless login when ADMIN_KEY is empty', async () => {
-  await setupAppTest({ adminKey: '' });
-  vi.stubEnv('NODE_ENV', 'production');
-  const response = await requestApp('/auth/login', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: '', password: '' }),
-  });
-  assertEquals(response.status, 401);
-});
-
-test('/auth/login on Cloudflare wrangler dev (empty ADMIN_KEY, no CF-Ray) grants passwordless admin login', async () => {
-  await setupAppTest({ adminKey: '' });
-  initRuntimeKind('cloudflare');
-  const response = await requestApp('/auth/login', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: '', password: '' }),
-  });
-  assertEquals(response.status, 200);
-  const body = (await response.json()) as { user: { id: number } };
-  assertEquals(body.user.id, 1);
-});
-
-test('/auth/login on Cloudflare edge (CF-Ray present) refuses passwordless login when ADMIN_KEY is empty', async () => {
-  await setupAppTest({ adminKey: '' });
-  initRuntimeKind('cloudflare');
-  const response = await requestApp('/auth/login', {
+test.each([
+  { name: 'Node dev with ADMIN_KEY unset', runtime: 'node' as const, adminKey: null, production: false, edge: false, expected: 200 },
+  { name: 'Node production with empty ADMIN_KEY', runtime: 'node' as const, adminKey: '', production: true, edge: false, expected: 401 },
+  { name: 'Cloudflare dev with ADMIN_KEY unset', runtime: 'cloudflare' as const, adminKey: null, production: false, edge: false, expected: 200 },
+  { name: 'Cloudflare edge with empty ADMIN_KEY', runtime: 'cloudflare' as const, adminKey: '', production: false, edge: true, expected: 401 },
+])('/auth/login passwordless policy: $name', async ({ runtime, adminKey, production, edge, expected }) => {
+  await setupControlPlaneTest({ adminKey });
+  initRuntimeKind(runtime);
+  if (production) vi.stubEnv('NODE_ENV', 'production');
+  const response = await requestControlPlane('/auth/login', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'cf-ray': '9a1b2c3d4e5f6789-SJC',
+      ...(edge ? { 'cf-ray': '9a1b2c3d4e5f6789-SJC' } : {}),
     },
     body: JSON.stringify({ username: '', password: '' }),
   });
-  assertEquals(response.status, 401);
+  assertEquals(response.status, expected);
 });
 
-// A brand-new checkout has ADMIN_KEY entirely unset — not `''` but truly
-// undefined — because platform-node's EnvGetter is `name => process.env[name]`
-// and an unexported variable reads as undefined. The route must treat that
-// state identically to an explicitly empty string, or fresh Node dev
-// installs 500 on every login. Cloudflare has the same shape when the
-// operator has no `.dev.vars`.
-
-test('/auth/login on Node dev with ADMIN_KEY entirely unset (EnvGetter returns undefined) grants passwordless admin login', async () => {
-  await setupAppTest({ adminKey: null });
-  const response = await requestApp('/auth/login', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: '', password: '' }),
-  });
-  assertEquals(response.status, 200);
-  const body = (await response.json()) as { user: { id: number; isAdmin: boolean } };
-  assertEquals(body.user.id, 1);
-  assertEquals(body.user.isAdmin, true);
-});
-
-test('/auth/login on Cloudflare wrangler dev with ADMIN_KEY entirely unset (no .dev.vars, no CF-Ray) grants passwordless admin login', async () => {
-  await setupAppTest({ adminKey: null });
-  initRuntimeKind('cloudflare');
-  const response = await requestApp('/auth/login', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: '', password: '' }),
-  });
-  assertEquals(response.status, 200);
-  const body = (await response.json()) as { user: { id: number } };
-  assertEquals(body.user.id, 1);
-});
-
-test('/auth/login with username + matching password issues a session', async () => {
-  const { repo } = await setupAppTest();
+test('/auth/login matches usernames case-insensitively, rejects a wrong password, and issues a usable session', async () => {
+  const { repo } = await setupControlPlaneTest();
   await repo.users.save({
-    id: 2,
-    username: 'alice',
-    passwordHash: await hashPassword('hunter2'),
-    isAdmin: false,
-    upstreamIds: null,
-    createdAt: '2026-01-01T00:00:00.000Z',
-    deletedAt: null,
-  });
-
-  const response = await requestApp('/auth/login', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: 'alice', password: 'hunter2' }),
-  });
-  assertEquals(response.status, 200);
-  const body = (await response.json()) as { token: string; user: { id: number; isAdmin: boolean } };
-  assertEquals(body.user.id, 2);
-  assertEquals(body.user.isAdmin, false);
-});
-
-test('/auth/login matches the username case-insensitively', async () => {
-  const { repo } = await setupAppTest();
-  await repo.users.save({
-    id: 2,
+    id: 3,
     username: 'Alice',
-    passwordHash: await hashPassword('hunter2'),
+    passwordHash: TEST_PASSWORD_HASH,
     isAdmin: false,
     upstreamIds: null,
     createdAt: '2026-01-01T00:00:00.000Z',
     deletedAt: null,
   });
 
-  const response = await requestApp('/auth/login', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: 'ALICE', password: 'hunter2' }),
-  });
+  const rejected = await login('alice', 'wrong-password');
+  assertEquals(rejected.status, 401);
+  assertEquals(await rejected.json(), { error: 'Invalid username or password' });
+
+  const response = await login('ALICE', TEST_PASSWORD);
   assertEquals(response.status, 200);
-  const body = (await response.json()) as { user: { id: number } };
-  assertEquals(body.user.id, 2);
+  const body = await response.json() as { token: string; user: unknown };
+  assertEquals(body.user, { id: 3, username: 'Alice', isAdmin: false, upstreamIds: null });
+
+  const me = await requestControlPlane('/auth/me', { headers: { 'x-floway-session': body.token } });
+  assertEquals(me.status, 200);
+  assertEquals(await me.json(), {
+    user: { id: 3, username: 'Alice', isAdmin: false, upstreamIds: null },
+    viaApiKey: false,
+    apiKey: null,
+  });
 });
 
-test('/auth/login with wrong password is rejected', async () => {
-  const { repo } = await setupAppTest();
+test('/auth/login gives missing users and users without passwords the same rejection', async () => {
+  const { repo } = await setupControlPlaneTest();
   await repo.users.save({
-    id: 2,
-    username: 'alice',
-    passwordHash: await hashPassword('hunter2'),
-    isAdmin: false,
-    upstreamIds: null,
-    createdAt: '2026-01-01T00:00:00.000Z',
-    deletedAt: null,
-  });
-
-  const response = await requestApp('/auth/login', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: 'alice', password: 'WRONG' }),
-  });
-  assertEquals(response.status, 401);
-});
-
-test('/auth/login refuses a user with no password set (must use admin reset path)', async () => {
-  const { repo } = await setupAppTest();
-  await repo.users.save({
-    id: 2,
+    id: 3,
     username: 'pending',
     passwordHash: null,
     isAdmin: false,
@@ -216,57 +102,63 @@ test('/auth/login refuses a user with no password set (must use admin reset path
     deletedAt: null,
   });
 
-  const response = await requestApp('/auth/login', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: 'pending', password: 'anything' }),
-  });
-  assertEquals(response.status, 401);
+  for (const username of ['missing', 'pending']) {
+    const response = await login(username, 'anything');
+    assertEquals(response.status, 401);
+    assertEquals(await response.json(), { error: 'Invalid username or password' });
+  }
 });
 
-test('/auth/logout deletes the current session only', async () => {
-  const { repo } = await setupAppTest();
+test('/auth/login preserves malformed JSON as an HTTP 400', async () => {
+  const response = await requestControlPlane('/auth/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{',
+  });
+  assertEquals(response.status, 400);
+  assertEquals(await response.text(), 'Malformed JSON in request body');
+});
+
+test('/auth/login exposes a missing seed admin as an internal invariant failure', async () => {
+  const { repo, adminKey } = await setupControlPlaneTest();
+  const admin = await repo.users.getById(1);
+  assertExists(admin);
+  await repo.users.save({ ...admin, deletedAt: '2026-01-01T00:00:00.000Z' });
+  const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const response = await login('', adminKey);
+    assertEquals(response.status, 500);
+    const body = await response.json() as { error: { message: string; stack?: string } };
+    assertEquals(body.error.message, 'ADMIN_KEY login: seed admin (user 1) is missing');
+    expect(body.error.stack).toContain('ADMIN_KEY login: seed admin');
+  } finally {
+    consoleSpy.mockRestore();
+  }
+});
+
+test('/auth/logout deletes only the current session', async () => {
+  const { repo } = await setupControlPlaneTest();
   const sessionA = await repo.sessions.create(1);
   const sessionB = await repo.sessions.create(1);
 
-  const response = await requestApp('/auth/logout', {
+  const response = await requestControlPlane('/auth/logout', {
     method: 'POST',
     headers: { 'x-floway-session': sessionA.id },
   });
   assertEquals(response.status, 200);
-
+  assertEquals(await response.json(), { ok: true });
   expect(await repo.sessions.getByIdAndTouch(sessionA.id)).toBeNull();
   expect(await repo.sessions.getByIdAndTouch(sessionB.id)).not.toBeNull();
 });
 
-test('/auth/me returns the current user shape with viaApiKey:false for sessions', async () => {
-  const { repo } = await setupAppTest();
-  const session = await repo.sessions.create(1);
-
-  const response = await requestApp('/auth/me', {
-    method: 'GET',
-    headers: { 'x-floway-session': session.id },
-  });
+test('/auth/me identifies API-key authentication without exposing key material', async () => {
+  const { apiKey } = await setupControlPlaneTest();
+  const response = await requestControlPlane('/auth/me', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 200);
-  const body = (await response.json()) as { user: { id: number; isAdmin: boolean }; viaApiKey: boolean; apiKey: unknown };
-  assertEquals(body.user.id, 1);
-  assertEquals(body.user.isAdmin, true);
-  assertEquals(body.viaApiKey, false);
-  assertEquals(body.apiKey, null);
-});
-
-test('/auth/me reports viaApiKey:true and the API key metadata when authed via x-api-key', async () => {
-  const { apiKey } = await setupAppTest();
-
-  const response = await requestApp('/auth/me', {
-    method: 'GET',
-    headers: { 'x-api-key': apiKey.key },
+  assertEquals(await response.json(), {
+    user: { id: 2, username: 'tester', isAdmin: false, upstreamIds: null },
+    viaApiKey: true,
+    apiKey: { id: apiKey.id, name: apiKey.name },
   });
-
-  assertEquals(response.status, 200);
-  const body = (await response.json()) as { user: { id: number }; viaApiKey: boolean; apiKey: { id: string; name: string } };
-  assertEquals(body.viaApiKey, true);
-  assertEquals(body.apiKey.id, apiKey.id);
-  assertEquals(body.apiKey.name, apiKey.name);
 });

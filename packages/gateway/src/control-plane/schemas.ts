@@ -19,6 +19,7 @@ import { z } from 'zod';
 
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
+import { MODEL_ALIAS_TARGET_LIMIT } from '../shared/model-aliases.ts';
 import { RETENTION_MAX_SECONDS, SECONDS_PER_DAY } from '../shared/retention.ts';
 import { kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS, tokenUsageUnattributedUserId } from '@floway-dev/protocols/common';
 import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, parseFlagOverridesWire, UPSTREAM_HUE_DEGREES } from '@floway-dev/provider';
@@ -58,6 +59,12 @@ const modelEndpointsSchema = z.object({
   audioTranscriptions: z.object({}).optional(),
   rerank: z.object({}).optional(),
 });
+
+const hasChatEndpoint = (endpoints: z.infer<typeof modelEndpointsSchema>): boolean =>
+  endpoints.completions !== undefined
+  || endpoints.chatCompletions !== undefined
+  || endpoints.responses !== undefined
+  || endpoints.messages !== undefined;
 
 const priceSchema = z.string().transform((value, ctx) => {
   try {
@@ -160,8 +167,8 @@ const upstreamModelSchema = z.object({
   limits: limitsSchema.optional(),
   chat: chatSchema.optional(),
 }).refine(
-  m => m.chat === undefined || m.kind === undefined || m.kind === 'chat',
-  { message: "chat metadata only allowed when kind === 'chat'", path: ['chat'] },
+  m => m.chat === undefined || hasChatEndpoint(m.endpoints),
+  { message: 'chat metadata requires at least one chat endpoint', path: ['chat'] },
 ).refine(
   m => kindForEndpoints(m.endpoints) !== 'rerank' || m.rerankTarget !== undefined,
   { message: 'rerankTarget is required when endpoints select rerank', path: ['rerankTarget'] },
@@ -218,14 +225,20 @@ const ollamaConfigSchema = z.object({
 // CPU cost dependency on length is sub-linear past SHA-256's 64-byte block
 // (oversize keys are pre-hashed once before the iteration loop), but the
 // JSON-parse + zod + pre-hash work is still worth bounding.
-const passwordSchema = z.string().min(1).max(1024);
+const PASSWORD_MAX_BYTES = 1024;
+const utf8 = new TextEncoder();
+const passwordWithinByteLimitSchema = z.string().refine(
+  value => value.length <= PASSWORD_MAX_BYTES && utf8.encode(value).byteLength <= PASSWORD_MAX_BYTES,
+  { message: `password must be at most ${PASSWORD_MAX_BYTES} UTF-8 bytes` },
+);
+const passwordSchema = passwordWithinByteLimitSchema.refine(value => value.length > 0, { message: 'password must not be empty' });
 
 // Both fields are allowed empty so the blank-username login path (ADMIN_KEY
 // match, or the dev-only passwordless shortcut when ADMIN_KEY is unset)
 // passes validation; the login handler dispatches on the empty values.
 export const authLoginBody = z.object({
   username: z.string().regex(/^[a-zA-Z0-9_.\-]{0,64}$/, 'username must be 0-64 chars of [A-Za-z0-9_.-] (empty for ADMIN_KEY login)'),
-  password: z.string().max(1024),
+  password: passwordWithinByteLimitSchema,
 });
 
 // --- users ---
@@ -313,8 +326,8 @@ export const updateKeyBody = z.object({
 // enumerated. When present it must be non-empty: stored and wire shapes stay
 // symmetric, so "all colos" is always the absent field.
 const proxyFallbackListSchema = z.array(z.object({
-  id: z.string().min(1),
-  colos: z.array(z.string().min(1)).min(1).optional(),
+  id: z.string().trim().min(1),
+  colos: z.array(z.string().trim().min(1)).min(1).optional(),
 }));
 
 // Per-upstream model name prefix policy. `null` clears the policy (the upstream
@@ -632,7 +645,7 @@ const aliasBaseShape = {
   selection: z.enum(['random', 'first-available']),
   display_name: z.string().min(1).nullable(),
   visible_in_models_list: z.boolean(),
-  targets: z.array(aliasTargetSchema).min(1),
+  targets: z.array(aliasTargetSchema).min(1).max(MODEL_ALIAS_TARGET_LIMIT),
   announced_metadata: announcedMetadataSchema.nullable(),
   sort_order: z.number().int().optional(),
 };
@@ -685,8 +698,8 @@ const aliasBodyRulesRefinement = (
 };
 
 // Create and update share the same body shape — the difference is operational:
-// create rejects PK collisions, update reads the path `:name` as the old name
-// and treats a different `body.name` as a rename. Splitting them keeps the
+// create rejects PK collisions, update reads the path `:id` as the stable row
+// handle and treats a different `body.name` as a rename. Splitting them keeps the
 // type names self-documenting at the RPC-client surface.
 export const createAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinement);
 export const updateAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinement);

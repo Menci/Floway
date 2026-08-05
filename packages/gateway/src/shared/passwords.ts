@@ -26,25 +26,38 @@ export const hashPassword = async (plaintext: string): Promise<string> => {
   return `${PASSWORD_HASH_SCHEME}$${ITERATIONS}$${encodeBase64(salt)}$${encodeBase64(bits)}`;
 };
 
+interface ParsedPasswordHash {
+  iterations: number;
+  salt: Uint8Array;
+  expected: Uint8Array;
+}
+
+const parsePasswordHash = (encoded: string): ParsedPasswordHash | null => {
+  const parts = encoded.split('$');
+  if (parts.length !== 4 || parts[0] !== PASSWORD_HASH_SCHEME || !/^[1-9]\d*$/.test(parts[1])) return null;
+  const iterations = Number(parts[1]);
+  if (!Number.isSafeInteger(iterations) || iterations < 1000 || iterations > ITERATIONS) return null;
+  try {
+    const salt = decodeForgivingBase64(parts[2]);
+    const expected = decodeForgivingBase64(parts[3]);
+    return salt.length === SALT_BYTES && expected.length === HASH_BITS / 8
+      ? { iterations, salt, expected }
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+export const isSupportedPasswordHash = (encoded: string): boolean => parsePasswordHash(encoded) !== null;
+
 // Returns false on any structural failure of the encoded string. The caller
 // presents the same response either way; surfacing the parse error would only
 // help an attacker distinguish "no such user" from "stored hash corrupted".
 export const verifyPassword = async (plaintext: string, encoded: string): Promise<boolean> => {
-  const parts = encoded.split('$');
-  if (parts.length !== 4 || parts[0] !== PASSWORD_HASH_SCHEME) return false;
-  const iters = Number(parts[1]);
-  if (!Number.isFinite(iters) || iters < 1000 || iters > 10_000_000) return false;
-  let salt: Uint8Array;
-  let expected: Uint8Array;
-  try {
-    salt = decodeForgivingBase64(parts[2]);
-    expected = decodeForgivingBase64(parts[3]);
-  } catch {
-    return false;
-  }
-  if (expected.length !== HASH_BITS / 8) return false;
-  const actual = await deriveBits(plaintext, salt, iters);
-  return timingSafeEqual(actual, expected);
+  const parsed = parsePasswordHash(encoded);
+  if (!parsed) return false;
+  const actual = await deriveBits(plaintext, parsed.salt, parsed.iterations);
+  return timingSafeEqual(actual, parsed.expected);
 };
 
 // Stable dummy hash used to flatten the login timing oracle: the no-user /

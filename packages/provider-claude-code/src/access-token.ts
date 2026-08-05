@@ -38,6 +38,14 @@ const REFRESH_SKEW_MS = 5 * 60 * 1000;
 const isAccessTokenFresh = (entry: ClaudeCodeAccessTokenEntry): boolean =>
   entry.expiresAt > Date.now() + REFRESH_SKEW_MS;
 
+const sameCredentialGeneration = (
+  current: ClaudeCodeAccountCredential,
+  expected: ClaudeCodeAccountCredential,
+): boolean => current.accountUuid === expected.accountUuid
+  && current.tokenKind === expected.tokenKind
+  && current.refreshToken === expected.refreshToken
+  && current.stateUpdatedAt === expected.stateUpdatedAt;
+
 export interface EnsureClaudeCodeAccessTokenArgs {
   upstreamId: string;
   repo: UpstreamsRepoSlim;
@@ -199,18 +207,14 @@ const ensureClaudeCodeAccessTokenInner = async (
     rotationApplied = false;
     const storedState = readClaudeCodeUpstreamState(current);
     const stored = storedState.accounts[0];
-    if (
-      stored.state !== 'active'
-      || stored.tokenKind !== 'oauth'
-      || stored.refreshToken !== account.refreshToken
-    ) return storedState;
+    if (stored.state !== 'active' || stored.tokenKind !== 'oauth' || !sameCredentialGeneration(stored, account)) return storedState;
     rotationApplied = true;
     return replaceSoleAccount(storedState, () => ({
       ...stored,
       refreshToken: rotatedRefreshToken,
       accessToken: newAccessTokenEntry,
     }));
-  });
+  }, { kind: 'claude-code' });
   if (!rotationApplied) return await ensureClaudeCodeAccessTokenInner(args, false);
   logInfo('claude_code_refresh_token_rotated', {
     upstream_id: args.upstreamId,
@@ -251,8 +255,11 @@ const persistTerminalState = async (
     const state = readClaudeCodeUpstreamState(current);
     const account = state.accounts[0];
     const generationMatches = previousAccount.tokenKind === 'oauth'
-      ? account.tokenKind === 'oauth' && account.refreshToken === previousAccount.refreshToken
-      : account.tokenKind === 'setup-token' && account.accessToken?.token === previousAccount.accessToken?.token;
+      ? sameCredentialGeneration(account, previousAccount)
+      : account.tokenKind === 'setup-token'
+        && account.accountUuid === previousAccount.accountUuid
+        && account.accessToken?.token === previousAccount.accessToken?.token
+        && account.stateUpdatedAt === previousAccount.stateUpdatedAt;
     if (account.state !== 'active' || account.accountUuid !== previousAccount.accountUuid || !generationMatches) return state;
     stateFlipped = true;
     return replaceSoleAccount(state, currentAccount => ({
@@ -262,7 +269,7 @@ const persistTerminalState = async (
       stateUpdatedAt: flippedAt,
       accessToken: null,
     }));
-  });
+  }, { kind: 'claude-code' });
   if (!stateFlipped) return;
   logWarn('claude_code_account_state_flip', {
     upstream_id: upstreamId,
@@ -329,5 +336,5 @@ export const invalidateClaudeCodeAccessToken = async (args: {
     const state = readClaudeCodeUpstreamState(current);
     if (state.accounts[0].accessToken?.token !== args.expectedToken) return state;
     return replaceSoleAccount(state, account => ({ ...account, accessToken: null }));
-  });
+  }, { kind: 'claude-code' });
 };
