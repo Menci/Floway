@@ -16,7 +16,7 @@ import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { CanonicalResponsesPayload, ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { type ModelCandidate, directFetcher, type ProviderModel, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions, type FlagId } from '@floway-dev/provider';
+import { type MessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderModel, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions, type FlagId } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_attempt_test';
@@ -412,11 +412,13 @@ test('generate strips disallowed headers and injects external image loading acro
     return Promise.resolve(new Response(Uint8Array.of(1, 2, 3), { headers: { 'content-type': 'image/png' } }));
   });
   let observedHeaders: Headers | undefined;
+  let observedAnthropicBeta: readonly string[] | undefined;
   let observedBody: Omit<MessagesPayload, 'model'> | undefined;
   const upstreamModel = stubInternalModel({ endpoints: { messages: {} } }, 'up_test');
   const messagesProvider = stubProvider({
     callMessages: async (_model, body, _signal, opts): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
       observedHeaders = opts.headers;
+      observedAnthropicBeta = (opts as MessagesUpstreamCallOptions).anthropicBeta;
       observedBody = body as Omit<MessagesPayload, 'model'>;
       return {
         ok: true,
@@ -456,12 +458,14 @@ test('generate strips disallowed headers and injects external image loading acro
     }),
     ctx: makeGatewayCtx(createResponsesHttpStore(testResponsesStatePolicy(API_KEY_ID), Date.now(), true)),
     candidate,
-    headers: new Headers({ 'x-test': 'abc' }),
+    headers: new Headers({ 'anthropic-beta': 'must-not-cross-source-protocols', 'x-test': 'abc' }),
   });
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
   assertEquals(observedHeaders?.get('x-test'), null);
+  assertEquals(observedHeaders?.get('anthropic-beta'), null);
+  assertEquals(observedAnthropicBeta, []);
   const message = observedBody?.messages[0];
   assert(message?.role === 'user' && Array.isArray(message.content));
   const image = message.content.find(block => block.type === 'image');
