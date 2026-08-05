@@ -71,6 +71,35 @@ describe('copy outcome expiry', () => {
     expect(result.current.outcomeFor('row-1')).toBe('copied');
   });
 
+  it('gives a repeated success its own full display interval', async () => {
+    const { result } = renderHook(() => useCopyToClipboard());
+
+    await press(() => { result.current.copy('first', 'row-1'); });
+    await advance(1_000);
+    await press(() => { result.current.copy('first', 'row-1'); });
+    await advance(500);
+
+    expect(result.current.outcomeFor('row-1')).toBe('copied');
+
+    await advance(1_000);
+    expect(result.current.outcomeFor('row-1')).toBe('idle');
+  });
+
+  it('does not let an older copy result overwrite a newer one', async () => {
+    const completions: Array<(copied: boolean) => void> = [];
+    copyResult.mockImplementation(() => new Promise(resolve => { completions.push(resolve); }));
+    const { result } = renderHook(() => useCopyToClipboard());
+
+    act(() => { result.current.copy('first', 'row-1'); });
+    act(() => { result.current.copy('second', 'row-2'); });
+    await act(async () => { completions[1]!(true); });
+    expect(result.current.outcomeFor('row-2')).toBe('copied');
+
+    await act(async () => { completions[0]!(false); });
+    expect(result.current.outcomeFor('row-2')).toBe('copied');
+    expect(result.current.outcomeFor('row-1')).toBe('idle');
+  });
+
   it('gives an untagged button a slot of its own', async () => {
     const { result } = renderHook(() => useCopyToClipboard());
 
