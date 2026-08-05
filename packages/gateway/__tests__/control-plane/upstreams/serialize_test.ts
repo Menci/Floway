@@ -224,6 +224,56 @@ const codexBase = (overrides: { config?: unknown; state?: unknown }): UpstreamRe
   state: overrides.state ?? null,
 } as unknown as UpstreamRecord);
 
+test('upstreamRecordToJson redacts Ollama and subscription credentials', () => {
+  const ollama = upstreamRecordToJson({
+    ...custom,
+    id: 'up_ollama_secret',
+    kind: 'ollama',
+    config: {
+      baseUrl: 'https://ollama.example.com',
+      apiKey: 'ollama-secret-sentinel',
+      models: [{ upstreamModelId: 'llama', kind: 'chat', endpoints: { chatCompletions: {} } }],
+    },
+  });
+  const codex = upstreamRecordToJson(codexBase({
+    state: {
+      accounts: [{
+        chatgptAccountId: 'account',
+        refresh_token: 'codex-refresh-secret-sentinel',
+        state: 'active',
+        state_updated_at: timestamp,
+        openaiDeviceId: '11111111-2222-4333-8444-555555555555',
+        accessToken: { token: 'codex-access-secret-sentinel', expiresAt: 1_800_000_000_000, refreshedAt: timestamp },
+        quotaSnapshot: null,
+      }],
+    },
+  }));
+  const claude = upstreamRecordToJson(claudeCodeBase({
+    state: {
+      accounts: [{
+        ...claudeCodeCredential,
+        refreshToken: 'claude-refresh-secret-sentinel',
+        accessToken: { token: 'claude-access-secret-sentinel', expiresAt: 1_800_000_000_000, refreshedAt: timestamp },
+      }],
+    },
+  }));
+
+  expect(JSON.stringify([ollama, codex, claude])).not.toMatch(/secret-sentinel/);
+  if (ollama.kind !== 'ollama' || codex.kind !== 'codex' || claude.kind !== 'claude-code') {
+    throw new Error('Expected provider-specific serialized records');
+  }
+  assertEquals(ollama.config.apiKeySet, true);
+  assertEquals(codex.state.accounts[0].refresh_token_set, true);
+  assertEquals(claude.state.accounts[0].refreshTokenSet, true);
+  assertEquals(codex.state.accounts[0], {
+    chatgptAccountId: 'account',
+    state: 'active',
+    state_updated_at: timestamp,
+    refresh_token_set: true,
+  });
+  assertEquals(claude.state.accounts[0].accessToken, { expiresAt: 1_800_000_000_000, refreshedAt: timestamp });
+});
+
 test('upstreamRecordToJson throws when claude-code state.accessToken is a string', () => {
   const record = claudeCodeBase({
     state: { accounts: [{ ...claudeCodeCredential, accessToken: 'not-an-object' }] },

@@ -35,6 +35,14 @@ describe('upstreamModelSchema chat', () => {
     expect(createUpstreamBody.safeParse(body).success).toBe(true);
   });
 
+  test('accepts chat metadata when chat endpoints derive an omitted kind', () => {
+    const body = structuredClone(baseAzure);
+    const model = body.config.models[0] as Record<string, unknown>;
+    delete model.kind;
+    model.chat = { modalities: { input: ['text'], output: ['text'] } };
+    expect(createUpstreamBody.safeParse(body).success).toBe(true);
+  });
+
   test('accepts chat with budget_tokens only', () => {
     const body = structuredClone(baseAzure);
     (body.config.models[0] as Record<string, unknown>).chat = {
@@ -95,6 +103,24 @@ describe('upstreamModelSchema chat', () => {
     const body = structuredClone(baseAzure);
     const model = body.config.models[0] as Record<string, unknown>;
     model.kind = 'embedding';
+    model.endpoints = { embeddings: {} };
+    model.chat = { modalities: { input: ['text'], output: ['text'] } };
+    expect(createUpstreamBody.safeParse(body).success).toBe(false);
+  });
+
+  test('rejects chat metadata when omitted kind derives a non-chat kind', () => {
+    const body = structuredClone(baseAzure);
+    const model = body.config.models[0] as Record<string, unknown>;
+    delete model.kind;
+    model.endpoints = { embeddings: {} };
+    model.chat = { modalities: { input: ['text'], output: ['text'] } };
+    expect(createUpstreamBody.safeParse(body).success).toBe(false);
+  });
+
+  test('rejects chat metadata when explicit chat kind conflicts with non-chat endpoints', () => {
+    const body = structuredClone(baseAzure);
+    const model = body.config.models[0] as Record<string, unknown>;
+    model.kind = 'chat';
     model.endpoints = { embeddings: {} };
     model.chat = { modalities: { input: ['text'], output: ['text'] } };
     expect(createUpstreamBody.safeParse(body).success).toBe(false);

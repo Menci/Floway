@@ -188,7 +188,7 @@ const ensureClaudeCodeAccessTokenInner = async (
       stored.tokenKind === 'oauth'
         ? { ...stored, refreshToken: rotatedRefreshToken, accessToken: newAccessTokenEntry }
         : stored
-    )));
+    )), 'claude-code');
   logInfo('claude_code_refresh_token_rotated', {
     upstream_id: args.upstreamId,
     account_uuid: account.accountUuid,
@@ -227,7 +227,7 @@ const persistTerminalState = async (
       stateMessage: fields.message,
       stateUpdatedAt: flippedAt,
       accessToken: null,
-    })));
+    })), 'claude-code');
   logWarn('claude_code_account_state_flip', {
     upstream_id: upstreamId,
     account_uuid: previousAccount.accountUuid,
@@ -292,5 +292,5 @@ export const invalidateClaudeCodeAccessToken = async (args: {
     const state = readClaudeCodeUpstreamState(current);
     if (state.accounts[0].accessToken === null) return state;
     return replaceSoleAccount(state, account => ({ ...account, accessToken: null }));
-  });
+  }, 'claude-code');
 };

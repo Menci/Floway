@@ -66,7 +66,7 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
     await getProviderRepo().upstreams.saveState(record.id, current => {
       const { state, accountIndex } = locateActiveAccount(current);
       return replaceCodexAccount(state, accountIndex, account => ({ ...account, refresh_token: newRefreshToken, state_updated_at: rotatedAt }));
-    });
+    }, 'codex');
   };
 
   const persistTerminalState = async (newState: 'session_terminated' | 'refresh_failed', message: string): Promise<void> => {
@@ -77,7 +77,7 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
       // is dead the cached token is dead too, and leaving it would confuse the
       // dashboard's status panel.
       return replaceCodexAccount(state, accountIndex, account => ({ ...account, state: newState, state_message: message, state_updated_at: flippedAt, accessToken: null }));
-    });
+    }, 'codex');
   };
 
   const effects: CodexCallEffects = { persistRefreshTokenRotation, persistTerminalState };

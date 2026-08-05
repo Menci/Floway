@@ -270,5 +270,5 @@ export const putCopilotQuota = async (upstreamId: string, snapshot: CopilotQuota
   await getProviderRepo().upstreams.saveState(upstreamId, current => ({
     ...readCopilotUpstreamState(current),
     quotaSnapshot: { fetchedAt, data: snapshot },
-  } satisfies CopilotUpstreamState));
+  } satisfies CopilotUpstreamState), 'copilot');
 };

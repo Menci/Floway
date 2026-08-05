@@ -359,10 +359,7 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   if (body.config !== undefined) fields.config = config.value;
 
   const repo = getRepo().upstreams;
-  if (!await repo.updateFields(id, existing.kind, fields)) {
-    return c.json({ error: 'Upstream not found' }, 404);
-  }
-  const saved = await repo.getById(id);
+  const saved = await repo.updateFields(id, existing.kind, fields);
   if (!saved) return c.json({ error: 'Upstream not found' }, 404);
   const modelsCache = await warmModelsCache(saved, c);
   return c.json(await serializeForResponse({ ...saved, modelsCache }, knownProxyIds));

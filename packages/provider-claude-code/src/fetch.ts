@@ -105,7 +105,7 @@ const persistQuotaSnapshot = async (upstreamId: string, snapshot: ClaudeCodeQuot
       ...account,
       quotaSnapshot: { fetchedAt, data: snapshot },
     }));
-  });
+  }, 'claude-code');
   const priorStatus = previousAccount.quotaSnapshot === null ? null : previousAccount.quotaSnapshot.data.status;
   // Emit only on transition. Persisting every response would flood the log
   // with one event per request; the dashboard already reads the snapshot
@@ -230,7 +230,7 @@ const persistTerminalAccountState = async (
       stateUpdatedAt: flippedAt,
       accessToken: null,
     }));
-  });
+  }, 'claude-code');
   if (previousAccount.state !== 'active') return;
   logWarn('claude_code_account_state_flip', {
     upstream_id: upstreamId,

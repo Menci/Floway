@@ -71,6 +71,12 @@ export const copilotOAuthDeviceLoginStart = async (c: CtxWithJson<typeof copilot
 export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotOAuthDeviceLoginPollBody>) => {
   const { record, deviceCode } = c.req.valid('json');
   if (record.kind !== 'copilot') return c.json({ status: 'error' as const, error: 'Upstream is not a Copilot upstream' }, 400);
+  const repo = getRepo().upstreams;
+  const dbRecord = record.id === '' ? null : await repo.getById(record.id);
+  if (record.id !== '' && dbRecord === null) return c.json({ status: 'error' as const, error: 'Upstream not found' }, 404);
+  if (dbRecord !== null && dbRecord.kind !== 'copilot') {
+    return c.json({ status: 'error' as const, error: 'Upstream is not a Copilot upstream' }, 400);
+  }
 
   // Config-validation errors (e.g. unknown proxy id in the override) surface
   // as 400 — they belong to the caller, not to the upstream.
@@ -123,25 +129,18 @@ export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
   // regardless of caller path.
   let nextState: CopilotUpstreamState;
   if (record.id !== '') {
-    const repo = getRepo().upstreams;
-    const dbRecord = await repo.getById(record.id);
-    if (!dbRecord) return c.json({ status: 'error' as const, error: 'Upstream not found' }, 404);
-    if (dbRecord.kind !== 'copilot') return c.json({ status: 'error' as const, error: 'Upstream is not a Copilot upstream' }, 400);
-    const previous = assertCopilotUpstreamRecord(dbRecord);
+    const previous = assertCopilotUpstreamRecord(dbRecord!);
     const sameIdentity = previous.config.githubHost === githubHost && previous.config.user.id === cred.user.id;
-    const prevState = sameIdentity ? readCopilotUpstreamState(dbRecord.state) : emptyCopilotUpstreamState();
+    const prevState = sameIdentity ? readCopilotUpstreamState(dbRecord!.state) : emptyCopilotUpstreamState();
     nextState = { ...prevState, copilotToken: cred.tokenEntry };
-    if (!await repo.updateFields(record.id, 'copilot', {
+    const next = await repo.updateFields(record.id, 'copilot', {
       config: configPatch,
       state: nextState,
-      updatedAt: nextUpstreamUpdatedAt(dbRecord),
-    }, { clearModelsCache: !sameIdentity })) {
-      return c.json({ status: 'error' as const, error: 'Upstream not found' }, 404);
-    }
-    const next = await repo.getById(record.id);
+      updatedAt: nextUpstreamUpdatedAt(dbRecord!),
+    }, { clearModelsCache: !sameIdentity });
     if (!next) return c.json({ status: 'error' as const, error: 'Upstream not found' }, 404);
     clearInProcessCopilotTokenCache();
-    await warmModelsCache(next, c);
+    await warmModelsCache(next, c, { readBack: false });
   } else {
     nextState = { ...emptyCopilotUpstreamState(), copilotToken: cred.tokenEntry };
   }

@@ -160,7 +160,7 @@ async function getCopilotToken(upstreamId: string, githubHost: string, githubTok
       await getRepo().upstreams.saveState(upstreamId, current => ({
         ...readCopilotUpstreamState(current),
         copilotToken: entry,
-      } satisfies CopilotUpstreamState));
+      } satisfies CopilotUpstreamState), 'copilot');
     } catch (err) {
       console.warn(`Failed to persist Copilot token for ${upstreamId}:`, err);
     }

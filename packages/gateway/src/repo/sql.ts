@@ -74,7 +74,7 @@ import { AgentSetupTokenCollisionError, isAgentSetupToken } from '@floway-dev/ag
 import type { SqlBindValue, SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 import { addDecimalStrings, canonicalPricingSelectorKey, parseBillingMetric, parseModelKind, parseNonNegativeDecimalString, parsePricingSelectorKey, type AliasSelection, type AnnouncedMetadata } from '@floway-dev/protocols/common';
 import type { ProxyFallbackEntry, ModelPrefixConfig, UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
-import { normalizeModelPrefix, parsePerformanceOperation, UpstreamGoneError } from '@floway-dev/provider';
+import { normalizeModelPrefix, parsePerformanceOperation, UpstreamGoneError, UpstreamKindMismatchError } from '@floway-dev/provider';
 
 interface ApiKeyRow {
   id: string;
@@ -1055,7 +1055,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
     expectedKind: UpstreamRecord['kind'],
     patch: UpstreamFieldsPatch,
     options: { clearModelsCache?: boolean } = {},
-  ): Promise<boolean> {
+  ): Promise<UpstreamRecord | null> {
     const assignments: string[] = [];
     const values: SqlBindValue[] = [];
     const add = (column: string, value: SqlBindValue): void => {
@@ -1066,7 +1066,10 @@ class SqlUpstreamRepo implements UpstreamRepo {
     if (patch.name !== undefined) add('name', patch.name);
     if (patch.enabled !== undefined) add('enabled', patch.enabled ? 1 : 0);
     if (patch.sortOrder !== undefined) add('sort_order', patch.sortOrder);
-    if (patch.updatedAt !== undefined) add('updated_at', patch.updatedAt);
+    if (patch.updatedAt !== undefined) {
+      assignments.push('updated_at = MAX(updated_at, ?)');
+      values.push(patch.updatedAt);
+    }
     if (patch.flagOverrides !== undefined) add('flag_overrides', JSON.stringify(normalizeFlagOverrides(patch.flagOverrides)));
     if (patch.disabledPublicModelIds !== undefined) add('disabled_public_model_ids', JSON.stringify(normalizeDisabledPublicModelIds(patch.disabledPublicModelIds)));
     if (patch.proxyFallbackList !== undefined) add('proxy_fallback_list_json', JSON.stringify(normalizeProxyFallbackList(patch.proxyFallbackList)));
@@ -1075,13 +1078,13 @@ class SqlUpstreamRepo implements UpstreamRepo {
     if (Object.hasOwn(patch, 'config')) add('config_json', serializeStoredConfig(patch.config));
     if (Object.hasOwn(patch, 'state')) add('state_json', serializeStoredState(patch.state));
     if (options.clearModelsCache) assignments.push('models_cache_json = NULL');
-    if (assignments.length === 0) return false;
+    if (assignments.length === 0) return null;
 
-    const result = await this.db
-      .prepare(`UPDATE upstreams SET ${assignments.join(', ')} WHERE id = ? AND provider = ?`)
+    const row = await this.db
+      .prepare(`UPDATE upstreams SET ${assignments.join(', ')} WHERE id = ? AND provider = ? RETURNING id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue`)
       .bind(...values, id, expectedKind)
-      .run();
-    return (result.meta.changes ?? 0) > 0;
+      .first<UpstreamRow>();
+    return row ? toUpstreamRecord(row) : null;
   }
 
   private async saveRecord(upstream: UpstreamRecord, clearModelsCache: boolean): Promise<void> {
@@ -1184,21 +1187,24 @@ class SqlUpstreamRepo implements UpstreamRepo {
   // retries is not, because the caller's change — a rotated refresh token the
   // vendor has already invalidated — cannot be reconstructed later, so it
   // throws rather than returning a flag a caller can drop.
-  async saveState(id: string, mutate: (current: unknown) => unknown): Promise<void> {
+  async saveState(id: string, mutate: (current: unknown) => unknown, expectedKind?: UpstreamRecord['kind']): Promise<void> {
     for (let attempt = 0; attempt < UPSTREAM_STATE_WRITE_ATTEMPTS; attempt++) {
       const row = await this.db
-        .prepare('SELECT state_json FROM upstreams WHERE id = ?')
+        .prepare('SELECT provider, state_json FROM upstreams WHERE id = ?')
         .bind(id)
-        .first<{ state_json: string | null }>();
+        .first<{ provider: string; state_json: string | null }>();
       if (!row) throw new UpstreamGoneError(id);
+      if (expectedKind !== undefined && row.provider !== expectedKind) {
+        throw new UpstreamKindMismatchError(id, expectedKind, row.provider);
+      }
       const current = row.state_json === null ? null : decodeUpstreamState(row.state_json, id);
       const next = serializeStoredState(mutate(current));
       // A mutator that decided there is nothing to do returns what it was
       // given, which serializes back to the stored text.
       if (next === row.state_json) return;
       const result = await this.db
-        .prepare('UPDATE upstreams SET state_json = ? WHERE id = ? AND state_json IS ?')
-        .bind(next, id, row.state_json)
+        .prepare(`UPDATE upstreams SET state_json = ? WHERE id = ? AND state_json IS ?${expectedKind === undefined ? '' : ' AND provider = ?'}`)
+        .bind(next, id, row.state_json, ...(expectedKind === undefined ? [] : [expectedKind]))
         .run();
       if ((result.meta.changes ?? 0) > 0) return;
     }

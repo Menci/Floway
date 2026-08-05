@@ -38,7 +38,7 @@ const persistAccessToken = async (
       // a 401 retry races a concurrent refresh that already cleared the token.
       if (entry === null && state.accounts[idx].accessToken === null) return current;
       return replaceCodexAccount(state, idx, account => ({ ...account, accessToken: entry }));
-    });
+    }, 'codex');
   } catch (err) {
     // A minted access token is bookkeeping the next request re-derives, so an
     // operator deleting the upstream mid-request is not worth failing that

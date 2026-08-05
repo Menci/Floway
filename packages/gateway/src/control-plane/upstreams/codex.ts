@@ -32,6 +32,10 @@ export const codexOAuthExchange = async (c: CtxWithJson<typeof codexOAuthExchang
   const body = c.req.valid('json');
   const { record } = body;
   if (record.kind !== 'codex') return c.json({ error: 'Upstream is not a Codex upstream' }, 400);
+  const repo = getRepo().upstreams;
+  const dbRecord = record.id === '' ? null : await repo.getById(record.id);
+  if (record.id !== '' && dbRecord === null) return c.json({ error: 'Upstream not found' }, 404);
+  if (dbRecord !== null && dbRecord.kind !== 'codex') return c.json({ error: 'Upstream is not a Codex upstream' }, 400);
 
   let fetcher: Fetcher;
   try {
@@ -59,22 +63,13 @@ export const codexOAuthExchange = async (c: CtxWithJson<typeof codexOAuthExchang
   // Edit state: overwrite the credential slice of the stored record.
   // Single-account convention — exchange REPLACES accounts[0], no append.
   if (record.id !== '') {
-    const repo = getRepo().upstreams;
-    const dbRecord = await repo.getById(record.id);
-    if (!dbRecord) return c.json({ error: 'Upstream not found' }, 404);
-    if (dbRecord.kind !== 'codex') return c.json({ error: 'Upstream is not a Codex upstream' }, 400);
-    assertCodexUpstreamCredentials(dbRecord);
-    const clearModelsCache = dbRecord.config.accounts[0].chatgptAccountId !== ingestion.config.accounts[0].chatgptAccountId;
-    if (!await repo.updateFields(record.id, 'codex', {
+    const next = await repo.updateFields(record.id, 'codex', {
       config: ingestion.config,
       state: ingestion.state,
-      updatedAt: nextUpstreamUpdatedAt(dbRecord),
-    }, { clearModelsCache })) {
-      return c.json({ error: 'Upstream not found' }, 404);
-    }
-    const next = await repo.getById(record.id);
+      updatedAt: nextUpstreamUpdatedAt(dbRecord!),
+    }, { clearModelsCache: true });
     if (!next) return c.json({ error: 'Upstream not found' }, 404);
-    await warmModelsCache(next, c);
+    await warmModelsCache(next, c, { readBack: false });
   }
 
   return c.json({
@@ -131,7 +126,7 @@ export const codexOAuthRefresh = async (c: CtxWithJson<typeof codexOAuthRefreshB
           ? { ...a, refresh_token: newRefreshToken, state_updated_at: rotatedAt }
           : a),
       } satisfies CodexUpstreamState;
-    });
+    }, 'codex');
   };
 
   try {
@@ -144,14 +139,29 @@ export const codexOAuthRefresh = async (c: CtxWithJson<typeof codexOAuthRefreshB
       // clear the cached access token, mark the account refresh_failed so
       // the dashboard renders the red badge and prompts a re-import.
       const failedAt = new Date().toISOString();
+      let credentialGenerationMoved = false;
       await repo.saveState(record.id, current => {
         assertCodexUpstreamState(current);
         return {
-          accounts: current.accounts.map(a => a.chatgptAccountId === account.chatgptAccountId
-            ? { ...a, state: 'refresh_failed' as const, state_message: err.upstreamMessage, state_updated_at: failedAt, accessToken: null }
-            : a),
+          accounts: current.accounts.map(a => {
+            if (a.chatgptAccountId !== account.chatgptAccountId) {
+              credentialGenerationMoved = true;
+              return a;
+            }
+            if (a.state !== 'active') return a;
+            if (a.refresh_token !== account.refresh_token || a.state_updated_at !== account.state_updated_at) {
+              credentialGenerationMoved = true;
+              return a;
+            }
+            return { ...a, state: 'refresh_failed' as const, state_message: err.upstreamMessage, state_updated_at: failedAt, accessToken: null };
+          }),
         } satisfies CodexUpstreamState;
-      });
+      }, 'codex');
+      if (credentialGenerationMoved) {
+        const recovered = await repo.getById(record.id);
+        if (!recovered) return c.json({ error: 'Upstream not found' }, 404);
+        return c.json({ patch: { state: recovered.state } });
+      }
       return c.json({ error: `Codex refresh failed: ${err.upstreamMessage}. Re-run OAuth exchange to recover.` }, 400);
     }
     return c.json({ error: errorMessage(err) }, 502);

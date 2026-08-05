@@ -322,7 +322,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
             ...state,
             knownModels: mergeKnownModels(state.knownModels ?? emptyKnownModels(), response, now),
           } satisfies CopilotUpstreamState;
-        });
+        }, 'copilot');
       } catch (err) {
         console.warn(`Failed to persist Copilot known-models for ${copilot.id}:`, err);
       }

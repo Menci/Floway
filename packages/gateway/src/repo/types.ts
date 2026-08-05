@@ -279,13 +279,14 @@ export interface UpstreamRepo {
   // Targeted updates preserve fields owned by a concurrent control-plane
   // action. Credential exchanges update config/state while metadata edits
   // update only the fields present in their PATCH; neither can replay a stale
-  // whole-row snapshot over the other.
+  // whole-row snapshot over the other. The returned record is the row produced
+  // by that atomic write, so callers never need a fallible post-commit read.
   updateFields(
     id: string,
     expectedKind: UpstreamProviderKind,
     patch: UpstreamFieldsPatch,
     options?: { clearModelsCache?: boolean },
-  ): Promise<boolean>;
+  ): Promise<UpstreamRecord | null>;
   delete(id: string): Promise<boolean>;
   deleteAll(): Promise<void>;
   // Upstream state write with optimistic concurrency, used both by the
@@ -293,8 +294,9 @@ export interface UpstreamRepo {
   // refresh / probe routes. The repo reads, applies `mutate`, and writes under
   // a CAS, retrying against the winner when it loses; exhausting the retries
   // throws. See UpstreamsRepoSlim in @floway-dev/provider for why the change
-  // is a function.
-  saveState(id: string, mutate: (current: unknown) => unknown): Promise<void>;
+  // is a function. The optional kind is checked in the same CAS as the state
+  // document to close delete/recreate races across provider kinds.
+  saveState(id: string, mutate: (current: unknown) => unknown, expectedKind?: UpstreamProviderKind): Promise<void>;
   // Catalog-cache writes are conditional on the row generation that started
   // the fetch. A superseded provider can finish serving its own request, but
   // cannot publish models or errors under newer credentials/configuration.

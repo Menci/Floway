@@ -60,6 +60,39 @@ test('/api/upstreams/copilot/oauth/device-login/start starts GitHub device flow'
 // the test focused on their exchange semantics.
 const copilotBlueprintEnvelope = { id: '', kind: 'copilot', config: { githubHost: 'github.com' }, state: null, proxy_fallback_list: MOCKED_FETCH_EGRESS };
 
+test('/api/upstreams/copilot/oauth/device-login/poll preserves every GitHub polling state without side effects', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  const cases = [
+    { upstream: { error: 'authorization_pending' }, status: 200, body: { status: 'pending' } },
+    { upstream: { error: 'slow_down' }, status: 200, body: { status: 'slow_down' } },
+    { upstream: { error: 'access_denied', error_description: 'The operator denied access' }, status: 400, body: { status: 'error', error: 'The operator denied access' } },
+    { upstream: { token_type: 'bearer' }, status: 502, body: { status: 'error', error: 'GitHub device flow response missing access_token' } },
+  ] as const;
+
+  for (const item of cases) {
+    let calls = 0;
+    await withMockedFetch(
+      request => {
+        calls += 1;
+        assertEquals(new URL(request.url).pathname, '/login/oauth/access_token');
+        return jsonResponse(item.upstream);
+      },
+      async () => {
+        const response = await requestApp('/api/upstreams/copilot/oauth/device-login/poll', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
+          body: JSON.stringify({ record: copilotBlueprintEnvelope, deviceCode: 'device' }),
+        });
+        assertEquals(response.status, item.status);
+        assertEquals(await response.json(), item.body);
+      },
+    );
+    assertEquals(calls, 1);
+  }
+  assertEquals(await repo.upstreams.list(), []);
+});
+
 test('/api/upstreams/copilot/oauth/device-login/start targets the selected GHE.com tenant', async () => {
   const { adminSession } = await setupAppTest();
   await withMockedFetch(

@@ -45,6 +45,10 @@ export const claudeCodeOAuthExchange = async (c: CtxWithJson<typeof claudeCodeOA
   const body = c.req.valid('json');
   const { record } = body;
   if (record.kind !== 'claude-code') return c.json({ error: 'Upstream is not a Claude Code upstream' }, 400);
+  const repo = getRepo().upstreams;
+  const dbRecord = record.id === '' ? null : await repo.getById(record.id);
+  if (record.id !== '' && dbRecord === null) return c.json({ error: 'Upstream not found' }, 404);
+  if (dbRecord !== null && dbRecord.kind !== 'claude-code') return c.json({ error: 'Upstream is not a Claude Code upstream' }, 400);
 
   let fetcher: Fetcher;
   try {
@@ -70,22 +74,13 @@ export const claudeCodeOAuthExchange = async (c: CtxWithJson<typeof claudeCodeOA
   }
 
   if (record.id !== '') {
-    const repo = getRepo().upstreams;
-    const dbRecord = await repo.getById(record.id);
-    if (!dbRecord) return c.json({ error: 'Upstream not found' }, 404);
-    if (dbRecord.kind !== 'claude-code') return c.json({ error: 'Upstream is not a Claude Code upstream' }, 400);
-    assertClaudeCodeUpstreamCredentials(dbRecord);
-    const clearModelsCache = dbRecord.config.accounts[0].accountUuid !== ingestion.config.accounts[0].accountUuid;
-    if (!await repo.updateFields(record.id, 'claude-code', {
+    const next = await repo.updateFields(record.id, 'claude-code', {
       config: ingestion.config,
       state: ingestion.state,
-      updatedAt: nextUpstreamUpdatedAt(dbRecord),
-    }, { clearModelsCache })) {
-      return c.json({ error: 'Upstream not found' }, 404);
-    }
-    const next = await repo.getById(record.id);
+      updatedAt: nextUpstreamUpdatedAt(dbRecord!),
+    }, { clearModelsCache: true });
     if (!next) return c.json({ error: 'Upstream not found' }, 404);
-    await warmModelsCache(next, c);
+    await warmModelsCache(next, c, { readBack: false });
   }
 
   return c.json({ patch: { config: ingestion.config, state: ingestion.state } });
@@ -94,6 +89,10 @@ export const claudeCodeOAuthExchange = async (c: CtxWithJson<typeof claudeCodeOA
 export const claudeCodeSetupTokenExchange = async (c: CtxWithJson<typeof claudeCodeSetupTokenExchangeBody>) => {
   const { record, callback } = c.req.valid('json');
   if (record.kind !== 'claude-code') return c.json({ error: 'Upstream is not a Claude Code upstream' }, 400);
+  const repo = getRepo().upstreams;
+  const dbRecord = record.id === '' ? null : await repo.getById(record.id);
+  if (record.id !== '' && dbRecord === null) return c.json({ error: 'Upstream not found' }, 404);
+  if (dbRecord !== null && dbRecord.kind !== 'claude-code') return c.json({ error: 'Upstream is not a Claude Code upstream' }, 400);
 
   let fetcher: Fetcher;
   try {
@@ -119,22 +118,13 @@ export const claudeCodeSetupTokenExchange = async (c: CtxWithJson<typeof claudeC
   }
 
   if (record.id !== '') {
-    const repo = getRepo().upstreams;
-    const dbRecord = await repo.getById(record.id);
-    if (!dbRecord) return c.json({ error: 'Upstream not found' }, 404);
-    if (dbRecord.kind !== 'claude-code') return c.json({ error: 'Upstream is not a Claude Code upstream' }, 400);
-    assertClaudeCodeUpstreamCredentials(dbRecord);
-    const clearModelsCache = dbRecord.config.accounts[0].accountUuid !== ingestion.config.accounts[0].accountUuid;
-    if (!await repo.updateFields(record.id, 'claude-code', {
+    const next = await repo.updateFields(record.id, 'claude-code', {
       config: ingestion.config,
       state: ingestion.state,
-      updatedAt: nextUpstreamUpdatedAt(dbRecord),
-    }, { clearModelsCache })) {
-      return c.json({ error: 'Upstream not found' }, 404);
-    }
-    const next = await repo.getById(record.id);
+      updatedAt: nextUpstreamUpdatedAt(dbRecord!),
+    }, { clearModelsCache: true });
     if (!next) return c.json({ error: 'Upstream not found' }, 404);
-    await warmModelsCache(next, c);
+    await warmModelsCache(next, c, { readBack: false });
   }
 
   return c.json({ patch: { config: ingestion.config, state: ingestion.state } });
@@ -279,7 +269,7 @@ export const claudeCodeProbe = async (c: CtxWithJson<typeof claudeCodeProbeBody>
   // one. A draft that has never been saved has no row to write to.
   if (record.id !== '') {
     await repo.saveState(record.id, current =>
-      mergeSnapshotInto(readClaudeCodeUpstreamState(current)));
+      mergeSnapshotInto(readClaudeCodeUpstreamState(current)), 'claude-code');
     const updated = await repo.getById(record.id);
     if (!updated) return c.json({ error: 'Upstream not found' }, 404);
     assertClaudeCodeUpstreamCredentials(updated);

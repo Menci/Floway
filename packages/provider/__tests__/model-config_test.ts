@@ -219,7 +219,7 @@ describe('modelsField metadata integration', () => {
       kind: 'embedding',
       endpoints: { embeddings: {} },
       chat: { modalities: { input: ['text'], output: ['text'] } },
-    }], 'p')).toThrow(/chat .* only allowed when kind/);
+    }], 'p')).toThrow(/endpoint-derived kind are chat/);
   });
 
   test('accepts chat on chat kind', () => {
@@ -230,6 +230,27 @@ describe('modelsField metadata integration', () => {
       chat: { modalities: { input: ['text'], output: ['text'] } },
     }], 'p');
     expect(m.chat?.modalities?.input).toEqual(['text']);
+  });
+
+  test('accepts chat when chat endpoints derive an omitted kind', () => {
+    const [model] = modelsField([{
+      upstreamModelId: 'm',
+      endpoints: { messages: {} },
+      chat: { modalities: { input: ['text'], output: ['text'] } },
+    }], 'p');
+    expect(model.kind).toBe('chat');
+    expect(model.chat?.modalities?.input).toEqual(['text']);
+  });
+
+  test('rejects chat when endpoints derive a non-chat kind despite an omitted or chat declaration', () => {
+    for (const kind of [undefined, 'chat'] as const) {
+      expect(() => modelsField([{
+        upstreamModelId: 'm',
+        ...(kind === undefined ? {} : { kind }),
+        endpoints: { embeddings: {} },
+        chat: { modalities: { input: ['text'], output: ['text'] } },
+      }], 'p')).toThrow(/endpoint-derived kind are chat/);
+    }
   });
 });
 
