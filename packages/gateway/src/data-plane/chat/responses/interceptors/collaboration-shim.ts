@@ -38,7 +38,8 @@ const toolInventories = (payload: CanonicalResponsesPayload): Array<readonly Res
 
 export const hasCollaborationNamespace = (payload: CanonicalResponsesPayload): boolean =>
   toolInventories(payload).some(tools =>
-    (tools ?? []).some(tool => namespaceTool(tool)?.name === CLIENT_NAMESPACE));
+    (tools ?? []).some(tool => namespaceTool(tool)?.name === CLIENT_NAMESPACE))
+  || payload.input.some(item => item.type === 'function_call' && item.namespace === CLIENT_NAMESPACE);
 
 export const collaborationShimSupportsTarget = (
   payload: CanonicalResponsesPayload,
@@ -227,7 +228,7 @@ export const withCollaborationShim: ResponsesInterceptor = async (ctx, _gatewayC
   const toolLists = toolInventories(ctx.payload);
   const collaborationCounts = toolLists.map(tools =>
     (tools ?? []).filter(tool => namespaceTool(tool)?.name === CLIENT_NAMESPACE).length);
-  if (collaborationCounts.every(count => count === 0)) return await run();
+  if (!hasCollaborationNamespace(ctx.payload)) return await run();
   if (!collaborationShimSupportsTarget(ctx.payload, ctx.targetApi)) {
     throw new TypeError(`Collaboration shim cannot project a ${ctx.targetApi} target`);
   }

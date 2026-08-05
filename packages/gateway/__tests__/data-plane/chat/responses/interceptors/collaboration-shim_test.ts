@@ -218,6 +218,25 @@ test('rejects direct Chat Completions projection', async () => {
   );
 });
 
+test('projects history-only collaboration calls and applies target eligibility', async () => {
+  const ctx = invocation();
+  ctx.payload = { ...ctx.payload, tools: undefined, tool_choice: undefined };
+  const original = structuredClone(ctx.payload);
+  await withCollaborationShim(ctx, mockChatGatewayCtx(), async () => {
+    const item = ctx.payload.input[0];
+    expect(item).toMatchObject({ type: 'function_call', namespace: 'collaboration_2' });
+    expect(item).not.toHaveProperty('encrypted_function_args');
+    return eventResult((async function* () {})(), testTelemetryModelIdentity);
+  });
+  expect(ctx.payload).toEqual(original);
+
+  ctx.targetApi = 'chat-completions';
+  await expect(withCollaborationShim(ctx, mockChatGatewayCtx(), async () =>
+    eventResult((async function* () {})(), testTelemetryModelIdentity))).rejects.toThrow(
+    'Collaboration shim cannot project a chat-completions target',
+  );
+});
+
 test('rejects ambiguous duplicate collaboration namespaces', async () => {
   const ctx = invocation();
   ctx.payload = { ...ctx.payload, tools: [collaborationTool(), collaborationTool()] };

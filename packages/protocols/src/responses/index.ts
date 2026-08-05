@@ -238,9 +238,12 @@ export interface ResponsesFunctionToolCallItem {
   namespace?: string;
   arguments: string;
   // Codex marks the function arguments whose values were encrypted by the
-  // Responses service. An explicit empty list is the plaintext form; absent,
-  // null, or a non-empty list on collaboration tools is encrypted.
+  // Responses service. An explicit empty list is the plaintext form. Codex
+  // removes that empty marker when replaying calls through providers not named
+  // exactly `OpenAI`, so absence is also a possible plaintext replay form;
+  // null or a non-empty list identifies encrypted arguments.
   // https://github.com/openai/codex/blob/f2d825533c9423728f319a6dbcbb31c21768aa69/codex-rs/protocol/src/models.rs#L875-L890
+  // https://github.com/openai/codex/blob/c4f42d161ae44a8d696ee9fb595709661979d187/codex-rs/core/src/client.rs#L848-L860
   encrypted_function_args?: string[] | null;
   status: 'completed' | 'in_progress' | 'incomplete';
   caller?: ResponsesToolCaller | null;
