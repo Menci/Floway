@@ -1,6 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, resolve, sep } from 'node:path';
+import { mkdir, readFile, rename, rm, rmdir, writeFile } from 'node:fs/promises';
+import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 
 import type { FileStore } from '@floway-dev/platform';
 
@@ -20,6 +21,7 @@ import type { FileStore } from '@floway-dev/platform';
 // can replay or diff against upstream byte-for-byte.
 export class FsFileStore implements FileStore {
   private readonly root: string;
+  private readonly directoryMutations = new Map<string, Promise<void>>();
 
   constructor(root: string) {
     // Resolve once so `pathFor` can verify resolved paths still live under it.
@@ -31,8 +33,22 @@ export class FsFileStore implements FileStore {
 
   async put(key: string, body: Uint8Array): Promise<void> {
     const path = this.pathFor(key);
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, body);
+    const directory = dirname(path);
+    await this.withDirectoryLock(directory, async () => {
+      await mkdir(directory, { recursive: true });
+      const temporaryPath = join(directory, `.floway-write-${randomUUID()}`);
+      try {
+        await writeFile(temporaryPath, body, { flag: 'wx' });
+        await rename(temporaryPath, path);
+      } catch (error) {
+        try {
+          await rm(temporaryPath, { force: true });
+        } catch (cleanupError) {
+          throw new AggregateError([error, cleanupError], `FsFileStore: failed to write and clean up ${key}`);
+        }
+        throw error;
+      }
+    });
   }
 
   async get(key: string): Promise<Uint8Array | null> {
@@ -45,7 +61,46 @@ export class FsFileStore implements FileStore {
   }
 
   async deleteKeys(keys: readonly string[]): Promise<void> {
-    await Promise.all(keys.map(async key => await rm(this.pathFor(key), { force: true })));
+    for (const key of keys) {
+      const path = this.pathFor(key);
+      const directory = dirname(path);
+      await this.withDirectoryLock(directory, async () => await rm(path, { force: true }));
+      await this.pruneEmptyParents(directory);
+    }
+  }
+
+  private async pruneEmptyParents(start: string): Promise<void> {
+    let directory = start;
+    while (directory !== this.root) {
+      const removed = await this.withDirectoryLock(directory, async () => {
+        try {
+          await rmdir(directory);
+          return true;
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code === 'ENOENT') return true;
+          if (code === 'ENOTEMPTY' || code === 'EEXIST') return false;
+          throw error;
+        }
+      });
+      if (!removed) return;
+      directory = dirname(directory);
+    }
+  }
+
+  private async withDirectoryLock<T>(directory: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.directoryMutations.get(directory) ?? Promise.resolve();
+    let release!: () => void;
+    const lock = new Promise<void>(resolveLock => { release = resolveLock; });
+    const tail = previous.then(() => lock);
+    this.directoryMutations.set(directory, tail);
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (this.directoryMutations.get(directory) === tail) this.directoryMutations.delete(directory);
+    }
   }
 
   // Resolve a key against `root` and reject paths that escape it. Even though
@@ -55,6 +110,7 @@ export class FsFileStore implements FileStore {
   private pathFor(key: string): string {
     if (isAbsolute(key)) throw new Error(`FsFileStore: absolute keys are not supported (${key})`);
     const path = resolve(this.root, ...key.split('/'));
+    if (path === this.root) throw new Error(`FsFileStore: empty keys are not supported (${key})`);
     if (path !== this.root && !path.startsWith(this.root + sep)) {
       throw new Error(`FsFileStore: key escapes root (${key})`);
     }

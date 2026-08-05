@@ -1,8 +1,8 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { FsFileStore } from '../src/fs-file-store.ts';
 import { assertEquals } from '@floway-dev/test-utils';
@@ -46,4 +46,56 @@ test('put creates intermediate directories', () => withTempRoot(async root => {
   await store.put('deeply/nested/path/file.bin', new Uint8Array([42]));
   const read = await store.get('deeply/nested/path/file.bin');
   assertEquals(read, new Uint8Array([42]));
+}));
+
+test('concurrent replacements expose only complete file versions', () => withTempRoot(async root => {
+  const store = new FsFileStore(root);
+  const size = 1024 * 1024;
+  const initial = new Uint8Array(size).fill(0x11);
+  const first = new Uint8Array(size).fill(0x55);
+  const second = new Uint8Array(size).fill(0xaa);
+  await store.put('atomic/value.bin', initial);
+
+  let completed = false;
+  const replacements = Promise.all([
+    store.put('atomic/value.bin', first),
+    store.put('atomic/value.bin', second),
+  ]).finally(() => { completed = true; });
+  const assertCompleteVersion = (value: Uint8Array): void => {
+    assertEquals(value.byteLength, size);
+    const byte = value[0]!;
+    assertEquals([0x11, 0x55, 0xaa].includes(byte), true);
+    assertEquals(value.every(current => current === byte), true);
+  };
+  let observations = 0;
+  while (!completed && observations < 2) {
+    assertCompleteVersion((await store.get('atomic/value.bin'))!);
+    observations += 1;
+  }
+  await replacements;
+  assertCompleteVersion((await store.get('atomic/value.bin'))!);
+  assertEquals(observations > 0, true);
+}));
+
+test('deleteKeys prunes empty key directories while retaining shared and root directories', () => withTempRoot(async root => {
+  const store = new FsFileStore(root);
+  await store.put('shared/drop/item/body.bin', new Uint8Array([1]));
+  await store.put('shared/keep/body.bin', new Uint8Array([2]));
+
+  await store.deleteKeys(['shared/drop/item/body.bin']);
+
+  assertEquals(await readdir(join(root, 'shared')), ['keep']);
+  assertEquals(await store.get('shared/keep/body.bin'), new Uint8Array([2]));
+
+  await store.deleteKeys(['shared/keep/body.bin']);
+
+  await expect(stat(join(root, 'shared'))).rejects.toMatchObject({ code: 'ENOENT' });
+  assertEquals((await stat(root)).isDirectory(), true);
+}));
+
+test('rejects empty, absolute, and root-escaping keys', () => withTempRoot(async root => {
+  const store = new FsFileStore(root);
+  for (const key of ['', '.', '../outside', join(root, 'absolute')]) {
+    await expect(store.put(key, new Uint8Array())).rejects.toThrow('FsFileStore:');
+  }
 }));
