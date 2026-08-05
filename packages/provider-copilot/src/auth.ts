@@ -178,7 +178,6 @@ const refreshCopilotToken = (
 
   const controller = new AbortController();
   const generation = tokenCacheGeneration;
-  let refresh: InFlightTokenRefresh;
   const promise = retryCopilotTokenFetch(async () => {
     const entry = await exchangeCopilotToken(githubHost, githubToken, fetcher, controller.signal);
     if (controller.signal.aborted) throw controller.signal.reason;
@@ -201,17 +200,17 @@ const refreshCopilotToken = (
       console.warn(`Failed to persist Copilot token for ${upstreamId}:`, err);
     }
     return entry;
-  }, controller.signal).finally(() => {
+  }, controller.signal);
+  const refresh: InFlightTokenRefresh = { controller, promise, waiters: 0, settled: false };
+  inFlightTokenRefreshes.set(upstreamId, refresh);
+  // The lifecycle observer is attached before callers can join. Its catch owns
+  // the rejection when every waiter has already cancelled.
+  void promise.finally(() => {
     refresh.settled = true;
     if (inFlightTokenRefreshes.get(upstreamId) === refresh) {
       inFlightTokenRefreshes.delete(upstreamId);
     }
-  });
-  refresh = { controller, promise, waiters: 0, settled: false };
-  inFlightTokenRefreshes.set(upstreamId, refresh);
-  // Every live waiter observes this promise. This sink also owns a rejection
-  // when all waiters abort before the shared exchange settles.
-  void promise.catch(() => undefined);
+  }).catch(() => undefined);
   return refresh;
 };
 
