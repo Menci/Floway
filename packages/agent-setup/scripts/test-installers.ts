@@ -409,6 +409,11 @@ const startModelServer = async (): Promise<ModelServer> => {
       ].join('\n'));
       return;
     }
+    if (pathname === '/probe/setup-fail.ps1') {
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      res.end('$global:LASTEXITCODE = 23\n');
+      return;
+    }
     if (pathname === '/install.sh' || pathname === '/install-codex.sh') {
       if (state.mode === 'installer-html') {
         res.writeHead(200, { 'content-type': 'text/html' });
@@ -548,7 +553,7 @@ interface RunOptions {
   baseUrl: string;
   // The wrapping one-line command injects the gateway origin into the executing
   // shell (Bash exports SETUP_ENDPOINT; PowerShell assigns $SetupEndpoint in the
-  // iex runspace); the harness mirrors that. `baseUrlOverride` injects a
+  // clean child process); the harness mirrors that. `baseUrlOverride` injects a
   // different value than the model-server URL (used for the invalid-origin
   // guard); `omitBaseUrl` injects nothing at all (the missing-origin guard).
   baseUrlOverride?: string;
@@ -641,9 +646,8 @@ const injectedBaseUrlValue = (options: RunOptions): string => options.baseUrlOve
 const injectedBaseUrlEnv = (options: RunOptions): Record<string, string> =>
   options.omitBaseUrl ? {} : { SETUP_ENDPOINT: injectedBaseUrlValue(options) };
 
-// PowerShell's `iex` runs in the caller's runspace, so the origin is a plain
-// in-process variable assigned ahead of the served body — mirror the
-// `$SetupEndpoint = '...'` the copyable command performs.
+// The copyable command sends this assignment before the served body over the
+// clean child process's UTF-8 stdin.
 const powerShellBaseUrlPrelude = (options: RunOptions): string =>
   options.omitBaseUrl ? '' : `$SetupEndpoint = ${powerShellLiteral(injectedBaseUrlValue(options))}\n`;
 
@@ -699,7 +703,7 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
 
   const signal = options.signalDuringInstall;
   return new Promise<RunResult>(resolve => {
-    const child = spawn('/bin/bash', [scriptPath], { env, detached: signal !== undefined });
+    const child = spawn('/bin/bash', ['-p', scriptPath], { env, detached: signal !== undefined });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', chunk => { stdout += chunk; });
@@ -743,7 +747,7 @@ const runShellInstallerWithAmbientKey = (options: RunOptions): Promise<RunResult
     AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT: FAKE_INSTALLER_SCRIPT,
   };
   return new Promise<RunResult>(resolve => {
-    const child = spawn('/bin/bash', [scriptPath], { env });
+    const child = spawn('/bin/bash', ['-p', scriptPath], { env });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', chunk => { stdout += chunk; });
@@ -803,9 +807,6 @@ const readCodexToken = (workspace: Workspace, codexHome?: string): string =>
   readFileSync(codexTokenPath(workspace, codexHome), 'utf8');
 const readMaterializedCodexConfig = (workspace: Workspace, codexHome?: string): Record<string, unknown> =>
   JSON.parse(readFileSync(codexConfigPath(workspace, codexHome), 'utf8')) as Record<string, unknown>;
-const powerShellCallerSurvivalPath = (workspace: Workspace, runId?: string): string =>
-  join(workspace.root, `powershell-caller-survived${runId ? `-${runId}` : ''}`);
-
 const networkReachable = (): boolean => {
   const probe = spawnSync('/usr/bin/curl', ['-fsSL', '-o', '/dev/null', '--max-time', '8', 'https://github.com/jqlang/jq/releases/download/jq-1.8.2/sha256sum.txt'], { encoding: 'utf8' });
   return probe.status === 0;
@@ -829,15 +830,8 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
   const script = powerShellBaseUrlPrelude(options) + renderPowerShellPrefix({ agent, apiKey: options.apiKey ?? SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + culturePrelude + body;
   const suffix = options.runId ? `-${options.runId}` : '';
   const scriptPath = join(workspace.root, `setup${suffix}.ps1`);
-  const invocationPath = join(workspace.root, `invoke-setup${suffix}.ps1`);
   writeFileSync(scriptPath, script);
-  writeFileSync(invocationPath, [
-    `$body = Get-Content -Raw -LiteralPath ${powerShellLiteral(scriptPath)}`,
-    '$body | Invoke-Expression',
-    '$code = $global:LASTEXITCODE',
-    `[System.IO.File]::WriteAllText(${powerShellLiteral(powerShellCallerSurvivalPath(workspace, options.runId))}, 'alive')`,
-    'exit $code',
-  ].join('\n'));
+  const childInput = `${script}\nexit $global:LASTEXITCODE\n`;
 
   if (options.fakeChmodFailure) {
     writeFileSync(join(workspace.binDir, 'chmod'), '#!/bin/bash\nexit 73\n', { mode: 0o755 });
@@ -867,13 +861,15 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
   if (options.failRestore) env.AGENT_SETUP_TEST_FAIL_RESTORE = '1';
 
   return new Promise<RunResult>(resolve => {
-    const child = spawn(hostPwsh!, ['-NoProfile', '-File', invocationPath], { env });
+    const child = spawn(hostPwsh!, ['-NoProfile', '-NonInteractive', '-Command', '-'], { env });
     let stdout = '';
     let stderr = '';
+    child.stdin.on('error', error => { stderr += String(error); });
     child.stdout.on('data', chunk => { stdout += chunk; });
     child.stderr.on('data', chunk => { stderr += chunk; });
     child.on('error', error => resolve({ code: -1, stdout, stderr: `${stderr}${String(error)}`, combined: `${stdout}${stderr}${String(error)}` }));
     child.on('close', code => resolve({ code: code ?? -1, stdout, stderr, combined: `${stdout}${stderr}` }));
+    child.stdin.end(childInput);
   });
 };
 
@@ -1251,7 +1247,6 @@ test('claude', 'PowerShell: existing CLI configures and preserves unrelated keys
     configuration: claudeConfig({ model: 'claude-opus-x[1m]', defaultFableModel: 'fable-x', defaultOpusModel: 'opus-x', defaultSonnetModel: 'sonnet-x', effortLevel: 'high', cleanupPeriodDays: 180, optOutAiAttribution: true, modelDiscovery: true }),
   });
   t.equal(run.code, 0, `should succeed:\n${run.combined}`);
-  t.ok(existsSync(powerShellCallerSurvivalPath(ws)), 'the IEX caller survives a successful setup');
   t.ok(!existsSync(installerMarker(ws)), 'installer must not run when claude is present');
   const settings = readSettings(settingsPathFor(ws)) as { theme: string; effortLevel: string; cleanupPeriodDays: number; attribution: Record<string, unknown>; env: Record<string, string> };
   t.equal(settings.theme, 'dark', 'unrelated top-level key preserved');
@@ -1543,7 +1538,6 @@ test('claude', 'PowerShell: invalid existing JSON fails without mutating the fil
   writeFileSync(settingsPathFor(ws), broken);
   const run = await runPowerShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url });
   t.ok(run.code !== 0, 'invalid existing settings must fail the run');
-  t.ok(existsSync(powerShellCallerSurvivalPath(ws)), 'the IEX caller survives a failed setup');
   t.equal(readFileSync(settingsPathFor(ws), 'utf8'), broken, 'the invalid file is left untouched');
   t.equal(backupFiles(configDir).length, 0, 'no backup is created when validation fails before mutation');
 });
@@ -1823,7 +1817,8 @@ test('claude', 'the copyable Bash command isolates the downloaded installer from
 const powerShellSetupCommand = (origin: string, path: string) => {
   const endpoint = powerShellLiteral(origin);
   const childEndpointAssignment = powerShellLiteral(`$SetupEndpoint = ${endpoint}`);
-  return `& { $SetupEndpoint = ${endpoint}; $PowerShell = $null; foreach ($Name in @('pwsh.exe', 'pwsh', 'powershell.exe')) { $Candidate = [System.IO.Path]::Combine($PSHOME, $Name); if ([System.IO.File]::Exists($Candidate)) { $PowerShell = $Candidate; break } }; if (-not $PowerShell) { throw 'Unable to locate a PowerShell application under $PSHOME.' }; $PreviousOutputEncoding = $OutputEncoding; try { $OutputEncoding = [System.Text.UTF8Encoding]::new($false); @(${childEndpointAssignment}, (Microsoft.PowerShell.Utility\\Invoke-RestMethod -Uri ($SetupEndpoint + ${powerShellLiteral(path)}))) | & $PowerShell -NoProfile -NonInteractive -Command - } finally { $OutputEncoding = $PreviousOutputEncoding } }`;
+  const childExit = powerShellLiteral('exit $global:LASTEXITCODE');
+  return `& { $SetupEndpoint = ${endpoint}; $PowerShell = $null; foreach ($Name in @('pwsh.exe', 'pwsh', 'powershell.exe')) { $Candidate = [System.IO.Path]::Combine($PSHOME, $Name); if ([System.IO.File]::Exists($Candidate)) { $PowerShell = $Candidate; break } }; if (-not $PowerShell) { throw 'Unable to locate a PowerShell application under $PSHOME.' }; $PreviousOutputEncoding = $OutputEncoding; try { $OutputEncoding = [System.Text.UTF8Encoding]::new($false); @(${childEndpointAssignment}, (Microsoft.PowerShell.Utility\\Invoke-RestMethod -Uri ($SetupEndpoint + ${powerShellLiteral(path)})), ${childExit}) | & $PowerShell -NoProfile -NonInteractive -Command - } finally { $OutputEncoding = $PreviousOutputEncoding } }`;
 };
 
 test('claude', 'the copyable PowerShell command isolates the downloaded installer from its caller', async t => {
@@ -1839,6 +1834,13 @@ test('claude', 'the copyable PowerShell command isolates the downloaded installe
   t.equal(run.code, 0, `the copyable PowerShell command should run cleanly:\n${run.combined}`);
   t.includes(run.stdout, `PROBE_BASE_URL=[${origin}]`, 'the endpoint prelude reached the clean child process');
   t.includes(run.stdout, `PROBE_UNICODE=[${COMMAND_BOUNDARY_SECRET}]`, 'UTF-8 stdin preserved the downloaded body');
+});
+
+test('claude', 'the copyable PowerShell command propagates the downloaded installer status', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const command = powerShellSetupCommand(modelServer.url, '/probe/setup-fail.ps1');
+  const run = await runCommandLine(hostPwsh, ['-NoProfile', '-Command'], command);
+  t.equal(run.code, 23, `the clean child status must reach the caller:\n${run.combined}`);
 });
 
 test('claude', 'a missing SETUP_ENDPOINT fails before any mutation', async t => {
