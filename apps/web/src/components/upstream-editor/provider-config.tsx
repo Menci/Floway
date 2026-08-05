@@ -327,6 +327,7 @@ function CopilotConfig({ record, onPatch }: {
       return;
     }
     if (result.data.status === 'complete') { setBusy(false); onPatch(result.data.patch, isPersisted(record)); return; }
+    if (secondsLeft <= 0) { expire(); return; }
     if (result.data.status === 'slow_down') {
       const next = interval + DEVICE_FLOW_SLOW_DOWN_SECONDS;
       schedulePoll(deviceCode, next, secondsLeft);
