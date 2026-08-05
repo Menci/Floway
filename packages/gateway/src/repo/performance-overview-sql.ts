@@ -90,7 +90,7 @@ const summaryAggregateSql = performanceAxisSql.map(({ axis, bucket, group, where
   CROSS JOIN settings
   JOIN bucket_map ON bucket_map.hour = filtered_summary.hour
   WHERE ${where}
-  GROUP BY bucket, group_value`).join('\n  UNION ALL');
+  GROUP BY ${bucket}, ${group}`).join('\n  UNION ALL');
 
 const histogramAggregateSql = performanceAxisSql.map(({ axis, bucket, group, where }) => `
   SELECT
@@ -112,7 +112,7 @@ const histogramAggregateSql = performanceAxisSql.map(({ axis, bucket, group, whe
     AND performance_buckets.operation = filtered_summary.operation
     AND performance_buckets.runtime_location = filtered_summary.runtime_location
   WHERE ${where}
-  GROUP BY bucket, group_value, performance_buckets.metric, performance_buckets.lower`).join('\n  UNION ALL');
+  GROUP BY ${bucket}, ${group}, performance_buckets.metric, performance_buckets.lower`).join('\n  UNION ALL');
 
 const overviewSql = (scoped: boolean) => `/* performance-overview */
 WITH
@@ -188,10 +188,7 @@ invalid_histogram_bounds AS MATERIALIZED (
     AND performance_buckets.upstream = filtered_summary.upstream
     AND performance_buckets.operation = filtered_summary.operation
     AND performance_buckets.runtime_location = filtered_summary.runtime_location
-  GROUP BY performance_buckets.hour, performance_buckets.key_id,
-    performance_buckets.model, performance_buckets.upstream,
-    performance_buckets.operation, performance_buckets.runtime_location,
-    performance_buckets.metric, performance_buckets.lower
+  GROUP BY performance_buckets.metric, performance_buckets.lower
   HAVING COUNT(DISTINCT COALESCE(CAST(performance_buckets.upper AS TEXT), 'null')) > 1
   LIMIT 1
 ),
