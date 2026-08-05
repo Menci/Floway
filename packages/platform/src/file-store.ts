@@ -19,11 +19,12 @@ export class MemoryFileStore implements FileStore {
   private readonly files = new Map<string, Uint8Array>();
 
   async put(key: string, body: Uint8Array): Promise<void> {
-    this.files.set(key, body.slice());
+    this.files.set(key, new Uint8Array(body));
   }
 
   async get(key: string): Promise<Uint8Array | null> {
-    return this.files.get(key)?.slice() ?? null;
+    const body = this.files.get(key);
+    return body ? new Uint8Array(body) : null;
   }
 
   async deleteKeys(keys: readonly string[]): Promise<void> {

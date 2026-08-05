@@ -1,9 +1,14 @@
-import { test } from 'vitest';
+import { beforeEach, test, vi } from 'vitest';
 
-import { getExternalResourceFetcher, initExternalResourceFetcher } from '../src/external-resource-fetcher.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
-test('external resource fetcher must be initialized', () => {
+beforeEach(() => {
+  vi.resetModules();
+});
+
+test('external resource fetcher must be initialized', async () => {
+  const { getExternalResourceFetcher } = await import('../src/external-resource-fetcher.ts');
+
   assertThrows(
     () => getExternalResourceFetcher(),
     Error,
@@ -12,9 +17,11 @@ test('external resource fetcher must be initialized', () => {
 });
 
 test('external resource fetcher exposes the initialized runtime implementation', async () => {
-  const expected = new Response('ok');
-  initExternalResourceFetcher(() => Promise.resolve(expected));
+  const { getExternalResourceFetcher, initExternalResourceFetcher } = await import('../src/external-resource-fetcher.ts');
+  const expected = async (_url: URL, _signal: AbortSignal): Promise<Response> => {
+    throw new Error('identity-only test fetcher must not be called');
+  };
+  initExternalResourceFetcher(expected);
 
-  const fetcher = getExternalResourceFetcher();
-  assertEquals(await fetcher(new URL('https://example.com/image.png'), new AbortController().signal), expected);
+  assertEquals(getExternalResourceFetcher(), expected);
 });

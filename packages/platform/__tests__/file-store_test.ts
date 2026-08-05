@@ -6,6 +6,9 @@ import { assertEquals } from '@floway-dev/test-utils';
 test('MemoryFileStore clones at the store boundary', async () => {
   const store = new MemoryFileStore();
   const body = new Uint8Array([1, 2, 3]);
+  // A caller-owned typed array can override its virtual slice method; the
+  // store boundary must use an intrinsic copy that cannot alias this object.
+  body.slice = () => body;
 
   await store.put('k', body);
   body[0] = 9;
