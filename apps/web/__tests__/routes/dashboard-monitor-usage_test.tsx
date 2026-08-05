@@ -162,7 +162,7 @@ describe('usage dimension controls', () => {
     });
 
     fireEvent.click(screen.getByRole('combobox', { name: 'API Key' }));
-    fireEvent.click(screen.getByRole('option', { name: 'Alice key' }));
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Alice key' }));
 
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'User' }).getAttribute('placeholder')).toBe('Only me'));
     expect(screen.getByRole('combobox', { name: 'API Key' }).getAttribute('placeholder')).toBe('1 selected');
