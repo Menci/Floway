@@ -2,8 +2,6 @@ import { convertRgbToHsv, convertRgbToLrgb, parseHex, wcagContrast } from 'culor
 
 import { hsvToRgb, rgbToHex, type RgbTuple } from './color-bytes';
 
-export { hsvToRgb, rgbToHex } from './color-bytes';
-
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 
 const rgbTuple = ({ r, g, b }: { r: number; g: number; b: number }): RgbTuple =>
@@ -37,6 +35,8 @@ export const blendHex = (hex: string, alpha: number, backdrop: string): string =
     Math.round(channel * alpha + bottom[index]! * (1 - alpha))) as RgbTuple));
 };
 
+// WCAG 2.2 requires at least 4.5:1 contrast for normal text.
+// https://www.w3.org/TR/WCAG22/#contrast-minimum
 const TEXT_CONTRAST_FLOOR = 4.5;
 const BLACK: RgbTuple = [0, 0, 0];
 const WHITE: RgbTuple = [255, 255, 255];

@@ -263,6 +263,9 @@ importers:
       '@unocss/postcss':
         specifier: ^66.7.5
         version: 66.7.5(postcss@8.5.23)
+      es-module-lexer:
+        specifier: ^2.3.1
+        version: 2.3.1
       happy-dom:
         specifier: ^20.11.1
         version: 20.11.1
