@@ -18,6 +18,12 @@ const githubUser = {
   avatar_url: 'https://example.com/octo-auth.png',
 };
 
+const githubAccessToken = (accessToken: string) => ({
+  access_token: accessToken,
+  token_type: 'bearer',
+  scope: 'read:user',
+});
+
 test('/api/upstreams/copilot/oauth/device-login/start starts GitHub device flow', async () => {
   const { adminSession } = await setupAppTest();
 
@@ -51,7 +57,7 @@ test('/api/upstreams/copilot/oauth/device-login/poll returns a config+state patc
   await withMockedFetch(
     request => {
       const url = new URL(request.url);
-      if (url.hostname === 'github.com' && url.pathname === '/login/oauth/access_token') return jsonResponse({ access_token: 'ghu_new' });
+      if (url.hostname === 'github.com' && url.pathname === '/login/oauth/access_token') return jsonResponse(githubAccessToken('ghu_new'));
       if (url.hostname === 'api.github.com' && url.pathname === '/user') return jsonResponse(githubUser);
       if (url.hostname === 'api.github.com' && url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
@@ -98,7 +104,7 @@ test('/api/upstreams/copilot/oauth/device-login/poll rejects failed GitHub user 
   await withMockedFetch(
     request => {
       const url = new URL(request.url);
-      if (url.hostname === 'github.com' && url.pathname === '/login/oauth/access_token') return jsonResponse({ access_token: 'ghu_no_user' });
+      if (url.hostname === 'github.com' && url.pathname === '/login/oauth/access_token') return jsonResponse(githubAccessToken('ghu_no_user'));
       if (url.hostname === 'api.github.com' && url.pathname === '/user') return jsonResponse({ message: 'bad credentials' }, 401);
       throw new Error(`Unhandled fetch ${request.url}`);
     },
@@ -129,7 +135,7 @@ test('/api/upstreams/copilot/oauth/device-login/poll rejects a failed token exch
   await withMockedFetch(
     request => {
       const url = new URL(request.url);
-      if (url.hostname === 'github.com' && url.pathname === '/login/oauth/access_token') return jsonResponse({ access_token: 'ghu_no_seat' });
+      if (url.hostname === 'github.com' && url.pathname === '/login/oauth/access_token') return jsonResponse(githubAccessToken('ghu_no_seat'));
       if (url.hostname === 'api.github.com' && url.pathname === '/user') return jsonResponse(githubUser);
       if (url.hostname === 'api.github.com' && url.pathname === '/copilot_internal/v2/token') return jsonResponse({ message: 'no copilot seat' }, 403);
       throw new Error(`Unhandled fetch ${request.url}`);
@@ -161,7 +167,7 @@ test('/api/upstreams/copilot/oauth/device-login/poll rejects a token-exchange re
   await withMockedFetch(
     request => {
       const url = new URL(request.url);
-      if (url.hostname === 'github.com' && url.pathname === '/login/oauth/access_token') return jsonResponse({ access_token: 'ghu_no_endpoint' });
+      if (url.hostname === 'github.com' && url.pathname === '/login/oauth/access_token') return jsonResponse(githubAccessToken('ghu_no_endpoint'));
       if (url.hostname === 'api.github.com' && url.pathname === '/user') return jsonResponse(githubUser);
       if (url.hostname === 'api.github.com' && url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({ token: 'ct_no_endpoint', expires_at: Math.floor(Date.now() / 1000) + 1500, refresh_in: 1200 });
@@ -201,7 +207,7 @@ test('/api/upstreams/copilot/oauth/device-login/poll targeted-patches config+sta
   await withMockedFetch(
     request => {
       const url = new URL(request.url);
-      if (url.hostname === 'github.com' && url.pathname === '/login/oauth/access_token') return jsonResponse({ access_token: 'ghu_refreshed' });
+      if (url.hostname === 'github.com' && url.pathname === '/login/oauth/access_token') return jsonResponse(githubAccessToken('ghu_refreshed'));
       if (url.hostname === 'api.github.com' && url.pathname === '/user') return jsonResponse(githubUser);
       if (url.hostname === 'api.github.com' && url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
