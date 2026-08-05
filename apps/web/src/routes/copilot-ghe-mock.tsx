@@ -8,15 +8,10 @@ import {
   SaveRegular,
 } from '@fluentui/react-icons';
 import { useMemo, useState } from 'react';
-import { createRoot } from 'react-dom/client';
 import { FormProvider, useForm } from 'react-hook-form';
-import { createMemoryRouter, RouterProvider } from 'react-router';
-import criticalCss from 'virtual:floway-critical.css?inline';
-import winuiStylesheet from 'virtual:floway-winui.css?url';
 
 import type { AuthUser } from '../api/auth';
 import type { UpstreamRecord } from '../api/types';
-import { GradientBackground } from '../components/gradient-background';
 import { Sidebar } from '../components/sidebar/nav';
 import type { UpstreamEditorValues } from '../components/upstream-editor/data';
 import { valuesFromRecord } from '../components/upstream-editor/data';
@@ -36,13 +31,6 @@ import { HuePicker } from '../components/upstreams/hue-picker';
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
 import { fluentComponents } from '../fluent';
 import { useTranslation } from '../i18n/translation';
-import { DARK_SCHEME_QUERY, useMediaQuery } from '../lib/use-media-query';
-import { winuiDarkTheme, winuiLightTheme } from '../winui/theme';
-import '../i18n';
-import '@fontsource/maple-mono/400.css';
-import '@fontsource/maple-mono/600.css';
-import '@fontsource/maple-mono/700.css';
-import '../global.css';
 
 const {
   Button,
@@ -352,7 +340,7 @@ function ReviewControls({ onChange, view }: { onChange: (view: MockView) => void
   </Card>;
 }
 
-function Mock() {
+export default function CopilotGheMockRoute() {
   const [view, setView] = useState<MockView>('github');
   const [host, setHost] = useState('github.com');
   const changeView = (next: MockView) => {
@@ -360,7 +348,7 @@ function Mock() {
     if (next === 'ghe' || next === 'waiting' || next === 'connected') setHost('octocorp.ghe.com');
     setView(next);
   };
-  return <GradientBackground>
+  return <>
     <ReviewControls onChange={changeView} view={view} />
     <div className="grid grid-cols-[clamp(240px,18vw,290px)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] h-[100dvh] min-h-0">
       <div className="min-h-0"><Sidebar user={user} /></div>
@@ -372,22 +360,5 @@ function Mock() {
         </main>
       </div>
     </div>
-  </GradientBackground>;
-}
-
-function Root() {
-  const dark = useMediaQuery(DARK_SCHEME_QUERY);
-  return <>
-    <style>{criticalCss}</style>
-    <link href={winuiStylesheet} rel="stylesheet" />
-    <fluentComponents.FluentProvider theme={dark ? winuiDarkTheme : winuiLightTheme}>
-      <Mock />
-    </fluentComponents.FluentProvider>
   </>;
 }
-
-const router = createMemoryRouter([{ path: '*', element: <Root /> }], {
-  initialEntries: ['/dashboard/providers/upstreams/new/copilot'],
-});
-
-createRoot(document.getElementById('root')!).render(<RouterProvider router={router} />);
