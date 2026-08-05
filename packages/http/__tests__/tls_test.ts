@@ -23,8 +23,19 @@ describe('userspaceTls — input validation', () => {
       { readable: fake.readable, writable: fake.writable },
       { host: 'example.com', signal: ac.signal },
     );
-    setTimeout(() => ac.abort(new DOMException('cancelled', 'AbortError')), 30);
+    await fake.waitForWritten(1);
+    ac.abort(new DOMException('cancelled', 'AbortError'));
     await expect(promise).rejects.toMatchObject({ name: 'AbortError', message: expect.stringContaining('cancelled') });
+    expect(fake.readable.locked).toBe(false);
+    expect(fake.writable.locked).toBe(false);
+  });
+
+  it('releases the writer when acquiring the transport reader fails', async () => {
+    const fake = makeFakeDuplex();
+    const heldReader = fake.readable.getReader();
+    await expect(userspaceTls(fake, { host: 'example.com' })).rejects.toBeInstanceOf(TypeError);
+    expect(fake.writable.locked).toBe(false);
+    heldReader.releaseLock();
   });
 });
 
@@ -40,15 +51,7 @@ describe('userspaceTls — ClientHello on the wire', () => {
     );
     handshake.catch(() => { /* expected — we abort below */ });
 
-    // Poll the fake duplex's write buffer until the ClientHello lands. The
-    // first byte is enough to discriminate a TLS handshake record from
-    // anything else; we read more once it's there. Polling avoids a hard-
-    // coded sleep that races reclaim's synchronous startup path under load.
-    const deadline = Date.now() + 1000;
-    while (fake.written().byteLength < 5 && Date.now() < deadline) {
-      await new Promise(r => setTimeout(r, 5));
-    }
-    const written = fake.written();
+    const written = await fake.waitForWritten(6);
     expect(written.byteLength).toBeGreaterThanOrEqual(5);
     // TLS record header: type=Handshake(0x16), legacy_record_version=TLS1.2(0x0303)
     // for TLS 1.3 ClientHellos (RFC 8446 §5.1).
@@ -70,13 +73,14 @@ describe('userspaceTls — handshake failure', () => {
       { readable: fake.readable, writable: fake.writable },
       { host: 'example.com' },
     );
-    // Wait for the ClientHello to be sent.
-    await new Promise(r => setTimeout(r, 5));
+    await fake.waitForWritten(1);
     // Reply with bytes that don't form a TLS record at all.
     fake.respond(new Uint8Array([0xff, 0xff, 0xff, 0xff, 0xff]));
     fake.endResponse();
 
     await expect(promise).rejects.toBeInstanceOf(Error);
+    expect(fake.readable.locked).toBe(false);
+    expect(fake.writable.locked).toBe(false);
   });
 
   it('rejects when the transport EOFs before the handshake completes', async () => {
@@ -85,9 +89,11 @@ describe('userspaceTls — handshake failure', () => {
       { readable: fake.readable, writable: fake.writable },
       { host: 'example.com' },
     );
-    await new Promise(r => setTimeout(r, 5));
+    await fake.waitForWritten(1);
     fake.endResponse();
     await expect(promise).rejects.toBeInstanceOf(Error);
+    expect(fake.readable.locked).toBe(false);
+    expect(fake.writable.locked).toBe(false);
   });
 
   it('rejects with an AbortError when the signal aborts AFTER the ClientHello but before the ServerHello', async () => {
@@ -97,9 +103,7 @@ describe('userspaceTls — handshake failure', () => {
       { readable: fake.readable, writable: fake.writable },
       { host: 'example.com', signal: ac.signal },
     );
-    // Let the ClientHello be emitted first.
-    await new Promise(r => setTimeout(r, 10));
-    expect(fake.written().byteLength).toBeGreaterThan(0);
+    expect((await fake.waitForWritten(1)).byteLength).toBeGreaterThan(0);
     ac.abort(new DOMException('cancel after ClientHello', 'AbortError'));
     await expect(promise).rejects.toMatchObject({
       name: 'AbortError',
@@ -118,7 +122,8 @@ describe('userspaceTls — handshake failure', () => {
       { readable: fake.readable, writable: fake.writable },
       { host: 'example.com', signal: ac.signal },
     );
-    setTimeout(() => ac.abort('plain string reason'), 5);
+    await fake.waitForWritten(1);
+    ac.abort('plain string reason');
     await expect(promise).rejects.toMatchObject({
       name: 'AbortError',
       message: 'plain string reason',
@@ -140,11 +145,7 @@ describe('userspaceTls — prefix coalescing', () => {
     );
     handshake.catch(() => { /* expected — we abort below */ });
 
-    const deadline = Date.now() + 1000;
-    while (fake.written().byteLength < 9 && Date.now() < deadline) {
-      await new Promise(r => setTimeout(r, 5));
-    }
-    const written = fake.written();
+    const written = await fake.waitForWritten(9);
     expect(written[0]).toBe(0xde);
     expect(written[1]).toBe(0xad);
     expect(written[2]).toBe(0xbe);
@@ -165,11 +166,7 @@ describe('userspaceTls — prefix coalescing', () => {
     );
     handshake.catch(() => { /* expected */ });
 
-    const deadline = Date.now() + 1000;
-    while (fake.written().byteLength < 5 && Date.now() < deadline) {
-      await new Promise(r => setTimeout(r, 5));
-    }
-    expect(fake.written()[0]).toBe(0x16);
+    expect((await fake.waitForWritten(5))[0]).toBe(0x16);
 
     ac.abort(new DOMException('done', 'AbortError'));
     await handshake.catch(() => { /* expected */ });
@@ -188,11 +185,7 @@ describe('userspaceTls — prefix coalescing', () => {
     );
     handshake.catch(() => { /* expected */ });
 
-    const deadline = Date.now() + 1000;
-    while (fake.written().byteLength < 200 && Date.now() < deadline) {
-      await new Promise(r => setTimeout(r, 5));
-    }
-    const written = fake.written();
+    const written = await fake.waitForWritten(1);
     const text = new TextDecoder('latin1').decode(written);
     expect(text).toContain(host);
 
