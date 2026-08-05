@@ -16,10 +16,13 @@ const canonicalize = (value: unknown): unknown => {
   return value;
 };
 
+export const serializeCanonicalJson = (value: unknown): string =>
+  JSON.stringify(canonicalize(value));
+
 // state_json is nullable; null/undefined collapse to SQL NULL.
 export const serializeStoredState = (value: unknown): string | null =>
-  value === null || value === undefined ? null : JSON.stringify(canonicalize(value));
+  value === null || value === undefined ? null : serializeCanonicalJson(value);
 
 // config_json is NOT NULL; an absent value is stored as the JSON literal `null`.
 export const serializeStoredConfig = (value: unknown): string =>
-  JSON.stringify(canonicalize(value === undefined ? null : value));
+  serializeCanonicalJson(value === undefined ? null : value);

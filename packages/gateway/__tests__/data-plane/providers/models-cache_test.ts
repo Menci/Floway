@@ -97,6 +97,19 @@ describe('fetchUpstreamModelsCached', () => {
     expect((await storedCache(repo))?.models.map(m => m.id)).toEqual(['m1']);
   });
 
+  test('rejects duplicate non-empty model ids before they can enter the cache', async () => {
+    const repo = await setupRepo();
+    const fetchFn = vi.fn(async () => [aModel('duplicate'), aModel('duplicate')]);
+
+    await expect(fetchUpstreamModelsCached(
+      stubInstance(fetchFn),
+      { scheduler: () => {}, fetcher: directFetcher },
+    )).rejects.toThrow("Upstream 'up_a' returned duplicate model id 'duplicate'");
+
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(await storedCache(repo)).toBeNull();
+  });
+
   test('within SOFT: no fetch, returns stored', async () => {
     const repo = await setupRepo();
     const cache = await seedCache(repo, { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now() - 1000, models: [aModel('cached')] });
