@@ -1,5 +1,6 @@
 import { buildKeyToUserMap } from '../../src/control-plane/shared/key-to-user.ts';
 import { partitionTelemetryOverviewRecords } from '../../src/control-plane/shared/telemetry-overview.ts';
+import { aggregatePerformanceForDisplay } from '../../src/control-plane/performance/aggregate.ts';
 import { usageUserIdForKey } from '../../src/control-plane/token-usage/aggregate.ts';
 import { normalizeDisabledPublicModelIds } from '../../src/repo/disabled-public-models.ts';
 import { normalizeFlagOverrides } from '../../src/repo/flag-overrides.ts';
@@ -36,6 +37,8 @@ import type {
   PerformanceSample,
   PerformanceBucketRow,
   PerformanceMetric,
+  PerformanceOverviewQueryOptions,
+  PerformanceOverviewResult,
   ProxyBackoffRepo,
   ProxyRecord,
   ProxyRepo,
@@ -573,6 +576,8 @@ const freezePerformanceRow = ({ bucketMap, ...rest }: StoredPerformanceRow): Per
 class MemoryPerformanceRepo implements PerformanceRepo {
   private readonly summaries = new Map<string, StoredPerformanceRow>();
 
+  constructor(private readonly apiKeys: ApiKeyRepo) {}
+
   async recordSample(sample: PerformanceSample): Promise<void> {
     const row = this.upsertRow(sample);
     row.requests += 1;
@@ -599,11 +604,62 @@ class MemoryPerformanceRepo implements PerformanceRepo {
     row.neutral += 1;
   }
 
-  async query(opts: { keyId?: string; start: string; end: string }): Promise<PerformanceTelemetryRecord[]> {
-    return [...this.summaries.values()]
-      .filter(r => (opts.keyId ? r.keyId === opts.keyId : true) && r.hour >= opts.start && r.hour < opts.end)
+  async queryOverview(opts: PerformanceOverviewQueryOptions): Promise<PerformanceOverviewResult> {
+    const keyToUser = buildKeyToUserMap(await this.apiKeys.listIncludingDeleted());
+    const visibleKeyIds = new Set([...keyToUser]
+      .filter(([, userId]) => userId === opts.actorUserId)
+      .map(([keyId]) => keyId));
+    const records = [...this.summaries.values()]
+      .filter(record => record.hour >= opts.start && record.hour < opts.end)
       .sort(comparePerformanceRow)
       .map(freezePerformanceRow);
+    const scoped = opts.groupBy === 'keyId'
+      ? records.filter(record => visibleKeyIds.has(record.keyId))
+      : records;
+    const partitioned = partitionTelemetryOverviewRecords(scoped, {
+      model: { value: record => record.model },
+      upstream: { value: record => record.upstream },
+      operation: { value: record => record.operation },
+      runtimeLocation: { value: record => record.runtimeLocation },
+      userId: {
+        value: record => keyToUser.get(record.keyId)?.toString() ?? null,
+        includeFacet: () => opts.isAdmin,
+      },
+      keyId: {
+        value: record => record.keyId,
+        includeFacet: record => visibleKeyIds.has(record.keyId),
+      },
+    }, {
+      model: new Set(opts.filters.models),
+      upstream: new Set(opts.filters.upstreams),
+      operation: new Set(opts.filters.operations),
+      runtimeLocation: new Set(opts.filters.runtimeLocations),
+      userId: new Set(opts.filters.userIds.map(String)),
+      keyId: new Set(opts.filters.keyIds),
+    });
+    const aggregateOptions = { bucket: 'all' as const, timezoneOffsetMinutes: 0 };
+    const { series, ...axes } = aggregatePerformanceForDisplay(partitioned.filtered, {
+      series: { ...aggregateOptions, groupBy: opts.groupBy, bucketForHour: opts.bucketForHour },
+      none: { ...aggregateOptions, groupBy: 'none' },
+      model: { ...aggregateOptions, groupBy: 'model' },
+      upstream: { ...aggregateOptions, groupBy: 'upstream' },
+      runtimeLocation: { ...aggregateOptions, groupBy: 'runtimeLocation' },
+      operation: { ...aggregateOptions, groupBy: 'operation' },
+      keyId: { ...aggregateOptions, groupBy: 'keyId' },
+      userId: { ...aggregateOptions, groupBy: 'userId' },
+    }, keyToUser, visibleKeyIds);
+    return {
+      series,
+      axes: { ...axes, userId: opts.isAdmin ? axes.userId : [] },
+      dimensionValues: {
+        models: partitioned.dimensionValues.model,
+        upstreams: partitioned.dimensionValues.upstream,
+        operations: partitioned.dimensionValues.operation,
+        runtimeLocations: partitioned.dimensionValues.runtimeLocation,
+        userIds: partitioned.dimensionValues.userId.map(Number).sort((left, right) => left - right),
+        keyIds: partitioned.dimensionValues.keyId,
+      },
+    };
   }
 
   async listAll(): Promise<PerformanceTelemetryRecord[]> {
@@ -1403,7 +1459,7 @@ export class InMemoryRepo implements Repo {
     this.apiKeys = new MemoryApiKeyRepo(this.expirationSweeps);
     this.usage = new MemoryUsageRepo(this.apiKeys);
     this.webSearchUsage = new MemoryWebSearchUsageRepo();
-    this.performance = new MemoryPerformanceRepo();
+    this.performance = new MemoryPerformanceRepo(this.apiKeys);
     this.webSearchConfig = new MemoryWebSearchConfigRepo();
     this.upstreams = new MemoryUpstreamRepo();
     this.proxies = new MemoryProxyRepo(this.upstreams);

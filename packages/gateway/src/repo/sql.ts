@@ -1,6 +1,7 @@
 import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { SqlExpirationSweepsRepo } from './expiration-sweeps-sql.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
+import { querySqlPerformanceOverview } from './performance-overview-sql.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
 import { SqlResponsesItemsRepo, SqlResponsesSnapshotsRepo } from './responses-state-sql.ts';
 import { generateSessionToken } from './session-tokens.ts';
@@ -22,6 +23,8 @@ import type {
   PerformanceBucketRow,
   PerformanceDimensions,
   PerformanceMetric,
+  PerformanceOverviewQueryOptions,
+  PerformanceOverviewResult,
   PerformanceRepo,
   PerformanceSample,
   PerformanceTelemetryRecord,
@@ -685,8 +688,8 @@ class SqlPerformanceRepo implements PerformanceRepo {
     await this.upsertSummary(dims, { requests: 1, neutral: 1 }, 'add').run();
   }
 
-  async query(opts: { keyId?: string; start: string; end: string }): Promise<PerformanceTelemetryRecord[]> {
-    return await this.rowsFor(opts);
+  queryOverview(opts: PerformanceOverviewQueryOptions): Promise<PerformanceOverviewResult> {
+    return querySqlPerformanceOverview(this.db, opts);
   }
 
   async listAll(): Promise<PerformanceTelemetryRecord[]> {

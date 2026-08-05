@@ -1,33 +1,18 @@
-import type { PerformanceMetric, PerformanceTelemetryRecord } from '../../repo/types.ts';
+import type { PerformanceDisplayRecord, PerformanceGroupBy, PerformanceMetric, PerformanceTelemetryRecord } from '../../repo/types.ts';
 import { type HistogramBucket, percentileFromBuckets } from '../../shared/performance-histogram.ts';
 import { createTelemetryBucket, type TelemetryBucketGranularity } from '../shared/telemetry-bucket.ts';
-export type PerformanceGroupBy = 'none' | 'keyId' | 'userId' | 'model' | 'upstream' | 'operation' | 'runtimeLocation';
-
 // One aggregated row in the shape the dashboard consumes. `ttftMs*` render as
 // milliseconds directly; `tpotUs*` render as tok/s via `1_000_000 / tpotUs`,
 // and that reciprocal inverts percentile direction — the p95 microsecond
 // figure is the 5th percentile of the tok/s figure.
-export interface PerformanceDisplayRecord {
-  bucket: string;
-  group: string;
-  requests: number;
-  errors: number;
-  ttftSamples: number;
-  tpotSamples: number;
-  neutral: number;
-  ttftMsP50: number | null;
-  ttftMsP95: number | null;
-  ttftMsP99: number | null;
-  tpotUsP50: number | null;
-  tpotUsP95: number | null;
-  tpotUsP99: number | null;
-}
+export type { PerformanceDisplayRecord, PerformanceGroupBy } from '../../repo/types.ts';
 
 export interface AggregateOptions {
   bucket: TelemetryBucketGranularity;
   groupBy: PerformanceGroupBy;
   timeZone?: string;
   timezoneOffsetMinutes: number;
+  bucketForHour?: (hour: string) => string;
 }
 
 interface MutableAggregate {
@@ -126,7 +111,7 @@ export const aggregatePerformanceForDisplay = <K extends string>(
 ): Record<K, PerformanceDisplayRecord[]> => {
   const entries = Object.entries(axes) as [K, AggregateOptions][];
   const maps = entries.map(() => new Map<string, MutableAggregate>());
-  const bucketResolvers = entries.map(([, options]) => createTelemetryBucket(options));
+  const bucketResolvers = entries.map(([, options]) => options.bucketForHour ?? createTelemetryBucket(options));
   for (const record of records) {
     for (let i = 0; i < entries.length; i++) {
       const options = entries[i][1];

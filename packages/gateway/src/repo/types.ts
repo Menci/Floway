@@ -189,6 +189,58 @@ export interface PerformanceTelemetryRecord extends PerformanceDimensions {
   buckets: readonly PerformanceBucketRow[];
 }
 
+export type PerformanceGroupBy = 'none' | 'keyId' | 'userId' | 'model' | 'upstream' | 'operation' | 'runtimeLocation';
+export type PerformanceOverviewGroupBy = Exclude<PerformanceGroupBy, 'none'>;
+export type PerformanceOverviewAxis = PerformanceGroupBy | 'series';
+
+export interface PerformanceDisplayRecord {
+  bucket: string;
+  group: string;
+  requests: number;
+  errors: number;
+  ttftSamples: number;
+  tpotSamples: number;
+  neutral: number;
+  ttftMsP50: number | null;
+  ttftMsP95: number | null;
+  ttftMsP99: number | null;
+  tpotUsP50: number | null;
+  tpotUsP95: number | null;
+  tpotUsP99: number | null;
+}
+
+export interface PerformanceOverviewFilters {
+  keyIds: readonly string[];
+  userIds: readonly number[];
+  models: readonly string[];
+  upstreams: readonly string[];
+  operations: readonly string[];
+  runtimeLocations: readonly string[];
+}
+
+export interface PerformanceOverviewQueryOptions {
+  actorUserId: number;
+  isAdmin: boolean;
+  start: string;
+  end: string;
+  groupBy: PerformanceOverviewGroupBy;
+  filters: PerformanceOverviewFilters;
+  bucketForHour: (hour: string) => string;
+}
+
+export interface PerformanceOverviewResult {
+  series: PerformanceDisplayRecord[];
+  axes: Record<PerformanceGroupBy, PerformanceDisplayRecord[]>;
+  dimensionValues: {
+    models: string[];
+    upstreams: string[];
+    operations: string[];
+    runtimeLocations: string[];
+    userIds: number[];
+    keyIds: string[];
+  };
+}
+
 export interface ApiKeyRepo {
   list(): Promise<ApiKey[]>;
   // Includes soft-deleted rows so the user_id behind a historical key stays
@@ -276,7 +328,7 @@ export interface PerformanceRepo {
   // calls and chat successes that never got a first output token or a real
   // upstream call.
   recordNeutral(dims: PerformanceDimensions): Promise<void>;
-  query(opts: { keyId?: string; start: string; end: string }): Promise<PerformanceTelemetryRecord[]>;
+  queryOverview(opts: PerformanceOverviewQueryOptions): Promise<PerformanceOverviewResult>;
   listAll(): Promise<PerformanceTelemetryRecord[]>;
   // Replacement upsert used by admin restore paths.
   set(record: PerformanceTelemetryRecord): Promise<void>;
