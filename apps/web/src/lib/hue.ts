@@ -1,4 +1,8 @@
-import { formatHex, toRgb } from './culori';
+import { converter, formatHex, modeOklch, modeRgb, useMode as registerMode } from 'culori/fn';
+
+registerMode(modeRgb);
+registerMode(modeOklch);
+const toRgb = converter('rgb');
 
 // How much chroma a hue can carry before it reads heavier than its neighbours.
 // Red takes the most and cyan the least, which is why a flat chroma leaves half

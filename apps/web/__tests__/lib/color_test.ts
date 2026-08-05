@@ -95,10 +95,22 @@ describe('hsvToRgb', () => {
     expect(hsvToRgb(180, 0, 0.5)).toEqual([128, 128, 128]);
   });
 
-  it('normalizes hues around the colour circle', () => {
-    expect(hsvToRgb(-60, 1, 1)).toEqual(hsvToRgb(300, 1, 1));
-    expect(hsvToRgb(360, 1, 1)).toEqual(hsvToRgb(0, 1, 1));
-    expect(hsvToRgb(780, 1, 1)).toEqual(hsvToRgb(60, 1, 1));
+  it.each([
+    [1, 1, 1, [255, 4, 0]],
+    [59, 1, 1, [255, 251, 0]],
+    [119, 1, 1, [4, 255, 0]],
+    [179, 1, 1, [0, 255, 251]],
+    [239, 1, 1, [0, 4, 255]],
+    [299, 1, 1, [251, 0, 255]],
+    [359, 1, 1, [255, 0, 4]],
+    [17, 0.41, 0.73, [186, 131, 110]],
+    [73, 0.83, 0.57, [119, 145, 25]],
+    [211, 0.67, 0.92, [77, 153, 235]],
+    [318, 0.22, 0.31, [79, 62, 74]],
+    [30, 1, 0.5, [128, 64, 0]],
+    [210, 0.5, 0.5, [64, 96, 128]],
+  ] as const)('preserves the frozen byte result for hsv(%s, %s, %s)', (h, s, v, expected) => {
+    expect(hsvToRgb(h, s, v)).toEqual(expected);
   });
 });
 
@@ -179,28 +191,21 @@ describe('readableTone', () => {
   });
 
   it.each([
-    ['#C239B3', CARD_LIGHT],
-    ['#C239B3', CARD_DARK],
-    ['#FFD740', CARD_LIGHT],
-    ['#0000FF', CARD_DARK],
-    ['#0000FF', '#787878'],
-  ])('selects the first readable discrete candidate for %s on %s', (hex, surface) => {
-    const source = hexToRgb(hex);
-    const [h, s, v] = rgbToHsv(...source);
-    const darken = contrast('#000000', surface) > contrast('#FFFFFF', surface);
-
-    let expected = contrast(hex, surface) >= 4.5 ? hex : undefined;
-    for (let saturation = s; saturation >= 0 && expected === undefined; saturation -= 0.1) {
-      for (let step = 1; step <= 100; step += 1) {
-        const value = darken ? v * (1 - step / 100) : v + (1 - v) * (step / 100);
-        const candidate = rgbToHex(...hsvToRgb(h, saturation, value));
-        if (contrast(candidate, surface) >= 4.5) {
-          expected = candidate;
-          break;
-        }
-      }
-    }
-
+    ['#C239B3', '#FFFFFF', '#C239B3'],
+    ['#C239B3', '#373737', '#F962E8'],
+    ['#FFD740', '#FFFFFF', '#8A7423'],
+    ['#0000FF', '#373737', '#9999FF'],
+    ['#0000FF', '#787878', '#000036'],
+    ['#00E5FF', '#FFFFFF', '#008391'],
+    ['#00E5FF', '#373737', '#00E5FF'],
+    ['#00306E', '#FFFFFF', '#00306E'],
+    ['#4CC2FF', '#2C2C2C', '#4CC2FF'],
+    ['#10B981', '#808080', '#021C13'],
+    ['#F43F5E', '#949494', '#551621'],
+    ['#FBBF24', '#6E6E6E', '#FCF1D4'],
+    ['#010203', '#FFFFFF', '#010203'],
+    ['#FEFDFC', '#000000', '#FEFDFC'],
+  ])('preserves the frozen readable tone for %s on %s', (hex, surface, expected) => {
     expect(readableTone(hex, surface)).toBe(expected);
   });
 
@@ -231,7 +236,9 @@ describe('blendHex', () => {
   it('preserves the byte-rounded alpha compositing boundary', () => {
     expect(blendHex('#010203', 0.5, '#040506')).toBe('#030405');
     expect(blendHex('#ABCDEF', 0.333, '#123456')).toBe('#456789');
+    expect(blendHex('#4CC2FF', 0.21 - Number.EPSILON, '#2C2C2C')).toBe('#334B58');
     expect(blendHex('#4CC2FF', 0.21, '#2C2C2C')).toBe('#334C58');
+    expect(blendHex('#4CC2FF', 0.21 + Number.EPSILON, '#2C2C2C')).toBe('#334C58');
   });
 
   it('rejects an unparseable value on either side', () => {
