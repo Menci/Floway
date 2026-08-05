@@ -235,6 +235,34 @@ test('enumerateRealModelCandidates rejects a model id disabled on that upstream 
   assertEquals(disabled.candidates.length, 0);
 });
 
+test('a recorded refresh failure is irrelevant when the prefix policy cannot address the model id', async () => {
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_prefixed_failure',
+    name: 'Prefixed failure',
+    modelPrefix: { prefix: 'tenant/', addressable: ['prefixed'], listed: ['prefixed'] },
+    config: { baseUrl: 'https://prefixed-failure.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+  }));
+
+  await withMockedFetch(
+    request => {
+      if (new URL(request.url).hostname === 'prefixed-failure.example.com') return jsonResponse({ error: 'down' }, 502);
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const resolved = await enumerateModelCandidates({
+        upstreamIds: null,
+        model: 'unprefixed-model',
+        kind: 'chat',
+        scheduler: testScheduler,
+        runtimeLocation: 'TEST',
+      });
+      expect(resolved.failedUpstreams).toEqual([]);
+    },
+  );
+});
+
 // A persisted refresh error must not hide healthy siblings. The broken
 // upstream's display name flows back via `failedUpstreams` while its empty
 // or last-known-good snapshot stays independent of the current request.

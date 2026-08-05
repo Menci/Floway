@@ -41,7 +41,7 @@ const enumerateOneUpstreamCandidates = async (
       else if (form === 'prefixed' && modelId.startsWith(cfg.prefix)) lookupIds.push(modelId.slice(cfg.prefix.length));
     }
   }
-  if (lookupIds.length === 0) return { candidates: [], sawAnyId: false, modelsError: provider.modelsCache?.lastError != null };
+  if (lookupIds.length === 0) return { candidates: [], sawAnyId: false, modelsError: false };
 
   const providedModels = await fetchUpstreamModelsCached(provider, { scheduler, fetcher });
   const disabled = new Set(provider.disabledPublicModelIds);
