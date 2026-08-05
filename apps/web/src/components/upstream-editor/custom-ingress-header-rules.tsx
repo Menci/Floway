@@ -111,7 +111,7 @@ function IngressHeaderRuleRow({
           placeholder={placeholder}
           selectedOptions={field.value === null ? [PASSTHROUGH_OPTION] : field.value === '' ? [EMPTY_OPTION] : []}
           spellCheck={false}
-          value={custom ? field.value : ''}
+          value={field.value ?? ''}
         >
           <Option value={PASSTHROUGH_OPTION}>{t('dashboard.upstreamEditor.headers.passthrough')}</Option>
           <Option value={EMPTY_OPTION}>{t('dashboard.upstreamEditor.headers.empty')}</Option>
