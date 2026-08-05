@@ -187,7 +187,7 @@ test('fetchOllamaCatalog cancels discarded and oversized /api/show bodies withou
 });
 
 test('fetchOllamaCatalog rejects when every model detail lookup fails', async () => {
-  const fetcher: Fetcher = (url) => new URL(url).pathname === '/api/tags'
+  const fetcher: Fetcher = url => new URL(url).pathname === '/api/tags'
     ? Promise.resolve(jsonResponse({ models: [{ name: 'first' }, { name: 'second' }] }))
     : Promise.resolve(new Response(null, { status: 500 }));
   await expect(fetchOllamaCatalog(config, fetcher)).rejects.toMatchObject({

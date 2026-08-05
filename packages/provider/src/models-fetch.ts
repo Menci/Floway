@@ -220,7 +220,7 @@ export const httpResponseToResponse = (httpResponse: ProviderModelsUnavailableEr
 // shape" — error envelope identical across providers (network / JSON-parse
 // / shape-invalid ⇒ ProviderModelsUnavailableError(null, cause); non-2xx
 // ⇒ status+headers+body).
-export const fetchUpstreamModels = async <T>(
+export const fetchUpstreamModels = <T>(
   doFetch: (signal: AbortSignal) => Promise<Response>,
   parse: (json: unknown) => T | null,
   options: ProviderModelsTaskOptions & { idleTimeoutMs?: number; maxErrorResponseBytes?: number; maxResponseBytes?: number; responseByteBudget?: ResponseByteBudget } = {},

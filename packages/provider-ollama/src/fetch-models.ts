@@ -118,7 +118,7 @@ const parseShowResponse = (id: string, modifiedAt: number | undefined, value: un
   return raw;
 };
 
-const fetchShowForTag = async (
+const fetchShowForTag = (
   config: OllamaUpstreamConfig,
   fetcher: Fetcher,
   tag: TagEntry,
