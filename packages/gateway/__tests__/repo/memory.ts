@@ -1189,7 +1189,7 @@ class MemoryProxyBackoffRepo implements ProxyBackoffRepo {
     const k = this.key(proxyId, upstreamId);
     const now = Math.floor(Date.now() / 1000);
     const existing = this.rows.get(k);
-    if (!existing || existing.proxyUrl !== proxyUrl) {
+    if (existing?.proxyUrl !== proxyUrl) {
       this.rows.set(k, {
         proxyId,
         upstreamId,
@@ -1455,9 +1455,8 @@ export class InMemoryRepo implements Repo {
     this.performance = new MemoryPerformanceRepo();
     this.webSearchConfig = new MemoryWebSearchConfigRepo();
     this.upstreams = new MemoryUpstreamRepo();
-    let proxies!: ProxyRepo;
-    const proxyBackoffs = new MemoryProxyBackoffRepo(async id => await proxies.getById(id));
-    proxies = new MemoryProxyRepo(this.upstreams, async id => await proxyBackoffs.resetForProxy(id));
+    const proxyBackoffs = new MemoryProxyBackoffRepo(async id => await this.proxies.getById(id));
+    const proxies = new MemoryProxyRepo(this.upstreams, async id => await proxyBackoffs.resetForProxy(id));
     this.proxies = proxies;
     this.proxyBackoffs = proxyBackoffs;
     this.modelAliases = new MemoryModelAliasesRepo();

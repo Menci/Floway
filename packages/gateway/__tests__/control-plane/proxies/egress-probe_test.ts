@@ -1,8 +1,8 @@
 import { expect, test, vi } from 'vitest';
 
 import { ANCHORS, isIpV4, isIpV6, probeProxyEgress, type AnchorName } from '../../../src/control-plane/proxies/egress-probe.ts';
-import { assertEquals } from '@floway-dev/test-utils';
 import { ProxyDialError, type ProxyConfig, type SocketDial } from '@floway-dev/proxy';
+import { assertEquals } from '@floway-dev/test-utils';
 
 const proxyConfig: ProxyConfig = {
   kind: 'http',
