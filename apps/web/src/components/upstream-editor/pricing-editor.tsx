@@ -149,6 +149,7 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
     switch (issue.code) {
     case 'empty-catalog': return t(`${key}emptyCatalog`);
     case 'empty-rates': return t(`${key}emptyRates`);
+    case 'unknown-rate-metric': return t(`${key}unknownRateMetric`, { metric: issue.metric });
     case 'invalid-rate': return t(`${key}invalidRate`, { metric: metricName(issue.metric) });
     case 'invalid-selector': return t(`${key}invalidSelector`);
     case 'base-count': return t(`${key}baseCount`);

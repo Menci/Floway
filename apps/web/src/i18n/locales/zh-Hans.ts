@@ -720,6 +720,7 @@ const zhHansCN = {
           pricingIssue: {
             emptyCatalog: '请先添加基础价格。',
             emptyRates: '请为这条规则至少填写一项价格。',
+            unknownRateMetric: '请删除未知的 {{metric}} 价格类型。',
             invalidRate: '{{metric}} 必须大于或等于 0。',
             invalidSelector: '请补全或删除这条规则的适用条件。',
             baseCount: '只能有一条基础价格；请为每条条件价格填写适用条件。',

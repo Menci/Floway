@@ -133,3 +133,24 @@ test('reassembleResponsesEvents rejects malformed and contradictory terminal eve
     'cannot carry Responses status "failed"',
   );
 });
+
+test('reassembleResponsesEvents accepts a completed compaction resource with no status field', async () => {
+  const compaction = {
+    id: 'cmp_1',
+    object: 'response.compaction',
+    output: [],
+    created_at: 1,
+    usage: {
+      input_tokens: 1,
+      output_tokens: 1,
+      total_tokens: 2,
+      input_tokens_details: { cached_tokens: 0 },
+      output_tokens_details: { reasoning_tokens: 0 },
+    },
+  };
+  const result = await reassembleResponsesEvents(makeEvents([{
+    data: { type: 'response.completed', response: compaction },
+  }]));
+
+  assertEquals(result, compaction);
+});

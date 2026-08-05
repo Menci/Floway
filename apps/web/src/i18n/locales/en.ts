@@ -760,6 +760,7 @@ const en = {
           pricingIssue: {
             emptyCatalog: 'Add a Base price to continue.',
             emptyRates: 'Enter at least one price for this rule.',
+            unknownRateMetric: 'Remove the unknown {{metric}} price type.',
             invalidRate: '{{metric}} must be zero or greater.',
             invalidSelector: "Complete or remove this rule's conditions.",
             baseCount: 'Keep exactly one Base price. Add a condition to every override.',

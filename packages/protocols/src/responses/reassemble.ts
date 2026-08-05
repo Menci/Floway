@@ -21,8 +21,12 @@ export async function reassembleResponsesEvents(events: AsyncIterable<ResponsesR
       const response = rawEvent.response;
       if (typeof response !== 'object' || response === null || Array.isArray(response)) throw new TypeError(`${type} must carry a response object`);
       const expectedStatus = type === 'response.completed' ? 'completed' : type === 'response.incomplete' ? 'incomplete' : 'failed';
-      if ((response as { status?: unknown }).status !== expectedStatus) {
-        throw new TypeError(`${type} cannot carry Responses status ${JSON.stringify((response as { status?: unknown }).status)}`);
+      const status = (response as { status?: unknown }).status;
+      const completedCompaction = type === 'response.completed'
+        && status === undefined
+        && (response as { object?: unknown }).object === 'response.compaction';
+      if (status !== expectedStatus && !completedCompaction) {
+        throw new TypeError(`${type} cannot carry Responses status ${JSON.stringify(status)}`);
       }
       return response as ResponsesResult;
     }
