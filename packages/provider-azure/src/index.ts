@@ -4,7 +4,6 @@ import type { ProviderModule } from '@floway-dev/provider';
 
 export const azureProviderModule: ProviderModule = {
   create: createAzureProvider,
-  inboundHeaderAllowlist: [],
   defaultFlags: AZURE_DEFAULT_FLAGS,
 };
 export { assertAzureUpstreamRecord, type AzureUpstreamConfig } from './config.ts';
