@@ -173,7 +173,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
 
         <Panel className="min-w-0">
           <AgentSetupCard
-            initialApiKeyId={loaderData.selectedKeyId || null}
+            initialApiKeyId={loaderData.selectedKeyId ?? null}
             initialError={loaderData.setupError}
             initialLease={loaderData.setupLease}
             models={agentSetupModels}
