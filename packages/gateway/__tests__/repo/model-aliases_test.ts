@@ -234,8 +234,8 @@ test('[sql] preserves passthrough alias metadata fields owned by a future schema
     'chat',
     'first-available',
     1,
-    '[{"target_model_id":"model-a","rules":{"verbosity":"high","futureRule":true},"futureTarget":"kept"}]',
-    '{"limits":{"max_output_tokens":1024,"futureLimit":7},"futureMetadata":{"enabled":true}}',
+    '[{"target_model_id":"model-a","rules":{"verbosity":"high","futureRule":{"__proto__":{"marker":"rule"}}},"futureTarget":"kept"}]',
+    '{"limits":{"max_output_tokens":1024,"futureLimit":7},"futureMetadata":{"__proto__":{"marker":"metadata"}}}',
     1,
     '2026-07-21T00:00:00.000Z',
     '2026-07-21T00:00:00.000Z',
@@ -244,13 +244,19 @@ test('[sql] preserves passthrough alias metadata fields owned by a future schema
   const row = await new SqlRepo(db).modelAliases.getById('alias_passthrough');
   assertEquals(row?.targets, [{
     target_model_id: 'model-a',
-    rules: { verbosity: 'high', futureRule: true },
+    rules: { verbosity: 'high', futureRule: JSON.parse('{"__proto__":{"marker":"rule"}}') },
     futureTarget: 'kept',
   }]);
   assertEquals(row?.announcedMetadata, {
     limits: { max_output_tokens: 1024, futureLimit: 7 },
-    futureMetadata: { enabled: true },
+    futureMetadata: JSON.parse('{"__proto__":{"marker":"metadata"}}'),
   });
+  const futureRule = row === null ? null : Reflect.get(row.targets[0].rules, 'futureRule');
+  const futureMetadata = row?.announcedMetadata === null || row?.announcedMetadata === undefined
+    ? null
+    : Reflect.get(row.announcedMetadata, 'futureMetadata');
+  assertEquals(futureRule !== null && typeof futureRule === 'object' && Object.hasOwn(futureRule, '__proto__'), true);
+  assertEquals(futureMetadata !== null && typeof futureMetadata === 'object' && Object.hasOwn(futureMetadata, '__proto__'), true);
 });
 
 const migrationFilenames = migrationSqlByFilename.map(([filename]) => filename);

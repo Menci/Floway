@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { applyMigrations } from '../src/migrate.ts';
 import { createNodeSqliteDatabase } from '../src/node-sqlite-database.ts';
-import { SqlRepo } from '@floway-dev/gateway';
+import { MODEL_CATALOG_REVISION, SqlRepo } from '@floway-dev/gateway';
 import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
 // The repo layer's own suite runs against sql.js, which — like D1 — coerces a
@@ -95,7 +95,7 @@ test('repository JSON codecs round-trip upstream, alias, and Responses state thr
     hue: 210,
   });
   await repo.upstreams.saveModelsCache('up_node', {
-    revision: 9,
+    revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_786_000_000_000,
     models: [stubProviderModel({ id: 'node-model', enabledFlags: new Set(['vendor-kimi'] as const) })],
   });

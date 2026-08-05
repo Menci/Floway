@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { clearInFlightForTesting, fetchUpstreamModelsCached, MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
 import { initRepo } from '../../../src/repo/index.ts';
+import { SqlRepo } from '../../../src/repo/sql.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
+import { createSqliteTestDb } from '../../repo/test-sqlite.ts';
 import { directFetcher, type Provider, type ProviderModel, type UpstreamModelsCache } from '@floway-dev/provider';
 import { stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -245,5 +247,46 @@ describe('fetchUpstreamModelsCached', () => {
     expect(result.map(model => model.id)).toEqual(['current-catalog']);
     expect(fetchFn).toHaveBeenCalledTimes(1);
     expect((await storedCache(repo))?.revision).toBe(MODEL_CATALOG_REVISION);
+  });
+
+  test('an old-shape stale SQL cache hydrates cold and is replaced by a current fetch', async () => {
+    const db = await createSqliteTestDb();
+    const repo = new SqlRepo(db);
+    initRepo(repo);
+    await repo.upstreams.save({
+      id: UPSTREAM_ID,
+      kind: 'custom',
+      name: 'Upstream A',
+      enabled: true,
+      sortOrder: 0,
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:00:00.000Z',
+      config: {},
+      state: null,
+      modelsCache: null,
+      flagOverrides: {},
+      disabledPublicModelIds: [],
+      proxyFallbackList: [],
+      modelPrefix: null,
+      hue: 210,
+    });
+    await db.prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ?').bind(JSON.stringify({
+      revision: MODEL_CATALOG_REVISION - 1,
+      fetchedAt: Date.now() - 1_000,
+      models: [{ id: 'old-catalog', enabledFlags: [] }],
+      lastError: null,
+    }), UPSTREAM_ID).run();
+
+    const hydrated = await repo.upstreams.getById(UPSTREAM_ID);
+    expect(hydrated?.modelsCache).toBeNull();
+    const fetchFn = vi.fn(async () => [aModel('current-catalog')]);
+    const result = await fetchUpstreamModelsCached(
+      stubInstance(fetchFn, hydrated?.modelsCache ?? null),
+      { scheduler: () => {}, fetcher: directFetcher },
+    );
+
+    expect(result.map(model => model.id)).toEqual(['current-catalog']);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect((await repo.upstreams.getById(UPSTREAM_ID))?.modelsCache?.revision).toBe(MODEL_CATALOG_REVISION);
   });
 });

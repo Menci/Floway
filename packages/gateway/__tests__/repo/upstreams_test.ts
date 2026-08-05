@@ -890,12 +890,13 @@ test('migration 0072 folds every cached catalog onto its upstream row', async ()
                 json_object('baseUrl', 'https://b.example', 'apiKey', 'k', 'authStyle', 'bearer'), '{}', '[]', '[]'),
               ('up_cold', 'custom', 'Cold', 1, 2, '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z',
                 json_object('baseUrl', 'https://c.example', 'apiKey', 'k', 'authStyle', 'bearer'), '{}', '[]', '[]')`);
-    // enabledFlags arrives as an array because that is what modelsReplacer
-    // wrote: the reviver has to turn it back into a Set on the way out.
+    // This is a genuine pre-revision-5 shape: revision 4 did not carry the
+    // current limits/kind/endpoints projection. Hydration must treat it as a
+    // cold cache without applying today's ProviderModel schema.
     db.run(`INSERT INTO models_cache (upstream_id, revision, fetched_at, models_json, last_error_json)
             VALUES
-              ('up_clean', 4, 1785643896263, '[{"id":"cached-model","limits":{},"kind":"chat","endpoints":{"responses":{}},"enabledFlags":["vendor-deepseek"]}]', NULL),
-              ('up_failed', 4, 1785643797798, '[{"id":"stale-model","limits":{},"kind":"chat","endpoints":{"responses":{}},"enabledFlags":[]}]', '{"message":"boom","at":1785643800000}')`);
+              ('up_clean', 4, 1785643896263, '[{"id":"cached-model","enabledFlags":["vendor-deepseek"]}]', NULL),
+              ('up_failed', 4, 1785643797798, '[{"id":"stale-model","enabledFlags":[]}]', '{"message":"boom","at":1785643800000}')`);
 
     applySqlJsFile(db, '0072_fold_models_cache.sql');
 
@@ -909,18 +910,8 @@ test('migration 0072 folds every cached catalog onto its upstream row', async ()
     }
 
     const repo = new SqlRepo(wrapSqlJsDatabase(db)).upstreams;
-    const clean = (await repo.getById('up_clean'))?.modelsCache;
-    assertEquals(clean?.revision, 4);
-    assertEquals(clean?.fetchedAt, 1785643896263);
-    assertEquals(clean?.lastError, null);
-    assertEquals(clean?.models.map(model => model.id), ['cached-model']);
-    assert(clean?.models[0].enabledFlags instanceof Set);
-    assertEquals([...clean.models[0].enabledFlags], ['vendor-deepseek']);
-
-    const failed = (await repo.getById('up_failed'))?.modelsCache;
-    assertEquals(failed?.lastError, { message: 'boom', at: 1785643800000 });
-    assertEquals(failed?.models.map(model => model.id), ['stale-model']);
-
+    assertEquals((await repo.getById('up_clean'))?.modelsCache, null);
+    assertEquals((await repo.getById('up_failed'))?.modelsCache, null);
     assertEquals((await repo.getById('up_cold'))?.modelsCache, null);
   } finally {
     db.close();
