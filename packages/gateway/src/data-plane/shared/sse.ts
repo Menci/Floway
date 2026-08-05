@@ -11,7 +11,7 @@ interface SseKeepAliveOptions {
 
 interface SseStreamOptions {
   keepAlive?: SseKeepAliveOptions;
-  downstreamAbortController?: AbortController;
+  clientDisconnectController?: AbortController;
 }
 
 type ResolvedSseKeepAliveOptions = Required<SseKeepAliveOptions>;
@@ -59,6 +59,12 @@ const streamAbortPromise = (stream: SSEStreamingApi): Promise<void> => {
   });
 };
 
+const signalAbortPromise = (signal: AbortSignal | undefined): Promise<void> => {
+  if (signal === undefined) return new Promise(() => {});
+  if (signal.aborted) return Promise.resolve();
+  return new Promise(resolve => signal.addEventListener('abort', () => resolve(), { once: true }));
+};
+
 const pendingFrameResult = (pendingNext: Promise<IteratorResult<SseFrame>>): Promise<NextFrameResult> =>
   pendingNext.then(
     (result): NextFrameResult => ({ type: 'frame', result }),
@@ -91,39 +97,39 @@ const drainSSEFrames = async (
   stream: SSEStreamingApi,
   events: AsyncIterable<SseFrame>,
   keepAlive: ResolvedSseKeepAliveOptions | undefined,
-  downstreamAbortController: AbortController | undefined,
+  clientDisconnectController: AbortController | undefined,
 ): Promise<StreamCompletion> => {
   const iterator = events[Symbol.asyncIterator]();
-  const abortDownstream = () => {
-    if (!downstreamAbortController?.signal.aborted) {
-      downstreamAbortController?.abort();
+  let clientDisconnected = false;
+  const recordClientDisconnect = () => {
+    clientDisconnected = true;
+    if (!clientDisconnectController?.signal.aborted) {
+      clientDisconnectController?.abort();
     }
   };
-  const abortResult = streamAbortPromise(stream).then((): NextFrameResult => {
-    abortDownstream();
+  const abortResult = Promise.race([
+    streamAbortPromise(stream),
+    signalAbortPromise(clientDisconnectController?.signal),
+  ]).then((): NextFrameResult => {
+    recordClientDisconnect();
     return { type: 'abort' };
   });
   let pendingNext = pendingFrameResult(iterator.next());
   let completed = false;
-  let stoppedByDownstream = false;
-
-  const stopForDownstream = () => {
-    stoppedByDownstream = true;
-    abortDownstream();
-  };
 
   try {
     while (true) {
-      if (stream.aborted || stream.closed) {
-        stopForDownstream();
-        return 'cancel';
+      if (!clientDisconnected && (stream.aborted || stream.closed)) {
+        recordClientDisconnect();
       }
 
-      const next = await nextFrameOrKeepAlive(pendingNext, abortResult, keepAlive);
+      const next = clientDisconnected
+        ? await pendingNext
+        : await nextFrameOrKeepAlive(pendingNext, abortResult, keepAlive);
 
       if (next.type === 'abort') {
-        stopForDownstream();
-        return 'cancel';
+        recordClientDisconnect();
+        continue;
       }
       if (next.type === 'keep-alive') {
         if (!keepAlive) continue;
@@ -131,34 +137,30 @@ const drainSSEFrames = async (
         continue;
       }
       if (next.type === 'next-error') {
-        if (stream.aborted || stream.closed) {
-          stopForDownstream();
-          return 'cancel';
-        }
         throw next.error;
       }
 
       if (next.result.done) {
         completed = true;
-        return 'eof';
+        return clientDisconnected ? 'cancel' : 'eof';
       }
 
-      await writeSSEFrame(stream, next.result.value);
+      if (!clientDisconnected) {
+        try {
+          await writeSSEFrame(stream, next.result.value);
+        } catch (error) {
+          if (stream.aborted || stream.closed) recordClientDisconnect();
+          else throw error;
+        }
+      }
       pendingNext = pendingFrameResult(iterator.next());
     }
   } finally {
-    if (!completed) {
-      const stopped = iterator.return?.();
-      // Downstream already cancelled; cleanup errors from the upstream
-      // iterator have nowhere to surface to. Awaiting the rejection would
-      // leak it as an unhandled rejection.
-      if (stoppedByDownstream) stopped?.catch(() => {});
-      else await stopped;
-    }
+    if (!completed) await iterator.return?.();
   }
 };
 
 export const writeSSEFrames = async (stream: SSEStreamingApi, events: AsyncIterable<SseFrame>, options: SseStreamOptions = {}): Promise<StreamCompletion> => {
   const keepAlive = resolveKeepAliveOptions(options.keepAlive);
-  return await drainSSEFrames(stream, events, keepAlive, options.downstreamAbortController);
+  return await drainSSEFrames(stream, events, keepAlive, options.clientDisconnectController);
 };

@@ -736,7 +736,7 @@ export const webSearchServerTool: ServerToolRegistration = async (invocation, ga
     apiKeyId: gatewayCtx.apiKeyId,
     includeSearchResults: includeArray.includes('web_search_call.results'),
     includeSearchActionSources: includeArray.includes('web_search_call.action.sources'),
-    ...(gatewayCtx.abortSignal !== undefined ? { signal: gatewayCtx.abortSignal } : {}),
+    clientDisconnectSignal: gatewayCtx.clientDisconnectSignal,
   };
   if (webSearchConfig.passthroughOpenAiSearch.enabled) {
     const dispatcher = resolveAlphaSearchDispatcher({
@@ -753,7 +753,7 @@ export const webSearchServerTool: ServerToolRegistration = async (invocation, ga
       settings,
       input: invocation.payload.input,
       action,
-      signal: gatewayCtx.abortSignal,
+      signal: gatewayCtx.clientDisconnectSignal,
     });
   }
 

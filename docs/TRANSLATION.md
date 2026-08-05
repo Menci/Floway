@@ -101,7 +101,9 @@ Messages already reports disjoint input metrics. Its flat cache-creation
 total and optional 5-minute / 1-hour detail are normalized into two cache-write
 buckets. Streaming `message_start` and `message_delta` usage is accumulated as
 one snapshot, including late input counts and atomic replacement of the
-`speed` / `service_tier` pair.
+`speed` / `service_tier` pair. Client disconnect only stops downstream writes;
+the source stream continues through its terminal event so late usage still
+reaches this snapshot and `EventResultMetadata`.
 
 Some billing facts have no native field in every OpenAI/Gemini usage shape —
 the 1-hour cache-write subset, and on Gemini a cache-write count or served

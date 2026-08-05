@@ -4,6 +4,7 @@ import { appendFailedUpstreams } from '../../../../shared/failed-upstreams.ts';
 import { stampUpstreamCallStart, type AttemptState } from '../../../../shared/gateway-ctx.ts';
 import { recordPerformance, type PerformanceTelemetryContext } from '../../../../shared/telemetry/performance.ts';
 import { recordTokenUsage, tokenUsageFromImagesBody } from '../../../../shared/telemetry/usage.ts';
+import { retainUpstreamFetcher } from '../../../../shared/upstream-call-options.ts';
 import { createExternalImageFetcher, type ExternalImageFetchResult } from '../../../shared/external-image-loader.ts';
 import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
 import { dimensionsFromBytes, getImageProcessor, type BackgroundScheduler } from '@floway-dev/platform';
@@ -900,7 +901,7 @@ interface ShimState {
   upstreamIds: readonly string[] | null;
   backgroundScheduler: BackgroundScheduler;
   runtimeLocation: string;
-  downstreamAbortSignal: AbortSignal | undefined;
+  clientDisconnectSignal: AbortSignal;
   imageDispatchCount: number;
 }
 
@@ -1082,7 +1083,7 @@ const issueImageCall = async (
 ): Promise<{ response: Response; modelKey: string }> => {
   for (let retry = 0; ; retry++) {
     const opts = {
-      fetcher,
+      fetcher: retainUpstreamFetcher(fetcher, state.clientDisconnectSignal, state.backgroundScheduler),
       waitUntil: state.backgroundScheduler,
       headers: new Headers(),
       // Stamp this image sub-call's OWN perf slot — never ctx.attempt —
@@ -1090,11 +1091,11 @@ const issueImageCall = async (
       // Perf recording lives at the sub-call's terminal boundary in
       // streamImageGeneration; the retry loop overwrites this slot each
       // retry so it reflects the dispatch that actually returned.
-      wrapUpstreamCall: stampUpstreamCallStart(attempt),
+      wrapUpstreamCall: stampUpstreamCallStart(attempt, state.clientDisconnectSignal),
     };
     const { response, modelKey } = await (editRequest === null
-      ? provider.instance.callImagesGenerations(model, buildGenerationsBody(prompt, config, stream), state.downstreamAbortSignal, opts)
-      : provider.instance.callImagesEdits(model, editRequest, state.downstreamAbortSignal, opts));
+      ? provider.instance.callImagesGenerations(model, buildGenerationsBody(prompt, config, stream), undefined, opts)
+      : provider.instance.callImagesEdits(model, editRequest, undefined, opts));
     if (response.status !== 429 || retry >= MAX_RATE_LIMIT_RETRIES) return { response, modelKey };
 
     // 25% jitter desynchronizes parallel callers so a burst of orchestrator
@@ -1103,7 +1104,7 @@ const issueImageCall = async (
     const backoffMs = base + Math.random() * base * 0.25;
     const delayMs = Math.min(parseRetryAfterMs(response.headers) ?? backoffMs, RETRY_CAP_MS);
     await response.text().catch(() => undefined);
-    await sleep(delayMs, state.downstreamAbortSignal);
+    await sleep(delayMs, state.clientDisconnectSignal);
   }
 };
 
@@ -1295,7 +1296,7 @@ const streamImageGeneration = (
   let finalB64: string | undefined;
   let finalEcho: EchoFields = {};
   let usage: unknown;
-  for await (const frame of parseSSEStream(response.body, { signal: state.downstreamAbortSignal })) {
+  for await (const frame of parseSSEStream(response.body)) {
     const signal = parseImageStreamEvent(frame.data);
     if (signal === null) continue;
     if (signal.kind === 'partial') {
@@ -1428,7 +1429,7 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
     };
   }
 
-  const materializer = createRemoteImageMaterializer(gatewayCtx.abortSignal);
+  const materializer = createRemoteImageMaterializer(gatewayCtx.clientDisconnectSignal);
   const remoteInputs = initialInspection.sources.filter(isRemoteImageSource);
   const materializedInputs = await materializer.inputs(remoteInputs);
   if (!materializedInputs.ok) {
@@ -1479,7 +1480,7 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
     upstreamIds: gatewayCtx.upstreamIds,
     backgroundScheduler: gatewayCtx.backgroundScheduler,
     runtimeLocation: gatewayCtx.runtimeLocation,
-    downstreamAbortSignal: gatewayCtx.abortSignal,
+    clientDisconnectSignal: gatewayCtx.clientDisconnectSignal,
     imageDispatchCount: 0,
   };
 

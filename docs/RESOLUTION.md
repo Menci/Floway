@@ -313,7 +313,9 @@ models.
 
 Each iteration clears `upstreamCallStartedAt` and `firstOutputTokenAt`.
 Providers receive `wrapUpstreamCall`; invoking it stamps
-`upstreamCallStartedAt` synchronously immediately before dispatch, so the
+`upstreamCallStartedAt` synchronously immediately before dispatch. The same
+boundary rejects a client connection that has already closed. Once dispatch
+begins, client lifecycle no longer controls the upstream request, so the
 interval includes the gateway's own egress work — the proxy-backoff lookup,
 dial, TLS, and CONNECT — and excludes gateway pre-dispatch work: parsing,
 model resolution, affinity, translation, and interceptor entry. Because the
@@ -327,6 +329,21 @@ Successful passthrough operations record neutral performance rather than
 inventing a token TTFT; their failures remain zero-output errors. Attribution
 belongs to the terminal candidate because the iterator replaces the attempt
 context before every run.
+
+### Client disconnects
+
+Each outbound data-plane fetch checks the request's client-disconnect signal
+at dispatch. A failed check prevents that fetch; a fetch that passed the check
+is retained independently of the client connection. Its response body is read
+to completion even when a protocol parser reaches its terminal event first.
+
+Streaming HTTP and WebSocket transports enter discard mode after the client
+disconnects: they stop writes and keep-alives, continue consuming the active
+upstream event iterator, and settle dumps, performance, and terminal usage from
+the complete server-side result. Any later retry, server-tool call, redirect,
+or ReAct turn performs a fresh dispatch check and therefore does not start
+after the disconnect. Background schedulers own retained response and active
+WebSocket-turn lifetimes so runtime eviction cannot truncate this drain.
 
 ## Pricing, request counts, and metric rows
 

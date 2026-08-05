@@ -104,14 +104,14 @@ test('external image fetcher preserves transport failure detail', async () => {
   assertEquals(result.error, expected);
 });
 
-test('external image loader propagates downstream cancellation', async () => {
+test('external image loader rejects a client disconnect before dispatch', async () => {
   const controller = new AbortController();
-  controller.abort(new Error('downstream cancelled'));
+  controller.abort(new Error('client disconnected'));
   initExternalResourceFetcher(() => Promise.reject(new Error('should not fetch')));
 
   await assertRejects(
     () => createExternalImageLoader(controller.signal)('https://example.com/image.png'),
     Error,
-    'downstream cancelled',
+    'client disconnected',
   );
 });

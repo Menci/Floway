@@ -76,17 +76,14 @@ const readBoundedBody = async (response: Response): Promise<BoundedBodyResult> =
   return { type: 'success', data };
 };
 
-const fetchExternalImage = async (initialUrl: URL, downstreamSignal?: AbortSignal): Promise<ExternalImageFetchResult> => {
+const fetchExternalImage = async (initialUrl: URL, clientDisconnectSignal?: AbortSignal): Promise<ExternalImageFetchResult> => {
   const timeoutSignal = AbortSignal.timeout(FETCH_TIMEOUT_MS);
-  const signal = downstreamSignal === undefined
-    ? timeoutSignal
-    : AbortSignal.any([downstreamSignal, timeoutSignal]);
   let url = initialUrl;
 
   try {
     for (let redirectCount = 0; ; redirectCount++) {
-      downstreamSignal?.throwIfAborted();
-      const response = await getExternalResourceFetcher()(url, signal);
+      clientDisconnectSignal?.throwIfAborted();
+      const response = await getExternalResourceFetcher()(url, timeoutSignal);
       if (!REDIRECT_STATUSES.has(response.status)) {
         if (!response.ok) {
           await response.body?.cancel();
@@ -114,27 +111,26 @@ const fetchExternalImage = async (initialUrl: URL, downstreamSignal?: AbortSigna
       url = redirected;
     }
   } catch (error) {
-    downstreamSignal?.throwIfAborted();
     return timeoutSignal.aborted ? { type: 'timeout' } : { type: 'transport-error', error };
   }
 };
 
-export const createExternalImageFetcher = (downstreamSignal?: AbortSignal): ExternalImageFetcher => {
+export const createExternalImageFetcher = (clientDisconnectSignal?: AbortSignal): ExternalImageFetcher => {
   const requests = new Map<string, Promise<ExternalImageFetchResult>>();
   return value => {
-    downstreamSignal?.throwIfAborted();
+    clientDisconnectSignal?.throwIfAborted();
     const url = parseExternalUrl(value);
     if (url === null) return Promise.resolve({ type: 'invalid-url' });
     const cached = requests.get(url.href);
     if (cached !== undefined) return cached;
-    const request = fetchExternalImage(url, downstreamSignal);
+    const request = fetchExternalImage(url, clientDisconnectSignal);
     requests.set(url.href, request);
     return request;
   };
 };
 
-export const createExternalImageLoader = (downstreamSignal?: AbortSignal): RemoteImageLoader => {
-  const fetchImage = createExternalImageFetcher(downstreamSignal);
+export const createExternalImageLoader = (clientDisconnectSignal?: AbortSignal): RemoteImageLoader => {
+  const fetchImage = createExternalImageFetcher(clientDisconnectSignal);
   return async url => {
     const result = await fetchImage(url);
     return result.type === 'success' ? { mediaType: result.mediaType, data: result.data } : null;

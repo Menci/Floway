@@ -53,7 +53,16 @@ const createIdleSSEEvents = () => {
   return {
     events,
     hasPendingNext: () => pendingNext !== undefined,
-    rejectNext: (error: unknown) => pendingNext?.reject(error),
+    emit: (frame: SseFrame) => {
+      const pending = pendingNext;
+      pendingNext = undefined;
+      pending?.resolve({ done: false, value: frame });
+    },
+    close: () => {
+      const pending = pendingNext;
+      pendingNext = undefined;
+      pending?.resolve(closedIteratorResult());
+    },
     returnCalled: () => returnCalled,
   };
 };
@@ -67,20 +76,20 @@ const waitForIteratorStart = async (events: ReturnType<typeof createIdleSSEEvent
   throw new Error('SSE iterator did not start');
 };
 
-const waitForIteratorReturn = async (events: ReturnType<typeof createIdleSSEEvents>) => {
-  for (let i = 0; i < 10; i++) {
-    if (events.returnCalled()) return;
-    await Promise.resolve();
-  }
-
-  throw new Error('SSE iterator was not stopped');
-};
-
-const requestSSE = async (events: AsyncIterable<SseFrame>, options: NonNullable<Parameters<typeof writeSSEFrames>[2]>): Promise<Response> => {
+const requestSSE = async (
+  events: AsyncIterable<SseFrame>,
+  options: NonNullable<Parameters<typeof writeSSEFrames>[2]>,
+  completion?: Deferred<Awaited<ReturnType<typeof writeSSEFrames>>>,
+): Promise<Response> => {
   const app = new Hono();
   app.get('/', c =>
     streamSSE(c, async stream => {
-      await writeSSEFrames(stream, events, options);
+      try {
+        const result = await writeSSEFrames(stream, events, options);
+        completion?.resolve(result);
+      } catch (error) {
+        completion?.reject(error);
+      }
     }));
   return await app.request('/');
 };
@@ -165,46 +174,38 @@ test('writeSSEFrames does not emit keepalive before ready events', async () => {
   assertEquals(await response.text(), 'event: response.completed\ndata: {}\n\n');
 });
 
-test('writeSSEFrames stops idle iterator and timer when the response is canceled', async () => {
+test('writeSSEFrames stops writing but drains the iterator when the response is canceled', async () => {
   const time = new FakeTime();
   const idle = createIdleSSEEvents();
+  const completion = deferred<Awaited<ReturnType<typeof writeSSEFrames>>>();
 
   try {
     const response = await requestSSE(idle.events, {
       keepAlive: { intervalMs: 1_000, frame: sseCommentFrame('keepalive') },
-    });
+    }, completion);
     const reader = response.body!.getReader();
 
     await waitForIteratorStart(idle);
     await reader.cancel();
-    await waitForIteratorReturn(idle);
+    await waitForMicrotasks();
 
-    assertEquals(idle.returnCalled(), true);
+    assertEquals(idle.returnCalled(), false);
     await time.tickAsync(5_000);
+    idle.emit(sseFrame('{"usage":1}'));
+    await waitForIteratorStart(idle);
+    idle.close();
+    assertEquals(await completion.promise, 'cancel');
+    assertEquals(idle.returnCalled(), false);
   } finally {
     time.restore();
   }
 });
 
-test('writeSSEFrames handles pending iterator errors after the response is canceled', async () => {
-  const idle = createIdleSSEEvents();
-  const response = await requestSSE(idle.events, {
-    keepAlive: { intervalMs: 1_000, frame: sseCommentFrame('keepalive') },
-  });
-  const reader = response.body!.getReader();
-
-  await waitForIteratorStart(idle);
-  await reader.cancel();
-  idle.rejectNext(new Error('late upstream stream failure'));
-  await waitForIteratorReturn(idle);
-
-  assertEquals(idle.returnCalled(), true);
-});
-
-test('writeSSEFrames aborts a pending upstream SSE reader when the downstream response is canceled', async () => {
+test('writeSSEFrames does not cancel an upstream SSE reader when the downstream response is canceled', async () => {
   const upstreamCanceled = deferred<void>();
   let upstreamController!: ReadableStreamDefaultController<Uint8Array>;
-  const downstreamAbortController = new AbortController();
+  const clientDisconnectController = new AbortController();
+  const completion = deferred<Awaited<ReturnType<typeof writeSSEFrames>>>();
   const upstreamBody = new ReadableStream<Uint8Array>({
     start(controller) {
       upstreamController = controller;
@@ -214,13 +215,12 @@ test('writeSSEFrames aborts a pending upstream SSE reader when the downstream re
     },
   });
   const response = await requestSSE(
-    parseSSEStream(upstreamBody, {
-      signal: downstreamAbortController.signal,
-    }),
+    parseSSEStream(upstreamBody),
     {
       keepAlive: { intervalMs: 1_000, frame: sseCommentFrame('keepalive') },
-      downstreamAbortController,
+      clientDisconnectController,
     },
+    completion,
   );
   const reader = response.body!.getReader();
   const pendingRead = reader.read();
@@ -232,12 +232,16 @@ test('writeSSEFrames aborts a pending upstream SSE reader when the downstream re
 
     const cancelState = await cancelStateWithin(upstreamCanceled.promise, 20);
 
-    assertEquals(cancelState, 'canceled');
+    assertEquals(cancelState, 'pending');
+    assertEquals(clientDisconnectController.signal.aborted, true);
+    upstreamController.enqueue(new TextEncoder().encode('data: {"usage":1}\n\n'));
+    upstreamController.close();
+    assertEquals(await completion.promise, 'cancel');
   } finally {
     try {
       upstreamController.close();
     } catch {
-      // The stream is already canceled in the passing path.
+      // The stream was already closed by the test.
     }
     await pendingRead.catch(() => {});
     await cancelResponse?.catch(() => {});

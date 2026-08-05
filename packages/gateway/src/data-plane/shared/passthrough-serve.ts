@@ -208,7 +208,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       let terminalFrameSeen = false;
       try {
         const frames = (async function* () {
-          const sseFramesIn = parseSSEStream(upstreamBody, { signal: ctx.abortSignal });
+          const sseFramesIn = parseSSEStream(upstreamBody);
           for await (const parsed of parseTargetStreamFrames<unknown>(sseFramesIn, { protocol: sourceApi })) {
             const inputFrame: ProtocolFrame<unknown> = parsed.type === 'done' ? doneFrame() : eventFrame(parsed.data);
             // Dump pre-transform, so forensics see upstream truth even
@@ -222,7 +222,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         })();
         completion = await writeSSEFrames(stream, frames, {
           keepAlive: { frame: sseCommentFrame('keepalive') },
-          downstreamAbortController: ctx.downstreamAbortController,
+          clientDisconnectController: ctx.clientDisconnectController,
         });
       } catch (e) {
         streamError = e;
