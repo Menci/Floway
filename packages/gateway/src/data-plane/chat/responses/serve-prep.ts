@@ -1,8 +1,8 @@
 import { analyzeResponsesAffinity } from './affinity/ingress.ts';
 import { responsesTarget } from './attempt.ts';
-import { renderResponsesFailure, type ResponsesServeFailure } from './errors.ts';
+import { renderResponsesFailure, responsesInputErrorResult, type ResponsesServeFailure } from './errors.ts';
 import { hydrateResponsesPayload } from './items/hydrate.ts';
-import type { StatefulResponsesStore } from './items/store.ts';
+import { ResponsesInputItemIdCollisionError, type StatefulResponsesStore } from './items/store.ts';
 import { enumerateModelCandidates } from '../../providers/resolution.ts';
 import type { AffinityCandidateSelection } from '../shared/affinity/index.ts';
 import { selectAffinityCandidates } from '../shared/affinity/index.ts';
@@ -108,7 +108,19 @@ export const prepareResponsesServePlan = async (args: {
   // up the new user items in addition to the prior snapshot history.
   // Runs after the affinity walk so any `item_reference` in user-supplied
   // input has its target row loaded.
-  await store.stageInputItems(payload.input);
+  try {
+    await store.stageInputItems(payload.input);
+  } catch (error) {
+    if (!(error instanceof ResponsesInputItemIdCollisionError)) throw error;
+    return {
+      kind: 'failure',
+      result: responsesInputErrorResult({
+        message: error.message,
+        param: `input[${error.inputIndex}].id`,
+        code: 'responses_item_id_collision',
+      }),
+    };
+  }
 
   if (selection.candidates.length === 0) {
     return {

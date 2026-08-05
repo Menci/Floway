@@ -174,6 +174,25 @@ test('tool_use content_block_start → tool_calls init chunk', () => {
   assertEquals(tc![0].function!.arguments, '');
 });
 
+test('non-empty content block starts preserve initial text, thinking, and tool input', () => {
+  const translateStart = (contentBlock: Extract<MessagesStreamEvent, { type: 'content_block_start' }>['content_block']) => {
+    const state = createMessagesToChatCompletionsStreamState();
+    translateMessagesEventToChatCompletionsChunks(MSG_START, state);
+    return translateMessagesEventToChatCompletionsChunks({ type: 'content_block_start', index: 0, content_block: contentBlock }, state) as ChatCompletionsStreamEvent[];
+  };
+
+  assertEquals(translateStart({ type: 'text', text: 'hello' })[0].choices[0].delta, { content: 'hello' });
+  assertEquals(translateStart({ type: 'thinking', thinking: 'trace' })[0].choices[0].delta, { reasoning_text: 'trace' });
+  assertEquals(translateStart({ type: 'tool_use', id: 'call_1', name: 'lookup', input: { q: 'x' } })[0].choices[0].delta, {
+    tool_calls: [{
+      index: 0,
+      id: 'call_1',
+      type: 'function',
+      function: { name: 'lookup', arguments: '{"q":"x"}' },
+    }],
+  });
+});
+
 test('multiple tool_use blocks increment index', () => {
   const state = createMessagesToChatCompletionsStreamState();
   translateMessagesEventToChatCompletionsChunks(MSG_START, state);
@@ -473,6 +492,30 @@ test('message_delta without usage → no usage on chunk', () => {
     state,
   );
   assertEquals((result as ChatCompletionsStreamEvent[])[0].usage, undefined);
+});
+
+test('usage-only message_delta does not finish the Chat completion', () => {
+  const state = createMessagesToChatCompletionsStreamState();
+  translateMessagesEventToChatCompletionsChunks(MSG_START, state);
+
+  const usageOnly = translateMessagesEventToChatCompletionsChunks(
+    { type: 'message_delta', delta: {}, usage: { output_tokens: 3 } },
+    state,
+  ) as ChatCompletionsStreamEvent[];
+  const terminal = translateMessagesEventToChatCompletionsChunks(
+    { type: 'message_delta', delta: { stop_reason: 'end_turn' } },
+    state,
+  ) as ChatCompletionsStreamEvent[];
+
+  assertEquals(usageOnly, [{
+    id: 'msg_test',
+    object: 'chat.completion.chunk',
+    created: state.created,
+    model: 'claude-sonnet-4-20250514',
+    choices: [],
+    usage: { prompt_tokens: 10, completion_tokens: 3, total_tokens: 13 },
+  }]);
+  assertEquals(terminal[0].choices[0].finish_reason, 'stop');
 });
 
 test('message_delta usage includes cache_read_input_tokens from message_start', () => {

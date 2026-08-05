@@ -8,9 +8,9 @@ import { requireDashboardUser } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
 import { api, callApi, type GlobalError } from '../api/client';
 import { PerformanceChartSection } from '../components/performance/chart';
+import { loadPerformancePageData, type PerformancePageData } from '../components/performance/data';
 import {
   buildPerformanceQuery,
-  parsePerformanceUrlState,
   performanceLabels,
   serializePerformanceUrlState,
   type PerformanceFilters,
@@ -25,7 +25,7 @@ import {
 import { buildPerformanceChart, performanceBuckets } from '../components/performance/plot';
 import { PerformanceTable } from '../components/performance/table';
 import { TelemetryDimensionControls, type TelemetryDimension } from '../components/telemetry/dimension-controls';
-import { changeTelemetryFilter, changeTelemetryGroupBy, scopeTelemetryIdentity } from '../components/telemetry/filter-state';
+import { changeTelemetryFilter, changeTelemetryGroupBy } from '../components/telemetry/filter-state';
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
@@ -44,51 +44,11 @@ import { useLocale } from '../lib/use-locale';
 
 const { Button, Tab, TabList, Text, Tooltip } = fluentComponents;
 
-interface UpstreamName { id: string; name: string }
-
 const groupByValues: PerformanceGroupBy[] = ['model', 'upstream', 'operation', 'runtimeLocation', 'keyId', 'userId'];
 
-interface LoaderData {
-  currentUserId: string;
-  error: GlobalError | null;
-  loadedAt: number;
-  // `null` is a failed fetch, not a quiet gateway: an empty overview would
-  // render zeroes the page does not know to be true.
-  overview: PerformanceOverviewResponse | null;
-  state: PerformanceUrlState;
-  // Null on the same terms: without the names, a group labels itself with an
-  // upstream id the page would be presenting as a name.
-  upstreamNames: UpstreamName[] | null;
-  view: PerformanceView;
-}
-
-export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise<LoaderData> {
+export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise<PerformancePageData> {
   const user = await requireDashboardUser();
-  const state = parsePerformanceUrlState(new URL(request.url).searchParams);
-  const view: PerformanceView = user.isAdmin ? 'all-by-user' : 'self-by-key';
-  const scoped = scopeTelemetryIdentity(state.groupBy, state.filters, {
-    currentUserId: String(user.id),
-    fallbackGroup: 'model',
-    userDimensionAvailable: view === 'all-by-user',
-  });
-  const loadedAt = Date.now();
-  const query = buildPerformanceQuery(state.range, scoped.groupBy, scoped.filters, loadedAt);
-  // The page opens for every signed-in account, so the names come from the
-  // non-admin upstream picker; /api/upstreams answers 403 to an operator and
-  // would leave the whole page unavailable to them.
-  const [overview, upstreams] = await Promise.all([
-    callApi(() => api.api.performance.overview.$get({ query })),
-    callApi(() => api.api['upstream-options'].$get()),
-  ]);
-  return {
-    currentUserId: String(user.id),
-    error: overview.error ?? upstreams.error ?? null,
-    loadedAt,
-    overview: overview.data ?? null,
-    state: { ...state, ...scoped },
-    upstreamNames: upstreams.data?.map(({ id, name }) => ({ id, name })) ?? null,
-    view,
-  };
+  return loadPerformancePageData(request, user);
 }
 
 export const shouldRevalidate = revalidateOnPathnameChange;

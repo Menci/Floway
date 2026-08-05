@@ -103,6 +103,35 @@ test('resolveCopilotRawModel prefers 1m variants when they satisfy requested rea
   assertEquals(resolved?.id, 'claude-opus-4.7-1m-internal');
 });
 
+test('resolveCopilotRawModel trusts an explicit 1m id when catalog limits under-report it', () => {
+  const resolved = resolveCopilotRawModel(
+    models(
+      model('claude-opus-4.7'),
+      model('claude-opus-4.7-1m-internal', { contextWindow: 200_000 }),
+    ),
+    'claude-opus-4-7',
+    { context1m: true },
+  );
+
+  assertEquals(resolved?.id, 'claude-opus-4.7-1m-internal');
+});
+
+test('resolveCopilotRawModel recognizes a 1m prompt-plus-output budget when max context is absent', () => {
+  const summed = model('claude-opus-4.7-high');
+  delete summed.capabilities?.limits?.max_context_window_tokens;
+  if (summed.capabilities?.limits) {
+    summed.capabilities.limits.max_prompt_tokens = 936_000;
+    summed.capabilities.limits.max_output_tokens = 64_000;
+  }
+  const resolved = resolveCopilotRawModel(
+    models(model('claude-opus-4.7'), summed),
+    'claude-opus-4-7',
+    { context1m: true },
+  );
+
+  assertEquals(resolved?.id, 'claude-opus-4.7-high');
+});
+
 test('resolveCopilotRawModel prioritizes explicit 1m intent even when effort cannot be met', () => {
   const resolved = resolveCopilotRawModel(
     models(
@@ -168,4 +197,10 @@ test('copilotModelSupportsFastMode is true iff any raw variant has the -fast suf
   assertEquals(copilotModelSupportsFastMode([model('claude-opus-4.6'), model('claude-opus-4.6-fast')]), true);
   assertEquals(copilotModelSupportsFastMode([model('claude-opus-4.7'), model('claude-opus-4.7-xhigh', { reasoningEfforts: ['xhigh'] })]), false);
   assertEquals(copilotModelSupportsFastMode([]), false);
+});
+
+test('resolveCopilotRawModel treats non-Claude ids as exact opaque keys', () => {
+  const opaque = model('__proto__');
+  assertEquals(resolveCopilotRawModel(models(opaque), '__proto__'), opaque);
+  assertEquals(resolveCopilotRawModel(models(opaque), 'missing'), undefined);
 });

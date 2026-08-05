@@ -1,11 +1,14 @@
 import { act } from '@testing-library/react';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { OutcomeToastProvider } from '../../src/components/ui/outcome-toast';
-import DashboardServicesApiKeys from '../../src/routes/dashboard-services-api-keys';
+import DashboardServicesApiKeys, { clientLoader } from '../../src/routes/dashboard-services-api-keys';
+import { flowayTokenStorageKey } from '../../src/auth/session';
 import { stubLocalStorage } from '../local-storage-stub';
 import { renderInApp } from '../render';
+
+afterEach(() => vi.unstubAllGlobals());
 
 // Which key the Agent Setup card is set up for outlives a visit, so the page
 // stores the id the operator picked. What may not happen is the page throwing
@@ -49,5 +52,32 @@ describe('API keys page', () => {
     await act(async () => { renderPage(); });
 
     expect(storage.get('floway-agent-setup-selected-key')).toBe('stored-key');
+  });
+
+  it('threads navigation cancellation through page and setup requests', async () => {
+    storage.set(flowayTokenStorageKey, 'session');
+    storage.set('floway-agent-setup-selected-key', 'key-1');
+    const controller = new AbortController();
+    const request = new Request('http://localhost/dashboard/services/api-keys', { signal: controller.signal });
+    const signals: AbortSignal[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.signal) signals.push(init.signal);
+      const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost').pathname;
+      if (path === '/api/keys') return Response.json([{
+        id: 'key-1', name: 'Key 1', key: 'sk-key-1', upstream_ids: null,
+        created_at: '2026-01-01T00:00:00.000Z', last_used_at: null,
+        dump_retention_seconds: null, responses_retention_seconds: 0,
+      }]);
+      if (path === '/api/upstream-options') return Response.json([]);
+      if (path === '/api/models') return Response.json({ data: [] });
+      if (path === '/api/setup') return Response.json({});
+      throw new Error(`Unexpected request to ${path}`);
+    }));
+
+    await clientLoader({ request } as never);
+    controller.abort();
+
+    expect(signals).toHaveLength(4);
+    expect(signals.every(signal => signal === request.signal && signal.aborted)).toBe(true);
   });
 });

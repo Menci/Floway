@@ -85,31 +85,6 @@ test('Responses refusal lifecycle becomes Messages refusal metadata without visi
   ]);
 });
 
-test('Responses reasoning stream without readable summary emits a redacted_thinking carrier', () => {
-  const state = createResponsesToMessagesStreamState();
-
-  const events = translateResponsesStreamEventToMessagesEvents(
-    {
-      type: 'response.output_item.done',
-      output_index: 0,
-      item: {
-        type: 'reasoning',
-        id: 'rs_0',
-        summary: [],
-      },
-    },
-    state,
-  );
-
-  assertEquals(events, [
-    {
-      type: 'content_block_start',
-      index: 0,
-      content_block: { type: 'redacted_thinking', data: packReasoningSignature('rs_0', '') },
-    },
-  ]);
-});
-
 test('text-only Responses reasoning stream emits a recoverable signature delta', () => {
   const state = createResponsesToMessagesStreamState();
 
@@ -120,7 +95,7 @@ test('text-only Responses reasoning stream emits a recoverable signature delta',
         item_id: 'rs_0',
         output_index: 0,
         summary_index: 0,
-        delta: 'trace',
+        delta: 'tra',
       },
       state,
     ),
@@ -147,13 +122,43 @@ test('text-only Responses reasoning stream emits a recoverable signature delta',
     {
       type: 'content_block_delta',
       index: 0,
-      delta: { type: 'thinking_delta', thinking: 'trace' },
+      delta: { type: 'thinking_delta', thinking: 'tra' },
+    },
+    {
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'thinking_delta', thinking: 'ce' },
     },
     {
       type: 'content_block_delta',
       index: 0,
       delta: { type: 'signature_delta', signature: packReasoningSignature('rs_0', '') },
     },
+  ]);
+});
+
+test('Responses output_text.done completes a partial Messages text block', () => {
+  const state = createResponsesToMessagesStreamState();
+  const events = [
+    ...translateResponsesStreamEventToMessagesEvents({
+      type: 'response.output_text.delta',
+      item_id: 'msg_0',
+      output_index: 0,
+      content_index: 0,
+      delta: 'ans',
+    }, state),
+    ...translateResponsesStreamEventToMessagesEvents({
+      type: 'response.output_text.done',
+      item_id: 'msg_0',
+      output_index: 0,
+      content_index: 0,
+      text: 'answer',
+    }, state),
+  ];
+
+  assertEquals(events.filter(event => event.type === 'content_block_delta'), [
+    { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'ans' } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'wer' } },
   ]);
 });
 
@@ -505,6 +510,11 @@ test('Responses stream keeps later text deferred until earlier tool block is don
       type: 'content_block_delta',
       index: 0,
       delta: { type: 'input_json_delta', partial_json: '{"q":' },
+    },
+    {
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'input_json_delta', partial_json: '1}' },
     },
     { type: 'content_block_stop', index: 0 },
     {

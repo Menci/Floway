@@ -210,6 +210,9 @@ const normalizeStreamEvent = (event: ResponsesStreamEvent, state: StreamItemStat
 
   if (event.type === 'response.output_item.done') {
     const tracked = trackObservedItem(state, event.output_index, event.item);
+    if (!tracked.added) {
+      throw new TypeError(`Copilot Responses emitted output_item.done before output_item.added for output_index ${event.output_index}`);
+    }
     return { ...event, item: normalizeObservedItem(event.item, tracked.publicId) };
   }
 

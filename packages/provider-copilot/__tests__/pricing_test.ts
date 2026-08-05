@@ -33,14 +33,17 @@ test('Copilot GPT-5.6 pricing resolves standard short and long entries', () => {
   } as const;
   for (const [id, [short, long]] of Object.entries(expected)) {
     const pricing = pricingForCopilotPublicModelId(id);
-    assertEquals(priceRequest(pricing, { inputTokens: 0 }).rates, short);
+    assertEquals(priceRequest(pricing, { inputTokens: 272000 }).rates, short);
     assertEquals(priceRequest(pricing, { inputTokens: 272000 + 1 }).rates, long);
   }
 });
 
 test('Copilot GPT and Gemini threshold entries apply whole-request rates', () => {
+  assertEquals(priceRequest(pricingForCopilotPublicModelId('gpt-5.5'), { inputTokens: 272000 }).rates, published({ input_tokens: '5', input_cache_read_tokens: '0.5', output_tokens: '30' }));
   assertEquals(priceRequest(pricingForCopilotPublicModelId('gpt-5.5'), { inputTokens: 272001 }).rates, published({ input_tokens: '10', input_cache_read_tokens: '1', output_tokens: '45' }));
+  assertEquals(priceRequest(pricingForCopilotPublicModelId('gpt-5.4'), { inputTokens: 272000 }).rates, published({ input_tokens: '2.5', input_cache_read_tokens: '0.25', output_tokens: '15' }));
   assertEquals(priceRequest(pricingForCopilotPublicModelId('gpt-5.4'), { inputTokens: 272001 }).rates, published({ input_tokens: '5', input_cache_read_tokens: '0.5', output_tokens: '22.5' }));
+  assertEquals(priceRequest(pricingForCopilotPublicModelId('gemini-3.1-pro-preview'), { inputTokens: 200000 }).rates, published({ input_tokens: '2', input_cache_read_tokens: '0.2', output_tokens: '12' }));
   assertEquals(priceRequest(pricingForCopilotPublicModelId('gemini-3.1-pro-preview'), { inputTokens: 200001 }).rates, published({ input_tokens: '4', input_cache_read_tokens: '0.4', output_tokens: '18' }));
 });
 

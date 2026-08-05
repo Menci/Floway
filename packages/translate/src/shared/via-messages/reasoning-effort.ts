@@ -31,5 +31,5 @@ export interface MessagesReasoningFields {
 
 export const messagesReasoningFieldsFromEffort = (effort: string | null | undefined): MessagesReasoningFields => {
   if (effort === 'none') return { thinking: { type: 'disabled' } };
-  return effort ? { effort } : {};
+  return effort !== undefined && effort !== null ? { effort } : {};
 };

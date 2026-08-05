@@ -2,7 +2,7 @@ import type { GeminiContent, GeminiFinishReason, GeminiFunctionCallingConfig, Ge
 
 const isJsonObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
-export type GeminiToolCallIds = Record<string, string[]>;
+export type GeminiToolCallIds = Map<string, string[]>;
 
 export type GeminiFunctionCall = NonNullable<GeminiPart['functionCall']>;
 export type GeminiFunctionResponse = NonNullable<GeminiPart['functionResponse']>;
@@ -94,8 +94,9 @@ export const geminiFunctionCallPart = (part: GeminiPart, ids: GeminiToolCallIds,
   if (!call) return null;
 
   const id = call.id ?? geminiToolCallId(turnIndex, partIndex);
-  ids[call.name] ??= [];
-  ids[call.name].push(id);
+  const unmatched = ids.get(call.name);
+  if (unmatched) unmatched.push(id);
+  else ids.set(call.name, [id]);
 
   return { call, id };
 };
@@ -104,15 +105,20 @@ export const geminiFunctionResponsePart = (part: GeminiPart, ids: GeminiToolCall
   const response = part.functionResponse;
   if (!response) return null;
 
-  const unmatched = ids[response.name];
+  const unmatched = ids.get(response.name);
   const id = response.id ?? geminiToolCallId(turnIndex, partIndex);
   if (response.id !== undefined) {
     const index = remove === 'first' ? unmatched?.indexOf(response.id) ?? -1 : unmatched?.lastIndexOf(response.id) ?? -1;
-    if (index >= 0) unmatched?.splice(index, 1);
+    if (index >= 0 && unmatched) {
+      unmatched.splice(index, 1);
+      if (unmatched.length === 0) ids.delete(response.name);
+    }
     return { response, id };
   }
 
-  return { response, id: unmatched?.shift() ?? id };
+  const matchedId = unmatched?.shift();
+  if (unmatched?.length === 0) ids.delete(response.name);
+  return { response, id: matchedId ?? id };
 };
 
 // Reasoning effort is freeform on the inbound IRs — the gateway never

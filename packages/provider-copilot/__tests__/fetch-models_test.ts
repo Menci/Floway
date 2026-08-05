@@ -52,12 +52,12 @@ test('fetchCopilotModels returns the parsed response on 2xx', async () => {
       const preflight = copilotTokenResponse(request);
       if (preflight) return preflight;
       const url = new URL(request.url);
-      if (url.pathname === '/models') return jsonResponse({ object: 'list', data: [{ id: 'cm-1' }] });
+      if (url.pathname === '/models') return jsonResponse({ object: 'list', data: [{ id: 'cm-1' }, { id: '__proto__' }] });
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
       const result = await fetchCopilotModels(config, directFetcher);
-      assertEquals(result.data[0].id, 'cm-1');
+      assertEquals(result.data.map(model => model.id), ['cm-1', '__proto__']);
     },
   );
 });
@@ -83,7 +83,14 @@ test('fetchCopilotModels throws ProviderModelsUnavailableError with httpResponse
   assertEquals(thrown.httpResponse?.body, 'forbidden');
 });
 
-test('fetchCopilotModels throws ProviderModelsUnavailableError with null httpResponse on shape error', async () => {
+test.each([
+  ['a missing id', { object: 'list', data: [{ name: 'missing id' }] }],
+  ['an empty id', { object: 'list', data: [{ id: '' }] }],
+  ['non-array supported_endpoints', { object: 'list', data: [{ id: 'm', supported_endpoints: '/v1/messages' }] }],
+  ['a negative token limit', { object: 'list', data: [{ id: 'm', capabilities: { limits: { max_output_tokens: -1 } } }] }],
+  ['non-array reasoning efforts', { object: 'list', data: [{ id: 'm', capabilities: { supports: { reasoning_effort: { medium: true } } } }] }],
+  ['duplicate ids', { object: 'list', data: [{ id: 'm' }, { id: 'm' }] }],
+] as const)('fetchCopilotModels rejects %s as an unavailable catalog', async (_label, body) => {
   const config = await installRepoAndConfig();
 
   let thrown: unknown;
@@ -92,7 +99,7 @@ test('fetchCopilotModels throws ProviderModelsUnavailableError with null httpRes
       const preflight = copilotTokenResponse(request);
       if (preflight) return preflight;
       const url = new URL(request.url);
-      if (url.pathname === '/models') return jsonResponse({ object: 'list', data: [{ name: 'missing id' }] });
+      if (url.pathname === '/models') return jsonResponse(body);
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {

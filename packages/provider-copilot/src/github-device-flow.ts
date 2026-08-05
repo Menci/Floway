@@ -1,6 +1,6 @@
 import * as oauth from 'oauth4webapi';
 
-import type { CopilotUpstreamUser } from './config.ts';
+import { parseCopilotUpstreamUser, type CopilotUpstreamUser } from './config.ts';
 import { githubApiOrigin, githubWebOrigin } from './github-host.ts';
 import type { Fetcher } from '@floway-dev/provider';
 
@@ -110,7 +110,7 @@ export const pollGitHubDeviceFlow = async (githubHost: string, deviceCode: strin
   }
 };
 
-export const fetchGitHubUser = async (githubHost: string, githubToken: string, fetcher: Fetcher) => {
+export const fetchGitHubUser = async (githubHost: string, githubToken: string, fetcher: Fetcher): Promise<CopilotUpstreamUser> => {
   const userResp = await fetcher(`${githubApiOrigin(githubHost)}/user`, {
     headers: {
       authorization: `token ${githubToken}`,
@@ -120,5 +120,5 @@ export const fetchGitHubUser = async (githubHost: string, githubToken: string, f
   });
 
   if (!userResp.ok) throw new Error(`GitHub user lookup failed: ${userResp.status} ${await userResp.text()}`);
-  return (await userResp.json()) as CopilotUpstreamUser;
+  return parseCopilotUpstreamUser(await userResp.json());
 };

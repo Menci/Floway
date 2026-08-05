@@ -1,8 +1,9 @@
-import { describe, expect, test, vi } from 'vitest';
+import { describe, expect, test } from 'vitest';
 
 import { wrapResponsesAffinityEgress } from '../../../../../src/data-plane/chat/responses/affinity/egress.ts';
 import { wrapResponsesObservedOutput } from '../../../../../src/data-plane/chat/responses/items/output.ts';
 import type { AffinityCodec, AffinityTarget } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { createDeferredAffinityCodec } from '../../shared/affinity/helpers.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesOutputItem, ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
@@ -65,10 +66,7 @@ describe('Responses affinity egress', () => {
   });
 
   test('streams visible reasoning before wrapping and reuses one natural carrier', async () => {
-    const calls: Array<{ value: string | undefined; resolve: (value: string) => void }> = [];
-    const codec: AffinityEgressCodec = {
-      wrap: value => new Promise(resolve => calls.push({ value, resolve })),
-    };
+    const codec = createDeferredAffinityCodec();
     const item: ResponsesOutputReasoning = {
       type: 'reasoning',
       id: 'rs_1',
@@ -88,15 +86,98 @@ describe('Responses affinity egress', () => {
     ]), { codec, affinity })[Symbol.asyncIterator]();
 
     expect((await output.next()).value).toMatchObject({ event: { delta: 'visible' } });
-    expect(calls).toHaveLength(0);
+    expect(codec.calls).toHaveLength(0);
     const pending = output.next();
-    await vi.waitFor(() => expect(calls.map(call => call.value)).toEqual(['opaque']));
-    calls[0].resolve('wrapped:opaque');
+    const wrapCall = await codec.nextCall();
+    expect(wrapCall.value).toBe('opaque');
+    wrapCall.resolve('wrapped:opaque');
     expect((await pending).value).toMatchObject({ event: { item: { encrypted_content: 'wrapped:opaque' } } });
     expect((await output.next()).value).toMatchObject({
       event: { response: { output: [{ encrypted_content: 'wrapped:opaque' }] } },
     });
-    expect(calls).toHaveLength(1);
+    expect(codec.calls).toHaveLength(1);
+  });
+
+  test('keeps natural carrier reuse scoped to the authenticated item domain', async () => {
+    const calls: Array<{ value: string | undefined; domain: string }> = [];
+    const codec: AffinityEgressCodec = {
+      wrap: async (value, _affinity, domain) => {
+        calls.push({ value, domain });
+        return `wrapped:${domain}:${value ?? 'synthetic'}`;
+      },
+    };
+    const reasoning: ResponsesOutputReasoning = {
+      type: 'reasoning',
+      id: 'rs_changed',
+      summary: [],
+      encrypted_content: 'same-opaque',
+    };
+    const compaction = {
+      type: 'compaction',
+      id: 'cmp_changed',
+      encrypted_content: 'same-opaque',
+    } as ResponsesOutputItem;
+    const output: ProtocolFrame<ResponsesStreamEvent>[] = [];
+    for await (const frame of wrapResponsesAffinityEgress(frames([
+      eventFrame({ type: 'response.output_item.added', output_index: 0, item: reasoning }),
+      eventFrame({ type: 'response.output_item.done', output_index: 0, item: compaction }),
+    ]), { codec, affinity })) output.push(frame);
+
+    expect(calls).toEqual([
+      { value: 'same-opaque', domain: 'responses.reasoning.encrypted_content' },
+      { value: 'same-opaque', domain: 'responses.compaction.encrypted_content' },
+    ]);
+    expect(output).toEqual([
+      eventFrame({
+        type: 'response.output_item.added',
+        output_index: 0,
+        item: { ...reasoning, encrypted_content: 'wrapped:responses.reasoning.encrypted_content:same-opaque' },
+      }),
+      eventFrame({
+        type: 'response.output_item.done',
+        output_index: 0,
+        item: { ...compaction, encrypted_content: 'wrapped:responses.compaction.encrypted_content:same-opaque' },
+      }),
+    ]);
+  });
+
+  test('keeps synthetic carrier reuse scoped to the authenticated item domain', async () => {
+    const calls: Array<{ value: string | undefined; domain: string }> = [];
+    const codec: AffinityEgressCodec = {
+      wrap: async (value, _affinity, domain) => {
+        calls.push({ value, domain });
+        return `wrapped:${domain}:${value ?? 'synthetic'}`;
+      },
+    };
+    const reasoning: ResponsesOutputReasoning = { type: 'reasoning', id: 'rs_changed', summary: [] };
+    const compaction = {
+      type: 'compaction',
+      id: 'cmp_changed',
+    } as unknown as Extract<ResponsesOutputItem, { type: 'compaction' }>;
+    const output: ProtocolFrame<ResponsesStreamEvent>[] = [];
+    for await (const frame of wrapResponsesAffinityEgress(frames([
+      eventFrame({ type: 'response.output_item.done', output_index: 0, item: reasoning }),
+      eventFrame({ type: 'response.completed', response: response([compaction]) }),
+    ]), { codec, affinity })) output.push(frame);
+
+    expect(calls).toEqual([
+      { value: undefined, domain: 'responses.reasoning.encrypted_content' },
+      { value: undefined, domain: 'responses.compaction.encrypted_content' },
+    ]);
+    expect(output).toEqual([
+      eventFrame({
+        type: 'response.output_item.done',
+        output_index: 0,
+        item: { ...reasoning, encrypted_content: 'wrapped:responses.reasoning.encrypted_content:synthetic' },
+      }),
+      eventFrame({
+        type: 'response.completed',
+        response: response([{
+          ...compaction,
+          encrypted_content: 'wrapped:responses.compaction.encrypted_content:synthetic',
+        }]),
+      }),
+    ]);
   });
 
   test('emits a complete reasoning prefix before a non-carrier first item', async () => {
@@ -160,18 +241,14 @@ describe('Responses affinity egress', () => {
       eventFrame({ type: 'response.completed', response: response([reasoning, program, programOutput]) }),
     ]), { codec: immediateCodec, affinity })) output.push(frame);
 
-    expect(output).toHaveLength(1);
-    expect(output[0]).toMatchObject({
-      event: {
-        response: {
-          output: [
-            { encrypted_content: 'wrapped:opaque' },
-            { type: 'program' },
-            { type: 'program_output' },
-          ],
-        },
-      },
-    });
+    expect(output).toEqual([eventFrame({
+      type: 'response.completed',
+      response: response([
+        { ...reasoning, encrypted_content: 'wrapped:opaque' },
+        program,
+        programOutput,
+      ]),
+    })]);
   });
 
   test('injects one complete prefix for a non-streaming terminal response', async () => {

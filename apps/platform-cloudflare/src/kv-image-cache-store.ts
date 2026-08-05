@@ -1,3 +1,4 @@
+import { ImageCacheRefreshCoordinator, parseImageCacheTimestamp } from '@floway-dev/platform';
 import type { ImageCachePolicy, ImageCacheStore } from '@floway-dev/platform';
 
 // Minimal shape of the Cloudflare KV binding we depend on. Hand-typed so the
@@ -31,23 +32,38 @@ const KV_MIN_TTL_SECONDS = 60;
 
 const ttlSeconds = (ttlMs: number): number => Math.max(KV_MIN_TTL_SECONDS, Math.ceil(ttlMs / 1000));
 
+const parseMetadataWrittenAt = (metadata: unknown, key: string): number => {
+  if (typeof metadata !== 'object' || metadata === null || !Object.hasOwn(metadata, 'writtenAt')) {
+    throw new TypeError(`Image cache metadata for key=${JSON.stringify(key)} must contain writtenAt`);
+  }
+  return parseImageCacheTimestamp(
+    Reflect.get(metadata, 'writtenAt'),
+    `Image cache metadata writtenAt for key=${JSON.stringify(key)}`,
+  );
+};
+
 export class KvImageCacheStore implements ImageCacheStore {
+  private readonly refreshes = new ImageCacheRefreshCoordinator();
+
   constructor(private readonly kv: KvNamespace, private readonly policy: ImageCachePolicy) {}
 
   async get(key: string): Promise<Uint8Array | null> {
-    const { value, metadata } = await this.kv.getWithMetadata<CacheEntryMetadata>(key, 'arrayBuffer');
+    const { value, metadata } = await this.kv.getWithMetadata<unknown>(key, 'arrayBuffer');
     if (!value) return null;
     const now = Date.now();
     // Entries written by older deploys carry no `writtenAt` metadata; treat
     // them as past the refresh threshold so the next read stamps the current
     // metadata shape onto them.
-    const age = metadata ? now - metadata.writtenAt : Infinity;
+    const writtenAt = metadata === null ? null : parseMetadataWrittenAt(metadata, key);
+    const age = writtenAt === null ? Infinity : now - writtenAt;
     if (age >= this.policy.refreshIfOlderThanMs) {
       // Awaited so the refresh actually lands — Workers would otherwise drop
       // a fire-and-forget write without an explicit `waitUntil`.
-      await this.kv.put(key, value, {
-        expirationTtl: ttlSeconds(this.policy.ttlMs),
-        metadata: { writtenAt: now } satisfies CacheEntryMetadata,
+      await this.refreshes.run(key, async () => {
+        await this.kv.put(key, value, {
+          expirationTtl: ttlSeconds(this.policy.ttlMs),
+          metadata: { writtenAt: now } satisfies CacheEntryMetadata,
+        });
       });
     }
     return new Uint8Array(value);

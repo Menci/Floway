@@ -54,7 +54,7 @@ import type {
   UsersRepo,
 } from '../../src/repo/types.ts';
 import { serializeStoredConfig, serializeStoredState } from '../../src/repo/upstream-json.ts';
-import { usageMetricRows } from '../../src/repo/usage-metrics.ts';
+import { usageBucketIdentityKey, usageMetricRows } from '../../src/repo/usage-metrics.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../../src/shared/performance-histogram.ts';
 import { assertWebSearchProviderName, type WebSearchConfig } from '../../src/shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
@@ -312,7 +312,14 @@ class MemoryUsageRepo implements UsageRepo {
   private store = new Map<string, UsageBucketState>();
 
   private key(r: UsageBucketIdentity): string {
-    return [r.keyId, r.model, r.upstream ?? '', r.modelKey, r.hour, canonicalPricingSelectorKey(r.pricingSelector)].join('\0');
+    return usageBucketIdentityKey(
+      r.keyId,
+      r.model,
+      r.upstream,
+      r.modelKey,
+      r.hour,
+      canonicalPricingSelectorKey(r.pricingSelector),
+    );
   }
 
   private toRecord(state: UsageBucketState): UsageRecord {
@@ -457,16 +464,20 @@ class MemoryPerformanceRepo implements PerformanceRepo {
   private readonly summaries = new Map<string, StoredPerformanceRow>();
 
   async recordSample(sample: PerformanceSample): Promise<void> {
+    const ttftBucket = bucketForTtftMs(sample.ttftMs);
+    const tpot = sample.tpotUs === undefined
+      ? null
+      : { value: sample.tpotUs, bucket: bucketForTpotUs(sample.tpotUs) };
     const row = this.upsertRow(sample);
     row.requests += 1;
     if (sample.success) row.ttftSamplesOk += 1;
     else row.errorsWithOutput += 1;
     row.ttftMsSum += sample.ttftMs;
-    this.incrementBucket(row, 'ttft_ms', bucketForTtftMs(sample.ttftMs));
-    if (sample.tpotUs !== undefined) {
+    this.incrementBucket(row, 'ttft_ms', ttftBucket);
+    if (tpot !== null) {
       row.tpotSamples += 1;
-      row.tpotUsSum += sample.tpotUs;
-      this.incrementBucket(row, 'tpot_us', bucketForTpotUs(sample.tpotUs));
+      row.tpotUsSum += tpot.value;
+      this.incrementBucket(row, 'tpot_us', tpot.bucket);
     }
   }
 
