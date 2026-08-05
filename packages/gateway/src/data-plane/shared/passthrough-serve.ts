@@ -192,6 +192,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       return passthroughApiError(c, 'Upstream returned a streaming response with no body.', 502);
     }
     forwardUpstreamHeaders(c, response.headers);
+    c.status(response.status as ContentfulStatusCode);
     return streamSSE(c, async stream => {
       let completion: StreamCompletion = 'error';
       let streamError: unknown;
@@ -211,8 +212,10 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
             ctx.dump?.frame(inputFrame);
             if (inputFrame.type === 'done') terminalFrameSeen = true;
             const outputFrame = responseHandling.transformFrame(inputFrame);
-            if (outputFrame === null) continue;
-            yield outputFrame.type === 'done' ? sseFrame('[DONE]') : sseFrame(JSON.stringify(outputFrame.event));
+            if (outputFrame !== null) {
+              yield outputFrame.type === 'done' ? sseFrame('[DONE]') : sseFrame(JSON.stringify(outputFrame.event));
+            }
+            if (inputFrame.type === 'done') return;
           }
         })();
         completion = await writeSSEFrames(stream, frames, {
@@ -222,7 +225,14 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       } catch (e) {
         streamError = e;
       } finally {
-        const usage = responseHandling.settleUsage();
+        let usage: TokenUsage | null = null;
+        try {
+          usage = responseHandling.settleUsage();
+        } catch (error) {
+          streamError = streamError === undefined
+            ? error
+            : new AggregateError([streamError, error], 'Passthrough stream and usage settlement both failed', { cause: streamError });
+        }
         const failed = streamError !== undefined || completion === 'error' || !terminalFrameSeen;
         if (failed) {
           ctx.dump?.failed(streamError ?? `${sourceApi} stream ended with completion=${completion}`);
