@@ -169,9 +169,6 @@ importers:
       '@jridgewell/trace-mapping':
         specifier: ^0.3.31
         version: 0.3.31
-      '@scure/base':
-        specifier: ^2.2.0
-        version: 2.2.0
       culori:
         specifier: ^4.0.2
         version: 4.0.2
@@ -504,9 +501,6 @@ importers:
       '@floway-dev/provider':
         specifier: workspace:*
         version: link:../provider
-      '@scure/base':
-        specifier: ^2.2.0
-        version: 2.2.0
       uuid:
         specifier: ^14.0.1
         version: 14.0.1

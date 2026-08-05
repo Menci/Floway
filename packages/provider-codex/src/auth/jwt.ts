@@ -2,7 +2,7 @@
 // skipped: the token reached us over TLS from auth.openai.com itself; spending
 // effort on signature-validating a token we just fetched would be theatre.
 
-import { base64urlnopad } from '@scure/base';
+import { decodeCanonicalBase64url } from '@floway-dev/protocols/common';
 
 export interface CodexIdTokenIdentity {
   email: string;
@@ -46,7 +46,9 @@ export const parseCodexIdTokenClaims = (idToken: string): CodexIdTokenIdentity =
 const decodeBase64UrlToUtf8 = (value: string): string => {
   // JOSE compact serialization uses canonical unpadded Base64URL.
   // https://www.rfc-editor.org/rfc/rfc7515.html#section-2
-  return new TextDecoder().decode(base64urlnopad.decode(value));
+  const bytes = decodeCanonicalBase64url(value);
+  if (bytes === null) throw new TypeError('Invalid canonical Base64URL JWT segment');
+  return new TextDecoder().decode(bytes);
 };
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);

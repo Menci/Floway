@@ -1,26 +1,25 @@
-import { base64, base64urlnopad } from '@scure/base';
-import { normalizeForgivingBase64 } from '@floway-dev/protocols/common';
+import {
+  decodeForgivingBase64,
+  encodeBase64 as encodeProtocolBase64,
+  encodeBase64url,
+  normalizeForgivingBase64,
+} from '@floway-dev/protocols/common';
 
 export const decodeWebBase64 = (value: string): Uint8Array => {
   const normalized = normalizeForgivingBase64(value);
-  if (hasTypedArrayBase64()) return base64.decode(normalized);
+  if (hasTypedArrayBase64()) return decodeForgivingBase64(normalized);
   return bytesFromBinaryString(atob(normalized));
 };
 
 export const decodeWebBase64BinaryString = (value: string): string => {
   const normalized = normalizeForgivingBase64(value);
-  return hasTypedArrayBase64() ? binaryStringFromBytes(base64.decode(normalized)) : atob(normalized);
-};
-
-export const encodeBase64 = (bytes: Uint8Array): string => {
-  if (hasTypedArrayBase64()) return base64.encode(bytes);
-  return btoa(binaryStringFromBytes(bytes));
+  return hasTypedArrayBase64() ? binaryStringFromBytes(decodeForgivingBase64(normalized)) : atob(normalized);
 };
 
 export const encodeBase64BinaryString = (value: string): string =>
-  hasTypedArrayBase64() ? base64.encode(bytesFromBinaryString(value)) : btoa(value);
+  hasTypedArrayBase64() ? encodeProtocolBase64(bytesFromBinaryString(value)) : btoa(value);
 
-export const encodeBase64url = (bytes: Uint8Array): string => base64urlnopad.encode(bytes);
+export { encodeBase64url };
 
 const hasTypedArrayBase64 = (): boolean =>
   typeof (Uint8Array as unknown as { fromBase64?: unknown }).fromBase64 === 'function'
