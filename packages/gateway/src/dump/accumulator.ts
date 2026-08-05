@@ -347,7 +347,7 @@ export class DumpAccumulator {
 
     const forClient = new ReadableStream<Uint8Array>({
       type: 'bytes',
-      pull: async (controller) => {
+      pull: async controller => {
         try {
           for (;;) {
             const result = await reader.read();
@@ -377,7 +377,7 @@ export class DumpAccumulator {
           terminate(`Response body stream failed: ${oneLineError(err)}`);
         }
       },
-      cancel: (reason) => {
+      cancel: reason => {
         const sourceCancellation = reader.cancel(reason);
         const canceled = reason === undefined
           ? 'Downstream response body canceled'
