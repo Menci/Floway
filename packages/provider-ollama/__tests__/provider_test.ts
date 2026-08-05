@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { createOllamaProvider } from '../src/provider.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
-import { assertEquals, assertExists, jsonResponse, noopUpstreamCallOptions, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, jsonResponse, noopMessagesUpstreamCallOptions, noopUpstreamCallOptions, withMockedFetch } from '@floway-dev/test-utils';
 
 const buildRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
   id: 'up_ollama',
@@ -232,7 +232,7 @@ test('Messages methods serialize typed anthropic-beta metadata only on Messages 
     },
     async () => {
       const [model] = await instance.instance.getProvidedModels(directFetcher);
-      const opts = noopUpstreamCallOptions({ anthropicBeta: ['context-1m', 'advanced-tool-use'] });
+      const opts = noopMessagesUpstreamCallOptions({ anthropicBeta: ['context-1m', 'advanced-tool-use'] });
       await instance.instance.callMessages(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
       await instance.instance.callMessagesCountTokens(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
     },
