@@ -108,24 +108,40 @@ codex_commit_files() {
   CODEX_TOKEN_BACKUP=""
 }
 
-# Terminate the app-server process group, giving a child whose stdin was just
-# closed a brief moment to exit on its own before escalating TERM then KILL. The
-# child is launched under job control so the whole descendant tree shares one
-# group. The natural-exit grace uses sub-second polling so a clean handshake
-# adds negligible latency.
+# Reap an app-server that exits when stdin closes while a watchdog gives a
+# genuinely running process group one second before escalating TERM then KILL.
+# Waiting in the parent is important: kill -0 also succeeds for an unreaped
+# zombie, so polling the pid would make every clean shutdown pay the full grace.
+# The marker keeps the watchdog alive through KILL after TERM releases the
+# parent's wait, and the process-group probe covers descendants that outlive
+# their leader.
 _codex_kill_group() {
   _ckg_pid=$1
-  _ckg_n=0
-  while kill -0 "$_ckg_pid" 2>/dev/null && [ "$_ckg_n" -lt 5 ]; do
-    sleep 0.2
-    _ckg_n=$((_ckg_n + 1))
-  done
-  if kill -0 "$_ckg_pid" 2>/dev/null; then
-    kill -TERM -- "-$_ckg_pid" 2>/dev/null || kill -TERM "$_ckg_pid" 2>/dev/null || true
-    sleep 0.5
-    kill -KILL -- "-$_ckg_pid" 2>/dev/null || kill -KILL "$_ckg_pid" 2>/dev/null || true
-  fi
+  _ckg_marker=$2
+  # The harness shortens both real waits while preserving the escalation order.
+  _ckg_term_grace=${AGENT_SETUP_TEST_CODEX_TERM_GRACE_SECONDS:-1}
+  _ckg_kill_grace=${AGENT_SETUP_TEST_CODEX_KILL_GRACE_SECONDS:-0.5}
+  rm -f "$_ckg_marker"
+  (
+    exec </dev/null >/dev/null 2>&1
+    sleep "$_ckg_term_grace"
+    if kill -0 -- "-$_ckg_pid" 2>/dev/null || kill -0 "$_ckg_pid" 2>/dev/null; then
+      : > "$_ckg_marker"
+      kill -TERM -- "-$_ckg_pid" 2>/dev/null || kill -TERM "$_ckg_pid" 2>/dev/null || true
+      sleep "$_ckg_kill_grace"
+      kill -KILL -- "-$_ckg_pid" 2>/dev/null || kill -KILL "$_ckg_pid" 2>/dev/null || true
+    fi
+  ) &
+  _ckg_watchdog=$!
+
   wait "$_ckg_pid" 2>/dev/null || true
+  if [ -e "$_ckg_marker" ] || kill -0 -- "-$_ckg_pid" 2>/dev/null; then
+    wait "$_ckg_watchdog" 2>/dev/null || true
+  else
+    kill "$_ckg_watchdog" 2>/dev/null || true
+    wait "$_ckg_watchdog" 2>/dev/null || true
+  fi
+  rm -f "$_ckg_marker"
 }
 
 # Read newline-delimited JSON-RPC from fd 4 until a response whose id matches
@@ -216,7 +232,7 @@ codex_app_server_batch_write() {
 
   exec 3>&- 2>/dev/null || true
   exec 4<&- 2>/dev/null || true
-  _codex_kill_group "$_cas_pid"
+  _codex_kill_group "$_cas_pid" "$_cas_dir/kill-started"
   rm -rf "$_cas_dir"
 
   if [ "$_cas_status" -ne 0 ]; then
@@ -343,6 +359,12 @@ codex_write_version() {
 # Install, then configure Codex as one transactional config/token write. A
 # freshly installed CLI is never uninstalled when configuration fails.
 configure_agent() {
+  CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
+  CODEX_CONFIG_PATH="$CODEX_HOME_DIR/config.toml"
+  CODEX_TOKEN_PATH="$CODEX_HOME_DIR/floway-token"
+  if ! _acquire_setup_lock "$CODEX_HOME_DIR"; then
+    return 1
+  fi
   out_agent_notice 'Installing' 'Codex'
   if ! codex_ensure_installed; then
     out_error 'Codex CLI is unavailable and could not be installed.'
@@ -355,13 +377,6 @@ configure_agent() {
   out_agent_notice 'Configuring' 'Codex'
   if ! ensure_jq; then
     out_error 'jq is required to configure Codex but is unavailable and could not be provisioned for this platform. Install jq and re-run.'
-    return 1
-  fi
-  CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
-  CODEX_CONFIG_PATH="$CODEX_HOME_DIR/config.toml"
-  CODEX_TOKEN_PATH="$CODEX_HOME_DIR/floway-token"
-  if ! mkdir -p "$CODEX_HOME_DIR"; then
-    out_error "could not create $CODEX_HOME_DIR"
     return 1
   fi
   if ! codex_backup_files; then

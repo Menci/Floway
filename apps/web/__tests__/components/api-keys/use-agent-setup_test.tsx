@@ -27,7 +27,7 @@ describe('Agent Setup install command', () => {
     expect(agentSetupCommand('https://floway.example', '/api/setup/token/claude.sh', 'unix'))
       .toBe("export SETUP_ENDPOINT='https://floway.example'; curl -fsSL \"$SETUP_ENDPOINT/api/setup/token/claude.sh\" | bash -p");
     expect(agentSetupCommand('https://floway.example', '/api/setup/token/codex.ps1', 'windows'))
-      .toBe("& { $SetupEndpoint = 'https://floway.example'; $PowerShell = $null; foreach ($Name in @('pwsh.exe', 'pwsh', 'powershell.exe')) { $Candidate = [System.IO.Path]::Combine($PSHOME, $Name); if ([System.IO.File]::Exists($Candidate)) { $PowerShell = $Candidate; break } }; if (-not $PowerShell) { throw 'Unable to locate a PowerShell application under $PSHOME.' }; $PreviousOutputEncoding = $OutputEncoding; try { $OutputEncoding = [System.Text.UTF8Encoding]::new($false); @('$SetupEndpoint = ''https://floway.example''', (Microsoft.PowerShell.Utility\\Invoke-RestMethod -Uri ($SetupEndpoint + '/api/setup/token/codex.ps1'))) | & $PowerShell -NoProfile -NonInteractive -Command - } finally { $OutputEncoding = $PreviousOutputEncoding } }");
+      .toBe("& { $SetupEndpoint = 'https://floway.example'; $PowerShell = $null; foreach ($Name in @('pwsh.exe', 'pwsh', 'powershell.exe')) { $Candidate = [System.IO.Path]::Combine($PSHOME, $Name); if ([System.IO.File]::Exists($Candidate)) { $PowerShell = $Candidate; break } }; if (-not $PowerShell) { throw 'Unable to locate a PowerShell application under $PSHOME.' }; $PreviousOutputEncoding = $OutputEncoding; try { $OutputEncoding = [System.Text.UTF8Encoding]::new($false); @('$SetupEndpoint = ''https://floway.example''', (Microsoft.PowerShell.Utility\\Invoke-RestMethod -Uri ($SetupEndpoint + '/api/setup/token/codex.ps1')), 'exit $global:LASTEXITCODE') | & $PowerShell -NoProfile -NonInteractive -Command - } finally { $OutputEncoding = $PreviousOutputEncoding } }");
   });
 
   it('starts the Unix installer across a privileged Bash boundary', () => {
@@ -42,6 +42,7 @@ describe('Agent Setup install command', () => {
 
     expect(command).toContain("foreach ($Name in @('pwsh.exe', 'pwsh', 'powershell.exe'))");
     expect(command).toContain('Microsoft.PowerShell.Utility\\Invoke-RestMethod');
+    expect(command).toContain("'exit $global:LASTEXITCODE'");
     expect(command).toContain('| & $PowerShell -NoProfile -NonInteractive -Command -');
     expect(command).not.toContain('| iex');
   });

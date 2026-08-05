@@ -61,7 +61,7 @@ function Install-SetupClaude {
 # existing document, back it up, construct and validate the replacement in the
 # same directory, then atomically rename it into place with owner-only access.
 function Write-SetupClaudeSettings {
-  $configDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME '.claude' }
+  $configDir = $script:ClaudeConfigDir
   $script:ClaudeSettingsPath = Join-Path $configDir 'settings.json'
   $script:ClaudeSettingsBackup = $null
   $script:ClaudeSettingsExisted = $false
@@ -72,14 +72,11 @@ function Write-SetupClaudeSettings {
   if (Test-Path -LiteralPath $script:ClaudeSettingsPath) {
     $script:ClaudeSettingsExisted = $true
     $raw = Get-Content -Raw -LiteralPath $script:ClaudeSettingsPath
-    try { $document = $raw | ConvertFrom-Json } catch { Stop-Setup "$($script:ClaudeSettingsPath) is not valid JSON; leaving it untouched." }
-    if ($document -isnot [System.Management.Automation.PSCustomObject]) { Stop-Setup "existing Claude settings root is not a JSON object." }
-    if (($document.PSObject.Properties.Name -contains 'env') -and ($document.env -isnot [System.Management.Automation.PSCustomObject])) {
-      Stop-Setup "existing Claude settings env is not a JSON object."
-    }
-    if (($document.PSObject.Properties.Name -contains 'attribution') -and ($document.attribution -isnot [System.Management.Automation.PSCustomObject])) {
-      Stop-Setup "existing Claude settings attribution is not a JSON object."
-    }
+    try { $document = Read-SetupJsonDocument $raw } catch { Stop-Setup "$($script:ClaudeSettingsPath) is not valid JSON; leaving it untouched." }
+    $root = $document.DocumentElement
+    if ($root.GetAttribute('type') -cne 'object') { Stop-Setup "existing Claude settings root is not a JSON object." }
+    try { $envObject = Get-SetupJsonObjectProperty $root 'env' } catch { Stop-Setup "existing Claude settings env is not a JSON object." }
+    try { $attribution = Get-SetupJsonObjectProperty $root 'attribution' } catch { Stop-Setup "existing Claude settings attribution is not a JSON object." }
     # DateTimeOffset.ToUnixTimeMilliseconds is unavailable on the .NET
     # Framework version bundled with the Windows PowerShell 5.1 baseline.
     $stamp = [long]([DateTimeOffset]::UtcNow - [DateTimeOffset]'1970-01-01T00:00:00Z').TotalMilliseconds
@@ -95,39 +92,38 @@ function Write-SetupClaudeSettings {
       throw
     }
   } else {
-    $document = [PSCustomObject]@{}
+    $document = Read-SetupJsonDocument '{}'
+    $root = $document.DocumentElement
+    $envObject = $null
+    $attribution = $null
   }
 
-  if ($document.PSObject.Properties.Name -notcontains 'env') {
-    $document | Add-Member -NotePropertyName env -NotePropertyValue ([PSCustomObject]@{})
-  }
+  if ($null -eq $envObject) { $envObject = Get-OrCreate-SetupJsonObjectProperty $root 'env' }
   # Refs: https://docs.claude.com/en/docs/claude-code/env-vars
   #       https://docs.claude.com/en/docs/claude-code/model-config#environment-variables
   #       https://docs.claude.com/en/docs/claude-code/settings
   #       https://code.claude.com/docs/en/settings#attribution-settings
-  Set-SetupProp $document.env 'ANTHROPIC_BASE_URL' $SetupEndpoint
-  Set-SetupProp $document.env 'ANTHROPIC_AUTH_TOKEN' $SetupApiKey
-  Set-SetupOptionalProp $document.env 'ANTHROPIC_MODEL' $SetupClaudeModel
-  Set-SetupOptionalProp $document.env 'ANTHROPIC_DEFAULT_FABLE_MODEL' $SetupClaudeDefaultFableModel
-  Set-SetupOptionalProp $document.env 'ANTHROPIC_DEFAULT_OPUS_MODEL' $SetupClaudeDefaultOpusModel
-  Set-SetupOptionalProp $document.env 'ANTHROPIC_DEFAULT_SONNET_MODEL' $SetupClaudeDefaultSonnetModel
-  Set-SetupOptionalProp $document.env 'ANTHROPIC_DEFAULT_HAIKU_MODEL' $SetupClaudeDefaultHaikuModel
-  if ($SetupClaudeModelDiscovery) { Set-SetupProp $document.env 'CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY' '1' }
-  else { Remove-SetupProp $document.env 'CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY' }
-  Set-SetupOptionalProp $document 'effortLevel' $SetupClaudeEffortLevel
-  Set-SetupOptionalProp $document 'cleanupPeriodDays' $SetupClaudeCleanupPeriodDays
+  Set-SetupProp $envObject 'ANTHROPIC_BASE_URL' $SetupEndpoint
+  Set-SetupProp $envObject 'ANTHROPIC_AUTH_TOKEN' $SetupApiKey
+  Set-SetupOptionalProp $envObject 'ANTHROPIC_MODEL' $SetupClaudeModel
+  Set-SetupOptionalProp $envObject 'ANTHROPIC_DEFAULT_FABLE_MODEL' $SetupClaudeDefaultFableModel
+  Set-SetupOptionalProp $envObject 'ANTHROPIC_DEFAULT_OPUS_MODEL' $SetupClaudeDefaultOpusModel
+  Set-SetupOptionalProp $envObject 'ANTHROPIC_DEFAULT_SONNET_MODEL' $SetupClaudeDefaultSonnetModel
+  Set-SetupOptionalProp $envObject 'ANTHROPIC_DEFAULT_HAIKU_MODEL' $SetupClaudeDefaultHaikuModel
+  if ($SetupClaudeModelDiscovery) { Set-SetupProp $envObject 'CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY' '1' }
+  else { Remove-SetupProp $envObject 'CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY' }
+  Set-SetupOptionalProp $root 'effortLevel' $SetupClaudeEffortLevel
+  Set-SetupOptionalProp $root 'cleanupPeriodDays' $SetupClaudeCleanupPeriodDays
   if ($SetupClaudeOptOutAiAttribution) {
-    if ($document.PSObject.Properties.Name -notcontains 'attribution') {
-      $document | Add-Member -NotePropertyName attribution -NotePropertyValue ([PSCustomObject]@{})
-    }
-    Set-SetupProp $document.attribution 'commit' ''
-    Set-SetupProp $document.attribution 'pr' ''
-    Set-SetupProp $document.attribution 'sessionUrl' $false
-  } elseif ($document.PSObject.Properties.Name -contains 'attribution') {
-    Remove-SetupProp $document.attribution 'commit'
-    Remove-SetupProp $document.attribution 'pr'
-    Remove-SetupProp $document.attribution 'sessionUrl'
-    if ($document.attribution.PSObject.Properties.Count -eq 0) { Remove-SetupProp $document 'attribution' }
+    if ($null -eq $attribution) { $attribution = Get-OrCreate-SetupJsonObjectProperty $root 'attribution' }
+    Set-SetupProp $attribution 'commit' ''
+    Set-SetupProp $attribution 'pr' ''
+    Set-SetupProp $attribution 'sessionUrl' $false
+  } elseif ($null -ne $attribution) {
+    Remove-SetupProp $attribution 'commit'
+    Remove-SetupProp $attribution 'pr'
+    Remove-SetupProp $attribution 'sessionUrl'
+    if (Test-SetupJsonObjectEmpty $attribution) { Remove-SetupProp $root 'attribution' }
   }
 
   $stage = "$($script:ClaudeSettingsPath).floway-stage.$PID"
@@ -135,12 +131,17 @@ function Write-SetupClaudeSettings {
     # The stage exists and is owner-only before any secret JSON is written.
     [System.IO.File]::Create($stage).Dispose()
     Protect-SetupFile $stage
-    $json = $document | ConvertTo-Json -Depth 100
+    $json = Write-SetupJsonDocument $document
     # Write UTF-8 without a BOM on every PowerShell version so downstream JSON
     # parsers accept the file.
     [System.IO.File]::WriteAllText($stage, $json, (New-Object System.Text.UTF8Encoding($false)))
-    $check = Get-Content -Raw -LiteralPath $stage | ConvertFrom-Json
-    if (($check.env.ANTHROPIC_BASE_URL -cne $SetupEndpoint) -or ($check.env.ANTHROPIC_AUTH_TOKEN -cne $SetupApiKey)) {
+    $check = Read-SetupJsonDocument ([System.IO.File]::ReadAllText($stage))
+    $checkEnv = Get-SetupJsonObjectProperty $check.DocumentElement 'env'
+    $checkBaseUrl = if ($null -eq $checkEnv) { $null } else { Get-SetupJsonProperty $checkEnv 'ANTHROPIC_BASE_URL' }
+    $checkApiKey = if ($null -eq $checkEnv) { $null } else { Get-SetupJsonProperty $checkEnv 'ANTHROPIC_AUTH_TOKEN' }
+    if (($null -eq $checkBaseUrl) -or ($checkBaseUrl.GetAttribute('type') -cne 'string') -or
+      ($checkBaseUrl.InnerText -cne $SetupEndpoint) -or ($null -eq $checkApiKey) -or
+      ($checkApiKey.GetAttribute('type') -cne 'string') -or ($checkApiKey.InnerText -cne $SetupApiKey)) {
       Stop-Setup "staged Claude settings failed validation."
     }
     $runningOnWindows = Test-SetupIsWindows
@@ -157,10 +158,11 @@ function Write-SetupClaudeSettings {
       # target on Windows. Windows replacing an existing target uses File.Replace.
       Move-Item -LiteralPath $stage -Destination $script:ClaudeSettingsPath -Force
     }
+    if ($env:AGENT_SETUP_TEST_FAIL_CLAUDE_AFTER_REPLACE) { throw 'test-injected failure after replacing Claude settings' }
     Remove-SetupOlderBackups -Path $script:ClaudeSettingsPath -Keep $script:ClaudeSettingsBackup
   } catch {
     if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Force }
-    Restore-SetupManagedFile -Existed $script:ClaudeSettingsExisted -Backup $script:ClaudeSettingsBackup -Path $script:ClaudeSettingsPath -OriginalLabel 'file' -CreatedLabel 'Claude settings'
+    $null = Restore-SetupManagedFile -Existed $script:ClaudeSettingsExisted -Backup $script:ClaudeSettingsBackup -Path $script:ClaudeSettingsPath -OriginalLabel 'file' -CreatedLabel 'Claude settings'
     throw
   }
 }
@@ -176,6 +178,8 @@ function Write-SetupClaudeVersion {
 # Install, then configure Claude Code as one transactional settings write. A
 # freshly installed CLI is never uninstalled when configuration fails.
 function Set-SetupAgent {
+  $script:ClaudeConfigDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME '.claude' }
+  Enter-SetupLock $script:ClaudeConfigDir
   Write-SetupAgentNotice 'Installing' 'Claude Code'
   # Ref: https://docs.claude.com/en/docs/claude-code/troubleshoot-install
   $candidates = @(

@@ -8,8 +8,5 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
-  },
-  "devDependencies": {
-    "@floway-dev/test-utils": "workspace:*"
   }
 }

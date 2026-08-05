@@ -8,6 +8,7 @@
 
 import type { AgentSetupConfiguration } from './configuration.ts';
 import type { ScriptAgent } from './script-assets.ts';
+import { assertScriptLiteralValue } from './script-literal.ts';
 
 export interface RenderPrefixInput {
   agent: ScriptAgent;
@@ -16,14 +17,11 @@ export interface RenderPrefixInput {
   configuration: AgentSetupConfiguration;
 }
 
-const assertNoNul = (value: string): void => {
-  if (value.includes('\0')) throw new Error('cannot render a value containing a NUL character');
-};
-
-// Flatten every C0/DEL control byte to a space so a key label cannot smuggle a
-// terminal escape into the metadata assignment. The value still flows through a
-// literal encoder afterward, which is where a NUL is rejected.
-const metadataValue = (value: string): string => value.replace(/[\u0001-\u001f\u007f]/g, ' ');
+// Flatten every C0, DEL, and C1 control to a space so a key label cannot smuggle
+// either the seven-bit or eight-bit form of a terminal escape into metadata.
+// The value still flows through a literal encoder afterward, which is where a
+// NUL is rejected.
+const metadataValue = (value: string): string => value.replace(/[\u0001-\u001f\u007f-\u009f]/g, ' ');
 
 // --- POSIX shell ---
 
@@ -31,7 +29,7 @@ const metadataValue = (value: string): string => value.replace(/[\u0001-\u001f\u
 // reopened; every other character (newlines, tabs, Unicode) is literal. NUL
 // cannot exist in a shell word and is rejected.
 const shellLiteral = (value: string): string => {
-  assertNoNul(value);
+  assertScriptLiteralValue(value);
   return `'${value.replace(/'/g, "'\\''")}'`;
 };
 
@@ -77,7 +75,7 @@ export const renderShellPrefix = (input: RenderPrefixInput): string => {
 
 // PowerShell single-quoted literal: single quotes are the only escape, doubled.
 const powerShellLiteral = (value: string): string => {
-  assertNoNul(value);
+  assertScriptLiteralValue(value);
   return `'${value.replace(/'/g, "''")}'`;
 };
 
