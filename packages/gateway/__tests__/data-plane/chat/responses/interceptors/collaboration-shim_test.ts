@@ -66,7 +66,16 @@ const response = (output: ResponsesOutputItem[], tools: ResponsesTool[], namespa
   status: 'completed',
   output,
   tools,
-  tool_choice: { type: 'allowed_tools', mode: 'auto', tools: [{ type: 'namespace', name: namespace }] },
+  tool_choice: {
+    type: 'allowed_tools',
+    mode: 'auto',
+    tools: [
+      { type: 'namespace', name: namespace },
+      { type: 'function', name: `${namespace}.spawn_agent` },
+      { type: 'custom', name: 'collaboration.audit' },
+      { type: 'namespace', name: 'collaboration.audit' },
+    ],
+  },
   error: null,
   incomplete_details: null,
 });
@@ -190,6 +199,7 @@ test('uses a deterministic collision suffix and restores shared context between 
 
 test('projects Messages targets through the same plaintext namespace', async () => {
   const ctx = invocation('messages');
+  ctx.payload = { ...ctx.payload, tool_choice: 'auto' };
   const original = structuredClone(ctx.payload);
   await withCollaborationShim(ctx, mockChatGatewayCtx(), async () => {
     expect((ctx.payload.tools?.[0] as { name: string }).name).toBe('collaboration_2');
