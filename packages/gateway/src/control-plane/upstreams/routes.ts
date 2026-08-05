@@ -8,12 +8,12 @@ import { type AuthedContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
-import { serializeStoredConfig } from '../../repo/upstream-json.ts';
 import { shortId } from '../../shared/short-id.ts';
 import type { createUpstreamBody, updateUpstreamBody } from '../schemas.ts';
 import { isRecord } from '../shared/field-validators.ts';
 import { nextSortOrder } from '../shared/sort-order.ts';
 import { warmModelsCache } from '../shared/warm-models-cache.ts';
+import { saveUpstreamForModels } from '../shared/save-upstream-for-models.ts';
 import {
   normalizeModelPrefix,
   ALL_PROVIDER_KINDS,
@@ -336,10 +336,7 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   if (!config.ok) return c.json({ error: config.error }, 400);
   next = { ...next, config: config.value };
 
-  const previousFetchIdentity = serializeStoredConfig({ kind: existing.kind, config: existing.config, state: existing.state, proxyFallbackList: existing.proxyFallbackList });
-  const nextFetchIdentity = serializeStoredConfig({ kind: next.kind, config: next.config, state: next.state, proxyFallbackList: next.proxyFallbackList });
-  if (previousFetchIdentity === nextFetchIdentity) await getRepo().upstreams.save(next);
-  else await getRepo().upstreams.saveClearingModelsCache(next);
+  await saveUpstreamForModels(existing, next);
   const modelsCache = await warmModelsCache(next, c);
   return c.json(await serializeForResponse({ ...next, modelsCache }, knownProxyIds));
 };

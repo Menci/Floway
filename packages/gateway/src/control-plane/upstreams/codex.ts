@@ -5,6 +5,7 @@ import { getRepo } from '../../repo/index.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { codexOAuthAuthorizeUrlBody, codexOAuthExchangeBody, codexOAuthRefreshBody } from '../schemas.ts';
 import { warmModelsCache } from '../shared/warm-models-cache.ts';
+import { saveUpstreamForModels } from '../shared/save-upstream-for-models.ts';
 import type { Fetcher, UpstreamRecord } from '@floway-dev/provider';
 import {
   buildCodexAuthorizeUrl,
@@ -67,7 +68,7 @@ export const codexOAuthExchange = async (c: CtxWithJson<typeof codexOAuthExchang
       state: ingestion.state,
       updatedAt: new Date().toISOString(),
     };
-    await getRepo().upstreams.save(next);
+    await saveUpstreamForModels(dbRecord, next);
     await warmModelsCache(next, c);
   }
 

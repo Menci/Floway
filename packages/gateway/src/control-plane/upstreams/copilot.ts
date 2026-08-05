@@ -6,6 +6,7 @@ import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { copilotOAuthDeviceLoginPollBody, copilotOAuthDeviceLoginStartBody, copilotQuotaBody } from '../schemas.ts';
 import { isRecord } from '../shared/field-validators.ts';
 import { warmModelsCache } from '../shared/warm-models-cache.ts';
+import { saveUpstreamForModels } from '../shared/save-upstream-for-models.ts';
 import type { Fetcher, UpstreamRecord } from '@floway-dev/provider';
 import {
   assertCopilotUpstreamRecord,
@@ -126,8 +127,7 @@ export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
     if (!Number.isFinite(previousUpdatedAt)) throw new Error(`Copilot upstream ${record.id} has an invalid updatedAt timestamp`);
     const updatedAt = new Date(Math.max(Date.now(), previousUpdatedAt + 1)).toISOString();
     const next: UpstreamRecord = { ...dbRecord, config: configPatch, state: nextState, updatedAt };
-    if (sameIdentity) await getRepo().upstreams.save(next);
-    else await getRepo().upstreams.saveClearingModelsCache(next);
+    await saveUpstreamForModels(dbRecord, next);
     clearInProcessCopilotTokenCache();
     await warmModelsCache(next, c);
   } else {

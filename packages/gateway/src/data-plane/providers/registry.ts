@@ -23,6 +23,9 @@ export type GatewayProvider = Provider & {
   readonly modelsFetchIdentity: string;
 };
 
+export const modelsFetchIdentity = (record: Pick<UpstreamRecord, 'kind' | 'config' | 'state' | 'proxyFallbackList'>): string =>
+  serializeStoredConfig({ kind: record.kind, config: record.config, state: record.state, proxyFallbackList: record.proxyFallbackList });
+
 export const createProvider = (
   record: UpstreamRecord,
   cacheGeneration: ModelsCacheGeneration = { updatedAt: record.updatedAt, config: record.config },
@@ -31,12 +34,7 @@ export const createProvider = (
   return {
     ...provider,
     modelsCacheGeneration: cacheGeneration,
-    modelsFetchIdentity: serializeStoredConfig({
-      kind: record.kind,
-      config: record.config,
-      state: record.state,
-      proxyFallbackList: record.proxyFallbackList,
-    }),
+    modelsFetchIdentity: modelsFetchIdentity(record),
   };
 };
 

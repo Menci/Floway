@@ -18,6 +18,7 @@ import { DIRECT_FALLBACK_IDS } from '../../repo/proxy-fallback-list.ts';
 import type { ApiKey, PerformanceTelemetryRecord, UsageRecord, User, WebSearchUsageRecord } from '../../repo/types.ts';
 import { type exportQuery, type importBody } from '../schemas.ts';
 import { warmModelsCache } from '../shared/warm-models-cache.ts';
+import { saveUpstreamForModels } from '../shared/save-upstream-for-models.ts';
 import { type FullSerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 
@@ -189,7 +190,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   }
   for (const record of usage) await repo.usage.set(record);
   for (const record of searchUsage) await repo.webSearchUsage.set(record);
-  for (const upstream of upstreams) await repo.upstreams.save(upstream);
+  for (const upstream of upstreams) await saveUpstreamForModels(await repo.upstreams.getById(upstream.id), upstream);
   await Promise.all(upstreams.map(upstream => warmModelsCache(upstream, c)));
   for (const record of performance) await repo.performance.set(record);
   await repo.webSearchConfig.save(searchConfig);

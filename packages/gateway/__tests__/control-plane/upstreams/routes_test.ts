@@ -789,9 +789,9 @@ test('PATCH /api/upstreams metadata warm preserves refresh backoff', async () =>
   );
   const generation = await getCacheGeneration(repo, created.id);
   const now = Date.now();
-  const claim = await repo.upstreams.claimModelsRefresh(created.id, generation, 'failed-refresh', now, now - 900_000, false, null);
+  const claim = await repo.upstreams.claimModelsRefresh({ id: created.id, generation, token: 'failed-refresh', now, staleClaimedBefore: now - 900_000, force: false, observedActiveToken: null });
   if (claim.kind !== 'claimed') throw new Error('expected refresh claim');
-  await repo.upstreams.completeModelsRefreshFailure(created.id, 'failed-refresh', 1, modelsRefreshRetryAt(now, 0));
+  await repo.upstreams.finalizeModelsRefreshFailure(created.id, generation, 'failed-refresh', { message: 'failed refresh', at: now }, 1, modelsRefreshRetryAt(now, 0));
   let modelRequests = 0;
 
   await withMockedFetch(
