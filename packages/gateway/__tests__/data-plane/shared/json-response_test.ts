@@ -6,6 +6,7 @@ import { initRepo } from '../../../src/repo/index.ts';
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
 import { mockGatewayCtx } from '../../test-utils/gateway-ctx.ts';
+import type { BackgroundScheduler } from '@floway-dev/platform';
 import { mockPerfTelemetryContext, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const encoder = new TextEncoder();
@@ -16,13 +17,13 @@ const deferred = () => {
   return { promise, resolve };
 };
 
-const harness = () => {
+const harness = (scheduler?: BackgroundScheduler) => {
   const repo = new InMemoryRepo();
   initRepo(repo);
   const background: Promise<unknown>[] = [];
   const ctx = mockGatewayCtx({
     apiKeyId: 'key_json_observer',
-    backgroundScheduler: promise => { background.push(promise); },
+    backgroundScheduler: scheduler ?? (promise => { background.push(promise); }),
   });
   const performance = mockPerfTelemetryContext({
     keyId: ctx.apiKeyId,
@@ -199,7 +200,7 @@ test('observeJsonResponse skips zero-length chunks without changing the forwarde
 
 test('observeJsonResponse forwards truncated UTF-8 as request-only observation failure', async () => {
   const { repo, observe, flush } = harness();
-  const prefix = encoder.encode('{"ignored":"');
+  const prefix = encoder.encode('{"usage":{"prompt_tokens":12,"total_tokens":12}}');
   const bytes = new Uint8Array(prefix.length + 2);
   bytes.set(prefix);
   bytes.set([0xe2, 0x82], prefix.length);
@@ -301,7 +302,7 @@ test('observeJsonResponse exposes upstream read failure and settles once', async
   const upstream = new ReadableStream<Uint8Array>({
     pull(controller) {
       pulls += 1;
-      if (pulls === 1) controller.enqueue(encoder.encode('{"data":[]'));
+      if (pulls === 1) controller.enqueue(encoder.encode('{"data":[],"usage":{"prompt_tokens":13,"total_tokens":13}}'));
       else controller.error(failure);
     },
   }, { highWaterMark: 0 });
@@ -309,8 +310,18 @@ test('observeJsonResponse exposes upstream read failure and settles once', async
 
   await expect(response.text()).rejects.toBe(failure);
   await flush();
-  expect(await repo.usage.listAll()).toHaveLength(1);
+  const usage = await repo.usage.listAll();
+  expect(usage).toHaveLength(1);
+  expect(tokenCountsFromUsage(usage[0])).toEqual({});
   const performance = await repo.performance.listAll();
   expect(performance).toHaveLength(1);
   expect(performance[0].errorsNoOutput).toBe(1);
+});
+
+test('observeJsonResponse exposes a terminal settlement failure without leaving the body pending', async () => {
+  const failure = new Error('background scheduler failed');
+  const { observe } = harness(() => { throw failure; });
+  const response = observe(new Response('{"usage":{"prompt_tokens":1,"total_tokens":1}}'));
+
+  await expect(response.text()).rejects.toBe(failure);
 });

@@ -1,4 +1,4 @@
-import { test, vi } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import type { InMemoryRepo } from '../../repo/memory.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestApp, setupAppTest } from '../../test-utils/app.ts';
@@ -333,6 +333,32 @@ test('/v1/audio/transcriptions warns on malformed declared JSON while forwarding
   } finally {
     warnSpy.mockRestore();
   }
+});
+
+test('/v1/audio/transcriptions records a non-streaming JSON read failure as request-only', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerAudioModel(repo);
+  const failure = new Error('upstream audio JSON failed');
+  let pulls = 0;
+  await withMockedFetch(
+    () => new Response(new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        if (pulls === 1) {
+          controller.enqueue(new TextEncoder().encode('{"text":"partial","usage":{"type":"tokens","input_tokens":4,"output_tokens":2,"total_tokens":6}}'));
+        } else {
+          controller.error(failure);
+        }
+      },
+    }, { highWaterMark: 0 }), { headers: { 'content-type': 'application/json' } }),
+    async () => {
+      const response = await requestApp('/v1/audio/transcriptions', {
+        method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm(),
+      });
+      await expect(response.text()).rejects.toBe(failure);
+    },
+  );
+  await assertFailedRequestOnlySettlement(repo);
 });
 
 test('/v1/audio/transcriptions preserves unknown future usage metrics as request-only', async () => {

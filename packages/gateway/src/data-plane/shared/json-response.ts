@@ -491,8 +491,8 @@ export const observeJsonResponse = ({
           const { done, value } = await reader.read();
           if (terminated) return;
           if (done) {
-            terminated = true;
             const terminalError = finish(false);
+            terminated = true;
             if (terminalError === null) controller.close();
             else controller.error(terminalError);
             return;
