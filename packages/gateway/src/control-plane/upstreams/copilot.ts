@@ -27,11 +27,11 @@ import {
   type CopilotUsageResponse,
 } from '@floway-dev/provider-copilot';
 
-const githubHostFromConfig = (config: Record<string, unknown>): string => {
-  if (typeof config.githubHost !== 'string') {
+const parseCopilotDraftConfig = (config: unknown): { config: Record<string, unknown>; githubHost: string } => {
+  if (!isRecord(config) || typeof config.githubHost !== 'string') {
     throw new Error('Copilot config must include a GitHub host');
   }
-  return normalizeGitHubHost(config.githubHost);
+  return { config, githubHost: normalizeGitHubHost(config.githubHost) };
 };
 
 export const copilotOAuthDeviceLoginStart = async (c: CtxWithJson<typeof copilotOAuthDeviceLoginStartBody>) => {
@@ -41,8 +41,7 @@ export const copilotOAuthDeviceLoginStart = async (c: CtxWithJson<typeof copilot
   let githubHost: string;
   let fetcher: Fetcher;
   try {
-    if (!isRecord(record.config)) throw new Error('Copilot config must include a GitHub host');
-    githubHost = githubHostFromConfig(record.config);
+    ({ githubHost } = parseCopilotDraftConfig(record.config));
     fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, runtimeLocation: getRuntimeLocation(c.req.raw) });
   } catch (e: unknown) {
     return c.json({ error: errorMessage(e) }, 400);
@@ -74,8 +73,7 @@ export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
   let fetcher: Fetcher;
   let githubHost: string;
   try {
-    if (!isRecord(record.config)) throw new Error('Copilot config must include a GitHub host');
-    githubHost = githubHostFromConfig(record.config);
+    ({ githubHost } = parseCopilotDraftConfig(record.config));
     fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, runtimeLocation: getRuntimeLocation(c.req.raw) });
   } catch (err) {
     return c.json({ status: 'error' as const, error: errorMessage(err) }, 400);
@@ -159,9 +157,9 @@ export const copilotQuota = async (c: CtxWithJson<typeof copilotQuotaBody>) => {
   let githubToken: string;
   let fetcher: Fetcher;
   try {
-    if (!isRecord(record.config)) throw new Error('Copilot config must include a GitHub host');
-    const config = record.config;
-    githubHost = githubHostFromConfig(record.config);
+    const parsed = parseCopilotDraftConfig(record.config);
+    githubHost = parsed.githubHost;
+    const { config } = parsed;
     if (typeof config.githubToken !== 'string' || config.githubToken === '') {
       return c.json({ error: 'Copilot upstream has no GitHub token' }, 400);
     }
