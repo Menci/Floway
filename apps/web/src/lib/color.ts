@@ -58,8 +58,8 @@ export const readableTone = (hex: string, surface: string): string => {
   const STEPS = 100;
 
   for (let saturation = s; saturation >= 0; saturation -= 0.1) {
-    // Luminance is monotonic as HSV value moves toward the chosen black/white
-    // extreme, so this finds the same first rung as a linear walk of all 100.
+    // Luminance is monotonic along the chosen HSV value direction, so this
+    // finds the same first rung as a linear walk of all 100.
     let first = 1;
     let last = STEPS;
     let readable: string | undefined;
