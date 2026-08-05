@@ -1,6 +1,6 @@
+import { createTelemetryBucket, type TelemetryBucketGranularity } from '../../src/control-plane/shared/telemetry-bucket.ts';
 import type { PerformanceDisplayRecord, PerformanceGroupBy, PerformanceMetric, PerformanceTelemetryRecord } from '../../src/repo/types.ts';
 import { type HistogramBucket, percentileFromBuckets } from '../../src/shared/performance-histogram.ts';
-import { createTelemetryBucket, type TelemetryBucketGranularity } from '../../src/control-plane/shared/telemetry-bucket.ts';
 
 export interface AggregateOptions {
   bucket: TelemetryBucketGranularity;

@@ -1,8 +1,7 @@
 import { test } from 'vitest';
 
+import type { PerformanceDisplayRecord, PerformanceTelemetryRecord } from '../../../src/repo/types.ts';
 import { aggregatePerformanceForDisplay, type AggregateOptions } from '../../repo/performance-overview-oracle.ts';
-import type { PerformanceDisplayRecord } from '../../../src/repo/types.ts';
-import type { PerformanceTelemetryRecord } from '../../../src/repo/types.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 // The production aggregator is multi-axis: one traversal produces every

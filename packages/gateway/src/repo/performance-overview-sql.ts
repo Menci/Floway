@@ -1,6 +1,5 @@
 import type {
   PerformanceDisplayRecord,
-  PerformanceGroupBy,
   PerformanceOverviewAxis,
   PerformanceOverviewQueryOptions,
   PerformanceOverviewResult,
