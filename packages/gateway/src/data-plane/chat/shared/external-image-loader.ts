@@ -1,3 +1,4 @@
+import { dispatchRetainedResponse, type RetainedDispatchLifecycle } from '../../shared/retained-response.ts';
 import { getExternalResourceFetcher } from '@floway-dev/platform';
 import type { RemoteImageLoader } from '@floway-dev/translate';
 
@@ -76,17 +77,20 @@ const readBoundedBody = async (response: Response): Promise<BoundedBodyResult> =
   return { type: 'success', data };
 };
 
-const fetchExternalImage = async (initialUrl: URL, downstreamSignal?: AbortSignal): Promise<ExternalImageFetchResult> => {
+const fetchExternalImage = async (
+  initialUrl: URL,
+  lifecycle?: RetainedDispatchLifecycle,
+): Promise<ExternalImageFetchResult> => {
   const timeoutSignal = AbortSignal.timeout(FETCH_TIMEOUT_MS);
-  const signal = downstreamSignal === undefined
-    ? timeoutSignal
-    : AbortSignal.any([downstreamSignal, timeoutSignal]);
   let url = initialUrl;
 
-  try {
-    for (let redirectCount = 0; ; redirectCount++) {
-      downstreamSignal?.throwIfAborted();
-      const response = await getExternalResourceFetcher()(url, signal);
+  for (let redirectCount = 0; ; redirectCount++) {
+    lifecycle?.clientDisconnectSignal.throwIfAborted();
+    try {
+      const response = await dispatchRetainedResponse(
+        () => getExternalResourceFetcher()(url, timeoutSignal),
+        lifecycle,
+      );
       if (!REDIRECT_STATUSES.has(response.status)) {
         if (!response.ok) {
           await response.body?.cancel();
@@ -112,29 +116,31 @@ const fetchExternalImage = async (initialUrl: URL, downstreamSignal?: AbortSigna
       const redirected = parseExternalUrl(location, url);
       if (redirected === null) return { type: 'invalid-redirect', status: response.status, reason: 'invalid-location' };
       url = redirected;
+    } catch (error) {
+      return timeoutSignal.aborted ? { type: 'timeout' } : { type: 'transport-error', error };
     }
-  } catch (error) {
-    downstreamSignal?.throwIfAborted();
-    return timeoutSignal.aborted ? { type: 'timeout' } : { type: 'transport-error', error };
   }
 };
 
-export const createExternalImageFetcher = (downstreamSignal?: AbortSignal): ExternalImageFetcher => {
+export const createExternalImageFetcher = (
+  lifecycle?: RetainedDispatchLifecycle,
+): ExternalImageFetcher => {
   const requests = new Map<string, Promise<ExternalImageFetchResult>>();
   return value => {
-    downstreamSignal?.throwIfAborted();
     const url = parseExternalUrl(value);
     if (url === null) return Promise.resolve({ type: 'invalid-url' });
     const cached = requests.get(url.href);
     if (cached !== undefined) return cached;
-    const request = fetchExternalImage(url, downstreamSignal);
+    const request = fetchExternalImage(url, lifecycle);
     requests.set(url.href, request);
     return request;
   };
 };
 
-export const createExternalImageLoader = (downstreamSignal?: AbortSignal): RemoteImageLoader => {
-  const fetchImage = createExternalImageFetcher(downstreamSignal);
+export const createExternalImageLoader = (
+  lifecycle?: RetainedDispatchLifecycle,
+): RemoteImageLoader => {
+  const fetchImage = createExternalImageFetcher(lifecycle);
   return async url => {
     const result = await fetchImage(url);
     return result.type === 'success' ? { mediaType: result.mediaType, data: result.data } : null;

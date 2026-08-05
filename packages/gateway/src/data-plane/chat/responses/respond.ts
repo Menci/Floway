@@ -77,7 +77,7 @@ export const respondResponses = async (
     try {
       completion = await writeSSEFrames(stream, responsesSseFrames(frames, state, ctx), {
         keepAlive: { frame: sseCommentFrame('keepalive') },
-        ...(ctx.downstreamAbortController !== undefined ? { downstreamAbortController: ctx.downstreamAbortController } : {}),
+        clientDisconnectController: ctx.clientDisconnectController,
       });
     } finally {
       const metadata = await eventResultMetadata(result);

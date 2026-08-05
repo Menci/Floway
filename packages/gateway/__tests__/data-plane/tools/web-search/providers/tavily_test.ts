@@ -265,11 +265,9 @@ test('Tavily fetchPage accepts a 200 with only failed_results (results omitted)'
   );
 });
 
-test('Tavily search forwards an AbortSignal to the underlying fetch (cancellation propagates)', async () => {
-  // A disconnected client must stop generating upstream load. The
-  // provider threads the caller-supplied AbortSignal into the fetch
-  // init; the global fetch wrapper preserves it on the Request, so we
-  // can read it back here to confirm it propagated.
+test('Tavily search forwards an explicit AbortSignal to the underlying fetch', async () => {
+  // The provider threads its caller-controlled signal into fetch. The global
+  // fetch wrapper preserves it on the Request so the test can verify identity.
   let captured: AbortSignal | undefined;
   await withMockedFetch(
     incoming => {

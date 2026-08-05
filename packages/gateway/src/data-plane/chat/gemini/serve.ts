@@ -37,6 +37,7 @@ export const geminiServe = {
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
       runtimeLocation: ctx.runtimeLocation,
+      clientDisconnectSignal: ctx.clientDisconnectSignal,
     });
     const viable = enumerated.filter(c => geminiGenerateTarget.canServe(c.model.endpoints));
     const selection = selectAffinityCandidates(viable, affinity);
@@ -67,6 +68,7 @@ export const geminiServe = {
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
       runtimeLocation: ctx.runtimeLocation,
+      clientDisconnectSignal: ctx.clientDisconnectSignal,
     });
     const viable = enumerated.filter(c => geminiCountTokensTarget.canServe(c.model.endpoints));
     const selection = selectAffinityCandidates(viable, affinity);

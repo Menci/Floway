@@ -68,20 +68,36 @@ describe('providerStreamResultToExecuteResult (first-output-token stamping)', ()
   });
 });
 
-test('an abandoned stream still settles its metadata instead of hanging the caller', async () => {
-  // Every streaming response resolves its cost through finalMetadata, and the
-  // respond layer awaits it in a finally. A transport that walks away without
-  // closing the generator would hang that await forever.
-  const abort = new AbortController();
-  const ctx = { ...mockGatewayCtx(), abortSignal: abort.signal };
-  const frames: ProtocolFrame<unknown>[] = [{ type: 'event', event: { type: 'response.created' } }];
-
-  const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'responses', ctx, () => null);
+test('client disconnect does not settle metadata before terminal usage is drained', async () => {
+  const terminalUsage = { input: 7, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 3 };
+  let releaseTerminal!: (frame: ProtocolFrame<{ type: string; usage?: typeof terminalUsage }>) => void;
+  const terminal = new Promise<ProtocolFrame<{ type: string; usage?: typeof terminalUsage }>>(resolve => { releaseTerminal = resolve; });
+  const events = (async function* () {
+    yield { type: 'event', event: { type: 'response.created' } } as const;
+    yield await terminal;
+  })();
+  const controller = new AbortController();
+  const ctx = mockGatewayCtx({ clientDisconnectSignal: controller.signal, clientDisconnectController: controller });
+  const result = await providerStreamResultToExecuteResult(
+    okStreamResult(events),
+    stubModelCandidate(),
+    'responses',
+    ctx,
+    event => event.usage ?? null,
+  );
   expect(result.type).toBe('events');
   if (result.type !== 'events') return;
 
-  // Never iterate the events; just abandon them.
-  abort.abort();
+  const iterator = result.events[Symbol.asyncIterator]();
+  await iterator.next();
+  controller.abort();
+  let metadataSettled = false;
+  void result.finalMetadata!.then(() => { metadataSettled = true; });
+  await Promise.resolve();
+  expect(metadataSettled).toBe(false);
 
-  expect((await result.finalMetadata!).modelIdentity).toBeDefined();
+  releaseTerminal({ type: 'event', event: { type: 'response.completed', usage: terminalUsage } });
+  await iterator.next();
+  await iterator.next();
+  expect((await result.finalMetadata!).billableUsage).toEqual(terminalUsage);
 });
