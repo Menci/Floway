@@ -15,6 +15,8 @@ import type {
   ApiKey,
   ApiKeyRepo,
   ApiKeyUpdate,
+  CreateUserAccountResult,
+  DeleteUserAccountResult,
   ExpirationDomain,
   ExpirationSweepCompletion,
   ExpirationSweepClaim,
@@ -27,6 +29,8 @@ import type {
   ModelsCacheGeneration,
   ModelAliasesRepo,
   ModelAliasRecord,
+  NewUserAccount,
+  NewUserDefaultKey,
   PerformanceDimensions,
   PerformanceRepo,
   PerformanceTelemetryRecord,
@@ -48,9 +52,13 @@ import type {
   StoredResponsesItem,
   StoredResponsesSnapshot,
   UpstreamRepo,
+  UpstreamFieldsPatch,
   UsageRecord,
   UsageRepo,
   User,
+  UserUpdate,
+  UserUpdateOptions,
+  UpdateActiveUserResult,
   UsersRepo,
 } from '../../src/repo/types.ts';
 import { serializeStoredConfig, serializeStoredState } from '../../src/repo/upstream-json.ts';
@@ -59,7 +67,7 @@ import { bucketForTtftMs, bucketForTpotUs } from '../../src/shared/performance-h
 import { assertWebSearchProviderName, type WebSearchConfig } from '../../src/shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import { addDecimalStrings, canonicalPricingSelectorKey, canonicalizePricingSelector, type BillingMetric, type DecimalString, type PricingSelector } from '@floway-dev/protocols/common';
-import { UpstreamGoneError, type UpstreamModelsCache, type UpstreamRecord } from '@floway-dev/provider';
+import { UpstreamGenerationMismatchError, UpstreamGoneError, UpstreamKindMismatchError, type UpstreamModelsCache, type UpstreamRecord, type UpstreamStateWriteGuard } from '@floway-dev/provider';
 
 const SEED_ADMIN_USER: User = {
   id: SEED_ADMIN_USER_ID,
@@ -77,8 +85,32 @@ const SEED_ADMIN_USER: User = {
 // SQLite's NOCASE.
 const usernamesMatch = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 
+class MemoryMutationCoordinator {
+  private tail: Promise<void> = Promise.resolve();
+
+  run<T>(operation: () => T | Promise<T>): Promise<T> {
+    const result = this.tail.then(operation);
+    this.tail = result.then(() => undefined, () => undefined);
+    return result;
+  }
+}
+
 class MemoryUsersRepo implements UsersRepo {
   private users: User[] = [{ ...SEED_ADMIN_USER }];
+
+  constructor(
+    private readonly apiKeys: MemoryApiKeyRepo,
+    private readonly sessions: MemorySessionsRepo,
+    private readonly mutations: MemoryMutationCoordinator,
+  ) {}
+
+  private mutate<T>(operation: () => T | Promise<T>): Promise<T> {
+    return this.mutations.run(operation);
+  }
+
+  isActive(id: number): boolean {
+    return this.users.some(user => user.id === id && user.deletedAt === null);
+  }
 
   list(): Promise<User[]> {
     return Promise.resolve(this.users.filter(u => u.deletedAt === null).map(u => ({ ...u })));
@@ -98,13 +130,49 @@ class MemoryUsersRepo implements UsersRepo {
     return Promise.resolve(u ? { ...u } : null);
   }
 
-  createNewUser(template: Omit<User, 'id'>): Promise<User> {
-    const collision = this.users.find(u => usernamesMatch(u.username, template.username) && u.deletedAt === null);
-    if (collision) throw new Error(`username taken: ${template.username}`);
-    const id = this.users.reduce((max, u) => Math.max(max, u.id), 0) + 1;
-    const user: User = { ...template, id };
-    this.users.push(user);
-    return Promise.resolve({ ...user });
+  createAccount(template: NewUserAccount, defaultKey: NewUserDefaultKey): Promise<CreateUserAccountResult> {
+    return this.mutate(() => {
+      const collision = this.users.find(u => usernamesMatch(u.username, template.username) && u.deletedAt === null);
+      if (collision) return { status: 'username-taken' };
+      const id = this.users.reduce((max, u) => Math.max(max, u.id), 0) + 1;
+      const user: User = { ...template, id, deletedAt: null };
+      this.apiKeys.insertAccountKey({ ...defaultKey, userId: id, deletedAt: null });
+      this.users.push(user);
+      return { status: 'created', user: { ...user } };
+    });
+  }
+
+  updateActive(id: number, patch: UserUpdate, options?: UserUpdateOptions): Promise<UpdateActiveUserResult> {
+    return this.mutate(() => {
+      const index = this.users.findIndex(user => user.id === id && user.deletedAt === null);
+      if (index < 0) return { status: 'missing' };
+      const existing = this.users[index];
+      if (patch.username !== undefined) {
+        const collision = this.users.find(user => usernamesMatch(user.username, patch.username!) && user.deletedAt === null && user.id !== id);
+        if (collision) return { status: 'username-taken' };
+      }
+      const user = { ...existing, ...patch };
+      this.users[index] = user;
+      if (options !== undefined) {
+        if (options.keepSessionId === null) this.sessions.deleteByUserIdNow(id);
+        else this.sessions.deleteByUserIdExceptNow(id, options.keepSessionId);
+      }
+      return { status: 'updated', user: { ...user } };
+    });
+  }
+
+  deleteAccount(id: number, deletedAt: string): Promise<DeleteUserAccountResult> {
+    return this.mutate(async () => {
+      const index = this.users.findIndex(user => user.id === id && user.deletedAt === null);
+      if (index < 0) return { status: 'missing' };
+      const keyDeletion = await this.apiKeys.prepareAccountDeletion(id, deletedAt);
+      const currentIndex = this.users.findIndex(user => user.id === id && user.deletedAt === null);
+      if (currentIndex < 0) return { status: 'missing' };
+      keyDeletion.commit();
+      this.sessions.deleteByUserIdNow(id);
+      this.users[currentIndex] = { ...this.users[currentIndex], deletedAt };
+      return { status: 'deleted', apiKeyIds: keyDeletion.apiKeyIds };
+    });
   }
 
   async save(user: User): Promise<void> {
@@ -118,13 +186,6 @@ class MemoryUsersRepo implements UsersRepo {
     else this.users.push({ ...user });
   }
 
-  async softDelete(id: number): Promise<boolean> {
-    const i = this.users.findIndex(u => u.id === id && u.deletedAt === null);
-    if (i < 0) return false;
-    this.users[i] = { ...this.users[i], deletedAt: new Date().toISOString() };
-    return true;
-  }
-
   deleteAll(): Promise<void> {
     this.users = [];
     return Promise.resolve();
@@ -133,6 +194,11 @@ class MemoryUsersRepo implements UsersRepo {
 
 class MemorySessionsRepo implements SessionsRepo {
   private sessions: Session[] = [];
+
+  constructor(
+    private readonly isUserActive: (userId: number) => boolean,
+    private readonly mutations: MemoryMutationCoordinator,
+  ) {}
 
   getByIdAndTouch(id: string): Promise<Session | null> {
     const i = this.sessions.findIndex(s => s.id === id);
@@ -149,22 +215,26 @@ class MemorySessionsRepo implements SessionsRepo {
     return Promise.resolve({ ...session });
   }
 
+  createForActiveUser(userId: number): Promise<Session | null> {
+    return this.mutations.run(() => this.isUserActive(userId) ? this.create(userId) : null);
+  }
+
   deleteById(id: string): Promise<boolean> {
     const before = this.sessions.length;
     this.sessions = this.sessions.filter(s => s.id !== id);
     return Promise.resolve(this.sessions.length < before);
   }
 
-  deleteByUserId(userId: number): Promise<number> {
+  deleteByUserIdNow(userId: number): number {
     const before = this.sessions.length;
     this.sessions = this.sessions.filter(s => s.userId !== userId);
-    return Promise.resolve(before - this.sessions.length);
+    return before - this.sessions.length;
   }
 
-  deleteByUserIdExcept(userId: number, exceptId: string): Promise<number> {
+  deleteByUserIdExceptNow(userId: number, exceptId: string): number {
     const before = this.sessions.length;
     this.sessions = this.sessions.filter(s => s.userId !== userId || s.id === exceptId);
-    return Promise.resolve(before - this.sessions.length);
+    return before - this.sessions.length;
   }
 
   deleteAll(): Promise<void> {
@@ -176,7 +246,52 @@ class MemorySessionsRepo implements SessionsRepo {
 class MemoryApiKeyRepo implements ApiKeyRepo {
   private keys: ApiKey[] = [];
 
-  constructor(private readonly expirationSweeps: ExpirationSweepsRepo) {}
+  constructor(
+    private readonly expirationSweeps: ExpirationSweepsRepo,
+    private readonly isUserActive: (userId: number) => boolean,
+    private readonly mutations: MemoryMutationCoordinator,
+  ) {}
+
+  insertAccountKey(key: ApiKey): void {
+    if (this.keys.some(existing => existing.id === key.id)) {
+      throw new Error('UNIQUE constraint failed: api_keys.id');
+    }
+    if (this.keys.some(existing => existing.key === key.key)) {
+      throw new Error('UNIQUE constraint failed: api_keys.key');
+    }
+    if (this.keys.some(existing => existing.serverSecret === key.serverSecret)) {
+      throw new Error('UNIQUE constraint failed: api_keys.server_secret');
+    }
+    this.keys.push(this.clone(key));
+  }
+
+  async prepareAccountDeletion(userId: number, deletedAt: string): Promise<{ apiKeyIds: string[]; commit: () => void }> {
+    const activeKeys = this.keys.filter(key => key.userId === userId && key.deletedAt === null);
+    const nextKeys = activeKeys.map(key => ({ ...key, deletedAt, responsesRetentionSeconds: 0 }));
+    await Promise.all(nextKeys.map((next, index) => this.schedulePolicyChanges(activeKeys[index], next)));
+    return {
+      apiKeyIds: activeKeys.map(key => key.id),
+      commit: () => {
+        for (const next of nextKeys) {
+          const index = this.keys.findIndex(key => key.id === next.id && key.deletedAt === null);
+          if (index >= 0) this.keys[index] = next;
+        }
+      },
+    };
+  }
+
+  private clone(key: ApiKey): ApiKey {
+    return { ...key, upstreamIds: key.upstreamIds === null ? null : [...key.upstreamIds] };
+  }
+
+  private assertUnique(key: ApiKey): void {
+    if (this.keys.some(existing => existing.id !== key.id && existing.key === key.key)) {
+      throw new Error('UNIQUE constraint failed: api_keys.key');
+    }
+    if (this.keys.some(existing => existing.id !== key.id && existing.serverSecret === key.serverSecret)) {
+      throw new Error('UNIQUE constraint failed: api_keys.server_secret');
+    }
+  }
 
   private schedulePolicyChanges(previous: ApiKey, next: ApiKey): Promise<void> {
     const schedules: Promise<void>[] = [];
@@ -190,93 +305,113 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
   }
 
   list(): Promise<ApiKey[]> {
-    return Promise.resolve(this.keys.filter(k => k.deletedAt === null).map(k => ({ ...k })));
+    return Promise.resolve(this.keys.filter(k => k.deletedAt === null).map(k => this.clone(k)));
   }
 
   listIncludingDeleted(): Promise<ApiKey[]> {
-    return Promise.resolve(this.keys.map(k => ({ ...k })));
+    return Promise.resolve(this.keys.map(k => this.clone(k)));
   }
 
   listByUserId(userId: number): Promise<ApiKey[]> {
-    return Promise.resolve(this.keys.filter(k => k.userId === userId && k.deletedAt === null).map(k => ({ ...k })));
+    return Promise.resolve(this.keys.filter(k => k.userId === userId && k.deletedAt === null).map(k => this.clone(k)));
   }
 
   listByUserIdIncludingDeleted(userId: number): Promise<ApiKey[]> {
-    return Promise.resolve(this.keys.filter(k => k.userId === userId).map(k => ({ ...k })));
+    return Promise.resolve(this.keys.filter(k => k.userId === userId).map(k => this.clone(k)));
   }
 
   findByRawKey(rawKey: string): Promise<ApiKey | null> {
     const k = this.keys.find(k => k.key === rawKey && k.deletedAt === null);
-    return Promise.resolve(k ? { ...k } : null);
+    return Promise.resolve(k ? this.clone(k) : null);
+  }
+
+  findByRawKeyIncludingDeleted(rawKey: string): Promise<ApiKey | null> {
+    const k = this.keys.find(k => k.key === rawKey);
+    return Promise.resolve(k ? this.clone(k) : null);
   }
 
   getById(id: string): Promise<ApiKey | null> {
     const k = this.keys.find(k => k.id === id && k.deletedAt === null);
-    return Promise.resolve(k ? { ...k } : null);
+    return Promise.resolve(k ? this.clone(k) : null);
   }
 
   async save(key: ApiKey): Promise<void> {
+    this.assertUnique(key);
     const i = this.keys.findIndex(k => k.id === key.id);
     if (i >= 0) {
       const previous = this.keys[i];
-      this.keys[i] = { ...key };
+      const next = this.clone(key);
+      this.keys[i] = next;
       try {
-        await this.schedulePolicyChanges(previous, key);
+        await this.schedulePolicyChanges(previous, next);
       } catch (error) {
         this.keys[i] = previous;
         throw error;
       }
-    } else this.keys.push({ ...key });
+    } else this.keys.push(this.clone(key));
   }
 
-  async update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null> {
-    const i = this.keys.findIndex(key => key.id === id && key.deletedAt === null);
-    if (i < 0) return null;
-    const previous = this.keys[i];
-    const next = { ...previous, ...patch };
-    this.keys[i] = next;
-    try {
-      await this.schedulePolicyChanges(previous, next);
-    } catch (error) {
-      this.keys[i] = previous;
-      throw error;
-    }
-    return { ...next };
+  insertForActiveUser(key: ApiKey): Promise<ApiKey | null> {
+    return this.mutations.run(() => {
+      if (!this.isUserActive(key.userId)) return null;
+      this.insertAccountKey(key);
+      return this.clone(key);
+    });
   }
 
-  async softDelete(id: string): Promise<boolean> {
-    const i = this.keys.findIndex(k => k.id === id && k.deletedAt === null);
-    if (i < 0) return false;
-    const previous = this.keys[i];
-    const next = { ...previous, deletedAt: new Date().toISOString(), responsesRetentionSeconds: 0 };
-    this.keys[i] = next;
-    try {
-      await this.schedulePolicyChanges(previous, next);
-    } catch (error) {
-      this.keys[i] = previous;
-      throw error;
-    }
-    return true;
-  }
-
-  async softDeleteByUserId(userId: number): Promise<number> {
-    const now = new Date().toISOString();
-    const updates: Array<{ index: number; previous: ApiKey; next: ApiKey }> = [];
-    for (let i = 0; i < this.keys.length; i++) {
-      const k = this.keys[i];
-      if (k.userId === userId && k.deletedAt === null) {
-        const next = { ...k, deletedAt: now, responsesRetentionSeconds: 0 };
-        updates.push({ index: i, previous: k, next });
+  update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null> {
+    return this.mutations.run(async () => {
+      const i = this.keys.findIndex(key => key.id === id && key.deletedAt === null);
+      if (i < 0) return null;
+      const previous = this.keys[i];
+      if (!this.isUserActive(previous.userId)) return null;
+      const next = this.clone({ ...previous, ...patch });
+      this.assertUnique(next);
+      this.keys[i] = next;
+      try {
+        await this.schedulePolicyChanges(previous, next);
+      } catch (error) {
+        this.keys[i] = previous;
+        throw error;
       }
-    }
-    for (const update of updates) this.keys[update.index] = update.next;
-    try {
-      await Promise.all(updates.map(update => this.schedulePolicyChanges(update.previous, update.next)));
-    } catch (error) {
-      for (const update of updates) this.keys[update.index] = update.previous;
-      throw error;
-    }
-    return updates.length;
+      return this.clone(next);
+    });
+  }
+
+  rotate(id: string, expectedRawKey: string, nextRawKey: string): Promise<ApiKey | null> {
+    return this.mutations.run(async () => {
+      const i = this.keys.findIndex(key => key.id === id && key.key === expectedRawKey && key.deletedAt === null);
+      if (i < 0) return null;
+      const previous = this.keys[i];
+      if (!this.isUserActive(previous.userId)) return null;
+      const next = this.clone({ ...previous, key: nextRawKey });
+      this.assertUnique(next);
+      this.keys[i] = next;
+      try {
+        await this.schedulePolicyChanges(previous, next);
+      } catch (error) {
+        this.keys[i] = previous;
+        throw error;
+      }
+      return this.clone(next);
+    });
+  }
+
+  softDelete(id: string): Promise<boolean> {
+    return this.mutations.run(async () => {
+      const i = this.keys.findIndex(k => k.id === id && k.deletedAt === null);
+      if (i < 0) return false;
+      const previous = this.keys[i];
+      const next = this.clone({ ...previous, deletedAt: new Date().toISOString(), responsesRetentionSeconds: 0 });
+      this.keys[i] = next;
+      try {
+        await this.schedulePolicyChanges(previous, next);
+      } catch (error) {
+        this.keys[i] = previous;
+        throw error;
+      }
+      return true;
+    });
   }
 
   async deleteAll(): Promise<void> {
@@ -599,6 +734,27 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     return Promise.resolve();
   }
 
+  updateFields(
+    id: string,
+    expectedKind: UpstreamRecord['kind'],
+    patch: UpstreamFieldsPatch,
+    options: { clearModelsCache?: boolean } = {},
+  ): Promise<UpstreamRecord | null> {
+    if (Object.keys(patch).length === 0 && !options.clearModelsCache) return Promise.resolve(null);
+    const existing = this.store.get(id);
+    if (existing?.kind !== expectedKind) return Promise.resolve(null);
+    const next = {
+      ...existing,
+      ...patch,
+      updatedAt: patch.updatedAt === undefined || patch.updatedAt < existing.updatedAt
+        ? existing.updatedAt
+        : patch.updatedAt,
+      modelsCache: options.clearModelsCache ? null : existing.modelsCache,
+    };
+    this.store.set(id, cloneUpstreamRecord(next));
+    return Promise.resolve(cloneUpstreamRecord(next));
+  }
+
   delete(id: string): Promise<boolean> {
     return Promise.resolve(this.store.delete(id));
   }
@@ -612,9 +768,15 @@ class MemoryUpstreamRepo implements UpstreamRepo {
   // the current state and the write always lands. Serialization still round-
   // trips through the canonical encoder so a mutator that returns its argument
   // unchanged is a no-op here too.
-  saveState(id: string, mutate: (current: unknown) => unknown): Promise<void> {
+  saveState(id: string, mutate: (current: unknown) => unknown, guard?: UpstreamStateWriteGuard): Promise<void> {
     const existing = this.store.get(id);
     if (!existing) throw new UpstreamGoneError(id);
+    if (guard !== undefined && existing.kind !== guard.kind) {
+      throw new UpstreamKindMismatchError(id, guard.kind, existing.kind);
+    }
+    if (guard?.config !== undefined && serializeStoredConfig(existing.config) !== serializeStoredConfig(guard.config)) {
+      throw new UpstreamGenerationMismatchError(id);
+    }
     const next = mutate(existing.state);
     const serialized = serializeStoredState(next);
     existing.state = serialized === null ? null : (JSON.parse(serialized) as unknown);
@@ -954,7 +1116,10 @@ class MemoryExpirationSweepsRepo implements ExpirationSweepsRepo {
 class MemoryProxyRepo implements ProxyRepo {
   private store = new Map<string, ProxyRecord>();
 
-  constructor(private upstreams: UpstreamRepo) {}
+  constructor(
+    private upstreams: UpstreamRepo,
+    private resetBackoffs: (proxyId: string) => Promise<void>,
+  ) {}
 
   list(): Promise<ProxyRecord[]> {
     return Promise.resolve(
@@ -983,11 +1148,10 @@ class MemoryProxyRepo implements ProxyRepo {
     return Promise.resolve(cloneProxyRecord(record));
   }
 
-  patch(id: string, patch: { name?: string; url?: string; dialTimeoutSeconds?: number | null }): Promise<{ record: ProxyRecord; urlChanged: boolean } | null> {
+  patch(id: string, patch: { name?: string; url?: string; dialTimeoutSeconds?: number | null }): Promise<ProxyRecord | null> {
     const existing = this.store.get(id);
     if (!existing) return Promise.resolve(null);
 
-    const urlChanged = patch.url !== undefined && patch.url !== existing.url;
     // Distinguish "absent" from "explicit null" — `??` would collapse a
     // deliberate clear back to the existing value.
     const nextDialTimeout = Object.hasOwn(patch, 'dialTimeoutSeconds') ? patch.dialTimeoutSeconds! : existing.dialTimeoutSeconds;
@@ -999,7 +1163,7 @@ class MemoryProxyRepo implements ProxyRepo {
       updatedAt: new Date().toISOString(),
     };
     this.store.set(id, updated);
-    return Promise.resolve({ record: cloneProxyRecord(updated), urlChanged });
+    return Promise.resolve(cloneProxyRecord(updated));
   }
 
   async delete(id: string): Promise<boolean> {
@@ -1009,12 +1173,15 @@ class MemoryProxyRepo implements ProxyRepo {
     // rejected at the storage layer.
     const upstreams = await this.upstreams.list();
     if (upstreams.some(u => u.proxyFallbackList.some(e => e.id === id))) return false;
-    return this.store.delete(id);
+    const deleted = this.store.delete(id);
+    if (deleted) await this.resetBackoffs(id);
+    return deleted;
   }
 
-  deleteAll(): Promise<void> {
+  async deleteAll(): Promise<void> {
+    const ids = [...this.store.keys()];
     this.store.clear();
-    return Promise.resolve();
+    await Promise.all(ids.map(async id => await this.resetBackoffs(id)));
   }
 
   save(record: { id: string; name: string; url: string; dialTimeoutSeconds: number | null }): Promise<void> {
@@ -1043,27 +1210,35 @@ class MemoryProxyRepo implements ProxyRepo {
 
 const cloneProxyRecord = (record: ProxyRecord): ProxyRecord => ({ ...record });
 
+interface MemoryBackoffRow extends BackoffRow {
+  proxyUrl: string;
+}
+
 class MemoryProxyBackoffRepo implements ProxyBackoffRepo {
-  private rows = new Map<string, BackoffRow>();
+  private rows = new Map<string, MemoryBackoffRow>();
+
+  constructor(private getProxy: (proxyId: string) => Promise<ProxyRecord | null>) {}
 
   private key(proxyId: string, upstreamId: string): string {
     return `${proxyId}\0${upstreamId}`;
   }
 
-  recordDialFailure(proxyId: string, upstreamId: string, errorMessage: string): Promise<void> {
+  async recordDialFailure(proxyId: string, upstreamId: string, proxyUrl: string, errorMessage: string): Promise<boolean> {
+    if ((await this.getProxy(proxyId))?.url !== proxyUrl) return false;
     const k = this.key(proxyId, upstreamId);
     const now = Math.floor(Date.now() / 1000);
     const existing = this.rows.get(k);
-    if (!existing) {
+    if (existing?.proxyUrl !== proxyUrl) {
       this.rows.set(k, {
         proxyId,
         upstreamId,
+        proxyUrl,
         failCount: 1,
         expiresAt: now + 60,
         lastError: errorMessage,
         lastErrorAt: now,
       });
-      return Promise.resolve();
+      return true;
     }
     // Mirror the SQL UPSERT schedule (see SqlProxyBackoffRepo.recordDialFailure).
     // The exponent is clamped at 6 to stay within JS's 32-bit signed shift
@@ -1073,33 +1248,38 @@ class MemoryProxyBackoffRepo implements ProxyBackoffRepo {
     this.rows.set(k, {
       proxyId,
       upstreamId,
+      proxyUrl,
       failCount: previousFailCount + 1,
       expiresAt: now + Math.min(60 * (1 << Math.min(previousFailCount, 6)), 3600),
       lastError: errorMessage,
       lastErrorAt: now,
     });
-    return Promise.resolve();
+    return true;
   }
 
-  recordDialSuccess(proxyId: string, upstreamId: string): Promise<void> {
-    this.rows.delete(this.key(proxyId, upstreamId));
-    return Promise.resolve();
+  async recordDialSuccess(proxyId: string, upstreamId: string, proxyUrl: string): Promise<boolean> {
+    if ((await this.getProxy(proxyId))?.url !== proxyUrl) return false;
+    const key = this.key(proxyId, upstreamId);
+    if (this.rows.get(key)?.proxyUrl !== proxyUrl) return false;
+    return this.rows.delete(key);
   }
 
-  listForUpstream(upstreamId: string): Promise<BackoffRow[]> {
-    return Promise.resolve(
-      [...this.rows.values()].filter(r => r.upstreamId === upstreamId).map(cloneBackoffRow),
-    );
+  private async currentRows(): Promise<MemoryBackoffRow[]> {
+    const rows = [...this.rows.values()];
+    const current = await Promise.all(rows.map(async row => (await this.getProxy(row.proxyId))?.url === row.proxyUrl));
+    return rows.filter((_, index) => current[index]);
   }
 
-  listForProxy(proxyId: string): Promise<BackoffRow[]> {
-    return Promise.resolve(
-      [...this.rows.values()].filter(r => r.proxyId === proxyId).map(cloneBackoffRow),
-    );
+  async listForUpstream(upstreamId: string): Promise<BackoffRow[]> {
+    return (await this.currentRows()).filter(r => r.upstreamId === upstreamId).map(cloneBackoffRow);
   }
 
-  listAll(): Promise<BackoffRow[]> {
-    return Promise.resolve([...this.rows.values()].map(cloneBackoffRow));
+  async listForProxy(proxyId: string): Promise<BackoffRow[]> {
+    return (await this.currentRows()).filter(r => r.proxyId === proxyId).map(cloneBackoffRow);
+  }
+
+  async listAll(): Promise<BackoffRow[]> {
+    return (await this.currentRows()).map(cloneBackoffRow);
   }
 
   resetForProxy(proxyId: string): Promise<void> {
@@ -1127,7 +1307,14 @@ class MemoryProxyBackoffRepo implements ProxyBackoffRepo {
   }
 }
 
-const cloneBackoffRow = (row: BackoffRow): BackoffRow => ({ ...row });
+const cloneBackoffRow = (row: BackoffRow): BackoffRow => ({
+  proxyId: row.proxyId,
+  upstreamId: row.upstreamId,
+  failCount: row.failCount,
+  expiresAt: row.expiresAt,
+  lastError: row.lastError,
+  lastErrorAt: row.lastErrorAt,
+});
 
 const cloneModelAliasRecord = (record: ModelAliasRecord): ModelAliasRecord => ({
   ...record,
@@ -1163,6 +1350,7 @@ class MemoryModelAliasesRepo implements ModelAliasesRepo {
   }
 
   insert(record: ModelAliasRecord): Promise<void> {
+    if (this.store.has(record.id)) throw new Error('UNIQUE constraint failed: model_aliases.id');
     if (this.nameTaken(record.name, null)) throw new Error('UNIQUE constraint failed: model_aliases.name');
     this.store.set(record.id, cloneModelAliasRecord(record));
     return Promise.resolve();
@@ -1251,7 +1439,7 @@ class MemoryAgentSetupRepo implements AgentSetupRepository {
       ...existing,
       configurationJson: input.configurationJson,
       configurationRevision: existing.configurationRevision + 1,
-      expiresAt: input.expiresAt,
+      expiresAt: Math.max(existing.expiresAt, input.expiresAt),
       updatedAt: input.now,
     };
     this.byToken.set(record.token, record);
@@ -1265,8 +1453,8 @@ class MemoryAgentSetupRepo implements AgentSetupRepository {
   }): Promise<AgentSetupRenewal> {
     const existing = this.byToken.get(input.token);
     if (!existing || existing.userId !== input.userId) return Promise.resolve({ status: 'missing' });
-    // Expiry-only: updated_at and the revision stay put.
-    const record: AgentSetupRecord = { ...existing, expiresAt: input.expiresAt };
+    // Monotonic expiry-only: updated_at and the revision stay put.
+    const record: AgentSetupRecord = { ...existing, expiresAt: Math.max(existing.expiresAt, input.expiresAt) };
     this.byToken.set(record.token, record);
     return Promise.resolve({ status: 'ok', record: { ...record } });
   }
@@ -1291,17 +1479,29 @@ export class InMemoryRepo implements Repo {
   agentSetup: AgentSetupRepository;
 
   constructor() {
-    this.users = new MemoryUsersRepo();
-    this.sessions = new MemorySessionsRepo();
+    const mutations = new MemoryMutationCoordinator();
+    const userHolder: { current?: MemoryUsersRepo } = {};
+    const isUserActive = (userId: number) => {
+      if (!userHolder.current) throw new Error('InMemoryRepo users are not initialized');
+      return userHolder.current.isActive(userId);
+    };
+    const sessions = new MemorySessionsRepo(isUserActive, mutations);
     this.expirationSweeps = new MemoryExpirationSweepsRepo();
-    this.apiKeys = new MemoryApiKeyRepo(this.expirationSweeps);
+    const apiKeys = new MemoryApiKeyRepo(this.expirationSweeps, isUserActive, mutations);
+    const users = new MemoryUsersRepo(apiKeys, sessions, mutations);
+    userHolder.current = users;
+    this.users = users;
+    this.sessions = sessions;
+    this.apiKeys = apiKeys;
     this.usage = new MemoryUsageRepo();
     this.webSearchUsage = new MemoryWebSearchUsageRepo();
     this.performance = new MemoryPerformanceRepo();
     this.webSearchConfig = new MemoryWebSearchConfigRepo();
     this.upstreams = new MemoryUpstreamRepo();
-    this.proxies = new MemoryProxyRepo(this.upstreams);
-    this.proxyBackoffs = new MemoryProxyBackoffRepo();
+    const proxyBackoffs = new MemoryProxyBackoffRepo(async id => await this.proxies.getById(id));
+    const proxies = new MemoryProxyRepo(this.upstreams, async id => await proxyBackoffs.resetForProxy(id));
+    this.proxies = proxies;
+    this.proxyBackoffs = proxyBackoffs;
     this.modelAliases = new MemoryModelAliasesRepo();
     this.responsesItems = new MemoryResponsesItemsRepo(this.apiKeys, this.expirationSweeps);
     this.responsesSnapshots = new MemoryResponsesSnapshotsRepo(this.apiKeys, this.expirationSweeps);

@@ -76,7 +76,7 @@ class FakeAgentSetupRepository implements AgentSetupRepository {
       ...row,
       configurationJson: input.configurationJson,
       configurationRevision: row.configurationRevision + 1,
-      expiresAt: input.expiresAt,
+      expiresAt: Math.max(row.expiresAt, input.expiresAt),
       updatedAt: input.now,
     };
     this.rows.set(updated.token, updated);
@@ -86,7 +86,7 @@ class FakeAgentSetupRepository implements AgentSetupRepository {
   renewLease(input: { userId: number; token: string; expiresAt: number }): Promise<AgentSetupRenewal> {
     const row = this.rows.get(input.token);
     if (!row || row.userId !== input.userId) return Promise.resolve({ status: 'missing' });
-    const updated: AgentSetupRecord = { ...row, expiresAt: input.expiresAt };
+    const updated: AgentSetupRecord = { ...row, expiresAt: Math.max(row.expiresAt, input.expiresAt) };
     this.rows.set(updated.token, updated);
     return Promise.resolve({ status: 'ok', record: { ...updated } });
   }
@@ -181,7 +181,7 @@ const create = async (h: Harness, apiKeyId = 'key_primary'): Promise<LeaseRespon
 
 // --- create: first use, restore, multi-page independence ---
 
-test('POST first use selects the first key and enables both agents at revision 1', async () => {
+test('POST first use creates defaults for the requested key at revision 1', async () => {
   const h = harness();
   const body = await create(h);
 
@@ -239,17 +239,62 @@ test('POST rejects a requested key outside a non-empty selectable set before rea
   expect(h.repo.rows.size).toBe(0);
 });
 
-test('POST restores the latest saved configuration whose key is still selectable', async () => {
-  const h = harness();
+test('malformed JSON bodies stop before any control dependency is called', async () => {
+  const listSelectableApiKeyIds = vi.fn(() => Promise.resolve(['key_primary']));
+  const h = harness({ controlOverrides: { listSelectableApiKeyIds } });
+  const latestSpy = vi.spyOn(h.repo, 'latestByUserId');
+  const insertSpy = vi.spyOn(h.repo, 'insertForUser');
+
+  for (const body of ['{', '{}']) {
+    const response = await h.request('/api/setup', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body,
+    });
+    expect(response.status).toEqual(400);
+  }
+  expect(listSelectableApiKeyIds).not.toHaveBeenCalled();
+  expect(latestSpy).not.toHaveBeenCalled();
+  expect(insertSpy).not.toHaveBeenCalled();
+});
+
+test('POST restores the latest saved preferences while switching to another selectable key', async () => {
+  const h = harness({
+    keys: ['key_primary', 'key_other'],
+    secrets: { key_primary: RAW_KEY, key_other: 'raw-other' },
+  });
   const first = await create(h);
   const edited = { ...first.configuration, codex: { ...first.configuration.codex, reasoningEffort: 'high' } };
   await h.request('/api/setup', putJson({ token: first.token, configuration: edited, expectedRevision: first.configurationRevision }));
 
-  const reopened = await create(h);
+  const reopened = await create(h, 'key_other');
+  expect(reopened.configuration.apiKeyId).toEqual('key_other');
   expect(reopened.configuration.codex.reasoningEffort).toEqual('high');
   // A reopen inserts a brand-new independent lease; it never reuses a token.
   expect(reopened.token).not.toBe(first.token);
   expect(reopened.configurationRevision).toEqual(1);
+});
+
+test('POST restores an expired latest configuration before sweeping its old lease', async () => {
+  const h = harness();
+  const now = Date.now();
+  const token = 'w'.repeat(43);
+  const configuration = {
+    ...JSON.parse(FULL_CONFIG_JSON('key_primary')) as LeaseResponse['configuration'],
+    codex: { model: 'gpt-custom', reasoningEffort: 'high' },
+  };
+  await h.repo.insertForUser({
+    userId: USER_ID,
+    token,
+    configurationJson: JSON.stringify(configuration),
+    now: now - 10_000,
+    expiresAt: now - 1,
+  });
+
+  const reopened = await create(h);
+  expect(reopened.configuration.codex.model).toEqual('gpt-custom');
+  expect(reopened.configuration.codex.reasoningEffort).toEqual('high');
+  expect(await h.repo.findByToken(token)).toEqual(null);
 });
 
 test('POST falls back to a first-use default when the latest config points at an unselectable key', async () => {
@@ -320,25 +365,118 @@ test('PUT rejecting an unavailable key returns a 400 that leaks nothing', async 
   expect(JSON.stringify(errorBody)).not.toContain(lease.token);
 });
 
-test('heartbeat renews expiry without bumping revision or updated_at', async () => {
+test('create and heartbeat apply the exact five-minute TTL without bumping revision or updated_at', async () => {
   vi.useFakeTimers();
   try {
-    vi.setSystemTime(1_000_000);
+    const createdAt = Date.parse('2026-08-06T00:00:00.000Z');
+    vi.setSystemTime(createdAt);
     const h = harness();
     const lease = await create(h);
+    expect(lease.expiresAt).toEqual(createdAt + 300_000);
     const before = await h.repo.findByToken(lease.token);
-    vi.setSystemTime(1_001_234);
 
+    const heartbeatAt = createdAt + 12_345;
+    vi.setSystemTime(heartbeatAt);
     const response = await h.request('/api/setup/heartbeat', heartbeatJson({ token: lease.token }));
     expect(response.status).toEqual(200);
     const body = (await response.json()) as LeaseResponse;
     expect(body.status).toEqual('ok');
-    expect(body.expiresAt).toEqual(1_301_234);
+    expect(body.expiresAt).toEqual(heartbeatAt + 300_000);
     expect(body.configurationRevision).toEqual(lease.configurationRevision);
     const after = await h.repo.findByToken(lease.token);
-    expect(after!.expiresAt).toEqual(1_301_234);
     expect(after!.updatedAt).toEqual(before!.updatedAt);
   } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('out-of-order heartbeat completion cannot shorten a newer lease', async () => {
+  vi.useFakeTimers();
+  const firstEntered = Promise.withResolvers<void>();
+  const releaseFirst = Promise.withResolvers<void>();
+  try {
+    const createdAt = Date.parse('2026-08-06T00:00:00.000Z');
+    vi.setSystemTime(createdAt);
+    const h = harness();
+    const lease = await create(h);
+    const renewLease = h.repo.renewLease.bind(h.repo);
+    let callCount = 0;
+    h.repo.renewLease = async input => {
+      callCount += 1;
+      if (callCount === 1) {
+        firstEntered.resolve();
+        await releaseFirst.promise;
+      }
+      return await renewLease(input);
+    };
+
+    const staleHeartbeatAt = createdAt + 10_000;
+    vi.setSystemTime(staleHeartbeatAt);
+    const staleResponsePromise = h.request('/api/setup/heartbeat', heartbeatJson({ token: lease.token }));
+    await firstEntered.promise;
+
+    const newerHeartbeatAt = createdAt + 20_000;
+    vi.setSystemTime(newerHeartbeatAt);
+    const newerResponse = await h.request('/api/setup/heartbeat', heartbeatJson({ token: lease.token }));
+    releaseFirst.resolve();
+    const staleResponse = await staleResponsePromise;
+
+    expect(newerResponse.status).toEqual(200);
+    expect(staleResponse.status).toEqual(200);
+    const expectedExpiry = newerHeartbeatAt + 300_000;
+    expect(((await newerResponse.json()) as LeaseResponse).expiresAt).toEqual(expectedExpiry);
+    expect(((await staleResponse.json()) as LeaseResponse).expiresAt).toEqual(expectedExpiry);
+    expect((await h.repo.findByToken(lease.token))?.expiresAt).toEqual(expectedExpiry);
+  } finally {
+    releaseFirst.resolve();
+    vi.useRealTimers();
+  }
+});
+
+test('a delayed configuration update cannot shorten a lease extended by a newer heartbeat', async () => {
+  vi.useFakeTimers();
+  const updateEntered = Promise.withResolvers<void>();
+  const releaseUpdate = Promise.withResolvers<void>();
+  try {
+    const createdAt = Date.parse('2026-08-06T00:00:00.000Z');
+    vi.setSystemTime(createdAt);
+    const h = harness();
+    const lease = await create(h);
+    const updateConfiguration = h.repo.updateConfiguration.bind(h.repo);
+    h.repo.updateConfiguration = async input => {
+      updateEntered.resolve();
+      await releaseUpdate.promise;
+      return await updateConfiguration(input);
+    };
+
+    const staleUpdateAt = createdAt + 10_000;
+    vi.setSystemTime(staleUpdateAt);
+    const edited = { ...lease.configuration, codex: { ...lease.configuration.codex, model: 'gpt-after-race' } };
+    const updateResponsePromise = h.request('/api/setup', putJson({
+      token: lease.token,
+      configuration: edited,
+      expectedRevision: lease.configurationRevision,
+    }));
+    await updateEntered.promise;
+
+    const newerHeartbeatAt = createdAt + 20_000;
+    vi.setSystemTime(newerHeartbeatAt);
+    const heartbeatResponse = await h.request('/api/setup/heartbeat', heartbeatJson({ token: lease.token }));
+    releaseUpdate.resolve();
+    const updateResponse = await updateResponsePromise;
+
+    expect(heartbeatResponse.status).toEqual(200);
+    expect(updateResponse.status).toEqual(200);
+    const expectedExpiry = newerHeartbeatAt + 300_000;
+    const updated = (await updateResponse.json()) as LeaseResponse;
+    expect(updated.expiresAt).toEqual(expectedExpiry);
+    expect(updated.configurationRevision).toEqual(lease.configurationRevision + 1);
+    expect(updated.configuration.codex.model).toEqual('gpt-after-race');
+    const stored = await h.repo.findByToken(lease.token);
+    expect(stored?.expiresAt).toEqual(expectedExpiry);
+    expect(stored?.updatedAt).toEqual(staleUpdateAt);
+  } finally {
+    releaseUpdate.resolve();
     vi.useRealTimers();
   }
 });
@@ -363,15 +501,16 @@ test('heartbeat renews an expired-but-still-present lease', async () => {
 test('POST retries a token collision with a fresh token', async () => {
   const h = harness();
   const original = h.repo.insertForUser.bind(h.repo);
-  let calls = 0;
+  const attemptedTokens: string[] = [];
   h.repo.insertForUser = async input => {
-    calls += 1;
-    if (calls === 1) throw new AgentSetupTokenCollisionError();
+    attemptedTokens.push(input.token);
+    if (attemptedTokens.length === 1) throw new AgentSetupTokenCollisionError();
     return await original(input);
   };
   const first = await create(h);
   expect(first.status).toEqual('ok');
-  expect(calls).toBe(2);
+  expect(attemptedTokens).toHaveLength(2);
+  expect(attemptedTokens[1]).not.toBe(attemptedTokens[0]);
 });
 
 test('POST stops after five consecutive token collisions', async () => {
@@ -464,13 +603,21 @@ test('GET serves the PowerShell prefix + common and target-agent fragments', asy
   expect(body).not.toContain(SETUP_POWERSHELL_CLAUDE);
 });
 
-test('HEAD validates but returns an empty body', async () => {
-  const h = harness();
+test('HEAD validates the lease without invoking the API-key-bearing renderer', async () => {
+  const h = harness({ secrets: { key_primary: 'raw\0key' } });
   const lease = await create(h);
   const response = await h.request(lease.scripts.claude.sh, { method: 'HEAD' });
   expect(response.status).toEqual(200);
   expect(response.headers.get('cache-control')).toEqual('no-store');
   expect(await response.text()).toEqual('');
+
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const get = await h.request(lease.scripts.claude.sh, { method: 'GET' });
+    expect(get.status).toEqual(500);
+  } finally {
+    errorSpy.mockRestore();
+  }
 });
 
 test('near-miss public URLs are consumed before host middleware can log their token', async () => {
@@ -556,72 +703,130 @@ test('unknown, expired, deleted-user, and deleted-key tokens all return an ident
   expect(bodies.size).toEqual(1);
 });
 
-test('a public serve failure is sealed to an opaque 500 that leaks neither token nor secret', async () => {
+test('a lease expiring at the current millisecond is no longer servable', async () => {
+  vi.useFakeTimers();
+  try {
+    const now = Date.parse('2026-08-06T00:00:00.000Z');
+    vi.setSystemTime(now);
+    const h = harness();
+    const token = 'e'.repeat(43);
+    await h.repo.insertForUser({
+      userId: USER_ID,
+      token,
+      configurationJson: FULL_CONFIG_JSON('key_primary'),
+      now: now - 10_000,
+      expiresAt: now,
+    });
+    const response = await h.request(`/api/setup/${token}/claude.sh`, { method: 'GET' });
+    expect(response.status).toEqual(404);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+const hostilePublicErrors = [
+  {
+    label: 'an at-prefixed multiline message',
+    create: (token: string, secret: string) => new Error(`safe first line\n    at ${secret}-${token}`),
+  },
+  {
+    label: 'an attacker-controlled name',
+    create: (token: string, secret: string) => {
+      const error = new Error('safe message');
+      error.name = `${secret}-${token}`;
+      return error;
+    },
+  },
+  {
+    label: 'a forged stack frame',
+    create: (token: string, secret: string) => {
+      const error = new Error('safe message');
+      error.stack = `Error: safe message\n    at ${secret}-${token} (routes.ts:1:1)`;
+      return error;
+    },
+  },
+  {
+    label: 'a throwing stack getter',
+    create: (_token: string, secret: string) => {
+      const error = new Error('safe message');
+      Object.defineProperty(error, 'stack', { get: () => { throw new Error(secret); } });
+      return error;
+    },
+  },
+  {
+    label: 'a throwing name getter',
+    create: (_token: string, secret: string) => {
+      const error = new Error('safe message');
+      Object.defineProperty(error, 'name', { get: () => { throw new Error(secret); } });
+      return error;
+    },
+  },
+  {
+    label: 'a non-string stack',
+    create: () => {
+      const error = new Error('safe message');
+      Object.defineProperty(error, 'stack', { value: 42 });
+      return error;
+    },
+  },
+  {
+    label: 'a hostile error proxy',
+    create: (token: string, secret: string) => new Proxy(new Error('safe message'), {
+      getPrototypeOf: () => { throw new Error(`${secret}-${token}`); },
+    }),
+  },
+] as const;
+
+test.each(hostilePublicErrors)('a public serve failure from $label stays totally opaque', async ({ create: createError }) => {
   const injectedSecret = 'INJECTED-SECRET-sk-abcdef0123456789';
-  const lease = { token: 'a'.repeat(43) };
+  const token = 'a'.repeat(43);
   const h = harness({
     publicOverrides: {
-      repository: {
-        findByToken: () => {
-          const error = new Error(`forced failure\nsecond line leaking ${lease.token} and ${injectedSecret}`);
-          error.name = injectedSecret;
-          throw error;
-        },
-      },
+      repository: { findByToken: () => { throw createError(token, injectedSecret); } },
     },
   });
-  const logged: string[] = [];
-  const errorSpy = vi.spyOn(console, 'error').mockImplementation((...args) => { logged.push(args.map(String).join(' ')); });
+  const logged: unknown[] = [];
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation((...args) => { logged.push(...args); });
   try {
-    const response = await h.request(`/api/setup/${lease.token}/claude.sh`, { method: 'GET' });
+    const response = await h.request(`/api/setup/${token}/claude.sh`, { method: 'GET' });
     expect(response.status).toEqual(500);
     expect(response.headers.get('cache-control')).toEqual('no-store');
     expect(response.headers.get('pragma')).toEqual('no-cache');
-    const raw = await response.text();
-    expect(JSON.parse(raw)).toEqual({ error: { type: 'internal_error' } });
-    expect(raw).not.toContain(injectedSecret);
-  } finally {
-    errorSpy.mockRestore();
-  }
-  const joined = logged.join('\n');
-  expect(joined).toContain('routes_test');
-  expect(joined).not.toContain(injectedSecret);
-  expect(joined).not.toContain(lease.token);
-  expect(joined).not.toContain('forced failure');
-});
-
-test.each([
-  ['a throwing stack getter', (token: string, secret: string) => {
-    const error = new Error('hidden');
-    Object.defineProperty(error, 'stack', { get: () => { throw new Error(`${token}:${secret}`); } });
-    return error;
-  }],
-  ['a non-string stack', (_token: string, _secret: string) => {
-    const error = new Error('hidden');
-    Object.defineProperty(error, 'stack', { value: 42 });
-    return error;
-  }],
-  ['a hostile error proxy', (token: string, secret: string) => new Proxy(new Error('hidden'), {
-    getPrototypeOf: () => { throw new Error(`${token}:${secret}`); },
-  })],
-] satisfies readonly [name: string, makeError: (token: string, secret: string) => Error][])('pathological public errors with %s remain sealed', async (_case, makeError) => {
-  const token = 'g'.repeat(43);
-  const secret = 'INJECTED-PATHOLOGICAL-SECRET';
-  const h = harness({ publicOverrides: { repository: { findByToken: () => { throw makeError(token, secret); } } } });
-  const logged: string[] = [];
-  const errorSpy = vi.spyOn(console, 'error').mockImplementation((...args) => { logged.push(args.map(String).join(' ')); });
-  try {
-    const response = await h.request(`/api/setup/${token}/claude.sh`);
-    expect(response.status).toBe(500);
-    expect(response.headers.get('cache-control')).toBe('no-store');
-    expect(response.headers.get('pragma')).toBe('no-cache');
     expect(response.headers.get('expires')).toBe('0');
     expect(response.headers.get('referrer-policy')).toBe('no-referrer');
     expect(response.headers.get('x-content-type-options')).toBe('nosniff');
-    expect(await response.json()).toEqual({ error: { type: 'internal_error' } });
+    const raw = await response.text();
+    expect(JSON.parse(raw)).toEqual({ error: { type: 'internal_error' } });
+    expect(raw).not.toContain(injectedSecret);
+    expect(raw).not.toContain(token);
   } finally {
     errorSpy.mockRestore();
   }
-  expect(logged.join('\n')).not.toContain(token);
-  expect(logged.join('\n')).not.toContain(secret);
+  expect(logged).toHaveLength(1);
+  const diagnostic = logged[0];
+  expect(diagnostic).toBeInstanceOf(Error);
+  if (!(diagnostic instanceof Error)) throw new Error('public diagnostic was not an Error');
+  expect(diagnostic.message).toBe('Agent Setup: failed to serve a public setup script');
+  expect(diagnostic.stack).toContain('reportPublicServeFailure');
+  const diagnosticText = `${diagnostic.name}\n${diagnostic.message}\n${diagnostic.stack}`;
+  expect(diagnosticText).not.toContain(injectedSecret);
+  expect(diagnosticText).not.toContain(token);
+});
+
+test('a public response remains opaque when the host logger throws', async () => {
+  const token = 'a'.repeat(43);
+  const h = harness({
+    publicOverrides: { repository: { findByToken: () => { throw new Error('repository secret'); } } },
+  });
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => { throw new Error('logger secret'); });
+  try {
+    const response = await h.request(`/api/setup/${token}/claude.sh`, { method: 'GET' });
+    expect(response.status).toEqual(500);
+    const raw = await response.text();
+    expect(JSON.parse(raw)).toEqual({ error: { type: 'internal_error' } });
+    expect(raw).not.toContain(token);
+    expect(raw).not.toContain('secret');
+  } finally {
+    errorSpy.mockRestore();
+  }
 });

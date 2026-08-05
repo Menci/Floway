@@ -1166,7 +1166,7 @@ test('Responses WebSocket evicts a failed continuation target so the next attemp
             type: 'message',
             role: 'assistant',
             status: 'completed',
-            content: [{ type: 'output_text', text: 'answer' }],
+            content: [{ type: 'output_text', text: 'answer', annotations: [] }],
           }],
         });
       }
@@ -1279,7 +1279,7 @@ test('Responses WebSocket evicts a continuation that failed through a streamed t
             type: 'message',
             role: 'assistant',
             status: 'completed',
-            content: [{ type: 'output_text', text: 'answer' }],
+            content: [{ type: 'output_text', text: 'answer', annotations: [] }],
           }],
         });
       }

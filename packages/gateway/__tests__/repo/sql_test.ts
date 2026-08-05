@@ -177,6 +177,33 @@ test('SQL upstream repo saveClearingModelsCache updates the row and removes the 
   assertEquals((await repo.getById('up_test'))?.modelsCache, null);
 });
 
+test('SQL upstream repo updateFields preserves unrelated concurrent fields and can clear the model cache', async () => {
+  const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
+  const original = baseRecord();
+  await repo.save(original);
+  await repo.saveModelsCache(original.id, generationFor(original), {
+    revision: MODEL_CATALOG_REVISION,
+    fetchedAt: 1_700_000_000_000,
+    models: [stubProviderModel({ id: 'old-identity-model' })],
+  });
+
+  assertEquals((await repo.updateFields(original.id, 'codex', { name: 'Concurrent rename' }))?.name, 'Concurrent rename');
+  const nextState = { accounts: [{ ...goodAccount, refresh_token: 'rt_v2' }] };
+  assertEquals((await repo.updateFields(original.id, 'codex', {
+    config: original.config,
+    state: nextState,
+    updatedAt: '2026-06-05T00:00:01.000Z',
+  }, { clearModelsCache: true }))?.state, nextState);
+
+  const stored = await repo.getById(original.id);
+  assertEquals(stored?.name, 'Concurrent rename');
+  assertEquals(stored?.state, nextState);
+  assertEquals(stored?.modelsCache, null);
+  assertEquals(await repo.updateFields(original.id, 'custom', { name: 'Wrong kind' }), null);
+  assertEquals(await repo.updateFields(original.id, 'codex', {}), null);
+  assertEquals((await repo.getById(original.id))?.name, 'Concurrent rename');
+});
+
 test('SQL model-cache generation accepts semantically equal noncanonical config JSON', async () => {
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db).upstreams;
@@ -253,7 +280,7 @@ const withWriterRacingReads = (db: SqlDatabase, race: () => Promise<unknown>, ti
     },
   });
   return {
-    prepare: query => wrapStatement(db.prepare(query), query.startsWith('SELECT state_json')),
+    prepare: query => wrapStatement(db.prepare(query), query.includes('state_json FROM upstreams WHERE id')),
     exec: sql => db.exec(sql),
   };
 };
@@ -283,6 +310,33 @@ test('SQL upstream repo saveState re-applies the mutator against the write that 
   const stored = (await repo.getById('up_test'))?.state as { accounts: { refresh_token: string; state_message?: string }[] };
   assertEquals(stored.accounts[0].refresh_token, 'rt_v2');
   assertEquals(stored.accounts[0].state_message, 'written by a sibling');
+});
+
+test('SQL upstream repo saveState cannot cross a provider replacement race', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db).upstreams;
+  await repo.save(baseRecord());
+  const replacementConfig = {
+    baseUrl: 'https://replacement.example.com',
+    authStyle: 'none',
+    endpoints: {},
+    ingressHeadersRules: [],
+    modelsFetch: { enabled: false },
+    models: [],
+  };
+  const racing = new SqlRepo(withWriterRacingReads(db, () =>
+    db.prepare('UPDATE upstreams SET provider = ?, config_json = ?, state_json = NULL WHERE id = ?')
+      .bind('custom', JSON.stringify(replacementConfig), 'up_test')
+      .run(), 1)).upstreams;
+
+  await assertRejects(
+    () => racing.saveState('up_test', () => ({ copilotToken: null }), { kind: 'codex' }),
+    Error,
+    'changed from codex to custom',
+  );
+  const replacement = await repo.getById('up_test');
+  assertEquals(replacement?.kind, 'custom');
+  assertEquals(replacement?.state, null);
 });
 
 // A writer that never wins gives up rather than looping, and says so instead

@@ -8,7 +8,9 @@ import { dummyPasswordHash, verifyPassword } from '../../shared/passwords.ts';
 import type { authLoginBody } from '../schemas.ts';
 import { loadKnownUpstreamIds } from '../shared/upstream-ids.ts';
 import { userToSessionWire } from '../users/wire.ts';
-import { getEnvOptional, timingSafeEqual } from '@floway-dev/platform';
+import { getEnvOptional, timingSafeEqualVariableLength } from '@floway-dev/platform';
+
+const utf8 = new TextEncoder();
 
 const resolveLoginUser = async (c: CtxWithJson<typeof authLoginBody>): Promise<User | null> => {
   const { username, password } = c.req.valid('json');
@@ -17,8 +19,7 @@ const resolveLoginUser = async (c: CtxWithJson<typeof authLoginBody>): Promise<U
   if (username === '') {
     const adminKey = getEnvOptional('ADMIN_KEY', '');
     if (adminKey) {
-      const utf8 = new TextEncoder();
-      if (!timingSafeEqual(utf8.encode(password), utf8.encode(adminKey))) return null;
+      if (!(await timingSafeEqualVariableLength(utf8.encode(password), utf8.encode(adminKey)))) return null;
     } else if (isProductionRequest(c)) {
       // Empty ADMIN_KEY grants zero-config passwordless admin login on
       // dev instances (no .dev.vars needed) but would leave a production
@@ -45,7 +46,8 @@ const resolveLoginUser = async (c: CtxWithJson<typeof authLoginBody>): Promise<U
 export const authLogin = async (c: CtxWithJson<typeof authLoginBody>) => {
   const user = await resolveLoginUser(c);
   if (!user) return c.json({ error: 'Invalid username or password' }, 401);
-  const [session, knownUpstreamIds] = await Promise.all([getRepo().sessions.create(user.id), loadKnownUpstreamIds()]);
+  const [session, knownUpstreamIds] = await Promise.all([getRepo().sessions.createForActiveUser(user.id), loadKnownUpstreamIds()]);
+  if (!session) return c.json({ error: 'Invalid username or password' }, 401);
   return c.json({ token: session.id, user: userToSessionWire(user, knownUpstreamIds) });
 };
 

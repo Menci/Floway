@@ -5,6 +5,8 @@ import type { SqlBindValue, SqlDatabase, SqlPreparedStatement, SqlResult } from 
 
 export type { SqlJsDatabase };
 
+const sqlJsModule = initSqlJs();
+
 export const migrationSqlByFilename = Object.entries(import.meta.glob('../../migrations/*.sql', { query: '?raw', import: 'default', eager: true }) as Record<string, string>)
   .map(([path, sql]) => [path.slice(path.lastIndexOf('/') + 1), sql] as const)
   .toSorted(([a], [b]) => a.localeCompare(b));
@@ -19,16 +21,15 @@ const registerTargetMathFunctions = (db: SqlJsDatabase) => {
   db.create_function('pow', ((base: number, exponent: number) => base ** exponent) as (...args: never[]) => unknown);
 };
 
-const sqlJsModule = initSqlJs();
-
 // Lets a test that drove the migrations itself — seeding rows between two of
 // them — read the result back through the production repository.
 export const wrapSqlJsDatabase = (db: SqlJsDatabase): SqlDatabase => new SqlJsSqlDatabase(db);
 
 // The only way to open a sql.js database here, so no test can reach one that
 // is missing a function the deployment targets have.
-export const createSqlJsDatabase = async (): Promise<SqlJsDatabase> => {
-  const db = new (await sqlJsModule).Database();
+export const createSqlJsDatabase = async (data?: Uint8Array): Promise<SqlJsDatabase> => {
+  const db = new (await sqlJsModule).Database(data);
+  db.run('PRAGMA foreign_keys = ON');
   registerTargetMathFunctions(db);
   return db;
 };
@@ -49,9 +50,7 @@ const currentSchemaBytes = (): Promise<Uint8Array> => {
 };
 
 export const createSqliteTestDb = async (): Promise<SqlDatabase> => {
-  const db = new (await sqlJsModule).Database((await currentSchemaBytes()).slice());
-  registerTargetMathFunctions(db);
-  return wrapSqlJsDatabase(db);
+  return wrapSqlJsDatabase(await createSqlJsDatabase((await currentSchemaBytes()).slice()));
 };
 
 // sql.js binds through JavaScript and happily takes values neither deployment
@@ -86,13 +85,26 @@ class SqlJsPreparedStatement implements SqlPreparedStatement {
     return Promise.resolve({ results, success: true, meta: {} });
   }
 
-  run(): Promise<SqlResult> {
+  runSync(): SqlResult {
     // sql.js's `run()` does not surface `changes`. Read it back via
     // `SELECT changes()` so the CAS path in saveState gets an accurate count.
     this.db.run(this.query, this.bound as unknown[]);
     const [changesResult] = this.db.exec('SELECT changes() AS changes');
     const changes = Number(changesResult.values[0][0]);
-    return Promise.resolve({ results: [], success: true, meta: { changes } });
+    return { results: [], success: true, meta: { changes } };
+  }
+
+  run(): Promise<SqlResult> {
+    return Promise.resolve(this.runSync());
+  }
+
+  executeForBatchSync(): SqlResult {
+    const [result] = this.db.exec(this.query, this.bound as unknown[]);
+    const results = result
+      ? result.values.map(values => Object.fromEntries(result.columns.map((column, index) => [column, values[index]])))
+      : [];
+    const [changesResult] = this.db.exec('SELECT changes() AS changes');
+    return { results, success: true, meta: { changes: Number(changesResult.values[0][0]) } };
   }
 }
 
@@ -101,6 +113,23 @@ class SqlJsSqlDatabase implements SqlDatabase {
 
   prepare(query: string): SqlPreparedStatement {
     return new SqlJsPreparedStatement(this.db, query);
+  }
+
+  batch(statements: SqlPreparedStatement[]): Promise<SqlResult[]> {
+    this.db.run('BEGIN');
+    try {
+      const results = statements.map(statement => {
+        if (!(statement instanceof SqlJsPreparedStatement)) {
+          throw new Error('SqlJsSqlDatabase.batch received a statement from a different database adapter');
+        }
+        return statement.executeForBatchSync();
+      });
+      this.db.run('COMMIT');
+      return Promise.resolve(results);
+    } catch (error) {
+      try { this.db.run('ROLLBACK'); } catch { /* transaction already rolled back */ }
+      throw error;
+    }
   }
 
   exec(sql: string): Promise<unknown> {

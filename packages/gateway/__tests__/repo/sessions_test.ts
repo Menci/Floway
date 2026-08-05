@@ -16,6 +16,22 @@ const backends: ReadonlyArray<readonly [string, RepoFactory]> = [
 ];
 
 describe.each(backends)('SessionsRepo (%s)', (_label, makeRepo) => {
+  test('createForActiveUser refuses to attach a session after account deletion', async () => {
+    const repo = await makeRepo();
+    await repo.users.save({
+      id: 2,
+      username: 'alice',
+      passwordHash: null,
+      isAdmin: false,
+      upstreamIds: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      deletedAt: null,
+    });
+    expect(await repo.sessions.createForActiveUser(2)).not.toBeNull();
+    await repo.users.deleteAccount(2, '2026-01-02T00:00:00.000Z');
+    expect(await repo.sessions.createForActiveUser(2)).toBeNull();
+  });
+
   test('create returns a 64-hex token attached to the user', async () => {
     const repo = await makeRepo();
     const session = await repo.sessions.create(1);
@@ -46,26 +62,6 @@ describe.each(backends)('SessionsRepo (%s)', (_label, makeRepo) => {
     expect(await repo.sessions.deleteById(a.id)).toBe(true);
     expect(await repo.sessions.deleteById(a.id)).toBe(false);
     expect(await repo.sessions.getByIdAndTouch(b.id)).not.toBeNull();
-  });
-
-  test('deleteByUserId removes every session for that user', async () => {
-    const repo = await makeRepo();
-    await repo.sessions.create(1);
-    await repo.sessions.create(1);
-    const other = await repo.sessions.create(2);
-    expect(await repo.sessions.deleteByUserId(1)).toBe(2);
-    expect(await repo.sessions.getByIdAndTouch(other.id)).not.toBeNull();
-  });
-
-  test('deleteByUserIdExcept keeps only the named session', async () => {
-    const repo = await makeRepo();
-    const a = await repo.sessions.create(1);
-    const keep = await repo.sessions.create(1);
-    const other = await repo.sessions.create(2);
-    expect(await repo.sessions.deleteByUserIdExcept(1, keep.id)).toBe(1);
-    expect(await repo.sessions.getByIdAndTouch(a.id)).toBeNull();
-    expect(await repo.sessions.getByIdAndTouch(keep.id)).not.toBeNull();
-    expect(await repo.sessions.getByIdAndTouch(other.id)).not.toBeNull();
   });
 
   test('deleteAll wipes the table', async () => {

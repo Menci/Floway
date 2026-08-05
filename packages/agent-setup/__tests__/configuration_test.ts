@@ -95,17 +95,17 @@ describe('agentSetupConfigurationSchema', () => {
     }).success).toBe(false);
   });
 
-  test.each(['bad\ud800value', 'bad\udc00value'])('rejects an unpaired surrogate in an opaque optional string', reasoningEffort => {
+  test.each(['\uD800', '\uDC00'])('rejects an unpaired UTF-16 surrogate %#', value => {
     expect(agentSetupConfigurationSchema.safeParse({
       ...fullConfiguration,
-      codex: { ...fullConfiguration.codex, reasoningEffort },
+      codex: { ...fullConfiguration.codex, model: value },
     }).success).toBe(false);
   });
 
-  test('accepts a valid surrogate pair in an opaque optional string', () => {
+  test('accepts a valid supplementary Unicode character', () => {
     expect(agentSetupConfigurationSchema.safeParse({
       ...fullConfiguration,
-      codex: { ...fullConfiguration.codex, reasoningEffort: 'tier-🚀' },
+      codex: { ...fullConfiguration.codex, model: 'model-🚀' },
     }).success).toBe(true);
   });
 

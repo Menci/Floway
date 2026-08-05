@@ -65,8 +65,8 @@ export { serializeModelPathAudioTranscriptionRequest, serializeOpenAIAudioTransc
 export type { ProviderStreamParser } from './streaming.ts';
 export { streamingProviderCall } from './streaming.ts';
 
-export type { ProviderRepo, UpstreamsRepoSlim } from './repo.ts';
-export { getProviderRepo, initProviderRepo, UpstreamGoneError } from './repo.ts';
+export type { ProviderRepo, UpstreamsRepoSlim, UpstreamStateWriteGuard } from './repo.ts';
+export { getProviderRepo, initProviderRepo, UpstreamGenerationMismatchError, UpstreamGoneError, UpstreamKindMismatchError } from './repo.ts';
 
 export {
   PROVIDER_MODELS_IDLE_TIMEOUT_MS,

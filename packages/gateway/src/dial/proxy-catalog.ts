@@ -5,6 +5,8 @@ import { parseProxyUri, type ProxyConfig, type ProxyUriError } from '@floway-dev
 // slow but real proxy can be granted more time without raising the bar for the
 // whole gateway.
 export interface ProxyEntry {
+  /** Raw persisted URL identifying the endpoint generation being dialled. */
+  url: string;
   config: ProxyConfig;
   /** ms; null means "use the dialer's default". */
   dialTimeoutMs: number | null;
@@ -28,6 +30,7 @@ export const loadProxyCatalog = async (
     if (!referencedIds.has(proxy.id)) continue;
     try {
       proxyById.set(proxy.id, {
+        url: proxy.url,
         config: parseProxyUri(proxy.url),
         dialTimeoutMs: proxy.dialTimeoutSeconds === null ? null : proxy.dialTimeoutSeconds * 1000,
       });

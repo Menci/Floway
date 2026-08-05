@@ -59,7 +59,9 @@ test('session token for a deleted user is invalidated', async () => {
     deletedAt: null,
   });
   const session = await repo.sessions.create(2);
-  await repo.users.softDelete(2);
+  const alice = await repo.users.getById(2);
+  expect(alice).not.toBeNull();
+  await repo.users.save({ ...alice!, deletedAt: '2026-01-02T00:00:00.000Z' });
 
   const app = authTestApp();
   const response = await app.request('/api/keys', { headers: { 'x-floway-session': session.id } });
@@ -83,8 +85,10 @@ test('API key whose owner was deleted is rejected', async () => {
     createdAt: '2026-01-01T00:00:00.000Z',
     deletedAt: null,
   });
-  await repo.apiKeys.save({ ...apiKey, id: 'key_alice', userId: 2, key: 'raw_alice', deletedAt: null });
-  await repo.users.softDelete(2);
+  await repo.apiKeys.save({ ...apiKey, id: 'key_alice', userId: 2, key: 'raw_alice', serverSecret: '11'.repeat(32), deletedAt: null });
+  const alice = await repo.users.getById(2);
+  expect(alice).not.toBeNull();
+  await repo.users.save({ ...alice!, deletedAt: '2026-01-02T00:00:00.000Z' });
 
   const app = authTestApp();
   const response = await app.request('/v1beta/models/gemini-test:generateContent', {
@@ -148,4 +152,23 @@ test('Authorization: Bearer with no value is rejected', async () => {
     headers: { authorization: 'Bearer ' },
   });
   assertEquals(response.status, 401);
+});
+
+test('Authorization schemes other than Bearer are never interpreted as raw API keys', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const rawKey = 'Basic abc123';
+  await repo.apiKeys.save({ ...apiKey, key: rawKey });
+  const app = authTestApp();
+
+  const wrongScheme = await app.request('/v1/chat/completions', {
+    method: 'POST',
+    headers: { authorization: rawKey },
+  });
+  assertEquals(wrongScheme.status, 401);
+
+  const bearer = await app.request('/v1/chat/completions', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${rawKey}` },
+  });
+  assertEquals(bearer.status, 200);
 });

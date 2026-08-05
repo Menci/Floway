@@ -120,19 +120,16 @@ const resolveServeableLease = async (
   return { apiKey: apiKey.secret, apiKeyName: apiKey.name, configuration };
 };
 
-const publicErrorDiagnostics = (error: unknown, token: string): string => {
+const reportPublicServeFailure = (): void => {
+  // Error fields are untrusted: getters can throw, names and multiline stack
+  // prefixes can carry secrets, and a forged frame is indistinguishable from a
+  // real one. Only a locally constructed diagnostic with a fixed message may
+  // cross this public credential boundary.
   try {
-    if (!(error instanceof Error)) return `Thrown value type: ${typeof error}`;
-    const stack = error.stack;
-    if (typeof stack !== 'string') return 'Error\n(stack unavailable)';
-    const lines = stack.split('\n');
-    const firstFrame = lines.findIndex(line => /^\s*at\s/.test(line));
-    const frames = firstFrame === -1 ? '(stack unavailable)' : lines.slice(firstFrame).join('\n');
-    // Error instance fields are throwable and may contain request data. Only
-    // fixed text and stack frames below the message line enter diagnostics.
-    return `Error\n${frames.replaceAll(token, '[setup-token]')}`;
+    console.error(new Error('Agent Setup: failed to serve a public setup script'));
   } catch {
-    return 'Error\n(stack unavailable)';
+    // A host logger failure must not escape into the ordinary error boundary,
+    // whose detailed response would disclose the token-bearing request path.
   }
 };
 
@@ -149,10 +146,9 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
       const prefix = language === 'sh' ? renderShellPrefix(input) : renderPowerShellPrefix(input);
       const body = prefix + SETUP_SCRIPT_BODIES[agent][language];
       return c.body(body, 200, SCRIPT_RESPONSE_HEADERS);
-    } catch (error) {
-      // Keep the unauthenticated response opaque. Operator diagnostics retain the
-      // stack frames but omit the error message, which may contain a token or key.
-      console.error('Agent Setup: failed to serve a public setup script', publicErrorDiagnostics(error, token));
+    } catch {
+      // Keep the unauthenticated response and every diagnostic path opaque.
+      reportPublicServeFailure();
       return c.json({ error: { type: 'internal_error' } }, 500, NON_CACHEABLE_HEADERS);
     }
   };

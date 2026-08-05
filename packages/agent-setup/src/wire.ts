@@ -4,9 +4,9 @@
 import { z } from 'zod';
 
 import { agentSetupConfigurationSchema } from './configuration.ts';
-import { AGENT_SETUP_TOKEN_PATTERN } from './token.ts';
+import { isAgentSetupToken } from './token.ts';
 
-const agentSetupToken = z.string().regex(AGENT_SETUP_TOKEN_PATTERN);
+const agentSetupToken = z.string().refine(isAgentSetupToken, { message: 'must be a 43-character base64url token' });
 
 // Acquisition names the selected API key but carries no origin; the dashboard's
 // one-line command injects that at execution time.

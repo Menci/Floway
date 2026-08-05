@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
-import { createUpstreamBody } from '../../src/control-plane/schemas.ts';
+import { authLoginBody, createAliasBody, createUpstreamBody, createUserBody } from '../../src/control-plane/schemas.ts';
+import { MODEL_ALIAS_TARGET_LIMIT } from '../../src/shared/model-aliases.ts';
 
 const baseAzure = {
   kind: 'azure' as const,
@@ -32,6 +33,23 @@ describe('upstreamModelSchema chat', () => {
       modalities: { input: ['text', 'image'], output: ['text'] },
       reasoning: { effort: { supported: ['low', 'medium'], default: 'low' } },
     };
+    expect(createUpstreamBody.safeParse(body).success).toBe(true);
+  });
+
+  test('accepts chat metadata when chat endpoints derive an omitted kind', () => {
+    const body = structuredClone(baseAzure);
+    const model = body.config.models[0] as Record<string, unknown>;
+    delete model.kind;
+    model.chat = { modalities: { input: ['text'], output: ['text'] } };
+    expect(createUpstreamBody.safeParse(body).success).toBe(true);
+  });
+
+  test('accepts chat metadata when any chat endpoint accompanies a stale non-chat primary kind', () => {
+    const body = structuredClone(baseAzure);
+    const model = body.config.models[0] as Record<string, unknown>;
+    model.kind = 'embedding';
+    model.endpoints = { embeddings: {}, chatCompletions: {} };
+    model.chat = { modalities: { input: ['text'], output: ['text'] } };
     expect(createUpstreamBody.safeParse(body).success).toBe(true);
   });
 
@@ -95,6 +113,24 @@ describe('upstreamModelSchema chat', () => {
     const body = structuredClone(baseAzure);
     const model = body.config.models[0] as Record<string, unknown>;
     model.kind = 'embedding';
+    model.endpoints = { embeddings: {} };
+    model.chat = { modalities: { input: ['text'], output: ['text'] } };
+    expect(createUpstreamBody.safeParse(body).success).toBe(false);
+  });
+
+  test('rejects chat metadata when omitted kind derives a non-chat kind', () => {
+    const body = structuredClone(baseAzure);
+    const model = body.config.models[0] as Record<string, unknown>;
+    delete model.kind;
+    model.endpoints = { embeddings: {} };
+    model.chat = { modalities: { input: ['text'], output: ['text'] } };
+    expect(createUpstreamBody.safeParse(body).success).toBe(false);
+  });
+
+  test('rejects chat metadata when explicit chat kind conflicts with non-chat endpoints', () => {
+    const body = structuredClone(baseAzure);
+    const model = body.config.models[0] as Record<string, unknown>;
+    model.kind = 'chat';
     model.endpoints = { embeddings: {} };
     model.chat = { modalities: { input: ['text'], output: ['text'] } };
     expect(createUpstreamBody.safeParse(body).success).toBe(false);
@@ -186,5 +222,45 @@ describe('upstreamModelSchema rerank', () => {
     const mixed = customRerank();
     (mixed.config.models[0] as Record<string, unknown>).endpoints = { rerank: {}, chatCompletions: {} };
     expect(createUpstreamBody.safeParse(mixed).success).toBe(true);
+  });
+});
+
+describe('model alias resource limits', () => {
+  const bodyWithTargets = (count: number) => ({
+    name: 'bounded-alias',
+    kind: 'chat' as const,
+    selection: 'first-available' as const,
+    display_name: null,
+    visible_in_models_list: true,
+    targets: Array.from({ length: count }, (_, index) => ({ target_model_id: `model-${index}`, rules: {} })),
+    announced_metadata: null,
+  });
+
+  test('accepts the target limit and rejects one additional candidate', () => {
+    expect(createAliasBody.safeParse(bodyWithTargets(MODEL_ALIAS_TARGET_LIMIT)).success).toBe(true);
+    expect(createAliasBody.safeParse(bodyWithTargets(MODEL_ALIAS_TARGET_LIMIT + 1)).success).toBe(false);
+  });
+});
+
+describe('account password schemas', () => {
+  test.each([
+    ['1024 ASCII bytes', 'a'.repeat(1024)],
+    ['1024 multibyte UTF-8 bytes', 'é'.repeat(512)],
+  ])('accept %s', (_label, password) => {
+    expect(authLoginBody.safeParse({ username: 'alice', password }).success).toBe(true);
+    expect(createUserBody.safeParse({ username: 'alice', password }).success).toBe(true);
+  });
+
+  test.each([
+    ['1025 ASCII bytes', 'a'.repeat(1025)],
+    ['1026 multibyte UTF-8 bytes', 'é'.repeat(513)],
+  ])('reject %s', (_label, password) => {
+    expect(authLoginBody.safeParse({ username: 'alice', password }).success).toBe(false);
+    expect(createUserBody.safeParse({ username: 'alice', password }).success).toBe(false);
+  });
+
+  test('allows the empty ADMIN_KEY login password but rejects an empty account password', () => {
+    expect(authLoginBody.safeParse({ username: '', password: '' }).success).toBe(true);
+    expect(createUserBody.safeParse({ username: 'alice', password: '' }).success).toBe(false);
   });
 });

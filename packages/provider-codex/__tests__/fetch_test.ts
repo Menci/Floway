@@ -145,7 +145,7 @@ describe('callCodexResponses — token freshness', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
     const responsesInit = fetchSpy.mock.calls[1][1] as RequestInit;
     expect(new Headers(responsesInit.headers).get('authorization')).toBe('Bearer at_new');
-    expect(effects.persistRefreshTokenRotation).toHaveBeenCalledWith('rt_v2');
+    expect(effects.persistRefreshTokenRotation).toHaveBeenCalledWith('rt_v1', 'rt_v2');
     expect((currentRecord.state as CodexUpstreamState).accounts[0].accessToken?.token).toBe('at_new');
   });
 
@@ -168,11 +168,7 @@ describe('callCodexResponses — token freshness', () => {
       model, body: { input: [], stream: true }, headers: new Headers(), effects, call: noopUpstreamCallOptions(),
     });
     expect(result.ok).toBe(false);
-    expect(effects.persistTerminalState).toHaveBeenCalledWith(
-      'refresh_failed',
-      expect.stringMatching(/gone/),
-      { refreshToken: 'rt_v1' },
-    );
+    expect(effects.persistTerminalState).toHaveBeenCalledWith('refresh_failed', expect.stringMatching(/gone/), expect.objectContaining({ refresh_token: 'rt_v1' }));
   });
 });
 
@@ -725,7 +721,7 @@ describe('callCodexResponses — upstream classification', () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(401);
-    expect(effects.persistRefreshTokenRotation).toHaveBeenCalledWith('rt_v2');
+    expect(effects.persistRefreshTokenRotation).toHaveBeenCalledWith('rt_v1', 'rt_v2');
   });
 
   test('401 after an initial mint retries with the rotated refresh token', async () => {
@@ -735,9 +731,9 @@ describe('callCodexResponses — upstream classification', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at2', refresh_token: 'rt_v3', id_token: 'it2', expires_in: 600 }), { status: 200 }))
       .mockResolvedValueOnce(sseResponse());
     const effects = makeEffects();
-    vi.mocked(effects.persistRefreshTokenRotation).mockImplementation(async refreshToken => {
+    vi.mocked(effects.persistRefreshTokenRotation).mockImplementation(async (_usedRefreshToken, newRefreshToken) => {
       const state = currentRecord.state as CodexUpstreamState;
-      currentRecord = makeRecord({ accounts: [{ ...state.accounts[0], refresh_token: refreshToken }] });
+      currentRecord = makeRecord({ accounts: [{ ...state.accounts[0], refresh_token: newRefreshToken }] });
     });
     const result = await callCodexResponses({
       upstreamId, account: activeAccount,
@@ -894,7 +890,7 @@ describe('callCodexResponsesCompact', () => {
       body: { input: [] }, headers: new Headers(), effects, call: noopUpstreamCallOptions(),
     });
     expect(result.ok).toBe(true);
-    expect(effects.persistRefreshTokenRotation).toHaveBeenCalledWith('rt_v2');
+    expect(effects.persistRefreshTokenRotation).toHaveBeenCalledWith('rt_v1', 'rt_v2');
     // Both compact requests hit the same URL; the bearer flipped from at_kv to at2.
     expect(fetchSpy.mock.calls[0][0]).toBe('https://chatgpt.com/backend-api/codex/responses/compact');
     expect(new Headers((fetchSpy.mock.calls[2][1] as RequestInit).headers).get('authorization')).toBe('Bearer at2');

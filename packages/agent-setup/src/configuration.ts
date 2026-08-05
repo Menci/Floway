@@ -7,8 +7,8 @@
 // "leave this override unset" (the installer removes the managed key), while ""
 // would ambiguously ask to write an empty value. Per the gateway's
 // protocol-opacity rule the schema rejects only representations an opaque value
-// cannot survive through the UTF-8 shell/PowerShell response — empty, NUL, and
-// ill-formed UTF-16 — never a vendor family.
+// cannot survive through the HTTP and shell/PowerShell boundaries — empty, NUL,
+// and ill-formed UTF-16 — never a vendor family.
 
 import { z } from 'zod';
 

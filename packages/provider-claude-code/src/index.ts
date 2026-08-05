@@ -8,6 +8,7 @@ export const claudeCodeProviderModule: ProviderModule = {
 };
 
 export * from './config.ts';
+export * from './credentials.ts';
 export * from './state.ts';
 export * from './constants.ts';
 export * from './access-token.ts';

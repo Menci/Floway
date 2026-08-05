@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 import { expect, test, vi } from 'vitest';
 
 import { internalErrorResponse } from '../../src/middleware/internal-error-response.ts';
@@ -75,4 +76,25 @@ test('internal error response bounds an adversarially deep Error cause chain', a
     limit: 32,
     name: 'Error',
   });
+});
+
+test('explicit HTTP errors preserve status, body, exception headers, and staged context headers without logging', async () => {
+  const app = new Hono().onError(internalErrorResponse);
+  app.get('/failure', c => {
+    c.header('x-staged', 'kept');
+    throw new HTTPException(422, {
+      res: new Response('invalid', { headers: { 'x-exception': 'kept' } }),
+    });
+  });
+  const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const response = await app.request('/failure');
+    expect(response.status).toBe(422);
+    expect(await response.text()).toBe('invalid');
+    expect(response.headers.get('x-staged')).toBe('kept');
+    expect(response.headers.get('x-exception')).toBe('kept');
+    expect(consoleSpy).not.toHaveBeenCalled();
+  } finally {
+    consoleSpy.mockRestore();
+  }
 });

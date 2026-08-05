@@ -214,7 +214,7 @@ describe('modelsField metadata integration', () => {
   });
 
   test('rejects chat when no chat endpoint is present', () => {
-    for (const kind of ['embedding', 'chat']) {
+    for (const kind of [undefined, 'embedding', 'chat']) {
       expect(() => modelsField([{
         upstreamModelId: 'm',
         kind,
@@ -242,6 +242,17 @@ describe('modelsField metadata integration', () => {
     expect(mixed.kind).toBe('embedding');
     expect(mixed.chat?.modalities?.input).toEqual(['text', 'image']);
   });
+
+  test('accepts chat when chat endpoints derive an omitted kind', () => {
+    const [model] = modelsField([{
+      upstreamModelId: 'm',
+      endpoints: { messages: {} },
+      chat: { modalities: { input: ['text'], output: ['text'] } },
+    }], 'p');
+    expect(model.kind).toBe('chat');
+    expect(model.chat?.modalities?.input).toEqual(['text']);
+  });
+
 });
 
 describe('modelsField rerank targets', () => {

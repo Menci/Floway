@@ -50,6 +50,9 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
   const kind = record.kind;
   const persisted = record.id === '' ? null : await getRepo().upstreams.getById(record.id);
   if (record.id !== '' && persisted === null) return c.json({ error: 'Upstream not found' }, 404);
+  if (persisted !== null && persisted.kind !== kind) {
+    return c.json({ error: `Upstream ${record.id} is ${persisted.kind}, not ${kind}` }, 400);
+  }
 
   const scheduler = backgroundSchedulerFromContext(c);
   const now = new Date().toISOString();
@@ -67,15 +70,19 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
     modelPrefix: null,
     // A draft only lists models; nothing renders its badge.
     hue: 0,
-    config: record.config,
-    state: record.state,
+    config: persisted !== null && (kind === 'copilot' || kind === 'codex' || kind === 'claude-code')
+      ? persisted.config
+      : record.config,
+    state: persisted === null ? record.state : persisted.state,
     // A draft is built from the request envelope and lists models live, so it
     // never carries a cached catalog.
     modelsCache: null,
   };
-  const cacheGeneration = persisted === null
-    ? { updatedAt: synthRecord.updatedAt, config: synthRecord.config }
-    : { updatedAt: persisted.updatedAt, config: persisted.config };
+  // The fetched config owns the cache write. For an edit preview whose config
+  // differs from the saved row, the repo generation check deliberately misses:
+  // the operator still sees the preview, but cancelling the edit cannot publish
+  // that draft catalog under the persisted configuration.
+  const cacheGeneration = { updatedAt: synthRecord.updatedAt, config: synthRecord.config };
 
   let fetcher: Fetcher;
   try {

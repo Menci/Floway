@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 
 const MAX_SERIALIZED_ERROR_CAUSE_DEPTH = 32;
 
@@ -37,6 +38,11 @@ const serializeErrorCause = (cause: unknown, ancestors: ReadonlySet<Error>, dept
 };
 
 export const internalErrorResponse = (error: Error, c: Context): Response => {
+  if (error instanceof HTTPException) {
+    const response = error.getResponse();
+    return c.newResponse(response.body, response);
+  }
+
   console.error(error);
 
   return c.json(
