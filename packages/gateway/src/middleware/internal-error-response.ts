@@ -31,10 +31,16 @@ const serializeErrorCause = (cause: unknown, ancestors: ReadonlySet<Error>, dept
   if (cause === undefined || cause === null || typeof cause === 'string' || typeof cause === 'number' || typeof cause === 'boolean') return cause;
 
   try {
-    JSON.stringify(cause);
-    return cause;
+    const encoded = JSON.stringify(cause);
+    if (encoded !== undefined) return JSON.parse(encoded) as unknown;
   } catch {
+    // Fall through to a printable scalar when the value is cyclic or exposes a
+    // hostile serializer. Returning the original would invoke it again in c.json.
+  }
+  try {
     return String(cause);
+  } catch {
+    return { type: 'unserializable_cause' };
   }
 };
 

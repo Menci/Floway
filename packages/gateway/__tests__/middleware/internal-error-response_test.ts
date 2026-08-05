@@ -76,3 +76,34 @@ test('internal error response bounds an adversarially deep Error cause chain', a
     name: 'Error',
   });
 });
+
+test('internal error response snapshots a cause whose toJSON is only safe once', async () => {
+  let calls = 0;
+  const cause = {
+    toJSON() {
+      calls += 1;
+      if (calls > 1) throw new Error('toJSON called twice');
+      return { detail: 'stable snapshot' };
+    },
+  };
+
+  const body = await requestError(new Error('outer failure', { cause }));
+
+  expect(calls).toBe(1);
+  expect(body.error.cause).toEqual({ detail: 'stable snapshot' });
+});
+
+test('internal error response marks a cause that cannot be serialized or printed', async () => {
+  const cause = {
+    toJSON() {
+      throw new Error('serialization denied');
+    },
+    toString() {
+      throw new Error('string conversion denied');
+    },
+  };
+
+  const body = await requestError(new Error('outer failure', { cause }));
+
+  expect(body.error.cause).toEqual({ type: 'unserializable_cause' });
+});
