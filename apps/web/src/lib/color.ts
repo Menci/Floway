@@ -13,13 +13,18 @@ import {
 
 registerMode(modeRgb);
 
-export const parseHexColor = (hex: string) => {
+const parseHexColor = (hex: string) => {
   const rgb = parseHex(hex);
   if (!rgb) throw new TypeError(`Not a hex colour: ${hex}`);
   return rgb;
 };
 
 const linearRgb = (rgb: ReturnType<typeof parseHexColor>) => convertRgbToLrgb(rgb);
+
+export const alphaHex = (hex: string, opacity: number): string => {
+  const rgb = parseHexColor(hex);
+  return formatHex8({ ...rgb, alpha: (rgb.alpha ?? 1) * opacity }).toUpperCase();
+};
 
 export const blendHex = (hex: string, alpha: number, backdrop: string): string => {
   const parsed = parseHexColor(hex);

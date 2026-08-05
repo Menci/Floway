@@ -1,7 +1,7 @@
 import { convertRgbToHsv, parseHex } from 'culori/fn';
 import { describe, expect, it } from 'vitest';
 
-import { blendHex, readableTone } from '../../src/lib/color';
+import { alphaHex, blendHex, readableTone } from '../../src/lib/color';
 import { hueBadgeTone } from '../../src/lib/hue';
 
 // The subject decides by contrast, so the assertions compute it independently
@@ -111,6 +111,12 @@ describe('blendHex', () => {
   it('rejects an unparseable value on either side', () => {
     expect(() => blendHex('nope', 0.5, '#FFFFFF')).toThrow(TypeError);
     expect(() => blendHex('#FF0000', 0.5, 'nope')).toThrow(TypeError);
+  });
+});
+
+describe('alphaHex', () => {
+  it('serializes the combined opacity through Culori', () => {
+    expect(alphaHex('#0000006B', 0.1)).toBe('#0000000B');
   });
 });
 

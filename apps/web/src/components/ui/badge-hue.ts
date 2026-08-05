@@ -1,8 +1,7 @@
-import { formatRgb } from 'culori/fn';
 import type { CSSProperties } from 'react';
 
 import { fluentComponents } from '../../fluent';
-import { blendHex, parseHexColor, readableTone } from '../../lib/color';
+import { alphaHex, blendHex, readableTone } from '../../lib/color';
 
 const { makeStyles } = fluentComponents;
 
@@ -39,11 +38,6 @@ const useStyles = makeStyles({
   },
 });
 
-const alpha = (hex: string, fraction: number): string => {
-  const rgb = parseHexColor(hex);
-  return formatRgb({ ...rgb, alpha: (rgb.alpha ?? 1) * fraction })!;
-};
-
 /**
  * A badge painted in an arbitrary hue. The label is resolved against the fill
  * rather than the surface under it, because the wash moves the reading by enough
@@ -58,17 +52,18 @@ const alpha = (hex: string, fraction: number): string => {
 export const useBadgeHue = (hue: BadgeHue): { className: string; style: CSSProperties } => {
   const styles = useStyles();
   const pair = typeof hue === 'string' ? { light: hue, dark: hue } : hue;
-  const label = (own: string, surface: string) => readableTone(own, blendHex(own, BADGE_FILL_ALPHA, surface));
+  const fill = { light: alphaHex(pair.light, BADGE_FILL_ALPHA), dark: alphaHex(pair.dark, BADGE_FILL_ALPHA) };
+  const label = (own: string, ownFill: string, surface: string) => readableTone(own, blendHex(ownFill, 1, surface));
 
   return {
     className: styles.scheme,
     style: {
-      '--floway-badge-fill-light': alpha(pair.light, BADGE_FILL_ALPHA),
-      '--floway-badge-fill-dark': alpha(pair.dark, BADGE_FILL_ALPHA),
-      '--floway-badge-stroke-light': alpha(pair.light, BADGE_STROKE_ALPHA),
-      '--floway-badge-stroke-dark': alpha(pair.dark, BADGE_STROKE_ALPHA),
-      '--floway-badge-label-light': label(pair.light, HARDEST_BADGE_SURFACE.light),
-      '--floway-badge-label-dark': label(pair.dark, HARDEST_BADGE_SURFACE.dark),
+      '--floway-badge-fill-light': fill.light,
+      '--floway-badge-fill-dark': fill.dark,
+      '--floway-badge-stroke-light': alphaHex(pair.light, BADGE_STROKE_ALPHA),
+      '--floway-badge-stroke-dark': alphaHex(pair.dark, BADGE_STROKE_ALPHA),
+      '--floway-badge-label-light': label(pair.light, fill.light, HARDEST_BADGE_SURFACE.light),
+      '--floway-badge-label-dark': label(pair.dark, fill.dark, HARDEST_BADGE_SURFACE.dark),
       backgroundColor: 'var(--floway-badge-fill)',
       borderColor: 'var(--floway-chip-stroke)',
       color: 'var(--floway-badge-label)',
