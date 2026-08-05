@@ -177,6 +177,69 @@ describe('nodeSocketDial', () => {
     await dialed.close();
   });
 
+  it('writer.abort destroys both socket halves with no fixed-delay teardown', async () => {
+    const dialed = await nodeSocketDial.connect('127.0.0.1', server.port);
+    const remote = server.lastSocket();
+    if (!remote) throw new Error('echo server did not accept the dialed socket');
+    const remoteClosed = new Promise<void>(resolve => remote.once('close', () => resolve()));
+    const writer = dialed.writable.getWriter();
+
+    await writer.abort(new Error('stop writing'));
+    await remoteClosed;
+    writer.releaseLock();
+
+    expect(remote.destroyed).toBe(true);
+    await dialed.close();
+  });
+
+  it('writer.close half-closes plain TCP while the readable side remains usable', async () => {
+    let remote: net.Socket | null = null;
+    const halfOpenServer = net.createServer({ allowHalfOpen: true }, socket => {
+      remote = socket;
+      socket.on('error', () => { /* peer teardown is expected */ });
+    });
+    await new Promise<void>(resolve => halfOpenServer.listen(0, '127.0.0.1', () => resolve()));
+    const address = halfOpenServer.address();
+    if (!address || typeof address === 'string') throw new Error('half-open server has no address');
+
+    try {
+      const dialed = await nodeSocketDial.connect('127.0.0.1', address.port);
+      if (!remote) throw new Error('half-open server did not accept the dialed socket');
+      const peer: net.Socket = remote;
+      const remoteEnded = new Promise<void>(resolve => peer.once('end', () => resolve()));
+      const writer = dialed.writable.getWriter();
+
+      await writer.close();
+      await remoteEnded;
+      writer.releaseLock();
+      expect(peer.readableEnded).toBe(true);
+
+      peer.write(new TextEncoder().encode('after-half-close'));
+      const reader = dialed.readable.getReader();
+      expect(new TextDecoder().decode((await reader.read()).value)).toBe('after-half-close');
+      reader.releaseLock();
+      await dialed.close();
+    } finally {
+      remote?.destroy();
+      await new Promise<void>(resolve => halfOpenServer.close(() => resolve()));
+    }
+  });
+
+  it('reader.cancel destroys the underlying socket', async () => {
+    const dialed = await nodeSocketDial.connect('127.0.0.1', server.port);
+    const remote = server.lastSocket();
+    if (!remote) throw new Error('echo server did not accept the dialed socket');
+    const remoteClosed = new Promise<void>(resolve => remote.once('close', () => resolve()));
+    const reader = dialed.readable.getReader();
+
+    await reader.cancel('subscriber done');
+    await remoteClosed;
+    reader.releaseLock();
+
+    expect(remote.destroyed).toBe(true);
+    await dialed.close();
+  });
+
   // The proxy URL parser hands `url.hostname` straight through, which keeps
   // `[...]` around an IPv6 literal. Node's `net.connect({ host: '[::1]' })`
   // falls through to DNS and fails ENOTFOUND — the platform impl strips the
