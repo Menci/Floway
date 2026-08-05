@@ -28,6 +28,7 @@ const isJsonObject = (value: unknown): value is object =>
   value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Set);
 
 const restoreOwnJsonProperties = <T>(source: unknown, decoded: T): T => {
+  if (source === decoded) return decoded;
   if (Array.isArray(source) && Array.isArray(decoded)) {
     for (let index = 0; index < source.length; index++) {
       decoded[index] = restoreOwnJsonProperties(source[index], decoded[index]);
