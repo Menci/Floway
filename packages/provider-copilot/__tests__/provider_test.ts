@@ -43,6 +43,7 @@ const buildCopilotUpstream = (overrides: Partial<UpstreamRecord> = {}): Upstream
     hue: 210,
     ...rest,
     config: overrideConfig ?? {
+      githubHost: 'github.com',
       githubToken: `ghu_${crypto.randomUUID().replace(/-/g, '')}`,
       user: { id: 1, login: 'tester', name: 'Test User', avatar_url: 'https://example.com/avatar.png' },
     },
