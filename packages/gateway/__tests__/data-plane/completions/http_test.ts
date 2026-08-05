@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
-import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels as requestApp, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
+import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -70,7 +70,7 @@ test('/v1/completions non-streaming forwards body to upstream /v1/completions an
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/completions', {
+      const response = await requestAppWithWarmModels('/v1/completions', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
         body: JSON.stringify({ model: 'davinci-002', prompt: 'hello' }),
@@ -108,7 +108,7 @@ test('/v1/completions streaming forces stream_options.include_usage upstream', a
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/completions', {
+      const response = await requestAppWithWarmModels('/v1/completions', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
         body: JSON.stringify({ model: 'davinci-002', prompt: 'hello', stream: true }),
@@ -136,7 +136,7 @@ test('/v1/completions streaming strips usage chunk when client did not request i
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/completions', {
+      const response = await requestAppWithWarmModels('/v1/completions', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
         body: JSON.stringify({ model: 'davinci-002', prompt: 'hello', stream: true }),
@@ -171,7 +171,7 @@ test('/v1/completions streaming forwards usage chunk when the client opted in', 
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/completions', {
+      const response = await requestAppWithWarmModels('/v1/completions', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
         body: JSON.stringify({
@@ -192,7 +192,7 @@ test('/v1/completions streaming forwards usage chunk when the client opted in', 
 
 test('/v1/completions rejects malformed body with the standard 400', async () => {
   const { apiKey } = await setupAppTest();
-  const response = await requestApp('/v1/completions', {
+  const response = await requestAppWithWarmModels('/v1/completions', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
     body: '{not json',
@@ -225,7 +225,7 @@ test('/v1/completions rejects a model without the completions endpoint with the 
   }));
   await warmModelsForTest();
 
-  const response = await requestApp('/v1/completions', {
+  const response = await requestAppWithWarmModels('/v1/completions', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
     body: JSON.stringify({ model: 'davinci-002', prompt: 'hello' }),
@@ -255,7 +255,7 @@ test('/v1/completions handler also serves the unversioned /completions path', as
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/completions', {
+      const response = await requestAppWithWarmModels('/completions', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
         body: JSON.stringify({ model: 'davinci-002', prompt: 'x' }),
@@ -288,7 +288,7 @@ test('/v1/completions non-streaming records usage row, performance neutral row (
       usage: { prompt_tokens: 7, completion_tokens: 2, total_tokens: 9 },
     })),
     async () => {
-      const response = await requestApp('/v1/completions', {
+      const response = await requestAppWithWarmModels('/v1/completions', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
         body: JSON.stringify({ model: 'davinci-002', prompt: 'hello' }),
@@ -332,7 +332,7 @@ test('/v1/completions streaming records usage row, performance neutral row (text
   await withMockedFetch(
     () => Promise.resolve(completionStream()),
     async () => {
-      const response = await requestApp('/v1/completions', {
+      const response = await requestAppWithWarmModels('/v1/completions', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
         body: JSON.stringify({ model: 'davinci-002', prompt: 'hello', stream: true }),

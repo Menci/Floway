@@ -267,7 +267,7 @@ export interface UpstreamRepo {
   // cannot publish models or errors under newer credentials/configuration.
   saveClaimedModelsCache(id: string, generation: ModelsCacheGeneration, token: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean>;
   saveClaimedModelsCacheError(id: string, generation: ModelsCacheGeneration, token: string, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean>;
-  claimModelsRefresh(id: string, generation: ModelsCacheGeneration, token: string, now: number, staleClaimedBefore: number, force: boolean): Promise<ModelsRefreshClaimResult>;
+  claimModelsRefresh(id: string, generation: ModelsCacheGeneration, token: string, now: number, staleClaimedBefore: number, force: boolean, observedActiveToken: string | null): Promise<ModelsRefreshClaimResult>;
   completeModelsRefreshSuccess(id: string, token: string): Promise<void>;
   completeModelsRefreshFailure(id: string, token: string, failureCount: number, retryAt: number): Promise<void>;
 }
@@ -278,8 +278,9 @@ export interface ModelsRefreshClaim {
 }
 
 export type ModelsRefreshClaimResult = ModelsRefreshClaim
-  | { kind: 'active' }
+  | { kind: 'active'; token: string }
   | { kind: 'backoff' }
+  | { kind: 'completed' }
   | { kind: 'generation-mismatch' };
 
 export interface ModelsCacheGeneration {

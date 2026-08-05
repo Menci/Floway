@@ -3,6 +3,7 @@ import { test } from 'vitest';
 import { blueprintUpstreamRecord, upstreamRecordToFullJson } from '../../../src/control-plane/upstreams/serialize.ts';
 import { MODEL_LISTING_FAILURE_CODE } from '../../../src/data-plane/models/shared.ts';
 import { MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
+import { modelsRefreshRetryAt } from '../../../src/repo/models-refresh-contract.ts';
 import { seedModelsCache, seedModelsCacheError } from '../../repo/models-cache-fixture.ts';
 import { MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
@@ -777,6 +778,39 @@ test('PATCH /api/upstreams warms the models cache before responding', async () =
   assertEquals(cached?.models.map(model => model.id), ['warmed-on-update']);
   assertEquals(patched.modelsCache.fetchedAt, cached?.fetchedAt ?? null);
   assertEquals(patched.modelsCache.lastError, null);
+});
+
+test('PATCH /api/upstreams metadata warm preserves refresh backoff', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  const created = await withMockedFetch(
+    () => jsonResponse({ object: 'list', data: [{ id: 'cached-model' }] }),
+    async () => await (await requestApp('/api/upstreams', authed(adminSession, createBody()))).json() as { id: string },
+  );
+  const generation = await getCacheGeneration(repo, created.id);
+  const now = Date.now();
+  const claim = await repo.upstreams.claimModelsRefresh(created.id, generation, 'failed-refresh', now, now - 900_000, false, null);
+  if (claim.kind !== 'claimed') throw new Error('expected refresh claim');
+  await repo.upstreams.completeModelsRefreshFailure(created.id, 'failed-refresh', 1, modelsRefreshRetryAt(now, 0));
+  let modelRequests = 0;
+
+  await withMockedFetch(
+    () => {
+      modelRequests++;
+      return jsonResponse({ object: 'list', data: [{ id: 'unexpected-model' }] });
+    },
+    async () => {
+      const response = await requestApp(`/api/upstreams/${created.id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
+        body: JSON.stringify({ name: 'Metadata only' }),
+      });
+      assertEquals(response.status, 200);
+    },
+  );
+
+  assertEquals(modelRequests, 0);
+  assertEquals((await repo.upstreams.getById(created.id))?.modelsCache?.models.map(model => model.id), ['cached-model']);
 });
 
 test('POST /api/upstreams/list-models without an id still serves draft preview', async () => {

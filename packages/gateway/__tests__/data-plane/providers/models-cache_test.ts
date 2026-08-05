@@ -248,7 +248,7 @@ describe('fetchUpstreamModelsCached', () => {
   test('synchronous warm waits for a refresh owned by another runtime', async () => {
     const repo = await setupRepo();
     const now = Date.now();
-    await expect(repo.upstreams.claimModelsRefresh(UPSTREAM_ID, CACHE_GENERATION, 'remote-owner', now, now - 900_000, false))
+    await expect(repo.upstreams.claimModelsRefresh(UPSTREAM_ID, CACHE_GENERATION, 'remote-owner', now, now - 900_000, false, null))
       .resolves.toEqual({ kind: 'claimed', failureCount: 0 });
     const localFetch = vi.fn(async () => [aModel('duplicate-local-model')]);
     const warming = warmUpstreamModels(stubInstance(localFetch), directFetcher);
@@ -267,6 +267,33 @@ describe('fetchUpstreamModelsCached', () => {
 
     expect((await warming).map(model => model.id)).toEqual(['remote-model']);
     expect(localFetch).not.toHaveBeenCalled();
+  });
+
+  test('explicit force bypasses a local warm waiting on another runtime', async () => {
+    const repo = await setupRepo();
+    const now = Date.now();
+    await repo.upstreams.claimModelsRefresh(UPSTREAM_ID, CACHE_GENERATION, 'remote-owner', now, now - 900_000, false, null);
+    const fetchFn = vi.fn(async () => [aModel('forced-model')]);
+    const instance = stubInstance(fetchFn, null, CACHE_GENERATION, 'shared-warm-force-key');
+    const warming = warmUpstreamModels(instance, directFetcher);
+    await new Promise(resolve => setTimeout(resolve, 20));
+
+    const forced = fetchUpstreamModelsCached(instance, { scheduler: () => {}, fetcher: directFetcher, force: true });
+    await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(1));
+    expect((await forced).map(model => model.id)).toEqual(['forced-model']);
+    expect((await warming).map(model => model.id)).toEqual(['forced-model']);
+  });
+
+  test('a success-claim release failure does not install upstream failure backoff', async () => {
+    const repo = await setupRepo();
+    const completeFailure = vi.spyOn(repo.upstreams, 'completeModelsRefreshFailure');
+    vi.spyOn(repo.upstreams, 'completeModelsRefreshSuccess').mockRejectedValueOnce(new Error('release failed'));
+    const instance = stubInstance(async () => [aModel('published-model')]);
+
+    await expect(fetchUpstreamModelsCached(instance, { scheduler: () => {}, fetcher: directFetcher, force: true }))
+      .rejects.toThrow('release failed');
+    expect(completeFailure).not.toHaveBeenCalled();
+    expect((await storedCache(repo))?.models.map(model => model.id)).toEqual(['published-model']);
   });
 
   test('a superseded generation neither joins nor overwrites the current catalog', async () => {

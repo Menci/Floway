@@ -8,7 +8,7 @@ export const seedModelsCache = async (
   cache: Omit<UpstreamModelsCache, 'lastError'>,
 ): Promise<boolean> => {
   const token = crypto.randomUUID();
-  const claim = await repo.claimModelsRefresh(id, generation, token, Date.now(), Number.MIN_SAFE_INTEGER, true);
+  const claim = await repo.claimModelsRefresh(id, generation, token, Date.now(), Number.MIN_SAFE_INTEGER, true, null);
   if (claim.kind !== 'claimed') return false;
   const saved = await repo.saveClaimedModelsCache(id, generation, token, cache);
   await repo.completeModelsRefreshSuccess(id, token);
@@ -22,7 +22,7 @@ export const seedModelsCacheError = async (
   error: NonNullable<UpstreamModelsCache['lastError']>,
 ): Promise<boolean> => {
   const token = crypto.randomUUID();
-  const claim = await repo.claimModelsRefresh(id, generation, token, Date.now(), Number.MIN_SAFE_INTEGER, true);
+  const claim = await repo.claimModelsRefresh(id, generation, token, Date.now(), Number.MIN_SAFE_INTEGER, true, null);
   if (claim.kind !== 'claimed') return false;
   const saved = await repo.saveClaimedModelsCacheError(id, generation, token, error);
   await repo.completeModelsRefreshSuccess(id, token);

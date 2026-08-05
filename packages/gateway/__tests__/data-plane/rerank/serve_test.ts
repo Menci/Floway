@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import type { Repo } from '../../../src/repo/types.ts';
-import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels as requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import type { ModelPricing, RerankTarget } from '@floway-dev/protocols/common';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
@@ -59,7 +59,7 @@ test('/v1/rerank translates Cohere v1 to v2 and records Cohere search units', as
       }), { status: 200, headers: { 'content-type': 'application/json', 'x-api-warning': 'trial quota', 'x-request-id': 'upstream-request' } });
     },
     async () => {
-      const response = await requestApp('/v1/rerank', {
+      const response = await requestAppWithWarmModels('/v1/rerank', {
         method: 'POST',
         headers: requestHeaders(apiKey.key),
         body: JSON.stringify({
@@ -111,7 +111,7 @@ test('/v2/rerank accepts null Cohere meta and records request-only usage', async
   await withMockedFetch(
     () => jsonResponse({ id: 'request-no-usage', results: [], meta: null }),
     async () => {
-      const response = await requestApp('/v2/rerank', {
+      const response = await requestAppWithWarmModels('/v2/rerank', {
         method: 'POST',
         headers: requestHeaders(apiKey.key),
         body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),
@@ -134,7 +134,7 @@ test('/v2/rerank preserves same-protocol successes with malformed usage as reque
   await withMockedFetch(
     () => jsonResponse({ id: 'request-bad-usage', results: [], meta: { tokens: 3 } }),
     async () => {
-      const response = await requestApp('/v2/rerank', {
+      const response = await requestAppWithWarmModels('/v2/rerank', {
         method: 'POST',
         headers: requestHeaders(apiKey.key),
         body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),
@@ -174,7 +174,7 @@ test('/jina/v1/rerank preserves same-dialect extensions and records token usage'
       return jsonResponse(upstreamResponse);
     },
     async () => {
-      const response = await requestApp('/jina/v1/rerank', {
+      const response = await requestAppWithWarmModels('/jina/v1/rerank', {
         method: 'POST',
         headers: requestHeaders(apiKey.key),
         body: JSON.stringify({
@@ -214,7 +214,7 @@ test('/jina/v1/rerank accepts a same-dialect success without usage', async () =>
   await withMockedFetch(
     () => jsonResponse(upstreamResponse),
     async () => {
-      const response = await requestApp('/jina/v1/rerank', {
+      const response = await requestAppWithWarmModels('/jina/v1/rerank', {
         method: 'POST',
         headers: requestHeaders(apiKey.key),
         body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),
@@ -246,7 +246,7 @@ test('/jina/v1/rerank sends image inputs to DashScope native and accepts cross-p
       });
     },
     async () => {
-      const response = await requestApp('/jina/v1/rerank', {
+      const response = await requestAppWithWarmModels('/jina/v1/rerank', {
         method: 'POST',
         headers: requestHeaders(apiKey.key),
         body: JSON.stringify({ model: 'public-reranker', query, documents: [document] }),
@@ -287,7 +287,7 @@ test('/voyage/v1/rerank translates a DashScope native response', async () => {
       });
     },
     async () => {
-      const response = await requestApp('/voyage/v1/rerank', {
+      const response = await requestAppWithWarmModels('/voyage/v1/rerank', {
         method: 'POST',
         headers: requestHeaders(apiKey.key),
         body: JSON.stringify({
@@ -325,7 +325,7 @@ test('/v2/rerank rejects Cohere v1-only fields before dispatch', async () => {
       return jsonResponse({ results: [] });
     },
     async () => {
-      const response = await requestApp('/v2/rerank', {
+      const response = await requestAppWithWarmModels('/v2/rerank', {
         method: 'POST',
         headers: requestHeaders(apiKey.key),
         body: JSON.stringify({
@@ -352,7 +352,7 @@ test('upstream rerank errors are forwarded and still record a request-only usage
       headers: { 'content-type': 'application/json', 'retry-after': '7', 'x-request-id': 'request-error' },
     }),
     async () => {
-      const response = await requestApp('/v1/rerank', {
+      const response = await requestAppWithWarmModels('/v1/rerank', {
         method: 'POST',
         headers: requestHeaders(apiKey.key),
         body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),
@@ -386,7 +386,7 @@ test('a concrete token metric remains unpriced when only rerank searches have a 
       results: [{ index: 0, relevance_score: 0.8 }],
     }),
     async () => {
-      const response = await requestApp('/jina/v1/rerank', {
+      const response = await requestAppWithWarmModels('/jina/v1/rerank', {
         method: 'POST',
         headers: requestHeaders(apiKey.key),
         body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),
@@ -413,7 +413,7 @@ test('target-incompatible source controls return 400 without dispatch', async ()
       return jsonResponse({ results: [] });
     },
     async () => {
-      const response = await requestApp('/jina/v1/rerank', {
+      const response = await requestAppWithWarmModels('/jina/v1/rerank', {
         method: 'POST',
         headers: requestHeaders(apiKey.key),
         body: JSON.stringify({
@@ -441,7 +441,7 @@ test('Jina image inputs reject pure-text targets before dispatch', async () => {
       return jsonResponse({ results: [] });
     },
     async () => {
-      const response = await requestApp('/jina/v1/rerank', {
+      const response = await requestAppWithWarmModels('/jina/v1/rerank', {
         method: 'POST',
         headers: requestHeaders(apiKey.key),
         body: JSON.stringify({
@@ -470,7 +470,7 @@ test('same-protocol success forwards opaque result items while still recording u
   await withMockedFetch(
     () => jsonResponse(upstreamBody),
     async () => {
-      const response = await requestApp('/jina/v1/rerank', {
+      const response = await requestAppWithWarmModels('/jina/v1/rerank', {
         method: 'POST',
         headers: requestHeaders(apiKey.key),
         body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),
@@ -498,7 +498,7 @@ test('cross-protocol success still validates result items before rendering', asy
       results: [{ relevance_score: 0.8 }],
     }),
     async () => {
-      const response = await requestApp('/voyage/v1/rerank', {
+      const response = await requestAppWithWarmModels('/voyage/v1/rerank', {
         method: 'POST',
         headers: requestHeaders(apiKey.key),
         body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),
@@ -523,7 +523,7 @@ test('same-protocol malformed JSON is forwarded as request-only usage', async ()
   await withMockedFetch(
     () => new Response('{not-json', { status: 200, headers: { 'content-type': 'application/json' } }),
     async () => {
-      const response = await requestApp('/jina/v1/rerank', {
+      const response = await requestAppWithWarmModels('/jina/v1/rerank', {
         method: 'POST',
         headers: requestHeaders(apiKey.key),
         body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),
@@ -549,7 +549,7 @@ test('usage parsed before a cross-protocol render failure is still recorded', as
       meta: { billed_units: { search_units: 2 } },
     }),
     async () => {
-      const response = await requestApp('/v1/rerank', {
+      const response = await requestAppWithWarmModels('/v1/rerank', {
         method: 'POST',
         headers: requestHeaders(apiKey.key),
         body: JSON.stringify({
@@ -572,7 +572,7 @@ test('usage parsed before a cross-protocol render failure is still recorded', as
 
 test('there is no unversioned /rerank route', async () => {
   const { apiKey } = await setupAppTest();
-  const response = await requestApp('/rerank', {
+  const response = await requestAppWithWarmModels('/rerank', {
     method: 'POST',
     headers: requestHeaders(apiKey.key),
     body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),

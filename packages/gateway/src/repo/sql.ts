@@ -900,6 +900,9 @@ class SqlUpstreamRepo implements UpstreamRepo {
   }
 
   private async saveRecord(upstream: UpstreamRecord, clearModelsCache: boolean): Promise<void> {
+    const modelsRefreshUpdate = clearModelsCache
+      ? 'NULL'
+      : "CASE WHEN models_refresh_json IS NULL THEN NULL ELSE json_set(models_refresh_json, '$.claimToken', NULL, '$.claimedAt', NULL) END";
     // created_at is deliberately not in the ON CONFLICT update list: the row's first INSERT
     // wins, and re-saves preserve that timestamp regardless of what the caller passes.
     await this.db
@@ -918,7 +921,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
            proxy_fallback_list_json = excluded.proxy_fallback_list_json,
            model_prefix_json = excluded.model_prefix_json,
            hue = excluded.hue,
-           models_refresh_json = NULL${clearModelsCache ? ', models_cache_json = NULL' : ''}`,
+           models_refresh_json = ${modelsRefreshUpdate}${clearModelsCache ? ', models_cache_json = NULL' : ''}`,
       )
       .bind(
         upstream.id,
@@ -971,10 +974,10 @@ class SqlUpstreamRepo implements UpstreamRepo {
     return (result.meta.changes ?? 0) > 0;
   }
 
-  async claimModelsRefresh(id: string, generation: ModelsCacheGeneration, token: string, now: number, staleClaimedBefore: number, force: boolean): Promise<ModelsRefreshClaimResult> {
+  async claimModelsRefresh(id: string, generation: ModelsCacheGeneration, token: string, now: number, staleClaimedBefore: number, force: boolean, observedActiveToken: string | null): Promise<ModelsRefreshClaimResult> {
     const rawConfig = await this.modelsCacheWriteConfig(id, generation);
     if (rawConfig === null) return { kind: 'generation-mismatch' };
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    while (true) {
       const row = await this.db
         .prepare(
           `UPDATE upstreams
@@ -985,19 +988,26 @@ class SqlUpstreamRepo implements UpstreamRepo {
              'claimedAt', ?
            )
            WHERE id = ? AND updated_at = ? AND config_json = ? AND (
-             ? = 1
-             OR models_refresh_json IS NULL
-             OR (
-               coalesce(json_extract(models_refresh_json, '$.retryAt'), 0) <= ?
-               AND (
-                 json_extract(models_refresh_json, '$.claimToken') IS NULL
-                 OR json_extract(models_refresh_json, '$.claimedAt') <= ?
+             ? = 1 OR (
+               ? IS NULL AND (
+                 models_refresh_json IS NULL
+                 OR (
+                   coalesce(json_extract(models_refresh_json, '$.retryAt'), 0) <= ?
+                   AND (
+                     json_extract(models_refresh_json, '$.claimToken') IS NULL
+                     OR json_extract(models_refresh_json, '$.claimedAt') <= ?
+                   )
+                 )
                )
+             ) OR (
+               ? IS NOT NULL
+               AND json_extract(models_refresh_json, '$.claimToken') = ?
+               AND json_extract(models_refresh_json, '$.claimedAt') <= ?
              )
            )
            RETURNING json_extract(models_refresh_json, '$.failCount') AS fail_count`,
         )
-        .bind(token, now, id, generation.updatedAt, rawConfig, sqliteBoolean(force), now, staleClaimedBefore)
+        .bind(token, now, id, generation.updatedAt, rawConfig, sqliteBoolean(force), observedActiveToken, now, staleClaimedBefore, observedActiveToken, observedActiveToken, staleClaimedBefore)
         .first<{ fail_count: number }>();
       if (row !== null) return { kind: 'claimed', failureCount: row.fail_count };
 
@@ -1012,11 +1022,14 @@ class SqlUpstreamRepo implements UpstreamRepo {
         .bind(id, generation.updatedAt, rawConfig)
         .first<{ models_refresh_json: string | null; retry_at: number | null; claim_token: string | null; claimed_at: number | null }>();
       if (state === null) return { kind: 'generation-mismatch' };
-      if (state.models_refresh_json === null) continue;
-      if (state.claim_token !== null && state.claimed_at !== null && state.claimed_at > staleClaimedBefore) return { kind: 'active' };
+      if (state.models_refresh_json === null) {
+        if (observedActiveToken !== null) return { kind: 'completed' };
+        continue;
+      }
+      if (state.claim_token !== null && state.claimed_at !== null && state.claimed_at > staleClaimedBefore) return { kind: 'active', token: state.claim_token };
       if (state.retry_at !== null && state.retry_at > now) return { kind: 'backoff' };
+      if (observedActiveToken !== null) return { kind: 'completed' };
     }
-    throw new Error(`Failed to classify models refresh claim contention for ${id}`);
   }
 
   async completeModelsRefreshSuccess(id: string, token: string): Promise<void> {

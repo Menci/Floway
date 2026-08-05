@@ -32,20 +32,35 @@ export interface ModelsCacheFetchOptions {
 // and superseded rows remain isolated. Not a TTL cache — the entry is removed
 // when the promise settles. The conditional delete defends against a stale
 // removal racing a later replacement.
-const inFlight = new Map<string, Promise<ProviderModel[] | null>>();
+type RefreshMode = 'fetch' | 'warm' | 'trigger';
+
+interface InFlightRefresh {
+  kind: 'fetch' | 'wait';
+  promise: Promise<ProviderModel[] | null>;
+}
+
+const inFlight = new Map<string, InFlightRefresh>();
+
+const startInFlight = (
+  key: string,
+  kind: InFlightRefresh['kind'],
+  fn: () => Promise<ProviderModel[] | null>,
+): Promise<ProviderModel[] | null> => {
+  const entry: InFlightRefresh = { kind, promise: fn() };
+  inFlight.set(key, entry);
+  entry.promise.finally(() => {
+    if (inFlight.get(key) === entry) inFlight.delete(key);
+  }).catch(() => {});
+  return entry.promise;
+};
 
 const memoInFlight = (
   key: string,
+  kind: InFlightRefresh['kind'],
   fn: () => Promise<ProviderModel[] | null>,
 ): Promise<ProviderModel[] | null> => {
   const existing = inFlight.get(key);
-  if (existing) return existing;
-  const promise = fn();
-  inFlight.set(key, promise);
-  promise.finally(() => {
-    if (inFlight.get(key) === promise) inFlight.delete(key);
-  }).catch(() => {});
-  return promise;
+  return existing?.promise ?? startInFlight(key, kind, fn);
 };
 
 const errorMessage = (err: unknown): string => err instanceof Error ? err.message : String(err);
@@ -83,14 +98,12 @@ const runFetch = async (
 const runClaimedFetch = async (
   instance: GatewayProvider,
   fetcher: Fetcher,
-  force: boolean,
-  waitForActive: boolean,
+  mode: RefreshMode,
   loadProvidedModels?: () => Promise<ProviderModel[]>,
 ): Promise<ProviderModel[] | null> => {
   const repo = getRepo();
   const token = crypto.randomUUID();
-  const initialFetchedAt = instance.modelsCache?.fetchedAt ?? null;
-  const initialErrorAt = instance.modelsCache?.lastError?.at ?? null;
+  let observedActiveToken: string | null = null;
   let claimed: Extract<Awaited<ReturnType<typeof repo.upstreams.claimModelsRefresh>>, { kind: 'claimed' }>;
   while (true) {
     const now = Date.now();
@@ -100,27 +113,28 @@ const runClaimedFetch = async (
       token,
       now,
       now - MODELS_REFRESH_CLAIM_LEASE_MS,
-      force,
+      mode === 'fetch',
+      observedActiveToken,
     );
     if (outcome.kind === 'claimed') {
       claimed = outcome;
       break;
     }
-    if (outcome.kind !== 'active' || !waitForActive) return null;
+    if (mode !== 'warm' || outcome.kind === 'backoff' || outcome.kind === 'generation-mismatch') return null;
+    if (outcome.kind === 'completed') {
+      const current = await repo.upstreams.getById(instance.upstreamId);
+      if (current !== null
+        && current.updatedAt === instance.modelsCacheGeneration.updatedAt
+        && serializeStoredConfig(current.config) === serializeStoredConfig(instance.modelsCacheGeneration.config)) instance.modelsCache = current.modelsCache;
+      return null;
+    }
+    observedActiveToken = outcome.token;
     await new Promise(resolve => setTimeout(resolve, ACTIVE_REFRESH_POLL_MS));
-    const current = await repo.upstreams.getById(instance.upstreamId);
-    if (current === null
-      || current.updatedAt !== instance.modelsCacheGeneration.updatedAt
-      || serializeStoredConfig(current.config) !== serializeStoredConfig(instance.modelsCacheGeneration.config)) return null;
-    instance.modelsCache = current.modelsCache;
-    if ((current.modelsCache?.fetchedAt ?? null) !== initialFetchedAt
-      || (current.modelsCache?.lastError?.at ?? null) !== initialErrorAt) return null;
   }
 
+  let models: ProviderModel[];
   try {
-    const models = await runFetch(instance, fetcher, instance.upstreamId, token, loadProvidedModels);
-    await repo.upstreams.completeModelsRefreshSuccess(instance.upstreamId, token);
-    return models;
+    models = await runFetch(instance, fetcher, instance.upstreamId, token, loadProvidedModels);
   } catch (error) {
     try {
       const failureCount = claimed.failureCount + 1;
@@ -131,6 +145,8 @@ const runClaimedFetch = async (
     }
     throw error;
   }
+  await repo.upstreams.completeModelsRefreshSuccess(instance.upstreamId, token);
+  return models;
 };
 
 const inFlightKey = (instance: GatewayProvider): string => {
@@ -145,13 +161,13 @@ export const fetchUpstreamModels = async (
 ): Promise<ProviderModel[]> => {
   const key = inFlightKey(instance);
   const existing = inFlight.get(key);
-  if (existing) {
-    const joined = await existing;
+  if (existing?.kind === 'fetch') {
+    const joined = await existing.promise;
     if (joined !== null) return joined;
     if (inFlight.get(key) === existing) inFlight.delete(key);
   }
 
-  const models = await memoInFlight(key, () => runClaimedFetch(instance, fetcher, true, false, loadProvidedModels));
+  const models = await startInFlight(key, 'fetch', () => runClaimedFetch(instance, fetcher, 'fetch', loadProvidedModels));
   if (models === null) throw new Error(`Failed to force-claim models refresh for ${instance.upstreamId}`);
   return models;
 };
@@ -164,12 +180,12 @@ export const warmUpstreamModels = async (
   const key = inFlightKey(instance);
   const existing = inFlight.get(key);
   if (existing) {
-    const joined = await existing;
+    const joined = await existing.promise;
     if (joined !== null) return joined;
     if (inFlight.get(key) === existing) inFlight.delete(key);
   }
 
-  const models = await memoInFlight(key, () => runClaimedFetch(instance, fetcher, false, true, loadProvidedModels));
+  const models = await memoInFlight(key, 'wait', () => runClaimedFetch(instance, fetcher, 'warm', loadProvidedModels));
   return models ?? instance.modelsCache?.models ?? [];
 };
 
@@ -180,7 +196,7 @@ export const triggerUpstreamModelsFetch = (
   loadProvidedModels?: () => Promise<ProviderModel[]>,
 ): void => {
   const key = inFlightKey(instance);
-  scheduler(memoInFlight(key, () => runClaimedFetch(instance, fetcher, false, false, loadProvidedModels)).then(() => {}));
+  scheduler(memoInFlight(key, 'fetch', () => runClaimedFetch(instance, fetcher, 'trigger', loadProvidedModels)).then(() => {}));
 };
 
 export const fetchUpstreamModelsCached = async (

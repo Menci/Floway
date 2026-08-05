@@ -579,7 +579,8 @@ class MemoryUpstreamRepo implements UpstreamRepo {
       ? { ...upstream, createdAt: existing.createdAt, modelsCache: existing.modelsCache }
       : { ...upstream, modelsCache: null };
     this.store.set(preserved.id, cloneUpstreamRecord(preserved));
-    this.modelsRefreshes.delete(preserved.id);
+    const refresh = this.modelsRefreshes.get(preserved.id);
+    if (refresh) this.modelsRefreshes.set(preserved.id, { ...refresh, claimToken: null, claimedAt: null });
     return Promise.resolve();
   }
 
@@ -634,13 +635,15 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     return Promise.resolve(true);
   }
 
-  claimModelsRefresh(id: string, generation: ModelsCacheGeneration, token: string, now: number, staleClaimedBefore: number, force: boolean): Promise<ModelsRefreshClaimResult> {
+  claimModelsRefresh(id: string, generation: ModelsCacheGeneration, token: string, now: number, staleClaimedBefore: number, force: boolean, observedActiveToken: string | null): Promise<ModelsRefreshClaimResult> {
     const stored = this.store.get(id);
     if (!stored || stored.updatedAt !== generation.updatedAt || serializeStoredConfig(stored.config) !== serializeStoredConfig(generation.config)) return Promise.resolve({ kind: 'generation-mismatch' });
     const existing = this.modelsRefreshes.get(id);
+    if (!force && observedActiveToken !== null && existing === undefined) return Promise.resolve({ kind: 'completed' });
     if (!force && existing !== undefined) {
-      if (existing.claimToken !== null && existing.claimedAt! > staleClaimedBefore) return Promise.resolve({ kind: 'active' });
+      if (existing.claimToken !== null && existing.claimedAt! > staleClaimedBefore) return Promise.resolve({ kind: 'active', token: existing.claimToken });
       if (existing.retryAt > now) return Promise.resolve({ kind: 'backoff' });
+      if (observedActiveToken !== null && existing.claimToken === null) return Promise.resolve({ kind: 'completed' });
     }
     this.modelsRefreshes.set(id, {
       failCount: existing?.failCount ?? 0,

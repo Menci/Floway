@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { buildCustomUpstreamRecord, copilotModels, requestAppWithWarmModels as requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { buildCustomUpstreamRecord, copilotModels, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals } from '@floway-dev/test-utils';
 
@@ -62,7 +62,7 @@ test('/v1beta/models lists Copilot LLM models in Gemini model shape', async () =
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1beta/models', {
+      const response = await requestAppWithWarmModels('/v1beta/models', {
         headers: { 'x-api-key': apiKey.key },
       });
 
@@ -110,7 +110,7 @@ test('/v1beta/models/:modelId returns one Gemini model or Google RPC 404', async
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const found = await requestApp('/v1beta/models/gpt-gemini-get', {
+      const found = await requestAppWithWarmModels('/v1beta/models/gpt-gemini-get', {
         headers: { 'x-api-key': apiKey.key },
       });
       assertEquals(found.status, 200);
@@ -118,7 +118,7 @@ test('/v1beta/models/:modelId returns one Gemini model or Google RPC 404', async
       assertEquals(model.name, 'models/gpt-gemini-get');
       assertEquals(model.supportedGenerationMethods, ['generateContent', 'streamGenerateContent', 'countTokens']);
 
-      const missing = await requestApp('/v1beta/models/missing-model', {
+      const missing = await requestAppWithWarmModels('/v1beta/models/missing-model', {
         headers: { 'x-api-key': apiKey.key },
       });
       assertEquals(missing.status, 404);
@@ -166,7 +166,7 @@ test('/v1beta/models includes custom upstream LLM models', async () => {
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const listResp = await requestApp('/v1beta/models', {
+      const listResp = await requestAppWithWarmModels('/v1beta/models', {
         headers: { 'x-api-key': apiKey.key },
       });
       assertEquals(listResp.status, 200);
@@ -176,7 +176,7 @@ test('/v1beta/models includes custom upstream LLM models', async () => {
       assertEquals(list.models[0].displayName, 'Custom LLM Model');
       assertEquals(list.models[0].supportedGenerationMethods, ['generateContent', 'streamGenerateContent', 'countTokens']);
 
-      const getResp = await requestApp('/v1beta/models/custom-llm-model', {
+      const getResp = await requestAppWithWarmModels('/v1beta/models/custom-llm-model', {
         headers: { 'x-api-key': apiKey.key },
       });
       assertEquals(getResp.status, 200);
@@ -219,7 +219,7 @@ test('/v1beta/models excludes custom upstream embedding-only models', async () =
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const listResp = await requestApp('/v1beta/models', {
+      const listResp = await requestAppWithWarmModels('/v1beta/models', {
         headers: { 'x-api-key': apiKey.key },
       });
       assertEquals(listResp.status, 200);
@@ -259,7 +259,7 @@ test('/v1beta/models hides upstream identity when a provider returns an invalid 
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1beta/models', {
+      const response = await requestAppWithWarmModels('/v1beta/models', {
         headers: { 'x-api-key': apiKey.key },
       });
       assertEquals(response.status, 200);
@@ -301,7 +301,7 @@ test('/v1beta/models hides upstream HTTP error bodies', async () => {
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1beta/models', {
+      const response = await requestAppWithWarmModels('/v1beta/models', {
         headers: { 'x-api-key': apiKey.key },
       });
       assertEquals(response.status, 200);
@@ -341,7 +341,7 @@ test('/v1beta/models hides thrown upstream request errors', async () => {
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1beta/models', {
+      const response = await requestAppWithWarmModels('/v1beta/models', {
         headers: { 'x-api-key': apiKey.key },
       });
       assertEquals(response.status, 200);
@@ -384,7 +384,7 @@ test('/v1beta/models hides malformed upstream response bodies', async () => {
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1beta/models', {
+      const response = await requestAppWithWarmModels('/v1beta/models', {
         headers: { 'x-api-key': apiKey.key },
       });
       assertEquals(response.status, 200);
@@ -440,7 +440,7 @@ test('/v1beta/models emits visible aliases as models/<alias-name> entries with d
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1beta/models', {
+      const response = await requestAppWithWarmModels('/v1beta/models', {
         headers: { 'x-api-key': apiKey.key },
       });
       assertEquals(response.status, 200);

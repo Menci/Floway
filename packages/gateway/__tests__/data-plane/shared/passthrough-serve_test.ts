@@ -17,7 +17,7 @@
 
 import { test, vi } from 'vitest';
 
-import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels as requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
 
@@ -69,7 +69,7 @@ test('passthrough-serve: usage-record failure does not turn upstream 2xx into 50
         throw new Error(`Unhandled fetch ${request.url}`);
       },
       async () => {
-        const response = await requestApp('/v1/embeddings', {
+        const response = await requestAppWithWarmModels('/v1/embeddings', {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
@@ -119,7 +119,7 @@ test('passthrough-serve: Custom resolves configured ingress header rules before 
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/embeddings', {
+      const response = await requestAppWithWarmModels('/v1/embeddings', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -159,7 +159,7 @@ test('passthrough-serve: non-JSON 2xx upstream body is forwarded verbatim with a
         throw new Error(`Unhandled fetch ${request.url}`);
       },
       async () => {
-        const response = await requestApp('/v1/embeddings', {
+        const response = await requestAppWithWarmModels('/v1/embeddings', {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
           body: JSON.stringify({ model: 'custom-embed-model', input: 'hi' }),
@@ -218,7 +218,7 @@ test('passthrough-serve: response header blocklist preserves vendor metadata and
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/embeddings', {
+      const response = await requestAppWithWarmModels('/v1/embeddings', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
         body: JSON.stringify({ model: 'custom-embed-model', input: 'hi' }),
@@ -273,7 +273,7 @@ test('passthrough-serve: alias whose targets have no kind-matching binding surfa
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/embeddings', {
+      const response = await requestAppWithWarmModels('/v1/embeddings', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
         body: JSON.stringify({ model: 'embed-fast', input: 'hi' }),
@@ -334,7 +334,7 @@ test('passthrough-serve: 5xx from the first candidate falls through to the next 
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/embeddings', {
+      const response = await requestAppWithWarmModels('/v1/embeddings', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
         body: JSON.stringify({ model: 'custom-embed-model', input: 'hi' }),
@@ -372,7 +372,7 @@ test('passthrough-serve: when every candidate returns non-2xx the most recent up
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/embeddings', {
+      const response = await requestAppWithWarmModels('/v1/embeddings', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
         body: JSON.stringify({ model: 'custom-embed-model', input: 'hi' }),
@@ -414,7 +414,7 @@ test('passthrough-serve: throw during rollover attributes the error perf row to 
         throw new Error(`Unhandled fetch ${request.url}`);
       },
       async () => {
-        const response = await requestApp('/v1/embeddings', {
+        const response = await requestAppWithWarmModels('/v1/embeddings', {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
           body: JSON.stringify({ model: 'custom-embed-model', input: 'hi' }),
