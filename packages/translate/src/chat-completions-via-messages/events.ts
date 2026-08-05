@@ -142,6 +142,12 @@ export const translateMessagesEventToChatCompletionsChunks = (event: MessagesStr
       return block.text ? [makeChunk(state, { content: block.text })] : [];
     case 'server_tool_use':
     case 'web_search_tool_result':
+    case 'web_fetch_tool_result':
+    case 'code_execution_tool_result':
+    case 'bash_code_execution_tool_result':
+    case 'text_editor_code_execution_tool_result':
+    case 'tool_search_tool_result':
+    case 'container_upload':
       return [];
     case 'fallback':
       state.model = block.to.model;

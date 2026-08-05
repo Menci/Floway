@@ -12,7 +12,12 @@ type Expect<T extends true> = T;
 
 export type ToolResultContentExcludesWebSearchResult = Expect<Equal<Extract<MessagesToolResultContentBlock, MessagesWebSearchResultBlock>, never>>;
 export type ServerToolUseNameIsString = Expect<Equal<MessagesServerToolUseBlock['name'], string>>;
-export type ServerToolUseInputIsQueryObject = Expect<Equal<MessagesServerToolUseBlock['input'], { query: string }>>;
+
+export const serverToolInputs = [
+  { type: 'server_tool_use', id: 'tool_1', name: 'web_search', input: { query: 'docs' } },
+  { type: 'server_tool_use', id: 'tool_2', name: 'code_execution', input: { code: 'print(1)' } },
+  { type: 'server_tool_use', id: 'tool_3', name: 'future_tool', input: 'opaque' },
+] satisfies MessagesServerToolUseBlock[];
 
 export const clientTool = {
   name: 'get_weather',

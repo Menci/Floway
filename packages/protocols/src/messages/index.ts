@@ -63,7 +63,7 @@ export interface MessagesPayload {
 export interface MessagesSearchResultLocationCitation {
   type: 'search_result_location';
   url: string;
-  title: string;
+  title: string | null;
   search_result_index: number;
   start_block_index: number;
   end_block_index: number;
@@ -73,12 +73,50 @@ export interface MessagesSearchResultLocationCitation {
 export interface MessagesWebSearchResultLocation {
   type: 'web_search_result_location';
   url: string;
-  title: string;
+  title: string | null;
   encrypted_index: string;
   cited_text?: string;
 }
 
-export type MessagesTextCitation = MessagesSearchResultLocationCitation | MessagesWebSearchResultLocation;
+// Anthropic adds citation variants as source kinds gain citable coordinates;
+// keep this response-side union aligned with the current SDK surface.
+// https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/messages/messages.ts#L1629-L1634
+export interface MessagesCharLocationCitation {
+  type: 'char_location';
+  cited_text: string;
+  document_index: number;
+  document_title: string | null;
+  start_char_index: number;
+  end_char_index: number;
+  file_id?: string | null;
+}
+
+export interface MessagesContentBlockLocationCitation {
+  type: 'content_block_location';
+  cited_text: string;
+  document_index: number;
+  document_title: string | null;
+  start_block_index: number;
+  end_block_index: number;
+  file_id?: string | null;
+}
+
+export interface MessagesPageLocationCitation {
+  type: 'page_location';
+  cited_text: string;
+  document_index: number;
+  document_title: string | null;
+  start_page_number: number;
+  end_page_number: number;
+  file_id?: string | null;
+}
+
+export type MessagesTextCitation =
+  | MessagesCharLocationCitation
+  | MessagesContentBlockLocationCitation
+  | MessagesPageLocationCitation
+  | MessagesSearchResultLocationCitation
+  | MessagesWebSearchResultLocation;
 
 // `cache_control` shape carried on every cache-anchored block. The default
 // upstream cache TTL is 5 minutes; an explicit `ttl` switches between the
@@ -93,7 +131,7 @@ export interface MessagesCacheControl {
 export interface MessagesTextBlock {
   type: 'text';
   text: string;
-  citations?: MessagesTextCitation[];
+  citations?: MessagesTextCitation[] | null;
   cache_control?: MessagesCacheControl;
 }
 
@@ -145,8 +183,11 @@ export interface MessagesToolUseBlock {
 export interface MessagesServerToolUseBlock {
   type: 'server_tool_use';
   id: string;
-  name: string;
-  input: { query: string };
+  // The server-tool family shares one output block and owns each tool's input.
+  // https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/messages/messages.ts#L1537-L1557
+  name: 'web_search' | 'web_fetch' | 'code_execution' | 'bash_code_execution' | 'text_editor_code_execution' | 'tool_search_tool_regex' | 'tool_search_tool_bm25' | (string & {});
+  input: unknown;
+  caller?: unknown;
 }
 
 export const MESSAGES_WEB_SEARCH_ERROR_CODES = ['too_many_requests', 'invalid_tool_input', 'max_uses_exceeded', 'query_too_long', 'request_too_large', 'unavailable'] as const;
@@ -218,6 +259,39 @@ export interface MessagesFallbackBlockParam {
   trigger?: unknown;
 }
 
+// Current server-produced content blocks that carry opaque tool-specific
+// payloads. Their discriminators and outer identity fields are typed while the
+// vendor-owned nested result remains untouched.
+// https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/messages/messages.ts#L1355-L1375
+// https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/messages/messages.ts#L847-L859
+export interface MessagesWebFetchToolResultBlock {
+  type: 'web_fetch_tool_result';
+  tool_use_id: string;
+  content: unknown;
+  caller?: unknown;
+  [key: string]: unknown;
+}
+
+export interface MessagesCodeExecutionToolResultBlock {
+  type: 'code_execution_tool_result' | 'bash_code_execution_tool_result' | 'text_editor_code_execution_tool_result';
+  tool_use_id: string;
+  content: unknown;
+  [key: string]: unknown;
+}
+
+export interface MessagesToolSearchToolResultBlock {
+  type: 'tool_search_tool_result';
+  tool_use_id: string;
+  content: unknown;
+  [key: string]: unknown;
+}
+
+export interface MessagesContainerUploadBlock {
+  type: 'container_upload';
+  file_id: string;
+  [key: string]: unknown;
+}
+
 export type MessagesUserContentBlock = MessagesTextBlock | MessagesImageBlock | MessagesToolResultBlock;
 
 export type MessagesAssistantContentBlock =
@@ -227,7 +301,11 @@ export type MessagesAssistantContentBlock =
   | MessagesWebSearchToolResultBlock
   | MessagesThinkingBlock
   | MessagesRedactedThinkingBlock
-  | MessagesFallbackBlock;
+  | MessagesFallbackBlock
+  | MessagesWebFetchToolResultBlock
+  | MessagesCodeExecutionToolResultBlock
+  | MessagesToolSearchToolResultBlock
+  | MessagesContainerUploadBlock;
 
 export type MessagesAssistantInputContentBlock =
   | Exclude<MessagesAssistantContentBlock, MessagesFallbackBlock>
@@ -327,7 +405,7 @@ export interface MessagesContentBlockStartEvent {
   type: 'content_block_start';
   index: number;
   content_block:
-    | { type: 'text'; text: string; citations?: MessagesTextCitation[] }
+    | { type: 'text'; text: string; citations?: MessagesTextCitation[] | null }
     | (Omit<MessagesToolUseBlock, 'input'> & {
       input: Record<string, unknown>;
     })
@@ -335,14 +413,18 @@ export interface MessagesContentBlockStartEvent {
     | MessagesWebSearchToolResultBlock
     | MessagesThinkingBlock
     | { type: 'redacted_thinking'; data: string }
-    | MessagesFallbackBlock;
+    | MessagesFallbackBlock
+    | MessagesWebFetchToolResultBlock
+    | MessagesCodeExecutionToolResultBlock
+    | MessagesToolSearchToolResultBlock
+    | MessagesContainerUploadBlock;
 }
 
 export interface MessagesContentBlockDeltaEvent {
   type: 'content_block_delta';
   index: number;
   delta:
-    | { type: 'text_delta'; text: string; citations?: MessagesTextCitation[] }
+    | { type: 'text_delta'; text: string; citations?: MessagesTextCitation[] | null }
     | { type: 'citations_delta'; citation: MessagesTextCitation }
     | { type: 'input_json_delta'; partial_json: string }
     | { type: 'thinking_delta'; thinking: string }

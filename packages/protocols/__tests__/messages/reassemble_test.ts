@@ -111,7 +111,7 @@ test('reassembleMessagesEvents reassembles tool_use response', async () => {
       data: {
         type: 'content_block_start',
         index: 0,
-        content_block: { type: 'tool_use', id: 'tu_1', name: 'calc' },
+        content_block: { type: 'tool_use', id: 'tu_1', name: 'calc', input: {} },
       },
     },
     {
@@ -184,7 +184,7 @@ test('reassembleMessagesEvents rejects malformed tool input JSON with its parse 
       data: {
         type: 'content_block_start',
         index: 0,
-        content_block: { type: 'tool_use', id: 'tu_bad', name: 'calc' },
+        content_block: { type: 'tool_use', id: 'tu_bad', name: 'calc', input: {} },
       },
     },
     {

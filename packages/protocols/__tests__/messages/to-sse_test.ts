@@ -67,3 +67,23 @@ test('messagesProtocolFrameToSSEFrame preserves an explicitly empty cited_text',
 
   assertEquals((JSON.parse(frame!.data) as { delta: { citation: { cited_text?: string } } }).delta.citation.cited_text, '');
 });
+
+test.each([
+  { type: 'char_location', cited_text: 'quote', document_index: 0, document_title: null, start_char_index: 0, end_char_index: 5, file_id: null },
+  { type: 'content_block_location', cited_text: 'quote', document_index: 0, document_title: null, start_block_index: 0, end_block_index: 1, file_id: null },
+  { type: 'page_location', cited_text: 'quote', document_index: 0, document_title: null, start_page_number: 1, end_page_number: 1, file_id: null },
+] as const)('messagesProtocolFrameToSSEFrame preserves $type citations', citation => {
+  const frame = messagesProtocolFrameToSSEFrame(eventFrame({
+    type: 'content_block_delta', index: 0, delta: { type: 'citations_delta', citation },
+  }));
+  assertEquals((JSON.parse(frame!.data) as { delta: { citation: unknown } }).delta.citation, citation);
+});
+
+test('messagesProtocolFrameToSSEFrame preserves nullable citation lists', () => {
+  const event = {
+    type: 'content_block_start' as const,
+    index: 0,
+    content_block: { type: 'text' as const, text: '', citations: null },
+  };
+  assertEquals(JSON.parse(messagesProtocolFrameToSSEFrame(eventFrame(event))!.data), event);
+});
