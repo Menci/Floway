@@ -92,13 +92,15 @@ const presentOrUndefined = (v: string | null | undefined): string | undefined =>
   return trimmed;
 };
 
+const bearerCredential = (authorization: string | undefined): string | undefined =>
+  /^Bearer\s+(.+)$/i.exec(authorization ?? '')?.[1];
+
 const extractApiKey = (c: Context): string | null => {
   const url = new URL(c.req.url);
-  const bearer = c.req.header('authorization')?.replace(/^Bearer\s+/i, '');
   return presentOrUndefined(url.searchParams.get('key'))
     ?? presentOrUndefined(c.req.header('x-api-key'))
     ?? presentOrUndefined(c.req.header('x-goog-api-key'))
-    ?? presentOrUndefined(bearer)
+    ?? presentOrUndefined(bearerCredential(c.req.header('authorization')))
     ?? null;
 };
 

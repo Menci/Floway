@@ -149,3 +149,22 @@ test('Authorization: Bearer with no value is rejected', async () => {
   });
   assertEquals(response.status, 401);
 });
+
+test('Authorization schemes other than Bearer are never interpreted as raw API keys', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const rawKey = 'Basic abc123';
+  await repo.apiKeys.save({ ...apiKey, key: rawKey });
+  const app = authTestApp();
+
+  const wrongScheme = await app.request('/v1/chat/completions', {
+    method: 'POST',
+    headers: { authorization: rawKey },
+  });
+  assertEquals(wrongScheme.status, 401);
+
+  const bearer = await app.request('/v1/chat/completions', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${rawKey}` },
+  });
+  assertEquals(bearer.status, 200);
+});
