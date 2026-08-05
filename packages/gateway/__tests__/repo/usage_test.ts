@@ -116,6 +116,45 @@ for (const backend of backends) {
     assertEquals(tokenRatesFromUsage(rows[1]), longPricing);
   });
 
+  test(`${backend.name} usage repo keeps NUL-bearing opaque model dimensions in separate buckets`, async () => {
+    const repo = await backend.make();
+    await repo.usage.set(record({
+      model: 'a\0b',
+      upstream: 'c',
+      modelKey: 'd',
+      requests: 1,
+      metrics: [{ metric: 'input_tokens', quantity: '1', unitPrice: null }],
+    }));
+    await repo.usage.set(record({
+      model: 'a',
+      upstream: 'b',
+      modelKey: 'c\0d',
+      requests: 2,
+      metrics: [{ metric: 'output_tokens', quantity: '2', unitPrice: null }],
+    }));
+
+    const rows = await query(repo);
+    assertEquals(rows.length, 2);
+    assertEquals(rows.find(row => row.model === 'a'), {
+      ...record({
+        model: 'a',
+        upstream: 'b',
+        modelKey: 'c\0d',
+        requests: 2,
+        metrics: [{ metric: 'output_tokens', quantity: '2', unitPrice: null }],
+      }),
+    });
+    assertEquals(rows.find(row => row.model === 'a\0b'), {
+      ...record({
+        model: 'a\0b',
+        upstream: 'c',
+        modelKey: 'd',
+        requests: 1,
+        metrics: [{ metric: 'input_tokens', quantity: '1', unitPrice: null }],
+      }),
+    });
+  });
+
   test(`${backend.name} usage repo sums additive writes within one pricing entry`, async () => {
     const repo = await backend.make();
     await repo.usage.record(record({ pricingSelector: { inputTokens: { operator: 'gt', value: 272000 } } }));
