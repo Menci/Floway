@@ -742,7 +742,7 @@ const zhHansCN = {
             'empty': '尚无额度观测。此上游服务的第一个请求会带来一份，也可以点击刷新立即获取。',
           },
           githubHost: 'GitHub 主机',
-          githubHostHint: '若使用具有数据驻留功能的 GitHub Enterprise Cloud，请输入主机名，例如 octocorp.ghe.com。',
+          githubHostHint: '若使用 GHE.com 账号，请输入主机名，例如 octocorp.ghe.com。',
           connect: '连接 GitHub',
           deviceCode: '设备代码',
           waiting: '正在等待授权…',

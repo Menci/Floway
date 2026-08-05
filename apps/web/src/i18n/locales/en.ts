@@ -783,7 +783,7 @@ const en = {
             empty: 'No quota observed yet. One arrives with the first request this upstream serves, or refresh to fetch one now.',
           },
           githubHost: 'GitHub host',
-          githubHostHint: 'For GitHub Enterprise Cloud with data residency, enter your hostname, such as octocorp.ghe.com.',
+          githubHostHint: 'For a GHE.com account, enter your hostname, such as octocorp.ghe.com.',
           connect: 'Connect GitHub',
           deviceCode: 'Device code',
           waiting: 'Waiting for authorization…',
