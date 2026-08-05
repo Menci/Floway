@@ -4,6 +4,7 @@ import { DUMP_DISABLED_REASON } from '../../../src/dump/broker.ts';
 import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import type { ApiKey, User } from '../../../src/repo/types.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
+import { flushBackground } from '../../test-utils/background-tracker.ts';
 import { requestControlPlane, setupControlPlaneTest, TEST_PASSWORD, TEST_PASSWORD_HASH } from '../../test-utils/control-plane.ts';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 import type { UpstreamRecord } from '@floway-dev/provider';
@@ -331,6 +332,7 @@ test('DELETE /api/users/:id attempts every broker close and keeps the committed 
   try {
     const response = await adminDelete(adminSession, 3);
     assertEquals(response.status, 200);
+    await flushBackground();
     assertEquals(stubs.closeChannelAttempts, keys.map(key => ({ keyId: key.id, reason: DUMP_DISABLED_REASON })));
     assertEquals(consoleSpy.mock.calls.length, keys.length);
   } finally {
@@ -339,4 +341,31 @@ test('DELETE /api/users/:id attempts every broker close and keeps the committed 
   expect(await repo.users.getById(3)).toBeNull();
   for (const key of keys) expect(await repo.apiKeys.getById(key.id)).toBeNull();
   expect(await repo.sessions.getByIdAndTouch(session.id)).toBeNull();
+});
+
+test('DELETE /api/users/:id responds after atomic revocation without waiting once per key on a hung broker', async () => {
+  const { adminSession, repo } = await setupControlPlaneTest();
+  await repo.users.save(sampleUser());
+  const keys = [sampleKey(3, 'key_1', '1'), sampleKey(3, 'key_2', '2')];
+  for (const key of keys) await repo.apiKeys.save(key);
+  const attempts: string[] = [];
+  let release!: () => void;
+  const brokerGate = new Promise<void>(resolve => { release = resolve; });
+  initDumpBroker({
+    async publish() {},
+    async closeChannel(keyId) {
+      attempts.push(keyId);
+      await brokerGate;
+    },
+    subscribe: () => (async function*() {})(),
+  });
+
+  const response = await adminDelete(adminSession, 3);
+  assertEquals(response.status, 200);
+  assertEquals(attempts, ['key_1']);
+  expect(await repo.users.getById(3)).toBeNull();
+
+  release();
+  await flushBackground();
+  assertEquals(attempts, ['key_1', 'key_2']);
 });
