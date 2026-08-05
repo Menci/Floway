@@ -513,6 +513,26 @@ test('PATCH /api/keys/:id rejects an empty update without mutating the key', asy
   assertEquals(await repo.apiKeys.getById(apiKey.id), apiKey);
 });
 
+test('PATCH /api/keys/:id does not resurrect a concurrently deleted key', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const updateOriginal = repo.apiKeys.update.bind(repo.apiKeys);
+  const update = vi.spyOn(repo.apiKeys, 'update').mockImplementationOnce(async (...args) => {
+    await repo.apiKeys.softDelete(apiKey.id);
+    return await updateOriginal(...args);
+  });
+  try {
+    const response = await ownerPatch(apiKey.id, { name: 'raced rename' }, apiKey.key);
+    assertEquals(response.status, 404);
+    assertEquals(await response.json(), { error: 'Key not found' });
+    assertEquals(await repo.apiKeys.getById(apiKey.id), null);
+    const tombstone = await repo.apiKeys.findByRawKeyIncludingDeleted(apiKey.key);
+    assertEquals(tombstone?.name, apiKey.name);
+    assertEquals(tombstone?.deletedAt === null, false);
+  } finally {
+    update.mockRestore();
+  }
+});
+
 test('PATCH /api/keys/:id sets dump_retention_seconds on the column', async () => {
   const { repo, apiKey } = await setupAppTest();
   const response = await ownerPatch(apiKey.id, { dump_retention_seconds: 3600 }, apiKey.key);
@@ -614,15 +634,27 @@ test('PATCH /api/keys/:id positive→null closes the channel', async () => {
   assertEquals((await repo.apiKeys.getById(apiKey.id))?.dumpRetentionSeconds, null);
 });
 
-test('PATCH /api/keys/:id positive→null succeeds when the broker close hook throws', async () => {
+test('PATCH /api/keys/:id retries an idempotent close after the first notification fails', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  stubs.failOn('closeChannel', new Error('broker down'));
+  const closeOriginal = stubs.broker.closeChannel.bind(stubs.broker);
+  const close = vi.spyOn(stubs.broker, 'closeChannel')
+    .mockRejectedValueOnce(new Error('broker down'))
+    .mockImplementation(closeOriginal);
 
-  const response = await ownerPatch(apiKey.id, { dump_retention_seconds: null }, apiKey.key);
-  assertEquals(response.status, 200);
-  assertEquals((await repo.apiKeys.getById(apiKey.id))?.dumpRetentionSeconds, null);
+  try {
+    const first = await ownerPatch(apiKey.id, { dump_retention_seconds: null }, apiKey.key);
+    assertEquals(first.status, 200);
+    assertEquals((await repo.apiKeys.getById(apiKey.id))?.dumpRetentionSeconds, null);
+
+    const retry = await ownerPatch(apiKey.id, { dump_retention_seconds: null }, apiKey.key);
+    assertEquals(retry.status, 200);
+    assertEquals(close.mock.calls.length, 2);
+    assertEquals(stubs.closedChannels.some(channel => channel.keyId === apiKey.id), true);
+  } finally {
+    close.mockRestore();
+  }
 });
 
 test('PATCH /api/keys/:id positive→smaller positive keeps the channel open', async () => {

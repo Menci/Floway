@@ -213,12 +213,12 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
     ...(body.dump_retention_seconds !== undefined ? { dumpRetentionSeconds: body.dump_retention_seconds } : {}),
     ...(body.responses_retention_seconds !== undefined ? { responsesRetentionSeconds: body.responses_retention_seconds } : {}),
   });
-  if (updated === null) throw new Error(`API key disappeared during update: ${id}`);
+  if (updated === null) return c.json({ error: 'Key not found' }, 404);
 
-  if (body.dump_retention_seconds !== undefined && body.dump_retention_seconds !== owned.dumpRetentionSeconds) {
-    const previous = owned.dumpRetentionSeconds;
-    const next = body.dump_retention_seconds;
-    if (next === null && previous !== null) await notifyDisabledBestEffort(id, 'updateKey retention disable');
+  if (body.dump_retention_seconds === null) {
+    // Closing is idempotent, so an explicit disable retries a prior notification
+    // that timed out after the database had already committed null.
+    await notifyDisabledBestEffort(id, 'updateKey retention disable');
   }
 
   return c.json(apiKeyToJson(updated, reachableUpstreamIds(knownUpstreamIds, userUpstreamIdsFromContext(c))));
