@@ -67,10 +67,11 @@ describe('fetchOnStream — request line and headers', () => {
   });
 
   it('rejects a missing or case-duplicated Host header before writing', async () => {
-    for (const headers of [
+    const cases: Array<Record<string, string>> = [
       { Authorization: 'Bearer x' },
       { Host: 'a.example', host: 'b.example' },
-    ]) {
+    ];
+    for (const headers of cases) {
       const fake = makeFakeDuplex();
       await expect(fetchOnStream(
         { readable: fake.readable, writable: fake.writable },
