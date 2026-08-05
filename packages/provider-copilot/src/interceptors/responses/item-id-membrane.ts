@@ -1,5 +1,6 @@
-import { unwrapCopilotItemId, wrapCopilotItemId } from './item-id-carrier.ts';
 import { hex } from '@scure/base';
+
+import { unwrapCopilotItemId, wrapCopilotItemId } from './item-id-carrier.ts';
 import type { CopilotResponsesBoundaryInterceptor } from './types.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalResponsesPayload, ResponsesCompactionResult, ResponsesInputItem, ResponsesOutputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';

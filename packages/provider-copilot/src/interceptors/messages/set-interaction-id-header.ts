@@ -1,5 +1,6 @@
-import { parseUserIdMetadata } from './detect-claude-code-metadata.ts';
 import { hex } from '@scure/base';
+
+import { parseUserIdMetadata } from './detect-claude-code-metadata.ts';
 import type { CopilotMessagesBoundaryInterceptor } from './types.ts';
 
 /**

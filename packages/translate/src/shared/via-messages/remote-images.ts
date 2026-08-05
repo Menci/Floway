@@ -1,5 +1,6 @@
-import type { RemoteImageLoader } from '../../types.ts';
 import { base64 } from '@scure/base';
+
+import type { RemoteImageLoader } from '../../types.ts';
 import type { MessagesImageBlock } from '@floway-dev/protocols/messages';
 
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);

@@ -18,8 +18,8 @@
 // but not byte-for-byte identical with arbitrary inputs — query order,
 // percent-encoding, and SS-2022 base64 padding may vary.
 
-import { ProxyUriError } from './errors.ts';
 import { base64DecodeBytes, base64EncodeBytes } from './bytes.ts';
+import { ProxyUriError } from './errors.ts';
 import {
   type HttpProxyConfig,
   type ProxyConfig,
