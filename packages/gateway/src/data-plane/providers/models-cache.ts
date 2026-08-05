@@ -1,6 +1,6 @@
+import type { GatewayProvider } from './registry.ts';
 import { getRepo } from '../../repo/index.ts';
 import { serializeStoredConfig } from '../../repo/upstream-json.ts';
-import type { GatewayProvider } from './registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { Fetcher, ProviderModel } from '@floway-dev/provider';
 

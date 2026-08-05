@@ -26,16 +26,16 @@ const stubInstance = (
   generation: ModelsCacheGeneration = CACHE_GENERATION,
   fetchIdentity = serializeStoredConfig(generation.config),
 ): GatewayProvider => ({
-    upstreamId: UPSTREAM_ID,
-    kind: 'custom',
-    name: UPSTREAM_ID,
-    disabledPublicModelIds: [],
-    modelPrefix: null,
-    modelsCache,
-    instance: stubProvider({ getProvidedModels: fetchFn }),
-    modelsCacheGeneration: generation,
-    modelsFetchIdentity: fetchIdentity,
-  });
+  upstreamId: UPSTREAM_ID,
+  kind: 'custom',
+  name: UPSTREAM_ID,
+  disabledPublicModelIds: [],
+  modelPrefix: null,
+  modelsCache,
+  instance: stubProvider({ getProvidedModels: fetchFn }),
+  modelsCacheGeneration: generation,
+  modelsFetchIdentity: fetchIdentity,
+});
 
 // The cache lives on the upstream row, so every write needs a row to
 // land on.

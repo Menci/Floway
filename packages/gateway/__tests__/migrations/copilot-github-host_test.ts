@@ -2,8 +2,8 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { test } from 'vitest';
 
-import { migrationSqlByFilename } from '../repo/test-sqlite.ts';
 import { serializeStoredConfig } from '../../src/repo/upstream-json.ts';
+import { migrationSqlByFilename } from '../repo/test-sqlite.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const MIGRATION = '0075_copilot_github_host.sql';
