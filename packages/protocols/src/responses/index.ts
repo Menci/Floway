@@ -459,11 +459,10 @@ export type ResponsesMultiAgentAction =
   | 'followup_task'
   | 'wait_agent';
 
-// Only these actions carry the model-encrypted message that Codex transfers
-// verbatim into the recipient thread's agent_message.
+// These collaboration actions carry a message into another agent thread.
 // https://github.com/openai/codex/blob/f2d825533c9423728f319a6dbcbb31c21768aa69/codex-rs/core/src/tools/handlers/multi_agents_spec.rs#L102-L145
 // https://github.com/openai/codex/blob/f2d825533c9423728f319a6dbcbb31c21768aa69/codex-rs/core/src/tools/handlers/multi_agents_spec.rs#L186-L243
-export const RESPONSES_ENCRYPTED_INTER_AGENT_MESSAGE_ACTIONS = [
+export const RESPONSES_INTER_AGENT_MESSAGE_ACTIONS = [
   'spawn_agent',
   'send_message',
   'followup_task',

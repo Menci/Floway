@@ -60,15 +60,10 @@ const opaqueBlobLocations = async (
   const locations: ResponsesBlobLocation[] = [];
   for (const [itemIndex, item] of items.entries()) {
     for (const location of responsesOpaqueLocations(item)) {
-      let decoded = await codec.unwrap(location.value, location.domain);
-      for (const legacyDomain of location.legacyDomains ?? []) {
-        if (decoded.kind === 'owned') break;
-        decoded = await codec.unwrap(location.value, legacyDomain);
-      }
       locations.push({
         ...location,
         itemIndex,
-        decoded,
+        decoded: await codec.unwrap(location.value, location.domain),
       });
     }
   }
