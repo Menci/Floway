@@ -157,6 +157,39 @@ test('copilotAuthedFetch routes the data-plane call through the baseUrl GitHub s
   assertEquals(observedUrl, 'https://api.enterprise.githubcopilot.com/v1/messages');
 });
 
+test('copilotAuthedFetch exchanges a GHE credential on the tenant API and still follows token endpoints.api', async () => {
+  await installRepoAndClearCache();
+  const observed: string[] = [];
+  await withMockedFetch(
+    async request => {
+      observed.push(request.url);
+      const url = new URL(request.url);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'tok-ghe',
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+          refresh_in: 1800,
+          endpoints: { api: 'https://api.business.githubcopilot.com' },
+        });
+      }
+      return new Response('{}', { status: 200 });
+    },
+    async () => {
+      await copilotAuthedFetch(
+        '/v1/messages',
+        { method: 'POST', body: '{}' },
+        { id: UPSTREAM_ID, githubHost: 'octocorp.ghe.com', githubToken: 'ghu_ghe' },
+        { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall },
+      );
+    },
+  );
+
+  assertEquals(observed, [
+    'https://api.octocorp.ghe.com/copilot_internal/v2/token',
+    'https://api.business.githubcopilot.com/v1/messages',
+  ]);
+});
+
 test('copilotAuthedFetch reads a still-valid Copilot token from state_json instead of refreshing', async () => {
   await installRepoAndClearCache();
   let tokenFetches = 0;
