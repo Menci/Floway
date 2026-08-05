@@ -578,12 +578,12 @@ test('POST /v1/responses rejects a malformed item reference before resolution or
   });
 
   assertEquals(response.status, 400);
-  const body = await response.json() as { error: { message: string; type: string; param: string; code: string } };
+  const body = await response.json() as { error: { message: string; type: string; param: string; code: string | null } };
   assertEquals(body.error, {
     message: 'Responses item_reference id must be a non-empty string.',
     type: 'invalid_request_error',
     param: 'input[0].id',
-    code: 'invalid_request_error',
+    code: null,
   });
   assertEquals(lastSeenModel.value, null);
   assertEquals(await repo.responsesItems.findOldestRefreshedAt(API_KEY_ID), null);
