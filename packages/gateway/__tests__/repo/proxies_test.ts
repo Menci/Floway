@@ -1,9 +1,10 @@
-import { test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
 import { createSqliteTestDb } from './test-sqlite.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { Repo } from '../../src/repo/types.ts';
+import type { SqlBindValue, SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 import type { ProxyFallbackEntry, UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
 
@@ -12,9 +13,19 @@ import { assertEquals } from '@floway-dev/test-utils';
 // run on D1 and node:sqlite — running the same scenarios against SqlRepo
 // (with sql.js applying every migration) is what catches schema drift,
 // SQLite-specific eval-order assumptions, and missing column wiring.
+const sharedSqlRepo = createSqliteTestDb().then(db => new SqlRepo(db));
+
+const resetSharedSqlRepo = async (): Promise<Repo> => {
+  const repo = await sharedSqlRepo;
+  await repo.proxyBackoffs.deleteAll();
+  await repo.upstreams.deleteAll();
+  await repo.proxies.deleteAll();
+  return repo;
+};
+
 const REPO_BACKENDS: Array<readonly [string, () => Promise<Repo>]> = [
   ['memory', async () => new InMemoryRepo()],
-  ['sql', async () => new SqlRepo(await createSqliteTestDb())],
+  ['sql', resetSharedSqlRepo],
 ];
 
 const upstreamFixture = (id: string, proxyFallbackList: ProxyFallbackEntry[]): UpstreamRecord => ({
@@ -38,13 +49,18 @@ const upstreamFixture = (id: string, proxyFallbackList: ProxyFallbackEntry[]): U
 for (const [backend, makeRepo] of REPO_BACKENDS) {
 
   test(`[${backend}] proxies repo inserts and lists ordered by createdAt`, async () => {
-    const repo = await makeRepo();
-    await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', dialTimeoutSeconds: null });
-    // Sleep to guarantee a distinct createdAt so the order assertion is deterministic.
-    await new Promise(resolve => setTimeout(resolve, 5));
-    await repo.proxies.insert({ id: 'b', name: 'B', url: 'socks5://host-b:1080', dialTimeoutSeconds: null });
-    const list = await repo.proxies.list();
-    assertEquals(list.map(p => p.id), ['a', 'b']);
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-06-01T00:00:00.000Z'));
+      const repo = await makeRepo();
+      await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', dialTimeoutSeconds: null });
+      vi.advanceTimersByTime(1);
+      await repo.proxies.insert({ id: 'b', name: 'B', url: 'socks5://host-b:1080', dialTimeoutSeconds: null });
+      const list = await repo.proxies.list();
+      assertEquals(list.map(p => p.id), ['a', 'b']);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test(`[${backend}] proxies repo findUpstreamsReferencing returns ids of upstreams whose fallback list contains the proxy`, async () => {
@@ -75,6 +91,22 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
     assertEquals(await repo.proxies.patch('nope', { name: 'x' }), null);
   });
 
+  test(`[${backend}] concurrent partial patches preserve one another`, async () => {
+    const repo = await makeRepo();
+    await repo.proxies.insert({ id: 'a', name: 'Old', url: 'socks5://host:1080', dialTimeoutSeconds: null });
+
+    await Promise.all([
+      repo.proxies.patch('a', { name: 'New' }),
+      repo.proxies.patch('a', { dialTimeoutSeconds: 30 }),
+    ]);
+
+    expect(await repo.proxies.getById('a')).toMatchObject({
+      name: 'New',
+      url: 'socks5://host:1080',
+      dialTimeoutSeconds: 30,
+    });
+  });
+
   test(`[${backend}] proxies repo save inserts a new row with createdAt and updatedAt set to now`, async () => {
     const repo = await makeRepo();
     await repo.proxies.save({ id: 'a', name: 'A', url: 'socks5://host:1080', dialTimeoutSeconds: 30 });
@@ -93,7 +125,6 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
     const originalCreatedAt = before?.createdAt;
     if (!originalCreatedAt) throw new Error('expected createdAt to be populated');
 
-    await new Promise(resolve => setTimeout(resolve, 5));
     await repo.proxies.save({ id: 'a', name: 'New', url: 'http://host-b:3128', dialTimeoutSeconds: 60 });
 
     const after = await repo.proxies.getById('a');
@@ -112,3 +143,53 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
   });
 
 }
+
+// Model a row that is visible to a pre-read but gone by the write boundary.
+// A read/modify/write implementation manufactures a success from the SELECT;
+// an atomic UPDATE ... RETURNING observes the deletion and returns no row.
+class VanishingProxyStatement implements SqlPreparedStatement {
+  constructor(
+    private readonly query: string,
+    private readonly bound: readonly SqlBindValue[] = [],
+  ) {}
+
+  bind(...values: SqlBindValue[]): SqlPreparedStatement {
+    return new VanishingProxyStatement(this.query, values);
+  }
+
+  first<T>(): Promise<T | null> {
+    if (this.query.startsWith('SELECT id, name, url')) {
+      return Promise.resolve({
+        id: String(this.bound[0]),
+        name: 'Old',
+        url: 'socks5://host:1080',
+        created_at: '2026-06-01T00:00:00.000Z',
+        updated_at: '2026-06-01T00:00:00.000Z',
+        dial_timeout_seconds: null,
+      } as T);
+    }
+    if (this.query.startsWith('UPDATE proxies')) return Promise.resolve(null);
+    throw new Error(`unexpected first query: ${this.query}`);
+  }
+
+  all<T>(): Promise<SqlResult<T>> {
+    throw new Error(`unexpected all query: ${this.query}`);
+  }
+
+  run(): Promise<SqlResult> {
+    if (this.query.startsWith('UPDATE proxies')) {
+      return Promise.resolve({ results: [], success: true, meta: { changes: 0 } });
+    }
+    throw new Error(`unexpected run query: ${this.query}`);
+  }
+}
+
+test('SQL proxy patch returns null when the row disappears at the write boundary', async () => {
+  const db: SqlDatabase = {
+    prepare: query => new VanishingProxyStatement(query),
+    exec: async () => undefined,
+  };
+  const repo = new SqlRepo(db);
+
+  expect(await repo.proxies.patch('a', { name: 'New' })).toBeNull();
+});

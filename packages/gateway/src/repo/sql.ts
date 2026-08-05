@@ -1276,28 +1276,31 @@ class SqlProxyRepo implements ProxyRepo {
   }
 
   async patch(id: string, patch: { name?: string; url?: string; dialTimeoutSeconds?: number | null }): Promise<ProxyRecord | null> {
-    const existing = await this.getById(id);
-    if (!existing) return null;
-
-    const nextName = patch.name ?? existing.name;
-    const nextUrl = patch.url ?? existing.url;
-    // dialTimeoutSeconds is nullable, so distinguish "not in patch" from
-    // "set to null" by hasOwn — `??` would collapse a deliberate clear.
-    const nextDialTimeout = Object.hasOwn(patch, 'dialTimeoutSeconds') ? patch.dialTimeoutSeconds! : existing.dialTimeoutSeconds;
+    // One targeted UPDATE lets concurrent patches to different fields compose
+    // and makes row deletion observable through the missing RETURNING row.
+    const hasName = sqliteBoolean(patch.name !== undefined);
+    const hasUrl = sqliteBoolean(patch.url !== undefined);
+    const hasDialTimeout = sqliteBoolean(Object.hasOwn(patch, 'dialTimeoutSeconds'));
     const updatedAt = new Date().toISOString();
-
-    await this.db
-      .prepare('UPDATE proxies SET name = ?, url = ?, dial_timeout_seconds = ?, updated_at = ? WHERE id = ?')
-      .bind(nextName, nextUrl, nextDialTimeout, updatedAt, id)
-      .run();
-
-    return {
-      ...existing,
-      name: nextName,
-      url: nextUrl,
-      dialTimeoutSeconds: nextDialTimeout,
-      updatedAt,
-    };
+    const row = await this.db
+      .prepare(
+        `UPDATE proxies
+         SET name = CASE WHEN ? THEN ? ELSE name END,
+             url = CASE WHEN ? THEN ? ELSE url END,
+             dial_timeout_seconds = CASE WHEN ? THEN ? ELSE dial_timeout_seconds END,
+             updated_at = ?
+         WHERE id = ?
+         RETURNING id, name, url, created_at, updated_at, dial_timeout_seconds`,
+      )
+      .bind(
+        hasName, patch.name ?? null,
+        hasUrl, patch.url ?? null,
+        hasDialTimeout, hasDialTimeout ? patch.dialTimeoutSeconds! : null,
+        updatedAt,
+        id,
+      )
+      .first<ProxyRow>();
+    return row === null ? null : toProxyRecord(row);
   }
 
   async delete(id: string): Promise<boolean> {
