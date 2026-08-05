@@ -297,9 +297,10 @@ header absent from the ingress request. The Custom config parser rejects
 Messages-owned metadata, gateway credentials, cookies, proxy/IP signals, body
 metadata, and hop-by-hop names because those remain owned by their protocol or
 the HTTP transport.
-Source-protocol metadata remains outside that generic policy: native Messages
-carries `anthropic-beta` through its own boundary, and Copilot parses it into
-`MessagesBoundaryCtx.anthropicBeta` before its interceptor chain. The gateway
+Protocol-owned transport metadata remains outside that generic policy: a
+native Messages target carries `anthropic-beta` through its own boundary, and
+Copilot parses it into `MessagesBoundaryCtx.anthropicBeta` before its
+interceptor chain. The gateway
 owns the control-plane handlers that call vendor APIs and maps their results
 onto Floway HTTP responses.
 
