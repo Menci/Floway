@@ -72,6 +72,19 @@ const oauthTokenResponse = (overrides: Partial<{ access_token: string; refresh_t
 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) });
 
 describe('createCodexProvider', () => {
+  test('owns request identity and turn metadata headers on the instance', () => {
+    const provider = createCodexProvider(baseRecord);
+
+    expect(provider.inboundHeaderAllowlist).toEqual([
+      'session-id',
+      'session_id',
+      'thread-id',
+      'x-client-request-id',
+      'x-codex-turn-metadata',
+      'x-codex-window-id',
+    ]);
+  });
+
   test('returns an instance carrying provider kind and identity', async () => {
     const instance = createCodexProvider(baseRecord);
     expect(instance.kind).toBe('codex');

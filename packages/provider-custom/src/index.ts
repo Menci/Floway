@@ -4,7 +4,6 @@ import type { ProviderModule } from '@floway-dev/provider';
 
 export const customProviderModule: ProviderModule = {
   create: createCustomProvider,
-  inboundHeaderAllowlist: [],
   defaultFlags: CUSTOM_DEFAULT_FLAGS,
 };
 
