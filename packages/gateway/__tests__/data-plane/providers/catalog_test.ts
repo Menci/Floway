@@ -1,4 +1,4 @@
-import { describe, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import { compareModelIds, getModelsFromProviders } from '../../../src/data-plane/providers/catalog.ts';
 import { clearInFlightForTesting } from '../../../src/data-plane/providers/models-cache.ts';
@@ -250,16 +250,14 @@ test('disabledPublicModelIds hides models from the catalog and routing, per upst
   assertEquals(keep.candidates.map(m => m.provider.upstreamId), ['up_a']);
 });
 
-// Per-upstream catalog refresh triggers fan out in parallel: total wall-clock time
-// tracks the slowest upstream, not the sum. The bound is loose because CI
-// timer noise eats into a tight `< sum` comparison; what matters is the
-// ratio.
+// Every upstream request must start before any sibling is released. This
+// directly observes concurrency without a wall-clock threshold that load can
+// satisfy or violate independently of execution order.
 test('catalog refresh triggers fan out per upstream in parallel', async () => {
   clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const FETCH_DELAY_MS = 60;
   const upstreams = [
     { id: 'up_p1', host: 'p1.example.com', model: 'p1-model' },
     { id: 'up_p2', host: 'p2.example.com', model: 'p2-model' },
@@ -274,30 +272,28 @@ test('catalog refresh triggers fan out per upstream in parallel', async () => {
     }));
   }
 
+  const started: string[] = [];
+  const releases = new Map<string, () => void>();
   await withMockedFetchRaw(
-    async request => {
+    request => {
       const url = new URL(request.url);
       const match = upstreams.find(u => url.hostname === u.host);
       if (match && url.pathname === '/v1/models') {
-        await new Promise(resolve => setTimeout(resolve, FETCH_DELAY_MS));
-        return jsonResponse({ object: 'list', data: [{ id: match.model, supported_endpoints: ['/chat/completions'] }] });
+        started.push(match.host);
+        return new Promise<Response>(resolve => {
+          releases.set(match.host, () => resolve(jsonResponse({ object: 'list', data: [{ id: match.model, supported_endpoints: ['/chat/completions'] }] })));
+        });
       }
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const start = Date.now();
-      await warmModelsForTest();
+      const warming = warmModelsForTest();
+      await vi.waitFor(() => expect(started.toSorted()).toEqual(upstreams.map(upstream => upstream.host).toSorted()));
+      for (const release of releases.values()) release();
+      await warming;
       const catalog = (await getModelsFromProviders(await listModelProviders(null), () => directFetcher, testScheduler)).models;
-      const elapsed = Date.now() - start;
 
       assertEquals([...catalog.map(m => m.id)].sort(), ['p1-model', 'p2-model', 'p3-model']);
-      // A serial walk would take >= 3 * FETCH_DELAY_MS; parallel is bounded by
-      // ~FETCH_DELAY_MS plus per-test overhead. Half the serial budget is the
-      // loosest threshold that still excludes any serial regression.
-      const serialBudget = upstreams.length * FETCH_DELAY_MS;
-      if (elapsed >= serialBudget / 2) {
-        throw new Error(`expected parallel walk (~${FETCH_DELAY_MS}ms) but took ${elapsed}ms (serial would be ${serialBudget}ms)`);
-      }
     },
   );
 });
