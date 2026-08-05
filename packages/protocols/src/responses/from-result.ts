@@ -90,6 +90,17 @@ const responsesMessageEvents = (item: ResponsesOutputMessage, outputIndex: numbe
         });
       }
 
+      part.annotations.forEach((annotation, annotationIndex) => {
+        events.push({
+          type: 'response.output_text.annotation.added',
+          item_id: itemId,
+          output_index: outputIndex,
+          content_index: contentIndex,
+          annotation_index: annotationIndex,
+          annotation,
+        });
+      });
+
       events.push({
         type: 'response.output_text.done',
         item_id: itemId,
@@ -178,14 +189,15 @@ const responsesReasoningEvents = (item: ResponsesOutputReasoning, outputIndex: n
         summary_index: summaryIndex,
         delta: part.text,
       });
-      events.push({
-        type: 'response.reasoning_summary_text.done',
-        item_id: item.id,
-        output_index: outputIndex,
-        summary_index: summaryIndex,
-        text: part.text,
-      });
     }
+
+    events.push({
+      type: 'response.reasoning_summary_text.done',
+      item_id: item.id,
+      output_index: outputIndex,
+      summary_index: summaryIndex,
+      text: part.text,
+    });
 
     events.push({
       type: 'response.reasoning_summary_part.done',

@@ -18,7 +18,13 @@ export async function reassembleResponsesEvents(events: AsyncIterable<ResponsesR
     }
 
     if (type === 'response.completed' || type === 'response.incomplete' || type === 'response.failed') {
-      return rawEvent.response as ResponsesResult;
+      const response = rawEvent.response;
+      if (typeof response !== 'object' || response === null || Array.isArray(response)) throw new TypeError(`${type} must carry a response object`);
+      const expectedStatus = type === 'response.completed' ? 'completed' : type === 'response.incomplete' ? 'incomplete' : 'failed';
+      if ((response as { status?: unknown }).status !== expectedStatus) {
+        throw new TypeError(`${type} cannot carry Responses status ${JSON.stringify((response as { status?: unknown }).status)}`);
+      }
+      return response as ResponsesResult;
     }
   }
 

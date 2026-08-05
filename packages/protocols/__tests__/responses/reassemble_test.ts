@@ -113,3 +113,23 @@ test('reassembleResponsesEvents throws when stream ends without terminal event',
 
   await assertRejects(() => reassembleResponsesEvents(body), Error, 'terminal');
 });
+
+test('reassembleResponsesEvents rejects malformed and contradictory terminal events', async () => {
+  await assertRejects(
+    () => reassembleResponsesEvents(makeEvents([{ data: { type: 'response.completed' } }])),
+    TypeError,
+    'must carry a response object',
+  );
+  await assertRejects(
+    () => reassembleResponsesEvents(makeEvents([{
+      data: {
+        type: 'response.completed',
+        response: {
+          id: 'resp_bad', object: 'response', model: 'gpt-test', status: 'failed', output: [], error: null, incomplete_details: null,
+        },
+      },
+    }])),
+    TypeError,
+    'cannot carry Responses status "failed"',
+  );
+});

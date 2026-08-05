@@ -47,7 +47,9 @@ export const webSearchCallLifecycleEvents = (
       { type: 'response.web_search_call.searching', output_index: outputIndex, item_id: itemId },
     ],
     endFrames: [
-      { type: 'response.web_search_call.completed', output_index: outputIndex, item_id: itemId },
+      ...(item.status === 'completed'
+        ? [{ type: 'response.web_search_call.completed' as const, output_index: outputIndex, item_id: itemId }]
+        : []),
       { type: 'response.output_item.done', output_index: outputIndex, item },
     ],
   };
