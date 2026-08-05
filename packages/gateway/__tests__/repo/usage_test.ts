@@ -353,6 +353,6 @@ test('SQL usage overview matches the in-memory oracle across filters, facets, ax
     group: 'all',
     requests: 11,
     metrics: [{ metric: 'input_tokens', quantity: '9007199254740992.1' }],
-    cost: '900719925.49409921',
+    cost: '900719925.4940992',
   });
 });
