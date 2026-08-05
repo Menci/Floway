@@ -1,6 +1,8 @@
 import { test } from 'vitest';
 
+import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
+import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { buildCustomUpstreamRecord, copilotModels, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { flushBackground } from '../../test-utils/background-tracker.ts';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
@@ -535,6 +537,7 @@ test('/v1/images/edits streams multipart text true and preserves image and mask 
       form.append('model', 'gpt-image-2');
       form.append('prompt', 'replace the sky');
       form.append('quality', 'high');
+      form.append('stream', 'false');
       form.append('stream', 'true');
       form.append('image', new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }), 'source.png');
       form.append('mask', new Blob([new Uint8Array([4, 5])], { type: 'image/webp' }), 'mask.webp');
@@ -573,10 +576,17 @@ test.each([
   {
     name: 'EOF without completed',
     body: () => imageSseResponse(imageSseFrame({ type: 'image_generation.partial_image', b64_json: 'cGFydGlhbA==', partial_image_index: 0 })),
+    forwarded: 'image_generation.partial_image',
   },
   {
     name: 'malformed event JSON',
     body: () => imageSseResponse('event: image_generation.partial_image\ndata: {not-json}\n\n'),
+    forwarded: '{not-json}',
+  },
+  {
+    name: 'a foreign DONE sentinel',
+    body: () => imageSseResponse('data: [DONE]\n\n'),
+    forwarded: '[DONE]',
   },
   {
     name: 'upstream body read error',
@@ -594,8 +604,9 @@ test.each([
         },
       }));
     },
+    forwarded: 'image_generation.partial_image',
   },
-])('/v1/images/generations records $name as a failed request-only stream', async ({ body }) => {
+])('/v1/images/generations forwards and records $name as a failed request-only stream', async ({ body, forwarded }) => {
   const { apiKey, repo } = await setupAppTest();
   await registerImagesUpstream(repo);
   await withMockedFetch(
@@ -603,10 +614,122 @@ test.each([
     async () => {
       const response = await requestGenerationStream(apiKey.key);
       assertEquals(response.status, 200);
-      await response.text();
+      assertEquals((await response.text()).includes(forwarded), true);
     },
   );
   await assertFailedStreamSettlement(repo);
+});
+
+test('/v1/images/generations latches an error event after completed while retaining usage', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerImagesUpstream(repo);
+  const wire = [
+    imageSseFrame({ type: 'image_generation.completed', b64_json: 'ZmluYWw=', usage: IMAGE_USAGE }),
+    imageSseFrame({ type: 'error', error: { message: 'late failure' } }),
+  ].join('');
+
+  await withMockedFetch(
+    () => imageSseResponse(wire),
+    async () => {
+      const response = await requestGenerationStream(apiKey.key);
+      assertEquals(await response.text(), wire);
+    },
+  );
+  await flushBackground();
+
+  const usage = await repo.usage.listAll();
+  assertEquals(usage.length, 1);
+  assertEquals(tokenCountsFromUsage(usage[0]!), { input: 6, input_image: 4, output_image: 50 });
+  const performance = await repo.performance.listAll();
+  assertEquals(performance.length, 1);
+  assertEquals(performance[0]?.errorsNoOutput, 1);
+});
+
+test('/v1/images response handling follows upstream media type and preserves streaming status', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerImagesUpstream(repo);
+
+  await withMockedFetch(
+    () => jsonResponse({ data: [{ b64_json: 'anNvbg==' }], usage: IMAGE_USAGE }),
+    async () => {
+      const response = await requestGenerationStream(apiKey.key);
+      assertEquals(response.headers.get('content-type'), 'application/json');
+      assertEquals((await response.json()).data[0].b64_json, 'anNvbg==');
+      await flushBackground();
+    },
+  );
+
+  const streamWire = imageSseFrame({ type: 'image_generation.completed', b64_json: 'c3RyZWFt', usage: IMAGE_USAGE });
+  await withMockedFetch(
+    () => new Response(streamWire, { status: 201, headers: { 'content-type': 'text/event-stream', 'x-request-id': 'stream-status' } }),
+    async () => {
+      const response = await requestApp('/v1/images/generations', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({ model: 'gpt-image-2', prompt: 'media-driven' }),
+      });
+      assertEquals(response.status, 201);
+      assertEquals(response.headers.get('x-request-id'), 'stream-status');
+      assertEquals(await response.text(), streamWire);
+      await flushBackground();
+    },
+  );
+});
+
+test('/v1/images/generations preserves exhausted upstream errors and records request-only settlement', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerImagesUpstream(repo);
+  await withMockedFetch(
+    () => new Response('rate limited', {
+      status: 429,
+      headers: { 'retry-after': '7', 'set-cookie': 'secret=1', 'x-request-id': 'image-rate-limit' },
+    }),
+    async () => {
+      const response = await requestGenerationStream(apiKey.key);
+      assertEquals(response.status, 429);
+      assertEquals(response.headers.get('retry-after'), '7');
+      assertEquals(response.headers.get('x-request-id'), 'image-rate-limit');
+      assertEquals(response.headers.get('set-cookie'), null);
+      assertEquals(await response.text(), 'rate limited');
+    },
+  );
+  await assertFailedStreamSettlement(repo);
+});
+
+test('/v1/images/generations dump renders stream frames and terminal image-token accounting', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  await registerImagesUpstream(repo);
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+  const wire = [
+    imageSseFrame({ type: 'image_generation.partial_image', b64_json: 'cGFydGlhbA==', partial_image_index: 0 }),
+    imageSseFrame({ type: 'image_generation.completed', b64_json: 'ZmluYWw=', usage: IMAGE_USAGE }),
+  ].join('');
+
+  await withMockedFetch(
+    () => new Response(wire, { status: 201, headers: { 'content-type': 'text/event-stream' } }),
+    async () => {
+      const response = await requestGenerationStream(apiKey.key);
+      assertEquals(response.status, 201);
+      assertEquals(await response.text(), wire);
+    },
+  );
+  await flushBackground();
+
+  assertEquals(dumps.stored.length, 1);
+  const dump = dumps.stored[0]!.record;
+  assertEquals(dump.meta.status, 201);
+  assertEquals(dump.meta.error, null);
+  assertEquals(dump.meta.inputTokens, 10);
+  assertEquals(dump.meta.outputTokens, 50);
+  assertEquals(dump.meta.responseBytes, new TextEncoder().encode(wire).byteLength);
+  assertEquals(dump.response.body.type, 'stream');
+  if (dump.response.body.type === 'stream') {
+    assertEquals(dump.response.body.events.map(entry =>
+      entry.frame.type === 'event' && typeof entry.frame.event === 'object' && entry.frame.event !== null
+        ? (entry.frame.event as { type?: unknown }).type
+        : null), ['image_generation.partial_image', 'image_generation.completed']);
+  }
 });
 
 test('/v1/images/generations returns 502 and records failure for a bodyless stream response', async () => {
@@ -626,7 +749,9 @@ test('/v1/images/generations returns 502 and records failure for a bodyless stre
 
 test('/v1/images/generations downstream cancellation aborts the provider signal and upstream body', async () => {
   const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   await registerImagesUpstream(repo);
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
   const providerAborted = deferred();
   const upstreamCanceled = deferred();
   const encoder = new TextEncoder();
@@ -648,6 +773,7 @@ test('/v1/images/generations downstream cancellation aborts the provider signal 
     },
     async () => {
       const response = await requestGenerationStream(apiKey.key);
+      assertEquals(response.headers.get('x-provider-trace'), 'image-trace');
       const reader = response.body!.getReader();
       try {
         const first = await reader.read();
@@ -665,4 +791,11 @@ test('/v1/images/generations downstream cancellation aborts the provider signal 
   );
 
   await assertFailedStreamSettlement(repo);
+  assertEquals(dumps.stored.length, 1);
+  const dump = dumps.stored[0]!.record;
+  assertEquals(dump.meta.error?.kind, 'failed');
+  assertEquals(dump.response.body.type, 'stream');
+  if (dump.response.body.type === 'stream') {
+    assertEquals(dump.response.body.events.length, 1);
+  }
 });
