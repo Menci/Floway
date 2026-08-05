@@ -5,8 +5,8 @@ import type {
   PerformanceOverviewQueryOptions,
   PerformanceOverviewResult,
 } from './types.ts';
-import { parsePerformanceOperation } from './types.ts';
 import type { SqlBindValue, SqlDatabase } from '@floway-dev/platform';
+import { parsePerformanceOperation } from '@floway-dev/provider';
 
 interface PerformanceOverviewSqlRow {
   row_kind: 'aggregate' | 'facet';

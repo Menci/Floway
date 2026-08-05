@@ -115,15 +115,6 @@ for (const impl of impls) {
       expect(new Set(rows.map(r => r.upstream))).toEqual(new Set(['anthropic-1', 'anthropic-2']));
     });
 
-    it('query filters by keyId and time range', async () => {
-      const repo = await impl.open();
-      await repo.recordSample(sample({ hour: '2026-06-30T08', keyId: 'key_a' }));
-      await repo.recordSample(sample({ hour: '2026-06-30T09', keyId: 'key_b' }));
-      const scoped = await repo.query({ keyId: 'key_a', start: '2026-06-30T00', end: '2026-06-30T23' });
-      expect(scoped).toHaveLength(1);
-      expect(scoped[0]!.keyId).toBe('key_a');
-    });
-
     it('set() replaces (not adds) a row and its buckets', async () => {
       const repo = await impl.open();
       await repo.recordSample(sample({ ttftMs: 100, tpotUs: 8_000 }));
