@@ -1,6 +1,5 @@
-import { retainResponse } from '../../shared/retained-response.ts';
+import { dispatchRetainedResponse, type RetainedDispatchLifecycle } from '../../shared/retained-response.ts';
 import { getExternalResourceFetcher } from '@floway-dev/platform';
-import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { RemoteImageLoader } from '@floway-dev/translate';
 
 const MAX_REDIRECTS = 5;
@@ -80,21 +79,18 @@ const readBoundedBody = async (response: Response): Promise<BoundedBodyResult> =
 
 const fetchExternalImage = async (
   initialUrl: URL,
-  clientDisconnectSignal?: AbortSignal,
-  backgroundScheduler?: BackgroundScheduler,
+  lifecycle?: RetainedDispatchLifecycle,
 ): Promise<ExternalImageFetchResult> => {
   const timeoutSignal = AbortSignal.timeout(FETCH_TIMEOUT_MS);
   let url = initialUrl;
 
   for (let redirectCount = 0; ; redirectCount++) {
-    clientDisconnectSignal?.throwIfAborted();
+    lifecycle?.clientDisconnectSignal.throwIfAborted();
     try {
-      const pendingResponse = getExternalResourceFetcher()(url, timeoutSignal);
-      backgroundScheduler?.(pendingResponse.then(() => {}, () => {}));
-      const rawResponse = await pendingResponse;
-      const response = backgroundScheduler === undefined
-        ? rawResponse
-        : retainResponse(rawResponse, backgroundScheduler);
+      const response = await dispatchRetainedResponse(
+        () => getExternalResourceFetcher()(url, timeoutSignal),
+        lifecycle,
+      );
       if (!REDIRECT_STATUSES.has(response.status)) {
         if (!response.ok) {
           await response.body?.cancel();
@@ -127,8 +123,7 @@ const fetchExternalImage = async (
 };
 
 export const createExternalImageFetcher = (
-  clientDisconnectSignal?: AbortSignal,
-  backgroundScheduler?: BackgroundScheduler,
+  lifecycle?: RetainedDispatchLifecycle,
 ): ExternalImageFetcher => {
   const requests = new Map<string, Promise<ExternalImageFetchResult>>();
   return value => {
@@ -136,17 +131,16 @@ export const createExternalImageFetcher = (
     if (url === null) return Promise.resolve({ type: 'invalid-url' });
     const cached = requests.get(url.href);
     if (cached !== undefined) return cached;
-    const request = fetchExternalImage(url, clientDisconnectSignal, backgroundScheduler);
+    const request = fetchExternalImage(url, lifecycle);
     requests.set(url.href, request);
     return request;
   };
 };
 
 export const createExternalImageLoader = (
-  clientDisconnectSignal?: AbortSignal,
-  backgroundScheduler?: BackgroundScheduler,
+  lifecycle?: RetainedDispatchLifecycle,
 ): RemoteImageLoader => {
-  const fetchImage = createExternalImageFetcher(clientDisconnectSignal, backgroundScheduler);
+  const fetchImage = createExternalImageFetcher(lifecycle);
   return async url => {
     const result = await fetchImage(url);
     return result.type === 'success' ? { mediaType: result.mediaType, data: result.data } : null;

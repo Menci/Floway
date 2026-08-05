@@ -102,9 +102,9 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
   };
 };
 
-// Run the dump-accumulator's finalize tee on the outgoing Response. Every
-// inbound HTTP wrapper returns its response through this seam so the dump
-// pipeline applies uniformly across happy-path, error, and passthrough paths.
+// Finalize the optional dump tee, then retain the outgoing body independently
+// of its consumer. Client cancellation records the disconnect while the
+// background scheduler keeps the server-side response drain alive.
 export const finalizeGatewayResponse = (ctx: GatewayCtx, response: Response): Response =>
   retainResponse(
     ctx.dump?.finalize(response) ?? response,

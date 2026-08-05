@@ -1,6 +1,7 @@
 import { test } from 'vitest';
 
-import { dispatchWebSearchFetch, fetchWithRetry } from '../../../../../src/data-plane/tools/web-search/providers/shared.ts';
+import { dispatchRetainedResponse } from '../../../../../src/data-plane/shared/retained-response.ts';
+import { fetchWithRetry } from '../../../../../src/data-plane/tools/web-search/providers/shared.ts';
 import { FakeTime } from '../../../../test-time.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
@@ -17,7 +18,7 @@ test('web-search retry checks client disconnect before each dispatch', async () 
   try {
     let caught: unknown;
     const result = fetchWithRetry(
-      async () => await dispatchWebSearchFetch(async () => {
+      async () => await dispatchRetainedResponse(async () => {
         dispatches += 1;
         return new Response('retry', { status: 429 });
       }, lifecycle),

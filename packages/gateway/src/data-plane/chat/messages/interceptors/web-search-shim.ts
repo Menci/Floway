@@ -637,7 +637,7 @@ const runWebSearchStopHandler = async function* (
   shimState: ShimStreamingState,
   state: Extract<MessagesWebSearchShimState, { mode: 'active' }>,
   provider: ActiveMessagesWebSearchProvider,
-  lifecycle?: WebSearchProviderLifecycle,
+  lifecycle: WebSearchProviderLifecycle,
 ): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
   const parsedInput = (() => {
     if (block.inputJson === '') return null;
@@ -676,14 +676,14 @@ const runWebSearchStopHandler = async function* (
     shimState.executedSearchCount += 1;
     shimState.currentSearchUseCount += 1;
 
-    lifecycle?.clientDisconnectSignal.throwIfAborted();
+    lifecycle.clientDisconnectSignal.throwIfAborted();
     try {
       const request: WebSearchProviderRequest = {
         query,
         allowedDomains: state.allowedDomains,
         blockedDomains: state.blockedDomains,
         userLocation: state.userLocation,
-        ...(lifecycle === undefined ? {} : { lifecycle }),
+        lifecycle,
       };
       const providerResult = await runWebSearchAndRecordUsage({ provider: provider.impl, providerName: provider.providerName, keyId: provider.apiKeyId, request });
       return buildNativeWebSearchResultBlockFromProviderResult(providerResult, block.upstreamToolUseId);
@@ -710,8 +710,8 @@ const runWebSearchStopHandler = async function* (
 export const rewriteMessagesWebSearchEventsToNative = async function* (
   frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>,
   state: MessagesWebSearchShimState,
-  provider?: ActiveMessagesWebSearchProvider,
-  lifecycle?: WebSearchProviderLifecycle,
+  provider: ActiveMessagesWebSearchProvider | undefined,
+  lifecycle: WebSearchProviderLifecycle,
 ): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
   if (state.mode === 'inactive') {
     yield* frames;

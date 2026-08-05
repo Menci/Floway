@@ -554,7 +554,7 @@ const runOneSearchQuery = async (
   active: { provider: WebSearchProvider; providerName: WebSearchProviderName },
 ): Promise<SearchQueryOutcome> => {
   try {
-    session.clientDisconnectSignal?.throwIfAborted();
+    session.clientDisconnectSignal.throwIfAborted();
     const searchRequest = {
       query,
       maxResults: session.filters.maxResults,
@@ -657,7 +657,7 @@ const runBatchFetch = async (
     return perUrl;
   }
   try {
-    session.clientDisconnectSignal?.throwIfAborted();
+    session.clientDisconnectSignal.throwIfAborted();
     const fetchRequest = {
       urls: needFetch,
       lifecycle: {

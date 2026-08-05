@@ -826,11 +826,16 @@ const collectStreamEvents = async (
   return events;
 };
 
+const TEST_WEB_SEARCH_LIFECYCLE: WebSearchProviderLifecycle = {
+  clientDisconnectSignal: new AbortController().signal,
+  backgroundScheduler: () => {},
+};
+
 const runStreamingShim = (
   events: MessagesStreamEvent[],
   state: MessagesWebSearchShimState,
   provider?: ReturnType<typeof activeProvider>,
-  lifecycle?: WebSearchProviderLifecycle,
+  lifecycle: WebSearchProviderLifecycle = TEST_WEB_SEARCH_LIFECYCLE,
 ) =>
   collectStreamEvents(
     rewriteMessagesWebSearchEventsToNative(

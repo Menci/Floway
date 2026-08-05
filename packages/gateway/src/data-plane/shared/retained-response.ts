@@ -1,16 +1,30 @@
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { Fetcher } from '@floway-dev/provider';
 
+export interface RetainedDispatchLifecycle {
+  clientDisconnectSignal: AbortSignal;
+  backgroundScheduler: BackgroundScheduler;
+}
+
+export const dispatchRetainedResponse = async (
+  dispatch: () => Promise<Response>,
+  lifecycle?: RetainedDispatchLifecycle,
+): Promise<Response> => {
+  if (lifecycle === undefined) return await dispatch();
+  lifecycle.clientDisconnectSignal.throwIfAborted();
+  const pendingResponse = dispatch();
+  lifecycle.backgroundScheduler(pendingResponse.then(() => {}, () => {}));
+  return retainResponse(await pendingResponse, lifecycle.backgroundScheduler);
+};
+
 export const retainUpstreamFetcher = (
   fetcher: Fetcher,
   clientDisconnectSignal: AbortSignal,
   backgroundScheduler: BackgroundScheduler,
-): Fetcher => async (url, init) => {
-  clientDisconnectSignal.throwIfAborted();
-  const pendingResponse = fetcher(url, init);
-  backgroundScheduler(pendingResponse.then(() => {}, () => {}));
-  return retainResponse(await pendingResponse, backgroundScheduler);
-};
+): Fetcher => async (url, init) => await dispatchRetainedResponse(
+  () => fetcher(url, init),
+  { clientDisconnectSignal, backgroundScheduler },
+);
 
 export const retainResponse = (
   response: Response,

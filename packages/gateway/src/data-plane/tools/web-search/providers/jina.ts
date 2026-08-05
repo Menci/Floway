@@ -1,6 +1,7 @@
-import { dispatchWebSearchFetch, extractWebSearchProviderErrorMessage, fetchWithRetry, httpStatusToErrorCode, toWebSearchTextBlocks, validateWebSearchQuery } from './shared.ts';
+import { extractWebSearchProviderErrorMessage, fetchWithRetry, httpStatusToErrorCode, toWebSearchTextBlocks, validateWebSearchQuery } from './shared.ts';
 import { truncateUtf8 } from './truncate.ts';
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
+import { dispatchRetainedResponse } from '../../../shared/retained-response.ts';
 import { normalizeDomainList } from '../domain-normalize.ts';
 import {
   DEFAULT_WEB_SEARCH_RESULT_COUNT,
@@ -112,7 +113,7 @@ type ReadOutcome =
 const readOneUrl = async (httpFetch: typeof fetch, apiKey: string, url: string, signal?: AbortSignal, lifecycle?: WebSearchProviderLifecycle): Promise<ReadOutcome> => {
   try {
     const response = await fetchWithRetry(
-      () => dispatchWebSearchFetch(() => httpFetch(JINA_READER_URL, {
+      () => dispatchRetainedResponse(() => httpFetch(JINA_READER_URL, {
         method: 'POST',
         headers: {
           authorization: `Bearer ${apiKey}`,
@@ -189,7 +190,7 @@ export const createJinaWebSearchProvider = (apiKey: string, deps?: { fetch?: typ
     // call it could have used.
 
     try {
-      const response = await dispatchWebSearchFetch(() => httpFetch(`${JINA_SEARCH_URL}?${params.toString()}`, {
+      const response = await dispatchRetainedResponse(() => httpFetch(`${JINA_SEARCH_URL}?${params.toString()}`, {
         method: 'GET',
         headers,
         ...(request.signal !== undefined ? { signal: request.signal } : {}),

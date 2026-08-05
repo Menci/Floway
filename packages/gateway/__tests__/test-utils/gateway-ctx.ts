@@ -6,9 +6,7 @@ import { stubModelCandidate } from '@floway-dev/test-utils';
 
 // Shared minimal GatewayCtx for tests that exercise serve / respond /
 // interceptor code in isolation. Defaults satisfy every required field; pass
-// `overrides` to nudge what each test cares about. Callers that need a
-// client-disconnect controller should construct one and override both
-// lifecycle fields with its signal and controller.
+// `overrides` to nudge what each test cares about.
 export const mockGatewayCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx => {
   const clientDisconnectController = overrides.clientDisconnectController ?? new AbortController();
   return {

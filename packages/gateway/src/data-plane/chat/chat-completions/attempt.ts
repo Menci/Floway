@@ -57,7 +57,10 @@ export const chatCompletionsAttempt = {
           p => translateChatCompletionsViaMessages(p, {
             model: candidate.model.id,
             fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
-            loadRemoteImage: createExternalImageLoader(ctx.clientDisconnectSignal, ctx.backgroundScheduler),
+            loadRemoteImage: createExternalImageLoader({
+              clientDisconnectSignal: ctx.clientDisconnectSignal,
+              backgroundScheduler: ctx.backgroundScheduler,
+            }),
           }),
           translated => messagesAttempt.generate({
             payload: translated, ctx, candidate, headers: invocation.headers, anthropicBeta: [],

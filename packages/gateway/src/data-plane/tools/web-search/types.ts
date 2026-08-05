@@ -1,5 +1,5 @@
 import type { WebSearchConfig, WebSearchProviderName } from '../../../shared/web-search-providers.ts';
-import type { BackgroundScheduler } from '@floway-dev/platform';
+import type { RetainedDispatchLifecycle } from '../../shared/retained-response.ts';
 import type { MessagesWebSearchErrorCode } from '@floway-dev/protocols/messages';
 
 export type { WebSearchConfig, WebSearchProviderName } from '../../../shared/web-search-providers.ts';
@@ -12,10 +12,7 @@ export const DEFAULT_WEB_SEARCH_RESULT_COUNT = 10;
 // for every provider so the shim's truncation handling is provider-agnostic.
 export const MAX_FETCH_PAGE_BYTES = 10_240;
 
-export interface WebSearchProviderLifecycle {
-  clientDisconnectSignal: AbortSignal;
-  backgroundScheduler: BackgroundScheduler;
-}
+export type WebSearchProviderLifecycle = RetainedDispatchLifecycle;
 
 export type WebSearchProviderErrorCode = Exclude<MessagesWebSearchErrorCode, 'max_uses_exceeded'>;
 

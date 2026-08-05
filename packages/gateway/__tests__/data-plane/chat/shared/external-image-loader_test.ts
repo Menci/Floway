@@ -4,6 +4,11 @@ import { createExternalImageFetcher, createExternalImageLoader } from '../../../
 import { initExternalResourceFetcher } from '@floway-dev/platform';
 import { assert, assertEquals, assertRejects } from '@floway-dev/test-utils';
 
+const lifecycle = (controller: AbortController) => ({
+  clientDisconnectSignal: controller.signal,
+  backgroundScheduler: () => {},
+});
+
 test('external image loader follows relative redirects and memoizes one request chain', async () => {
   const requested: string[] = [];
   initExternalResourceFetcher((url, signal) => {
@@ -110,7 +115,7 @@ test('external image loader rejects a client disconnect before dispatch', async 
   initExternalResourceFetcher(() => Promise.reject(new Error('should not fetch')));
 
   await assertRejects(
-    () => createExternalImageLoader(controller.signal)('https://example.com/image.png'),
+    () => createExternalImageLoader(lifecycle(controller))('https://example.com/image.png'),
     Error,
     'client disconnected',
   );
@@ -125,7 +130,7 @@ test('external image fetcher reuses an already-dispatched request after client d
     return response;
   });
   const controller = new AbortController();
-  const fetchImage = createExternalImageFetcher(controller.signal);
+  const fetchImage = createExternalImageFetcher(lifecycle(controller));
 
   const first = fetchImage('https://example.com/image.png');
   controller.abort(new Error('client disconnected'));
@@ -147,7 +152,7 @@ test('external image fetcher preserves a disconnect reason before a redirect dis
 
   let caught: unknown;
   try {
-    await createExternalImageFetcher(controller.signal)('https://example.com/start.png');
+    await createExternalImageFetcher(lifecycle(controller))('https://example.com/start.png');
   } catch (error) {
     caught = error;
   }

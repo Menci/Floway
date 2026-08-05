@@ -1,6 +1,7 @@
-import { dispatchWebSearchFetch, extractWebSearchProviderErrorMessage, fetchWithRetry, httpStatusToErrorCode, toWebSearchTextBlocks, validateWebSearchQuery } from './shared.ts';
+import { extractWebSearchProviderErrorMessage, fetchWithRetry, httpStatusToErrorCode, toWebSearchTextBlocks, validateWebSearchQuery } from './shared.ts';
 import { truncateUtf8 } from './truncate.ts';
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
+import { dispatchRetainedResponse } from '../../../shared/retained-response.ts';
 import { normalizeDomainList } from '../domain-normalize.ts';
 import {
   DEFAULT_WEB_SEARCH_RESULT_COUNT,
@@ -67,7 +68,7 @@ type BrowseOutcome =
 
 const browseOneUrl = async (httpFetch: typeof fetch, apiKey: string, url: string, signal?: AbortSignal, lifecycle?: WebSearchProviderLifecycle): Promise<BrowseOutcome> => {
   try {
-    const response = await fetchWithRetry(() => dispatchWebSearchFetch(() => httpFetch(MICROSOFT_WEB_IQ_BROWSE_URL, {
+    const response = await fetchWithRetry(() => dispatchRetainedResponse(() => httpFetch(MICROSOFT_WEB_IQ_BROWSE_URL, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -137,7 +138,7 @@ export const createMicrosoftWebIqWebSearchProvider = (apiKey: string, deps?: { f
     }
 
     try {
-      const response = await fetchWithRetry(() => dispatchWebSearchFetch(() => httpFetch(MICROSOFT_WEB_IQ_SEARCH_URL, {
+      const response = await fetchWithRetry(() => dispatchRetainedResponse(() => httpFetch(MICROSOFT_WEB_IQ_SEARCH_URL, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
