@@ -137,6 +137,45 @@ describe('Copilot token exchange retries', () => {
     ]);
   });
 
+  test.each([
+    { label: 'string', reason: 'proxy rejected', message: 'proxy rejected' },
+    { label: 'object', reason: { kind: 'proxy rejected' }, message: '[object Object]' },
+  ])('retries a non-Error $label rejection and finally preserves the original value', async ({ reason, message }) => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let tokenAttempts = 0;
+    const fetcher: Fetcher = async () => {
+      tokenAttempts++;
+      throw reason;
+    };
+
+    const result = runAuthedFetch(fetcher);
+    const rejection = expect(result).rejects.toBe(reason);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(tokenAttempts).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(999);
+    expect(tokenAttempts).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(tokenAttempts).toBe(2);
+
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(tokenAttempts).toBe(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(tokenAttempts).toBe(3);
+
+    await vi.advanceTimersByTimeAsync(3999);
+    expect(tokenAttempts).toBe(3);
+    await vi.advanceTimersByTimeAsync(1);
+    await rejection;
+    expect(tokenAttempts).toBe(4);
+    expect(warn.mock.calls).toEqual([
+      [`Retry 1/3 after 1000ms: ${message}`],
+      [`Retry 2/3 after 2000ms: ${message}`],
+      [`Retry 3/3 after 4000ms: ${message}`],
+    ]);
+  });
+
   test.each([403, 429])('treats HTTP %i as terminal on the first attempt', async status => {
     let tokenAttempts = 0;
     const fetcher: Fetcher = async () => {

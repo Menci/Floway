@@ -72,9 +72,9 @@ export function clearInProcessCopilotTokenCache(): void {
   inProcessTokenCache.clear();
 }
 
-class RetryableTypeError extends Error {
-  constructor(readonly originalError: TypeError) {
-    super(originalError.message, { cause: originalError });
+class RetryableError extends Error {
+  constructor(readonly originalError: unknown) {
+    super(originalError instanceof Error ? originalError.message : String(originalError), { cause: originalError });
   }
 }
 
@@ -88,11 +88,11 @@ const retryCopilotTokenFetch = async <T>(fn: () => Promise<T>, signal: AbortSign
           throw new RetryAbortError(error);
         }
 
-        // p-retry deliberately rejects non-network TypeErrors immediately.
-        // The token exchange previously retried every non-terminal failure,
-        // and proxy fetchers can use TypeError for failures that the library's
-        // browser-message heuristic does not recognize.
-        if (error instanceof TypeError) throw new RetryableTypeError(error);
+        // p-retry rejects non-network TypeErrors immediately and normalizes
+        // non-Error rejections into terminal TypeErrors. The token exchange
+        // previously retried every non-terminal value, so both shapes travel
+        // through a retryable Error and are restored at the boundary.
+        if (!(error instanceof Error) || error instanceof TypeError) throw new RetryableError(error);
         throw error;
       }
     }, {
@@ -102,12 +102,12 @@ const retryCopilotTokenFetch = async <T>(fn: () => Promise<T>, signal: AbortSign
       signal,
       onFailedAttempt: ({ error, attemptNumber, retryDelay }) => {
         if (retryDelay === 0) return;
-        const cause = error instanceof RetryableTypeError ? error.originalError : error;
-        console.warn(`Retry ${attemptNumber}/3 after ${retryDelay}ms: ${cause.message}`);
+        const cause = error instanceof RetryableError ? error.originalError : error;
+        console.warn(`Retry ${attemptNumber}/3 after ${retryDelay}ms: ${cause instanceof Error ? cause.message : String(cause)}`);
       },
     });
   } catch (error) {
-    if (error instanceof RetryableTypeError) throw error.originalError;
+    if (error instanceof RetryableError) throw error.originalError;
     throw error;
   }
 }
