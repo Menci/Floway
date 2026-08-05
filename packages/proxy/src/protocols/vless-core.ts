@@ -79,8 +79,7 @@ const stripVlessReplyPrefix = (source: ReadableStream<Uint8Array>): ReadableStre
     controller: ReadableStreamDefaultController<Uint8Array>,
     error: ProxyDialError,
   ): Promise<void> => {
-    try { await reader.cancel(error); } catch { /* reader already cancelled */ }
-    finally { release(); }
+    try { await reader.cancel(error); } catch { /* reader already cancelled */ } finally { release(); }
     controller.error(error);
   };
   return new ReadableStream<Uint8Array>({
@@ -131,8 +130,7 @@ const stripVlessReplyPrefix = (source: ReadableStream<Uint8Array>): ReadableStre
       }
     },
     async cancel(reason) {
-      try { await reader.cancel(reason); } catch { /* reader already cancelled */ }
-      finally { release(); }
+      try { await reader.cancel(reason); } catch { /* reader already cancelled */ } finally { release(); }
     },
   });
 };

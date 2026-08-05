@@ -42,8 +42,7 @@ export const postHandshakeReadable = (
       }
     },
     async cancel(reason) {
-      try { await reader.cancel(reason); } catch { /* reader already cancelled */ }
-      finally {
+      try { await reader.cancel(reason); } catch { /* reader already cancelled */ } finally {
         release();
         await socket.close().catch(() => {});
       }

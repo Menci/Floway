@@ -458,8 +458,7 @@ const lengthBody = (
     try { reader.releaseLock(); } catch { /* lock already released */ }
   };
   const cancelAndRelease = async (reason?: unknown): Promise<void> => {
-    try { await reader.cancel(reason); } catch { /* reader already cancelled */ }
-    finally { release(); }
+    try { await reader.cancel(reason); } catch { /* reader already cancelled */ } finally { release(); }
   };
   return new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -554,12 +553,12 @@ const untilEofBody = (
       if (done) {
         controller.close();
         release();
+      } else {
+        controller.enqueue(copy(value));
       }
-      else controller.enqueue(copy(value));
     },
     async cancel(reason) {
-      try { await reader.cancel(reason); } catch { /* reader already cancelled */ }
-      finally { release(); }
+      try { await reader.cancel(reason); } catch { /* reader already cancelled */ } finally { release(); }
     },
   });
 };

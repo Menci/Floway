@@ -92,8 +92,7 @@ const dialShadowsocksInner = async (
   let readerSettlement: Promise<void> | null = null;
   const settleReader = (reason?: unknown): Promise<void> => {
     readerSettlement ??= (async () => {
-      try { await reader.cancel(reason); } catch { /* reader already cancelled */ }
-      finally {
+      try { await reader.cancel(reason); } catch { /* reader already cancelled */ } finally {
         try { reader.releaseLock(); } catch { /* lock already released */ }
         await socket.close().catch(() => {});
       }

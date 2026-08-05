@@ -176,8 +176,21 @@ export const userspaceTls = async (
   // a passive observer.
   handshakeDone.catch(() => { /* main handler is the await below */ });
 
-  let drainPlaintext!: () => void;
   let plainSettlement: Promise<void> | null = null;
+  const drainPlaintext = (): void => {
+    try {
+      while (pendingPlaintext.length > 0 && (plainController.desiredSize ?? 0) > 0) {
+        plainController.enqueue(pendingPlaintext.shift()!);
+      }
+      if (cleanClosePending && pendingPlaintext.length === 0) {
+        cleanClosePending = false;
+        plainController.close();
+      }
+    } catch (error) {
+      void closePlain(error);
+    }
+  };
+
   const closePlain = async (error?: unknown): Promise<void> => {
     if (plainSettlement) return await plainSettlement;
     plainClosed = true;
@@ -197,20 +210,6 @@ export const userspaceTls = async (
       await settleWriter(error);
     })();
     await plainSettlement;
-  };
-
-  drainPlaintext = (): void => {
-    try {
-      while (pendingPlaintext.length > 0 && (plainController.desiredSize ?? 0) > 0) {
-        plainController.enqueue(pendingPlaintext.shift()!);
-      }
-      if (cleanClosePending && pendingPlaintext.length === 0) {
-        cleanClosePending = false;
-        plainController.close();
-      }
-    } catch (error) {
-      void closePlain(error);
-    }
   };
 
   const waitForPlainDemand = async (): Promise<void> => {

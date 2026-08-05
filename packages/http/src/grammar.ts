@@ -1,6 +1,6 @@
 // Shared HTTP/1.1 grammar primitives (RFC 9110 / RFC 9112).
 
-import { HttpProtocolError } from './errors.ts';
+import type { HttpProtocolError } from './errors.ts';
 
 // RFC 9110 §5.6.2: token = 1*tchar; tchar = "!" / "#" / "$" / "%" / "&" /
 // "'" / "*" / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA

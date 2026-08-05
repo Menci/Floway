@@ -37,8 +37,7 @@ export const decodeChunked = (
     error: HttpProtocolError,
   ): Promise<void> => {
     controller.error(error);
-    try { await reader.cancel(error); } catch { /* reader already cancelled */ }
-    finally { release(); }
+    try { await reader.cancel(error); } catch { /* reader already cancelled */ } finally { release(); }
   };
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
@@ -177,8 +176,7 @@ export const decodeChunked = (
                 return;
               }
               controller.close();
-              try { await reader.cancel(); } catch { /* reader already cancelled */ }
-              finally { release(); }
+              try { await reader.cancel(); } catch { /* reader already cancelled */ } finally { release(); }
               return;
             }
             validateTrailerLine(buf.subarray(0, idx));
@@ -195,14 +193,12 @@ export const decodeChunked = (
           }
         }
       } catch (error) {
-        try { await reader.cancel(error); } catch { /* reader already cancelled */ }
-        finally { release(); }
+        try { await reader.cancel(error); } catch { /* reader already cancelled */ } finally { release(); }
         throw error;
       }
     },
     async cancel(reason) {
-      try { await reader.cancel(reason); } catch { /* reader already cancelled */ }
-      finally { release(); }
+      try { await reader.cancel(reason); } catch { /* reader already cancelled */ } finally { release(); }
     },
   });
 };

@@ -133,8 +133,7 @@ export const wsUpgradeAndFrame = async (
     try { reader.releaseLock(); } catch { /* lock already released */ }
   };
   const releaseLocksAndCancel = async (cause?: unknown): Promise<void> => {
-    try { await reader.cancel(cause); } catch { /* reader already cancelled */ }
-    finally { releaseHandshakeReader(); }
+    try { await reader.cancel(cause); } catch { /* reader already cancelled */ } finally { releaseHandshakeReader(); }
     try { writer.releaseLock(); } catch { /* lock already released */ }
   };
 
@@ -418,8 +417,7 @@ const frameDuplexOnTransport = (
   let readerSettlement: Promise<void> | null = null;
   const settleReader = (cause?: unknown): Promise<void> => {
     readerSettlement ??= (async () => {
-      try { await reader.cancel(cause); } catch { /* reader already cancelled */ }
-      finally {
+      try { await reader.cancel(cause); } catch { /* reader already cancelled */ } finally {
         try { reader.releaseLock(); } catch { /* lock already released */ }
       }
     })();
@@ -432,8 +430,7 @@ const frameDuplexOnTransport = (
       try {
         if (cause !== undefined) await frameWriter.abort(cause);
         else await frameWriter.close();
-      } catch { /* peer already gone */ }
-      finally {
+      } catch { /* peer already gone */ } finally {
         try { frameWriter.releaseLock(); } catch { /* lock already released */ }
       }
     })();
@@ -614,7 +611,7 @@ const frameDuplexOnTransport = (
       await sendCloseFrame(WS_CLOSE_NORMAL, '');
       await settleFrameWriter(reason instanceof Error ? reason : undefined);
     },
-    async pull(controller) {
+    async pull(_controller) {
       try {
         while (!plainClosed) {
           const header = tryParseFrameHeader(buffer);
