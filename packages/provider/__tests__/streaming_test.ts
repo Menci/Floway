@@ -99,8 +99,16 @@ test('streamingProviderCall surfaces "unknown" content-type when the header is m
 });
 
 test('streamingProviderCall truncates oversized bodies in the error message', async () => {
-  const big = 'x'.repeat(2048);
-  const response = new Response(big, { status: 200, headers: { 'content-type': 'application/json' } });
+  let cancelled = false;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('x'.repeat(2048)));
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  const response = new Response(body, { status: 200, headers: { 'content-type': 'application/json' } });
   await assertRejects(async () => {
     try {
       await streamingProviderCall(Promise.resolve(response), stubParser, 'm-1', undefined);
@@ -109,6 +117,7 @@ test('streamingProviderCall truncates oversized bodies in the error message', as
       throw error;
     }
   }, Error);
+  assertEquals(cancelled, true);
 });
 
 test('streamingProviderCall returns ok:true with parsed frames on 2xx SSE', async () => {

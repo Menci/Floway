@@ -9,12 +9,29 @@ export type ProviderStreamParser<TEvent> = (
 const BODY_SNIPPET_CHARS = 1024;
 
 const readBodySnippet = async (response: Response): Promise<string> => {
+  if (!response.body) return '<empty>';
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let text = '';
   try {
-    const text = await response.text();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) {
+        text += decoder.decode();
+        break;
+      }
+      text += decoder.decode(value, { stream: true });
+      if (text.length > BODY_SNIPPET_CHARS) {
+        await reader.cancel();
+        return `${text.slice(0, BODY_SNIPPET_CHARS)}...[truncated]`;
+      }
+    }
     if (text.length === 0) return '<empty>';
     return text.length > BODY_SNIPPET_CHARS ? `${text.slice(0, BODY_SNIPPET_CHARS)}...[truncated]` : text;
   } catch {
     return '<unreadable>';
+  } finally {
+    reader.releaseLock();
   }
 };
 

@@ -12,15 +12,34 @@ export interface InternalDebugError {
   target_api?: string;
 }
 
-const serializeCause = (cause: unknown): unknown => {
-  if (!(cause instanceof Error)) return cause;
+const MAX_SERIALIZED_CAUSE_DEPTH = 32;
 
-  return {
-    name: cause.name,
-    message: cause.message,
-    stack: cause.stack,
-    cause: serializeCause(cause.cause),
-  };
+const serializedErrorIdentity = (error: Error) => ({
+  name: error.name,
+  message: error.message,
+  stack: error.stack,
+});
+
+const serializeCause = (cause: unknown, ancestors: ReadonlySet<Error>, depth = 0): unknown => {
+  if (cause instanceof Error) {
+    const identity = serializedErrorIdentity(cause);
+    if (ancestors.has(cause)) return { type: 'circular_reference', ...identity };
+    if (depth >= MAX_SERIALIZED_CAUSE_DEPTH) {
+      return { type: 'depth_limit', limit: MAX_SERIALIZED_CAUSE_DEPTH, ...identity };
+    }
+
+    const nextAncestors = new Set(ancestors);
+    nextAncestors.add(cause);
+    return { ...identity, cause: serializeCause(cause.cause, nextAncestors, depth + 1) };
+  }
+
+  if (cause === undefined || cause === null || typeof cause === 'string' || typeof cause === 'number' || typeof cause === 'boolean') return cause;
+  try {
+    JSON.stringify(cause);
+    return cause;
+  } catch {
+    return String(cause);
+  }
 };
 
 export const toInternalDebugError = (error: unknown, targetApi?: string): InternalDebugError => {
@@ -28,10 +47,8 @@ export const toInternalDebugError = (error: unknown, targetApi?: string): Intern
 
   return {
     type: 'internal_error',
-    name: known.name,
-    message: known.message,
-    stack: known.stack,
-    cause: serializeCause(known.cause),
+    ...serializedErrorIdentity(known),
+    cause: serializeCause(known.cause, new Set([known])),
     ...(targetApi ? { target_api: targetApi } : {}),
   };
 };
