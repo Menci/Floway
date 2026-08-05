@@ -95,6 +95,20 @@ describe('agentSetupConfigurationSchema', () => {
     }).success).toBe(false);
   });
 
+  test.each(['\uD800', '\uDC00'])('rejects an unpaired UTF-16 surrogate %#', value => {
+    expect(agentSetupConfigurationSchema.safeParse({
+      ...fullConfiguration,
+      codex: { ...fullConfiguration.codex, model: value },
+    }).success).toBe(false);
+  });
+
+  test('accepts a valid supplementary Unicode character', () => {
+    expect(agentSetupConfigurationSchema.safeParse({
+      ...fullConfiguration,
+      codex: { ...fullConfiguration.codex, model: 'model-🚀' },
+    }).success).toBe(true);
+  });
+
   test('rejects unknown keys in nested objects', () => {
     expect(agentSetupConfigurationSchema.safeParse({
       ...fullConfiguration,
