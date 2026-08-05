@@ -1,6 +1,7 @@
 import { copilotRawModelId, stripClaudeDateSuffix } from './model-name.ts';
 import type { CopilotModelsResponse, CopilotRawModel } from './types.ts';
 
+// https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/beta/beta.ts#L622-L635
 export const CONTEXT_1M_BETA = 'context-1m-2025-08-07';
 
 const STANDARD_CLAUDE_BASE_ID = /^claude-[a-z0-9-]+-\d+(?:\.\d+)?$/;
@@ -78,10 +79,10 @@ const chooseClaudeVariant = (candidates: readonly CopilotRawModel[], exactBase: 
   }
 
   // Fast Mode narrows the pool first because it has the strongest contract.
-  // 1m and effort then layer on top: 1m runs as an explicit branch (pair
-  // the 1m filter with effort, fall back to bare-1m on miss); the
-  // effort-only branch implicitly prefers 1m variants within its narrowed
-  // pool because 1m models tend to advertise broader effort coverage.
+  // 1m and effort then layer on top: an explicit 1m request stays within
+  // that context family even when its effort cannot be met; effort-only
+  // selection prefers 1m variants because they tend to advertise broader
+  // effort coverage.
   const pool = hints.fast ? narrow(candidates, supportsFastMode) : candidates;
 
   if (hints.context1m) {

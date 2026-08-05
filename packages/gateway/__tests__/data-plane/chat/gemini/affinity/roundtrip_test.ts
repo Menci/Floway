@@ -1,8 +1,9 @@
 import { expect, test } from 'vitest';
 
 import { wrapGeminiAffinityEgress } from '../../../../../src/data-plane/chat/gemini/affinity/egress.ts';
-import { prepareGeminiAffinity } from '../../../../../src/data-plane/chat/gemini/affinity/ingress.ts';
+import { analyzeGeminiAffinity } from '../../../../../src/data-plane/chat/gemini/affinity/ingress.ts';
 import { AffinityCodec, type AffinityTarget } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { reassembleGeminiEvents, type GeminiContent, type GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import type { ModelCandidate } from '@floway-dev/provider';
@@ -54,13 +55,16 @@ test('a carrier a real codec emits on thoughtSignature decodes on the next turn'
     }),
   ]), { codec, affinity: targetFor(candidateA) }));
 
-  const prepared = await prepareGeminiAffinity({ contents }, codec);
+  const prepared = await analyzeGeminiAffinity({ contents }, codec);
 
-  expect(prepared.narrowingEvidence).toEqual([{ target: targetFor(candidateA), mode: 'prefer' }]);
-  expect(prepared.payloadForCandidate(candidateA).contents?.[0].parts).toEqual([
+  const projectionA = acceptedAffinityEvaluation(prepared, candidateA);
+  const projectionB = acceptedAffinityEvaluation(prepared, candidateB);
+  expect(projectionA.degrades).toBe(false);
+  expect(projectionB.degrades).toBe(true);
+  expect(projectionA.materialize().contents?.[0].parts).toEqual([
     { text: 'visible', thoughtSignature: 'upstream-signature' },
   ]);
-  expect(prepared.payloadForCandidate(candidateB).contents?.[0].parts).toEqual([{ text: 'visible' }]);
+  expect(projectionB.materialize().contents?.[0].parts).toEqual([{ text: 'visible' }]);
 });
 
 test('a synthetic carrier issued for a candidate without a signature decodes on the next turn', async () => {
@@ -72,9 +76,12 @@ test('a synthetic carrier issued for a candidate without a signature decodes on 
     }),
   ]), { codec, affinity: targetFor(candidateA) }));
 
-  const prepared = await prepareGeminiAffinity({ contents }, codec);
+  const prepared = await analyzeGeminiAffinity({ contents }, codec);
 
-  expect(prepared.narrowingEvidence).toEqual([{ target: targetFor(candidateA), mode: 'prefer' }]);
-  expect(prepared.payloadForCandidate(candidateA).contents?.[0].parts).toEqual([{ text: 'visible' }]);
-  expect(prepared.payloadForCandidate(candidateB).contents?.[0].parts).toEqual([{ text: 'visible' }]);
+  const projectionA = acceptedAffinityEvaluation(prepared, candidateA);
+  const projectionB = acceptedAffinityEvaluation(prepared, candidateB);
+  expect(projectionA.degrades).toBe(false);
+  expect(projectionB.degrades).toBe(false);
+  expect(projectionA.materialize().contents?.[0].parts).toEqual([{ text: 'visible' }]);
+  expect(projectionB.materialize().contents?.[0].parts).toEqual([{ text: 'visible' }]);
 });

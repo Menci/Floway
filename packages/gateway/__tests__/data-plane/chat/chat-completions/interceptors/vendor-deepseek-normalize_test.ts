@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import type { ChatCompletionsInvocation } from '../../../../../src/data-plane/chat/chat-completions/interceptors/types.ts';
 import { withVendorDeepSeekChatCompletionsNormalize } from '../../../../../src/data-plane/chat/chat-completions/interceptors/vendor-deepseek-normalize.ts';
@@ -294,6 +294,7 @@ test('rewrites prompt_cache_hit_tokens/prompt_cache_miss_tokens into prompt_toke
             total_tokens: 120,
             prompt_cache_hit_tokens: 70,
             prompt_cache_miss_tokens: 30,
+            prompt_tokens_details: { upstream_metric: 'preserved' },
           } as unknown as ChatCompletionsStreamEvent['usage'],
         });
       })(),
@@ -306,9 +307,53 @@ test('rewrites prompt_cache_hit_tokens/prompt_cache_miss_tokens into prompt_toke
   if (frame.type !== 'event') throw new Error('expected event frame');
   const usage = usageRecord(frame.event.usage!);
   assertEquals(usage.prompt_tokens, 100);
-  assertEquals(usage.prompt_tokens_details, { cached_tokens: 70 });
+  assertEquals(usage.prompt_tokens_details, { upstream_metric: 'preserved', cached_tokens: 70 });
   assertEquals('prompt_cache_hit_tokens' in usage, false);
   assertEquals('prompt_cache_miss_tokens' in usage, false);
+});
+
+test('replaces array-shaped prompt_tokens_details without copying array indices', async () => {
+  const ctx = invocation(baseRequest());
+  const result = await withVendorDeepSeekChatCompletionsNormalize(ctx, stubCtx, () =>
+    Promise.resolve(eventResult(
+      (async function* () {
+        yield eventFrame({
+          id: 'x',
+          object: 'chat.completion.chunk',
+          created: 0,
+          model: 'deepseek-test',
+          choices: [],
+          usage: {
+            prompt_tokens: 100,
+            completion_tokens: 20,
+            total_tokens: 120,
+            prompt_cache_hit_tokens: 70,
+            prompt_cache_miss_tokens: 30,
+            prompt_tokens_details: [{ cached_tokens: 1 }],
+          } as unknown as ChatCompletionsStreamEvent['usage'],
+        });
+      })(),
+      testTelemetryModelIdentity,
+    )));
+
+  const frames = await collectFrames(result);
+  const frame = frames[0];
+  if (frame.type !== 'event') throw new Error('expected event frame');
+  const usage = usageRecord(frame.event.usage!);
+  assertEquals(usage.prompt_tokens_details, { cached_tokens: 70 });
+});
+
+test('propagates upstream stream errors unchanged', async () => {
+  const failure = new Error('upstream stream failed');
+  const result = await withVendorDeepSeekChatCompletionsNormalize(invocation(baseRequest()), stubCtx, () =>
+    Promise.resolve(eventResult(
+      (async function* () {
+        throw failure;
+      })(),
+      testTelemetryModelIdentity,
+    )));
+
+  await expect(collectFrames(result)).rejects.toBe(failure);
 });
 
 // ── Pass-through ──

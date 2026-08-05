@@ -16,6 +16,7 @@ const okEvents = (): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> 
 const invocation = (payload: MessagesPayload & { cache_control?: { type: 'ephemeral' } }): MessagesBoundaryCtx => ({
   payload,
   headers: new Headers(),
+  anthropicBeta: [],
   model: stubProviderModel({ endpoints: { messages: {} } }),
 });
 

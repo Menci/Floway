@@ -8,9 +8,8 @@ import type { CopilotMessagesBoundaryInterceptor } from './types.ts';
  *
  *   - `scope`: added by Claude Code's `prompt-caching-scope-2025-11-27` beta.
  *     Copilot returns `cache_control.scope: Extra inputs are not permitted`.
- *   - `ttl`: added by the `extended-cache-ttl-2025-04-11` beta. That beta is
- *     not on Copilot's accepted `anthropic-beta` allow-list (see
- *     `filter-anthropic-beta-header.ts`), so any `ttl` value trips the same
+ *   - `ttl`: added by the `extended-cache-ttl-2025-04-11` beta. Floway does
+ *     not enable that beta for Copilot, so any `ttl` value trips the same
  *     schema rejection on the body.
  *
  * Walk every position where `cache_control` may appear — system blocks,
