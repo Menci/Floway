@@ -4,6 +4,28 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { nodeSocketDial } from '../src/socket-dial.ts';
 
+const readExactly = async (
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  length: number,
+): Promise<{ body: Uint8Array; chunks: readonly Uint8Array[] }> => {
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (total < length) {
+    const next = await reader.read();
+    if (next.done) throw new Error(`socket ended after ${total} of ${length} expected bytes`);
+    chunks.push(next.value);
+    total += next.value.byteLength;
+  }
+  if (total !== length) throw new Error(`socket returned ${total} bytes while reading an exact ${length}-byte frame`);
+  const body = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return { body, chunks };
+};
+
 // Loopback echo server lets us verify that DialedSocket teardown actually
 // reaches the underlying net.Socket — Writable.toWeb / Readable.toWeb
 // behaviour around abort/cancel is non-obvious and the rest of the proxy
@@ -30,16 +52,55 @@ describe('nodeSocketDial', () => {
   beforeEach(async () => { server = await startEchoServer(); });
   afterEach(async () => { await server.close(); });
 
-  it('connects, writes, reads back, and tears down via close()', async () => {
+  it('connects, keeps retained read chunks stable, and tears down via close()', async () => {
     const dialed = await nodeSocketDial.connect('127.0.0.1', server.port);
     const writer = dialed.writable.getWriter();
-    await writer.write(new TextEncoder().encode('hi'));
-    writer.releaseLock();
     const reader = dialed.readable.getReader();
-    const { value } = await reader.read();
-    expect(new TextDecoder().decode(value)).toBe('hi');
-    reader.releaseLock();
-    await dialed.close();
+    try {
+      const firstPayload = new TextEncoder().encode('retained');
+      await writer.write(firstPayload);
+      const first = await readExactly(reader, firstPayload.byteLength);
+      expect(first.body).toEqual(firstPayload);
+      const retained = first.chunks[0];
+      if (retained === undefined) throw new Error('socket returned no retained chunk');
+      const snapshot = retained.slice();
+
+      for (let i = 0; i < 16; i += 1) {
+        const payload = new Uint8Array(64).fill(i);
+        await writer.write(payload);
+        expect((await readExactly(reader, payload.byteLength)).body).toEqual(payload);
+      }
+      expect(retained).toEqual(snapshot);
+    } finally {
+      writer.releaseLock();
+      reader.releaseLock();
+      await dialed.close();
+    }
+  });
+
+  it.each(['', '[]'])('rejects empty dial host %j without opening a socket', async host => {
+    await expect(nodeSocketDial.connect(host, server.port)).rejects.toThrow('SocketDial host must not be empty');
+    expect(server.lastSocket()).toBeNull();
+  });
+
+  it('does not send an invalid TLS SNI extension for an IP address', async () => {
+    const rejectingServer = net.createServer(socket => socket.destroy());
+    await new Promise<void>(resolve => rejectingServer.listen(0, '127.0.0.1', () => resolve()));
+    const address = rejectingServer.address();
+    if (!address || typeof address === 'string') throw new Error('TLS test server has no address');
+    const warnings: Error[] = [];
+    const onWarning = (warning: Error): void => {
+      if ((warning as Error & { code?: string }).code === 'DEP0123') warnings.push(warning);
+    };
+    process.on('warning', onWarning);
+    try {
+      await expect(nodeSocketDial.connect('127.0.0.1', address.port, { tls: true })).rejects.toThrow();
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(warnings).toEqual([]);
+    } finally {
+      process.off('warning', onWarning);
+      await new Promise<void>(resolve => rejectingServer.close(() => resolve()));
+    }
   });
 
   it('rejects a connect against a closed port', async () => {

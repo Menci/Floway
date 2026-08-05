@@ -41,6 +41,24 @@ test('EventTargetChannelBroker retains state only while a channel has subscriber
   assertEquals(activeChannelCount(broker), 0);
 });
 
+test('EventTargetChannelBroker supports intentional fan-out without listener warnings', async () => {
+  const broker = new EventTargetChannelBroker<string>(stringCodec);
+  const controllers = Array.from({ length: 11 }, () => new AbortController());
+  const warnings: Error[] = [];
+  const onWarning = (warning: Error): void => {
+    if (warning.name === 'MaxListenersExceededWarning') warnings.push(warning);
+  };
+  process.on('warning', onWarning);
+  try {
+    await Promise.all(controllers.map(controller => broker.subscribe('k', controller.signal)));
+    await new Promise<void>(resolve => setImmediate(resolve));
+    assertEquals(warnings, []);
+  } finally {
+    for (const controller of controllers) controller.abort();
+    process.off('warning', onWarning);
+  }
+});
+
 test('EventTargetChannelBroker terminates a slow subscriber at the bounded queue capacity', async () => {
   const broker = new EventTargetChannelBroker<string>(stringCodec);
   const iter = (await broker.subscribe('k', new AbortController().signal))[Symbol.asyncIterator]();

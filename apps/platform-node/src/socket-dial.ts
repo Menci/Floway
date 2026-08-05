@@ -51,6 +51,7 @@ export const nodeSocketDial: SocketDial = {
   async connect(host, port, opts): Promise<DialedSocket> {
     if (opts?.signal?.aborted) throwAbort(opts.signal);
     const dialHost = normalizeDialHost(host);
+    if (dialHost.length === 0) throw new TypeError('SocketDial host must not be empty');
     // node:net / node:tls accept `signal` natively; passing it lets the
     // runtime tear down a connect that has not yet fired 'connect' /
     // 'secureConnect' without us having to race anything ourselves.
@@ -65,7 +66,7 @@ export const nodeSocketDial: SocketDial = {
     const signal = opts?.signal;
     const socket = opts?.tls
       // @ts-expect-error – see block comment above
-      ? tls.connect({ host: dialHost, port, servername: dialHost, signal })
+      ? tls.connect({ host: dialHost, port, ...(net.isIP(dialHost) === 0 ? { servername: dialHost } : {}), signal })
       : net.connect({ host: dialHost, port, allowHalfOpen: true, signal });
     const readyEvent = opts?.tls ? 'secureConnect' : 'connect';
     await new Promise<void>((resolve, reject) => {
@@ -81,17 +82,11 @@ export const nodeSocketDial: SocketDial = {
       socket.once('error', onError);
     });
 
-    // net.Socket recycles its emitted Buffers from a shared pool, so any
-    // chunk our handshake state machines retain across an await can read
-    // overwritten bytes. Copy on the way out.
-    const rawReadable = Readable.toWeb(socket) as ReadableStream<Uint8Array>;
-    const readable = rawReadable.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
-      transform(chunk, controller) {
-        const owned = new Uint8Array(chunk.byteLength);
-        owned.set(chunk);
-        controller.enqueue(owned);
-      },
-    }));
+    // Node transfers each read's backing store into a new JS ArrayBuffer, so a
+    // retained chunk stays owned and does not need a second full-byte copy.
+    // https://github.com/nodejs/node/blob/85c454ab2915b4768c830d40e7809a7a098e1057/src/stream_base.cc#L692-L715
+    // https://github.com/nodejs/node/blob/85c454ab2915b4768c830d40e7809a7a098e1057/lib/internal/stream_base_commons.js#L166-L190
+    const readable = Readable.toWeb(socket) as ReadableStream<Uint8Array>;
     const writable = socketToWritable(socket);
 
     // Listen on 'close' rather than the toWeb readable's own close signal:

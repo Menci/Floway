@@ -1,3 +1,5 @@
+import { setMaxListeners } from 'node:events';
+
 import {
   abortChannelSubscription,
   channelSubscriptionQueueIsEmpty,
@@ -24,7 +26,11 @@ export class EventTargetChannelBroker<T> implements ChannelBroker<T> {
   private acquireTarget(channelId: string): ChannelTarget {
     let target = this.targets.get(channelId);
     if (!target) {
-      target = { events: new EventTarget(), subscribers: 0 };
+      const events = new EventTarget();
+      // Concurrent dashboard viewers are legitimate fan-out subscribers; the
+      // default threshold of ten is a diagnostic, not a broker capacity limit.
+      setMaxListeners(0, events);
+      target = { events, subscribers: 0 };
       this.targets.set(channelId, target);
     }
     target.subscribers += 1;

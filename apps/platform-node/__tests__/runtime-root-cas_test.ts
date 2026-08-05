@@ -1,12 +1,21 @@
-import { describe, expect, it } from 'vitest';
+import tls from 'node:tls';
 
-import { nodeRuntimeRootCAs } from '../src/runtime-root-cas.ts';
+import { expect, test, vi } from 'vitest';
 
-describe('nodeRuntimeRootCAs', () => {
-  it('exposes Node\'s bundled root certificate PEMs', () => {
-    expect(Array.isArray(nodeRuntimeRootCAs)).toBe(true);
-    expect(nodeRuntimeRootCAs.length).toBeGreaterThan(50);
-    expect(nodeRuntimeRootCAs[0]).toContain('-----BEGIN CERTIFICATE-----');
-    expect(nodeRuntimeRootCAs[0]).toContain('-----END CERTIFICATE-----');
-  });
+test('nodeRuntimeRootCAs snapshots Node\'s complete default trust set', async () => {
+  const original = tls.getCACertificates('default');
+  const singleRoot = tls.rootCertificates[0];
+  if (singleRoot === undefined) throw new Error('Node exposes no bundled root certificates');
+  try {
+    tls.setDefaultCACertificates([singleRoot]);
+    vi.resetModules();
+
+    const { nodeRuntimeRootCAs } = await import('../src/runtime-root-cas.ts');
+
+    expect(nodeRuntimeRootCAs).toEqual(tls.getCACertificates('default'));
+    expect(nodeRuntimeRootCAs).toEqual([singleRoot]);
+  } finally {
+    tls.setDefaultCACertificates(original);
+    vi.resetModules();
+  }
 });

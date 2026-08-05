@@ -20,6 +20,8 @@ test('Node external-resource egress accepts only globally routable addresses', (
     '::',
     '::1',
     '::ffff:127.0.0.1',
+    '100:0:0:1::1',
+    '5f00::1',
     'fc00::1',
     'fe80::1',
     'ff02::1',
