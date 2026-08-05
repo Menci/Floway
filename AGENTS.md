@@ -285,20 +285,23 @@ Ollama depend on `provider` + `protocols`; Claude Code and Codex add
 `interceptor`; Copilot adds `interceptor` + `platform`. `test-utils` depends on
 `provider` and is consumed as a test dependency by the rest of the workspace.
 Vendor credentials, catalog projection, and wire behavior stay in the vendor
-packages. Each package's static `ProviderModule` surface also declares, per
-provider call method, the case-insensitive exact names and lowercase-name
-regular expressions for client headers that call accepts. The gateway applies
-the selected allowlist plus the candidate's instance rules after it selects a
-candidate and before it calls the provider, so protocol-specific headers do
-not leak onto sibling surfaces and failover candidates never share a filtered
-or mutated header bag. Custom upstreams derive exact-name instance rules from
+packages. Each package's static `ProviderModule` surface also declares the
+case-insensitive exact names and lowercase-name regular expressions for
+ordinary client headers that provider accepts. The gateway applies the
+allowlist plus the candidate's instance rules after it selects a candidate and
+before it calls the provider, so failover candidates never share a filtered or
+mutated header bag. Custom upstreams derive exact-name instance rules from
 `config.ingressHeadersRules`; `null` preserves a matched ingress value and a
 string replaces it, including the empty string. Rules never synthesize a
 header absent from the ingress request. The Custom config parser rejects
-gateway credentials, cookies, proxy/IP signals, body metadata, and hop-by-hop
-names because those remain owned by the HTTP transport. The gateway owns the
-control-plane handlers that call vendor APIs and maps their results onto Floway
-HTTP responses.
+Messages-owned metadata, gateway credentials, cookies, proxy/IP signals, body
+metadata, and hop-by-hop names because those remain owned by their protocol or
+the HTTP transport.
+Source-protocol metadata remains outside that generic policy: native Messages
+carries `anthropic-beta` through its own boundary, and Copilot parses it into
+`MessagesBoundaryCtx.anthropicBeta` before its interceptor chain. The gateway
+owns the control-plane handlers that call vendor APIs and maps their results
+onto Floway HTTP responses.
 
 `gateway` depends on `agent-setup` + `http` + `interceptor` + `platform` +
 `protocols` + `provider` + every `provider-*` package + `proxy` + `translate`.

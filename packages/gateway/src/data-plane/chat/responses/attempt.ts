@@ -158,7 +158,7 @@ const dispatchResponses = async (
       body,
       invocation.action,
       ctx.abortSignal,
-      buildUpstreamCallOptions(candidate, ctx, invocation.headers, 'callResponses'),
+      buildUpstreamCallOptions(candidate, ctx, invocation.headers),
     );
     return await providerResponsesResultToExecuteResult(providerResult, candidate, targetApi, ctx);
   }

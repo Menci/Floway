@@ -92,6 +92,11 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 // https://www.rfc-editor.org/rfc/rfc9110.html#section-5.6.2
 const HTTP_FIELD_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 
+// https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/beta/beta.ts#L622-L635
+const PROTOCOL_OWNED_INGRESS_HEADER_NAMES = new Map([
+  ['anthropic-beta', 'Messages'],
+]);
+
 // These names belong to the gateway/provider transport boundary, not the
 // upstream application protocol. Forwarding body metadata after Floway has
 // reserialized JSON/FormData misframes the new body; forwarding gateway auth,
@@ -145,6 +150,10 @@ const ingressHeadersRulesField = (value: unknown): CustomIngressHeaderRule[] => 
       throw new Error(`Malformed custom upstream config: ingressHeadersRules[${index}].key must be a valid HTTP header name`);
     }
     const key = raw.key.trim().toLowerCase();
+    const owningProtocol = PROTOCOL_OWNED_INGRESS_HEADER_NAMES.get(key);
+    if (owningProtocol !== undefined) {
+      throw new Error(`Malformed custom upstream config: ingressHeadersRules[${index}].key ${key} is owned by the ${owningProtocol} protocol`);
+    }
     if (PROTECTED_INGRESS_HEADER_NAMES.has(key) || key.startsWith('cf-')) {
       throw new Error(`Malformed custom upstream config: ingressHeadersRules[${index}].key ${key} is owned by the HTTP transport`);
     }

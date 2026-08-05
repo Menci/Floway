@@ -27,10 +27,10 @@ import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 // not synthesize the variant on discovered ids in gateway mode. So we
 // rewrite the id of every 1M-capable model on the wire. On inference, the CLI
 // strips `[1m]` from the model id and pairs the request with
-// `anthropic-beta: context-1m-2025-08-07`. That signal reaches only providers
-// whose module allowlist accepts it; the suffix
-// remains a discovery-protocol representation of the advertised context
-// limit, not a cross-provider header-forwarding policy.
+// `anthropic-beta: context-1m-2025-08-07`. Native Messages dispatch carries
+// that protocol signal independently of ordinary provider header allowlists;
+// the suffix remains a discovery-protocol representation of the advertised
+// context limit, not a cross-provider header-forwarding policy.
 //
 // (2) Mirroring the official shape (instead of the OpenAI-Anthropic
 // superset the handler serves everyone else) also lets any future

@@ -74,7 +74,6 @@ export const completions = async (c: Context): Promise<Response> => {
     ctx,
     sourceApi: '/completions',
     operation: 'text_completion',
-    providerCall: 'callCompletions',
     model: request.model,
     kind: 'chat',
     modelServesEndpoint: model => model.endpoints.completions !== undefined,

@@ -13,7 +13,7 @@ import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import type { ModelCandidate, ExecuteResult, PlainResult } from '@floway-dev/provider';
+import type { ModelCandidate, ExecuteResult, PlainResult, UpstreamCallOptions } from '@floway-dev/provider';
 import { providerModelOf } from '@floway-dev/provider';
 import { translateMessagesViaChatCompletions, translateMessagesViaResponses } from '@floway-dev/translate';
 
@@ -31,6 +31,21 @@ export interface MessagesAttemptArgs {
   readonly candidate: ModelCandidate;
   readonly headers: Headers;
 }
+
+const buildMessagesUpstreamCallOptions = (
+  candidate: ModelCandidate,
+  ctx: ChatGatewayCtx,
+  headers: Headers,
+): UpstreamCallOptions => {
+  const options = buildUpstreamCallOptions(candidate, ctx, headers);
+  // `anthropic-beta` is Messages transport metadata, not a provider-level
+  // header permission. Native Messages carries it after the ordinary header
+  // bag has been filtered; translated target protocols never enter this path.
+  // https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/beta/beta.ts#L622-L635
+  const anthropicBeta = headers.get('anthropic-beta');
+  if (anthropicBeta !== null) options.headers.set('anthropic-beta', anthropicBeta);
+  return options;
+};
 
 export const messagesAttempt = {
   generate: async (args: MessagesAttemptArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
@@ -52,7 +67,7 @@ export const messagesAttempt = {
           providerModelOf(candidate),
           body,
           ctx.abortSignal,
-          buildUpstreamCallOptions(candidate, ctx, invocation.headers, 'callMessages'),
+          buildMessagesUpstreamCallOptions(candidate, ctx, invocation.headers),
         );
         return await providerStreamResultToExecuteResult(providerResult, candidate, targetApi, ctx, createMessagesBillableUsageReader());
       }
@@ -99,7 +114,7 @@ export const messagesAttempt = {
         providerModelOf(candidate),
         body,
         ctx.abortSignal,
-        buildUpstreamCallOptions(candidate, ctx, invocation.headers, 'callMessagesCountTokens'),
+        buildMessagesUpstreamCallOptions(candidate, ctx, invocation.headers),
       );
       return response;
     });

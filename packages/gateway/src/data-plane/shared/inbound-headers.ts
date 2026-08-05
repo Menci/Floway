@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 
-import { inboundHeaderAllowlistForCall } from '../providers/registry.ts';
-import type { InboundHeaderMatcher, IngressHeaderRule, Provider, ProviderCall } from '@floway-dev/provider';
+import { inboundHeaderAllowlistForKind } from '../providers/registry.ts';
+import type { InboundHeaderMatcher, IngressHeaderRule, Provider } from '@floway-dev/provider';
 
 export const inboundHeaders = (c: Context): Headers => new Headers(c.req.raw.headers);
 
@@ -29,5 +29,4 @@ export const resolveIngressHeaders = (
 export const resolveIngressHeadersForProvider = (
   headers: Headers,
   provider: Provider,
-  call: ProviderCall,
-): Headers => resolveIngressHeaders(headers, inboundHeaderAllowlistForCall(provider.kind, call), provider.ingressHeaderRules);
+): Headers => resolveIngressHeaders(headers, inboundHeaderAllowlistForKind(provider.kind), provider.ingressHeaderRules);

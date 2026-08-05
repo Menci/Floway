@@ -35,7 +35,7 @@ export interface Provider {
   kind: UpstreamProviderKind;
   name: string;
   // Candidate-specific exact/regex transformations layered over the static
-  // per-call allowlist. `null` preserves a matched ingress value; a string
+  // provider allowlist. `null` preserves a matched ingress value; a string
   // replaces it. Rules do not create a header absent from ingress.
   ingressHeaderRules: readonly IngressHeaderRule[];
   disabledPublicModelIds: readonly string[];
@@ -105,9 +105,11 @@ export type ProviderResponsesResult =
 // no-op. Providers use it for post-response persistence the caller has
 // already stopped waiting on.
 //
-// `headers` is the gateway-resolved ingress header bag. The gateway combines
-// this provider method's static allowlist with the candidate's instance rules
-// before constructing it. A provider may clone and mutate the bag for
+// `headers` is the ordinary inbound-headers conduit from gateway to provider.
+// The gateway combines the provider module's `inboundHeaderAllowlist` with the
+// candidate's instance rules before constructing this bag. Source-protocol
+// metadata is carried by its owning invocation boundary and does not widen
+// this provider-level policy. A provider may clone and mutate the bag for
 // request-specific wire shaping, but must not retain the gateway-owned
 // reference past the call.
 export interface UpstreamCallOptions {
@@ -139,8 +141,6 @@ export interface ProviderInstance {
   // those upstreams; the rejecting stubs in those providers are pure
   // defense-in-depth.
   callCompletions(model: ProviderModel, body: Omit<CompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
-  // Each protocol receives the gateway-resolved combination of this method's
-  // static allowlist and the selected provider instance's rules.
   callChatCompletions(model: ProviderModel, body: Omit<ChatCompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
   callResponses(model: ProviderModel, body: Omit<CanonicalResponsesPayload, 'model'>, action: ResponsesAction, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderResponsesResult>;
   callMessages(model: ProviderModel, body: Omit<MessagesPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<MessagesStreamEvent>>;
@@ -154,8 +154,6 @@ export interface ProviderInstance {
   callRerank(model: ProviderModel, request: CanonicalRerankRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderRerankCallResult>;
 }
 
-export type ProviderCall = Exclude<keyof ProviderInstance, 'getProvidedModels'>;
-
 // Static, module-shaped surface each provider package exports. The gateway
 // registry keeps a Record<UpstreamProviderKind, ProviderModule> so every
 // kind→X dispatch (instance construction, flag defaults) reads its answer
@@ -167,12 +165,12 @@ export interface ProviderModule {
   // fetch) happens on demand inside the per-request methods on the
   // returned ProviderInstance.
   create: (record: UpstreamRecord) => Provider;
-  // Client-authored headers each call surface can consume. Strings are exact,
+  // Client-authored headers this provider can consume. Strings are exact,
   // ASCII-case-insensitive names; regular expressions run against the
-  // normalized lowercase name. An absent call contributes no static headers;
-  // candidate-specific instance rules can still admit or replace exact names.
-  // The gateway resolves both layers at the candidate boundary.
-  inboundHeaderAllowlist: Partial<Record<ProviderCall, readonly InboundHeaderMatcher[]>>;
+  // normalized lowercase name. The gateway applies this allowlist at the
+  // candidate boundary before any ProviderInstance method can observe the
+  // ordinary inbound bag.
+  inboundHeaderAllowlist: readonly InboundHeaderMatcher[];
   // Exhaustive default map over every catalog flag id for a fresh
   // upstream of this kind; see each provider package's `defaults.ts`.
   defaultFlags: FlagDefaults;

@@ -29,7 +29,7 @@ export const rerankAttempt = async (
     model,
     request,
     ctx.abortSignal,
-    buildUpstreamCallOptions(candidate, ctx, inboundHeaders(c), 'callRerank'),
+    buildUpstreamCallOptions(candidate, ctx, inboundHeaders(c)),
   );
   return {
     type: 'plain',

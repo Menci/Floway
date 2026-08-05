@@ -46,7 +46,7 @@ export const resolveAlphaSearchDispatcher = async ({
       {
         fetcher: candidate.fetcher,
         waitUntil: scheduler,
-        headers: resolveIngressHeadersForProvider(headers, candidate.provider, 'callAlphaSearch'),
+        headers: resolveIngressHeadersForProvider(headers, candidate.provider),
         wrapUpstreamCall: identityWrapUpstreamCall,
       },
     );

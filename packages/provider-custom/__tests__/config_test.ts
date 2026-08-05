@@ -79,6 +79,7 @@ test('assertCustomUpstreamRecord rejects invalid or duplicate ingress header rul
     [[{ key: 1, value: null }], 'key must be a valid HTTP header name'],
     [[{ key: 'x-route', value: 1 }], 'value must be a string or null'],
     [[{ key: 'Content-Length', value: null }], 'content-length is owned by the HTTP transport'],
+    [[{ key: 'Anthropic-Beta', value: null }], 'anthropic-beta is owned by the Messages protocol'],
     [[{ key: 'Authorization', value: null }], 'authorization is owned by the HTTP transport'],
     [[{ key: 'CF-Ray', value: null }], 'cf-ray is owned by the HTTP transport'],
   ] as const) {
