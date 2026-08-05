@@ -1,6 +1,6 @@
 import { DeleteRegular } from '@fluentui/react-icons';
 import { useId } from 'react';
-import { Controller, useFieldArray, useFormContext } from 'react-hook-form';
+import { Controller, useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 
 import type { UpstreamEditorValues } from './data';
 import { EditorSection } from './section';
@@ -61,6 +61,8 @@ function IngressHeaderRuleRow({
   const { control } = useFormContext<CustomValues>();
   const labelId = useId();
   const rowNumber = index + 1;
+  const headerName = useWatch({ control, name: `config.ingressHeadersRules.${index}.key` });
+  const valueDisabled = headerName.trim() === '';
 
   return <div aria-labelledby={labelId} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_32px] items-center gap-2" role="group">
     <span className="sr-only" id={labelId}>{t('dashboard.upstreamEditor.headers.row', { number: rowNumber })}</span>
@@ -102,6 +104,7 @@ function IngressHeaderRuleRow({
           aria-label={t('dashboard.upstreamEditor.headers.valueForRow', { number: rowNumber })}
           autoComplete="off"
           className={custom ? 'font-mono' : undefined}
+          disabled={valueDisabled}
           freeform
           onChange={event => field.onChange(event.target.value)}
           onOptionSelect={(_, data) => {

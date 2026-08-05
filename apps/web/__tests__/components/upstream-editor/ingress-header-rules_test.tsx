@@ -48,6 +48,7 @@ describe('Custom ingress header rules', () => {
     expect(valueOf(screen.getByLabelText(label('keyForRow', 1)))).toBe('');
     expect(valueOf(screen.getByLabelText(label('valueForRow', 1)))).toBe('');
     expect(placeholderOf(screen.getByLabelText(label('valueForRow', 1)))).toBe(i18n.t('dashboard.upstreamEditor.headers.passthrough'));
+    expect(disabled(screen.getByLabelText(label('valueForRow', 1)))).toBe(true);
     expect(disabled(screen.getByRole('button', { name: label('remove', 1) }))).toBe(true);
     expect(screen.getAllByRole('group', { name: /Header rule/ })).toHaveLength(1);
   });
@@ -68,6 +69,9 @@ describe('Custom ingress header rules', () => {
     expect(placeholderOf(passthrough)).toBe(i18n.t('dashboard.upstreamEditor.headers.passthrough'));
     expect(placeholderOf(empty)).toBe(i18n.t('dashboard.upstreamEditor.headers.empty'));
     expect(placeholderOf(custom)).toBe('');
+    expect(disabled(passthrough)).toBe(false);
+    expect(disabled(empty)).toBe(false);
+    expect(disabled(custom)).toBe(false);
     expect(passthrough.closest('.font-mono')).toBeNull();
     expect(empty.closest('.font-mono')).toBeNull();
     expect(custom.closest('.font-mono')).not.toBeNull();
@@ -77,10 +81,13 @@ describe('Custom ingress header rules', () => {
   it('turns a typed draft into a rule and immediately appends the next blank row', () => {
     renderInApp(<Harness />);
     const draft = screen.getByLabelText(label('keyForRow', 1));
+    expect(disabled(screen.getByLabelText(label('valueForRow', 1)))).toBe(true);
     draft.focus();
     fireEvent.change(draft, { target: { value: 'X-Route' } });
     expect(document.activeElement).toBe(draft);
+    expect(disabled(screen.getByLabelText(label('valueForRow', 1)))).toBe(false);
     expect(valueOf(screen.getByLabelText(label('keyForRow', 2)))).toBe('');
+    expect(disabled(screen.getByLabelText(label('valueForRow', 2)))).toBe(true);
     fireEvent.blur(draft);
     expect(valueOf(draft)).toBe('x-route');
   });
