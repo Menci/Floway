@@ -1,7 +1,7 @@
 import { analyzeResponsesAffinity } from './affinity/ingress.ts';
 import { responsesTarget } from './attempt.ts';
 import { renderResponsesFailure, type ResponsesServeFailure } from './errors.ts';
-import { supportsPlaintextCollaborationTarget } from './interceptors/plaintext-collaboration.ts';
+import { collaborationShimSupportsTarget } from './interceptors/collaboration-shim.ts';
 import { hydrateResponsesPayload } from './items/hydrate.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
 import { enumerateModelCandidates } from '../../providers/resolution.ts';
@@ -102,7 +102,7 @@ export const prepareResponsesServePlan = async (args: {
     return { kind: 'failure', result: renderResponsesFailure(failure) };
   }
   const viable = endpointViable.filter(candidate =>
-    supportsPlaintextCollaborationTarget(hydrated.payload, responsesTarget.pick(candidate.model.endpoints)));
+    collaborationShimSupportsTarget(hydrated.payload, responsesTarget.pick(candidate.model.endpoints)));
   const affinity = await analyzeResponsesAffinity(hydrated.payload, ctx.affinity.codec);
   const selection = selectAffinityCandidates(viable, affinity);
   if ('kind' in selection) return { kind: 'failure', result: renderResponsesFailure(selection) };

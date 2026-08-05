@@ -40,7 +40,7 @@ export const hasCollaborationNamespace = (payload: CanonicalResponsesPayload): b
   toolInventories(payload).some(tools =>
     (tools ?? []).some(tool => namespaceTool(tool)?.name === CLIENT_NAMESPACE));
 
-export const supportsPlaintextCollaborationTarget = (
+export const collaborationShimSupportsTarget = (
   payload: CanonicalResponsesPayload,
   targetApi: ChatTargetApi,
 ): boolean => {
@@ -223,12 +223,14 @@ const clientEvent = (event: ResponsesStreamEvent, upstreamNamespace: string): Re
 // reserved identity and the plaintext marker before Codex dispatches it.
 // https://github.com/openai/codex/blob/c4f42d161ae44a8d696ee9fb595709661979d187/codex-rs/core/src/tools/router.rs#L31-L55
 // https://github.com/openai/codex/blob/c4f42d161ae44a8d696ee9fb595709661979d187/codex-rs/core/tests/suite/subagent_notifications.rs#L1514-L1563
-export const withPlaintextCollaboration: ResponsesInterceptor = async (ctx, _gatewayCtx, run) => {
-  if (ctx.targetApi !== 'responses') return await run();
+export const withCollaborationShim: ResponsesInterceptor = async (ctx, _gatewayCtx, run) => {
   const toolLists = toolInventories(ctx.payload);
   const collaborationCounts = toolLists.map(tools =>
     (tools ?? []).filter(tool => namespaceTool(tool)?.name === CLIENT_NAMESPACE).length);
   if (collaborationCounts.every(count => count === 0)) return await run();
+  if (!collaborationShimSupportsTarget(ctx.payload, ctx.targetApi)) {
+    throw new TypeError(`Collaboration shim cannot project a ${ctx.targetApi} target`);
+  }
   if (collaborationCounts.some(count => count > 1)) {
     throw new TypeError('Responses request carries multiple collaboration namespaces in one tool inventory');
   }

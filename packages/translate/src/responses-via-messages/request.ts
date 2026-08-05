@@ -24,19 +24,16 @@ import {
   type MessagesUserContentBlock,
   type MessagesUserMessage,
 } from '@floway-dev/protocols/messages';
-import {
-  RESPONSES_INTER_AGENT_MESSAGE_ACTIONS,
-  type ResponsesInputImage,
-  type ResponsesInputItem,
-  type ResponsesInputMessage,
-  type ResponsesInputText,
-  type ResponsesRequestPayload,
-  type ResponsesTool,
-  type ResponsesToolChoice,
-  type ResponsesToolOutputContent,
+import type {
+  ResponsesInputImage,
+  ResponsesInputItem,
+  ResponsesInputMessage,
+  ResponsesInputText,
+  ResponsesRequestPayload,
+  ResponsesTool,
+  ResponsesToolChoice,
+  ResponsesToolOutputContent,
 } from '@floway-dev/protocols/responses';
-
-const INTER_AGENT_MESSAGE_ACTIONS = new Set<string>(RESPONSES_INTER_AGENT_MESSAGE_ACTIONS);
 
 interface BuildTargetRequestOptions {
   loadRemoteImage?: RemoteImageLoader;
@@ -247,14 +244,6 @@ const translateResponsesInput = async (
       }, loadRemoteImage));
       break;
     case 'function_call': {
-      if (
-        item.namespace === 'collaboration'
-        && INTER_AGENT_MESSAGE_ACTIONS.has(item.name)
-        && item.encrypted_function_args !== undefined
-        && (!Array.isArray(item.encrypted_function_args) || item.encrypted_function_args.length > 0)
-      ) {
-        throw new TranslatorInputError(`Cannot translate encrypted collaboration history '${item.name}' to Messages.`);
-      }
       const sourceName = item.namespace === undefined ? item.name : `${item.namespace}.${item.name}`;
       appendAssistantBlock(messages, {
         type: 'tool_use',
@@ -319,24 +308,6 @@ const translateResponsesInput = async (
 
 const namespaceTargetName = (namespace: string, tool: string): string =>
   `${namespace}_${tool}`.replaceAll(/[^a-zA-Z0-9_-]/g, '_');
-
-const plaintextNamespaceParameters = (
-  namespace: string,
-  name: string,
-  parameters: Record<string, unknown>,
-): Record<string, unknown> => {
-  if (namespace !== 'collaboration' || !INTER_AGENT_MESSAGE_ACTIONS.has(name)) return parameters;
-  const properties = parameters.properties;
-  if (typeof properties !== 'object' || properties === null || Array.isArray(properties)) return parameters;
-  const message = (properties as Record<string, unknown>).message;
-  if (typeof message !== 'object' || message === null || Array.isArray(message)) return parameters;
-  const plaintextMessage = { ...(message as Record<string, unknown>) };
-  delete plaintextMessage.encrypted;
-  return {
-    ...parameters,
-    properties: { ...(properties as Record<string, unknown>), message: plaintextMessage },
-  };
-};
 
 const uniqueToolName = (preferred: string, reserved: Set<string>): string => {
   if (!reserved.has(preferred)) {
@@ -430,11 +401,7 @@ const translateTools = (
       out.push({
         name: targetName,
         ...(typeof functionTool.description === 'string' ? { description: functionTool.description } : {}),
-        input_schema: plaintextNamespaceParameters(
-          tool.name,
-          functionTool.name,
-          functionTool.parameters as Record<string, unknown>,
-        ),
+        input_schema: functionTool.parameters as Record<string, unknown>,
         ...(typeof functionTool.strict === 'boolean' ? { strict: functionTool.strict } : {}),
       });
     }

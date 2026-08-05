@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { withPlaintextCollaboration } from '../../../../../src/data-plane/chat/responses/interceptors/plaintext-collaboration.ts';
+import { withCollaborationShim } from '../../../../../src/data-plane/chat/responses/interceptors/collaboration-shim.ts';
 import type { ResponsesInvocation } from '../../../../../src/data-plane/chat/responses/interceptors/types.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -75,7 +75,7 @@ test('projects reserved collaboration onto a plaintext upstream namespace and re
   const ctx = invocation();
   const clientPayload = structuredClone(ctx.payload);
   let upstreamPayload: ResponsesInvocation['payload'] | undefined;
-  const result = await withPlaintextCollaboration(ctx, mockChatGatewayCtx(), async () => {
+  const result = await withCollaborationShim(ctx, mockChatGatewayCtx(), async () => {
     upstreamPayload = structuredClone(ctx.payload);
     const namespace = (ctx.payload.tools?.[0] as { name: string }).name;
     const spawn: ResponsesOutputFunctionCall = {
@@ -174,7 +174,7 @@ test('uses a deterministic collision suffix and restores shared context between 
   };
   const seen: string[] = [];
   const seenChoices: string[] = [];
-  const run = async () => await withPlaintextCollaboration(ctx, mockChatGatewayCtx(), async () => {
+  const run = async () => await withCollaborationShim(ctx, mockChatGatewayCtx(), async () => {
     seen.push((ctx.payload.tools?.[0] as { name: string }).name);
     const choice = ctx.payload.tool_choice as { tools: Array<{ name: string }> };
     seenChoices.push(choice.tools[1].name);
@@ -188,18 +188,30 @@ test('uses a deterministic collision suffix and restores shared context between 
   expect((ctx.payload.tools?.[0] as { name: string }).name).toBe('collaboration');
 });
 
-test('leaves translated targets unchanged', async () => {
+test('projects Messages targets through the same plaintext namespace', async () => {
   const ctx = invocation('messages');
   const original = structuredClone(ctx.payload);
-  await withPlaintextCollaboration(ctx, mockChatGatewayCtx(), async () =>
-    eventResult((async function* () {})(), testTelemetryModelIdentity));
+  await withCollaborationShim(ctx, mockChatGatewayCtx(), async () => {
+    expect((ctx.payload.tools?.[0] as { name: string }).name).toBe('collaboration_2');
+    const namespace = ctx.payload.tools?.[0] as unknown as { tools: Array<{ parameters: { properties: { message: Record<string, unknown> } } }> };
+    expect(namespace.tools[0].parameters.properties.message).not.toHaveProperty('encrypted');
+    return eventResult((async function* () {})(), testTelemetryModelIdentity);
+  });
   expect(ctx.payload).toEqual(original);
+});
+
+test('rejects direct Chat Completions projection', async () => {
+  const ctx = invocation('chat-completions');
+  await expect(withCollaborationShim(ctx, mockChatGatewayCtx(), async () =>
+    eventResult((async function* () {})(), testTelemetryModelIdentity))).rejects.toThrow(
+    'Collaboration shim cannot project a chat-completions target',
+  );
 });
 
 test('rejects ambiguous duplicate collaboration namespaces', async () => {
   const ctx = invocation();
   ctx.payload = { ...ctx.payload, tools: [collaborationTool(), collaborationTool()] };
-  await expect(withPlaintextCollaboration(ctx, mockChatGatewayCtx(), async () =>
+  await expect(withCollaborationShim(ctx, mockChatGatewayCtx(), async () =>
     eventResult((async function* () {})(), testTelemetryModelIdentity))).rejects.toThrow(
     'Responses request carries multiple collaboration namespaces in one tool inventory',
   );
@@ -213,7 +225,7 @@ test.each([null, ['message']] as const)('rejects explicitly encrypted history ma
     ...ctx.payload,
     input: [{ ...item, encrypted_function_args: marker === null ? null : [...marker] }],
   };
-  await expect(withPlaintextCollaboration(ctx, mockChatGatewayCtx(), async () =>
+  await expect(withCollaborationShim(ctx, mockChatGatewayCtx(), async () =>
     eventResult((async function* () {})(), testTelemetryModelIdentity))).rejects.toThrow(
     'Cannot project encrypted collaboration history',
   );
@@ -227,7 +239,7 @@ test('projects deferred tool-search inventories without a top-level tool list', 
     input: [{ type: 'tool_search_output', id: 'tso_1', tools: [collaborationTool()] }],
   };
   let upstreamItem: unknown;
-  const result = await withPlaintextCollaboration(ctx, mockChatGatewayCtx(), async () => {
+  const result = await withCollaborationShim(ctx, mockChatGatewayCtx(), async () => {
     upstreamItem = structuredClone(ctx.payload.input[0]);
     const item = ctx.payload.input[0];
     if (item.type !== 'tool_search_output') throw new Error('Expected tool-search output');
@@ -258,7 +270,7 @@ test('rejects an upstream encrypted marker before labeling the call plaintext', 
     encrypted_function_args: ['message'],
     status: 'completed',
   };
-  const result = await withPlaintextCollaboration(ctx, mockChatGatewayCtx(), async () =>
+  const result = await withCollaborationShim(ctx, mockChatGatewayCtx(), async () =>
     eventResult((async function* () {
       yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: output });
     })(), testTelemetryModelIdentity));
@@ -274,7 +286,7 @@ test('preserves explicit null tools in response snapshots', async () => {
     ...response([], [], 'collaboration_2'),
     tools: null,
   } as unknown as ResponsesResult;
-  const result = await withPlaintextCollaboration(ctx, mockChatGatewayCtx(), async () =>
+  const result = await withCollaborationShim(ctx, mockChatGatewayCtx(), async () =>
     eventResult((async function* () {
       yield eventFrame({ type: 'response.completed', response: snapshot });
     })(), testTelemetryModelIdentity));
