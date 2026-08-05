@@ -1,6 +1,8 @@
 import { test, vi } from 'vitest';
 
 import { DUMP_NOTIFICATION_TIMEOUT_MS, initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
+import { CUSTOM_API_KEY_MAX_LENGTH } from '../../../src/shared/api-key-tokens.ts';
+import { RETENTION_MAX_SECONDS, SECONDS_PER_DAY } from '../../../src/shared/retention.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { buildCustomUpstreamRecord, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
@@ -38,10 +40,12 @@ test('POST /api/keys defaults durable Responses persistence off', async () => {
 
 test('PATCH /api/keys/:id changes only the rolling Responses duration', async () => {
   const { repo, apiKey } = await setupAppTest();
-  const enabled = await ownerPatch(apiKey.id, { responses_retention_seconds: 7 * 24 * 60 * 60 }, apiKey.key);
-  assertEquals(enabled.status, 200);
-  assertEquals(((await enabled.json()) as { responses_retention_seconds: number }).responses_retention_seconds, 7 * 24 * 60 * 60);
-  assertEquals((await repo.apiKeys.getById(apiKey.id))?.responsesRetentionSeconds, 7 * 24 * 60 * 60);
+  for (const value of [SECONDS_PER_DAY, RETENTION_MAX_SECONDS]) {
+    const enabled = await ownerPatch(apiKey.id, { responses_retention_seconds: value }, apiKey.key);
+    assertEquals(enabled.status, 200);
+    assertEquals(((await enabled.json()) as { responses_retention_seconds: number }).responses_retention_seconds, value);
+    assertEquals((await repo.apiKeys.getById(apiKey.id))?.responsesRetentionSeconds, value);
+  }
 
   const disabled = await ownerPatch(apiKey.id, { responses_retention_seconds: 0 }, apiKey.key);
   assertEquals(disabled.status, 200);
@@ -246,6 +250,28 @@ test('POST /api/keys trims a custom key and rejects active duplicates', async ()
   });
   assertEquals(duplicate.status, 409);
   assertEquals((await duplicate.json()).error, 'An API key with that raw key already exists.');
+  assertEquals((await repo.apiKeys.listByUserId(apiKey.userId)).length, 2);
+});
+
+test('POST /api/keys enforces the custom-key resource boundary exactly', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  const atLimit = 'k'.repeat(CUSTOM_API_KEY_MAX_LENGTH);
+  const accepted = await requestApp('/api/keys', {
+    method: 'POST',
+    headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'maximum-key', key_source: 'custom', custom_key: atLimit }),
+  });
+  assertEquals(accepted.status, 201);
+  assertEquals(((await accepted.json()) as { key: string }).key.length, CUSTOM_API_KEY_MAX_LENGTH);
+
+  for (const customKey of ['   ', `${atLimit}k`]) {
+    const rejected = await requestApp('/api/keys', {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'invalid-key', key_source: 'custom', custom_key: customKey }),
+    });
+    assertEquals(rejected.status, 400);
+  }
   assertEquals((await repo.apiKeys.listByUserId(apiKey.userId)).length, 2);
 });
 
@@ -545,11 +571,15 @@ test('PATCH /api/keys/:id sets dump_retention_seconds on the column', async () =
   assertEquals(stored.dumpRetentionSeconds, 3600);
 });
 
-test('PATCH /api/keys/:id rejects zero and negative dump_retention_seconds', async () => {
+test('PATCH /api/keys/:id enforces dump retention boundaries without partial mutation', async () => {
   const { apiKey, repo } = await setupAppTest();
-  assertEquals((await ownerPatch(apiKey.id, { dump_retention_seconds: 0 }, apiKey.key)).status, 400);
-  assertEquals((await ownerPatch(apiKey.id, { dump_retention_seconds: -1 }, apiKey.key)).status, 400);
-  assertEquals(await repo.apiKeys.getById(apiKey.id), apiKey);
+  for (const value of [1, RETENTION_MAX_SECONDS]) {
+    assertEquals((await ownerPatch(apiKey.id, { dump_retention_seconds: value }, apiKey.key)).status, 200);
+  }
+  for (const value of [0, -1, RETENTION_MAX_SECONDS + 1, 1.5]) {
+    assertEquals((await ownerPatch(apiKey.id, { dump_retention_seconds: value }, apiKey.key)).status, 400);
+  }
+  assertEquals((await repo.apiKeys.getById(apiKey.id))?.dumpRetentionSeconds, RETENTION_MAX_SECONDS);
 });
 
 test('DELETE /api/keys/:id soft-deletes the key', async () => {
