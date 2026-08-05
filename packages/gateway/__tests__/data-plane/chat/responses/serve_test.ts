@@ -1,4 +1,4 @@
-import { afterEach, test, vi } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 
 import { TEST_RESPONSES_RETENTION_SECONDS, testResponsesStatePolicy } from './test-policy.ts';
 import { createResponsesHttpStore, MemoryStatefulResponsesBacking, LayeredStatefulResponsesStore } from '../../../../src/data-plane/chat/responses/items/store.ts';
@@ -346,6 +346,31 @@ test('generate filters out candidates whose endpoints do not satisfy the respons
   assertEquals(body.error.type, 'invalid_request_error');
   assert(typeof body.error.message === 'string' && body.error.message.includes('does not support'));
   assertEquals(callResponses.mock.calls.length, 0);
+});
+
+test.each([true, false])('generate with store=%s rejects conflicting full input items before provider dispatch or state writes', async storeFlag => {
+  const repo = installRepo();
+  const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => {
+    throw new Error('provider must not be called for ambiguous input identity');
+  });
+  queueResolution([makeCandidate({ callResponses })]);
+  const id = 'msg_input_collision';
+
+  await expect(responsesServe.generate({
+    payload: makePayload({
+      store: storeFlag,
+      input: [
+        { type: 'message', id, role: 'user', content: 'first' },
+        { type: 'message', id, role: 'user', content: 'second' },
+      ],
+    }),
+    ctx: makeGatewayCtx(createResponsesHttpStore(testResponsesStatePolicy(API_KEY_ID), Date.now(), storeFlag)),
+    headers: new Headers(),
+  })).rejects.toThrow(`Responses item id collision: ${id}`);
+
+  expect(callResponses).not.toHaveBeenCalled();
+  expect(await repo.responsesItems.lookupMany(API_KEY_ID, [id], 0)).toEqual([]);
+  expect(await repo.responsesSnapshots.findOldestRefreshedAt(API_KEY_ID)).toBeNull();
 });
 
 test('compact renders model-missing as a 404 when no candidates are available', async () => {
