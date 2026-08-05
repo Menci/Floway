@@ -59,6 +59,9 @@ interface FunctionCallOutputProjection {
 // https://github.com/vercel/ai/blob/c093ee7458ccd5dada05d8461041e47c24ee55c0/packages/google/src/convert-to-google-messages.ts#L137-L180
 const projectFunctionCallOutput = (item: ResponsesFunctionCallOutputItem): FunctionCallOutputProjection => {
   if (typeof item.output === 'string') return { toolContent: item.output, liftedImageContent: [] };
+  if (item.output.some(part => part.type === 'encrypted_content')) {
+    throw new TranslatorInputError('Cannot translate encrypted_content tool output to Chat Completions.');
+  }
   if (item.output.some(part => part.type === 'input_file')) {
     throw new TranslatorInputError('Cannot translate input_file tool output to Chat Completions.');
   }

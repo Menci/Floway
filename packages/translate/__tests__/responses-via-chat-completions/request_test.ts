@@ -563,6 +563,21 @@ test('buildTargetRequest wires Responses tooling guards', () => {
   );
 });
 
+test('buildTargetRequest rejects encrypted function output on Chat Completions targets', () => {
+  assertThrows(
+    () => buildTargetRequest({
+      model: 'gpt-test',
+      input: [{
+        type: 'function_call_output',
+        call_id: 'call_1',
+        output: [{ type: 'encrypted_content', encrypted_content: 'opaque' }],
+      }],
+    }),
+    Error,
+    'Cannot translate encrypted_content tool output to Chat Completions.',
+  );
+});
+
 test('buildTargetRequest accepts null tool_choice', () => {
   const result = buildTargetRequest({ model: 'gpt-test', input: 'hi', tool_choice: null });
   assertEquals(result.target.tool_choice, undefined);

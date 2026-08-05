@@ -103,7 +103,9 @@ const translateToolOutput = async (output: string | ResponsesInputContent[], loa
 
   const blocks: MessagesToolResultContentBlock[] = [];
   for (const part of output) {
-    if (part.type === 'input_image') {
+    if (part.type === 'encrypted_content') {
+      throw new TranslatorInputError('Cannot translate encrypted_content tool output to Messages.');
+    } else if (part.type === 'input_image') {
       if (typeof part.image_url !== 'string') {
         throw new TranslatorInputError('Cannot translate file_id-only image tool output to Messages.');
       }
