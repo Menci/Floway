@@ -1450,6 +1450,55 @@ test('claude', 'PowerShell times out on an occupied lock before invoking the CLI
   t.equal(readFileSync(join(psLock, 'owner'), 'utf8'), 'stale-owner', 'PowerShell does not break an unowned lock');
 });
 
+test('claude', 'Bash cleanup preserves a lock whose owner changed while setup was running', async t => {
+  const ws = makeWorkspace();
+  placeFakeClaude(ws.binDir);
+  const configDir = join(ws.root, 'bash-owner-change-config');
+  const gate = join(ws.root, 'release-holder');
+  const atCli = join(ws.root, 'holder-at-cli');
+  const runPromise = runShellInstaller({
+    workspace: ws,
+    configuration: claudeConfig(),
+    baseUrl: modelServer.url,
+    configDir,
+    fakeCliGate: gate,
+    fakeCliGateMarker: atCli,
+  });
+  await waitForFile(atCli, 'Bash to acquire the lock before owner replacement');
+  const ownerPath = join(setupLockPath(configDir), 'owner');
+  writeFileSync(ownerPath, 'replacement-owner');
+  writeFileSync(gate, 'release');
+  const run = await runPromise;
+  t.equal(run.code, 0, `settings should still commit:\n${run.combined}`);
+  t.includes(run.stderr, 'because its owner changed', 'Bash reports why cleanup retained the lock');
+  t.equal(readFileSync(ownerPath, 'utf8'), 'replacement-owner', 'Bash does not remove another owner token');
+});
+
+test('claude', 'PowerShell cleanup preserves a lock whose owner changed while setup was running', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeClaude(ws.binDir);
+  const configDir = join(ws.root, 'powershell-owner-change-config');
+  const gate = join(ws.root, 'release-holder');
+  const atCli = join(ws.root, 'holder-at-cli');
+  const runPromise = runPowerShellInstaller({
+    workspace: ws,
+    configuration: claudeConfig(),
+    baseUrl: modelServer.url,
+    configDir,
+    fakeCliGate: gate,
+    fakeCliGateMarker: atCli,
+  });
+  await waitForFile(atCli, 'PowerShell to acquire the lock before owner replacement');
+  const ownerPath = join(setupLockPath(configDir), 'owner');
+  writeFileSync(ownerPath, 'replacement-owner');
+  writeFileSync(gate, 'release');
+  const run = await runPromise;
+  t.equal(run.code, 0, `settings should still commit:\n${run.combined}`);
+  t.includes(run.stderr, 'because its owner changed', 'PowerShell reports why cleanup retained the lock');
+  t.equal(readFileSync(ownerPath, 'utf8'), 'replacement-owner', 'PowerShell does not remove another owner token');
+});
+
 test('claude', 'PowerShell: existing settings use File.Replace with a real null backup path', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
