@@ -300,9 +300,15 @@ importers:
       '@floway-dev/test-utils':
         specifier: workspace:*
         version: link:../test-utils
+      '@types/jsesc':
+        specifier: ^3.0.3
+        version: 3.0.3
       '@types/node':
         specifier: ^22
         version: 22.19.19
+      jsesc:
+        specifier: ^3.1.0
+        version: 3.1.0
 
   packages/gateway:
     dependencies:
@@ -2547,6 +2553,9 @@ packages:
 
   '@types/hast@3.0.5':
     resolution: {integrity: sha512-rp/ezSWaD1m44dPKICGhiskI13nVr7qTloFwDa/IYkhhf5nzwP+zIQcIJh3WIFSBOy/H1PzB40jPjMDksN4F+g==}
+
+  '@types/jsesc@3.0.3':
+    resolution: {integrity: sha512-YZZ9ZOAiiSVC6KApWd/fTCDTdTOOMiRU4Lq3/VSmXNPse8IvCVOn5kYRRLu900Ub1lTPurVZFI5unEqLDJR7wg==}
 
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
@@ -7494,6 +7503,8 @@ snapshots:
   '@types/hast@3.0.5':
     dependencies:
       '@types/unist': 3.0.3
+
+  '@types/jsesc@3.0.3': {}
 
   '@types/json-schema@7.0.15': {}
 
