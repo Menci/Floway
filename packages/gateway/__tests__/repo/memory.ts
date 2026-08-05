@@ -457,16 +457,20 @@ class MemoryPerformanceRepo implements PerformanceRepo {
   private readonly summaries = new Map<string, StoredPerformanceRow>();
 
   async recordSample(sample: PerformanceSample): Promise<void> {
+    const ttftBucket = bucketForTtftMs(sample.ttftMs);
+    const tpot = sample.tpotUs === undefined
+      ? null
+      : { value: sample.tpotUs, bucket: bucketForTpotUs(sample.tpotUs) };
     const row = this.upsertRow(sample);
     row.requests += 1;
     if (sample.success) row.ttftSamplesOk += 1;
     else row.errorsWithOutput += 1;
     row.ttftMsSum += sample.ttftMs;
-    this.incrementBucket(row, 'ttft_ms', bucketForTtftMs(sample.ttftMs));
-    if (sample.tpotUs !== undefined) {
+    this.incrementBucket(row, 'ttft_ms', ttftBucket);
+    if (tpot !== null) {
       row.tpotSamples += 1;
-      row.tpotUsSum += sample.tpotUs;
-      this.incrementBucket(row, 'tpot_us', bucketForTpotUs(sample.tpotUs));
+      row.tpotUsSum += tpot.value;
+      this.incrementBucket(row, 'tpot_us', tpot.bucket);
     }
   }
 

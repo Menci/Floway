@@ -166,6 +166,22 @@ for (const impl of impls) {
       expect(row!.buckets.some(b => b.metric === 'tpot_us')).toBe(false);
     });
 
+    it('rejects invalid TTFT values without retaining a partial summary', async () => {
+      const repo = await impl.open();
+      for (const ttftMs of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+        await expect(repo.recordSample(sample({ ttftMs }))).rejects.toThrow('expected finite non-negative number');
+      }
+      expect(await repo.listAll()).toEqual([]);
+    });
+
+    it('rejects invalid TPOT values without retaining the valid TTFT half', async () => {
+      const repo = await impl.open();
+      for (const tpotUs of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+        await expect(repo.recordSample(sample({ tpotUs }))).rejects.toThrow('expected finite non-negative number');
+      }
+      expect(await repo.listAll()).toEqual([]);
+    });
+
     it('recordNeutral bumps requests and neutral', async () => {
       const repo = await impl.open();
       await repo.recordNeutral(errSample({ operation: 'embeddings' }));
