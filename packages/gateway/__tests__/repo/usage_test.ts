@@ -4,6 +4,7 @@ import { InMemoryRepo } from './memory.ts';
 import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename } from './test-sqlite.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { Repo, UsageRecord } from '../../src/repo/types.ts';
+import { encodeOpaqueSqlText } from '../../src/repo/opaque-sql-text.ts';
 import { tokenCountsFromUsage, tokenRatesFromUsage, tokenUsageMetrics } from '../../src/repo/usage-metrics.ts';
 import type { PriceVector } from '@floway-dev/protocols/common';
 import { assertEquals, assertRejects, assertThrows } from '@floway-dev/test-utils';
@@ -236,10 +237,10 @@ for (const backend of backends) {
 test('SQL usage hydration rejects vocabulary unknown to the current application', async () => {
   const db = await createSqliteTestDb();
   await db.prepare(`INSERT INTO usage (
-    key_id, model, upstream, model_key, hour, pricing_selector,
+    key_id, model_json, upstream, model_key_json, hour, pricing_selector,
     metric, quantity, unit_price
   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
-    'key-1', 'model', null, 'model', '2026-07-12T00', '{}',
+    'key-1', encodeOpaqueSqlText('model'), null, encodeOpaqueSqlText('model'), '2026-07-12T00', '{}',
     'reasoning', '1', null,
   ).run();
   await assertRejects(() => new SqlRepo(db).usage.listAll(), TypeError, 'usage.metric is invalid: "reasoning"');

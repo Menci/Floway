@@ -1,4 +1,5 @@
 import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
+import { decodeOpaqueSqlText, encodeOpaqueSqlText } from './opaque-sql-text.ts';
 import { SqlExpirationSweepsRepo } from './expiration-sweeps-sql.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { decodeAliasTargets, decodeAnnouncedMetadata, encodeAliasTargets, encodeAnnouncedMetadata } from './model-alias-codecs.ts';
@@ -420,23 +421,39 @@ class SqlSessionsRepo implements SessionsRepo {
   }
 }
 
+type StoredUsageIdentity = readonly [
+  keyId: string,
+  modelJson: string,
+  upstream: string | null,
+  modelKeyJson: string,
+  hour: string,
+  pricingSelector: string,
+];
+
+const storedUsageIdentity = (record: UsageRecord): StoredUsageIdentity => [
+  record.keyId,
+  encodeOpaqueSqlText(record.model),
+  record.upstream ?? null,
+  encodeOpaqueSqlText(record.modelKey),
+  record.hour,
+  canonicalPricingSelectorKey(record.pricingSelector),
+];
+
 class SqlUsageRepo implements UsageRepo {
   constructor(private db: SqlDatabase) {}
 
   private async addMetric(
-    record: UsageRecord,
-    upstream: string | null,
-    selector: string,
+    storedIdentity: StoredUsageIdentity,
     row: ReturnType<typeof usageMetricRows>[number],
   ): Promise<void> {
-    const identity = [record.keyId, record.model, upstream, record.modelKey, record.hour, selector, row.metric];
+    const identity = [...storedIdentity, row.metric];
     for (let attempt = 0; attempt < 100; attempt++) {
       const current = await this.db.prepare(
-        "SELECT quantity FROM usage WHERE key_id = ? AND model = ? AND COALESCE(upstream, '') = COALESCE(?, '') AND model_key = ? AND hour = ? AND pricing_selector = ? AND metric = ?",
+        "SELECT quantity FROM usage WHERE key_id = ? AND model_json = ? AND COALESCE(upstream, '') = COALESCE(?, '') AND model_key_json = ? AND hour = ? AND pricing_selector = ? AND metric = ?",
       ).bind(...identity).first<{ quantity: string }>();
       if (!current) {
         const inserted = await this.db.prepare(
-          'INSERT OR IGNORE INTO usage (key_id, model, upstream, model_key, hour, pricing_selector, metric, quantity, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          'INSERT OR IGNORE INTO usage (key_id, model_json, upstream, model_key_json, hour, pricing_selector, metric, quantity, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
         ).bind(...identity, row.quantity, row.unitPrice).run();
         if (inserted.meta.changes === undefined) throw new Error('SQL runtime did not report inserted usage row count');
         if (inserted.meta.changes > 0) return;
@@ -445,7 +462,7 @@ class SqlUsageRepo implements UsageRepo {
 
       const quantity = addDecimalStrings(current.quantity, row.quantity);
       const updated = await this.db.prepare(
-        "UPDATE usage SET quantity = ? WHERE key_id = ? AND model = ? AND COALESCE(upstream, '') = COALESCE(?, '') AND model_key = ? AND hour = ? AND pricing_selector = ? AND metric = ? AND quantity = ?",
+        "UPDATE usage SET quantity = ? WHERE key_id = ? AND model_json = ? AND COALESCE(upstream, '') = COALESCE(?, '') AND model_key_json = ? AND hour = ? AND pricing_selector = ? AND metric = ? AND quantity = ?",
       ).bind(quantity, ...identity, current.quantity).run();
       if (updated.meta.changes === undefined) throw new Error('SQL runtime did not report updated usage row count');
       if (updated.meta.changes > 0) return;
@@ -454,47 +471,45 @@ class SqlUsageRepo implements UsageRepo {
   }
 
   async record(record: UsageRecord): Promise<void> {
-    const upstream = record.upstream ?? null;
-    const selector = canonicalPricingSelectorKey(record.pricingSelector);
+    const identity = storedUsageIdentity(record);
     await this.db.prepare(
-      `INSERT INTO usage_requests (key_id, model, upstream, model_key, hour, pricing_selector, requests) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO usage_requests (key_id, model_json, upstream, model_key_json, hour, pricing_selector, requests) VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT DO UPDATE SET requests = requests + excluded.requests`,
-    ).bind(record.keyId, record.model, upstream, record.modelKey, record.hour, selector, record.requests).run();
-    await Promise.all(usageMetricRows(record).map(row => this.addMetric(record, upstream, selector, row)));
+    ).bind(...identity, record.requests).run();
+    await Promise.all(usageMetricRows(record).map(row => this.addMetric(identity, row)));
   }
 
   async query(opts: { keyId?: string; start: string; end: string }): Promise<UsageRecord[]> {
     const where = opts.keyId ? 'key_id = ? AND hour >= ? AND hour < ?' : 'hour >= ? AND hour < ?';
     const binds = opts.keyId ? [opts.keyId, opts.start, opts.end] : [opts.start, opts.end];
     const [{ results: metrics }, { results: requests }] = await Promise.all([
-      this.db.prepare(`SELECT key_id, model, upstream, model_key, hour, pricing_selector, metric, quantity, unit_price FROM usage WHERE ${where} ORDER BY rowid`).bind(...binds).all<UsageMetricRow>(),
-      this.db.prepare(`SELECT key_id, model, upstream, model_key, hour, pricing_selector, requests FROM usage_requests WHERE ${where}`).bind(...binds).all<UsageRequestRow>(),
+      this.db.prepare(`SELECT key_id, model_json, upstream, model_key_json, hour, pricing_selector, metric, quantity, unit_price FROM usage WHERE ${where} ORDER BY rowid`).bind(...binds).all<UsageMetricRow>(),
+      this.db.prepare(`SELECT key_id, model_json, upstream, model_key_json, hour, pricing_selector, requests FROM usage_requests WHERE ${where}`).bind(...binds).all<UsageRequestRow>(),
     ]);
     return assembleUsageRecords(metrics, requests);
   }
 
   async listAll(): Promise<UsageRecord[]> {
     const [{ results: metrics }, { results: requests }] = await Promise.all([
-      this.db.prepare('SELECT key_id, model, upstream, model_key, hour, pricing_selector, metric, quantity, unit_price FROM usage ORDER BY rowid').all<UsageMetricRow>(),
-      this.db.prepare('SELECT key_id, model, upstream, model_key, hour, pricing_selector, requests FROM usage_requests').all<UsageRequestRow>(),
+      this.db.prepare('SELECT key_id, model_json, upstream, model_key_json, hour, pricing_selector, metric, quantity, unit_price FROM usage ORDER BY rowid').all<UsageMetricRow>(),
+      this.db.prepare('SELECT key_id, model_json, upstream, model_key_json, hour, pricing_selector, requests FROM usage_requests').all<UsageRequestRow>(),
     ]);
     return assembleUsageRecords(metrics, requests);
   }
 
   async set(record: UsageRecord): Promise<void> {
-    const upstream = record.upstream ?? null;
-    const selector = canonicalPricingSelectorKey(record.pricingSelector);
+    const identity = storedUsageIdentity(record);
     const statements: SqlPreparedStatement[] = [
-      this.db.prepare("DELETE FROM usage WHERE key_id = ? AND model = ? AND COALESCE(upstream, '') = COALESCE(?, '') AND model_key = ? AND hour = ? AND pricing_selector = ?")
-        .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, selector),
+      this.db.prepare("DELETE FROM usage WHERE key_id = ? AND model_json = ? AND COALESCE(upstream, '') = COALESCE(?, '') AND model_key_json = ? AND hour = ? AND pricing_selector = ?")
+        .bind(...identity),
       ...usageMetricRows(record).map(row => this.db.prepare(
-        'INSERT INTO usage (key_id, model, upstream, model_key, hour, pricing_selector, metric, quantity, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      ).bind(record.keyId, record.model, upstream, record.modelKey, record.hour, selector, row.metric, row.quantity, row.unitPrice)),
+        'INSERT INTO usage (key_id, model_json, upstream, model_key_json, hour, pricing_selector, metric, quantity, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      ).bind(...identity, row.metric, row.quantity, row.unitPrice)),
     ];
     statements.push(this.db.prepare(
-      `INSERT INTO usage_requests (key_id, model, upstream, model_key, hour, pricing_selector, requests) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO usage_requests (key_id, model_json, upstream, model_key_json, hour, pricing_selector, requests) VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT DO UPDATE SET requests = excluded.requests`,
-    ).bind(record.keyId, record.model, upstream, record.modelKey, record.hour, selector, record.requests));
+    ).bind(...identity, record.requests));
     await runStatements(this.db, statements);
   }
 
@@ -504,25 +519,40 @@ class SqlUsageRepo implements UsageRepo {
 }
 
 interface UsageMetricRow {
-  key_id: string; model: string; upstream: string | null; model_key: string; hour: string;
+  key_id: string; model_json: string; upstream: string | null; model_key_json: string; hour: string;
   pricing_selector: string; metric: string; quantity: string; unit_price: string | null;
 }
 interface UsageRequestRow {
-  key_id: string; model: string; upstream: string | null; model_key: string; hour: string;
+  key_id: string; model_json: string; upstream: string | null; model_key_json: string; hour: string;
   pricing_selector: string; requests: number;
 }
 
-type UsageIdentityRow = Pick<UsageMetricRow, 'key_id' | 'model' | 'upstream' | 'model_key' | 'hour' | 'pricing_selector'>;
-const usageBucketKey = (row: UsageIdentityRow): string =>
-  usageBucketIdentityKey(row.key_id, row.model, row.upstream, row.model_key, row.hour, row.pricing_selector);
+type UsageIdentityRow = Pick<UsageMetricRow, 'key_id' | 'model_json' | 'upstream' | 'model_key_json' | 'hour' | 'pricing_selector'>;
+
+const decodedUsageIdentity = (row: UsageIdentityRow) => ({
+  keyId: row.key_id,
+  model: decodeOpaqueSqlText(row.model_json, `usage.model_json for key_id=${row.key_id}, hour=${row.hour}`),
+  upstream: row.upstream,
+  modelKey: decodeOpaqueSqlText(row.model_key_json, `usage.model_key_json for key_id=${row.key_id}, hour=${row.hour}`),
+  hour: row.hour,
+  pricingSelector: parsePricingSelectorKey(row.pricing_selector),
+});
 
 const assembleUsageRecords = (metrics: readonly UsageMetricRow[], requests: readonly UsageRequestRow[]): UsageRecord[] => {
   const byBucket = new Map<string, UsageRecord>();
   const ensureRecord = (row: UsageIdentityRow): UsageRecord => {
-    const key = usageBucketKey(row);
+    const identity = decodedUsageIdentity(row);
+    const key = usageBucketIdentityKey(
+      identity.keyId,
+      identity.model,
+      identity.upstream,
+      identity.modelKey,
+      identity.hour,
+      row.pricing_selector,
+    );
     let record = byBucket.get(key);
     if (!record) {
-      record = { keyId: row.key_id, model: row.model, upstream: row.upstream, modelKey: row.model_key, hour: row.hour, pricingSelector: parsePricingSelectorKey(row.pricing_selector), requests: 0, metrics: [] };
+      record = { ...identity, requests: 0, metrics: [] };
       byBucket.set(key, record);
     }
     return record;
@@ -618,7 +648,7 @@ class SqlWebSearchUsageRepo implements WebSearchUsageRepo {
 type PerformanceDimensionRow = {
   hour: string;
   key_id: string;
-  model: string;
+  model_json: string;
   upstream: string;
   operation: string;
   runtime_location: string;
@@ -627,23 +657,26 @@ type PerformanceDimensionRow = {
 const performanceDimensionsFromRow = (row: PerformanceDimensionRow): PerformanceDimensions => ({
   hour: row.hour,
   keyId: row.key_id,
-  model: row.model,
+  model: decodeOpaqueSqlText(
+    row.model_json,
+    `performance model_json for key_id=${row.key_id}, hour=${row.hour}`,
+  ),
   upstream: row.upstream,
   operation: parsePerformanceOperation(row.operation),
   runtimeLocation: row.runtime_location,
 });
 
 const performanceRecordKey = (dims: PerformanceDimensions): string =>
-  `${dims.hour}\0${dims.keyId}\0${dims.model}\0${dims.upstream}\0${dims.operation}\0${dims.runtimeLocation}`;
+  JSON.stringify([dims.hour, dims.keyId, dims.model, dims.upstream, dims.operation, dims.runtimeLocation]);
 
 const performanceDimensionBinds = (dims: PerformanceDimensions): SqlBindValue[] =>
-  [dims.hour, dims.keyId, dims.model, dims.upstream, dims.operation, dims.runtimeLocation];
+  [dims.hour, dims.keyId, encodeOpaqueSqlText(dims.model), dims.upstream, dims.operation, dims.runtimeLocation];
 
 const PERFORMANCE_SUMMARY_COUNT_COLUMNS = ['requests', 'ttft_samples_ok', 'errors_with_output', 'errors_no_output', 'neutral', 'tpot_samples', 'ttft_ms_sum', 'tpot_us_sum'] as const;
 type PerformanceSummaryCountColumn = typeof PERFORMANCE_SUMMARY_COUNT_COLUMNS[number];
 
 const buildPerformanceSummarySql = (mode: 'add' | 'set'): string => {
-  const dimensionColumns = ['hour', 'key_id', 'model', 'upstream', 'operation', 'runtime_location'] as const;
+  const dimensionColumns = ['hour', 'key_id', 'model_json', 'upstream', 'operation', 'runtime_location'] as const;
   const allColumns = [...dimensionColumns, ...PERFORMANCE_SUMMARY_COUNT_COLUMNS];
   const placeholders = allColumns.map(() => '?').join(', ');
   const conflictKey = dimensionColumns.join(', ');
@@ -705,11 +738,11 @@ class SqlPerformanceRepo implements PerformanceRepo {
     }, 'set');
 
     const deleteStmt = this.db.prepare(
-      'DELETE FROM performance_buckets WHERE hour = ? AND key_id = ? AND model = ? AND upstream = ? AND operation = ? AND runtime_location = ?',
+      'DELETE FROM performance_buckets WHERE hour = ? AND key_id = ? AND model_json = ? AND upstream = ? AND operation = ? AND runtime_location = ?',
     ).bind(...performanceDimensionBinds(record));
 
     const bucketStmts = record.buckets.map(bucket => this.db.prepare(
-      `INSERT INTO performance_buckets (hour, key_id, model, upstream, operation, runtime_location, metric, lower, upper, count)
+      `INSERT INTO performance_buckets (hour, key_id, model_json, upstream, operation, runtime_location, metric, lower, upper, count)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(...performanceDimensionBinds(record), bucket.metric, bucket.lower, bucket.upper, bucket.count));
 
@@ -745,9 +778,9 @@ class SqlPerformanceRepo implements PerformanceRepo {
 
   private buildBucketStmt(dims: PerformanceDimensions, metric: PerformanceMetric, edges: { lower: number; upper: number | null }): SqlPreparedStatement {
     return this.db.prepare(
-      `INSERT INTO performance_buckets (hour, key_id, model, upstream, operation, runtime_location, metric, lower, upper, count)
+      `INSERT INTO performance_buckets (hour, key_id, model_json, upstream, operation, runtime_location, metric, lower, upper, count)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-       ON CONFLICT (hour, key_id, model, upstream, operation, runtime_location, metric, lower) DO UPDATE SET
+       ON CONFLICT (hour, key_id, model_json, upstream, operation, runtime_location, metric, lower) DO UPDATE SET
          count = count + 1`,
     ).bind(...performanceDimensionBinds(dims), metric, edges.lower, edges.upper);
   }
@@ -770,7 +803,7 @@ class SqlPerformanceRepo implements PerformanceRepo {
     const whereClause = clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '';
 
     const { results: summaryRows } = await this.db.prepare(
-      `SELECT hour, key_id, model, upstream, operation, runtime_location, requests, ttft_samples_ok, errors_with_output, errors_no_output, neutral, tpot_samples, ttft_ms_sum, tpot_us_sum
+      `SELECT hour, key_id, model_json, upstream, operation, runtime_location, requests, ttft_samples_ok, errors_with_output, errors_no_output, neutral, tpot_samples, ttft_ms_sum, tpot_us_sum
        FROM performance_summary${whereClause} ORDER BY hour`,
     ).bind(...binds).all<PerformanceDimensionRow & { requests: number; ttft_samples_ok: number; errors_with_output: number; errors_no_output: number; neutral: number; tpot_samples: number; ttft_ms_sum: number; tpot_us_sum: number }>();
 
@@ -792,7 +825,7 @@ class SqlPerformanceRepo implements PerformanceRepo {
     }
 
     const { results: bucketRows } = await this.db.prepare(
-      `SELECT hour, key_id, model, upstream, operation, runtime_location, metric, lower, upper, count
+      `SELECT hour, key_id, model_json, upstream, operation, runtime_location, metric, lower, upper, count
        FROM performance_buckets${whereClause} ORDER BY hour, metric, lower`,
     ).bind(...binds).all<PerformanceDimensionRow & { metric: PerformanceMetric; lower: number; upper: number | null; count: number }>();
     for (const row of bucketRows) {
@@ -827,8 +860,8 @@ class SqlWebSearchConfigRepo implements WebSearchConfigRepo {
 
   async get(): Promise<unknown | null> {
     const row = await this.db
-      .prepare('SELECT provider, tavily_api_key, microsoft_web_iq_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model FROM search_config WHERE id = 1')
-      .first<{ provider: string; tavily_api_key: string; microsoft_web_iq_api_key: string; jina_api_key: string; passthrough_openai_search: number; alpha_search_upstream_id: string; alpha_search_model: string }>();
+      .prepare('SELECT provider, tavily_api_key, microsoft_web_iq_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model_json FROM search_config WHERE id = 1')
+      .first<{ provider: string; tavily_api_key: string; microsoft_web_iq_api_key: string; jina_api_key: string; passthrough_openai_search: number; alpha_search_upstream_id: string; alpha_search_model_json: string }>();
     if (!row) throw new Error('search_config singleton row missing');
     return {
       provider: row.provider,
@@ -838,7 +871,7 @@ class SqlWebSearchConfigRepo implements WebSearchConfigRepo {
       passthroughOpenAiSearch: {
         enabled: row.passthrough_openai_search === 1,
         upstreamId: row.alpha_search_upstream_id,
-        model: row.alpha_search_model,
+        model: decodeOpaqueSqlText(row.alpha_search_model_json, 'search_config.alpha_search_model_json'),
       },
     };
   }
@@ -847,7 +880,7 @@ class SqlWebSearchConfigRepo implements WebSearchConfigRepo {
     const { provider, tavily, microsoftWebIq, jina, passthroughOpenAiSearch } = config;
     await this.db
       .prepare(
-        `INSERT INTO search_config (id, provider, tavily_api_key, microsoft_web_iq_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model, updated_at)
+        `INSERT INTO search_config (id, provider, tavily_api_key, microsoft_web_iq_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model_json, updated_at)
          VALUES (1, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
          ON CONFLICT (id) DO UPDATE SET
            provider = excluded.provider,
@@ -856,10 +889,18 @@ class SqlWebSearchConfigRepo implements WebSearchConfigRepo {
            jina_api_key = excluded.jina_api_key,
            passthrough_openai_search = excluded.passthrough_openai_search,
            alpha_search_upstream_id = excluded.alpha_search_upstream_id,
-           alpha_search_model = excluded.alpha_search_model,
+           alpha_search_model_json = excluded.alpha_search_model_json,
            updated_at = excluded.updated_at`,
       )
-      .bind(provider, tavily.apiKey, microsoftWebIq.apiKey, jina.apiKey, passthroughOpenAiSearch.enabled ? 1 : 0, passthroughOpenAiSearch.upstreamId, passthroughOpenAiSearch.model)
+      .bind(
+        provider,
+        tavily.apiKey,
+        microsoftWebIq.apiKey,
+        jina.apiKey,
+        passthroughOpenAiSearch.enabled ? 1 : 0,
+        passthroughOpenAiSearch.upstreamId,
+        encodeOpaqueSqlText(passthroughOpenAiSearch.model),
+      )
       .run();
   }
 }

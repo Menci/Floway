@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
 import { createSqliteTestDb } from './test-sqlite.ts';
+import { encodeOpaqueSqlText } from '../../src/repo/opaque-sql-text.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type {
   PerformanceDimensions,
@@ -113,6 +114,24 @@ for (const impl of impls) {
       const rows = await repo.listAll();
       expect(rows).toHaveLength(2);
       expect(new Set(rows.map(r => r.upstream))).toEqual(new Set(['anthropic-1', 'anthropic-2']));
+    });
+
+    it('round-trips an opaque model id containing embedded NUL', async () => {
+      const repo = await impl.open();
+      await repo.recordNeutral(errSample({ model: 'opaque\0model' }));
+
+      expect(await repo.listAll()).toEqual([{
+        ...errSample({ model: 'opaque\0model' }),
+        requests: 1,
+        ttftSamplesOk: 0,
+        errorsWithOutput: 0,
+        errorsNoOutput: 0,
+        neutral: 1,
+        tpotSamples: 0,
+        ttftMsSum: 0,
+        tpotUsSum: 0,
+        buckets: [],
+      }]);
     });
 
     it('query filters by keyId and time range', async () => {
@@ -254,9 +273,9 @@ describe('SqlPerformanceRepo operation vocabulary', () => {
   it('rejects an unknown stored operation at hydration', async () => {
     const db = await createSqliteTestDb();
     await db.prepare(
-      `INSERT INTO performance_summary (hour, key_id, model, upstream, operation, runtime_location)
+      `INSERT INTO performance_summary (hour, key_id, model_json, upstream, operation, runtime_location)
        VALUES (?, ?, ?, ?, ?, ?)`,
-    ).bind('2026-06-30T09', 'key_a', 'model', 'upstream', 'future-operation', 'hkg').run();
+    ).bind('2026-06-30T09', 'key_a', encodeOpaqueSqlText('model'), 'upstream', 'future-operation', 'hkg').run();
 
     const repo = new SqlRepo(db).performance;
     await expect(repo.listAll()).rejects.toThrow('Invalid performance operation: "future-operation"');
