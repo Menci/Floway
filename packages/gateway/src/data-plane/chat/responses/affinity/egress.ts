@@ -46,7 +46,11 @@ const wrapNaturalResponsesAffinity = async function* (
   const wrapArguments = async (outputIndex: number, argumentsJson: string): Promise<string> => {
     const item = streamedInterAgentCalls.get(outputIndex);
     if (item === undefined) return argumentsJson;
-    const wrappedItem = await wrapItem({ ...item, arguments: argumentsJson }, outputIndex);
+    const completeItem = { ...item, arguments: argumentsJson };
+    if (!responsesOpaqueLocations(completeItem).some(location => location.key === 'arguments.message')) {
+      throw new TypeError('Encrypted collaboration call has no string message argument');
+    }
+    const wrappedItem = await wrapItem(completeItem, outputIndex);
     if (wrappedItem.type !== 'function_call') throw new TypeError('Wrapped inter-agent call changed item type');
     return wrappedItem.arguments;
   };
@@ -156,8 +160,8 @@ const wrapNaturalResponsesAffinity = async function* (
         || event?.type === 'response.failed'
       ) {
         for (const [outputIndex, call] of streamedInterAgentCalls) {
-          const item = event.response.output.find(output => output.type === 'function_call' && output.id === call.id);
-          if (item?.type !== 'function_call') continue;
+          const item = event.response.output[outputIndex];
+          if (item?.type !== 'function_call' || item.call_id !== call.call_id) continue;
           pending.argumentsByIndex.set(outputIndex, await wrapArguments(outputIndex, item.arguments));
           pending.blocked.delete(outputIndex);
         }

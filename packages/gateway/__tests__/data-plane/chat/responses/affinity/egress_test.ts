@@ -152,6 +152,35 @@ describe('Responses affinity egress', () => {
     expect(JSON.parse(delta.delta).message).toBe('wrapped:ciphertext');
   });
 
+  test('resolves concurrent id-less calls from terminal output indexes', async () => {
+    const call = (callId: string, message: string) => ({
+      type: 'function_call' as const,
+      call_id: callId,
+      namespace: 'collaboration',
+      name: 'send_message',
+      arguments: JSON.stringify({ target: '/root/worker', message }),
+      status: 'completed' as const,
+    });
+    const first = call('call_1', 'cipher-one');
+    const second = call('call_2', 'cipher-two');
+    const output: ResponsesStreamEvent[] = [];
+    for await (const frame of wrapResponsesAffinityEgress(frames([
+      eventFrame({ type: 'response.output_item.added', output_index: 0, item: { ...first, arguments: '', status: 'in_progress' } }),
+      eventFrame({ type: 'response.function_call_arguments.delta', item_id: 'fc_stream_1', output_index: 0, delta: first.arguments }),
+      eventFrame({ type: 'response.output_item.added', output_index: 1, item: { ...second, arguments: '', status: 'in_progress' } }),
+      eventFrame({ type: 'response.function_call_arguments.delta', item_id: 'fc_stream_2', output_index: 1, delta: second.arguments }),
+      eventFrame({ type: 'response.incomplete', response: response([first, second], 'incomplete') }),
+    ]), { codec: immediateCodec, affinity })) {
+      if (frame.type === 'event') output.push(frame.event);
+    }
+
+    const messages = output
+      .filter((event): event is Extract<ResponsesStreamEvent, { type: 'response.function_call_arguments.delta' }> =>
+        event.type === 'response.function_call_arguments.delta')
+      .map(event => JSON.parse(event.delta).message);
+    expect(messages).toEqual(['wrapped:cipher-one', 'wrapped:cipher-two']);
+  });
+
   test.each(['error', 'response.failed', 'source EOF'] as const)(
     'never releases raw encrypted argument deltas on %s',
     async terminal => {
@@ -224,6 +253,42 @@ describe('Responses affinity egress', () => {
       await expect(async () => {
         for await (const _frame of output) { /* consume */ }
       }).rejects.toThrow('Encrypted collaboration call has no string message argument');
+    },
+  );
+
+  test.each(['arguments done', 'item done', 'incomplete snapshot'] as const)(
+    'rejects malformed authoritative %s before releasing buffered deltas',
+    async authority => {
+      const argumentsJson = '{"target":"raw-marker"}';
+      const item = {
+        type: 'function_call' as const,
+        id: 'fc_invalid',
+        call_id: 'call_invalid',
+        namespace: 'collaboration',
+        name: 'followup_task',
+        arguments: argumentsJson,
+        status: 'completed' as const,
+      };
+      const source: ProtocolFrame<ResponsesStreamEvent>[] = [
+        eventFrame({ type: 'response.output_item.added', output_index: 0, item: { ...item, arguments: '', status: 'in_progress' } }),
+        eventFrame({ type: 'response.function_call_arguments.delta', item_id: item.id, output_index: 0, delta: argumentsJson }),
+      ];
+      if (authority === 'arguments done') {
+        source.push(eventFrame({ type: 'response.function_call_arguments.done', item_id: item.id, output_index: 0, arguments: argumentsJson }));
+      } else if (authority === 'item done') {
+        source.push(eventFrame({ type: 'response.output_item.done', output_index: 0, item }));
+      } else {
+        source.push(eventFrame({ type: 'response.incomplete', response: response([item], 'incomplete') }));
+      }
+      const seen: ResponsesStreamEvent[] = [];
+      const output = wrapResponsesAffinityEgress(frames(source), { codec: immediateCodec, affinity });
+
+      await expect(async () => {
+        for await (const frame of output) {
+          if (frame.type === 'event') seen.push(frame.event);
+        }
+      }).rejects.toThrow('Encrypted collaboration call has no string message argument');
+      expect(JSON.stringify(seen)).not.toContain('raw-marker');
     },
   );
 
