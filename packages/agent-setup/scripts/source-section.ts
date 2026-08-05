@@ -19,7 +19,7 @@ export const decodeUtf8Source = (bytes: Uint8Array, file: string): string => {
 const uniqueBoundaryOffset = (source: string, boundary: string, name: string): number => {
   const index = source.indexOf(boundary);
   if (index === -1) throw new Error(`${name} does not contain boundary ${JSON.stringify(boundary)}`);
-  if (source.indexOf(boundary, index + boundary.length) !== -1) {
+  if (source.includes(boundary, index + boundary.length)) {
     throw new Error(`${name} contains boundary ${JSON.stringify(boundary)} more than once`);
   }
   return index;
