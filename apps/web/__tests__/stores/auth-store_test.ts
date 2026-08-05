@@ -74,4 +74,20 @@ describe('auth store request ownership', () => {
 
     expect(getSessionToken()).toBe('new-token');
   });
+
+  it('does not let a stale logout response clear a newer login', async () => {
+    let resolveLogout!: (response: Response) => void;
+    mocks.logout.mockReturnValue(new Promise(resolve => {
+      resolveLogout = resolve;
+    }));
+    useAuthStore.getState().primeFromLogin({ token: 'old-token', user: oldUser });
+    const pending = useAuthStore.getState().logout();
+
+    useAuthStore.getState().primeFromLogin({ token: 'new-token', user: newUser });
+    resolveLogout(new Response(null, { status: 204 }));
+    await pending;
+
+    expect(getSessionToken()).toBe('new-token');
+    expect(useAuthStore.getState().session).toEqual({ token: 'new-token', user: newUser });
+  });
 });
