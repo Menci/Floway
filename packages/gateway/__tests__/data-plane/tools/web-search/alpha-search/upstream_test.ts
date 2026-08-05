@@ -1,6 +1,6 @@
 import { test, vi } from 'vitest';
 
-import type { InboundHeaderMatcher, ModelCandidate, Provider } from '@floway-dev/provider';
+import type { InboundHeaderMatcher, ModelCandidate } from '@floway-dev/provider';
 import { assertEquals, assertExists, stubModelCandidate, stubProvider } from '@floway-dev/test-utils';
 
 let resolvedCandidate: ModelCandidate | undefined;
@@ -18,13 +18,14 @@ vi.mock('../../../../../src/data-plane/providers/resolution.ts', async importOri
 
 const { resolveAlphaSearchDispatcher } = await import('../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts');
 
-const dispatcherFor = async (kind: 'codex' | 'custom', additionalInboundHeaderAllowlist: readonly InboundHeaderMatcher[] = []) => {
+const dispatcherFor = async (kind: 'codex' | 'custom', inboundHeaderAllowlist: readonly InboundHeaderMatcher[] = []) => {
   let observedHeaders: Headers | undefined;
   const base = stubModelCandidate();
-  if (base.provider.kind !== 'custom') throw new Error('stubModelCandidate default must be Custom');
-  const common = {
+  const provider = {
     ...base.provider,
     upstreamId: 'search-upstream',
+    kind,
+    inboundHeaderAllowlist,
     instance: stubProvider({
       callAlphaSearch: async (_model, _body, _signal, opts) => {
         observedHeaders = opts.headers;
@@ -32,12 +33,6 @@ const dispatcherFor = async (kind: 'codex' | 'custom', additionalInboundHeaderAl
       },
     }),
   };
-  const provider: Provider = kind === 'custom'
-    ? { ...common, kind, additionalInboundHeaderAllowlist }
-    : (() => {
-        const { additionalInboundHeaderAllowlist: _customAllowlist, ...standard } = common;
-        return { ...standard, kind };
-      })();
   resolvedCandidate = stubModelCandidate({ provider });
   const dispatcher = await resolveAlphaSearchDispatcher({
     config: { upstreamId: provider.upstreamId, model: 'search-model' },
@@ -49,7 +44,7 @@ const dispatcherFor = async (kind: 'codex' | 'custom', additionalInboundHeaderAl
 };
 
 test('Codex Alpha Search receives only its declared turn metadata', async () => {
-  const { dispatcher, observedHeaders } = await dispatcherFor('codex');
+  const { dispatcher, observedHeaders } = await dispatcherFor('codex', ['x-codex-turn-metadata']);
   await dispatcher({}, undefined, new Headers({
     authorization: 'Bearer secret',
     'x-codex-turn-metadata': '{"turn_id":"turn-1"}',

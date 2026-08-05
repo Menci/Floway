@@ -234,6 +234,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     upstreamId: record.id,
     kind: 'custom',
     name: record.name,
+    inboundHeaderAllowlist: config.ingressHeadersRules.map(rule => rule.key),
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,
     modelsCache: record.modelsCache,
