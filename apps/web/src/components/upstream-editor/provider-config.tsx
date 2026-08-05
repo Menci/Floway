@@ -348,7 +348,7 @@ function CopilotConfig({ record, onPatch }: {
         freeform
         name={field.name}
         onBlur={field.onBlur}
-        onChange={(_, data) => field.onChange(data.value)}
+        onChange={event => field.onChange(event.target.value)}
         onOptionSelect={(_, data) => field.onChange(data.optionValue)}
         readOnly={busy || flow !== null || Boolean(config.user.login)}
         ref={field.ref}
