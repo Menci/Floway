@@ -100,6 +100,20 @@ test('SQL upstream repo preserves opaque provider data while restoring only the 
   assertEquals(ownValue(ownValue(ownValue(model?.providerData, 'future'), '__proto__'), 'marker'), 'provider');
 });
 
+test('SQL upstream repo hydrates deeply nested opaque provider data without recursively copying it', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db).upstreams;
+  await repo.save(baseRecord());
+  const depth = 20_000;
+  const providerData = '{"next":'.repeat(depth) + 'null' + '}'.repeat(depth);
+  const cache = `{"revision":${MODEL_CATALOG_REVISION},"fetchedAt":1700000000000,"models":[{"id":"deep-model","limits":{},"kind":"chat","endpoints":{"responses":{}},"providerData":${providerData},"enabledFlags":[]}],"lastError":null}`;
+  await db.prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ?').bind(cache, 'up_test').run();
+
+  const model = (await repo.getById('up_test'))?.modelsCache?.models[0];
+  assertEquals(model?.id, 'deep-model');
+  assertEquals(ownValue(model?.providerData, 'next') !== undefined, true);
+});
+
 test('SQL upstream repo saveModelsCacheError annotates a cached catalog and saveModelsCache clears it', async () => {
   const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
   await repo.save(baseRecord());
