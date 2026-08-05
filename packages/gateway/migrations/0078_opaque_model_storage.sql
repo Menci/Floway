@@ -35,6 +35,7 @@ ALTER TABLE usage_with_model_json RENAME TO usage;
 CREATE UNIQUE INDEX idx_usage_metric_identity
   ON usage (key_id, model_json, COALESCE(upstream, ''), model_key_json, hour, pricing_selector, metric);
 CREATE INDEX idx_usage_metric_hour ON usage (hour);
+CREATE INDEX idx_usage_metric_key_hour ON usage (key_id, hour);
 
 CREATE TABLE usage_requests_with_model_json (
   key_id TEXT NOT NULL,
@@ -58,6 +59,7 @@ ALTER TABLE usage_requests_with_model_json RENAME TO usage_requests;
 CREATE UNIQUE INDEX idx_usage_requests_identity
   ON usage_requests (key_id, model_json, COALESCE(upstream, ''), model_key_json, hour, pricing_selector);
 CREATE INDEX idx_usage_requests_hour ON usage_requests (hour);
+CREATE INDEX idx_usage_requests_key_hour ON usage_requests (key_id, hour);
 
 CREATE TABLE performance_summary_with_model_json (
   hour               TEXT    NOT NULL,
@@ -91,6 +93,7 @@ FROM performance_summary;
 DROP TABLE performance_summary;
 ALTER TABLE performance_summary_with_model_json RENAME TO performance_summary;
 CREATE INDEX idx_performance_summary_hour ON performance_summary (hour);
+CREATE INDEX idx_performance_summary_key_hour ON performance_summary (key_id, hour);
 
 CREATE TABLE performance_buckets_with_model_json (
   hour             TEXT    NOT NULL,
@@ -118,6 +121,7 @@ FROM performance_buckets;
 DROP TABLE performance_buckets;
 ALTER TABLE performance_buckets_with_model_json RENAME TO performance_buckets;
 CREATE INDEX idx_performance_buckets_hour ON performance_buckets (hour);
+CREATE INDEX idx_performance_buckets_key_hour ON performance_buckets (key_id, hour);
 
 CREATE TABLE search_config_with_model_json (
   id INTEGER PRIMARY KEY CHECK (id = 1),
