@@ -752,6 +752,7 @@ const filterValues = (item: z.ZodString) =>
 // can never resolve and are rejected up front rather than silently returning
 // an empty result.
 const filterUserId = z.string().regex(/^[1-9]\d*$/, 'filter_user_id must be a positive integer');
+const filterUsageUserId = z.string().regex(/^(?:0|[1-9]\d*)$/, 'filter_user_id must be zero or a positive integer');
 
 const telemetryOverviewQuery = {
   start: z.string().optional(),
@@ -769,6 +770,9 @@ const telemetryOverviewQuery = {
 
 export const tokenUsageOverviewQuery = z.object({
   ...telemetryOverviewQuery,
+  // Usage preserves records whose hard-deleted key has no resolvable owner in
+  // the established synthetic user-0 bucket.
+  filter_user_id: filterValues(filterUsageUserId),
   group_by: z.enum(['keyId', 'userId', 'model', 'upstream']).optional(),
 });
 
