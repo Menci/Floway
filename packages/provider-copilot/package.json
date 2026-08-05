@@ -14,7 +14,9 @@
     "@floway-dev/platform": "workspace:*",
     "@floway-dev/protocols": "workspace:*",
     "@floway-dev/provider": "workspace:*",
-    "oauth4webapi": "^3.8.6"
+    "oauth4webapi": "^3.8.6",
+    "p-retry": "^8.0.0",
+    "uuid": "^14.0.1"
   },
   "devDependencies": {
     "@floway-dev/test-utils": "workspace:*"

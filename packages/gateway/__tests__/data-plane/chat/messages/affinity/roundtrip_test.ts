@@ -1,8 +1,9 @@
 import { expect, test } from 'vitest';
 
 import { wrapMessagesAffinityEgress } from '../../../../../src/data-plane/chat/messages/affinity/egress.ts';
-import { prepareMessagesAffinity } from '../../../../../src/data-plane/chat/messages/affinity/ingress.ts';
+import { analyzeMessagesAffinity } from '../../../../../src/data-plane/chat/messages/affinity/ingress.ts';
 import { AffinityCodec, type AffinityTarget } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { reassembleMessagesEvents, type MessagesAssistantContentBlock, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ModelCandidate } from '@floway-dev/provider';
@@ -53,21 +54,21 @@ test('carriers a real codec emits on both Messages slots decode on the next turn
     eventFrame({ type: 'message_stop' }),
   ]), { codec, affinity: targetFor(candidateA) }));
 
-  const prepared = await prepareMessagesAffinity({
+  const prepared = await analyzeMessagesAffinity({
     model: 'model',
     max_tokens: 100,
     messages: [{ role: 'assistant', content }],
   }, codec);
 
-  expect(prepared.narrowingEvidence).toEqual([
-    { target: targetFor(candidateA), mode: 'prefer' },
-    { target: targetFor(candidateA), mode: 'prefer' },
-  ]);
-  expect(prepared.payloadForCandidate(candidateA).messages[0].content).toEqual([
+  const projectionA = acceptedAffinityEvaluation(prepared, candidateA);
+  const projectionB = acceptedAffinityEvaluation(prepared, candidateB);
+  expect(projectionA.degrades).toBe(false);
+  expect(projectionB.degrades).toBe(true);
+  expect(projectionA.materialize().messages[0].content).toEqual([
     { type: 'thinking', thinking: 'visible', signature: 'upstream-signature' },
     { type: 'redacted_thinking', data: 'upstream-redacted' },
   ]);
-  expect(prepared.payloadForCandidate(candidateB).messages[0].content).toEqual([
+  expect(projectionB.materialize().messages[0].content).toEqual([
     { type: 'thinking', thinking: 'visible' },
   ]);
 });
@@ -82,13 +83,16 @@ test('a synthetic carrier issued for a turn without thinking decodes on the next
     eventFrame({ type: 'message_stop' }),
   ]), { codec, affinity: targetFor(candidateA) }));
 
-  const prepared = await prepareMessagesAffinity({
+  const prepared = await analyzeMessagesAffinity({
     model: 'model',
     max_tokens: 100,
     messages: [{ role: 'assistant', content }],
   }, codec);
 
-  expect(prepared.narrowingEvidence).toEqual([{ target: targetFor(candidateA), mode: 'prefer' }]);
-  expect(prepared.payloadForCandidate(candidateA).messages[0].content).toEqual([{ type: 'text', text: 'answer' }]);
-  expect(prepared.payloadForCandidate(candidateB).messages[0].content).toEqual([{ type: 'text', text: 'answer' }]);
+  const projectionA = acceptedAffinityEvaluation(prepared, candidateA);
+  const projectionB = acceptedAffinityEvaluation(prepared, candidateB);
+  expect(projectionA.degrades).toBe(false);
+  expect(projectionB.degrades).toBe(false);
+  expect(projectionA.materialize().messages[0].content).toEqual([{ type: 'text', text: 'answer' }]);
+  expect(projectionB.materialize().messages[0].content).toEqual([{ type: 'text', text: 'answer' }]);
 });

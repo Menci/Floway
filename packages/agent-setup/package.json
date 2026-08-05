@@ -19,6 +19,8 @@
   },
   "devDependencies": {
     "@floway-dev/test-utils": "workspace:*",
-    "@types/node": "^22"
+    "@types/jsesc": "^3.0.3",
+    "@types/node": "^22",
+    "jsesc": "^3.1.0"
   }
 }

@@ -13,10 +13,11 @@ import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import {
   getProviderRepo,
+  headersForMessagesCall,
   streamingProviderCall,
+  type MessagesUpstreamCallOptions,
   type ProviderModel,
   type ProviderStreamResult,
-  type UpstreamCallOptions,
 } from '@floway-dev/provider';
 
 const ANTHROPIC_MESSAGES_ENDPOINT = 'https://api.anthropic.com/v1/messages?beta=true';
@@ -26,51 +27,17 @@ export interface CallClaudeCodeMessagesOptions {
   model: ProviderModel;
   body: Omit<MessagesPayload, 'model'>;
   // `shaped: true` means the inbound request already looks like real CC
-  // traffic (operator's CC client sent through verbatim). The wire header
-  // surface is rebuilt from `opts.call.headers` through a tight
-  // whitelist that matches sub2api's `allowedHeaders`
-  // (gateway_service.go:422-444), preserving the operator's genuine
-  // X-Stainless-* / anthropic-beta / x-claude-code-session-id fingerprint
-  // end-to-end. Only Authorization is swapped for our cached OAuth token.
+  // traffic. The gateway has reduced ordinary headers to the provider module's
+  // allowlist and carries anthropic-beta as typed Messages metadata, so the
+  // wire path preserves the complete genuine fingerprint. It supplies a
+  // default Content-Type when absent and sets cached OAuth auth.
   // `shaped: false` means the gateway's re-mimicry chain rebuilt the
   // payload's system blocks / metadata / model id — replace headers with
   // the pinned CC set so the wire shape matches end-to-end.
   shaped: boolean;
   signal?: AbortSignal;
-  call: UpstreamCallOptions;
+  call: MessagesUpstreamCallOptions;
 }
-
-// Sub2api's `allowedHeaders` allowlist verbatim
-// (gateway_service.go:422-444). On the shaped passthrough path we only
-// forward inbound headers whose lowercased name appears here; everything
-// else (e.g. ad-hoc debug headers, `host`, `cookie`) is dropped before
-// hitting Anthropic. `authorization` is intentionally excluded — we set
-// our own from the cached OAuth token. `content-type` is forwarded when
-// the inbound carries one; the call site defaults it to
-// `application/json` otherwise.
-const SHAPED_PASSTHROUGH_HEADER_ALLOWLIST = new Set<string>([
-  'accept',
-  'x-stainless-retry-count',
-  'x-stainless-timeout',
-  'x-stainless-lang',
-  'x-stainless-package-version',
-  'x-stainless-os',
-  'x-stainless-arch',
-  'x-stainless-runtime',
-  'x-stainless-runtime-version',
-  'x-stainless-helper-method',
-  'anthropic-dangerous-direct-browser-access',
-  'anthropic-version',
-  'x-app',
-  'anthropic-beta',
-  'accept-language',
-  'sec-fetch-mode',
-  'user-agent',
-  'content-type',
-  'accept-encoding',
-  'x-claude-code-session-id',
-  'x-client-request-id',
-]);
 
 const synthetic503 = (message: string): Response =>
   new Response(
@@ -398,15 +365,11 @@ const performUpstreamCall = async (
 ): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
   let headers: Record<string, string>;
   if (opts.shaped) {
-    // Shaped path: forward the operator's inbound CC fingerprint through a
-    // tight whitelist (see SHAPED_PASSTHROUGH_HEADER_ALLOWLIST). `opts.call.headers`
-    // is always present per the UpstreamCallOptions contract; an empty bag
-    // still produces a working passthrough (just content-type + authorization).
-    const inbound = opts.call.headers;
-    const passthrough: Record<string, string> = {};
-    for (const [name, value] of inbound.entries()) {
-      if (SHAPED_PASSTHROUGH_HEADER_ALLOWLIST.has(name)) passthrough[name] = value;
-    }
+    // The gateway already reduced ordinary headers to the Claude Code module's
+    // allowlist. This path restores typed Messages metadata, preserves the
+    // resulting fingerprint, fills Content-Type when absent, and sets
+    // provider-owned OAuth auth.
+    const passthrough = Object.fromEntries(headersForMessagesCall(opts.call.headers, opts.call.anthropicBeta));
     // Sub2api always sets Content-Type when the inbound omits it
     // (`gateway_service.go` request-forwarding path), so the upstream
     // never receives a body-bearing request without a media type.

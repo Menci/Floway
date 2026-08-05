@@ -285,8 +285,17 @@ Ollama depend on `provider` + `protocols`; Claude Code and Codex add
 `interceptor`; Copilot adds `interceptor` + `platform`. `test-utils` depends on
 `provider` and is consumed as a test dependency by the rest of the workspace.
 Vendor credentials, catalog projection, and wire behavior stay in the vendor
-packages. The gateway owns the control-plane handlers that call those vendor
-APIs and maps their results onto Floway HTTP responses.
+packages. Each package's static `ProviderModule` surface also declares the
+case-insensitive exact names and lowercase-name regular expressions for
+ordinary client headers that provider accepts. The gateway applies the
+allowlist after it selects a candidate and before it calls the provider, so
+failover candidates never share a filtered or mutated header bag.
+Protocol-owned transport metadata remains outside that generic policy:
+Messages ingress parses `anthropic-beta` into typed call metadata, passes it
+only to a native Messages target, and Copilot copies it into
+`MessagesBoundaryCtx.anthropicBeta` before its interceptor chain. The gateway
+owns the control-plane handlers that call vendor APIs and maps their results
+onto Floway HTTP responses.
 
 `gateway` depends on `agent-setup` + `http` + `interceptor` + `platform` +
 `protocols` + `provider` + every `provider-*` package + `proxy` + `translate`.
@@ -396,9 +405,9 @@ boundary. Locales are `en` and `zh-Hans`; a locale ships only if somebody here
 can review it, and the parity suite requires every plural key to supply the
 `other` form each language actually has.
 
-Client-carried affinity is a source-protocol membrane. Shared codec, candidate
-narrowing, and affinity request context live under
-`data-plane/chat/shared/affinity/`; each chat source protocol owns
+Client-carried affinity is a source-protocol membrane. Carrier authentication,
+candidate evaluation and selection, and request context are separate modules
+under `data-plane/chat/shared/affinity/`; each chat source protocol owns
 `affinity/ingress.ts` and `affinity/egress.ts`. Native Responses state is a
 separate source-edge membrane under `data-plane/chat/responses/items/`.
 Affinity wire behavior and its relationship to Stateful Responses and

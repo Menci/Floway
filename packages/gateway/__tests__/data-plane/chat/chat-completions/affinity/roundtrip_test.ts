@@ -1,8 +1,9 @@
 import { expect, test } from 'vitest';
 
 import { wrapChatCompletionsAffinityEgress } from '../../../../../src/data-plane/chat/chat-completions/affinity/egress.ts';
-import { prepareChatCompletionsAffinity } from '../../../../../src/data-plane/chat/chat-completions/affinity/ingress.ts';
+import { analyzeChatCompletionsAffinity } from '../../../../../src/data-plane/chat/chat-completions/affinity/ingress.ts';
 import { AffinityCodec, type AffinityTarget } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import { reassembleChatCompletionsEvents, type ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ModelCandidate } from '@floway-dev/provider';
@@ -57,14 +58,17 @@ test('a carrier a real codec emits on reasoning_opaque decodes on the next turn'
     doneFrame(),
   ]), { codec, affinity: targetFor(candidateA) }));
 
-  const prepared = await prepareChatCompletionsAffinity({ model: 'model', messages: [message] }, codec);
+  const prepared = await analyzeChatCompletionsAffinity({ model: 'model', messages: [message] }, codec);
 
-  expect(prepared.narrowingEvidence).toEqual([{ target: targetFor(candidateA), mode: 'prefer' }]);
-  expect(prepared.payloadForCandidate(candidateA).messages[0]).toMatchObject({
+  const projectionA = acceptedAffinityEvaluation(prepared, candidateA);
+  const projectionB = acceptedAffinityEvaluation(prepared, candidateB);
+  expect(projectionA.degrades).toBe(false);
+  expect(projectionB.degrades).toBe(true);
+  expect(projectionA.materialize().messages[0]).toMatchObject({
     content: 'answer',
     reasoning_opaque: 'upstream-opaque',
   });
-  expect(prepared.payloadForCandidate(candidateB).messages[0]).not.toHaveProperty('reasoning_opaque');
+  expect(projectionB.materialize().messages[0]).not.toHaveProperty('reasoning_opaque');
 });
 
 test('a synthetic carrier issued for a choice without reasoning decodes on the next turn', async () => {
@@ -75,9 +79,12 @@ test('a synthetic carrier issued for a choice without reasoning decodes on the n
     doneFrame(),
   ]), { codec, affinity: targetFor(candidateA) }));
 
-  const prepared = await prepareChatCompletionsAffinity({ model: 'model', messages: [message] }, codec);
+  const prepared = await analyzeChatCompletionsAffinity({ model: 'model', messages: [message] }, codec);
 
-  expect(prepared.narrowingEvidence).toEqual([{ target: targetFor(candidateA), mode: 'prefer' }]);
-  expect(prepared.payloadForCandidate(candidateA).messages[0]).not.toHaveProperty('reasoning_opaque');
-  expect(prepared.payloadForCandidate(candidateB).messages[0]).not.toHaveProperty('reasoning_opaque');
+  const projectionA = acceptedAffinityEvaluation(prepared, candidateA);
+  const projectionB = acceptedAffinityEvaluation(prepared, candidateB);
+  expect(projectionA.degrades).toBe(false);
+  expect(projectionB.degrades).toBe(false);
+  expect(projectionA.materialize().messages[0]).not.toHaveProperty('reasoning_opaque');
+  expect(projectionB.materialize().messages[0]).not.toHaveProperty('reasoning_opaque');
 });

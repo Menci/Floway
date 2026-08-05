@@ -1,3 +1,5 @@
+import { customAlphabet } from 'nanoid';
+
 // The generation choice offered on POST /api/keys and POST /api/keys/:id/rotate.
 // Not a persisted attribute — each create/rotate call carries the choice for
 // that single write. 'generate' means the gateway mints a fresh
@@ -11,11 +13,7 @@ export const CUSTOM_API_KEY_MAX_LENGTH = 4096;
 
 const BASE62 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 
-const randomBase62 = (length: number): string => {
-  const bytes = new Uint8Array(length);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, b => BASE62[b % BASE62.length]).join('');
-};
+const randomBase62 = customAlphabet(BASE62, 20);
 
 export const generateApiKeyToken = (): string =>
-  `sk-${randomBase62(20)}T3BlbkFJ${randomBase62(20)}`;
+  `sk-${randomBase62()}T3BlbkFJ${randomBase62()}`;

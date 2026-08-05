@@ -46,15 +46,18 @@ export { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, normalizeModelPrefix } fro
 
 export type {
   Provider,
+  InboundHeaderMatcher,
   ProviderInstance,
   ProviderCallResult,
   ProviderRerankCallResult,
   ProviderModule,
+  MessagesUpstreamCallOptions,
   ProviderResponsesResult,
   ProviderStreamResult,
   ResponsesAction,
   UpstreamCallOptions,
 } from './provider.ts';
+export { headersForMessagesCall } from './messages.ts';
 export type { ImagesEditsRequest, ImagesEditsSource } from './images.ts';
 export { serializeOpenAIImagesEditsRequest } from './images.ts';
 export type { AudioTranscriptionFormEntry, AudioTranscriptionRequest } from './audio.ts';

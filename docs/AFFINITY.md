@@ -1,9 +1,10 @@
 # Client-carried affinity
 
 Floway can resolve one public model name or alias to several upstream/model
-targets. Client-carried affinity records which target produced an opaque
-assistant blob so a later request can prefer that target, or require it when
-the surrounding protocol state is not portable.
+targets. Client-carried affinity records which target produced each opaque
+assistant blob. A later request keeps candidates that can retain every natural
+blob ahead of candidates that would discard one, and requires a target when the
+surrounding protocol state is not portable.
 
 Affinity is a source-protocol membrane. Each source protocol authenticates and
 projects Floway metadata before candidate attempts enter protocol interceptors,
@@ -33,13 +34,15 @@ encrypted plaintext is exactly:
 }
 ```
 
-Routing strength is not serialized. Ingress derives `prefer` or `force` from
-the blob's current protocol location. `origin` records how to restore original
-opaque bytes; its absence means the blob was created solely for affinity and
-contains no original value. `syntheticItem` is an independent, authenticated
-statement that Floway created the complete protocol item carrying the blob. It
-is valid only without `origin`. Item IDs and persistence metadata are not
-affinity data and are not consulted when interpreting `syntheticItem`.
+Routing policy is not serialized. Ingress assigns policy from the carrier's
+current protocol position: ordinary history is optional, while non-portable
+continuation state requires the target that produced it. `origin` records how
+to restore original opaque bytes; its absence means the blob was created solely
+for affinity and contains no original value.
+`syntheticItem` is an independent, authenticated statement that Floway created
+the complete protocol item carrying the blob. It is valid only without
+`origin`. Item IDs and persistence metadata are not affinity data and are not
+consulted when interpreting `syntheticItem`.
 
 The carrier has no delimiter or magic prefix:
 
@@ -62,33 +65,52 @@ layer independently. The implementation and byte-freeze coverage live in
 
 ## Ingress and routing
 
-Ingress builds routing evidence and a request-local payload factory. Each
-candidate attempt receives a fresh source payload:
+Ingress first analyzes the source request without reference to the model
+catalog. Chat Completions, Messages, and Gemini record their decoded optional
+blob locations. Responses performs one ordered item walk that records each blob
+as optional or required, the complete items authenticated as synthetic, and the
+required target inherited by blob-less compaction, program, and program-output
+state. This analysis is the only place Responses interprets item position.
 
-- ordinary blobs restore only for the exact upstream, model, and optional
-  alias rules;
-- force-state blobs restore for the required upstream and model regardless of
-  alias rules;
-- incompatible owned blobs and originless blob slots are removed;
-- a Responses item carrying an owned `syntheticItem: true` blob is removed in
-  full;
-- markerless originless blobs, including blobs written by an older Floway,
-  never cause whole-item removal;
-- foreign blobs remain unchanged.
+The request analysis then evaluates every viable model candidate exactly once.
+Each blob projection produces one of three decisions:
 
-Every owned carrier also supplies an exact-rules preference. The latest
-available preference moves first. Force never narrows alias rules; an exact
-preferred rule variant still wins when available. A direct candidate's absent
-rules and an alias target's empty `rules: {}` are the same no-overlay variant.
+- **preserve** — forward a foreign value unchanged, or restore an owned natural
+  value for a compatible candidate;
+- **remove** — remove an originless carrier without degradation, or remove an
+  optional natural value and mark the candidate as degrading;
+- **reject** — required owned state cannot be restored for this candidate.
 
-[`narrowCandidatesByAffinity`](../packages/gateway/src/data-plane/chat/shared/affinity/index.ts)
-only reorders or narrows candidates already produced by model resolution; it
-never creates a candidate. Missing preferred targets fall back normally.
-Missing or mutually incompatible forced upstream/model targets are routing
-errors. Candidate attempts still follow the sequential result-class rules in
-[RESOLUTION.md](./RESOLUTION.md); affinity selects the candidate only when an
-attempt succeeds, so a failed preferred attempt can fall through before egress
-records the actual serving target.
+Optional owned blobs require an exact upstream/model/rules match. Required
+owned state requires the upstream/model pair but deliberately ignores alias
+rules, so every rule variant of the same physical target remains eligible. A
+direct candidate's absent rules and an alias target's empty `rules: {}` are the
+same no-overlay variant for optional matching. Foreign blobs never impose a
+requirement and always pass through byte-for-byte.
+
+Responses removes an item in full only when an owned carrier authenticates
+`syntheticItem: true`. That marker is necessarily originless, so removing the
+item is not degradation. A markerless originless blob — including one written
+by an older Floway — removes only its own slot. A synthetic item can still
+establish the latest owned target from which a later blob-less program or
+program-output item inherits a requirement.
+
+Candidate evaluation returns either `rejected`, or `accepted` with a degradation
+bit and a lazy payload materializer. Eligibility and degradation therefore come
+from the same protocol projection decisions. No candidate payload is cloned
+while ordering. [`selectAffinityCandidates`](../packages/gateway/src/data-plane/chat/shared/affinity/selection.ts)
+rejects candidates that cannot retain required state, then stable-partitions the
+accepted candidates: every non-degrading candidate stays in resolver order at
+the front and every degrading fallback stays in resolver order behind it. If all
+accepted candidates have the same degradation status, resolver order is
+unchanged. The selected payload is cloned and materialized only when its attempt
+actually runs, and repeated access reuses that materialization.
+
+Mutually incompatible required targets and an unavailable sole required target
+are routing errors. Candidate attempts otherwise follow the sequential
+result-class rules in [RESOLUTION.md](./RESOLUTION.md). A failed non-degrading
+attempt can fall through to a degrading candidate before egress records the
+target of the first successful attempt.
 
 ## Egress
 
@@ -186,11 +208,12 @@ Item IDs are opaque: hydration performs no prefix validation and no
 candidate-specific rewrite. Affinity never reads, writes, authenticates, or
 validates item IDs, including when it recognizes a fully synthetic item.
 
-On output, affinity wraps the source-shaped events first. When state is
-writable, persistence stores the first `response.output_item.done` value for
-every output index under the exact client-facing item ID; duplicate done or
-terminal frames remain wire-visible but cannot replace that durable row.
-Completed item rows survive a later failed stream, but a response snapshot
+On output, closed item lifecycles first canonicalize any partial terminal
+restatement. Affinity wraps that source-shaped canonical stream, then, when
+state is writable, persistence stores the first `response.output_item.done`
+value for every output index under the exact client-facing item ID; duplicate
+done or terminal frames remain wire-visible but cannot replace that durable
+row. Completed item rows survive a later failed stream, but a response snapshot
 commits only before a successful `response.completed` or `response.incomplete`
 terminal.
 

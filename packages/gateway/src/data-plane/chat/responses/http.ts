@@ -6,7 +6,7 @@ import { responsesServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../../shared/gateway-ctx.ts';
-import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
+import { inboundHeaders } from '../../shared/inbound-headers.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
@@ -78,7 +78,7 @@ export const responsesHttp = {
       const payload = parsePayload(requestBody);
       const wantsStream = payload.stream === true;
       ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, (apiKey, requestStartedAt) => createResponsesHttpStore(apiKey, requestStartedAt, payload.store ?? undefined));
-      const result = await responsesServe.generate({ payload, ctx, headers: inboundHeadersForUpstream(c) });
+      const result = await responsesServe.generate({ payload, ctx, headers: inboundHeaders(c) });
       const response = await respondResponses(c, result, wantsStream, ctx, payload);
       return finalizeGatewayResponse(ctx, response);
     } catch (error) {
@@ -92,7 +92,7 @@ export const responsesHttp = {
     try {
       const payload = parsePayload(requestBody);
       ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, (apiKey, requestStartedAt) => createResponsesHttpStore(apiKey, requestStartedAt, payload.store ?? undefined));
-      const result = await responsesServe.compact({ payload, ctx, headers: inboundHeadersForUpstream(c) });
+      const result = await responsesServe.compact({ payload, ctx, headers: inboundHeaders(c) });
       if (result.type === 'result') {
         // Compact drains the upstream stream into a single compaction
         // resource with no per-token stamps; recordPerformance therefore

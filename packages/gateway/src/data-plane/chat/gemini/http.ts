@@ -4,7 +4,7 @@ import { geminiServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { finalizeGatewayResponse } from '../../shared/gateway-ctx.ts';
-import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
+import { inboundHeaders } from '../../shared/inbound-headers.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
@@ -106,7 +106,7 @@ const runGeminiGenerate = async (c: AuthedContext, model: string, wantsStream: b
 
   const ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKey => createNonResponsesSourceStore(apiKey.id));
   try {
-    const result = await geminiServe.generate({ payload, ctx, model, headers: inboundHeadersForUpstream(c) });
+    const result = await geminiServe.generate({ payload, ctx, model, headers: inboundHeaders(c) });
     const response = await respondGemini(c, result, wantsStream, ctx);
     return finalizeGatewayResponse(ctx, response);
   } catch (error) {
@@ -121,7 +121,7 @@ const runGeminiCountTokens = async (c: AuthedContext, model: string): Promise<Re
 
   const ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKey => createNonResponsesSourceStore(apiKey.id));
   try {
-    const result = await geminiServe.countTokens({ payload, ctx, model, headers: inboundHeadersForUpstream(c) });
+    const result = await geminiServe.countTokens({ payload, ctx, model, headers: inboundHeaders(c) });
     const response = await respondGemini(c, result, false, ctx);
     return finalizeGatewayResponse(ctx, response);
   } catch (error) {
