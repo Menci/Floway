@@ -842,9 +842,12 @@ test('Responses WebSocket evicts a failed continuation target so the next attemp
       if (url.pathname === '/responses') {
         responseCalls += 1;
         if (responseCalls === 2) {
-          return jsonResponse({
+          return new Response(JSON.stringify({
             error: { message: 'simulated upstream rejection', type: 'invalid_request_error', code: 'bad_request' },
-          }, 400);
+          }), {
+            status: 400,
+            headers: { 'content-type': 'Application/Problem+JSON; charset=utf-8' },
+          });
         }
         return sseResponsesResponse({
           id: `resp_ws_evict_${responseCalls}`,

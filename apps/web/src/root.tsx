@@ -23,9 +23,6 @@ import { useSourceMappedStack } from './lib/source-mapped-stack';
 import { DARK_SCHEME_QUERY, useMediaQuery } from './lib/use-media-query';
 import { winuiDarkTheme, winuiLightTheme } from './winui/theme';
 import './i18n';
-import '@fontsource/maple-mono/400.css';
-import '@fontsource/maple-mono/600.css';
-import '@fontsource/maple-mono/700.css';
 import './global.css';
 
 const { Button, FluentProvider, Spinner } = fluentComponents;

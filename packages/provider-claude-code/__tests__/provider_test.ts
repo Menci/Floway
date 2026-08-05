@@ -107,6 +107,25 @@ const stubModelsListFetch = (): ReturnType<typeof vi.spyOn> => vi.spyOn(globalTh
 );
 
 describe('createClaudeCodeProvider — factory surface', () => {
+  test('owns the Claude Code client header fingerprint on the instance', () => {
+    const provider = createClaudeCodeProvider(currentRecord);
+
+    expect(provider.inboundHeaderAllowlist).toEqual([
+      'accept',
+      /^x-stainless-(?:retry-count|timeout|lang|package-version|os|arch|runtime|runtime-version|helper-method)$/,
+      'anthropic-dangerous-direct-browser-access',
+      'anthropic-version',
+      'x-app',
+      'accept-language',
+      'sec-fetch-mode',
+      'user-agent',
+      'content-type',
+      'accept-encoding',
+      'x-claude-code-session-id',
+      'x-client-request-id',
+    ]);
+  });
+
   test('getProvidedModels mirrors the live /v1/models catalog under public aliases', async () => {
     stubModelsListFetch();
     const instance = createClaudeCodeProvider(currentRecord);

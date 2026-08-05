@@ -407,6 +407,8 @@ export const upstreamRecordEnvelope = z.object({
 // beyond `record` (refresh, probe, quota, list-models) shares this shape.
 const recordOnlyBody = z.object({ record: upstreamRecordEnvelope });
 
+export const copilotOAuthDeviceLoginStartBody = recordOnlyBody;
+
 export const copilotOAuthDeviceLoginPollBody = z.object({
   record: upstreamRecordEnvelope,
   deviceCode: z.string().min(1),
@@ -688,7 +690,7 @@ export const updateAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinemen
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(19, { error: 'version must be 19 — older export formats are not supported; re-export from the current deployment' }),
+  version: z.literal(20, { error: 'version must be 20 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().optional(),
 });

@@ -64,6 +64,7 @@ const makeCandidate = (
       upstreamId: upstream,
       kind: 'custom',
       name: upstream,
+      inboundHeaderAllowlist: [],
       disabledPublicModelIds: [],
       modelPrefix: null,
       modelsCache: null,
@@ -290,6 +291,7 @@ test('generate defers the role rewrite until after translation to Chat Completio
       upstreamId: upstream,
       kind: 'custom',
       name: upstream,
+      inboundHeaderAllowlist: [],
       disabledPublicModelIds: [],
       modelPrefix: null,
       modelsCache: null,
@@ -442,7 +444,7 @@ test('generate strips disallowed headers and injects external image loading acro
   });
   const candidate: ModelCandidate = {
     provider: {
-      upstreamId: 'up_test', kind: 'custom', name: 'up_test',
+      upstreamId: 'up_test', kind: 'custom', name: 'up_test', inboundHeaderAllowlist: [],
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, instance: messagesProvider,
     },
     model: upstreamModel,

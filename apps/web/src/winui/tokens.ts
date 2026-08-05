@@ -363,7 +363,7 @@ export const winuiTokenCss = `
     /* --winui-accent-base over --winui-solid-background-fill-quarternary at
        14%, 21%, 28% and 52.5%. */
     --winui-accent-tint-fill-default: #30414a;
-    --winui-accent-tint-fill-secondary: #334c58;
+    --winui-accent-tint-fill-secondary: #334b58;
     --winui-accent-tint-fill-tertiary: #355667;
     --winui-accent-tint-stroke: #3d7b9b;
   }

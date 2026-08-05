@@ -5,6 +5,7 @@ import { MODEL_LISTING_FAILURE_CODE, MODEL_LISTING_FAILURE_MESSAGE } from '../..
 import { fetchUpstreamModelsCached } from '../../data-plane/providers/models-cache.ts';
 import { createProvider } from '../../data-plane/providers/registry.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
+import { getRepo } from '../../repo/index.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { listModelsBody } from '../schemas.ts';
@@ -47,6 +48,8 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
     return c.json({ error: { message: `Invalid kind: ${record.kind}`, type: 'invalid_request_error' } }, 400);
   }
   const kind = record.kind;
+  const persisted = record.id === '' ? null : await getRepo().upstreams.getById(record.id);
+  if (record.id !== '' && persisted === null) return c.json({ error: 'Upstream not found' }, 404);
 
   const scheduler = backgroundSchedulerFromContext(c);
   const now = new Date().toISOString();
@@ -57,7 +60,7 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
     enabled: true,
     sortOrder: 0,
     createdAt: now,
-    updatedAt: now,
+    updatedAt: persisted?.updatedAt ?? now,
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: (record.proxy_fallback_list ?? []) as ProxyFallbackEntry[],
@@ -70,6 +73,9 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
     // never carries a cached catalog.
     modelsCache: null,
   };
+  const cacheGeneration = persisted === null
+    ? { updatedAt: synthRecord.updatedAt, config: synthRecord.config }
+    : { updatedAt: persisted.updatedAt, config: persisted.config };
 
   let fetcher: Fetcher;
   try {
@@ -85,7 +91,7 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
   try {
     if (kind === 'custom') {
       const assertedConfig = assertCustomUpstreamRecord(synthRecord).config;
-      const provider = createProvider(synthRecord);
+      const provider = createProvider(synthRecord, cacheGeneration);
       let result: Awaited<ReturnType<typeof fetchCustomModels>> | undefined;
       if (record.id === '') {
         result = await fetchCustomModels(assertedConfig, fetcher);
@@ -111,7 +117,7 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
     // Force through the SWR cache when the record is persisted so the
     // side-effect refresh keeps the data-plane cache in step; otherwise
     // live-fetch without any caching.
-    const provider = createProvider(synthRecord);
+    const provider = createProvider(synthRecord, cacheGeneration);
     const models = record.id !== ''
       ? await fetchUpstreamModelsCached(provider, { scheduler, fetcher, force: true })
       : await provider.instance.getProvidedModels(fetcher);

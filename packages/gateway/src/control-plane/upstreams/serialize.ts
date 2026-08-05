@@ -87,7 +87,7 @@ export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializ
     return {
       ...base,
       kind: 'copilot',
-      config: { user: clone(config.user), githubTokenSet: hasSecret(config.githubToken) },
+      config: { githubHost: config.githubHost, user: clone(config.user), githubTokenSet: hasSecret(config.githubToken) },
       state,
     };
   }
@@ -188,7 +188,7 @@ export const blueprintUpstreamRecord = (kind: UpstreamProviderKind): BlueprintSe
   const base = blueprintBase(kind);
   switch (kind) {
   case 'copilot':
-    return { ...base, kind, config: { githubToken: '', user: { login: '', avatar_url: '', name: null, id: 0 } }, state: null };
+    return { ...base, kind, config: { githubHost: 'github.com', githubToken: '', user: { login: '', avatar_url: '', name: null, id: 0 } }, state: null };
   case 'custom':
     // A custom upstream starts on the shape most of them have: an
     // OpenAI-compatible chat endpoint whose model catalog the upstream itself

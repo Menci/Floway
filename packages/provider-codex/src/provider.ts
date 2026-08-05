@@ -11,6 +11,19 @@ import { runInterceptors } from '@floway-dev/interceptor';
 import { toCompactPayloadShape } from '@floway-dev/protocols/responses';
 import { getProviderRepo, resolveEffectiveFlags, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type UpstreamRecord } from '@floway-dev/provider';
 
+// https://github.com/openai/codex/blob/c607da9f371bb66a41cc772c6ddf1989d28137d3/codex-rs/codex-api/src/requests/headers.rs#L5-L12
+// https://github.com/openai/codex/blob/c607da9f371bb66a41cc772c6ddf1989d28137d3/codex-rs/codex-api/src/endpoint/responses.rs#L87-L96
+// https://github.com/openai/codex/blob/c607da9f371bb66a41cc772c6ddf1989d28137d3/codex-rs/core/src/responses_metadata.rs#L255-L270
+// https://github.com/openai/codex/blob/bd8fc9adb93fa5bc0a69b396bd5ac78a5ec14487/codex-rs/codex-api/src/requests/headers.rs#L5-L16
+const INBOUND_HEADER_ALLOWLIST = [
+  'session-id',
+  'session_id',
+  'thread-id',
+  'x-client-request-id',
+  'x-codex-turn-metadata',
+  'x-codex-window-id',
+] as const;
+
 export const createCodexProvider = (record: UpstreamRecord): Provider => {
   assertCodexUpstreamRecord(record);
   assertCodexUpstreamState(record.state);
@@ -160,6 +173,7 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
     upstreamId: record.id,
     kind: 'codex',
     name: record.name,
+    inboundHeaderAllowlist: INBOUND_HEADER_ALLOWLIST,
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,
     modelsCache: record.modelsCache,
