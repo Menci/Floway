@@ -731,9 +731,9 @@ describe('callCodexResponses — upstream classification', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at2', refresh_token: 'rt_v3', id_token: 'it2', expires_in: 600 }), { status: 200 }))
       .mockResolvedValueOnce(sseResponse());
     const effects = makeEffects();
-    vi.mocked(effects.persistRefreshTokenRotation).mockImplementation(async refreshToken => {
+    vi.mocked(effects.persistRefreshTokenRotation).mockImplementation(async (_usedRefreshToken, newRefreshToken) => {
       const state = currentRecord.state as CodexUpstreamState;
-      currentRecord = makeRecord({ accounts: [{ ...state.accounts[0], refresh_token: refreshToken }] });
+      currentRecord = makeRecord({ accounts: [{ ...state.accounts[0], refresh_token: newRefreshToken }] });
     });
     const result = await callCodexResponses({
       upstreamId, account: activeAccount,
