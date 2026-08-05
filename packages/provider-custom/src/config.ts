@@ -98,9 +98,13 @@ const HTTP_FIELD_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 // cookies, proxy/IP signals, or hop-by-hop fields leaks credentials/topology or
 // is rejected by runtime fetch.
 // https://www.rfc-editor.org/rfc/rfc9110.html#section-7.6.1
+// https://www.rfc-editor.org/rfc/rfc7239.html
+// https://www.rfc-editor.org/rfc/rfc8586.html
+// https://developers.cloudflare.com/fundamentals/reference/http-request-headers/
+// https://cloud.google.com/apis/docs/system-parameters
+// https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/model-provider-info/src/lib.rs#L396-L408
 const PROTECTED_INGRESS_HEADER_NAMES = new Set([
   'accept-encoding',
-  'api-key',
   'authorization',
   'cdn-loop',
   'connection',

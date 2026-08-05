@@ -55,6 +55,7 @@ test('assertCustomUpstreamRecord canonicalizes ingress header rules without coll
         { key: ' X-Request-ID ', value: null },
         { key: 'X-Empty', value: '' },
         { key: 'X-Route', value: ' configured ' },
+        { key: 'API-Key', value: 'resource-key' },
       ],
     },
   });
@@ -63,6 +64,7 @@ test('assertCustomUpstreamRecord canonicalizes ingress header rules without coll
     { key: 'x-request-id', value: null },
     { key: 'x-empty', value: '' },
     { key: 'x-route', value: 'configured' },
+    { key: 'api-key', value: 'resource-key' },
   ]);
 });
 
