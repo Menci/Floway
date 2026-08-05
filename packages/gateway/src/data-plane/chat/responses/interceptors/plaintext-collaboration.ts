@@ -52,8 +52,11 @@ export const supportsPlaintextCollaborationTarget = (
     && item.tools.some(tool => namespaceTool(tool)?.name === CLIENT_NAMESPACE));
   if (deferredCollaboration) return false;
   const choice = payload.tool_choice;
-  return !isRecord(choice)
-    || (choice.type !== 'allowed_tools' && choice.type !== 'namespace' && typeof choice.namespace !== 'string');
+  if (!isRecord(choice)) return true;
+  const choiceRecord = choice as Record<string, unknown>;
+  return choice.type !== 'allowed_tools'
+    && choice.type !== 'namespace'
+    && typeof choiceRecord.namespace !== 'string';
 };
 
 const namespaceNames = (payload: CanonicalResponsesPayload): Set<string> => {
