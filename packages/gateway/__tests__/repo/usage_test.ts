@@ -2,9 +2,9 @@ import { test } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
 import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename } from './test-sqlite.ts';
+import { encodeOpaqueSqlText } from '../../src/repo/opaque-sql-text.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { Repo, UsageRecord } from '../../src/repo/types.ts';
-import { encodeOpaqueSqlText } from '../../src/repo/opaque-sql-text.ts';
 import { tokenCountsFromUsage, tokenRatesFromUsage, tokenUsageMetrics } from '../../src/repo/usage-metrics.ts';
 import type { PriceVector } from '@floway-dev/protocols/common';
 import { assertEquals, assertRejects, assertThrows } from '@floway-dev/test-utils';
