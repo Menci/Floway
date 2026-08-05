@@ -1,11 +1,11 @@
 import { test } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
+import { type CapturedStatement, type CompletedStatement, recordBoundStatements, recordCompletedStatements } from './recording-sql.ts';
 import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename } from './test-sqlite.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { ApiKey, Repo, UsageOverviewQueryOptions, UsageRecord } from '../../src/repo/types.ts';
 import { tokenCountsFromUsage, tokenRatesFromUsage, tokenUsageMetrics } from '../../src/repo/usage-metrics.ts';
-import type { SqlBindValue, SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
 import type { PriceVector } from '@floway-dev/protocols/common';
 import { assertEquals, assertRejects, assertThrows } from '@floway-dev/test-utils';
 
@@ -46,52 +46,6 @@ const apiKey = (id: string, userId: number): ApiKey => ({
 });
 
 const query = (repo: Repo) => repo.usage.query({ keyIds: ['key-1'], start: '2026-07-12T00', end: '2026-07-12T01' });
-
-interface CapturedStatement {
-  query: string;
-  binds: readonly SqlBindValue[];
-}
-
-const recordBoundStatements = (db: SqlDatabase, captured: CapturedStatement[]): SqlDatabase => ({
-  prepare: queryText => {
-    const statement = db.prepare(queryText);
-    return {
-      bind: (...binds) => {
-        captured.push({ query: queryText, binds });
-        return statement.bind(...binds);
-      },
-      first: () => statement.first(),
-      all: () => statement.all(),
-      run: () => statement.run(),
-    };
-  },
-  exec: sql => db.exec(sql),
-});
-
-interface CompletedStatement extends CapturedStatement {
-  resultCount: number;
-}
-
-const recordCompletedStatements = (db: SqlDatabase, completed: CompletedStatement[]): SqlDatabase => {
-  const wrap = (
-    queryText: string,
-    statement: SqlPreparedStatement,
-    binds: readonly SqlBindValue[],
-  ): SqlPreparedStatement => ({
-    bind: (...values) => wrap(queryText, statement.bind(...values), values),
-    first: () => statement.first(),
-    all: async <T = Record<string, unknown>>() => {
-      const result = await statement.all<T>();
-      completed.push({ query: queryText, binds, resultCount: result.results.length });
-      return result;
-    },
-    run: () => statement.run(),
-  });
-  return {
-    prepare: queryText => wrap(queryText, db.prepare(queryText), []),
-    exec: sql => db.exec(sql),
-  };
-};
 
 test('0052 preserves distinct open-string service tiers as canonical selectors', async () => {
   const db = await createSqlJsDatabase();
