@@ -1,6 +1,7 @@
+import { convertRgbToHsv, parseHex } from 'culori/fn';
 import { describe, expect, it } from 'vitest';
 
-import { blendHex, hexToRgb, hsvToRgb, readableTone, rgbToHex, rgbToHsv } from '../../src/lib/color';
+import { blendHex, hexToRgb, readableTone } from '../../src/lib/color';
 import { hueBadgeTone } from '../../src/lib/hue';
 
 // The subject decides by contrast, so the assertions compute it independently
@@ -36,95 +37,6 @@ describe('hexToRgb', () => {
   });
 });
 
-describe('rgbToHex', () => {
-  it('formats as uppercase #RRGGBB', () => {
-    expect(rgbToHex(0, 229, 255)).toBe('#00E5FF');
-    expect(rgbToHex(139, 92, 246)).toBe('#8B5CF6');
-  });
-
-  it('zero-pads single-digit hex bytes', () => {
-    expect(rgbToHex(0, 0, 0)).toBe('#000000');
-    expect(rgbToHex(1, 2, 3)).toBe('#010203');
-    expect(rgbToHex(255, 255, 255)).toBe('#FFFFFF');
-  });
-});
-
-describe('rgbToHsv', () => {
-  it('leaves hue absent for achromatic colors', () => {
-    const [h, s, v] = rgbToHsv(0, 0, 0);
-    expect(h).toBeUndefined();
-    expect(v).toBe(0);
-    expect(s).toBe(0);
-    expect(rgbToHsv(128, 128, 128)[0]).toBeUndefined();
-  });
-
-  it('gives value=1 and saturation=0 for white', () => {
-    const [h, s, v] = rgbToHsv(255, 255, 255);
-    expect(h).toBeUndefined();
-    expect(v).toBe(1);
-    expect(s).toBe(0);
-  });
-
-  it('gives hue=0 for pure red', () => {
-    const [h, s, v] = rgbToHsv(255, 0, 0);
-    expect(h).toBe(0);
-    expect(s).toBe(1);
-    expect(v).toBe(1);
-  });
-
-  it('gives hue=120 for pure green and hue=240 for pure blue', () => {
-    expect(rgbToHsv(0, 255, 0)[0]).toBe(120);
-    expect(rgbToHsv(0, 0, 255)[0]).toBe(240);
-  });
-});
-
-describe('hsvToRgb', () => {
-  it('round-trips through six hue anchors (0/60/120/180/240/300)', () => {
-    expect(hsvToRgb(0, 1, 1)).toEqual([255, 0, 0]);
-    expect(hsvToRgb(60, 1, 1)).toEqual([255, 255, 0]);
-    expect(hsvToRgb(120, 1, 1)).toEqual([0, 255, 0]);
-    expect(hsvToRgb(180, 1, 1)).toEqual([0, 255, 255]);
-    expect(hsvToRgb(240, 1, 1)).toEqual([0, 0, 255]);
-    expect(hsvToRgb(300, 1, 1)).toEqual([255, 0, 255]);
-  });
-
-  it('gives black when value=0 regardless of hue/saturation', () => {
-    expect(hsvToRgb(0, 0, 0)).toEqual([0, 0, 0]);
-    expect(hsvToRgb(180, 1, 0)).toEqual([0, 0, 0]);
-  });
-
-  it('gives grayscale when saturation=0', () => {
-    expect(hsvToRgb(0, 0, 1)).toEqual([255, 255, 255]);
-    expect(hsvToRgb(180, 0, 0.5)).toEqual([128, 128, 128]);
-  });
-
-});
-
-describe('HSV/RGB/HEX round-trip', () => {
-  it('rgb -> hsv -> rgb is near-identity for sample colors', () => {
-    const samples: [number, number, number][] = [
-      [0, 229, 255],
-      [139, 92, 246],
-      [16, 185, 129],
-      [244, 63, 94],
-      [251, 191, 36],
-    ];
-    for (const [r, g, b] of samples) {
-      const [h, s, v] = rgbToHsv(r, g, b);
-      const [r2, g2, b2] = hsvToRgb(h, s, v);
-      expect(Math.abs(r2 - r)).toBeLessThanOrEqual(1);
-      expect(Math.abs(g2 - g)).toBeLessThanOrEqual(1);
-      expect(Math.abs(b2 - b)).toBeLessThanOrEqual(1);
-    }
-  });
-
-  it('hex -> rgb -> hex is exact for canonical uppercase input', () => {
-    for (const hex of ['#000000', '#FFFFFF', '#00E5FF', '#8B5CF6', '#F43F5E']) {
-      expect(rgbToHex(...hexToRgb(hex))).toBe(hex);
-    }
-  });
-});
-
 describe('readableTone', () => {
   // The component resolves the label against the chip's own fill -- 10% of the
   // hue over the card -- so the tests ask the same question it does.
@@ -150,8 +62,8 @@ describe('readableTone', () => {
   });
 
   it('holds the hue while it moves value', () => {
-    const [sourceHue] = rgbToHsv(...hexToRgb('#00E5FF'));
-    const [tonedHue] = rgbToHsv(...hexToRgb(toned('#00E5FF', CARD_LIGHT)));
+    const { h: sourceHue } = convertRgbToHsv(parseHex('#00E5FF')!);
+    const { h: tonedHue } = convertRgbToHsv(parseHex(toned('#00E5FF', CARD_LIGHT))!);
     expect(Math.abs(tonedHue - sourceHue)).toBeLessThan(1);
   });
 
@@ -160,8 +72,8 @@ describe('readableTone', () => {
     // yellow, which looks like the hard case, is solved by value alone.
     const result = toned('#FFD740', CARD_LIGHT);
     expect(contrast(result, chip('#FFD740', CARD_LIGHT))).toBeGreaterThanOrEqual(4.5);
-    const [, sourceSaturation] = rgbToHsv(...hexToRgb('#FFD740'));
-    const [, resultSaturation] = rgbToHsv(...hexToRgb(result));
+    const { s: sourceSaturation } = convertRgbToHsv(parseHex('#FFD740')!);
+    const { s: resultSaturation } = convertRgbToHsv(parseHex(result)!);
     expect(resultSaturation).toBeCloseTo(sourceSaturation, 1);
   });
 
@@ -171,8 +83,8 @@ describe('readableTone', () => {
     const result = toned('#0000FF', CARD_DARK);
     expect(contrast('#0000FF', chip('#0000FF', CARD_DARK))).toBeLessThan(1.5);
     expect(contrast(result, chip('#0000FF', CARD_DARK))).toBeGreaterThanOrEqual(4.5);
-    const [, sourceSaturation] = rgbToHsv(...hexToRgb('#0000FF'));
-    const [, resultSaturation] = rgbToHsv(...hexToRgb(result));
+    const { s: sourceSaturation } = convertRgbToHsv(parseHex('#0000FF')!);
+    const { s: resultSaturation } = convertRgbToHsv(parseHex(result)!);
     expect(resultSaturation).toBeLessThan(sourceSaturation);
   });
 
