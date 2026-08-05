@@ -1,8 +1,8 @@
-import { formatRgb, parseHex } from 'culori/fn';
+import { formatRgb } from 'culori/fn';
 import type { CSSProperties } from 'react';
 
 import { fluentComponents } from '../../fluent';
-import { blendHex, readableTone } from '../../lib/color';
+import { blendHex, parseHexColor, readableTone } from '../../lib/color';
 
 const { makeStyles } = fluentComponents;
 
@@ -40,7 +40,7 @@ const useStyles = makeStyles({
 });
 
 const alpha = (hex: string, fraction: number): string => {
-  const rgb = parseHex(hex)!;
+  const rgb = parseHexColor(hex);
   return formatRgb({ ...rgb, alpha: (rgb.alpha ?? 1) * fraction })!;
 };
 

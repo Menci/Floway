@@ -13,26 +13,26 @@ import {
 
 registerMode(modeRgb);
 
-const parseRgb = (hex: string) => {
+export const parseHexColor = (hex: string) => {
   const rgb = parseHex(hex);
   if (!rgb) throw new TypeError(`Not a hex colour: ${hex}`);
   return rgb;
 };
 
-const linearRgb = (rgb: ReturnType<typeof parseRgb>) => convertRgbToLrgb(rgb);
+const linearRgb = (rgb: ReturnType<typeof parseHexColor>) => convertRgbToLrgb(rgb);
 
 export const blendHex = (hex: string, alpha: number, backdrop: string): string => {
-  const parsed = parseRgb(hex);
+  const parsed = parseHexColor(hex);
   const foreground = { ...parsed, alpha: (parsed.alpha ?? 1) * alpha };
-  const mixed = blend([parseRgb(backdrop), foreground], 'normal', 'rgb');
+  const mixed = blend([parseHexColor(backdrop), foreground], 'normal', 'rgb');
   return (mixed.alpha !== undefined && mixed.alpha < 1 ? formatHex8(mixed) : formatHex(mixed)).toUpperCase();
 };
 
 // WCAG 2.2 requires at least 4.5:1 contrast for normal text.
 // https://www.w3.org/TR/WCAG22/#contrast-minimum
 const TEXT_CONTRAST_FLOOR = 4.5;
-const BLACK = parseRgb('#000000');
-const WHITE = parseRgb('#FFFFFF');
+const BLACK = parseHexColor('#000000');
+const WHITE = parseHexColor('#FFFFFF');
 
 /**
  * The nearest tone of `hex` that reads as text on `surface`. Hue is held fixed
@@ -41,13 +41,13 @@ const WHITE = parseRgb('#FFFFFF');
  * reach the floor.
  */
 export const readableTone = (hex: string, surface: string): string => {
-  const rgb = parseRgb(hex);
-  const surfaceRgb = parseRgb(surface);
+  const rgb = parseHexColor(hex);
+  const surfaceRgb = parseHexColor(surface);
   if (surfaceRgb.alpha !== undefined && surfaceRgb.alpha < 1) {
     throw new TypeError('Readable tone requires an opaque surface');
   }
   const surfaceLinear = linearRgb(surfaceRgb);
-  const paintedRgb = blend([surfaceRgb, rgb], 'normal', 'rgb') as ReturnType<typeof parseRgb>;
+  const paintedRgb = blend([surfaceRgb, rgb], 'normal', 'rgb') as ReturnType<typeof parseHexColor>;
   if (wcagContrast(linearRgb(paintedRgb), surfaceLinear) >= TEXT_CONTRAST_FLOOR) return hex;
 
   const { h, s, v } = convertRgbToHsv(rgb);
@@ -68,7 +68,7 @@ export const readableTone = (hex: string, surface: string): string => {
       const value = darken ? v * (1 - step / STEPS) : v + (1 - v) * (step / STEPS);
       const candidate = convertHsvToRgb({ h, s: saturation, v: value });
       const candidateHex = formatHex(candidate).toUpperCase();
-      if (wcagContrast(linearRgb(parseRgb(candidateHex)), surfaceLinear) >= TEXT_CONTRAST_FLOOR) {
+      if (wcagContrast(linearRgb(parseHexColor(candidateHex)), surfaceLinear) >= TEXT_CONTRAST_FLOOR) {
         readable = candidateHex;
         last = step - 1;
       } else {
