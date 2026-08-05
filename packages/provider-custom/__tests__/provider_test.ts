@@ -1,13 +1,14 @@
 import { test } from 'vitest';
 
 import { createCustomProvider } from '../src/provider.ts';
-import type { ModelPricing } from '@floway-dev/protocols/common';
+import type { ModelEndpoints, ModelPricing } from '@floway-dev/protocols/common';
 import { parseRerankRequest } from '@floway-dev/protocols/rerank';
 import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
 import { assertEquals, assertExists, assertRejects, jsonResponse, noopMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 interface BuildOptions {
+  endpoints?: ModelEndpoints;
   ingressHeadersRules?: { key: string; value: string | null }[];
   modelsFetchEnabled?: boolean;
   models?: UpstreamModelConfig[];
@@ -32,7 +33,7 @@ const buildCustomUpstream = (options: BuildOptions = {}): UpstreamRecord => ({
     baseUrl: 'https://custom.example.com',
     authStyle: 'bearer',
     apiKey: 'sk-test',
-    endpoints: { chatCompletions: {} },
+    endpoints: options.endpoints ?? { chatCompletions: {} },
     ingressHeadersRules: options.ingressHeadersRules ?? [],
     modelsFetch: { enabled: options.modelsFetchEnabled ?? true },
     models: options.models ?? [],
@@ -223,6 +224,19 @@ test('auto-fetched non-chat models omit contradictory chat metadata', async () =
   );
   assertEquals(models[0].kind, 'embedding');
   assertEquals(models[0].chat, undefined);
+});
+
+test('auto-fetched models without a resolved endpoint stay out of the routable catalog', async () => {
+  const instance = createCustomProvider(buildCustomUpstream({ endpoints: {} }));
+  const models = await withMockedFetch(
+    () => jsonResponse({
+      object: 'list',
+      data: [{ id: 'unknown' }, { id: 'embedding', kind: 'embedding' }],
+    }),
+    async () => await instance.instance.getProvidedModels(directFetcher),
+  );
+  assertEquals(models.map(model => model.id), ['embedding']);
+  assertEquals(models[0].endpoints, { embeddings: {} });
 });
 
 test('manual runtime kind follows rerank endpoints when stored kind is stale', async () => {

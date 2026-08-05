@@ -60,6 +60,7 @@ const finalizeCustomModels = (
     // only a manual row with rerankTarget enters the routable provider catalog.
     if (rawModel.kind === 'rerank') continue;
     const endpoints = autoModelEndpoints(rawModel, configuredEndpoints);
+    if (Object.keys(endpoints).length === 0) continue;
     const kind = kindForEndpoints(endpoints);
     models.push({
       ...customRawToProviderModel(rawModel),
