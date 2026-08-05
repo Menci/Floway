@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 
 import { currentMark } from './logo-mark';
 import { fluentComponents } from '../fluent';
-import { hsvToRgb, rgbToHex } from '../lib/color';
+import { hsvToRgb, rgbToHex } from '../lib/color-bytes';
 
 const { makeStyles } = fluentComponents;
 
