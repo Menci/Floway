@@ -4,8 +4,9 @@
 // the public setup-script URL.
 
 const AGENT_SETUP_TOKEN_LENGTH = 43;
-const AGENT_SETUP_TOKEN_PATTERN = new RegExp(`^[A-Za-z0-9_-]{${AGENT_SETUP_TOKEN_LENGTH}}$`);
-export const AGENT_SETUP_TOKEN_PREFIX_PATTERN = `[A-Za-z0-9_-]{${AGENT_SETUP_TOKEN_LENGTH}}.*`;
+export const AGENT_SETUP_TOKEN_PATH_PATTERN = `[A-Za-z0-9_-]{${AGENT_SETUP_TOKEN_LENGTH}}`;
+export const AGENT_SETUP_TOKEN_PREFIX_PATTERN = `${AGENT_SETUP_TOKEN_PATH_PATTERN}.*`;
+const AGENT_SETUP_TOKEN_PATTERN = new RegExp(`^${AGENT_SETUP_TOKEN_PATH_PATTERN}$`);
 
 export const isAgentSetupToken = (value: string): boolean => AGENT_SETUP_TOKEN_PATTERN.test(value);
 

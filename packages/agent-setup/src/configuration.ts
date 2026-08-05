@@ -12,10 +12,11 @@
 
 import { z } from 'zod';
 
+import { isScriptLiteralValue } from './script-literal.ts';
+
 const opaqueOptionalString = z.string()
   .min(1)
-  .refine(value => value.isWellFormed(), { message: 'must contain well-formed Unicode' })
-  .refine(value => !value.includes('\0'), { message: 'must not contain a NUL character' })
+  .refine(isScriptLiteralValue, { message: 'must not contain NUL or an unpaired surrogate' })
   .nullable();
 
 export const agentSetupConfigurationSchema = z.object({

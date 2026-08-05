@@ -1,5 +1,6 @@
 SETUP_TMPDIR=""
 _cleanup() {
+  _release_setup_lock
   if [ -n "$SETUP_TMPDIR" ]; then
     rm -rf "$SETUP_TMPDIR" 2>/dev/null || true
   fi

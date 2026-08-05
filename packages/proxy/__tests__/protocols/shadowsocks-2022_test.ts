@@ -1,6 +1,6 @@
 import { gcm } from '@noble/ciphers/aes.js';
 import { blake3 } from '@noble/hashes/blake3.js';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { concat } from '../../src/bytes.ts';
 import { buildSs2022RequestHeader, dialShadowsocks2022 } from '../../src/protocols/shadowsocks-2022.ts';
@@ -25,6 +25,7 @@ const config = (overrides: Partial<Shadowsocks2022ProxyConfig> = {}): Shadowsock
 });
 
 const SUBKEY_CONTEXT = new TextEncoder().encode('shadowsocks 2022 session subkey');
+const FIXED_NOW_SECONDS = 1_800_000_000;
 
 describe('buildSs2022RequestHeader', () => {
   it('encodes ATYP=0x03 | dom_len | dom | port BE | padlen=16 | 16-byte pad', () => {
@@ -96,19 +97,19 @@ describe('dialShadowsocks2022 — SIP022 happy path', () => {
 });
 
 describe('dialShadowsocks2022 — SIP022 defenses', () => {
-  it('rejects a response whose timestamp is more than 30s in the past', async () => {
+  it('rejects a response exactly 31s in the past', async () => {
     await expect(runWithServerHandshakeOptions({ skewSec: 31, echoCorrect: true })).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'proxy-handshake',
-      message: expect.stringMatching(/timestamp skew/),
+      message: expect.stringContaining('timestamp skew 31s'),
     });
   });
 
-  it('rejects a response whose timestamp is more than 30s in the future', async () => {
+  it('rejects a response exactly 31s in the future', async () => {
     await expect(runWithServerHandshakeOptions({ skewSec: -31, echoCorrect: true })).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'proxy-handshake',
-      message: expect.stringMatching(/timestamp skew/),
+      message: expect.stringContaining('timestamp skew -31s'),
     });
   });
 
@@ -326,7 +327,7 @@ describe('dialShadowsocks2022 — KDF + key-length matrix', () => {
 describe('dialShadowsocks2022 — response-side SIP022 checks', () => {
   it('rejects a response whose timestamp is exactly 0 (epoch)', async () => {
     // skew = now - 0 = now (huge) → outside the ±30s window.
-    await expect(runWithServerHandshakeOptions({ skewSec: Math.floor(Date.now() / 1000), echoCorrect: true })).rejects.toMatchObject({
+    await expect(runWithServerHandshakeOptions({ skewSec: FIXED_NOW_SECONDS, echoCorrect: true })).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'proxy-handshake',
       message: expect.stringMatching(/timestamp skew/),
@@ -345,6 +346,18 @@ describe('dialShadowsocks2022 — response-side SIP022 checks', () => {
 });
 
 const runWithServerHandshakeOptions = async (
+  serverOpts: { skewSec: number; echoCorrect: boolean },
+): Promise<unknown> => {
+  vi.useFakeTimers();
+  vi.setSystemTime(FIXED_NOW_SECONDS * 1000);
+  try {
+    return await runWithServerHandshakeOptionsAtFixedTime(serverOpts);
+  } finally {
+    vi.useRealTimers();
+  }
+};
+
+const runWithServerHandshakeOptionsAtFixedTime = async (
   serverOpts: { skewSec: number; echoCorrect: boolean },
 ): Promise<unknown> => {
   const fake = makeFakeSocketDial();

@@ -24,7 +24,11 @@ import {
 import { renderPowerShellPrefix, renderShellPrefix } from './render.ts';
 import { type AgentSetupRecord, type AgentSetupRepository, AgentSetupTokenCollisionError } from './repository.ts';
 import { type ScriptAgent, type ScriptLanguage, SETUP_SCRIPT_BODIES } from './script-assets.ts';
-import { AGENT_SETUP_TOKEN_PREFIX_PATTERN, generateAgentSetupToken } from './token.ts';
+import {
+  AGENT_SETUP_TOKEN_PATH_PATTERN,
+  AGENT_SETUP_TOKEN_PREFIX_PATTERN,
+  generateAgentSetupToken,
+} from './token.ts';
 import { agentSetupCreateBody, agentSetupHeartbeatBody, agentSetupUpdateBody } from './wire.ts';
 
 const SETUP_LEASE_TTL_MS = 5 * 60 * 1000;
@@ -150,13 +154,14 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
   };
 
   const notFound = (c: Context) => c.body(null, 404, SCRIPT_RESPONSE_HEADERS);
+  const exactTokenPath = `/:token{${AGENT_SETUP_TOKEN_PATH_PATTERN}}`;
   const tokenBearingPath = `/:token{${AGENT_SETUP_TOKEN_PREFIX_PATTERN}}`;
 
   return new Hono()
-    .on(['GET', 'HEAD'], '/:token/claude.sh', serveSetupScript('claude', 'sh'))
-    .on(['GET', 'HEAD'], '/:token/claude.ps1', serveSetupScript('claude', 'ps1'))
-    .on(['GET', 'HEAD'], '/:token/codex.sh', serveSetupScript('codex', 'sh'))
-    .on(['GET', 'HEAD'], '/:token/codex.ps1', serveSetupScript('codex', 'ps1'))
+    .on(['GET', 'HEAD'], `${exactTokenPath}/claude.sh`, serveSetupScript('claude', 'sh'))
+    .on(['GET', 'HEAD'], `${exactTokenPath}/claude.ps1`, serveSetupScript('claude', 'ps1'))
+    .on(['GET', 'HEAD'], `${exactTokenPath}/codex.sh`, serveSetupScript('codex', 'sh'))
+    .on(['GET', 'HEAD'], `${exactTokenPath}/codex.ps1`, serveSetupScript('codex', 'ps1'))
     // Consume every near-miss beneath a token-shaped path before the host's
     // middleware. A mistyped filename or HTTP method still carries the live
     // credential in its URL segment and must not fall through to access logs.

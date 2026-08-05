@@ -32,24 +32,31 @@ function Protect-SetupFile {
 function Restore-SetupManagedFile {
   param([bool]$Existed, [string]$Backup, [string]$Path, [string]$OriginalLabel, [string]$CreatedLabel)
   if ($Existed) {
-    if ($Backup -and (Test-Path -LiteralPath $Backup)) {
-      try {
-        if ($env:AGENT_SETUP_TEST_FAIL_RESTORE) { throw 'test-injected restore failure' }
-        # Secret-bearing backups were already owner-only before any mutation.
-        # Moving one back preserves that protection without a second operation
-        # that could fail after the backup path has been consumed.
-        Move-Item -LiteralPath $Backup -Destination $Path -Force
-      } catch {
-        Write-SetupWarn "could not restore $Path from its backup; your original $OriginalLabel is preserved at $Backup — restore it by hand."
-      }
+    if (-not $Backup -or (-not (Test-Path -LiteralPath $Backup))) {
+      Write-SetupWarn "rollback failed for $Path because its expected $OriginalLabel backup is missing."
+      return $false
+    }
+    try {
+      if ($env:AGENT_SETUP_TEST_FAIL_RESTORE) { throw 'test-injected restore failure' }
+      # Secret-bearing backups were already owner-only before any mutation.
+      # Moving one back preserves that protection without a second operation
+      # that could fail after the backup path has been consumed.
+      Move-Item -LiteralPath $Backup -Destination $Path -Force
+      return $true
+    } catch {
+      Write-SetupWarn "could not restore $Path from its backup; your original $OriginalLabel is preserved at $Backup — restore it by hand."
+      return $false
     }
   } elseif (Test-Path -LiteralPath $Path) {
     try {
       Remove-Item -LiteralPath $Path -Force
+      return $true
     } catch {
       Write-SetupWarn "could not remove the $CreatedLabel this run created at $Path — remove it by hand."
+      return $false
     }
   }
+  return $true
 }
 
 function Remove-SetupOlderBackups {

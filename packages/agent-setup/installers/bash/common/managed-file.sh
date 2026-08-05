@@ -7,7 +7,11 @@ _restore_managed_file() {
   _rmf_original_label=$4
   _rmf_created_label=$5
   if [ "$_rmf_existed" -eq 1 ]; then
-    if [ -n "$_rmf_backup" ] && [ -e "$_rmf_backup" ] && ! mv "$_rmf_backup" "$_rmf_path" 2>/dev/null; then
+    if [ -z "$_rmf_backup" ] || [ ! -e "$_rmf_backup" ]; then
+      out_warn "rollback failed for $_rmf_path because its expected $_rmf_original_label backup is missing."
+      return 1
+    fi
+    if ! mv "$_rmf_backup" "$_rmf_path" 2>/dev/null; then
       out_warn "could not restore $_rmf_path from its backup; your original $_rmf_original_label is preserved at $_rmf_backup — restore it by hand."
       return 1
     fi

@@ -11,8 +11,9 @@ const powerShellLiteral = (value: string) => `'${value.replaceAll("'", "''")}'`;
 const windowsAgentSetupCommand = (origin: string, path: string): string => {
   const endpoint = powerShellLiteral(origin);
   const childEndpointAssignment = powerShellLiteral(`$SetupEndpoint = ${endpoint}`);
+  const childExit = powerShellLiteral('exit $global:LASTEXITCODE');
   const scriptUri = `($SetupEndpoint + ${powerShellLiteral(path)})`;
-  return `& { $SetupEndpoint = ${endpoint}; $PowerShell = $null; foreach ($Name in @('pwsh.exe', 'pwsh', 'powershell.exe')) { $Candidate = [System.IO.Path]::Combine($PSHOME, $Name); if ([System.IO.File]::Exists($Candidate)) { $PowerShell = $Candidate; break } }; if (-not $PowerShell) { throw 'Unable to locate a PowerShell application under $PSHOME.' }; $PreviousOutputEncoding = $OutputEncoding; try { $OutputEncoding = [System.Text.UTF8Encoding]::new($false); @(${childEndpointAssignment}, (Microsoft.PowerShell.Utility\\Invoke-RestMethod -Uri ${scriptUri})) | & $PowerShell -NoProfile -NonInteractive -Command - } finally { $OutputEncoding = $PreviousOutputEncoding } }`;
+  return `& { $SetupEndpoint = ${endpoint}; $PowerShell = $null; foreach ($Name in @('pwsh.exe', 'pwsh', 'powershell.exe')) { $Candidate = [System.IO.Path]::Combine($PSHOME, $Name); if ([System.IO.File]::Exists($Candidate)) { $PowerShell = $Candidate; break } }; if (-not $PowerShell) { throw 'Unable to locate a PowerShell application under $PSHOME.' }; $PreviousOutputEncoding = $OutputEncoding; try { $OutputEncoding = [System.Text.UTF8Encoding]::new($false); @(${childEndpointAssignment}, (Microsoft.PowerShell.Utility\\Invoke-RestMethod -Uri ${scriptUri}), ${childExit}) | & $PowerShell -NoProfile -NonInteractive -Command - } finally { $OutputEncoding = $PreviousOutputEncoding } }`;
 };
 
 export const agentSetupCommand = (origin: string, path: string, platform: 'unix' | 'windows'): string => platform === 'unix'

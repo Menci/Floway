@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+import type { ZodType } from 'zod';
 
 import type { AgentSetupConfiguration } from '../src/configuration.ts';
 import { agentSetupCreateBody, agentSetupHeartbeatBody, agentSetupUpdateBody } from '../src/wire.ts';
@@ -23,42 +24,37 @@ const fullConfiguration: AgentSetupConfiguration = {
 };
 
 describe('agent setup request bodies', () => {
-  test('agentSetupCreateBody accepts a non-empty API key id', () => {
+  const token = 'a'.repeat(43);
+
+  test('accepts a non-empty create key and a canonical heartbeat token', () => {
     expect(agentSetupCreateBody.safeParse({ apiKeyId: 'key-a' }).success).toBe(true);
+    expect(agentSetupHeartbeatBody.safeParse({ token }).success).toBe(true);
   });
 
-  test('agentSetupUpdateBody accepts a token, configuration, and expected revision', () => {
-    expect(agentSetupUpdateBody.safeParse({
-      token: 'token-a',
-      configuration: fullConfiguration,
-      expectedRevision: 3,
-    }).success).toBe(true);
-  });
-
-  test('agentSetupUpdateBody rejects an invalid inner configuration', () => {
-    expect(agentSetupUpdateBody.safeParse({
-      token: 'token-a',
-      configuration: { ...fullConfiguration, claudeCode: { ...fullConfiguration.claudeCode, model: '' } },
-      expectedRevision: 3,
-    }).success).toBe(false);
-  });
-
-  test('agentSetupHeartbeatBody accepts a bare token', () => {
-    expect(agentSetupHeartbeatBody.safeParse({ token: 'token-a' }).success).toBe(true);
+  test.each([0, 1, Number.MAX_SAFE_INTEGER])('accepts a complete update at revision %s', expectedRevision => {
+    expect(agentSetupUpdateBody.safeParse({ token, configuration: fullConfiguration, expectedRevision }).success).toBe(true);
   });
 
   test.each([
-    { label: 'a missing create key', parse: () => agentSetupCreateBody.safeParse({}).success },
-    { label: 'an empty create key', parse: () => agentSetupCreateBody.safeParse({ apiKeyId: '' }).success },
-    { label: 'a non-string create key', parse: () => agentSetupCreateBody.safeParse({ apiKeyId: 7 }).success },
-    { label: 'an empty update token', parse: () => agentSetupUpdateBody.safeParse({ token: '', configuration: fullConfiguration, expectedRevision: 0 }).success },
-    { label: 'a negative revision', parse: () => agentSetupUpdateBody.safeParse({ token: 'token-a', configuration: fullConfiguration, expectedRevision: -1 }).success },
-    { label: 'a fractional revision', parse: () => agentSetupUpdateBody.safeParse({ token: 'token-a', configuration: fullConfiguration, expectedRevision: 1.5 }).success },
-    { label: 'a non-finite revision', parse: () => agentSetupUpdateBody.safeParse({ token: 'token-a', configuration: fullConfiguration, expectedRevision: Number.POSITIVE_INFINITY }).success },
-    { label: 'an unsafe revision', parse: () => agentSetupUpdateBody.safeParse({ token: 'token-a', configuration: fullConfiguration, expectedRevision: Number.MAX_SAFE_INTEGER + 1 }).success },
-    { label: 'an empty heartbeat token', parse: () => agentSetupHeartbeatBody.safeParse({ token: '' }).success },
-    { label: 'a non-string heartbeat token', parse: () => agentSetupHeartbeatBody.safeParse({ token: 7 }).success },
-  ])('rejects $label', ({ parse }) => {
-    expect(parse()).toBe(false);
+    ['a missing create key id', agentSetupCreateBody, {}],
+    ['an empty create key id', agentSetupCreateBody, { apiKeyId: '' }],
+    ['a non-string create key id', agentSetupCreateBody, { apiKeyId: 7 }],
+    ['an empty heartbeat token', agentSetupHeartbeatBody, { token: '' }],
+    ['a short heartbeat token', agentSetupHeartbeatBody, { token: 'a'.repeat(42) }],
+    ['a long heartbeat token', agentSetupHeartbeatBody, { token: 'a'.repeat(44) }],
+    ['a non-base64url heartbeat token', agentSetupHeartbeatBody, { token: `${'a'.repeat(42)}=` }],
+    ['a non-string heartbeat token', agentSetupHeartbeatBody, { token: 7 }],
+    ['an empty update token', agentSetupUpdateBody, { token: '', configuration: fullConfiguration, expectedRevision: 1 }],
+    ['a negative revision', agentSetupUpdateBody, { token, configuration: fullConfiguration, expectedRevision: -1 }],
+    ['a fractional revision', agentSetupUpdateBody, { token, configuration: fullConfiguration, expectedRevision: 1.5 }],
+    ['a non-finite revision', agentSetupUpdateBody, { token, configuration: fullConfiguration, expectedRevision: Number.POSITIVE_INFINITY }],
+    ['an unsafe revision', agentSetupUpdateBody, { token, configuration: fullConfiguration, expectedRevision: Number.MAX_SAFE_INTEGER + 1 }],
+    ['an invalid inner configuration', agentSetupUpdateBody, {
+      token,
+      configuration: { ...fullConfiguration, claudeCode: { ...fullConfiguration.claudeCode, model: '' } },
+      expectedRevision: 1,
+    }],
+  ] satisfies readonly [name: string, schema: ZodType, value: unknown][])('rejects %s', (_name, schema, value) => {
+    expect(schema.safeParse(value).success).toBe(false);
   });
 });

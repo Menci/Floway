@@ -9,19 +9,12 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { decodeUtf8Source, renderSourceSection, type SourceSection } from './source-section.ts';
 import { typescriptString } from './typescript-string.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(HERE, '..');
 const GENERATED_PATH = resolve(PACKAGE_ROOT, 'src/script-assets.generated.ts');
-
-interface SourceSection {
-  name: string;
-  file: string;
-  start?: string;
-  end?: string;
-  append?: string;
-}
 
 interface PlatformSources {
   common: readonly SourceSection[];
@@ -37,6 +30,7 @@ const scriptSources = {
       { name: 'SETUP_BASH_COMMON_MAIN', file: 'installers/bash/common/main.sh', end: '# --- run' },
       { name: 'SETUP_BASH_COMMON_PROCESS', file: 'installers/bash/common/process.sh', append: '\n' },
       { name: 'SETUP_BASH_COMMON_JQ', file: 'installers/bash/common/jq.sh', append: '\n' },
+      { name: 'SETUP_BASH_COMMON_LOCK', file: 'installers/bash/common/lock.sh', append: '\n' },
       { name: 'SETUP_BASH_COMMON_CLI', file: 'installers/bash/common/cli.sh', end: '_install_brew_cask() {' },
       { name: 'SETUP_BASH_COMMON_MANAGED_FILE', file: 'installers/bash/common/managed-file.sh', append: '\n' },
       { name: 'SETUP_BASH_COMMON_CLI', file: 'installers/bash/common/cli.sh', start: '_install_brew_cask() {' },
@@ -54,6 +48,7 @@ const scriptSources = {
       { name: 'SETUP_POWERSHELL_COMMON_JSON_DOCUMENT', file: 'installers/powershell/common/json-document.ps1', append: '\n' },
       { name: 'SETUP_POWERSHELL_COMMON_MAIN', file: 'installers/powershell/common/main.ps1', end: '# --- run' },
       { name: 'SETUP_POWERSHELL_COMMON_MANAGED_FILE', file: 'installers/powershell/common/managed-file.ps1', end: '# Rollback retains' },
+      { name: 'SETUP_POWERSHELL_COMMON_LOCK', file: 'installers/powershell/common/lock.ps1', append: '\n' },
       { name: 'SETUP_POWERSHELL_COMMON_PROCESS', file: 'installers/powershell/common/process.ps1', end: '# Run a fixed package-manager' },
       { name: 'SETUP_POWERSHELL_COMMON_PLATFORM', file: 'installers/powershell/common/platform.ps1', start: 'function Get-SetupPlatform', append: '\n' },
       {
@@ -84,21 +79,13 @@ for (const { name, file } of allSections) {
 
 const sourceByName = new Map(await Promise.all([...sourceFiles].map(async ([name, file]) => [
   name,
-  await readFile(resolve(PACKAGE_ROOT, file), 'utf8'),
+  decodeUtf8Source(await readFile(resolve(PACKAGE_ROOT, file)), file),
 ] as const)));
-
-const findBoundary = (source: string, boundary: string, from: number, name: string): number => {
-  const index = source.indexOf(boundary, from);
-  if (index === -1) throw new Error(`${name} does not contain boundary ${JSON.stringify(boundary)}`);
-  return index;
-};
 
 const renderSection = (section: SourceSection): string => {
   const source = sourceByName.get(section.name);
   if (source === undefined) throw new Error(`source not loaded for ${section.name}`);
-  const start = section.start === undefined ? 0 : findBoundary(source, section.start, 0, section.name);
-  const end = section.end === undefined ? source.length : findBoundary(source, section.end, start, section.name);
-  return source.slice(start, end) + (section.append ?? '');
+  return renderSourceSection(section, source);
 };
 
 const sourceConstants = [...sourceFiles].map(([name]) => {
@@ -127,7 +114,7 @@ ${sourceFragments}
 `;
 
 if (process.argv.includes('--check')) {
-  const actual = await readFile(GENERATED_PATH, 'utf8').catch((error: NodeJS.ErrnoException) => {
+  const actual = await readFile(GENERATED_PATH).then(bytes => decodeUtf8Source(bytes, GENERATED_PATH)).catch((error: NodeJS.ErrnoException) => {
     // A missing generated file is drift the check should report; any other read
     // failure (permissions, I/O) is a real fault and must propagate.
     if (error.code === 'ENOENT') return null;

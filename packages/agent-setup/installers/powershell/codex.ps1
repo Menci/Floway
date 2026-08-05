@@ -80,8 +80,9 @@ function Backup-SetupCodexFiles {
 }
 
 function Restore-SetupCodexFiles {
-  Restore-SetupManagedFile -Existed $script:CodexConfigExisted -Backup $script:CodexConfigBackup -Path $script:CodexConfigPath -OriginalLabel 'file' -CreatedLabel 'Codex config'
-  Restore-SetupManagedFile -Existed $script:CodexTokenExisted -Backup $script:CodexTokenBackup -Path $script:CodexTokenPath -OriginalLabel 'provider token' -CreatedLabel 'Codex provider token'
+  $configRestored = Restore-SetupManagedFile -Existed $script:CodexConfigExisted -Backup $script:CodexConfigBackup -Path $script:CodexConfigPath -OriginalLabel 'file' -CreatedLabel 'Codex config'
+  $tokenRestored = Restore-SetupManagedFile -Existed $script:CodexTokenExisted -Backup $script:CodexTokenBackup -Path $script:CodexTokenPath -OriginalLabel 'provider token' -CreatedLabel 'Codex provider token'
+  return $configRestored -and $tokenRestored
 }
 
 function Complete-SetupCodexFiles {
@@ -251,6 +252,10 @@ function Write-SetupCodexVersion {
 # Install, then configure Codex as one transactional config/token write. A
 # freshly installed CLI is never uninstalled when configuration fails.
 function Set-SetupAgent {
+  $script:CodexHomeDir = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
+  $script:CodexConfigPath = Join-Path $script:CodexHomeDir 'config.toml'
+  $script:CodexTokenPath = Join-Path $script:CodexHomeDir 'floway-token'
+  Enter-SetupLock $script:CodexHomeDir
   Write-SetupAgentNotice 'Installing' 'Codex'
   # Upstream installs into these user-local candidates by default:
   # https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/scripts/install/install.sh
@@ -270,32 +275,26 @@ function Set-SetupAgent {
   Write-SetupCodexVersion -Exe $exe
 
   Write-SetupAgentNotice 'Configuring' 'Codex'
-  $script:CodexHomeDir = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
-  $script:CodexConfigPath = Join-Path $script:CodexHomeDir 'config.toml'
-  $script:CodexTokenPath = Join-Path $script:CodexHomeDir 'floway-token'
-  if (-not (Test-Path -LiteralPath $script:CodexHomeDir)) {
-    New-Item -ItemType Directory -Path $script:CodexHomeDir -Force | Out-Null
-  }
   Backup-SetupCodexFiles
   try {
     Write-SetupCodexToken
   } catch {
     Write-SetupWarn "Codex provider-token staging failed; rolling back configuration and token."
-    Restore-SetupCodexFiles
+    $null = Restore-SetupCodexFiles
     throw
   }
   try {
     $writtenConfigPath = Write-SetupCodexConfig -Exe $exe
   } catch {
     Write-SetupWarn "Codex configuration failed; rolling back configuration and token."
-    Restore-SetupCodexFiles
+    $null = Restore-SetupCodexFiles
     throw
   }
   try {
     Complete-SetupCodexFiles
   } catch {
     Write-SetupWarn "Codex backup cleanup failed; rolling back configuration and token."
-    Restore-SetupCodexFiles
+    $null = Restore-SetupCodexFiles
     throw
   }
   Write-SetupInfo ('Written to `' + $writtenConfigPath + '`.')

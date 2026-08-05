@@ -18,7 +18,6 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@floway-dev/test-utils": "workspace:*",
     "@types/jsesc": "^3.0.3",
     "@types/node": "^22",
     "jsesc": "^3.1.0"
