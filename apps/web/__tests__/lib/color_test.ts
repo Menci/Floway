@@ -206,6 +206,7 @@ describe('readableTone', () => {
     ['#10B981', '#808080', '#021C13'],
     ['#F43F5E', '#949494', '#551621'],
     ['#FBBF24', '#6E6E6E', '#FCF1D4'],
+    ['#5AF19C', '#FFFFFF', '#328556'],
     ['#010203', '#FFFFFF', '#010203'],
     ['#FEFDFC', '#000000', '#FEFDFC'],
   ])('preserves the frozen readable tone for %s on %s', (hex, surface, expected) => {

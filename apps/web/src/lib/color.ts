@@ -17,7 +17,10 @@ export const hexToRgb = (hex: string): RgbTuple => {
 };
 
 export const rgbToHsv = (r: number, g: number, b: number): [number, number, number] => {
-  const { h, s, v } = convertRgbToHsv(rgbColor([r, g, b]));
+  const { h, v } = convertRgbToHsv(rgbColor([r, g, b]));
+  // Culori's equivalent `1 - min / max` changes the last bit for byte inputs,
+  // which can move readableTone across a byte-rounding boundary.
+  const s = v === 0 ? 0 : (Math.max(r, g, b) - Math.min(r, g, b)) / Math.max(r, g, b);
   return [h ?? 0, s, v];
 };
 
