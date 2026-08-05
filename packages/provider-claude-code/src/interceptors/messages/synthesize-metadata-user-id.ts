@@ -3,6 +3,7 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 import { v4 } from 'uuid';
 
 import type { MessagesBoundaryCtx } from './types.ts';
+import { parseMetadataUserID } from '../../detection.ts';
 import type { MessagesMessage, MessagesPayload } from '@floway-dev/protocols/messages';
 
 // Real CC includes `metadata.user_id` on every /v1/messages request: a JSON
@@ -34,7 +35,7 @@ export const synthesizeMetadataUserId = async <TResult>(
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   const existing = ctx.payload.metadata?.user_id;
-  if (typeof existing === 'string' && existing.length > 0) return await run();
+  if (typeof existing === 'string' && parseMetadataUserID(existing) !== null) return await run();
 
   const deviceId = deviceIdForUpstream(ctx.upstreamId);
   const sessionId = sessionIdForPayload(ctx.upstreamId, ctx.payload);
@@ -49,25 +50,25 @@ export const synthesizeMetadataUserId = async <TResult>(
 const deviceIdForUpstream = (upstreamId: string): string =>
   sha256Hex(`claude-code-device:${upstreamId}`);
 
-// Session id derives from the upstream id plus the first user message text,
+// Session id derives from the upstream id plus the first user message content,
 // so multi-turn conversations of the same conversation prefix re-use the
 // same session id (good for prompt cache) but different conversations get
-// different ids. Mirrors the strategy the Codex provider uses for its own
-// session-id derivation, with a per-upstream salt so two upstreams running
-// the same script don't collide.
+// different ids. Structured content stays opaque in the seed so image-only
+// conversations do not all collapse to an empty-text identity. This mirrors
+// the strategy the Codex provider uses, with a per-upstream salt so two
+// upstreams running the same script do not collide.
 const sessionIdForPayload = (upstreamId: string, payload: Pick<MessagesPayload, 'messages'>): string => {
-  const firstUser = firstUserMessageText(payload.messages);
-  return sha256Uuidv4(`claude-code-session:${upstreamId}${firstUser}`);
+  const firstUser = firstUserMessageContent(payload.messages);
+  const seed = typeof firstUser === 'string'
+    ? `${upstreamId}${firstUser}`
+    : `${upstreamId}\u0000blocks:${JSON.stringify(firstUser)}`;
+  return sha256Uuidv4(`claude-code-session:${seed}`);
 };
 
-const firstUserMessageText = (messages: MessagesMessage[]): string => {
+const firstUserMessageContent = (messages: MessagesMessage[]): MessagesMessage['content'] => {
   for (const msg of messages) {
     if (msg.role !== 'user') continue;
-    if (typeof msg.content === 'string') return msg.content;
-    return msg.content
-      .map(part => part.type === 'text' ? part.text : '')
-      .filter(Boolean)
-      .join('\n');
+    return msg.content;
   }
   return '';
 };

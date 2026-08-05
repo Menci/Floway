@@ -11,7 +11,7 @@ import type { RawHttpResponse } from './types.ts';
 /**
  * Bridge a wire-faithful {@link RawHttpResponse} to a Web `Response`. The
  * Web `Response` constructor rejects status outside 200..599 and rejects a
- * non-null body for 204/304 — both of which the wire can legitimately
+ * non-null body for 204/205/304 — all of which the wire can legitimately
  * carry — so the parser stays a pure wire decoder and this is the single
  * place that maps the parsed shape onto the Fetch standard's constraints.
  *
@@ -30,12 +30,11 @@ export const toWebResponse = (raw: RawHttpResponse): Response => {
       { rfc: 'WHATWG Fetch §response-class' },
     );
   }
-  // RFC 9110 §15.3.5 + §15.4.5: 204 No Content and 304 Not Modified MUST
-  // NOT carry a body. The Web Response constructor also refuses a non-null
-  // body for these statuses, so we cancel the body stream (in case the
-  // parser fell back to until-EOF framing on a misbehaving upstream) and
-  // construct with `null`.
-  if (raw.status === 204 || raw.status === 304) {
+  // RFC 9110 §15.3.5, §15.3.6, and §15.4.5: 204 No Content, 205 Reset
+  // Content, and 304 Not Modified MUST NOT carry content. The Web Response
+  // constructor also refuses a non-null body for these statuses, so we
+  // cancel the body stream and construct with `null`.
+  if (raw.status === 204 || raw.status === 205 || raw.status === 304) {
     raw.body.cancel().catch(() => {});
     return new Response(null, { status: raw.status, statusText: raw.statusText, headers: raw.headers });
   }
@@ -45,18 +44,20 @@ export const toWebResponse = (raw: RawHttpResponse): Response => {
 /**
  * Parse an HTTP/1.1 response off a byte-stream reader. Returns a
  * wire-faithful struct rather than a Web `Response`: Response rejects 1xx
- * and refuses to carry a body for 204/304, but those are legal on the
+ * and refuses to carry a body for 204/205/304, but those are legal on the
  * wire. Bridge to a Response with {@link toWebResponse} when the caller
  * wants one.
  *
  * 1xx interim heads (100 Continue, 103 Early Hints, …) are read and
  * discarded transparently — RFC 9112 §6 mandates no body on a 1xx, so any
  * subsequent bytes are the next response head, which we re-parse on the
- * spot. The returned struct is always a non-1xx final response.
+ * spot. Status 101 is returned as a protocol-switch boundary whose body is
+ * the opaque post-upgrade byte stream; other informational heads are skipped.
  */
 export const parseHttpResponse = async (readable: ReadableStream<Uint8Array>): Promise<RawHttpResponse> => {
   const reader = readable.getReader();
   let buffer: Uint8Array = new Uint8Array(0);
+  let informationalCount = 0;
   // Hand-off contract: on the success path the reader is moved into the body
   // framing stream, which then owns the lock. On every throw before that
   // hand-off the reader must release the lock — otherwise a downstream
@@ -67,7 +68,17 @@ export const parseHttpResponse = async (readable: ReadableStream<Uint8Array>): P
     while (true) {
       const result = await readResponseHead(reader, buffer);
       buffer = result.remainder;
+      if (result.status === 101) {
+        return finalizeResponse(reader, result);
+      }
       if (result.status >= 100 && result.status < 200) {
+        informationalCount++;
+        if (informationalCount > 16) {
+          throw new HttpProtocolError(
+            'HTTP/1.1 response exceeded 16 informational heads',
+            'TOO_MANY_INFORMATIONAL',
+          );
+        }
         // Interim response: no body to frame, no headers to surface. The
         // remainder bytes belong to the next response; loop back into
         // head-parsing with them already buffered.
@@ -82,6 +93,7 @@ export const parseHttpResponse = async (readable: ReadableStream<Uint8Array>): P
 };
 
 interface ResponseHead {
+  version: '1.0' | '1.1';
   status: number;
   statusText: string;
   headers: Headers;
@@ -100,7 +112,6 @@ const readResponseHead = async (
   const HEADER_BUFFER_CAP = 64 * 1024;
   const { statusLine, lines, remainder } = await readHeadSection(reader, preBuffered, {
     maxBytes: HEADER_BUFFER_CAP,
-    decodeContext: 'response headers',
     eofError: receivedBytes => new HttpProtocolError(
       `unexpected EOF before headers; got ${receivedBytes} bytes`,
       'EOF',
@@ -136,12 +147,16 @@ const readResponseHead = async (
     );
   }
   const status = parseInt(m[1]!, 10);
-  // RFC 9110 §5.6.3: OWS = *( SP / HTAB ). The reason-phrase grammar
-  // forbids leading OWS (enforced by the `\S` first-byte anchor) but
-  // greedy `.*` keeps trailing SP/HTAB up to the CRLF, so a misbehaving
-  // upstream sending `HTTP/1.1 200 OK   ` would otherwise surface
-  // trailing whitespace through statusText. Trim it to match the
-  // RawHttpResponse.statusText contract.
+  if (status < 100 || status > 599) {
+    throw new HttpProtocolError(
+      `status code ${status} is outside the defined 100..599 range`,
+      'BAD_STATUS_LINE',
+      { rfc: 'RFC 9110 §15' },
+    );
+  }
+  // SP/HTAB are valid reason-phrase bytes, including at the start. Preserve
+  // those leading bytes while trimming trailing OWS to the public statusText
+  // contract.
   const statusText = m[2]!.replace(/[ \t]+$/, '');
 
   const respHeaders = new Headers();
@@ -203,14 +218,27 @@ const readResponseHead = async (
     respHeaders.append(name, value);
   }
 
-  return { status, statusText, headers: respHeaders, rawContentLengths, rawTransferEncodings, remainder };
+  const version = statusLine.startsWith('HTTP/1.0') ? '1.0' : '1.1';
+  return { version, status, statusText, headers: respHeaders, rawContentLengths, rawTransferEncodings, remainder };
 };
 
 const finalizeResponse = (
   reader: ReadableStreamDefaultReader<Uint8Array>,
   head: ResponseHead,
 ): RawHttpResponse => {
-  const { status, statusText, headers, rawContentLengths, rawTransferEncodings, remainder } = head;
+  const { version, status, statusText, headers, rawContentLengths, rawTransferEncodings, remainder } = head;
+
+  if (status === 101) {
+    return { status, statusText, headers, body: untilEofBody(reader, remainder) };
+  }
+
+  // RFC 9112 §6.3 gives response status semantics precedence over framing
+  // fields: 204, 205, and 304 never carry content even if a peer includes a
+  // Content-Length or Transfer-Encoding field. Frame them as an immediate
+  // zero-length body so raw callers cannot hang waiting for advertised bytes.
+  if (status === 204 || status === 205 || status === 304) {
+    return { status, statusText, headers, body: lengthBody(reader, remainder, 0) };
+  }
 
   // RFC 9112 §6.3: a message with both Transfer-Encoding and
   // Content-Length is an error (the sender is broken or actively
@@ -220,6 +248,13 @@ const finalizeResponse = (
       'HTTP/1.1 response has both Transfer-Encoding and Content-Length',
       'CL_AND_TE',
       { rfc: 'RFC 9112 §6.3' },
+    );
+  }
+  if (version === '1.0' && rawTransferEncodings.length > 0) {
+    throw new HttpProtocolError(
+      'HTTP/1.0 response cannot use Transfer-Encoding',
+      'TE_NOT_CHUNKED',
+      { rfc: 'RFC 9112 §6.1' },
     );
   }
   // RFC 9112 §6.3: multiple Content-Length values are an error unless
@@ -232,25 +267,40 @@ const finalizeResponse = (
     );
   }
 
-  // Parse Transfer-Encoding as a token list; `chunked` MUST be the final
-  // (or only) coding. Anything else (gzip, identity, etc.) framed without
-  // chunked has no defined termination and we don't decode them anyway.
-  const teTokens = rawTransferEncodings
-    .flatMap(v => v.split(','))
-    .map(t => t.trim().toLowerCase())
-    .filter(t => t !== '');
-  const teIsChunked = teTokens.length > 0 && teTokens[teTokens.length - 1] === 'chunked';
-  if (teTokens.length > 0 && !teIsChunked) {
+  // Parse Transfer-Encoding as a coding list. `chunked` MUST be final when
+  // present; a response whose final coding is not chunked is close-delimited
+  // and the encoded bytes stay opaque to this framing layer.
+  const transferCodings = splitTransferCodings(rawTransferEncodings)
+    .filter(value => value.trim() !== '')
+    .map(parseTransferCoding);
+  const teTokens = transferCodings.map(coding => coding.name);
+  if (rawTransferEncodings.length > 0 && transferCodings.length === 0) {
     throw new HttpProtocolError(
-      `HTTP/1.1 response has Transfer-Encoding without chunked: ${teTokens.join(',')}`,
+      'HTTP/1.1 response has an empty Transfer-Encoding value',
       'TE_NOT_CHUNKED',
       { rfc: 'RFC 9112 §6.1' },
     );
   }
-  if (teTokens.filter(t => t === 'chunked').length > 1) {
+  const chunkedIndexes = teTokens.flatMap((token, index) => token === 'chunked' ? [index] : []);
+  if (chunkedIndexes.length > 1) {
     throw new HttpProtocolError(
       'HTTP/1.1 response has chunked listed more than once in Transfer-Encoding',
       'TE_DOUBLE_CHUNKED',
+      { rfc: 'RFC 9112 §6.1' },
+    );
+  }
+  const teIsChunked = chunkedIndexes.length === 1;
+  if (teIsChunked && chunkedIndexes[0] !== teTokens.length - 1) {
+    throw new HttpProtocolError(
+      `HTTP/1.1 response has chunked before the final transfer coding: ${teTokens.join(',')}`,
+      'TE_NOT_CHUNKED',
+      { rfc: 'RFC 9112 §6.1' },
+    );
+  }
+  if (teTokens.includes('identity')) {
+    throw new HttpProtocolError(
+      'HTTP/1.1 response uses the obsolete identity transfer coding',
+      'TE_NOT_CHUNKED',
       { rfc: 'RFC 9112 §6.1' },
     );
   }
@@ -259,10 +309,12 @@ const finalizeResponse = (
   let body: ReadableStream<Uint8Array>;
   if (teIsChunked) {
     body = decodeChunked(reader, remainder);
-    headers.delete('transfer-encoding');
+    const remainingCodings = transferCodings.slice(0, -1);
+    if (remainingCodings.length === 0) headers.delete('transfer-encoding');
+    else headers.set('transfer-encoding', remainingCodings.map(coding => coding.raw).join(', '));
   } else if (contentLength !== null) {
-    const total = parseInt(contentLength, 10);
-    if (!Number.isFinite(total) || total < 0 || String(total) !== contentLength) {
+    const total = Number(contentLength);
+    if (!/^\d+$/.test(contentLength) || !Number.isSafeInteger(total)) {
       throw new HttpProtocolError(
         `HTTP/1.1 response has malformed Content-Length: ${JSON.stringify(contentLength)}`,
         'BAD_CL',
@@ -271,10 +323,122 @@ const finalizeResponse = (
     }
     body = lengthBody(reader, remainder, total);
   } else {
+    // RFC 9112 §6.3 item 7: when Transfer-Encoding is present and its final
+    // coding is not chunked, the response is close-delimited. We do not
+    // decode that coding, so its header and encoded bytes stay wire-faithful.
     body = untilEofBody(reader, remainder);
   }
 
   return { status, statusText, headers, body };
+};
+
+interface TransferCoding {
+  name: string;
+  raw: string;
+}
+
+const splitTransferCodings = (values: string[]): string[] => {
+  const codings: string[] = [];
+  for (const value of values) {
+    let start = 0;
+    let quoted = false;
+    let escaped = false;
+    for (let i = 0; i < value.length; i++) {
+      const c = value[i]!;
+      if (escaped) {
+        escaped = false;
+      } else if (quoted && c === '\\') {
+        escaped = true;
+      } else if (c === '"') {
+        quoted = !quoted;
+      } else if (!quoted && c === ',') {
+        codings.push(value.slice(start, i));
+        start = i + 1;
+      }
+    }
+    codings.push(value.slice(start));
+  }
+  return codings;
+};
+
+const parseTransferCoding = (input: string): TransferCoding => {
+  const raw = input.trim();
+  let offset = 0;
+  const skipOws = (): void => {
+    while (input[offset] === ' ' || input[offset] === '\t') offset++;
+  };
+  const readToken = (): string => {
+    const start = offset;
+    while (offset < input.length && TCHAR.test(input[offset]!)) offset++;
+    return input.slice(start, offset);
+  };
+
+  skipOws();
+  const name = readToken().toLowerCase();
+  if (name === '') {
+    throw new HttpProtocolError(
+      `HTTP/1.1 response has malformed transfer coding ${JSON.stringify(input)}`,
+      'BAD_HEADERS',
+      { rfc: 'RFC 9110 §10.1.4' },
+    );
+  }
+  let hasParameters = false;
+  while (true) {
+    skipOws();
+    if (offset === input.length) break;
+    if (input[offset++] !== ';') {
+      throw new HttpProtocolError(
+        `HTTP/1.1 response has malformed transfer coding ${JSON.stringify(input)}`,
+        'BAD_HEADERS',
+        { rfc: 'RFC 9110 §10.1.4' },
+      );
+    }
+    hasParameters = true;
+    skipOws();
+    if (readToken() === '') throwMalformedTransferCoding(input);
+    skipOws();
+    if (input[offset++] !== '=') throwMalformedTransferCoding(input);
+    skipOws();
+    if (input[offset] === '"') {
+      offset++;
+      let closed = false;
+      while (offset < input.length) {
+        const c = input.charCodeAt(offset++);
+        if (c === 0x22) {
+          closed = true;
+          break;
+        }
+        if (c === 0x5c) {
+          if (offset >= input.length) throwMalformedTransferCoding(input);
+          const escapedByte = input.charCodeAt(offset++);
+          if (escapedByte !== 0x09 && (escapedByte < 0x20 || escapedByte === 0x7f)) {
+            throwMalformedTransferCoding(input);
+          }
+        } else if (c !== 0x09 && (c < 0x20 || c === 0x7f)) {
+          throwMalformedTransferCoding(input);
+        }
+      }
+      if (!closed) throwMalformedTransferCoding(input);
+    } else if (readToken() === '') {
+      throwMalformedTransferCoding(input);
+    }
+  }
+  if (name === 'chunked' && hasParameters) {
+    throw new HttpProtocolError(
+      'HTTP/1.1 chunked transfer coding cannot carry parameters',
+      'BAD_HEADERS',
+      { rfc: 'RFC 9112 §7.1' },
+    );
+  }
+  return { name, raw };
+};
+
+const throwMalformedTransferCoding = (input: string): never => {
+  throw new HttpProtocolError(
+    `HTTP/1.1 response has malformed transfer coding ${JSON.stringify(input)}`,
+    'BAD_HEADERS',
+    { rfc: 'RFC 9110 §10.1.4' },
+  );
 };
 
 // Body framing — Content-Length. Frames the body to exactly `total` bytes:
@@ -287,6 +451,15 @@ const lengthBody = (
   total: number,
 ): ReadableStream<Uint8Array> => {
   let consumed = 0;
+  let released = false;
+  const release = (): void => {
+    if (released) return;
+    released = true;
+    try { reader.releaseLock(); } catch { /* lock already released */ }
+  };
+  const cancelAndRelease = async (reason?: unknown): Promise<void> => {
+    try { await reader.cancel(reason); } catch { /* reader already cancelled */ } finally { release(); }
+  };
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       if (head.byteLength > total) {
@@ -294,7 +467,7 @@ const lengthBody = (
           `trailing bytes after Content-Length boundary (${head.byteLength - total} extra in head)`,
           'TRAILING_BODY_BYTES',
         ));
-        try { await reader.cancel(); } catch { /* reader already cancelled */ }
+        await cancelAndRelease();
         return;
       }
       if (head.byteLength) {
@@ -303,7 +476,7 @@ const lengthBody = (
       }
       if (consumed >= total) {
         controller.close();
-        try { await reader.cancel(); } catch { /* reader already cancelled */ }
+        await cancelAndRelease();
       }
     },
     async pull(controller) {
@@ -313,12 +486,20 @@ const lengthBody = (
       // and bypass back-pressure (mirrors `untilEofBody` and the chunked
       // decoder's data branch). A 20 MiB JSON body under a slow consumer
       // would otherwise pin its full size in memory.
-      const { value, done } = await reader.read();
+      let result: ReadableStreamReadResult<Uint8Array>;
+      try {
+        result = await reader.read();
+      } catch (error) {
+        release();
+        throw error;
+      }
+      const { value, done } = result;
       if (done) {
         controller.error(new HttpProtocolError(
           `upstream EOF after ${consumed}/${total} body bytes`,
           'EOF',
         ));
+        release();
         return;
       }
       const remain = total - consumed;
@@ -332,16 +513,16 @@ const lengthBody = (
           `trailing bytes after Content-Length boundary (${value.byteLength - remain} extra)`,
           'TRAILING_BODY_BYTES',
         ));
-        try { await reader.cancel(); } catch { /* reader already cancelled */ }
+        await cancelAndRelease();
         return;
       }
       if (consumed >= total) {
         controller.close();
-        try { await reader.cancel(); } catch { /* reader already cancelled */ }
+        await cancelAndRelease();
       }
     },
-    cancel(reason) {
-      reader.cancel(reason).catch(() => {});
+    async cancel(reason) {
+      await cancelAndRelease(reason);
     },
   });
 };
@@ -350,17 +531,34 @@ const untilEofBody = (
   reader: ReadableStreamDefaultReader<Uint8Array>,
   head: Uint8Array,
 ): ReadableStream<Uint8Array> => {
+  let released = false;
+  const release = (): void => {
+    if (released) return;
+    released = true;
+    try { reader.releaseLock(); } catch { /* lock already released */ }
+  };
   return new ReadableStream<Uint8Array>({
     start(controller) {
       if (head.byteLength) controller.enqueue(head);
     },
     async pull(controller) {
-      const { value, done } = await reader.read();
-      if (done) controller.close();
-      else controller.enqueue(copy(value));
+      let result: ReadableStreamReadResult<Uint8Array>;
+      try {
+        result = await reader.read();
+      } catch (error) {
+        release();
+        throw error;
+      }
+      const { value, done } = result;
+      if (done) {
+        controller.close();
+        release();
+      } else {
+        controller.enqueue(copy(value));
+      }
     },
-    cancel(reason) {
-      reader.cancel(reason).catch(() => {});
+    async cancel(reason) {
+      try { await reader.cancel(reason); } catch { /* reader already cancelled */ } finally { release(); }
     },
   });
 };

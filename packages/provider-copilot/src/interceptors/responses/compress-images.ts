@@ -1,4 +1,4 @@
-import { memoizedDataUrlCompressor } from '../image-compression.ts';
+import { mapImageCompressions, memoizedDataUrlCompressor } from '../image-compression.ts';
 import { targetSizeForResponsesChat } from '../image-size.ts';
 import type { ResponsesBoundaryCtx } from './types.ts';
 import type { ResponsesInputContent, ResponsesInputImage, ResponsesToolOutputContent } from '@floway-dev/protocols/responses';
@@ -33,11 +33,8 @@ const compressInlineImages = async (ctx: ResponsesBoundaryCtx): Promise<void> =>
 
   const compress = memoizedDataUrlCompressor(targetSizeForResponsesChat(ctx.model.id));
   const compressedUrls = new Map<CompressibleImagePart, string>();
-  await Promise.all(
-    targets.map(async target => {
-      compressedUrls.set(target.part, await compress(target.imageUrl));
-    }),
-  );
+  const outputs = await mapImageCompressions(targets, target => compress(target.imageUrl));
+  targets.forEach((target, index) => compressedUrls.set(target.part, outputs[index]));
   const hasCompressedImage = (part: ResponsesInputContent): part is CompressibleImagePart =>
     part.type === 'input_image' && compressedUrls.has(part as CompressibleImagePart);
   const rewriteImage = (part: CompressibleImagePart): CompressibleImagePart => {

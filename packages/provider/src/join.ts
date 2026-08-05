@@ -9,8 +9,8 @@
 // want for hosts that serve the API under a subpath. So we hand-join after
 // trimming the base's trailing slash and validating the path.
 
-const FORBIDDEN_PATH_SEGMENTS = ['//', '/./', '/../'];
 const MAX_PATH_LENGTH = 256;
+const FORBIDDEN_RAW_PATH_CHARACTERS = /[\\\u0000-\u001f\u007f]/;
 
 export interface ValidatePathOk {
   ok: true;
@@ -35,12 +35,21 @@ export const validateUpstreamPath = (raw: unknown, field: string): ValidatePathO
   if (value.length > MAX_PATH_LENGTH) {
     return { ok: false, error: `${field} is too long` };
   }
-  for (const segment of FORBIDDEN_PATH_SEGMENTS) {
-    if (value.includes(segment)) {
-      return {
-        ok: false,
-        error: `${field} must not contain "${segment}"`,
-      };
+  if (value.includes('#')) {
+    return { ok: false, error: `${field} must not contain a fragment` };
+  }
+  if (FORBIDDEN_RAW_PATH_CHARACTERS.test(value)) {
+    return { ok: false, error: `${field} contains a forbidden character` };
+  }
+  if (value.includes('//')) {
+    return { ok: false, error: `${field} must not contain "//"` };
+  }
+  const queryIndex = value.indexOf('?');
+  const pathname = queryIndex === -1 ? value : value.slice(0, queryIndex);
+  for (const segment of pathname.split('/')) {
+    const dots = segment.replace(/%2e/gi, '.');
+    if (dots === '.' || dots === '..') {
+      return { ok: false, error: `${field} must not contain relative path segments` };
     }
   }
   return { ok: true, value };

@@ -52,6 +52,7 @@ const paint = (gesture: Gesture) => {
 
 export const withWinuiDrag = (components: FluentComponents): FluentComponents => {
   const FluentSwitch = components.Switch;
+  const { mergeCallbacks } = components;
   const { indicator: indicatorClass, input: inputClass } = components.switchClassNames;
   const resolveSlotProps = components.slot.resolveShorthand as (value: unknown) => PropCarrier | undefined;
 
@@ -167,18 +168,20 @@ export const withWinuiDrag = (components: FluentComponents): FluentComponents =>
       event.stopPropagation();
     };
 
+    const resolvedRoot = resolveSlotProps(root) as React.HTMLAttributes<HTMLDivElement> | undefined;
+
     return (
       <FluentSwitch
         {...props}
         ref={ref}
         root={{
-          ...resolveSlotProps(root),
-          onClickCapture,
-          onLostPointerCapture: abandon,
-          onPointerCancel: abandon,
-          onPointerDown,
-          onPointerMove,
-          onPointerUp,
+          ...resolvedRoot,
+          onClickCapture: mergeCallbacks(resolvedRoot?.onClickCapture, onClickCapture),
+          onLostPointerCapture: mergeCallbacks(resolvedRoot?.onLostPointerCapture, abandon),
+          onPointerCancel: mergeCallbacks(resolvedRoot?.onPointerCancel, abandon),
+          onPointerDown: mergeCallbacks(resolvedRoot?.onPointerDown, onPointerDown),
+          onPointerMove: mergeCallbacks(resolvedRoot?.onPointerMove, onPointerMove),
+          onPointerUp: mergeCallbacks(resolvedRoot?.onPointerUp, onPointerUp),
         }}
       />
     );

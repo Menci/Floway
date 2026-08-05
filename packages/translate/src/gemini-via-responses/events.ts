@@ -1,4 +1,6 @@
 import { geminiCandidateEvent, parseStrictJsonObject } from '../shared/gemini-via/gemini.ts';
+import { authoritativeStreamSuffix } from '../shared/via-responses/authoritative-stream-value.ts';
+import { responsesPartKey } from '../shared/via-responses/responses-stream.ts';
 import { eventFrame, splitInclusiveInputTokens, splitInclusiveOutputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiFinishReason, GeminiPart, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 import { isResponsesTerminalEvent, type ResponsesOutputFunctionCall, type ResponsesOutputReasoning, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -76,22 +78,22 @@ interface ResponsesFunctionCallDraft {
 
 interface ResponsesToGeminiStreamState {
   functionCalls: Map<number, ResponsesFunctionCallDraft>;
-  emittedReasoningKeys: Set<string>;
-  emittedTextKeys: Set<string>;
+  reasoningTexts: Map<string, string>;
+  outputTexts: Map<string, string>;
   serviceTier?: ResponsesResult['service_tier'];
 }
-
-const responsesPartKey = (outputIndex: number, partIndex: number): string => `${outputIndex}:${partIndex}`;
 
 const emitTextPart = (part: GeminiPart): ProtocolFrame<GeminiStreamEvent> => eventFrame(geminiCandidateEvent([part]));
 
 const reasoningItemDoneFrames = function* (item: ResponsesOutputReasoning, outputIndex: number, state: ResponsesToGeminiStreamState): Generator<ProtocolFrame<GeminiStreamEvent>> {
   for (const [summaryIndex, part] of item.summary.entries()) {
     const key = responsesPartKey(outputIndex, summaryIndex);
-    if (!part.text || state.emittedReasoningKeys.has(key)) continue;
+    const streamed = state.reasoningTexts.get(key) ?? '';
+    const suffix = authoritativeStreamSuffix(streamed, part.text, `Responses reasoning summary ${key}`);
+    if (part.text) state.reasoningTexts.set(key, part.text);
+    if (!suffix) continue;
 
-    state.emittedReasoningKeys.add(key);
-    yield eventFrame(geminiCandidateEvent([{ text: part.text, thought: true }]));
+    yield eventFrame(geminiCandidateEvent([{ text: suffix, thought: true }]));
   }
 };
 
@@ -99,23 +101,19 @@ const functionCallDoneFrame = (item: ResponsesOutputFunctionCall, outputIndex: n
   const current = state.functionCalls.get(outputIndex);
   state.functionCalls.delete(outputIndex);
 
-  const draft = current ?? {
-    id: item.call_id,
-    name: item.name,
-    argsJson: item.arguments,
-  };
-  let argsJson = item.arguments;
-  if (current?.argsJson) argsJson = current.argsJson;
+  const id = item.call_id;
+  const name = item.name;
+  const argsJson = item.arguments.length > 0 ? item.arguments : current?.argsJson ?? '';
 
-  if (!draft.name) {
+  if (!name) {
     throw new Error('Responses function call ended without a name.');
   }
 
   return emitTextPart(
     {
       functionCall: {
-        ...(draft.id !== undefined ? { id: draft.id } : {}),
-        name: draft.name,
+        ...(id !== undefined ? { id } : {}),
+        name,
         args: argsJson ? parseStrictJsonObject(argsJson, 'Responses function call arguments') : {},
       },
     },
@@ -130,8 +128,8 @@ const handleTerminal = (event: Extract<ResponsesStreamEvent, { type: 'response.c
 export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>): AsyncGenerator<ProtocolFrame<GeminiStreamEvent>> {
   const state: ResponsesToGeminiStreamState = {
     functionCalls: new Map(),
-    emittedReasoningKeys: new Set(),
-    emittedTextKeys: new Set(),
+    reasoningTexts: new Map(),
+    outputTexts: new Map(),
   };
 
   for await (const event of upstreamResponsesEventsUntilTerminal(frames)) {
@@ -149,10 +147,12 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
       if (!text) break;
 
       const key = responsesPartKey(textEvent.output_index, textEvent.summary_index);
-      if (textEvent.type === 'response.reasoning_summary_text.done' && state.emittedReasoningKeys.has(key)) break;
-
-      state.emittedReasoningKeys.add(key);
-      yield eventFrame(geminiCandidateEvent([{ text, thought: true }]));
+      const streamed = state.reasoningTexts.get(key) ?? '';
+      const emitted = textEvent.type === 'response.reasoning_summary_text.delta'
+        ? text
+        : authoritativeStreamSuffix(streamed, text, `Responses reasoning summary ${key}`);
+      state.reasoningTexts.set(key, textEvent.type === 'response.reasoning_summary_text.delta' ? streamed + text : text);
+      if (emitted) yield eventFrame(geminiCandidateEvent([{ text: emitted, thought: true }]));
       break;
     }
 
@@ -163,10 +163,12 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
       if (!text) break;
 
       const key = responsesPartKey(textEvent.output_index, textEvent.content_index);
-      if (textEvent.type === 'response.output_text.done' && state.emittedTextKeys.has(key)) break;
-
-      state.emittedTextKeys.add(key);
-      yield emitTextPart({ text });
+      const streamed = state.outputTexts.get(key) ?? '';
+      const emitted = textEvent.type === 'response.output_text.delta'
+        ? text
+        : authoritativeStreamSuffix(streamed, text, `Responses output text ${key}`);
+      state.outputTexts.set(key, textEvent.type === 'response.output_text.delta' ? streamed + text : text);
+      if (emitted) yield emitTextPart({ text: emitted });
       break;
     }
 

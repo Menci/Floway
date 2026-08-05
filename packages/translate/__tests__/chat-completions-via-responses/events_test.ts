@@ -1045,7 +1045,7 @@ test('translateResponsesEventToChatCompletionsChunks preserves later text after 
   );
 });
 
-test('translateResponsesEventToChatCompletionsChunks emits output_text.done when no delta arrived', () => {
+test('translateResponsesEventToChatCompletionsChunks completes partial output text from output_text.done', () => {
   const state = createResponsesToChatCompletionsStreamState();
   const chunks = [
     translateResponsesEventToChatCompletionsChunks(
@@ -1066,6 +1066,16 @@ test('translateResponsesEventToChatCompletionsChunks emits output_text.done when
     ),
     translateResponsesEventToChatCompletionsChunks(
       {
+        type: 'response.output_text.delta',
+        item_id: 'msg_0',
+        output_index: 0,
+        content_index: 0,
+        delta: 'ans',
+      },
+      state,
+    ),
+    translateResponsesEventToChatCompletionsChunks(
+      {
         type: 'response.output_text.done',
         item_id: 'msg_0',
         output_index: 0,
@@ -1078,11 +1088,43 @@ test('translateResponsesEventToChatCompletionsChunks emits output_text.done when
 
   assertEquals(
     chunks.map(chunk => chunk.choices[0]?.delta),
-    [{ role: 'assistant' }, { content: 'answer' }],
+    [{ role: 'assistant' }, { content: 'ans' }, { content: 'wer' }],
   );
 });
 
-test('translateResponsesEventToChatCompletionsChunks emits function_call_arguments.done when no delta arrived', () => {
+test('translateResponsesEventToChatCompletionsChunks completes partial refusal text once', () => {
+  const state = createResponsesToChatCompletionsStreamState();
+  const chunks = [
+    translateResponsesEventToChatCompletionsChunks({
+      type: 'response.refusal.delta',
+      item_id: 'msg_0',
+      output_index: 0,
+      content_index: 0,
+      delta: 'Can',
+    }, state),
+    translateResponsesEventToChatCompletionsChunks({
+      type: 'response.refusal.done',
+      item_id: 'msg_0',
+      output_index: 0,
+      content_index: 0,
+      refusal: 'Cannot',
+    }, state),
+    translateResponsesEventToChatCompletionsChunks({
+      type: 'response.content_part.done',
+      item_id: 'msg_0',
+      output_index: 0,
+      content_index: 0,
+      part: { type: 'refusal', refusal: 'Cannot' },
+    }, state),
+  ].flatMap(result => result);
+
+  assertEquals(chunks.map(chunk => chunk.choices[0].delta), [
+    { refusal: 'Can' },
+    { refusal: 'not' },
+  ]);
+});
+
+test('translateResponsesEventToChatCompletionsChunks completes partial function arguments from output_item.done', () => {
   const state = createResponsesToChatCompletionsStreamState();
   const chunks = [
     translateResponsesEventToChatCompletionsChunks(
@@ -1117,10 +1159,24 @@ test('translateResponsesEventToChatCompletionsChunks emits function_call_argumen
     ),
     translateResponsesEventToChatCompletionsChunks(
       {
-        type: 'response.function_call_arguments.done',
+        type: 'response.function_call_arguments.delta',
         item_id: 'fc_0',
         output_index: 0,
-        arguments: '{"q":1}',
+        delta: '{"q":',
+      },
+      state,
+    ),
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.output_item.done',
+        output_index: 0,
+        item: {
+          type: 'function_call',
+          call_id: 'call_0',
+          name: 'lookup',
+          arguments: '{"q":1}',
+          status: 'completed',
+        },
       },
       state,
     ),
@@ -1144,7 +1200,15 @@ test('translateResponsesEventToChatCompletionsChunks emits function_call_argumen
         tool_calls: [
           {
             index: 0,
-            function: { arguments: '{"q":1}' },
+            function: { arguments: '{"q":' },
+          },
+        ],
+      },
+      {
+        tool_calls: [
+          {
+            index: 0,
+            function: { arguments: '1}' },
           },
         ],
       },
@@ -1152,7 +1216,7 @@ test('translateResponsesEventToChatCompletionsChunks emits function_call_argumen
   );
 });
 
-test('translateResponsesEventToChatCompletionsChunks emits all done-only reasoning summary parts', () => {
+test('translateResponsesEventToChatCompletionsChunks completes partial and done-only reasoning summary parts', () => {
   const state = createResponsesToChatCompletionsStreamState();
   const chunks = [
     translateResponsesEventToChatCompletionsChunks(
@@ -1176,6 +1240,16 @@ test('translateResponsesEventToChatCompletionsChunks emits all done-only reasoni
         type: 'response.output_item.added',
         output_index: 0,
         item: { type: 'reasoning', id: 'rs_0', summary: [] },
+      },
+      state,
+    ),
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.reasoning_summary_text.delta',
+        item_id: 'rs_0',
+        output_index: 0,
+        summary_index: 0,
+        delta: 'fir',
       },
       state,
     ),
@@ -1218,7 +1292,7 @@ test('translateResponsesEventToChatCompletionsChunks emits all done-only reasoni
 
   assertEquals(
     chunks.map(chunk => chunk.choices[0]?.delta.reasoning_text).filter(text => text !== undefined),
-    ['first', 'second'],
+    ['fir', 'st', 'second'],
   );
 });
 

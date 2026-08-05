@@ -81,7 +81,7 @@ const isUnsafeQuotaId = (id: string): boolean =>
   id === '' || id === '__proto__' || id === 'constructor' || id === 'prototype';
 
 const parseNumber = (raw: string | null): number | null => {
-  if (raw === null) return null;
+  if (raw === null || raw.trim() === '') return null;
   const value = Number(raw);
   return Number.isFinite(value) ? value : null;
 };
@@ -267,8 +267,12 @@ export const fetchCopilotUsage = (githubHost: string, githubToken: string, fetch
 // snapshot each time.
 export const putCopilotQuota = async (upstreamId: string, snapshot: CopilotQuotaSnapshot): Promise<void> => {
   const fetchedAt = Date.now();
-  await getProviderRepo().upstreams.saveState(upstreamId, current => ({
-    ...readCopilotUpstreamState(current),
-    quotaSnapshot: { fetchedAt, data: snapshot },
-  } satisfies CopilotUpstreamState));
+  await getProviderRepo().upstreams.saveState(upstreamId, current => {
+    const state = readCopilotUpstreamState(current);
+    if (state.quotaSnapshot && state.quotaSnapshot.fetchedAt > fetchedAt) return state;
+    return {
+      ...state,
+      quotaSnapshot: { fetchedAt, data: snapshot },
+    } satisfies CopilotUpstreamState;
+  });
 };

@@ -8,11 +8,17 @@
 //
 // A model is admitted if it has a string `id`; everything else is best-
 // effort metadata. The container is admitted if `data` is an array.
+// Anthropic pages forward `last_id` as the next request's `after_id`:
+// https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/core/pagination.ts#L115-L199
 
 import type { CustomUpstreamConfig } from './config.ts';
 import { customFetchModels } from './fetch.ts';
 import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, type ModelKind, type ModelPricing, parseNonNegativeDecimalString, type PriceVector, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
-import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, identityWrapUpstreamCall } from '@floway-dev/provider';
+import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, identityWrapUpstreamCall, ProviderModelsUnavailableError, runProviderModelsTask } from '@floway-dev/provider';
+
+const MAX_CUSTOM_MODEL_PAGES = 32;
+const MAX_CUSTOM_MODELS = 4096;
+const MAX_CUSTOM_CATALOG_RESPONSE_BYTES = 16 * 1024 * 1024;
 
 export interface CustomRawModel {
   id: string;
@@ -43,9 +49,19 @@ export interface CustomModelsResponse {
   data: CustomRawModel[];
 }
 
+interface CustomModelsPage extends CustomModelsResponse {
+  modelLimitExceeded?: true;
+  nextAfterId?: string;
+}
+
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const optionalNumberField = (value: unknown): number | undefined => (typeof value === 'number' && Number.isFinite(value) ? value : undefined);
+
+const optionalRepresentableUnixSeconds = (value: unknown): number | undefined => {
+  const seconds = optionalNumberField(value);
+  return seconds !== undefined && !Number.isNaN(new Date(seconds * 1000).getTime()) ? seconds : undefined;
+};
 
 const optionalStringField = (value: unknown): string | undefined => (typeof value === 'string' && value !== '' ? value : undefined);
 
@@ -59,6 +75,50 @@ const parseLimits = (value: unknown): CustomRawModel['limits'] => {
   const max_prompt_tokens = optionalNumberField(value.max_prompt_tokens);
   if (max_prompt_tokens !== undefined) limits.max_prompt_tokens = max_prompt_tokens;
   return Object.keys(limits).length > 0 ? limits : undefined;
+};
+
+const parseModelLimits = (value: Record<string, unknown>): CustomRawModel['limits'] => {
+  const limits: NonNullable<CustomRawModel['limits']> = { ...(parseLimits(value.limits) ?? {}) };
+  const maxInputTokens = optionalNumberField(value.max_input_tokens);
+  if (maxInputTokens !== undefined) limits.max_context_window_tokens = maxInputTokens;
+  const maxTokens = optionalNumberField(value.max_tokens);
+  if (maxTokens !== undefined) limits.max_output_tokens = maxTokens;
+  return Object.keys(limits).length > 0 ? limits : undefined;
+};
+
+const supportedCapability = (value: unknown): boolean => isRecord(value) && value.supported === true;
+
+// https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/models.ts#L127-L245
+const chatFromAnthropicCapabilities = (value: unknown): UpstreamChatModelConfig | undefined => {
+  if (!isRecord(value)) return undefined;
+  const chat: UpstreamChatModelConfig = {};
+  if (supportedCapability(value.image_input)) {
+    chat.modalities = { input: ['text', 'image'], output: ['text'] };
+  }
+
+  const reasoning: NonNullable<UpstreamChatModelConfig['reasoning']> = {};
+  if (isRecord(value.effort) && value.effort.supported === true) {
+    const publishedLevels = Object.entries(value.effort)
+      .filter(([level, capability]) => level !== 'supported' && supportedCapability(capability))
+      .map(([level]) => level);
+    const canonicalLevels = ['low', 'medium', 'high', 'max', 'xhigh'];
+    const supported = [
+      ...canonicalLevels.filter(level => publishedLevels.includes(level)),
+      ...publishedLevels.filter(level => !canonicalLevels.includes(level)),
+    ];
+    if (supported.length > 0) {
+      reasoning.effort = {
+        supported,
+        default: supported.includes('medium') ? 'medium' : supported[0],
+      };
+    }
+  }
+  if (isRecord(value.thinking) && isRecord(value.thinking.types)) {
+    if (supportedCapability(value.thinking.types.enabled)) reasoning.budget_tokens = {};
+    if (supportedCapability(value.thinking.types.adaptive)) reasoning.adaptive = true;
+  }
+  if (Object.keys(reasoning).length > 0) chat.reasoning = reasoning;
+  return Object.keys(chat).length > 0 ? chat : undefined;
 };
 
 const parsePricing = (value: unknown): ModelPricing | undefined => {
@@ -101,7 +161,7 @@ const parseRawModel = (value: unknown): CustomRawModel | null => {
   if (!isRecord(value)) return null;
   if (typeof value.id !== 'string' || value.id === '') return null;
   const model: CustomRawModel = { id: value.id };
-  const created = optionalNumberField(value.created);
+  const created = optionalRepresentableUnixSeconds(value.created);
   if (created !== undefined) model.created = created;
   const created_at = optionalStringField(value.created_at);
   if (created_at !== undefined) model.created_at = created_at;
@@ -111,32 +171,90 @@ const parseRawModel = (value: unknown): CustomRawModel | null => {
   if (name !== undefined) model.name = name;
   const owned_by = optionalStringField(value.owned_by);
   if (owned_by !== undefined) model.owned_by = owned_by;
-  const limits = parseLimits(value.limits);
+  const limits = parseModelLimits(value);
   if (limits !== undefined) model.limits = limits;
   const pricing = parsePricing(value.pricing);
   if (pricing !== undefined) model.pricing = pricing;
   const kind = parseKind(value.kind);
   if (kind !== undefined) model.kind = kind;
-  // Attempt to parse chat metadata; silently skip on malformed data.
+  let chat: UpstreamChatModelConfig | undefined;
   try {
-    const chat = chatField(value.chat, `${value.id}.chat`);
-    if (chat !== undefined) model.chat = chat;
+    chat = chatField(value.chat, `${value.id}.chat`);
   } catch { /* skip */ }
+  chat ??= chatFromAnthropicCapabilities(value.capabilities);
+  if (chat !== undefined) model.chat = chat;
   return model;
 };
 
-const parseCustomModelsResponse = (value: unknown): CustomModelsResponse | null => {
+const parseCustomModelsPage = (value: unknown): CustomModelsPage | null => {
   if (!isRecord(value) || !Array.isArray(value.data)) return null;
+  if (value.data.length > MAX_CUSTOM_MODELS) return { data: [], modelLimitExceeded: true };
   const data: CustomRawModel[] = [];
   for (const item of value.data) {
     const model = parseRawModel(item);
     if (model) data.push(model);
   }
+  if (value.data.length > 0 && data.length === 0) return null;
+  if (value.has_more !== undefined && typeof value.has_more !== 'boolean') return null;
+  if (value.has_more === true) {
+    const nextAfterId = optionalStringField(value.last_id);
+    if (data.length === 0 || nextAfterId === undefined) return null;
+    return { data, nextAfterId };
+  }
   return { data };
 };
 
-export const fetchCustomModels = (config: CustomUpstreamConfig, fetcher: Fetcher): Promise<CustomModelsResponse> =>
-  fetchUpstreamModels(
-    () => customFetchModels(config, { method: 'GET' }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }),
-    parseCustomModelsResponse,
-  );
+const paginationError = (message: string): ProviderModelsUnavailableError =>
+  new ProviderModelsUnavailableError(null, new Error(message));
+
+export const fetchCustomModels = (
+  config: CustomUpstreamConfig,
+  fetcher: Fetcher,
+  options: { idleTimeoutMs?: number; maxCatalogResponseBytes?: number; signal?: AbortSignal; totalTimeoutMs?: number } = {},
+): Promise<CustomModelsResponse> => runProviderModelsTask(async signal => {
+  const maxCatalogResponseBytes = options.maxCatalogResponseBytes ?? MAX_CUSTOM_CATALOG_RESPONSE_BYTES;
+  if (!Number.isSafeInteger(maxCatalogResponseBytes) || maxCatalogResponseBytes <= 0) {
+    throw new TypeError('maxCatalogResponseBytes must be a positive safe integer');
+  }
+  const data: CustomRawModel[] = [];
+  const responseByteBudget = { remainingBytes: maxCatalogResponseBytes };
+  const seenModelIds = new Set<string>();
+  const seenCursors = new Set<string>();
+  let afterId: string | undefined;
+
+  for (let pageIndex = 0; pageIndex < MAX_CUSTOM_MODEL_PAGES; pageIndex++) {
+    if (responseByteBudget.remainingBytes === 0) {
+      throw paginationError('Custom /models catalog exhausted its response byte budget');
+    }
+    const page = await fetchUpstreamModels(
+      pageSignal => customFetchModels(config, { method: 'GET', signal: pageSignal }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }, afterId),
+      parseCustomModelsPage,
+      { idleTimeoutMs: options.idleTimeoutMs, responseByteBudget, signal, totalTimeoutMs: options.totalTimeoutMs },
+    );
+    if (page.modelLimitExceeded) {
+      throw paginationError(`Custom /models catalog exceeded ${MAX_CUSTOM_MODELS} models`);
+    }
+    for (const model of page.data) {
+      if (seenModelIds.has(model.id)) continue;
+      if (seenModelIds.size >= MAX_CUSTOM_MODELS) {
+        throw paginationError(`Custom /models catalog exceeded ${MAX_CUSTOM_MODELS} models`);
+      }
+      seenModelIds.add(model.id);
+      data.push(model);
+    }
+    if (page.nextAfterId === undefined) return { data };
+    if (seenCursors.has(page.nextAfterId)) {
+      throw paginationError(`Custom /models pagination repeated cursor ${JSON.stringify(page.nextAfterId)}`);
+    }
+    seenCursors.add(page.nextAfterId);
+    afterId = page.nextAfterId;
+  }
+
+  throw paginationError(`Custom /models pagination exceeded ${MAX_CUSTOM_MODEL_PAGES} pages`);
+}, options).catch((cause: unknown) => {
+  if (options.signal?.aborted) throw options.signal.reason;
+  if (cause instanceof DOMException && cause.name === 'TimeoutError') {
+    throw new ProviderModelsUnavailableError(null, cause);
+  }
+  throw cause;
+});

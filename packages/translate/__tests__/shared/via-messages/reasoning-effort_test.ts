@@ -10,7 +10,7 @@ test('effort none becomes the Messages native disable shape rather than an outpu
 });
 
 test('every other effort passes through to output_config verbatim', () => {
-  for (const effort of ['minimal', 'low', 'medium', 'high', 'max', 'vendor-specific-level']) {
+  for (const effort of ['', 'minimal', 'low', 'medium', 'high', 'max', 'vendor-specific-level']) {
     assertEquals(messagesReasoningFieldsFromEffort(effort), { effort });
   }
 });
@@ -18,7 +18,16 @@ test('every other effort passes through to output_config verbatim', () => {
 test('an absent effort selects neither slot', () => {
   assertEquals(messagesReasoningFieldsFromEffort(undefined), {});
   assertEquals(messagesReasoningFieldsFromEffort(null), {});
-  assertEquals(messagesReasoningFieldsFromEffort(''), {});
+});
+
+test('Messages output_config effort takes precedence even when it is empty', () => {
+  assertEquals(resolveMessagesReasoningEffort({
+    model: 'test',
+    max_tokens: 16,
+    messages: [],
+    output_config: { effort: '' },
+    thinking: { type: 'disabled' },
+  }), '');
 });
 
 // The two helpers are inverses: what `messages-via` reads off a Messages

@@ -135,10 +135,7 @@ export const buildTargetRequest = (payload: ChatCompletionsPayload): CanonicalRe
 
   const responseTextConfig = payload.response_format === undefined ? undefined : payload.response_format === null ? null : { format: payload.response_format };
 
-  // Chat's `reasoning_effort: 'none'` disables reasoning without a Responses
-  // equivalent (Responses `reasoning.effort` has no 'none' member); drop the
-  // field instead of forwarding a value the upstream rejects.
-  const reasoningEffort = payload.reasoning_effort && payload.reasoning_effort !== 'none' ? payload.reasoning_effort : undefined;
+  const reasoningEffort = typeof payload.reasoning_effort === 'string' ? payload.reasoning_effort : undefined;
   const reasoning = reasoningEffort !== undefined ? { effort: reasoningEffort } : undefined;
 
   return {

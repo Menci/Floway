@@ -1,11 +1,11 @@
-import { ensureCodexAccessToken, mintCodexAccessToken } from './access-token.ts';
+import { ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken } from './access-token.ts';
 import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import { assertCodexUpstreamRecord, type CodexUpstreamConfig } from './config.ts';
 import { CODEX_DEFAULT_FLAGS } from './defaults.ts';
 import { callCodexAlphaSearch, callCodexResponses, callCodexResponsesCompact, type CodexCallEffects } from './fetch.ts';
 import { CODEX_RESPONSES_BOUNDARY } from './interceptors/responses/index.ts';
 import type { ResponsesBoundaryCtx } from './interceptors/responses/types.ts';
-import { codexRawToProviderModel, fetchCodexCatalog } from './models.ts';
+import { CodexModelsFetchError, codexRawToProviderModel, fetchCodexCatalog } from './models.ts';
 import { assertCodexUpstreamState, findCodexAccountIndex, replaceCodexAccount } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import { toCompactPayloadShape } from '@floway-dev/protocols/responses';
@@ -69,14 +69,19 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
     });
   };
 
-  const persistTerminalState = async (newState: 'session_terminated' | 'refresh_failed', message: string): Promise<void> => {
+  const persistTerminalState: CodexCallEffects['persistTerminalState'] = async (newState, message, expectedGeneration) => {
     const flippedAt = new Date().toISOString();
     await getProviderRepo().upstreams.saveState(record.id, current => {
       const { state, accountIndex } = locateActiveAccount(current);
+      const account = state.accounts[accountIndex]!;
+      const generationMatches = 'accessToken' in expectedGeneration
+        ? account.accessToken?.token === expectedGeneration.accessToken
+        : account.refresh_token === expectedGeneration.refreshToken;
+      if (account.state !== 'active' || !generationMatches) return state;
       // Clear any cached access token on the terminal flip — once the credential
       // is dead the cached token is dead too, and leaving it would confuse the
       // dashboard's status panel.
-      return replaceCodexAccount(state, accountIndex, account => ({ ...account, state: newState, state_message: message, state_updated_at: flippedAt, accessToken: null }));
+      return replaceCodexAccount(state, accountIndex, currentAccount => ({ ...currentAccount, state: newState, state_message: message, state_updated_at: flippedAt, accessToken: null }));
     });
   };
 
@@ -91,17 +96,35 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
       // `refresh_failed` so the dashboard stops claiming the credential is
       // active, then rethrow so the caller's models-cache records the
       // failure and surfaces it to the operator.
-      let access;
-      try {
-        access = await ensureCodexAccessToken(record.id, accountIdentity.chatgptAccountId, refreshToken =>
-          mintCodexAccessToken(refreshToken, fetcher, persistRefreshTokenRotation));
-      } catch (err) {
-        if (err instanceof CodexOAuthSessionTerminatedError) {
-          await persistTerminalState('refresh_failed', err.upstreamMessage);
+      const ensureCatalogAccess = async (force = false) => {
+        let attemptedRefreshToken = locateActiveAccount(record.state).account.refresh_token;
+        try {
+          return await ensureCodexAccessToken(record.id, accountIdentity.chatgptAccountId, refreshToken => {
+            attemptedRefreshToken = refreshToken;
+            return mintCodexAccessToken(refreshToken, fetcher, persistRefreshTokenRotation);
+          }, force);
+        } catch (err) {
+          if (err instanceof CodexOAuthSessionTerminatedError) {
+            await persistTerminalState('refresh_failed', err.upstreamMessage, { refreshToken: attemptedRefreshToken });
+          }
+          throw err;
         }
-        throw err;
+      };
+      const fetchCatalog = (accessToken: string) => fetchCodexCatalog({
+        accessToken,
+        accountId: accountIdentity.chatgptAccountId,
+        fetcher,
+      });
+      let access = await ensureCatalogAccess();
+      let raw: Awaited<ReturnType<typeof fetchCodexCatalog>>;
+      try {
+        raw = await fetchCatalog(access.token);
+      } catch (error) {
+        if (!(error instanceof CodexModelsFetchError) || error.status !== 401) throw error;
+        await invalidateCodexAccessToken(record.id, accountIdentity.chatgptAccountId, access.token);
+        access = await ensureCatalogAccess(true);
+        raw = await fetchCatalog(access.token);
       }
-      const raw = await fetchCodexCatalog({ accessToken: access.token, accountId: accountIdentity.chatgptAccountId, fetcher });
       // Surface every model the upstream returns, including ones whose
       // ChatGPT-side `visibility` is `hide` (e.g. codex-auto-review). The
       // operator's gateway is its own surface — they can dispatch to those

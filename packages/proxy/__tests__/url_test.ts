@@ -62,6 +62,28 @@ describe('parseProxyUri', () => {
     expect(parseProxyUri('http://example.com:80/x?y=1#name').port).toBe(80);
   });
 
+  it.each(['http', 'socks5'])('preserves password-only %s credentials with an empty username', scheme => {
+    const parsed = parseProxyUri(`${scheme}://:secret@example.com:80`);
+    expect(parsed).toMatchObject({ username: '', password: 'secret' });
+    expect(formatProxyUri(parsed)).toBe(`${scheme}://:secret@example.com:80`);
+  });
+
+  it('round-trips explicitly empty HTTP credentials without erasing auth intent', () => {
+    const parsed = parseProxyUri('http://:@example.com:80');
+    expect(parsed).toMatchObject({ username: '', password: '' });
+    expect(formatProxyUri(parsed)).toBe('http://:@example.com:80');
+  });
+
+  it('normalizes an IPv6 proxy host to bare form and brackets it when formatting', () => {
+    const parsed = parseProxyUri('socks5://[2001:db8::1]:1080');
+    expect(parsed).toMatchObject({
+      host: '2001:db8::1',
+      name: '[2001:db8::1]:1080',
+    });
+    expect(formatProxyUri(parsed)).toBe('socks5://[2001:db8::1]:1080');
+    expect(parseProxyUri(formatProxyUri(parsed))).toEqual(parsed);
+  });
+
   it('parses SOCKS5 with auth', () => {
     expect(parseProxyUri('socks5://u:p@1.2.3.4:1080#jp')).toEqual({
       kind: 'socks5',

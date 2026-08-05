@@ -56,6 +56,34 @@ describe('dialSocks5 — RFC 1928 no-auth happy path', () => {
     const { value } = await reader.read();
     expectEqualBytes(value!, [0xde, 0xad, 0xbe, 0xef]);
   });
+
+  it('returns promptly when the success reply and tunneled bytes are coalesced', async () => {
+    const fake = makeFakeSocketDial();
+    const promise = dialSocks5(socks5Config(), target, { socketDial: fake.socketDial });
+    const srv = await fake.awaitConnect();
+    await srv.read(3);
+    srv.respond(arr(0x05, 0x00));
+    await drainConnectRequest(srv);
+    srv.respond(new Uint8Array([
+      0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0,
+      0xde, 0xad,
+    ]));
+    const result = await promise;
+    expect(Array.from((await result.readable.getReader().read()).value!)).toEqual([0xde, 0xad]);
+  });
+
+  it('closes the socket when the tunneled readable is cancelled', async () => {
+    const fake = makeFakeSocketDial();
+    const promise = dialSocks5(socks5Config(), target, { socketDial: fake.socketDial });
+    const srv = await fake.awaitConnect();
+    await srv.read(3);
+    srv.respond(arr(0x05, 0x00));
+    await drainConnectRequest(srv);
+    srv.respond(arr(0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0));
+    const result = await promise;
+    await result.readable.cancel('done');
+    expect(srv.closed()).toBe(true);
+  });
 });
 
 describe('dialSocks5 — RFC 1929 user/pass sub-negotiation', () => {

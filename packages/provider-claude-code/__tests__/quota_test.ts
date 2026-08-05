@@ -138,6 +138,18 @@ describe('parseClaudeCodeQuotaHeaders — coercion edge cases', () => {
     expect(parseClaudeCodeQuotaHeaders(h).reset).toBeNull();
   });
 
+  test('unrepresentable reset and blank utilization survive as null', () => {
+    const h = new Headers({
+      'anthropic-ratelimit-unified-reset': '1e308',
+      'anthropic-ratelimit-unified-5h-reset': '   ',
+      'anthropic-ratelimit-unified-5h-utilization': '   ',
+    });
+    const snapshot = parseClaudeCodeQuotaHeaders(h);
+    expect(snapshot.reset).toBeNull();
+    expect(snapshot.fiveHour?.reset).toBeNull();
+    expect(snapshot.fiveHour?.utilization).toBeNull();
+  });
+
   test('7d surpassed-threshold parses as boolean', () => {
     const h = new Headers({
       'anthropic-ratelimit-unified-7d-status': 'allowed_warning',

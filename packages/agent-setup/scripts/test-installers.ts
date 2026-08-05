@@ -370,6 +370,8 @@ Copy-Item -LiteralPath $env:${src} -Destination (Join-Path $target '${binName}')
 New-Item -ItemType File -Path $env:FAKE_INSTALLER_MARKER -Force | Out-Null
 `;
 
+const COMMAND_BOUNDARY_SECRET = 'secret-from-downloaded-script-密钥';
+
 const startModelServer = async (): Promise<ModelServer> => {
   const state = {
     mode: 'ok' as ModelServerMode,
@@ -382,15 +384,29 @@ const startModelServer = async (): Promise<ModelServer> => {
     // Unauthenticated probe bodies for the command-injection-semantics tests:
     // each echoes the base URL the wrapping command injected into the executing
     // shell, so the harness can confirm `export SETUP_ENDPOINT` / `$SetupEndpoint`
-    // actually reached the piped `bash` / the `iex` runspace.
+    // reached the clean child process without carrying caller-owned functions.
     if (pathname === '/probe/setup.sh') {
       res.writeHead(200, { 'content-type': 'text/x-shellscript' });
-      res.end('printf \'PROBE_BASE_URL=[%s]\\n\' "${SETUP_ENDPOINT:-UNSET}"\n');
+      res.end([
+        `SETUP_PROBE_SECRET='${COMMAND_BOUNDARY_SECRET}'`,
+        'if [ "${FLOWAY_BASH_ENV_RAN:-}" = 1 ] || declare -F floway_poison >/dev/null; then printf \'poison crossed Bash boundary\\n\' >&2; exit 1; fi',
+        'case "$(ps -o command= -p $$)" in *"$SETUP_PROBE_SECRET"*) printf \'downloaded secret reached Bash argv\\n\' >&2; exit 1;; esac',
+        'printf \'PROBE_BASE_URL=[%s]\\n\' "${SETUP_ENDPOINT:-UNSET}"',
+        'printf \'PROBE_UNICODE=[%s]\\n\' "$SETUP_PROBE_SECRET"',
+        '',
+      ].join('\n'));
       return;
     }
     if (pathname === '/probe/setup.ps1') {
       res.writeHead(200, { 'content-type': 'text/plain' });
-      res.end('Write-Output "PROBE_BASE_URL=[$(if ($null -eq $SetupEndpoint) { \'UNSET\' } else { $SetupEndpoint })]"\n');
+      res.end([
+        `$ProbeSecret = '${COMMAND_BOUNDARY_SECRET}'`,
+        "if (Get-Command FlowayPoison -CommandType Function -ErrorAction SilentlyContinue) { throw 'caller function crossed PowerShell boundary' }",
+        "if ([Environment]::CommandLine.Contains($ProbeSecret)) { throw 'downloaded secret reached PowerShell argv' }",
+        'Write-Output "PROBE_BASE_URL=[$(if ($null -eq $SetupEndpoint) { \'UNSET\' } else { $SetupEndpoint })]"',
+        'Write-Output "PROBE_UNICODE=[$ProbeSecret]"',
+        '',
+      ].join('\n'));
       return;
     }
     if (pathname === '/install.sh' || pathname === '/install-codex.sh') {
@@ -1776,11 +1792,11 @@ test('claude', 'a download that ends before the final main call performs no setu
 
 // A raw shell run of an arbitrary command line, sharing the async model-server
 // event loop. Used to exercise the exact copyable command a user pastes, so the
-// `export SETUP_ENDPOINT` / `$SetupEndpoint` injection and the `| bash` / `| iex`
-// pipeline scoping are verified end to end rather than assumed.
-const runCommandLine = (exe: string, args: string[], command: string): Promise<RunResult> =>
+// `export SETUP_ENDPOINT` / `$SetupEndpoint` injection and both clean-process
+// boundaries are verified end to end rather than assumed.
+const runCommandLine = (exe: string, args: string[], command: string, extraEnv: Record<string, string> = {}): Promise<RunResult> =>
   new Promise<RunResult>(resolve => {
-    const child = spawn(exe, [...args, command], { env: { PATH: `${SHIM_BIN}:${process.env.PATH ?? ''}` } });
+    const child = spawn(exe, [...args, command], { env: { PATH: `${SHIM_BIN}:${process.env.PATH ?? ''}`, ...extraEnv } });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', chunk => { stdout += chunk; });
@@ -1789,21 +1805,40 @@ const runCommandLine = (exe: string, args: string[], command: string): Promise<R
     child.on('close', code => resolve({ code: code ?? -1, stdout, stderr, combined: `${stdout}${stderr}` }));
   });
 
-test('claude', 'the copyable Bash command exports the origin into the piped installer body', async t => {
+test('claude', 'the copyable Bash command isolates the downloaded installer from its caller', async t => {
+  const ws = makeWorkspace();
+  const bashEnv = join(ws.root, 'poison-bash-env.sh');
+  writeFileSync(bashEnv, 'export FLOWAY_BASH_ENV_RAN=1\n');
   const origin = modelServer.url;
-  const command = `export SETUP_ENDPOINT='${origin.replace(/'/g, "'\\''")}'; curl -fsSL "$SETUP_ENDPOINT/probe/setup.sh" | bash`;
-  const run = await runCommandLine('/bin/bash', ['-c'], command);
+  const command = `export SETUP_ENDPOINT='${origin.replace(/'/g, "'\\''")}'; curl -fsSL "$SETUP_ENDPOINT/probe/setup.sh" | bash -p`;
+  const run = await runCommandLine('/bin/bash', ['-c'], command, {
+    BASH_ENV: bashEnv,
+    'BASH_FUNC_floway_poison%%': '() { printf \'poisoned function ran\\n\' >&2; return 1; }',
+  });
   t.equal(run.code, 0, `the copyable Bash command should run cleanly:\n${run.combined}`);
   t.includes(run.stdout, `PROBE_BASE_URL=[${origin}]`, 'the exported origin reached the piped bash executing the fetched body');
+  t.includes(run.stdout, `PROBE_UNICODE=[${COMMAND_BOUNDARY_SECRET}]`, 'the downloaded body stayed intact over stdin');
 });
 
-test('claude', 'the copyable PowerShell command assigns the origin into the iex runspace', async t => {
+const powerShellSetupCommand = (origin: string, path: string) => {
+  const endpoint = powerShellLiteral(origin);
+  const childEndpointAssignment = powerShellLiteral(`$SetupEndpoint = ${endpoint}`);
+  return `& { $SetupEndpoint = ${endpoint}; $PowerShell = $null; foreach ($Name in @('pwsh.exe', 'pwsh', 'powershell.exe')) { $Candidate = [System.IO.Path]::Combine($PSHOME, $Name); if ([System.IO.File]::Exists($Candidate)) { $PowerShell = $Candidate; break } }; if (-not $PowerShell) { throw 'Unable to locate a PowerShell application under $PSHOME.' }; $PreviousOutputEncoding = $OutputEncoding; try { $OutputEncoding = [System.Text.UTF8Encoding]::new($false); @(${childEndpointAssignment}, (Microsoft.PowerShell.Utility\\Invoke-RestMethod -Uri ($SetupEndpoint + ${powerShellLiteral(path)}))) | & $PowerShell -NoProfile -NonInteractive -Command - } finally { $OutputEncoding = $PreviousOutputEncoding } }`;
+};
+
+test('claude', 'the copyable PowerShell command isolates the downloaded installer from its caller', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const origin = modelServer.url;
-  const command = `$SetupEndpoint = ${powerShellLiteral(origin)}; irm "$SetupEndpoint/probe/setup.ps1" | iex`;
+  const command = [
+    "function global:FlowayPoison { throw 'poisoned function ran' }",
+    "function global:Invoke-RestMethod { throw 'poisoned fetch ran' }",
+    "function global:pwsh { throw 'poisoned launcher ran' }",
+    powerShellSetupCommand(origin, '/probe/setup.ps1'),
+  ].join('; ');
   const run = await runCommandLine(hostPwsh, ['-NoProfile', '-Command'], command);
   t.equal(run.code, 0, `the copyable PowerShell command should run cleanly:\n${run.combined}`);
-  t.includes(run.stdout, `PROBE_BASE_URL=[${origin}]`, 'the in-process origin reached the iex-executed fetched body');
+  t.includes(run.stdout, `PROBE_BASE_URL=[${origin}]`, 'the endpoint prelude reached the clean child process');
+  t.includes(run.stdout, `PROBE_UNICODE=[${COMMAND_BOUNDARY_SECRET}]`, 'UTF-8 stdin preserved the downloaded body');
 });
 
 test('claude', 'a missing SETUP_ENDPOINT fails before any mutation', async t => {

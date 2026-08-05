@@ -156,8 +156,12 @@ export const importClaudeCodeFromCredentialsJson = async (
   const accessToken = pickNonEmptyString(w, 'accessToken', 'credentials.json.claudeAiOauth');
   const refreshToken = pickNonEmptyString(w, 'refreshToken', 'credentials.json.claudeAiOauth');
   const expiresAtRaw = w.expiresAt;
-  if (typeof expiresAtRaw !== 'number' || !Number.isFinite(expiresAtRaw)) {
-    throw new TypeError('credentials.json.claudeAiOauth.expiresAt must be a finite number (unix ms)');
+  if (
+    typeof expiresAtRaw !== 'number'
+    || !Number.isSafeInteger(expiresAtRaw)
+    || Number.isNaN(new Date(expiresAtRaw).getTime())
+  ) {
+    throw new TypeError('credentials.json.claudeAiOauth.expiresAt must be a valid integer unix-ms timestamp');
   }
   // expiresAt is unix milliseconds; reject obviously-too-small values (1e12 ≈ 2001-09-09) to catch a seconds-encoded regression early.
   if (expiresAtRaw < 1_000_000_000_000) {

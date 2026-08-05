@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { flowayTokenStorageKey } from '../../../src/auth/session';
 import { blankAgentSetupDraft } from '../../../src/components/api-keys/agent-setup';
-import { agentSetupCommand, useAgentSetup } from '../../../src/components/api-keys/use-agent-setup';
+import { agentSetupCommand } from '../../../src/components/api-keys/agent-setup-command';
+import { useAgentSetup } from '../../../src/components/api-keys/use-agent-setup';
 import { stubLocalStorage } from '../../local-storage-stub';
 import { advance, settle } from '../../settle';
 
@@ -24,9 +25,25 @@ const lease = (expiresAt = Date.now() + 120_000) => ({
 describe('Agent Setup install command', () => {
   it('builds origin-scoped Unix and Windows commands', () => {
     expect(agentSetupCommand('https://floway.example', '/api/setup/token/claude.sh', 'unix'))
-      .toBe("export SETUP_ENDPOINT='https://floway.example'; curl -fsSL \"$SETUP_ENDPOINT/api/setup/token/claude.sh\" | bash");
+      .toBe("export SETUP_ENDPOINT='https://floway.example'; curl -fsSL \"$SETUP_ENDPOINT/api/setup/token/claude.sh\" | bash -p");
     expect(agentSetupCommand('https://floway.example', '/api/setup/token/codex.ps1', 'windows'))
-      .toBe("$SetupEndpoint = 'https://floway.example'; irm \"$SetupEndpoint/api/setup/token/codex.ps1\" | iex");
+      .toBe("& { $SetupEndpoint = 'https://floway.example'; $PowerShell = $null; foreach ($Name in @('pwsh.exe', 'pwsh', 'powershell.exe')) { $Candidate = [System.IO.Path]::Combine($PSHOME, $Name); if ([System.IO.File]::Exists($Candidate)) { $PowerShell = $Candidate; break } }; if (-not $PowerShell) { throw 'Unable to locate a PowerShell application under $PSHOME.' }; $PreviousOutputEncoding = $OutputEncoding; try { $OutputEncoding = [System.Text.UTF8Encoding]::new($false); @('$SetupEndpoint = ''https://floway.example''', (Microsoft.PowerShell.Utility\\Invoke-RestMethod -Uri ($SetupEndpoint + '/api/setup/token/codex.ps1'))) | & $PowerShell -NoProfile -NonInteractive -Command - } finally { $OutputEncoding = $PreviousOutputEncoding } }");
+  });
+
+  it('starts the Unix installer across a privileged Bash boundary', () => {
+    const command = agentSetupCommand('https://floway.example', '/api/setup/token/claude.sh', 'unix');
+
+    expect(command.endsWith('| bash -p')).toBe(true);
+    expect(command.endsWith('| bash')).toBe(false);
+  });
+
+  it('streams the PowerShell installer into a clean application process', () => {
+    const command = agentSetupCommand('https://floway.example', '/api/setup/token/codex.ps1', 'windows');
+
+    expect(command).toContain("foreach ($Name in @('pwsh.exe', 'pwsh', 'powershell.exe'))");
+    expect(command).toContain('Microsoft.PowerShell.Utility\\Invoke-RestMethod');
+    expect(command).toContain('| & $PowerShell -NoProfile -NonInteractive -Command -');
+    expect(command).not.toContain('| iex');
   });
 });
 
@@ -127,6 +144,42 @@ describe('Agent Setup lease lifecycle', () => {
     await advance(400);
     await settle();
     expect(saves.map(save => save.configuration.codex.model)).toEqual(['gpt-early']);
+  });
+
+  it('carries an unsaved edit across a key switch before the debounce elapses', async () => {
+    const saves: Array<{ configuration: { apiKeyId: string; codex: { model: string | null } } }> = [];
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as {
+        apiKeyId?: string;
+        configuration?: { apiKeyId: string; codex: { model: string | null } };
+      };
+      if (init?.method === 'PUT' && body.configuration) saves.push({ configuration: body.configuration });
+      const keyId = body.apiKeyId ?? body.configuration?.apiKeyId ?? 'key-1';
+      const configuration = body.configuration ?? { ...lease().configuration, apiKeyId: keyId };
+      return Response.json({
+        ...lease(),
+        token: `lease-${keyId}`,
+        configuration,
+      });
+    }));
+    mount('key-1');
+    await settle();
+    await act(async () => current().updateDraft(configuration => ({
+      ...configuration,
+      codex: { ...configuration.codex, model: 'gpt-unsaved' },
+    })));
+
+    view.rerender({ apiKeyId: 'key-2' });
+    await settle();
+
+    expect(current().draft.apiKeyId).toBe('key-2');
+    expect(current().draft.codex.model).toBe('gpt-unsaved');
+    await advance(400);
+    await settle();
+    expect(saves.map(save => save.configuration)).toEqual([expect.objectContaining({
+      apiKeyId: 'key-2',
+      codex: expect.objectContaining({ model: 'gpt-unsaved' }),
+    })]);
   });
 
   it('leaves a saved edit behind when the next key answers with its own configuration', async () => {
