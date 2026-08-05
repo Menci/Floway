@@ -15,7 +15,7 @@ const MESSAGE_ACTIONS = new Set(['spawn_agent', 'send_message', 'followup_task']
 const canonicalItemType = (itemType: string): string =>
   itemType === 'compaction_summary' ? 'compaction' : itemType;
 
-const carrierDomain = (itemType: string, slot: string): string =>
+export const responsesCarrierDomain = (itemType: string, slot: string): string =>
   `responses.${canonicalItemType(itemType)}.${slot}`;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -71,7 +71,7 @@ export const responsesOpaqueLocations = (item: ResponsesItem): ResponsesOpaqueLo
     locations.push({
       key: 'encrypted_content',
       value: record.encrypted_content,
-      domain: carrierDomain(item.type, 'encrypted_content'),
+      domain: responsesCarrierDomain(item.type, 'encrypted_content'),
       required: false,
     });
   }
@@ -79,7 +79,7 @@ export const responsesOpaqueLocations = (item: ResponsesItem): ResponsesOpaqueLo
     locations.push({
       key: 'fingerprint',
       value: item.fingerprint,
-      domain: carrierDomain(item.type, 'fingerprint'),
+      domain: responsesCarrierDomain(item.type, 'fingerprint'),
       required: false,
     });
   }
@@ -100,7 +100,7 @@ export const responsesOpaqueLocations = (item: ResponsesItem): ResponsesOpaqueLo
       locations.push({
         key: `output.${index}.encrypted_content`,
         value: content.encrypted_content,
-        domain: carrierDomain(item.type, `output.${index}.encrypted_content`),
+        domain: responsesCarrierDomain(item.type, `output.${index}.encrypted_content`),
         required: true,
       });
     }
