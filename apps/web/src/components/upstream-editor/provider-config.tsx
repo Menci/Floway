@@ -349,7 +349,9 @@ function CopilotConfig({ record, onPatch }: {
         name={field.name}
         onBlur={field.onBlur}
         onChange={event => field.onChange(event.target.value)}
-        onOptionSelect={(_, data) => field.onChange(data.optionValue)}
+        onOptionSelect={(_, data) => {
+          if (data.optionValue !== undefined) field.onChange(data.optionValue);
+        }}
         readOnly={busy || flow !== null || Boolean(config.user.login)}
         ref={field.ref}
         selectedOptions={field.value === 'github.com' ? ['github.com'] : []}
