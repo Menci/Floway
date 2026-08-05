@@ -88,6 +88,86 @@ test('affinity selects the route while item storage preserves the exact emitted 
   expect(selection.payloadFor(candidateA).input).toEqual([programOutput]);
 });
 
+test('inter-agent ciphertext carries one mandatory target from parent function call to child agent message', async () => {
+  const candidateA = modelCandidate('upstream-a');
+  const candidateB = modelCandidate('upstream-b');
+  const codec = new AffinityCodec('22'.repeat(32));
+  const rawMessage = 'gAAAA-upstream-ciphertext';
+  const parentCall = {
+    type: 'function_call' as const,
+    id: 'fc_parent',
+    call_id: 'call_spawn',
+    namespace: 'collaboration',
+    name: 'spawn_agent',
+    arguments: JSON.stringify({ task_name: 'worker', message: rawMessage }),
+    encrypted_function_args: null,
+    status: 'completed' as const,
+  };
+  const upstreamResponse: ResponsesResult = {
+    id: 'resp_parent',
+    object: 'response',
+    model: 'model-a',
+    status: 'completed',
+    output: [parentCall],
+    error: null,
+    incomplete_details: null,
+  };
+  let clientResponse: ResponsesResult | undefined;
+  for await (const frame of wrapResponsesAffinityEgress((async function* () {
+    yield eventFrame({ type: 'response.completed', response: upstreamResponse });
+  })(), {
+    codec,
+    affinity: { upstreamId: candidateA.provider.upstreamId, modelId: candidateA.model.id },
+  })) {
+    if (frame.type === 'event' && frame.event.type === 'response.completed') clientResponse = frame.event.response;
+  }
+  if (clientResponse === undefined || clientResponse.output[0]?.type !== 'function_call') {
+    throw new Error('Expected wrapped parent function call');
+  }
+  const wrappedMessage = JSON.parse(clientResponse.output[0].arguments).message as string;
+  expect(wrappedMessage).not.toBe(rawMessage);
+
+  const parentReplay = await analyzeResponsesAffinity({
+    model: 'model-a',
+    input: [clientResponse.output[0]],
+  }, codec);
+  const childReplay = await analyzeResponsesAffinity({
+    model: 'model-a',
+    input: [{
+      type: 'agent_message',
+      id: 'amsg_child',
+      author: '/root',
+      recipient: '/root/worker',
+      content: [
+        { type: 'input_text', text: 'Message Type: MESSAGE\nPayload:\n' },
+        { type: 'encrypted_content', encrypted_content: wrappedMessage },
+      ],
+    }],
+  }, codec);
+
+  for (const replay of [parentReplay, childReplay]) {
+    expect(replay.requiredTargets).toEqual([{
+      upstreamId: candidateA.provider.upstreamId,
+      modelId: candidateA.model.id,
+    }]);
+    expect(replay.evaluateCandidate(candidateB)).toEqual({ kind: 'rejected' });
+  }
+  const parentInput = parentReplay.evaluateCandidate(candidateA);
+  if (parentInput.kind !== 'accepted') throw new Error('Expected producer candidate for parent replay');
+  const restoredParent = parentInput.materialize().input[0];
+  if (restoredParent.type !== 'function_call') throw new Error('Expected restored parent call');
+  expect(JSON.parse(restoredParent.arguments).message).toBe(rawMessage);
+
+  const childInput = childReplay.evaluateCandidate(candidateA);
+  if (childInput.kind !== 'accepted') throw new Error('Expected producer candidate for child replay');
+  expect(childInput.materialize().input[0]).toMatchObject({
+    content: [
+      { type: 'input_text' },
+      { type: 'encrypted_content', encrypted_content: rawMessage },
+    ],
+  });
+});
+
 test('agent-message natural and originless nested carriers round-trip without changing ids', async () => {
   const candidate = modelCandidate('upstream-a');
   const codec = new AffinityCodec('22'.repeat(32));

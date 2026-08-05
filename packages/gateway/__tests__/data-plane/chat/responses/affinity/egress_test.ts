@@ -29,6 +29,112 @@ const response = (output: ResponsesResult['output'], status: ResponsesResult['st
 });
 
 describe('Responses affinity egress', () => {
+  test('rewrites streamed collaboration arguments coherently before Codex executes the done item', async () => {
+    const argumentsJson = JSON.stringify({ target: '/root/worker', message: 'gAAAA-ciphertext' });
+    const item = {
+      type: 'function_call' as const,
+      id: 'fc_1',
+      call_id: 'call_1',
+      namespace: 'collaboration',
+      name: 'spawn_agent',
+      arguments: argumentsJson,
+      encrypted_function_args: null,
+      status: 'completed' as const,
+    };
+    const added = { ...item, arguments: '', status: 'in_progress' as const };
+    const calls: Array<{ value: string | undefined; domain: string }> = [];
+    const codec: AffinityEgressCodec = {
+      wrap: async (value, _target, domain) => {
+        calls.push({ value, domain });
+        return `wrapped:${value}`;
+      },
+    };
+    const output: ResponsesStreamEvent[] = [];
+    for await (const frame of wrapResponsesAffinityEgress(frames([
+      eventFrame({ type: 'response.output_item.added', output_index: 0, item: added }),
+      eventFrame({ type: 'response.function_call_arguments.delta', item_id: 'fc_1', output_index: 0, delta: argumentsJson.slice(0, 20) }),
+      eventFrame({ type: 'response.function_call_arguments.delta', item_id: 'fc_1', output_index: 0, delta: argumentsJson.slice(20) }),
+      eventFrame({ type: 'response.function_call_arguments.done', item_id: 'fc_1', output_index: 0, arguments: argumentsJson }),
+      eventFrame({ type: 'response.output_item.done', output_index: 0, item }),
+      eventFrame({ type: 'response.completed', response: response([item]) }),
+    ]), { codec, affinity })) {
+      if (frame.type === 'event') output.push(frame.event);
+    }
+
+    const rewrittenArguments = output
+      .filter((event): event is Extract<ResponsesStreamEvent, { type: 'response.function_call_arguments.delta' }> =>
+        event.type === 'response.function_call_arguments.delta')
+      .map(event => event.delta)
+      .join('');
+    const argumentsDone = output.find((event): event is Extract<ResponsesStreamEvent, { type: 'response.function_call_arguments.done' }> =>
+      event.type === 'response.function_call_arguments.done');
+    const itemDone = output.find((event): event is Extract<ResponsesStreamEvent, { type: 'response.output_item.done' }> =>
+      event.type === 'response.output_item.done');
+    const terminal = output.at(-1);
+    expect(argumentsDone?.arguments).toBe(rewrittenArguments);
+    expect(itemDone?.item).toMatchObject({ type: 'function_call', arguments: rewrittenArguments });
+    if (terminal?.type !== 'response.completed') throw new Error('Expected completed response');
+    expect(terminal.response.output[0]).toMatchObject({ type: 'function_call', arguments: rewrittenArguments });
+    expect(JSON.parse(rewrittenArguments)).toEqual({ target: '/root/worker', message: 'wrapped:gAAAA-ciphertext' });
+    expect(calls).toEqual([{
+      value: 'gAAAA-ciphertext',
+      domain: 'responses.inter-agent-message.encrypted-content',
+    }]);
+  });
+
+  test('does not rewrite a collaboration call whose encrypted argument list is explicitly empty', async () => {
+    const item = {
+      type: 'function_call' as const,
+      id: 'fc_1',
+      call_id: 'call_1',
+      namespace: 'collaboration',
+      name: 'send_message',
+      arguments: JSON.stringify({ target: '/root/worker', message: 'plain text' }),
+      encrypted_function_args: [],
+      status: 'completed' as const,
+    };
+    const output: ResponsesStreamEvent[] = [];
+    for await (const frame of wrapResponsesAffinityEgress(frames([
+      eventFrame({ type: 'response.completed', response: response([item]) }),
+    ]), { codec: immediateCodec, affinity })) {
+      if (frame.type === 'event') output.push(frame.event);
+    }
+
+    expect(output.at(-1)).toMatchObject({ response: { output: [item] } });
+  });
+
+  test.each(['function_call_output', 'custom_tool_call_output'] as const)(
+    'wraps encrypted content nested in %s',
+    async type => {
+      const item = {
+        type,
+        id: 'out_1',
+        call_id: 'call_1',
+        output: [
+          { type: 'input_text' as const, text: 'visible' },
+          { type: 'encrypted_content' as const, encrypted_content: 'opaque-output' },
+        ],
+      };
+      const output: ResponsesStreamEvent[] = [];
+      for await (const frame of wrapResponsesAffinityEgress(frames([
+        eventFrame({ type: 'response.completed', response: response([item]) }),
+      ]), { codec: immediateCodec, affinity })) {
+        if (frame.type === 'event') output.push(frame.event);
+      }
+
+      expect(output.at(-1)).toMatchObject({
+        response: {
+          output: [{
+            output: [
+              { type: 'input_text', text: 'visible' },
+              { type: 'encrypted_content', encrypted_content: 'wrapped:opaque-output' },
+            ],
+          }],
+        },
+      });
+    },
+  );
+
   test('wraps natural blobs inside queued response output', async () => {
     const reasoning: ResponsesOutputReasoning = {
       type: 'reasoning',
