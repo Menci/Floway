@@ -150,15 +150,25 @@ export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
 // reported no buckets at all; the dashboard then keeps showing the stored
 // snapshot rather than blanking the card.
 export const copilotQuota = async (c: CtxWithJson<typeof copilotQuotaBody>) => {
-  try {
-    const { record } = c.req.valid('json');
-    if (record.kind !== 'copilot') return c.json({ error: 'Upstream is not a Copilot upstream' }, 400);
-    const config = isRecord(record.config) ? record.config : null;
-    const githubHost = githubHostFromConfig(record.config);
-    const githubToken = config && typeof config.githubToken === 'string' ? config.githubToken : '';
-    if (!githubToken) return c.json({ error: 'Copilot upstream has no GitHub token' }, 400);
+  const { record } = c.req.valid('json');
+  if (record.kind !== 'copilot') return c.json({ error: 'Upstream is not a Copilot upstream' }, 400);
 
-    const fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, runtimeLocation: getRuntimeLocation(c.req.raw) });
+  let githubHost: string;
+  let githubToken: string;
+  let fetcher: Fetcher;
+  try {
+    const config = isRecord(record.config) ? record.config : null;
+    githubHost = githubHostFromConfig(record.config);
+    if (!config || typeof config.githubToken !== 'string' || config.githubToken === '') {
+      return c.json({ error: 'Copilot upstream has no GitHub token' }, 400);
+    }
+    githubToken = config.githubToken;
+    fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, runtimeLocation: getRuntimeLocation(c.req.raw) });
+  } catch (e: unknown) {
+    return c.json({ error: errorMessage(e) }, 400);
+  }
+
+  try {
     const resp = await fetchCopilotUsage(githubHost, githubToken, fetcher);
 
     if (!resp.ok) {

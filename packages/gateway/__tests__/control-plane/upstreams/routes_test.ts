@@ -2370,6 +2370,17 @@ test('POST /api/upstreams/copilot/quota rejects a record missing its GitHub toke
   assertEquals(body.error.toLowerCase().includes('github token'), true);
 });
 
+test('POST /api/upstreams/copilot/quota rejects an invalid GitHub host with 400', async () => {
+  const { adminSession } = await setupAppTest();
+  const envelope = upstreamRecordEnvelope(upstreamRecord('up_copilot_bad_host', {
+    kind: 'copilot',
+    config: { githubHost: 'https://github.com', githubToken: 'ghu_test', user: githubUser },
+  }));
+  const resp = await requestApp('/api/upstreams/copilot/quota', authed(adminSession, { record: envelope }));
+  assertEquals(resp.status, 400);
+  assertEquals(await resp.json(), { error: 'GitHub host must be github.com or a tenant hostname ending in .ghe.com' });
+});
+
 test('POST /api/upstreams/copilot/quota remaps upstream 401 to 502 and passes upstream 500 through', async () => {
   const { repo, adminSession, copilotUpstream } = await setupAppTest();
   const envelope = envelopeFromRecord(await getRecord(repo, copilotUpstream.id));
