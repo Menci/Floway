@@ -42,12 +42,13 @@ export const scopeTelemetryIdentity = <Filters extends TelemetryIdentityFilters,
   filters: Filters,
   context: TelemetryIdentityContext<Group>,
 ): TelemetryIdentityState<Filters, Group> => {
-  const scopedFilters = reconcileTelemetryIdentityFilters(filters, context) as Filters;
+  const groupedFilters = clearGroupedTelemetryFilters(filters, groupBy);
+  const scopedFilters = reconcileTelemetryIdentityFilters(groupedFilters, context) as Filters;
   if (groupBy === 'keyId') {
     return {
       groupBy,
       filters: {
-        ...clearGroupedTelemetryFilters(scopedFilters, groupBy),
+        ...scopedFilters,
         userId: context.userDimensionAvailable ? [context.currentUserId] : [],
       } as Filters,
     };
