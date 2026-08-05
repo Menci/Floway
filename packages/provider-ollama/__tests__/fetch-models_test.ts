@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from '../src/config.ts';
 import { fetchOllamaCatalog } from '../src/fetch-models.ts';
@@ -105,6 +105,16 @@ test('fetchOllamaCatalog rejects with ProviderModelsUnavailableError when /api/t
       );
     },
   );
+
+  await withMockedFetch(
+    async () => jsonResponse({ models: [{}, { name: '' }] }),
+    async () => {
+      await assertRejects(
+        () => fetchOllamaCatalog(config, directFetcher),
+        ProviderModelsUnavailableError,
+      );
+    },
+  );
 });
 
 test('fetchOllamaCatalog bounds /api/show concurrency and deduplicates repeated tags', async () => {
@@ -200,5 +210,33 @@ test('fetchOllamaCatalog propagates cancellation from /api/show fetch and body d
       });
     };
     await expect(fetchOllamaCatalog(config, fetcher)).rejects.toBe(abort);
+  }
+});
+
+test('fetchOllamaCatalog aborts stalled show requests and rejects systemic detail failure', async () => {
+  vi.useFakeTimers();
+  try {
+    let upstreamReason: unknown;
+    const fetcher: Fetcher = (url, init) => {
+      if (new URL(url).pathname === '/api/tags') {
+        return Promise.resolve(jsonResponse({ models: [{ name: 'stalled' }] }));
+      }
+      return new Promise<Response>((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => {
+          upstreamReason = init.signal?.reason;
+          reject(init.signal?.reason);
+        }, { once: true });
+      });
+    };
+    const stalled = fetchOllamaCatalog(config, fetcher, { totalTimeoutMs: 35 });
+    const assertion = expect(stalled).rejects.toMatchObject({
+      name: 'ProviderModelsUnavailableError',
+      cause: expect.objectContaining({ name: 'TimeoutError' }),
+    });
+    await vi.advanceTimersByTimeAsync(35);
+    await assertion;
+    expect(upstreamReason).toMatchObject({ name: 'TimeoutError' });
+  } finally {
+    vi.useRealTimers();
   }
 });

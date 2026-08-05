@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { assertCustomUpstreamRecord, fetchCustomModels } from '../src/index.ts';
 import { ProviderModelsUnavailableError, directFetcher, type Fetcher } from '@floway-dev/provider';
@@ -310,6 +310,27 @@ test('fetchCustomModels does not request another page after exact byte-budget ex
   assertEquals((error.cause as Error).message, 'Custom /models catalog exhausted its response byte budget');
 });
 
+test('fetchCustomModels aborts a stalled page at the catalog total timeout', async () => {
+  vi.useFakeTimers();
+  try {
+    const { config } = assertCustomUpstreamRecord(upstreamRecord());
+    let upstreamReason: unknown;
+    const fetcher: Fetcher = (_url, init) => new Promise<Response>((_resolve, reject) => {
+      init.signal?.addEventListener('abort', () => {
+        upstreamReason = init.signal?.reason;
+        reject(init.signal?.reason);
+      }, { once: true });
+    });
+    const stalled = fetchCustomModels(config, fetcher, { totalTimeoutMs: 40 });
+    const assertion = expect(stalled).rejects.toMatchObject({ name: 'TimeoutError' });
+    await vi.advanceTimersByTimeAsync(40);
+    await assertion;
+    expect(upstreamReason).toMatchObject({ name: 'TimeoutError' });
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test('fetchCustomModels throws ProviderModelsUnavailableError with httpResponse on non-2xx', async () => {
   const { config } = assertCustomUpstreamRecord(upstreamRecord());
   let thrown: unknown;
@@ -346,6 +367,7 @@ test('fetchCustomModels throws ProviderModelsUnavailableError with null httpResp
   const { config } = assertCustomUpstreamRecord(upstreamRecord());
   for (const body of [
     { object: 'list', data: 'oops' },
+    { data: [{}, { id: 123 }] },
     { data: [{ id: 'model' }], has_more: true, last_id: null },
     { data: [{ id: 'model' }], has_more: 'yes', last_id: 'model' },
   ]) {

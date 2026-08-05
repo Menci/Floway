@@ -20,7 +20,7 @@
 
 import type { OllamaUpstreamConfig } from './config.ts';
 import { ollamaFetchShow, ollamaFetchTags } from './fetch.ts';
-import { fetchUpstreamModels, type Fetcher, identityWrapUpstreamCall, isAbortError, readBoundedJsonResponse } from '@floway-dev/provider';
+import { fetchUpstreamModels, type Fetcher, identityWrapUpstreamCall, isAbortError, ProviderModelsUnavailableError, readBoundedJsonResponse, runProviderModelsTask } from '@floway-dev/provider';
 
 const MAX_CONCURRENT_SHOW_REQUESTS = 8;
 const MAX_SHOW_RESPONSE_BYTES = 4 * 1024 * 1024;
@@ -74,6 +74,7 @@ const parseTagsResponse = (value: unknown): TagEntry[] | null => {
       entries.push(entry);
     }
   }
+  if (value.models.length > 0 && entries.length === 0) return null;
   return entries;
 };
 
@@ -123,10 +124,12 @@ const fetchShowForTag = async (
   tag: TagEntry,
   signal: AbortSignal,
   maxResponseBytes: number,
-): Promise<OllamaRawModel | null> => {
+  idleTimeoutMs: number | undefined,
+  totalTimeoutMs: number | undefined,
+): Promise<OllamaRawModel | null> => runProviderModelsTask(async taskSignal => {
   const response = await ollamaFetchShow(
     config,
-    { method: 'POST', body: JSON.stringify({ name: tag.name }), signal },
+    { method: 'POST', body: JSON.stringify({ name: tag.name }), signal: taskSignal },
     { fetcher, wrapUpstreamCall: identityWrapUpstreamCall },
   );
   if (!response.ok) {
@@ -135,18 +138,18 @@ const fetchShowForTag = async (
   }
   let parsed: unknown;
   try {
-    parsed = await readBoundedJsonResponse(response, maxResponseBytes);
+    parsed = await readBoundedJsonResponse(response, maxResponseBytes, undefined, { idleTimeoutMs, signal: taskSignal });
   } catch (error) {
     if (isAbortError(error)) throw error;
     return null;
   }
   return parseShowResponse(tag.name, tag.modifiedAt, parsed);
-};
+}, { signal, totalTimeoutMs });
 
 export const fetchOllamaCatalog = async (
   config: OllamaUpstreamConfig,
   fetcher: Fetcher,
-  options: { maxShowResponseBytes?: number } = {},
+  options: { idleTimeoutMs?: number; maxShowResponseBytes?: number; totalTimeoutMs?: number } = {},
 ): Promise<OllamaCatalog> => {
   const maxShowResponseBytes = options.maxShowResponseBytes ?? MAX_SHOW_RESPONSE_BYTES;
   if (!Number.isSafeInteger(maxShowResponseBytes) || maxShowResponseBytes <= 0) {
@@ -157,13 +160,15 @@ export const fetchOllamaCatalog = async (
   // provider's catalog fetch produces, which the control-plane and SWR cache
   // both branch on.
   const tags = await fetchUpstreamModels(
-    () => ollamaFetchTags(config, { method: 'GET' }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }),
+    signal => ollamaFetchTags(config, { method: 'GET', signal }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }),
     parseTagsResponse,
+    { idleTimeoutMs: options.idleTimeoutMs, totalTimeoutMs: options.totalTimeoutMs },
   );
   const results: Array<OllamaRawModel | null | undefined> = new Array(tags.length);
   const controller = new AbortController();
   let nextIndex = 0;
   let fatalAbort: unknown;
+  let firstShowError: unknown;
   let rejectFatalAbort!: (error: unknown) => void;
   const fatalAbortPromise = new Promise<never>((_resolve, reject) => { rejectFatalAbort = reject; });
   const worker = async (): Promise<void> => {
@@ -171,7 +176,15 @@ export const fetchOllamaCatalog = async (
       const index = nextIndex++;
       if (index >= tags.length) return;
       try {
-        results[index] = await fetchShowForTag(config, fetcher, tags[index], controller.signal, maxShowResponseBytes);
+        results[index] = await fetchShowForTag(
+          config,
+          fetcher,
+          tags[index],
+          controller.signal,
+          maxShowResponseBytes,
+          options.idleTimeoutMs,
+          options.totalTimeoutMs,
+        );
       } catch (error) {
         if (isAbortError(error)) {
           if (fatalAbort === undefined) {
@@ -181,6 +194,7 @@ export const fetchOllamaCatalog = async (
           }
           return;
         }
+        if (firstShowError === undefined) firstShowError = error;
         results[index] = null;
       }
     }
@@ -199,6 +213,12 @@ export const fetchOllamaCatalog = async (
   const data: OllamaRawModel[] = [];
   for (const model of results) {
     if (model !== null && model !== undefined) data.push(model);
+  }
+  if (tags.length > 0 && data.length === 0) {
+    throw new ProviderModelsUnavailableError(
+      null,
+      firstShowError ?? new Error('Every Ollama /api/show request failed'),
+    );
   }
   return { data };
 };

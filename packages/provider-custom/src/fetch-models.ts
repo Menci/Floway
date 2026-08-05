@@ -14,7 +14,7 @@
 import type { CustomUpstreamConfig } from './config.ts';
 import { customFetchModels } from './fetch.ts';
 import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, type ModelKind, type ModelPricing, parseNonNegativeDecimalString, type PriceVector, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
-import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, identityWrapUpstreamCall, ProviderModelsUnavailableError } from '@floway-dev/provider';
+import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, identityWrapUpstreamCall, ProviderModelsUnavailableError, runProviderModelsTask } from '@floway-dev/provider';
 
 const MAX_CUSTOM_MODEL_PAGES = 32;
 const MAX_CUSTOM_MODELS = 4096;
@@ -149,6 +149,7 @@ const parseCustomModelsPage = (value: unknown): CustomModelsPage | null => {
     const model = parseRawModel(item);
     if (model) data.push(model);
   }
+  if (value.data.length > 0 && data.length === 0) return null;
   if (value.has_more !== undefined && typeof value.has_more !== 'boolean') return null;
   if (value.has_more === true) {
     const nextAfterId = optionalStringField(value.last_id);
@@ -161,11 +162,11 @@ const parseCustomModelsPage = (value: unknown): CustomModelsPage | null => {
 const paginationError = (message: string): ProviderModelsUnavailableError =>
   new ProviderModelsUnavailableError(null, new Error(message));
 
-export const fetchCustomModels = async (
+export const fetchCustomModels = (
   config: CustomUpstreamConfig,
   fetcher: Fetcher,
-  options: { maxCatalogResponseBytes?: number } = {},
-): Promise<CustomModelsResponse> => {
+  options: { idleTimeoutMs?: number; maxCatalogResponseBytes?: number; signal?: AbortSignal; totalTimeoutMs?: number } = {},
+): Promise<CustomModelsResponse> => runProviderModelsTask(async signal => {
   const maxCatalogResponseBytes = options.maxCatalogResponseBytes ?? MAX_CUSTOM_CATALOG_RESPONSE_BYTES;
   if (!Number.isSafeInteger(maxCatalogResponseBytes) || maxCatalogResponseBytes <= 0) {
     throw new TypeError('maxCatalogResponseBytes must be a positive safe integer');
@@ -181,9 +182,9 @@ export const fetchCustomModels = async (
       throw paginationError('Custom /models catalog exhausted its response byte budget');
     }
     const page = await fetchUpstreamModels(
-      () => customFetchModels(config, { method: 'GET' }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }, afterId),
+      pageSignal => customFetchModels(config, { method: 'GET', signal: pageSignal }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }, afterId),
       parseCustomModelsPage,
-      { responseByteBudget },
+      { idleTimeoutMs: options.idleTimeoutMs, responseByteBudget, signal, totalTimeoutMs: options.totalTimeoutMs },
     );
     if (page.modelLimitExceeded) {
       throw paginationError(`Custom /models catalog exceeded ${MAX_CUSTOM_MODELS} models`);
@@ -205,4 +206,4 @@ export const fetchCustomModels = async (
   }
 
   throw paginationError(`Custom /models pagination exceeded ${MAX_CUSTOM_MODEL_PAGES} pages`);
-};
+}, options);
