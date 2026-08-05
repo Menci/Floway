@@ -158,6 +158,29 @@ test('/v1/images/edits rejects multipart body without model field with 400', asy
   assertEquals(response.status, 400);
 });
 
+test.each([
+  ['duplicate text', 'alternate-model'],
+  ['mixed file', new Blob(['alternate-model'], { type: 'text/plain' })],
+] as const)('/v1/images/edits rejects %s multipart model values with 400', async (_name, duplicateModel) => {
+  const { apiKey } = await setupAppTest();
+  const form = new FormData();
+  form.append('model', 'gpt-image-2');
+  form.append('model', duplicateModel);
+  form.append('image', new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }), 'source.png');
+  const response = await requestApp('/v1/images/edits', {
+    method: 'POST',
+    headers: { 'x-api-key': apiKey.key },
+    body: form,
+  });
+  assertEquals(response.status, 400);
+  assertEquals(await response.json(), {
+    error: {
+      message: 'Image edits request body must include a model field.',
+      type: 'api_error',
+    },
+  });
+});
+
 test('/v1/images/edits requires at least one image for JSON and multipart requests', async () => {
   const { apiKey } = await setupAppTest();
   const json = await requestApp('/v1/images/edits', {

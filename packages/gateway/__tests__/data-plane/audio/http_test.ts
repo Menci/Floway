@@ -83,6 +83,10 @@ test('/v1/audio/transcriptions rejects malformed multipart and invalid field typ
   const fileModel = new FormData();
   appendTranscriptionFile(fileModel);
   fileModel.append('model', new Blob(['gpt-4o-transcribe'], { type: 'text/plain' }), 'model.txt');
+  const mixedModelValues = transcriptionForm();
+  mixedModelValues.append('model', new Blob(['alternate'], { type: 'text/plain' }), 'model.txt');
+  const duplicateModels = transcriptionForm();
+  duplicateModels.append('model', 'alternate');
   const missingFile = new FormData();
   missingFile.append('model', 'gpt-4o-transcribe');
   const stringFile = new FormData();
@@ -112,6 +116,8 @@ test('/v1/audio/transcriptions rejects malformed multipart and invalid field typ
     { name: 'missing model', body: missingModel, message: 'Audio transcription request body must include a model field.' },
     { name: 'empty model', body: emptyModel, message: 'Audio transcription request body must include a model field.' },
     { name: 'file-valued model', body: fileModel, message: 'Audio transcription request body must include a model field.' },
+    { name: 'mixed model values', body: mixedModelValues, message: 'Audio transcription request body must include a model field.' },
+    { name: 'duplicate model values', body: duplicateModels, message: 'Audio transcription request body must include a model field.' },
     { name: 'missing file', body: missingFile, message: 'Audio transcription request body must include a file upload.' },
     { name: 'string-valued file', body: stringFile, message: 'Audio transcription request body must include a file upload.' },
     { name: 'mixed file values', body: mixedFiles, message: 'Audio transcription request body must include a file upload.' },
@@ -558,37 +564,48 @@ test('/v1/audio/transcriptions completes and cancels an upstream kept open after
 test.each([
   {
     name: 'malformed SSE JSON',
-    body: () => new Response([
-      'data: {"type":"transcript.text.delta","delta":"partial"}',
-      '',
-      'data: {not-json}',
-      '',
-    ].join('\n'), { headers: { 'content-type': 'text/event-stream' } }),
-    forwarded: ['transcript.text.delta', '{not-json}'],
+    createFixture: () => ({
+      response: new Response([
+        'data: {"type":"transcript.text.delta","delta":"partial"}',
+        '',
+        'data: {not-json}',
+        '',
+        'data: {"type":"transcript.text.done","text":"complete"}',
+        '',
+      ].join('\n'), { headers: { 'content-type': 'text/event-stream' } }),
+      verify: () => undefined,
+    }),
+    forwarded: ['transcript.text.delta', '{not-json}', 'transcript.text.done'],
   },
   {
     name: 'an upstream body read error',
-    body: () => {
+    createFixture: () => {
       const encoder = new TextEncoder();
       let pulled = false;
-      return new Response(new ReadableStream<Uint8Array>({
-        pull(controller) {
-          if (!pulled) {
-            pulled = true;
-            controller.enqueue(encoder.encode('data: {"type":"transcript.text.delta","delta":"partial"}\n\n'));
-            return;
-          }
-          controller.error(new Error('upstream audio stream failed'));
-        },
-      }), { headers: { 'content-type': 'text/event-stream' } });
+      let readErrorTriggered = false;
+      return {
+        response: new Response(new ReadableStream<Uint8Array>({
+          pull(controller) {
+            if (!pulled) {
+              pulled = true;
+              controller.enqueue(encoder.encode('data: {"type":"transcript.text.delta","delta":"partial"}\n\n'));
+              return;
+            }
+            readErrorTriggered = true;
+            controller.error(new Error('upstream audio stream failed'));
+          },
+        }), { headers: { 'content-type': 'text/event-stream' } }),
+        verify: () => assertEquals(readErrorTriggered, true),
+      };
     },
     forwarded: ['transcript.text.delta', 'partial'],
   },
-])('/v1/audio/transcriptions forwards $name and records failed request-only settlement', async ({ body, forwarded }) => {
+])('/v1/audio/transcriptions forwards $name and records failed request-only settlement', async ({ createFixture, forwarded }) => {
   const { apiKey, repo } = await setupAppTest();
   await registerAudioModel(repo);
+  const fixture = createFixture();
   await withMockedFetch(
-    () => body(),
+    () => fixture.response,
     async () => {
       const response = await requestApp('/v1/audio/transcriptions', {
         method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['stream', 'true']]),
@@ -598,6 +615,7 @@ test.each([
       for (const fragment of forwarded) assertEquals(wire.includes(fragment), true);
     },
   );
+  fixture.verify();
   await assertFailedRequestOnlySettlement(repo);
 });
 

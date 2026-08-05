@@ -14,6 +14,7 @@ import type { Context } from 'hono';
 import { respondImages } from './respond.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
+import { singleNonEmptyMultipartTextField } from '../shared/multipart.ts';
 import { prepareJsonModelRequest } from '../shared/passthrough-request.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/request-body.ts';
@@ -153,8 +154,8 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
   } catch {
     return invalid('Image edits request body must be valid multipart/form-data.');
   }
-  const model = form.get('model');
-  if (typeof model !== 'string' || model.length === 0) {
+  const model = singleNonEmptyMultipartTextField(form, 'model');
+  if (model === undefined) {
     return invalid('Image edits request body must include a model field.');
   }
   const images: File[] = [];
