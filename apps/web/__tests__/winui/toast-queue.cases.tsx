@@ -1,14 +1,16 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { useRef } from 'react';
 import { describe, expect, it } from 'vitest';
 
 import { fluentComponents } from '../../src/fluent';
 import { renderInApp } from '../render';
+import { settle } from '../settle';
 
 const { Toast, Toaster, ToastTitle, useToastController } = fluentComponents;
 
 const TOASTER_ID = 'toast-queue-suite';
 const LIMIT = 1;
+const visibleToasts = () => screen.getAllByRole('listitem').map(item => item.textContent);
 
 // Fluent renders a toast held behind the limit like any other, with `visible`
 // false, and takes the finish of an exit motion as permission to drop it. A
@@ -38,11 +40,11 @@ describe('winui toaster queue', () => {
     renderInApp(<QueueHarness />);
 
     fireEvent.click(screen.getByRole('button', { name: 'fire' }));
-    await screen.findByText('held');
-    expect(screen.queryByText('queued')).toBeNull();
+    await settle();
+    expect(visibleToasts()).toEqual(['held']);
 
     fireEvent.click(screen.getByRole('button', { name: 'dismiss' }));
-    await screen.findByText('queued');
-    await waitFor(() => expect(screen.queryByText('held')).toBeNull());
+    await settle();
+    expect(visibleToasts()).toEqual(['queued']);
   });
 });

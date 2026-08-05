@@ -32,3 +32,15 @@ test('dispatchUpstreamFetch rejects a timing wrapper that dispatches twice', asy
     },
   }, 'https://example.com', { method: 'POST', body: 'payload' })).rejects.toThrow('invoked more than once');
 });
+
+test('dispatchUpstreamFetch rejects a timing wrapper that never dispatches', async () => {
+  let fetchCalls = 0;
+  await expect(dispatchUpstreamFetch({
+    fetcher: () => {
+      fetchCalls++;
+      return Promise.resolve(new Response('unexpected'));
+    },
+    wrapUpstreamCall: <T>() => Promise.resolve(new Response('bypassed') as unknown as T),
+  }, 'https://example.com', { method: 'POST', body: 'payload' })).rejects.toThrow('was not invoked');
+  expect(fetchCalls).toBe(0);
+});

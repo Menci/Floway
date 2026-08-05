@@ -494,6 +494,15 @@ test('rejects a repeated output_item.added observation', async () => {
   await expect(collect(result)).rejects.toThrow(/output_item\.added twice/);
 });
 
+test('rejects output_item.done before the item lifecycle opens', async () => {
+  const item: ResponsesOutputItem = { type: 'message', id: 'msg_raw', status: 'completed', role: 'assistant', content: [] };
+  const { result } = await runStream([
+    eventFrame(outputItemEvent('done', 0, item)),
+  ]);
+
+  await expect(collect(result)).rejects.toThrow(/output_item\.done before output_item\.added/);
+});
+
 test('rejects an output index whose observed item type changes', async () => {
   const { result } = await runStream([
     eventFrame(outputItemEvent('added', 0, { type: 'message', id: 'msg_raw', status: 'in_progress', role: 'assistant', content: [] })),

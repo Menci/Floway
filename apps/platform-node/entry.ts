@@ -1,11 +1,11 @@
 import { serve, upgradeWebSocket } from '@hono/node-server';
 import { setGlobalDispatcher } from 'undici';
-import { WebSocketServer } from 'ws';
 
 import { bootstrapNodePlatform } from './src/bootstrap.ts';
 import { parseNodeListenPort } from './src/config.ts';
 import { createNodeGlobalDispatcher } from './src/global-dispatcher.ts';
 import { applyMigrations } from './src/migrate.ts';
+import { createResponsesWebSocketServer } from './src/responses-websocket-server.ts';
 import {
   app,
   initBackgroundSchedulerResolver,
@@ -65,7 +65,7 @@ setInterval(sweep, SCHEDULED_INTERVAL_MS).unref();
 serve({
   fetch: app.fetch,
   port,
-  websocket: { server: new WebSocketServer({ noServer: true }) },
+  websocket: { server: createResponsesWebSocketServer() },
 }, info => {
   console.log(`Floway listening on http://localhost:${info.port}`);
 });

@@ -111,8 +111,8 @@ export const streamPlaygroundText = async function* (request: PlaygroundRequest)
     let payload: unknown;
     try {
       payload = JSON.parse(frame.data);
-    } catch {
-      continue;
+    } catch (error) {
+      throw new SyntaxError(`Playground received a malformed ${api} stream frame.`, { cause: error });
     }
     const failure = streamFailureMessage(api, payload);
     if (failure !== null) throw new Error(failure);

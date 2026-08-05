@@ -5,9 +5,21 @@ import { createResponsesWsSession } from './items/store.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
 import { isResponsesResponseTerminalEvent, normalizeResponsesStreamLifecycle } from './stream-lifecycle.ts';
+import {
+  prepareResponsesWebSocketMessage,
+  RESPONSES_WEBSOCKET_CONNECTION_LIMIT_ERROR,
+  RESPONSES_WEBSOCKET_LIMITS,
+  RESPONSES_WEBSOCKET_MESSAGE_TOO_LARGE_CODE,
+  RESPONSES_WEBSOCKET_QUEUE_LIMIT_CODE,
+  ResponsesWebSocketIngressBudget,
+  responsesWebSocketMessageByteLength,
+  type PreparedResponsesWebSocketMessage,
+  type ResponsesWebSocketIngressReservation,
+} from './websocket-policy.ts';
 import type { DumpAccumulator } from '../../../dump/accumulator.ts';
 import { apiKeyFromContext, authenticateApiKey, type AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
+import { utf8ByteLength } from '../../../shared/utf8.ts';
 import { inboundHeaders } from '../../shared/inbound-headers.ts';
 import { takeRequestBody } from '../../shared/request-body.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../../shared/sse.ts';
@@ -31,9 +43,8 @@ interface WorkerWebSocket extends WebSocket {
 interface ResponsesWebSocketSocket {
   readonly readyState: number;
   send(data: string): void;
+  close(code?: number, reason?: string): void;
 }
-
-const UTF8_ENCODER = new TextEncoder();
 
 // Our implementor slug prefixes the keep-alive's wire type; the spec reserves
 // every unprefixed type for itself, gives `acme:trace_event` as the form, and
@@ -47,6 +58,7 @@ const UTF8_ENCODER = new TextEncoder();
 export const KEEP_ALIVE_EVENT_TYPE = 'floway:keep_alive';
 
 interface ResponsesWebSocketHandlers {
+  onOpen(event: unknown, socket: ResponsesWebSocketSocket): void;
   onMessage(event: { readonly data: unknown }, socket: ResponsesWebSocketSocket): void;
   onClose(event: unknown, socket: ResponsesWebSocketSocket): void;
   onError(event: unknown, socket: ResponsesWebSocketSocket): void;
@@ -96,11 +108,17 @@ export const responsesWebSocket = async (c: AuthedContext): Promise<Response> =>
   const pair = new WebSocketPair();
   const client = pair[0];
   const server = pair[1];
-  server.accept();
+  // Keep binary delivery stable across compatibility dates. Cloudflare changed
+  // the default to Blob on 2026-03-17, while the gateway's bounded synchronous
+  // ingress path deliberately accepts ArrayBuffer.
+  // https://github.com/cloudflare/cloudflare-docs/blob/f8ac0aa6d9ef268d442865225c786753aa1332af/src/content/docs/workers/runtime-apis/websockets.mdx#L229-L267
+  server.binaryType = 'arraybuffer';
 
   server.addEventListener('close', event => events.onClose(event, server));
   server.addEventListener('error', event => events.onError(event, server));
   server.addEventListener('message', event => events.onMessage(event, server));
+  server.accept();
+  events.onOpen(new Event('open'), server);
 
   return new Response(null, { status: 101, webSocket: client } as ResponseInit & { readonly webSocket: WebSocket });
 };
@@ -112,9 +130,18 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
   // turn rather than freezing key/user policy at upgrade time.
   const authenticatedRawKey = apiKeyFromContext(c).key;
   const session = createResponsesWsSession();
+  const ingressBudget = new ResponsesWebSocketIngressBudget();
   let closed = false;
   let activeAbortController: AbortController | undefined;
-  let queue = Promise.resolve();
+  let activeTurn: Promise<void> | undefined;
+  let connectionLimitTimer: ReturnType<typeof setTimeout> | undefined;
+
+  interface QueuedTurn {
+    readonly prepared: Exclude<PreparedResponsesWebSocketMessage, { readonly kind: 'message-too-large' }>;
+    readonly reservation: ResponsesWebSocketIngressReservation;
+    readonly socket: ResponsesWebSocketSocket;
+  }
+  const queuedTurns: QueuedTurn[] = [];
 
   // ── Session-scoped BackgroundScheduler ──────────────────────────────────
   //
@@ -131,16 +158,16 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
   // execution context at all. `sessionScheduler` tracks the task in
   // `pendingWork`; the isolate stays alive throughout because we register
   // ONE lifetime promise up-front (while the fetch handler is still
-  // running, so this waitUntil IS legal) that only resolves when
-  // (WS closed ∧ pendingWork drained).
+  // running, so this waitUntil IS legal) that only resolves when the WebSocket
+  // is closed, its active turn has finished, and pendingWork is
+  // drained.
   //
-  // The drain uses a `while (size > 0)` loop rather than a single
-  // `Promise.allSettled(pendingWork)` snapshot: the in-flight message
-  // handler running at close time may still enqueue a final
-  // dump.finalize / settle / recordFailedRequest from its finally/catch after
-  // `sessionClosed` resolves. The loop keeps going until the Set is
-  // genuinely empty, which is bounded because `closed = true` short-
-  // circuits future message handlers at the top of `handleClientMessage`.
+  // The drain first joins the active turn, then drains background work to a
+  // fixed point. The active handler can enqueue dump.finalize,
+  // settle, or recordFailedRequest after `sessionClosed` resolves; observing an
+  // empty Set before that handler finishes would let the lifetime promise exit
+  // while those writes have not even been scheduled. The fixed-point check also
+  // covers a message callback that was already dispatched when close arrived.
   const pendingWork = new Set<Promise<unknown>>();
   let sessionClosedResolve: (() => void) | undefined;
   const sessionClosed = new Promise<void>(resolve => { sessionClosedResolve = resolve; });
@@ -152,40 +179,142 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
   };
   backgroundSchedulerFromContext(c)((async () => {
     await sessionClosed;
-    while (pendingWork.size > 0) {
-      await Promise.allSettled([...pendingWork]);
+    while (true) {
+      const currentTurn = activeTurn;
+      if (currentTurn !== undefined) await currentTurn;
+      if (pendingWork.size > 0) await Promise.allSettled([...pendingWork]);
+      if (activeTurn === undefined && pendingWork.size === 0) break;
     }
   })());
 
-  const closeActiveRequest = (): void => {
+  const clearConnectionLimitTimer = (): void => {
+    if (connectionLimitTimer === undefined) return;
+    clearTimeout(connectionLimitTimer);
+    connectionLimitTimer = undefined;
+  };
+
+  const discardQueuedTurns = (): void => {
+    for (const turn of queuedTurns.splice(0)) turn.reservation.release();
+  };
+
+  const closeActiveRequest = (reason?: unknown): void => {
+    if (closed) return;
     closed = true;
-    activeAbortController?.abort();
+    clearConnectionLimitTimer();
+    discardQueuedTurns();
+    activeAbortController?.abort(reason);
     sessionClosedResolve?.();
   };
 
-  return {
-    onClose: closeActiveRequest,
-    onError: closeActiveRequest,
-    onMessage: (event, socket) => {
-      queue = queue
-        .then(async () => {
-          if (closed) return;
-          const abortController = new AbortController();
-          activeAbortController = abortController;
-          try {
-            await handleClientMessage(c, socket, session, event.data, authenticatedRawKey, abortController, () => closed, sessionScheduler);
-          } finally {
-            if (activeAbortController === abortController) activeAbortController = undefined;
-          }
-        })
-        // WS-specific top-level: Hono's onError never runs for callbacks fired off
-        // an open socket, so we serialize the error inline as the spec's
-        // WebSocket error envelope. (HTTP entries let onError handle the same case.)
-        .catch(error => {
-          if (!closed) sendError(socket, 500, serverErrorEnvelope(error));
+  const closeWithError = (
+    socket: ResponsesWebSocketSocket,
+    status: number,
+    error: Record<string, unknown>,
+    closeCode: number,
+    closeReason: string,
+  ): void => {
+    sendError(socket, status, error);
+    closeActiveRequest(new WebSocketClientMessageError(String(error.message ?? closeReason)));
+    if (socket.readyState === WebSocket.OPEN) socket.close(closeCode, closeReason);
+  };
+
+  const runQueuedTurn = (turn: QueuedTurn): void => {
+    if (closed || activeTurn !== undefined) return;
+    activeTurn = (async () => {
+      if (turn.prepared.kind === 'unsupported') {
+        sendError(turn.socket, 400, {
+          type: 'invalid_request_error',
+          code: 'invalid_request_error',
+          message: `Unsupported WebSocket message data: ${turn.prepared.description}`,
         });
+        return;
+      }
+
+      const abortController = new AbortController();
+      activeAbortController = abortController;
+      try {
+        await handleClientMessage(c, turn.socket, session, turn.prepared.bytes, authenticatedRawKey, abortController, () => closed, sessionScheduler);
+      } finally {
+        if (activeAbortController === abortController) activeAbortController = undefined;
+      }
+    })()
+      // WS-specific top-level: Hono's onError never runs for callbacks fired off
+      // an open socket, so serialize the error inline.
+      .catch(error => {
+        if (!closed) sendError(turn.socket, 500, serverErrorEnvelope(error));
+      })
+      .finally(() => {
+        turn.reservation.release();
+        activeTurn = undefined;
+        const next = queuedTurns.shift();
+        if (next !== undefined) runQueuedTurn(next);
+      });
+  };
+
+  const enqueue = (
+    prepared: Exclude<PreparedResponsesWebSocketMessage, { readonly kind: 'message-too-large' }>,
+    reservation: ResponsesWebSocketIngressReservation,
+    socket: ResponsesWebSocketSocket,
+  ): void => {
+    const turn = { prepared, reservation, socket };
+    if (activeTurn === undefined) runQueuedTurn(turn);
+    else queuedTurns.push(turn);
+  };
+
+  return {
+    onOpen: (_event, socket) => {
+      connectionLimitTimer = setTimeout(() => {
+        closeWithError(
+          socket,
+          400,
+          RESPONSES_WEBSOCKET_CONNECTION_LIMIT_ERROR,
+          1000,
+          RESPONSES_WEBSOCKET_CONNECTION_LIMIT_ERROR.code,
+        );
+      }, RESPONSES_WEBSOCKET_LIMITS.maxConnectionDurationMs);
+      unrefTimer(connectionLimitTimer);
+    },
+    onClose: (_event, socket) => {
+      closeActiveRequest();
+      // Cloudflare compatibility dates before 2026-04-07 require the Worker to
+      // send the reciprocal Close. Newer runtimes and Node silently ignore this
+      // call after their automatic reply.
+      // https://github.com/cloudflare/cloudflare-docs/blob/f8ac0aa6d9ef268d442865225c786753aa1332af/src/content/docs/workers/runtime-apis/websockets.mdx#L185-L225
+      socket.close();
+    },
+    onError: event => { closeActiveRequest(event); },
+    onMessage: (event, socket) => {
+      if (closed) return;
+      const byteLength = responsesWebSocketMessageByteLength(event.data);
+      const decision = ingressBudget.reserve(byteLength);
+      if (decision.kind === 'message-too-large') {
+        closeWithError(socket, 413, {
+          type: 'invalid_request_error',
+          code: RESPONSES_WEBSOCKET_MESSAGE_TOO_LARGE_CODE,
+          message: `WebSocket message exceeds the ${RESPONSES_WEBSOCKET_LIMITS.maxMessageBytes}-byte limit.`,
+        }, 1009, RESPONSES_WEBSOCKET_MESSAGE_TOO_LARGE_CODE);
+        return;
+      }
+      if (decision.kind === 'queue-full') {
+        closeWithError(socket, 429, {
+          type: 'rate_limit_error',
+          code: RESPONSES_WEBSOCKET_QUEUE_LIMIT_CODE,
+          message: 'Responses WebSocket queue capacity exceeded; open a new connection and retry.',
+        }, 1008, RESPONSES_WEBSOCKET_QUEUE_LIMIT_CODE);
+        return;
+      }
+
+      const prepared = prepareResponsesWebSocketMessage(event.data, RESPONSES_WEBSOCKET_LIMITS.maxMessageBytes, byteLength);
+      if (prepared.kind === 'message-too-large') throw new Error('WebSocket message size changed after ingress reservation');
+      enqueue(prepared, decision.reservation, socket);
     },
   };
+};
+
+const unrefTimer = (timer: unknown): void => {
+  if (typeof timer !== 'object' || timer === null) return;
+  const unref = Reflect.get(timer, 'unref');
+  if (typeof unref === 'function') Reflect.apply(unref, timer, []);
 };
 
 interface ResponsesWsTurnFailure {
@@ -197,7 +326,7 @@ const handleClientMessage = async (
   c: AuthedContext,
   socket: ResponsesWebSocketSocket,
   session: ReturnType<typeof createResponsesWsSession>,
-  data: unknown,
+  requestBytes: Uint8Array,
   authenticatedRawKey: string,
   downstreamAbortController: AbortController,
   isClosed: () => boolean,
@@ -240,7 +369,7 @@ const handleClientMessage = async (
     // request body when `ctx` is constructed below. Payloads that fail to
     // parse never reach ctx construction, so no dump record is emitted for
     // them — there is no api-key-scoped turn to attribute them to.
-    const requestBody = { bytes: wsDataToBytes(data), streamError: null };
+    const requestBody = { bytes: requestBytes, streamError: null };
     if (!(await authenticateApiKey(c, authenticatedRawKey))) {
       turnFailure.fail(401, {
         type: 'authentication_error',
@@ -311,7 +440,7 @@ const handleClientMessage = async (
       throw error;
     }
 
-    await respondResponsesWebSocket({ socket, eventId, signal, isClosed, result, ctx, payload, turnFailure });
+    await respondResponsesWebSocket({ socket, eventId, downstreamAbortController, isClosed, result, ctx, payload, turnFailure });
   } catch (error) {
     if (signal.aborted || isClosed()) return;
     if (error instanceof TranslatorInputError) {
@@ -347,13 +476,6 @@ const handleClientMessage = async (
 
 class WebSocketClientMessageError extends Error {}
 
-const wsDataToBytes = (data: unknown): Uint8Array => {
-  if (typeof data === 'string') return new TextEncoder().encode(data);
-  if (data instanceof ArrayBuffer) return new Uint8Array(data);
-  if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-  throw new WebSocketClientMessageError(`Unsupported WebSocket message data: ${typeof data}`);
-};
-
 const validateClientMessage = (parsed: unknown): ResponsesWebSocketClientEvent => {
   if (!parsed || typeof parsed !== 'object' || typeof (parsed as { type?: unknown }).type !== 'string') {
     throw new WebSocketClientMessageError('WebSocket message must be a JSON object with a string type.');
@@ -368,14 +490,15 @@ const responsesPayloadFromClientSource = (source: object): CanonicalResponsesPay
 const respondResponsesWebSocket = async (input: {
   readonly socket: ResponsesWebSocketSocket;
   readonly eventId: string | undefined;
-  readonly signal: AbortSignal;
+  readonly downstreamAbortController: AbortController;
   readonly isClosed: () => boolean;
   readonly result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>;
   readonly ctx: ChatGatewayCtx;
   readonly payload: CanonicalResponsesPayload;
   readonly turnFailure: ResponsesWsTurnFailure;
 }): Promise<void> => {
-  const { socket, eventId, signal, isClosed, result, ctx, payload, turnFailure } = input;
+  const { socket, eventId, downstreamAbortController, isClosed, result, ctx, payload, turnFailure } = input;
+  const { signal } = downstreamAbortController;
   if (result.type === 'api-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.error(result.source, result.upstreamId);
@@ -399,15 +522,20 @@ const respondResponsesWebSocket = async (input: {
     const observed = observeResponsesWebSocketFrames(normalizeResponsesStreamLifecycle(result.events), state, ctx);
     const output = wrapResponsesClientEgress(observed, ctx, payload);
     const iterator = output[Symbol.asyncIterator]();
-    let pendingNext = pendingWsFrameResult(iterator.next());
+    const abortResult = wsAbortResult(signal);
+    let pendingNext: Promise<WsFrameRaceResult> | undefined;
     let completed = false;
     let stoppedByDownstream = false;
     let streamed = false;
     const sequence = createDownstreamSequence();
 
-    const stopForDownstream = (): void => {
+    const stopForDownstream = (reason?: unknown): void => {
       stoppedByDownstream = true;
       completion = 'cancel';
+      if (!signal.aborted) {
+        if (reason === undefined) downstreamAbortController.abort();
+        else downstreamAbortController.abort(reason);
+      }
     };
 
     try {
@@ -417,8 +545,13 @@ const respondResponsesWebSocket = async (input: {
           return;
         }
 
-        const next = await nextFrameOrKeepAlive(pendingNext);
+        pendingNext ??= pendingWsFrameResult(iterator.next());
+        const next = await nextFrameOrKeepAlive(pendingNext, abortResult);
 
+        if (next.type === 'abort') {
+          stopForDownstream();
+          return;
+        }
         if (next.type === 'keep-alive') {
           // Extended reasoning turns go completely silent: upstream sends SSE
           // `ping` events, `parseResponsesStream` drops them, and no frame at
@@ -484,12 +617,14 @@ const respondResponsesWebSocket = async (input: {
           // https://github.com/openai/openai-python/blob/3844843c277f42b0b18beaa58152cfda61df524a/src/openai/resources/responses/responses.py#L4493-L4502
           // https://github.com/openai/codex/blob/e6cfd40c3f444aadd6017c9eeab01db70f48961a/codex-rs/codex-api/src/sse/responses.rs#L466-L472
           if (!streamed) continue;
-          if (!sendJson(socket, { type: KEEP_ALIVE_EVENT_TYPE, sequence_number: sequence.take() }, eventId, ctx.dump)) {
-            stopForDownstream();
+          const sent = sendJson(socket, { type: KEEP_ALIVE_EVENT_TYPE, sequence_number: sequence.take() }, eventId, ctx.dump);
+          if (!sent.ok) {
+            stopForDownstream(sent.error);
             return;
           }
           continue;
         }
+        pendingNext = undefined;
         if (next.type === 'next-error') throw next.error;
         if (next.result.done) {
           completed = true;
@@ -497,7 +632,6 @@ const respondResponsesWebSocket = async (input: {
         }
 
         const frame = next.result.value;
-        pendingNext = pendingWsFrameResult(iterator.next());
         if (frame.type !== 'event') continue;
 
         const event = frame.event;
@@ -524,8 +658,9 @@ const respondResponsesWebSocket = async (input: {
           continue;
         }
 
-        if (!sendResponsesEvent(socket, sequence.renumber(event), eventId, ctx.dump)) {
-          stopForDownstream();
+        const sent = sendResponsesEvent(socket, sequence.renumber(event), eventId, ctx.dump);
+        if (!sent.ok) {
+          stopForDownstream(sent.error);
           return;
         }
         streamed = true;
@@ -533,7 +668,7 @@ const respondResponsesWebSocket = async (input: {
     } finally {
       if (!completed) {
         const stopped = iterator.return?.(undefined);
-        if (stoppedByDownstream) stopped?.catch(() => {});
+        if (stoppedByDownstream && pendingNext !== undefined) stopped?.catch(() => {});
         else await stopped;
       }
     }
@@ -544,8 +679,9 @@ const respondResponsesWebSocket = async (input: {
     // Renumbered here rather than where it was buffered: keep-alives can still
     // fire while the generator drains behind the terminal event, and each of
     // those takes a slot that has to land before the terminal event's own.
-    if (!sendResponsesEvent(socket, sequence.renumber(terminalEvent), eventId, ctx.dump)) {
-      completion = 'cancel';
+    const sent = sendResponsesEvent(socket, sequence.renumber(terminalEvent), eventId, ctx.dump);
+    if (!sent.ok) {
+      stopForDownstream(sent.error);
       return;
     }
     completion = 'eof';
@@ -594,13 +730,21 @@ const observeResponsesWebSocketFrames = async function* (
 type WsFrameRaceResult =
   | { type: 'frame'; result: IteratorResult<ProtocolFrame<ClientResponsesStreamEvent>> }
   | { type: 'next-error'; error: unknown }
-  | { type: 'keep-alive' };
+  | { type: 'keep-alive' }
+  | { type: 'abort' };
 
 const pendingWsFrameResult = (pendingNext: Promise<IteratorResult<ProtocolFrame<ClientResponsesStreamEvent>>>): Promise<WsFrameRaceResult> =>
   pendingNext.then(
     (result): WsFrameRaceResult => ({ type: 'frame', result }),
     (error): WsFrameRaceResult => ({ type: 'next-error', error }),
   );
+
+const wsAbortResult = (signal: AbortSignal): Promise<WsFrameRaceResult> => {
+  if (signal.aborted) return Promise.resolve({ type: 'abort' });
+  return new Promise(resolve => {
+    signal.addEventListener('abort', () => resolve({ type: 'abort' }), { once: true });
+  });
+};
 
 // The interval is the one already shared with SSE rather than a WebSocket
 // constant of its own. Widening the gap between server data frames on a
@@ -610,13 +754,16 @@ const pendingWsFrameResult = (pendingNext: Promise<IteratorResult<ProtocolFrame<
 // is ~70 bytes, and the earliest unprotected idle teardown seen on that same
 // path was 215.8 s, so an interval chosen for economy would spend a real
 // margin against a stochastic teardown to save nothing.
-const nextFrameOrKeepAlive = async (pendingFrame: Promise<WsFrameRaceResult>): Promise<WsFrameRaceResult> => {
+const nextFrameOrKeepAlive = async (
+  pendingFrame: Promise<WsFrameRaceResult>,
+  pendingAbort: Promise<WsFrameRaceResult>,
+): Promise<WsFrameRaceResult> => {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const keepAlive = new Promise<WsFrameRaceResult>(resolve => {
     timeoutId = setTimeout(() => resolve({ type: 'keep-alive' }), DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS);
   });
   try {
-    return await Promise.race([pendingFrame, keepAlive]);
+    return await Promise.race([pendingFrame, pendingAbort, keepAlive]);
   } finally {
     if (timeoutId !== undefined) clearTimeout(timeoutId);
   }
@@ -731,15 +878,17 @@ const sendResponsesEvent = (
   event: ClientResponsesStreamEvent,
   eventId?: string,
   dump?: DumpAccumulator | null,
-): boolean => sendJson(socket, event, eventId, dump);
+): WebSocketSendResult => sendJson(socket, event, eventId, dump);
+
+type WebSocketSendResult = { ok: true } | { ok: false; error?: unknown };
 
 const sendJson = (
   socket: ResponsesWebSocketSocket,
   value: unknown,
   eventId?: string,
   dump?: DumpAccumulator | null,
-): boolean => {
-  if (socket.readyState !== 1) return false;
+): WebSocketSendResult => {
+  if (socket.readyState !== 1) return { ok: false };
   const payload = eventId === undefined || !value || typeof value !== 'object'
     ? value
     : { ...value, event_id: eventId };
@@ -747,9 +896,9 @@ const sendJson = (
   try {
     text = JSON.stringify(payload);
     socket.send(text);
-  } catch {
-    return false;
+  } catch (error) {
+    return { ok: false, error };
   }
-  dump?.recordSentPayloadBytes(UTF8_ENCODER.encode(text).byteLength);
-  return true;
+  dump?.recordSentPayloadBytes(utf8ByteLength(text));
+  return { ok: true };
 };

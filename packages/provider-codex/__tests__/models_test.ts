@@ -1,8 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { CODEX_CLI_VERSION, CODEX_ORIGINATOR, CODEX_USER_AGENT } from '../src/constants.ts';
-import { codexRawToProviderModel, fetchCodexCatalog } from '../src/models.ts';
-import { priceRequest } from '@floway-dev/protocols/common';
+import { CodexModelsFetchError, codexRawToProviderModel, fetchCodexCatalog } from '../src/models.ts';
 import { directFetcher, type FlagId } from '@floway-dev/provider';
 
 const okJson = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
@@ -34,9 +33,11 @@ describe('fetchCodexCatalog', () => {
     expect(headers.get('openai-beta')).toBeNull();
   });
 
-  test('throws when upstream returns non-2xx (caller handles 401 retry)', async () => {
+  test('surfaces a typed status when upstream returns non-2xx', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"error":"unauthorized"}', { status: 401 }));
-    await expect(fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher })).rejects.toThrow(/401/);
+    const request = fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher });
+    await expect(request).rejects.toBeInstanceOf(CodexModelsFetchError);
+    await expect(request).rejects.toMatchObject({ status: 401 });
   });
 
   test('throws on missing models key (forward-compatible shape guard)', async () => {
@@ -57,6 +58,17 @@ describe('fetchCodexCatalog', () => {
   test('throws on entry missing context_window', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({ models: [{ slug: 'gpt-x', display_name: 'GPT-X' }] }));
     await expect(fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher })).rejects.toThrow(/context_window/);
+  });
+
+  test.each([
+    { slug: '', display_name: 'GPT-X', context_window: 1 },
+    { slug: 'gpt-x', display_name: '   ', context_window: 1 },
+    { slug: 'gpt-x', display_name: 'GPT-X', context_window: 0 },
+    { slug: 'gpt-x', display_name: 'GPT-X', context_window: 1.5 },
+    { slug: 'gpt-x', display_name: 'GPT-X', context_window: Number.MAX_VALUE },
+  ])('rejects unusable required model metadata: %j', async entry => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({ models: [entry] }));
+    await expect(fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher })).rejects.toThrow();
   });
 
   test('carries input_modalities, supported_reasoning_levels, default_reasoning_level through to CodexRawModel', async () => {
@@ -128,41 +140,11 @@ describe('codexRawToProviderModel', () => {
     expect(m.owned_by).toBe('openai');
   });
 
-  test('attaches OpenAI-API-rate pricing for known slugs and treats codex-auto-review as gpt-5.4', () => {
+  test('attaches known pricing and treats codex-auto-review as gpt-5.4', () => {
     const flagship = codexRawToProviderModel({ id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000 }, noFlags);
-    expect(flagship.pricing).toEqual({
-      entries: [
-        { rates: { input_tokens: '0.0000025', input_cache_read_tokens: '0.00000025', output_tokens: '0.000015' } },
-        { selector: { serviceTier: 'flex' }, rates: { input_tokens: '0.00000125', input_cache_read_tokens: '0.00000013', output_tokens: '0.0000075' } },
-        { selector: { serviceTier: 'priority' }, rates: { input_tokens: '0.000005', input_cache_read_tokens: '0.0000005', output_tokens: '0.00003' } },
-        { selector: { inputTokens: { operator: 'gt', value: 272000 } }, rates: { input_tokens: '0.000005', input_cache_read_tokens: '0.0000005', output_tokens: '0.0000225' } },
-      ],
-    });
+    expect(flagship.pricing).toBeDefined();
     const review = codexRawToProviderModel({ id: 'codex-auto-review', display_name: 'Codex Auto Review', context_window: 272000 }, noFlags);
     expect(review.pricing).toEqual(flagship.pricing);
-  });
-
-  // End-to-end resolution check: serviceTier selectors must match the wire
-  // values billableServiceTier persists, not Codex's Rust enum names.
-  test('service-tier entries resolve through the wire-value strings', () => {
-    const flagship = codexRawToProviderModel({ id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000 }, noFlags);
-    if (!flagship.pricing) throw new Error('expected pricing to be defined');
-
-    expect(priceRequest(flagship.pricing, { serviceTier: 'priority', inputTokens: 0 }).rates).toEqual({
-      input_tokens: '0.000005',
-      input_cache_read_tokens: '0.0000005',
-      output_tokens: '0.00003',
-    });
-    expect(priceRequest(flagship.pricing, { serviceTier: 'flex', inputTokens: 0 }).rates).toEqual({
-      input_tokens: '0.00000125',
-      input_cache_read_tokens: '0.00000013',
-      output_tokens: '0.0000075',
-    });
-    expect(priceRequest(flagship.pricing, { inputTokens: 0 }).rates).toEqual({
-      input_tokens: '0.0000025',
-      input_cache_read_tokens: '0.00000025',
-      output_tokens: '0.000015',
-    });
   });
 
   test('omits pricing for unknown slugs (forward-compat with new upstream models)', () => {

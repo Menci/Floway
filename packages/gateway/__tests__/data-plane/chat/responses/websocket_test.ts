@@ -4,14 +4,181 @@ import { onTestFinished, test, vi } from 'vitest';
 import { app } from '../../../../src/app.ts';
 import { hashResponsesItem } from '../../../../src/data-plane/chat/responses/items/identity.ts';
 import { responsesServe } from '../../../../src/data-plane/chat/responses/serve.ts';
+import {
+  RESPONSES_WEBSOCKET_CONNECTION_LIMIT_ERROR,
+  RESPONSES_WEBSOCKET_LIMITS,
+  RESPONSES_WEBSOCKET_QUEUE_LIMIT_CODE,
+} from '../../../../src/data-plane/chat/responses/websocket-policy.ts';
 import { KEEP_ALIVE_EVENT_TYPE } from '../../../../src/data-plane/chat/responses/websocket.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../../../src/data-plane/shared/sse.ts';
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
+import { initBackgroundSchedulerResolver } from '../../../../src/runtime/background.ts';
 import { installDumpStubs } from '../../../dump/test-fixtures.ts';
 import { FakeTime } from '../../../test-time.ts';
 import { copilotModels, flushAsyncWork, setupAppTest, sseResponse, sseResponsesResponse } from '../../../test-utils/app.ts';
+import { trackBackground } from '../../../test-utils/background-tracker.ts';
 import { installWorkerWebSocketRuntime, type TestWorkerWebSocket } from '../../../test-utils/worker-websocket.ts';
-import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { EventResult, EventResultMetadata, TelemetryModelIdentity } from '@floway-dev/provider';
+import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, stubModelCandidate, withMockedFetch } from '@floway-dev/test-utils';
+
+type ResponsesFrame = ProtocolFrame<ResponsesStreamEvent>;
+const timeoutSetTimeout = globalThis.setTimeout;
+const timeoutClearTimeout = globalThis.clearTimeout;
+
+interface Deferred<T> {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+}
+
+const deferred = <T>(): Deferred<T> => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(res => { resolve = res; });
+  return { promise, resolve };
+};
+
+const TEST_MODEL_IDENTITY = {
+  model: 'gpt-direct-responses',
+  upstream: 'up_ws_cleanup',
+  modelKey: 'gpt-direct-responses',
+  pricing: null,
+} satisfies TelemetryModelIdentity;
+
+const closedResponsesIteratorResult = (): IteratorResult<ResponsesFrame> => ({
+  done: true,
+  value: undefined,
+});
+
+const createControlledResponsesEvents = (
+  firstFrame?: ResponsesFrame,
+  settlePendingOnAbort?: AbortSignal,
+) => {
+  let first = firstFrame;
+  let pendingNext: Deferred<IteratorResult<ResponsesFrame>> | undefined;
+  let nextCalls = 0;
+  const firstNextStarted = deferred<void>();
+  const secondNextStarted = deferred<void>();
+  const iteratorReturned = deferred<void>();
+
+  const events: AsyncIterable<ResponsesFrame> = {
+    [Symbol.asyncIterator]() {
+      return {
+        next(): Promise<IteratorResult<ResponsesFrame>> {
+          nextCalls += 1;
+          if (nextCalls === 1) firstNextStarted.resolve();
+          if (nextCalls === 2) secondNextStarted.resolve();
+          if (first !== undefined) {
+            const value = first;
+            first = undefined;
+            return Promise.resolve({ done: false, value });
+          }
+
+          const pending = deferred<IteratorResult<ResponsesFrame>>();
+          pendingNext = pending;
+          if (settlePendingOnAbort?.aborted) pending.resolve(closedResponsesIteratorResult());
+          else settlePendingOnAbort?.addEventListener('abort', () => pending.resolve(closedResponsesIteratorResult()), { once: true });
+          return pending.promise;
+        },
+        return(): Promise<IteratorResult<ResponsesFrame>> {
+          iteratorReturned.resolve();
+          pendingNext?.resolve(closedResponsesIteratorResult());
+          return Promise.resolve(closedResponsesIteratorResult());
+        },
+      };
+    },
+  };
+
+  return {
+    events,
+    nextCalls: () => nextCalls,
+    firstNextStarted: firstNextStarted.promise,
+    secondNextStarted: secondNextStarted.promise,
+    iteratorReturned: iteratorReturned.promise,
+    resolvePendingFrame: (frame: ResponsesFrame) => {
+      assertExists(pendingNext);
+      pendingNext.resolve({ done: false, value: frame });
+    },
+  };
+};
+
+type ControlledResponsesEvents = ReturnType<typeof createControlledResponsesEvents>;
+
+const responseCreatedFrame = (): ResponsesFrame => eventFrame({
+  type: 'response.created',
+  sequence_number: 0,
+  response: {
+    id: 'resp_ws_cleanup_upstream',
+    object: 'response',
+    model: 'gpt-direct-responses',
+    status: 'in_progress',
+    output: [],
+    output_text: '',
+    incomplete_details: null,
+    error: null,
+  },
+});
+
+const controlledEventResult = (
+  events: AsyncIterable<ResponsesFrame>,
+  metadataRead: () => void,
+  finalMetadata: Promise<EventResultMetadata>,
+): EventResult<ResponsesFrame> => ({
+  type: 'events',
+  events,
+  modelIdentity: TEST_MODEL_IDENTITY,
+  get finalMetadata() {
+    metadataRead();
+    return finalMetadata;
+  },
+});
+
+const mockControlledResponsesTurn = (
+  createEvents: (signal: AbortSignal) => ControlledResponsesEvents,
+  finalMetadata: Promise<EventResultMetadata> = Promise.resolve({ modelIdentity: TEST_MODEL_IDENTITY }),
+) => {
+  const turnSignal = deferred<AbortSignal>();
+  const controlledEvents = deferred<ControlledResponsesEvents>();
+  const metadataRead = deferred<void>();
+  const generate = vi.spyOn(responsesServe, 'generate').mockImplementation(async ({ ctx }) => {
+    const signal = ctx.abortSignal;
+    assertExists(signal);
+    const events = createEvents(signal);
+    ctx.affinity.select(stubModelCandidate({ model: { id: 'gpt-direct-responses' } }));
+    turnSignal.resolve(signal);
+    controlledEvents.resolve(events);
+    return controlledEventResult(events.events, () => { metadataRead.resolve(); }, finalMetadata);
+  });
+  onTestFinished(() => generate.mockRestore());
+
+  return {
+    calls: () => generate.mock.calls.length,
+    signal: turnSignal.promise,
+    events: controlledEvents.promise,
+    metadataRead: metadataRead.promise,
+  };
+};
+
+const promiseWithin = async <T>(promise: Promise<T>, failureMessage: string, timeoutMs = 1_000): Promise<T> => {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timeoutId = timeoutSetTimeout(() => reject(new Error(failureMessage)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== undefined) timeoutClearTimeout(timeoutId);
+  }
+};
+
+const flushImmediateFakeTime = async (time: FakeTime): Promise<void> => {
+  for (let i = 0; i < 10; i++) {
+    await new Promise<void>(resolve => { timeoutSetTimeout(resolve, 0); });
+    await time.tickAsync(0);
+  }
+};
 
 const waitForMessages = async (
   socket: TestWorkerWebSocket,
@@ -283,8 +450,10 @@ test('Responses WebSocket starts capturing on the next turn when dump retention 
       const client = await connectResponsesWebSocket(apiKey.key);
       await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
 
+      const storedDump = dumps.waitForStored();
       await completeResponsesTurn(client, 'capture-after-enable');
-      await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
+      await storedDump;
+      assertEquals(dumps.stored.length, 1);
 
       const stored = dumps.stored[0];
       assertExists(stored);
@@ -312,8 +481,10 @@ test('Responses WebSocket stops capturing on the next turn when dump retention i
   await withSuccessfulResponsesUpstream(
     async () => await withWorkerWebSocketRuntime(async () => {
       const client = await connectResponsesWebSocket(apiKey.key);
+      const storedDump = dumps.waitForStored();
       await completeResponsesTurn(client, 'captured-before-disable');
-      await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
+      await storedDump;
+      assertEquals(dumps.stored.length, 1);
 
       await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: null });
       await completeResponsesTurn(client, 'not-captured-after-disable');
@@ -334,8 +505,10 @@ test('Responses WebSocket dump responseBytes equals the UTF-8 payload bytes sent
       const client = await connectResponsesWebSocket(apiKey.key);
       const recorded = recordRawMessages(client);
       try {
+        const storedDump = dumps.waitForStored();
         await completeResponsesTurn(client, '响应-byte-count');
-        await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
+        await storedDump;
+        assertEquals(dumps.stored.length, 1);
 
         const expectedBytes = recorded.messages.reduce(
           (total, message) => total + new TextEncoder().encode(message).byteLength,
@@ -566,8 +739,9 @@ test('Responses WebSocket keep-alive waits for the first event and takes a slot 
 
         await tickKeepAliveIntervals(1);
 
-        enqueueSseEvent('response.output_item.done', { type: 'response.output_item.done', output_index: 0, item: reasoning, sequence_number: 1 });
-        enqueueSseEvent('response.completed', { type: 'response.completed', response, sequence_number: 2 });
+        enqueueSseEvent('response.output_item.added', { type: 'response.output_item.added', output_index: 0, item: reasoning, sequence_number: 1 });
+        enqueueSseEvent('response.output_item.done', { type: 'response.output_item.done', output_index: 0, item: reasoning, sequence_number: 2 });
+        enqueueSseEvent('response.completed', { type: 'response.completed', response, sequence_number: 3 });
         upstreamController.enqueue(encoder.encode('data: [DONE]\n\n'));
         upstreamController.close();
         assert(
@@ -580,8 +754,9 @@ test('Responses WebSocket keep-alive waits for the first event and takes a slot 
           [
             ['response.created', 0],
             [KEEP_ALIVE_EVENT_TYPE, 1],
-            ['response.output_item.done', 2],
-            ['response.completed', 3],
+            ['response.output_item.added', 2],
+            ['response.output_item.done', 3],
+            ['response.completed', 4],
           ],
           'expected the keep-alive to take a slot and shift every later event past it',
         );
@@ -753,6 +928,7 @@ test('Responses WebSocket dump responseBytes counts an error envelope sent downs
       const recorded = recordRawMessages(client);
       try {
         const received = waitForMessages(client, messages => messages.length === 1);
+        const storedDump = dumps.waitForStored();
         client.send(JSON.stringify({
           type: 'response.create',
           event_id: '错误-byte-count',
@@ -763,7 +939,8 @@ test('Responses WebSocket dump responseBytes counts an error envelope sent downs
         }));
 
         assertEquals((await received)[0]?.status, 404);
-        await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
+        await storedDump;
+        assertEquals(dumps.stored.length, 1);
         const expectedBytes = recorded.messages.reduce(
           (total, message) => total + new TextEncoder().encode(message).byteLength,
           0,
@@ -1492,6 +1669,305 @@ test('Responses WebSocket aborts the in-flight Responses request when the client
       await upstreamAborted;
     }),
   );
+});
+
+test('Responses WebSocket close interrupts an idle frame wait before the keep-alive deadline', async () => {
+  const { apiKey } = await setupAppTest();
+  const turn = mockControlledResponsesTurn(() => createControlledResponsesEvents());
+
+  await withWorkerWebSocketRuntime(async () => {
+    const client = await connectResponsesWebSocket(apiKey.key);
+    client.send(JSON.stringify({
+      type: 'response.create',
+      response: { model: 'gpt-direct-responses', input: 'idle until closed' },
+    }));
+
+    const events = await promiseWithin(
+      turn.events,
+      'Responses WebSocket did not create the controlled idle stream',
+    );
+    await promiseWithin(
+      events.firstNextStarted,
+      'Responses WebSocket did not begin its idle frame wait',
+    );
+    client.close();
+    try {
+      await promiseWithin(
+        turn.metadataRead,
+        'Responses WebSocket did not settle the closed turn before the keep-alive timer',
+      );
+    } finally {
+      events.resolvePendingFrame(responseCreatedFrame());
+    }
+
+    assertEquals((await turn.signal).aborted, true);
+    await promiseWithin(
+      events.iteratorReturned,
+      'Responses WebSocket did not finish queued iterator cleanup after the idle read settled',
+    );
+  });
+});
+
+test('Responses WebSocket expires an active connection at exactly 60 minutes', async () => {
+  const { apiKey } = await setupAppTest();
+  const turn = mockControlledResponsesTurn(() => createControlledResponsesEvents());
+  const time = new FakeTime();
+
+  try {
+    await withWorkerWebSocketRuntime(async () => {
+      const client = await connectResponsesWebSocket(apiKey.key);
+      const received = waitForMessages(
+        client,
+        messages => messages.some(message => message.type === 'error'),
+        RESPONSES_WEBSOCKET_LIMITS.maxConnectionDurationMs + 1,
+      );
+      client.send(JSON.stringify({
+        type: 'response.create',
+        response: { model: 'gpt-direct-responses', input: 'run until connection expiry' },
+      }));
+      const events = await promiseWithin(turn.events, 'Responses WebSocket did not start the expiring turn');
+      await promiseWithin(events.firstNextStarted, 'Responses WebSocket did not begin its expiring frame wait');
+
+      await time.tickAsync(RESPONSES_WEBSOCKET_LIMITS.maxConnectionDurationMs - 1);
+      assertEquals(client.readyState, WebSocket.OPEN);
+      await time.tickAsync(1);
+
+      assertEquals(await received, [{
+        type: 'error',
+        status: 400,
+        error: RESPONSES_WEBSOCKET_CONNECTION_LIMIT_ERROR,
+      }]);
+      assertEquals(client.readyState, WebSocket.CLOSED);
+      assertEquals(client.closeCode, 1000);
+      assertEquals(client.closeReason, RESPONSES_WEBSOCKET_CONNECTION_LIMIT_ERROR.code);
+      assertEquals((await turn.signal).aborted, true);
+
+      events.resolvePendingFrame(responseCreatedFrame());
+      await promiseWithin(turn.metadataRead, 'Responses WebSocket did not settle the expired turn');
+      await promiseWithin(events.iteratorReturned, 'Responses WebSocket did not release its expired iterator');
+    });
+  } finally {
+    time.restore();
+  }
+});
+
+test('Responses WebSocket close clears its lifetime timer and reciprocates the close', async () => {
+  const { apiKey } = await setupAppTest();
+  const time = new FakeTime();
+
+  try {
+    await withWorkerWebSocketRuntime(async () => {
+      const client = await connectResponsesWebSocket(apiKey.key);
+      const pair = activeRuntime().pairs.at(-1);
+      assertExists(pair);
+      assertEquals(pair.server.binaryType, 'arraybuffer');
+      assertEquals(vi.getTimerCount(), 1);
+
+      client.close(1000, 'client done');
+      await time.tickAsync(0);
+
+      assertEquals(vi.getTimerCount(), 0);
+      assertEquals(pair.server.readyState, WebSocket.CLOSED);
+    });
+  } finally {
+    time.restore();
+  }
+});
+
+test('Responses WebSocket bounds pipelined response.create retention and aborts on overflow', async () => {
+  const { apiKey } = await setupAppTest();
+  const turn = mockControlledResponsesTurn(() => createControlledResponsesEvents());
+
+  await withWorkerWebSocketRuntime(async () => {
+    const client = await connectResponsesWebSocket(apiKey.key);
+    client.send(JSON.stringify({
+      type: 'response.create',
+      response: { model: 'gpt-direct-responses', input: 'active turn' },
+    }));
+    const events = await promiseWithin(turn.events, 'Responses WebSocket did not start the active queued turn');
+    await promiseWithin(events.firstNextStarted, 'Responses WebSocket did not begin its active queued frame wait');
+
+    client.send(JSON.stringify({
+      type: 'response.create',
+      response: { model: 'gpt-direct-responses', input: 'one queued turn' },
+    }));
+    const received = waitForMessages(client, messages => messages.some(message => message.type === 'error'));
+    client.send(JSON.stringify({
+      type: 'response.create',
+      response: { model: 'gpt-direct-responses', input: 'overflow' },
+    }));
+
+    assertEquals(await received, [{
+      type: 'error',
+      status: 429,
+      error: {
+        type: 'rate_limit_error',
+        code: RESPONSES_WEBSOCKET_QUEUE_LIMIT_CODE,
+        message: 'Responses WebSocket queue capacity exceeded; open a new connection and retry.',
+      },
+    }]);
+    assertEquals(client.readyState, WebSocket.CLOSED);
+    assertEquals(client.closeCode, 1008);
+    assertEquals(client.closeReason, RESPONSES_WEBSOCKET_QUEUE_LIMIT_CODE);
+    assertEquals((await turn.signal).aborted, true);
+
+    events.resolvePendingFrame(responseCreatedFrame());
+    await promiseWithin(turn.metadataRead, 'Responses WebSocket did not settle its overflow-aborted turn');
+    await promiseWithin(events.iteratorReturned, 'Responses WebSocket did not release its overflow-aborted iterator');
+    await flushAsyncWork();
+    assertEquals(turn.calls(), 1);
+  });
+});
+
+test('Responses WebSocket send failures abort the turn before another iterator read', async () => {
+  const { apiKey } = await setupAppTest();
+  const sendFailure = new Error('simulated downstream send failure');
+  const turn = mockControlledResponsesTurn(() => createControlledResponsesEvents(responseCreatedFrame()));
+
+  await withWorkerWebSocketRuntime(async () => {
+    const client = await connectResponsesWebSocket(apiKey.key);
+    const pair = activeRuntime().pairs.at(-1);
+    assertExists(pair);
+    pair.server.send = () => { throw sendFailure; };
+
+    client.send(JSON.stringify({
+      type: 'response.create',
+      response: { model: 'gpt-direct-responses', input: 'fail the first send' },
+    }));
+    const events = await promiseWithin(
+      turn.events,
+      'Responses WebSocket did not create the controlled send-failure stream',
+    );
+    await promiseWithin(
+      turn.metadataRead,
+      'Responses WebSocket did not settle the failed downstream send',
+    );
+    await promiseWithin(
+      events.iteratorReturned,
+      'Responses WebSocket did not close the upstream iterator after the failed send',
+    );
+
+    const signal = await turn.signal;
+    assertEquals(events.nextCalls(), 1);
+    assertEquals(signal.aborted, true);
+    assert(signal.reason === sendFailure, 'expected the original send error to become the abort reason');
+    client.close();
+  });
+});
+
+test('Responses WebSocket keep-alive readiness failures abort the pending turn', async () => {
+  const { apiKey } = await setupAppTest();
+  const turn = mockControlledResponsesTurn(signal =>
+    createControlledResponsesEvents(responseCreatedFrame(), signal));
+
+  await withWorkerWebSocketRuntime(async () => {
+    const client = await connectResponsesWebSocket(apiKey.key);
+    const pair = activeRuntime().pairs.at(-1);
+    assertExists(pair);
+    const time = new FakeTime();
+    onTestFinished(() => time.restore());
+    const send = pair.server.send.bind(pair.server);
+    let sendCalls = 0;
+    pair.server.send = data => {
+      sendCalls += 1;
+      send(data);
+      pair.server.readyState = WebSocket.CLOSED;
+    };
+
+    client.send(JSON.stringify({
+      type: 'response.create',
+      response: { model: 'gpt-direct-responses', input: 'fail the keep-alive readiness check' },
+    }));
+    await flushImmediateFakeTime(time);
+    const events = await promiseWithin(
+      turn.events,
+      'Responses WebSocket did not create the controlled keep-alive stream',
+    );
+    await promiseWithin(
+      events.secondNextStarted,
+      'Responses WebSocket did not resume its frame wait after the first event',
+    );
+    await time.tickAsync(DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS);
+    await promiseWithin(
+      turn.metadataRead,
+      'Responses WebSocket did not settle the failed keep-alive send',
+    );
+
+    assertEquals(sendCalls, 1);
+    assertEquals((await turn.signal).aborted, true);
+    client.close();
+  });
+});
+
+test('Responses WebSocket session lifetime joins the active turn and its background work after close', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const finalMetadata = deferred<EventResultMetadata>();
+  const turn = mockControlledResponsesTurn(
+    () => createControlledResponsesEvents(),
+    finalMetadata.promise,
+  );
+  const usageStarted = deferred<void>();
+  const finishUsage = deferred<void>();
+  const usageRecord = vi.spyOn(repo.usage, 'record').mockImplementation(async () => {
+    usageStarted.resolve();
+    await finishUsage.promise;
+  });
+  onTestFinished(() => {
+    finishUsage.resolve();
+    usageRecord.mockRestore();
+  });
+  const lifetimeCaptured = deferred<{ readonly promise: Promise<unknown> }>();
+  initBackgroundSchedulerResolver(_c => promise => { lifetimeCaptured.resolve({ promise }); });
+  onTestFinished(() => { initBackgroundSchedulerResolver(_c => trackBackground); });
+
+  await withWorkerWebSocketRuntime(async () => {
+    const client = await connectResponsesWebSocket(apiKey.key);
+    const { promise: lifetime } = await promiseWithin(
+      lifetimeCaptured.promise,
+      'Responses WebSocket did not register its session lifetime',
+    );
+    let lifetimeSettled = false;
+    void lifetime.then(() => { lifetimeSettled = true; });
+    client.send(JSON.stringify({
+      type: 'response.create',
+      response: { model: 'gpt-direct-responses', input: 'close during final metadata' },
+    }));
+    const events = await promiseWithin(
+      turn.events,
+      'Responses WebSocket did not create the controlled lifetime stream',
+    );
+    await promiseWithin(
+      events.firstNextStarted,
+      'Responses WebSocket did not begin the active lifetime turn',
+    );
+
+    client.close();
+    await promiseWithin(
+      turn.metadataRead,
+      'Responses WebSocket did not enter final metadata settlement after close',
+    );
+    await new Promise<void>(resolve => { timeoutSetTimeout(resolve, 0); });
+    assertEquals(lifetimeSettled, false, 'session lifetime exited before the active turn settled');
+
+    finalMetadata.resolve({ modelIdentity: TEST_MODEL_IDENTITY });
+    await promiseWithin(
+      usageStarted.promise,
+      'Responses WebSocket did not schedule usage settlement from the active turn',
+    );
+    await new Promise<void>(resolve => { timeoutSetTimeout(resolve, 0); });
+    assertEquals(lifetimeSettled, false, 'session lifetime exited before background usage completed');
+
+    finishUsage.resolve();
+    await promiseWithin(
+      lifetime,
+      'Responses WebSocket session lifetime did not finish after background work drained',
+    );
+    events.resolvePendingFrame(responseCreatedFrame());
+    await promiseWithin(
+      events.iteratorReturned,
+      'Responses WebSocket did not finish iterator cleanup after lifetime settlement',
+    );
+  });
 });
 
 // The four chat HTTP transports render a mid-attempt throw (interceptor

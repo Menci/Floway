@@ -62,6 +62,15 @@ test('mergeKnownModels refreshes snapshot data when the model reappears', () => 
   assertEquals(merged.models.a.snapshot.name, 'new');
 });
 
+test('mergeKnownModels preserves an opaque __proto__ model id as data', () => {
+  const merged = mergeKnownModels(emptyKnownModels(), response('__proto__'), 1_000_000);
+
+  assertEquals(Object.keys(merged.models), ['__proto__']);
+  assertEquals(Object.hasOwn(merged.models, '__proto__'), true);
+  assertEquals(merged.models.__proto__.snapshot.id, '__proto__');
+  assertEquals(projectKnownModels(merged, 1_000_001).map(item => item.id), ['__proto__']);
+});
+
 test('projectKnownModels returns only entries within the 24 h window', () => {
   const knownModels: CopilotKnownModels = {
     fetchedAt: 1_000_000,

@@ -106,6 +106,16 @@ describe('parseCodexQuotaHeaders', () => {
     }), { now: observedAt, isRateLimited: false });
     expect(snapshot).toEqual({ observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'premium' });
   });
+
+  test('ignores blank numbers and unrepresentable reset timestamps', () => {
+    const observedAt = new Date('2026-06-05T00:00:00.000Z');
+    const snapshot = parseCodexQuotaHeaders(new Headers({
+      'x-codex-primary-used-percent': '   ',
+      'x-codex-primary-reset-after-seconds': '1e308',
+      'x-codex-secondary-reset-after-seconds': '1e308',
+    }), { now: observedAt, isRateLimited: true });
+    expect(snapshot).toEqual({ observed_at: '2026-06-05T00:00:00.000Z' });
+  });
 });
 
 describe('codexQuotaActiveLimitKey', () => {
@@ -201,13 +211,20 @@ describe('putCodexQuota', () => {
 
   test('throws when the upstream disappeared mid-flight', async () => {
     current = null;
-    await expect(putCodexQuota(upstreamId, accountId, { observed_at: 'now' })).rejects.toThrow(/disappeared/);
+    await expect(putCodexQuota(upstreamId, accountId, { observed_at: '2026-06-05T00:00:00Z' })).rejects.toThrow(/disappeared/);
     expect(repo.writes).toEqual([]);
   });
 
   test('throws when the requested account is not in the pool', async () => {
-    await expect(putCodexQuota(upstreamId, 'acc_other', { observed_at: 'now' })).rejects.toThrow(/not found in upstream/);
+    await expect(putCodexQuota(upstreamId, 'acc_other', { observed_at: '2026-06-05T00:00:00Z' })).rejects.toThrow(/not found in upstream/);
     expect(repo.writes).toEqual([]);
+  });
+
+  test('rejects malformed snapshots before opening a state write', async () => {
+    await expect(putCodexQuota(upstreamId, accountId, {
+      observed_at: 'not-a-date',
+    })).rejects.toThrow(/observed_at/);
+    expect(repo.saveState).not.toHaveBeenCalled();
   });
 });
 

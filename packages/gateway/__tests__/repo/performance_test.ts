@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
 import { createSqliteTestDb } from './test-sqlite.ts';
+import { encodeOpaqueSqlText } from '../../src/repo/opaque-sql-text.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type {
   PerformanceDimensions,
@@ -115,6 +116,24 @@ for (const impl of impls) {
       expect(new Set(rows.map(r => r.upstream))).toEqual(new Set(['anthropic-1', 'anthropic-2']));
     });
 
+    it('round-trips an opaque model id containing embedded NUL', async () => {
+      const repo = await impl.open();
+      await repo.recordNeutral(errSample({ model: 'opaque\0model' }));
+
+      expect(await repo.listAll()).toEqual([{
+        ...errSample({ model: 'opaque\0model' }),
+        requests: 1,
+        ttftSamplesOk: 0,
+        errorsWithOutput: 0,
+        errorsNoOutput: 0,
+        neutral: 1,
+        tpotSamples: 0,
+        ttftMsSum: 0,
+        tpotUsSum: 0,
+        buckets: [],
+      }]);
+    });
+
     it('query filters by keyId and time range', async () => {
       const repo = await impl.open();
       await repo.recordSample(sample({ hour: '2026-06-30T08', keyId: 'key_a' }));
@@ -164,6 +183,22 @@ for (const impl of impls) {
       expect(row).toMatchObject({ requests: 1, ttftSamplesOk: 1, tpotSamples: 0, ttftMsSum: 340, tpotUsSum: 0 });
       expect(row!.buckets.some(b => b.metric === 'ttft_ms')).toBe(true);
       expect(row!.buckets.some(b => b.metric === 'tpot_us')).toBe(false);
+    });
+
+    it('rejects invalid TTFT values without retaining a partial summary', async () => {
+      const repo = await impl.open();
+      for (const ttftMs of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+        await expect(repo.recordSample(sample({ ttftMs }))).rejects.toThrow('expected finite non-negative number');
+      }
+      expect(await repo.listAll()).toEqual([]);
+    });
+
+    it('rejects invalid TPOT values without retaining the valid TTFT half', async () => {
+      const repo = await impl.open();
+      for (const tpotUs of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+        await expect(repo.recordSample(sample({ tpotUs }))).rejects.toThrow('expected finite non-negative number');
+      }
+      expect(await repo.listAll()).toEqual([]);
     });
 
     it('recordNeutral bumps requests and neutral', async () => {
@@ -238,11 +273,36 @@ describe('SqlPerformanceRepo operation vocabulary', () => {
   it('rejects an unknown stored operation at hydration', async () => {
     const db = await createSqliteTestDb();
     await db.prepare(
-      `INSERT INTO performance_summary (hour, key_id, model, upstream, operation, runtime_location)
+      `INSERT INTO performance_summary (hour, key_id, model_json, upstream, operation, runtime_location)
        VALUES (?, ?, ?, ?, ?, ?)`,
-    ).bind('2026-06-30T09', 'key_a', 'model', 'upstream', 'future-operation', 'hkg').run();
+    ).bind('2026-06-30T09', 'key_a', encodeOpaqueSqlText('model'), 'upstream', 'future-operation', 'hkg').run();
 
     const repo = new SqlRepo(db).performance;
     await expect(repo.listAll()).rejects.toThrow('Invalid performance operation: "future-operation"');
+  });
+
+  it('rejects a bucket row whose summary is missing', async () => {
+    const db = await createSqliteTestDb();
+    await db.prepare(
+      `INSERT INTO performance_buckets (
+         hour, key_id, model_json, upstream, operation, runtime_location,
+         metric, lower, upper, count
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      '2026-06-30T09',
+      'key_a',
+      encodeOpaqueSqlText('model'),
+      'upstream',
+      'chat',
+      'hkg',
+      'ttft_ms',
+      0,
+      100,
+      1,
+    ).run();
+
+    await expect(new SqlRepo(db).performance.listAll()).rejects.toThrow(
+      'performance_buckets row has no matching summary',
+    );
   });
 });

@@ -21,6 +21,16 @@ export interface CodexRawModel {
   default_reasoning_effort?: string;
 }
 
+export class CodexModelsFetchError extends Error {
+  readonly status: number;
+
+  constructor(status: number, bodySnippet: string) {
+    super(`Codex /models fetch failed: ${status} ${bodySnippet}`);
+    this.name = 'CodexModelsFetchError';
+    this.status = status;
+  }
+}
+
 // `fetcher` is required so the catalog refresh traverses the same proxy/
 // dial chain configured for request-time traffic.
 export const fetchCodexCatalog = async (opts: { accessToken: string; accountId: string; signal?: AbortSignal; fetcher: Fetcher }): Promise<CodexRawModel[]> => {
@@ -37,14 +47,14 @@ export const fetchCodexCatalog = async (opts: { accessToken: string; accountId: 
   });
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`Codex /models fetch failed: ${response.status} ${body.slice(0, 200)}`);
+    throw new CodexModelsFetchError(response.status, body.slice(0, 200));
   }
   const parsed = await response.json() as { models?: unknown };
   if (!Array.isArray(parsed.models)) throw new Error('Codex /models response missing models array');
   return parsed.models.map(assertRawModel);
 };
 
-const isPlainRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+const isPlainRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 // Fail loud on malformed upstream catalog responses: a missing field
 // signals an upstream contract change we need to notice. New optional
@@ -54,11 +64,13 @@ const isPlainRecord = (v: unknown): v is Record<string, unknown> => typeof v ===
 const assertRawModel = (value: unknown): CodexRawModel => {
   if (!isPlainRecord(value)) throw new TypeError('Codex model entry is not an object');
   const slug = value.slug;
-  if (typeof slug !== 'string') throw new TypeError('Codex model entry missing slug');
+  if (typeof slug !== 'string' || slug.trim() === '') throw new TypeError('Codex model entry missing slug');
   const display_name = value.display_name;
-  if (typeof display_name !== 'string') throw new TypeError(`Codex model entry ${slug} missing display_name`);
+  if (typeof display_name !== 'string' || display_name.trim() === '') throw new TypeError(`Codex model entry ${slug} missing display_name`);
   const context_window = value.context_window;
-  if (typeof context_window !== 'number') throw new TypeError(`Codex model entry ${slug} missing context_window`);
+  if (typeof context_window !== 'number' || !Number.isSafeInteger(context_window) || context_window <= 0) {
+    throw new TypeError(`Codex model entry ${slug} carries invalid context_window`);
+  }
 
   const raw: CodexRawModel = { id: slug, display_name, context_window };
 

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { expect, test } from 'vitest';
 
 import { FsFileStore } from '../src/fs-file-store.ts';
-import { assertEquals } from '@floway-dev/test-utils';
+import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const withTempRoot = async (fn: (root: string) => Promise<void>): Promise<void> => {
   const root = await mkdtemp(join(tmpdir(), 'fs-file-store-'));
@@ -93,9 +93,28 @@ test('deleteKeys prunes empty key directories while retaining shared and root di
   assertEquals((await stat(root)).isDirectory(), true);
 }));
 
-test('rejects empty, absolute, and root-escaping keys', () => withTempRoot(async root => {
+test('every operation rejects a key that resolves to the configured root', () => withTempRoot(async root => {
   const store = new FsFileStore(root);
-  for (const key of ['', '.', '../outside', join(root, 'absolute')]) {
-    await expect(store.put(key, new Uint8Array())).rejects.toThrow('FsFileStore:');
+  for (const key of ['', '.']) {
+    await assertRejects(() => store.put(key, new Uint8Array()), Error, 'empty keys are not supported');
+    await assertRejects(() => store.get(key), Error, 'empty keys are not supported');
+    await assertRejects(() => store.deleteKeys([key]), Error, 'empty keys are not supported');
   }
+}));
+
+test('every operation rejects a key that escapes the configured root', () => withTempRoot(async root => {
+  const store = new FsFileStore(join(root, 'files'));
+
+  await assertRejects(() => store.put('../escaped.bin', new Uint8Array([1])), Error, 'key escapes root');
+  await assertRejects(() => store.get('nested/../../escaped.bin'), Error, 'key escapes root');
+  await assertRejects(() => store.deleteKeys(['../../../escaped.bin']), Error, 'key escapes root');
+}));
+
+test('every operation rejects absolute keys even when they point inside the root', () => withTempRoot(async root => {
+  const store = new FsFileStore(root);
+  const key = join(root, 'absolute.bin');
+
+  await assertRejects(() => store.put(key, new Uint8Array([1])), Error, 'absolute keys are not supported');
+  await assertRejects(() => store.get(key), Error, 'absolute keys are not supported');
+  await assertRejects(() => store.deleteKeys([key]), Error, 'absolute keys are not supported');
 }));
