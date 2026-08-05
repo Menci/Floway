@@ -1,5 +1,5 @@
-import { decodeWebBase64, encodeBase64 } from './base-encoding.ts';
 import { timingSafeEqual } from '@floway-dev/platform';
+import { decodeForgivingBase64, encodeBase64 } from '@floway-dev/protocols/common';
 
 // Cloudflare Workers' Web Crypto refuses PBKDF2 with iterations above 100k as a
 // CPU-time DoS guard ("Pbkdf2 failed: iteration counts above 100000 are not
@@ -37,8 +37,8 @@ export const verifyPassword = async (plaintext: string, encoded: string): Promis
   let salt: Uint8Array;
   let expected: Uint8Array;
   try {
-    salt = decodeWebBase64(parts[2]);
-    expected = decodeWebBase64(parts[3]);
+    salt = decodeForgivingBase64(parts[2]);
+    expected = decodeForgivingBase64(parts[3]);
   } catch {
     return false;
   }

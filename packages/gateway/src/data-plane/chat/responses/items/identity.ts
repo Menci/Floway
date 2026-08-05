@@ -1,5 +1,5 @@
 import { hashResponsesJson } from '../../../../repo/responses-hash.ts';
-import { encodeHex } from '../../../../shared/base-encoding.ts';
+import { encodeHex } from '@floway-dev/protocols/common';
 
 export const responsesItemId = (item: object): string | null => {
   const id = 'id' in item ? item.id : undefined;

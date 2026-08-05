@@ -1,4 +1,4 @@
-import { decodeWebBase64, encodeBase64 } from '../../lib/base-encoding';
+import { decodeWebBase64, decodeWebBase64BinaryString, encodeBase64 } from '../../lib/base-encoding';
 import { errorMessage } from '../../lib/error-message';
 import type { DumpBody } from '@floway-dev/gateway/dump-types';
 import { isTextualMediaType, parseMediaType } from '@floway-dev/protocols/common';
@@ -60,7 +60,7 @@ const renderMultipart = (base64: string, contentType: string): string | null => 
     // latin1 to windows-1252 (https://encoding.spec.whatwg.org/#names-and-labels),
     // which maps 0x80-0x9F -- a PNG signature leads with 0x89 -- to code points
     // above 255.
-    const wire = binaryStringFromBytes(decodeWebBase64(base64));
+    const wire = decodeWebBase64BinaryString(base64);
     const chunks = wire.split(`--${boundary}`);
     if (chunks.length < 3) return null;
 
@@ -84,9 +84,3 @@ const renderMultipart = (base64: string, contentType: string): string | null => 
 
 const bytesFromBinaryString = (value: string): Uint8Array =>
   Uint8Array.from(value, character => character.charCodeAt(0));
-
-const binaryStringFromBytes = (bytes: Uint8Array): string => {
-  let value = '';
-  for (const byte of bytes) value += String.fromCharCode(byte);
-  return value;
-};

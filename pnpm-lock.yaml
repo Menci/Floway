@@ -366,9 +366,6 @@ importers:
       '@hono/zod-validator':
         specifier: ^0.8.0
         version: 0.8.0(hono@4.12.22)(zod@4.4.3)
-      '@scure/base':
-        specifier: ^2.2.0
-        version: 2.2.0
       es-toolkit:
         specifier: ^1.49.0
         version: 1.49.0
@@ -459,9 +456,6 @@ importers:
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
-      '@scure/base':
-        specifier: ^2.2.0
-        version: 2.2.0
     devDependencies:
       '@floway-dev/test-utils':
         specifier: workspace:*
@@ -538,9 +532,6 @@ importers:
       '@floway-dev/provider':
         specifier: workspace:*
         version: link:../provider
-      '@scure/base':
-        specifier: ^2.2.0
-        version: 2.2.0
       oauth4webapi:
         specifier: ^3.8.6
         version: 3.8.6
@@ -613,9 +604,6 @@ importers:
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
-      '@scure/base':
-        specifier: ^2.2.0
-        version: 2.2.0
     devDependencies:
       '@floway-dev/test-utils':
         specifier: workspace:*

@@ -1,4 +1,3 @@
-import { decodeWebBase64, encodeHex } from '../../../../../shared/base-encoding.ts';
 import { sleep } from '../../../../../shared/sleep.ts';
 import { enumerateModelCandidates } from '../../../../providers/resolution.ts';
 import { appendFailedUpstreams } from '../../../../shared/failed-upstreams.ts';
@@ -8,7 +7,7 @@ import { recordTokenUsage, tokenUsageFromImagesBody } from '../../../../shared/t
 import { createExternalImageFetcher, type ExternalImageFetchResult } from '../../../shared/external-image-loader.ts';
 import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
 import { dimensionsFromBytes, getImageProcessor, type BackgroundScheduler } from '@floway-dev/platform';
-import { isImageMediaType, mediaTypeEssence, parseSSEStream } from '@floway-dev/protocols/common';
+import { decodeForgivingBase64, encodeHex, isImageMediaType, mediaTypeEssence, parseSSEStream } from '@floway-dev/protocols/common';
 import {
   createRandomResponsesItemId,
   type ResponsesFunctionCallOutputItem,
@@ -153,7 +152,7 @@ const prepareEditSources = async (sources: readonly ImageSource[]): Promise<read
 };
 
 const base64ToArrayBuffer = (b64: string): ArrayBuffer => {
-  const bytes = decodeWebBase64(b64);
+  const bytes = decodeForgivingBase64(b64);
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 };
 

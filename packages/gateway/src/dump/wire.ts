@@ -5,8 +5,7 @@ import type {
   StoredDumpRecord,
   StoredDumpResponseBody,
 } from './types.ts';
-import { encodeBase64 } from '../shared/base-encoding.ts';
-import { isTextualMediaType } from '@floway-dev/protocols/common';
+import { encodeBase64, isTextualMediaType } from '@floway-dev/protocols/common';
 
 const contentTypeOf = (headers: ReadonlyArray<readonly [string, string]>): string =>
   headers.find(([name]) => name.toLowerCase() === 'content-type')?.[1] ?? '';

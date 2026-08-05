@@ -1,6 +1,6 @@
 import type { StoredResponsesItemPayload } from './types.ts';
-import { decodeWebBase64, encodeBase64, encodeBase64url } from '../shared/base-encoding.ts';
 import { getFileStore, sha256Hex } from '@floway-dev/platform';
+import { decodeForgivingBase64, encodeBase64, encodeBase64url } from '@floway-dev/protocols/common';
 
 type StoredResponsesPayloadJson =
   | {
@@ -87,7 +87,7 @@ export const parseStoredResponsesPayload = async (
   const descriptor = parseDescriptor(id, raw);
   if (descriptor.storage === 'inline') {
     if (fileKey !== null) throw new Error(`Inline Responses payload unexpectedly owns a file for id=${id}`);
-    return parseInlinePayloadJson(id, await ungzipToString(decodeWebBase64(descriptor.payload)));
+    return parseInlinePayloadJson(id, await ungzipToString(decodeForgivingBase64(descriptor.payload)));
   }
 
   if (fileKey === null) throw new Error(`Stored Responses payload file key missing for id=${id}`);

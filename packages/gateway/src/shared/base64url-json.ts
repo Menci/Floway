@@ -6,11 +6,11 @@
 // slot remains forward-compatible with a native-compaction upstream's own
 // opaque content.
 
-import { decodeWebBase64url, encodeBase64url } from './base-encoding.ts';
+import { decodeForgivingBase64url, encodeBase64url } from '@floway-dev/protocols/common';
 
 const base64UrlToBytes = (value: string): Uint8Array | null => {
   try {
-    return decodeWebBase64url(value);
+    return decodeForgivingBase64url(value);
   } catch {
     return null;
   }

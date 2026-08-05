@@ -4,25 +4,7 @@ const ASCII_WHITESPACE = /[\t\n\f\r ]/g;
 const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 const BASE64_BODY = /^[A-Za-z0-9+/]*$/;
 
-// Web `atob` historically accepted ASCII whitespace and omitted padding.
-// Persisted password hashes and Responses payloads, plus external image data,
-// already depend on that input policy. Canonical output remains RFC 4648.
-export const decodeWebBase64 = (value: string): Uint8Array => {
-  return base64.decode(normalizeForgivingBase64(value));
-};
-
-export const encodeBase64 = (bytes: Uint8Array): string => base64.encode(bytes);
-
-export const decodeWebBase64url = (value: string): Uint8Array =>
-  decodeWebBase64(value.replaceAll('-', '+').replaceAll('_', '/'));
-
-export const encodeBase64url = (bytes: Uint8Array): string => base64urlnopad.encode(bytes);
-
-export const encodeHex = (bytes: Uint8Array): string => hex.encode(bytes);
-
-export const decodeHex = (value: string): Uint8Array => hex.decode(value);
-
-const normalizeForgivingBase64 = (value: string): string => {
+export const normalizeForgivingBase64 = (value: string): string => {
   // https://infra.spec.whatwg.org/#forgiving-base64-decode
   let normalized = value.replace(ASCII_WHITESPACE, '');
   if (normalized.length % 4 === 0) {
@@ -40,3 +22,17 @@ const normalizeForgivingBase64 = (value: string): string => {
   }
   return normalized.padEnd(normalized.length + (4 - remainder) % 4, '=');
 };
+
+export const decodeForgivingBase64 = (value: string): Uint8Array =>
+  base64.decode(normalizeForgivingBase64(value));
+
+export const decodeForgivingBase64url = (value: string): Uint8Array =>
+  decodeForgivingBase64(value.replaceAll('-', '+').replaceAll('_', '/'));
+
+export const encodeBase64 = (bytes: Uint8Array): string => base64.encode(bytes);
+
+export const encodeBase64url = (bytes: Uint8Array): string => base64urlnopad.encode(bytes);
+
+export const encodeHex = (bytes: Uint8Array): string => hex.encode(bytes);
+
+export const decodeHex = (value: string): Uint8Array => hex.decode(value);

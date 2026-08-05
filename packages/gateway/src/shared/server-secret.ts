@@ -1,4 +1,4 @@
-import { decodeHex, encodeHex } from './base-encoding.ts';
+import { decodeHex, encodeHex } from '@floway-dev/protocols/common';
 
 export const parseServerSecret = (value: unknown, field = 'serverSecret'): string => {
   if (typeof value !== 'string' || !/^[0-9a-f]{64}$/.test(value)) {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { decodeWebBase64, encodeBase64, encodeBase64url } from '../../src/lib/base-encoding';
+import { decodeWebBase64, decodeWebBase64BinaryString, encodeBase64, encodeBase64url } from '../../src/lib/base-encoding';
 
 describe('browser base encoding', () => {
   test('preserves whitespace, omitted padding, and non-zero trailing padding bits', () => {
@@ -20,7 +20,9 @@ describe('browser base encoding', () => {
     Object.defineProperty(Uint8Array.prototype, 'toBase64', { configurable: true, value: undefined });
     try {
       const bytes = Uint8Array.from({ length: 1024 * 1024 }, (_, index) => index & 0xff);
-      expect(decodeWebBase64(encodeBase64(bytes))).toEqual(bytes);
+      const encoded = encodeBase64(bytes);
+      expect(decodeWebBase64(encoded)).toEqual(bytes);
+      expect(decodeWebBase64BinaryString(encoded).length).toBe(bytes.length);
     } finally {
       if (fromBase64) Object.defineProperty(Uint8Array, 'fromBase64', fromBase64);
       else Reflect.deleteProperty(Uint8Array, 'fromBase64');
