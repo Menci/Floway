@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, test, vi } from 'vitest';
 
@@ -133,20 +134,17 @@ test.each(['superseded-first', 'newest-first'] as const)(
     const restore = vi.fn();
     const onCommit = vi.fn();
     const { result, rerender } = renderHook(
-      ({ query }) => useRefreshOnChange(
-        query,
-        100,
-        async (signal, { requestedAt }) => {
+      ({ query }) => {
+        const reload = useCallback(async (signal: AbortSignal, { requestedAt }: { requestedAt: number }) => {
           const succeeded = await new Promise<boolean>(resolve => {
             runs.push({ query, requestedAt, settle: resolve, signal });
           });
           if (signal.aborted) return false;
           if (succeeded) responses.push(query.groupBy);
           return succeeded;
-        },
-        restore,
-        onCommit,
-      ),
+        }, [query]);
+        return useRefreshOnChange(query, 100, reload, restore, onCommit);
+      },
       { initialProps: { query: { groupBy: 'model' } } },
     );
 
