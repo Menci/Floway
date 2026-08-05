@@ -28,6 +28,7 @@
 
 import { githubHeaders } from './auth.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
+import { githubApiOrigin } from './github-host.ts';
 import { getProviderRepo, type Fetcher } from '@floway-dev/provider';
 
 // One quota bucket. A seat reports three kinds of bucket and both sources spell
@@ -257,8 +258,8 @@ export const projectCopilotUsageResponse = (body: CopilotUsageResponse, now: Dat
   };
 };
 
-export const fetchCopilotUsage = (githubToken: string, fetcher: Fetcher): Promise<Response> =>
-  fetcher('https://api.github.com/copilot_internal/user', { headers: githubHeaders(githubToken) });
+export const fetchCopilotUsage = (githubHost: string, githubToken: string, fetcher: Fetcher): Promise<Response> =>
+  fetcher(`${githubApiOrigin(githubHost)}/copilot_internal/user`, { headers: githubHeaders(githubToken) });
 
 // Both sources land in the same slot, so whichever observed the seat most
 // recently is what the dashboard shows. `fetchedAt` is stamped outside the

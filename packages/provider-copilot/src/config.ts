@@ -1,4 +1,5 @@
 import type { UpstreamRecord } from '@floway-dev/provider';
+import { normalizeGitHubHost } from './github-host.ts';
 
 export interface CopilotUpstreamUser {
   login: string;
@@ -8,6 +9,7 @@ export interface CopilotUpstreamUser {
 }
 
 export interface CopilotUpstreamConfig {
+  githubHost: string;
   githubToken: string;
   user: CopilotUpstreamUser;
 }
@@ -59,7 +61,14 @@ const copilotUserField = (value: unknown, err: FieldErrorBuilder): CopilotUpstre
 // rejections differently.
 export const parseCopilotUpstreamConfig = (value: unknown, err: FieldErrorBuilder): CopilotUpstreamConfig => {
   if (!isRecord(value)) throw err('config', 'an object');
+  let githubHost: string;
+  try {
+    githubHost = normalizeGitHubHost(nonEmptyStringField(value.githubHost, 'githubHost', err));
+  } catch {
+    throw err('githubHost', 'github.com or a tenant hostname ending in .ghe.com');
+  }
   return {
+    githubHost,
     githubToken: nonEmptyStringField(value.githubToken, 'githubToken', err),
     user: copilotUserField(value.user, err),
   };
@@ -72,6 +81,7 @@ export const assertCopilotUpstreamRecord = (record: UpstreamRecord): CopilotUpst
     ...record,
     kind: 'copilot',
     config: {
+      githubHost: normalizeGitHubHost(stringField(record.config.githubHost, 'githubHost', malformedConfig)),
       githubToken: stringField(record.config.githubToken, 'githubToken', malformedConfig),
       user: copilotUserField(record.config.user, malformedConfig),
     },

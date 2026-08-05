@@ -1,4 +1,5 @@
 import type { CopilotUpstreamUser } from './config.ts';
+import { githubApiOrigin, githubWebOrigin } from './github-host.ts';
 import { directFetcher, type Fetcher } from '@floway-dev/provider';
 
 const GITHUB_CLIENT_ID = 'Iv1.b507a08c87ecfe98';
@@ -14,8 +15,8 @@ interface GitHubDeviceFlowStart {
 
 // All GitHub egress accepts a Fetcher so the copilot auth poll can forward
 // the operator's edit-form proxy override; absent that, direct egress.
-export const startGitHubDeviceFlow = async (fetcher: Fetcher = directFetcher) => {
-  const resp = await fetcher('https://github.com/login/device/code', {
+export const startGitHubDeviceFlow = async (githubHost: string, fetcher: Fetcher = directFetcher) => {
+  const resp = await fetcher(`${githubWebOrigin(githubHost)}/login/device/code`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -36,8 +37,8 @@ export const startGitHubDeviceFlow = async (fetcher: Fetcher = directFetcher) =>
   return { ok: true as const, data };
 };
 
-export const pollGitHubDeviceFlow = async (deviceCode: string, fetcher: Fetcher = directFetcher) => {
-  const resp = await fetcher('https://github.com/login/oauth/access_token', {
+export const pollGitHubDeviceFlow = async (githubHost: string, deviceCode: string, fetcher: Fetcher = directFetcher) => {
+  const resp = await fetcher(`${githubWebOrigin(githubHost)}/login/oauth/access_token`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -60,8 +61,8 @@ export const pollGitHubDeviceFlow = async (deviceCode: string, fetcher: Fetcher 
   };
 };
 
-export const fetchGitHubUser = async (githubToken: string, fetcher: Fetcher = directFetcher) => {
-  const userResp = await fetcher('https://api.github.com/user', {
+export const fetchGitHubUser = async (githubHost: string, githubToken: string, fetcher: Fetcher = directFetcher) => {
+  const userResp = await fetcher(`${githubApiOrigin(githubHost)}/user`, {
     headers: {
       authorization: `token ${githubToken}`,
       accept: 'application/json',

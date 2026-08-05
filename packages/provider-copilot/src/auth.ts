@@ -1,4 +1,5 @@
 import { readCopilotUpstreamState, type CopilotTokenEntry, type CopilotUpstreamState } from './state.ts';
+import { githubApiOrigin } from './github-host.ts';
 import { dispatchUpstreamFetch, getProviderRepo as getRepo, isAbortError, type Fetcher } from '@floway-dev/provider';
 
 // Version constants pinned to a known-good fingerprint that mirrors what a
@@ -117,7 +118,7 @@ function isTokenValid(token: string | null, expiresAt: number): boolean {
   return expiresAt > now + 60;
 }
 
-async function getCopilotToken(upstreamId: string, githubToken: string, fetcher: Fetcher, signal: AbortSignal | undefined): Promise<CopilotTokenEntry> {
+async function getCopilotToken(upstreamId: string, githubHost: string, githubToken: string, fetcher: Fetcher, signal: AbortSignal | undefined): Promise<CopilotTokenEntry> {
   const now = Date.now();
   const cached = inProcessTokenCache.get(upstreamId);
   if (cached && isTokenValid(cached.entry.token, cached.entry.expiresAt) && now - cached.cachedAt < IN_PROCESS_TTL_MS) {
@@ -139,7 +140,7 @@ async function getCopilotToken(upstreamId: string, githubToken: string, fetcher:
   // Copilot proxy would still see periodic auth-refresh failures every
   // ~25 minutes per process.
   return await withRetry(async () => {
-    const entry = await exchangeCopilotToken(githubToken, fetcher, signal);
+    const entry = await exchangeCopilotToken(githubHost, githubToken, fetcher, signal);
     inProcessTokenCache.set(upstreamId, { entry, cachedAt: Date.now() });
     // Best-effort: the caller is about to satisfy a live request with this
     // token, so a storage failure costs the next cold isolate one extra mint
@@ -166,8 +167,8 @@ async function getCopilotToken(upstreamId: string, githubToken: string, fetcher:
 // PAT to — it travels with the token because they share a lifetime
 // (vscode-copilot-chat 5863f5a7 domainServiceImpl.ts L55, refreshes on
 // every onDidStoreUpdate; all four reference implementations agree).
-export async function exchangeCopilotToken(githubToken: string, fetcher: Fetcher, signal?: AbortSignal): Promise<CopilotTokenEntry> {
-  const resp = await fetcher('https://api.github.com/copilot_internal/v2/token', {
+export async function exchangeCopilotToken(githubHost: string, githubToken: string, fetcher: Fetcher, signal?: AbortSignal): Promise<CopilotTokenEntry> {
+  const resp = await fetcher(`${githubApiOrigin(githubHost)}/copilot_internal/v2/token`, {
     method: 'GET',
     headers: githubHeaders(githubToken),
     signal,
@@ -210,6 +211,7 @@ export interface CopilotFetchOptions {
 
 export interface CopilotAuth {
   id: string;
+  githubHost: string;
   githubToken: string;
 }
 
@@ -220,7 +222,7 @@ export async function copilotAuthedFetch(path: string, init: RequestInit, auth: 
   // the body in an explicit owner and replace the generator parameter so the
   // final network wait cannot retain both copies after ownership transfers.
   init = { signal };
-  const entry = await getCopilotToken(auth.id, auth.githubToken, options.fetcher, signal);
+  const entry = await getCopilotToken(auth.id, auth.githubHost, auth.githubToken, options.fetcher, signal);
 
   // x-request-id and x-agent-task-id share a single per-call UUID, mirroring
   // VSCode Copilot Chat's "one id ties the request to its background task" pattern.
