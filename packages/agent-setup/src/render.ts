@@ -7,6 +7,7 @@
 // the executing shell, and the fixed installer body reads it from there.
 
 import type { AgentSetupConfiguration } from './configuration.ts';
+import { assertScriptLiteralValue } from './script-literal.ts';
 import type { ScriptAgent } from './script-assets.ts';
 
 export interface RenderPrefixInput {
@@ -15,10 +16,6 @@ export interface RenderPrefixInput {
   apiKeyName: string;
   configuration: AgentSetupConfiguration;
 }
-
-const assertNoNul = (value: string): void => {
-  if (value.includes('\0')) throw new Error('cannot render a value containing a NUL character');
-};
 
 // Flatten every C0, DEL, and C1 control to a space so a key label cannot smuggle
 // either the seven-bit or eight-bit form of a terminal escape into metadata.
@@ -32,7 +29,7 @@ const metadataValue = (value: string): string => value.replace(/[\u0001-\u001f\u
 // reopened; every other character (newlines, tabs, Unicode) is literal. NUL
 // cannot exist in a shell word and is rejected.
 const shellLiteral = (value: string): string => {
-  assertNoNul(value);
+  assertScriptLiteralValue(value);
   return `'${value.replace(/'/g, "'\\''")}'`;
 };
 
@@ -78,7 +75,7 @@ export const renderShellPrefix = (input: RenderPrefixInput): string => {
 
 // PowerShell single-quoted literal: single quotes are the only escape, doubled.
 const powerShellLiteral = (value: string): string => {
-  assertNoNul(value);
+  assertScriptLiteralValue(value);
   return `'${value.replace(/'/g, "''")}'`;
 };
 

@@ -97,6 +97,15 @@ describe('renderShellPrefix', () => {
       configuration: fullConfiguration,
     })).toThrow();
   });
+
+  test('rejects an unpaired surrogate before UTF-8 response encoding can replace it', () => {
+    expect(() => renderShellPrefix({
+      agent: 'claude',
+      apiKey: 'sk-\ud800-key',
+      apiKeyName: 'Primary key',
+      configuration: fullConfiguration,
+    })).toThrow();
+  });
 });
 
 describe('renderPowerShellPrefix', () => {
@@ -135,6 +144,10 @@ describe('renderPowerShellPrefix', () => {
 
   test('propagates a NUL-rejecting failure from the API key', () => {
     expect(() => renderPowerShellPrefix({ agent: 'claude', apiKey: 'sk-\0-key', apiKeyName: 'Primary key', configuration: fullConfiguration })).toThrow();
+  });
+
+  test('rejects an unpaired surrogate before UTF-8 response encoding can replace it', () => {
+    expect(() => renderPowerShellPrefix({ agent: 'claude', apiKey: 'sk-\udc00-key', apiKeyName: 'Primary key', configuration: fullConfiguration })).toThrow();
   });
 
   test('renders $false and $null for disabled target-agent overrides', () => {

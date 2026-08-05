@@ -95,6 +95,20 @@ describe('agentSetupConfigurationSchema', () => {
     }).success).toBe(false);
   });
 
+  test.each(['bad\ud800value', 'bad\udc00value'])('rejects an unpaired surrogate in an opaque optional string', reasoningEffort => {
+    expect(agentSetupConfigurationSchema.safeParse({
+      ...fullConfiguration,
+      codex: { ...fullConfiguration.codex, reasoningEffort },
+    }).success).toBe(false);
+  });
+
+  test('accepts a valid surrogate pair in an opaque optional string', () => {
+    expect(agentSetupConfigurationSchema.safeParse({
+      ...fullConfiguration,
+      codex: { ...fullConfiguration.codex, reasoningEffort: 'tier-🚀' },
+    }).success).toBe(true);
+  });
+
   test('rejects unknown keys in nested objects', () => {
     expect(agentSetupConfigurationSchema.safeParse({
       ...fullConfiguration,
