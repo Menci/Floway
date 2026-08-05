@@ -5,7 +5,7 @@ import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename } from 
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { ApiKey, Repo, UsageOverviewQueryOptions, UsageRecord } from '../../src/repo/types.ts';
 import { tokenCountsFromUsage, tokenRatesFromUsage, tokenUsageMetrics } from '../../src/repo/usage-metrics.ts';
-import type { SqlBindValue, SqlDatabase } from '@floway-dev/platform';
+import type { SqlBindValue, SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
 import type { PriceVector } from '@floway-dev/protocols/common';
 import { assertEquals, assertRejects, assertThrows } from '@floway-dev/test-utils';
 
@@ -67,6 +67,31 @@ const recordBoundStatements = (db: SqlDatabase, captured: CapturedStatement[]): 
   },
   exec: sql => db.exec(sql),
 });
+
+interface CompletedStatement extends CapturedStatement {
+  resultCount: number;
+}
+
+const recordCompletedStatements = (db: SqlDatabase, completed: CompletedStatement[]): SqlDatabase => {
+  const wrap = (
+    queryText: string,
+    statement: SqlPreparedStatement,
+    binds: readonly SqlBindValue[],
+  ): SqlPreparedStatement => ({
+    bind: (...values) => wrap(queryText, statement.bind(...values), values),
+    first: () => statement.first(),
+    all: async <T = Record<string, unknown>>() => {
+      const result = await statement.all<T>();
+      completed.push({ query: queryText, binds, resultCount: result.results.length });
+      return result;
+    },
+    run: () => statement.run(),
+  });
+  return {
+    prepare: queryText => wrap(queryText, db.prepare(queryText), []),
+    exec: sql => db.exec(sql),
+  };
+};
 
 test('0052 preserves distinct open-string service tiers as canonical selectors', async () => {
   const db = await createSqlJsDatabase();
@@ -444,4 +469,39 @@ test('SQL usage overview uses key-hour indexes for an actor-scoped aggregate', a
   const plan = results.map(row => row.detail).join('\n');
   assertEquals(plan.includes('idx_usage_metric_key_hour'), true);
   assertEquals(plan.includes('idx_usage_requests_key_hour'), true);
+});
+
+test('SQL usage overview returns grouped term cardinality rather than raw storage rows', async () => {
+  const db = await createSqliteTestDb();
+  const seedRepo = new SqlRepo(db);
+  await seedRepo.apiKeys.save(apiKey('key-1', 1));
+  await Promise.all(Array.from({ length: 40 }, (_, index) => seedRepo.usage.set(record({
+    model: 'shared-model',
+    modelKey: `storage-${index}`,
+    pricingSelector: { serviceTier: `tier-${index}` },
+    metrics: [{ metric: 'input_tokens', quantity: '1', unitPrice: '0.5' }],
+  }))));
+  const completed: CompletedStatement[] = [];
+  const repo = new SqlRepo(recordCompletedStatements(db, completed));
+
+  const overview = await repo.usage.queryOverview({
+    actorUserId: 1,
+    isAdmin: true,
+    start: '2026-07-12T00',
+    end: '2026-07-12T01',
+    groupBy: 'model',
+    filters: { keyIds: [], userIds: [], models: [], upstreams: [] },
+    bucketForHour: hour => hour,
+  });
+
+  const rawRows = await db.prepare('SELECT (SELECT COUNT(*) FROM usage) + (SELECT COUNT(*) FROM usage_requests) AS count')
+    .first<{ count: number }>();
+  const aggregate = completed.find(statement => statement.query.startsWith('/* usage-overview */'));
+  if (!aggregate || !rawRows) throw new Error('Usage overview SQL evidence was not captured');
+  assertEquals(rawRows.count, 80);
+  assertEquals(aggregate.resultCount < rawRows.count, true);
+  assertEquals(overview.axes.none[0], {
+    bucket: 'all', group: 'all', requests: 40,
+    metrics: [{ metric: 'input_tokens', quantity: '40' }], cost: '20',
+  });
 });
