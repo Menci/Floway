@@ -1,6 +1,30 @@
 import { describe, expect, it } from 'vitest';
 
-import { encodeAtypAddress } from '../src/bytes.ts';
+import { base64DecodeBytes, base64EncodeBytes, base64UrlDecodeBytes, encodeAtypAddress, hexDecode } from '../src/bytes.ts';
+
+describe('base codecs', () => {
+  it('matches RFC 4648 vectors and accepts the established external forms', () => {
+    expect(base64EncodeBytes(new TextEncoder().encode('foobar'))).toBe('Zm9vYmFy');
+    expect(base64DecodeBytes(' Zm9v\nYg\t')).toEqual(new TextEncoder().encode('foob'));
+    expect(base64UrlDecodeBytes('-_8')).toEqual(new Uint8Array([0xfb, 0xff]));
+    expect(base64UrlDecodeBytes('/+8=')).toEqual(new Uint8Array([0xff, 0xef]));
+    expect(hexDecode('00ABff')).toEqual(new Uint8Array([0x00, 0xab, 0xff]));
+  });
+
+  it('preserves forgiving-base64 trailing-bit acceptance for legacy and SS-2022 values', () => {
+    expect(new TextDecoder().decode(base64DecodeBytes('Zh=='))).toBe('f');
+    expect(new TextDecoder().decode(base64DecodeBytes('MDEyMzQ1Njc4OWFiY2RlZh=='))).toBe('0123456789abcdef');
+    expect(base64UrlDecodeBytes('-x')).toEqual(new Uint8Array([0xfb]));
+    expect(() => base64DecodeBytes('Zg=')).toThrow();
+  });
+
+  it('round-trips a large byte buffer without binary-string conversion', () => {
+    const bytes = Uint8Array.from({ length: 1024 * 1024 }, (_, index) => index & 0xff);
+    const decoded = base64DecodeBytes(base64EncodeBytes(bytes));
+    expect(decoded).toHaveLength(bytes.length);
+    expect(decoded.every((byte, index) => byte === bytes[index])).toBe(true);
+  });
+});
 
 const SOCKS_ATYP = { v4: 0x01, domain: 0x03, v6: 0x04 };
 const VLESS_ATYP = { v4: 0x01, domain: 0x02, v6: 0x03 };

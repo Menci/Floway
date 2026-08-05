@@ -3,7 +3,12 @@
 // Buffers read from a transport-owned ReadableStream may be pooled or reused
 // by the runtime, so retained or downstream-enqueued bytes must own their memory.
 
+import { base64, base64urlnopad, hex } from '@scure/base';
 import ipaddr from 'ipaddr.js';
+
+const ASCII_WHITESPACE = /[\t\n\f\r ]/g;
+const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+const BASE64_BODY = /^[A-Za-z0-9+/]*$/;
 
 /**
  * Allocate a fresh ArrayBuffer-backed Uint8Array detached from any
@@ -62,21 +67,7 @@ export const randomBytes = (n: number): Uint8Array<ArrayBuffer> => {
  * silently write the byte slot as 0 and let a typo through wire framing.
  */
 export const hexDecode = (s: string): Uint8Array<ArrayBuffer> => {
-  if (s.length % 2 !== 0) throw new Error(`hex: odd length ${s.length}`);
-  const out = new Uint8Array(s.length / 2);
-  for (let i = 0; i < out.byteLength; i++) {
-    const hi = hexNibble(s.charCodeAt(i * 2));
-    const lo = hexNibble(s.charCodeAt(i * 2 + 1));
-    out[i] = (hi << 4) | lo;
-  }
-  return out;
-};
-
-const hexNibble = (code: number): number => {
-  if (code >= 0x30 && code <= 0x39) return code - 0x30;       // '0'..'9'
-  if (code >= 0x61 && code <= 0x66) return code - 0x61 + 10;  // 'a'..'f'
-  if (code >= 0x41 && code <= 0x46) return code - 0x41 + 10;  // 'A'..'F'
-  throw new Error(`hex: non-hex character 0x${code.toString(16)}`);
+  return new Uint8Array(hex.decode(s));
 };
 
 /**
@@ -99,31 +90,38 @@ export const findDoubleCrlfFrom = (buf: Uint8Array, from: number): number => {
   return -1;
 };
 
-/**
- * Base64-encode a raw byte buffer. RFC 7617 §2.1 mandates UTF-8 bytes for
- * HTTP Basic auth credentials: the caller encodes the credential string to
- * UTF-8 with TextEncoder, then base64s those bytes (NOT the JS string code
- * units of the original credentials, which would emit Latin-1 bytes and
- * crash on code points > U+00FF). `btoa` requires a binary-string input
- * (one code-unit per byte), so we map each byte to its corresponding
- * Latin-1 code unit via `String.fromCharCode` before calling btoa.
- */
-export const base64EncodeBytes = (bytes: Uint8Array): string => {
-  let bin = '';
-  for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]!);
-  return btoa(bin);
-};
+export const base64EncodeBytes = (bytes: Uint8Array): string => base64.encode(bytes);
+
+export const base64UrlEncodeBytes = (bytes: Uint8Array): string => base64urlnopad.encode(bytes);
 
 /**
- * Base64-decode the inverse of {@link base64EncodeBytes}. `atob` returns
- * a Latin-1 binary string; map each code unit back to its byte value.
- * Throws (via `atob`) on invalid base64.
+ * Base64-decode the inverse of {@link base64EncodeBytes}. Existing proxy URIs
+ * accept the Web `atob` input policy: ASCII whitespace and omitted padding.
  */
 export const base64DecodeBytes = (s: string): Uint8Array<ArrayBuffer> => {
-  const bin = atob(s);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
+  return new Uint8Array(base64.decode(normalizeForgivingBase64(s)));
+};
+
+export const base64UrlDecodeBytes = (s: string): Uint8Array<ArrayBuffer> =>
+  base64DecodeBytes(s.replaceAll('-', '+').replaceAll('_', '/'));
+
+const normalizeForgivingBase64 = (value: string): string => {
+  // https://infra.spec.whatwg.org/#forgiving-base64-decode
+  let normalized = value.replace(ASCII_WHITESPACE, '');
+  if (normalized.length % 4 === 0) {
+    normalized = normalized.endsWith('==')
+      ? normalized.slice(0, -2)
+      : normalized.endsWith('=') ? normalized.slice(0, -1) : normalized;
+  }
+  const remainder = normalized.length % 4;
+  if (remainder === 1) throw new Error('Invalid base64 length');
+  if (!BASE64_BODY.test(normalized)) throw new Error('Invalid base64 character');
+  if (remainder === 2 || remainder === 3) {
+    const index = BASE64_ALPHABET.indexOf(normalized.at(-1)!);
+    const canonical = BASE64_ALPHABET[index & (remainder === 2 ? 0x30 : 0x3c)]!;
+    normalized = `${normalized.slice(0, -1)}${canonical}`;
+  }
+  return normalized.padEnd(normalized.length + (4 - remainder) % 4, '=');
 };
 
 type IpLiteral =

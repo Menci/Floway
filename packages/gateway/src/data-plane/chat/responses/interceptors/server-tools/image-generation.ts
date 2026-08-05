@@ -7,7 +7,7 @@ import { recordTokenUsage, tokenUsageFromImagesBody } from '../../../../shared/t
 import { createExternalImageFetcher, type ExternalImageFetchResult } from '../../../shared/external-image-loader.ts';
 import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
 import { dimensionsFromBytes, getImageProcessor, type BackgroundScheduler } from '@floway-dev/platform';
-import { isImageMediaType, mediaTypeEssence, parseSSEStream } from '@floway-dev/protocols/common';
+import { decodeForgivingBase64, encodeHex, isImageMediaType, mediaTypeEssence, parseSSEStream } from '@floway-dev/protocols/common';
 import {
   createRandomResponsesItemId,
   type ResponsesFunctionCallOutputItem,
@@ -128,7 +128,7 @@ const prepareEditSources = async (sources: readonly ImageSource[]): Promise<read
     let keyPromise = keyBySource.get(source);
     if (keyPromise === undefined) {
       keyPromise = crypto.subtle.digest('SHA-256', source.bytes).then(buffer => {
-        const digest = [...new Uint8Array(buffer)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+        const digest = encodeHex(new Uint8Array(buffer));
         return `${source.mimeType}\u0000${digest}`;
       });
       keyBySource.set(source, keyPromise);
@@ -152,11 +152,8 @@ const prepareEditSources = async (sources: readonly ImageSource[]): Promise<read
 };
 
 const base64ToArrayBuffer = (b64: string): ArrayBuffer => {
-  const binary = atob(b64);
-  const buffer = new ArrayBuffer(binary.length);
-  const bytes = new Uint8Array(buffer);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return buffer;
+  const bytes = decodeForgivingBase64(b64);
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 };
 
 // Parse a `data:<mime>;base64,<payload>` URL or a bare base64 string (as

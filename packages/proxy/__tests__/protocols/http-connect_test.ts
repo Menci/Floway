@@ -242,10 +242,7 @@ describe('dialHttpConnect — auth header encoding', () => {
     await promise;
   });
 
-  // RFC 7617 §2.1 defaults the credential charset to UTF-8; the dialer
-  // encodes the `${user}:${password}` string with TextEncoder and base64s
-  // the resulting bytes.
-  it('UTF-8 encodes a "ä" (U+00E4) password before base64 (RFC 7617 §2.1)', async () => {
+  it('UTF-8 encodes a "ä" (U+00E4) password before base64', async () => {
     const fake = makeFakeSocketDial();
     const promise = dialHttpConnect(
       httpConfig({ username: 'u', password: 'pä' }),
@@ -255,9 +252,7 @@ describe('dialHttpConnect — auth header encoding', () => {
     const srv = await fake.awaitConnect();
     const head = await drainCONNECTRequest(srv);
     // base64(UTF-8("u:pä")) = base64([0x75, 0x3a, 0x70, 0xc3, 0xa4]) =
-    // "dTpww6Q=". A Latin-1 encoding would instead emit "dTpw5A=="; RFC
-    // 7617 §2.1 mandates the UTF-8 form, so the encoder must
-    // UTF-8-then-base64.
+    // "dTpww6Q=". A Latin-1 encoding would instead emit "dTpw5A==".
     expect(head).toContain('Proxy-Authorization: Basic dTpww6Q=\r\n');
     srv.respond('HTTP/1.1 200 OK\r\n\r\n');
     await promise;
