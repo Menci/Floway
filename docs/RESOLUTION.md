@@ -101,8 +101,9 @@ catalog feeds:
 `toPublicModel` projects an `InternalModel` onto the public DTO. Gemini uses its
 own projection, Codex synthesizes its client-catalog shape, and the control plane
 adds dashboard-only fields. Listing and request resolution are separate
-consumers of the same persisted snapshots and both report recorded refresh
-failures from `modelsCache.lastError`.
+consumers of the same persisted snapshots. Request-resolution failures report
+recorded refresh errors from `modelsCache.lastError`; listing serves the
+available snapshot without exposing those names.
 
 ## Addressable surfaces
 

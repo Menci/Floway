@@ -10,10 +10,10 @@ import { logInfo } from '@floway-dev/provider-claude-code';
 
 const errorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error);
 
-// Populate the SWR model cache synchronously after saving an upstream so the
-// next dashboard read sees the new catalog. The cache layer persists upstream
-// fetch failures in `lastError`; errors escaping that layer are internal and
-// must remain observable without aborting the surrounding control-plane write.
+// Wait synchronously for an eligible refresh or an active owner. A persisted
+// cooldown suppresses a new attempt and leaves the current snapshot in place.
+// Refresh failures persist in `lastError`; errors escaping the cache layer are
+// internal and remain observable without aborting the control-plane write.
 //
 // Returns what the row holds afterwards so the caller can answer with the
 // freshness this warm produced rather than the snapshot it read before saving.

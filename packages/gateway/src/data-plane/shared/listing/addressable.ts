@@ -47,9 +47,9 @@ export const listedRealModels = (entries: readonly AddressableIdEntry[]): readon
 
 // Enumerate every inbound id the data plane accepts under `upstreamFilter`,
 // tagged with whether the id participates in the default `/v1/models`
-// listing. Fans out per upstream the same way `collectProviderModels` does,
-// re-uses the SWR cache so the catalog refresh round-trip is shared with
-// `getModelsFromProviders`.
+// listing. Fans out persisted snapshot reads the same way
+// `collectProviderModels` does; repeated stale access may submit or join the
+// same separate background refresh trigger.
 export const enumerateAddressableModelIds = async (
   upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,

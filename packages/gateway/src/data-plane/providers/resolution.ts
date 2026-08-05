@@ -15,8 +15,8 @@ import { isAbortError, type Fetcher, type ModelCandidate } from '@floway-dev/pro
 // apply: an `unprefixed`-addressable upstream is probed with the inbound id
 // verbatim; a `prefixed`-addressable upstream is probed with the inbound id
 // minus its configured prefix when (and only when) the inbound carries that
-// prefix. Both branches are evaluated against the same SWR-cached catalog
-// fetch — a single upstream typically contributes at most one candidate,
+// prefix. Both branches are evaluated against the same persisted catalog
+// snapshot — a single upstream typically contributes at most one candidate,
 // but a catalog that publishes both the bare and prefixed forms can match
 // twice and both go through.
 //
@@ -192,9 +192,8 @@ export const enumerateModelCandidates = async ({
   upstreamIds: readonly string[] | null;
   model: string;
   kind: ModelKind;
-  // Threaded into `enumerateRealModelCandidates` so the per-upstream
-  // catalog lookup hits the SWR-cached `fetchUpstreamModelsCached` instead
-  // of round-tripping to the upstream on every request.
+  // Threaded into `enumerateRealModelCandidates` so stale snapshot access can
+  // submit or join a separate background refresh trigger.
   scheduler: BackgroundScheduler;
   // Runtime location tag for this request — see GatewayCtx.runtimeLocation.
   // Threaded into the per-request fetcher so colo-scoped fallback entries
