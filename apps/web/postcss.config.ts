@@ -30,18 +30,30 @@ const hasUnclosedNode = (nodes: valueParser.Node[]): boolean =>
       || (node.type === 'function' && hasUnclosedNode(node.nodes)),
   );
 
-const isWoffSource = (nodes: valueParser.Node[]): boolean => {
-  let woff = false;
+interface WoffReferences {
+  format: boolean;
+  url: boolean;
+}
+
+const woffReferences = (nodes: valueParser.Node[]): WoffReferences => {
+  const references: WoffReferences = { format: false, url: false };
   valueParser.walk(nodes, node => {
     if (node.type !== 'function') return;
     const name = cssUnescape(node.value).toLowerCase();
     const argument = functionArgument(node);
     if (argument === undefined) return;
-    if (name === 'format' && argument.toLowerCase() === 'woff') woff = true;
+    if (name === 'format' && argument.toLowerCase() === 'woff') references.format = true;
     const pathname = argument.split(/[?#]/, 1)[0]!;
-    if (name === 'url' && !argument.toLowerCase().startsWith('data:') && /\.woff$/i.test(pathname)) woff = true;
+    if (name === 'url' && !argument.toLowerCase().startsWith('data:') && /\.woff$/i.test(pathname)) {
+      references.url = true;
+    }
   });
-  return woff;
+  return references;
+};
+
+const isWoffSource = (nodes: valueParser.Node[]): boolean => {
+  const references = woffReferences(nodes);
+  return references.format || references.url;
 };
 
 interface FontSource {
@@ -103,7 +115,9 @@ export const fontsourceWoff2Only = (): Plugin => ({
       declaration.value = stripWoffSources(declaration.value, path);
     });
     root.walkDecls(declaration => {
-      if (isWoffSource(valueParser(declaration.value).nodes)) {
+      const references = woffReferences(valueParser(declaration.value).nodes);
+      const src = cssUnescape(declaration.prop).toLowerCase() === 'src';
+      if (references.url || (src && references.format)) {
         throw new Error(`${path} still declares a WOFF source`);
       }
     });

@@ -110,6 +110,12 @@ describe('Fontsource WOFF2-only transform', () => {
     await expect(process(css)).rejects.toThrow('still declares a WOFF source');
   });
 
+  it('does not interpret format functions outside src descriptors as font sources', async () => {
+    const css = `:root { --font-format-label: format('woff'); }`;
+
+    expect(await process(css)).toBe(css);
+  });
+
   it.each(['400.css', '600.css', '700.css'])('processes the installed Maple Mono %s stylesheet', async file => {
     const path = import.meta.resolve(`@fontsource/maple-mono/${file}`);
     const css = await readFile(new URL(path), 'utf8');
