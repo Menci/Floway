@@ -119,9 +119,10 @@ const resolveServeableLease = async (
 const reportPublicServeFailure = (): void => {
   // Error fields are untrusted: getters can throw, names and multiline stack
   // prefixes can carry secrets, and a forged frame is indistinguishable from a
-  // real one. Only a fixed diagnostic may cross this public credential boundary.
+  // real one. Only a locally constructed diagnostic with a fixed message may
+  // cross this public credential boundary.
   try {
-    console.error('Agent Setup: failed to serve a public setup script');
+    console.error(new Error('Agent Setup: failed to serve a public setup script'));
   } catch {
     // A host logger failure must not escape into the ordinary error boundary,
     // whose detailed response would disclose the token-bearing request path.

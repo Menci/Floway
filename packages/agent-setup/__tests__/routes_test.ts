@@ -651,8 +651,8 @@ test.each(hostilePublicErrors)('a public serve failure from $label stays totally
       repository: { findByToken: () => { throw createError(token, injectedSecret); } },
     },
   });
-  const logged: string[] = [];
-  const errorSpy = vi.spyOn(console, 'error').mockImplementation((...args) => { logged.push(args.map(String).join(' ')); });
+  const logged: unknown[] = [];
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation((...args) => { logged.push(...args); });
   try {
     const response = await h.request(`/api/setup/${token}/claude.sh`, { method: 'GET' });
     assertEquals(response.status, 500);
@@ -665,7 +665,15 @@ test.each(hostilePublicErrors)('a public serve failure from $label stays totally
   } finally {
     errorSpy.mockRestore();
   }
-  expect(logged).toEqual(['Agent Setup: failed to serve a public setup script']);
+  expect(logged).toHaveLength(1);
+  const diagnostic = logged[0];
+  expect(diagnostic).toBeInstanceOf(Error);
+  if (!(diagnostic instanceof Error)) throw new Error('public diagnostic was not an Error');
+  expect(diagnostic.message).toBe('Agent Setup: failed to serve a public setup script');
+  expect(diagnostic.stack).toContain('reportPublicServeFailure');
+  const diagnosticText = `${diagnostic.name}\n${diagnostic.message}\n${diagnostic.stack}`;
+  expect(diagnosticText).not.toContain(injectedSecret);
+  expect(diagnosticText).not.toContain(token);
 });
 
 test('a public response remains opaque when the host logger throws', async () => {

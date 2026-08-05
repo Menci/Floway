@@ -205,8 +205,8 @@ test('a hostile public-serve error cannot escape into the detailed gateway error
   Object.defineProperty(hostile, 'stack', { get: () => { throw new Error(injectedSecret); } });
   repo.agentSetup.findByToken = () => { throw hostile; };
 
-  const logged: string[] = [];
-  const errorSpy = vi.spyOn(console, 'error').mockImplementation((...args) => { logged.push(args.map(String).join(' ')); });
+  const logged: unknown[] = [];
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation((...args) => { logged.push(...args); });
   try {
     const response = await requestApp(lease.scripts.claude.sh, { method: 'GET' });
     assertEquals(response.status, 500);
@@ -217,8 +217,13 @@ test('a hostile public-serve error cannot escape into the detailed gateway error
   } finally {
     errorSpy.mockRestore();
   }
-  const joined = logged.join('\n');
-  expect(logged).toEqual(['Agent Setup: failed to serve a public setup script']);
+  expect(logged).toHaveLength(1);
+  const diagnostic = logged[0];
+  expect(diagnostic).toBeInstanceOf(Error);
+  if (!(diagnostic instanceof Error)) throw new Error('public diagnostic was not an Error');
+  expect(diagnostic.message).toBe('Agent Setup: failed to serve a public setup script');
+  expect(diagnostic.stack).toContain('reportPublicServeFailure');
+  const joined = `${diagnostic.name}\n${diagnostic.message}\n${diagnostic.stack}`;
   expect(joined).not.toContain(lease.token);
   expect(joined).not.toContain(injectedSecret);
 });
