@@ -5,10 +5,10 @@ import {
   cloudflareEnvGetter,
   type CloudflareEnv,
 } from '../src/cloudflare-env.ts';
+import type { BroadcastNamespace } from '../src/durable-object-channel-broker.ts';
 import type { ImagesBinding } from '../src/image-processor.ts';
 import type { KvNamespace } from '../src/kv-image-cache-store.ts';
 import type { R2BucketLike } from '../src/r2-file-store.ts';
-import type { BroadcastNamespace } from '../src/durable-object-channel-broker.ts';
 import type { SqlDatabase } from '@floway-dev/platform';
 
 const completeEnv = (): CloudflareEnv => ({
