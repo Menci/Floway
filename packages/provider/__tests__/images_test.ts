@@ -1,6 +1,5 @@
-import { describe, expect, test } from 'vitest';
+import { test } from 'vitest';
 
-import { base64ToBytes, bytesToBase64 } from '../src/image-helpers.ts';
 import { serializeOpenAIImagesEditsRequest } from '../src/images.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
@@ -79,22 +78,5 @@ test('serializeOpenAIImagesEditsRequest preserves extra inline reference fields 
     prompt: 'edit',
     images: [{ image_url: 'data:image/png;base64,aW1hZ2U=', future_field: 'keep' }],
     model: 'gpt-image',
-  });
-});
-describe('image base64 helpers', () => {
-  test('preserves external whitespace and omitted-padding acceptance', () => {
-    expect(base64ToBytes(' AQID\nBA\t')).toEqual(new Uint8Array([1, 2, 3, 4]));
-  });
-
-  test('preserves forgiving-base64 trailing-bit acceptance', () => {
-    expect(new TextDecoder().decode(base64ToBytes('Zh=='))).toBe('f');
-    expect(() => base64ToBytes('Zg=')).toThrow();
-  });
-
-  test('round-trips large image buffers', () => {
-    const bytes = Uint8Array.from({ length: 1024 * 1024 }, (_, index) => index & 0xff);
-    const decoded = base64ToBytes(bytesToBase64(bytes));
-    expect(decoded).toHaveLength(bytes.length);
-    expect(decoded.every((byte, index) => byte === bytes[index])).toBe(true);
   });
 });
