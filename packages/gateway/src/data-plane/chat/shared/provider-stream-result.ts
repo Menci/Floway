@@ -31,20 +31,45 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
     ...(context !== undefined ? { performance: context } : {}),
     ...(billableUsage !== undefined ? { billableUsage } : {}),
   });
+  const observeFrame = (frame: ProtocolFrame<TEvent>): void => {
+    if (ctx.attempt.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, targetApi)) {
+      ctx.attempt.firstOutputTokenAt = performance.now();
+    }
+    if (frame.type === 'event') {
+      const reported = readBillableUsage(frame.event);
+      if (reported !== null) billableUsage = reported;
+    }
+  };
   const stampedEvents = (async function* () {
+    // Downstream protocol wrappers are allowed to finish at their terminal
+    // event. Keep ownership of the provider iterator here so IteratorClose
+    // still consumes trailing usage and transport sentinels before metadata
+    // settles.
+    const iterator = providerResult.events[Symbol.asyncIterator]();
+    let sourceOpen = true;
+    const readSource = async (): Promise<IteratorResult<ProtocolFrame<TEvent>>> => {
+      try {
+        const next = await iterator.next();
+        if (next.done) sourceOpen = false;
+        else observeFrame(next.value);
+        return next;
+      } catch (error) {
+        sourceOpen = false;
+        throw error;
+      }
+    };
     try {
-      for await (const frame of providerResult.events) {
-        if (ctx.attempt.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, targetApi)) {
-          ctx.attempt.firstOutputTokenAt = performance.now();
-        }
-        if (frame.type === 'event') {
-          const reported = readBillableUsage(frame.event);
-          if (reported !== null) billableUsage = reported;
-        }
-        yield frame;
+      while (true) {
+        const next = await readSource();
+        if (next.done) break;
+        yield next.value;
       }
     } finally {
-      settleMetadata();
+      try {
+        while (sourceOpen) await readSource();
+      } finally {
+        settleMetadata();
+      }
     }
   })();
   return {

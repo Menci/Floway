@@ -34,7 +34,7 @@ test('an upstream error without response.failed is closed with a failed response
   assertEquals(failed.response.error, { code: 'overloaded', message: 'try later' });
 });
 
-test('returning after a response terminal still drains the upstream sentinel', async () => {
+test('a response terminal remains the last visible frame', async () => {
   const created: ResponsesResult = {
     id: 'resp_upstream',
     object: 'response',
@@ -44,7 +44,6 @@ test('returning after a response terminal still drains the upstream sentinel', a
     error: null,
     incomplete_details: null,
   };
-  let sentinelDrained = false;
   const source = async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
     yield eventFrame({ type: 'response.created', sequence_number: 0, response: created });
     yield eventFrame({
@@ -53,15 +52,12 @@ test('returning after a response terminal still drains the upstream sentinel', a
       response: { ...created, status: 'completed' },
     });
     yield doneFrame();
-    sentinelDrained = true;
   };
-  const normalized = normalizeResponsesStreamLifecycle(source())[Symbol.asyncIterator]();
+  const events: ResponsesStreamEvent[] = [];
 
-  const createdFrame = await normalized.next();
-  const completedFrame = await normalized.next();
-  await normalized.return(undefined);
+  for await (const frame of normalizeResponsesStreamLifecycle(source())) {
+    if (frame.type === 'event') events.push(frame.event);
+  }
 
-  assertEquals(createdFrame.value?.type === 'event' ? createdFrame.value.event.type : undefined, 'response.created');
-  assertEquals(completedFrame.value?.type === 'event' ? completedFrame.value.event.type : undefined, 'response.completed');
-  assertEquals(sentinelDrained, true);
+  assertEquals(events.map(event => event.type), ['response.created', 'response.completed']);
 });

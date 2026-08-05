@@ -68,7 +68,7 @@ describe('providerStreamResultToExecuteResult (first-output-token stamping)', ()
   });
 });
 
-test('client disconnect does not settle metadata before terminal usage is drained', async () => {
+test('consumer return drains terminal usage before metadata settles', async () => {
   const terminalUsage = { input: 7, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 3 };
   let releaseTerminal!: (frame: ProtocolFrame<{ type: string; usage?: typeof terminalUsage }>) => void;
   const terminal = new Promise<ProtocolFrame<{ type: string; usage?: typeof terminalUsage }>>(resolve => { releaseTerminal = resolve; });
@@ -76,8 +76,7 @@ test('client disconnect does not settle metadata before terminal usage is draine
     yield { type: 'event', event: { type: 'response.created' } } as const;
     yield await terminal;
   })();
-  const controller = new AbortController();
-  const ctx = mockGatewayCtx({ clientDisconnectSignal: controller.signal, clientDisconnectController: controller });
+  const ctx = mockGatewayCtx();
   const result = await providerStreamResultToExecuteResult(
     okStreamResult(events),
     stubModelCandidate(),
@@ -90,14 +89,17 @@ test('client disconnect does not settle metadata before terminal usage is draine
 
   const iterator = result.events[Symbol.asyncIterator]();
   await iterator.next();
-  controller.abort();
+  const returned = iterator.return?.();
+  if (returned === undefined) throw new Error('expected the event iterator to implement return()');
   let metadataSettled = false;
+  let returnSettled = false;
   void result.finalMetadata!.then(() => { metadataSettled = true; });
+  void returned.then(() => { returnSettled = true; });
   await Promise.resolve();
   expect(metadataSettled).toBe(false);
+  expect(returnSettled).toBe(false);
 
   releaseTerminal({ type: 'event', event: { type: 'response.completed', usage: terminalUsage } });
-  await iterator.next();
-  await iterator.next();
+  await returned;
   expect((await result.finalMetadata!).billableUsage).toEqual(terminalUsage);
 });
