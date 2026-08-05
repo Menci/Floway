@@ -163,22 +163,22 @@ ${selectionPill('2px')}
   --colorNeutralForeground2: var(--winui-text-fill-disabled);
 }
 
-/* Focus. Fluent draws the outer stroke as an outline inside the border box, so
-   only its colour is restated; the inner one is an inset shadow the full depth
-   of the focus visual, of which the outline covers everything but the last
-   pixel -- a shadow rather than the two-pseudo-element construction used
-   elsewhere, because this item's ::after is spoken for by the selection
-   indicator above.
+/* Focus. The strokes sit outside the item so they do not cover its selected
+   fill or the measured selection indicator at the leading edge. A one-pixel
+   spread shadow draws the inner stroke; an outline offset by that pixel puts
+   the two-pixel outer stroke immediately around it. This is the same
+   construction used for a focused ToastContainer, and it avoids needing the
+   item's ::after, which is spoken for by the selection indicator above.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L429
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources.xaml#L15-L16
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L446-L452
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/inc/FocusRectNudging.h#L388 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/FocusRect/FocusRectManager.cpp#L173-L186 */
 .fui-NavItem.fui-NavItem[data-fui-focus-visible],
 .fui-NavSubItem.fui-NavSubItem[data-fui-focus-visible],
 .fui-NavCategoryItem.fui-NavCategoryItem[data-fui-focus-visible] {
-  box-shadow:
-    inset 0 0 0 var(--winui-focus-visual-depth) var(--winui-focus-stroke-inner);
+  outline: var(--winui-focus-visual-primary-thickness) solid var(--winui-focus-stroke-outer);
+  outline-offset: var(--winui-focus-visual-secondary-thickness);
+  box-shadow: 0 0 0 var(--winui-focus-visual-secondary-thickness) var(--winui-focus-stroke-inner);
 }
 
 /* A selected item's icon keeps the primary text fill instead of Fluent's brand
