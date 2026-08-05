@@ -1061,7 +1061,7 @@ test('POST /api/upstreams/codex/oauth/exchange in edit state persists the patch 
   // config + state on the existing row rather than appending an account.
   const response = await withMockedFetch(
     () => jsonResponse({ models: [] }),
-    () => requestApp('/api/upstreams/codex/oauth/exchange', authed(adminSession, {
+    async () => requestApp('/api/upstreams/codex/oauth/exchange', authed(adminSession, {
       record: envelopeFromRecord(await getRecord(repo, initial.id)),
       auth_json: codexAuthJsonImport({
         tokens: { access_token: 'at_v2', refresh_token: 'rt_v2', id_token: fakeIdToken({}) },

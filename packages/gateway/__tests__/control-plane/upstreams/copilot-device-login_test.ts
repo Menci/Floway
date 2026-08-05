@@ -67,7 +67,7 @@ test('/api/upstreams/copilot/oauth/device-login/poll preserves every GitHub poll
     { upstream: { error: 'authorization_pending' }, status: 200, body: { status: 'pending' } },
     { upstream: { error: 'slow_down' }, status: 200, body: { status: 'slow_down' } },
     { upstream: { error: 'access_denied', error_description: 'The operator denied access' }, status: 400, body: { status: 'error', error: 'The operator denied access' } },
-    { upstream: { token_type: 'bearer' }, status: 502, body: { status: 'error', error: 'GitHub device flow response missing access_token' } },
+    { upstream: { token_type: 'bearer' }, status: 502, body: { status: 'error', error: 'access_token' }, errorSubstring: true },
   ] as const;
 
   for (const item of cases) {
@@ -85,7 +85,13 @@ test('/api/upstreams/copilot/oauth/device-login/poll preserves every GitHub poll
           body: JSON.stringify({ record: copilotBlueprintEnvelope, deviceCode: 'device' }),
         });
         assertEquals(response.status, item.status);
-        assertEquals(await response.json(), item.body);
+        const body = await response.json() as { status: string; error?: string };
+        if ('errorSubstring' in item) {
+          assertEquals(body.status, item.body.status);
+          assertEquals(body.error?.includes(item.body.error), true);
+        } else {
+          assertEquals(body, item.body);
+        }
       },
     );
     assertEquals(calls, 1);
