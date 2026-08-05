@@ -269,14 +269,20 @@ export interface UpstreamRepo {
   saveModelsCacheError(id: string, generation: ModelsCacheGeneration, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean>;
   saveClaimedModelsCache(id: string, generation: ModelsCacheGeneration, token: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean>;
   saveClaimedModelsCacheError(id: string, generation: ModelsCacheGeneration, token: string, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean>;
-  claimModelsRefresh(id: string, generation: ModelsCacheGeneration, token: string, now: number, staleClaimedBefore: number, force: boolean): Promise<ModelsRefreshClaim | null>;
+  claimModelsRefresh(id: string, generation: ModelsCacheGeneration, token: string, now: number, staleClaimedBefore: number, force: boolean): Promise<ModelsRefreshClaimResult>;
   completeModelsRefreshSuccess(id: string, token: string): Promise<void>;
   completeModelsRefreshFailure(id: string, token: string, failureCount: number, retryAt: number): Promise<void>;
 }
 
 export interface ModelsRefreshClaim {
+  kind: 'claimed';
   failureCount: number;
 }
+
+export type ModelsRefreshClaimResult = ModelsRefreshClaim
+  | { kind: 'active' }
+  | { kind: 'backoff' }
+  | { kind: 'generation-mismatch' };
 
 export interface ModelsCacheGeneration {
   updatedAt: string;

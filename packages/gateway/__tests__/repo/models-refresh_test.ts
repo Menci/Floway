@@ -39,26 +39,29 @@ describe.each(factories)('%s models refresh coordination', (_name, createRepo) =
     let now = 1_800_000_000_000;
 
     const first = await repo.upstreams.claimModelsRefresh(record.id, generation, 'claim-0', now, now - 900_000, false);
-    expect(first).toEqual({ failureCount: 0 });
-    await expect(repo.upstreams.claimModelsRefresh(record.id, generation, 'racer', now, now - 900_000, false)).resolves.toBeNull();
+    expect(first).toEqual({ kind: 'claimed', failureCount: 0 });
+    await expect(repo.upstreams.claimModelsRefresh(record.id, generation, 'racer', now, now - 900_000, false)).resolves.toEqual({ kind: 'active' });
 
     const delays = [1, 2, 4, 8, 16, 32, 60, 60].map(minutes => minutes * 60_000);
-    let claim = first!;
+    if (first.kind !== 'claimed') throw new Error('expected refresh claim');
+    let claim = first;
     for (const [index, delay] of delays.entries()) {
       const retryAt = modelsRefreshRetryAt(now, claim.failureCount);
       expect(retryAt - now).toBe(delay);
       await repo.upstreams.completeModelsRefreshFailure(record.id, `claim-${index}`, claim.failureCount + 1, retryAt);
-      await expect(repo.upstreams.claimModelsRefresh(record.id, generation, `early-${index}`, retryAt - 1, retryAt - 900_001, false)).resolves.toBeNull();
+      await expect(repo.upstreams.claimModelsRefresh(record.id, generation, `early-${index}`, retryAt - 1, retryAt - 900_001, false)).resolves.toEqual({ kind: 'backoff' });
       now = retryAt;
-      claim = (await repo.upstreams.claimModelsRefresh(record.id, generation, `claim-${index + 1}`, now, now - 900_000, false))!;
+      const nextClaim = await repo.upstreams.claimModelsRefresh(record.id, generation, `claim-${index + 1}`, now, now - 900_000, false);
+      if (nextClaim.kind !== 'claimed') throw new Error('expected refresh claim');
+      claim = nextClaim;
       expect(claim.failureCount).toBe(index + 1);
     }
 
     const blockedUntil = modelsRefreshRetryAt(now, claim.failureCount);
     await repo.upstreams.completeModelsRefreshFailure(record.id, `claim-${delays.length}`, claim.failureCount + 1, blockedUntil);
-    await expect(repo.upstreams.claimModelsRefresh(record.id, generation, 'forced', now + 1, now - 899_999, true)).resolves.toEqual({ failureCount: delays.length + 1 });
+    await expect(repo.upstreams.claimModelsRefresh(record.id, generation, 'forced', now + 1, now - 899_999, true)).resolves.toEqual({ kind: 'claimed', failureCount: delays.length + 1 });
     await repo.upstreams.completeModelsRefreshSuccess(record.id, 'forced');
-    await expect(repo.upstreams.claimModelsRefresh(record.id, generation, 'after-success', now + 2, now - 899_998, false)).resolves.toEqual({ failureCount: 0 });
+    await expect(repo.upstreams.claimModelsRefresh(record.id, generation, 'after-success', now + 2, now - 899_998, false)).resolves.toEqual({ kind: 'claimed', failureCount: 0 });
   });
 
   test('recovers abandoned claims and fences tokens, timestamps, and config', async () => {
@@ -66,19 +69,19 @@ describe.each(factories)('%s models refresh coordination', (_name, createRepo) =
     await repo.upstreams.save(record);
     const now = 1_800_000_000_000;
 
-    await expect(repo.upstreams.claimModelsRefresh(record.id, generation, 'abandoned', now, now - 900_000, false)).resolves.toEqual({ failureCount: 0 });
-    await expect(repo.upstreams.claimModelsRefresh(record.id, generation, 'replacement', now + 900_001, now + 1, false)).resolves.toEqual({ failureCount: 0 });
+    await expect(repo.upstreams.claimModelsRefresh(record.id, generation, 'abandoned', now, now - 900_000, false)).resolves.toEqual({ kind: 'claimed', failureCount: 0 });
+    await expect(repo.upstreams.claimModelsRefresh(record.id, generation, 'replacement', now + 900_001, now + 1, false)).resolves.toEqual({ kind: 'claimed', failureCount: 0 });
     await repo.upstreams.completeModelsRefreshSuccess(record.id, 'abandoned');
-    await expect(repo.upstreams.claimModelsRefresh(record.id, generation, 'racer', now + 900_002, now + 2, false)).resolves.toBeNull();
+    await expect(repo.upstreams.claimModelsRefresh(record.id, generation, 'racer', now + 900_002, now + 2, false)).resolves.toEqual({ kind: 'active' });
 
     const next = { ...record, config: { tenant: 'next' } };
     await repo.upstreams.saveClearingModelsCache(next);
-    await expect(repo.upstreams.claimModelsRefresh(record.id, generation, 'old-config', now + 900_003, now + 3, false)).resolves.toBeNull();
-    await expect(repo.upstreams.claimModelsRefresh(record.id, { updatedAt: next.updatedAt, config: next.config }, 'current', now + 900_003, now + 3, false)).resolves.toEqual({ failureCount: 0 });
+    await expect(repo.upstreams.claimModelsRefresh(record.id, generation, 'old-config', now + 900_003, now + 3, false)).resolves.toEqual({ kind: 'generation-mismatch' });
+    await expect(repo.upstreams.claimModelsRefresh(record.id, { updatedAt: next.updatedAt, config: next.config }, 'current', now + 900_003, now + 3, false)).resolves.toEqual({ kind: 'claimed', failureCount: 0 });
 
     const newer = { ...next, updatedAt: '2026-08-01T00:01:00.000Z' };
     await repo.upstreams.saveClearingModelsCache(newer);
-    await expect(repo.upstreams.claimModelsRefresh(record.id, { updatedAt: next.updatedAt, config: next.config }, 'old-time', now + 900_004, now + 4, false)).resolves.toBeNull();
+    await expect(repo.upstreams.claimModelsRefresh(record.id, { updatedAt: next.updatedAt, config: next.config }, 'old-time', now + 900_004, now + 4, false)).resolves.toEqual({ kind: 'generation-mismatch' });
   });
 
   test('saving a new upstream generation clears its predecessor refresh state', async () => {
@@ -86,7 +89,7 @@ describe.each(factories)('%s models refresh coordination', (_name, createRepo) =
     await repo.upstreams.save(record);
     const now = 1_800_000_000_000;
     const claim = await repo.upstreams.claimModelsRefresh(record.id, generation, 'failed', now, now - 900_000, false);
-    if (!claim) throw new Error('expected refresh claim');
+    if (claim.kind !== 'claimed') throw new Error('expected refresh claim');
     await repo.upstreams.completeModelsRefreshFailure(record.id, 'failed', 1, modelsRefreshRetryAt(now, 0));
 
     const next = { ...record, name: 'Renamed', updatedAt: '2026-08-01T00:01:00.000Z' };
@@ -98,6 +101,6 @@ describe.each(factories)('%s models refresh coordination', (_name, createRepo) =
       now + 1,
       now - 899_999,
       false,
-    )).resolves.toEqual({ failureCount: 0 });
+    )).resolves.toEqual({ kind: 'claimed', failureCount: 0 });
   });
 });

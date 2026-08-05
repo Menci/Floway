@@ -26,6 +26,7 @@ import type {
   AgentSetupRepository,
   BackoffRow,
   ModelsCacheGeneration,
+  ModelsRefreshClaimResult,
   ModelAliasesRepo,
   ModelAliasRecord,
   PerformanceDimensions,
@@ -641,21 +642,21 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     return this.saveModelsCacheError(id, generation, error);
   }
 
-  claimModelsRefresh(id: string, generation: ModelsCacheGeneration, token: string, now: number, staleClaimedBefore: number, force: boolean): Promise<{ failureCount: number } | null> {
+  claimModelsRefresh(id: string, generation: ModelsCacheGeneration, token: string, now: number, staleClaimedBefore: number, force: boolean): Promise<ModelsRefreshClaimResult> {
     const stored = this.store.get(id);
-    if (!stored || stored.updatedAt !== generation.updatedAt || serializeStoredConfig(stored.config) !== serializeStoredConfig(generation.config)) return Promise.resolve(null);
+    if (!stored || stored.updatedAt !== generation.updatedAt || serializeStoredConfig(stored.config) !== serializeStoredConfig(generation.config)) return Promise.resolve({ kind: 'generation-mismatch' });
     const existing = this.modelsRefreshes.get(id);
-    const eligible = force
-      || existing === undefined
-      || (existing.retryAt <= now && (existing.claimToken === null || existing.claimedAt! <= staleClaimedBefore));
-    if (!eligible) return Promise.resolve(null);
+    if (!force && existing !== undefined) {
+      if (existing.claimToken !== null && existing.claimedAt! > staleClaimedBefore) return Promise.resolve({ kind: 'active' });
+      if (existing.retryAt > now) return Promise.resolve({ kind: 'backoff' });
+    }
     this.modelsRefreshes.set(id, {
       failCount: existing?.failCount ?? 0,
       retryAt: existing?.retryAt ?? 0,
       claimToken: token,
       claimedAt: now,
     });
-    return Promise.resolve({ failureCount: existing?.failCount ?? 0 });
+    return Promise.resolve({ kind: 'claimed', failureCount: existing?.failCount ?? 0 });
   }
 
   completeModelsRefreshSuccess(id: string, token: string): Promise<void> {

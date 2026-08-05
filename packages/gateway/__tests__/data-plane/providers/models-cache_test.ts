@@ -244,6 +244,30 @@ describe('fetchUpstreamModelsCached', () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
+  test('synchronous warm waits for a refresh owned by another runtime', async () => {
+    const repo = await setupRepo();
+    const now = Date.now();
+    await expect(repo.upstreams.claimModelsRefresh(UPSTREAM_ID, CACHE_GENERATION, 'remote-owner', now, now - 900_000, false))
+      .resolves.toEqual({ kind: 'claimed', failureCount: 0 });
+    const localFetch = vi.fn(async () => [aModel('duplicate-local-model')]);
+    const warming = warmUpstreamModels(stubInstance(localFetch), directFetcher);
+
+    let settled = false;
+    void warming.finally(() => { settled = true; });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(settled).toBe(false);
+
+    await repo.upstreams.saveClaimedModelsCache(UPSTREAM_ID, CACHE_GENERATION, 'remote-owner', {
+      revision: MODEL_CATALOG_REVISION,
+      fetchedAt: now + 1,
+      models: [aModel('remote-model')],
+    });
+    await repo.upstreams.completeModelsRefreshSuccess(UPSTREAM_ID, 'remote-owner');
+
+    expect((await warming).map(model => model.id)).toEqual(['remote-model']);
+    expect(localFetch).not.toHaveBeenCalled();
+  });
+
   test('a superseded generation neither joins nor overwrites the current catalog', async () => {
     const repo = await setupRepo();
     let resolveOld: ((models: ProviderModel[]) => void) | null = null;
@@ -317,6 +341,11 @@ describe('fetchUpstreamModelsCached', () => {
       models: [{ id: 'forced-model' }],
       lastError: null,
     });
+
+    clearInFlightForTesting();
+    const recovery = vi.fn(async () => [aModel('post-race-model')]);
+    await warmUpstreamModels(stubInstance(recovery, await storedCache(repo), CACHE_GENERATION, 'post-race'), directFetcher);
+    expect(recovery).toHaveBeenCalledTimes(1);
   });
 
   test('catalog revision mismatch is cold and refreshes without blocking', async () => {

@@ -10,6 +10,7 @@ import type { Fetcher, ProviderModel } from '@floway-dev/provider';
 // access only triggers a background attempt guarded by the persisted refresh
 // claim/backoff state.
 const SOFT_MS = 10 * 60 * 1000;
+const ACTIVE_REFRESH_POLL_MS = 100;
 
 export { MODEL_CATALOG_REVISION } from '../../repo/models-cache-contract.ts';
 
@@ -83,20 +84,38 @@ const runClaimedFetch = async (
   instance: GatewayProvider,
   fetcher: Fetcher,
   force: boolean,
+  waitForActive: boolean,
   loadProvidedModels?: () => Promise<ProviderModel[]>,
 ): Promise<ProviderModel[] | null> => {
   const repo = getRepo();
-  const now = Date.now();
   const token = crypto.randomUUID();
-  const claimed = await repo.upstreams.claimModelsRefresh(
-    instance.upstreamId,
-    instance.modelsCacheGeneration,
-    token,
-    now,
-    now - MODELS_REFRESH_CLAIM_LEASE_MS,
-    force,
-  );
-  if (claimed === null) return null;
+  const initialFetchedAt = instance.modelsCache?.fetchedAt ?? null;
+  const initialErrorAt = instance.modelsCache?.lastError?.at ?? null;
+  let claimed: Extract<Awaited<ReturnType<typeof repo.upstreams.claimModelsRefresh>>, { kind: 'claimed' }>;
+  while (true) {
+    const now = Date.now();
+    const outcome = await repo.upstreams.claimModelsRefresh(
+      instance.upstreamId,
+      instance.modelsCacheGeneration,
+      token,
+      now,
+      now - MODELS_REFRESH_CLAIM_LEASE_MS,
+      force,
+    );
+    if (outcome.kind === 'claimed') {
+      claimed = outcome;
+      break;
+    }
+    if (outcome.kind !== 'active' || !waitForActive) return null;
+    await new Promise(resolve => setTimeout(resolve, ACTIVE_REFRESH_POLL_MS));
+    const current = await repo.upstreams.getById(instance.upstreamId);
+    if (current === null
+      || current.updatedAt !== instance.modelsCacheGeneration.updatedAt
+      || serializeStoredConfig(current.config) !== serializeStoredConfig(instance.modelsCacheGeneration.config)) return null;
+    instance.modelsCache = current.modelsCache;
+    if ((current.modelsCache?.fetchedAt ?? null) !== initialFetchedAt
+      || (current.modelsCache?.lastError?.at ?? null) !== initialErrorAt) return null;
+  }
 
   try {
     const models = await runFetch(instance, fetcher, instance.upstreamId, token, loadProvidedModels);
@@ -132,7 +151,7 @@ export const fetchUpstreamModels = async (
     if (inFlight.get(key) === existing) inFlight.delete(key);
   }
 
-  const models = await memoInFlight(key, () => runClaimedFetch(instance, fetcher, true, loadProvidedModels));
+  const models = await memoInFlight(key, () => runClaimedFetch(instance, fetcher, true, false, loadProvidedModels));
   if (models === null) throw new Error(`Failed to force-claim models refresh for ${instance.upstreamId}`);
   return models;
 };
@@ -146,10 +165,11 @@ export const warmUpstreamModels = async (
   const existing = inFlight.get(key);
   if (existing) {
     const joined = await existing;
-    return joined ?? instance.modelsCache?.models ?? [];
+    if (joined !== null) return joined;
+    if (inFlight.get(key) === existing) inFlight.delete(key);
   }
 
-  const models = await memoInFlight(key, () => runClaimedFetch(instance, fetcher, false, loadProvidedModels));
+  const models = await memoInFlight(key, () => runClaimedFetch(instance, fetcher, false, true, loadProvidedModels));
   return models ?? instance.modelsCache?.models ?? [];
 };
 
@@ -160,7 +180,7 @@ export const triggerUpstreamModelsFetch = (
   loadProvidedModels?: () => Promise<ProviderModel[]>,
 ): void => {
   const key = inFlightKey(instance);
-  scheduler(memoInFlight(key, () => runClaimedFetch(instance, fetcher, false, loadProvidedModels)).then(() => {}));
+  scheduler(memoInFlight(key, () => runClaimedFetch(instance, fetcher, false, false, loadProvidedModels)).then(() => {}));
 };
 
 export const fetchUpstreamModelsCached = async (

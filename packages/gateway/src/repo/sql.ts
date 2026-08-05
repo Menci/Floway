@@ -19,6 +19,7 @@ import type {
   AgentSetupRepository,
   BackoffRow,
   ModelsCacheGeneration,
+  ModelsRefreshClaimResult,
   ModelAliasesRepo,
   ModelAliasRecord,
   PerformanceBucketRow,
@@ -1000,34 +1001,52 @@ class SqlUpstreamRepo implements UpstreamRepo {
     return (result.meta.changes ?? 0) > 0;
   }
 
-  async claimModelsRefresh(id: string, generation: ModelsCacheGeneration, token: string, now: number, staleClaimedBefore: number, force: boolean): Promise<{ failureCount: number } | null> {
+  async claimModelsRefresh(id: string, generation: ModelsCacheGeneration, token: string, now: number, staleClaimedBefore: number, force: boolean): Promise<ModelsRefreshClaimResult> {
     const rawConfig = await this.modelsCacheWriteConfig(id, generation);
-    if (rawConfig === null) return null;
-    const row = await this.db
-      .prepare(
-        `UPDATE upstreams
-         SET models_refresh_json = json_object(
-           'failCount', coalesce(json_extract(models_refresh_json, '$.failCount'), 0),
-           'retryAt', coalesce(json_extract(models_refresh_json, '$.retryAt'), 0),
-           'claimToken', ?,
-           'claimedAt', ?
-         )
-         WHERE id = ? AND updated_at = ? AND config_json = ? AND (
-           ? = 1
-           OR models_refresh_json IS NULL
-           OR (
-             coalesce(json_extract(models_refresh_json, '$.retryAt'), 0) <= ?
-             AND (
-               json_extract(models_refresh_json, '$.claimToken') IS NULL
-               OR json_extract(models_refresh_json, '$.claimedAt') <= ?
+    if (rawConfig === null) return { kind: 'generation-mismatch' };
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const row = await this.db
+        .prepare(
+          `UPDATE upstreams
+           SET models_refresh_json = json_object(
+             'failCount', coalesce(json_extract(models_refresh_json, '$.failCount'), 0),
+             'retryAt', coalesce(json_extract(models_refresh_json, '$.retryAt'), 0),
+             'claimToken', ?,
+             'claimedAt', ?
+           )
+           WHERE id = ? AND updated_at = ? AND config_json = ? AND (
+             ? = 1
+             OR models_refresh_json IS NULL
+             OR (
+               coalesce(json_extract(models_refresh_json, '$.retryAt'), 0) <= ?
+               AND (
+                 json_extract(models_refresh_json, '$.claimToken') IS NULL
+                 OR json_extract(models_refresh_json, '$.claimedAt') <= ?
+               )
              )
            )
-         )
-         RETURNING json_extract(models_refresh_json, '$.failCount') AS fail_count`,
-      )
-      .bind(token, now, id, generation.updatedAt, rawConfig, sqliteBoolean(force), now, staleClaimedBefore)
-      .first<{ fail_count: number }>();
-    return row === null ? null : { failureCount: row.fail_count };
+           RETURNING json_extract(models_refresh_json, '$.failCount') AS fail_count`,
+        )
+        .bind(token, now, id, generation.updatedAt, rawConfig, sqliteBoolean(force), now, staleClaimedBefore)
+        .first<{ fail_count: number }>();
+      if (row !== null) return { kind: 'claimed', failureCount: row.fail_count };
+
+      const state = await this.db
+        .prepare(
+          `SELECT models_refresh_json,
+             json_extract(models_refresh_json, '$.retryAt') AS retry_at,
+             json_extract(models_refresh_json, '$.claimToken') AS claim_token,
+             json_extract(models_refresh_json, '$.claimedAt') AS claimed_at
+           FROM upstreams WHERE id = ? AND updated_at = ? AND config_json = ?`,
+        )
+        .bind(id, generation.updatedAt, rawConfig)
+        .first<{ models_refresh_json: string | null; retry_at: number | null; claim_token: string | null; claimed_at: number | null }>();
+      if (state === null) return { kind: 'generation-mismatch' };
+      if (state.models_refresh_json === null) continue;
+      if (state.claim_token !== null && state.claimed_at !== null && state.claimed_at > staleClaimedBefore) return { kind: 'active' };
+      if (state.retry_at !== null && state.retry_at > now) return { kind: 'backoff' };
+    }
+    throw new Error(`Failed to classify models refresh claim contention for ${id}`);
   }
 
   async completeModelsRefreshSuccess(id: string, token: string): Promise<void> {
