@@ -67,9 +67,9 @@ const stubUsageGateway = (upstreamOptions: () => Response = () => Response.json(
     if (path === '/api/token-usage/overview') return Response.json({
       series: [{ bucket: '2026-08-05T11', group: 'gpt-5', requests: 1, metrics: [], cost: null }],
       axes: { none: [], model: [], upstream: [], userId: [], keyId: [] },
-      dimensionValues: { models: ['gpt-5'], upstreams: ['upstream:up-1'], userIds: [2], keyIds: [] },
-      users: [{ id: 2, username: 'Alice' }],
-      keys: [],
+      dimensionValues: { models: ['gpt-5'], upstreams: ['upstream:up-1'], userIds: [2], keyIds: ['key-2'] },
+      users: [{ id: 1, username: 'admin' }, { id: 2, username: 'Alice' }],
+      keys: [{ id: 'key-2', name: 'Alice key', createdAt: '2026-08-01T00:00:00.000Z' }],
     });
     if (path === '/api/search-usage') return Response.json({ view: 'all-by-user', records: [], users: [] });
     if (path === '/api/upstream-options') return upstreamOptions();
@@ -149,6 +149,23 @@ describe('usage dimension controls', () => {
     expect(screen.getByRole('button', { name: 'About API key telemetry scope' })).toBeTruthy();
     expect(screen.queryByRole('combobox', { name: 'API Key' })).toBeNull();
     expect(screen.getByRole('combobox', { name: 'User' }).getAttribute('placeholder')).toBe('Only me');
+  });
+
+  it('lets an API key selection replace another user with the current-user scope', async () => {
+    stubUsageGateway();
+    renderPage({
+      ...loaderData,
+      state: {
+        ...loaderData.state,
+        filters: { ...loaderData.state.filters, userId: ['2'] },
+      },
+    });
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'API Key' }));
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Alice key' }));
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'User' }).getAttribute('placeholder')).toBe('Only me'));
+    expect(screen.getByRole('combobox', { name: 'API Key' }).getAttribute('placeholder')).toBe('1 selected');
   });
 
   it('uses the ungrouped axis for stable summary totals', () => {

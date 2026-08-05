@@ -77,6 +77,12 @@ export const changeTelemetryFilter = <Filters extends TelemetryIdentityFilters, 
   context: TelemetryIdentityContext<Group>,
 ): TelemetryIdentityState<Filters, Group> => {
   const filters = { ...state.filters, [dimension]: values };
+  if (dimension === 'keyId' && values.length > 0 && context.userDimensionAvailable) {
+    return scopeTelemetryIdentity(state.groupBy, {
+      ...filters,
+      userId: [context.currentUserId],
+    }, context);
+  }
   if (dimension === 'userId' && !isCurrentUserOnly(values, context.currentUserId)) {
     const groupBy = state.groupBy === 'keyId' ? context.fallbackGroup : state.groupBy;
     return scopeTelemetryIdentity(groupBy, {

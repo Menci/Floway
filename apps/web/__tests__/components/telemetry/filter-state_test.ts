@@ -31,7 +31,7 @@ describe('telemetry filter state', () => {
       groupBy: 'keyId',
       filters: { model: ['gpt-5'], upstream: ['up-1'], userId: ['1'], keyId: [] },
     });
-    expect(changeTelemetryFilter({ groupBy: 'model', filters: { ...filters, userId: [], keyId: [] } }, 'keyId', ['key-2'], context)).toEqual({
+    expect(changeTelemetryFilter({ groupBy: 'model', filters: { ...filters, userId: ['2'], keyId: [] } }, 'keyId', ['key-2'], context)).toEqual({
       groupBy: 'model',
       filters: { model: [], upstream: ['up-1'], userId: ['1'], keyId: ['key-2'] },
     });
