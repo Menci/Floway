@@ -38,7 +38,10 @@ afterEach(() => {
 });
 
 test('/api/upstreams/copilot/oauth/device-login/poll waits for the post-OAuth model warm', async () => {
-  const { adminSession } = await setupAppTest();
+  const { adminSession, githubAccount, repo } = await setupAppTest();
+  const existing = buildCopilotUpstreamRecord(githubAccount, { id: 'up_blocking_warm' });
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save(existing);
   let releaseWarm: (() => void) | null = null;
   modelsCacheMock.pending = new Promise<void>(resolve => { releaseWarm = resolve; });
 
@@ -62,7 +65,7 @@ test('/api/upstreams/copilot/oauth/device-login/poll waits for the post-OAuth mo
       const responsePromise = requestApp('/api/upstreams/copilot/oauth/device-login/poll', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
-        body: JSON.stringify({ record: copilotBlueprintEnvelope, deviceCode: 'device' }),
+        body: JSON.stringify({ record: { ...copilotBlueprintEnvelope, id: existing.id }, deviceCode: 'device' }),
       }).finally(() => { settled = true; });
 
       await vi.waitFor(() => expect(modelsCacheMock.calls).toBe(1));
