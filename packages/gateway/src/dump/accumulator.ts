@@ -148,7 +148,17 @@ const tokenUsageInput = (usage: TokenUsage | null): number | null => {
 };
 
 const oneLineError = (err: unknown): string => {
-  const msg = (err instanceof Error ? err.message : String(err)).replace(/\s+/g, ' ').trim();
+  let raw: string;
+  try {
+    raw = err instanceof Error ? String(err.message) : String(err);
+  } catch {
+    try {
+      raw = Object.prototype.toString.call(err);
+    } catch {
+      raw = 'Unformattable error';
+    }
+  }
+  const msg = raw.replace(/\s+/g, ' ').trim();
   return msg.length > 500 ? `${msg.slice(0, 497)}…` : msg;
 };
 
@@ -339,24 +349,28 @@ export class DumpAccumulator {
       type: 'bytes',
       pull: async (controller) => {
         try {
-          const result = await reader.read();
-          if (terminated) return;
-          if (result.done) {
-            controller.close();
-            terminate(null);
+          for (;;) {
+            const result = await reader.read();
+            if (terminated) return;
+            if (result.done) {
+              controller.close();
+              terminate(null);
+              return;
+            }
+            const chunkBytes = result.value.byteLength;
+            if (chunkBytes === 0) continue;
+            if (!this.sawProtocolFrame && !isStream) {
+              try {
+                bodyCapture.append(result.value);
+              } catch (err) {
+                bodyCapture.clear();
+                this.recordCaptureFailure(`Dump response body capture failed: ${oneLineError(err)}`);
+              }
+            }
+            controller.enqueue(result.value);
+            payloadBytes += chunkBytes;
             return;
           }
-          const chunkBytes = result.value.byteLength;
-          if (!this.sawProtocolFrame && !isStream) {
-            try {
-              bodyCapture.append(result.value);
-            } catch (err) {
-              bodyCapture.clear();
-              this.recordCaptureFailure(`Dump response body capture failed: ${oneLineError(err)}`);
-            }
-          }
-          controller.enqueue(result.value);
-          payloadBytes += chunkBytes;
         } catch (err) {
           if (terminated) return;
           controller.error(err);
@@ -364,10 +378,10 @@ export class DumpAccumulator {
         }
       },
       cancel: (reason) => {
+        const sourceCancellation = reader.cancel(reason);
         const canceled = reason === undefined
           ? 'Downstream response body canceled'
           : `Downstream response body canceled: ${oneLineError(reason)}`;
-        const sourceCancellation = reader.cancel(reason);
         terminate(canceled);
         return sourceCancellation;
       },
@@ -413,10 +427,10 @@ export class DumpAccumulator {
       : {
           kind: 'failed',
           reason: oneLineError([
+            ...captureFailures,
             ...(baseError === null
               ? []
               : [baseError.kind === 'failed' ? baseError.reason : `${baseError.kind} error`]),
-            ...captureFailures,
           ].join('; ')),
         };
 
