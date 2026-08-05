@@ -1,10 +1,8 @@
-import { converter, modeOklch, modeRgb, useMode as registerMode } from 'culori/fn';
+import { converter } from 'culori/fn';
 import { describe, expect, it } from 'vitest';
 
 import { hueBadgeTone, HUE_RAIL_GRADIENT, pickDistinctHue } from '../../src/lib/hue';
 
-registerMode(modeRgb);
-registerMode(modeOklch);
 const toOklch = converter('oklch');
 
 const everyHue = Array.from({ length: 360 }, (_, hue) => hue);
@@ -22,6 +20,24 @@ const expected = (scheme: 'light' | 'dark', hue: number) => {
 };
 
 describe('hueBadgeTone', () => {
+  it.each([
+    [0, '#d30069', '#ff9cc9'],
+    [30, '#da0000', '#ffa28d'],
+    [60, '#c63400', '#ffb45f'],
+    [90, '#9d6200', '#f0c95b'],
+    [120, '#637b00', '#c4da7d'],
+    [150, '#008833', '#99e2a8'],
+    [180, '#008a72', '#78e4d0'],
+    [210, '#0085a3', '#6ce1f5'],
+    [240, '#0076cd', '#80d8ff'],
+    [270, '#435ce4', '#abc9ff'],
+    [300, '#873bdd', '#ddb6ff'],
+    [330, '#b600b0', '#ffa5ff'],
+    [359, '#d3006b', '#ff9ccb'],
+  ])('preserves the frozen badge tones at %s degrees', (hue, light, dark) => {
+    expect(hueBadgeTone(hue)).toEqual({ light, dark });
+  });
+
   it('paints the shade the chromatic ladder states for the hue', () => {
     for (const hue of everyHue) {
       const tone = hueBadgeTone(hue);

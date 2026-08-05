@@ -64,8 +64,6 @@ export const fetchOnStream = async (
   //     duplex (we always emit Connection: close below) and a caller-
   //     supplied `keep-alive` would mislead the upstream into reusing a
   //     transport we plan to tear down.
-  //   - track whether Accept-Encoding is set so we can default it to
-  //     `identity` below without a second pass over the header map.
   //   - validate every name/value the caller passes through so a
   //     ${k}: ${v}\r\n serialization can't smuggle a fresh header line
   //     onto the wire.
@@ -73,7 +71,6 @@ export const fetchOnStream = async (
   // ever taking the writer lock — otherwise a pre-write throw would leave
   // the lock pinned and the caller's writable.abort() would TypeError.
   const headers: Record<string, string> = {};
-  let hasAcceptEncoding = false;
   for (const [k, v] of Object.entries(request.headers)) {
     if (!TCHAR.test(k)) {
       throw new HttpProtocolError(
@@ -89,11 +86,9 @@ export const fetchOnStream = async (
     ));
     const lk = k.toLowerCase();
     if (lk === 'content-length' || lk === 'transfer-encoding' || lk === 'connection') continue;
-    if (lk === 'accept-encoding') hasAcceptEncoding = true;
     headers[k] = v;
   }
   headers.Connection = 'close';
-  if (!hasAcceptEncoding) headers['Accept-Encoding'] = 'identity';
   // Without Content-Length on a body-bearing request, RFC 9112 §6 has the
   // server treat the message as zero-length — a serialized POST emitted
   // with no framing at all silently loses its body on strict upstreams.

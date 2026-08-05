@@ -1,3 +1,5 @@
+import { isImageMediaType, mediaTypeEssence } from '@floway-dev/protocols/common';
+
 const BASE64_CHUNK = 0x8000;
 
 export const base64ToBytes = (base64: string): Uint8Array<ArrayBuffer> => {
@@ -19,9 +21,9 @@ const BASE64_DATA_URL = /^data:([^;,]+)(?:;[^,;]*)*;base64,(.*)$/is;
 
 export const parseBase64ImageDataUrl = (url: string): { mimeType: string; base64: string } | null => {
   const match = BASE64_DATA_URL.exec(url);
-  const mimeType = match?.[1];
+  const mimeType = mediaTypeEssence(match?.[1]);
   const base64 = match?.[2];
-  return mimeType?.toLowerCase().startsWith('image/') && base64 !== undefined ? { mimeType, base64 } : null;
+  return isImageMediaType(mimeType) && mimeType !== null && base64 !== undefined ? { mimeType, base64 } : null;
 };
 
 export const isBase64ImageDataUrl = (url: string): boolean =>

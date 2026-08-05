@@ -1,5 +1,6 @@
 
 import type { ControlPlaneModel } from '../../api/types';
+import { isEventStreamMediaType } from '@floway-dev/protocols/common';
 import { MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/messages';
 
 export type PlaygroundApi = 'responses' | 'chatCompletions' | 'messages';
@@ -80,7 +81,7 @@ const normalizeMessagesSseLine = (line: string): string => {
 };
 
 const normalizeMessagesStream = (response: Response): Response => {
-  if (!response.body || !response.headers.get('content-type')?.includes('text/event-stream')) return response;
+  if (!response.body || !isEventStreamMediaType(response.headers.get('content-type'))) return response;
   let pending = '';
   const stream = response.body
     .pipeThrough(new TextDecoderStream())

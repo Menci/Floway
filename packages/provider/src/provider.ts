@@ -29,6 +29,10 @@ export interface Provider {
   upstreamId: string;
   kind: UpstreamProviderKind;
   name: string;
+  // Client-authored headers this instance can consume. Strings are exact,
+  // ASCII-case-insensitive names; regular expressions run against normalized
+  // lowercase names. The gateway applies this at the candidate boundary.
+  inboundHeaderAllowlist: readonly InboundHeaderMatcher[];
   disabledPublicModelIds: readonly string[];
   // Per-upstream model name prefix policy mirrored from the source upstream
   // record so registry helpers — routing and listing — read it from the
@@ -97,8 +101,8 @@ export type ProviderResponsesResult =
 // already stopped waiting on.
 //
 // `headers` is the ordinary inbound-headers conduit from gateway to provider.
-// The gateway filters the source request through the provider module's
-// `inboundHeaderAllowlist` before constructing this bag. Protocol-owned
+// The gateway filters the source request through the selected provider
+// instance's `inboundHeaderAllowlist` before constructing this bag. Protocol-owned
 // metadata is carried by its owning invocation boundary and does not widen
 // this provider-level policy. A provider may clone and mutate the bag for
 // request-specific wire shaping, but must not retain the gateway-owned
@@ -163,12 +167,6 @@ export interface ProviderModule {
   // fetch) happens on demand inside the per-request methods on the
   // returned ProviderInstance.
   create: (record: UpstreamRecord) => Provider;
-  // Client-authored headers this provider can consume. Strings are exact,
-  // ASCII-case-insensitive names; regular expressions run against the
-  // normalized lowercase name. The gateway applies this allowlist at the
-  // candidate boundary before any ProviderInstance method can observe the
-  // ordinary inbound bag.
-  inboundHeaderAllowlist: readonly InboundHeaderMatcher[];
   // Exhaustive default map over every catalog flag id for a fresh
   // upstream of this kind; see each provider package's `defaults.ts`.
   defaultFlags: FlagDefaults;

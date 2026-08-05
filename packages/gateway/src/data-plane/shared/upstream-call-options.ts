@@ -12,6 +12,6 @@ export const buildUpstreamCallOptions = (
 ): UpstreamCallOptions => ({
   fetcher: candidate.fetcher,
   waitUntil: ctx.backgroundScheduler,
-  headers: filterInboundHeadersForProvider(headers, candidate.provider.kind),
+  headers: filterInboundHeadersForProvider(headers, candidate.provider),
   wrapUpstreamCall: stampUpstreamCallStart(ctx.attempt),
 });

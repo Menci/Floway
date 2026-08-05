@@ -21,7 +21,7 @@ import { getRepo } from '../repo/index.ts';
 import type { ApiKey, TokenUsage } from '../repo/types.ts';
 import { ulid } from '../shared/ulid.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import { isEventStreamMediaType, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
 // Frozen at ctx construction so `finalize` never has to re-read a stream
@@ -198,7 +198,7 @@ export class DumpAccumulator {
       return response;
     }
 
-    const isStream = (response.headers.get('content-type') ?? '').startsWith('text/event-stream');
+    const isStream = isEventStreamMediaType(response.headers.get('content-type'));
     const [forClient, forCapture] = response.body.tee();
     this.backgroundScheduler((async () => {
       const reader = forCapture.getReader();

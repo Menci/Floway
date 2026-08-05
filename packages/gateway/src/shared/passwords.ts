@@ -1,4 +1,4 @@
-import { timingSafeEqual } from './timing-safe-equal.ts';
+import { timingSafeEqual } from '@floway-dev/platform';
 
 // Cloudflare Workers' Web Crypto refuses PBKDF2 with iterations above 100k as a
 // CPU-time DoS guard ("Pbkdf2 failed: iteration counts above 100000 are not

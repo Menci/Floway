@@ -5,8 +5,7 @@ import type {
   StoredDumpRecord,
   StoredDumpResponseBody,
 } from './types.ts';
-
-const TEXT_CONTENT_TYPE_PREFIXES = ['text/', 'application/json', 'application/javascript', 'application/xml', 'application/x-www-form-urlencoded'];
+import { isTextualMediaType } from '@floway-dev/protocols/common';
 
 const bytesToBase64 = (bytes: Uint8Array): string => {
   let binary = '';
@@ -21,8 +20,7 @@ const contentTypeOf = (headers: ReadonlyArray<readonly [string, string]>): strin
 // back to base64 when the bytes do not decode cleanly (a content-type
 // that lied about being text).
 const encodeBodyForWire = (bytes: Uint8Array, contentType: string): DumpBody => {
-  const base = contentType.toLowerCase().split(';')[0]!.trim();
-  if (TEXT_CONTENT_TYPE_PREFIXES.some(prefix => base.startsWith(prefix))) {
+  if (isTextualMediaType(contentType)) {
     try {
       return { encoding: 'utf8', data: new TextDecoder('utf-8', { fatal: true }).decode(bytes) };
     } catch {}

@@ -41,6 +41,28 @@ test('dumpRecordToWire encodes a textual request body as utf8', () => {
   assertEquals(wire.request.body.data, '{"k":"v"}');
 });
 
+test('dumpRecordToWire recognizes structured textual suffixes without accepting near matches', () => {
+  const structured = dumpRecordToWire(baseStored({
+    request: {
+      method: 'POST',
+      path: '/v1/x',
+      headers: [['content-type', 'Application/Problem+JSON; charset=utf-8']],
+      body: new TextEncoder().encode('{"error":"bad"}'),
+    },
+  }));
+  assertEquals(structured.request.body.encoding, 'utf8');
+
+  const nearMatch = dumpRecordToWire(baseStored({
+    request: {
+      method: 'POST',
+      path: '/v1/x',
+      headers: [['content-type', 'application/jsonish']],
+      body: new TextEncoder().encode('{"not":"json"}'),
+    },
+  }));
+  assertEquals(nearMatch.request.body.encoding, 'base64');
+});
+
 // A binary content-type round-trips through base64 so JSON serialization
 // preserves every byte; the dashboard decodes base64 client-side.
 test('dumpRecordToWire encodes a binary response body as base64', () => {
