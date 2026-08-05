@@ -2,6 +2,7 @@ import { geminiStatusForHttpStatus } from './errors.ts';
 import { geminiCountTokensInterceptors, geminiInterceptors } from './interceptors/index.ts';
 import { stripUnsupportedPartFieldsFromPayload } from './interceptors/strip-unsupported-part-fields.ts';
 import { stripUnsupportedToolsFromPayload } from './interceptors/strip-unsupported-tools.ts';
+import { mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
@@ -11,7 +12,7 @@ import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiPayload, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
-import { type ModelCandidate, plainResult, type ExecuteResult, type GeminiInvocation, type PlainResult } from '@floway-dev/provider';
+import { type ModelCandidate, plainResult, type ExecuteResult, type GeminiInvocation, type PlainResult, toInternalDebugError } from '@floway-dev/provider';
 import { translateGeminiViaChatCompletions, translateGeminiViaMessages, translateGeminiViaResponses } from '@floway-dev/translate';
 
 // Gemini has no native upstream target in the provider API; prefer Chat
@@ -117,54 +118,85 @@ export const geminiAttempt = {
 // Reshape the Messages count_tokens body into the Gemini `{ totalTokens }`
 // envelope. The upstream body shape is provider-specific: Anthropic emits
 // `{ input_tokens }`, Copilot's translated count emits `{ total_tokens }`;
-// either is accepted. A missing or non-numeric figure is surfaced as a
-// 502 Google-RPC error so the caller sees a typed Gemini failure rather
-// than a passthrough of the upstream shape.
+// either is accepted, and both may appear only when they agree. Counts must
+// be non-negative safe integers; every other shape becomes a typed 502
+// Google-RPC error.
 const reshapeMessagesCountAsGemini = (messagesResult: PlainResult): PlainResult => {
   if (messagesResult.status !== 200) {
     // Empty upstream bodies fall back to a fixed message so the Google-RPC envelope is never empty.
     const text = new TextDecoder().decode(messagesResult.body);
-    return geminiErrorPlainResult(messagesResult.status, text || 'Upstream token counting request failed.', messagesResult.upstreamId);
+    const status = validUpstreamErrorStatus(messagesResult.status);
+    return geminiErrorPlainResult(status, text || 'Upstream token counting request failed.', messagesResult.headers, messagesResult.upstreamId);
   }
-  let decoded: unknown;
-  try { decoded = JSON.parse(new TextDecoder().decode(messagesResult.body)); } catch {}
-  const upstreamTokenCounts = decoded && typeof decoded === 'object'
-    ? decoded as { input_tokens?: unknown; total_tokens?: unknown }
-    : {};
-  const totalTokens = typeof upstreamTokenCounts.input_tokens === 'number'
-    ? upstreamTokenCounts.input_tokens
-    : typeof upstreamTokenCounts.total_tokens === 'number'
-      ? upstreamTokenCounts.total_tokens
-      : null;
-  if (totalTokens === null) {
-    return geminiInternalPlainResult(502, new Error('Invalid upstream token counting response.'));
+  let totalTokens: number;
+  try {
+    totalTokens = parseMessagesTokenCount(messagesResult.body);
+  } catch (error) {
+    return geminiInternalPlainResult(502, error, messagesResult.headers, messagesResult.upstreamId);
   }
   return plainResult(
     200,
-    new Headers({ 'content-type': 'application/json' }),
+    geminiJsonHeaders(messagesResult.headers),
     new TextEncoder().encode(JSON.stringify({ totalTokens })),
     messagesResult.upstreamId,
   );
 };
 
-const geminiErrorPlainResult = (status: number, message: string, upstream?: string): PlainResult => plainResult(
+const validUpstreamErrorStatus = (status: number): number =>
+  Number.isInteger(status) && status >= 400 && status <= 599 ? status : 502;
+
+const geminiJsonHeaders = (upstream: Headers | undefined): Headers =>
+  mergeForwardedUpstreamHeaders({ 'content-type': 'application/json' }, upstream);
+
+const isTokenCount = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+
+const parseMessagesTokenCount = (body: Uint8Array): number => {
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(new TextDecoder().decode(body)) as unknown;
+  } catch (cause) {
+    throw new Error('Invalid upstream token counting response.', { cause });
+  }
+  if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) {
+    throw new Error('Invalid upstream token counting response.');
+  }
+
+  const { input_tokens: inputTokens, total_tokens: totalTokens } = decoded as { input_tokens?: unknown; total_tokens?: unknown };
+  if (inputTokens === undefined && totalTokens === undefined) throw new Error('Invalid upstream token counting response.');
+  if (inputTokens !== undefined && !isTokenCount(inputTokens)) throw new Error('Invalid upstream token counting response.');
+  if (totalTokens !== undefined && !isTokenCount(totalTokens)) throw new Error('Invalid upstream token counting response.');
+  if (inputTokens !== undefined && totalTokens !== undefined && inputTokens !== totalTokens) {
+    throw new Error('Invalid upstream token counting response.');
+  }
+  if (inputTokens !== undefined) return inputTokens;
+  if (totalTokens !== undefined) return totalTokens;
+  throw new Error('Invalid upstream token counting response.');
+};
+
+const geminiErrorPlainResult = (status: number, message: string, headers: Headers | undefined, upstream?: string): PlainResult => plainResult(
   status,
-  new Headers({ 'content-type': 'application/json' }),
+  geminiJsonHeaders(headers),
   new TextEncoder().encode(JSON.stringify({ error: { code: status, message, status: geminiStatusForHttpStatus(status) } })),
   upstream,
 );
 
-const geminiInternalPlainResult = (status: number, error: Error): PlainResult => plainResult(
-  status,
-  new Headers({ 'content-type': 'application/json' }),
-  new TextEncoder().encode(JSON.stringify({
-    error: {
-      code: status,
-      message: error.message,
-      status: geminiStatusForHttpStatus(status),
-      type: 'internal_error',
-      name: error.name,
-      stack: error.stack,
-    },
-  })),
-);
+const geminiInternalPlainResult = (status: number, error: unknown, headers: Headers | undefined, upstream?: string): PlainResult => {
+  const debug = toInternalDebugError(error);
+  return plainResult(
+    status,
+    geminiJsonHeaders(headers),
+    new TextEncoder().encode(JSON.stringify({
+      error: {
+        code: status,
+        message: debug.message,
+        status: geminiStatusForHttpStatus(status),
+        type: debug.type,
+        name: debug.name,
+        stack: debug.stack,
+        cause: debug.cause,
+      },
+    })),
+    upstream,
+  );
+};

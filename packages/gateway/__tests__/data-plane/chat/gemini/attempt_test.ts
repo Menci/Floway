@@ -198,7 +198,7 @@ test('countTokens translates Gemini to Messages count_tokens and reshapes to tot
   assertEquals('stream' in upstreamBody, false);
 });
 
-test('countTokens accepts the upstream total_tokens dialect and refuses unknown shapes with a 502', async () => {
+test('countTokens accepts the upstream total_tokens dialect', async () => {
   installRepo();
   const totalTokensResp = await geminiAttempt.countTokens({
     payload: makePayload(),
@@ -214,13 +214,30 @@ test('countTokens accepts the upstream total_tokens dialect and refuses unknown 
   assertEquals(totalTokensResp.type, 'plain');
   if (totalTokensResp.type !== 'plain') throw new Error('unreachable');
   assertEquals(JSON.parse(new TextDecoder().decode(totalTokensResp.body)), { totalTokens: 19 });
+});
 
+test.each([
+  ['negative input_tokens', JSON.stringify({ input_tokens: -1 })],
+  ['fractional input_tokens', JSON.stringify({ input_tokens: 1.5 })],
+  ['non-finite input_tokens', '{"input_tokens":1e999}'],
+  ['unsafe input_tokens', JSON.stringify({ input_tokens: Number.MAX_SAFE_INTEGER + 1 })],
+  ['conflicting dialect fields', JSON.stringify({ input_tokens: 19, total_tokens: 20 })],
+  ['an unknown response shape', JSON.stringify({ unexpected: true })],
+])('countTokens rejects %s with a 502 while preserving safe headers', async (_case, upstreamBody) => {
+  installRepo();
   const unexpectedResp = await geminiAttempt.countTokens({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     candidate: makeCandidate({
       callMessagesCountTokens: async () => ({
-        response: new Response(JSON.stringify({ unexpected: true }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) }),
+        response: new Response(upstreamBody, {
+          status: 200,
+          headers: new Headers({
+            'content-type': 'application/json',
+            'set-cookie': 'upstream-session=secret',
+            'x-request-id': 'invalid-count-request',
+          }),
+        }),
         modelKey: 'k',
       }),
     }),
@@ -229,9 +246,50 @@ test('countTokens accepts the upstream total_tokens dialect and refuses unknown 
   assertEquals(unexpectedResp.type, 'plain');
   if (unexpectedResp.type !== 'plain') throw new Error('unreachable');
   assertEquals(unexpectedResp.status, 502);
+  assertEquals(unexpectedResp.headers.get('content-type'), 'application/json');
+  assertEquals(unexpectedResp.headers.get('x-request-id'), 'invalid-count-request');
+  assertEquals(unexpectedResp.headers.get('set-cookie'), null);
   const body = JSON.parse(new TextDecoder().decode(unexpectedResp.body));
   assertEquals(body.error.code, 502);
   assertEquals(body.error.status, 'UNAVAILABLE');
+});
+
+test('countTokens preserves valid upstream error status and safe headers', async () => {
+  installRepo();
+  const result = await geminiAttempt.countTokens({
+    payload: makePayload(),
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({
+      callMessagesCountTokens: async () => ({
+        response: new Response('quota exhausted', {
+          status: 429,
+          headers: new Headers({
+            'content-length': '999',
+            'content-type': 'text/plain',
+            'retry-after': '7',
+            'set-cookie': 'upstream-session=secret',
+            'x-request-id': 'count-error-request',
+          }),
+        }),
+        modelKey: 'k',
+      }),
+    }),
+    headers: new Headers(),
+  });
+
+  assertEquals(result.status, 429);
+  assertEquals(result.headers.get('content-type'), 'application/json');
+  assertEquals(result.headers.get('retry-after'), '7');
+  assertEquals(result.headers.get('x-request-id'), 'count-error-request');
+  assertEquals(result.headers.get('content-length'), null);
+  assertEquals(result.headers.get('set-cookie'), null);
+  assertEquals(JSON.parse(new TextDecoder().decode(result.body)), {
+    error: {
+      code: 429,
+      message: 'quota exhausted',
+      status: 'RESOURCE_EXHAUSTED',
+    },
+  });
 });
 
 test('countTokens refuses a non-messages candidate', async () => {

@@ -1,4 +1,5 @@
 import type { StreamCompletion } from '../../shared/sse.ts';
+import { mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { plainResult } from '@floway-dev/provider';
 import type { EventResultMetadata, ExecuteResult, PlainResult } from '@floway-dev/provider';
@@ -14,7 +15,10 @@ export const plainResultToResponse = (result: PlainResult): Response =>
 export const plainResultFromResponse = async (response: Response, upstream?: string): Promise<PlainResult> =>
   plainResult(
     response.status,
-    new Headers({ 'content-type': response.headers.get('content-type') ?? 'application/json' }),
+    mergeForwardedUpstreamHeaders(
+      { 'content-type': response.headers.get('content-type') ?? 'application/json' },
+      response.headers,
+    ),
     new Uint8Array(await response.arrayBuffer()),
     upstream,
   );
