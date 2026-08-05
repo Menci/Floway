@@ -206,7 +206,7 @@ const tryOne = async (
     // here that means a bookkeeping rejection cannot discard a healthy
     // upstream Response we already hold.
     try {
-      await input.repo.proxyBackoffs.recordDialSuccess(id, input.upstreamId);
+      await input.repo.proxyBackoffs.recordDialSuccess(id, input.upstreamId, config.url);
     } catch (recordErr) {
       console.warn(`failed to clear proxy backoff for ${id}/${input.upstreamId}:`, recordErr);
     }
@@ -244,7 +244,7 @@ const tryOne = async (
       // failure must not shadow the real dial error — log and swallow so
       // `errors[]` carries the original cause up to the caller.
       try {
-        await input.repo.proxyBackoffs.recordDialFailure(id, input.upstreamId, `[${err.stage}] ${err.message}`);
+        await input.repo.proxyBackoffs.recordDialFailure(id, input.upstreamId, config.url, `[${err.stage}] ${err.message}`);
       } catch (recordErr) {
         console.warn(`failed to persist proxy backoff for ${id}/${input.upstreamId}:`, recordErr);
       }

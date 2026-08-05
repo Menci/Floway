@@ -29,6 +29,7 @@ export const wrapSqlJsDatabase = (db: SqlJsDatabase): SqlDatabase => new SqlJsSq
 // is missing a function the deployment targets have.
 export const createSqlJsDatabase = async (data?: Uint8Array): Promise<SqlJsDatabase> => {
   const db = new (await sqlJs).Database(data);
+  db.run('PRAGMA foreign_keys = ON');
   registerTargetMathFunctions(db);
   return db;
 };

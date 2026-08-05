@@ -1275,7 +1275,7 @@ class SqlProxyRepo implements ProxyRepo {
     };
   }
 
-  async patch(id: string, patch: { name?: string; url?: string; dialTimeoutSeconds?: number | null }): Promise<{ record: ProxyRecord; urlChanged: boolean } | null> {
+  async patch(id: string, patch: { name?: string; url?: string; dialTimeoutSeconds?: number | null }): Promise<ProxyRecord | null> {
     const existing = await this.getById(id);
     if (!existing) return null;
 
@@ -1284,7 +1284,6 @@ class SqlProxyRepo implements ProxyRepo {
     // dialTimeoutSeconds is nullable, so distinguish "not in patch" from
     // "set to null" by hasOwn — `??` would collapse a deliberate clear.
     const nextDialTimeout = Object.hasOwn(patch, 'dialTimeoutSeconds') ? patch.dialTimeoutSeconds! : existing.dialTimeoutSeconds;
-    const urlChanged = patch.url !== undefined && patch.url !== existing.url;
     const updatedAt = new Date().toISOString();
 
     await this.db
@@ -1293,14 +1292,11 @@ class SqlProxyRepo implements ProxyRepo {
       .run();
 
     return {
-      record: {
-        ...existing,
-        name: nextName,
-        url: nextUrl,
-        dialTimeoutSeconds: nextDialTimeout,
-        updatedAt,
-      },
-      urlChanged,
+      ...existing,
+      name: nextName,
+      url: nextUrl,
+      dialTimeoutSeconds: nextDialTimeout,
+      updatedAt,
     };
   }
 
@@ -1377,7 +1373,7 @@ const toProxyRecord = (row: ProxyRow): ProxyRecord => ({
 class SqlProxyBackoffRepo implements ProxyBackoffRepo {
   constructor(private db: SqlDatabase) {}
 
-  async recordDialFailure(proxyId: string, upstreamId: string, errorMessage: string): Promise<void> {
+  async recordDialFailure(proxyId: string, upstreamId: string, proxyUrl: string, errorMessage: string): Promise<boolean> {
     const now = Math.floor(Date.now() / 1000);
     // SQLite reads RHS column references at the start of the UPDATE, before
     // the increment is applied. So `1 << fail_count` resolves against the
@@ -1388,31 +1384,48 @@ class SqlProxyBackoffRepo implements ProxyBackoffRepo {
     // of consecutive calls (the JS mirror in memory.ts wraps at 2^31; SQL
     // is wider but still finite — capping the exponent keeps both impls
     // bounded by construction).
-    await this.db
+    const result = await this.db
       .prepare(
         `INSERT INTO proxy_upstream_backoffs
-           (proxy_id, upstream_id, fail_count, expires_at, last_error, last_error_at)
-         VALUES (?, ?, 1, ? + 60, ?, ?)
+           (proxy_id, upstream_id, proxy_url, fail_count, expires_at, last_error, last_error_at)
+         SELECT id, ?, url, 1, ? + 60, ?, ?
+         FROM proxies
+         WHERE id = ? AND url = ?
          ON CONFLICT (proxy_id, upstream_id) DO UPDATE SET
-           fail_count = fail_count + 1,
-           expires_at = ? + min(60 * (1 << min(fail_count, 6)), 3600),
+           proxy_url = excluded.proxy_url,
+           fail_count = CASE WHEN proxy_url = excluded.proxy_url THEN fail_count + 1 ELSE 1 END,
+           expires_at = CASE
+             WHEN proxy_url = excluded.proxy_url THEN ? + min(60 * (1 << min(fail_count, 6)), 3600)
+             ELSE excluded.expires_at
+           END,
            last_error = excluded.last_error,
            last_error_at = excluded.last_error_at`,
       )
-      .bind(proxyId, upstreamId, now, errorMessage, now, now)
+      .bind(upstreamId, now, errorMessage, now, proxyId, proxyUrl, now)
       .run();
+    return (result.meta.changes ?? 0) > 0;
   }
 
-  async recordDialSuccess(proxyId: string, upstreamId: string): Promise<void> {
-    await this.db
-      .prepare('DELETE FROM proxy_upstream_backoffs WHERE proxy_id = ? AND upstream_id = ?')
-      .bind(proxyId, upstreamId)
+  async recordDialSuccess(proxyId: string, upstreamId: string, proxyUrl: string): Promise<boolean> {
+    const result = await this.db
+      .prepare(
+        `DELETE FROM proxy_upstream_backoffs
+         WHERE proxy_id = ? AND upstream_id = ? AND proxy_url = ?
+           AND EXISTS (SELECT 1 FROM proxies WHERE id = ? AND url = ?)`,
+      )
+      .bind(proxyId, upstreamId, proxyUrl, proxyId, proxyUrl)
       .run();
+    return (result.meta.changes ?? 0) > 0;
   }
 
   async listForUpstream(upstreamId: string): Promise<BackoffRow[]> {
     const { results } = await this.db
-      .prepare('SELECT proxy_id, upstream_id, fail_count, expires_at, last_error, last_error_at FROM proxy_upstream_backoffs WHERE upstream_id = ?')
+      .prepare(
+        `SELECT b.proxy_id, b.upstream_id, b.fail_count, b.expires_at, b.last_error, b.last_error_at
+         FROM proxy_upstream_backoffs b
+         JOIN proxies p ON p.id = b.proxy_id AND p.url = b.proxy_url
+         WHERE b.upstream_id = ?`,
+      )
       .bind(upstreamId)
       .all<BackoffRowDb>();
     return results.map(toBackoffRow);
@@ -1420,7 +1433,12 @@ class SqlProxyBackoffRepo implements ProxyBackoffRepo {
 
   async listForProxy(proxyId: string): Promise<BackoffRow[]> {
     const { results } = await this.db
-      .prepare('SELECT proxy_id, upstream_id, fail_count, expires_at, last_error, last_error_at FROM proxy_upstream_backoffs WHERE proxy_id = ?')
+      .prepare(
+        `SELECT b.proxy_id, b.upstream_id, b.fail_count, b.expires_at, b.last_error, b.last_error_at
+         FROM proxy_upstream_backoffs b
+         JOIN proxies p ON p.id = b.proxy_id AND p.url = b.proxy_url
+         WHERE b.proxy_id = ?`,
+      )
       .bind(proxyId)
       .all<BackoffRowDb>();
     return results.map(toBackoffRow);
@@ -1428,7 +1446,11 @@ class SqlProxyBackoffRepo implements ProxyBackoffRepo {
 
   async listAll(): Promise<BackoffRow[]> {
     const { results } = await this.db
-      .prepare('SELECT proxy_id, upstream_id, fail_count, expires_at, last_error, last_error_at FROM proxy_upstream_backoffs')
+      .prepare(
+        `SELECT b.proxy_id, b.upstream_id, b.fail_count, b.expires_at, b.last_error, b.last_error_at
+         FROM proxy_upstream_backoffs b
+         JOIN proxies p ON p.id = b.proxy_id AND p.url = b.proxy_url`,
+      )
       .all<BackoffRowDb>();
     return results.map(toBackoffRow);
   }

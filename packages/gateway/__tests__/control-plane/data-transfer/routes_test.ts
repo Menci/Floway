@@ -1427,7 +1427,7 @@ test('import replace wipes proxy_upstream_backoffs alongside the proxies it cool
   const { app, repo } = setup();
   await repo.proxies.save({ id: 'p_old', name: 'Old', url: HTTP_PROXY_URL, dialTimeoutSeconds: null });
   await repo.upstreams.save(CUSTOM_UPSTREAM);
-  await repo.proxyBackoffs.recordDialFailure('p_old', CUSTOM_UPSTREAM.id, 'transport reset');
+  await repo.proxyBackoffs.recordDialFailure('p_old', CUSTOM_UPSTREAM.id, HTTP_PROXY_URL, 'transport reset');
   assertEquals((await repo.proxyBackoffs.listAll()).length, 1);
 
   const result = await doImport(app, 'replace', latestImportData({

@@ -19,12 +19,17 @@ describe('createFetcher', () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  const proxyA: ProxyEntry = { config: { kind: 'socks5', host: 'a', port: 1, name: 'a' }, dialTimeoutMs: null };
-  const proxyB: ProxyEntry = { config: { kind: 'socks5', host: 'b', port: 1, name: 'b' }, dialTimeoutMs: null };
+  const proxyA: ProxyEntry = { url: 'socks5://a:1', config: { kind: 'socks5', host: 'a', port: 1, name: 'a' }, dialTimeoutMs: null };
+  const proxyB: ProxyEntry = { url: 'socks5://b:1', config: { kind: 'socks5', host: 'b', port: 1, name: 'b' }, dialTimeoutMs: null };
+
+  const insertProxy = async (repo: InMemoryRepo, id: string, entry: ProxyEntry): Promise<void> => {
+    await repo.proxies.insert({ id, name: id, url: entry.url, dialTimeoutSeconds: null });
+  };
 
   it('first-pass tries each non-backoff entry in order and short-circuits on success', async () => {
     const repo = new InMemoryRepo();
-    await repo.proxyBackoffs.recordDialFailure('a', 'u', 'x');
+    await insertProxy(repo, 'a', proxyA);
+    await repo.proxyBackoffs.recordDialFailure('a', 'u', proxyA.url, 'x');
     const calls: string[] = [];
     const fetcher = createFetcher({
       repo,
@@ -50,6 +55,7 @@ describe('createFetcher', () => {
 
   it('records exactly one dial failure per call when the same entry is the only fallback', async () => {
     const repo = new InMemoryRepo();
+    await insertProxy(repo, 'a', proxyA);
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
@@ -71,8 +77,9 @@ describe('createFetcher', () => {
 
   it('clears backoff on dial success', async () => {
     const repo = new InMemoryRepo();
-    await repo.proxyBackoffs.recordDialFailure('a', 'u', 'x');
-    await repo.proxyBackoffs.recordDialFailure('a', 'u', 'x');
+    await insertProxy(repo, 'a', proxyA);
+    await repo.proxyBackoffs.recordDialFailure('a', 'u', proxyA.url, 'x');
+    await repo.proxyBackoffs.recordDialFailure('a', 'u', proxyA.url, 'x');
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
@@ -91,8 +98,10 @@ describe('createFetcher', () => {
 
   it('falls through to second pass when first pass exhausts', async () => {
     const repo = new InMemoryRepo();
-    await repo.proxyBackoffs.recordDialFailure('a', 'u', 'x');
-    await repo.proxyBackoffs.recordDialFailure('b', 'u', 'x');
+    await insertProxy(repo, 'a', proxyA);
+    await insertProxy(repo, 'b', proxyB);
+    await repo.proxyBackoffs.recordDialFailure('a', 'u', proxyA.url, 'x');
+    await repo.proxyBackoffs.recordDialFailure('b', 'u', proxyB.url, 'x');
     const order: string[] = [];
     const fetcher = createFetcher({
       repo,
@@ -115,9 +124,10 @@ describe('createFetcher', () => {
 
   it('only adds one failure when an already-backed-off entry fails again on pass 2', async () => {
     const repo = new InMemoryRepo();
+    await insertProxy(repo, 'a', proxyA);
     // Pre-record two failures so 'a' is in active backoff with failCount=2.
-    await repo.proxyBackoffs.recordDialFailure('a', 'u', 'old');
-    await repo.proxyBackoffs.recordDialFailure('a', 'u', 'old');
+    await repo.proxyBackoffs.recordDialFailure('a', 'u', proxyA.url, 'old');
+    await repo.proxyBackoffs.recordDialFailure('a', 'u', proxyA.url, 'old');
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
@@ -135,6 +145,72 @@ describe('createFetcher', () => {
     await expect(fetcher('https://api.openai.com', { method: 'GET' })).rejects.toBeInstanceOf(ProxyDialError);
     const [row] = await repo.proxyBackoffs.listForUpstream('u');
     expect(row!.failCount).toBe(3);
+  });
+
+  it('does not let an old URL generation overwrite replacement backoff state', async () => {
+    const replacement: ProxyEntry = {
+      url: 'socks5://replacement:1',
+      config: { kind: 'socks5', host: 'replacement', port: 1, name: 'replacement' },
+      dialTimeoutMs: null,
+    };
+
+    const failureRepo = new InMemoryRepo();
+    await insertProxy(failureRepo, 'a', proxyA);
+    let rejectOldFailure!: (reason: unknown) => void;
+    let markFailureStarted!: () => void;
+    const failureStarted = new Promise<void>(resolve => { markFailureStarted = resolve; });
+    const oldFailureFetcher = createFetcher({
+      repo: failureRepo,
+      upstreamId: 'u',
+      fallbackList: [{ id: 'a' }],
+      runtimeLocation: 'TEST',
+      proxyById: new Map([['a', proxyA]]),
+      runProxied: async () => {
+        markFailureStarted();
+        return await new Promise<Response>((_resolve, reject) => { rejectOldFailure = reject; });
+      },
+      runDirectFetch: async () => new Response('direct'),
+      runDirectConnect: async () => new Response('direct connect'),
+      socketDial: () => stubSocketDial,
+    });
+    const oldFailureRequest = oldFailureFetcher('https://api.openai.com', { method: 'GET' });
+    await failureStarted;
+    await failureRepo.proxies.patch('a', { url: replacement.url });
+    await failureRepo.proxyBackoffs.recordDialFailure('a', 'u', replacement.url, 'replacement failure');
+    rejectOldFailure(new ProxyDialError('late old failure', 'tcp-connect'));
+    await expect(oldFailureRequest).rejects.toBeInstanceOf(ProxyDialError);
+    expect(await failureRepo.proxyBackoffs.listForUpstream('u')).toMatchObject([
+      { failCount: 1, lastError: 'replacement failure' },
+    ]);
+
+    const successRepo = new InMemoryRepo();
+    await insertProxy(successRepo, 'a', proxyA);
+    let resolveOldSuccess!: (response: Response) => void;
+    let markSuccessStarted!: () => void;
+    const successStarted = new Promise<void>(resolve => { markSuccessStarted = resolve; });
+    const oldSuccessFetcher = createFetcher({
+      repo: successRepo,
+      upstreamId: 'u',
+      fallbackList: [{ id: 'a' }],
+      runtimeLocation: 'TEST',
+      proxyById: new Map([['a', proxyA]]),
+      runProxied: async () => {
+        markSuccessStarted();
+        return await new Promise<Response>(resolve => { resolveOldSuccess = resolve; });
+      },
+      runDirectFetch: async () => new Response('direct'),
+      runDirectConnect: async () => new Response('direct connect'),
+      socketDial: () => stubSocketDial,
+    });
+    const oldSuccessRequest = oldSuccessFetcher('https://api.openai.com', { method: 'GET' });
+    await successStarted;
+    await successRepo.proxies.patch('a', { url: replacement.url });
+    await successRepo.proxyBackoffs.recordDialFailure('a', 'u', replacement.url, 'replacement failure');
+    resolveOldSuccess(new Response('old success'));
+    expect(await (await oldSuccessRequest).text()).toBe('old success');
+    expect(await successRepo.proxyBackoffs.listForUpstream('u')).toMatchObject([
+      { failCount: 1, lastError: 'replacement failure' },
+    ]);
   });
 
   it('falls through when a fallback-list entry references an unknown proxy id', async () => {
@@ -349,7 +425,8 @@ describe('createFetcher', () => {
     // We expect the call to fail with no dials made (both entries unavailable
     // for opposite reasons), and crucially 'a' must NOT be re-attempted in
     // pass 2 — pass 2 is only for backoff-skipped entries.
-    await repo.proxyBackoffs.recordDialFailure('b', 'u', 'x');
+    await insertProxy(repo, 'b', proxyB);
+    await repo.proxyBackoffs.recordDialFailure('b', 'u', proxyB.url, 'x');
     const calls: string[] = [];
     const fetcher = createFetcher({
       repo,
@@ -578,6 +655,7 @@ describe('createFetcher', () => {
 
   it('persists the failed dial stage in the backoff lastError tag', async () => {
     const repo = new InMemoryRepo();
+    await insertProxy(repo, 'a', proxyA);
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
@@ -601,7 +679,8 @@ describe('createFetcher', () => {
     // failures cannot shadow request outcomes (mirrors the failure
     // path's existing log-and-swallow policy).
     const repo = new InMemoryRepo();
-    await repo.proxyBackoffs.recordDialFailure('a', 'u', 'old');
+    await insertProxy(repo, 'a', proxyA);
+    await repo.proxyBackoffs.recordDialFailure('a', 'u', proxyA.url, 'old');
     const original = repo.proxyBackoffs.recordDialSuccess.bind(repo.proxyBackoffs);
     repo.proxyBackoffs.recordDialSuccess = async () => { throw new Error('transient store outage'); };
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -657,8 +736,8 @@ describe('createFetcher', () => {
       fallbackList: [{ id: 'broken' }, { id: 'good' }],
       runtimeLocation: 'TEST',
       proxyById: new Map([
-        ['broken', { config: { kind: 'socks5', host: 'broken', port: 1, name: 'broken' }, dialTimeoutMs: null }],
-        ['good', { config: { kind: 'socks5', host: 'good', port: 1, name: 'good' }, dialTimeoutMs: null }],
+        ['broken', { url: 'socks5://broken:1', config: { kind: 'socks5', host: 'broken', port: 1, name: 'broken' }, dialTimeoutMs: null }],
+        ['good', { url: 'socks5://good:1', config: { kind: 'socks5', host: 'good', port: 1, name: 'good' }, dialTimeoutMs: null }],
       ]),
       runProxied: async (config: ProxyConfig) => {
         if (config.host === 'broken') {

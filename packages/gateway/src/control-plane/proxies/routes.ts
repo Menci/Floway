@@ -65,14 +65,7 @@ export const updateProxy = async (c: CtxWithJson<typeof updateProxyBody>) => {
     ...(Object.hasOwn(body, 'dial_timeout_seconds') ? { dialTimeoutSeconds: body.dial_timeout_seconds } : {}),
   });
   if (!result) return c.json({ error: 'Proxy not found' }, 404);
-
-  if (result.urlChanged) {
-    // The new URL might point at a healthy server; the old URL's backoff
-    // state must not stop the dial layer from retrying immediately.
-    await repo.proxyBackoffs.resetForProxy(id);
-  }
-
-  return c.json(proxyRecordToJson(result.record));
+  return c.json(proxyRecordToJson(result));
 };
 
 export const deleteProxy = async (c: Context) => {
@@ -102,8 +95,6 @@ export const deleteProxy = async (c: Context) => {
     return c.json({ error: 'Proxy not found' }, 404);
   }
 
-  // Sweep orphaned backoff rows; proxy_upstream_backoffs has no FK to proxies, so the cleanup is unconditional.
-  await repo.proxyBackoffs.resetForProxy(id);
   return c.body(null, 204);
 };
 

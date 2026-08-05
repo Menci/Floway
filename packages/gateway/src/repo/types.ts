@@ -312,14 +312,12 @@ export interface ProxyRepo {
   list(): Promise<ProxyRecord[]>;
   getById(id: string): Promise<ProxyRecord | null>;
   insert(input: { id: string; name: string; url: string; dialTimeoutSeconds: number | null }): Promise<ProxyRecord>;
-  // Returns the updated record alongside the bit `url` actually changed by
-  // this patch so callers that react to URL edits (e.g. wiping outstanding
-  // backoff rows) don't need a redundant getById round-trip.
-  patch(id: string, patch: { name?: string; url?: string; dialTimeoutSeconds?: number | null }): Promise<{ record: ProxyRecord; urlChanged: boolean } | null>;
+  patch(id: string, patch: { name?: string; url?: string; dialTimeoutSeconds?: number | null }): Promise<ProxyRecord | null>;
   // Upsert: an id collision overwrites the configurable columns (name, url,
   // dial_timeout_seconds) and refreshes updated_at; created_at belongs to the
   // local deployment and is preserved.
   save(record: { id: string; name: string; url: string; dialTimeoutSeconds: number | null }): Promise<void>;
+  // Deleting a proxy also deletes its backoff state.
   delete(id: string): Promise<boolean>;
   deleteAll(): Promise<void>;
   findUpstreamsReferencing(proxyId: string): Promise<string[]>;
@@ -336,8 +334,11 @@ export interface BackoffRow {
 }
 
 export interface ProxyBackoffRepo {
-  recordDialFailure(proxyId: string, upstreamId: string, errorMessage: string): Promise<void>;
-  recordDialSuccess(proxyId: string, upstreamId: string): Promise<void>;
+  // Apply an outcome only while the proxy still exists at the URL that was
+  // actually dialled. A request can outlive an operator URL edit or deletion;
+  // its stale outcome must not throttle or clear the replacement endpoint.
+  recordDialFailure(proxyId: string, upstreamId: string, proxyUrl: string, errorMessage: string): Promise<boolean>;
+  recordDialSuccess(proxyId: string, upstreamId: string, proxyUrl: string): Promise<boolean>;
   listForUpstream(upstreamId: string): Promise<BackoffRow[]>;
   listForProxy(proxyId: string): Promise<BackoffRow[]>;
   listAll(): Promise<BackoffRow[]>;
