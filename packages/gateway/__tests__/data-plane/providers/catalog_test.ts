@@ -241,16 +241,11 @@ test('disabledPublicModelIds hides models from the catalog and routing, per upst
   assertEquals(keep.candidates.map(m => m.provider.upstreamId), ['up_a']);
 });
 
-// Per-upstream catalog fetches fan out in parallel: total wall-clock time
-// tracks the slowest upstream, not the sum. The bound is loose because CI
-// timer noise eats into a tight `< sum` comparison; what matters is the
-// ratio.
 test('catalog assembly fans out per-upstream catalog fetches in parallel', async () => {
   clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const FETCH_DELAY_MS = 60;
   const upstreams = [
     { id: 'up_p1', host: 'p1.example.com', model: 'p1-model' },
     { id: 'up_p2', host: 'p2.example.com', model: 'p2-model' },
@@ -265,29 +260,31 @@ test('catalog assembly fans out per-upstream catalog fetches in parallel', async
     }));
   }
 
+  let started = 0;
+  let releaseFetches!: () => void;
+  const fetchGate = new Promise<void>(resolve => { releaseFetches = resolve; });
+
   await withMockedFetch(
     async request => {
       const url = new URL(request.url);
       const match = upstreams.find(u => url.hostname === u.host);
       if (match && url.pathname === '/v1/models') {
-        await new Promise(resolve => setTimeout(resolve, FETCH_DELAY_MS));
+        started += 1;
+        await fetchGate;
         return jsonResponse({ object: 'list', data: [{ id: match.model, supported_endpoints: ['/chat/completions'] }] });
       }
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const start = Date.now();
-      const catalog = (await getModelsFromProviders(await listModelProviders(null), () => directFetcher, testScheduler)).models;
-      const elapsed = Date.now() - start;
+      const providers = await listModelProviders(null);
+      const pendingCatalog = getModelsFromProviders(providers, () => directFetcher, testScheduler);
+      for (let turn = 0; turn < 20 && started < upstreams.length; turn++) await Promise.resolve();
+      const startedBeforeRelease = started;
+      releaseFetches();
+      const catalog = (await pendingCatalog).models;
 
       assertEquals([...catalog.map(m => m.id)].sort(), ['p1-model', 'p2-model', 'p3-model']);
-      // A serial walk would take >= 3 * FETCH_DELAY_MS; parallel is bounded by
-      // ~FETCH_DELAY_MS plus per-test overhead. Half the serial budget is the
-      // loosest threshold that still excludes any serial regression.
-      const serialBudget = upstreams.length * FETCH_DELAY_MS;
-      if (elapsed >= serialBudget / 2) {
-        throw new Error(`expected parallel walk (~${FETCH_DELAY_MS}ms) but took ${elapsed}ms (serial would be ${serialBudget}ms)`);
-      }
+      assertEquals(startedBeforeRelease, upstreams.length);
     },
   );
 });
