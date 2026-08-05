@@ -26,6 +26,22 @@ export const decodeChunked = (
   // long extension is the only way to reach this cap, and it's a DoS.
   const MAX_CHUNK_SIZE_LINE = 1024;
   let trailerBytesSeen = 0;
+  let growingStorage: Uint8Array | null = null;
+  const appendGrowing = (chunk: Uint8Array): void => {
+    const currentLength = buf.byteLength;
+    const required = currentLength + chunk.byteLength;
+    const canReuse = growingStorage !== null
+      && buf.buffer === growingStorage.buffer
+      && buf.byteOffset === 0
+      && growingStorage.byteLength >= required;
+    if (!canReuse) {
+      const next = new Uint8Array(Math.max(1024, required, currentLength * 2));
+      next.set(buf);
+      growingStorage = next;
+    }
+    growingStorage!.set(chunk, currentLength);
+    buf = growingStorage!.subarray(0, required);
+  };
   let released = false;
   const release = (): void => {
     if (released) return;
@@ -59,7 +75,7 @@ export const decodeChunked = (
                 await fail(controller, new HttpProtocolError('chunked: EOF in size', 'EOF'));
                 return;
               }
-              buf = concat(buf, more.value);
+              appendGrowing(more.value);
               continue;
             }
             if (idx > MAX_CHUNK_SIZE_LINE) {
@@ -164,7 +180,7 @@ export const decodeChunked = (
                 await fail(controller, new HttpProtocolError('chunked: EOF in trailers', 'EOF'));
                 return;
               }
-              buf = concat(buf, more.value);
+              appendGrowing(more.value);
               continue;
             }
             if (idx === 0) {
