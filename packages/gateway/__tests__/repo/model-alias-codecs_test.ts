@@ -4,16 +4,16 @@ import { decodeAliasTargets, decodeAnnouncedMetadata } from '../../src/repo/mode
 
 describe('stored model alias targets', () => {
   test.each([
-    [],
-    [{ target_model_id: '', rules: {} }],
-    [{ target_model_id: 'model', rules: { reasoning: { effort: '' } } }],
-    [{ target_model_id: 'model', rules: { reasoning: { summary: '' } } }],
-    [{ target_model_id: 'model', rules: { reasoning: { budget_tokens: -1 } } }],
-    [{ target_model_id: 'model', rules: { reasoning: { budget_tokens: 1.5 } } }],
-    [{ target_model_id: 'model', rules: { reasoning: { adaptive: true, budget_tokens: 0 } } }],
-    [{ target_model_id: 'model', rules: { verbosity: '' } }],
-    [{ target_model_id: 'model', rules: { serviceTier: '' } }],
-  ])('rejects state the control-plane write boundary cannot produce: %j', targets => {
+    { targets: [] },
+    { targets: [{ target_model_id: '', rules: {} }] },
+    { targets: [{ target_model_id: 'model', rules: { reasoning: { effort: '' } } }] },
+    { targets: [{ target_model_id: 'model', rules: { reasoning: { summary: '' } } }] },
+    { targets: [{ target_model_id: 'model', rules: { reasoning: { budget_tokens: -1 } } }] },
+    { targets: [{ target_model_id: 'model', rules: { reasoning: { budget_tokens: 1.5 } } }] },
+    { targets: [{ target_model_id: 'model', rules: { reasoning: { adaptive: true, budget_tokens: 0 } } }] },
+    { targets: [{ target_model_id: 'model', rules: { verbosity: '' } }] },
+    { targets: [{ target_model_id: 'model', rules: { serviceTier: '' } }] },
+  ])('rejects state the control-plane write boundary cannot produce: $targets', ({ targets }) => {
     expect(() => decodeAliasTargets(JSON.stringify(targets), 'alias_corrupt')).toThrow(
       'model_aliases.targets JSON is invalid for id=alias_corrupt',
     );
