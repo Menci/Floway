@@ -115,9 +115,6 @@ export const resolvePerformanceGroup = (
   return group;
 };
 
-const filterValuesFromUrl = (search: URLSearchParams, key: string): string[] =>
-  [...new Set(search.getAll(key).filter(Boolean))];
-
 export const parsePerformanceUrlState = (search: URLSearchParams): PerformanceUrlState => ({
   metric: oneOf(search.get('m'), ['ttft', 'tokPerSec'], 'ttft'),
   percentile: oneOf(search.get('pct'), ['p50', 'p95', 'p99'], 'p95'),

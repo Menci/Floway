@@ -699,11 +699,11 @@ export const exportQuery = z.object({
 
 // --- query strings (token-usage, search-usage, performance) ---
 //
-// `view` is required on the usage endpoints. The two views return different
-// payload shapes, so deriving one from the caller's capability would make the
-// same URL answer differently per user — and silently widen as soon as
-// someone's role changes. Declaring it required in the schema also makes the
-// RPC client demand it at compile time.
+// `view` is required on the record-oriented token and search Usage endpoints.
+// Their two views return different payload shapes, so deriving one from the
+// caller's capability would make the same URL silently widen after a role
+// change. The single-shape token Usage overview follows the Performance
+// contract and derives its authorized dimensions without accepting `view`.
 //
 // start/end stay optional in the schema (rather than `.min(1)`) so the
 // handler can return the canonical "start and end query parameters are

@@ -919,6 +919,8 @@ const en = {
       usage: {
         empty: 'No usage records in this range',
         callout: { requests: 'Req', cost: 'Cost', total: 'Total', cached: 'Cached', cachedRate: 'Cached%', prefill: 'Prefill', output: 'Output', hitRate: 'Hit%' },
+        apiKeyScopeInfo: 'API key dimensions always include only API keys owned by your account, even when you have global telemetry access. Other dimensions remain global.',
+        apiKeyScopeLabel: 'About API key telemetry scope',
         groupBy: { label: 'Group by', model: 'By Model', upstream: 'By Upstream', userId: 'By User', keyId: 'By API Key' },
         filters: {
           model: 'Model',

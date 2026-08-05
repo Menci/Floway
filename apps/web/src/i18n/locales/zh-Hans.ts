@@ -876,6 +876,8 @@ const zhHansCN = {
       usage: {
         empty: '此时间范围内没有使用记录',
         callout: { requests: '请求', cost: '费用', total: '总量', cached: '缓存', cachedRate: '缓存率', prefill: '预填充', output: '输出', hitRate: '命中率' },
+        apiKeyScopeInfo: 'API 密钥维度始终只包含当前账号拥有的 API 密钥，即使你拥有全局遥测权限。其他维度仍按全局范围统计。',
+        apiKeyScopeLabel: '关于 API 密钥遥测范围',
         groupBy: { label: '分组依据', model: '按模型', upstream: '按上游', userId: '按用户', keyId: '按 API 密钥' },
         filters: {
           model: '模型',

@@ -57,6 +57,11 @@ export const buildTokenChart = ({
 }): TokenChartModel => {
   const { values, details } = aggregateTokenRecords(records, metric, buckets);
   const presentGroups = new Set(records.map(record => record.group));
+  const knownGroups = new Set(dimensionOptions.map(option => option.value));
+  const missingGroup = [...presentGroups].find(group => !knownGroups.has(group));
+  if (missingGroup !== undefined) {
+    throw new TypeError(`Usage overview series group is missing from dimension values: ${missingGroup}`);
+  }
   const entries = withUniqueSeriesLegends(dimensionOptions
     .filter(option => presentGroups.has(option.value))
     .map((option, colorSlot) => ({ id: option.value, label: option.label, colorSlot })));

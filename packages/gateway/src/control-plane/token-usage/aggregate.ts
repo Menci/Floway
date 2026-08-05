@@ -110,9 +110,9 @@ export function aggregateUsageForDisplay(records: readonly UsageRecord[]): Displ
   );
 }
 
-// Legacy `/api/token-usage` keeps collapsing hard-deleted key rows into user 0.
-// The overview endpoint follows Performance and drops unattributable rows only
-// from its user axis while retaining them in every non-user aggregate.
+// `/api/token-usage` assigns hard-deleted key rows to synthetic user 0. The
+// overview omits those rows only from its user axis and retains them in every
+// non-user aggregate.
 export function aggregateUsageByUserForDisplay(
   records: readonly UsageRecord[],
   keyToUser: ReadonlyMap<string, number>,

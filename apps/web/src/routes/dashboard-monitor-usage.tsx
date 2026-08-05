@@ -1,3 +1,4 @@
+import { InfoRegular } from '@fluentui/react-icons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
 
@@ -11,7 +12,7 @@ import { TelemetryDimensionControls, type TelemetryDimension } from '../componen
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
-import { PANEL_STACK_CLASS } from '../components/ui/layout';
+import { CONTROL_ROW_CLASS, PANEL_STACK_CLASS } from '../components/ui/layout';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { ResourceListActions } from '../components/ui/resource-list';
@@ -28,11 +29,20 @@ import { parseUsageUrlState, serializeUsageUrlState, type UsageUrlState } from '
 import { formatCount } from '../lib/format-number';
 import { useEntryRewrite } from '../lib/page-navigation';
 import { useLocale } from '../lib/use-locale';
+import { fluentComponents } from '../fluent';
+
+const { Button, Tooltip } = fluentComponents;
 
 type LoaderData = Awaited<ReturnType<typeof loadUsagePageData>> & {
   isAdmin: boolean;
   loadedAt: number;
   state: UsageUrlState;
+};
+
+const requiredLabel = (labels: ReadonlyMap<string, string>, value: string, dimension: string) => {
+  const label = labels.get(value);
+  if (label === undefined) throw new TypeError(`Usage ${dimension} dimension is missing metadata for ${value}`);
+  return label;
 };
 
 export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise<LoaderData> {
@@ -111,8 +121,8 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     return [
       { key: 'model', groupLabel: t('dashboard.usage.groupBy.model'), filterLabel: t('dashboard.usage.filters.model'), allLabel: t('dashboard.usage.filters.all.model'), options: usage.dimensionValues.models.map(value => ({ value, label: value })) },
       { key: 'upstream', groupLabel: t('dashboard.usage.groupBy.upstream'), filterLabel: t('dashboard.usage.filters.upstream'), allLabel: t('dashboard.usage.filters.all.upstream'), options: usage.dimensionValues.upstreams.map(value => ({ value, label: upstreamNames.get(value) ?? value })) },
-      { key: 'userId', groupLabel: t('dashboard.usage.groupBy.userId'), filterLabel: t('dashboard.usage.filters.userId'), allLabel: t('dashboard.usage.filters.all.userId'), options: usage.dimensionValues.userIds.map(value => ({ value: String(value), label: users.get(String(value)) ?? `user ${value}` })) },
-      { key: 'keyId', groupLabel: t('dashboard.usage.groupBy.keyId'), filterLabel: t('dashboard.usage.filters.keyId'), allLabel: t('dashboard.usage.filters.all.keyId'), options: usage.dimensionValues.keyIds.map(value => ({ value, label: keys.get(value) ?? value })) },
+      { key: 'userId', groupLabel: t('dashboard.usage.groupBy.userId'), filterLabel: t('dashboard.usage.filters.userId'), allLabel: t('dashboard.usage.filters.all.userId'), options: usage.dimensionValues.userIds.map(value => ({ value: String(value), label: requiredLabel(users, String(value), 'user') })) },
+      { key: 'keyId', groupLabel: t('dashboard.usage.groupBy.keyId'), filterLabel: t('dashboard.usage.filters.keyId'), allLabel: t('dashboard.usage.filters.all.keyId'), options: usage.dimensionValues.keyIds.map(value => ({ value, label: requiredLabel(keys, value, 'API key') })) },
     ];
   }, [t, upstreams, usage]);
   const availableDimensions = dimensions?.filter(dimension => dimension.key !== 'userId' || loaderData.isAdmin) ?? null;
@@ -124,7 +134,11 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     () => usage?.series.filter(record => !hiddenSeries.has(record.group)) ?? null,
     [hiddenSeries, usage],
   );
-  const summary = useMemo(() => visibleSeries && summarizeUsage(visibleSeries), [visibleSeries]);
+  const summary = useMemo(() => {
+    if (!usage || !visibleSeries) return null;
+    if (hiddenSeries.size === 0) return summarizeUsage(usage.axes.none);
+    return summarizeUsage(visibleSeries);
+  }, [hiddenSeries, usage, visibleSeries]);
   const tokenChart = useMemo(() => {
     if (!usage || !selectedDimension) return null;
     return buildTokenChart({
@@ -163,6 +177,14 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
         filterDimensions={filterDimensions}
         filters={filters}
         groupBy={groupBy}
+        groupByAdornment={groupBy === 'keyId' && <Tooltip content={t('dashboard.usage.apiKeyScopeInfo')} relationship="description">
+          <Button
+            appearance="subtle"
+            aria-label={t('dashboard.usage.apiKeyScopeLabel')}
+            className={CONTROL_ROW_CLASS}
+            icon={<InfoRegular />}
+          />
+        </Tooltip>}
         groupByLabel={t('dashboard.usage.groupBy.label')}
         onFilterChange={setFilter}
         onGroupByChange={changeGroupBy}
