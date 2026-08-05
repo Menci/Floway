@@ -262,7 +262,7 @@ describe('dialReality — pre-connect base64 decoder corner cases', () => {
     await verifyReachesConnect(`${'A'.repeat(43)}=`);
   });
 
-  it('accepts non-zero trailing padding bits like the prior Web decoder', async () => {
+  it('accepts non-zero trailing padding bits under WHATWG forgiving-base64', async () => {
     await verifyReachesConnect(`${'A'.repeat(42)}B=`);
   });
 

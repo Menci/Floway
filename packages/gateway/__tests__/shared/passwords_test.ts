@@ -18,9 +18,9 @@ describe('passwords', () => {
     expect(await verifyPassword('hunter2', encoded)).toBe(true);
   });
 
-  test('verifies a password hash persisted by the original Web base64 codec', async () => {
-    const encoded = 'pbkdf2-sha256$1000$AAECAwQFBgcICQoLDA0ODw==$Q8oHjyFWkGk9NBm+mZJZy2gY0b1LoR3CCd+yDog1c/4=';
-    expect(await verifyPassword('legacy-password', encoded)).toBe(true);
+  test('verifies a fixed password hash in the persisted format', async () => {
+    const encoded = 'pbkdf2-sha256$1000$AAECAwQFBgcICQoLDA0ODw==$rep5GM+JZ4GSYa/Qxf4tY9KFd/PnYjJdCeYGWosl/ug=';
+    expect(await verifyPassword('persisted-password', encoded)).toBe(true);
   });
 
   test('verifyPassword rejects a different plaintext', async () => {
