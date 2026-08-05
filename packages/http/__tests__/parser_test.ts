@@ -91,15 +91,15 @@ describe('parseHttpResponse — status-line grammar', () => {
     });
   });
 
-  it('rejects a status line with two SPs between code and reason (the second SP cannot be absorbed into the reason)', async () => {
-    // RFC 9112 §4 grammar puts a single SP between status-code and
-    // reason-phrase. A double SP would either silently absorb the extra
-    // space into the reason (a lenient-parser foot-gun llhttp's strict
-    // mode rejects), or — if accepted — diverge from what a strict
-    // intermediary sees. We reject.
-    await expect(parseHttpResponse(respondAndEnd('HTTP/1.1 200  OK\r\nContent-Length: 0\r\n\r\n'))).rejects.toMatchObject({
-      code: 'BAD_STATUS_LINE',
-    });
+  it('accepts SP and HTAB at the start of the reason phrase', async () => {
+    const spaced = await parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200  OK\r\nContent-Length: 0\r\n\r\n',
+    ));
+    const tabbed = await parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 \tOK\r\nContent-Length: 0\r\n\r\n',
+    ));
+    expect(spaced.statusText).toBe(' OK');
+    expect(tabbed.statusText).toBe('\tOK');
   });
 
   it('rejects a status line with two SPs between version and code', async () => {
@@ -165,6 +165,18 @@ describe('parseHttpResponse — status-line grammar', () => {
     await expect(parseHttpResponse(respondAndEnd('garbage HTTP/1.1 200 OK\r\n\r\n'))).rejects.toMatchObject({
       code: 'BAD_STATUS_LINE',
     });
+  });
+
+  it.each(['099', '600'])('rejects status code %s outside 100..599', async status => {
+    await expect(parseHttpResponse(respondAndEnd(
+      `HTTP/1.1 ${status} Invalid\r\nContent-Length: 0\r\n\r\n`,
+    ))).rejects.toMatchObject({ code: 'BAD_STATUS_LINE' });
+  });
+
+  it('rejects a NUL control byte in the reason phrase', async () => {
+    await expect(parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 bad\0reason\r\nContent-Length: 0\r\n\r\n',
+    ))).rejects.toMatchObject({ code: 'BAD_STATUS_LINE' });
   });
 });
 
@@ -361,26 +373,15 @@ describe('parseHttpResponse — header value grammar (RFC 9110 §5.5 field-value
     }
   });
 
-  it('rejects bytes ≥ 0x80 in the response header section (RFC 9112 §5: ASCII only)', async () => {
-    // RFC 9112 §5 forbids non-ASCII bytes in the header section. A
-    // fatal-UTF-8 decoder alone is not enough — valid UTF-8 sequences
-    // like 0xc3 0xa9 ("é") decode cleanly but the spec still rejects
-    // them. The parser scans for any byte ≥ 0x80 before decoding.
-    for (const bytes of [
-      [0xff],                       // invalid UTF-8 lead
-      [0xc3, 0xa9],                 // valid UTF-8 for "é"
-      [0xe4, 0xb8, 0xad],           // valid UTF-8 for "中"
-      [0x80],                       // continuation byte in isolation
-    ]) {
-      const fake = makeFakeDuplex();
-      fake.respond(new TextEncoder().encode('HTTP/1.1 200 OK\r\nX: '));
-      fake.respond(new Uint8Array(bytes));
-      fake.respond('\r\nContent-Length: 0\r\n\r\n');
-      fake.endResponse();
-      await expect(parseHttpResponse(fake.readable)).rejects.toMatchObject({
-        code: 'BAD_HEADERS',
-      });
-    }
+  it('preserves obs-text bytes in a response field value as opaque data', async () => {
+    const fake = makeFakeDuplex();
+    fake.respond(new TextEncoder().encode('HTTP/1.1 200 OK\r\nX: '));
+    fake.respond(new Uint8Array([0x80, 0xff]));
+    fake.respond('\r\nContent-Length: 0\r\n\r\n');
+    fake.endResponse();
+    const response = await parseHttpResponse(fake.readable);
+    const value = response.headers.get('x')!;
+    expect(Array.from(value, char => char.charCodeAt(0))).toEqual([0x80, 0xff]);
   });
 
   it('preserves duplicate-named headers as a comma-joined Headers entry', async () => {

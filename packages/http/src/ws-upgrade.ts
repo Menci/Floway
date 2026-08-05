@@ -265,7 +265,6 @@ const readUpgradeResponse = async (
 ): Promise<UpgradeResponseHead> => {
   const { statusLine, lines, remainder } = await readHeadSection(reader, new Uint8Array(0), {
     maxBytes: WS_HEAD_BUFFER_CAP,
-    decodeContext: 'WS upgrade response head',
     eofError: receivedBytes => new HttpProtocolError(
       `WS upgrade: unexpected EOF before response head; got ${receivedBytes} bytes`,
       'EOF',

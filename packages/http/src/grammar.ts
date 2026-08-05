@@ -9,21 +9,16 @@ export const TCHAR = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 // Module-scope so we never allocate a fresh decoder per request/response.
 export const ASCII_DECODER = new TextDecoder();
 
-// RFC 9112 §5 forbids any non-ASCII byte in the header section. Reject
-// ≥ 0x80 before decoding — TextDecoder fatal-UTF-8 alone would accept
-// valid UTF-8 sequences like 0xc3 0xa9 ("é") that the spec forbids in
-// the header section.
-export const decodeAsciiHeaderSection = (bytes: Uint8Array, context: string): string => {
-  for (let i = 0; i < bytes.byteLength; i++) {
-    if (bytes[i]! >= 0x80) {
-      throw new HttpProtocolError(
-        `non-ASCII byte 0x${bytes[i]!.toString(16).padStart(2, '0')} at offset ${i} in ${context}`,
-        'BAD_HEADERS',
-        { rfc: 'RFC 9112 §5' },
-      );
-    }
+// RFC 9110 §5.5 includes obs-text (%x80-FF) in field values and requires
+// recipients to treat it as opaque data. Decode one byte to one code point;
+// UTF-8 decoding would replace standalone obs-text and corrupt the field.
+export const decodeHttp1Head = (bytes: Uint8Array): string => {
+  let decoded = '';
+  const chunkSize = 8192;
+  for (let offset = 0; offset < bytes.byteLength; offset += chunkSize) {
+    decoded += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
   }
-  return ASCII_DECODER.decode(bytes);
+  return decoded;
 };
 
 // RFC 9110 §5.6.3: OWS = *( SP / HTAB ). Strip from both ends of a
@@ -34,11 +29,9 @@ export const trimFieldValueOws = (value: string): string => value.replace(/^[\t 
 
 // RFC 9112 §4: status-line = HTTP-version SP status-code SP reason-phrase.
 // The version group is non-capturing — no caller reads it — so capture
-// indices are status=m[1], reason=m[2]. The reason alternation `(\S.*|)`
-// permits an empty reason (RFC 7230 erratum 4087) while forbidding a
-// leading SP, which would otherwise be silently absorbed from a double
-// SP between code and reason.
-export const STATUS_LINE = /^HTTP\/(?:1\.[01]) (\d{3}) (\S.*|)$/;
+// indices are status=m[1], reason=m[2]. reason-phrase permits HTAB, SP,
+// VCHAR, and obs-text; the empty alternative follows RFC 7230 erratum 4087.
+export const STATUS_LINE = /^HTTP\/(?:1\.[01]) (\d{3}) ([\t\x20-\x7e\x80-\xff]*)$/;
 
 // RFC 9110 §5.5: field-content = field-vchar / SP / HTAB / obs-fold;
 // field-vchar = VCHAR / obs-text. The legal byte set inside a value is

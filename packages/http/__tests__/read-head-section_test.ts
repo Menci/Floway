@@ -13,7 +13,6 @@ const readResponseHeadSection = async (
   try {
     return await readHeadSection(reader, new Uint8Array(0), {
       maxBytes: HEADER_BUFFER_CAP,
-      decodeContext: 'response headers',
       eofError: receivedBytes => new HttpProtocolError(
         `unexpected EOF before headers; got ${receivedBytes} bytes`,
         'EOF',

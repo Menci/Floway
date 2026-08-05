@@ -99,7 +99,6 @@ const readResponseHead = async (
   const HEADER_BUFFER_CAP = 64 * 1024;
   const { statusLine, lines, remainder } = await readHeadSection(reader, preBuffered, {
     maxBytes: HEADER_BUFFER_CAP,
-    decodeContext: 'response headers',
     eofError: receivedBytes => new HttpProtocolError(
       `unexpected EOF before headers; got ${receivedBytes} bytes`,
       'EOF',
@@ -135,12 +134,16 @@ const readResponseHead = async (
     );
   }
   const status = parseInt(m[1]!, 10);
-  // RFC 9110 §5.6.3: OWS = *( SP / HTAB ). The reason-phrase grammar
-  // forbids leading OWS (enforced by the `\S` first-byte anchor) but
-  // greedy `.*` keeps trailing SP/HTAB up to the CRLF, so a misbehaving
-  // upstream sending `HTTP/1.1 200 OK   ` would otherwise surface
-  // trailing whitespace through statusText. Trim it to match the
-  // RawHttpResponse.statusText contract.
+  if (status < 100 || status > 599) {
+    throw new HttpProtocolError(
+      `status code ${status} is outside the defined 100..599 range`,
+      'BAD_STATUS_LINE',
+      { rfc: 'RFC 9110 §15' },
+    );
+  }
+  // SP/HTAB are valid reason-phrase bytes, including at the start. Preserve
+  // those leading bytes while trimming trailing OWS to the public statusText
+  // contract.
   const statusText = m[2]!.replace(/[ \t]+$/, '');
 
   const respHeaders = new Headers();

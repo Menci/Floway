@@ -4,7 +4,7 @@
 
 import { concat, copy } from './bytes.ts';
 import { HttpProtocolError } from './errors.ts';
-import { ASCII_DECODER, TCHAR, decodeAsciiHeaderSection, trimFieldValueOws, validateFieldValueBytes } from './grammar.ts';
+import { ASCII_DECODER, TCHAR, decodeHttp1Head, trimFieldValueOws, validateFieldValueBytes } from './grammar.ts';
 
 export const decodeChunked = (
   reader: ReadableStreamDefaultReader<Uint8Array>,
@@ -95,21 +95,15 @@ export const decodeChunked = (
             // Reject both values wider than the protocol's 64-bit field and
             // values JavaScript cannot represent exactly; an imprecise `need`
             // would lose the body boundary and stream upstream bytes unbounded.
-            if (hex.length > 16) {
-              await fail(controller, new HttpProtocolError(
-                'chunked: size line exceeds 64-bit chunk size',
-                'CHUNK_BAD_SIZE',
-              ));
-              return;
-            }
-            need = parseInt(hex, 16);
-            if (!Number.isSafeInteger(need)) {
+            const exactSize = BigInt(`0x${hex}`);
+            if (exactSize > BigInt(Number.MAX_SAFE_INTEGER)) {
               await fail(controller, new HttpProtocolError(
                 'chunked: size exceeds the exact integer range',
                 'CHUNK_BAD_SIZE',
               ));
               return;
             }
+            need = Number(exactSize);
             buf = buf.subarray(idx + 2);
             scanFrom = 0;
             state = need === 0 ? 'trailers' : 'data';
@@ -252,7 +246,7 @@ const validChunkExtensions = (extensions: string): boolean => {
 };
 
 const validateTrailerLine = (bytes: Uint8Array): void => {
-  const line = decodeAsciiHeaderSection(bytes, 'chunk trailer');
+  const line = decodeHttp1Head(bytes);
   const colon = line.indexOf(':');
   const name = colon < 0 ? '' : line.slice(0, colon);
   if (!TCHAR.test(name)) {

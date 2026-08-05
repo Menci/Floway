@@ -1,9 +1,8 @@
 import { copy, findDoubleCrlfFrom } from './bytes.ts';
-import { decodeAsciiHeaderSection } from './grammar.ts';
+import { decodeHttp1Head } from './grammar.ts';
 
 interface ReadHeadSectionOptions {
   maxBytes: number;
-  decodeContext: string;
   eofError: (receivedBytes: number) => Error;
   overflowError: (maxBytes: number) => Error;
 }
@@ -57,7 +56,7 @@ export const readHeadSection = async (
 
   const headerBytes = buffer.subarray(0, headerEnd);
   const remainder = copy(buffer.subarray(headerEnd + 4));
-  const lines = decodeAsciiHeaderSection(headerBytes, options.decodeContext).split('\r\n');
+  const lines = decodeHttp1Head(headerBytes).split('\r\n');
   const statusLine = lines.shift()!;
   return { statusLine, lines, remainder };
 };

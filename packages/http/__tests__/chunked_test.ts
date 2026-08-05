@@ -163,6 +163,12 @@ describe('decodeChunked — RFC 9112 §7.1.1 chunk-size grammar', () => {
     expect(await drain(decodeChunked(reader, head))).toBe('hello');
   });
 
+  it('accepts a long run of leading zeroes when the numeric size remains exact', async () => {
+    const input = `${'0'.repeat(64)}5\r\nhello\r\n0\r\n\r\n`;
+    const { reader, head } = fromString(input);
+    expect(await drain(decodeChunked(reader, head))).toBe('hello');
+  });
+
   it('rejects a chunk size with a 0x prefix', async () => {
     const input = '0x5\r\nhello\r\n0\r\n\r\n';
     const { reader, head } = fromString(input);
