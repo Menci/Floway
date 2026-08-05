@@ -1031,8 +1031,14 @@ test('import preserves staged intra-record error precedence', async () => {
   const badApiKey = await doImport(app, 'replace', latestImportData({
     apiKeys: [{ ...KEY_A, upstreamIds: {}, id: '' }],
   }));
+  const badApiKeyConstruction = await doImport(app, 'replace', latestImportData({
+    apiKeys: [{ ...KEY_A, id: '', lastUsedAt: '' }],
+  }));
   const duplicateMalformedUser = await doImport(app, 'replace', latestImportData({
     users: [SEED_ADMIN, { ...USER_BOB, id: SEED_ADMIN.id, username: 'bad username' }],
+  }));
+  const badUserConstruction = await doImport(app, 'replace', latestImportData({
+    users: [SEED_ADMIN, { ...USER_BOB, deletedAt: 42, createdAt: '' }],
   }));
   const badUsage = await doImport(app, 'replace', latestImportData({
     usage: [{ ...USAGE_1, requests: -1, pricingSelector: null }],
@@ -1044,7 +1050,9 @@ test('import preserves staged intra-record error precedence', async () => {
 
   assertEquals(badUpstream.body.error, `invalid upstreams at index 0: kind must be one of ${ALL_PROVIDER_KINDS.join(', ')}`);
   assertEquals(badApiKey.body.error, 'invalid apiKeys at index 0: upstream_ids must be null or an array of upstream ids');
+  assertEquals(badApiKeyConstruction.body.error, 'invalid apiKeys at index 0: id must be a non-empty string');
   assertEquals(duplicateMalformedUser.body.error, 'invalid users at index 1: duplicate user id 1');
+  assertEquals(badUserConstruction.body.error, 'invalid users at index 1: deletedAt must be null or an ISO string');
   assertEquals(badUsage.body.error, 'invalid usage at index 0: record has invalid usage fields');
   assertEquals(badPerformance.body.error, 'invalid performance record at index 0: ttftSamplesOk + errorsWithOutput + errorsNoOutput + neutral must equal requests');
 });

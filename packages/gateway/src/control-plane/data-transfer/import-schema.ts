@@ -212,21 +212,28 @@ const apiKeySchema = parsedBy((value): ApiKey => {
   const upstreamIds = parseValue(upstreamIdsSchema, wire.upstreamIds);
   const userId = parseValue(positiveIntegerSchema('userId'), wire.userId);
   const deletedAt = parseValue(nullableStringSchema('deletedAt'), wire.deletedAt);
+  const id = parseValue(nonEmptyStringSchema('id'), wire.id);
+  const name = parseValue(nonEmptyStringSchema('name'), wire.name);
+  const key = parseValue(nonEmptyStringSchema('key'), wire.key);
+  const serverSecret = parseValue(parsedBy(parseServerSecret), wire.serverSecret);
+  const createdAt = parseValue(nonEmptyStringSchema('createdAt'), wire.createdAt);
   const lastUsedAt = wire.lastUsedAt === undefined
     ? {}
     : { lastUsedAt: parseValue(nonEmptyStringSchema('lastUsedAt'), wire.lastUsedAt) };
+  const dumpRetentionSeconds = parseValue(dumpRetentionSchema.optional().default(null), wire.dumpRetentionSeconds);
+  const responsesRetentionSeconds = parseValue(responsesRetentionSchema, wire.responsesRetentionSeconds);
   return {
-    id: parseValue(nonEmptyStringSchema('id'), wire.id),
+    id,
     userId,
-    name: parseValue(nonEmptyStringSchema('name'), wire.name),
-    key: parseValue(nonEmptyStringSchema('key'), wire.key),
-    serverSecret: parseValue(parsedBy(parseServerSecret), wire.serverSecret),
-    createdAt: parseValue(nonEmptyStringSchema('createdAt'), wire.createdAt),
+    name,
+    key,
+    serverSecret,
+    createdAt,
     ...lastUsedAt,
     upstreamIds,
     deletedAt,
-    dumpRetentionSeconds: parseValue(dumpRetentionSchema.optional().default(null), wire.dumpRetentionSeconds),
-    responsesRetentionSeconds: parseValue(responsesRetentionSchema, wire.responsesRetentionSeconds),
+    dumpRetentionSeconds,
+    responsesRetentionSeconds,
   };
 });
 
@@ -247,8 +254,8 @@ const userSchema = z.object({
     if (!result.ok) throw new Error(result.error);
     return result.value;
   }),
-  createdAt: nonEmptyStringSchema('createdAt'),
   deletedAt: nullableStringSchema('deletedAt'),
+  createdAt: nonEmptyStringSchema('createdAt'),
 });
 
 const sequentialArraySchema = <T>(
