@@ -9,19 +9,12 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { decodeUtf8Source, renderSourceSection, type SourceSection } from './source-section.ts';
 import { typescriptString } from './typescript-string.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(HERE, '..');
 const GENERATED_PATH = resolve(PACKAGE_ROOT, 'src/script-assets.generated.ts');
-
-interface SourceSection {
-  name: string;
-  file: string;
-  start?: string;
-  end?: string;
-  append?: string;
-}
 
 interface PlatformSources {
   common: readonly SourceSection[];
@@ -86,21 +79,13 @@ for (const { name, file } of allSections) {
 
 const sourceByName = new Map(await Promise.all([...sourceFiles].map(async ([name, file]) => [
   name,
-  await readFile(resolve(PACKAGE_ROOT, file), 'utf8'),
+  decodeUtf8Source(await readFile(resolve(PACKAGE_ROOT, file)), file),
 ] as const)));
-
-const findBoundary = (source: string, boundary: string, from: number, name: string): number => {
-  const index = source.indexOf(boundary, from);
-  if (index === -1) throw new Error(`${name} does not contain boundary ${JSON.stringify(boundary)}`);
-  return index;
-};
 
 const renderSection = (section: SourceSection): string => {
   const source = sourceByName.get(section.name);
   if (source === undefined) throw new Error(`source not loaded for ${section.name}`);
-  const start = section.start === undefined ? 0 : findBoundary(source, section.start, 0, section.name);
-  const end = section.end === undefined ? source.length : findBoundary(source, section.end, start, section.name);
-  return source.slice(start, end) + (section.append ?? '');
+  return renderSourceSection(section, source);
 };
 
 const sourceConstants = [...sourceFiles].map(([name]) => {
@@ -129,7 +114,7 @@ ${sourceFragments}
 `;
 
 if (process.argv.includes('--check')) {
-  const actual = await readFile(GENERATED_PATH, 'utf8').catch((error: NodeJS.ErrnoException) => {
+  const actual = await readFile(GENERATED_PATH).then(bytes => decodeUtf8Source(bytes, GENERATED_PATH)).catch((error: NodeJS.ErrnoException) => {
     // A missing generated file is drift the check should report; any other read
     // failure (permissions, I/O) is a real fault and must propagate.
     if (error.code === 'ENOENT') return null;
