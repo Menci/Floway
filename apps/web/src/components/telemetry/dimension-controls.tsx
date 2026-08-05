@@ -13,6 +13,7 @@ export interface TelemetryDimension<Key extends string> {
   filterLabel: string;
   allLabel: string;
   options: readonly MultiselectOption[];
+  selectionLabel?: (values: readonly string[]) => string;
 }
 
 export function TelemetryGroupByField<Key extends string>({
@@ -78,7 +79,7 @@ export function TelemetryFilterFields<Key extends string>({
           options={dimension.options}
           placeholder={filters[dimension.key].length === 0
             ? dimension.allLabel
-            : selectedLabel(filters[dimension.key].length)}
+            : dimension.selectionLabel?.(filters[dimension.key]) ?? selectedLabel(filters[dimension.key].length)}
           value={filters[dimension.key]}
         />
       </Field>)}

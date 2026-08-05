@@ -873,6 +873,7 @@ const zhHansCN = {
           toggleHint: '点击切换。Shift 点击或双击可单独显示。',
         },
       },
+      telemetry: { currentUserOnly: '仅自己' },
       usage: {
         empty: '此时间范围内没有使用记录',
         callout: { requests: '请求', cost: '费用', total: '总量', cached: '缓存', cachedRate: '缓存率', prefill: '预填充', output: '输出', hitRate: '命中率' },

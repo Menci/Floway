@@ -25,7 +25,7 @@ import {
 import { buildPerformanceChart, performanceBuckets } from '../components/performance/plot';
 import { PerformanceTable } from '../components/performance/table';
 import { TelemetryDimensionControls, type TelemetryDimension } from '../components/telemetry/dimension-controls';
-import { clearGroupedTelemetryFilters, scopeTelemetryIdentity } from '../components/telemetry/filter-state';
+import { changeTelemetryFilter, changeTelemetryGroupBy, scopeTelemetryIdentity } from '../components/telemetry/filter-state';
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
@@ -49,6 +49,7 @@ interface UpstreamName { id: string; name: string }
 const groupByValues: PerformanceGroupBy[] = ['model', 'upstream', 'operation', 'runtimeLocation', 'keyId', 'userId'];
 
 interface LoaderData {
+  currentUserId: string;
   error: GlobalError | null;
   loadedAt: number;
   // `null` is a failed fetch, not a quiet gateway: an empty overview would
@@ -65,7 +66,11 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   const user = await requireDashboardUser();
   const state = parsePerformanceUrlState(new URL(request.url).searchParams);
   const view: PerformanceView = user.isAdmin ? 'all-by-user' : 'self-by-key';
-  const scoped = scopeTelemetryIdentity(state.groupBy, state.filters, view === 'all-by-user', 'model');
+  const scoped = scopeTelemetryIdentity(state.groupBy, state.filters, {
+    currentUserId: String(user.id),
+    fallbackGroup: 'model',
+    userDimensionAvailable: view === 'all-by-user',
+  });
   const loadedAt = Date.now();
   const query = buildPerformanceQuery(state.range, scoped.groupBy, scoped.filters, loadedAt);
   // The page opens for every signed-in account, so the names come from the
@@ -76,6 +81,7 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
     callApi(() => api.api['upstream-options'].$get()),
   ]);
   return {
+    currentUserId: String(user.id),
     error: overview.error ?? upstreams.error ?? null,
     loadedAt,
     overview: overview.data ?? null,
@@ -106,6 +112,11 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const [upstreamNames] = useState(() => loaderData.upstreamNames && new Map(loaderData.upstreamNames.map(record => [record.id, record.name])));
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
   const locale = useLocale();
+  const identityContext = {
+    currentUserId: loaderData.currentUserId,
+    fallbackGroup: 'model' as const,
+    userDimensionAvailable: view === 'all-by-user',
+  };
 
   // A background poll must not clear a failure the operator has not read.
   const reload = useCallback(async (signal: AbortSignal, { background, requestedAt }: { background: boolean; requestedAt: number }) => {
@@ -158,8 +169,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     if (next === query.groupBy) return;
     setQuery(current => ({
       ...current,
-      filters: clearGroupedTelemetryFilters(current.filters, next),
-      groupBy: next,
+      ...changeTelemetryGroupBy(current, next, identityContext),
     }));
   };
   const changeRange = (next: PerformanceRange) => {
@@ -168,7 +178,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   };
   const setFilter = (key: keyof PerformanceFilters, value: string[]) => setQuery(current => ({
     ...current,
-    filters: { ...current.filters, [key]: value },
+    ...changeTelemetryFilter(current, key, value, identityContext),
   }));
   const buckets = useMemo(() => performanceBuckets(loadedQuery.range, loadedAt, locale), [loadedAt, loadedQuery.range, locale]);
   const labels = useMemo(() => overview && upstreamNames && performanceLabels(overview, upstreamNames), [overview, upstreamNames]);
@@ -203,7 +213,17 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
         { key: 'upstream', groupLabel: t('dashboard.performance.groupBy.upstream'), filterLabel: t('dashboard.performance.filters.upstream'), allLabel: t('dashboard.performance.filters.all.upstream'), options: overview.dimensionValues.upstreams.map(value => ({ value, label: labels.upstreams.get(value) ?? value })) },
         { key: 'operation', groupLabel: t('dashboard.performance.groupBy.operation'), filterLabel: t('dashboard.performance.filters.operation'), allLabel: t('dashboard.performance.filters.all.operation'), options: overview.dimensionValues.operations.map(value => ({ value, label: value })) },
         { key: 'runtimeLocation', groupLabel: t('dashboard.performance.groupBy.runtimeLocation'), filterLabel: t('dashboard.performance.filters.runtimeLocation'), allLabel: t('dashboard.performance.filters.all.runtimeLocation'), options: overview.dimensionValues.runtimeLocations.map(value => ({ value, label: value })) },
-        { key: 'userId', groupLabel: t('dashboard.performance.groupBy.userId'), filterLabel: t('dashboard.performance.filters.userId'), allLabel: t('dashboard.performance.filters.all.userId'), options: overview.dimensionValues.userIds.map(value => ({ value: String(value), label: labels.users.get(String(value)) ?? `user ${value}` })) },
+        {
+          key: 'userId',
+          groupLabel: t('dashboard.performance.groupBy.userId'),
+          filterLabel: t('dashboard.performance.filters.userId'),
+          allLabel: t('dashboard.performance.filters.all.userId'),
+          options: [...new Set([...overview.dimensionValues.userIds.map(String), ...loadedQuery.filters.userId])]
+            .map(value => ({ value, label: labels.users.get(value) ?? `user ${value}` })),
+          selectionLabel: values => values.length === 1 && values[0] === loaderData.currentUserId
+            ? t('dashboard.telemetry.currentUserOnly')
+            : t('dashboard.performance.filters.selected', { count: values.length }),
+        },
         { key: 'keyId', groupLabel: t('dashboard.performance.groupBy.keyId'), filterLabel: t('dashboard.performance.filters.keyId'), allLabel: t('dashboard.performance.filters.all.keyId'), options: overview.dimensionValues.keyIds.map(value => ({ value, label: labels.keys.get(value) ?? value })) },
       ];
       const availableDimensions = dimensions.filter(dimension => dimension.key !== 'userId' || view === 'all-by-user');

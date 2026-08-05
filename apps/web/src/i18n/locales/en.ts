@@ -916,6 +916,7 @@ const en = {
           toggleHint: 'Click to toggle. Shift-click or double-click to isolate.',
         },
       },
+      telemetry: { currentUserOnly: 'Only me' },
       usage: {
         empty: 'No usage records in this range',
         callout: { requests: 'Req', cost: 'Cost', total: 'Total', cached: 'Cached', cachedRate: 'Cached%', prefill: 'Prefill', output: 'Output', hitRate: 'Hit%' },
