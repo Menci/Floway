@@ -38,7 +38,8 @@ const isWoffSource = (nodes: valueParser.Node[]): boolean => {
     const argument = functionArgument(node);
     if (argument === undefined) return;
     if (name === 'format' && argument.toLowerCase() === 'woff') woff = true;
-    if (name === 'url' && !argument.toLowerCase().startsWith('data:') && /\.woff(?:[?#]|$)/i.test(argument)) woff = true;
+    const pathname = argument.split(/[?#]/, 1)[0]!;
+    if (name === 'url' && !argument.toLowerCase().startsWith('data:') && /\.woff$/i.test(pathname)) woff = true;
   });
   return woff;
 };
@@ -74,7 +75,6 @@ const stripWoffSources = (value: string, source: string): string => {
   parsed.nodes = retained.flatMap(
     ({ delimiterBefore, nodes }, index) => index === 0 ? nodes : [delimiterBefore!, ...nodes],
   );
-  if (isWoffSource(parsed.nodes)) throw new Error(`${source} still declares a WOFF source`);
   return valueParser.stringify(parsed.nodes);
 };
 
@@ -96,10 +96,16 @@ const stripWoffSources = (value: string, source: string): string => {
 export const fontsourceWoff2Only = (): Plugin => ({
   postcssPlugin: 'fontsource-woff2-only',
   Once(root, { result }) {
-    const path = result.opts.from?.replaceAll('\\', '/');
+    const path = result.opts.from?.replaceAll('\\', '/').split(/[?#]/, 1)[0];
     if (path === undefined || !fontsourceStylesheet.test(path)) return;
-    root.walkDecls(/^src$/i, declaration => {
+    root.walkDecls(declaration => {
+      if (cssUnescape(declaration.prop).toLowerCase() !== 'src') return;
       declaration.value = stripWoffSources(declaration.value, path);
+    });
+    root.walkDecls(declaration => {
+      if (isWoffSource(valueParser(declaration.value).nodes)) {
+        throw new Error(`${path} still declares a WOFF source`);
+      }
     });
   },
 });

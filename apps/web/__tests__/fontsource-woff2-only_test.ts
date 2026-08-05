@@ -41,6 +41,34 @@ describe('Fontsource WOFF2-only transform', () => {
     expect(output).not.toContain(String.raw`example.wo\66 f')`);
   });
 
+  it('recognizes escaped src descriptors', async () => {
+    const css = String.raw`@font-face {
+      s\72 c: url('./example.woff2') format('woff2'),
+        url('./example.woff') format('woff');
+    }`;
+
+    const output = await process(css);
+
+    expect(output).toContain(String.raw`s\72 c: url('./example.woff2') format('woff2')`);
+    expect(output).not.toContain("url('./example.woff')");
+  });
+
+  it('classifies URL pathnames independently of query strings and fragments', async () => {
+    const css = `@font-face {
+      src: url('./example.woff2?fallback=.woff') format('woff2'),
+        url('./example-alt.woff2#fallback=.woff') format('woff2'),
+        url('./example.woff?cache=1') format('woff'),
+        url('./example-alt.woff#cache') format('woff');
+    }`;
+
+    const output = await process(css);
+
+    expect(output).toContain("url('./example.woff2?fallback=.woff') format('woff2')");
+    expect(output).toContain("url('./example-alt.woff2#fallback=.woff') format('woff2')");
+    expect(output).not.toContain("url('./example.woff?cache=1')");
+    expect(output).not.toContain("url('./example-alt.woff#cache')");
+  });
+
   it('treats data URL commas as URL content', async () => {
     const css = `@font-face {
       src: url('data:font/woff2;base64,d09GMg==') format('woff2'),
@@ -66,6 +94,20 @@ describe('Fontsource WOFF2-only transform', () => {
     const css = `@font-face { src: url('./example.woff') format('woff'); }`;
 
     expect(await process(css, '/workspace/src/global.css')).toBe(css);
+  });
+
+  it.each(['?inline', '#transform-only'])('matches Fontsource IDs carrying %s', async suffix => {
+    const css = `@font-face {
+      src: url('./example.woff2') format('woff2'), url('./example.woff') format('woff');
+    }`;
+
+    expect(await process(css, `${fontsourcePath}${suffix}`)).not.toContain("format('woff')");
+  });
+
+  it('fails if WOFF remains anywhere in a Fontsource stylesheet', async () => {
+    const css = `:root { --unexpected-font: url('./example.woff') format('woff'); }`;
+
+    await expect(process(css)).rejects.toThrow('still declares a WOFF source');
   });
 
   it.each(['400.css', '600.css', '700.css'])('processes the installed Maple Mono %s stylesheet', async file => {
