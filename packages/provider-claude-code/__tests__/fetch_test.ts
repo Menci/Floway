@@ -183,11 +183,11 @@ describe('callClaudeCodeMessages — header surface', () => {
           'user-agent': 'claude-cli/2.1.181 (external, cli)',
           'x-app': 'cli',
           'anthropic-version': '2023-06-01',
-          'anthropic-beta': 'oauth-2025-04-20,claude-code-20250219',
           'x-stainless-package-version': '0.94.0',
           'x-claude-code-session-id': 'sess-abc',
           'x-client-request-id': 'req-xyz',
         }),
+        anthropicBeta: ['oauth-2025-04-20', 'claude-code-20250219'],
       },
     });
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;

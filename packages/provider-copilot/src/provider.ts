@@ -20,7 +20,7 @@ import type { CopilotRawModel } from './types.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import { parseChatCompletionsStream, type ChatCompletionsPayload, type ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { type ModelEndpointKey, type ModelEndpoints, type ProtocolFrame, kindForEndpoints } from '@floway-dev/protocols/common';
-import { parseAnthropicBetaHeader, parseMessagesStream, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import { parseMessagesStream, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type CanonicalResponsesPayload, type ResponsesResult } from '@floway-dev/protocols/responses';
 import { eventResult, getProviderRepo, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, resolveEffectiveFlags, type ExecuteResult, type FlagOverrides, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 
@@ -118,14 +118,12 @@ const messagesBoundaryContext = (
   body: Omit<MessagesPayload, 'model'>,
   model: ProviderModel,
   headers: Headers,
+  anthropicBeta: readonly string[],
 ): MessagesBoundaryCtx => {
-  const boundaryHeaders = new Headers(headers);
-  const anthropicBeta = [...parseAnthropicBetaHeader(boundaryHeaders.get('anthropic-beta'))];
-  boundaryHeaders.delete('anthropic-beta');
   return {
     payload: { ...body, model: model.id },
-    headers: boundaryHeaders,
-    anthropicBeta,
+    headers: new Headers(headers),
+    anthropicBeta: [...anthropicBeta],
     model,
   };
 };
@@ -436,7 +434,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
 
       // Both the native Messages call and count_tokens select the same raw
       // `messages` variant; they differ only in the upstream endpoint path.
-      const ctx = messagesBoundaryContext(body, model, opts.headers);
+      const ctx = messagesBoundaryContext(body, model, opts.headers, opts.anthropicBeta);
       const rawModel = rawModelFor(model, 'messages', {
         context1m: ctx.anthropicBeta.includes(CONTEXT_1M_BETA),
         reasoningEffort: messagesReasoningEffort(body),
@@ -451,7 +449,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       return lowerToStream(result, rawModel.id);
     },
     callMessagesCountTokens: async (model, body, signal, opts) => {
-      const ctx = messagesBoundaryContext(body, model, opts.headers);
+      const ctx = messagesBoundaryContext(body, model, opts.headers, opts.anthropicBeta);
       const rawModel = rawModelFor(model, 'messages', {
         context1m: ctx.anthropicBeta.includes(CONTEXT_1M_BETA),
         reasoningEffort: messagesReasoningEffort(body),

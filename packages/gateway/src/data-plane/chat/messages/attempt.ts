@@ -13,7 +13,7 @@ import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import type { ModelCandidate, ExecuteResult, PlainResult, UpstreamCallOptions } from '@floway-dev/provider';
+import type { ModelCandidate, ExecuteResult, MessagesUpstreamCallOptions, PlainResult } from '@floway-dev/provider';
 import { providerModelOf } from '@floway-dev/provider';
 import { translateMessagesViaChatCompletions, translateMessagesViaResponses } from '@floway-dev/translate';
 
@@ -30,28 +30,25 @@ export interface MessagesAttemptArgs {
   readonly ctx: ChatGatewayCtx;
   readonly candidate: ModelCandidate;
   readonly headers: Headers;
+  readonly anthropicBeta: readonly string[];
 }
 
 const buildMessagesUpstreamCallOptions = (
   candidate: ModelCandidate,
   ctx: ChatGatewayCtx,
   headers: Headers,
-): UpstreamCallOptions => {
-  const options = buildUpstreamCallOptions(candidate, ctx, headers);
-  // `anthropic-beta` is Messages transport metadata, not a provider-level
-  // header permission. Native Messages carries it after the ordinary header
-  // bag has been filtered; translated target protocols never enter this path.
-  // https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/beta/beta.ts#L622-L635
-  const anthropicBeta = headers.get('anthropic-beta');
-  if (anthropicBeta !== null) options.headers.set('anthropic-beta', anthropicBeta);
-  return options;
-};
+  anthropicBeta: readonly string[],
+): MessagesUpstreamCallOptions => ({
+  ...buildUpstreamCallOptions(candidate, ctx, headers),
+  anthropicBeta,
+});
 
 export const messagesAttempt = {
   generate: async (args: MessagesAttemptArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
-    const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders } = args;
+    const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders, anthropicBeta } = args;
     const payload = { ...sourcePayload, model: candidate.model.id };
     const headers = new Headers(sourceHeaders);
+    headers.delete('anthropic-beta');
     const targetApi = messagesGenerateTarget.pick(candidate.model.endpoints);
     const invocation: MessagesInvocation = {
       payload,
@@ -67,7 +64,7 @@ export const messagesAttempt = {
           providerModelOf(candidate),
           body,
           ctx.abortSignal,
-          buildMessagesUpstreamCallOptions(candidate, ctx, invocation.headers),
+          buildMessagesUpstreamCallOptions(candidate, ctx, invocation.headers, anthropicBeta),
         );
         return await providerStreamResultToExecuteResult(providerResult, candidate, targetApi, ctx, createMessagesBillableUsageReader());
       }
@@ -94,9 +91,10 @@ export const messagesAttempt = {
   },
 
   countTokens: async (args: MessagesAttemptArgs): Promise<PlainResult> => {
-    const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders } = args;
+    const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders, anthropicBeta } = args;
     const payload = { ...sourcePayload, model: candidate.model.id };
     const headers = new Headers(sourceHeaders);
+    headers.delete('anthropic-beta');
     // `pick` here is contractually total — serve filtered with
     // `messagesCountTokensTarget.canServe`, so a non-messages candidate is
     // a contract breach.
@@ -114,7 +112,7 @@ export const messagesAttempt = {
         providerModelOf(candidate),
         body,
         ctx.abortSignal,
-        buildMessagesUpstreamCallOptions(candidate, ctx, invocation.headers),
+        buildMessagesUpstreamCallOptions(candidate, ctx, invocation.headers, anthropicBeta),
       );
       return response;
     });

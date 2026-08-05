@@ -60,12 +60,14 @@ than in pairwise translators.
   authority for wire workarounds; the provider parses upstream SSE into typed
   protocol frames before returning them. The source HTTP/WebSocket adapter
   performs final serialization only after translation back to the source.
-- `anthropic-beta` belongs to the Messages protocol boundary. A dispatch whose
-  selected target is Messages preserves it independently of the provider's
-  ordinary inbound header allowlist; other target protocols do not receive it.
-  Copilot parses the field into `MessagesBoundaryCtx.anthropicBeta`, removes it
-  from the mutable header bag, lets its interceptor chain normalize the token
-  list, and serializes that typed value once at the wire terminal.
+- `anthropic-beta` belongs to the Messages source boundary. Messages ingress
+  parses it into typed call metadata independently of the provider's ordinary
+  inbound header allowlist. A native Messages target receives those tokens;
+  translations from other source protocols supply none, and a Messages source
+  translated to another target does not leak them through the ordinary header
+  bag. Copilot copies the tokens into `MessagesBoundaryCtx.anthropicBeta`, lets
+  its interceptor chain normalize the list, and serializes that typed value
+  once at the wire terminal.
 - Claude Code Messages has two provider-owned paths. A request recognized as
   Claude Code-shaped skips the re-mimicry envelope. At the candidate boundary,
   the gateway reduces ordinary inbound headers to the allowlist exported by
