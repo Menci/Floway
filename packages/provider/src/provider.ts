@@ -139,8 +139,8 @@ export interface ProviderInstance {
   // those upstreams; the rejecting stubs in those providers are pure
   // defense-in-depth.
   callCompletions(model: ProviderModel, body: Omit<CompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
-  // Each protocol receives only the headers declared for this method by the
-  // provider's static module surface.
+  // Each protocol receives the gateway-resolved combination of this method's
+  // static allowlist and the selected provider instance's rules.
   callChatCompletions(model: ProviderModel, body: Omit<ChatCompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
   callResponses(model: ProviderModel, body: Omit<CanonicalResponsesPayload, 'model'>, action: ResponsesAction, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderResponsesResult>;
   callMessages(model: ProviderModel, body: Omit<MessagesPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<MessagesStreamEvent>>;
@@ -169,8 +169,9 @@ export interface ProviderModule {
   create: (record: UpstreamRecord) => Provider;
   // Client-authored headers each call surface can consume. Strings are exact,
   // ASCII-case-insensitive names; regular expressions run against the
-  // normalized lowercase name. An absent call accepts no inbound headers.
-  // The gateway applies the selected allowlist at the candidate boundary.
+  // normalized lowercase name. An absent call contributes no static headers;
+  // candidate-specific instance rules can still admit or replace exact names.
+  // The gateway resolves both layers at the candidate boundary.
   inboundHeaderAllowlist: Partial<Record<ProviderCall, readonly InboundHeaderMatcher[]>>;
   // Exhaustive default map over every catalog flag id for a fresh
   // upstream of this kind; see each provider package's `defaults.ts`.

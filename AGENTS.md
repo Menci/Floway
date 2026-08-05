@@ -294,9 +294,11 @@ not leak onto sibling surfaces and failover candidates never share a filtered
 or mutated header bag. Custom upstreams derive exact-name instance rules from
 `config.ingressHeadersRules`; `null` preserves a matched ingress value and a
 string replaces it, including the empty string. Rules never synthesize a
-header absent from the ingress request. The gateway owns the control-plane
-handlers that call vendor APIs and maps their results onto Floway HTTP
-responses.
+header absent from the ingress request. The Custom config parser rejects
+gateway credentials, cookies, proxy/IP signals, body metadata, and hop-by-hop
+names because those remain owned by the HTTP transport. The gateway owns the
+control-plane handlers that call vendor APIs and maps their results onto Floway
+HTTP responses.
 
 `gateway` depends on `agent-setup` + `http` + `interceptor` + `platform` +
 `protocols` + `provider` + every `provider-*` package + `proxy` + `translate`.

@@ -72,6 +72,13 @@ test('assertCustomUpstreamRecord rejects invalid or duplicate ingress header rul
     [[{ key: 'bad header', value: null }], 'must be a valid HTTP header name'],
     [[{ key: 'x-route', value: 'ok\r\nnot-ok' }], 'value is not a valid HTTP header value'],
     [[{ key: 'x-route', value: null, extra: true }], 'must contain only key and value'],
+    ['not-an-array', 'ingressHeadersRules must be an array'],
+    [[null], 'must contain only key and value'],
+    [[{ key: 1, value: null }], 'key must be a valid HTTP header name'],
+    [[{ key: 'x-route', value: 1 }], 'value must be a string or null'],
+    [[{ key: 'Content-Length', value: null }], 'content-length is owned by the HTTP transport'],
+    [[{ key: 'Authorization', value: null }], 'authorization is owned by the HTTP transport'],
+    [[{ key: 'CF-Ray', value: null }], 'cf-ray is owned by the HTTP transport'],
   ] as const) {
     assertThrows(
       () => assertCustomUpstreamRecord({
@@ -82,6 +89,16 @@ test('assertCustomUpstreamRecord rejects invalid or duplicate ingress header rul
       message,
     );
   }
+});
+
+test('assertCustomUpstreamRecord requires ingressHeadersRules on persisted config', () => {
+  const config = { ...(baseRecord.config as Record<string, unknown>) };
+  delete config.ingressHeadersRules;
+  assertThrows(
+    () => assertCustomUpstreamRecord({ ...baseRecord, config }),
+    Error,
+    'ingressHeadersRules must be an array',
+  );
 });
 
 test('assertCustomUpstreamRecord defaults modelsFetch to enabled when absent', () => {

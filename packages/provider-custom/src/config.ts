@@ -89,7 +89,46 @@ const authStyleField = (value: unknown): CustomAuthStyle => {
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
+// https://www.rfc-editor.org/rfc/rfc9110.html#section-5.6.2
 const HTTP_FIELD_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+
+// These names belong to the gateway/provider transport boundary, not the
+// upstream application protocol. Forwarding body metadata after Floway has
+// reserialized JSON/FormData misframes the new body; forwarding gateway auth,
+// cookies, proxy/IP signals, or hop-by-hop fields leaks credentials/topology or
+// is rejected by runtime fetch.
+// https://www.rfc-editor.org/rfc/rfc9110.html#section-7.6.1
+const PROTECTED_INGRESS_HEADER_NAMES = new Set([
+  'accept-encoding',
+  'api-key',
+  'authorization',
+  'cdn-loop',
+  'connection',
+  'content-encoding',
+  'content-length',
+  'content-type',
+  'cookie',
+  'expect',
+  'forwarded',
+  'host',
+  'keep-alive',
+  'proxy-authorization',
+  'proxy-connection',
+  'te',
+  'trailer',
+  'transfer-encoding',
+  'true-client-ip',
+  'upgrade',
+  'x-api-key',
+  'x-client-ip',
+  'x-floway-session',
+  'x-forwarded-for',
+  'x-forwarded-host',
+  'x-forwarded-proto',
+  'x-goog-api-key',
+  'x-openai-actor-authorization',
+  'x-real-ip',
+]);
 
 const ingressHeadersRulesField = (value: unknown): CustomIngressHeaderRule[] => {
   if (!Array.isArray(value)) throw new Error('Malformed custom upstream config: ingressHeadersRules must be an array');
@@ -102,6 +141,9 @@ const ingressHeadersRulesField = (value: unknown): CustomIngressHeaderRule[] => 
       throw new Error(`Malformed custom upstream config: ingressHeadersRules[${index}].key must be a valid HTTP header name`);
     }
     const key = raw.key.trim().toLowerCase();
+    if (PROTECTED_INGRESS_HEADER_NAMES.has(key) || key.startsWith('cf-')) {
+      throw new Error(`Malformed custom upstream config: ingressHeadersRules[${index}].key ${key} is owned by the HTTP transport`);
+    }
     if (seen.has(key)) {
       throw new Error(`Malformed custom upstream config: ingressHeadersRules contains duplicate key ${key}`);
     }
