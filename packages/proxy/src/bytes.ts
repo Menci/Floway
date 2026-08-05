@@ -150,14 +150,23 @@ const parseIpLiteral = (host: string): IpLiteral | null => {
 
   // ipaddr.js accepts the same historical IPv4 spellings in an IPv6
   // transitional tail. Keep the tail aligned with the strict IPv4 contract.
+  let ipv6Host = host;
   if (host.includes('.')) {
     const ipv4Tail = host.slice(host.lastIndexOf(':') + 1);
     if (!ipaddr.IPv4.isValidFourPartDecimal(ipv4Tail)) return null;
+
+    // ipaddr.js treats bare IPv4-compatible `::192.0.2.128` as the
+    // IPv4-mapped `::ffff:192.0.2.128`. Turn an already-validated dotted tail
+    // into its two native IPv6 groups first so compatible and mapped forms
+    // retain their distinct wire bits.
+    const [a, b, c, d] = ipaddr.IPv4.parse(ipv4Tail).toByteArray();
+    const ipv6Prefix = host.slice(0, host.lastIndexOf(':') + 1);
+    ipv6Host = `${ipv6Prefix}${((a! << 8) | b!).toString(16)}:${((c! << 8) | d!).toString(16)}`;
   }
 
   return {
     kind: 'ipv6',
-    bytes: Uint8Array.from(ipaddr.IPv6.parse(host).toByteArray()),
+    bytes: Uint8Array.from(ipaddr.IPv6.parse(ipv6Host).toByteArray()),
   };
 };
 

@@ -35,9 +35,25 @@ describe('encodeAtypAddress — strict IP literal boundaries', () => {
     ['::1', [...new Array<number>(15).fill(0), 1]],
     ['2001:db8:0:1:2:3:4:5', [0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 1, 0, 2, 0, 3, 0, 4, 0, 5]],
     ['ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff', new Array<number>(16).fill(0xff)],
-    ['::ffff:192.0.2.128', [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 192, 0, 2, 128]],
   ] as const)('encodes IPv6 %s as 16 network-order octets', (host, octets) => {
     expect(bytes(encodeAtypAddress(host, SOCKS_ATYP))).toEqual([0x04, ...octets]);
+  });
+
+  it('preserves the distinct wire bits of IPv4-compatible and IPv4-mapped IPv6', () => {
+    const compatible = bytes(encodeAtypAddress('::192.0.2.128', SOCKS_ATYP));
+    const mapped = bytes(encodeAtypAddress('::ffff:192.0.2.128', SOCKS_ATYP));
+
+    expect(compatible).toEqual([
+      0x04,
+      0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 192, 0, 2, 128,
+    ]);
+    expect(mapped).toEqual([
+      0x04,
+      0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0xff, 0xff, 192, 0, 2, 128,
+    ]);
+    expect(compatible).not.toEqual(mapped);
   });
 
   it.each([
