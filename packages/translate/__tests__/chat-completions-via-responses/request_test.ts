@@ -281,12 +281,12 @@ test('buildTargetRequest forwards reasoning_effort and service_tier onto the nat
   assertEquals(result.service_tier, 'priority');
 });
 
-test("buildTargetRequest drops reasoning_effort='none' since Responses has no equivalent", () => {
+test.each(['none', ''] as const)('buildTargetRequest forwards open reasoning_effort value %j verbatim', (effort) => {
   const result = buildTargetRequest({
     model: 'gpt-test',
     messages: [{ role: 'user', content: 'hi' }],
-    reasoning_effort: 'none',
+    reasoning_effort: effort,
   });
 
-  assertEquals(result.reasoning, undefined);
+  assertEquals(result.reasoning, { effort });
 });

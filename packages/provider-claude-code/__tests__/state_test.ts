@@ -172,6 +172,15 @@ describe('assertClaudeCodeUpstreamState', () => {
       accounts: [{ ...goodAccount, quotaSnapshot: { fetchedAt: 1, data: { status: 'allowed' } } }],
     })).toThrow(/data\.reset/);
   });
+  test.each([
+    { ...fullQuotaSnapshot, extra: true },
+    { ...fullQuotaSnapshot, fiveHour: { status: null, reset: null, utilization: null, extra: true } },
+    { ...fullQuotaSnapshot, raw: { 'anthropic-ratelimit-unified-status': 1 } },
+  ])('rejects malformed nested quota data: %j', data => {
+    expect(() => assertClaudeCodeUpstreamState({
+      accounts: [{ ...goodAccount, quotaSnapshot: { fetchedAt: 1, data } }],
+    })).toThrow();
+  });
 
   test('accepts usageProbeSnapshot null / populated', () => {
     expect(() => assertClaudeCodeUpstreamState({ accounts: [{ ...goodAccount, usageProbeSnapshot: null }] })).not.toThrow();

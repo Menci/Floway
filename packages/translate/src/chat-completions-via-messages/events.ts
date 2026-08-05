@@ -118,7 +118,7 @@ export const translateMessagesEventToChatCompletionsChunks = (event: MessagesStr
     switch (block.type) {
     case 'thinking':
       claimReasoningBlock(state, event.index);
-      return [];
+      return block.thinking && state.reasoningBlockIndex === event.index ? [makeChunk(state, { reasoning_text: block.thinking })] : [];
     case 'redacted_thinking':
       return claimReasoningBlock(state, event.index) ? [makeChunk(state, { reasoning_opaque: block.data })] : [];
     case 'tool_use': {
@@ -130,13 +130,14 @@ export const translateMessagesEventToChatCompletionsChunks = (event: MessagesStr
               index: toolCallIndex,
               id: block.id,
               type: 'function',
-              function: { name: block.name, arguments: '' },
+              function: { name: block.name, arguments: Object.keys(block.input).length > 0 ? JSON.stringify(block.input) : '' },
             },
           ],
         }),
       ];
     }
     case 'text':
+      return block.text ? [makeChunk(state, { content: block.text })] : [];
     case 'server_tool_use':
     case 'web_search_tool_result':
       return [];

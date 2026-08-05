@@ -2,7 +2,7 @@
 // Writes happen via UpstreamRepo.saveState, which read-modify-writes the row
 // and replays the mutator whenever a concurrent writer wins.
 
-import type { CodexQuotaSnapshot } from './quota.ts';
+import { assertCodexQuotaSnapshot, type CodexQuotaSnapshot } from './quota-snapshot.ts';
 
 export type CodexAccountCredentialHealth = 'active' | 'session_terminated' | 'refresh_failed';
 
@@ -118,10 +118,6 @@ const assertCodexAccessTokenEntry = (value: unknown, where: string): void => {
   }
 };
 
-// Deeper validation of the snapshot's `data` payload lives in quota.ts, which
-// owns the snapshot shape and re-checks at every consumer boundary. Here we
-// only confirm the wrapper is a plain object so an unrelated key (array,
-// scalar) doesn't slip past.
 const assertCodexQuotaSnapshotEntry = (value: unknown, where: string): void => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new TypeError(`${where} must be a plain object`);
@@ -135,9 +131,7 @@ const assertCodexQuotaSnapshotEntry = (value: unknown, where: string): void => {
   if (typeof obj.fetchedAt !== 'number' || !Number.isFinite(obj.fetchedAt)) {
     throw new TypeError(`${where}.fetchedAt must be a finite number`);
   }
-  if (typeof obj.data !== 'object' || obj.data === null || Array.isArray(obj.data)) {
-    throw new TypeError(`${where}.data must be a plain object`);
-  }
+  assertCodexQuotaSnapshot(obj.data, `${where}.data`);
 };
 
 const isUnsafeMapKey = (key: string): boolean => key === '' || key === '__proto__' || key === 'constructor' || key === 'prototype';
