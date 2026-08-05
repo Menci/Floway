@@ -1,12 +1,28 @@
 import type { Context } from 'hono';
 
-const serializeErrorCause = (cause: unknown): unknown => {
+const MAX_SERIALIZED_ERROR_CAUSE_DEPTH = 32;
+
+const serializedErrorIdentity = (error: Error) => ({
+  name: error.name,
+  message: error.message,
+  stack: error.stack,
+});
+
+const serializeErrorCause = (cause: unknown, ancestors: ReadonlySet<Error>, depth = 0): unknown => {
   if (cause instanceof Error) {
+    const identity = serializedErrorIdentity(cause);
+    if (ancestors.has(cause)) {
+      return { type: 'circular_reference', ...identity };
+    }
+    if (depth >= MAX_SERIALIZED_ERROR_CAUSE_DEPTH) {
+      return { type: 'depth_limit', limit: MAX_SERIALIZED_ERROR_CAUSE_DEPTH, ...identity };
+    }
+
+    const nextAncestors = new Set(ancestors);
+    nextAncestors.add(cause);
     return {
-      name: cause.name,
-      message: cause.message,
-      stack: cause.stack,
-      cause: serializeErrorCause(cause.cause),
+      ...identity,
+      cause: serializeErrorCause(cause.cause, nextAncestors, depth + 1),
     };
   }
 
@@ -27,10 +43,8 @@ export const internalErrorResponse = (error: Error, c: Context): Response => {
     {
       error: {
         type: 'internal_error',
-        name: error.name,
-        message: error.message,
-        stack: error.stack,
-        cause: serializeErrorCause(error.cause),
+        ...serializedErrorIdentity(error),
+        cause: serializeErrorCause(error.cause, new Set([error])),
         method: c.req.method,
         path: c.req.path,
       },
