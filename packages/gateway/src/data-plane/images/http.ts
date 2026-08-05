@@ -47,6 +47,9 @@ const prepareJsonImagesEdit = (body: Record<string, unknown>): PreparedImagesEdi
   if (!Array.isArray(body.images)) {
     return { type: 'invalid', message: 'Image edits request body must include an images array.' };
   }
+  if (body.images.length === 0) {
+    return { type: 'invalid', message: 'Image edits request body must include at least one image.' };
+  }
   const images: ImagesEditsSource[] = [];
   for (const [index, value] of body.images.entries()) {
     const source = imageEditSource(value, `Image edits images[${index}]`);
@@ -170,9 +173,12 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
       parameters[name] = value;
     }
   }
+  if (images.length === 0) {
+    return invalid('Image edits request body must include at least one image file.');
+  }
   return await serveImagesEditRequest(c, requestBody, model, {
     images: images.map(file => ({ type: 'upload', file })),
     ...(mask === undefined ? {} : { mask: { type: 'upload' as const, file: mask } }),
     parameters,
-  }, form.get('stream') === 'true');
+  }, parameters.stream === 'true');
 };

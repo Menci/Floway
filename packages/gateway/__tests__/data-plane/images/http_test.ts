@@ -156,7 +156,27 @@ test('/v1/images/edits rejects multipart body without model field with 400', asy
   assertEquals(response.status, 400);
 });
 
-test('/v1/images/generations rejects model on custom upstream without /images/generations capability', async () => {
+test('/v1/images/edits requires at least one image for JSON and multipart requests', async () => {
+  const { apiKey } = await setupAppTest();
+  const json = await requestApp('/v1/images/edits', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+    body: JSON.stringify({ model: 'gpt-image-2', prompt: 'edit', images: [] }),
+  });
+  assertEquals(json.status, 400);
+  assertEquals(await json.json(), { error: { message: 'Image edits request body must include at least one image.', type: 'api_error' } });
+
+  const form = new FormData();
+  form.append('model', 'gpt-image-2');
+  form.append('prompt', 'edit');
+  const multipart = await requestApp('/v1/images/edits', {
+    method: 'POST', headers: { 'x-api-key': apiKey.key }, body: form,
+  });
+  assertEquals(multipart.status, 400);
+  assertEquals(await multipart.json(), { error: { message: 'Image edits request body must include at least one image file.', type: 'api_error' } });
+});
+
+test('/v1/images/generations rejects a model of the wrong kind', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
@@ -197,6 +217,35 @@ test('/v1/images/generations rejects model on custom upstream without /images/ge
       assertEquals(body.error.message, 'Model gpt-4o does not support the /images/generations endpoint.');
     },
   );
+});
+
+test.each([
+  {
+    name: 'generations rejects an edits-only image model',
+    endpoints: { imagesEdits: {} },
+    path: '/v1/images/generations',
+    body: { model: 'gpt-image-2', prompt: 'draw' },
+    sourceApi: '/images/generations',
+  },
+  {
+    name: 'edits rejects a generations-only image model',
+    endpoints: { imagesGenerations: {} },
+    path: '/v1/images/edits',
+    body: { model: 'gpt-image-2', prompt: 'edit', images: [{ file_id: 'file-source' }] },
+    sourceApi: '/images/edits',
+  },
+] as const)('/v1/images/$name', async ({ endpoints, path, body, sourceApi }) => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerImagesUpstream(repo, endpoints);
+  const response = await requestApp(path, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+    body: JSON.stringify(body),
+  });
+  assertEquals(response.status, 400);
+  assertEquals(await response.json(), {
+    error: { message: `Model gpt-image-2 does not support the ${sourceApi} endpoint.`, type: 'api_error' },
+  });
 });
 
 test('/v1/images/generations forwards a JSON request through a custom upstream and records usage', async () => {
