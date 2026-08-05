@@ -1729,13 +1729,14 @@ class SqlAgentSetupRepo implements AgentSetupRepository {
     expiresAt: number;
   }): Promise<AgentSetupMutation> {
     // Single-statement CAS on (user_id, token, revision). The token never
-    // changes; a stale revision fails the WHERE so nothing is written.
+    // changes; a stale revision fails the WHERE so nothing is written, while
+    // MAX keeps a delayed update from shortening a newer expiry.
     const row = await this.db
       .prepare(
         `UPDATE agent_setup SET
            configuration_json = ?,
            configuration_revision = configuration_revision + 1,
-           expires_at = ?,
+           expires_at = MAX(expires_at, ?),
            updated_at = ?
          WHERE user_id = ? AND token = ? AND configuration_revision = ?
          RETURNING ${AGENT_SETUP_COLUMNS}`,
@@ -1755,11 +1756,11 @@ class SqlAgentSetupRepo implements AgentSetupRepository {
     token: string;
     expiresAt: number;
   }): Promise<AgentSetupRenewal> {
-    // Expiry-only: updated_at and the revision are left untouched so a heartbeat
-    // neither reorders the restore selection nor collides with an edit.
+    // Atomic monotonic expiry-only update: an older request cannot shorten a
+    // newer lease, and updated_at/revision remain untouched.
     const row = await this.db
       .prepare(
-        `UPDATE agent_setup SET expires_at = ?
+        `UPDATE agent_setup SET expires_at = MAX(expires_at, ?)
          WHERE user_id = ? AND token = ?
          RETURNING ${AGENT_SETUP_COLUMNS}`,
       )

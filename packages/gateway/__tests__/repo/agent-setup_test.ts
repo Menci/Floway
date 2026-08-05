@@ -248,6 +248,32 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
     });
   });
 
+  test('updateConfiguration cannot shorten an expiry extended after the request was computed', async () => {
+    const repo = await makeRepo();
+    const created = await insert(repo);
+    const renewed = await repo.agentSetup.renewLease({ userId: 7, token: PRIMARY_TOKEN, expiresAt: 2_000 });
+    expect(renewed.status).toBe('ok');
+
+    const configurationJson = '{"apiKeyId":"key-after-heartbeat"}';
+    const result = await repo.agentSetup.updateConfiguration({
+      userId: 7,
+      token: PRIMARY_TOKEN,
+      expectedRevision: 1,
+      configurationJson,
+      now: 1_100,
+      expiresAt: 1_500,
+    });
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') throw new Error('unreachable');
+    expect(result.record).toEqual({
+      ...created,
+      configurationJson,
+      configurationRevision: 2,
+      expiresAt: 2_000,
+      updatedAt: 1_100,
+    });
+  });
+
   test('updateConfiguration reports revision-conflict without mutating when the revision is stale', async () => {
     const repo = await makeRepo();
     const created = await insert(repo);
@@ -314,13 +340,19 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
     expect(result.record.configurationRevision).toBe(2);
   });
 
-  test('renewLease extends expiry without touching the token, revision, or updated_at', async () => {
+  test('renewLease extends expiry monotonically without touching the token, revision, or updated_at', async () => {
     const repo = await makeRepo();
     const created = await insert(repo);
     const renewed = await repo.agentSetup.renewLease({ userId: 7, token: PRIMARY_TOKEN, expiresAt: 1_400 });
     expect(renewed.status).toBe('ok');
     if (renewed.status !== 'ok') throw new Error('unreachable');
     expect(renewed.record).toEqual({ ...created, expiresAt: 1_400 });
+
+    const delayed = await repo.agentSetup.renewLease({ userId: 7, token: PRIMARY_TOKEN, expiresAt: 1_350 });
+    expect(delayed.status).toBe('ok');
+    if (delayed.status !== 'ok') throw new Error('unreachable');
+    expect(delayed.record).toEqual(renewed.record);
+    expect(await repo.agentSetup.findByToken(PRIMARY_TOKEN)).toEqual(renewed.record);
   });
 
   test('renewLease revives an expired-but-present lease', async () => {

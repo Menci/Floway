@@ -76,7 +76,7 @@ class FakeAgentSetupRepository implements AgentSetupRepository {
       ...row,
       configurationJson: input.configurationJson,
       configurationRevision: row.configurationRevision + 1,
-      expiresAt: input.expiresAt,
+      expiresAt: Math.max(row.expiresAt, input.expiresAt),
       updatedAt: input.now,
     };
     this.rows.set(updated.token, updated);
@@ -86,7 +86,7 @@ class FakeAgentSetupRepository implements AgentSetupRepository {
   renewLease(input: { userId: number; token: string; expiresAt: number }): Promise<AgentSetupRenewal> {
     const row = this.rows.get(input.token);
     if (!row || row.userId !== input.userId) return Promise.resolve({ status: 'missing' });
-    const updated: AgentSetupRecord = { ...row, expiresAt: input.expiresAt };
+    const updated: AgentSetupRecord = { ...row, expiresAt: Math.max(row.expiresAt, input.expiresAt) };
     this.rows.set(updated.token, updated);
     return Promise.resolve({ status: 'ok', record: { ...updated } });
   }
@@ -393,6 +393,97 @@ test('create and heartbeat apply the exact five-minute TTL without bumping revis
     const after = await h.repo.findByToken(lease.token);
     assertEquals(after!.updatedAt, before!.updatedAt);
   } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('out-of-order heartbeat completion cannot shorten a newer lease', async () => {
+  vi.useFakeTimers();
+  const firstEntered = Promise.withResolvers<void>();
+  const releaseFirst = Promise.withResolvers<void>();
+  try {
+    const createdAt = Date.parse('2026-08-06T00:00:00.000Z');
+    vi.setSystemTime(createdAt);
+    const h = harness();
+    const lease = await create(h);
+    const renewLease = h.repo.renewLease.bind(h.repo);
+    let callCount = 0;
+    h.repo.renewLease = async input => {
+      callCount += 1;
+      if (callCount === 1) {
+        firstEntered.resolve();
+        await releaseFirst.promise;
+      }
+      return await renewLease(input);
+    };
+
+    const staleHeartbeatAt = createdAt + 10_000;
+    vi.setSystemTime(staleHeartbeatAt);
+    const staleResponsePromise = h.request('/api/setup/heartbeat', heartbeatJson({ token: lease.token }));
+    await firstEntered.promise;
+
+    const newerHeartbeatAt = createdAt + 20_000;
+    vi.setSystemTime(newerHeartbeatAt);
+    const newerResponse = await h.request('/api/setup/heartbeat', heartbeatJson({ token: lease.token }));
+    releaseFirst.resolve();
+    const staleResponse = await staleResponsePromise;
+
+    assertEquals(newerResponse.status, 200);
+    assertEquals(staleResponse.status, 200);
+    const expectedExpiry = newerHeartbeatAt + 300_000;
+    assertEquals(((await newerResponse.json()) as LeaseResponse).expiresAt, expectedExpiry);
+    assertEquals(((await staleResponse.json()) as LeaseResponse).expiresAt, expectedExpiry);
+    assertEquals((await h.repo.findByToken(lease.token))?.expiresAt, expectedExpiry);
+  } finally {
+    releaseFirst.resolve();
+    vi.useRealTimers();
+  }
+});
+
+test('a delayed configuration update cannot shorten a lease extended by a newer heartbeat', async () => {
+  vi.useFakeTimers();
+  const updateEntered = Promise.withResolvers<void>();
+  const releaseUpdate = Promise.withResolvers<void>();
+  try {
+    const createdAt = Date.parse('2026-08-06T00:00:00.000Z');
+    vi.setSystemTime(createdAt);
+    const h = harness();
+    const lease = await create(h);
+    const updateConfiguration = h.repo.updateConfiguration.bind(h.repo);
+    h.repo.updateConfiguration = async input => {
+      updateEntered.resolve();
+      await releaseUpdate.promise;
+      return await updateConfiguration(input);
+    };
+
+    const staleUpdateAt = createdAt + 10_000;
+    vi.setSystemTime(staleUpdateAt);
+    const edited = { ...lease.configuration, codex: { ...lease.configuration.codex, model: 'gpt-after-race' } };
+    const updateResponsePromise = h.request('/api/setup', putJson({
+      token: lease.token,
+      configuration: edited,
+      expectedRevision: lease.configurationRevision,
+    }));
+    await updateEntered.promise;
+
+    const newerHeartbeatAt = createdAt + 20_000;
+    vi.setSystemTime(newerHeartbeatAt);
+    const heartbeatResponse = await h.request('/api/setup/heartbeat', heartbeatJson({ token: lease.token }));
+    releaseUpdate.resolve();
+    const updateResponse = await updateResponsePromise;
+
+    assertEquals(heartbeatResponse.status, 200);
+    assertEquals(updateResponse.status, 200);
+    const expectedExpiry = newerHeartbeatAt + 300_000;
+    const updated = (await updateResponse.json()) as LeaseResponse;
+    assertEquals(updated.expiresAt, expectedExpiry);
+    assertEquals(updated.configurationRevision, lease.configurationRevision + 1);
+    assertEquals(updated.configuration.codex.model, 'gpt-after-race');
+    const stored = await h.repo.findByToken(lease.token);
+    assertEquals(stored?.expiresAt, expectedExpiry);
+    assertEquals(stored?.updatedAt, staleUpdateAt);
+  } finally {
+    releaseUpdate.resolve();
     vi.useRealTimers();
   }
 });

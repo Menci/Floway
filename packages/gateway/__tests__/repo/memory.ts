@@ -1400,7 +1400,7 @@ class MemoryAgentSetupRepo implements AgentSetupRepository {
       ...existing,
       configurationJson: input.configurationJson,
       configurationRevision: existing.configurationRevision + 1,
-      expiresAt: input.expiresAt,
+      expiresAt: Math.max(existing.expiresAt, input.expiresAt),
       updatedAt: input.now,
     };
     this.byToken.set(record.token, record);
@@ -1414,8 +1414,8 @@ class MemoryAgentSetupRepo implements AgentSetupRepository {
   }): Promise<AgentSetupRenewal> {
     const existing = this.byToken.get(input.token);
     if (!existing || existing.userId !== input.userId) return Promise.resolve({ status: 'missing' });
-    // Expiry-only: updated_at and the revision stay put.
-    const record: AgentSetupRecord = { ...existing, expiresAt: input.expiresAt };
+    // Monotonic expiry-only: updated_at and the revision stay put.
+    const record: AgentSetupRecord = { ...existing, expiresAt: Math.max(existing.expiresAt, input.expiresAt) };
     this.byToken.set(record.token, record);
     return Promise.resolve({ status: 'ok', record: { ...record } });
   }
