@@ -1,7 +1,7 @@
 import { useId, type ReactNode } from 'react';
 
-import { fluentComponents } from '../../fluent';
 import { telemetryDimensionExcludedByGroup } from './filter-state';
+import { fluentComponents } from '../../fluent';
 import { Dropdown } from '../ui/fluent-form-controls';
 import { MultiselectCombobox, type MultiselectOption } from '../ui/multiselect-combobox';
 
