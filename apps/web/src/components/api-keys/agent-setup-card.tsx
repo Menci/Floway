@@ -10,8 +10,9 @@ import {
   type AgentSetupLease,
   type AgentSetupPlatform,
 } from './agent-setup';
+import { agentSetupCommand } from './agent-setup-command';
 import { modelOptions, rankAgentSetupModels, type ClaudePicker } from './agent-setup-models';
-import { agentSetupCommand, useAgentSetup } from './use-agent-setup';
+import { useAgentSetup } from './use-agent-setup';
 import type { ApiKey, ControlPlaneModel } from '../../api/types';
 import claudeIconUrl from '../../assets/claude-color.svg';
 import codexIconUrl from '../../assets/codex.svg';

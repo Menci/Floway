@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { flowayTokenStorageKey } from '../../../src/auth/session';
 import { blankAgentSetupDraft } from '../../../src/components/api-keys/agent-setup';
-import { agentSetupCommand, useAgentSetup } from '../../../src/components/api-keys/use-agent-setup';
+import { agentSetupCommand } from '../../../src/components/api-keys/agent-setup-command';
+import { useAgentSetup } from '../../../src/components/api-keys/use-agent-setup';
 import { stubLocalStorage } from '../../local-storage-stub';
 import { advance, settle } from '../../settle';
 
