@@ -5,7 +5,7 @@ import {
   EyeRegular,
   PlugConnectedRegular,
 } from '@fluentui/react-icons';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Controller, useFormContext, useWatch } from 'react-hook-form';
 
 import { ClaudeCodeAccountCard } from './claude-code-account-card';
@@ -288,6 +288,7 @@ function CopilotConfig({ record, onPatch }: {
   // A tick that has already fired holds no timer id, so clearing the timer
   // cannot end the loop on its own; the recursion reads this after every await.
   const cancelled = useRef(false);
+  const pollRef = useRef<((deviceCode: string, interval: number, secondsLeft: number) => Promise<void>) | null>(null);
   const stop = () => { if (timer.current !== null) window.clearTimeout(timer.current); timer.current = null; };
 
   const expire = useCallback(() => {
@@ -307,6 +308,7 @@ function CopilotConfig({ record, onPatch }: {
     }
     timer.current = window.setTimeout(() => {
       timer.current = null;
+      if (pollRef.current === null) throw new Error('Copilot device polling callback is not attached');
       void pollRef.current(deviceCode, interval, secondsLeft - interval);
     }, interval * 1000);
   }, [expire]);
@@ -339,9 +341,7 @@ function CopilotConfig({ record, onPatch }: {
   // A flow outlives the render that armed it — its code lives a quarter of an
   // hour, and the form goes on being edited meanwhile — so every tick must
   // enter the newest closure and send the upstream as it now reads.
-  const pollRef = useRef(poll);
-  // eslint-disable-next-line react-hooks/refs -- Carrying the newest render's request body to a loop that outlives the render that armed it.
-  pollRef.current = poll;
+  useLayoutEffect(() => { pollRef.current = poll; });
 
   // Armed from `flow`, not from the click that opened one: the panel draws the
   // code, the link and the spinner from `flow` alone, so a remount must
