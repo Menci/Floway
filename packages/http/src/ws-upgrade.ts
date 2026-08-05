@@ -54,6 +54,7 @@ const RESERVED_HEADER_NAMES = new Set([
   'sec-websocket-version',
   'sec-websocket-key',
   'sec-websocket-protocol',
+  'sec-websocket-extensions',
 ]);
 
 // 7-bit length boundary for the short form. Above this and up to
@@ -69,6 +70,12 @@ const WS_16BIT_LEN_MAX = 0xffff;
 // fragmented continuation frames indefinitely. 64 MiB is far past any
 // reasonable WebSocket message a sane peer would emit.
 const WS_MAX_MESSAGE_SIZE = 64 * 1024 * 1024;
+
+// RFC 6455 §10.4 requires implementations to protect themselves from a long
+// stream of small fragments as well as a single large frame. Bound the number
+// of retained parts independently from their total byte size.
+// https://www.rfc-editor.org/rfc/rfc6455#section-10.4
+const WS_MAX_MESSAGE_FRAGMENTS = 1024;
 
 // Cap on the upgrade-response head accumulation. RFC has no defined
 // cap; we mirror the response parser's 64 KiB ceiling.
@@ -109,29 +116,52 @@ export const wsUpgradeAndFrame = async (
   const expectedAccept = base64EncodeBytes(sha1(utf8Bytes(clientKey + WS_GUID)));
 
   const writer = transport.writable.getWriter();
-  const reader = transport.readable.getReader();
+  let reader: ReadableStreamDefaultReader<Uint8Array>;
+  try {
+    reader = transport.readable.getReader();
+  } catch (error) {
+    writer.releaseLock();
+    throw error;
+  }
 
   // The pre-handshake teardown path needs to release both locks so the
   // caller can destroy the underlying socket cleanly.
-  const releaseLocksAndCancel = (cause?: unknown): void => {
-    void reader.cancel(cause).catch(() => {});
+  let handshakeReaderReleased = false;
+  const releaseHandshakeReader = (): void => {
+    if (handshakeReaderReleased) return;
+    handshakeReaderReleased = true;
+    try { reader.releaseLock(); } catch { /* lock already released */ }
+  };
+  const releaseLocksAndCancel = async (cause?: unknown): Promise<void> => {
+    try { await reader.cancel(cause); } catch { /* reader already cancelled */ }
+    finally { releaseHandshakeReader(); }
     try { writer.releaseLock(); } catch { /* lock already released */ }
   };
 
   let abortDetach: (() => void) | null = null;
+  let abortHandshake: Promise<never> | null = null;
   if (opts.signal) {
     const signal = opts.signal;
+    let rejectAbort!: (reason: unknown) => void;
+    abortHandshake = new Promise<never>((_, reject) => { rejectAbort = reject; });
+    abortHandshake.catch(() => { /* consumed by the races below */ });
     const onAbort = (): void => {
-      releaseLocksAndCancel(signalAbortReason(signal));
+      const reason = signalAbortReason(signal);
+      rejectAbort(reason);
+      void reader.cancel(reason).catch(() => {});
     };
     signal.addEventListener('abort', onAbort, { once: true });
     abortDetach = (): void => signal.removeEventListener('abort', onAbort);
+    if (signal.aborted) onAbort();
   }
 
-  try {
-    await sendUpgradeRequest(writer, opts, clientKey);
+  const raceAbort = async <T>(operation: Promise<T>): Promise<T> =>
+    abortHandshake ? await Promise.race([operation, abortHandshake]) : await operation;
 
-    const { headers, remainder } = await readUpgradeResponse(reader);
+  try {
+    await raceAbort(sendUpgradeRequest(writer, opts, clientKey));
+
+    const { headers, remainder } = await raceAbort(readUpgradeResponse(reader));
     validateUpgradeResponse(headers, expectedAccept, opts.subprotocols);
 
     abortDetach?.();
@@ -146,8 +176,9 @@ export const wsUpgradeAndFrame = async (
     );
   } catch (err) {
     abortDetach?.();
-    releaseLocksAndCancel(err);
-    throw err;
+    const failure = opts.signal?.aborted ? signalAbortReason(opts.signal) : err;
+    await releaseLocksAndCancel(failure);
+    throw failure;
   }
 };
 
@@ -186,6 +217,17 @@ const sendUpgradeRequest = async (
     'Sec-WebSocket-Version: 13',
   ];
   if (opts.subprotocols?.length) {
+    const unique = new Set<string>();
+    for (const protocol of opts.subprotocols) {
+      if (!TCHAR.test(protocol) || unique.has(protocol)) {
+        throw new HttpProtocolError(
+          `caller-supplied WebSocket subprotocol is not a unique token: ${JSON.stringify(protocol)}`,
+          'BAD_HEADERS',
+          { rfc: 'RFC 6455 §4.1' },
+        );
+      }
+      unique.add(protocol);
+    }
     lines.push(`Sec-WebSocket-Protocol: ${opts.subprotocols.join(', ')}`);
   }
   for (const [name, value] of Object.entries(opts.additionalHeaders ?? {})) {
@@ -253,6 +295,12 @@ const readUpgradeResponse = async (
     );
   }
   const headers = new Map<string, string>();
+  if (lines.length > 100) {
+    throw new HttpProtocolError(
+      `WS upgrade response has ${lines.length} header lines (max 100)`,
+      'TOO_MANY_HEADERS',
+    );
+  }
   for (const line of lines) {
     const idx = line.indexOf(':');
     if (idx < 0) {
@@ -262,9 +310,34 @@ const readUpgradeResponse = async (
         { rfc: 'RFC 9112 §5' },
       );
     }
-    const name = line.slice(0, idx).toLowerCase();
+    const rawName = line.slice(0, idx);
+    if (!TCHAR.test(rawName)) {
+      throw new HttpProtocolError(
+        `WS upgrade: invalid header name ${JSON.stringify(rawName)}`,
+        'BAD_HEADERS',
+        { rfc: 'RFC 9110 §5.1' },
+      );
+    }
+    const name = rawName.toLowerCase();
     const value = trimFieldValueOws(line.slice(idx + 1));
-    headers.set(name, value);
+    validateFieldValueBytes(value, hex => new HttpProtocolError(
+      `WS upgrade: forbidden control byte 0x${hex} in ${JSON.stringify(rawName)}`,
+      'BAD_HEADERS',
+      { rfc: 'RFC 9110 §5.5' },
+    ));
+    const previous = headers.get(name);
+    if (previous !== undefined) {
+      if (name === 'sec-websocket-accept' || name === 'sec-websocket-protocol' || name === 'sec-websocket-extensions') {
+        throw new HttpProtocolError(
+          `WS upgrade: duplicate singleton header ${JSON.stringify(rawName)}`,
+          'BAD_HEADERS',
+          { rfc: 'RFC 6455 §11.3' },
+        );
+      }
+      headers.set(name, `${previous}, ${value}`);
+    } else {
+      headers.set(name, value);
+    }
   }
   return { headers, remainder };
 };
@@ -317,6 +390,14 @@ const validateUpgradeResponse = (
       );
     }
   }
+  const extensions = headers.get('sec-websocket-extensions');
+  if (extensions !== undefined) {
+    throw new HttpProtocolError(
+      `WS upgrade: server selected unoffered extensions ${JSON.stringify(extensions)}`,
+      'BAD_HEADERS',
+      { rfc: 'RFC 6455 §4.1' },
+    );
+  }
 };
 
 const frameDuplexOnTransport = (
@@ -335,24 +416,48 @@ const frameDuplexOnTransport = (
   // many dials — would otherwise accumulate one closure per ws upgrade
   // pinning the closed-over streams.
   let detachAbortListener: (() => void) | null = null;
+  let readerSettlement: Promise<void> | null = null;
+  const settleReader = (cause?: unknown): Promise<void> => {
+    readerSettlement ??= (async () => {
+      try { await reader.cancel(cause); } catch { /* reader already cancelled */ }
+      finally {
+        try { reader.releaseLock(); } catch { /* lock already released */ }
+      }
+    })();
+    return readerSettlement;
+  };
+  let writerSettlement: Promise<void> | null = null;
+  let outboundClosing = false;
+  const settleFrameWriter = (cause?: unknown): Promise<void> => {
+    writerSettlement ??= (async () => {
+      try {
+        if (cause !== undefined) await frameWriter.abort(cause);
+        else await frameWriter.close();
+      } catch { /* peer already gone */ }
+      finally {
+        try { frameWriter.releaseLock(); } catch { /* lock already released */ }
+      }
+    })();
+    return writerSettlement;
+  };
 
   const closePlain = (cause?: unknown): void => {
     if (plainClosed) return;
     plainClosed = true;
     detachAbortListener?.();
     detachAbortListener = null;
-    if (cause) {
+    if (cause !== undefined) {
       try { plainController.error(cause); } catch { /* already closed */ }
     } else {
       try { plainController.close(); } catch { /* already closed */ }
     }
-    void reader.cancel(cause).catch(() => {});
+    void settleReader(cause);
     // Close (or abort) the underlying writer too. Without this, every teardown
     // path that doesn't originate from the consumer's writable.close — server
     // close frame, transport EOF, signal abort, internal frame error — leaks
     // the transport's write half locked under our frameWriter.
-    if (cause) void frameWriter.abort(cause).catch(() => {});
-    else void frameWriter.close().catch(() => {});
+    outboundClosing = true;
+    void settleFrameWriter(cause);
   };
 
   const sendCloseFrame = async (code: number, reason: string): Promise<void> => {
@@ -387,34 +492,38 @@ const frameDuplexOnTransport = (
   // Reassembly state for fragmented messages. RFC 6455 §5.4 allows a
   // message to span FIN=0 frames followed by a FIN=1 continuation;
   // concatenate the parts and only enqueue once the message is whole. Text
-  // and binary opcodes (0x1, 0x2) are reassembled identically — the framer
-  // treats payloads as opaque bytes.
+  // and binary opcodes (0x1, 0x2) share the same byte reassembly; complete
+  // text messages receive the RFC-mandated fatal UTF-8 validation.
   let inMessage = false;
   const messageParts: Uint8Array[] = [];
   let messageSize = 0;
+  let messageFragments = 0;
+  let messageOpcode: 0x1 | 0x2 | null = null;
 
   const handleFrame = async (
     fin: boolean,
     opcode: number,
     payload: Uint8Array,
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     if (opcode === 0x8) {
       // Close frame: respond with our own close, drain reader, signal end-
       // of-stream upward. RFC 6455 §5.5.1: the server's close payload (if
       // any) leads with a 2-byte status code followed by UTF-8 reason.
+      validateClosePayload(payload);
+      outboundClosing = true;
       await sendCloseFrame(WS_CLOSE_NORMAL, '');
       closePlain();
-      return;
+      return false;
     }
     if (opcode === 0x9) {
       // Ping: per RFC 6455 §5.5.2 the pong payload echoes the ping payload.
-      try { await writeFrame(frameWriter, 0xa, payload); } catch { /* peer already gone */ }
-      return;
+      await writeFrame(frameWriter, 0xa, payload);
+      return false;
     }
     if (opcode === 0xa) {
       // Pong: we never send pings, so an unsolicited pong is informational
       // and discardable per RFC 6455 §5.5.3.
-      return;
+      return false;
     }
     if (opcode === 0x0) {
       if (!inMessage) {
@@ -433,6 +542,7 @@ const frameDuplexOnTransport = (
         );
       }
       inMessage = true;
+      messageOpcode = opcode;
     } else {
       throw new HttpProtocolError(
         `WS frame: reserved opcode 0x${opcode.toString(16)}`,
@@ -440,9 +550,16 @@ const frameDuplexOnTransport = (
         { rfc: 'RFC 6455 §5.2' },
       );
     }
+    messageFragments++;
+    if (messageFragments > WS_MAX_MESSAGE_FRAGMENTS) {
+      throw new HttpProtocolError(
+        `WS message exceeded ${WS_MAX_MESSAGE_FRAGMENTS} fragments`,
+        'WS_MESSAGE_TOO_LARGE',
+      );
+    }
     messageSize += payload.byteLength;
     messageParts.push(payload);
-    if (!fin) return;
+    if (!fin) return false;
     let message: Uint8Array;
     if (messageParts.length === 1) {
       message = messageParts[0]!;
@@ -457,107 +574,137 @@ const frameDuplexOnTransport = (
     inMessage = false;
     messageParts.length = 0;
     messageSize = 0;
+    messageFragments = 0;
+    const completeOpcode = messageOpcode;
+    messageOpcode = null;
+    if (completeOpcode === 0x1) {
+      try {
+        new TextDecoder('utf-8', { fatal: true }).decode(message);
+      } catch (cause) {
+        throw new HttpProtocolError(
+          'WS text message contains invalid UTF-8',
+          'BAD_HEADERS',
+          { cause, rfc: 'RFC 6455 §8.1' },
+        );
+      }
+    }
     try {
       plainController.enqueue(message);
     } catch (err) {
       closePlain(err);
     }
+    return true;
   };
 
+  let buffer: Uint8Array = initialBytes;
   const readable = new ReadableStream<Uint8Array>({
     start(c) { plainController = c; },
     // A non-Error reason is a clean consumer cancel — emit a polite close
     // frame and FIN; an Error reason means the consumer hit a failure
     // mid-body, so RST the writer rather than graceful-end a half whose
     // readable just errored.
-    cancel(reason) {
+    async cancel(reason) {
+      if (plainClosed) return;
       plainClosed = true;
+      outboundClosing = true;
       detachAbortListener?.();
       detachAbortListener = null;
-      void reader.cancel(reason).catch(() => {});
-      void sendCloseFrame(WS_CLOSE_NORMAL, '').then(() => {
-        if (reason instanceof Error) return frameWriter.abort(reason).catch(() => {});
-        return frameWriter.close().catch(() => {});
-      });
+      await settleReader(reason);
+      await sendCloseFrame(WS_CLOSE_NORMAL, '');
+      await settleFrameWriter(reason instanceof Error ? reason : undefined);
     },
-  });
-
-  void (async () => {
-    let buffer: Uint8Array = initialBytes;
-    try {
-      while (!plainClosed) {
-        const header = tryParseFrameHeader(buffer);
-        if (!header) {
-          const { value, done } = await reader.read();
-          if (done) {
-            // Transport hung up without a close frame. Treat as EOF —
-            // the consumer's reader sees a clean end.
-            closePlain();
-            return;
+    async pull(controller) {
+      try {
+        while (!plainClosed) {
+          const header = tryParseFrameHeader(buffer);
+          if (!header) {
+            const { value, done } = await reader.read();
+            if (done) {
+              throw new HttpProtocolError(
+                'WS transport ended without a Close frame',
+                'EOF',
+                { rfc: 'RFC 6455 §7.2.1' },
+              );
+            }
+            buffer = concat(buffer, value);
+            continue;
           }
-          buffer = concat(buffer, value);
-          continue;
-        }
-        if (header.masked) {
-          throw new HttpProtocolError(
-            'WS frame: server-to-client frame is masked (RFC 6455 §5.1)',
-            'BAD_HEADERS',
-            { rfc: 'RFC 6455 §5.1' },
-          );
-        }
-        // Reject an oversized data frame on its header alone, before the
-        // accumulating read below pins `header.payloadLen` bytes in `buffer`.
-        // Control frames (opcode ≥ 0x8) are already capped at 125 bytes by
-        // tryParseFrameHeader and never enter the cross-continuation total.
-        if (header.opcode < 0x8 && messageSize + header.payloadLen > WS_MAX_MESSAGE_SIZE) {
-          throw new HttpProtocolError(
-            `WS message exceeded ${WS_MAX_MESSAGE_SIZE} bytes across continuation frames`,
-            'WS_MESSAGE_TOO_LARGE',
-          );
-        }
-        const total = header.headerLen + header.payloadLen;
-        while (buffer.byteLength < total) {
-          const { value, done } = await reader.read();
-          if (done) {
+          if (header.masked) {
             throw new HttpProtocolError(
-              `WS frame: unexpected EOF after ${buffer.byteLength}/${total} bytes`,
-              'EOF',
+              'WS frame: server-to-client frame is masked (RFC 6455 §5.1)',
+              'BAD_HEADERS',
+              { rfc: 'RFC 6455 §5.1' },
             );
           }
-          buffer = concat(buffer, value);
+          if (header.opcode < 0x8 && messageSize + header.payloadLen > WS_MAX_MESSAGE_SIZE) {
+            throw new HttpProtocolError(
+              `WS message exceeded ${WS_MAX_MESSAGE_SIZE} bytes across continuation frames`,
+              'WS_MESSAGE_TOO_LARGE',
+            );
+          }
+          const total = header.headerLen + header.payloadLen;
+          const parts = [buffer];
+          let bufferedBytes = buffer.byteLength;
+          while (bufferedBytes < total) {
+            const { value, done } = await reader.read();
+            if (done) {
+              throw new HttpProtocolError(
+                `WS frame: unexpected EOF after ${bufferedBytes}/${total} bytes`,
+                'EOF',
+              );
+            }
+            parts.push(value);
+            bufferedBytes += value.byteLength;
+          }
+          if (parts.length > 1) {
+            const joined = new Uint8Array(bufferedBytes);
+            let offset = 0;
+            for (const part of parts) {
+              joined.set(part, offset);
+              offset += part.byteLength;
+            }
+            buffer = joined;
+          }
+          const payload = total === buffer.byteLength
+            ? buffer.subarray(header.headerLen)
+            : copy(buffer.subarray(header.headerLen, total));
+          buffer = total === buffer.byteLength
+            ? new Uint8Array(0)
+            : buffer.subarray(total);
+          if (await handleFrame(header.fin, header.opcode, payload)) return;
         }
-        // `buffer` is `concat`'s fresh allocation (or the owned `initialBytes`
-        // handed in to `frameDuplexOnTransport`, already detached by
-        // `readUpgradeResponse`), so subarrays onto it are already off
-        // transport-pooled memory. Copying just the remainder breaks the
-        // backing-buffer aliasing between `payload` and the next iteration's
-        // `buffer`; an extra `copy` on `payload` would duplicate up to
-        // WS_MAX_MESSAGE_SIZE bytes per frame for no aliasing benefit.
-        const payload = buffer.subarray(header.headerLen, total);
-        buffer = copy(buffer.subarray(total));
-        await handleFrame(header.fin, header.opcode, payload);
+      } catch (err) {
+        closePlain(err);
       }
-    } catch (err) {
-      closePlain(err);
-    } finally {
-      try { reader.releaseLock(); } catch { /* lock already released */ }
-    }
-  })();
+    },
+  });
 
   // Outbound: each chunk → one masked binary frame. RFC 6455 §5.3
   // requires every client→server frame to be masked.
   const writable = new WritableStream<Uint8Array>({
     async write(chunk) {
-      if (chunk.byteLength === 0) return;
+      if (outboundClosing) {
+        throw new HttpProtocolError(
+          'WS writable is closing; data frames are no longer allowed',
+          'BAD_HEADERS',
+          { rfc: 'RFC 6455 §5.5.1' },
+        );
+      }
       await writeFrame(frameWriter, 0x2, chunk);
     },
     async close() {
+      if (outboundClosing) return;
+      outboundClosing = true;
       await sendCloseFrame(WS_CLOSE_NORMAL, '');
-      try { await frameWriter.close(); } catch { /* peer already gone */ }
+      await settleFrameWriter();
     },
     async abort(reason) {
+      if (outboundClosing) return;
+      outboundClosing = true;
       await sendCloseFrame(WS_CLOSE_INTERNAL_ERROR, String(reason ?? ''));
-      try { await frameWriter.abort(reason); } catch { /* peer already gone */ }
+      const cause = reason instanceof Error ? reason : new Error(String(reason ?? 'WebSocket writable aborted'));
+      closePlain(cause);
+      await settleFrameWriter(cause);
     },
   });
 
@@ -601,6 +748,13 @@ const tryParseFrameHeader = (buf: Uint8Array): FrameHeader | null => {
   } else if (len7 === 126) {
     if (buf.byteLength < 4) return null;
     payloadLen = (buf[2]! << 8) | buf[3]!;
+    if (payloadLen <= WS_SHORT_LEN_MAX) {
+      throw new HttpProtocolError(
+        `WS frame: non-minimal 16-bit length encoding for ${payloadLen} bytes`,
+        'BAD_HEADERS',
+        { rfc: 'RFC 6455 §5.2' },
+      );
+    }
     headerLen = 4;
   } else {
     if (buf.byteLength < 10) return null;
@@ -625,6 +779,13 @@ const tryParseFrameHeader = (buf: Uint8Array): FrameHeader | null => {
         { rfc: 'RFC 6455 §5.2' },
       );
     }
+    if (n <= WS_16BIT_LEN_MAX) {
+      throw new HttpProtocolError(
+        `WS frame: non-minimal 64-bit length encoding for ${n} bytes`,
+        'BAD_HEADERS',
+        { rfc: 'RFC 6455 §5.2' },
+      );
+    }
     payloadLen = n;
     headerLen = 10;
   }
@@ -645,6 +806,34 @@ const tryParseFrameHeader = (buf: Uint8Array): FrameHeader | null => {
     );
   }
   return { fin, opcode, masked, payloadLen, headerLen };
+};
+
+const validateClosePayload = (payload: Uint8Array): void => {
+  if (payload.byteLength === 0) return;
+  if (payload.byteLength === 1) {
+    throw new HttpProtocolError(
+      'WS close frame contains a one-byte status code',
+      'BAD_HEADERS',
+      { rfc: 'RFC 6455 §5.5.1' },
+    );
+  }
+  const code = (payload[0]! << 8) | payload[1]!;
+  if (code < 1000 || code >= 5000 || code === 1004 || code === 1005 || code === 1006 || code === 1015) {
+    throw new HttpProtocolError(
+      `WS close frame contains invalid status code ${code}`,
+      'BAD_HEADERS',
+      { rfc: 'RFC 6455 §7.4' },
+    );
+  }
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(payload.subarray(2));
+  } catch (cause) {
+    throw new HttpProtocolError(
+      'WS close reason contains invalid UTF-8',
+      'BAD_HEADERS',
+      { cause, rfc: 'RFC 6455 §8.1' },
+    );
+  }
 };
 
 const writeFrame = async (

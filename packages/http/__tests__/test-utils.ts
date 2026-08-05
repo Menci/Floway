@@ -13,6 +13,7 @@ export interface FakeDuplex {
   waitWritableClosed(): Promise<void>;
 
   respond(bytes: Uint8Array | string): void;
+  failResponse(reason: unknown): void;
   /** Close the readable (server EOF). */
   endResponse(): void;
 }
@@ -68,6 +69,7 @@ export const makeFakeDuplex = (): FakeDuplex => {
       const u = typeof bytes === 'string' ? enc.encode(bytes) : bytes;
       controller.enqueue(new Uint8Array(u));
     },
+    failResponse(reason) { controller.error(reason); },
     endResponse() { controller.close(); },
   };
 };
