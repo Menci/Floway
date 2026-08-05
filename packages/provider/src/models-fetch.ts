@@ -8,6 +8,37 @@ export class ProviderModelsUnavailableError extends Error {
   }
 }
 
+const DEFAULT_MAX_MODELS_RESPONSE_BYTES = 16 * 1024 * 1024;
+
+const readJsonBody = async (response: Response, maxBytes: number): Promise<unknown> => {
+  if (!response.body) throw new Error('Provider model listing returned an empty body');
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel();
+        throw new Error(`Provider model listing exceeded ${maxBytes} response bytes`);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+};
+
 // Reconstruct a Response from the captured upstream HTTP frame, or null
 // when none was captured (e.g. network errors or malformed bodies) — that
 // null lets callers choose their own fallback shape.
@@ -26,7 +57,12 @@ export const httpResponseToResponse = (httpResponse: ProviderModelsUnavailableEr
 export const fetchUpstreamModels = async <T>(
   doFetch: () => Promise<Response>,
   parse: (json: unknown) => T | null,
+  options: { maxResponseBytes?: number } = {},
 ): Promise<T> => {
+  const maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MAX_MODELS_RESPONSE_BYTES;
+  if (!Number.isSafeInteger(maxResponseBytes) || maxResponseBytes <= 0) {
+    throw new TypeError('maxResponseBytes must be a positive safe integer');
+  }
   let response: Response;
   try {
     response = await doFetch();
@@ -42,7 +78,7 @@ export const fetchUpstreamModels = async <T>(
   }
   let parsed: unknown;
   try {
-    parsed = await response.json();
+    parsed = await readJsonBody(response, maxResponseBytes);
   } catch (cause) {
     throw new ProviderModelsUnavailableError(null, cause);
   }
