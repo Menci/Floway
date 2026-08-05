@@ -1,11 +1,82 @@
 import { test } from 'vitest';
 
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
-import { buildCustomUpstreamRecord, copilotModels, flushAsyncWork, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { buildCustomUpstreamRecord, copilotModels, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { flushBackground } from '../../test-utils/background-tracker.ts';
+import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
-import { jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
+import { assert, jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/wEAAAAASUVORK5CYII=';
+
+interface Deferred {
+  readonly promise: Promise<void>;
+  readonly resolve: () => void;
+}
+
+const deferred = (): Deferred => {
+  let resolve!: () => void;
+  const promise = new Promise<void>(res => {
+    resolve = res;
+  });
+  return { promise, resolve };
+};
+
+const IMAGE_USAGE = {
+  total_tokens: 60,
+  input_tokens: 10,
+  output_tokens: 50,
+  input_tokens_details: { text_tokens: 6, image_tokens: 4 },
+};
+
+const registerImagesUpstream = async (
+  repo: Awaited<ReturnType<typeof setupAppTest>>['repo'],
+  endpoints: ModelEndpoints = { imagesGenerations: {}, imagesEdits: {} },
+): Promise<void> => {
+  await repo.upstreams.deleteAll();
+  clearInProcessCopilotTokenCache();
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_images',
+    name: 'Custom Image Provider',
+    sortOrder: 100,
+    config: {
+      baseUrl: 'https://images.example.com',
+      authStyle: 'bearer',
+      ingressHeadersRules: [],
+      apiKey: 'sk-images',
+      endpoints: {},
+      modelsFetch: { enabled: false },
+      models: [{ upstreamModelId: 'gpt-image-2', endpoints }],
+    },
+  }));
+};
+
+const imageSseResponse = (body: BodyInit | null): Response =>
+  new Response(body, { headers: { 'content-type': 'text/event-stream', 'x-provider-trace': 'image-trace' } });
+
+const imageSseFrame = (event: Record<string, unknown>): string =>
+  `event: ${event.type as string}\ndata: ${JSON.stringify(event)}\n\n`;
+
+const requestGenerationStream = (apiKey: string): Promise<Response> =>
+  requestApp('/v1/images/generations', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey },
+    body: JSON.stringify({ model: 'gpt-image-2', prompt: 'a shiba in space', stream: true }),
+  });
+
+const assertFailedStreamSettlement = async (
+  repo: Awaited<ReturnType<typeof setupAppTest>>['repo'],
+): Promise<void> => {
+  await flushBackground();
+  const usage = await repo.usage.listAll();
+  assertEquals(usage.length, 1);
+  assertEquals(usage[0]?.requests, 1);
+  assertEquals(usage[0]?.metrics, []);
+  const performance = await repo.performance.listAll();
+  assertEquals(performance.length, 1);
+  assertEquals(performance[0]?.requests, 1);
+  assertEquals(performance[0]?.errorsNoOutput, 1);
+};
 
 test('/v1/images/generations rejects malformed JSON body with 400', async () => {
   const { apiKey } = await setupAppTest();
@@ -160,7 +231,7 @@ test('/v1/images/generations forwards a JSON request through a custom upstream a
       }
       if (url.hostname === 'images.example.com' && url.pathname === '/v1/images/generations') {
         forwarded = await request.json() as Record<string, unknown>;
-        return jsonResponse({ data: [{ b64_json: 'aGVsbG8=' }], usage: { input_tokens: 10, output_tokens: 50 } });
+        return jsonResponse({ data: [{ b64_json: 'aGVsbG8=' }], usage: IMAGE_USAGE });
       }
       throw new Error(`Unhandled fetch ${request.url}`);
     },
@@ -173,14 +244,15 @@ test('/v1/images/generations forwards a JSON request through a custom upstream a
       assertEquals(response.status, 200);
       const body = await response.json() as { data: { b64_json: string }[] };
       assertEquals(body.data[0].b64_json, 'aGVsbG8=');
-      await flushAsyncWork();
+      await flushBackground();
     },
   );
   assertExists(forwarded);
   assertEquals(forwarded.model, 'gpt-image-2');
   assertEquals(forwarded.prompt, 'a shiba in space');
   const usageRows = await repo.usage.listAll();
-  assertEquals(usageRows.some(row => row.model === 'gpt-image-2' && tokenCountsFromUsage(row).input === 10 && tokenCountsFromUsage(row).output === 50), true);
+  assertEquals(usageRows.length, 1);
+  assertEquals(tokenCountsFromUsage(usageRows[0]!), { input: 6, input_image: 4, output_image: 50 });
 });
 
 test('/v1/images/edits forwards a multipart request through an Azure model and records usage', async () => {
@@ -226,7 +298,15 @@ test('/v1/images/edits forwards a multipart request through an Azure model and r
       if (url.hostname === 'example.openai.azure.com') {
         observedUrl = request.url;
         observedForm = await request.formData();
-        return jsonResponse({ data: [{ b64_json: 'aGk=' }], usage: { input_tokens: 7, output_tokens: 11 } });
+        return jsonResponse({
+          data: [{ b64_json: 'aGk=' }],
+          usage: {
+            total_tokens: 18,
+            input_tokens: 7,
+            output_tokens: 11,
+            input_tokens_details: { text_tokens: 5, image_tokens: 2 },
+          },
+        });
       }
       throw new Error(`Unhandled fetch ${request.url}`);
     },
@@ -243,13 +323,14 @@ test('/v1/images/edits forwards a multipart request through an Azure model and r
       assertEquals(response.status, 200);
       const body = await response.json() as { data: { b64_json: string }[] };
       assertEquals(body.data[0].b64_json, 'aGk=');
-      await flushAsyncWork();
+      await flushBackground();
     },
   );
   assertEquals(observedUrl?.endsWith('?api-version=preview'), true);
   assertEquals(observedForm?.get('model'), 'gpt-image-2');
   const usageRows = await repo.usage.listAll();
-  assertEquals(usageRows.some(row => row.model === 'gpt-image-2' && tokenCountsFromUsage(row).input === 7 && tokenCountsFromUsage(row).output === 11), true);
+  assertEquals(usageRows.length, 1);
+  assertEquals(tokenCountsFromUsage(usageRows[0]!), { input: 5, input_image: 2, output_image: 11 });
 });
 
 test('/v1/images/edits forwards JSON image references through a custom provider', async () => {
