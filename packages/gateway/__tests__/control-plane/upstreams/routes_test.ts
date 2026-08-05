@@ -40,6 +40,7 @@ const azureConfig = {
 };
 
 const copilotConfig = {
+  githubHost: 'github.com',
   githubToken: 'ghu_secret',
   user: {
     id: 12345,
@@ -1204,7 +1205,7 @@ test('PATCH /api/upstreams rejects config edits on a copilot row', async () => {
   const patch = await requestApp(`/api/upstreams/${copilotUpstream.id}`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
-    body: JSON.stringify({ config: { githubToken: 'ghu_hijack', user: { login: 'x', id: 0, avatar_url: '', name: null } } }),
+    body: JSON.stringify({ config: { githubHost: 'github.com', githubToken: 'ghu_hijack', user: { login: 'x', id: 0, avatar_url: '', name: null } } }),
   });
   assertEquals(patch.status, 400);
   const body = (await patch.json()) as { error: string };

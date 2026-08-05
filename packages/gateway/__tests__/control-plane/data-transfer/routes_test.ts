@@ -113,6 +113,7 @@ const COPILOT_UPSTREAM: UpstreamRecord = {
   modelsCache: null,
   hue: 210,
   config: {
+    githubHost: 'github.com',
     githubToken: 'ghu-alice',
     user: {
       id: 100,
