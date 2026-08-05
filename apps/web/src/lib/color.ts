@@ -30,7 +30,8 @@ export const blendHex = (hex: string, alpha: number, backdrop: string): string =
   const parsed = parseHexColor(hex);
   const foreground = { ...parsed, alpha: (parsed.alpha ?? 1) * alpha };
   const mixed = blend([parseHexColor(backdrop), foreground], 'normal', 'rgb');
-  return (mixed.alpha !== undefined && mixed.alpha < 1 ? formatHex8(mixed) : formatHex(mixed)).toUpperCase();
+  if (mixed.alpha === undefined) throw new TypeError('Culori blend returned no alpha');
+  return (mixed.alpha < 1 ? formatHex8(mixed) : formatHex(mixed)).toUpperCase();
 };
 
 // WCAG 2.2 requires at least 4.5:1 contrast for normal text.
