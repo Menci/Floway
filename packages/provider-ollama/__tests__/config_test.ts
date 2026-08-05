@@ -56,18 +56,18 @@ test('assertOllamaUpstreamRecord parses manual model overrides', () => {
   assertEquals(config.models[0].display_name, 'GPT-OSS 120B');
 });
 
-test('assertOllamaUpstreamRecord rejects a non-http(s) base URL', () => {
-  assertThrows(() => assertOllamaUpstreamRecord({
-    ...baseRecord,
-    config: { baseUrl: 'ftp://example.com' },
-  }));
-});
-
-test('assertOllamaUpstreamRecord rejects a missing base URL', () => {
-  assertThrows(() => assertOllamaUpstreamRecord({
-    ...baseRecord,
-    config: { baseUrl: '' },
-  }));
+test('assertOllamaUpstreamRecord rejects malformed base URLs and suffix-swallowing URL components', () => {
+  for (const baseUrl of [
+    'ftp://example.com',
+    '',
+    'https://ollama.example.com?token=secret',
+    'https://ollama.example.com#fragment',
+  ]) {
+    assertThrows(() => assertOllamaUpstreamRecord({
+      ...baseRecord,
+      config: { baseUrl },
+    }));
+  }
 });
 
 test('assertOllamaUpstreamRecord rejects rerank models', () => {

@@ -1,6 +1,6 @@
 import type { AzureUpstreamConfig } from './config.ts';
 import { azureAnthropicBaseUrl, azureOpenAiV1BaseUrl } from './endpoint.ts';
-import { type UpstreamFetchOptions, joinBaseAndPath } from '@floway-dev/provider';
+import { dispatchUpstreamFetch, type UpstreamFetchOptions, joinBaseAndPath } from '@floway-dev/provider';
 
 const azureFetchUrl = async (
   config: AzureUpstreamConfig,
@@ -22,7 +22,7 @@ const azureFetchUrl = async (
   if (options.extraHeaders) {
     for (const [key, value] of options.extraHeaders) headers.set(key, value);
   }
-  return await options.wrapUpstreamCall(() => options.fetcher(url, { ...init, headers }));
+  return await dispatchUpstreamFetch(options, url, { ...init, headers });
 };
 
 const azureFetchInternal = async (

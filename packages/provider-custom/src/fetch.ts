@@ -1,5 +1,5 @@
 import type { CustomPathOverrideKey, CustomUpstreamConfig } from './config.ts';
-import { type UpstreamFetchOptions, joinBaseAndPath } from '@floway-dev/provider';
+import { dispatchUpstreamFetch, type UpstreamFetchOptions, joinBaseAndPath } from '@floway-dev/provider';
 
 // https://docs.anthropic.com/en/api/versioning
 const ANTHROPIC_VERSION = '2023-06-01';
@@ -12,6 +12,13 @@ const ANTHROPIC_VERSION = '2023-06-01';
 // down to both.
 const pathOverrideFor = (config: CustomUpstreamConfig, key: CustomPathOverrideKey): string =>
   config.pathOverrides?.[key] ?? `/v1${key}`;
+
+const appendSubpath = (path: string, suffix: string): string => {
+  const queryIndex = path.indexOf('?');
+  const pathname = queryIndex === -1 ? path : path.slice(0, queryIndex);
+  const query = queryIndex === -1 ? '' : path.slice(queryIndex);
+  return `${pathname.replace(/\/+$/, '')}${suffix}${query}`;
+};
 
 const customFetchInternal = async (
   config: CustomUpstreamConfig,
@@ -35,7 +42,7 @@ const customFetchInternal = async (
   if (options.extraHeaders) {
     for (const [k, v] of options.extraHeaders) headers.set(k, v);
   }
-  return await options.wrapUpstreamCall(() => options.fetcher(joinBaseAndPath(config.baseUrl, path), { ...init, headers }));
+  return await dispatchUpstreamFetch(options, joinBaseAndPath(config.baseUrl, path), { ...init, headers });
 };
 
 export const customFetchRerank = (config: CustomUpstreamConfig, path: string, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
@@ -46,11 +53,11 @@ export const customFetchChatCompletions = (config: CustomUpstreamConfig, init: R
 export const customFetchResponses = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   customFetchInternal(config, pathOverrideFor(config, '/responses'), init, options);
 export const customFetchResponsesCompact = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, `${pathOverrideFor(config, '/responses')}/compact`, init, options);
+  customFetchInternal(config, appendSubpath(pathOverrideFor(config, '/responses'), '/compact'), init, options);
 export const customFetchMessages = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   customFetchInternal(config, pathOverrideFor(config, '/messages'), init, options);
 export const customFetchMessagesCountTokens = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, `${pathOverrideFor(config, '/messages')}/count_tokens`, init, options);
+  customFetchInternal(config, appendSubpath(pathOverrideFor(config, '/messages'), '/count_tokens'), init, options);
 export const customFetchEmbeddings = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   customFetchInternal(config, pathOverrideFor(config, '/embeddings'), init, options);
 export const customFetchCompletions = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>

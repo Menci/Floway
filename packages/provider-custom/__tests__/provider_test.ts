@@ -373,7 +373,11 @@ test('Custom provider uses configured endpoints regardless of per-model hints in
   );
 });
 
-test('Custom provider projects display_name / created / limits / pricing from a Floway-shaped /models response', async () => {
+test('Custom provider projects display_name / created / limits / pricing / chat from a Floway-shaped /models response', async () => {
+  const chat = {
+    modalities: { input: ['text', 'image'], output: ['text'] },
+    reasoning: { effort: { supported: ['low', 'high'], default: 'low' } },
+  } as const;
   await withMockedFetch(
     () => jsonResponse({
       object: 'list',
@@ -384,6 +388,7 @@ test('Custom provider projects display_name / created / limits / pricing from a 
         created_at: '2026-04-01T00:00:00Z',
         limits: { max_output_tokens: 8192, max_context_window_tokens: 200000 },
         pricing: { entries: [{ rates: { input_tokens: '3', output_tokens: '15', input_cache_read_tokens: '0.3' } }] },
+        chat,
       }],
     }),
     async () => {
@@ -395,6 +400,7 @@ test('Custom provider projects display_name / created / limits / pricing from a 
       assertEquals(model.pricing?.entries[0]?.rates.input_tokens, '3');
       assertEquals(model.pricing?.entries[0]?.rates.output_tokens, '15');
       assertEquals(model.pricing?.entries[0]?.rates.input_cache_read_tokens, '0.3');
+      assertEquals(model.chat, chat);
     },
   );
 });

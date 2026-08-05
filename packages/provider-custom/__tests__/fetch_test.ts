@@ -82,8 +82,8 @@ test('admin pathOverrides replace defaults and propagate to derived sub-paths', 
     config: {
       ...(baseRecord.config as Record<string, unknown>),
       pathOverrides: {
-        '/messages': '/api/v1/messages',
-        '/responses': '/api/v1/responses',
+        '/messages': '/api/v1/messages/?version=1',
+        '/responses': '/api/v1/responses/?version=1',
         '/alpha/search': '/api/search',
       },
     },
@@ -106,9 +106,9 @@ test('admin pathOverrides replace defaults and propagate to derived sub-paths', 
   );
 
   assertEquals(seen, [
-    'https://custom.example.com/api/v1/messages',
-    'https://custom.example.com/api/v1/messages/count_tokens',
-    'https://custom.example.com/api/v1/responses/compact',
+    'https://custom.example.com/api/v1/messages/?version=1',
+    'https://custom.example.com/api/v1/messages/count_tokens?version=1',
+    'https://custom.example.com/api/v1/responses/compact?version=1',
     'https://custom.example.com/api/search',
     'https://custom.example.com/v1/chat/completions',
   ]);

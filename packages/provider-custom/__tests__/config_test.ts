@@ -247,6 +247,17 @@ test('assertCustomUpstreamRecord rejects malformed opaque config instead of drop
     'baseUrl must be an http(s) URL',
   );
 
+  for (const baseUrl of ['https://custom.example.com?token=secret', 'https://custom.example.com#fragment']) {
+    assertThrows(
+      () => assertCustomUpstreamRecord({
+        ...baseRecord,
+        config: { ...(baseRecord.config as Record<string, unknown>), baseUrl },
+      }),
+      Error,
+      'without query or fragment',
+    );
+  }
+
   assertThrows(
     () =>
       assertCustomUpstreamRecord({

@@ -48,11 +48,17 @@ const baseUrlField = (value: unknown): string => {
   const baseUrl = nonEmptyStringField(value, 'baseUrl').trim();
   try {
     const parsed = new URL(baseUrl);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    if (
+      (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')
+      || parsed.search !== ''
+      || parsed.hash !== ''
+      || baseUrl.includes('?')
+      || baseUrl.includes('#')
+    ) {
       throw new Error('invalid protocol');
     }
   } catch {
-    throw new Error('Malformed ollama upstream config: baseUrl must be an http(s) URL');
+    throw new Error('Malformed ollama upstream config: baseUrl must be an http(s) URL without query or fragment');
   }
   return baseUrl;
 };
