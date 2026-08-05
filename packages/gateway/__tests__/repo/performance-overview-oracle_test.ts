@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
+import { aggregatePerformanceForDisplay } from './performance-overview-oracle.ts';
 import { createTelemetryBucket, type TelemetryBucketGranularity } from '../../src/control-plane/shared/telemetry-bucket.ts';
 import type { PerformanceDisplayRecord, PerformanceTelemetryRecord } from '../../src/repo/types.ts';
-import { aggregatePerformanceForDisplay } from './performance-overview-oracle.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 interface AggregateOptions {
