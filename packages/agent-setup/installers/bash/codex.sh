@@ -118,14 +118,17 @@ codex_commit_files() {
 _codex_kill_group() {
   _ckg_pid=$1
   _ckg_marker=$2
+  # The harness shortens both real waits while preserving the escalation order.
+  _ckg_term_grace=${AGENT_SETUP_TEST_CODEX_TERM_GRACE_SECONDS:-1}
+  _ckg_kill_grace=${AGENT_SETUP_TEST_CODEX_KILL_GRACE_SECONDS:-0.5}
   rm -f "$_ckg_marker"
   (
     exec </dev/null >/dev/null 2>&1
-    sleep 1
+    sleep "$_ckg_term_grace"
     if kill -0 -- "-$_ckg_pid" 2>/dev/null || kill -0 "$_ckg_pid" 2>/dev/null; then
       : > "$_ckg_marker"
       kill -TERM -- "-$_ckg_pid" 2>/dev/null || kill -TERM "$_ckg_pid" 2>/dev/null || true
-      sleep 0.5
+      sleep "$_ckg_kill_grace"
       kill -KILL -- "-$_ckg_pid" 2>/dev/null || kill -KILL "$_ckg_pid" 2>/dev/null || true
     fi
   ) &
