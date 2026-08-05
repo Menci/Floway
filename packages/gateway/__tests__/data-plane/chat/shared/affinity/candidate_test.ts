@@ -94,7 +94,7 @@ describe('client-carried affinity candidate selection', () => {
         degrades: value === required,
         materialize: () => {
           materializations += 1;
-          return value.model.id;
+          return undefined;
         },
       };
     });
@@ -104,8 +104,8 @@ describe('client-carried affinity candidate selection', () => {
     expect(selection.candidates).toEqual([sameTargetAlias, required]);
     expect(evaluations).toEqual([required, sameTargetAlias, rejected]);
     expect(materializations).toBe(0);
-    expect(selection.payloadFor(sameTargetAlias)).toBe('model');
-    expect(selection.payloadFor(sameTargetAlias)).toBe('model');
+    expect(selection.payloadFor(sameTargetAlias)).toBeUndefined();
+    expect(selection.payloadFor(sameTargetAlias)).toBeUndefined();
     expect(materializations).toBe(1);
     expect(() => selection.payloadFor(rejected)).toThrow('outside the selected set');
   });
@@ -113,6 +113,7 @@ describe('client-carried affinity candidate selection', () => {
   test('required state matches upstream and model while degradation orders rule variants', () => {
     const direct = candidate('up-a', 'model');
     const alias = candidate('up-a', 'model', { reasoning: { effort: 'low' } });
+    const changedAlias = candidate('up-a', 'model', { reasoning: { effort: 'high' } });
     const other = candidate('up-b', 'model');
 
     expect(selectedCandidates(
@@ -123,6 +124,11 @@ describe('client-carried affinity candidate selection', () => {
       [direct, alias, other],
       affinity([targetFor(alias)], [direct]),
     )).toEqual([alias, direct]);
+
+    const duplicatePhysicalRequirements = affinity([targetFor(alias), targetFor(changedAlias)]);
+    expect(duplicatePhysicalRequirements.requiredTargets).toEqual([targetFor(alias)]);
+    expect(selectedCandidates([direct, alias, changedAlias, other], duplicatePhysicalRequirements))
+      .toEqual([direct, alias, changedAlias]);
   });
 
   test('fails unavailable and conflicting required affinity', () => {
@@ -167,12 +173,20 @@ describe('affinity blob projection', () => {
     expect(projectOptionalAffinityBlob(originless, exact)).toEqual({ kind: 'remove', degrades: false });
     expect(projectOptionalAffinityBlob(originless, other)).toEqual({ kind: 'remove', degrades: false });
     expect(projectRequiredAffinityBlob(originless, samePhysicalTarget)).toEqual({ kind: 'remove', degrades: false });
+    expect(projectRequiredAffinityBlob(originless, other)).toEqual({ kind: 'reject', requiredTarget: targetFor(exact) });
   });
 
   test('degrades optional natural state only when the exact target cannot preserve it', () => {
     const natural = ownedBlob(targetFor(exact), 'opaque');
     expect(projectOptionalAffinityBlob(natural, exact)).toEqual({ kind: 'preserve', value: 'opaque' });
     expect(projectOptionalAffinityBlob(natural, samePhysicalTarget)).toEqual({ kind: 'remove', degrades: true });
+
+    const direct = candidate('up-a', 'model');
+    const emptyRulesAlias = candidate('up-a', 'model', {});
+    expect(projectOptionalAffinityBlob(ownedBlob(targetFor(direct), 'direct'), emptyRulesAlias))
+      .toEqual({ kind: 'preserve', value: 'direct' });
+    expect(projectOptionalAffinityBlob(ownedBlob(targetFor(emptyRulesAlias), 'alias'), direct))
+      .toEqual({ kind: 'preserve', value: 'alias' });
   });
 
   test('rejects required state outside its physical target while accepting every rule variant', () => {
