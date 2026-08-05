@@ -8,7 +8,7 @@ import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-comp
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesClientTool, MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload, ResponsesResult } from '@floway-dev/protocols/responses';
-import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
+import { type MessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import type { FlagId } from '@floway-dev/provider/flags';
 import { assertEquals, assertExists, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -52,10 +52,10 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 const makeCandidate = (overrides: {
   upstream?: string;
   endpoints?: ModelEndpoints;
-  callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
+  callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: MessagesUpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
   callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
   callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
-  callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
+  callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: MessagesUpstreamCallOptions) => Promise<ProviderCallResult>;
   enabledFlags?: ReadonlySet<FlagId>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
@@ -105,6 +105,7 @@ test('generate native messages target calls provider.callMessages with no rewrit
     ctx: makeGatewayCtx(),
     candidate: makeCandidate({ callMessages }),
     headers: new Headers(),
+    anthropicBeta: [],
   });
 
   assertEquals(result.type, 'events');
@@ -113,8 +114,38 @@ test('generate native messages target calls provider.callMessages with no rewrit
   assertEquals(callMessages.mock.calls.length, 1);
 });
 
+test('generate carries anthropic-beta through the Messages boundary outside the provider allowlist', async () => {
+  installRepo();
+  let upstreamHeaders: Headers | undefined;
+  let upstreamAnthropicBeta: readonly string[] | undefined;
+  const callMessages = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+    upstreamHeaders = opts?.headers;
+    upstreamAnthropicBeta = opts?.anthropicBeta;
+    return { ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: new Headers() };
+  });
+
+  const result = await messagesAttempt.generate({
+    payload: makePayload(),
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({ callMessages }),
+    headers: new Headers({
+      'anthropic-beta': 'must-not-enter-ordinary-headers',
+      'x-unlisted': 'discard',
+    }),
+    anthropicBeta: ['context-1m-2025-08-07', 'advanced-tool-use-2025-11-20'],
+  });
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+  assertExists(upstreamHeaders);
+  assertEquals(Object.fromEntries(upstreamHeaders), {});
+  assertEquals(upstreamAnthropicBeta, ['context-1m-2025-08-07', 'advanced-tool-use-2025-11-20']);
+});
+
 test('generate translate-to-responses branch routes through responsesAttempt', async () => {
   installRepo();
+  let upstreamHeaders: Headers | undefined;
   const respResp: ResponsesResult = {
     id: 'resp_x', object: 'response', model: 'test-model', status: 'completed',
     output: [{
@@ -123,23 +154,58 @@ test('generate translate-to-responses branch routes through responsesAttempt', a
     }],
     output_text: 'hi', error: null, incomplete_details: null,
   };
-  const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
-    action: 'generate', ok: true,
-    events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: respResp }]),
-    modelKey: 'k',
-    headers: new Headers(),
-  }));
+  const callResponses = vi.fn(async (_model, _body, _action, _signal, opts): Promise<ProviderResponsesResult> => {
+    upstreamHeaders = opts?.headers;
+    return {
+      action: 'generate', ok: true,
+      events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: respResp }]),
+      modelKey: 'k',
+      headers: new Headers(),
+    };
+  });
   const result = await messagesAttempt.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     candidate: makeCandidate({ callResponses, endpoints: { responses: {} } }),
-    headers: new Headers(),
+    headers: new Headers({ 'anthropic-beta': 'must-not-enter-ordinary-headers' }),
+    anthropicBeta: ['context-1m-2025-08-07'],
   });
 
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
   assertEquals(callResponses.mock.calls.length, 1);
+  assertEquals(upstreamHeaders?.has('anthropic-beta'), false);
+});
+
+test('generate does not carry Messages beta metadata through translation to Chat Completions', async () => {
+  installRepo();
+  let upstreamHeaders: Headers | undefined;
+  const callChatCompletions = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => {
+    upstreamHeaders = opts?.headers;
+    return {
+      ok: true,
+      events: makeProtocolFrames([{
+        id: 'chatcmpl_1', object: 'chat.completion.chunk', created: 1, model: 'test-model',
+        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+      }]),
+      modelKey: 'k',
+      headers: new Headers(),
+    };
+  });
+
+  const result = await messagesAttempt.generate({
+    payload: makePayload(),
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({ callChatCompletions, endpoints: { chatCompletions: {} } }),
+    headers: new Headers({ 'anthropic-beta': 'must-not-enter-ordinary-headers' }),
+    anthropicBeta: ['context-1m-2025-08-07'],
+  });
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+  assertEquals(upstreamHeaders?.has('anthropic-beta'), false);
 });
 
 test('generate lets the target system-to-developer rewrite take precedence over the source system-to-user rewrite', async () => {
@@ -186,6 +252,7 @@ test('generate lets the target system-to-developer rewrite take precedence over 
       ]),
     }),
     headers: new Headers(),
+    anthropicBeta: [],
   });
 
   assertEquals(result.type, 'events');
@@ -242,6 +309,7 @@ test('generate translate-to-responses branch rewrites a multi-block system prefi
       enabledFlags: new Set<FlagId>(['rewrite-system-to-developer']),
     }),
     headers: new Headers(),
+    anthropicBeta: [],
   });
 
   assertEquals(result.type, 'events');
@@ -273,6 +341,7 @@ test('countTokens proxies the upstream response as a plain result', async () => 
     ctx: makeGatewayCtx(),
     candidate: makeCandidate({ callMessagesCountTokens }),
     headers: new Headers(),
+    anthropicBeta: [],
   });
 
   assertEquals(result.type, 'plain');
@@ -281,6 +350,32 @@ test('countTokens proxies the upstream response as a plain result', async () => 
   const body = JSON.parse(new TextDecoder().decode(result.body));
   assertEquals(body.input_tokens, 7);
   assertEquals(callMessagesCountTokens.mock.calls.length, 1);
+});
+
+test('countTokens carries anthropic-beta through the Messages boundary outside the provider allowlist', async () => {
+  installRepo();
+  let upstreamHeaders: Headers | undefined;
+  let upstreamAnthropicBeta: readonly string[] | undefined;
+  const callMessagesCountTokens = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderCallResult> => {
+    upstreamHeaders = opts?.headers;
+    upstreamAnthropicBeta = opts?.anthropicBeta;
+    return { response: Response.json({ input_tokens: 7 }), modelKey: 'k' };
+  });
+
+  await messagesAttempt.countTokens({
+    payload: makePayload(),
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({ callMessagesCountTokens }),
+    headers: new Headers({
+      'anthropic-beta': 'must-not-enter-ordinary-headers',
+      'x-unlisted': 'discard',
+    }),
+    anthropicBeta: ['context-1m-2025-08-07'],
+  });
+
+  assertExists(upstreamHeaders);
+  assertEquals(Object.fromEntries(upstreamHeaders), {});
+  assertEquals(upstreamAnthropicBeta, ['context-1m-2025-08-07']);
 });
 
 test('countTokens applies generation request transforms before provider dispatch', async () => {
@@ -312,6 +407,7 @@ test('countTokens applies generation request transforms before provider dispatch
       ]),
     }),
     headers: new Headers(),
+    anthropicBeta: [],
   });
 
   assertEquals(result.type, 'plain');
@@ -343,6 +439,7 @@ test('countTokens prepares the generation web-search request shape', async () =>
       enabledFlags: new Set<FlagId>(['messages-web-search-shim']),
     }),
     headers: new Headers(),
+    anthropicBeta: [],
   });
 
   assertEquals(result.type, 'plain');
@@ -366,6 +463,7 @@ test('countTokens refuses a non-messages candidate', async () => {
       ctx: makeGatewayCtx(),
       candidate: makeCandidate({ endpoints: { responses: {} } }),
       headers: new Headers(),
+      anthropicBeta: [],
     });
   } catch (error) {
     thrown = error;
@@ -390,6 +488,7 @@ test('generate attaches the performance context to the result', async () => {
     ctx,
     candidate: makeCandidate({ upstream: 'up_perf', callMessages }),
     headers: new Headers(),
+    anthropicBeta: [],
   });
 
   assertEquals(result.type, 'events');
@@ -419,6 +518,7 @@ test('generate propagates upstream response headers onto the EventResult so resp
     ctx: makeGatewayCtx(),
     candidate: makeCandidate({ callMessages }),
     headers: new Headers(),
+    anthropicBeta: [],
   });
 
   assertEquals(result.type, 'events');

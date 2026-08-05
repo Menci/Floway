@@ -7,7 +7,6 @@ import type {
   ClientResponsesTextField,
   ClientResponsesTool,
   ClientResponsesUsage,
-  ResponsesOutputItem,
   ResponsesResult,
   ResponsesStreamEvent,
   ResponsesTool,
@@ -202,20 +201,6 @@ export const completeResponseResource = (
   };
 };
 
-// The item lifecycle — not the terminal envelope's `output` — is the spec's
-// authority on what a response produced, and upstreams take that literally: a
-// Codex turn that closed `reasoning` and `message` states `output:
-// ['reasoning']`, and its compaction turn states `output: []`. A terminal
-// reached without a closed item is left as it arrived.
-// https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L237
-const withObservedOutput = (
-  response: ResponsesResult,
-  observed: Map<number, ResponsesOutputItem>,
-): ResponsesResult =>
-  observed.size === 0
-    ? response
-    : { ...response, output: [...observed].sort(([left], [right]) => left - right).map(([, item]) => item) };
-
 // The client-facing egress stage: every resource-bearing event carries the
 // complete resource, so a streamed response validates frame by frame and the
 // non-streaming body — which is the terminal frame's resource verbatim —
@@ -226,7 +211,6 @@ export const wrapResponseResourceCompletion = async function* (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   sources: ResponseResourceSources,
 ): AsyncGenerator<ProtocolFrame<ClientResponsesStreamEvent>> {
-  const observed = new Map<number, ResponsesOutputItem>();
   for await (const frame of frames) {
     if (frame.type !== 'event') {
       yield frame;
@@ -239,14 +223,10 @@ export const wrapResponseResourceCompletion = async function* (
     case 'response.in_progress':
       yield eventFrame({ ...event, response: completeResponseResource(event.response, sources, false) });
       continue;
-    case 'response.output_item.done':
-      observed.set(event.output_index, event.item);
-      yield eventFrame(event);
-      continue;
     case 'response.completed':
     case 'response.incomplete':
     case 'response.failed':
-      yield eventFrame({ ...event, response: completeResponseResource(withObservedOutput(event.response, observed), sources, true) });
+      yield eventFrame({ ...event, response: completeResponseResource(event.response, sources, true) });
       continue;
     default:
       yield eventFrame(event);

@@ -9,7 +9,7 @@ import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload, ResponsesResult } from '@floway-dev/protocols/responses';
-import { type ModelCandidate, directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
+import { type MessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import type { FlagId } from '@floway-dev/provider/flags';
 import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -63,7 +63,7 @@ const makeCandidate = (overrides: {
   upstream?: string;
   endpoints?: ModelEndpoints;
   callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
-  callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
+  callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: MessagesUpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
   callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
   enabledFlags?: ReadonlySet<FlagId>;
 } = {}): ModelCandidate => {
@@ -166,20 +166,23 @@ test('generate native target applies role compatibility flags in target-chain or
 
 test('generate translates through the Messages target when only that endpoint is exposed', async () => {
   installRepo();
-  const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: new Headers(),
-  }));
+  let anthropicBeta: readonly string[] | undefined;
+  const callMessages = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+    anthropicBeta = opts?.anthropicBeta;
+    return { ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: new Headers() };
+  });
   const result = await chatCompletionsAttempt.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     candidate: makeCandidate({ callMessages, endpoints: { messages: {} } }),
-    headers: new Headers(),
+    headers: new Headers({ 'anthropic-beta': 'must-not-cross-source-protocols' }),
   });
 
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
   assertEquals(callMessages.mock.calls.length, 1);
+  assertEquals(anthropicBeta, []);
 });
 
 test('generate injects the platform external-image loader into Chat-to-Messages translation', async () => {

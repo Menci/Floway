@@ -11,7 +11,7 @@
 // forwards the winning attempt (2xx) or the last failure (exhausted).
 
 import type { GatewayCtx } from './gateway-ctx.ts';
-import { inboundHeadersForUpstream } from './inbound-headers.ts';
+import { inboundHeaders } from './inbound-headers.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from './telemetry/attribution.ts';
 import type { PerformanceTelemetryContext } from './telemetry/performance.ts';
 import { buildUpstreamCallOptions } from './upstream-call-options.ts';
@@ -49,7 +49,7 @@ export const passthroughAttempt = async (args: PassthroughAttemptArgs): Promise<
   const { response, modelKey } = await call(
     candidate.provider,
     providerModelOf(candidate),
-    buildUpstreamCallOptions(candidate, ctx, inboundHeadersForUpstream(c)),
+    buildUpstreamCallOptions(candidate, ctx, inboundHeaders(c)),
   );
   return {
     type: 'plain',

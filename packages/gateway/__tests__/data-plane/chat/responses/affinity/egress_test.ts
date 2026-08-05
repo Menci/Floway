@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from 'vitest';
 
 import { wrapResponsesAffinityEgress } from '../../../../../src/data-plane/chat/responses/affinity/egress.ts';
+import { wrapResponsesObservedOutput } from '../../../../../src/data-plane/chat/responses/items/output.ts';
 import type { AffinityCodec, AffinityTarget } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesOutputItem, ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -214,5 +215,64 @@ describe('Responses affinity egress', () => {
     expect(output[0]).toMatchObject({
       event: { response: { output: [{ type: 'compaction_summary', encrypted_content: 'wrapped:opaque' }] } },
     });
+  });
+
+  test.each([
+    ['response.completed', 'completed'],
+    ['response.incomplete', 'incomplete'],
+  ] as const)('uses closed items before affinity rewrites a partial %s restatement', async (eventType, status) => {
+    const reasoning: ResponsesOutputReasoning = { type: 'reasoning', id: 'rs_first', summary: [] };
+    const message = {
+      type: 'message' as const,
+      id: 'msg_second',
+      role: 'assistant' as const,
+      status: 'completed' as const,
+      content: [{ type: 'output_text' as const, text: 'answer', annotations: [] }],
+    };
+    const partial = response([message], status);
+    const input = frames([
+      eventFrame({ type: 'response.output_item.added', output_index: 0, item: reasoning }),
+      eventFrame({ type: 'response.output_item.done', output_index: 0, item: reasoning }),
+      eventFrame({ type: 'response.output_item.added', output_index: 1, item: message }),
+      eventFrame({ type: 'response.output_item.done', output_index: 1, item: message }),
+      eventFrame({ type: eventType, response: partial } as ResponsesStreamEvent),
+    ]);
+
+    const output: ResponsesStreamEvent[] = [];
+    const canonical = wrapResponsesObservedOutput(input);
+    for await (const frame of wrapResponsesAffinityEgress(canonical, { codec: immediateCodec, affinity })) {
+      if (frame.type === 'event') output.push(frame.event);
+    }
+
+    const reasoningDone = output.find(event => event.type === 'response.output_item.done' && event.item.type === 'reasoning');
+    expect(reasoningDone).toMatchObject({ item: { encrypted_content: 'wrapped:synthetic-slot' } });
+    const terminal = output.at(-1);
+    expect(terminal?.type).toBe(eventType);
+    if (terminal?.type !== eventType) throw new Error(`expected ${eventType}`);
+    expect(terminal.response.output).toMatchObject([
+      { type: 'reasoning', encrypted_content: 'wrapped:synthetic-slot' },
+      message,
+    ]);
+  });
+
+  test('does not move first-item affinity onto a later carrier omitted into the terminal restatement', async () => {
+    const reasoning: ResponsesOutputReasoning = { type: 'reasoning', id: 'rs_first', summary: [] };
+    const program = { type: 'program', id: 'prog_second', call_id: 'call_second', code: 'return 1' } as ResponsesOutputItem;
+    const input = frames([
+      eventFrame({ type: 'response.output_item.done', output_index: 0, item: reasoning }),
+      eventFrame({ type: 'response.output_item.done', output_index: 1, item: program }),
+      eventFrame({ type: 'response.completed', response: response([program]) }),
+    ]);
+
+    const output: ResponsesStreamEvent[] = [];
+    const canonical = wrapResponsesObservedOutput(input);
+    for await (const frame of wrapResponsesAffinityEgress(canonical, { codec: immediateCodec, affinity })) {
+      if (frame.type === 'event') output.push(frame.event);
+    }
+
+    const terminal = output.at(-1);
+    if (terminal?.type !== 'response.completed') throw new Error('expected response.completed');
+    expect(terminal.response.output[0]).toMatchObject({ type: 'reasoning', encrypted_content: 'wrapped:synthetic-slot' });
+    expect(terminal.response.output[1]).toEqual(program);
   });
 });
