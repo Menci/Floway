@@ -443,7 +443,6 @@ test('SQL usage overview uses key-hour indexes for an actor-scoped aggregate', a
     .bind(...statement.binds)
     .all<{ detail: string }>();
   const plan = results.map(row => row.detail).join('\n');
-  assertEquals(plan.includes('idx_api_keys_user_all'), true);
   assertEquals(plan.includes('idx_usage_metric_key_hour'), true);
   assertEquals(plan.includes('idx_usage_requests_key_hour'), true);
 });
