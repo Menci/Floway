@@ -189,10 +189,15 @@ const orderAliasTargets = (alias: ModelAliasRecord): readonly ModelAliasRecord['
   return shuffled;
 };
 
-const deduplicateAliasCandidates = (candidates: readonly ModelCandidate[]): ModelCandidate[] => {
+interface AliasCandidateCollector {
+  readonly candidates: ModelCandidate[];
+  readonly add: (candidate: ModelCandidate) => void;
+}
+
+const createAliasCandidateCollector = (): AliasCandidateCollector => {
   const rulesByUpstreamByModel = new Map<string, Map<string, Set<string>>>();
-  const unique: ModelCandidate[] = [];
-  for (const candidate of candidates) {
+  const candidates: ModelCandidate[] = [];
+  const add = (candidate: ModelCandidate): void => {
     let byUpstream = rulesByUpstreamByModel.get(candidate.model.id);
     if (byUpstream === undefined) {
       byUpstream = new Map();
@@ -204,11 +209,11 @@ const deduplicateAliasCandidates = (candidates: readonly ModelCandidate[]): Mode
       byUpstream.set(candidate.provider.upstreamId, rules);
     }
     const rulesKey = serializeCanonicalJson(candidate.rules ?? {});
-    if (rules.has(rulesKey)) continue;
+    if (rules.has(rulesKey)) return;
     rules.add(rulesKey);
-    unique.push(candidate);
-  }
-  return unique;
+    candidates.push(candidate);
+  };
+  return { candidates, add };
 };
 
 // Per-request model resolution. Two-branch chain:
@@ -292,17 +297,17 @@ export const enumerateModelCandidates = async ({
   // same physical binding under two rule variants.
   const aggregatedFailed = new Set<string>();
   let sawAny = false;
-  const flat: ModelCandidate[] = [];
+  const collected = createAliasCandidateCollector();
   for (const target of orderAliasTargets(alias)) {
     const result = await resolveRealCandidates(target.target_model_id, kind, enumerateReal);
     for (const name of result.failedUpstreams) aggregatedFailed.add(name);
     if (result.sawModel) sawAny = true;
     for (const candidate of result.candidates) {
-      flat.push({ ...candidate, rules: target.rules });
+      collected.add({ ...candidate, rules: target.rules });
     }
   }
   return {
-    candidates: deduplicateAliasCandidates(flat),
+    candidates: collected.candidates,
     sawModel: sawAny,
     failedUpstreams: [...aggregatedFailed],
   };
