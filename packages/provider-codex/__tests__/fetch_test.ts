@@ -234,6 +234,34 @@ describe('callCodexResponses — upstream classification', () => {
     expect(body.stream).toBe(true);
   });
 
+  test('forwards opaque request controls and the caller abort signal to Codex', async () => {
+    seedFreshAccessToken();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    const abort = new AbortController();
+    await callCodexResponses({
+      upstreamId,
+      account: activeAccount,
+      model,
+      body: {
+        input: [],
+        stream: true,
+        reasoning: { effort: 'future-effort', summary: 'future-summary' },
+        text: { verbosity: 'future-verbosity' },
+        service_tier: 'future-tier',
+      },
+      headers: new Headers(),
+      signal: abort.signal,
+      effects: makeEffects(),
+      call: noopUpstreamCallOptions(),
+    });
+    const init = fetchSpy.mock.calls[0][1] as RequestInit;
+    const body = JSON.parse(init.body as string);
+    expect(body.reasoning).toEqual({ effort: 'future-effort', summary: 'future-summary' });
+    expect(body.text).toEqual({ verbosity: 'future-verbosity' });
+    expect(body.service_tier).toBe('future-tier');
+    expect(init.signal).toBe(abort.signal);
+  });
+
   test('builds Codex responses headers and metadata from a clean set', async () => {
     seedFreshAccessToken();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());

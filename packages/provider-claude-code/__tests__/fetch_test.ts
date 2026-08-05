@@ -290,6 +290,31 @@ describe('callClaudeCodeMessages — wire body', () => {
     expect(body.model).toBe('claude-sonnet-4-5-20250929');
   });
 
+  test('forwards opaque request controls and the caller abort signal to Anthropic', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    const abort = new AbortController();
+    await callClaudeCodeMessages({
+      upstreamId,
+      model: sonnetModel,
+      body: {
+        ...minimalBody,
+        output_config: { effort: 'future-effort' },
+        service_tier: 'future-tier',
+        speed: 'future-speed',
+      },
+      shaped: false,
+      signal: abort.signal,
+      call: noopUpstreamCallOptions(),
+    });
+    const init = fetchSpy.mock.calls[0]![1] as RequestInit;
+    const body = JSON.parse(init.body as string);
+    expect(body.output_config.effort).toBe('future-effort');
+    expect(body.service_tier).toBe('future-tier');
+    expect(body.speed).toBe('future-speed');
+    expect(init.signal).toBe(abort.signal);
+  });
+
   test('targets /v1/messages?beta=true', async () => {
     seedAccount({ accessToken: freshAccessTokenEntry });
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
