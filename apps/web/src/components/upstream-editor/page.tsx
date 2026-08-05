@@ -2,7 +2,6 @@ import { SaveRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FormProvider, useForm } from 'react-hook-form';
-import { useTranslation } from 'react-i18next';
 import { useBlocker, useNavigate, type BlockerFunction } from 'react-router';
 import { z } from 'zod';
 
@@ -22,6 +21,7 @@ import { UpstreamWorkspace } from './workspace';
 import { api, callApi } from '../../api/client';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { useEntryRewrite } from '../../lib/page-navigation';
 import { BackNavigationButton } from '../ui/back-navigation-button';
 import { ConfirmDialog } from '../ui/confirm-dialog';

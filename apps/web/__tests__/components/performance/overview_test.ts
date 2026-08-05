@@ -13,16 +13,18 @@ const emptyOverview = (): PerformanceOverviewResponse => ({
 
 describe('performance overview query', () => {
   it('sends group-by and all active filters using the new API shape', () => {
-    const search = buildPerformanceQuery('all-by-user', '7d', 'operation', {
-      model: 'gpt-5', upstream: 'up_1', operation: '', runtimeLocation: 'SJC', userId: '2', keyId: 'key_1',
+    const query = buildPerformanceQuery('7d', 'operation', {
+      model: ['gpt-5', 'claude-opus-4-7'], upstream: ['up_1'], operation: [], runtimeLocation: ['SJC'], userId: ['2'], keyId: ['key_1'],
     }, Date.UTC(2026, 6, 12, 4));
-    expect(search.get('group_by')).toBe('operation');
-    expect(search.get('filter_model')).toBe('gpt-5');
-    expect(search.get('filter_upstream')).toBe('up_1');
-    expect(search.get('filter_runtime_location')).toBe('SJC');
-    expect(search.get('filter_user_id')).toBe('2');
-    expect(search.get('filter_key_id')).toBe('key_1');
-    expect(search.has('metric_scope')).toBe(false);
+    expect(query).toMatchObject({
+      group_by: 'operation',
+      filter_model: ['gpt-5', 'claude-opus-4-7'],
+      filter_upstream: ['up_1'],
+      filter_runtime_location: ['SJC'],
+      filter_user_id: ['2'],
+      filter_key_id: ['key_1'],
+    });
+    expect(query).not.toHaveProperty('metric_scope');
   });
 
   it('converts TPOT microseconds to output tokens per second', () => {
@@ -31,15 +33,16 @@ describe('performance overview query', () => {
   });
 
   it('clears filters hidden by the selected grouping', () => {
-    const filters = { model: '', upstream: '', operation: '', runtimeLocation: '', userId: '2', keyId: 'key_1' };
-    expect(clearGroupedFilter(filters, 'userId')).toMatchObject({ userId: '', keyId: '' });
+    const filters = { model: [], upstream: [], operation: [], runtimeLocation: [], userId: ['2'], keyId: ['key_1'] };
+    expect(clearGroupedFilter(filters, 'userId')).toMatchObject({ userId: [], keyId: [] });
   });
 
   it('round-trips non-default dashboard state through the URL', () => {
-    const state = parsePerformanceUrlState(new URLSearchParams('m=tokPerSec&pct=p99&g=upstream&r=30d&fm=gpt-5&hide=a%252Cb,c'));
-    expect(state).toMatchObject({ metric: 'tokPerSec', percentile: 'p99', groupBy: 'upstream', range: '30d', filters: { model: 'gpt-5' }, hidden: ['a,b', 'c'] });
-    expect(serializePerformanceUrlState(state).get('m')).toBe('tokPerSec');
-    expect(serializePerformanceUrlState(state).get('fm')).toBe('gpt-5');
+    const state = parsePerformanceUrlState(new URLSearchParams('m=tokPerSec&pct=p99&g=upstream&r=30d&fm=&fm=gpt-5&fm=gpt-5&fm=claude-opus-4-7&hide=a%252Cb,c'));
+    expect(state).toMatchObject({ metric: 'tokPerSec', percentile: 'p99', groupBy: 'upstream', range: '30d', filters: { model: ['gpt-5', 'claude-opus-4-7'] }, hidden: ['a,b', 'c'] });
+    const serialized = serializePerformanceUrlState(state);
+    expect(serialized.get('m')).toBe('tokPerSec');
+    expect(serialized.getAll('fm')).toEqual(['gpt-5', 'claude-opus-4-7']);
   });
 });
 

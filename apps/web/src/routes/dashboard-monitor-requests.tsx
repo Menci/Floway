@@ -1,8 +1,8 @@
 import { DismissRegular } from '@fluentui/react-icons';
 import { useCallback, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router';
 
+import { useTranslation } from '../i18n/translation';
 import type { Route } from './+types/dashboard-monitor-requests';
 import { requireDashboardSession } from './guards';
 import { api, callApi } from '../api/client';

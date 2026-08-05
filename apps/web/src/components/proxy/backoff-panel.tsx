@@ -1,10 +1,10 @@
 import { ArrowResetRegular } from '@fluentui/react-icons';
 import { useState } from 'react';
-import { useTranslation } from 'react-i18next';
 
 import { api, callApi } from '../../api/client';
 import type { BackoffRow } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { formatCountdown } from '../../lib/format-duration';
 import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';

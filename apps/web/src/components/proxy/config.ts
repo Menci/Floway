@@ -22,7 +22,7 @@ export const FORM_KINDS: FormKind[] = [
   'reality',
 ];
 
-export const formKindLabelKey = (kind: FormKind): string =>
+export const formKindLabelKey = <K extends FormKind>(kind: K): `dashboard.proxy.form.protocolOptions.${K}` =>
   `dashboard.proxy.form.protocolOptions.${kind}`;
 
 export const SS_METHOD_OPTIONS = [

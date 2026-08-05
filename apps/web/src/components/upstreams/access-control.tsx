@@ -1,10 +1,10 @@
 import { ProhibitedRegular, ShieldKeyhole24Regular } from '@fluentui/react-icons';
 import { useCallback, useId, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
 
 import { ProviderBadge } from './provider-badge';
 import type { ControlPlaneModel, UpstreamOption } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { useDangerTextClass } from '../ui/danger';
 import { ReorderButtons } from '../ui/reorder-buttons';
 import { ScrollArea } from '../ui/scroll-area';

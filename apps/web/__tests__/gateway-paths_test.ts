@@ -44,9 +44,11 @@ const gatewayUrls = [
 // -- a context not starting with `^` matches by prefix.
 const viteProxies = (url: string) => wranglerProxiedPaths.some(context => url.startsWith(context));
 
-const nginxLocations = [...readRepoFile('docker/nginx.conf').matchAll(/^\s*location\s+~\s+(\S+)\s*\{/gm)].map(
-  ([, pattern]) => new RegExp(pattern!),
-);
+// `proxy_pass` is what makes a location a gateway path; the file also carries
+// locations that only settle how a static asset is served.
+const nginxLocations = [
+  ...readRepoFile('docker/nginx.conf').matchAll(/^\s*location\s+~\s+(\S+)\s*\{[^}]*proxy_pass[^}]*\}/gm),
+].map(([, pattern]) => new RegExp(pattern!));
 const nginxProxies = (url: string) => nginxLocations.some(pattern => pattern.test(url));
 
 // Cloudflare's `run_worker_first` entries are path globs where `*` spans any

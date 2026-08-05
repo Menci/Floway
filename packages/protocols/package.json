@@ -19,6 +19,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
+  "dependencies": {
+    "eventsource-parser": "^3.1.0"
+  },
   "devDependencies": {
     "@floway-dev/test-utils": "workspace:*"
   }

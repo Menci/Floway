@@ -2,11 +2,11 @@ import { PUBLIC_DATA_PLANE_ROUTES, type PublicDataPlaneRouteId } from '@floway-d
 
 export type ApiDocsGroup = 'models' | 'generation' | 'media' | 'rerank' | 'search';
 
-export interface ApiDocsEndpoint {
+export interface ApiDocsEndpoint<Name extends string = string> {
   docs: string;
   group: ApiDocsGroup;
   method: 'GET' | 'POST';
-  name: string;
+  name: Name;
   path: string;
   route: PublicDataPlaneRouteId;
 }
@@ -14,10 +14,10 @@ export interface ApiDocsEndpoint {
 const openAi = 'https://platform.openai.com/docs/api-reference';
 const codexSearchDocs = 'https://github.com/openai/codex/blob/2e1607ee2fa8099a233df7437adee5f16a741905/codex-rs/codex-api/src/search.rs#L8-L29';
 
-const endpoint = (
+const endpoint = <const Name extends string>(
   route: PublicDataPlaneRouteId,
-  metadata: Pick<ApiDocsEndpoint, 'docs' | 'group' | 'name'> & { path?: string },
-): ApiDocsEndpoint => {
+  metadata: Pick<ApiDocsEndpoint<Name>, 'docs' | 'group' | 'name'> & { path?: string },
+): ApiDocsEndpoint<Name> => {
   const manifest = PUBLIC_DATA_PLANE_ROUTES[route];
   return { route, method: manifest.method, path: metadata.path ?? manifest.paths.join(', '), ...metadata };
 };
@@ -28,7 +28,7 @@ const geminiActionPath = (action: string) =>
 export const authCurlExample = (origin: string) =>
   `curl "${origin}/v1/models" -H "Authorization: Bearer $FLOWAY_API_KEY"`;
 
-export const apiDocsEndpoints: readonly ApiDocsEndpoint[] = [
+export const apiDocsEndpoints = [
   endpoint('models', { group: 'models', name: 'openAiModels', docs: `${openAi}/models/list` }),
   endpoint('geminiModels', { group: 'models', name: 'geminiModels', docs: 'https://ai.google.dev/api/models' }),
   endpoint('geminiModel', { group: 'models', name: 'geminiModel', docs: 'https://ai.google.dev/api/models', path: PUBLIC_DATA_PLANE_ROUTES.geminiModel.paths[0].replace(':modelId{.+}', '{model}') }),
@@ -55,6 +55,6 @@ export const apiDocsEndpoints: readonly ApiDocsEndpoint[] = [
   endpoint('voyageV1Rerank', { group: 'rerank', name: 'voyageRerank', docs: 'https://docs.voyageai.com/reference/reranker-api' }),
 
   endpoint('alphaSearch', { group: 'search', name: 'codexSearch', docs: codexSearchDocs }),
-];
+] satisfies readonly ApiDocsEndpoint[];
 
 export const apiDocsGroups = [...new Set(apiDocsEndpoints.map(item => item.group))];
