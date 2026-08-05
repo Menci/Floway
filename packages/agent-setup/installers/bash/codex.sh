@@ -108,24 +108,37 @@ codex_commit_files() {
   CODEX_TOKEN_BACKUP=""
 }
 
-# Terminate the app-server process group, giving a child whose stdin was just
-# closed a brief moment to exit on its own before escalating TERM then KILL. The
-# child is launched under job control so the whole descendant tree shares one
-# group. The natural-exit grace uses sub-second polling so a clean handshake
-# adds negligible latency.
+# Reap an app-server that exits when stdin closes while a watchdog gives a
+# genuinely running process group one second before escalating TERM then KILL.
+# Waiting in the parent is important: kill -0 also succeeds for an unreaped
+# zombie, so polling the pid would make every clean shutdown pay the full grace.
+# The marker keeps the watchdog alive through KILL after TERM releases the
+# parent's wait, and the process-group probe covers descendants that outlive
+# their leader.
 _codex_kill_group() {
   _ckg_pid=$1
-  _ckg_n=0
-  while kill -0 "$_ckg_pid" 2>/dev/null && [ "$_ckg_n" -lt 5 ]; do
-    sleep 0.2
-    _ckg_n=$((_ckg_n + 1))
-  done
-  if kill -0 "$_ckg_pid" 2>/dev/null; then
-    kill -TERM -- "-$_ckg_pid" 2>/dev/null || kill -TERM "$_ckg_pid" 2>/dev/null || true
-    sleep 0.5
-    kill -KILL -- "-$_ckg_pid" 2>/dev/null || kill -KILL "$_ckg_pid" 2>/dev/null || true
-  fi
+  _ckg_marker=$2
+  rm -f "$_ckg_marker"
+  (
+    exec </dev/null >/dev/null 2>&1
+    sleep 1
+    if kill -0 -- "-$_ckg_pid" 2>/dev/null || kill -0 "$_ckg_pid" 2>/dev/null; then
+      : > "$_ckg_marker"
+      kill -TERM -- "-$_ckg_pid" 2>/dev/null || kill -TERM "$_ckg_pid" 2>/dev/null || true
+      sleep 0.5
+      kill -KILL -- "-$_ckg_pid" 2>/dev/null || kill -KILL "$_ckg_pid" 2>/dev/null || true
+    fi
+  ) &
+  _ckg_watchdog=$!
+
   wait "$_ckg_pid" 2>/dev/null || true
+  if [ -e "$_ckg_marker" ] || kill -0 -- "-$_ckg_pid" 2>/dev/null; then
+    wait "$_ckg_watchdog" 2>/dev/null || true
+  else
+    kill "$_ckg_watchdog" 2>/dev/null || true
+    wait "$_ckg_watchdog" 2>/dev/null || true
+  fi
+  rm -f "$_ckg_marker"
 }
 
 # Read newline-delimited JSON-RPC from fd 4 until a response whose id matches
@@ -216,7 +229,7 @@ codex_app_server_batch_write() {
 
   exec 3>&- 2>/dev/null || true
   exec 4<&- 2>/dev/null || true
-  _codex_kill_group "$_cas_pid"
+  _codex_kill_group "$_cas_pid" "$_cas_dir/kill-started"
   rm -rf "$_cas_dir"
 
   if [ "$_cas_status" -ne 0 ]; then
