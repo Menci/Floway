@@ -105,7 +105,7 @@ test('SQL upstream repo hydrates deeply nested opaque provider data without recu
   const repo = new SqlRepo(db).upstreams;
   await repo.save(baseRecord());
   const depth = 20_000;
-  const providerData = '{"next":'.repeat(depth) + 'null' + '}'.repeat(depth);
+  const providerData = `${'{"next":'.repeat(depth)}null${'}'.repeat(depth)}`;
   const cache = `{"revision":${MODEL_CATALOG_REVISION},"fetchedAt":1700000000000,"models":[{"id":"deep-model","limits":{},"kind":"chat","endpoints":{"responses":{}},"providerData":${providerData},"enabledFlags":[]}],"lastError":null}`;
   await db.prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ?').bind(cache, 'up_test').run();
 
