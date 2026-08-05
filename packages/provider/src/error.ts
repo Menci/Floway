@@ -35,11 +35,12 @@ const serializeCause = (cause: unknown, ancestors: ReadonlySet<Error>, depth = 0
 
   if (cause === undefined || cause === null || typeof cause === 'string' || typeof cause === 'number' || typeof cause === 'boolean') return cause;
   try {
-    JSON.stringify(cause);
-    return cause;
+    const serialized = JSON.stringify(cause);
+    if (serialized !== undefined) return JSON.parse(serialized) as unknown;
   } catch {
-    return String(cause);
+    // Fall through to the stable marker below.
   }
+  return { type: 'unserializable_cause', valueType: typeof cause };
 };
 
 export const toInternalDebugError = (error: unknown, targetApi?: string): InternalDebugError => {

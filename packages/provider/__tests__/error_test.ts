@@ -29,3 +29,26 @@ test('toInternalDebugError bounds adversarially deep Error cause chains', () => 
   expect(serializedDepth).toBe(32);
   expect(cause).toMatchObject({ type: 'depth_limit', limit: 32, name: 'Error' });
 });
+
+test('toInternalDebugError snapshots stateful non-Error causes exactly once', () => {
+  let calls = 0;
+  const cause = {
+    toJSON: () => ++calls === 1 ? { state: 'captured' } : 1n,
+  };
+
+  const debug = toInternalDebugError(new Error('failure', { cause }));
+  expect(debug.cause).toEqual({ state: 'captured' });
+  expect(calls).toBe(1);
+  expect(() => JSON.stringify(debug)).not.toThrow();
+});
+
+test('toInternalDebugError does not invoke a hostile fallback toString', () => {
+  const cause = {
+    toJSON: () => { throw new Error('no JSON'); },
+    toString: () => { throw new Error('no string'); },
+  };
+
+  const debug = toInternalDebugError(new Error('failure', { cause }));
+  expect(debug.cause).toEqual({ type: 'unserializable_cause', valueType: 'object' });
+  expect(() => JSON.stringify(debug)).not.toThrow();
+});
