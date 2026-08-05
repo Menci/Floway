@@ -22,10 +22,10 @@ $cases = @(
 $results = foreach ($json in $cases) {
   try { $null = Read-SetupJsonDocument $json; 'accepted' } catch { 'rejected' }
 }
-[Console]::Out.Write(($results -join ','))
+Write-Output -NoEnumerate ($results -join ',')
 `,
   });
 
   expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
-  expect(result.stdout, result.stderr).toBe('rejected,rejected,rejected,accepted,accepted');
+  expect(result.stdout.trim(), result.stderr).toBe('rejected,rejected,rejected,accepted,accepted');
 });
