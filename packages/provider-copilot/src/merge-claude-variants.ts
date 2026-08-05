@@ -75,19 +75,26 @@ const mergeVariantGroup = (variants: CopilotRawModel[]): CopilotRawModel => {
 
 export const mergeClaudeVariants = (models: CopilotModelsResponse): CopilotModelsResponse => {
   const groups = new Map<string, CopilotRawModel[]>();
-  const order: string[] = [];
+  const order: Array<
+    | { readonly kind: 'claude'; readonly key: string }
+    | { readonly kind: 'opaque'; readonly model: CopilotRawModel }
+  > = [];
 
   for (const model of models.data) {
-    const key = isClaudeModel(model) ? copilotPublicModelId(model.id) : model.id;
+    if (!isClaudeModel(model)) {
+      order.push({ kind: 'opaque', model });
+      continue;
+    }
+    const key = copilotPublicModelId(model.id);
     if (!groups.has(key)) {
       groups.set(key, []);
-      order.push(key);
+      order.push({ kind: 'claude', key });
     }
     groups.get(key)!.push(model);
   }
 
   return {
     object: models.object,
-    data: order.map(key => mergeVariantGroup(groups.get(key)!)),
+    data: order.map(item => item.kind === 'opaque' ? item.model : mergeVariantGroup(groups.get(item.key)!)),
   };
 };

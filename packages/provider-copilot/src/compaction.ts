@@ -47,7 +47,10 @@ const isRetainedMessage = (item: ResponsesInputItem): item is ResponsesInputMess
 // Retained messages are newly synthesized output items, so their client-visible
 // producer IDs are assigned here instead of inherited from input. They are
 // resent as full content; the compaction blob carries next-turn state.
-export const compactionResponse = (input: ResponsesInputItem[], generated: ResponsesResult): ResponsesCompactionResult => {
+export const retainMessagesForCompaction = (
+  input: readonly ResponsesInputItem[],
+  tokenBudget: number,
+): ResponsesInputMessage[] => {
   const kept: ResponsesInputMessage[] = [];
   let used = 0;
   for (let i = input.length - 1; i >= 0; i -= 1) {
@@ -60,7 +63,7 @@ export const compactionResponse = (input: ResponsesInputItem[], generated: Respo
         ? sum + Math.ceil(encoder.encode(part.text).length / APPROX_BYTES_PER_TOKEN)
         : sum, 0);
     used += Math.max(tokens, 1);
-    if (used > RETAINED_BUDGET_TOKENS && kept.length > 0) break;
+    if (used > tokenBudget && kept.length > 0) break;
 
     kept.push({
       type: 'message',
@@ -71,6 +74,12 @@ export const compactionResponse = (input: ResponsesInputItem[], generated: Respo
       ...(item.phase !== undefined ? { phase: item.phase } : {}),
     });
   }
+
+  return kept.reverse();
+};
+
+export const compactionResponse = (input: ResponsesInputItem[], generated: ResponsesResult): ResponsesCompactionResult => {
+  const kept = retainMessagesForCompaction(input, RETAINED_BUDGET_TOKENS);
 
   // The trigger turn may also emit a stray assistant message, and it may
   // segment its state across several compaction items: `gpt-5-mini-2025-08-07`
@@ -102,6 +111,6 @@ export const compactionResponse = (input: ResponsesInputItem[], generated: Respo
   return {
     ...generated,
     object: 'response.compaction',
-    output: [...kept.reverse(), ...compactionItems] as unknown as ResponsesOutputItem[],
+    output: [...kept, ...compactionItems] as unknown as ResponsesOutputItem[],
   };
 };
