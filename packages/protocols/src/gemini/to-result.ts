@@ -1,5 +1,5 @@
-import type { GeminiErrorResponse, GeminiStreamEvent } from './index.ts';
 import { assertGeminiCandidateIndex } from './candidate-index.ts';
+import type { GeminiErrorResponse, GeminiStreamEvent } from './index.ts';
 import { reassembleGeminiEvents } from './reassemble.ts';
 import type { ProtocolFrame } from '../common/index.ts';
 

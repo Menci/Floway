@@ -1,5 +1,5 @@
-import { GEMINI_CANDIDATE_KEYS, GEMINI_RESULT_KEYS } from './field-keys.ts';
 import { assertGeminiCandidateIndex } from './candidate-index.ts';
+import { GEMINI_CANDIDATE_KEYS, GEMINI_RESULT_KEYS } from './field-keys.ts';
 import type { GeminiCandidate, GeminiPart, GeminiResult, GeminiStreamEvent } from './index.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
 

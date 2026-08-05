@@ -431,14 +431,14 @@ test.each(childEventItems.flatMap(item => [undefined, '', 1].map(id => ({ id, it
   'responsesResultToEvents rejects invalid id $id on child-event item $item.type',
   ({ id, item }) => {
     const invalidItem = id === undefined ? item : { ...item, id };
-  assertThrows(
-    () => responsesResultToEvents({
-      ...completedResponse,
+    assertThrows(
+      () => responsesResultToEvents({
+        ...completedResponse,
         output: [invalidItem as unknown as ResponsesOutputItem],
-    }),
-    Error,
-    `Responses ${item.type} output item is missing its id`,
-  );
+      }),
+      Error,
+      `Responses ${item.type} output item is missing its id`,
+    );
   },
 );
 

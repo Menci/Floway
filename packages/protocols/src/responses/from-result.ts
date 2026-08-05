@@ -1,6 +1,6 @@
 import { imageGenerationCallLifecycleEvents } from './image-generation-lifecycle.ts';
-import { requireResponsesItemId } from './item-id.ts';
 import type { ResponsesOutputCustomToolCall, ResponsesOutputFunctionCall, ResponsesOutputImageGenerationCall, ResponsesOutputItem, ResponsesOutputMessage, ResponsesOutputReasoning, ResponsesOutputWebSearchCall, ResponsesResult, ResponsesStreamEvent } from './index.ts';
+import { requireResponsesItemId } from './item-id.ts';
 import { webSearchCallLifecycleEvents } from './web-search-lifecycle.ts';
 import { type EventFrame, eventFrame } from '../common/index.ts';
 
