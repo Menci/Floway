@@ -2,14 +2,17 @@ import { Hono } from 'hono';
 import { test } from 'vitest';
 
 import { respondMessages } from '../../../../src/data-plane/chat/messages/respond.ts';
+import { createMessagesBillableUsageReader } from '../../../../src/data-plane/chat/messages/usage.ts';
+import { providerStreamResultToExecuteResult } from '../../../../src/data-plane/chat/shared/provider-stream-result.ts';
 import type { ChatGatewayCtx } from '../../../../src/data-plane/chat/shared/gateway-ctx.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
+import { tokenCountsFromUsage } from '../../../../src/repo/usage-metrics.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import { eventResult, type ExecuteResult } from '@floway-dev/provider';
-import { assert, assertEquals, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { eventResult, type ExecuteResult, type ProviderStreamResult } from '@floway-dev/provider';
+import { assert, assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 // --- header forwarding ---
 
@@ -125,3 +128,113 @@ test('respondMessages forwards upstream headers and strips hop-by-hop / framing 
 // A generator whose next() resolves only when emit() supplies the next event.
 // Lets a test interleave "upstream emitted frame X" with "downstream cancels",
 // so the streaming finally block fires while message_stop is still in flight.
+
+interface Deferred<T> {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+}
+
+const deferred = <T>(): Deferred<T> => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(resolvePromise => { resolve = resolvePromise; });
+  return { promise, resolve };
+};
+
+const controlledMessagesEvents = (signal: AbortSignal): {
+  readonly events: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>;
+  readonly emit: (event: MessagesStreamEvent) => void;
+  readonly stopped: Promise<void>;
+} => {
+  const queued: ProtocolFrame<MessagesStreamEvent>[] = [];
+  let pending: Deferred<IteratorResult<ProtocolFrame<MessagesStreamEvent>>> | undefined;
+  const stopped = deferred<void>();
+  const events: AsyncIterable<ProtocolFrame<MessagesStreamEvent>> = {
+    [Symbol.asyncIterator]() {
+      return {
+        next(): Promise<IteratorResult<ProtocolFrame<MessagesStreamEvent>>> {
+          if (signal.aborted) return Promise.resolve({ done: true, value: undefined });
+          const frame = queued.shift();
+          if (frame !== undefined) return Promise.resolve({ done: false, value: frame });
+          pending = deferred<IteratorResult<ProtocolFrame<MessagesStreamEvent>>>();
+          return pending.promise;
+        },
+        return(): Promise<IteratorResult<ProtocolFrame<MessagesStreamEvent>>> {
+          pending?.resolve({ done: true, value: undefined });
+          stopped.resolve();
+          return Promise.resolve({ done: true, value: undefined });
+        },
+      };
+    },
+  };
+  signal.addEventListener('abort', () => {
+    pending?.resolve({ done: true, value: undefined });
+    pending = undefined;
+    stopped.resolve();
+  }, { once: true });
+  return {
+    events,
+    emit: event => {
+      const frame = eventFrame(event);
+      if (pending === undefined) queued.push(frame);
+      else {
+        const waiter = pending;
+        pending = undefined;
+        waiter.resolve({ done: false, value: frame });
+      }
+    },
+    stopped: stopped.promise,
+  };
+};
+
+test('respondMessages records the latest upstream usage when the client disconnects before message_stop', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const downstreamAbortController = new AbortController();
+  const controlled = controlledMessagesEvents(downstreamAbortController.signal);
+  const scheduledUsage = deferred<Promise<unknown>>();
+  const ctx: ChatGatewayCtx = {
+    ...makeRespondCtx(),
+    wantsStream: true,
+    abortSignal: downstreamAbortController.signal,
+    downstreamAbortController,
+    backgroundScheduler: promise => { scheduledUsage.resolve(promise); },
+  };
+  const providerResult: ProviderStreamResult<MessagesStreamEvent> = {
+    ok: true,
+    events: controlled.events,
+    modelKey: 'claude-upstream',
+  };
+  const result = await providerStreamResultToExecuteResult(
+    providerResult,
+    stubModelCandidate({ model: { id: 'claude-public' } }),
+    'messages',
+    ctx,
+    createMessagesBillableUsageReader(),
+  );
+  const app = new Hono().get('/', c => respondMessages(c, result, true, ctx));
+  const response = await app.request('/');
+  const reader = response.body!.getReader();
+
+  controlled.emit({
+    type: 'message_start',
+    message: {
+      id: 'msg_abort', type: 'message', role: 'assistant', content: [], model: 'claude-test',
+      stop_reason: null, stop_sequence: null,
+      usage: { input_tokens: 20, output_tokens: 0 },
+    },
+  });
+  await reader.read();
+  for (const outputTokens of [5, 11, 17]) {
+    controlled.emit({ type: 'message_delta', delta: {}, usage: { output_tokens: outputTokens } });
+    await reader.read();
+  }
+
+  await reader.cancel();
+  await controlled.stopped;
+  await (await scheduledUsage.promise);
+
+  assertEquals(downstreamAbortController.signal.aborted, true);
+  const rows = await repo.usage.listAll();
+  assertEquals(rows.length, 1);
+  assertEquals(tokenCountsFromUsage(rows[0]), { input: 20, output: 17 });
+});
