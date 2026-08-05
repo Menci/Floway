@@ -20,7 +20,9 @@ const responseSnapshot = (event: ResponsesStreamEvent): ResponsesResult | undefi
 // The upstream transport sentinel is never a client-facing success signal by
 // itself. A response terminal owns that decision; if an upstream error omits
 // the response.failed event the protocol requires after it, close the observed
-// response with that event before either transport sees the stream end.
+// response with that event before either transport sees the stream end. Once a
+// response terminal appears it remains the last visible frame, while the
+// iterator still drains to EOF so provider metadata and accounting can settle.
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L430
 export const normalizeResponsesStreamLifecycle = async function* (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
@@ -28,8 +30,10 @@ export const normalizeResponsesStreamLifecycle = async function* (
   let announced: ResponsesResult | undefined;
   let upstreamError: Extract<ResponsesStreamEvent, { type: 'error' }> | undefined;
   let lastSequenceNumber: number | undefined;
+  let terminalSeen = false;
 
   for await (const frame of frames) {
+    if (terminalSeen) continue;
     if (frame.type === 'done') continue;
 
     const event = frame.event;
@@ -39,8 +43,10 @@ export const normalizeResponsesStreamLifecycle = async function* (
     if (event.sequence_number !== undefined) lastSequenceNumber = event.sequence_number;
 
     yield frame;
-    if (isResponsesResponseTerminalEvent(event)) return;
+    if (isResponsesResponseTerminalEvent(event)) terminalSeen = true;
   }
+
+  if (terminalSeen) return;
 
   if (announced !== undefined && upstreamError !== undefined) {
     yield eventFrame({

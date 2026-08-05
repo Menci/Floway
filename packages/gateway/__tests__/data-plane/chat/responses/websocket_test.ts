@@ -52,14 +52,25 @@ const closedResponsesIteratorResult = (): IteratorResult<ResponsesFrame> => ({
 
 const createControlledResponsesEvents = (
   firstFrame?: ResponsesFrame,
-  settlePendingOnAbort?: AbortSignal,
 ) => {
-  let first = firstFrame;
   let pendingNext: Deferred<IteratorResult<ResponsesFrame>> | undefined;
+  const queued: IteratorResult<ResponsesFrame>[] = firstFrame === undefined
+    ? []
+    : [{ done: false, value: firstFrame }];
+  let closed = false;
   let nextCalls = 0;
   const firstNextStarted = deferred<void>();
   const secondNextStarted = deferred<void>();
-  const iteratorReturned = deferred<void>();
+
+  const offer = (result: IteratorResult<ResponsesFrame>): void => {
+    const pending = pendingNext;
+    if (pending === undefined) {
+      queued.push(result);
+      return;
+    }
+    pendingNext = undefined;
+    pending.resolve(result);
+  };
 
   const events: AsyncIterable<ResponsesFrame> = {
     [Symbol.asyncIterator]() {
@@ -68,20 +79,15 @@ const createControlledResponsesEvents = (
           nextCalls += 1;
           if (nextCalls === 1) firstNextStarted.resolve();
           if (nextCalls === 2) secondNextStarted.resolve();
-          if (first !== undefined) {
-            const value = first;
-            first = undefined;
-            return Promise.resolve({ done: false, value });
-          }
+          const queuedResult = queued.shift();
+          if (queuedResult !== undefined) return Promise.resolve(queuedResult);
+          if (closed) return Promise.resolve(closedResponsesIteratorResult());
 
           const pending = deferred<IteratorResult<ResponsesFrame>>();
           pendingNext = pending;
-          if (settlePendingOnAbort?.aborted) pending.resolve(closedResponsesIteratorResult());
-          else settlePendingOnAbort?.addEventListener('abort', () => pending.resolve(closedResponsesIteratorResult()), { once: true });
           return pending.promise;
         },
         return(): Promise<IteratorResult<ResponsesFrame>> {
-          iteratorReturned.resolve();
           pendingNext?.resolve(closedResponsesIteratorResult());
           return Promise.resolve(closedResponsesIteratorResult());
         },
@@ -94,10 +100,14 @@ const createControlledResponsesEvents = (
     nextCalls: () => nextCalls,
     firstNextStarted: firstNextStarted.promise,
     secondNextStarted: secondNextStarted.promise,
-    iteratorReturned: iteratorReturned.promise,
-    resolvePendingFrame: (frame: ResponsesFrame) => {
-      assertExists(pendingNext);
-      pendingNext.resolve({ done: false, value: frame });
+    enqueueFrame: (frame: ResponsesFrame) => {
+      if (closed) throw new Error('Cannot enqueue a frame after the controlled stream closes');
+      offer({ done: false, value: frame });
+    },
+    close: () => {
+      if (closed) return;
+      closed = true;
+      offer(closedResponsesIteratorResult());
     },
   };
 };
@@ -118,6 +128,30 @@ const responseCreatedFrame = (): ResponsesFrame => eventFrame({
     error: null,
   },
 });
+
+const responseCompletedFrame = (): ResponsesFrame => eventFrame({
+  type: 'response.completed',
+  sequence_number: 1,
+  response: {
+    id: 'resp_ws_cleanup_upstream',
+    object: 'response',
+    model: 'gpt-direct-responses',
+    status: 'completed',
+    output: [],
+    output_text: 'done',
+    incomplete_details: null,
+    error: null,
+  },
+});
+
+const finishControlledResponsesEvents = (
+  events: ControlledResponsesEvents,
+  includeCreated = false,
+): void => {
+  if (includeCreated) events.enqueueFrame(responseCreatedFrame());
+  events.enqueueFrame(responseCompletedFrame());
+  events.close();
+};
 
 const controlledEventResult = (
   events: AsyncIterable<ResponsesFrame>,
@@ -265,8 +299,15 @@ const withWorkerWebSocketRuntime = async <T>(run: () => Promise<T>): Promise<T> 
   try {
     return await run();
   } finally {
-    runtime.restore();
-    currentRuntime = undefined;
+    try {
+      for (const { client } of runtime.pairs) {
+        if (client.readyState === WebSocket.OPEN) client.close();
+      }
+      await flushAsyncWork();
+    } finally {
+      runtime.restore();
+      currentRuntime = undefined;
+    }
   }
 };
 
@@ -1700,7 +1741,7 @@ test('Responses WebSocket drains terminal usage without aborting upstream after 
   );
 });
 
-test('Responses WebSocket close interrupts an idle frame wait before the keep-alive deadline', async () => {
+test('Responses WebSocket close stops downstream keep-alives while draining an idle upstream turn', async () => {
   const { apiKey } = await setupAppTest();
   const turn = mockControlledResponsesTurn(() => createControlledResponsesEvents());
 
@@ -1720,19 +1761,11 @@ test('Responses WebSocket close interrupts an idle frame wait before the keep-al
       'Responses WebSocket did not begin its idle frame wait',
     );
     client.close();
-    try {
-      await promiseWithin(
-        turn.metadataRead,
-        'Responses WebSocket did not settle the closed turn before the keep-alive timer',
-      );
-    } finally {
-      events.resolvePendingFrame(responseCreatedFrame());
-    }
-
     assertEquals((await turn.signal).aborted, true);
+    finishControlledResponsesEvents(events, true);
     await promiseWithin(
-      events.iteratorReturned,
-      'Responses WebSocket did not finish queued iterator cleanup after the idle read settled',
+      turn.metadataRead,
+      'Responses WebSocket did not settle the drained turn after the client closed',
     );
   });
 });
@@ -1771,9 +1804,8 @@ test('Responses WebSocket expires an active connection at exactly 60 minutes', a
       assertEquals(client.closeReason, RESPONSES_WEBSOCKET_CONNECTION_LIMIT_ERROR.code);
       assertEquals((await turn.signal).aborted, true);
 
-      events.resolvePendingFrame(responseCreatedFrame());
+      finishControlledResponsesEvents(events, true);
       await promiseWithin(turn.metadataRead, 'Responses WebSocket did not settle the expired turn');
-      await promiseWithin(events.iteratorReturned, 'Responses WebSocket did not release its expired iterator');
     });
   } finally {
     time.restore();
@@ -1840,15 +1872,14 @@ test('Responses WebSocket bounds pipelined response.create retention and aborts 
     assertEquals(client.closeReason, RESPONSES_WEBSOCKET_QUEUE_LIMIT_CODE);
     assertEquals((await turn.signal).aborted, true);
 
-    events.resolvePendingFrame(responseCreatedFrame());
+    finishControlledResponsesEvents(events, true);
     await promiseWithin(turn.metadataRead, 'Responses WebSocket did not settle its overflow-aborted turn');
-    await promiseWithin(events.iteratorReturned, 'Responses WebSocket did not release its overflow-aborted iterator');
     await flushAsyncWork();
     assertEquals(turn.calls(), 1);
   });
 });
 
-test('Responses WebSocket send failures abort the turn before another iterator read', async () => {
+test('Responses WebSocket send failures close downstream delivery and drain the active upstream turn', async () => {
   const { apiKey } = await setupAppTest();
   const sendFailure = new Error('simulated downstream send failure');
   const turn = mockControlledResponsesTurn(() => createControlledResponsesEvents(responseCreatedFrame()));
@@ -1867,27 +1898,28 @@ test('Responses WebSocket send failures abort the turn before another iterator r
       turn.events,
       'Responses WebSocket did not create the controlled send-failure stream',
     );
+    const signal = await turn.signal;
+    await promiseWithin(
+      events.secondNextStarted,
+      'Responses WebSocket did not continue draining after the downstream send failed',
+    );
+    finishControlledResponsesEvents(events);
     await promiseWithin(
       turn.metadataRead,
       'Responses WebSocket did not settle the failed downstream send',
     );
-    await promiseWithin(
-      events.iteratorReturned,
-      'Responses WebSocket did not close the upstream iterator after the failed send',
-    );
 
-    const signal = await turn.signal;
-    assertEquals(events.nextCalls(), 1);
+    assertEquals(events.nextCalls(), 3);
     assertEquals(signal.aborted, true);
     assert(signal.reason === sendFailure, 'expected the original send error to become the abort reason');
     client.close();
   });
 });
 
-test('Responses WebSocket keep-alive readiness failures abort the pending turn', async () => {
+test('Responses WebSocket keep-alive readiness failures stop delivery and drain the pending turn', async () => {
   const { apiKey } = await setupAppTest();
-  const turn = mockControlledResponsesTurn(signal =>
-    createControlledResponsesEvents(responseCreatedFrame(), signal));
+  const turn = mockControlledResponsesTurn(() =>
+    createControlledResponsesEvents(responseCreatedFrame()));
 
   await withWorkerWebSocketRuntime(async () => {
     const client = await connectResponsesWebSocket(apiKey.key);
@@ -1917,6 +1949,7 @@ test('Responses WebSocket keep-alive readiness failures abort the pending turn',
       'Responses WebSocket did not resume its frame wait after the first event',
     );
     await time.tickAsync(DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS);
+    finishControlledResponsesEvents(events);
     await promiseWithin(
       turn.metadataRead,
       'Responses WebSocket did not settle the failed keep-alive send',
@@ -1971,6 +2004,7 @@ test('Responses WebSocket session lifetime joins the active turn and its backgro
     );
 
     client.close();
+    finishControlledResponsesEvents(events, true);
     await promiseWithin(
       turn.metadataRead,
       'Responses WebSocket did not enter final metadata settlement after close',
@@ -1990,11 +2024,6 @@ test('Responses WebSocket session lifetime joins the active turn and its backgro
     await promiseWithin(
       lifetime,
       'Responses WebSocket session lifetime did not finish after background work drained',
-    );
-    events.resolvePendingFrame(responseCreatedFrame());
-    await promiseWithin(
-      events.iteratorReturned,
-      'Responses WebSocket did not finish iterator cleanup after lifetime settlement',
     );
   });
 });
@@ -2050,6 +2079,7 @@ test('Responses WebSocket outer catch records a failed perf sample attributed to
         assertEquals(errorMessage.type, 'error');
         assertEquals(errorMessage.status, 500);
         assertEquals(errorMessage.event_id, 'evt_throw');
+        client.close();
       }),
     );
 
