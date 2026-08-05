@@ -303,10 +303,8 @@ it('SQL Performance overview matches the in-memory oracle across every grouping 
   };
 
   for (const groupBy of ['model', 'upstream', 'operation', 'runtimeLocation', 'userId', 'keyId'] as const) {
-    assertEquals(
-      await sql.performance.queryOverview({ ...options, groupBy }),
-      await memory.performance.queryOverview({ ...options, groupBy }),
-    );
+    expect(await sql.performance.queryOverview({ ...options, groupBy }))
+      .toEqual(await memory.performance.queryOverview({ ...options, groupBy }));
   }
   for (const filters of [
     { ...options.filters, models: ['model-a', 'model-b'], upstreams: ['up-b'] },
@@ -314,13 +312,9 @@ it('SQL Performance overview matches the in-memory oracle across every grouping 
     { ...options.filters, operations: ['chat'], runtimeLocations: ['LOCAL'] },
     { ...options.filters, models: ['missing'] },
   ]) {
-    assertEquals(
-      await sql.performance.queryOverview({ ...options, filters }),
-      await memory.performance.queryOverview({ ...options, filters }),
-    );
+    expect(await sql.performance.queryOverview({ ...options, filters }))
+      .toEqual(await memory.performance.queryOverview({ ...options, filters }));
   }
-  assertEquals(
-    await sql.performance.queryOverview({ ...options, actorUserId: 2, isAdmin: false }),
-    await memory.performance.queryOverview({ ...options, actorUserId: 2, isAdmin: false }),
-  );
+  expect(await sql.performance.queryOverview({ ...options, actorUserId: 2, isAdmin: false }))
+    .toEqual(await memory.performance.queryOverview({ ...options, actorUserId: 2, isAdmin: false }));
 });
