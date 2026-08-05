@@ -64,6 +64,7 @@ export const buildUsageOverviewQuery = (
   nowMs: number,
 ): Record<string, string | string[]> => ({
   ...dashboardRangeQuery(range, nowMs),
+  bucket: 'hour',
   group_by: groupBy,
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   timezone_offset_minutes: String(new Date(nowMs).getTimezoneOffset()),

@@ -55,7 +55,7 @@ export const buildTokenChart = ({
   range: UsageRange;
   buckets: ChartBucket[];
 }): TokenChartModel => {
-  const { values, details } = aggregateTokenRecords(records, metric, buckets);
+  const { values, details } = aggregateTokenRecords(records, metric, range, buckets);
   const presentGroups = new Set(records.map(record => record.group));
   const knownGroups = new Set(dimensionOptions.map(option => option.value));
   const missingGroup = [...presentGroups].find(group => !knownGroups.has(group));
@@ -175,6 +175,7 @@ export const buildSearchChart = ({
 const aggregateTokenRecords = (
   records: DisplayUsageRecord[],
   metric: UsageMetric,
+  range: UsageRange,
   buckets: ChartBucket[],
 ) => {
   const values = new Map<string, Map<string, number | null>>();
@@ -185,7 +186,7 @@ const aggregateTokenRecords = (
   }
 
   for (const record of records) {
-    const bucket = record.bucket;
+    const bucket = dashboardBucketKeyForUtcHour(range, record.bucket);
     if (!values.has(bucket)) continue;
 
     const group = record.group;

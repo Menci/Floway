@@ -131,6 +131,31 @@ describe('bucket callout figures', () => {
   });
 });
 
+test('repeated local hours remain independent chart points', () => {
+  const buckets = ['2026-11-01T05', '2026-11-01T06'].map(hour => ({
+    key: hour,
+    label: '01:00',
+    date: new Date(`${hour}:00:00.000Z`),
+  }));
+  const records = buckets.map(({ key }, index) => ({
+    bucket: key,
+    group: 'key-1',
+    requests: 1,
+    metrics: { input_tokens: index === 0 ? '1' : '2' },
+    cost: null,
+  } satisfies DisplayUsageRecord));
+
+  const model = buildTokenChart({
+    records,
+    dimensionOptions: [{ value: 'key-1', label: 'Key 1' }],
+    metric: 'total',
+    range: 'today',
+    buckets,
+  });
+
+  expect(areaPlot(model.plot).lineChartData![0]!.data.map(point => point.y)).toEqual([1, 2]);
+});
+
 describe('search chart', () => {
   const searchRecord = (provider: string, requests: number) => ({
     provider,
