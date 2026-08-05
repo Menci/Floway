@@ -88,6 +88,10 @@ describe('usage dimension controls', () => {
     expect(screen.getByText('Last Day')).toBeTruthy();
     expect(screen.getByText('7 Days')).toBeTruthy();
     expect(screen.getByText('30 Days')).toBeTruthy();
+    const controlsRow = screen.getByRole('group', { name: 'Group by' }).parentElement?.parentElement;
+    const range = screen.getByRole('radiogroup', { name: 'Usage range' });
+    expect(range.parentElement?.parentElement).toBe(controlsRow);
+    expect(controlsRow?.nextElementSibling?.contains(screen.getByRole('combobox', { name: 'Upstream' }))).toBe(true);
     expect(screen.getByRole('heading', { level: 2, name: 'By Model' })).toBeTruthy();
   });
 
