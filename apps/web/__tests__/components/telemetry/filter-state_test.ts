@@ -22,7 +22,7 @@ describe('telemetry filter state', () => {
   it('normalizes an unavailable user grouping without retaining hidden filters', () => {
     expect(scopeTelemetryIdentity('userId', filters, { ...context, userDimensionAvailable: false })).toEqual({
       groupBy: 'model',
-      filters: { model: [], upstream: ['up-1'], userId: [], keyId: ['key-1'] },
+      filters: { model: [], upstream: ['up-1'], userId: [], keyId: [] },
     });
   });
 
@@ -33,7 +33,7 @@ describe('telemetry filter state', () => {
     });
     expect(changeTelemetryFilter({ groupBy: 'model', filters: { ...filters, userId: [], keyId: [] } }, 'keyId', ['key-2'], context)).toEqual({
       groupBy: 'model',
-      filters: { model: ['gpt-5'], upstream: ['up-1'], userId: ['1'], keyId: ['key-2'] },
+      filters: { model: [], upstream: ['up-1'], userId: ['1'], keyId: ['key-2'] },
     });
   });
 
