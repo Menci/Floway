@@ -56,35 +56,67 @@ test('assertOllamaUpstreamRecord parses manual model overrides', () => {
   assertEquals(config.models[0].display_name, 'GPT-OSS 120B');
 });
 
-test('assertOllamaUpstreamRecord rejects a non-http(s) base URL', () => {
-  assertThrows(() => assertOllamaUpstreamRecord({
-    ...baseRecord,
-    config: { baseUrl: 'ftp://example.com' },
-  }));
+test('assertOllamaUpstreamRecord rejects malformed base URLs and suffix-swallowing URL components', () => {
+  for (const baseUrl of [
+    'ftp://example.com',
+    '',
+    'https://ollama.example.com?token=secret',
+    'https://ollama.example.com#fragment',
+  ]) {
+    assertThrows(() => assertOllamaUpstreamRecord({
+      ...baseRecord,
+      config: { baseUrl },
+    }));
+  }
 });
 
-test('assertOllamaUpstreamRecord rejects a missing base URL', () => {
-  assertThrows(() => assertOllamaUpstreamRecord({
-    ...baseRecord,
-    config: { baseUrl: '' },
-  }));
+test('assertOllamaUpstreamRecord rejects malformed optional fields', () => {
+  for (const config of [
+    { baseUrl: 'https://ollama.com', models: null },
+    { baseUrl: 'https://ollama.com', apiKey: '   ' },
+    { baseUrl: 'https://ollama.com', apiKey: 'bad\r\nkey' },
+    { baseUrl: 'https://ollama.com', apiKey: 'non-byte-\u0100' },
+  ]) {
+    assertThrows(() => assertOllamaUpstreamRecord({ ...baseRecord, config }));
+  }
 });
 
 test('assertOllamaUpstreamRecord rejects rerank models', () => {
-  assertThrows(
-    () => assertOllamaUpstreamRecord({
-      ...baseRecord,
-      config: {
-        ...(baseRecord.config as Record<string, unknown>),
-        models: [{
-          upstreamModelId: 'reranker',
-          kind: 'rerank',
-          endpoints: { rerank: {} },
-          rerankTarget: { protocol: 'cohere-v2' },
-        }],
-      },
-    }),
-    Error,
-    'rerank models require a custom upstream',
-  );
+  for (const model of [
+    { upstreamModelId: 'reranker', kind: 'rerank', endpoints: { rerank: {} }, rerankTarget: { protocol: 'cohere-v2' } },
+    { upstreamModelId: 'reranker', kind: 'chat', endpoints: { rerank: {} }, rerankTarget: { protocol: 'cohere-v2' } },
+    { upstreamModelId: 'mixed', kind: 'embedding', endpoints: { embeddings: {}, rerank: {} } },
+  ]) {
+    assertThrows(
+      () => assertOllamaUpstreamRecord({
+        ...baseRecord,
+        config: {
+          ...(baseRecord.config as Record<string, unknown>),
+          models: [model],
+        },
+      }),
+      Error,
+      'rerank models require a custom upstream',
+    );
+  }
+});
+
+test('assertOllamaUpstreamRecord rejects endpoint-derived image models', () => {
+  for (const model of [
+    { upstreamModelId: 'image-model', kind: 'image', endpoints: { imagesGenerations: {}, imagesEdits: {} } },
+    { upstreamModelId: 'image-model', kind: 'chat', endpoints: { imagesGenerations: {}, imagesEdits: {} } },
+    { upstreamModelId: 'mixed', kind: 'embedding', endpoints: { embeddings: {}, imagesGenerations: {} } },
+  ]) {
+    assertThrows(
+      () => assertOllamaUpstreamRecord({
+        ...baseRecord,
+        config: {
+          ...(baseRecord.config as Record<string, unknown>),
+          models: [model],
+        },
+      }),
+      Error,
+      'image models require a custom or azure upstream',
+    );
+  }
 });

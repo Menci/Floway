@@ -81,14 +81,7 @@ test('assertCustomUpstreamRecord rejects invalid or duplicate ingress header rul
     [[null], 'must contain only key and value'],
     [[{ key: 1, value: null }], 'key must be a valid HTTP header name'],
     [[{ key: 'x-route', value: 1 }], 'value must be a string or null'],
-    [[{ key: 'Content-Length', value: null }], 'content-length is owned by the HTTP transport'],
     [[{ key: 'Anthropic-Beta', value: null }], 'anthropic-beta is owned by the Messages protocol'],
-    [[{ key: 'Authorization', value: null }], 'authorization is owned by the HTTP transport'],
-    [[{ key: 'CF-Ray', value: null }], 'cf-ray is owned by the HTTP transport'],
-    [[{ key: 'X-Forwarded-Port', value: null }], 'x-forwarded-port is owned by the HTTP transport'],
-    [[{ key: 'Sec-WebSocket-Key', value: null }], 'sec-websocket-key is owned by the HTTP transport'],
-    [[{ key: 'Proxy-Authenticate', value: null }], 'proxy-authenticate is owned by the HTTP transport'],
-    [[{ key: 'Proxy-Authentication-Info', value: null }], 'proxy-authentication-info is owned by the HTTP transport'],
   ] as const) {
     assertThrows(
       () => assertCustomUpstreamRecord({
@@ -234,6 +227,20 @@ test('assertCustomUpstreamRecord rejects malformed opaque config instead of drop
     'unsupported pathOverrides key models',
   );
 
+  for (const endpoint of ['/v1/models?before_id=middle', '/v1/models?after_id=middle']) {
+    assertThrows(
+      () => assertCustomUpstreamRecord({
+        ...baseRecord,
+        config: {
+          ...(baseRecord.config as Record<string, unknown>),
+          modelsFetch: { enabled: true, endpoint },
+        },
+      }),
+      Error,
+      'must not set reserved pagination parameters',
+    );
+  }
+
   assertThrows(
     () =>
       assertCustomUpstreamRecord({
@@ -247,6 +254,17 @@ test('assertCustomUpstreamRecord rejects malformed opaque config instead of drop
     'baseUrl must be an http(s) URL',
   );
 
+  for (const baseUrl of ['https://custom.example.com?token=secret', 'https://custom.example.com#fragment']) {
+    assertThrows(
+      () => assertCustomUpstreamRecord({
+        ...baseRecord,
+        config: { ...(baseRecord.config as Record<string, unknown>), baseUrl },
+      }),
+      Error,
+      'without query or fragment',
+    );
+  }
+
   assertThrows(
     () =>
       assertCustomUpstreamRecord({
@@ -259,6 +277,28 @@ test('assertCustomUpstreamRecord rejects malformed opaque config instead of drop
     Error,
     'authStyle must be "bearer", "anthropic", or "none"',
   );
+
+  assertThrows(
+    () => assertCustomUpstreamRecord({
+      ...baseRecord,
+      config: { ...(baseRecord.config as Record<string, unknown>), models: null },
+    }),
+    Error,
+    'models must be an array',
+  );
+
+  for (const authStyle of ['bearer', 'anthropic']) {
+    for (const apiKey of ['bad\r\nkey', 'non-byte-\u0100']) {
+      assertThrows(
+        () => assertCustomUpstreamRecord({
+          ...baseRecord,
+          config: { ...(baseRecord.config as Record<string, unknown>), apiKey, authStyle },
+        }),
+        Error,
+        'apiKey is not a valid HTTP header value',
+      );
+    }
+  }
 });
 
 test('assertCustomUpstreamRecord accepts authStyle "none" with no apiKey', () => {

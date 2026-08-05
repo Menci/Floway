@@ -1,8 +1,10 @@
 import type { CustomPathOverrideKey, CustomUpstreamConfig } from './config.ts';
-import { type UpstreamFetchOptions, joinBaseAndPath } from '@floway-dev/provider';
+import { dispatchUpstreamFetch, type UpstreamFetchOptions, joinBaseAndPath } from '@floway-dev/provider';
 
 // https://docs.anthropic.com/en/api/versioning
 const ANTHROPIC_VERSION = '2023-06-01';
+// https://github.com/anthropics/anthropic-sdk-python/blob/f5c30d0490fb7bcd8e0b65d8d8e63c0e7d1bfe59/src/anthropic/resources/models.py#L89-L152
+const ANTHROPIC_MAX_MODELS_PAGE_SIZE = '1000';
 
 // Endpoint key is the OpenAI-canonical path fragment (`/chat/completions`,
 // `/images/generations`, ...). The default upstream URL is the key prefixed
@@ -13,7 +15,14 @@ const ANTHROPIC_VERSION = '2023-06-01';
 const pathOverrideFor = (config: CustomUpstreamConfig, key: CustomPathOverrideKey): string =>
   config.pathOverrides?.[key] ?? `/v1${key}`;
 
-const customFetchInternal = async (
+const appendSubpath = (path: string, suffix: string): string => {
+  const queryIndex = path.indexOf('?');
+  const pathname = queryIndex === -1 ? path : path.slice(0, queryIndex);
+  const query = queryIndex === -1 ? '' : path.slice(queryIndex);
+  return `${pathname.replace(/\/+$/, '')}${suffix}${query}`;
+};
+
+const customFetchInternal = (
   config: CustomUpstreamConfig,
   path: string,
   init: RequestInit,
@@ -35,7 +44,7 @@ const customFetchInternal = async (
   if (options.extraHeaders) {
     for (const [k, v] of options.extraHeaders) headers.set(k, v);
   }
-  return await options.wrapUpstreamCall(() => options.fetcher(joinBaseAndPath(config.baseUrl, path), { ...init, headers }));
+  return dispatchUpstreamFetch(options, joinBaseAndPath(config.baseUrl, path), { ...init, headers });
 };
 
 export const customFetchRerank = (config: CustomUpstreamConfig, path: string, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
@@ -46,11 +55,11 @@ export const customFetchChatCompletions = (config: CustomUpstreamConfig, init: R
 export const customFetchResponses = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   customFetchInternal(config, pathOverrideFor(config, '/responses'), init, options);
 export const customFetchResponsesCompact = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, `${pathOverrideFor(config, '/responses')}/compact`, init, options);
+  customFetchInternal(config, appendSubpath(pathOverrideFor(config, '/responses'), '/compact'), init, options);
 export const customFetchMessages = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   customFetchInternal(config, pathOverrideFor(config, '/messages'), init, options);
 export const customFetchMessagesCountTokens = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, `${pathOverrideFor(config, '/messages')}/count_tokens`, init, options);
+  customFetchInternal(config, appendSubpath(pathOverrideFor(config, '/messages'), '/count_tokens'), init, options);
 export const customFetchEmbeddings = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   customFetchInternal(config, pathOverrideFor(config, '/embeddings'), init, options);
 export const customFetchCompletions = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
@@ -65,5 +74,16 @@ export const customFetchAlphaSearch = (config: CustomUpstreamConfig, init: Reque
   customFetchInternal(config, pathOverrideFor(config, '/alpha/search'), init, options);
 // /models lives on its own fetch toggle (see config.modelsFetch.endpoint),
 // not in pathOverrides.
-export const customFetchModels = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, config.modelsFetch.endpoint ?? '/v1/models', init, options);
+export const customFetchModels = (
+  config: CustomUpstreamConfig,
+  init: RequestInit,
+  options: UpstreamFetchOptions,
+  afterId?: string,
+): Promise<Response> => {
+  const path = config.modelsFetch.endpoint ?? '/v1/models';
+  if (afterId === undefined) return customFetchInternal(config, path, init, options);
+  const page = new URL(path, 'https://floway.invalid');
+  page.searchParams.set('after_id', afterId);
+  if (!page.searchParams.has('limit')) page.searchParams.set('limit', ANTHROPIC_MAX_MODELS_PAGE_SIZE);
+  return customFetchInternal(config, `${page.pathname}${page.search}`, init, options);
+};

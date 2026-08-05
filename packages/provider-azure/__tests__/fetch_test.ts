@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { assertAzureUpstreamRecord } from '../src/config.ts';
 import {
@@ -82,6 +82,22 @@ test('OpenAI v1 transports apply api-key auth and the canonical paths', async ()
     ['application/json', 'application/json', 'application/json', 'application/json'],
   );
   assertEquals(seen[0].body, { model: 'set-by-provider' });
+});
+
+test('Azure transports enforce exactly one timing-wrapper dispatch', async () => {
+  const { config } = assertAzureUpstreamRecord(baseRecord);
+  let fetchCalls = 0;
+  await expect(azureFetchChatCompletions(config, { method: 'POST', body: '{}' }, {
+    fetcher: () => {
+      fetchCalls++;
+      return Promise.resolve(new Response('{}'));
+    },
+    wrapUpstreamCall: async dispatch => {
+      await dispatch();
+      return await dispatch();
+    },
+  })).rejects.toThrow('invoked more than once');
+  expect(fetchCalls).toBe(1);
 });
 
 test('image transports append the Azure preview api-version', async () => {

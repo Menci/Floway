@@ -118,6 +118,7 @@ describe('dialShadowsocks — AEAD frame round trip', () => {
       stage: 'proxy-handshake',
       message: expect.stringContaining('handshake decrypt'),
     });
+    expect(srv.closed()).toBe(true);
   });
 });
 
