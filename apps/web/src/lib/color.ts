@@ -22,7 +22,8 @@ const parseRgb = (hex: string) => {
 const linearRgb = (rgb: ReturnType<typeof parseRgb>) => convertRgbToLrgb(rgb);
 
 export const blendHex = (hex: string, alpha: number, backdrop: string): string => {
-  const foreground = { ...parseRgb(hex), alpha };
+  const parsed = parseRgb(hex);
+  const foreground = { ...parsed, alpha: (parsed.alpha ?? 1) * alpha };
   const mixed = blend([parseRgb(backdrop), foreground], 'normal', 'rgb');
   return (mixed.alpha !== undefined && mixed.alpha < 1 ? formatHex8(mixed) : formatHex(mixed)).toUpperCase();
 };

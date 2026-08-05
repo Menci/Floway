@@ -91,6 +91,7 @@ describe('blendHex', () => {
   it('accepts Culori hex forms', () => {
     expect(blendHex('#f00', 1, '#fff')).toBe('#FF0000');
     expect(blendHex('#f00', 0, '#0000')).toBe('#00000000');
+    expect(blendHex('#ff000080', 0.5, '#0000')).toBe('#FF000040');
   });
 
   it('returns the backdrop at zero alpha and the top colour at one', () => {
