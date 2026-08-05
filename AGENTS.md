@@ -309,12 +309,14 @@ filesystem, `sharp`, WebSocket, socket, and runtime-root-CA implementations;
 its migrator consumes the gateway's exported migration directory. These apps
 are the only deployment-target composition roots.
 
-`apps/web` depends at runtime on `protocols`, `provider`, and `proxy`.
+`apps/web` depends at runtime on `protocols`, `provider`, `provider-custom`, and
+`proxy`.
 Its protocol imports use `/common`, `/chat-completions`, `/completions`,
 `/messages`, `/responses`, `/gemini`, and `/rerank`; its provider imports use
-the root, `/flags`, `/model`, and `/model-prefix`; its proxy imports are
-restricted to `/url`, `/url-kind`, `/proxy-config`, and `/constants` so the SPA
-does not pull in dialers, userspace TLS, or Node `crypto`. It type-imports
+the root, `/flags`, `/model`, and `/model-prefix`; its provider-custom import is
+restricted to `/ingress-header-rules`; its proxy imports are restricted to
+`/url`, `/url-kind`, `/proxy-config`, and `/constants` so the SPA does not pull
+in dialers, userspace TLS, or Node `crypto`. It type-imports
 gateway contracts through `/app-type`, `/dump-types`,
 `/control-plane/performance/aggregate`, `/control-plane/upstreams/types`,
 `/control-plane/usage-types`,

@@ -145,6 +145,9 @@ importers:
       '@floway-dev/provider':
         specifier: workspace:*
         version: link:../../packages/provider
+      '@floway-dev/provider-custom':
+        specifier: workspace:*
+        version: link:../../packages/provider-custom
       '@floway-dev/proxy':
         specifier: workspace:*
         version: link:../../packages/proxy
