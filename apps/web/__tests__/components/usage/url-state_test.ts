@@ -20,9 +20,9 @@ describe('usage URL state', () => {
     expect(serialized.getAll('fu')).toEqual([]);
   });
 
-  it('clears both identity filters when grouping by user or API key', () => {
+  it('preserves the user scope for API key grouping until the loader resolves the current user', () => {
     expect(parseUsageUrlState(new URLSearchParams('g=userId&fusr=2&fk=key-1')).filters).toMatchObject({ userId: [], keyId: [] });
-    expect(parseUsageUrlState(new URLSearchParams('g=keyId&fusr=2&fk=key-1')).filters).toMatchObject({ userId: [], keyId: [] });
+    expect(parseUsageUrlState(new URLSearchParams('g=keyId&fusr=2&fk=key-1')).filters).toMatchObject({ userId: ['2'], keyId: [] });
   });
 
   it('uses the shared opaque hidden-series format for both charts', () => {
