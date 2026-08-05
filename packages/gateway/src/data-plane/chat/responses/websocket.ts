@@ -206,6 +206,7 @@ const handleClientMessage = async (
   const signal = downstreamAbortController.signal;
   let eventId: string | undefined;
   let ctx: ChatGatewayCtx | undefined;
+  let apiKeyId: string | undefined;
   let previousResponseId: string | undefined;
 
   // "If a continuation turn fails with a `4xx` or `5xx` error, the server MUST
@@ -224,8 +225,9 @@ const handleClientMessage = async (
   // `Map.delete` makes the second call inert.
   const turnFailure: ResponsesWsTurnFailure = {
     evict: () => {
-      if (ctx === undefined || previousResponseId === undefined) return;
-      session.evictSnapshot(ctx.store.apiKeyId, previousResponseId);
+      const scopedApiKeyId = ctx?.store.apiKeyId ?? apiKeyId;
+      if (scopedApiKeyId === undefined || previousResponseId === undefined) return;
+      session.evictSnapshot(scopedApiKeyId, previousResponseId);
     },
     fail: (status, error) => {
       turnFailure.evict();
@@ -247,6 +249,7 @@ const handleClientMessage = async (
       });
       return;
     }
+    apiKeyId = apiKeyFromContext(c).id;
     let parsed: unknown;
     try {
       parsed = JSON.parse(new TextDecoder().decode(requestBody.bytes)) as unknown;
@@ -269,8 +272,11 @@ const handleClientMessage = async (
     const source = message.response && typeof message.response === 'object'
       ? message.response
       : Object.fromEntries(Object.entries(message).filter(([key]) => key !== 'type' && key !== 'event_id'));
+    const rawPreviousResponseId = (source as { previous_response_id?: unknown }).previous_response_id;
+    previousResponseId = typeof rawPreviousResponseId === 'string' && rawPreviousResponseId.length > 0
+      ? rawPreviousResponseId
+      : undefined;
     const payload = responsesPayloadFromClientSource(source);
-    previousResponseId = payload.previous_response_id ?? undefined;
     ctx = createChatGatewayCtxFromHono(c, {
       wantsStream: true,
       downstreamAbortController,

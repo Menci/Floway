@@ -104,7 +104,10 @@ const withWorkerWebSocketRuntime = async <T>(run: () => Promise<T>): Promise<T> 
   }
 };
 
-const withSuccessfulResponsesUpstream = async <T>(run: () => Promise<T>): Promise<T> =>
+const withSuccessfulResponsesUpstream = async <T>(
+  run: () => Promise<T>,
+  onResponsesRequest: (request: Request) => void = () => {},
+): Promise<T> =>
   await withMockedFetch(
     async request => {
       const url = new URL(request.url);
@@ -116,6 +119,7 @@ const withSuccessfulResponsesUpstream = async <T>(run: () => Promise<T>): Promis
         return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
       }
       if (url.pathname === '/responses') {
+        onResponsesRequest(request);
         return sseResponsesResponse({
           id: 'resp_ws_policy_refresh',
           object: 'response',
@@ -882,6 +886,71 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
         },
       }]);
     }),
+  );
+});
+
+test('Responses WebSocket evicts a continuation target when canonicalization rejects the turn', async () => {
+  const { apiKey } = await setupAppTest();
+  let responseCalls = 0;
+
+  await withSuccessfulResponsesUpstream(
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const client = await connectResponsesWebSocket(apiKey.key);
+      const firstTerminal = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
+      client.send(JSON.stringify({
+        type: 'response.create',
+        response: { model: 'gpt-direct-responses', input: 'first question', store: false },
+      }));
+      const firstResponseId = terminalResponseId(await firstTerminal);
+
+      const malformed = waitForMessages(client, messages => messages.some(message => message.type === 'error'));
+      client.send(JSON.stringify({
+        type: 'response.create',
+        event_id: 'evt_malformed_continuation',
+        response: {
+          model: 'gpt-direct-responses',
+          previous_response_id: firstResponseId,
+          input: [{ type: 'item_reference', id: 42 }],
+          store: false,
+        },
+      }));
+      assertEquals(await malformed, [{
+        type: 'error',
+        event_id: 'evt_malformed_continuation',
+        status: 400,
+        error: {
+          type: 'invalid_request_error',
+          code: 'invalid_request_error',
+          message: 'Responses item_reference id must be a non-empty string.',
+          param: 'input[0].id',
+        },
+      }]);
+
+      const evicted = waitForMessages(client, messages => messages.some(message => message.type === 'error'));
+      client.send(JSON.stringify({
+        type: 'response.create',
+        event_id: 'evt_retry_evicted',
+        response: {
+          model: 'gpt-direct-responses',
+          previous_response_id: firstResponseId,
+          input: 'retry',
+          store: false,
+        },
+      }));
+      assertEquals(await evicted, [{
+        type: 'error',
+        event_id: 'evt_retry_evicted',
+        status: 400,
+        error: {
+          message: `Previous response with id '${firstResponseId}' not found.`,
+          type: 'invalid_request_error',
+          param: 'previous_response_id',
+          code: 'previous_response_not_found',
+        },
+      }]);
+      assertEquals(responseCalls, 1);
+    }),
+    () => { responseCalls += 1; },
   );
 });
 
