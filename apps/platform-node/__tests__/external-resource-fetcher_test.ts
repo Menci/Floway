@@ -1,3 +1,4 @@
+import { Response as UndiciResponse } from 'undici';
 import { test } from 'vitest';
 
 import {
@@ -76,4 +77,45 @@ test('Node external-resource DNS preserves resolver failures', async () => {
   });
 
   assertEquals(error, expected);
+});
+
+test('Node external-resource responses release the upstream reader at EOF', async () => {
+  const bytes = new Uint8Array([1, 2, 3]);
+  const upstreamBody = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(bytes);
+      controller.close();
+    },
+  });
+  const upstream = new UndiciResponse(upstreamBody, {
+    status: 206,
+    headers: { 'content-type': 'application/octet-stream' },
+  });
+  const fetcher = createNodeExternalResourceFetcher(() => Promise.resolve(upstream));
+
+  const response = await fetcher(new URL('https://example.com/image.bin'), new AbortController().signal);
+
+  assertEquals(upstreamBody.locked, true);
+  assertEquals(new Uint8Array(await response.arrayBuffer()), bytes);
+  assertEquals(upstreamBody.locked, false);
+  assertEquals(response.status, 206);
+  assertEquals(response.headers.get('content-type'), 'application/octet-stream');
+});
+
+test('Node external-resource cancellation forwards the reason and releases the upstream reader', async () => {
+  let cancelReason: unknown;
+  const upstreamBody = new ReadableStream<Uint8Array>({
+    cancel(reason) {
+      cancelReason = reason;
+    },
+  });
+  const upstream = new UndiciResponse(upstreamBody);
+  const fetcher = createNodeExternalResourceFetcher(() => Promise.resolve(upstream));
+  const reason = new Error('consumer stopped');
+
+  const response = await fetcher(new URL('https://example.com/image.bin'), new AbortController().signal);
+  await response.body!.cancel(reason);
+
+  assertEquals(cancelReason, reason);
+  assertEquals(upstreamBody.locked, false);
 });

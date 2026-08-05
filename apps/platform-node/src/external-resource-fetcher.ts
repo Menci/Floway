@@ -97,26 +97,47 @@ export const createPublicAddressLookup = (resolve: ResolveAll = resolveAll): Loo
     });
   };
 
-export const createNodeExternalResourceFetcher = (): ExternalResourceFetcher => {
+export const createNodeExternalResourceFetcher = (
+  fetchImpl: typeof undiciFetch = undiciFetch,
+): ExternalResourceFetcher => {
   const dispatcher = new Agent({ connect: { lookup: createPublicAddressLookup() } });
   return async (url, signal) => {
     // Undici bypasses `lookup` for IP literals, so validate them before the
     // dispatcher sees the request.
     const hostname = normalizeDialHost(url.hostname);
     if (isIP(hostname) !== 0 && !isPublicIpAddress(hostname)) throw nonPublicTargetError();
-    const response = await undiciFetch(url, { dispatcher, redirect: 'manual', signal });
+    const response = await fetchImpl(url, { dispatcher, redirect: 'manual', signal });
     const body = response.body === null
       ? null
       : (() => {
           const reader = response.body.getReader();
+          let released = false;
+          const release = (): void => {
+            if (released) return;
+            released = true;
+            reader.releaseLock();
+          };
           return new ReadableStream<Uint8Array>({
             async pull(controller) {
-              const next = await reader.read();
-              if (next.done) controller.close();
-              else controller.enqueue(next.value);
+              try {
+                const next = await reader.read();
+                if (next.done) {
+                  release();
+                  controller.close();
+                } else {
+                  controller.enqueue(next.value);
+                }
+              } catch (error) {
+                release();
+                throw error;
+              }
             },
-            cancel(reason) {
-              return reader.cancel(reason);
+            async cancel(reason) {
+              try {
+                await reader.cancel(reason);
+              } finally {
+                release();
+              }
             },
           });
         })();
