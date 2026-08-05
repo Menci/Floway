@@ -97,7 +97,7 @@ describe('dialShadowsocks2022 — SIP022 happy path', () => {
 });
 
 describe('dialShadowsocks2022 — SIP022 defenses', () => {
-  it('rejects a response whose timestamp is more than 30s in the past', async () => {
+  it('rejects a response exactly 31s in the past', async () => {
     await expect(runWithServerHandshakeOptions({ skewSec: 31, echoCorrect: true })).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'proxy-handshake',
@@ -105,7 +105,7 @@ describe('dialShadowsocks2022 — SIP022 defenses', () => {
     });
   });
 
-  it('rejects a response whose timestamp is more than 30s in the future', async () => {
+  it('rejects a response exactly 31s in the future', async () => {
     await expect(runWithServerHandshakeOptions({ skewSec: -31, echoCorrect: true })).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'proxy-handshake',
