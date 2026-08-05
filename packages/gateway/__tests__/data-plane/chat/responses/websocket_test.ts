@@ -17,6 +17,7 @@ import type { EventResult, TelemetryModelIdentity } from '@floway-dev/provider';
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 type ResponsesFrame = ProtocolFrame<ResponsesStreamEvent>;
+const conditionSetTimeout = globalThis.setTimeout;
 
 interface Deferred<T> {
   readonly promise: Promise<T>;
@@ -184,10 +185,10 @@ const waitForMicrotasks = async (): Promise<void> => {
   for (let i = 0; i < 10; i++) await Promise.resolve();
 };
 
-const waitForMicrotaskCondition = async (condition: () => boolean, failureMessage: string): Promise<void> => {
+const waitForCondition = async (condition: () => boolean, failureMessage: string): Promise<void> => {
   for (let i = 0; i < 200; i++) {
     if (condition()) return;
-    await Promise.resolve();
+    await new Promise<void>(resolve => { conditionSetTimeout(resolve, 0); });
   }
   throw new Error(failureMessage);
 };
@@ -1647,19 +1648,19 @@ test('Responses WebSocket close interrupts an idle frame wait before the keep-al
       response: { model: 'gpt-direct-responses', input: 'idle until closed' },
     }));
 
-    await waitForMicrotaskCondition(
+    await waitForCondition(
       () => turn.nextCalls() === 1,
       'Responses WebSocket did not begin its idle frame wait',
     );
     client.close();
-    await waitForMicrotaskCondition(
+    await waitForCondition(
       turn.metadataRead,
       'Responses WebSocket did not settle the closed turn before the keep-alive timer',
     );
 
     assertEquals(turn.signal().aborted, true);
     turn.events().resolvePendingFrame(responseCreatedFrame());
-    await waitForMicrotaskCondition(
+    await waitForCondition(
       turn.returnCalled,
       'Responses WebSocket did not finish queued iterator cleanup after the idle read settled',
     );
@@ -1681,11 +1682,11 @@ test('Responses WebSocket send failures abort the turn before another iterator r
       type: 'response.create',
       response: { model: 'gpt-direct-responses', input: 'fail the first send' },
     }));
-    await waitForMicrotaskCondition(
+    await waitForCondition(
       turn.metadataRead,
       'Responses WebSocket did not settle the failed downstream send',
     );
-    await waitForMicrotaskCondition(
+    await waitForCondition(
       turn.returnCalled,
       'Responses WebSocket did not close the upstream iterator after the failed send',
     );
@@ -1720,12 +1721,12 @@ test('Responses WebSocket keep-alive readiness failures abort the pending turn',
       type: 'response.create',
       response: { model: 'gpt-direct-responses', input: 'fail the keep-alive readiness check' },
     }));
-    await waitForMicrotaskCondition(
+    await waitForCondition(
       () => turn.nextCalls() === 2,
       'Responses WebSocket did not resume its frame wait after the first event',
     );
     await time.tickAsync(DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS);
-    await waitForMicrotaskCondition(
+    await waitForCondition(
       turn.metadataRead,
       'Responses WebSocket did not settle the failed keep-alive send',
     );
