@@ -10,12 +10,15 @@ import {
   multiplyDecimalStrings,
   parseBillingMetric,
   parseNonNegativeDecimalString,
+  tokenUsageUnattributedUserId,
+  usageUpstreamDimensionPrefix,
+  usageWithoutUpstreamDimensionValue,
   type BillingMetric,
   type DecimalString,
 } from '@floway-dev/protocols/common';
 
 interface UsageOverviewSqlRow {
-  row_kind: 'facet' | 'metric' | 'request';
+  row_kind: 'facet' | 'metric' | 'missing_hour' | 'request' | 'validation';
   axis: string | null;
   bucket: string | null;
   group_value: string | null;
@@ -40,23 +43,10 @@ const rangeBinds = (opts: UsageOverviewQueryOptions, scoped: boolean): SqlBindVa
   ? [opts.actorUserId, opts.start, opts.end]
   : [opts.start, opts.end];
 
-const overviewHoursSql = (scoped: boolean) => `/* usage-overview-hours */
-  SELECT hour FROM (
-    SELECT usage_requests.hour AS hour
-    FROM usage_requests
-    WHERE ${scopedRange('usage_requests', scoped)}
-    UNION ALL
-    SELECT usage.hour AS hour
-    FROM usage
-    WHERE ${scopedRange('usage', scoped)}
-  )
-  GROUP BY hour
-  ORDER BY hour`;
-
 const overviewSql = (scoped: boolean) => `/* usage-overview */
 WITH
-settings(actor_user_id, is_admin, series_group_by) AS (
-  VALUES (?, ?, ?)
+settings(actor_user_id, is_admin, series_group_by, unattributed_user_id, no_upstream_value, upstream_prefix) AS (
+  VALUES (?, ?, ?, ?, ?, ?)
 ),
 model_filter(value) AS MATERIALIZED (
   SELECT CAST(value AS TEXT) FROM json_each(?)
@@ -105,9 +95,12 @@ facts AS MATERIALIZED (
 scoped AS MATERIALIZED (
   SELECT
     facts.*,
-    COALESCE(api_keys.user_id, 0) AS user_id,
+    COALESCE(api_keys.user_id, settings.unattributed_user_id) AS user_id,
     CASE WHEN api_keys.user_id = settings.actor_user_id THEN 1 ELSE 0 END AS owned,
-    CASE WHEN facts.upstream IS NULL THEN 'none' ELSE 'upstream:' || facts.upstream END AS upstream_value
+    CASE
+      WHEN facts.upstream IS NULL THEN settings.no_upstream_value
+      ELSE settings.upstream_prefix || facts.upstream
+    END AS upstream_value
   FROM facts
   CROSS JOIN settings
   LEFT JOIN api_keys ON api_keys.id = facts.key_id
@@ -177,7 +170,7 @@ request_rows AS (
   WHERE fact_kind = 'request'
   GROUP BY axis, bucket, group_value
 ),
-metric_rows AS (
+metric_terms AS MATERIALIZED (
   SELECT 'metric' AS row_kind, axis, bucket, group_value, NULL AS dimension, NULL AS facet_value,
     NULL AS requests_text, metric, quantity, unit_price,
     CAST(COUNT(*) AS TEXT) AS occurrences_text,
@@ -186,10 +179,43 @@ metric_rows AS (
   WHERE fact_kind = 'metric'
   GROUP BY axis, bucket, group_value, metric, quantity, unit_price
 ),
+metric_rows AS (
+  SELECT 'metric' AS row_kind, axis, bucket, group_value, dimension, facet_value,
+    requests_text, metric,
+    json_group_array(json_object(
+      'quantity', quantity,
+      'unitPrice', unit_price,
+      'occurrences', occurrences_text
+    )) AS quantity,
+    NULL AS unit_price,
+    NULL AS occurrences_text,
+    MIN(metric_order) AS metric_order
+  FROM metric_terms
+  GROUP BY axis, bucket, group_value, metric
+),
+validation_rows AS (
+  SELECT 'validation' AS row_kind,
+    NULL AS axis, NULL AS bucket, NULL AS group_value, NULL AS dimension, NULL AS facet_value,
+    NULL AS requests_text, metric, quantity, unit_price, NULL AS occurrences_text, NULL AS metric_order
+  FROM scoped
+  WHERE fact_kind = 'metric'
+  GROUP BY metric, quantity, unit_price
+),
+missing_hour_rows AS (
+  SELECT 'missing_hour' AS row_kind,
+    NULL AS axis, NULL AS bucket, NULL AS group_value, NULL AS dimension, hour AS facet_value,
+    NULL AS requests_text, NULL AS metric, NULL AS quantity, NULL AS unit_price,
+    NULL AS occurrences_text, NULL AS metric_order
+  FROM filtered
+  WHERE NOT EXISTS (SELECT 1 FROM bucket_map WHERE bucket_map.hour = filtered.hour)
+  GROUP BY hour
+),
 wire AS (
   SELECT * FROM facet_rows
   UNION ALL SELECT * FROM request_rows
   UNION ALL SELECT * FROM metric_rows
+  UNION ALL SELECT * FROM validation_rows
+  UNION ALL SELECT * FROM missing_hour_rows
 )
 SELECT * FROM wire
 ORDER BY row_kind, dimension, facet_value, axis, bucket, group_value, metric_order, metric, unit_price, quantity`;
@@ -204,6 +230,21 @@ const safeInteger = (value: string, label: string): number => {
 interface MutableOverviewRecord extends Omit<UsageOverviewRecord, 'metrics'> {
   metrics: Map<BillingMetric, { quantity: DecimalString; order: number }>;
 }
+
+const parseStoredMetric = (
+  metricValue: unknown,
+  quantityValue: unknown,
+  unitPriceValue: unknown,
+) => {
+  const metric = parseBillingMetric(metricValue, 'usage.metric');
+  const quantity = parseNonNegativeDecimalString(quantityValue, `usage metric ${metric} quantity`);
+  const unitPrice = unitPriceValue === null
+    ? null
+    : parseNonNegativeDecimalString(unitPriceValue, `usage metric ${metric} unit price`);
+  if (quantity !== quantityValue) throw new TypeError(`Stored usage metric ${metric} quantity must be canonical: ${JSON.stringify(quantityValue)}`);
+  if (unitPrice !== unitPriceValue) throw new TypeError(`Stored usage metric ${metric} unit price must be canonical: ${JSON.stringify(unitPriceValue)}`);
+  return { metric, quantity, unitPrice };
+};
 
 const finishOverview = (rows: readonly UsageOverviewSqlRow[]): UsageOverviewResult => {
   const records = new Map<UsageOverviewAxis, Map<string, MutableOverviewRecord>>(
@@ -224,6 +265,13 @@ const finishOverview = (rows: readonly UsageOverviewSqlRow[]): UsageOverviewResu
   };
 
   for (const row of rows) {
+    if (row.row_kind === 'missing_hour') {
+      throw new Error('Usage overview bucket map is incomplete');
+    }
+    if (row.row_kind === 'validation') {
+      parseStoredMetric(row.metric, row.quantity, row.unit_price);
+      continue;
+    }
     if (row.row_kind === 'facet') {
       if (row.dimension === null || row.facet_value === null || !overviewDimensions.has(row.dimension)) {
         throw new TypeError('Stored Usage overview returned an invalid facet row');
@@ -240,28 +288,34 @@ const finishOverview = (rows: readonly UsageOverviewSqlRow[]): UsageOverviewResu
       aggregate.requests = safeInteger(row.requests_text, 'Usage overview requests');
       continue;
     }
-    if (row.metric === null || row.quantity === null || row.occurrences_text === null || row.metric_order === null) {
+    if (row.metric === null || row.quantity === null || row.metric_order === null) {
       throw new TypeError('Stored Usage overview metric row is incomplete');
     }
-    const metric = parseBillingMetric(row.metric, 'usage.metric');
-    const quantity = parseNonNegativeDecimalString(row.quantity, `usage metric ${metric} quantity`);
-    const unitPrice = row.unit_price === null
-      ? null
-      : parseNonNegativeDecimalString(row.unit_price, `usage metric ${metric} unit price`);
-    if (quantity !== row.quantity) throw new TypeError(`Stored usage metric ${metric} quantity must be canonical: ${JSON.stringify(row.quantity)}`);
-    if (unitPrice !== row.unit_price) throw new TypeError(`Stored usage metric ${metric} unit price must be canonical: ${JSON.stringify(row.unit_price)}`);
-    const occurrences = safeInteger(row.occurrences_text, 'Usage overview metric occurrence count');
-    const contribution = multiplyDecimalStrings(quantity, String(occurrences));
-    const existing = aggregate.metrics.get(metric);
-    aggregate.metrics.set(metric, existing
-      ? { quantity: addDecimalStrings(existing.quantity, contribution), order: Math.min(existing.order, row.metric_order) }
-      : { quantity: contribution, order: row.metric_order });
-    if (unitPrice !== null) {
-      aggregate.cost = addDecimalStrings(
-        aggregate.cost ?? '0',
-        multiplyDecimalStrings(contribution, unitPrice),
+    const terms: unknown = JSON.parse(row.quantity);
+    if (!Array.isArray(terms)) throw new TypeError('Stored Usage overview metric terms must be an array');
+    let metric: BillingMetric | undefined;
+    for (const term of terms) {
+      if (!term || typeof term !== 'object') throw new TypeError('Stored Usage overview metric term must be an object');
+      const values = term as Record<string, unknown>;
+      const parsed = parseStoredMetric(row.metric, values.quantity, values.unitPrice);
+      metric = parsed.metric;
+      const occurrences = safeInteger(
+        typeof values.occurrences === 'string' ? values.occurrences : '',
+        'Usage overview metric occurrence count',
       );
+      const contribution = multiplyDecimalStrings(parsed.quantity, String(occurrences));
+      const existing = aggregate.metrics.get(parsed.metric);
+      aggregate.metrics.set(parsed.metric, existing
+        ? { quantity: addDecimalStrings(existing.quantity, contribution), order: Math.min(existing.order, row.metric_order) }
+        : { quantity: contribution, order: row.metric_order });
+      if (parsed.unitPrice !== null) {
+        aggregate.cost = addDecimalStrings(
+          aggregate.cost ?? '0',
+          multiplyDecimalStrings(contribution, parsed.unitPrice),
+        );
+      }
     }
+    if (metric === undefined) throw new TypeError('Stored Usage overview metric terms must not be empty');
   }
 
   const finished = (axis: UsageOverviewAxis): UsageOverviewRecord[] => [...records.get(axis)!.values()]
@@ -300,22 +354,32 @@ export const querySqlUsageOverview = async (
 ): Promise<UsageOverviewResult> => {
   const scoped = !opts.isAdmin || opts.groupBy === 'keyId';
   const range = rangeBinds(opts, scoped);
-  const { results: hours } = await db.prepare(overviewHoursSql(scoped))
-    .bind(...range, ...range)
-    .all<{ hour: string }>();
-  const buckets = Object.fromEntries(hours.map(({ hour }) => [hour, opts.bucketForHour(hour)]));
-  const binds: SqlBindValue[] = [
-    opts.actorUserId,
-    opts.isAdmin ? 1 : 0,
-    opts.groupBy,
-    JSON.stringify(opts.filters.models),
-    JSON.stringify(opts.filters.upstreams),
-    JSON.stringify(opts.filters.userIds),
-    JSON.stringify(opts.filters.keyIds),
-    JSON.stringify(buckets),
-    ...range,
-    ...range,
-  ];
-  const { results } = await db.prepare(overviewSql(scoped)).bind(...binds).all<UsageOverviewSqlRow>();
-  return finishOverview(results);
+  const buckets: Record<string, string> = {};
+  while (true) {
+    const binds: SqlBindValue[] = [
+      opts.actorUserId,
+      opts.isAdmin ? 1 : 0,
+      opts.groupBy,
+      tokenUsageUnattributedUserId,
+      usageWithoutUpstreamDimensionValue,
+      usageUpstreamDimensionPrefix,
+      JSON.stringify(opts.filters.models),
+      JSON.stringify(opts.filters.upstreams),
+      JSON.stringify(opts.filters.userIds),
+      JSON.stringify(opts.filters.keyIds),
+      JSON.stringify(buckets),
+      ...range,
+      ...range,
+    ];
+    const { results } = await db.prepare(overviewSql(scoped)).bind(...binds).all<UsageOverviewSqlRow>();
+    const missingHours = results
+      .filter(row => row.row_kind === 'missing_hour')
+      .map(row => row.facet_value)
+      .filter((hour): hour is string => hour !== null);
+    if (missingHours.length === 0) return finishOverview(results);
+    for (const hour of missingHours) {
+      if (hour in buckets) throw new Error(`Usage overview did not accept bucket mapping for ${hour}`);
+      buckets[hour] = opts.bucketForHour(hour);
+    }
+  }
 };

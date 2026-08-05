@@ -1,7 +1,6 @@
 import { aggregatePerformanceForDisplay } from './performance-overview-oracle.ts';
+import { partitionTelemetryOverviewRecords } from './telemetry-overview-oracle.ts';
 import { buildKeyToUserMap } from '../../src/control-plane/shared/key-to-user.ts';
-import { partitionTelemetryOverviewRecords } from '../../src/control-plane/shared/telemetry-overview.ts';
-import { usageUserIdForKey } from '../../src/control-plane/token-usage/aggregate.ts';
 import { normalizeDisabledPublicModelIds } from '../../src/repo/disabled-public-models.ts';
 import { normalizeFlagOverrides } from '../../src/repo/flag-overrides.ts';
 import { normalizeProxyFallbackList } from '../../src/repo/proxy-fallback-list.ts';
@@ -68,7 +67,7 @@ import { usageMetricRows } from '../../src/repo/usage-metrics.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../../src/shared/performance-histogram.ts';
 import { assertWebSearchProviderName, type WebSearchConfig } from '../../src/shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
-import { addDecimalStrings, canonicalPricingSelectorKey, canonicalizePricingSelector, multiplyDecimalStrings, usageUpstreamDimensionValue, type BillingMetric, type DecimalString, type PricingSelector } from '@floway-dev/protocols/common';
+import { addDecimalStrings, canonicalPricingSelectorKey, canonicalizePricingSelector, multiplyDecimalStrings, tokenUsageUnattributedUserId, usageUpstreamDimensionValue, type BillingMetric, type DecimalString, type PricingSelector } from '@floway-dev/protocols/common';
 import { UpstreamGoneError, type UpstreamModelsCache, type UpstreamRecord } from '@floway-dev/provider';
 
 const SEED_ADMIN_USER: User = {
@@ -318,6 +317,9 @@ interface UsageBucketState extends UsageBucketIdentity {
   requests: number;
 }
 
+const memoryUsageUserIdForKey = (keyId: string, keyToUser: ReadonlyMap<string, number>): number =>
+  keyToUser.get(keyId) ?? tokenUsageUnattributedUserId;
+
 const accumulateMemoryOverview = (aggregate: UsageOverviewRecord, record: UsageRecord) => {
   aggregate.requests += record.requests;
   for (const row of record.metrics) {
@@ -341,7 +343,7 @@ const memoryOverviewGroup = (
 ): string => {
   if (axis === 'none') return 'all';
   const groupBy = axis === 'series' ? opts.groupBy : axis;
-  if (groupBy === 'userId') return String(usageUserIdForKey(record.keyId, keyToUser));
+  if (groupBy === 'userId') return String(memoryUsageUserIdForKey(record.keyId, keyToUser));
   if (groupBy === 'upstream') return usageUpstreamDimensionValue(record.upstream);
   return record[groupBy];
 };
@@ -444,7 +446,7 @@ class MemoryUsageRepo implements UsageRepo {
         includeFacet: record => visibleKeyIds.has(record.keyId),
       },
       userId: {
-        value: record => String(usageUserIdForKey(record.keyId, keyToUser)),
+        value: record => String(memoryUsageUserIdForKey(record.keyId, keyToUser)),
         includeFacet: () => opts.isAdmin,
       },
       model: { value: record => record.model },

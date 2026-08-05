@@ -397,6 +397,28 @@ test('SQL usage overview preserves request-only and metric-only storage identiti
   ]);
 });
 
+test('SQL usage overview validates scoped metric rows before dashboard filters', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  await repo.apiKeys.save(apiKey('key-1', 1));
+  await db.prepare(`INSERT INTO usage (
+    key_id, model, upstream, model_key, hour, pricing_selector, metric, quantity, unit_price
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+    'key-1', 'excluded-model', null, 'excluded-model', '2026-07-12T00', '{}',
+    'unknown_metric', '1', null,
+  ).run();
+
+  await expect(repo.usage.queryOverview({
+    actorUserId: 1,
+    isAdmin: true,
+    start: '2026-07-12T00',
+    end: '2026-07-12T01',
+    groupBy: 'model',
+    filters: { keyIds: [], userIds: [], models: ['included-model'], upstreams: [] },
+    bucketForHour: hour => hour,
+  })).rejects.toThrow('usage.metric is invalid: "unknown_metric"');
+});
+
 test('SQL usage overview uses key-hour indexes for an actor-scoped aggregate', async () => {
   const db = await createSqliteTestDb();
   const seedRepo = new SqlRepo(db);
@@ -433,7 +455,7 @@ test('SQL usage overview returns grouped term cardinality rather than raw storag
     model: 'shared-model',
     modelKey: `storage-${index}`,
     pricingSelector: { serviceTier: `tier-${index}` },
-    metrics: [{ metric: 'input_tokens', quantity: '1', unitPrice: '0.5' }],
+    metrics: [{ metric: 'input_tokens', quantity: String(index + 1) as `${number}`, unitPrice: '0.5' }],
   }))));
   const completed: CompletedStatement[] = [];
   const repo = new SqlRepo(recordCompletedStatements(db, completed));
@@ -450,12 +472,12 @@ test('SQL usage overview returns grouped term cardinality rather than raw storag
 
   const rawRows = await db.prepare('SELECT (SELECT COUNT(*) FROM usage) + (SELECT COUNT(*) FROM usage_requests) AS count')
     .first<{ count: number }>();
-  const aggregate = completed.find(statement => statement.query.startsWith('/* usage-overview */'));
+  const aggregate = completed.filter(statement => statement.query.startsWith('/* usage-overview */')).at(-1);
   if (!aggregate || !rawRows) throw new Error('Usage overview SQL evidence was not captured');
   assertEquals(rawRows.count, 80);
   assertEquals(aggregate.resultCount < rawRows.count, true);
   assertEquals(overview.axes.none[0], {
     bucket: 'all', group: 'all', requests: 40,
-    metrics: [{ metric: 'input_tokens', quantity: '40' }], cost: '20',
+    metrics: [{ metric: 'input_tokens', quantity: '820' }], cost: '410',
   });
 });

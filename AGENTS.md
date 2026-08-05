@@ -318,7 +318,7 @@ restricted to `/ingress-header-rules`; its proxy imports are restricted to
 `/url`, `/url-kind`, `/proxy-config`, and `/constants` so the SPA does not pull
 in dialers, userspace TLS, or Node `crypto`. It type-imports
 gateway contracts through `/app-type`, `/dump-types`,
-`/control-plane/performance/aggregate`, `/control-plane/upstreams/types`,
+`/control-plane/upstreams/types`,
 `/control-plane/usage-types`,
 `/control-plane/proxies/serialize`, and `/data-plane/models/shared`;
 `@floway-dev/gateway` stays a

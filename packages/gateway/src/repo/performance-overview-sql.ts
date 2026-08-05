@@ -8,7 +8,7 @@ import type { SqlBindValue, SqlDatabase } from '@floway-dev/platform';
 import { parsePerformanceOperation } from '@floway-dev/provider';
 
 interface PerformanceOverviewSqlRow {
-  row_kind: 'aggregate' | 'facet' | 'orphan';
+  row_kind: 'aggregate' | 'facet' | 'missing_hour' | 'orphan';
   axis: string | null;
   bucket: string | null;
   group_value: string | null;
@@ -34,20 +34,13 @@ const overviewDimensions = new Set([
   'keyId', 'userId', 'model', 'upstream', 'operation', 'runtimeLocation',
 ]);
 
-const scopedRange = (scoped: boolean) => scoped
-  ? 'performance_summary.key_id IN (SELECT id FROM api_keys WHERE user_id = ?) AND performance_summary.hour >= ? AND performance_summary.hour < ?'
-  : 'performance_summary.hour >= ? AND performance_summary.hour < ?';
+const scopedRange = (table: string, scoped: boolean) => scoped
+  ? `${table}.key_id IN (SELECT id FROM api_keys WHERE user_id = ?) AND ${table}.hour >= ? AND ${table}.hour < ?`
+  : `${table}.hour >= ? AND ${table}.hour < ?`;
 
 const rangeBinds = (opts: PerformanceOverviewQueryOptions, scoped: boolean): SqlBindValue[] => scoped
   ? [opts.actorUserId, opts.start, opts.end]
   : [opts.start, opts.end];
-
-const overviewHoursSql = (scoped: boolean) => `/* performance-overview-hours */
-  SELECT performance_summary.hour AS hour
-  FROM performance_summary
-  WHERE ${scopedRange(scoped)}
-  GROUP BY performance_summary.hour
-  ORDER BY performance_summary.hour`;
 
 const overviewSql = (scoped: boolean) => `/* performance-overview */
 WITH
@@ -83,7 +76,7 @@ scoped_summary AS MATERIALIZED (
   FROM performance_summary
   CROSS JOIN settings
   LEFT JOIN api_keys ON api_keys.id = performance_summary.key_id
-  WHERE ${scopedRange(scoped)}
+  WHERE ${scopedRange('performance_summary', scoped)}
 ),
 orphan_buckets AS MATERIALIZED (
   SELECT 1 AS present
@@ -95,7 +88,7 @@ orphan_buckets AS MATERIALIZED (
     AND performance_summary.upstream = performance_buckets.upstream
     AND performance_summary.operation = performance_buckets.operation
     AND performance_summary.runtime_location = performance_buckets.runtime_location
-  WHERE performance_buckets.hour >= ? AND performance_buckets.hour < ?
+  WHERE ${scopedRange('performance_buckets', scoped)}
     AND performance_summary.hour IS NULL
   LIMIT 1
 ),
@@ -292,10 +285,22 @@ orphan_rows AS (
     NULL AS tpot_us_p50, NULL AS tpot_us_p95, NULL AS tpot_us_p99
   FROM orphan_buckets
 ),
+missing_hour_rows AS (
+  SELECT 'missing_hour' AS row_kind,
+    NULL AS axis, NULL AS bucket, NULL AS group_value, NULL AS dimension, hour AS facet_value,
+    NULL AS requests_text, NULL AS errors_text, NULL AS ttft_samples_text,
+    NULL AS tpot_samples_text, NULL AS neutral_text,
+    NULL AS ttft_ms_p50, NULL AS ttft_ms_p95, NULL AS ttft_ms_p99,
+    NULL AS tpot_us_p50, NULL AS tpot_us_p95, NULL AS tpot_us_p99
+  FROM filtered_summary
+  WHERE NOT EXISTS (SELECT 1 FROM bucket_map WHERE bucket_map.hour = filtered_summary.hour)
+  GROUP BY hour
+),
 wire AS (
   SELECT * FROM facet_rows
   UNION ALL SELECT * FROM aggregate_rows
   UNION ALL SELECT * FROM orphan_rows
+  UNION ALL SELECT * FROM missing_hour_rows
 )
 SELECT * FROM wire
 ORDER BY row_kind, dimension, facet_value, axis, bucket, group_value`;
@@ -317,6 +322,9 @@ const finishOverview = (rows: readonly PerformanceOverviewSqlRow[]): Performance
     [...overviewDimensions].map(dimension => [dimension, new Set()]),
   );
   for (const row of rows) {
+    if (row.row_kind === 'missing_hour') {
+      throw new Error('Performance overview bucket map is incomplete');
+    }
     if (row.row_kind === 'orphan') {
       throw new Error('performance_buckets row has no matching summary');
     }
@@ -381,25 +389,31 @@ export const querySqlPerformanceOverview = async (
   }
   const scoped = opts.groupBy === 'keyId';
   const range = rangeBinds(opts, scoped);
-  const { results: hours } = await db.prepare(overviewHoursSql(scoped))
-    .bind(...range)
-    .all<{ hour: string }>();
-  const buckets = Object.fromEntries(hours.map(({ hour }) => [hour, opts.bucketForHour(hour)]));
-  const binds: SqlBindValue[] = [
-    opts.actorUserId,
-    opts.isAdmin ? 1 : 0,
-    opts.groupBy,
-    JSON.stringify(opts.filters.models),
-    JSON.stringify(opts.filters.upstreams),
-    JSON.stringify(opts.filters.operations),
-    JSON.stringify(opts.filters.runtimeLocations),
-    JSON.stringify(opts.filters.userIds),
-    JSON.stringify(opts.filters.keyIds),
-    JSON.stringify(buckets),
-    ...range,
-    opts.start,
-    opts.end,
-  ];
-  const { results } = await db.prepare(overviewSql(scoped)).bind(...binds).all<PerformanceOverviewSqlRow>();
-  return finishOverview(results);
+  const buckets: Record<string, string> = {};
+  while (true) {
+    const binds: SqlBindValue[] = [
+      opts.actorUserId,
+      opts.isAdmin ? 1 : 0,
+      opts.groupBy,
+      JSON.stringify(opts.filters.models),
+      JSON.stringify(opts.filters.upstreams),
+      JSON.stringify(opts.filters.operations),
+      JSON.stringify(opts.filters.runtimeLocations),
+      JSON.stringify(opts.filters.userIds),
+      JSON.stringify(opts.filters.keyIds),
+      JSON.stringify(buckets),
+      ...range,
+      ...range,
+    ];
+    const { results } = await db.prepare(overviewSql(scoped)).bind(...binds).all<PerformanceOverviewSqlRow>();
+    const missingHours = results
+      .filter(row => row.row_kind === 'missing_hour')
+      .map(row => row.facet_value)
+      .filter((hour): hour is string => hour !== null);
+    if (missingHours.length === 0) return finishOverview(results);
+    for (const hour of missingHours) {
+      if (hour in buckets) throw new Error(`Performance overview did not accept bucket mapping for ${hour}`);
+      buckets[hour] = opts.bucketForHour(hour);
+    }
+  }
 };

@@ -90,9 +90,9 @@ export function aggregateUsageForDisplay(records: readonly UsageRecord[]): Displ
   );
 }
 
-// Token Usage assigns an unrecoverable key owner to the synthetic user bucket
-// so its record and overview responses both preserve unattributed rows.
-export const usageUserIdForKey = (
+// The all-by-user record response keeps hard-deleted-key usage in a synthetic
+// user bucket because no owner metadata remains to attribute it further.
+const usageUserIdForKey = (
   keyId: string,
   keyToUser: ReadonlyMap<string, number>,
 ): number => keyToUser.get(keyId) ?? tokenUsageUnattributedUserId;

@@ -343,6 +343,33 @@ it('SQL Performance overview rejects a histogram row without its summary identit
   })).rejects.toThrow('performance_buckets row has no matching summary');
 });
 
+it('SQL Performance overview ignores out-of-scope orphan histograms under key grouping', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  await repo.apiKeys.save(apiKey('key-1', 1));
+  await repo.apiKeys.save(apiKey('key-2', 2));
+  await repo.performance.recordNeutral(errSample({ keyId: 'key-1' }));
+  await db.prepare(`INSERT INTO performance_buckets (
+    hour, key_id, model, upstream, operation, runtime_location, metric, lower, upper, count
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+    '2026-06-30T09', 'key-2', 'model', 'upstream', 'chat', 'LOCAL',
+    'ttft_ms', 0, 100, 1,
+  ).run();
+
+  const overview = await repo.performance.queryOverview({
+    actorUserId: 1,
+    isAdmin: true,
+    start: '2026-06-30T00',
+    end: '2026-06-30T23',
+    groupBy: 'keyId',
+    filters: {
+      keyIds: [], userIds: [], models: [], upstreams: [], operations: [], runtimeLocations: [],
+    },
+    bucketForHour: hour => hour,
+  });
+  expect(overview.axes.none[0]?.requests).toBe(1);
+});
+
 it('SQL Performance overview uses actor indexes and returns aggregate cardinality', async () => {
   const db = await createSqliteTestDb();
   const seedRepo = new SqlRepo(db);
@@ -375,7 +402,7 @@ it('SQL Performance overview uses actor indexes and returns aggregate cardinalit
     bucketForHour: () => 'one-bucket',
   });
 
-  const aggregate = completed.find(statement => statement.query.startsWith('/* performance-overview */'));
+  const aggregate = completed.filter(statement => statement.query.startsWith('/* performance-overview */')).at(-1);
   if (!aggregate) throw new Error('Performance overview SQL evidence was not captured');
   const { results } = await db.prepare(`EXPLAIN QUERY PLAN ${aggregate.query}`)
     .bind(...aggregate.binds)

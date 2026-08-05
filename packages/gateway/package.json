@@ -14,9 +14,6 @@
     "./control-plane/proxies/serialize": {
       "types": "./src/control-plane/proxies/serialize.ts"
     },
-    "./control-plane/performance/aggregate": {
-      "types": "./src/control-plane/performance/aggregate.ts"
-    },
     "./control-plane/usage-types": {
       "types": "./src/control-plane/usage-types.ts"
     },
