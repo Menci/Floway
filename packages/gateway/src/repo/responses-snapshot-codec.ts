@@ -1,0 +1,12 @@
+import { decodeStoredJson } from './stored-json.ts';
+import { z } from 'zod';
+
+const itemIdsSchema = z.array(z.string());
+
+export const decodeResponsesSnapshotItemIds = (raw: string, id: string, apiKeyId: string): string[] =>
+  decodeStoredJson(raw, itemIdsSchema, {
+    malformed: `responses_snapshots.item_ids_json is malformed for id=${id}, api_key_id=${apiKeyId}`,
+    invalid: `responses_snapshots.item_ids_json is invalid for id=${id}, api_key_id=${apiKeyId}`,
+  });
+
+export const encodeResponsesSnapshotItemIds = (itemIds: readonly string[]): string => JSON.stringify(itemIds);
