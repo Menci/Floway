@@ -266,6 +266,8 @@ describe('createFetcher', () => {
 
   it('does not retry an entry that already failed in the first pass', async () => {
     const repo = new InMemoryRepo();
+    await insertProxy(repo, 'a', proxyA);
+    await insertProxy(repo, 'b', proxyB);
     const calls: string[] = [];
     const fetcher = createFetcher({
       repo,
