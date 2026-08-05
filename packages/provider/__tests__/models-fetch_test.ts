@@ -83,7 +83,16 @@ test('fetchUpstreamModels removes representation headers from untruncated captur
   const result = fetchUpstreamModels(
     () => Promise.resolve(new Response('small', {
       status: 500,
-      headers: { 'content-encoding': 'gzip', 'content-length': '5', 'repr-digest': 'sha-256=:stale:' },
+      headers: {
+        'accept-ranges': 'bytes',
+        'content-encoding': 'gzip',
+        'content-length': '5',
+        'content-range': 'bytes 0-4/5',
+        'content-type': 'text/plain; charset=iso-8859-1',
+        etag: '"stale"',
+        'last-modified': 'Wed, 01 Jan 2025 00:00:00 GMT',
+        'repr-digest': 'sha-256=:stale:',
+      },
     })),
     value => value,
   );
@@ -92,6 +101,11 @@ test('fetchUpstreamModels removes representation headers from untruncated captur
   expect(error.httpResponse?.headers.get('content-encoding')).toBeNull();
   expect(error.httpResponse?.headers.get('content-length')).toBeNull();
   expect(error.httpResponse?.headers.get('repr-digest')).toBeNull();
+  expect(error.httpResponse?.headers.get('etag')).toBeNull();
+  expect(error.httpResponse?.headers.get('last-modified')).toBeNull();
+  expect(error.httpResponse?.headers.get('content-range')).toBeNull();
+  expect(error.httpResponse?.headers.get('accept-ranges')).toBeNull();
+  expect(error.httpResponse?.headers.get('content-type')).toBe('text/plain');
 });
 
 test('fetchUpstreamModels aborts total stalls and preserves caller cancellation reasons', async () => {

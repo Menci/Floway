@@ -77,6 +77,10 @@ const REWRITTEN_BODY_HEADERS = [
   'digest',
   'content-digest',
   'repr-digest',
+  'etag',
+  'last-modified',
+  'content-range',
+  'accept-ranges',
 ] as const;
 
 export interface ResponseByteBudget {
@@ -166,7 +170,13 @@ const readErrorBody = async (response: Response, maxBytes: number, options: Prov
 };
 
 const stripRewrittenBodyHeaders = (headers: Headers): void => {
+  const contentType = headers.get('content-type');
   for (const name of REWRITTEN_BODY_HEADERS) headers.delete(name);
+  if (contentType !== null) {
+    const essence = contentType.split(';', 1)[0]?.trim();
+    if (essence) headers.set('content-type', essence);
+    else headers.delete('content-type');
+  }
 };
 
 export const readBoundedJsonResponse = async (
