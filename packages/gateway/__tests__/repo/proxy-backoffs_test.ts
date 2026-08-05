@@ -165,7 +165,7 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
 
 }
 
-test('proxy backoff generation migration carries current rows and drops existing orphans', async () => {
+it('proxy backoff generation migration carries current rows and drops existing orphans', async () => {
   const db = await createSqlJsDatabase();
   for (const [filename, sql] of migrationSqlByFilename) {
     if (filename === '0077_proxy_backoff_generation.sql') break;
