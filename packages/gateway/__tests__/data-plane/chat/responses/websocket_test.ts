@@ -80,6 +80,10 @@ const createControlledResponsesEvents = (
     events,
     nextCalls: () => nextCalls,
     returnCalled: () => returnCalled,
+    resolvePendingFrame: (frame: ResponsesFrame) => {
+      assertExists(pendingNext);
+      pendingNext.resolve({ done: false, value: frame });
+    },
   };
 };
 
@@ -135,6 +139,8 @@ const mockControlledResponsesTurn = (
       assertExists(controlledEvents);
       return controlledEvents;
     },
+    nextCalls: () => controlledEvents?.nextCalls() ?? 0,
+    returnCalled: () => controlledEvents?.returnCalled() ?? false,
     metadataRead: () => metadataRead,
   };
 };
@@ -1642,7 +1648,7 @@ test('Responses WebSocket close interrupts an idle frame wait before the keep-al
     }));
 
     await waitForMicrotaskCondition(
-      () => turn.events().nextCalls() === 1,
+      () => turn.nextCalls() === 1,
       'Responses WebSocket did not begin its idle frame wait',
     );
     client.close();
@@ -1652,6 +1658,11 @@ test('Responses WebSocket close interrupts an idle frame wait before the keep-al
     );
 
     assertEquals(turn.signal().aborted, true);
+    turn.events().resolvePendingFrame(responseCreatedFrame());
+    await waitForMicrotaskCondition(
+      turn.returnCalled,
+      'Responses WebSocket did not finish queued iterator cleanup after the idle read settled',
+    );
   });
 });
 
@@ -1675,11 +1686,11 @@ test('Responses WebSocket send failures abort the turn before another iterator r
       'Responses WebSocket did not settle the failed downstream send',
     );
     await waitForMicrotaskCondition(
-      () => turn.events().returnCalled(),
+      turn.returnCalled,
       'Responses WebSocket did not close the upstream iterator after the failed send',
     );
 
-    assertEquals(turn.events().nextCalls(), 1);
+    assertEquals(turn.nextCalls(), 1);
     assertEquals(turn.signal().aborted, true);
     assert(turn.signal().reason === sendFailure, 'expected the original send error to become the abort reason');
     client.close();
@@ -1710,7 +1721,7 @@ test('Responses WebSocket keep-alive readiness failures abort the pending turn',
       response: { model: 'gpt-direct-responses', input: 'fail the keep-alive readiness check' },
     }));
     await waitForMicrotaskCondition(
-      () => turn.events().nextCalls() === 2,
+      () => turn.nextCalls() === 2,
       'Responses WebSocket did not resume its frame wait after the first event',
     );
     await time.tickAsync(DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS);
