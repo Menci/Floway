@@ -1,6 +1,7 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { parseSSEStream } from '../../src/common/parse-sse.ts';
+import { byteStream, collectAsync } from './test-utils.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 interface Deferred<T> {
@@ -36,11 +37,7 @@ const cancelStateWithin = async (promise: Promise<void>, timeoutMs: number): Pro
 };
 
 const collect = async (text: string) => {
-  const frames = [];
-  for await (const frame of parseSSEStream(new Response(text).body!)) {
-    frames.push(frame);
-  }
-  return frames;
+  return await collectAsync(parseSSEStream(byteStream(text)));
 };
 
 test('parseSSEStream flushes a final data line without a trailing newline', async () => {
@@ -99,6 +96,26 @@ test('parseSSEStream joins data fields and resets event state at blank-line boun
       data: 'tail',
     },
   ]);
+});
+
+test('parseSSEStream preserves Unicode split at every byte boundary', async () => {
+  const bytes = new TextEncoder().encode('event: update\r\ndata: A😀中\r\n\r\n');
+  const chunks = Array.from(bytes, byte => new Uint8Array([byte]));
+
+  assertEquals(await collectAsync(parseSSEStream(byteStream(...chunks))), [
+    { type: 'sse', event: 'update', data: 'A😀中' },
+  ]);
+});
+
+test('parseSSEStream rejects invalid UTF-8 rather than replacing upstream bytes', async () => {
+  const prefix = new TextEncoder().encode('data: {"text":"');
+  const suffix = new TextEncoder().encode('"}\n\n');
+  const invalid = new Uint8Array(prefix.length + 1 + suffix.length);
+  invalid.set(prefix);
+  invalid[prefix.length] = 0xff;
+  invalid.set(suffix, prefix.length + 1);
+
+  await expect(collectAsync(parseSSEStream(byteStream(invalid)))).rejects.toThrow(TypeError);
 });
 
 test('parseSSEStream cancels a pending reader when its signal aborts', async () => {

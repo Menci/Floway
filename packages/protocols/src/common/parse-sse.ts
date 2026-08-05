@@ -9,7 +9,7 @@ interface ParseSSEStreamOptions {
 export const parseSSEStream = async function* (body: ReadableStream<Uint8Array>, options: ParseSSEStreamOptions = {}): AsyncGenerator<SseFrame> {
   const reader = body.getReader();
   const { signal } = options;
-  const decoder = new TextDecoder();
+  const decoder = new TextDecoder('utf-8', { fatal: true });
   let pendingFrames: SseFrame[] = [];
   let cancelPromise: Promise<void> | undefined;
 

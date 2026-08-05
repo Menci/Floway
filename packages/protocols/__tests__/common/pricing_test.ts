@@ -24,6 +24,16 @@ test('billing storage parsers accept current vocabulary and reject unknown value
   assertThrows(() => parseBillingMetric('reasoning'), TypeError, 'billing metric is invalid: "reasoning"');
 });
 
+test('price vectors reject unknown billing metrics even alongside valid rates', () => {
+  const pricing = { input_tokens: '1', input_token: '2' } as never;
+  assertThrows(
+    () => modelPricing({ rates: pricing }),
+    RangeError,
+    'unknown billing metric: input_token',
+  );
+  assertEquals(collectModelPricingIssues({ entries: [{ rates: pricing }] }).map(issue => issue.code), ['unknown-rate-metric']);
+});
+
 test('canonical selector JSON sorts axis keys and threshold object keys deterministically', () => {
   const first: PricingSelector = { serviceTier: 'priority', inputTokens: { value: 272000, operator: 'gt' } };
   const second: PricingSelector = { inputTokens: { operator: 'gt', value: 272000 }, serviceTier: 'priority' };
@@ -260,4 +270,24 @@ test('priceRequest preserves equality facts only when model pricing is unavailab
     selector: { serviceTier: 'future' },
     rates: null,
   });
+});
+
+test('priceRequest never reuses a compilation after mutable JSON pricing changes', () => {
+  const pricing: ModelPricing = {
+    entries: [{ rates: { input_tokens: '1' } }],
+  };
+  assertEquals(priceRequest(pricing, { inputTokens: 11 }).rates, { input_tokens: '1' });
+  (pricing.entries as Array<ModelPricing['entries'][number]>).push({
+    selector: { inputTokens: { operator: 'gt', value: 10 } },
+    rates: { input_tokens: '2' },
+  });
+  assertEquals(priceRequest(pricing, { inputTokens: 11 }).rates, { input_tokens: '2' });
+});
+
+test('priceRequest rejects malformed runtime facts', () => {
+  for (const inputTokens of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1]) {
+    assertThrows(() => priceRequest(GRID, { inputTokens }), RangeError, 'non-negative safe integer');
+  }
+  assertThrows(() => priceRequest(GRID, { serviceTier: '' }), RangeError, 'non-empty string');
+  assertThrows(() => priceRequest(GRID, { serviceTier: 1 as never }), RangeError, 'non-empty string');
 });
