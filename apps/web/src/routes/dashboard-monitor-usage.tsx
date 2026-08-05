@@ -13,7 +13,7 @@ import {
   TelemetryGroupByField,
   type TelemetryDimension,
 } from '../components/telemetry/dimension-controls';
-import { clearGroupedTelemetryFilters, scopeTelemetryIdentity } from '../components/telemetry/filter-state';
+import { changeTelemetryFilter, changeTelemetryGroupBy, scopeTelemetryIdentity } from '../components/telemetry/filter-state';
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
@@ -39,6 +39,7 @@ import { tokenUsageUnattributedUserId, usageUpstreamDimensionValue, usageUpstrea
 const { Button, Tooltip } = fluentComponents;
 
 type LoaderData = Awaited<ReturnType<typeof loadUsagePageData>> & {
+  currentUserId: string;
   isAdmin: boolean;
   loadedAt: number;
   state: UsageUrlState;
@@ -53,10 +54,15 @@ const requiredLabel = (labels: ReadonlyMap<string, string>, value: string, dimen
 export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise<LoaderData> {
   const user = await requireDashboardUser();
   const parsed = parseUsageUrlState(new URL(request.url).searchParams);
-  const scoped = scopeTelemetryIdentity(parsed.groupBy, parsed.filters, user.isAdmin, 'model');
+  const scoped = scopeTelemetryIdentity(parsed.groupBy, parsed.filters, {
+    currentUserId: String(user.id),
+    fallbackGroup: 'model',
+    userDimensionAvailable: user.isAdmin,
+  });
   const loadedAt = Date.now();
   return {
     ...await loadUsagePageData(user.isAdmin, parsed.range, scoped.groupBy, scoped.filters, loadedAt),
+    currentUserId: String(user.id),
     isAdmin: user.isAdmin,
     loadedAt,
     state: { ...parsed, ...scoped },
@@ -83,6 +89,11 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const [hiddenSearch, setHiddenSearch] = useState<Set<string>>(() => new Set(initialState.hiddenSearch));
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
   const locale = useLocale();
+  const identityContext = {
+    currentUserId: loaderData.currentUserId,
+    fallbackGroup: 'model' as const,
+    userDimensionAvailable: loaderData.isAdmin,
+  };
 
   const reload = useCallback(async (signal: AbortSignal, { background, requestedAt }: { background: boolean; requestedAt: number }) => {
     if (!background) setError(null);
@@ -130,13 +141,26 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     }
     const users = new Map(usage.users.map(user => [String(user.id), user.username]));
     const keys = new Map(usage.keys.map(key => [key.id, key.name]));
+    const userIds = usage.dimensionValues.userIds.map(String);
+    if (loadedQuery.filters.userId.includes(loaderData.currentUserId) && !userIds.includes(loaderData.currentUserId)) {
+      userIds.unshift(loaderData.currentUserId);
+    }
     return [
       { key: 'model', groupLabel: t('dashboard.usage.groupBy.model'), filterLabel: t('dashboard.usage.filters.model'), allLabel: t('dashboard.usage.filters.all.model'), options: usage.dimensionValues.models.map(value => ({ value, label: value })) },
       { key: 'upstream', groupLabel: t('dashboard.usage.groupBy.upstream'), filterLabel: t('dashboard.usage.filters.upstream'), allLabel: t('dashboard.usage.filters.all.upstream'), options: usage.dimensionValues.upstreams.map(value => ({ value, label: requiredLabel(upstreamNames, value, 'upstream') })) },
-      { key: 'userId', groupLabel: t('dashboard.usage.groupBy.userId'), filterLabel: t('dashboard.usage.filters.userId'), allLabel: t('dashboard.usage.filters.all.userId'), options: usage.dimensionValues.userIds.map(value => ({ value: String(value), label: value === tokenUsageUnattributedUserId ? t('dashboard.usage.filters.unattributedUser') : requiredLabel(users, String(value), 'user') })) },
+      {
+        key: 'userId',
+        groupLabel: t('dashboard.usage.groupBy.userId'),
+        filterLabel: t('dashboard.usage.filters.userId'),
+        allLabel: t('dashboard.usage.filters.all.userId'),
+        options: userIds.map(value => ({ value, label: Number(value) === tokenUsageUnattributedUserId ? t('dashboard.usage.filters.unattributedUser') : requiredLabel(users, value, 'user') })),
+        selectionLabel: values => values.length === 1 && values[0] === loaderData.currentUserId
+          ? t('dashboard.telemetry.currentUserOnly')
+          : t('dashboard.usage.filters.selected', { count: values.length }),
+      },
       { key: 'keyId', groupLabel: t('dashboard.usage.groupBy.keyId'), filterLabel: t('dashboard.usage.filters.keyId'), allLabel: t('dashboard.usage.filters.all.keyId'), options: usage.dimensionValues.keyIds.map(value => ({ value, label: requiredLabel(keys, value, 'API key') })) },
     ];
-  }, [t, upstreams, usage]);
+  }, [loadedQuery.filters.userId, loaderData.currentUserId, t, upstreams, usage]);
   const availableDimensions = dimensions?.filter(dimension => dimension.key !== 'userId' || loaderData.isAdmin) ?? null;
   const selectedDimension = availableDimensions === null ? null : (() => {
     const dimension = availableDimensions.find(candidate => candidate.key === loadedQuery.groupBy);
@@ -174,8 +198,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     if (next === query.groupBy) return;
     setQuery(current => ({
       ...current,
-      filters: clearGroupedTelemetryFilters(current.filters, next),
-      groupBy: next,
+      ...changeTelemetryGroupBy(current, next, identityContext),
     }));
   };
   const changeRange = (next: UsageRange) => {
@@ -184,7 +207,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   };
   const setFilter = (key: UsageGroupBy, values: string[]) => setQuery(current => ({
     ...current,
-    filters: { ...current.filters, [key]: values },
+    ...changeTelemetryFilter(current, key, values, identityContext),
   }));
 
   return <section className="dashboard-page">

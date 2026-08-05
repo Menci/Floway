@@ -19,6 +19,7 @@ const loadedAt = Date.UTC(2026, 7, 5, 12);
 const bucket = dashboardBucketFrames('today', loadedAt).at(-2)!.key;
 const usageRecord = { bucket, group: 'gpt-5', requests: 1, metrics: { input_tokens: '10' as const }, cost: null };
 const loaderData = {
+  currentUserId: '1',
   error: null,
   isAdmin: true,
   loadedAt,
@@ -42,7 +43,7 @@ const loaderData = {
       keyId: [{ ...usageRecord, bucket: 'all', group: 'key-2' }],
     },
     dimensionValues: { models: ['gpt-5'], upstreams: ['upstream:up-1'], userIds: [2], keyIds: ['key-2'] },
-    users: [{ id: 2, username: 'Alice' }],
+    users: [{ id: 1, username: 'admin' }, { id: 2, username: 'Alice' }],
     keys: [{ id: 'key-2', name: 'Alice key', createdAt: '2026-08-01T00:00:00.000Z' }],
   },
 };
@@ -95,7 +96,7 @@ describe('usage dimension controls', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'By Model' })).toBeTruthy();
   });
 
-  it('hides both identity filters while grouping by either identity dimension', () => {
+  it('hides API key filters under user grouping', () => {
     renderPage({
       ...loaderData,
       state: { ...loaderData.state, groupBy: 'userId' },
@@ -137,11 +138,17 @@ describe('usage dimension controls', () => {
   it('discloses that API key grouping is account-scoped', () => {
     renderPage({
       ...loaderData,
-      state: { ...loaderData.state, groupBy: 'keyId' },
+      state: {
+        ...loaderData.state,
+        filters: { ...loaderData.state.filters, userId: ['1'] },
+        groupBy: 'keyId',
+      },
       usage: { ...loaderData.usage, series: [{ ...usageRecord, group: 'key-2' }] },
     });
 
     expect(screen.getByRole('button', { name: 'About API key telemetry scope' })).toBeTruthy();
+    expect(screen.queryByRole('combobox', { name: 'API Key' })).toBeNull();
+    expect(screen.getByRole('combobox', { name: 'User' }).getAttribute('placeholder')).toBe('Only me');
   });
 
   it('uses the ungrouped axis for stable summary totals', () => {
