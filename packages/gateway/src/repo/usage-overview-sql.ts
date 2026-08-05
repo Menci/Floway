@@ -56,6 +56,55 @@ const overviewHoursSql = (scoped: boolean) => `/* usage-overview-hours */
   GROUP BY hour
   ORDER BY hour`;
 
+interface UsageAxisSql {
+  axis: UsageOverviewAxis;
+  bucket: string;
+  group: string;
+  where: string;
+}
+
+const usageSeriesGroupSql = `CASE settings.series_group_by
+  WHEN 'keyId' THEN filtered.key_id
+  WHEN 'userId' THEN CAST(filtered.user_id AS TEXT)
+  WHEN 'model' THEN filtered.model
+  WHEN 'upstream' THEN filtered.upstream_value
+END`;
+
+const usageAxisSql: readonly UsageAxisSql[] = [
+  { axis: 'series', bucket: 'bucket_map.bucket', group: usageSeriesGroupSql, where: '1' },
+  { axis: 'none', bucket: "'all'", group: "'all'", where: '1' },
+  { axis: 'keyId', bucket: "'all'", group: 'filtered.key_id', where: 'filtered.owned = 1' },
+  { axis: 'userId', bucket: "'all'", group: 'CAST(filtered.user_id AS TEXT)', where: 'settings.is_admin = 1' },
+  { axis: 'model', bucket: "'all'", group: 'filtered.model', where: '1' },
+  { axis: 'upstream', bucket: "'all'", group: 'filtered.upstream_value', where: '1' },
+];
+
+const usageRequestAggregateSql = usageAxisSql.map(({ axis, bucket, group, where }) => `
+  SELECT 'request' AS row_kind, '${axis}' AS axis,
+    ${bucket} AS bucket, ${group} AS group_value,
+    NULL AS dimension, NULL AS facet_value,
+    CAST(SUM(filtered.requests) AS TEXT) AS requests_text,
+    NULL AS metric, NULL AS quantity, NULL AS unit_price,
+    NULL AS occurrences_text, NULL AS metric_order
+  FROM filtered
+  CROSS JOIN settings
+  JOIN bucket_map ON bucket_map.hour = filtered.hour
+  WHERE filtered.fact_kind = 'request' AND ${where}
+  GROUP BY ${bucket}, ${group}`).join('\n  UNION ALL');
+
+const usageMetricTermSql = usageAxisSql.map(({ axis, bucket, group, where }) => `
+  SELECT 'metric' AS row_kind, '${axis}' AS axis,
+    ${bucket} AS bucket, ${group} AS group_value,
+    NULL AS dimension, NULL AS facet_value, NULL AS requests_text,
+    filtered.metric, filtered.quantity, filtered.unit_price,
+    CAST(COUNT(*) AS TEXT) AS occurrences_text,
+    MIN(filtered.source_order) AS metric_order
+  FROM filtered
+  CROSS JOIN settings
+  JOIN bucket_map ON bucket_map.hour = filtered.hour
+  WHERE filtered.fact_kind = 'metric' AND ${where}
+  GROUP BY ${bucket}, ${group}, filtered.metric, filtered.quantity, filtered.unit_price`).join('\n  UNION ALL');
+
 const overviewSql = (scoped: boolean) => `/* usage-overview */
 WITH
 settings(actor_user_id, is_admin, series_group_by, unattributed_user_id, no_upstream_value, upstream_prefix) AS (
@@ -127,33 +176,6 @@ filtered AS MATERIALIZED (
     AND (NOT EXISTS (SELECT 1 FROM user_filter) OR user_id IN (SELECT value FROM user_filter))
     AND (NOT EXISTS (SELECT 1 FROM key_filter) OR key_id IN (SELECT value FROM key_filter))
 ),
-axes(axis, grouping, bucketed, owned_only, admin_only) AS (
-  SELECT 'series', series_group_by, 1, 0, 0 FROM settings
-  UNION ALL SELECT 'none', 'none', 0, 0, 0
-  UNION ALL SELECT 'keyId', 'keyId', 0, 1, 0
-  UNION ALL SELECT 'userId', 'userId', 0, 0, 1
-  UNION ALL SELECT 'model', 'model', 0, 0, 0
-  UNION ALL SELECT 'upstream', 'upstream', 0, 0, 0
-),
-projected AS MATERIALIZED (
-  SELECT
-    filtered.*,
-    axes.axis,
-    CASE WHEN axes.bucketed = 1 THEN bucket_map.bucket ELSE 'all' END AS bucket,
-    CASE axes.grouping
-      WHEN 'none' THEN 'all'
-      WHEN 'keyId' THEN filtered.key_id
-      WHEN 'userId' THEN CAST(filtered.user_id AS TEXT)
-      WHEN 'model' THEN filtered.model
-      WHEN 'upstream' THEN filtered.upstream_value
-    END AS group_value
-  FROM filtered
-  CROSS JOIN axes
-  CROSS JOIN settings
-  JOIN bucket_map ON bucket_map.hour = filtered.hour
-  WHERE (axes.owned_only = 0 OR filtered.owned = 1)
-    AND (axes.admin_only = 0 OR settings.is_admin = 1)
-),
 facet_rows AS (
   SELECT 'facet' AS row_kind, NULL AS axis, NULL AS bucket, NULL AS group_value,
     'keyId' AS dimension, key_id AS facet_value, NULL AS requests_text,
@@ -176,21 +198,10 @@ facet_rows AS (
   GROUP BY upstream_value
 ),
 request_rows AS (
-  SELECT 'request' AS row_kind, axis, bucket, group_value, NULL AS dimension, NULL AS facet_value,
-    CAST(SUM(requests) AS TEXT) AS requests_text,
-    NULL AS metric, NULL AS quantity, NULL AS unit_price, NULL AS occurrences_text, NULL AS metric_order
-  FROM projected
-  WHERE fact_kind = 'request'
-  GROUP BY axis, bucket, group_value
+  ${usageRequestAggregateSql}
 ),
 metric_terms AS MATERIALIZED (
-  SELECT 'metric' AS row_kind, axis, bucket, group_value, NULL AS dimension, NULL AS facet_value,
-    NULL AS requests_text, metric, quantity, unit_price,
-    CAST(COUNT(*) AS TEXT) AS occurrences_text,
-    MIN(source_order) AS metric_order
-  FROM projected
-  WHERE fact_kind = 'metric'
-  GROUP BY axis, bucket, group_value, metric, quantity, unit_price
+  ${usageMetricTermSql}
 ),
 metric_numbered AS MATERIALIZED (
   SELECT *,
