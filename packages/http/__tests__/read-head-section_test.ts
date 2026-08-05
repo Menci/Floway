@@ -39,6 +39,12 @@ describe('readHeadSection', () => {
     });
   });
 
+  it('rejects an oversized head whose terminator arrives in the same chunk', async () => {
+    await expect(readResponseHeadSection(respondAndEnd(
+      `HTTP/1.1 200 OK\r\nX-Big: ${'a'.repeat(70 * 1024)}\r\n\r\n`,
+    ))).rejects.toMatchObject({ code: 'HEADER_BUFFER_OVERFLOW' });
+  });
+
   it('rejects EOF before the head terminator', async () => {
     await expect(
       readResponseHeadSection(respondAndEnd('HTTP/1.1 200 OK\r\nContent-Type:')),

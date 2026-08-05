@@ -261,8 +261,8 @@ const finalizeResponse = (
     body = decodeChunked(reader, remainder);
     headers.delete('transfer-encoding');
   } else if (contentLength !== null) {
-    const total = parseInt(contentLength, 10);
-    if (!Number.isFinite(total) || total < 0 || String(total) !== contentLength) {
+    const total = Number(contentLength);
+    if (!/^\d+$/.test(contentLength) || !Number.isSafeInteger(total)) {
       throw new HttpProtocolError(
         `HTTP/1.1 response has malformed Content-Length: ${JSON.stringify(contentLength)}`,
         'BAD_CL',
@@ -287,6 +287,16 @@ const lengthBody = (
   total: number,
 ): ReadableStream<Uint8Array> => {
   let consumed = 0;
+  let released = false;
+  const release = (): void => {
+    if (released) return;
+    released = true;
+    try { reader.releaseLock(); } catch { /* lock already released */ }
+  };
+  const cancelAndRelease = async (reason?: unknown): Promise<void> => {
+    try { await reader.cancel(reason); } catch { /* reader already cancelled */ }
+    finally { release(); }
+  };
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       if (head.byteLength > total) {
@@ -294,7 +304,7 @@ const lengthBody = (
           `trailing bytes after Content-Length boundary (${head.byteLength - total} extra in head)`,
           'TRAILING_BODY_BYTES',
         ));
-        try { await reader.cancel(); } catch { /* reader already cancelled */ }
+        await cancelAndRelease();
         return;
       }
       if (head.byteLength) {
@@ -303,7 +313,7 @@ const lengthBody = (
       }
       if (consumed >= total) {
         controller.close();
-        try { await reader.cancel(); } catch { /* reader already cancelled */ }
+        await cancelAndRelease();
       }
     },
     async pull(controller) {
@@ -313,12 +323,20 @@ const lengthBody = (
       // and bypass back-pressure (mirrors `untilEofBody` and the chunked
       // decoder's data branch). A 20 MiB JSON body under a slow consumer
       // would otherwise pin its full size in memory.
-      const { value, done } = await reader.read();
+      let result: ReadableStreamReadResult<Uint8Array>;
+      try {
+        result = await reader.read();
+      } catch (error) {
+        release();
+        throw error;
+      }
+      const { value, done } = result;
       if (done) {
         controller.error(new HttpProtocolError(
           `upstream EOF after ${consumed}/${total} body bytes`,
           'EOF',
         ));
+        release();
         return;
       }
       const remain = total - consumed;
@@ -332,16 +350,16 @@ const lengthBody = (
           `trailing bytes after Content-Length boundary (${value.byteLength - remain} extra)`,
           'TRAILING_BODY_BYTES',
         ));
-        try { await reader.cancel(); } catch { /* reader already cancelled */ }
+        await cancelAndRelease();
         return;
       }
       if (consumed >= total) {
         controller.close();
-        try { await reader.cancel(); } catch { /* reader already cancelled */ }
+        await cancelAndRelease();
       }
     },
-    cancel(reason) {
-      reader.cancel(reason).catch(() => {});
+    async cancel(reason) {
+      await cancelAndRelease(reason);
     },
   });
 };
@@ -350,17 +368,34 @@ const untilEofBody = (
   reader: ReadableStreamDefaultReader<Uint8Array>,
   head: Uint8Array,
 ): ReadableStream<Uint8Array> => {
+  let released = false;
+  const release = (): void => {
+    if (released) return;
+    released = true;
+    try { reader.releaseLock(); } catch { /* lock already released */ }
+  };
   return new ReadableStream<Uint8Array>({
     start(controller) {
       if (head.byteLength) controller.enqueue(head);
     },
     async pull(controller) {
-      const { value, done } = await reader.read();
-      if (done) controller.close();
+      let result: ReadableStreamReadResult<Uint8Array>;
+      try {
+        result = await reader.read();
+      } catch (error) {
+        release();
+        throw error;
+      }
+      const { value, done } = result;
+      if (done) {
+        controller.close();
+        release();
+      }
       else controller.enqueue(copy(value));
     },
-    cancel(reason) {
-      reader.cancel(reason).catch(() => {});
+    async cancel(reason) {
+      try { await reader.cancel(reason); } catch { /* reader already cancelled */ }
+      finally { release(); }
     },
   });
 };

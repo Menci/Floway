@@ -202,6 +202,20 @@ describe('decodeChunked — RFC 9112 §7.1.1 chunk-size grammar', () => {
     expect(err).toBeInstanceOf(HttpProtocolError);
     expect((err as HttpProtocolError).code).toBe('CHUNK_BAD_SIZE');
   });
+
+  it.each([' 5', '5 '])('rejects whitespace around a chunk size: %j', async size => {
+    const { reader, head } = fromString(`${size}\r\nhello\r\n0\r\n\r\n`);
+    await expect(drain(decodeChunked(reader, head))).rejects.toMatchObject({
+      code: 'CHUNK_BAD_SIZE',
+    });
+  });
+
+  it('rejects a chunk size outside JavaScript\'s exact integer range', async () => {
+    const { reader, head } = fromString('20000000000000\r\n');
+    await expect(drain(decodeChunked(reader, head))).rejects.toMatchObject({
+      code: 'CHUNK_BAD_SIZE',
+    });
+  });
 });
 
 describe('decodeChunked — extensions and trailers (RFC 9112 §7.1.1, §7.1.2)', () => {
@@ -229,6 +243,16 @@ describe('decodeChunked — extensions and trailers (RFC 9112 §7.1.1, §7.1.2)'
     expect(await drain(decodeChunked(reader, head))).toBe('hello');
   });
 
+  it.each(['5;', '5;=value', '5;name=', '5;name="unterminated'])(
+    'rejects a malformed chunk extension: %j',
+    async sizeLine => {
+      const { reader, head } = fromString(`${sizeLine}\r\nhello\r\n0\r\n\r\n`);
+      await expect(drain(decodeChunked(reader, head))).rejects.toMatchObject({
+        code: 'CHUNK_BAD_SIZE',
+      });
+    },
+  );
+
   it('accepts a single trailing header after the 0-sized terminator', async () => {
     const input = '5\r\nhello\r\n0\r\nX-Trailer: t\r\n\r\n';
     const { reader, head } = fromString(input);
@@ -239,6 +263,35 @@ describe('decodeChunked — extensions and trailers (RFC 9112 §7.1.1, §7.1.2)'
     const input = '5\r\nhello\r\n0\r\nA: 1\r\nB: 2\r\nC: 3\r\n\r\n';
     const { reader, head } = fromString(input);
     expect(await drain(decodeChunked(reader, head))).toBe('hello');
+  });
+
+  it.each(['Bad Trailer: x', 'Missing-Colon', 'X: bad\0value'])(
+    'rejects a malformed trailer field: %j',
+    async trailer => {
+      const { reader, head } = fromString(`5\r\nhello\r\n0\r\n${trailer}\r\n\r\n`);
+      await expect(drain(decodeChunked(reader, head))).rejects.toMatchObject({
+        code: 'BAD_HEADERS',
+      });
+    },
+  );
+
+  it('rejects bytes already buffered after the final trailer terminator', async () => {
+    const { reader, head } = fromString('5\r\nhello\r\n0\r\n\r\nEXTRA');
+    await expect(drain(decodeChunked(reader, head))).rejects.toMatchObject({
+      code: 'TRAILING_BODY_BYTES',
+    });
+  });
+
+  it('releases the transport reader after a framing error', async () => {
+    const source = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(enc('not-hex\r\n'));
+        controller.close();
+      },
+    });
+    await expect(drain(decodeChunked(source.getReader(), new Uint8Array(0))))
+      .rejects.toMatchObject({ code: 'CHUNK_BAD_SIZE' });
+    expect(source.locked).toBe(false);
   });
 
   it('rejects when a trailer block exceeds the 64 KiB cap', async () => {

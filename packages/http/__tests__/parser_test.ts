@@ -578,6 +578,19 @@ describe('parseHttpResponse — Content-Length value grammar', () => {
     expect(await collectBody(r)).toBe('');
   });
 
+  it('accepts leading zeroes in the decimal Content-Length grammar', async () => {
+    const r = await parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 OK\r\nContent-Length: 0005\r\n\r\nhello',
+    ));
+    expect(await collectBody(r)).toBe('hello');
+  });
+
+  it('rejects a Content-Length outside JavaScript\'s exact integer range', async () => {
+    await expect(parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 OK\r\nContent-Length: 9007199254740992\r\n\r\n',
+    ))).rejects.toMatchObject({ code: 'BAD_CL' });
+  });
+
   it('accepts a large Content-Length value (within 32-bit range)', async () => {
     const len = 70_000;
     const fake = makeFakeDuplex();
@@ -628,11 +641,9 @@ describe('parseHttpResponse — DoS caps', () => {
   // HEADER_BUFFER_OVERFLOW — so neither an unbounded read nor a different
   // code can pass unnoticed.
   it('rejects a single header that grows past the 64 KiB header buffer', async () => {
-    const fake = makeFakeDuplex();
-    fake.respond('HTTP/1.1 200 OK\r\nX-Big: ');
-    fake.respond('a'.repeat(70 * 1024));
-    fake.endResponse();
-    await expect(parseHttpResponse(fake.readable)).rejects.toMatchObject({
+    await expect(parseHttpResponse(respondAndEnd(
+      `HTTP/1.1 200 OK\r\nX-Big: ${'a'.repeat(70 * 1024)}\r\n\r\n`,
+    ))).rejects.toMatchObject({
       code: 'HEADER_BUFFER_OVERFLOW',
     });
   });
@@ -722,6 +733,19 @@ describe('parseHttpResponse — body framing', () => {
     const resp = await parseHttpResponse(fake.readable);
     expect(resp.status).toBe(200);
     expect(await collectBody(resp)).toBe('');
+  });
+
+  it.each([
+    ['Content-Length', 'HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK'],
+    ['chunked', 'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nOK\r\n0\r\n\r\n'],
+    ['until EOF', 'HTTP/1.1 200 OK\r\n\r\nOK'],
+  ])('releases the transport reader after a %s body completes', async (_framing, wire) => {
+    const fake = makeFakeDuplex();
+    fake.respond(wire);
+    fake.endResponse();
+    const resp = await parseHttpResponse(fake.readable);
+    expect(await collectBody(resp)).toBe('OK');
+    expect(fake.readable.locked).toBe(false);
   });
 });
 
