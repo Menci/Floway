@@ -242,8 +242,6 @@ describe('dialHttpConnect — auth header encoding', () => {
     await promise;
   });
 
-  // Floway's Basic credential policy encodes `${user}:${password}` with
-  // TextEncoder and base64s the resulting bytes.
   it('UTF-8 encodes a "ä" (U+00E4) password before base64', async () => {
     const fake = makeFakeSocketDial();
     const promise = dialHttpConnect(
