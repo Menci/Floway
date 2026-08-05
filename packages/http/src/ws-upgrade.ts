@@ -622,6 +622,7 @@ const frameDuplexOnTransport = (
           if (!header) {
             const { value, done } = await reader.read();
             if (done) {
+              if (plainClosed) return;
               throw new HttpProtocolError(
                 'WS transport ended without a Close frame',
                 'EOF',
@@ -650,6 +651,7 @@ const frameDuplexOnTransport = (
           while (bufferedBytes < total) {
             const { value, done } = await reader.read();
             if (done) {
+              if (plainClosed) return;
               throw new HttpProtocolError(
                 `WS frame: unexpected EOF after ${bufferedBytes}/${total} bytes`,
                 'EOF',
