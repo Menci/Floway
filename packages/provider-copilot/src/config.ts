@@ -36,6 +36,15 @@ const nonEmptyStringField = (value: unknown, field: string, err: FieldErrorBuild
   return str;
 };
 
+const githubHostField = (value: unknown, err: FieldErrorBuilder): string => {
+  const host = stringField(value, 'githubHost', err);
+  try {
+    return normalizeGitHubHost(host);
+  } catch {
+    throw err('githubHost', 'github.com or a tenant hostname ending in .ghe.com');
+  }
+};
+
 const nullableStringField = (value: unknown, field: string, err: FieldErrorBuilder): string | null => {
   if (value !== null && typeof value !== 'string') throw err(field, 'a string or null');
   return value;
@@ -61,14 +70,8 @@ const copilotUserField = (value: unknown, err: FieldErrorBuilder): CopilotUpstre
 // rejections differently.
 export const parseCopilotUpstreamConfig = (value: unknown, err: FieldErrorBuilder): CopilotUpstreamConfig => {
   if (!isRecord(value)) throw err('config', 'an object');
-  let githubHost: string;
-  try {
-    githubHost = normalizeGitHubHost(nonEmptyStringField(value.githubHost, 'githubHost', err));
-  } catch {
-    throw err('githubHost', 'github.com or a tenant hostname ending in .ghe.com');
-  }
   return {
-    githubHost,
+    githubHost: githubHostField(value.githubHost, err),
     githubToken: nonEmptyStringField(value.githubToken, 'githubToken', err),
     user: copilotUserField(value.user, err),
   };
@@ -81,7 +84,7 @@ export const assertCopilotUpstreamRecord = (record: UpstreamRecord): CopilotUpst
     ...record,
     kind: 'copilot',
     config: {
-      githubHost: normalizeGitHubHost(stringField(record.config.githubHost, 'githubHost', malformedConfig)),
+      githubHost: githubHostField(record.config.githubHost, malformedConfig),
       githubToken: stringField(record.config.githubToken, 'githubToken', malformedConfig),
       user: copilotUserField(record.config.user, malformedConfig),
     },

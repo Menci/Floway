@@ -13,7 +13,7 @@ export {
   exchangeCopilotToken,
 } from './auth.ts';
 export { fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from './github-device-flow.ts';
-export { GITHUB_DOTCOM_HOST, githubApiOrigin, githubWebOrigin, normalizeGitHubHost } from './github-host.ts';
+export { normalizeGitHubHost } from './github-host.ts';
 export {
   fetchCopilotUsage,
   projectCopilotUsageResponse,

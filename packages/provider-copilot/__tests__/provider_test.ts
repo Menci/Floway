@@ -9,7 +9,7 @@ import { createInMemoryImageProcessor, initImageProcessor } from '@floway-dev/pl
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher, initProviderRepo } from '@floway-dev/provider';
-import { assertEquals, assertRejects, jsonResponse, noopMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertRejects, assertThrows, jsonResponse, noopMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const mergeClaudeVariantsControl = vi.hoisted<{
   override: ((models: CopilotModelsResponse) => CopilotModelsResponse) | null;
@@ -49,6 +49,21 @@ const buildCopilotUpstream = (overrides: Partial<UpstreamRecord> = {}): Upstream
     },
   };
 };
+
+test('createCopilotProvider reports an invalid host through the config contract', () => {
+  const record = buildCopilotUpstream({
+    config: {
+      githubHost: 'https://github.com',
+      githubToken: 'ghu_test',
+      user: { id: 1, login: 'tester', name: null, avatar_url: '' },
+    },
+  });
+  assertThrows(
+    () => createCopilotProvider(record),
+    Error,
+    'Malformed copilot upstream config: githubHost must be github.com or a tenant hostname ending in .ghe.com',
+  );
+});
 
 interface CopilotTestRepo {
   copilotUpstream: UpstreamRecord;
