@@ -4170,6 +4170,7 @@ test('downstream AbortSignal threads through to provider search / fetchPage and 
 
   const observedSignal = await searchStarted;
   // Same instance identity — not a clone.
+  assert(observedSignal !== undefined);
   assertEquals(observedSignal, controller.signal);
   assertFalse(observedSignal.aborted);
 
