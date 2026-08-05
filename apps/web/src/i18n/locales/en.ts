@@ -535,6 +535,18 @@ const en = {
           pathOverrides: 'Path overrides',
         },
         auth: { none: 'None' },
+        headers: {
+          title: 'Client request headers',
+          description: 'Only client headers with a matching rule are sent to this upstream. Keep the client value, replace it with an empty value, or type a replacement.',
+          key: 'Header name',
+          value: 'Behavior or value',
+          row: 'Header rule {{number, number}}',
+          keyForRow: 'Header name for rule {{number, number}}',
+          valueForRow: 'Behavior or value for rule {{number, number}}',
+          remove: 'Remove header rule {{number, number}}',
+          passthrough: '(passthrough)',
+          empty: '(empty)',
+        },
         proxy: {
           directFetch: 'Direct (Fetch)',
           directConnect: 'Direct (TCP connect)',

@@ -116,7 +116,7 @@ const ingressHeadersRulesField = (value: unknown): CustomIngressHeaderRule[] => 
     } catch {
       throw new Error(`Malformed custom upstream config: ingressHeadersRules[${index}].value is not a valid HTTP header value`);
     }
-    return { key, value: headers.get(key)! };
+    return { key, value: headers.get(key) as string };
   });
 };
 

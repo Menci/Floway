@@ -508,6 +508,18 @@ const zhHansCN = {
           pathOverrides: '路径覆盖',
         },
         auth: { none: '无认证' },
+        headers: {
+          title: '客户端请求标头',
+          description: '仅向此上游发送匹配规则的客户端标头。可以保留客户端值、覆盖为空值，或输入自定义覆盖值。',
+          key: '标头名称',
+          value: '处理方式或覆盖值',
+          row: '标头规则 {{number, number}}',
+          keyForRow: '规则 {{number, number}} 的标头名称',
+          valueForRow: '规则 {{number, number}} 的处理方式或覆盖值',
+          remove: '删除标头规则 {{number, number}}',
+          passthrough: '（透传）',
+          empty: '（空值）',
+        },
         proxy: {
           directFetch: '直连（Fetch）',
           directConnect: '直连（TCP connect）',
