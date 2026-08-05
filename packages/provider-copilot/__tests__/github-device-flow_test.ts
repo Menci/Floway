@@ -13,7 +13,7 @@ const requestParameters = (init: RequestInit): URLSearchParams => {
   return new URLSearchParams(String(init.body));
 };
 
-test('startGitHubDeviceFlow sends the probed form request through the supplied fetcher', async () => {
+test('startGitHubDeviceFlow sends the OAuth form request through the supplied fetcher', async () => {
   let called = false;
   const fetcher: Fetcher = async (url, init) => {
     called = true;
