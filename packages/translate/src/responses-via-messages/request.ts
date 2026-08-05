@@ -25,7 +25,6 @@ import {
   type MessagesUserMessage,
 } from '@floway-dev/protocols/messages';
 import type {
-  ResponsesInputContent,
   ResponsesInputImage,
   ResponsesInputItem,
   ResponsesInputMessage,

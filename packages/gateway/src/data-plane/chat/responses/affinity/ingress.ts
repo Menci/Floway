@@ -1,3 +1,4 @@
+import { replaceResponsesOpaqueLocations, responsesOpaqueLocations, type ResponsesOpaqueLocation } from './opaque-locations.ts';
 import {
   type AffinityCodec,
   type AffinityRequestAnalysis,
@@ -10,7 +11,6 @@ import {
   projectRequiredAffinityBlob,
   projectNativeResponsesUpstreamAffinityBlob,
 } from '../../shared/affinity/index.ts';
-import { replaceResponsesOpaqueLocations, responsesOpaqueLocations, type ResponsesOpaqueLocation } from './opaque-locations.ts';
 import type { CanonicalResponsesPayload, ResponsesInputItem } from '@floway-dev/protocols/responses';
 import type { ModelCandidate } from '@floway-dev/provider';
 

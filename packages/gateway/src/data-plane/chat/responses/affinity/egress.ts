@@ -1,5 +1,5 @@
-import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
 import { INTER_AGENT_MESSAGE_DOMAIN, isEncryptedInterAgentCall, replaceResponsesOpaqueLocations, responsesCarrierDomain, responsesOpaqueLocations } from './opaque-locations.ts';
+import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { createRandomResponsesItemId, type ResponsesOutputItem, type ResponsesOutputReasoning, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
