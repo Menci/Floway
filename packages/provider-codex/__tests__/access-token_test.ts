@@ -97,13 +97,21 @@ describe('invalidateCodexAccessToken', () => {
   test('clears a populated access-token slot', async () => {
     const entry: CodexAccessTokenEntry = { token: 'at_x', expiresAt: farFutureMs, refreshedAt: 'now' };
     current = makeRecord({ accounts: [{ ...baseAccount, accessToken: entry }] });
-    await invalidateCodexAccessToken(upstreamId, accountId);
+    await invalidateCodexAccessToken(upstreamId, accountId, 'at_x');
     expect(storedState().accounts[0].accessToken).toBeNull();
   });
 
   test('writes nothing when the slot is already null', async () => {
-    await invalidateCodexAccessToken(upstreamId, accountId);
+    await invalidateCodexAccessToken(upstreamId, accountId, 'at_old');
     expect(repo.writes).toEqual([]);
+  });
+
+  test('does not clear a newer token written after the rejected request started', async () => {
+    const entry: CodexAccessTokenEntry = { token: 'at_newer', expiresAt: farFutureMs, refreshedAt: 'newer' };
+    current = makeRecord({ accounts: [{ ...baseAccount, accessToken: entry }] });
+    await invalidateCodexAccessToken(upstreamId, accountId, 'at_rejected');
+    expect(repo.writes).toEqual([]);
+    expect(storedState().accounts[0].accessToken).toEqual(entry);
   });
 });
 

@@ -382,8 +382,8 @@ const dispatchCodexHttpCall = async (
 // current refresh token, so a request whose initial mint rotated rt1 → rt2
 // cannot retry with its stale captured rt1. It also shares the credential's
 // single-flight entry, collapsing simultaneous 401 retries onto one rotation.
-const refreshAccessTokenForRetry = async (opts: CodexBackendCallBase): Promise<{ ok: true; accessToken: string } | { ok: false; response: Response }> => {
-  await invalidateCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId);
+const refreshAccessTokenForRetry = async (opts: CodexBackendCallBase, rejectedAccessToken: string): Promise<{ ok: true; accessToken: string } | { ok: false; response: Response }> => {
+  await invalidateCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, rejectedAccessToken);
   let attemptedRefreshToken = opts.account.refresh_token;
   try {
     const minted = await ensureCodexAccessToken(
@@ -428,7 +428,7 @@ const performStreamingResponsesCall = async (
   const result = await streamingProviderCall(upstreamFetch, parseResponsesStream, opts.model.id, opts.signal);
 
   if (!result.ok && result.response.status === 401 && !alreadyRetried) {
-    const fresh = await refreshAccessTokenForRetry(opts);
+    const fresh = await refreshAccessTokenForRetry(opts, accessToken);
     if (!fresh.ok) return { ok: false, modelKey: opts.model.id, response: fresh.response };
     return await performStreamingResponsesCall(opts, fresh.accessToken, true);
   }
@@ -457,7 +457,7 @@ const performUnaryCompactCall = async (
   );
 
   if (response.status === 401 && !alreadyRetried) {
-    const fresh = await refreshAccessTokenForRetry(opts);
+    const fresh = await refreshAccessTokenForRetry(opts, accessToken);
     if (!fresh.ok) return { ok: false, modelKey: opts.model.id, response: fresh.response };
     return await performUnaryCompactCall(opts, fresh.accessToken, true);
   }
@@ -495,7 +495,7 @@ const performAlphaSearchCall = async (
   );
 
   if (response.status === 401 && !alreadyRetried) {
-    const fresh = await refreshAccessTokenForRetry(opts);
+    const fresh = await refreshAccessTokenForRetry(opts, accessToken);
     if (!fresh.ok) return { modelKey: opts.model.id, response: fresh.response };
     return await performAlphaSearchCall(opts, fresh.accessToken, true);
   }

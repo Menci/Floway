@@ -21,6 +21,7 @@ const persistAccessToken = async (
   accountId: string,
   entry: CodexAccessTokenEntry | null,
   where: string,
+  expectedToken?: string,
 ): Promise<void> => {
   // The mutator is replayed on a lost race, so the diagnostic is recorded and
   // emitted once afterwards rather than logged from inside it.
@@ -34,9 +35,10 @@ const persistAccessToken = async (
         return current;
       }
       accountMissing = false;
-      // Invalidating an already-null slot has nothing to write — the case where
-      // a 401 retry races a concurrent refresh that already cleared the token.
-      if (entry === null && state.accounts[idx].accessToken === null) return current;
+      // Invalidation belongs to the request that observed `expectedToken`.
+      // A sibling refresh or operator re-import may already have installed a
+      // newer token; that generation must survive the late 401.
+      if (entry === null && state.accounts[idx].accessToken?.token !== expectedToken) return current;
       return replaceCodexAccount(state, idx, account => ({ ...account, accessToken: entry }));
     });
   } catch (err) {
@@ -61,7 +63,8 @@ export const putCodexAccessToken = async (
 export const invalidateCodexAccessToken = async (
   upstreamId: string,
   accountId: string,
-): Promise<void> => { await persistAccessToken(upstreamId, accountId, null, 'invalidateCodexAccessToken'); };
+  expectedToken: string,
+): Promise<void> => { await persistAccessToken(upstreamId, accountId, null, 'invalidateCodexAccessToken', expectedToken); };
 
 // Reads, mints, and persists. The mint callback is responsible for routing
 // the rotated refresh_token through the upstream's persistence hook;

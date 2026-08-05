@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { CODEX_CLI_VERSION, CODEX_ORIGINATOR, CODEX_USER_AGENT } from '../src/constants.ts';
-import { codexRawToProviderModel, fetchCodexCatalog } from '../src/models.ts';
+import { CodexModelsFetchError, codexRawToProviderModel, fetchCodexCatalog } from '../src/models.ts';
 import { priceRequest } from '@floway-dev/protocols/common';
 import { directFetcher, type FlagId } from '@floway-dev/provider';
 
@@ -34,9 +34,11 @@ describe('fetchCodexCatalog', () => {
     expect(headers.get('openai-beta')).toBeNull();
   });
 
-  test('throws when upstream returns non-2xx (caller handles 401 retry)', async () => {
+  test('surfaces a typed status when upstream returns non-2xx', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"error":"unauthorized"}', { status: 401 }));
-    await expect(fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher })).rejects.toThrow(/401/);
+    const request = fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher });
+    await expect(request).rejects.toBeInstanceOf(CodexModelsFetchError);
+    await expect(request).rejects.toMatchObject({ status: 401 });
   });
 
   test('throws on missing models key (forward-compatible shape guard)', async () => {

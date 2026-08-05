@@ -21,6 +21,16 @@ export interface CodexRawModel {
   default_reasoning_effort?: string;
 }
 
+export class CodexModelsFetchError extends Error {
+  readonly status: number;
+
+  constructor(status: number, bodySnippet: string) {
+    super(`Codex /models fetch failed: ${status} ${bodySnippet}`);
+    this.name = 'CodexModelsFetchError';
+    this.status = status;
+  }
+}
+
 // `fetcher` is required so the catalog refresh traverses the same proxy/
 // dial chain configured for request-time traffic.
 export const fetchCodexCatalog = async (opts: { accessToken: string; accountId: string; signal?: AbortSignal; fetcher: Fetcher }): Promise<CodexRawModel[]> => {
@@ -37,7 +47,7 @@ export const fetchCodexCatalog = async (opts: { accessToken: string; accountId: 
   });
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`Codex /models fetch failed: ${response.status} ${body.slice(0, 200)}`);
+    throw new CodexModelsFetchError(response.status, body.slice(0, 200));
   }
   const parsed = await response.json() as { models?: unknown };
   if (!Array.isArray(parsed.models)) throw new Error('Codex /models response missing models array');
