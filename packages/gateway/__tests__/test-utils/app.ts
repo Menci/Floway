@@ -1,6 +1,6 @@
 import { trackBackground } from './background-tracker.ts';
 import { app } from '../../src/app.ts';
-import { clearInFlightForTesting, fetchUpstreamModelsCached } from '../../src/data-plane/providers/models-cache.ts';
+import { clearInFlightForTesting, warmUpstreamModels } from '../../src/data-plane/providers/models-cache.ts';
 import { listModelProviders } from '../../src/data-plane/providers/registry.ts';
 import type { WebSearchConfig } from '../../src/data-plane/tools/web-search/types.ts';
 import { createPerRequestFetcher } from '../../src/dial/per-request.ts';
@@ -9,7 +9,6 @@ import type { ApiKey } from '../../src/repo/types.ts';
 import { initBackgroundSchedulerResolver } from '../../src/runtime/background.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import { createInMemoryImageProcessor, initEnv, initExternalResourceFetcher, initFileStore, initImageProcessor, initSocketDial, MemoryFileStore } from '@floway-dev/platform';
-import { PUBLIC_DATA_PLANE_ROUTES } from '@floway-dev/protocols/common';
 import type { ProxyFallbackEntry, UpstreamRecord } from '@floway-dev/provider';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 
@@ -302,16 +301,13 @@ export function sseResponsesResponse(response: Record<string, unknown>): Respons
 }
 
 export async function requestApp(path: string, init: RequestInit): Promise<Response> {
-  const method = init.method?.toUpperCase() ?? 'GET';
-  const pathname = new URL(path, 'http://localhost').pathname;
-  const isModelConsumer = pathname === '/api/models' || Object.values(PUBLIC_DATA_PLANE_ROUTES).some(route =>
-    route.method === method && route.paths.some(template => {
-      const parameter = template.indexOf('/:');
-      return parameter === -1 ? pathname === template : pathname.startsWith(template.slice(0, parameter + 1));
-    }));
-  if (isModelConsumer && globalThis.fetch !== processFetch) await warmModelsForTest();
   return await app.request(path, init);
 }
+
+export const requestAppWithWarmModels = async (path: string, init: RequestInit): Promise<Response> => {
+  if (globalThis.fetch !== processFetch) await warmModelsForTest();
+  return await requestApp(path, init);
+};
 
 // App fixtures write upstream rows directly because their fetch mocks are not
 // installed until the test body runs. Production create/update/OAuth flows
@@ -321,14 +317,8 @@ export async function requestApp(path: string, init: RequestInit): Promise<Respo
 export const warmModelsForTest = async (): Promise<void> => {
   const providers = await listModelProviders(null);
   const fetcherForUpstream = await createPerRequestFetcher('TEST');
-  const pending: Promise<unknown>[] = [];
-  await Promise.all(providers.map(async provider => {
-    await fetchUpstreamModelsCached(provider, {
-      scheduler: promise => { pending.push(promise); },
-      fetcher: fetcherForUpstream(provider.upstreamId),
-    });
-  }));
-  await Promise.allSettled(pending);
+  await Promise.allSettled(providers.map(async provider =>
+    await warmUpstreamModels(provider, fetcherForUpstream(provider.upstreamId))));
 };
 
 export function parseSSEText(text: string): Array<{ event: string; data: string }> {

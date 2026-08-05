@@ -1,6 +1,6 @@
-import { test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
-import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, copilotModels, requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, copilotModels, flushAsyncWork, requestApp as requestAppCold, requestAppWithWarmModels as requestApp, setupAppTest } from '../../test-utils/app.ts';
 import type { ModelKind } from '@floway-dev/protocols/common';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals } from '@floway-dev/test-utils';
@@ -14,6 +14,32 @@ const SECOND_ACCOUNT = {
     avatar_url: 'https://example.com/second.png',
   },
 };
+
+test('/v1/models returns a cold snapshot before its triggered upstream fetch settles', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save(buildCustomUpstreamRecord());
+  let resolveFetch: ((response: Response) => void) | null = null;
+
+  await withMockedFetch(
+    () => new Promise<Response>(resolve => { resolveFetch = resolve; }),
+    async () => {
+      let responseSettled = false;
+      const responsePromise = requestAppCold('/v1/models', { headers: { 'x-api-key': apiKey.key } })
+        .then(response => { responseSettled = true; return response; });
+
+      await vi.waitFor(() => expect(resolveFetch).not.toBeNull());
+      await vi.waitFor(() => expect(responseSettled).toBe(true));
+      const response = await responsePromise;
+      expect(response.status).toBe(200);
+      expect((await response.json() as { data: unknown[] }).data).toEqual([]);
+
+      resolveFetch!(jsonResponse({ data: [{ id: 'eventual-model' }] }));
+      await flushAsyncWork();
+      expect((await repo.upstreams.getById('up_custom'))?.modelsCache?.models.map(model => model.id)).toEqual(['eventual-model']);
+    },
+  );
+});
 
 test('/v1/models returns merged model list from Copilot and custom upstreams', async () => {
   const { repo, apiKey } = await setupAppTest();

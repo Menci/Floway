@@ -1,7 +1,7 @@
 import { test, vi } from 'vitest';
 
 import type { InMemoryRepo } from '../../repo/memory.ts';
-import { flushAsyncWork, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { flushAsyncWork, MOCKED_FETCH_EGRESS, requestAppWithWarmModels as requestApp, setupAppTest } from '../../test-utils/app.ts';
 import type { ModelPricing } from '@floway-dev/protocols/common';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';

@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { buildCustomUpstreamRecord, copilotModels, requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { buildCustomUpstreamRecord, copilotModels, requestAppWithWarmModels as requestApp, setupAppTest } from '../../test-utils/app.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { assert, assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
