@@ -56,7 +56,7 @@ export const cloudflareSocketDial: SocketDial = {
       await socket.opened;
     } catch (cause) {
       removeAbortListener();
-      await safeClose();
+      void safeClose();
       // If the failure was caused by the caller's abort, surface as
       // AbortError (preserving the original reason if it was an Error)
       // instead of an opaque connect failure.
@@ -65,7 +65,7 @@ export const cloudflareSocketDial: SocketDial = {
     }
 
     if (opts?.signal?.aborted) {
-      await safeClose();
+      void safeClose();
       throwAbort(opts.signal);
     }
 

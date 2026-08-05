@@ -28,11 +28,13 @@ class FakeSocket {
   readonly closed = this.closedState.promise;
   closeCalls = 0;
   closeError: Error | null = null;
+  closeGate: Promise<void> | null = null;
   rejectOpenOnClose: Error | null = null;
 
   async close(): Promise<void> {
     this.closeCalls += 1;
     if (this.rejectOpenOnClose) this.openedState.reject(this.rejectOpenOnClose);
+    if (this.closeGate) await this.closeGate;
     this.closedState.resolve();
     if (this.closeError) throw this.closeError;
   }
@@ -135,6 +137,18 @@ describe('cloudflareSocketDial', () => {
     installCloudflareConnect(() => socket);
 
     await expect(cloudflareSocketDial.connect('example.com', 443, { tls: true }))
+      .rejects.toMatchObject({ message: 'dial example.com:443 failed', cause: openedError });
+    expect(socket.closeCalls).toBe(1);
+  });
+
+  it('reports a failed handshake without waiting for a stalled runtime close', async () => {
+    const socket = new FakeSocket();
+    const openedError = new Error('connection refused');
+    socket.closeGate = new Promise(() => {});
+    socket.openedState.reject(openedError);
+    installCloudflareConnect(() => socket);
+
+    await expect(cloudflareSocketDial.connect('example.com', 443))
       .rejects.toMatchObject({ message: 'dial example.com:443 failed', cause: openedError });
     expect(socket.closeCalls).toBe(1);
   });
