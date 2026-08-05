@@ -408,7 +408,7 @@ test('SQL usage overview validates scoped metric rows before dashboard filters',
     'unknown_metric', '1', null,
   ).run();
 
-  await expect(repo.usage.queryOverview({
+  await assertRejects(() => repo.usage.queryOverview({
     actorUserId: 1,
     isAdmin: true,
     start: '2026-07-12T00',
@@ -416,7 +416,7 @@ test('SQL usage overview validates scoped metric rows before dashboard filters',
     groupBy: 'model',
     filters: { keyIds: [], userIds: [], models: ['included-model'], upstreams: [] },
     bucketForHour: hour => hour,
-  })).rejects.toThrow('usage.metric is invalid: "unknown_metric"');
+  }), TypeError, 'usage.metric is invalid: "unknown_metric"');
 });
 
 test('SQL usage overview uses key-hour indexes for an actor-scoped aggregate', async () => {
