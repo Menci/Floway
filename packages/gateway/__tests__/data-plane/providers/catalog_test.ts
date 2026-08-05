@@ -1,12 +1,12 @@
-import { describe, expect, test } from 'vitest';
+import { describe, test } from 'vitest';
 
 import { compareModelIds, getModelsFromProviders } from '../../../src/data-plane/providers/catalog.ts';
 import { clearInFlightForTesting } from '../../../src/data-plane/providers/models-cache.ts';
-import { listModelProviders, type GatewayProvider } from '../../../src/data-plane/providers/registry.ts';
+import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { buildCustomUpstreamRecord, copilotModels, setupAppTest } from '../../test-utils/app.ts';
-import { directFetcher, type InternalModel, type ProviderModel } from '@floway-dev/provider';
-import { assertEquals, jsonResponse, stubProvider, withMockedFetch } from '@floway-dev/test-utils';
+import { directFetcher, isAbortError, type InternalModel, type ProviderModel } from '@floway-dev/provider';
+import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const realProviderModels = (model: InternalModel | undefined): Record<string, ProviderModel> => {
   if (model?.providerModels === undefined) throw new Error(`expected real InternalModel with providerModels, got ${JSON.stringify(model)}`);
@@ -241,7 +241,7 @@ test('disabledPublicModelIds hides models from the catalog and routing, per upst
   assertEquals(keep.candidates.map(m => m.provider.upstreamId), ['up_a']);
 });
 
-test('catalog assembly fans out per-upstream catalog fetches in parallel', async () => {
+test('catalog assembly starts every upstream fetch before waiting for any response', { timeout: 5_000 }, async () => {
   clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
@@ -260,31 +260,75 @@ test('catalog assembly fans out per-upstream catalog fetches in parallel', async
     }));
   }
 
-  let started = 0;
-  let releaseFetches!: () => void;
+  const started = new Set<string>();
+  let releaseFetches: (() => void) | undefined;
   const fetchGate = new Promise<void>(resolve => { releaseFetches = resolve; });
+  let markAllStarted: (() => void) | undefined;
+  const allStarted = new Promise<void>(resolve => { markAllStarted = resolve; });
 
   await withMockedFetch(
     async request => {
       const url = new URL(request.url);
       const match = upstreams.find(u => url.hostname === u.host);
       if (match && url.pathname === '/v1/models') {
-        started += 1;
+        started.add(match.id);
+        if (started.size === upstreams.length) markAllStarted!();
         await fetchGate;
         return jsonResponse({ object: 'list', data: [{ id: match.model, supported_endpoints: ['/chat/completions'] }] });
       }
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const providers = await listModelProviders(null);
-      const pendingCatalog = getModelsFromProviders(providers, () => directFetcher, testScheduler);
-      for (let turn = 0; turn < 20 && started < upstreams.length; turn++) await Promise.resolve();
-      const startedBeforeRelease = started;
-      releaseFetches();
-      const catalog = (await pendingCatalog).models;
+      const catalogPromise = getModelsFromProviders(await listModelProviders(null), () => directFetcher, testScheduler);
+      await allStarted;
+      assertEquals([...started].sort(), upstreams.map(upstream => upstream.id).sort());
+      releaseFetches!();
+      const catalog = (await catalogPromise).models;
 
       assertEquals([...catalog.map(m => m.id)].sort(), ['p1-model', 'p2-model', 'p3-model']);
-      assertEquals(startedBeforeRelease, upstreams.length);
+    },
+  );
+});
+
+test('catalog abort does not wait for another upstream whose fetch never settles', { timeout: 1_000 }, async () => {
+  clearInFlightForTesting();
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_hanging',
+    name: 'Hanging',
+    sortOrder: 1,
+    config: { baseUrl: 'https://hanging.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+  }));
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_aborting',
+    name: 'Aborting',
+    sortOrder: 2,
+    config: { baseUrl: 'https://aborting.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+  }));
+  const abortError = Object.assign(new Error('aborted'), { name: 'AbortError' });
+  const calls: string[] = [];
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.pathname !== '/v1/models') throw new Error(`Unhandled fetch ${request.url}`);
+      calls.push(url.hostname);
+      if (url.hostname === 'hanging.example.com') return new Promise<Response>(() => {});
+      if (url.hostname === 'aborting.example.com') throw abortError;
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      let thrown: unknown;
+      try {
+        await getModelsFromProviders(await listModelProviders(null), () => directFetcher, testScheduler);
+      } catch (error) {
+        thrown = error;
+      } finally {
+        clearInFlightForTesting();
+      }
+      assertEquals(isAbortError(thrown), true);
+      assertEquals(calls.sort(), ['aborting.example.com', 'hanging.example.com']);
     },
   );
 });
@@ -335,55 +379,6 @@ test('catalog assembly: a rejected provider does not block other providers', asy
       assertEquals([...catalog.map(m => m.id)].sort(), ['ok-1-model', 'ok-2-model']);
     },
   );
-});
-
-test('catalog assembly propagates AbortError without waiting for a pending sibling', async () => {
-  await setupAppTest();
-  clearInFlightForTesting();
-  const abortError = Object.assign(new Error('catalog request aborted'), { name: 'AbortError' });
-  let slowStarted!: () => void;
-  const started = new Promise<void>(resolve => { slowStarted = resolve; });
-  let releaseSlow!: (models: ProviderModel[]) => void;
-  const slowModels = new Promise<ProviderModel[]>(resolve => { releaseSlow = resolve; });
-  const provider = (upstreamId: string, getProvidedModels: () => Promise<ProviderModel[]>): GatewayProvider => ({
-    upstreamId,
-    kind: 'custom',
-    name: upstreamId,
-    inboundHeaderAllowlist: [],
-    disabledPublicModelIds: [],
-    modelPrefix: null,
-    modelsCache: null,
-    instance: stubProvider({ getProvidedModels }),
-    modelsCacheGeneration: { updatedAt: '2026-08-06T00:00:00.000Z', config: {} },
-    modelsFetchIdentity: upstreamId,
-  });
-  const slow = provider('up_pending', () => {
-    slowStarted();
-    return slowModels;
-  });
-  const aborting = provider('up_aborting', async () => { throw abortError; });
-
-  let observed: { status: 'rejected'; error: unknown } | null = null;
-  const result = getModelsFromProviders([slow, aborting], () => directFetcher, testScheduler)
-    .then(
-      () => ({ status: 'fulfilled' as const }),
-      error => ({ status: 'rejected' as const, error }),
-    );
-  void result.then(outcome => {
-    if (outcome.status === 'rejected') observed = outcome;
-  });
-
-  await started;
-  // Advance one event-loop turn while the sibling remains unresolved. Promise
-  // jobs, including cache error persistence, must have propagated the abort by
-  // this checkpoint without relying on a wall-clock race.
-  await new Promise(resolve => setTimeout(resolve, 0));
-  const beforeSiblingSettled = observed;
-  releaseSlow([]);
-  const final = await result;
-
-  expect(beforeSiblingSettled).toEqual({ status: 'rejected', error: abortError });
-  expect(final).toEqual({ status: 'rejected', error: abortError });
 });
 
 // End-to-end listing checks for the prefix policy. The catalog walk goes

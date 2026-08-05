@@ -58,6 +58,10 @@ export function canonicalizeResponsesPayload(value: unknown): CanonicalResponses
   if (typeof input !== 'string' && !Array.isArray(input)) {
     throw new TranslatorInputError('Responses input must be a string or an array.', { param: 'input' });
   }
+  const previousResponseId: unknown = payload.previous_response_id;
+  if (previousResponseId !== undefined && previousResponseId !== null && typeof previousResponseId !== 'string') {
+    throw new TranslatorInputError("Invalid type for 'previous_response_id': expected a string or null.", { param: 'previous_response_id' });
+  }
   return {
     ...payload,
     input: typeof input === 'string'
@@ -66,6 +70,10 @@ export function canonicalizeResponsesPayload(value: unknown): CanonicalResponses
           if (isImplicitEasyInputMessage(item)) return { ...item, type: 'message' };
           if (typeof item !== 'object' || item === null || (item as { type?: unknown }).type === undefined) {
             throw new TranslatorInputError('Untyped Responses input items require a valid role and content.', { param: `input[${index}]` });
+          }
+          const typedItem = item as Record<string, unknown>;
+          if (typedItem.type === 'item_reference' && (typeof typedItem.id !== 'string' || typedItem.id.length === 0)) {
+            throw new TranslatorInputError('Responses item_reference id must be a non-empty string.', { param: `input[${index}].id` });
           }
           return item as ResponsesInputItem;
         }),

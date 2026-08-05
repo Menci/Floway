@@ -49,6 +49,7 @@ test('buildTargetRequest merges adjacent assistant reasoning text and tool calls
         type: 'reasoning',
         id: 'rs_1',
         summary: [{ type: 'summary_text', text: 'trace' }],
+        encrypted_content: 'opaque',
       },
       {
         type: 'message',
@@ -114,6 +115,7 @@ test('buildTargetRequest merges adjacent assistant reasoning text and tool calls
       role: 'assistant',
       content: 'Hello',
       reasoning_text: 'trace',
+      reasoning_opaque: 'opaque',
       reasoning_items: [
         {
           type: 'reasoning',

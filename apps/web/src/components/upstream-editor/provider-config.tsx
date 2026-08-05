@@ -5,7 +5,7 @@ import {
   EyeRegular,
   PlugConnectedRegular,
 } from '@fluentui/react-icons';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Controller, useFormContext, useWatch } from 'react-hook-form';
 
 import { ClaudeCodeAccountCard } from './claude-code-account-card';
@@ -288,7 +288,30 @@ function CopilotConfig({ record, onPatch }: {
   // A tick that has already fired holds no timer id, so clearing the timer
   // cannot end the loop on its own; the recursion reads this after every await.
   const cancelled = useRef(false);
+  const pollRef = useRef<((deviceCode: string, interval: number, secondsLeft: number) => Promise<void>) | null>(null);
   const stop = () => { if (timer.current !== null) window.clearTimeout(timer.current); timer.current = null; };
+
+  const expire = useCallback(() => {
+    timer.current = null;
+    setBusy(false);
+    setFlow(null);
+  }, []);
+
+  const schedulePoll = useCallback((deviceCode: string, interval: number, secondsLeft: number) => {
+    if (secondsLeft <= 0) {
+      timer.current = window.setTimeout(expire, 0);
+      return;
+    }
+    if (interval > secondsLeft) {
+      timer.current = window.setTimeout(expire, secondsLeft * 1000);
+      return;
+    }
+    timer.current = window.setTimeout(() => {
+      timer.current = null;
+      if (pollRef.current === null) throw new Error('Copilot device polling callback is not attached');
+      void pollRef.current(deviceCode, interval, secondsLeft - interval);
+    }, interval * 1000);
+  }, [expire]);
 
   const poll = async (deviceCode: string, interval: number, secondsLeft: number) => {
     const result = await callApi(() => api.api.upstreams.copilot.oauth['device-login'].poll.$post({
@@ -302,33 +325,32 @@ function CopilotConfig({ record, onPatch }: {
       // https://www.rfc-editor.org/rfc/rfc8628#section-3.5
       const transient = result.error.status === 0 || result.error.status === 502;
       if (!transient || secondsLeft <= 0) { setBusy(false); setFlow(null); setError(result.error.message); return; }
-      timer.current = window.setTimeout(() => void pollRef.current(deviceCode, interval, secondsLeft - interval), interval * 1000);
+      schedulePoll(deviceCode, interval, secondsLeft);
       return;
     }
     if (result.data.status === 'complete') { setBusy(false); onPatch(result.data.patch, isPersisted(record)); return; }
+    if (secondsLeft <= 0) { expire(); return; }
     if (result.data.status === 'slow_down') {
       const next = interval + DEVICE_FLOW_SLOW_DOWN_SECONDS;
-      timer.current = window.setTimeout(() => void pollRef.current(deviceCode, next, secondsLeft - next), next * 1000);
+      schedulePoll(deviceCode, next, secondsLeft);
       return;
     }
-    timer.current = window.setTimeout(() => void pollRef.current(deviceCode, interval, secondsLeft - interval), interval * 1000);
+    schedulePoll(deviceCode, interval, secondsLeft);
   };
 
   // A flow outlives the render that armed it — its code lives a quarter of an
   // hour, and the form goes on being edited meanwhile — so every tick must
   // enter the newest closure and send the upstream as it now reads.
-  const pollRef = useRef(poll);
-  // eslint-disable-next-line react-hooks/refs -- Carrying the newest render's request body to a loop that outlives the render that armed it.
-  pollRef.current = poll;
+  useLayoutEffect(() => { pollRef.current = poll; });
 
   // Armed from `flow`, not from the click that opened one: the panel draws the
   // code, the link and the spinner from `flow` alone, so a remount must
   // re-schedule the tick rather than show a live code with nothing polling it.
   useEffect(() => {
     cancelled.current = false;
-    if (flow) timer.current = window.setTimeout(() => void pollRef.current(flow.device_code, flow.interval, flow.expires_in - flow.interval), flow.interval * 1000);
+    if (flow) schedulePoll(flow.device_code, flow.interval, flow.expires_in);
     return () => { cancelled.current = true; stop(); };
-  }, [flow]);
+  }, [flow, schedulePoll]);
 
   const start = async () => {
     stop(); setBusy(true); setError(null);
@@ -420,14 +442,21 @@ function OAuthConfig({ record, onPatch }: {
   const [error, setError] = useState<string | null>(null);
   const flowKind = tab === 'setup' ? 'setup-token' : 'oauth';
 
-  // Two authorize-url requests can be outstanding at once — a tab switch
-  // supersedes one, and the effect below re-fires on every `record` identity
-  // change. `stashPkce` writes one sessionStorage slot per (kind, flow kind),
-  // so the verifier must belong to the URL the operator actually opened: the
-  // generation is taken before the stash as well as before the URL, because a
-  // round trip separates them and an older call could otherwise stash last.
+  // A tab switch or record change supersedes the preparation already running.
+  // The generation guards the crypto work, which cannot be aborted, while the
+  // controller stops an authorize-url request that has reached the gateway.
   const generation = useRef(0);
+  const preparationController = useRef<AbortController | null>(null);
+  const cancelPreparation = () => {
+    generation.current += 1;
+    preparationController.current?.abort();
+    preparationController.current = null;
+    setBusy(false);
+  };
   const prepare = useCallback(async () => {
+    preparationController.current?.abort();
+    const controller = new AbortController();
+    preparationController.current = controller;
     const mine = ++generation.current;
     setBusy(true); setError(null);
     const pkce = await generatePkce();
@@ -435,15 +464,20 @@ function OAuthConfig({ record, onPatch }: {
     stashPkce(record.kind, flowKind, { verifier: pkce.verifier, state: pkce.state });
     const body = { record: previewRecord(record, getValues()), challenge: pkce.challenge, state: pkce.state };
     const result = record.kind === 'codex'
-      ? await callApi(() => api.api.upstreams.codex.oauth['authorize-url'].$post({ json: body }))
+      ? await callApi(() => api.api.upstreams.codex.oauth['authorize-url'].$post({ json: body }, { init: { signal: controller.signal } }))
       : tab === 'setup'
-        ? await callApi(() => api.api.upstreams['claude-code']['setup-token']['authorize-url'].$post({ json: body }))
-        : await callApi(() => api.api.upstreams['claude-code'].oauth['authorize-url'].$post({ json: body }));
+        ? await callApi(() => api.api.upstreams['claude-code']['setup-token']['authorize-url'].$post({ json: body }, { init: { signal: controller.signal } }))
+        : await callApi(() => api.api.upstreams['claude-code'].oauth['authorize-url'].$post({ json: body }, { init: { signal: controller.signal } }));
     if (generation.current !== mine) return;
+    preparationController.current = null;
     setBusy(false);
     if (result.error) { setError(result.error.message); return; }
     setAuthorizeUrl(result.data.authorize_url);
   }, [flowKind, getValues, record, tab]);
+  useEffect(() => () => {
+    generation.current += 1;
+    preparationController.current?.abort();
+  }, []);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- Opening the panel starts an authorize-url request; the pending flag is the start of that work.
   useEffect(() => { if (open && tab !== 'json' && !authorizeUrl) void prepare(); }, [authorizeUrl, open, prepare, tab]);
 
@@ -500,11 +534,11 @@ function OAuthConfig({ record, onPatch }: {
       <Button appearance="primary" disabledFocusable={refreshing} icon={refreshing ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={() => void refreshCredential()}>
         {t('dashboard.upstreamEditor.oauth.refresh')}
       </Button>
-      <Button onClick={() => setOpen(value => !value)}>{open ? t('common.cancel') : t('dashboard.upstreamEditor.oauth.reimport')}</Button>
+      <Button onClick={() => { cancelPreparation(); setOpen(value => !value); }}>{open ? t('common.cancel') : t('dashboard.upstreamEditor.oauth.reimport')}</Button>
     </div>}
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
     {open && <>
-      <TabList aria-label={t('dashboard.upstreamEditor.oauth.importMethod')} selectedValue={tab} onTabSelect={(_, data) => { setTab(String(data.value)); setAuthorizeUrl(null); }}>
+      <TabList aria-label={t('dashboard.upstreamEditor.oauth.importMethod')} selectedValue={tab} onTabSelect={(_, data) => { cancelPreparation(); setTab(String(data.value)); setAuthorizeUrl(null); }}>
         {record.kind === 'codex' ? <><Tab value="json">auth.json</Tab><Tab value="oauth">OAuth</Tab></> : <><Tab value="oauth">OAuth</Tab><Tab value="setup">Setup Token</Tab><Tab value="json">credentials.json</Tab></>}
       </TabList>
       {tab === 'json' ? <Field label={t('dashboard.upstreamEditor.oauth.credentialJson')}><Textarea className="font-mono" rows={8} value={json} onChange={(_, data) => setJson(data.value)} /></Field> : <div className="grid gap-3">

@@ -79,6 +79,18 @@ const memoInFlight = (
 
 const errorMessage = (err: unknown): string => err instanceof Error ? err.message : String(err);
 
+const assertUniqueModelIds = (instance: GatewayProvider, models: ProviderModel[]): ProviderModel[] => {
+  const seen = new Set<string>();
+  for (const model of models) {
+    if (!model.id) continue;
+    if (seen.has(model.id)) {
+      throw new Error(`Upstream '${instance.upstreamId}' returned duplicate model id '${model.id}'`);
+    }
+    seen.add(model.id);
+  }
+  return models;
+};
+
 const runFetch = async (
   instance: GatewayProvider,
   fetcher: Fetcher,
@@ -87,7 +99,7 @@ const runFetch = async (
 ): Promise<ModelsFetchResult> => {
   const generation = instance.modelsCacheGeneration;
   try {
-    const models = [...await (loadProvidedModels?.() ?? instance.instance.getProvidedModels(fetcher))];
+    const models = assertUniqueModelIds(instance, [...await (loadProvidedModels?.() ?? instance.instance.getProvidedModels(fetcher))]);
     const entry = { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now(), models, lastError: null };
     const persisted = await getRepo().upstreams.saveModelsCache(key, generation, entry);
     return { models, persistedCache: persisted ? entry : null };
@@ -119,7 +131,7 @@ export const fetchUpstreamModelsCached = async (
   const cached = instance.modelsCache?.revision === MODEL_CATALOG_REVISION ? instance.modelsCache : null;
 
   if (cached && now - cached.fetchedAt < SOFT_MS) {
-    return cached.models;
+    return assertUniqueModelIds(instance, cached.models);
   }
 
   if (cached && now - cached.fetchedAt < HARD_MS) {
@@ -132,7 +144,7 @@ export const fetchUpstreamModelsCached = async (
       scheduler(inFlightFetch.promise.catch(() => {}));
       inFlightFetch.backgroundScheduled = true;
     }
-    return cached.models;
+    return assertUniqueModelIds(instance, cached.models);
   }
 
   return await memoInFlight(inFlightKey, instance, () => runFetch(instance, fetcher, key)).promise;

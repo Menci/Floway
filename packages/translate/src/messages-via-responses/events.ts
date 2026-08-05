@@ -1,5 +1,6 @@
 import { packReasoningSignature } from '../shared/messages-and-responses/reasoning.ts';
 import { isContextExceededError } from '../shared/messages-via/context-window-error.ts';
+import { authoritativeStreamSuffix } from '../shared/via-responses/authoritative-stream-value.ts';
 import { createResponsesOutputOrderState, recordResponsesOutputOrderEvent, type ResponsesOutputOrderState, shouldDeferForEarlierResponsesOutput } from '../shared/via-responses/responses-stream-order.ts';
 import { responsesPartKey } from '../shared/via-responses/responses-stream.ts';
 import { eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -58,9 +59,9 @@ const upstreamResponsesEventsUntilTerminal = async function* (frames: AsyncItera
   throw new Error(UPSTREAM_RESPONSES_MISSING_TERMINAL_MESSAGE);
 };
 
-const hasResponsePartForOutput = (keys: Set<string>, outputIndex: number): boolean => {
+const hasResponsePartForOutput = (values: ReadonlyMap<string, string>, outputIndex: number): boolean => {
   const prefix = `${outputIndex}:`;
-  for (const key of keys) {
+  for (const key of values.keys()) {
     if (key.startsWith(prefix)) return true;
   }
   return false;
@@ -71,11 +72,11 @@ interface ResponsesToMessagesStreamState {
   nextBlockIndex: number;
   blockIndexByKey: Map<string, number>;
   openBlocks: Set<number>;
-  emittedReasoningSummaryKeys: Set<string>;
+  reasoningSummaryTexts: Map<string, string>;
   emittedReasoningSignatureOutputIndexes: Set<number>;
-  emittedTextContentKeys: Set<string>;
+  contentTexts: Map<string, string>;
   refusalTexts: Map<number, Map<number, string>>;
-  emittedFunctionArgumentOutputIndexes: Set<number>;
+  functionArguments: Map<number, string>;
   outputOrder: ResponsesOutputOrderState;
   functionCallState: Map<
     number,
@@ -160,6 +161,7 @@ const handleOutputItemAdded = (event: Extract<ResponsesStreamEvent, { type: 'res
     toolCallId,
     name,
   });
+  state.functionArguments.set(event.output_index, event.item.arguments);
 
   const events: MessagesStreamEvent[] = [];
   closeOpenBlocks(state, events);
@@ -176,16 +178,21 @@ const handleOutputItemAdded = (event: Extract<ResponsesStreamEvent, { type: 'res
       index: blockIndex,
       delta: { type: 'input_json_delta', partial_json: event.item.arguments },
     });
-    state.emittedFunctionArgumentOutputIndexes.add(event.output_index);
   }
 
   return events;
 };
 
 const handleOutputItemDone = (event: Extract<ResponsesStreamEvent, { type: 'response.output_item.done' }>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
+  if (event.item.type === 'function_call') {
+    const events = handleFunctionArgumentsComplete(event.output_index, event.item.arguments, state);
+    state.functionCallState.delete(event.output_index);
+    state.functionArguments.delete(event.output_index);
+    return events;
+  }
   if (event.item.type !== 'reasoning') return [];
 
-  const hasEmittedSummary = hasResponsePartForOutput(state.emittedReasoningSummaryKeys, event.output_index);
+  const hasEmittedSummary = hasResponsePartForOutput(state.reasoningSummaryTexts, event.output_index);
   const trimmedSummary = event.item.summary
     .map(part => part.text)
     .join('')
@@ -208,14 +215,15 @@ const handleOutputItemDone = (event: Extract<ResponsesStreamEvent, { type: 'resp
 
   for (const [summaryIndex, part] of event.item.summary.entries()) {
     const key = responsesPartKey(event.output_index, summaryIndex);
-    if (!part.text || state.emittedReasoningSummaryKeys.has(key)) continue;
+    const suffix = authoritativeStreamSuffix(state.reasoningSummaryTexts.get(key) ?? '', part.text, `Responses reasoning summary ${key}`);
+    if (part.text) state.reasoningSummaryTexts.set(key, part.text);
+    if (!suffix) continue;
 
     events.push({
       type: 'content_block_delta',
       index: blockIndex,
-      delta: { type: 'thinking_delta', thinking: part.text },
+      delta: { type: 'thinking_delta', thinking: suffix },
     });
-    state.emittedReasoningSummaryKeys.add(key);
   }
 
   // The signature carrier packs the reasoning id together with the opaque
@@ -238,12 +246,13 @@ const handleOutputItemDone = (event: Extract<ResponsesStreamEvent, { type: 'resp
 const handleThinkingDelta = (event: Extract<ResponsesStreamEvent, { type: 'response.reasoning_summary_text.delta' }>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
   const events: MessagesStreamEvent[] = [];
   const blockIndex = openThinkingBlock(state, event.output_index, events);
+  const key = responsesPartKey(event.output_index, event.summary_index);
+  state.reasoningSummaryTexts.set(key, (state.reasoningSummaryTexts.get(key) ?? '') + event.delta);
   events.push({
     type: 'content_block_delta',
     index: blockIndex,
     delta: { type: 'thinking_delta', thinking: event.delta },
   });
-  state.emittedReasoningSummaryKeys.add(responsesPartKey(event.output_index, event.summary_index));
   return events;
 };
 
@@ -251,14 +260,15 @@ const handleThinkingDone = (event: Extract<ResponsesStreamEvent, { type: 'respon
   const events: MessagesStreamEvent[] = [];
   const blockIndex = openThinkingBlock(state, event.output_index, events);
   const key = responsesPartKey(event.output_index, event.summary_index);
+  const suffix = authoritativeStreamSuffix(state.reasoningSummaryTexts.get(key) ?? '', event.text, `Responses reasoning summary ${key}`);
+  if (event.text) state.reasoningSummaryTexts.set(key, event.text);
 
-  if (event.text && !state.emittedReasoningSummaryKeys.has(key)) {
+  if (suffix) {
     events.push({
       type: 'content_block_delta',
       index: blockIndex,
-      delta: { type: 'thinking_delta', thinking: event.text },
+      delta: { type: 'thinking_delta', thinking: suffix },
     });
-    state.emittedReasoningSummaryKeys.add(key);
   }
 
   return events;
@@ -269,12 +279,13 @@ const handleTextDelta = (event: Extract<ResponsesStreamEvent, { type: 'response.
 
   const events: MessagesStreamEvent[] = [];
   const blockIndex = openTextBlock(state, event.output_index, event.content_index, events);
+  const key = responsesPartKey(event.output_index, event.content_index);
+  state.contentTexts.set(key, (state.contentTexts.get(key) ?? '') + event.delta);
   events.push({
     type: 'content_block_delta',
     index: blockIndex,
     delta: { type: 'text_delta', text: event.delta },
   });
-  state.emittedTextContentKeys.add(responsesPartKey(event.output_index, event.content_index));
   return events;
 };
 
@@ -283,13 +294,14 @@ const handleTextDone = (event: Extract<ResponsesStreamEvent, { type: 'response.o
   const blockIndex = openTextBlock(state, event.output_index, event.content_index, events);
 
   const key = responsesPartKey(event.output_index, event.content_index);
-  if (event.text && !state.emittedTextContentKeys.has(key)) {
+  const suffix = authoritativeStreamSuffix(state.contentTexts.get(key) ?? '', event.text, `Responses output text ${key}`);
+  if (event.text) state.contentTexts.set(key, event.text);
+  if (suffix) {
     events.push({
       type: 'content_block_delta',
       index: blockIndex,
-      delta: { type: 'text_delta', text: event.text },
+      delta: { type: 'text_delta', text: suffix },
     });
-    state.emittedTextContentKeys.add(key);
   }
 
   return events;
@@ -299,12 +311,15 @@ const handleContentPartDone = (event: Extract<ResponsesStreamEvent, { type: 'res
   if (event.part.type !== 'refusal') return [];
 
   const key = responsesPartKey(event.output_index, event.content_index);
-  if (!event.part.refusal || state.emittedTextContentKeys.has(key)) return [];
+  const streamed = state.contentTexts.get(key) ?? '';
+  authoritativeStreamSuffix(streamed, event.part.refusal, `Responses refusal ${key}`);
+  const complete = event.part.refusal.length > 0 ? event.part.refusal : streamed;
+  if (!complete) return [];
 
   const parts = state.refusalTexts.get(event.output_index) ?? new Map<number, string>();
-  parts.set(event.content_index, event.part.refusal);
+  parts.set(event.content_index, complete);
   state.refusalTexts.set(event.output_index, parts);
-  state.emittedTextContentKeys.add(key);
+  state.contentTexts.set(key, complete);
   return [];
 };
 
@@ -312,15 +327,20 @@ const handleRefusalDelta = (event: Extract<ResponsesStreamEvent, { type: 'respon
   const parts = state.refusalTexts.get(event.output_index) ?? new Map<number, string>();
   parts.set(event.content_index, (parts.get(event.content_index) ?? '') + event.delta);
   state.refusalTexts.set(event.output_index, parts);
-  state.emittedTextContentKeys.add(responsesPartKey(event.output_index, event.content_index));
+  const key = responsesPartKey(event.output_index, event.content_index);
+  state.contentTexts.set(key, (state.contentTexts.get(key) ?? '') + event.delta);
   return [];
 };
 
 const handleRefusalDone = (event: Extract<ResponsesStreamEvent, { type: 'response.refusal.done' }>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
+  const key = responsesPartKey(event.output_index, event.content_index);
+  const streamed = state.contentTexts.get(key) ?? '';
+  authoritativeStreamSuffix(streamed, event.refusal, `Responses refusal ${key}`);
+  const complete = event.refusal.length > 0 ? event.refusal : streamed;
   const parts = state.refusalTexts.get(event.output_index) ?? new Map<number, string>();
-  parts.set(event.content_index, event.refusal);
+  parts.set(event.content_index, complete);
   state.refusalTexts.set(event.output_index, parts);
-  state.emittedTextContentKeys.add(responsesPartKey(event.output_index, event.content_index));
+  state.contentTexts.set(key, complete);
   return [];
 };
 
@@ -330,7 +350,7 @@ const handleFunctionArgumentsDelta = (event: Extract<ResponsesStreamEvent, { typ
   const functionCallState = state.functionCallState.get(event.output_index);
   if (!functionCallState) return [];
 
-  state.emittedFunctionArgumentOutputIndexes.add(event.output_index);
+  state.functionArguments.set(event.output_index, (state.functionArguments.get(event.output_index) ?? '') + event.delta);
 
   return [
     {
@@ -341,26 +361,25 @@ const handleFunctionArgumentsDelta = (event: Extract<ResponsesStreamEvent, { typ
   ];
 };
 
-const handleFunctionArgumentsDone = (event: Extract<ResponsesStreamEvent, { type: 'response.function_call_arguments.done' }>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
-  const functionCallState = state.functionCallState.get(event.output_index);
+const handleFunctionArgumentsComplete = (outputIndex: number, complete: string, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
+  const functionCallState = state.functionCallState.get(outputIndex);
   if (!functionCallState) return [];
 
-  state.functionCallState.delete(event.output_index);
-
-  if (!event.arguments || state.emittedFunctionArgumentOutputIndexes.has(event.output_index)) {
-    return [];
-  }
-
-  state.emittedFunctionArgumentOutputIndexes.add(event.output_index);
+  const suffix = authoritativeStreamSuffix(state.functionArguments.get(outputIndex) ?? '', complete, `Responses function arguments for output ${outputIndex}`);
+  if (complete) state.functionArguments.set(outputIndex, complete);
+  if (!suffix) return [];
 
   return [
     {
       type: 'content_block_delta',
       index: functionCallState.blockIndex,
-      delta: { type: 'input_json_delta', partial_json: event.arguments },
+      delta: { type: 'input_json_delta', partial_json: suffix },
     },
   ];
 };
+
+const handleFunctionArgumentsDone = (event: Extract<ResponsesStreamEvent, { type: 'response.function_call_arguments.done' }>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] =>
+  handleFunctionArgumentsComplete(event.output_index, event.arguments, state);
 
 const handleCompleted = (response: ResponsesResult, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
   const events: MessagesStreamEvent[] = [];
@@ -459,11 +478,11 @@ export const createResponsesToMessagesStreamState = (): ResponsesToMessagesStrea
   nextBlockIndex: 0,
   blockIndexByKey: new Map(),
   openBlocks: new Set(),
-  emittedReasoningSummaryKeys: new Set(),
+  reasoningSummaryTexts: new Map(),
   emittedReasoningSignatureOutputIndexes: new Set(),
-  emittedTextContentKeys: new Set(),
+  contentTexts: new Map(),
   refusalTexts: new Map(),
-  emittedFunctionArgumentOutputIndexes: new Set(),
+  functionArguments: new Map(),
   outputOrder: createResponsesOutputOrderState(),
   functionCallState: new Map(),
 });

@@ -1,7 +1,7 @@
 import { hasReadableSummary, toResponsesReasoningItem } from '../shared/chat-completions-and-responses/reasoning.ts';
 import { unwrapCustomToolInput } from '../shared/responses-via/custom-tool-wrap.ts';
 import * as responses from '../shared/responses-via/responses-event-builder.ts';
-import type { ChatCompletionsStreamEvent, ChatCompletionsResult } from '@floway-dev/protocols/chat-completions';
+import { chatCompletionsErrorPayloadMessage, type ChatCompletionsStreamEvent, type ChatCompletionsResult } from '@floway-dev/protocols/chat-completions';
 import { eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { createRandomResponsesItemId, type ResponsesOutputItem, type ResponsesOutputReasoning, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
@@ -53,6 +53,7 @@ const upstreamChatCompletionEventsUntilDone = async function* (frames: AsyncIter
 
 interface PendingScalarReasoningItem {
   text: string;
+  encryptedContent?: string;
 }
 
 interface PendingTextItem {
@@ -177,7 +178,7 @@ const commitPendingScalarReasoning = (state: ChatCompletionsToResponsesStreamSta
   const reasoning = state.pendingScalarReasoning;
   state.pendingScalarReasoning = undefined;
   const outputIndex = state.outputIndex++;
-  const item = responses.reasoningItem(createRandomResponsesItemId('reasoning'), reasoning.text);
+  const item = responses.reasoningItem(createRandomResponsesItemId('reasoning'), reasoning.text, reasoning.encryptedContent);
 
   return emitCompletedReasoningItem(item, outputIndex, state);
 };
@@ -395,6 +396,11 @@ const finalize = (state: ChatCompletionsToResponsesStreamState): ResponsesStream
 };
 
 export const translateChatCompletionsChunkToResponsesEvents = (chunk: ChatCompletionsStreamEvent, state: ChatCompletionsToResponsesStreamState): ResponsesStreamEvent[] => {
+  const upstreamError = chatCompletionsErrorPayloadMessage(chunk);
+  if (upstreamError) {
+    throw new Error(`Upstream Chat Completions stream error: ${upstreamError}`, { cause: chunk });
+  }
+
   const events = ensureResponseCreated(chunk, state);
 
   if (chunk.choices.length === 0) {
@@ -440,6 +446,10 @@ export const translateChatCompletionsChunkToResponsesEvents = (chunk: ChatComple
           reasoning.text += choice.delta.reasoning_text;
         }
       }
+    }
+
+    if (choice.delta.reasoning_opaque !== undefined && choice.delta.reasoning_opaque !== null && !state.reasoningItemsSeen) {
+      openScalarReasoning(state).encryptedContent = choice.delta.reasoning_opaque;
     }
 
     if (choice.delta.content) {

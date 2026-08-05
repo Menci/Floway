@@ -102,7 +102,13 @@ export const userspaceTls = async (
   }
 
   const writer = transport.writable.getWriter();
-  const reader = transport.readable.getReader();
+  let reader: ReadableStreamDefaultReader<Uint8Array>;
+  try {
+    reader = transport.readable.getReader();
+  } catch (error) {
+    writer.releaseLock();
+    throw error;
+  }
 
   // Detach the abort listener on every teardown path so a long-lived caller
   // signal (e.g. a request controller shared across many dials) doesn't
@@ -128,6 +134,33 @@ export const userspaceTls = async (
   let plainController!: ReadableStreamDefaultController<Uint8Array>;
   let plainClosed = false;
   let handshakeOk = false;
+  const pendingPlaintext: Uint8Array<ArrayBuffer>[] = [];
+  let cleanClosePending = false;
+  let resumeDemand: (() => void) | null = null;
+
+  let transportWrites = Promise.resolve();
+  const queueTransportWrite = (bytes: Uint8Array): void => {
+    transportWrites = transportWrites.then(async () => await writer.write(bytes));
+    transportWrites.catch(error => {
+      if (!handshakeOk) handshakeReject(error);
+      else void closePlain(error);
+    });
+  };
+
+  let writerSettlement: Promise<void> | null = null;
+  const settleWriter = (error?: unknown): Promise<void> => {
+    writerSettlement ??= (async () => {
+      try {
+        if (error !== undefined) await writer.abort(error);
+        else await writer.close();
+      } catch (cause) {
+        logTlsTeardownError(cause);
+      } finally {
+        try { writer.releaseLock(); } catch { /* lock already released */ }
+      }
+    })();
+    return writerSettlement;
+  };
 
   // Resolve when the handshake succeeds; reject on TLS-end or error before then.
   let handshakeResolve!: () => void;
@@ -143,40 +176,48 @@ export const userspaceTls = async (
   // a passive observer.
   handshakeDone.catch(() => { /* main handler is the await below */ });
 
-  const closePlain = (error?: unknown): void => {
-    if (plainClosed) return;
-    plainClosed = true;
-    cleanupSignal();
-    if (error) {
-      try { plainController.error(error); } catch { /* already closed/errored */ }
-    } else {
-      try { plainController.close(); } catch { /* already closed/errored */ }
-    }
-    // On error, abort the underlying writer so the transport tears down
-    // hard; on a clean teardown, emit a polite FIN. A bare `writer.close()`
-    // on the error path would graceful-end a half whose readable just
-    // errored, leaving an in-flight write awaiting a peer that's already
-    // gone.
-    if (error) void writer.abort(error).catch(logTlsTeardownError);
-    else void writer.close().catch(logTlsTeardownError);
-  };
-  const safeEnqueue = (chunk: Uint8Array<ArrayBuffer>): void => {
-    // Once `plainClosed` is set, the controller has been closed/errored by
-    // a teardown path and the next reclaim-driven onApplicationData would
-    // throw ERR_INVALID_STATE. The teardown reason is the source of truth
-    // for the consumer; silently dropping post-close bytes here is correct.
-    // BEFORE plainClosed, an enqueue throw is a real invariant violation —
-    // route it through closePlain so the consumer's reader unsticks with
-    // the actual error rather than hanging forever.
-    if (plainClosed) return;
+  let plainSettlement: Promise<void> | null = null;
+  const drainPlaintext = (): void => {
     try {
-      plainController.enqueue(chunk);
-    } catch (err) {
-      closePlain(err);
+      while (pendingPlaintext.length > 0 && (plainController.desiredSize ?? 0) > 0) {
+        plainController.enqueue(pendingPlaintext.shift()!);
+      }
+      if (cleanClosePending && pendingPlaintext.length === 0) {
+        cleanClosePending = false;
+        plainController.close();
+      }
+    } catch (error) {
+      void closePlain(error);
     }
   };
 
-  let pendingPrefix: Uint8Array | null = opts.prefix ?? null;
+  const closePlain = async (error?: unknown): Promise<void> => {
+    if (plainSettlement) return await plainSettlement;
+    plainClosed = true;
+    cleanupSignal();
+    resumeDemand?.();
+    resumeDemand = null;
+    plainSettlement = (async () => {
+      if (error !== undefined) {
+        pendingPlaintext.length = 0;
+        try { plainController.error(error); } catch { /* already closed/errored */ }
+      } else {
+        cleanClosePending = true;
+        drainPlaintext();
+      }
+      // On error, abort the underlying writer so the transport tears down
+      // hard; on a clean teardown, emit a polite FIN.
+      await settleWriter(error);
+    })();
+    await plainSettlement;
+  };
+
+  const waitForPlainDemand = async (): Promise<void> => {
+    if (!handshakeOk || plainClosed || (plainController.desiredSize ?? 0) > 0) return;
+    await new Promise<void>(resolve => { resumeDemand = resolve; });
+  };
+
+  let pendingPrefix: Uint8Array | null = opts.prefix ? copy(opts.prefix) : null;
 
   // `@reclaimprotocol/tls`'s exported TLSClientOptions typing is missing
   // two things this call site uses: `verifyHost` (added by our pnpm patch)
@@ -207,10 +248,7 @@ export const userspaceTls = async (
       }
       out.set(header, off); off += header.byteLength;
       out.set(content, off);
-      writer.write(out).catch(e => {
-        if (!handshakeOk) handshakeReject(e);
-        else closePlain(e);
-      });
+      queueTransportWrite(out);
     },
     onHandshake() {
       handshakeOk = true;
@@ -218,14 +256,15 @@ export const userspaceTls = async (
     },
     onApplicationData(plaintext) {
       if (plainClosed) return;
-      safeEnqueue(copy(plaintext));
+      pendingPlaintext.push(copy(plaintext));
+      drainPlaintext();
     },
     onTlsEnd(error) {
       if (!handshakeOk) {
         handshakeReject(error ?? new Error('TLS ended before handshake'));
         return;
       }
-      closePlain(error);
+      void closePlain(error);
     },
   };
   const tlsClient = makeTLSClient(tlsOptions as Parameters<typeof makeTLSClient>[0]);
@@ -235,19 +274,27 @@ export const userspaceTls = async (
   // so by then tlsClient is fully initialized.
   const plainReadable = new ReadableStream<Uint8Array>({
     start(c) { plainController = c; },
+    pull() {
+      drainPlaintext();
+      resumeDemand?.();
+      resumeDemand = null;
+    },
     // Consumer-initiated cancel (response body fully read or aborted) tears
     // down our side of the duplex — flag so subsequent TLS-end callbacks
     // skip their controller calls, and signal end-of-stream upward. Mirror
     // closePlain's split: an Error reason means the consumer hit a failure,
     // so we abort the underlying writer rather than emit a polite FIN that
     // would block on a peer already gone; a clean cancel still closes.
-    cancel(reason) {
+    async cancel(reason) {
       plainClosed = true;
+      pendingPlaintext.length = 0;
       cleanupSignal();
+      resumeDemand?.();
+      resumeDemand = null;
       void tlsClient.end().catch(logTlsTeardownError);
-      void reader.cancel(reason).catch(() => {});
-      if (reason instanceof Error) void writer.abort(reason).catch(logTlsTeardownError);
-      else void writer.close().catch(logTlsTeardownError);
+      await reader.cancel(reason).catch(() => {});
+      try { reader.releaseLock(); } catch { /* lock already released */ }
+      await settleWriter(reason instanceof Error ? reason : undefined);
     },
   });
 
@@ -257,6 +304,7 @@ export const userspaceTls = async (
   const plainWritable = new WritableStream<Uint8Array>({
     async write(chunk) {
       await tlsClient.write(chunk);
+      await transportWrites;
     },
     async close() {
       // Both promises must be awaited — a bare `void promise` discards
@@ -265,11 +313,13 @@ export const userspaceTls = async (
       // a debug log so genuine bugs aren't silenced, but never let one
       // mask the close itself (peer already gone is normal here).
       try { await tlsClient.end(); } catch (e) { logTlsTeardownError(e); }
-      try { await writer.close(); } catch (e) { logTlsTeardownError(e); }
+      await transportWrites;
+      await settleWriter();
     },
     async abort(reason) {
       try { await tlsClient.end(); } catch (e) { logTlsTeardownError(e); }
-      try { await writer.abort(reason); } catch (e) { logTlsTeardownError(e); }
+      await transportWrites.catch(() => {});
+      await settleWriter(reason);
     },
   });
 
@@ -286,14 +336,15 @@ export const userspaceTls = async (
           // a raw transport EOF without an alert wouldn't trigger it.
           // Drive closePlain ourselves so the consumer's reader unsticks
           // when the transport simply hangs up.
-          closePlain();
+          await closePlain();
           return;
         }
         await tlsClient.handleReceivedBytes(value);
+        await waitForPlainDemand();
       }
     } catch (e) {
       if (!handshakeOk) handshakeReject(e);
-      else closePlain(e);
+      else await closePlain(e);
     } finally {
       try { reader.releaseLock(); } catch { /* lock already released */ }
     }
@@ -304,7 +355,7 @@ export const userspaceTls = async (
     const onAbort = (): void => {
       const reason = signalAbortReason(captured);
       if (!handshakeOk) handshakeReject(reason);
-      else closePlain(reason);
+      else void closePlain(reason);
       void reader.cancel(reason).catch(() => {});
     };
     captured.addEventListener('abort', onAbort, { once: true });
@@ -318,14 +369,16 @@ export const userspaceTls = async (
 
   try {
     await tlsClient.startHandshake();
+    await transportWrites;
     await handshakeDone;
   } catch (err) {
     cleanupSignal();
     // Handshake never completed: the reader still holds the transport.readable
     // lock and the writer holds transport.writable. Cancel both so the caller
     // can close the underlying socket cleanly without an orphaned stream lock.
-    void reader.cancel(err).catch(() => {});
-    try { writer.releaseLock(); } catch { /* lock already released */ }
+    await reader.cancel(err).catch(() => {});
+    try { reader.releaseLock(); } catch { /* lock already released */ }
+    await settleWriter(err);
     throw err;
   }
 

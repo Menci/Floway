@@ -12,9 +12,9 @@
 // a second registry round trip.
 
 import { compareModelIds, getModelsFromProviders, internalModelFromProviderModel, mergeRealModels } from '../../providers/catalog.ts';
-import { settleCatalogTasks } from '../../providers/catalog-settlement.ts';
 import { fetchUpstreamModelsCached } from '../../providers/models-cache.ts';
 import { listModelProviders } from '../../providers/registry.ts';
+import { settleUnlessAborted } from '../../providers/settle.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { Fetcher, InternalModel, Provider, UpstreamRecord } from '@floway-dev/provider';
 
@@ -113,7 +113,7 @@ export const enumerateAddressableModelIds = async (
   // only contribution from THAT upstream — its listed rows already came
   // (or were dropped) through `getModelsFromProviders`. Ordinary failures
   // remain isolated while caller cancellation rejects the whole fanout.
-  const perUpstream = await settleCatalogTasks(providers.map(provider => async () => {
+  const perUpstream = await settleUnlessAborted(providers.map(async provider => {
     const cfg = provider.modelPrefix;
     const addressableOnly = cfg !== null ? cfg.addressable.filter(form => !cfg.listed.includes(form)) : [];
     if (cfg === null || addressableOnly.length === 0) return [] as AddressableIdEntry[];

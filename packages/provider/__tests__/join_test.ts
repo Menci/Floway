@@ -34,10 +34,22 @@ test('validateUpstreamPath rejects double slashes', () => {
 });
 
 test('validateUpstreamPath rejects relative segments', () => {
-  for (const bad of ['/api/./chat', '/api/../chat']) {
+  for (const bad of [
+    '/api/./chat',
+    '/api/../chat',
+    '/api/.',
+    '/api/..',
+    '/%2e%2e/admin',
+    '/.%2E/admin',
+    '/api\\..\\admin',
+  ]) {
     const result = validateUpstreamPath(bad, 'chat');
     assertFalse(result.ok, `expected ${bad} to be rejected`);
   }
+});
+
+test('validateUpstreamPath rejects fragments that would not reach the upstream', () => {
+  assertFalse(validateUpstreamPath('/v1/messages#ignored', 'messages').ok);
 });
 
 test('joinBaseAndPath strips trailing base slashes', () => {

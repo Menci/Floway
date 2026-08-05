@@ -24,12 +24,12 @@ export const mergeKnownModels = (
   response: CopilotModelsResponse,
   now: number,
 ): CopilotKnownModels => {
-  const models: Record<string, CopilotKnownModelEntry> = { ...prev.models };
+  const models = new Map(Object.entries(prev.models));
   for (const raw of response.data) {
-    models[raw.id] = { snapshot: raw, lastSeenAt: now };
+    models.set(raw.id, { snapshot: raw, lastSeenAt: now });
   }
-  for (const [id, entry] of Object.entries(models)) {
-    if (now - entry.lastSeenAt >= KNOWN_MODEL_TTL_MS) delete models[id];
+  for (const [id, entry] of models) {
+    if (now - entry.lastSeenAt >= KNOWN_MODEL_TTL_MS) models.delete(id);
   }
-  return { fetchedAt: now, models };
+  return { fetchedAt: now, models: Object.fromEntries(models) };
 };

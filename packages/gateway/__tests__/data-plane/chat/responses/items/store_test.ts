@@ -305,6 +305,66 @@ describe('StatefulResponsesStore', () => {
     expect(await repo.responsesItems.lookupMany('key-a', snapshot.itemIds, 0)).toHaveLength(snapshot.itemIds.length);
   });
 
+  test('exact repeated full input items share one row while preserving both snapshot positions', async () => {
+    const repo = installRepo();
+    const store = createResponsesHttpStore(testResponsesStatePolicy(), Date.now(), true);
+    const item = { type: 'message' as const, id: 'msg_repeated', role: 'user' as const, content: 'same' };
+    const repeated = structuredClone(item);
+
+    await store.loadInputItems([item, repeated], [item, repeated]);
+    await store.stageInputItems([item, repeated]);
+    await store.commitSnapshot('resp_repeated', 'append', []);
+
+    expect((await repo.responsesSnapshots.lookup('key-a', 'resp_repeated', 0))?.itemIds).toEqual([item.id, item.id]);
+    expect(await repo.responsesItems.lookupMany('key-a', [item.id], 0)).toMatchObject([{
+      id: item.id,
+      payload: { item },
+    }]);
+  });
+
+  test('WebSocket input loading rejects conflicting local and durable rows under one scoped id', async () => {
+    const repo = installRepo();
+    const session = createResponsesWsSession();
+    const id = 'msg_cross_backing_collision';
+    const localItem = { type: 'message' as const, id, role: 'assistant' as const, content: [] };
+    const durableItem = { ...localItem, content: [{ type: 'output_text' as const, text: 'different', annotations: [] }] };
+    const local = session.createStore(testResponsesStatePolicy(), Date.now(), false);
+    await local.persistOutputItem({
+      id,
+      apiKeyId: 'key-a',
+      payload: { item: localItem },
+      itemHash: await hashResponsesItem(localItem),
+      refreshedAt: Date.now(),
+    });
+    const durableRow = {
+      id,
+      apiKeyId: 'key-a',
+      payload: { item: durableItem },
+      itemHash: await hashResponsesItem(durableItem),
+      refreshedAt: Date.now(),
+    };
+    await repo.responsesItems.insertMany([durableRow], 0);
+
+    const reader = session.createStore(testResponsesStatePolicy(), Date.now(), true);
+    await expect(reader.loadInputItems([{ type: 'item_reference', id }], []))
+      .rejects.toThrow(`Responses item id collision: ${id}`);
+    expect(await repo.responsesItems.lookupMany('key-a', [id], 0)).toMatchObject([{ payload: durableRow.payload }]);
+  });
+
+  test('idless input reuses its content digest across lookup and staging', async () => {
+    installRepo();
+    const digest = vi.spyOn(crypto.subtle, 'digest');
+    const store = createResponsesHttpStore(testResponsesStatePolicy(), Date.now(), true);
+    const item = { type: 'message' as const, role: 'user' as const, content: 'hash once' };
+    try {
+      await store.loadInputItems([item], [item]);
+      await store.stageInputItems([item]);
+      expect(digest).toHaveBeenCalledTimes(1);
+    } finally {
+      digest.mockRestore();
+    }
+  });
+
   test('per-attempt private payloads reset on each beginAttempt', () => {
     const store = createResponsesHttpStore(testResponsesStatePolicy(), Date.now(), true);
     store.beginAttempt(new Map([['item', { first: true }]]));

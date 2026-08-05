@@ -43,6 +43,96 @@ interface ResponseSnapshot {
   readonly streamError: string | null;
 }
 
+interface DumpCaptureLimits {
+  readonly responseBodyBytes: number;
+  readonly streamEventBytes: number;
+  readonly streamEvents: number;
+}
+
+// A dump is diagnostic data, so one request must not be able to retain an
+// unbounded response beside the live delivery path. The full delivered byte
+// count remains in metadata; bodies and canonical frames retain a useful
+// prefix and surface an explicit capture failure when either ceiling is hit.
+const DEFAULT_CAPTURE_LIMITS: DumpCaptureLimits = {
+  responseBodyBytes: 8 * 1024 * 1024,
+  streamEventBytes: 8 * 1024 * 1024,
+  streamEvents: 10_000,
+};
+
+const utf8ByteLength = (value: string): number => {
+  let bytes = 0;
+  for (let index = 0; index < value.length; index++) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit <= 0x7F) {
+      bytes += 1;
+    } else if (codeUnit <= 0x7FF) {
+      bytes += 2;
+    } else if (codeUnit >= 0xD800 && codeUnit <= 0xDBFF) {
+      const next = value.charCodeAt(index + 1);
+      if (next >= 0xDC00 && next <= 0xDFFF) {
+        bytes += 4;
+        index += 1;
+      } else {
+        bytes += 3;
+      }
+    } else {
+      bytes += 3;
+    }
+  }
+  return bytes;
+};
+
+const assertCaptureLimit = (name: keyof DumpCaptureLimits, value: number): void => {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new RangeError(`Dump capture limit ${name} must be a non-negative safe integer`);
+  }
+};
+
+class BoundedByteCapture {
+  private buffer = new Uint8Array();
+  private length = 0;
+  private truncated = false;
+
+  constructor(private readonly limit: number) {}
+
+  append(chunk: Uint8Array): void {
+    if (chunk.byteLength === 0 || this.truncated) return;
+    const accepted = Math.min(chunk.byteLength, this.limit - this.length);
+    if (accepted > 0) {
+      this.ensureCapacity(this.length + accepted);
+      this.buffer.set(chunk.subarray(0, accepted), this.length);
+      this.length += accepted;
+    }
+    if (accepted < chunk.byteLength) this.truncated = true;
+  }
+
+  clear(): void {
+    this.buffer = new Uint8Array();
+    this.length = 0;
+    this.truncated = false;
+  }
+
+  take(): { bytes: Uint8Array; truncated: boolean } {
+    const bytes = this.length === this.buffer.byteLength
+      ? this.buffer
+      : this.buffer.slice(0, this.length);
+    const truncated = this.truncated;
+    this.clear();
+    return { bytes, truncated };
+  }
+
+  private ensureCapacity(required: number): void {
+    if (required <= this.buffer.byteLength) return;
+    const capacity = Math.min(
+      this.limit,
+      Math.max(required, Math.max(1024, this.buffer.byteLength * 2)),
+    );
+    const grown = new Uint8Array(capacity);
+    grown.set(this.buffer.subarray(0, this.length));
+    this.buffer = grown;
+  }
+}
+
 // Four independent attribution slots the mid-flight hooks fill: `model` and
 // `upstreamId` identify what the turn was about, `inputTokens` /
 // `outputTokens` quantify what the upstream reported. They're independent
@@ -86,7 +176,17 @@ const tokenUsageOutput = (usage: TokenUsage | null): number | null =>
   sumTokenCategories(usage, ['output', 'output_image']);
 
 const oneLineError = (err: unknown): string => {
-  const msg = (err instanceof Error ? err.message : String(err)).replace(/\s+/g, ' ').trim();
+  let raw: string;
+  try {
+    raw = err instanceof Error ? String(err.message) : String(err);
+  } catch {
+    try {
+      raw = Object.prototype.toString.call(err);
+    } catch {
+      raw = 'Unformattable error';
+    }
+  }
+  const msg = raw.replace(/\s+/g, ' ').trim();
   return msg.length > 500 ? `${msg.slice(0, 497)}…` : msg;
 };
 
@@ -104,7 +204,13 @@ const resolveUpstreamRef = async (id: string | null): Promise<DumpUpstreamRef | 
 };
 
 export class DumpAccumulator {
-  private readonly events: DumpStreamEvent[] = [];
+  private events: DumpStreamEvent[] = [];
+  private capturedEventBytes = 2; // JSON array brackets written by the store.
+  private eventCaptureStopped = false;
+  private sawProtocolFrame = false;
+  private captureClosed = false;
+  private responseBodyCapture: BoundedByteCapture | null = null;
+  private readonly captureFailures: string[] = [];
   private sentPayloadBytes = 0;
   private model: string | null = null;
   private upstreamId: string | null = null;
@@ -112,8 +218,6 @@ export class DumpAccumulator {
   private outputTokens: number | null = null;
   private errorMeta: DumpErrorMeta | null = null;
   private readonly preparedRequestBody: Promise<PreparedDumpRequestBody>;
-  private readonly terminalOutcome: Promise<void>;
-  private terminalOutcomeResolve: (() => void) | undefined;
 
   constructor(
     private readonly apiKey: ApiKey,
@@ -121,8 +225,11 @@ export class DumpAccumulator {
     requestBody: Uint8Array,
     private readonly startedAt: number,
     private readonly backgroundScheduler: BackgroundScheduler,
+    private readonly captureLimits: DumpCaptureLimits = DEFAULT_CAPTURE_LIMITS,
   ) {
-    this.terminalOutcome = new Promise(resolve => { this.terminalOutcomeResolve = resolve; });
+    for (const [name, value] of Object.entries(captureLimits) as Array<[keyof DumpCaptureLimits, number]>) {
+      assertCaptureLimit(name, value);
+    }
     this.preparedRequestBody = getDumpStore().prepareRequestBody(requestBody);
     // Preparation starts eagerly and is awaited at terminal persistence. Mark
     // a rejection handled immediately so a long upstream wait cannot surface
@@ -139,12 +246,10 @@ export class DumpAccumulator {
   error(kind: 'upstream' | 'gateway', upstream?: string): void {
     this.errorMeta = { kind };
     if (upstream !== undefined) this.upstreamId = upstream;
-    this.settleTerminalOutcome();
   }
 
   failed(reason: unknown): void {
-    this.errorMeta = { kind: 'failed', reason: typeof reason === 'string' ? reason : oneLineError(reason) };
-    this.settleTerminalOutcome();
+    this.errorMeta = { kind: 'failed', reason: oneLineError(reason) };
   }
 
   // Records one protocol frame. Stored as the canonical ProtocolFrame so
@@ -152,7 +257,34 @@ export class DumpAccumulator {
   // derives the SSE wire view on demand via the per-protocol
   // frame-to-SSE encoder + reducer.
   frame(frame: ProtocolFrame<unknown>): void {
-    this.events.push({ frame, ts: Date.now() - this.startedAt });
+    if (this.captureClosed) return;
+    this.sawProtocolFrame = true;
+    this.responseBodyCapture?.clear();
+    if (this.eventCaptureStopped) return;
+
+    const event = { frame, ts: Date.now() - this.startedAt };
+    try {
+      const serialized = JSON.stringify(event);
+      if (serialized === undefined) throw new TypeError('event is not JSON-serializable');
+      const delimiterBytes = this.events.length === 0 ? 0 : 1;
+      const eventBytes = utf8ByteLength(serialized);
+      if (
+        this.events.length >= this.captureLimits.streamEvents
+        || this.capturedEventBytes + delimiterBytes + eventBytes > this.captureLimits.streamEventBytes
+      ) {
+        this.eventCaptureStopped = true;
+        this.recordCaptureFailure(
+          `Dump stream event capture truncated after ${this.events.length} events `
+          + `(limits: ${this.captureLimits.streamEvents} events, ${this.captureLimits.streamEventBytes} bytes)`,
+        );
+        return;
+      }
+      this.events.push(JSON.parse(serialized) as DumpStreamEvent);
+      this.capturedEventBytes += delimiterBytes + eventBytes;
+    } catch (err) {
+      this.eventCaptureStopped = true;
+      this.recordCaptureFailure(`Dump stream event capture failed: ${oneLineError(err)}`);
+    }
   }
 
   recordSentPayloadBytes(byteLength: number): void {
@@ -164,12 +296,6 @@ export class DumpAccumulator {
     this.upstreamId = identity.upstream;
     this.inputTokens = tokenUsageInput(usage);
     this.outputTokens = tokenUsageOutput(usage);
-    this.settleTerminalOutcome();
-  }
-
-  private settleTerminalOutcome(): void {
-    this.terminalOutcomeResolve?.();
-    this.terminalOutcomeResolve = undefined;
   }
 
   // --- response-side: handler exit ---
@@ -181,13 +307,14 @@ export class DumpAccumulator {
   //     Responses path uses this: its "response" is the stream of frames
   //     already captured via `frame()`, while the send seam records their
   //     actual UTF-8 payload bytes via `recordSentPayloadBytes()`.
-  //   • `(response)` — tees the response body so the client gets bytes
-  //     flowing while a background reader accumulates the other half. The
-  //     returned Response streams the client-side bytes; status, statusText,
-  //     and headers pass through verbatim so the tee is invisible to the
-  //     client. A null body falls through to the bare form.
+  //   • `(response)` — wraps the original reader in one cancellation-coupled
+  //     byte stream. Each client pull advances the source once, counts the
+  //     delivered payload incrementally, and retains a bounded body prefix
+  //     only when canonical protocol frames are unavailable. Client cancel
+  //     reaches the original source directly and terminates the dump task.
+  //     A null body falls through to the bare form.
   //
-  // The background drain → record assembly → store put → broker publish is
+  // Terminal snapshot → record assembly → store put → broker publish is
   // scheduled through the runtime's BackgroundScheduler so dump write
   // failures cannot turn a successful upstream call into a 502.
   finalize(status: number, headers: ReadonlyArray<readonly [string, string]>): void;
@@ -195,10 +322,11 @@ export class DumpAccumulator {
   finalize(...args: [number, ReadonlyArray<readonly [string, string]>] | [Response]): void | Response {
     if (args.length === 2) {
       const [status, headers] = args;
+      this.captureClosed = true;
       this.backgroundScheduler(this.write({
         status,
         headers: headers.map(([k, v]) => [k, v]),
-        isStream: this.events.length > 0,
+        isStream: this.sawProtocolFrame,
         bytes: new Uint8Array(),
         payloadBytes: this.sentPayloadBytes,
         streamError: null,
@@ -216,86 +344,77 @@ export class DumpAccumulator {
     }
 
     const isStream = isEventStreamMediaType(response.headers.get('content-type'));
-    if (isStream) {
-      const reader = response.body.getReader();
-      let payloadBytes = 0;
-      let finalized = false;
-      const finalizeCapture = (streamError: string | null): void => {
-        if (finalized) return;
-        finalized = true;
-        this.backgroundScheduler((async () => {
-          await this.terminalOutcome;
-          await this.write({
-            status: responseStatus,
-            headers: responseHeaders,
-            isStream: true,
-            bytes: new Uint8Array(),
-            payloadBytes,
-            streamError,
-          });
-        })());
-      };
-      const forClient = new ReadableStream<Uint8Array>({
-        pull: async controller => {
-          try {
-            const { done, value } = await reader.read();
-            if (done) {
-              finalizeCapture(null);
-              controller.close();
-              return;
-            }
-            payloadBytes += value.byteLength;
-            controller.enqueue(value);
-          } catch (error) {
-            finalizeCapture(oneLineError(error));
-            controller.error(error);
-          }
-        },
-        cancel: async reason => {
-          let streamError: string | null = null;
-          try {
-            await reader.cancel(reason);
-          } catch (error) {
-            streamError = oneLineError(error);
-          }
-          finalizeCapture(streamError);
-        },
-      });
-      return new Response(forClient, {
-        status: response.status,
-        statusText: response.statusText,
-        headers: response.headers,
-      });
-    }
+    const reader = response.body.getReader();
+    const bodyCapture = new BoundedByteCapture(this.captureLimits.responseBodyBytes);
+    this.responseBodyCapture = bodyCapture;
+    if (this.sawProtocolFrame || isStream) bodyCapture.clear();
 
-    const [forClient, forCapture] = response.body.tee();
-    this.backgroundScheduler((async () => {
-      const reader = forCapture.getReader();
-      const chunks: Uint8Array[] = [];
-      let total = 0;
-      let streamError: string | null = null;
-      try {
-        for (;;) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          chunks.push(value);
-          total += value.byteLength;
-        }
-      } catch (err) {
-        streamError = oneLineError(err);
-      }
-      const bytes = new Uint8Array(total);
-      let offset = 0;
-      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-      await this.write({
+    let payloadBytes = 0;
+    let terminated = false;
+    let resolveSnapshot!: (snapshot: ResponseSnapshot) => void;
+    const snapshot = new Promise<ResponseSnapshot>(resolve => { resolveSnapshot = resolve; });
+    const terminate = (streamError: string | null): void => {
+      if (terminated) return;
+      terminated = true;
+      this.captureClosed = true;
+      this.responseBodyCapture = null;
+      const captured = bodyCapture.take();
+      const useCapturedBytes = !this.sawProtocolFrame && !isStream;
+      const truncationError = captured.truncated && useCapturedBytes
+        ? `Dump response body capture exceeded the ${this.captureLimits.responseBodyBytes}-byte limit; stored body is truncated`
+        : null;
+      resolveSnapshot({
         status: responseStatus,
         headers: responseHeaders,
-        isStream: false,
-        bytes,
-        payloadBytes: bytes.byteLength,
-        streamError,
+        isStream,
+        bytes: useCapturedBytes ? captured.bytes : new Uint8Array(),
+        payloadBytes,
+        streamError: [streamError, truncationError].filter((value): value is string => value !== null).join('; ') || null,
       });
-    })());
+    };
+
+    const forClient = new ReadableStream<Uint8Array>({
+      type: 'bytes',
+      pull: async controller => {
+        try {
+          for (;;) {
+            const result = await reader.read();
+            if (terminated) return;
+            if (result.done) {
+              controller.close();
+              terminate(null);
+              return;
+            }
+            const chunkBytes = result.value.byteLength;
+            if (chunkBytes === 0) continue;
+            if (!this.sawProtocolFrame && !isStream) {
+              try {
+                bodyCapture.append(result.value);
+              } catch (err) {
+                bodyCapture.clear();
+                this.recordCaptureFailure(`Dump response body capture failed: ${oneLineError(err)}`);
+              }
+            }
+            controller.enqueue(result.value);
+            payloadBytes += chunkBytes;
+            return;
+          }
+        } catch (err) {
+          if (terminated) return;
+          controller.error(err);
+          terminate(`Response body stream failed: ${oneLineError(err)}`);
+        }
+      },
+      cancel: reason => {
+        const sourceCancellation = reader.cancel(reason);
+        const canceled = reason === undefined
+          ? 'Downstream response body canceled'
+          : `Downstream response body canceled: ${oneLineError(reason)}`;
+        terminate(canceled);
+        return sourceCancellation;
+      },
+    });
+    this.backgroundScheduler(snapshot.then(async captured => await this.write(captured)));
 
     return new Response(forClient, {
       status: response.status,
@@ -315,13 +434,33 @@ export class DumpAccumulator {
     // Prefer the accumulator's frame log so dumps reflect the gateway's
     // frame sequence regardless of negotiated wire shape; passthrough
     // endpoints with no frames fall back to captured bytes.
-    const responseBody: StoredDumpResponseBody = this.events.length > 0
-      ? { type: 'stream', events: this.events }
+    const capturedEvents = this.events;
+    this.events = [];
+    const responseBody: StoredDumpResponseBody = this.sawProtocolFrame
+      ? { type: 'stream', events: capturedEvents }
       : response.bytes.byteLength > 0 || response.streamError !== null
         ? response.isStream
           ? { type: 'stream', events: [] }
           : { type: 'bytes', body: response.bytes }
         : { type: 'none' };
+
+    const baseError = this.errorMeta
+      ?? (this.requestSnapshot.streamError !== null ? { kind: 'failed' as const, reason: this.requestSnapshot.streamError } : null);
+    const captureFailures = [
+      ...this.captureFailures,
+      ...(response.streamError === null ? [] : [response.streamError]),
+    ];
+    const error: DumpErrorMeta | null = captureFailures.length === 0
+      ? baseError
+      : {
+          kind: 'failed',
+          reason: oneLineError([
+            ...captureFailures,
+            ...(baseError === null
+              ? []
+              : [baseError.kind === 'failed' ? baseError.reason : `${baseError.kind} error`]),
+          ].join('; ')),
+        };
 
     const meta: DumpMetadata = {
       id: recordId,
@@ -337,13 +476,10 @@ export class DumpAccumulator {
       requestBytes: this.requestSnapshot.bodyByteLength,
       responseBytes: response.payloadBytes,
       durationMs: completedAt - this.startedAt,
-      // Precedence: an explicit error stamp from the respond path wins;
-      // otherwise a request-body read failure (operator-side payload didn't
-      // arrive intact) outranks a response-body read failure. Both stream-
-      // read failures surface as `kind: 'failed'`.
-      error: this.errorMeta
-        ?? (this.requestSnapshot.streamError !== null ? { kind: 'failed', reason: this.requestSnapshot.streamError } : null)
-        ?? (response.streamError !== null ? { kind: 'failed', reason: response.streamError } : null),
+      // A capture failure must remain visible even when the respond path also
+      // recorded an upstream/gateway outcome, so both are folded into one
+      // failed reason rather than silently presenting a partial body as whole.
+      error,
     };
 
     // Commit the row before publishing so subscribers fetching detail off the meta frame find it.
@@ -367,6 +503,10 @@ export class DumpAccumulator {
     } catch (err) {
       console.error(`[dump] write failed for key=${this.apiKey.id} record=${recordId}`, oneLineError(err));
     }
+  }
+
+  private recordCaptureFailure(reason: string): void {
+    if (!this.captureFailures.includes(reason)) this.captureFailures.push(reason);
   }
 }
 

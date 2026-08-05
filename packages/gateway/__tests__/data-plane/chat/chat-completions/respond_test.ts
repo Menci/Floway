@@ -3,6 +3,8 @@ import { expect, test } from 'vitest';
 
 import { respondChatCompletions } from '../../../../src/data-plane/chat/chat-completions/respond.ts';
 import type { DumpAccumulator } from '../../../../src/dump/accumulator.ts';
+import { initRepo } from '../../../../src/repo/index.ts';
+import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -27,6 +29,7 @@ const chunk = (text: string): ChatCompletionsStreamEvent => ({
 });
 
 const serve = async (dump: DumpAccumulator, frames: AsyncGenerator<ProtocolFrame<ChatCompletionsStreamEvent>>): Promise<string> => {
+  initRepo(new InMemoryRepo());
   const ctx = mockChatGatewayCtx({ wantsStream: true, dump });
   const app = new Hono().get('/', c =>
     respondChatCompletions(c, eventResult(frames, testTelemetryModelIdentity), true, true, ctx));

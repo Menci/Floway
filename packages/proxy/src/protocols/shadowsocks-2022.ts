@@ -86,8 +86,6 @@ const dialShadowsocks2022Inner = async (
   let recvNonce = 0n;
 
   const writer = socket.writable.getWriter();
-  const reader = socket.readable.getReader();
-  const readN = makeExactReader(reader, 'SS2022');
 
   // Build the request:
   //   - sendSalt
@@ -107,8 +105,24 @@ const dialShadowsocks2022Inner = async (
   initialOut.set(sendSalt, 0);
   initialOut.set(fixedSealed, sendSalt.byteLength);
   initialOut.set(variableSealed, sendSalt.byteLength + fixedSealed.byteLength);
-  await writer.write(initialOut);
-  writer.releaseLock();
+  try {
+    await writer.write(initialOut);
+  } finally {
+    writer.releaseLock();
+  }
+
+  const reader = socket.readable.getReader();
+  const readN = makeExactReader(reader, 'SS2022');
+  let readerSettlement: Promise<void> | null = null;
+  const settleReader = (reason?: unknown): Promise<void> => {
+    readerSettlement ??= (async () => {
+      try { await reader.cancel(reason); } catch { /* reader already cancelled */ } finally {
+        try { reader.releaseLock(); } catch { /* lock already released */ }
+        await socket.close().catch(() => {});
+      }
+    })();
+    return readerSettlement;
+  };
 
   // AEAD auth failure on the very first frame is overwhelmingly a wrong-
   // password / wrong-cipher misconfig, so tag it as `proxy-handshake`
@@ -162,21 +176,20 @@ const dialShadowsocks2022Inner = async (
         const lenPlain = recvCipher.decrypt(leNonce(recvNonce++), lenSealed);
         const len = (lenPlain[0]! << 8) | lenPlain[1]!;
         if (len === 0) {
-          controller.error(new ProxyDialError('SS2022: zero-length payload', 'proxy-handshake'));
-          return;
+          throw new ProxyDialError('SS2022: zero-length payload', 'proxy-handshake');
         }
         const ptSealed = await readN(len + TAG);
         const pt = recvCipher.decrypt(leNonce(recvNonce++), ptSealed);
         controller.enqueue(pt as Uint8Array<ArrayBuffer>);
       } catch (e) {
-        if (!recvBootstrapped && !(e instanceof ProxyDialError)) {
-          controller.error(new ProxyDialError(`SS2022 handshake decrypt failed: ${e instanceof Error ? e.message : String(e)}`, 'proxy-handshake', { cause: e }));
-          return;
-        }
-        controller.error(e);
+        const error = !recvBootstrapped && !(e instanceof ProxyDialError)
+          ? new ProxyDialError(`SS2022 handshake decrypt failed: ${e instanceof Error ? e.message : String(e)}`, 'proxy-handshake', { cause: e })
+          : e;
+        await settleReader(error);
+        controller.error(error);
       }
     },
-    cancel(reason) { reader.cancel(reason).catch(() => {}); },
+    async cancel(reason) { await settleReader(reason); },
   });
 
   const ssWritable = new WritableStream<Uint8Array>({
@@ -196,8 +209,8 @@ const dialShadowsocks2022Inner = async (
         w.releaseLock();
       }
     },
-    async close() { try { await socket.close(); } catch { /* socket already closed */ } },
-    async abort() { try { await socket.close(); } catch { /* socket already closed */ } },
+    async close() { await settleReader(); },
+    async abort(reason) { await settleReader(reason); },
   });
 
   return { readable: ssReadable, writable: ssWritable };

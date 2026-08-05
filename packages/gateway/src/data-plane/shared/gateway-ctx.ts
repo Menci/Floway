@@ -47,7 +47,7 @@ export interface CreateGatewayCtxOptions {
   wantsStream: boolean;
   // WebSocket-style call sites own the AbortController (so the upgrade
   // handler can cancel mid-stream); HTTP call sites let the factory mint one
-  // when wantsStream is true.
+  // linked to the inbound Request signal when wantsStream is true.
   downstreamAbortController?: AbortController;
   // Already-buffered inbound request body bytes. HTTP handlers read them
   // once via `readRequestBody` and pass them in so the dump accumulator's
@@ -76,8 +76,24 @@ export interface CreateGatewayCtxOptions {
   backgroundScheduler: BackgroundScheduler;
 }
 
+const createRequestLinkedAbortController = (requestSignal: AbortSignal): AbortController => {
+  const controller = new AbortController();
+  const abortFromRequest = (): void => controller.abort(requestSignal.reason);
+
+  if (requestSignal.aborted) {
+    abortFromRequest();
+    return controller;
+  }
+
+  requestSignal.addEventListener('abort', abortFromRequest, { once: true });
+  controller.signal.addEventListener('abort', () => {
+    requestSignal.removeEventListener('abort', abortFromRequest);
+  }, { once: true });
+  return controller;
+};
+
 export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCtxOptions): GatewayCtx => {
-  const controller = opts.downstreamAbortController ?? (opts.wantsStream ? new AbortController() : undefined);
+  const controller = opts.downstreamAbortController ?? (opts.wantsStream ? createRequestLinkedAbortController(c.req.raw.signal) : undefined);
   const apiKey = apiKeyFromContext(c);
   const upstreamIds = effectiveUpstreamIdsFromContext(c);
   const dump = openDumpAccumulator(c, opts.method ?? c.req.method, apiKey, opts.requestBody, opts.backgroundScheduler);

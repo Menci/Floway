@@ -391,6 +391,19 @@ const prepare = (tools: ResponsesTool[]) => {
   return { filters: result.filters };
 };
 
+type DomainFilterField = 'allowed_domains' | 'blocked_domains';
+
+const hostedWithFilter = (field: DomainFilterField, value: unknown): ResponsesTool => ({
+  type: 'web_search',
+  filters: { [field]: value },
+} as unknown as ResponsesTool);
+
+const rejectedPreparation = (tools: ResponsesTool[]) => {
+  const result = prepareToolsForShim(tools);
+  if (result.ok) throw new Error('expected web-search tool preparation to reject');
+  return result.error;
+};
+
 test('isHostedWebSearchTool recognizes every hosted variant', () => {
   assertEquals([...WEB_SEARCH_HOSTED_TYPES].sort(), [...hostedVariants].sort());
   for (const type of hostedVariants) assertEquals(isHostedWebSearchTool({ type } as ResponsesTool), true);
@@ -439,6 +452,119 @@ test('prepareToolsForShim selects the last web_search declaration as one configu
   });
 });
 
+test('prepareToolsForShim rejects every malformed domain shape through both filter fields', () => {
+  const invalidEntries: ReadonlyArray<{ value: unknown; message: string }> = [
+    { value: 'https://quora.com/', message: "Invalid domain 'https://quora.com/'" },
+    { value: 'http://example.com', message: "Invalid domain 'http://example.com'" },
+    { value: 'example.com/some/path', message: "Invalid domain 'example.com/some/path'" },
+    { value: 'example.com:8080', message: "Invalid domain 'example.com:8080'" },
+    { value: 'example.com?q=1', message: "Invalid domain 'example.com?q=1'" },
+    { value: '', message: "Invalid domain ''" },
+    { value: '   ', message: "Invalid domain '   '" },
+    { value: 'bad domain with space', message: "Invalid domain 'bad domain with space'" },
+    { value: 'no_underscore_either', message: "Invalid domain 'no_underscore_either'" },
+    { value: '*.wildcards.not.supported', message: "Invalid domain '*.wildcards.not.supported'" },
+    { value: null, message: 'Expected string, got null.' },
+    { value: 5, message: 'Expected string, got number.' },
+    { value: {}, message: 'Expected string, got object.' },
+  ];
+
+  for (const field of ['allowed_domains', 'blocked_domains'] as const) {
+    for (const { value, message } of invalidEntries) {
+      assertEquals(
+        rejectedPreparation([hostedWithFilter(field, [value])]),
+        { message, param: 'tools' },
+        `${field}: ${JSON.stringify(value)}`,
+      );
+    }
+  }
+});
+
+test('prepareToolsForShim rejects malformed entries alongside valid siblings', () => {
+  assertEquals(
+    rejectedPreparation([hostedWithFilter('allowed_domains', ['valid.com', 'bad domain'])]),
+    { message: "Invalid domain 'bad domain'", param: 'tools' },
+  );
+  assertEquals(
+    rejectedPreparation([hostedWithFilter('blocked_domains', ['reddit.com', 'https://quora.com/'])]),
+    { message: "Invalid domain 'https://quora.com/'", param: 'tools' },
+  );
+});
+
+test('prepareToolsForShim validates every hosted declaration before selecting the last one', () => {
+  assertEquals(
+    rejectedPreparation([
+      hostedWithFilter('allowed_domains', ['bad domain']),
+      { type: 'web_search' },
+    ]),
+    { message: "Invalid domain 'bad domain'", param: 'tools' },
+  );
+});
+
+test('prepareToolsForShim enforces each domain-list cap at the inclusive boundary', () => {
+  const exactly100 = Array.from({ length: 100 }, (_, index) => `host${index}.example`);
+  const oversized = [...exactly100, 'host100.example'];
+
+  for (const field of ['allowed_domains', 'blocked_domains'] as const) {
+    assertEquals(
+      rejectedPreparation([hostedWithFilter(field, oversized)]),
+      {
+        message: `web_search tool filters.${field} accepts at most 100 entries; got 101.`,
+        param: 'tools',
+      },
+    );
+    assertEquals(
+      prepare([hostedWithFilter(field, exactly100)]).filters,
+      field === 'allowed_domains'
+        ? { allowedDomains: exactly100, maxResults: 20 }
+        : { blockedDomains: exactly100, maxResults: 20 },
+    );
+  }
+});
+
+test('prepareToolsForShim rejects malformed filter containers and list values', () => {
+  assertEquals(
+    rejectedPreparation([{
+      type: 'web_search',
+      filters: [] as unknown as { allowed_domains?: string[] },
+    }]),
+    { message: 'web_search tool filters must be an object; got array.', param: 'tools' },
+  );
+  assertEquals(
+    rejectedPreparation([hostedWithFilter('allowed_domains', 'example.com')]),
+    { message: 'web_search tool filters.allowed_domains must be an array of strings; got string.', param: 'tools' },
+  );
+  assertEquals(
+    rejectedPreparation([hostedWithFilter('blocked_domains', {})]),
+    { message: 'web_search tool filters.blocked_domains must be an array of strings; got object.', param: 'tools' },
+  );
+});
+
+test('prepareToolsForShim accepts omitted, null, and empty domain filters', () => {
+  assertEquals(prepare([{ type: 'web_search' }]).filters, { maxResults: 20 });
+  assertEquals(
+    prepare([hostedWithFilter('allowed_domains', null)]).filters,
+    { maxResults: 20 },
+  );
+  assertEquals(
+    prepare([hostedWithFilter('allowed_domains', [])]).filters,
+    { allowedDomains: [], maxResults: 20 },
+  );
+});
+
+test('prepareToolsForShim rejects an unknown search context size', () => {
+  assertEquals(
+    rejectedPreparation([{
+      type: 'web_search',
+      search_context_size: 'XXL' as 'low',
+    }]),
+    {
+      message: "web_search tool search_context_size must be one of 'low' | 'medium' | 'high'; got \"XXL\".",
+      param: 'tools[].search_context_size',
+    },
+  );
+});
+
 test('prepareToolsForShim passes through with empty filters when no hosted web_search exists', () => {
   const fn: ResponsesTool = { type: 'function', name: 'foo', parameters: {}, strict: false };
   assertEquals(prepare([fn]).filters, {});
@@ -451,11 +577,6 @@ test('resolveServerToolName returns the first free sequential name', () => {
     { type: 'function', name: SHIM_TOOL, parameters: {}, strict: false },
     { type: 'custom', name: `${SHIM_TOOL}_2` },
   ]), `${SHIM_TOOL}_3`);
-});
-
-test('prepareToolsForShim rejects invalid hosted fields', () => {
-  const result = prepareToolsForShim([{ type: 'web_search', search_context_size: 'huge' } as unknown as ResponsesTool]);
-  assertEquals(result.ok, false);
 });
 
 // ── Private-payload restoration (transformInputItemsForWebSearch) ──

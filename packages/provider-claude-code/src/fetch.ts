@@ -422,6 +422,7 @@ const performUpstreamCall = async (
     await invalidateClaudeCodeAccessToken({
       upstreamId: opts.upstreamId,
       repo: getProviderRepo().upstreams,
+      expectedToken: accessToken.entry.token,
     });
     const ensured = await ensureOrSession503(opts, upstreamModelId);
     if ('modelKey' in ensured) return ensured;

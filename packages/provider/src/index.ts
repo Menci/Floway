@@ -69,10 +69,15 @@ export type { ProviderRepo, UpstreamsRepoSlim } from './repo.ts';
 export { getProviderRepo, initProviderRepo, UpstreamGoneError } from './repo.ts';
 
 export {
+  PROVIDER_MODELS_IDLE_TIMEOUT_MS,
+  PROVIDER_MODELS_TOTAL_TIMEOUT_MS,
   ProviderModelsUnavailableError,
   fetchUpstreamModels,
   httpResponseToResponse,
+  readBoundedJsonResponse,
+  runProviderModelsTask,
 } from './models-fetch.ts';
+export type { ProviderModelsTaskOptions, ResponseByteBudget } from './models-fetch.ts';
 
 export type { FlagDefaults, FlagId, FlagOverrides } from './flags.ts';
 export {
@@ -102,6 +107,7 @@ export type { Fetcher, UpstreamFetchOptions } from './options.ts';
 export { directFetcher, dispatchUpstreamFetch, identityWrapUpstreamCall } from './options.ts';
 
 export { isAbortError } from './abort.ts';
+export { isHttpFieldValue } from './http-field-value.ts';
 
 export {
   base64ToBytes,

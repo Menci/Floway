@@ -1,7 +1,7 @@
 import { unionEndpoints } from './endpoint-union.ts';
 import { fetchUpstreamModelsCached, MODEL_CATALOG_REVISION } from './models-cache.ts';
 import type { GatewayProvider } from './registry.ts';
-import { settleCatalogTasks } from './catalog-settlement.ts';
+import { settleUnlessAborted } from './settle.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 import type { Fetcher, InternalModel, Provider, ProviderModel, UpstreamRecord } from '@floway-dev/provider';
@@ -108,13 +108,15 @@ const collectProviderModels = async (
   // the SOFT-fresh row without an upstream round trip, so the parallel walk
   // is cheap on the warm path and bounded by `max(per-upstream fetch)` on
   // the cold path.
-  const fetchOne = (instance: GatewayProvider) =>
-    fetchUpstreamModelsCached(instance, {
+  const fetchOne = async (instance: GatewayProvider) => {
+    const models = await fetchUpstreamModelsCached(instance, {
       scheduler,
       fetcher: fetcherForUpstream(instance.upstreamId),
-    }).then(models => ({ instance, models }));
+    });
+    return { instance, models };
+  };
 
-  const settled = await settleCatalogTasks(providers.map(instance => () => fetchOne(instance)));
+  const settled = await settleUnlessAborted(providers.map(fetchOne));
 
   for (const [index, result] of settled.entries()) {
     if (result.status === 'rejected') {

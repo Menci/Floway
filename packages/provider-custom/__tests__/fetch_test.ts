@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { assertCustomUpstreamRecord } from '../src/config.ts';
 import {
@@ -76,14 +76,30 @@ test('typed transports use default /v1/* paths', async () => {
   ]);
 });
 
+test('typed transports enforce exactly one timing-wrapper dispatch', async () => {
+  const { config } = assertCustomUpstreamRecord(baseRecord);
+  let fetchCalls = 0;
+  await expect(customFetchChatCompletions(config, { method: 'POST', body: '{}' }, {
+    fetcher: () => {
+      fetchCalls++;
+      return Promise.resolve(new Response('{}'));
+    },
+    wrapUpstreamCall: async dispatch => {
+      await dispatch();
+      return await dispatch();
+    },
+  })).rejects.toThrow('invoked more than once');
+  expect(fetchCalls).toBe(1);
+});
+
 test('admin pathOverrides replace defaults and propagate to derived sub-paths', async () => {
   const { config } = assertCustomUpstreamRecord({
     ...baseRecord,
     config: {
       ...(baseRecord.config as Record<string, unknown>),
       pathOverrides: {
-        '/messages': '/api/v1/messages',
-        '/responses': '/api/v1/responses',
+        '/messages': '/api/v1/messages/?version=1',
+        '/responses': '/api/v1/responses/?version=1',
         '/alpha/search': '/api/search',
       },
     },
@@ -106,9 +122,9 @@ test('admin pathOverrides replace defaults and propagate to derived sub-paths', 
   );
 
   assertEquals(seen, [
-    'https://custom.example.com/api/v1/messages',
-    'https://custom.example.com/api/v1/messages/count_tokens',
-    'https://custom.example.com/api/v1/responses/compact',
+    'https://custom.example.com/api/v1/messages/?version=1',
+    'https://custom.example.com/api/v1/messages/count_tokens?version=1',
+    'https://custom.example.com/api/v1/responses/compact?version=1',
     'https://custom.example.com/api/search',
     'https://custom.example.com/v1/chat/completions',
   ]);

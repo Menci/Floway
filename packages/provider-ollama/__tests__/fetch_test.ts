@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { assertOllamaUpstreamRecord } from '../src/config.ts';
 import {
@@ -66,6 +66,22 @@ test('typed transports hit the fixed Ollama endpoint paths', async () => {
     'https://ollama.com/api/tags',
     'https://ollama.com/api/show',
   ]);
+});
+
+test('Ollama transports enforce exactly one timing-wrapper dispatch', async () => {
+  const { config } = assertOllamaUpstreamRecord(baseRecord);
+  let fetchCalls = 0;
+  await expect(ollamaFetchChatCompletions(config, { method: 'POST', body: '{}' }, {
+    fetcher: () => {
+      fetchCalls++;
+      return Promise.resolve(new Response('{}'));
+    },
+    wrapUpstreamCall: async dispatch => {
+      await dispatch();
+      return await dispatch();
+    },
+  })).rejects.toThrow('invoked more than once');
+  expect(fetchCalls).toBe(1);
 });
 
 test('Authorization: Bearer is set when apiKey is configured', async () => {

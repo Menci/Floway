@@ -1,4 +1,4 @@
-import { act, fireEvent } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { useState } from 'react';
 import { createMemoryRouter, RouterProvider, useOutlet } from 'react-router';
 import { describe, expect, it } from 'vitest';
@@ -6,7 +6,6 @@ import { describe, expect, it } from 'vitest';
 import { usePageFrames } from '../../src/components/page-frames';
 import { pageNavigation } from '../../src/lib/page-navigation';
 import { PAGE_LEAVE_ANIMATION } from '../../src/winui/page-transition.css';
-import { renderInApp } from '../render';
 
 // A page is held on screen while it leaves, and it is held so that what the
 // operator was looking at is what fades out. That only works while React keeps
@@ -29,7 +28,7 @@ const renderRouter = () => {
   const router = createMemoryRouter([
     { path: '/', Component: Shell, children: [{ index: true, Component: Page }, { path: 'next', Component: Page }] },
   ], { initialEntries: ['/'] });
-  return { router, ...renderInApp(<RouterProvider router={router} />) };
+  return { router, ...render(<RouterProvider router={router} />) };
 };
 
 describe('page frames', () => {

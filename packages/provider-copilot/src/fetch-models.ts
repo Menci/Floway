@@ -2,13 +2,56 @@ import { copilotFetchModels, type CopilotFetchConfig } from './fetch.ts';
 import type { CopilotModelsResponse } from './types.ts';
 import { fetchUpstreamModels, type Fetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
 
-const isCopilotModelsResponse = (value: unknown): value is CopilotModelsResponse => {
-  const response = value as CopilotModelsResponse;
-  return (
-    typeof response?.object === 'string'
-    && Array.isArray(response.data)
-    && response.data.every(model => typeof model?.id === 'string')
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const isOptionalString = (value: unknown): boolean => value === undefined || typeof value === 'string';
+const isOptionalBoolean = (value: unknown): boolean => value === undefined || typeof value === 'boolean';
+const isOptionalFiniteNonNegativeNumber = (value: unknown): boolean =>
+  value === undefined || (typeof value === 'number' && Number.isFinite(value) && value >= 0);
+const isOptionalStringArray = (value: unknown): boolean =>
+  value === undefined || (Array.isArray(value) && value.every(item => typeof item === 'string'));
+
+const isCopilotRawModel = (value: unknown): boolean => {
+  if (!isRecord(value) || typeof value.id !== 'string' || value.id === '') return false;
+  if (!isOptionalString(value.name)
+    || !isOptionalString(value.version)
+    || !isOptionalString(value.owned_by)
+    || !isOptionalString(value.display_name)
+    || !isOptionalFiniteNonNegativeNumber(value.created)
+    || !isOptionalStringArray(value.supported_endpoints)) return false;
+
+  if (value.capabilities === undefined) return true;
+  if (!isRecord(value.capabilities) || !isOptionalString(value.capabilities.type)) return false;
+
+  const limits = value.capabilities.limits;
+  if (limits !== undefined) {
+    if (!isRecord(limits)
+      || !isOptionalFiniteNonNegativeNumber(limits.max_context_window_tokens)
+      || !isOptionalFiniteNonNegativeNumber(limits.max_prompt_tokens)
+      || !isOptionalFiniteNonNegativeNumber(limits.max_output_tokens)) return false;
+  }
+
+  const supports = value.capabilities.supports;
+  return supports === undefined || (
+    isRecord(supports)
+    && isOptionalBoolean(supports.vision)
+    && isOptionalStringArray(supports.reasoning_effort)
+    && isOptionalFiniteNonNegativeNumber(supports.min_thinking_budget)
+    && isOptionalFiniteNonNegativeNumber(supports.max_thinking_budget)
+    && isOptionalBoolean(supports.adaptive_thinking)
   );
+};
+
+const isCopilotModelsResponse = (value: unknown): value is CopilotModelsResponse => {
+  if (!isRecord(value) || typeof value.object !== 'string' || !Array.isArray(value.data)) return false;
+  const ids = new Set<string>();
+  for (const model of value.data) {
+    if (!isCopilotRawModel(model)) return false;
+    const id = (model as { id: string }).id;
+    if (ids.has(id)) return false;
+    ids.add(id);
+  }
+  return true;
 };
 
 // VSCode Copilot Chat tags `/models` calls with the `model-access` intent
@@ -27,6 +70,6 @@ const MODELS_HEADER_OVERRIDES = new Headers({
 
 export const fetchCopilotModels = (config: CopilotFetchConfig, fetcher: Fetcher): Promise<CopilotModelsResponse> =>
   fetchUpstreamModels(
-    () => copilotFetchModels(config, { method: 'GET' }, { extraHeaders: MODELS_HEADER_OVERRIDES, fetcher, wrapUpstreamCall: identityWrapUpstreamCall }),
+    signal => copilotFetchModels(config, { method: 'GET', signal }, { extraHeaders: MODELS_HEADER_OVERRIDES, fetcher, wrapUpstreamCall: identityWrapUpstreamCall }),
     v => (isCopilotModelsResponse(v) ? v : null),
   );

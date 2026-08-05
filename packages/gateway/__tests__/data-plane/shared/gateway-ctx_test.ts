@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { describe, test } from 'vitest';
+import { describe, test, vi } from 'vitest';
 
 import { createGatewayCtxFromHono, type AttemptState, stampUpstreamCallStart } from '../../../src/data-plane/shared/gateway-ctx.ts';
 import type { RequestBody } from '../../../src/data-plane/shared/request-body.ts';
@@ -78,41 +78,64 @@ describe('createGatewayCtxFromHono', () => {
     assertEquals(ctx.upstreamIds, null);
   });
 
-  test('respects wantsStream=true', async () => {
+  test('factory-minted streaming controller follows the inbound Request signal while the handler is pending', async () => {
+    const app = makeApp();
+    let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
+    let signalSeenByHandler: AbortSignal | undefined;
+    let handlerReadyResolve: (() => void) | undefined;
+    const handlerReady = new Promise<void>(resolve => { handlerReadyResolve = resolve; });
+    let releaseHandler: (() => void) | undefined;
+    const handlerReleased = new Promise<void>(resolve => { releaseHandler = resolve; });
+    app.get('/test', async c => {
+      signalSeenByHandler = c.req.raw.signal;
+      ctx = createGatewayCtxFromHono(c, { wantsStream: true, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
+      handlerReadyResolve?.();
+      await handlerReleased;
+      return c.text('ok');
+    });
+
+    const inbound = new AbortController();
+    const request = new Request('http://localhost/test', { signal: inbound.signal });
+    const removeAbortListener = vi.spyOn(request.signal, 'removeEventListener');
+    const response = app.request(request);
+    await handlerReady;
+    const reason = new Error('client disconnected before upstream headers');
+    try {
+      assertEquals(signalSeenByHandler, request.signal);
+      assertExists(ctx);
+      assertExists(ctx.downstreamAbortController);
+      assertExists(ctx.abortSignal);
+      assertEquals(ctx.wantsStream, true);
+      assertEquals(ctx.abortSignal, ctx.downstreamAbortController.signal);
+
+      inbound.abort(reason);
+
+      assert(ctx.abortSignal.aborted);
+      assertEquals(ctx.abortSignal.reason, reason);
+      assert(removeAbortListener.mock.calls.some(([type]) => type === 'abort'));
+    } finally {
+      releaseHandler?.();
+      await response;
+    }
+  });
+
+  test('factory-minted streaming controller starts aborted when the inbound Request already is', async () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
       ctx = createGatewayCtxFromHono(c, { wantsStream: true, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
       return c.text('ok');
     });
-    await app.request('/test');
-    assertExists(ctx);
-    assertEquals(ctx.wantsStream, true);
-  });
 
-  test('respects wantsStream=false', async () => {
-    const app = makeApp();
-    let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
-    app.get('/test', c => {
-      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
-      return c.text('ok');
-    });
-    await app.request('/test');
-    assertExists(ctx);
-    assertEquals(ctx.wantsStream, false);
-  });
+    const inbound = new AbortController();
+    const reason = new Error('client disconnected before dispatch');
+    inbound.abort(reason);
+    await app.request(new Request('http://localhost/test', { signal: inbound.signal }));
 
-  test('wantsStream=true: downstreamAbortController is defined and abortSignal matches its signal', async () => {
-    const app = makeApp();
-    let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
-    app.get('/test', c => {
-      ctx = createGatewayCtxFromHono(c, { wantsStream: true, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
-      return c.text('ok');
-    });
-    await app.request('/test');
     assertExists(ctx);
-    assertExists(ctx.downstreamAbortController);
-    assertEquals(ctx.abortSignal, ctx.downstreamAbortController.signal);
+    assertExists(ctx.abortSignal);
+    assert(ctx.abortSignal.aborted);
+    assertEquals(ctx.abortSignal.reason, reason);
   });
 
   test('wantsStream=false: abortSignal is the raw request signal without a downstream controller', async () => {
@@ -127,25 +150,38 @@ describe('createGatewayCtxFromHono', () => {
     await app.request('/test');
     assertExists(ctx);
     assertExists(requestSignal);
+    assertEquals(ctx.wantsStream, false);
     assertEquals(ctx.downstreamAbortController, undefined);
     assertEquals(ctx.abortSignal, requestSignal);
   });
 
-  test('caller-supplied downstreamAbortController overrides the factory-minted one (websocket path)', async () => {
+  test('caller-supplied WebSocket controller remains independent of the upgrade Request signal', async () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
-    let controller: AbortController | undefined;
+    const controller = new AbortController();
     app.get('/test', c => {
-      controller = new AbortController();
       ctx = createGatewayCtxFromHono(c, { wantsStream: true, downstreamAbortController: controller, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
       return c.text('ok');
     });
-    await app.request('/test');
+
+    const inbound = new AbortController();
+    await app.request(new Request('http://localhost/test', {
+      headers: { upgrade: 'websocket' },
+      signal: inbound.signal,
+    }));
     assertExists(ctx);
-    assertExists(controller);
+    assertExists(ctx.abortSignal);
     assertEquals(ctx.downstreamAbortController, controller);
     assertEquals(ctx.abortSignal, controller.signal);
     assertEquals(ctx.wantsStream, true);
+
+    inbound.abort(new Error('upgrade request lifetime ended'));
+    assert(!controller.signal.aborted);
+
+    const turnReason = new Error('websocket closed');
+    controller.abort(turnReason);
+    assert(ctx.abortSignal.aborted);
+    assertEquals(ctx.abortSignal.reason, turnReason);
   });
 
   test('exposes the caller-supplied backgroundScheduler on ctx', async () => {

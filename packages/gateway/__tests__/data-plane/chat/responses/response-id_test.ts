@@ -1,12 +1,19 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { createResponsesResponseId } from '../../../../src/data-plane/chat/responses/response-id.ts';
 
-test('creates distinct opaque response envelope ids', () => {
-  const first = createResponsesResponseId();
-  const second = createResponsesResponseId();
+test('creates a 128-bit lowercase-hex response envelope id', () => {
+  const random = vi.spyOn(crypto, 'getRandomValues').mockImplementation(<T extends ArrayBufferView | null>(array: T): T => {
+    if (!(array instanceof Uint8Array)) throw new TypeError('expected a Uint8Array');
+    array.set(Uint8Array.from({ length: array.length }, (_, index) => index));
+    return array;
+  });
 
-  expect(first).toMatch(/^resp_.+$/u);
-  expect(second).toMatch(/^resp_.+$/u);
-  expect(second).not.toBe(first);
+  try {
+    expect(createResponsesResponseId()).toBe('resp_000102030405060708090a0b0c0d0e0f');
+    expect(random).toHaveBeenCalledOnce();
+    expect(random.mock.calls[0]?.[0]).toHaveLength(16);
+  } finally {
+    random.mockRestore();
+  }
 });

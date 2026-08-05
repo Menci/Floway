@@ -82,6 +82,37 @@ test('preserves a caller-supplied user_id verbatim', async () => {
   assertEquals(ctx.payload.metadata?.user_id, explicit);
 });
 
+test('replaces a malformed caller-supplied user_id with a valid synthesized envelope', async () => {
+  const ctx = invocation({
+    model: 'm',
+    max_tokens: 1,
+    messages: [{ role: 'user', content: 'x' }],
+    metadata: { user_id: 'not-a-claude-code-id' },
+  });
+  await synthesizeMetadataUserId(ctx, {}, okEvents);
+  const synthesized = ctx.payload.metadata?.user_id;
+  if (typeof synthesized !== 'string') throw new Error('expected synthesized user_id');
+  if (parseMetadataUserID(synthesized) === null) throw new Error(`expected valid synthesized user_id, got ${synthesized}`);
+});
+
+test('session_id distinguishes image-only conversations with different inputs', async () => {
+  const imageMessage = (data: string): MessagesPayload => ({
+    model: 'm',
+    max_tokens: 1,
+    messages: [{
+      role: 'user',
+      content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data } }],
+    }],
+  });
+  const first = invocation(imageMessage('AAAA'));
+  const second = invocation(imageMessage('BBBB'));
+  await synthesizeMetadataUserId(first, {}, okEvents);
+  await synthesizeMetadataUserId(second, {}, okEvents);
+  const firstId = parseMetadataUserID(first.payload.metadata!.user_id!)!;
+  const secondId = parseMetadataUserID(second.payload.metadata!.user_id!)!;
+  if (firstId.sessionId === secondId.sessionId) throw new Error('expected image content to participate in session identity');
+});
+
 // Regression: synthesize must run BEFORE hoist in the chain, otherwise hoist's
 // synthetic `<system>\n${captured}\n</system>` becomes the "first user message"
 // the session id derives from — and two unrelated conversations sharing one
