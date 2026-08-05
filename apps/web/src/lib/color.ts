@@ -56,6 +56,9 @@ export const readableTone = (hex: string, surface: string): string => {
   const paintedRgb = blend([surfaceRgb, rgb], 'normal', 'rgb') as ReturnType<typeof parseHexColor>;
   if (wcagContrast(linearRgb(paintedRgb), surfaceLinear) >= TEXT_CONTRAST_FLOOR) return hex;
 
+  const opaqueHex = formatHex(rgb).toUpperCase();
+  if (wcagContrast(linearRgb(parseHexColor(opaqueHex)), surfaceLinear) >= TEXT_CONTRAST_FLOOR) return opaqueHex;
+
   const { h, s, v } = convertRgbToHsv(rgb);
   // Which extreme actually clears the floor, not whether the surface is light:
   // between luminance 0.183 and 0.5 white misses the floor while black clears

@@ -35,6 +35,10 @@ describe('readableTone', () => {
     expect(contrast(result, CARD_LIGHT)).toBeGreaterThanOrEqual(4.5);
   });
 
+  it('checks the same opaque tone before searching away from an alpha color', () => {
+    expect(readableTone('#00001110', '#757575')).toBe('#000011');
+  });
+
   it('rejects a translucent surface without a backdrop to flatten it onto', () => {
     expect(() => readableTone('#0008', '#FFFFFF80')).toThrow('Readable tone requires an opaque surface');
   });
