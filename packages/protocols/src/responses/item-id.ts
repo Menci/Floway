@@ -1,3 +1,5 @@
+import { hex } from '@scure/base';
+
 // These are only the Responses item types Floway itself can create, not a
 // catalog or validator for provider-returned item IDs.
 // OpenAI's wire examples use msg_/rs_/ws_/ctc_ for their corresponding item
@@ -26,4 +28,3 @@ export const createRandomResponsesItemId = (type: GeneratedResponsesItemType): s
   crypto.getRandomValues(bytes);
   return `${prefix}_${hex.encode(bytes)}`;
 };
-import { hex } from '@scure/base';

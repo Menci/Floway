@@ -1,3 +1,5 @@
+import { base64, base64urlnopad } from '@scure/base';
+
 export type OpaqueValueOrigin = 'raw' | 'base64' | 'base64url';
 
 export interface DecodedOpaqueValue {
@@ -107,4 +109,3 @@ const rawStringFromBytes = (bytes: Uint8Array): string => {
   }
   return value;
 };
-import { base64, base64urlnopad } from '@scure/base';

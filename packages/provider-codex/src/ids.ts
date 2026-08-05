@@ -1,3 +1,5 @@
+import { hex } from '@scure/base';
+
 // Format the SHA-256 digest as a UUIDv4-shaped opaque identifier. This remains
 // for Floway-owned stable ids where we intentionally do not mimic Codex's
 // random persisted device id yet.
@@ -30,4 +32,3 @@ const uuidFromBytes = (bytes: Uint8Array): string => {
   const encoded = hex.encode(bytes);
   return `${encoded.slice(0, 8)}-${encoded.slice(8, 12)}-${encoded.slice(12, 16)}-${encoded.slice(16, 20)}-${encoded.slice(20)}`;
 };
-import { hex } from '@scure/base';
