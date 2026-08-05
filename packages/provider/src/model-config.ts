@@ -259,6 +259,12 @@ const kindField = (value: unknown, endpoints: ModelEndpoints, label: string): Mo
   return value as ModelKind;
 };
 
+const hasChatEndpoint = (endpoints: ModelEndpoints): boolean =>
+  endpoints.completions !== undefined
+  || endpoints.chatCompletions !== undefined
+  || endpoints.responses !== undefined
+  || endpoints.messages !== undefined;
+
 const rerankTargetField = (value: unknown, label: string): RerankTarget | undefined => {
   if (value === undefined) return undefined;
   if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
@@ -279,8 +285,8 @@ const modelField = (value: unknown, label: string): UpstreamModelConfig => {
   const effectiveKind = kindForEndpoints(endpoints);
   const chat = chatField(value.chat, `${label}.chat`);
   const rerankTarget = rerankTargetField(value.rerankTarget, `${label}.rerankTarget`);
-  if (chat !== undefined && effectiveKind !== 'chat') {
-    throw new Error(`Malformed ${label}: chat field is only allowed when endpoints select chat`);
+  if (chat !== undefined && !hasChatEndpoint(endpoints)) {
+    throw new Error(`Malformed ${label}: chat field requires at least one chat endpoint`);
   }
   if (effectiveKind === 'rerank' && rerankTarget === undefined) {
     throw new Error(`Malformed ${label}: rerankTarget is required when endpoints select rerank`);

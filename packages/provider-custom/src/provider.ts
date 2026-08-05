@@ -47,6 +47,12 @@ const autoModelEndpoints = (model: CustomRawModel, configured: ModelEndpoints): 
   return inferEndpointsFromModelId(model.id) ?? configured;
 };
 
+const hasChatEndpoint = (endpoints: ModelEndpoints): boolean =>
+  endpoints.completions !== undefined
+  || endpoints.chatCompletions !== undefined
+  || endpoints.responses !== undefined
+  || endpoints.messages !== undefined;
+
 const finalizeCustomModels = (
   response: CustomModelsResponse,
   configuredEndpoints: ModelEndpoints,
@@ -68,7 +74,7 @@ const finalizeCustomModels = (
       endpoints,
       providerData: rawModel.id,
       enabledFlags,
-      ...(kind === 'chat' && rawModel.chat ? { chat: rawModel.chat } : {}),
+      ...(hasChatEndpoint(endpoints) && rawModel.chat ? { chat: rawModel.chat } : {}),
     });
   }
   return models;

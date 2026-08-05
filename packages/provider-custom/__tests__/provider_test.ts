@@ -227,6 +227,19 @@ test('auto-fetched non-chat models omit contradictory chat metadata', async () =
   assertEquals(models[0].chat, undefined);
 });
 
+test('auto-fetched mixed models retain chat metadata when a chat endpoint is present', async () => {
+  const chat = { reasoning: { effort: { supported: ['low'], default: 'low' } } };
+  const instance = createCustomProvider(buildCustomUpstream({
+    endpoints: { embeddings: {}, chatCompletions: {} },
+  }));
+  const models = await withMockedFetch(
+    () => jsonResponse({ object: 'list', data: [{ id: 'mixed', kind: 'chat', chat }] }),
+    async () => await instance.instance.getProvidedModels(directFetcher),
+  );
+  assertEquals(models[0].kind, 'embedding');
+  assertEquals(models[0].chat, chat);
+});
+
 test('auto-fetched models without a resolved endpoint stay out of the routable catalog', async () => {
   const instance = createCustomProvider(buildCustomUpstream({ endpoints: {} }));
   const models = await withMockedFetch(

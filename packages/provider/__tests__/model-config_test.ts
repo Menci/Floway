@@ -220,11 +220,11 @@ describe('modelsField metadata integration', () => {
         kind,
         endpoints: { embeddings: {} },
         chat: { modalities: { input: ['text'], output: ['text'] } },
-      }], 'p')).toThrow(/chat field is only allowed when endpoints select chat/);
+      }], 'p')).toThrow(/chat field requires at least one chat endpoint/);
     }
   });
 
-  test('accepts chat on chat kind', () => {
+  test('accepts chat whenever a chat endpoint is present, including mixed primary kinds', () => {
     const [m] = modelsField([{
       upstreamModelId: 'm',
       kind: 'chat',
@@ -232,6 +232,15 @@ describe('modelsField metadata integration', () => {
       chat: { modalities: { input: ['text'], output: ['text'] } },
     }], 'p');
     expect(m.chat?.modalities?.input).toEqual(['text']);
+
+    const [mixed] = modelsField([{
+      upstreamModelId: 'mixed',
+      kind: 'embedding',
+      endpoints: { embeddings: {}, chatCompletions: {} },
+      chat: { modalities: { input: ['text', 'image'], output: ['text'] } },
+    }], 'p');
+    expect(mixed.kind).toBe('embedding');
+    expect(mixed.chat?.modalities?.input).toEqual(['text', 'image']);
   });
 });
 
