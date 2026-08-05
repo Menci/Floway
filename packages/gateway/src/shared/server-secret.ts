@@ -1,3 +1,5 @@
+import { decodeHex, encodeHex } from './base-encoding.ts';
+
 export const parseServerSecret = (value: unknown, field = 'serverSecret'): string => {
   if (typeof value !== 'string' || !/^[0-9a-f]{64}$/.test(value)) {
     throw new TypeError(`${field} must be exactly 64 lowercase hexadecimal characters`);
@@ -12,4 +14,3 @@ export const serverSecretBytes = (value: unknown, field = 'serverSecret'): Uint8
 
 export const generateServerSecret = (): string =>
   encodeHex(crypto.getRandomValues(new Uint8Array(32)));
-import { decodeHex, encodeHex } from './base-encoding.ts';

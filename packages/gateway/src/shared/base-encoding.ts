@@ -17,8 +17,6 @@ export const decodeWebBase64url = (value: string): Uint8Array =>
 
 export const encodeBase64url = (bytes: Uint8Array): string => base64urlnopad.encode(bytes);
 
-export const decodeCanonicalBase64url = (value: string): Uint8Array => base64urlnopad.decode(value);
-
 export const encodeHex = (bytes: Uint8Array): string => hex.encode(bytes);
 
 export const decodeHex = (value: string): Uint8Array => hex.decode(value);
