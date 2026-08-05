@@ -211,13 +211,20 @@ describe('putCodexQuota', () => {
 
   test('throws when the upstream disappeared mid-flight', async () => {
     current = null;
-    await expect(putCodexQuota(upstreamId, accountId, { observed_at: 'now' })).rejects.toThrow(/disappeared/);
+    await expect(putCodexQuota(upstreamId, accountId, { observed_at: '2026-06-05T00:00:00Z' })).rejects.toThrow(/disappeared/);
     expect(repo.writes).toEqual([]);
   });
 
   test('throws when the requested account is not in the pool', async () => {
-    await expect(putCodexQuota(upstreamId, 'acc_other', { observed_at: 'now' })).rejects.toThrow(/not found in upstream/);
+    await expect(putCodexQuota(upstreamId, 'acc_other', { observed_at: '2026-06-05T00:00:00Z' })).rejects.toThrow(/not found in upstream/);
     expect(repo.writes).toEqual([]);
+  });
+
+  test('rejects malformed snapshots before opening a state write', async () => {
+    await expect(putCodexQuota(upstreamId, accountId, {
+      observed_at: 'not-a-date',
+    })).rejects.toThrow(/observed_at/);
+    expect(repo.saveState).not.toHaveBeenCalled();
   });
 });
 

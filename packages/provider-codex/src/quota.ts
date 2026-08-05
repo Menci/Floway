@@ -1,25 +1,8 @@
 import { findCodexAccountIndex, readCodexUpstreamState, replaceCodexAccount } from './state.ts';
+import { assertCodexQuotaSnapshot, type CodexQuotaSnapshot } from './quota-snapshot.ts';
 import { getProviderRepo } from '@floway-dev/provider';
 
-export interface CodexQuotaSnapshot {
-  observed_at: string;
-  active_limit?: string;
-  plan_type?: string;
-
-  primary_used_percent?: number;
-  primary_window_minutes?: number;
-  primary_reset_after_at?: string;
-
-  secondary_used_percent?: number;
-  secondary_window_minutes?: number;
-  secondary_reset_after_at?: string;
-
-  credits_has_credits?: boolean;
-  credits_balance?: number;
-
-  // Present only when this snapshot was written as a result of a 429.
-  ratelimited_until?: string;
-}
+export { assertCodexQuotaSnapshot, type CodexQuotaSnapshot } from './quota-snapshot.ts';
 
 export type CodexQuotaSnapshotMap = Record<string, CodexQuotaSnapshot>;
 
@@ -136,6 +119,7 @@ export const putCodexQuota = async (
   accountId: string,
   snapshot: CodexQuotaSnapshot,
 ): Promise<void> => {
+  assertCodexQuotaSnapshot(snapshot, 'putCodexQuota.snapshot');
   // Stamped before the write so a replay against a winning sibling produces
   // the same document rather than a later `fetchedAt`.
   const fetchedAt = Date.now();
