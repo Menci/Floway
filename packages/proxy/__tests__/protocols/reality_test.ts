@@ -13,7 +13,7 @@ import {
   verifyRealityLeaf,
 } from '../../src/protocols/reality.ts';
 import type { RealityProxyConfig } from '../../src/proxy-config.ts';
-import type { DialTarget } from '../../src/types.ts';
+import type { DialTarget, SocketDial } from '../../src/types.ts';
 import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
 
 describe('buildRealitySessionId', () => {
@@ -236,38 +236,52 @@ describe('buildRealityAad — clientHello boundary cases', () => {
   });
 });
 
+const verifyRealityReachesConnect = async (overrides: Partial<RealityProxyConfig>): Promise<void> => {
+  let connectStartedResolve!: () => void;
+  const connectStarted = new Promise<void>(resolve => { connectStartedResolve = resolve; });
+  let connectCount = 0;
+  const socketDial: SocketDial = {
+    connect: async (_host, _port, options) => {
+      connectCount++;
+      connectStartedResolve();
+      return await new Promise<never>((_, reject) => {
+        options!.signal!.addEventListener('abort', () => reject(options!.signal!.reason), { once: true });
+      });
+    },
+  };
+  const controller = new AbortController();
+  const outcome = dialReality(
+    realityConfig(overrides),
+    target,
+    { socketDial, signal: controller.signal },
+  ).catch((error: unknown) => error);
+  await connectStarted;
+  controller.abort(new DOMException('configuration accepted', 'AbortError'));
+  await outcome;
+  expect(connectCount).toBe(1);
+};
+
 describe('dialReality — pre-connect base64 decoder corner cases', () => {
   // base64url with padding stripped — common in URI form. The decoder
   // re-adds '=' padding internally. We verify the decoder reaches the
-  // connect call without throwing; the actual TLS handshake doesn't happen
-  // because we abort right after.
-  const verifyReachesConnect = async (publicKey: string): Promise<void> => {
-    const fake = makeFakeSocketDial();
-    const ctrl = new AbortController();
-    const p = dialReality(realityConfig({ publicKey }), target, { socketDial: fake.socketDial, signal: ctrl.signal });
-    p.catch(() => { /* aborted dial — we only care that we reached connect */ });
-    await fake.awaitConnect();
-    ctrl.abort();
-    expect(fake.connectCount()).toBe(1);
-    await p.catch(() => {});
-  };
-
+  // connect call without throwing; the blocking dial keeps TLS construction
+  // out of this configuration-only test.
   it('accepts a 43-char base64url string (no padding)', async () => {
     // 'A'.repeat(43) decodes to 32 zero bytes (32-byte pubkey).
-    await verifyReachesConnect('A'.repeat(43));
+    await verifyRealityReachesConnect({ publicKey: 'A'.repeat(43) });
   });
 
   it('accepts a 44-char base64 string with explicit padding', async () => {
-    await verifyReachesConnect(`${'A'.repeat(43)}=`);
+    await verifyRealityReachesConnect({ publicKey: `${'A'.repeat(43)}=` });
   });
 
   it('accepts non-zero trailing padding bits under WHATWG forgiving-base64', async () => {
-    await verifyReachesConnect(`${'A'.repeat(42)}B=`);
+    await verifyRealityReachesConnect({ publicKey: `${'A'.repeat(42)}B=` });
   });
 
   it('accepts a base64url string with the URL-safe alphabet (- and _)', async () => {
     // 32 bytes of 0xfe yields a 43-char base64url with '-' and '_' characters.
-    await verifyReachesConnect('_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v4');
+    await verifyRealityReachesConnect({ publicKey: '_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v4' });
   });
 
   it('rejects a 33-byte pubkey (one byte too long)', async () => {
@@ -285,36 +299,25 @@ describe('dialReality — pre-connect base64 decoder corner cases', () => {
 });
 
 describe('dialReality — shortId hex decoder corner cases', () => {
-  const verifyReachesConnect = async (shortId: string | undefined): Promise<void> => {
-    const fake = makeFakeSocketDial();
-    const ctrl = new AbortController();
-    const p = dialReality(realityConfig({ shortId }), target, { socketDial: fake.socketDial, signal: ctrl.signal });
-    p.catch(() => { /* aborted dial — we only care that we reached connect */ });
-    await fake.awaitConnect();
-    ctrl.abort();
-    expect(fake.connectCount()).toBe(1);
-    await p.catch(() => {});
-  };
-
   it('accepts uppercase hex characters', async () => {
-    await verifyReachesConnect('AABBCCDDEEFF1122');
+    await verifyRealityReachesConnect({ shortId: 'AABBCCDDEEFF1122' });
   });
 
   it('accepts the all-zeros 16-char shortId', async () => {
-    await verifyReachesConnect('0000000000000000');
+    await verifyRealityReachesConnect({ shortId: '0000000000000000' });
   });
 
   it('accepts an empty sid (the documented default — zero-pads to all-zeros)', async () => {
-    await verifyReachesConnect('');
+    await verifyRealityReachesConnect({ shortId: '' });
   });
 
   it('accepts an undefined sid (treated as empty)', async () => {
-    await verifyReachesConnect(undefined);
+    await verifyRealityReachesConnect({ shortId: undefined });
   });
 
   it('accepts shorter hex slices — Xray-core copy(SessionId[8:], shortId) leaves the tail zero', async () => {
-    await verifyReachesConnect('aabb');
-    await verifyReachesConnect('aabbccddeeff');
+    await verifyRealityReachesConnect({ shortId: 'aabb' });
+    await verifyRealityReachesConnect({ shortId: 'aabbccddeeff' });
   });
 
   it('rejects a 17-char hex shortId — exceeds the 8-byte (16 hex char) slot', async () => {
