@@ -69,8 +69,11 @@ function Invoke-SetupInterpreterBody {
 
 function Invoke-SetupPowerShellBody {
   param([string]$Body, [int]$TimeoutSeconds, [switch]$BypassExecutionPolicy)
-  $pwsh = Get-Command pwsh -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-  $exe = if ($pwsh) { $pwsh.Source } else { [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName }
+  $pwsh = if ($env:AGENT_SETUP_TEST_POWERSHELL_EXE) { $null }
+    else { Get-Command pwsh -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1 }
+  $exe = if ($env:AGENT_SETUP_TEST_POWERSHELL_EXE) { $env:AGENT_SETUP_TEST_POWERSHELL_EXE }
+    elseif ($pwsh) { $pwsh.Source }
+    else { [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName }
   $executionPolicy = if ($BypassExecutionPolicy) { '-ExecutionPolicy Bypass ' } else { '' }
   Invoke-SetupInterpreterBody -Body $Body -TimeoutSeconds $TimeoutSeconds -Exe $exe -Arguments "-NoProfile -NonInteractive ${executionPolicy}-Command -"
 }
@@ -101,7 +104,7 @@ function Get-SetupRemoteInstaller {
       [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead,
       $cancellation.Token
     ).GetAwaiter().GetResult()
-    $response.EnsureSuccessStatusCode()
+    $null = $response.EnsureSuccessStatusCode()
     $declaredLength = $response.Content.Headers.ContentLength
     if (($null -ne $declaredLength) -and ($declaredLength -gt $maxBytes)) {
       Stop-Setup 'the installer download exceeded the 8 MiB size limit.'

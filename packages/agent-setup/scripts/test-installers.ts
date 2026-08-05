@@ -580,6 +580,7 @@ interface RunOptions {
   installerUrl?: string;
   timeoutSeconds?: number;
   downloadMaxBytes?: number;
+  powerShellInterpreter?: string;
   lockTimeoutSeconds?: number;
   lockWaitMarker?: string;
   ambientApiKey?: boolean;
@@ -865,6 +866,8 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
   if (options.withInstallHook !== false) env.AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT = FAKE_INSTALLER_SCRIPT;
   if (options.installerUrl) env.AGENT_SETUP_TEST_CLAUDE_URL = options.installerUrl;
   if (options.timeoutSeconds !== undefined) env.AGENT_SETUP_TEST_TIMEOUT_SECONDS = String(options.timeoutSeconds);
+  if (options.downloadMaxBytes !== undefined) env.AGENT_SETUP_TEST_DOWNLOAD_MAX_BYTES = String(options.downloadMaxBytes);
+  if (options.powerShellInterpreter) env.AGENT_SETUP_TEST_POWERSHELL_EXE = options.powerShellInterpreter;
   if (options.lockTimeoutSeconds !== undefined) env.AGENT_SETUP_TEST_LOCK_TIMEOUT_SECONDS = String(options.lockTimeoutSeconds);
   if (options.lockWaitMarker) env.AGENT_SETUP_TEST_LOCK_WAIT_MARKER = options.lockWaitMarker;
   if (options.failClaudeAfterReplace) env.AGENT_SETUP_TEST_FAIL_CLAUDE_AFTER_REPLACE = '1';
@@ -1769,7 +1772,8 @@ test('claude', 'PowerShell downloaded installer is bounded', async t => {
 test('claude', 'PowerShell bounds stdin delivery to an interpreter that never reads', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
-  writeFileSync(join(ws.binDir, 'pwsh'), `#!/bin/bash
+  const interpreter = join(ws.binDir, 'non-reading-pwsh');
+  writeFileSync(interpreter, `#!/bin/bash
 printf '%s' "$$" > "$FAKE_INSTALLER_CHILD_PID_FILE"
 sleep 12
 `, { mode: 0o755 });
@@ -1783,6 +1787,7 @@ sleep 12
     withInstallHook: false,
     installerUrl: `${modelServer.url}/install.ps1`,
     timeoutSeconds: 2,
+    powerShellInterpreter: interpreter,
   });
 
   t.ok(run.code !== 0, 'blocked stdin delivery must fail the setup');
