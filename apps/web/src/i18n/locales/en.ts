@@ -920,7 +920,7 @@ const en = {
       usage: {
         empty: 'No usage records in this range',
         callout: { requests: 'Req', cost: 'Cost', total: 'Total', cached: 'Cached', cachedRate: 'Cached%', prefill: 'Prefill', output: 'Output', hitRate: 'Hit%' },
-        apiKeyScopeInfo: 'API key dimensions always include only API keys owned by your account, even when you have global telemetry access. Other dimensions remain global.',
+        apiKeyScopeInfo: 'API key grouping and filters include only keys owned by your account. Choosing By API Key sets User to Only me; choosing another user clears API key filters and returns to By Model.',
         apiKeyScopeLabel: 'About API key telemetry scope',
         groupBy: { label: 'Group by', model: 'By Model', upstream: 'By Upstream', userId: 'By User', keyId: 'By API Key' },
         filters: {
@@ -961,7 +961,7 @@ const en = {
       performance: {
         empty: 'No performance records in this range',
         actions: { refresh: 'Refresh performance' },
-        apiKeyScopeInfo: 'API key dimensions always include only API keys owned by your account, even when you have global telemetry access. Other dimensions remain global.',
+        apiKeyScopeInfo: 'API key grouping and filters include only keys owned by your account. Choosing By API Key sets User to Only me; choosing another user clears API key filters and returns to By Model.',
         apiKeyScopeLabel: 'About API key telemetry scope',
         breakdown: 'Performance breakdown dimension',
         metric: { label: 'Performance metric', ttft: 'TTFT', outputSpeed: 'Output speed' },
