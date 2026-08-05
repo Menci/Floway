@@ -57,11 +57,9 @@ const dialHttpConnectInner = async (
     'Proxy-Connection: keep-alive',
   ];
   if (auth) {
-    // RFC 7617 §2.1 defaults the credential charset to UTF-8. `btoa` on a
-    // JS string Latin-1-encodes each code unit, so a password byte in
-    // U+0080..U+00FF would go on the wire as that single Latin-1 byte
-    // and a code point > U+00FF would throw InvalidCharacterError mid-
-    // dial. Encode to UTF-8 bytes first, then base64.
+    // RFC 7617 §2.1 defaults the credential charset to UTF-8. Encoding JS
+    // code units as Latin-1 would put U+0080..U+00FF on the wire as a single
+    // byte and fail for higher code points. Encode to UTF-8 bytes first.
     const token = base64EncodeBytes(utf8Bytes(`${auth.username}:${auth.password}`));
     lines.push(`Proxy-Authorization: Basic ${token}`);
   }
