@@ -1,5 +1,5 @@
 import { InfoRegular } from '@fluentui/react-icons';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
 
 import { useTranslation } from '../i18n/translation';
@@ -24,7 +24,7 @@ import { loadUsagePageData } from '../components/usage/data';
 import { formatMetricValue } from '../components/usage/format';
 import { buildSearchChart, buildTokenChart, dashboardBuckets, summarizeUsage } from '../components/usage/plot';
 import { SummaryMetrics } from '../components/usage/summary-metrics';
-import type { UsageFilters, UsageGroupBy, UsageMetric, UsageRange } from '../components/usage/types';
+import type { UsageGroupBy, UsageMetric, UsageRange } from '../components/usage/types';
 import { parseUsageUrlState, serializeUsageUrlState, type UsageUrlState } from '../components/usage/url-state';
 import { fluentComponents } from '../fluent';
 import { formatCount } from '../lib/format-number';
@@ -66,24 +66,21 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const [, setSearchParams] = useSearchParams();
   const rewrite = useEntryRewrite();
   const initialState = loaderData.state;
-  const [range, setRange] = useState<UsageRange>(initialState.range);
-  const [loadedRange, setLoadedRange] = useState<UsageRange>(initialState.range);
-  const [loadedAt, setLoadedAt] = useState(loaderData.loadedAt);
+  const [query, setQuery] = useState(() => ({
+    filters: initialState.filters,
+    groupBy: initialState.groupBy,
+    range: initialState.range,
+  }));
   const [usage, setUsage] = useState(loaderData.usage);
   const [search, setSearch] = useState(loaderData.search);
   const [upstreams, setUpstreams] = useState(loaderData.upstreams);
   const [metric, setMetric] = useState<UsageMetric>(initialState.metric);
-  const [groupBy, setGroupBy] = useState<UsageGroupBy>(initialState.groupBy);
-  const [filters, setFilters] = useState<UsageFilters>(initialState.filters);
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set(initialState.hidden));
-  const loadedGroupRef = useRef(groupBy);
   const [hiddenSearch, setHiddenSearch] = useState<Set<string>>(() => new Set(initialState.hiddenSearch));
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
-  const query = useMemo(() => ({ filters, groupBy, range }), [filters, groupBy, range]);
   const locale = useLocale();
 
-  const reload = useCallback(async (signal: AbortSignal, { background }: { background: boolean }) => {
-    const requestedAt = Date.now();
+  const reload = useCallback(async (signal: AbortSignal, { background, requestedAt }: { background: boolean; requestedAt: number }) => {
     if (!background) setError(null);
     const next = await loadUsagePageData(loaderData.isAdmin, query.range, query.groupBy, query.filters, requestedAt, signal);
     if (signal.aborted) return false;
@@ -94,22 +91,20 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     setUsage(next.usage);
     setSearch(next.search);
     setUpstreams(next.upstreams);
-    setLoadedRange(query.range);
-    setLoadedAt(requestedAt);
     setError(next.error);
-    if (loadedGroupRef.current !== query.groupBy) {
-      loadedGroupRef.current = query.groupBy;
-      setHiddenSeries(new Set());
-    }
     return true;
   }, [loaderData.isAdmin, query]);
 
-  const restoreQuery = useCallback((loaded: typeof query) => {
-    setFilters(loaded.filters);
-    setGroupBy(loaded.groupBy);
-    setRange(loaded.range);
+  const onQueryCommit = useCallback((previous: typeof query, next: typeof query) => {
+    if (previous.groupBy !== next.groupBy) setHiddenSeries(new Set());
   }, []);
-  const { loadedQuery, poll, refresh, refreshing } = useRefreshOnChange(query, reload, restoreQuery);
+  const { loadedAt, loadedQuery, poll, refresh, refreshing } = useRefreshOnChange(
+    query,
+    loaderData.loadedAt,
+    reload,
+    setQuery,
+    onQueryCommit,
+  );
   usePollWhileVisible(poll);
 
   const urlState = useMemo<UsageUrlState>(
@@ -121,7 +116,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   }, [rewrite, setSearchParams, urlState]);
   const addressOf = (patch: Partial<UsageUrlState>) => `?${serializeUsageUrlState({ ...urlState, ...patch })}`;
 
-  const buckets = useMemo(() => dashboardBuckets(loadedRange, loadedAt, locale), [loadedAt, loadedRange, locale]);
+  const buckets = useMemo(() => dashboardBuckets(loadedQuery.range, loadedAt, locale), [loadedAt, loadedQuery.range, locale]);
   const dimensions = useMemo<Array<TelemetryDimension<UsageGroupBy>> | null>(() => {
     if (!usage) return null;
     const upstreamNames = new Map(upstreams.map(upstream => [usageUpstreamDimensionValue(upstream.id), upstream.name]));
@@ -159,26 +154,32 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
       records: usage.series,
       dimensionOptions: selectedDimension.options,
       metric,
-      range: loadedRange,
+      range: loadedQuery.range,
       buckets,
     });
-  }, [buckets, loadedRange, metric, selectedDimension, usage]);
+  }, [buckets, loadedQuery.range, metric, selectedDimension, usage]);
   const searchChart = useMemo(
-    () => search && buildSearchChart({ search, range: loadedRange, buckets }),
-    [buckets, loadedRange, search],
+    () => search && buildSearchChart({ search, range: loadedQuery.range, buckets }),
+    [buckets, loadedQuery.range, search],
   );
   const showSearch = searchChart === null || searchChart.entries.length > 0;
 
   const changeGroupBy = (next: UsageGroupBy) => {
-    if (next === groupBy) return;
-    setGroupBy(next);
-    setFilters(current => clearGroupedTelemetryFilters(current, next));
+    if (next === query.groupBy) return;
+    setQuery(current => ({
+      ...current,
+      filters: clearGroupedTelemetryFilters(current.filters, next),
+      groupBy: next,
+    }));
   };
   const changeRange = (next: UsageRange) => {
-    if (next === range) return;
-    setRange(next);
+    if (next === query.range) return;
+    setQuery(current => ({ ...current, range: next }));
   };
-  const setFilter = (key: UsageGroupBy, values: string[]) => setFilters(current => ({ ...current, [key]: values }));
+  const setFilter = (key: UsageGroupBy, values: string[]) => setQuery(current => ({
+    ...current,
+    filters: { ...current.filters, [key]: values },
+  }));
 
   return <section className="dashboard-page">
     <DashboardPageHeader

@@ -77,11 +77,12 @@ describe('refresh supersession', () => {
 
 test('query-driven refresh commits the query only when its response arrives', async () => {
   const runs: Array<{ settle: (succeeded: boolean) => void }> = [];
-  const reload = (_signal: AbortSignal, _options: { background: boolean }) =>
+  const reload = (_signal: AbortSignal, _options: { background: boolean; requestedAt: number }) =>
     new Promise<boolean>(resolve => { runs.push({ settle: resolve }); });
   const restore = vi.fn();
+  const onCommit = vi.fn();
   const { result, rerender } = renderHook(
-    ({ query }) => useRefreshOnChange(query, reload, restore),
+    ({ query }) => useRefreshOnChange(query, 100, reload, restore, onCommit),
     { initialProps: { query: { groupBy: 'model' } } },
   );
 
@@ -93,15 +94,17 @@ test('query-driven refresh commits the query only when its response arrives', as
     runs[0]!.settle(true);
   });
   expect(result.current.loadedQuery).toEqual({ groupBy: 'upstream' });
+  expect(result.current.loadedAt).toBeGreaterThan(100);
+  expect(onCommit).toHaveBeenCalledWith({ groupBy: 'model' }, { groupBy: 'upstream' });
 });
 
 test('query-driven refresh keeps the displayed query after a failed response', async () => {
   const runs: Array<{ settle: (succeeded: boolean) => void }> = [];
-  const reload = (_signal: AbortSignal, _options: { background: boolean }) =>
+  const reload = (_signal: AbortSignal, _options: { background: boolean; requestedAt: number }) =>
     new Promise<boolean>(resolve => { runs.push({ settle: resolve }); });
   const restore = vi.fn();
   const { result, rerender } = renderHook(
-    ({ query }) => useRefreshOnChange(query, reload, restore),
+    ({ query }) => useRefreshOnChange(query, 100, reload, restore),
     { initialProps: { query: { groupBy: 'model' } } },
   );
 
@@ -110,6 +113,7 @@ test('query-driven refresh keeps the displayed query after a failed response', a
   await act(async () => { runs[0]!.settle(false); });
 
   expect(result.current.loadedQuery).toEqual({ groupBy: 'model' });
+  expect(result.current.loadedAt).toBe(100);
   expect(restore).toHaveBeenCalledWith({ groupBy: 'model' });
 
   await act(async () => { void result.current.refresh(); });

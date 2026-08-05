@@ -11,8 +11,11 @@ export interface RefreshControl {
 }
 
 export interface RefreshOnChangeControl<Query> extends RefreshControl {
+  loadedAt: number;
   loadedQuery: Query;
 }
+
+interface QueryRefreshOptions { background: boolean; requestedAt: number }
 
 export const useRefresh = (
   reload: (signal: AbortSignal, options: { background: boolean }) => Promise<void>,
@@ -66,21 +69,28 @@ const sameQuery = <Query extends Record<string, unknown>>(left: Query, right: Qu
  */
 export const useRefreshOnChange = <Query extends Record<string, unknown>>(
   query: Query,
-  reload: (signal: AbortSignal, options: { background: boolean }) => Promise<boolean>,
+  initialLoadedAt: number,
+  reload: (signal: AbortSignal, options: QueryRefreshOptions) => Promise<boolean>,
   restore: (query: Query) => void,
+  onCommit?: (previous: Query, next: Query) => void,
 ): RefreshOnChangeControl<Query> => {
   const loadedFor = useRef(query);
+  const [loadedAt, setLoadedAt] = useState(initialLoadedAt);
   const [loadedQuery, setLoadedQuery] = useState(query);
   const control = useRefresh(useCallback(async (signal: AbortSignal, options: { background: boolean }) => {
-    const succeeded = await reload(signal, options);
+    const requestedAt = Date.now();
+    const succeeded = await reload(signal, { ...options, requestedAt });
     if (signal.aborted) return;
     if (!succeeded) {
       restore(loadedFor.current);
       return;
     }
+    const previous = loadedFor.current;
     loadedFor.current = query;
     setLoadedQuery(query);
-  }, [query, reload, restore]));
+    setLoadedAt(requestedAt);
+    onCommit?.(previous, query);
+  }, [onCommit, query, reload, restore]));
   const { cancel, refresh } = control;
 
   useEffect(() => {
@@ -91,5 +101,5 @@ export const useRefreshOnChange = <Query extends Record<string, unknown>>(
     void refresh();
   }, [cancel, query, refresh]);
 
-  return { ...control, loadedQuery };
+  return { ...control, loadedAt, loadedQuery };
 };

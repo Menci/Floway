@@ -1,5 +1,5 @@
 import { InfoRegular } from '@fluentui/react-icons';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
 
 import { useTranslation } from '../i18n/translation';
@@ -93,25 +93,22 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const rewrite = useEntryRewrite();
   const initialState = loaderData.state;
   const view: PerformanceView = loaderData.view;
-  const [range, setRange] = useState<PerformanceRange>(initialState.range);
-  const [loadedRange, setLoadedRange] = useState<PerformanceRange>(initialState.range);
-  const [loadedAt, setLoadedAt] = useState(loaderData.loadedAt);
+  const [query, setQuery] = useState(() => ({
+    filters: initialState.filters,
+    groupBy: initialState.groupBy === 'userId' && view !== 'all-by-user' ? 'model' as const : initialState.groupBy,
+    range: initialState.range,
+  }));
   const [metric, setMetric] = useState<PerformanceMetric>(initialState.metric);
   const [percentile, setPercentile] = useState<PerformancePercentile>(initialState.percentile);
-  const [groupBy, setGroupBy] = useState<PerformanceGroupBy>(initialState.groupBy === 'userId' && view !== 'all-by-user' ? 'model' : initialState.groupBy);
   const [breakdownGroup, setBreakdownGroup] = useState<PerformanceGroupBy>('model');
-  const [filters, setFilters] = useState<PerformanceFilters>(initialState.filters);
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set(initialState.hidden));
-  const loadedGroupRef = useRef(groupBy);
   const [overview, setOverview] = useState<PerformanceOverviewResponse | null>(loaderData.overview);
   const [upstreamNames] = useState(() => loaderData.upstreamNames && new Map(loaderData.upstreamNames.map(record => [record.id, record.name])));
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
-  const query = useMemo(() => ({ filters, groupBy, range }), [filters, groupBy, range]);
   const locale = useLocale();
 
   // A background poll must not clear a failure the operator has not read.
-  const reload = useCallback(async (signal: AbortSignal, { background }: { background: boolean }) => {
-    const requestedAt = Date.now();
+  const reload = useCallback(async (signal: AbortSignal, { background, requestedAt }: { background: boolean; requestedAt: number }) => {
     if (!background) setError(null);
     const search = buildPerformanceQuery(query.range, query.groupBy, query.filters, requestedAt);
     const result = await callApi(() => api.api.performance.overview.$get(
@@ -124,21 +121,19 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       return false;
     }
     setOverview(result.data);
-    setLoadedRange(query.range);
-    setLoadedAt(requestedAt);
-    if (loadedGroupRef.current !== query.groupBy) {
-      loadedGroupRef.current = query.groupBy;
-      setHiddenSeries(new Set());
-    }
     return true;
   }, [query]);
 
-  const restoreQuery = useCallback((loaded: typeof query) => {
-    setFilters(loaded.filters);
-    setGroupBy(loaded.groupBy);
-    setRange(loaded.range);
+  const onQueryCommit = useCallback((previous: typeof query, next: typeof query) => {
+    if (previous.groupBy !== next.groupBy) setHiddenSeries(new Set());
   }, []);
-  const { loadedQuery, poll, refresh, refreshing } = useRefreshOnChange(query, reload, restoreQuery);
+  const { loadedAt, loadedQuery, poll, refresh, refreshing } = useRefreshOnChange(
+    query,
+    loaderData.loadedAt,
+    reload,
+    setQuery,
+    onQueryCommit,
+  );
 
   usePollWhileVisible(poll);
 
@@ -160,18 +155,24 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   // axis under an operator who chose nothing.
   // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-combobox/library/src/utils/useSelection.ts#L23-L26
   const changeGroupBy = (next: PerformanceGroupBy) => {
-    if (next === groupBy) return;
-    setGroupBy(next);
-    setFilters(current => clearGroupedTelemetryFilters(current, next));
+    if (next === query.groupBy) return;
+    setQuery(current => ({
+      ...current,
+      filters: clearGroupedTelemetryFilters(current.filters, next),
+      groupBy: next,
+    }));
   };
   const changeRange = (next: PerformanceRange) => {
-    if (next === range) return;
-    setRange(next);
+    if (next === query.range) return;
+    setQuery(current => ({ ...current, range: next }));
   };
-  const setFilter = (key: keyof PerformanceFilters, value: string[]) => setFilters(current => ({ ...current, [key]: value }));
-  const buckets = useMemo(() => performanceBuckets(loadedRange, loadedAt, locale), [loadedAt, loadedRange, locale]);
+  const setFilter = (key: keyof PerformanceFilters, value: string[]) => setQuery(current => ({
+    ...current,
+    filters: { ...current.filters, [key]: value },
+  }));
+  const buckets = useMemo(() => performanceBuckets(loadedQuery.range, loadedAt, locale), [loadedAt, loadedQuery.range, locale]);
   const labels = useMemo(() => overview && upstreamNames && performanceLabels(overview, upstreamNames), [overview, upstreamNames]);
-  const chart = useMemo(() => overview && labels && buildPerformanceChart(overview.series, metric, percentile, loadedQuery.groupBy, labels, buckets, loadedRange), [buckets, labels, loadedQuery.groupBy, loadedRange, metric, overview, percentile]);
+  const chart = useMemo(() => overview && labels && buildPerformanceChart(overview.series, metric, percentile, loadedQuery.groupBy, labels, buckets, loadedQuery.range), [buckets, labels, loadedQuery.groupBy, loadedQuery.range, metric, overview, percentile]);
   const summary = overview?.axes.none[0];
   const summaryCards = [
     ['requests', formatCount(summary?.requests ?? 0, locale)],
