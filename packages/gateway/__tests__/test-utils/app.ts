@@ -1,4 +1,4 @@
-import { flushBackground, trackBackground } from './background-tracker.ts';
+import { trackBackground } from './background-tracker.ts';
 import { app } from '../../src/app.ts';
 import { clearInFlightForTesting, fetchUpstreamModelsCached } from '../../src/data-plane/providers/models-cache.ts';
 import { listModelProviders } from '../../src/data-plane/providers/registry.ts';
@@ -321,13 +321,14 @@ export async function requestApp(path: string, init: RequestInit): Promise<Respo
 export const warmModelsForTest = async (): Promise<void> => {
   const providers = await listModelProviders(null);
   const fetcherForUpstream = await createPerRequestFetcher('TEST');
+  const pending: Promise<unknown>[] = [];
   await Promise.all(providers.map(async provider => {
     await fetchUpstreamModelsCached(provider, {
-      scheduler: trackBackground,
+      scheduler: promise => { pending.push(promise); },
       fetcher: fetcherForUpstream(provider.upstreamId),
     });
   }));
-  await flushBackground();
+  await Promise.allSettled(pending);
 };
 
 export function parseSSEText(text: string): Array<{ event: string; data: string }> {
