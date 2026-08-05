@@ -8,7 +8,11 @@ import { requireDashboardUser } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
 import type { GlobalError } from '../api/client';
 import { SEARCH_PROVIDER_LABEL_KEYS } from '../components/search/provider';
-import { TelemetryDimensionControls, type TelemetryDimension } from '../components/telemetry/dimension-controls';
+import {
+  TelemetryFilterFields,
+  TelemetryGroupByField,
+  type TelemetryDimension,
+} from '../components/telemetry/dimension-controls';
 import { clearGroupedTelemetryFilters, scopeTelemetryIdentity } from '../components/telemetry/filter-state';
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
@@ -192,37 +196,46 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error.message}</OutcomeMessageBar>}
 
     <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
-      {availableDimensions && <TelemetryDimensionControls
-        disabled={refreshing}
-        dimensions={availableDimensions}
-        filters={loadedQuery.filters}
-        groupBy={loadedQuery.groupBy}
-        groupByAdornment={loadedQuery.groupBy === 'keyId' && <Tooltip content={t('dashboard.usage.apiKeyScopeInfo')} relationship="description">
-          <Button
-            appearance="subtle"
-            aria-label={t('dashboard.usage.apiKeyScopeLabel')}
-            className={CONTROL_ROW_CLASS}
-            icon={<InfoRegular />}
-          />
-        </Tooltip>}
-        groupByLabel={t('dashboard.usage.groupBy.label')}
-        onFilterChange={setFilter}
-        onGroupByChange={changeGroupBy}
-        selectedLabel={count => t('dashboard.usage.filters.selected', { count })}
-      />}
-      <div className="flex justify-end min-w-0">
-        <ChoiceGroup
-          ariaLabel={t('dashboard.usage.range.label')}
+      <div className="flex items-end gap-3 min-w-0 flex-wrap">
+        {availableDimensions && <TelemetryGroupByField
           disabled={refreshing}
-          items={[
-            { value: 'today', label: t('dashboard.usage.range.today'), to: addressOf({ range: 'today' }) },
-            { value: '7d', label: t('dashboard.usage.range.sevenDays'), to: addressOf({ range: '7d' }) },
-            { value: '30d', label: t('dashboard.usage.range.thirtyDays'), to: addressOf({ range: '30d' }) },
-          ]}
-          onChange={value => changeRange(value as UsageRange)}
-          value={loadedQuery.range}
-        />
+          dimensions={availableDimensions}
+          groupBy={loadedQuery.groupBy}
+          groupByAdornment={loadedQuery.groupBy === 'keyId' && <Tooltip content={t('dashboard.usage.apiKeyScopeInfo')} relationship="description">
+            <Button
+              appearance="subtle"
+              aria-label={t('dashboard.usage.apiKeyScopeLabel')}
+              className={CONTROL_ROW_CLASS}
+              icon={<InfoRegular />}
+            />
+          </Tooltip>}
+          groupByLabel={t('dashboard.usage.groupBy.label')}
+          onGroupByChange={changeGroupBy}
+        />}
+        <div className="ml-auto flex-none">
+          <ChoiceGroup
+            ariaLabel={t('dashboard.usage.range.label')}
+            disabled={refreshing}
+            items={[
+              { value: 'today', label: t('dashboard.usage.range.today'), to: addressOf({ range: 'today' }) },
+              { value: '7d', label: t('dashboard.usage.range.sevenDays'), to: addressOf({ range: '7d' }) },
+              { value: '30d', label: t('dashboard.usage.range.thirtyDays'), to: addressOf({ range: '30d' }) },
+            ]}
+            onChange={value => changeRange(value as UsageRange)}
+            value={loadedQuery.range}
+          />
+        </div>
       </div>
+      {availableDimensions && <div className="flex items-end gap-3 min-w-0 flex-wrap">
+        <TelemetryFilterFields
+          disabled={refreshing}
+          dimensions={availableDimensions}
+          filters={loadedQuery.filters}
+          groupBy={loadedQuery.groupBy}
+          onFilterChange={setFilter}
+          selectedLabel={count => t('dashboard.usage.filters.selected', { count })}
+        />
+      </div>}
 
       {tokenChart === null || summary === null || selectedDimension === null ? (
         <EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine>
