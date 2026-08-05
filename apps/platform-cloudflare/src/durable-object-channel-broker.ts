@@ -64,6 +64,9 @@ const iterateFromBroadcastSocket = <T>(
         socket?.removeEventListener('close', onClose);
         socket?.removeEventListener('error', onError);
       };
+      // Subscriber termination must remove its WebSocket from the Durable
+      // Object hibernation registry. Waiting for the eager open also covers a
+      // cancellation or error that arrives while the handshake is in flight.
       const closeSocket = async (): Promise<void> => {
         await openPromise.catch(() => {});
         socket?.close(1000, 'subscriber done');
