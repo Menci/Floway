@@ -5,6 +5,19 @@ import { buildCustomUpstreamRecord, copilotModels, flushAsyncWork, requestApp, s
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
 
+interface Deferred {
+  readonly promise: Promise<void>;
+  readonly resolve: () => void;
+}
+
+const deferred = (): Deferred => {
+  let resolve!: () => void;
+  const promise = new Promise<void>(res => {
+    resolve = res;
+  });
+  return { promise, resolve };
+};
+
 test('/v1/embeddings wraps scalar string input for Copilot upstream', async () => {
   const { apiKey } = await setupAppTest();
   let forwardedBody:
@@ -132,6 +145,124 @@ test('/v1/embeddings records usage under request model when upstream omits model
   assertEquals(performanceRows[0]?.requests, 1);
   assertEquals(performanceRows[0]?.errorsNoOutput, 0);
   assertEquals(performanceRows[0]?.errorsWithOutput, 0);
+});
+
+test('/v1/embeddings preserves a success with malformed usage as a request-only row', async () => {
+  const { apiKey, repo } = await setupAppTest();
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+
+      if (url.hostname === 'update.code.visualstudio.com') {
+        return jsonResponse(['1.110.1']);
+      }
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'copilot-access-token',
+          expires_at: 4102444800,
+          refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
+        });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'text-embedding-real', supported_endpoints: ['/embeddings'] }]));
+      }
+      if (url.pathname === '/embeddings') {
+        return jsonResponse({
+          data: [{ object: 'embedding', index: 0, embedding: [0.1] }],
+          usage: { prompt_tokens: 2, total_tokens: 3 },
+        });
+      }
+
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/embeddings', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey.key,
+        },
+        body: JSON.stringify({ model: 'text-embedding-real', input: 'hello' }),
+      });
+
+      assertEquals(response.status, 200);
+      await response.json();
+    },
+  );
+
+  await flushAsyncWork();
+
+  const usage = await repo.usage.listAll();
+  assertEquals(usage.length, 1);
+  assertEquals(usage[0]?.requests, 1);
+  assertEquals(tokenCountsFromUsage(usage[0]!), {});
+});
+
+test('/v1/embeddings aborts a pending upstream request when the inbound request is canceled', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_embed',
+    name: 'Embedding Provider',
+    enabled: true,
+    sortOrder: 100,
+    createdAt: '2026-05-01T00:00:00.000Z',
+    flagOverrides: {},
+    disabledPublicModelIds: [],
+    config: {
+      baseUrl: 'https://embed.example.com',
+      authStyle: 'bearer',
+      ingressHeadersRules: [],
+      apiKey: 'sk-embed',
+      endpoints: {},
+    },
+  }));
+
+  const upstreamStarted = deferred();
+  const upstreamAborted = deferred();
+  let upstreamSignal: AbortSignal | undefined;
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.pathname === '/v1/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'custom-embed-model' }] });
+      }
+      if (url.pathname === '/v1/embeddings') {
+        upstreamSignal = request.signal;
+        upstreamStarted.resolve();
+        return new Promise<Response>((_resolve, reject) => {
+          request.signal.addEventListener('abort', () => {
+            upstreamAborted.resolve();
+            reject(request.signal.reason);
+          }, { once: true });
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const controller = new AbortController();
+      const response = requestApp('/v1/embeddings', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey.key,
+        },
+        body: JSON.stringify({ model: 'custom-embed-model', input: 'hello' }),
+        signal: controller.signal,
+      });
+
+      await upstreamStarted.promise;
+      assertExists(upstreamSignal);
+      assertEquals(upstreamSignal.aborted, false);
+      controller.abort(new Error('client disconnected'));
+      await upstreamAborted.promise;
+      assertEquals(upstreamSignal.aborted, true);
+      assertEquals((await response).status, 502);
+    },
+  );
 });
 
 test('/v1/embeddings records request and upstream performance', async () => {
@@ -453,25 +584,11 @@ test('/v1/embeddings reports the failed upstream even when a sibling upstream\'s
 
 test('/v1/embeddings rejects malformed body at the provider-independent boundary', async () => {
   const { apiKey } = await setupAppTest();
+  let dispatched = false;
 
   await withMockedFetch(
     request => {
-      const url = new URL(request.url);
-
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
-      if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({
-          token: 'copilot-access-token',
-          expires_at: 4102444800,
-          refresh_in: 3600,
-          endpoints: { api: 'https://api.individual.githubcopilot.com' },
-        });
-      }
-      if (url.pathname === '/models') {
-        return jsonResponse(copilotModels([{ id: 'text-embedding-real', supported_endpoints: ['/embeddings'] }]));
-      }
+      dispatched = true;
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
@@ -489,4 +606,6 @@ test('/v1/embeddings rejects malformed body at the provider-independent boundary
       assertEquals(body.error.type, 'api_error');
     },
   );
+
+  assertEquals(dispatched, false);
 });
