@@ -360,6 +360,7 @@ test('translateChatCompletionsChunkToResponsesEvents keeps late opaque with prio
     type: 'reasoning',
     id: expect.stringMatching(/^rs_[0-9a-f]{32}$/),
     summary: [{ type: 'summary_text', text: 'trace' }],
+    encrypted_content: 'sig',
   });
 });
 
