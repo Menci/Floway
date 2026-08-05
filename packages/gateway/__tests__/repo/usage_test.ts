@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { InMemoryRepo } from './memory.ts';
 import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename } from './test-sqlite.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
-import type { Repo, UsageRecord } from '../../src/repo/types.ts';
+import type { ApiKey, Repo, UsageOverviewQueryOptions, UsageRecord } from '../../src/repo/types.ts';
 import { tokenCountsFromUsage, tokenRatesFromUsage, tokenUsageMetrics } from '../../src/repo/usage-metrics.ts';
 import type { SqlBindValue, SqlDatabase } from '@floway-dev/platform';
 import type { PriceVector } from '@floway-dev/protocols/common';
@@ -30,6 +30,19 @@ const record = (overrides: Partial<UsageRecord>): UsageRecord => ({
   requests: 1,
   metrics: tokenUsageMetrics({ input: 300_000, input_cache_read: 20_000, output: 100_000 }, longPricing),
   ...overrides,
+});
+
+const apiKey = (id: string, userId: number): ApiKey => ({
+  id,
+  userId,
+  name: id,
+  key: `raw-${id}`,
+  serverSecret: '01'.repeat(32),
+  createdAt: '2026-01-01T00:00:00.000Z',
+  upstreamIds: null,
+  deletedAt: null,
+  dumpRetentionSeconds: null,
+  responsesRetentionSeconds: 0,
 });
 
 const query = (repo: Repo) => repo.usage.query({ keyIds: ['key-1'], start: '2026-07-12T00', end: '2026-07-12T01' });
@@ -279,4 +292,67 @@ test('SQL usage key scopes use key-hour range indexes in both storage tables', a
   }));
   assertEquals(plans.some(plan => plan.includes('idx_usage_metric_key_hour')), true);
   assertEquals(plans.some(plan => plan.includes('idx_usage_requests_key_hour')), true);
+});
+
+test('SQL usage overview matches the in-memory oracle across filters, facets, axes, and exact decimals', async () => {
+  const sql = new SqlRepo(await createSqliteTestDb());
+  const memory = new InMemoryRepo();
+  const repos = [sql, memory];
+  for (const repo of repos) {
+    await repo.apiKeys.save(apiKey('key-1', 1));
+    await repo.apiKeys.save(apiKey('key-2', 2));
+    await Promise.all([
+      repo.usage.set(record({
+        keyId: 'key-1', model: 'model-a', modelKey: 'storage-a', upstream: null,
+        hour: '2026-11-01T05', requests: 1,
+        metrics: [{ metric: 'input_tokens', quantity: '9007199254740992', unitPrice: '0.0000001' }],
+      })),
+      repo.usage.set(record({
+        keyId: 'key-1', model: 'model-a', modelKey: 'storage-b', upstream: null,
+        hour: '2026-11-01T06', requests: 2,
+        pricingSelector: { serviceTier: 'priority' },
+        metrics: [{ metric: 'input_tokens', quantity: '0.1', unitPrice: '0.2' }],
+      })),
+      repo.usage.set(record({
+        keyId: 'key-2', model: 'model-b', upstream: 'none',
+        hour: '2026-11-01T06', requests: 4,
+        metrics: [{ metric: 'output_tokens', quantity: '3', unitPrice: null }],
+      })),
+      repo.usage.set(record({
+        keyId: 'ghost', model: 'model-b', upstream: null,
+        hour: '2026-11-01T07', requests: 8,
+        metrics: [{ metric: 'input_tokens', quantity: '0', unitPrice: '0.3' }],
+      })),
+    ]);
+  }
+  const options: UsageOverviewQueryOptions = {
+    actorUserId: 1,
+    isAdmin: true,
+    start: '2026-11-01T05',
+    end: '2026-11-01T08',
+    groupBy: 'model',
+    filters: { keyIds: [], userIds: [], models: ['model-a', 'model-b'], upstreams: ['none'] },
+    keyToUser: new Map([['key-1', 1], ['key-2', 2]]),
+    bucketForHour: hour => hour === '2026-11-01T05' || hour === '2026-11-01T06'
+      ? '2026-11-01T01'
+      : '2026-11-01T02',
+  };
+
+  const expected = await memory.usage.queryOverview(options);
+  const actual = await sql.usage.queryOverview(options);
+
+  assertEquals(actual, expected);
+  assertEquals(actual.dimensionValues, {
+    keyIds: ['key-1'],
+    userIds: [0, 1, 2],
+    models: ['model-a', 'model-b'],
+    upstreams: ['none', 'upstream:none'],
+  });
+  assertEquals(actual.axes.none[0], {
+    bucket: 'all',
+    group: 'all',
+    requests: 11,
+    metrics: [{ metric: 'input_tokens', quantity: '9007199254740992.1' }],
+    cost: '900719925.49409921',
+  });
 });
