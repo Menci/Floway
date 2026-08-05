@@ -15,7 +15,7 @@
 // touches the user's real config or credentials.
 //
 // Run the whole suite with `pnpm run test:agent-setup-installers`, or scope it
-// with `--agent claude` / `--agent codex`.
+// with `--agent claude` / `--agent codex` and `--match <name substring>`.
 
 import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -3068,8 +3068,17 @@ const parseAgentFilter = (): ScriptAgent | 'all' => {
   throw new Error(`--agent must be "claude" or "codex", got ${JSON.stringify(value)}`);
 };
 
+const parseNameFilter = (): string | null => {
+  const index = process.argv.indexOf('--match');
+  if (index === -1) return null;
+  const value = process.argv[index + 1];
+  if (value) return value;
+  throw new Error('--match requires a non-empty test-name substring');
+};
+
 const main = async (): Promise<void> => {
   const filter = parseAgentFilter();
+  const nameFilter = parseNameFilter();
   modelServer = await startModelServer();
 
   let passed = 0;
@@ -3080,6 +3089,7 @@ const main = async (): Promise<void> => {
   try {
     for (const testCase of cases) {
       if (filter !== 'all' && testCase.agent !== filter) continue;
+      if (nameFilter !== null && !testCase.name.includes(nameFilter)) continue;
       modelServer.reset();
       const assert = makeAssert();
       const label = `[${testCase.agent}] ${testCase.name}`;
