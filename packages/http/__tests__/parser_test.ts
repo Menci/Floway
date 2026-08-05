@@ -502,6 +502,31 @@ describe('parseHttpResponse — Content-Length / Transfer-Encoding smuggling mat
     expect(r.headers.get('transfer-encoding')).toBe('gzip');
   });
 
+  it('preserves a quoted comma in a remaining transfer-coding parameter', async () => {
+    const r = await parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip; note="a,b", chunked\r\n\r\n2\r\nOK\r\n0\r\n\r\n',
+    ));
+    expect(await collectBody(r)).toBe('OK');
+    expect(r.headers.get('transfer-encoding')).toBe('gzip; note="a,b"');
+  });
+
+  it.each([
+    'g@zip, chunked',
+    'gzip; missing-value, chunked',
+    'chunked; forbidden=parameter',
+    'gzip; note="unterminated, chunked',
+  ])('rejects malformed Transfer-Encoding grammar: %j', async transferEncoding => {
+    await expect(parseHttpResponse(respondAndEnd(
+      `HTTP/1.1 200 OK\r\nTransfer-Encoding: ${transferEncoding}\r\n\r\n`,
+    ))).rejects.toMatchObject({ code: 'BAD_HEADERS' });
+  });
+
+  it('rejects Transfer-Encoding on HTTP/1.0', async () => {
+    await expect(parseHttpResponse(respondAndEnd(
+      'HTTP/1.0 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n',
+    ))).rejects.toMatchObject({ code: 'TE_NOT_CHUNKED' });
+  });
+
   it('rejects Transfer-Encoding: chunked listed twice (across two headers)', async () => {
     await expect(parseHttpResponse(respondAndEnd(
       'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n',
@@ -797,6 +822,21 @@ describe('parseHttpResponse — 1xx interim heads', () => {
       '',
     ].join('\r\n')));
     expect(r.status).toBe(200);
+  });
+
+  it('returns 101 as a protocol switch with the following bytes left opaque', async () => {
+    const r = await parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 101 Switching Protocols\r\nUpgrade: example\r\nConnection: Upgrade\r\n\r\nPROTO',
+    ));
+    expect(r.status).toBe(101);
+    expect(await collectBody(r)).toBe('PROTO');
+  });
+
+  it('bounds an unending sequence of informational response heads', async () => {
+    const informational = 'HTTP/1.1 100 Continue\r\n\r\n'.repeat(17);
+    await expect(parseHttpResponse(respondAndEnd(
+      `${informational}HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n`,
+    ))).rejects.toMatchObject({ code: 'TOO_MANY_INFORMATIONAL' });
   });
 });
 

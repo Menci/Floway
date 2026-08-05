@@ -30,6 +30,13 @@ export const fetchOnStream = async (
       { rfc: 'RFC 9110 §6.4.1' },
     );
   }
+  if (request.method.toUpperCase() === 'CONNECT') {
+    throw new HttpProtocolError(
+      'CONNECT requests are not supported by this HTTP response layer',
+      'CONNECT_REQUEST_REJECTED',
+      { rfc: 'RFC 9112 §6.3' },
+    );
+  }
 
   // RFC 9110 §9.1: the method is a token. The same anti-smuggling rationale
   // as header names applies — a CR/LF/SP smuggled into the method would split

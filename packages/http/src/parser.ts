@@ -51,11 +51,13 @@ export const toWebResponse = (raw: RawHttpResponse): Response => {
  * 1xx interim heads (100 Continue, 103 Early Hints, …) are read and
  * discarded transparently — RFC 9112 §6 mandates no body on a 1xx, so any
  * subsequent bytes are the next response head, which we re-parse on the
- * spot. The returned struct is always a non-1xx final response.
+ * spot. Status 101 is returned as a protocol-switch boundary whose body is
+ * the opaque post-upgrade byte stream; other informational heads are skipped.
  */
 export const parseHttpResponse = async (readable: ReadableStream<Uint8Array>): Promise<RawHttpResponse> => {
   const reader = readable.getReader();
   let buffer: Uint8Array = new Uint8Array(0);
+  let informationalCount = 0;
   // Hand-off contract: on the success path the reader is moved into the body
   // framing stream, which then owns the lock. On every throw before that
   // hand-off the reader must release the lock — otherwise a downstream
@@ -66,7 +68,17 @@ export const parseHttpResponse = async (readable: ReadableStream<Uint8Array>): P
     while (true) {
       const result = await readResponseHead(reader, buffer);
       buffer = result.remainder;
+      if (result.status === 101) {
+        return finalizeResponse(reader, result);
+      }
       if (result.status >= 100 && result.status < 200) {
+        informationalCount++;
+        if (informationalCount > 16) {
+          throw new HttpProtocolError(
+            'HTTP/1.1 response exceeded 16 informational heads',
+            'TOO_MANY_INFORMATIONAL',
+          );
+        }
         // Interim response: no body to frame, no headers to surface. The
         // remainder bytes belong to the next response; loop back into
         // head-parsing with them already buffered.
@@ -81,6 +93,7 @@ export const parseHttpResponse = async (readable: ReadableStream<Uint8Array>): P
 };
 
 interface ResponseHead {
+  version: '1.0' | '1.1';
   status: number;
   statusText: string;
   headers: Headers;
@@ -205,14 +218,19 @@ const readResponseHead = async (
     respHeaders.append(name, value);
   }
 
-  return { status, statusText, headers: respHeaders, rawContentLengths, rawTransferEncodings, remainder };
+  const version = statusLine.startsWith('HTTP/1.0') ? '1.0' : '1.1';
+  return { version, status, statusText, headers: respHeaders, rawContentLengths, rawTransferEncodings, remainder };
 };
 
 const finalizeResponse = (
   reader: ReadableStreamDefaultReader<Uint8Array>,
   head: ResponseHead,
 ): RawHttpResponse => {
-  const { status, statusText, headers, rawContentLengths, rawTransferEncodings, remainder } = head;
+  const { version, status, statusText, headers, rawContentLengths, rawTransferEncodings, remainder } = head;
+
+  if (status === 101) {
+    return { status, statusText, headers, body: untilEofBody(reader, remainder) };
+  }
 
   // RFC 9112 §6.3 gives response status semantics precedence over framing
   // fields: 204, 205, and 304 never carry content even if a peer includes a
@@ -232,6 +250,13 @@ const finalizeResponse = (
       { rfc: 'RFC 9112 §6.3' },
     );
   }
+  if (version === '1.0' && rawTransferEncodings.length > 0) {
+    throw new HttpProtocolError(
+      'HTTP/1.0 response cannot use Transfer-Encoding',
+      'TE_NOT_CHUNKED',
+      { rfc: 'RFC 9112 §6.1' },
+    );
+  }
   // RFC 9112 §6.3: multiple Content-Length values are an error unless
   // every value is the same single token. We forbid duplicates outright.
   if (rawContentLengths.length > 1) {
@@ -245,11 +270,11 @@ const finalizeResponse = (
   // Parse Transfer-Encoding as a coding list. `chunked` MUST be final when
   // present; a response whose final coding is not chunked is close-delimited
   // and the encoded bytes stay opaque to this framing layer.
-  const teTokens = rawTransferEncodings
-    .flatMap(v => v.split(','))
-    .map(t => t.trim().toLowerCase())
-    .filter(t => t !== '');
-  if (rawTransferEncodings.length > 0 && teTokens.length === 0) {
+  const transferCodings = splitTransferCodings(rawTransferEncodings)
+    .filter(value => value.trim() !== '')
+    .map(parseTransferCoding);
+  const teTokens = transferCodings.map(coding => coding.name);
+  if (rawTransferEncodings.length > 0 && transferCodings.length === 0) {
     throw new HttpProtocolError(
       'HTTP/1.1 response has an empty Transfer-Encoding value',
       'TE_NOT_CHUNKED',
@@ -284,9 +309,9 @@ const finalizeResponse = (
   let body: ReadableStream<Uint8Array>;
   if (teIsChunked) {
     body = decodeChunked(reader, remainder);
-    const remainingCodings = teTokens.slice(0, -1);
+    const remainingCodings = transferCodings.slice(0, -1);
     if (remainingCodings.length === 0) headers.delete('transfer-encoding');
-    else headers.set('transfer-encoding', remainingCodings.join(', '));
+    else headers.set('transfer-encoding', remainingCodings.map(coding => coding.raw).join(', '));
   } else if (contentLength !== null) {
     const total = Number(contentLength);
     if (!/^\d+$/.test(contentLength) || !Number.isSafeInteger(total)) {
@@ -305,6 +330,115 @@ const finalizeResponse = (
   }
 
   return { status, statusText, headers, body };
+};
+
+interface TransferCoding {
+  name: string;
+  raw: string;
+}
+
+const splitTransferCodings = (values: string[]): string[] => {
+  const codings: string[] = [];
+  for (const value of values) {
+    let start = 0;
+    let quoted = false;
+    let escaped = false;
+    for (let i = 0; i < value.length; i++) {
+      const c = value[i]!;
+      if (escaped) {
+        escaped = false;
+      } else if (quoted && c === '\\') {
+        escaped = true;
+      } else if (c === '"') {
+        quoted = !quoted;
+      } else if (!quoted && c === ',') {
+        codings.push(value.slice(start, i));
+        start = i + 1;
+      }
+    }
+    codings.push(value.slice(start));
+  }
+  return codings;
+};
+
+const parseTransferCoding = (input: string): TransferCoding => {
+  const raw = input.trim();
+  let offset = 0;
+  const skipOws = (): void => {
+    while (input[offset] === ' ' || input[offset] === '\t') offset++;
+  };
+  const readToken = (): string => {
+    const start = offset;
+    while (offset < input.length && TCHAR.test(input[offset]!)) offset++;
+    return input.slice(start, offset);
+  };
+
+  skipOws();
+  const name = readToken().toLowerCase();
+  if (name === '') {
+    throw new HttpProtocolError(
+      `HTTP/1.1 response has malformed transfer coding ${JSON.stringify(input)}`,
+      'BAD_HEADERS',
+      { rfc: 'RFC 9110 §10.1.4' },
+    );
+  }
+  let hasParameters = false;
+  while (true) {
+    skipOws();
+    if (offset === input.length) break;
+    if (input[offset++] !== ';') {
+      throw new HttpProtocolError(
+        `HTTP/1.1 response has malformed transfer coding ${JSON.stringify(input)}`,
+        'BAD_HEADERS',
+        { rfc: 'RFC 9110 §10.1.4' },
+      );
+    }
+    hasParameters = true;
+    skipOws();
+    if (readToken() === '') throwMalformedTransferCoding(input);
+    skipOws();
+    if (input[offset++] !== '=') throwMalformedTransferCoding(input);
+    skipOws();
+    if (input[offset] === '"') {
+      offset++;
+      let closed = false;
+      while (offset < input.length) {
+        const c = input.charCodeAt(offset++);
+        if (c === 0x22) {
+          closed = true;
+          break;
+        }
+        if (c === 0x5c) {
+          if (offset >= input.length) throwMalformedTransferCoding(input);
+          const escapedByte = input.charCodeAt(offset++);
+          if (escapedByte !== 0x09 && (escapedByte < 0x20 || escapedByte === 0x7f)) {
+            throwMalformedTransferCoding(input);
+          }
+        } else if (c !== 0x09 && (c < 0x20 || c === 0x7f)) {
+          throwMalformedTransferCoding(input);
+        }
+      }
+      if (!closed) throwMalformedTransferCoding(input);
+    } else if (readToken() === '') {
+      throwMalformedTransferCoding(input);
+    }
+  }
+  if (name === 'chunked' && hasParameters) {
+    throw new HttpProtocolError(
+      'HTTP/1.1 chunked transfer coding cannot carry parameters',
+      'BAD_HEADERS',
+      { rfc: 'RFC 9112 §7.1' },
+    );
+  }
+  return { name, raw };
+};
+
+const throwMalformedTransferCoding = (input: string): never => {
+  throw new HttpProtocolError(
+    `HTTP/1.1 response has malformed transfer coding ${JSON.stringify(input)}`,
+    'BAD_HEADERS',
+    { rfc: 'RFC 9110 §10.1.4' },
+  );
 };
 
 // Body framing — Content-Length. Frames the body to exactly `total` bytes:

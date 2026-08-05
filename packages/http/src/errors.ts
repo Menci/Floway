@@ -20,11 +20,13 @@ export type HttpProtocolErrorCode =
   | 'CHUNK_TOO_LONG'
   | 'TRAILERS_TOO_LONG'
   | 'TOO_MANY_HEADERS'
+  | 'TOO_MANY_INFORMATIONAL'
   | 'HEADER_BUFFER_OVERFLOW'
   | 'WS_MESSAGE_TOO_LARGE'
   | 'EOF'
   | 'TRAILING_BODY_BYTES'
-  | 'HEAD_REQUEST_REJECTED';
+  | 'HEAD_REQUEST_REJECTED'
+  | 'CONNECT_REQUEST_REJECTED';
 
 export class HttpProtocolError extends Error {
   override readonly name = 'HttpProtocolError';

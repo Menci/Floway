@@ -321,6 +321,15 @@ describe('fetchOnStream — request-method handling', () => {
       { method: 'Head', path: '/', headers: { Host: 'h' } },
     )).rejects.toMatchObject({ code: 'HEAD_REQUEST_REJECTED' });
   });
+
+  it('rejects CONNECT because a successful response switches to an opaque tunnel', async () => {
+    const fake = makeFakeDuplex();
+    await expect(fetchOnStream(
+      { readable: fake.readable, writable: fake.writable },
+      { method: 'CONNECT', path: 'example.com:443', headers: { Host: 'example.com:443' } },
+    )).rejects.toMatchObject({ code: 'CONNECT_REQUEST_REJECTED' });
+    expect(fake.written()).toHaveLength(0);
+  });
 });
 
 describe('fetchOnStream — request-line smuggling defense (RFC 9110 §9.1 / RFC 9112 §3.2)', () => {
