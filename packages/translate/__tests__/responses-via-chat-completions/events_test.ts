@@ -27,6 +27,15 @@ const chunk = (
   ...(usage ? { usage } : {}),
 });
 
+test('empty open finish_reason still terminates the Responses stream', () => {
+  const state = createChatCompletionsToResponsesStreamState();
+  translateChatCompletionsChunkToResponsesEvents(chunk({ role: 'assistant', content: 'done' }), state);
+  translateChatCompletionsChunkToResponsesEvents(chunk({}, ''), state);
+
+  const events = flushChatCompletionsToResponsesEvents(state);
+  assertEquals(events.at(-1)?.type, 'response.completed');
+});
+
 const translate = (chunks: ChatCompletionsStreamEvent[]): ResponsesStreamEvent[] => {
   const state = createChatCompletionsToResponsesStreamState();
   return [...chunks.flatMap(item => translateChatCompletionsChunkToResponsesEvents(item, state)), ...flushChatCompletionsToResponsesEvents(state)];

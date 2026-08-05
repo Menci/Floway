@@ -25,43 +25,97 @@ const isPlainArray = (value: unknown): value is unknown[] => Array.isArray(value
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 
+const ownValue = (object: Record<string, unknown>, key: string): unknown =>
+  Object.hasOwn(object, key) ? object[key] : undefined;
+
+const setOwnValue = (object: Record<string, unknown>, key: string, value: unknown): void => {
+  Object.defineProperty(object, key, {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
+};
+
+const cloneExtra = <T>(value: T): T => structuredClone(value);
+
+const indexedObjectPositions = new WeakMap<Record<string, unknown>[], Map<number, number>>();
+
+const mergeObjectFields = (target: Record<string, unknown>, source: Record<string, unknown>): void => {
+  for (const [key, value] of Object.entries(source)) {
+    if (key === 'index' || value === undefined || value === null) continue;
+    const current = ownValue(target, key);
+    if (typeof current === 'string' && typeof value === 'string') {
+      setOwnValue(target, key, current + value);
+    } else if (isPlainObject(current) && isPlainObject(value)) {
+      setOwnValue(target, key, { ...current, ...cloneExtra(value) });
+    } else {
+      setOwnValue(target, key, cloneExtra(value));
+    }
+  }
+};
+
+const mergeIndexedObjects = (
+  existing: Record<string, unknown>[],
+  incoming: readonly Record<string, unknown>[],
+): Record<string, unknown>[] => {
+  let positionByIndex = indexedObjectPositions.get(existing);
+  if (positionByIndex === undefined) {
+    positionByIndex = new Map();
+    const initial = existing.splice(0);
+    for (const source of initial) {
+      const index = source.index;
+      const position = typeof index === 'number' && Number.isFinite(index) ? positionByIndex.get(index) : undefined;
+      if (position === undefined) {
+        existing.push(cloneExtra(source));
+        if (typeof index === 'number' && Number.isFinite(index)) positionByIndex.set(index, existing.length - 1);
+      } else {
+        mergeObjectFields(existing[position]!, source);
+      }
+    }
+    indexedObjectPositions.set(existing, positionByIndex);
+  }
+
+  for (const source of incoming) {
+    const index = source.index;
+    const position = typeof index === 'number' && Number.isFinite(index)
+      ? positionByIndex.get(index)
+      : undefined;
+    if (position === undefined) {
+      const appended = cloneExtra(source);
+      existing.push(appended);
+      if (typeof index === 'number' && Number.isFinite(index)) positionByIndex.set(index, existing.length - 1);
+      continue;
+    }
+    mergeObjectFields(existing[position]!, source);
+  }
+  return existing;
+};
+
 const accumulate = (acc: Record<string, unknown>, key: string, value: unknown): void => {
   if (value === undefined || value === null) return;
-  const existing = acc[key];
+  const existing = ownValue(acc, key);
 
   if (typeof existing === 'string' && typeof value === 'string') {
-    acc[key] = existing + value;
+    setOwnValue(acc, key, existing + value);
     return;
   }
 
-  if (isPlainArray(existing) && isPlainArray(value) && existing.every(isPlainObject) && value.every(isPlainObject)) {
-    const merged = [...existing] as Record<string, unknown>[];
-    for (const incoming of value as Record<string, unknown>[]) {
-      const idx = typeof incoming.index === 'number' ? incoming.index : -1;
-      if (idx >= 0 && isPlainObject(merged[idx])) {
-        const into = merged[idx];
-        for (const [k, v] of Object.entries(incoming)) {
-          if (k === 'index') continue;
-          if (typeof into[k] === 'string' && typeof v === 'string') into[k] = into[k] + v;
-          else if (isPlainObject(into[k]) && isPlainObject(v)) into[k] = { ...into[k], ...v };
-          else if (v !== undefined && v !== null) into[k] = v;
-        }
-      } else if (idx >= 0) {
-        merged[idx] = incoming;
-      } else {
-        merged.push(incoming);
-      }
-    }
-    acc[key] = merged;
+  if (isPlainArray(value) && value.every(isPlainObject)) {
+    const indexedExisting = isPlainArray(existing)
+      && (indexedObjectPositions.has(existing as Record<string, unknown>[]) || existing.every(isPlainObject))
+      ? existing as Record<string, unknown>[]
+      : [];
+    setOwnValue(acc, key, mergeIndexedObjects(indexedExisting, value));
     return;
   }
 
   if (isPlainObject(existing) && isPlainObject(value)) {
-    acc[key] = { ...existing, ...value };
+    setOwnValue(acc, key, { ...existing, ...cloneExtra(value) });
     return;
   }
 
-  acc[key] = value;
+  setOwnValue(acc, key, cloneExtra(value));
 };
 
 export const captureExtras = (source: Record<string, unknown>, knownKeys: ReadonlySet<string>, into: Record<string, unknown>): void => {

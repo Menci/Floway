@@ -12,6 +12,23 @@ export const usageUpstreamFromDimensionValue = (value: string): string | null =>
   return value.slice(usageUpstreamPrefix.length);
 };
 
+const BILLABLE_USAGE_COUNT_FIELDS = ['input', 'cacheRead', 'cacheWrite', 'cacheWrite1h', 'output'] as const;
+
+const validateBillableUsage = (usage: BillableUsage, label: string): void => {
+  for (const field of BILLABLE_USAGE_COUNT_FIELDS) {
+    const value = usage[field];
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new RangeError(`${label}.${field} must be a non-negative safe integer: ${value}`);
+    }
+  }
+};
+
+const addBillableUsageCount = (left: number, right: number, field: typeof BILLABLE_USAGE_COUNT_FIELDS[number]): number => {
+  const sum = left + right;
+  if (!Number.isSafeInteger(sum)) throw new RangeError(`summed billable usage.${field} exceeds the safe integer range`);
+  return sum;
+};
+
 // Response-side `default` (OpenAI), `standard` (Anthropic), and blank values
 // identify base service. Other open-string values remain byte-preserving.
 // https://developers.openai.com/api/docs/guides/priority-processing
@@ -20,16 +37,18 @@ export const usageUpstreamFromDimensionValue = (value: string): string | null =>
 // A response can span several upstream turns — the server-tool shim's ReAct
 // loop, a compaction round trip — and we are billed for every one.
 export const sumBillableUsage = (a: BillableUsage | undefined, b: BillableUsage | undefined): BillableUsage | undefined => {
-  if (a === undefined) return b;
-  if (b === undefined) return a;
+  if (a !== undefined) validateBillableUsage(a, 'left billable usage');
+  if (b !== undefined) validateBillableUsage(b, 'right billable usage');
+  if (a === undefined) return b === undefined ? undefined : { ...b };
+  if (b === undefined) return { ...a };
   return {
-    input: a.input + b.input,
-    cacheRead: a.cacheRead + b.cacheRead,
-    cacheWrite: a.cacheWrite + b.cacheWrite,
-    cacheWrite1h: a.cacheWrite1h + b.cacheWrite1h,
-    output: a.output + b.output,
+    input: addBillableUsageCount(a.input, b.input, 'input'),
+    cacheRead: addBillableUsageCount(a.cacheRead, b.cacheRead, 'cacheRead'),
+    cacheWrite: addBillableUsageCount(a.cacheWrite, b.cacheWrite, 'cacheWrite'),
+    cacheWrite1h: addBillableUsageCount(a.cacheWrite1h, b.cacheWrite1h, 'cacheWrite1h'),
+    output: addBillableUsageCount(a.output, b.output, 'output'),
     // A tier cannot be summed; the latest turn's is the one served.
-    ...(b.tier ?? a.tier ? { tier: b.tier ?? a.tier } : {}),
+    ...(b.tier !== undefined ? { tier: b.tier } : {}),
   };
 };
 

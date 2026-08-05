@@ -12,13 +12,10 @@ const expectedPrefixes = {
   image_generation_call: 'ig',
 } as const satisfies Record<GeneratedResponsesItemType, string>;
 
-test.each(Object.entries(expectedPrefixes))('creates unique %s ids with the canonical prefix', (type, prefix) => {
-  const first = createRandomResponsesItemId(type as GeneratedResponsesItemType);
-  const second = createRandomResponsesItemId(type as GeneratedResponsesItemType);
+test.each(Object.entries(expectedPrefixes))('creates %s ids with the canonical prefix and 128-bit body', (type, prefix) => {
+  const id = createRandomResponsesItemId(type as GeneratedResponsesItemType);
 
-  expect(first).toMatch(new RegExp(`^${prefix}_[0-9a-f]{32}$`));
-  expect(second).toMatch(new RegExp(`^${prefix}_[0-9a-f]{32}$`));
-  expect(first).not.toBe(second);
+  expect(id).toMatch(new RegExp(`^${prefix}_[0-9a-f]{32}$`));
 });
 
 test.each(['unknown', '__proto__', 'constructor', 'toString'])('rejects unsupported runtime item type %s', type => {

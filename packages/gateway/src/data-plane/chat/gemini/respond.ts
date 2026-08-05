@@ -12,7 +12,7 @@ import { forwardUpstreamHeaders, mergeForwardedUpstreamHeaders } from '../../sha
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
 import { eventFrame, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
-import { geminiProtocolFrameToSSEFrame, GEMINI_MISSING_TERMINAL_MESSAGE, isGeminiErrorEvent, isGeminiTerminalEvent, collectGeminiProtocolEventsToResult } from '@floway-dev/protocols/gemini';
+import { createGeminiTerminalDetector, geminiProtocolFrameToSSEFrame, GEMINI_MISSING_TERMINAL_MESSAGE, isGeminiErrorEvent, collectGeminiProtocolEventsToResult } from '@floway-dev/protocols/gemini';
 import type { GeminiErrorResponse, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import { type ExecuteResult, type PlainResult, type ApiErrorResult, type InternalDebugError, toInternalDebugError, decodeApiErrorBody } from '@floway-dev/provider';
 
@@ -196,16 +196,16 @@ const geminiStreamErrorEvent = (error: unknown): GeminiStreamEvent =>
 
 // --- frame observation ---
 
-const isGeminiTerminalFrame = (frame: ProtocolFrame<GeminiStreamEvent>): boolean => frame.type === 'done' || (frame.type === 'event' && isGeminiTerminalEvent(frame.event));
-
 const observeGeminiFrames = async function* (frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>, state: SourceStreamState, ctx: GatewayCtx) {
+  const isTerminalEvent = createGeminiTerminalDetector();
   for await (const frame of frames) {
     ctx.dump?.frame(frame);
     const failed = frame.type === 'event' && isGeminiErrorEvent(frame.event);
+    const terminal = frame.type === 'done' || (frame.type === 'event' && isTerminalEvent(frame.event));
     if (failed) state.failed = true;
-    if (isGeminiTerminalFrame(frame) && !failed) state.completed = true;
+    if (terminal && !failed) state.completed = true;
     yield frame;
-    if (isGeminiTerminalFrame(frame)) return;
+    if (terminal) return;
   }
   throw new Error(GEMINI_MISSING_TERMINAL_MESSAGE);
 };

@@ -29,6 +29,20 @@ const frames = async function* (values: ProtocolFrame<MessagesStreamEvent>[]) {
   yield* values;
 };
 
+const messageStartFrame = () => eventFrame({
+  type: 'message_start' as const,
+  message: {
+    id: 'msg_affinity',
+    type: 'message' as const,
+    role: 'assistant' as const,
+    content: [] as [],
+    model: 'model',
+    stop_reason: null,
+    stop_sequence: null,
+    usage: { input_tokens: 1, output_tokens: 0 },
+  },
+});
+
 // The client's next turn replays the assistant blocks it reassembled from the
 // stream, so reassembly is what carries egress output back to ingress.
 const assistantContent = async (
@@ -44,6 +58,7 @@ test('carriers a real codec emits on both Messages slots decode on the next turn
   const candidateA = candidate('upstream-a');
   const candidateB = candidate('upstream-b');
   const content = await assistantContent(wrapMessagesAffinityEgress(frames([
+    messageStartFrame(),
     eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } }),
     eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'visible' } }),
     eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'upstream-signature' } }),
@@ -77,6 +92,7 @@ test('a synthetic carrier issued for a turn without thinking decodes on the next
   const candidateA = candidate('upstream-a');
   const candidateB = candidate('upstream-b');
   const content = await assistantContent(wrapMessagesAffinityEgress(frames([
+    messageStartFrame(),
     eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
     eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'answer' } }),
     eventFrame({ type: 'content_block_stop', index: 0 }),

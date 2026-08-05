@@ -1,8 +1,22 @@
 import type { ParsedRerankRequest, CanonicalRerankRequest, CanonicalRerankResponse, CanonicalRerankResult, RerankInput } from './index.ts';
-import type { RerankProtocol, RerankSourceProtocol } from '../common/models.ts';
+import { RERANK_PROTOCOLS, type RerankProtocol, type RerankSourceProtocol } from '../common/models.ts';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const unsupportedProtocol = (protocol: never, operation: string): never => {
+  throw new TypeError(`Unsupported rerank protocol for ${operation}: ${String(protocol)}`);
+};
+
+const assertRerankProtocol = (protocol: RerankProtocol, operation: string): void => {
+  if (!(RERANK_PROTOCOLS as readonly string[]).includes(protocol)) unsupportedProtocol(protocol as never, operation);
+};
+
+const assertRerankSourceProtocol = (protocol: RerankSourceProtocol, operation: string): void => {
+  assertRerankProtocol(protocol, operation);
+  const runtimeProtocol: string = protocol;
+  if (runtimeProtocol === 'dashscope-compatible' || runtimeProtocol === 'dashscope-native') unsupportedProtocol(protocol as never, operation);
+};
 
 const requiredString = (value: unknown, field: string): string => {
   if (typeof value !== 'string' || value.length === 0) throw new Error(`${field} must be a non-empty string`);
@@ -29,7 +43,7 @@ const optionalNullableFiniteNumber = (value: unknown, field: string): number | u
 
 const optionalPositiveInteger = (value: unknown, field: string): number | undefined => {
   const number = optionalFiniteNumber(value, field);
-  if (number !== undefined && (!Number.isInteger(number) || number < 1)) throw new Error(`${field} must be a positive integer`);
+  if (number !== undefined && (!Number.isSafeInteger(number) || number < 1)) throw new Error(`${field} must be a positive integer in the safe range`);
   return number;
 };
 
@@ -38,7 +52,7 @@ const optionalNullablePositiveInteger = (value: unknown, field: string): number 
 
 const optionalInteger = (value: unknown, field: string): number | undefined => {
   const number = optionalFiniteNumber(value, field);
-  if (number !== undefined && !Number.isInteger(number)) throw new Error(`${field} must be an integer`);
+  if (number !== undefined && !Number.isSafeInteger(number)) throw new Error(`${field} must be an integer in the safe range`);
   return number;
 };
 
@@ -85,6 +99,7 @@ const rejectFields = (body: Record<string, unknown>, protocol: RerankSourceProto
 };
 
 export const parseRerankRequest = (protocol: RerankSourceProtocol, value: unknown): ParsedRerankRequest => {
+  assertRerankSourceProtocol(protocol, 'request parsing');
   if (!isRecord(value)) throw new Error('Rerank request body must be an object');
   const model = requiredString(value.model, 'model');
   switch (protocol) {
@@ -167,6 +182,7 @@ export const parseRerankRequest = (protocol: RerankSourceProtocol, value: unknow
       },
     };
   }
+  default: return unsupportedProtocol(protocol, 'request parsing');
   }
 };
 
@@ -179,6 +195,8 @@ export const rerankRequestIncompatibility = (
   protocol: RerankProtocol,
   request: CanonicalRerankRequest,
 ): string | null => {
+  assertRerankProtocol(protocol, 'compatibility checking');
+  assertRerankSourceProtocol(request.sourceProtocol, 'compatibility checking');
   const hasJinaImageInput = request.sourceProtocol === 'jina-v1'
     && [request.query, ...request.documents].some(input => typeof input !== 'string' && typeof input.image === 'string');
   if (hasJinaImageInput && protocol !== 'jina-v1' && protocol !== 'dashscope-native') {
@@ -207,6 +225,8 @@ export const serializeRerankRequest = (
   model: string,
   request: CanonicalRerankRequest,
 ): Record<string, unknown> => {
+  assertRerankProtocol(protocol, 'request serialization');
+  assertRerankSourceProtocol(request.sourceProtocol, 'request serialization');
   const incompatibility = rerankRequestIncompatibility(protocol, request);
   if (incompatibility !== null) throw new Error(incompatibility);
   if (protocol === request.sourceProtocol) return { ...request.raw, model };
@@ -271,6 +291,7 @@ export const serializeRerankRequest = (
       ...(Object.keys(parameters).length === 0 ? {} : { parameters }),
     };
   }
+  default: return unsupportedProtocol(protocol, 'request serialization');
   }
 };
 
@@ -289,7 +310,7 @@ const resultDocument = (value: unknown, field: string): RerankInput => {
 
 const resultItem = (value: unknown, field: string): CanonicalRerankResult => {
   if (!isRecord(value)) throw new Error(`${field} must be an object`);
-  if (typeof value.index !== 'number' || !Number.isInteger(value.index) || value.index < 0) throw new Error(`${field}.index must be a non-negative integer`);
+  if (typeof value.index !== 'number' || !Number.isSafeInteger(value.index) || value.index < 0) throw new Error(`${field}.index must be a non-negative safe integer`);
   if (typeof value.relevance_score !== 'number' || !Number.isFinite(value.relevance_score)) throw new Error(`${field}.relevance_score must be a finite number`);
   const embedding = optionalEmbedding(value.embedding, `${field}.embedding`);
   return {
@@ -306,12 +327,10 @@ const resultsArray = (value: unknown, field: string): CanonicalRerankResult[] =>
 };
 
 const requiredTotalTokensFrom = (value: unknown): number => {
-  if (!isRecord(value) || typeof value.total_tokens !== 'number' || !Number.isFinite(value.total_tokens)) {
-    throw new Error('usage.total_tokens must be a finite number');
+  if (!isRecord(value) || typeof value.total_tokens !== 'number' || !Number.isSafeInteger(value.total_tokens) || value.total_tokens < 0) {
+    throw new Error('usage.total_tokens must be a non-negative safe integer');
   }
-  const totalTokens = value.total_tokens;
-  if (totalTokens < 0) throw new Error('usage.total_tokens must not be negative');
-  return totalTokens;
+  return value.total_tokens;
 };
 
 const optionalUsage = (
@@ -338,8 +357,8 @@ const cohereUsage = (meta: unknown): Pick<CanonicalRerankResponse, 'totalTokens'
   const tokens = optionalRecord(metadata.tokens, 'meta.tokens');
   const searchUnits = optionalNullableFiniteNumber(billedUnits?.search_units, 'meta.billed_units.search_units');
   const inputTokens = optionalNullableFiniteNumber(tokens?.input_tokens, 'meta.tokens.input_tokens');
-  if (searchUnits !== undefined && searchUnits < 0) throw new Error('meta.billed_units.search_units must not be negative');
-  if (inputTokens !== undefined && inputTokens < 0) throw new Error('meta.tokens.input_tokens must not be negative');
+  if (searchUnits !== undefined && (!Number.isSafeInteger(searchUnits) || searchUnits < 0)) throw new Error('meta.billed_units.search_units must be a non-negative safe integer');
+  if (inputTokens !== undefined && (!Number.isSafeInteger(inputTokens) || inputTokens < 0)) throw new Error('meta.tokens.input_tokens must be a non-negative safe integer');
   return {
     ...(inputTokens === undefined ? {} : { totalTokens: inputTokens }),
     ...(searchUnits === undefined ? {} : { searchUnits }),
@@ -350,6 +369,7 @@ export const parseRerankUsage = (
   protocol: RerankProtocol,
   value: unknown,
 ): Pick<CanonicalRerankResponse, 'totalTokens' | 'searchUnits'> => {
+  assertRerankProtocol(protocol, 'usage parsing');
   if (!isRecord(value)) return {};
   switch (protocol) {
   case 'cohere-v1':
@@ -360,10 +380,12 @@ export const parseRerankUsage = (
   case 'dashscope-compatible':
   case 'dashscope-native':
     return optionalUsage(value, requiredTotalTokensFrom);
+  default: return unsupportedProtocol(protocol, 'usage parsing');
   }
 };
 
 export const parseRerankResponse = (protocol: RerankProtocol, value: unknown): CanonicalRerankResponse => {
+  assertRerankProtocol(protocol, 'response parsing');
   if (!isRecord(value)) throw new Error('Rerank response body must be an object');
   const usage = parseRerankUsage(protocol, value);
   switch (protocol) {
@@ -412,6 +434,7 @@ export const parseRerankResponse = (protocol: RerankProtocol, value: unknown): C
       ...usage,
     };
   }
+  default: return unsupportedProtocol(protocol, 'response parsing');
   }
 };
 
@@ -440,6 +463,8 @@ export const renderRerankResponse = (
   response: CanonicalRerankResponse,
   request: CanonicalRerankRequest,
 ): Record<string, unknown> => {
+  assertRerankSourceProtocol(sourceProtocol, 'response rendering');
+  assertRerankProtocol(targetProtocol, 'response rendering');
   if (sourceProtocol === targetProtocol) return response.raw;
   switch (sourceProtocol) {
   case 'cohere-v1':
@@ -481,5 +506,6 @@ export const renderRerankResponse = (
         ...(request.returnDocuments === true ? { document: stringInput(sourceDocument(request, result)) } : {}),
       })),
     };
+  default: return unsupportedProtocol(sourceProtocol, 'response rendering');
   }
 };

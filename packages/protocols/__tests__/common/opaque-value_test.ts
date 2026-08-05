@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
-import { appendOpaqueTrailer, decodeOpaqueValue, encodeOpaqueValue, splitOpaqueTrailer } from '../../src/common/opaque-value.ts';
-import { assertEquals } from '@floway-dev/test-utils';
+import { appendOpaqueTrailer, decodeOpaqueValue, encodeOpaqueValue, MAX_OPAQUE_TRAILER_BYTES, splitOpaqueTrailer, uint16be } from '../../src/common/opaque-value.ts';
+import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 test('opaque values preserve canonical Base64 alphabets byte-for-byte', () => {
   assertEquals(decodeOpaqueValue('AP+A'), { bytes: new Uint8Array([0x00, 0xff, 0x80]), origin: 'base64' });
@@ -46,4 +46,21 @@ test('opaque trailers freeze original-trailer-length framing and alphabet select
     original: new Uint8Array([0xfb, 0xff]),
     trailer: new Uint8Array([0x01, 0x02, 0x03]),
   });
+});
+
+test('opaque trailer framing enforces every unsigned 16-bit boundary', () => {
+  assertEquals(uint16be(0), new Uint8Array([0, 0]));
+  assertEquals(uint16be(MAX_OPAQUE_TRAILER_BYTES), new Uint8Array([0xff, 0xff]));
+  for (const value of [-1, 1.5, Number.NaN, MAX_OPAQUE_TRAILER_BYTES + 1]) {
+    assertThrows(() => uint16be(value), RangeError, 'Unsigned 16-bit value');
+  }
+
+  const maximum = new Uint8Array(MAX_OPAQUE_TRAILER_BYTES);
+  const framed = appendOpaqueTrailer(undefined, maximum);
+  assertEquals(splitOpaqueTrailer(framed)?.trailer.length, MAX_OPAQUE_TRAILER_BYTES);
+  assertThrows(() => appendOpaqueTrailer(undefined, new Uint8Array(MAX_OPAQUE_TRAILER_BYTES + 1)), RangeError, '2-byte length marker');
+
+  for (const minimum of [-1, 0.5, Number.NaN, MAX_OPAQUE_TRAILER_BYTES + 1]) {
+    assertThrows(() => splitOpaqueTrailer(framed, minimum), RangeError, 'Minimum opaque trailer length');
+  }
 });
