@@ -40,7 +40,7 @@ test('dispatchUpstreamFetch rejects a timing wrapper that never dispatches', asy
       fetchCalls++;
       return Promise.resolve(new Response('unexpected'));
     },
-    wrapUpstreamCall: () => Promise.resolve(new Response('bypassed')),
+    wrapUpstreamCall: <T>() => Promise.resolve(new Response('bypassed') as unknown as T),
   }, 'https://example.com', { method: 'POST', body: 'payload' })).rejects.toThrow('was not invoked');
   expect(fetchCalls).toBe(0);
 });

@@ -213,7 +213,7 @@ describe('modelsField metadata integration', () => {
     expect(model.endpoints).toEqual({ audioTranscriptions: {} });
   });
 
-  test('rejects chat whenever endpoints derive a non-chat runtime kind', () => {
+  test('rejects chat when no chat endpoint is present', () => {
     for (const kind of ['embedding', 'chat']) {
       expect(() => modelsField([{
         upstreamModelId: 'm',

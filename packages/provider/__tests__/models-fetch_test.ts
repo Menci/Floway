@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest';
 
 import { fetchUpstreamModels, httpResponseToResponse, ProviderModelsUnavailableError } from '../src/models-fetch.ts';
+import { assertRejects } from '@floway-dev/test-utils';
 
 test('fetchUpstreamModels accepts the byte boundary and cancels an oversized success body', async () => {
   const json = '{"ok":true}';
@@ -27,7 +28,8 @@ test('fetchUpstreamModels accepts the byte boundary and cancels an oversized suc
     value => value,
     { maxResponseBytes: bytes.byteLength - 1 },
   );
-  await expect(result).rejects.toMatchObject({
+  const error = await assertRejects(() => result, ProviderModelsUnavailableError) as ProviderModelsUnavailableError;
+  expect(error).toMatchObject({
     name: 'ProviderModelsUnavailableError',
     cause: expect.objectContaining({ message: `Provider model listing exceeded ${bytes.byteLength - 1} response bytes` }),
   } satisfies Partial<ProviderModelsUnavailableError>);
@@ -66,7 +68,6 @@ test('fetchUpstreamModels bounds non-2xx bodies while preserving status and head
       body: 'rate-lim...[truncated]',
     },
   });
-  const error = await result.catch(cause => cause as ProviderModelsUnavailableError);
   expect(error.httpResponse?.headers.get('retry-after')).toBe('5');
   expect(error.httpResponse?.headers.get('content-length')).toBeNull();
   expect(error.httpResponse?.headers.get('content-encoding')).toBeNull();
@@ -85,7 +86,7 @@ test('fetchUpstreamModels removes representation headers from untruncated captur
     })),
     value => value,
   );
-  const error = await result.catch(cause => cause as ProviderModelsUnavailableError);
+  const error = await assertRejects(() => result, ProviderModelsUnavailableError) as ProviderModelsUnavailableError;
   expect(error.httpResponse?.body).toBe('small');
   expect(error.httpResponse?.headers.get('content-encoding')).toBeNull();
   expect(error.httpResponse?.headers.get('content-length')).toBeNull();
