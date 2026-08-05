@@ -1,4 +1,4 @@
-import { convertRgbToLrgb, parseHex, wcagContrast } from 'culori/fn';
+import { convertRgbToHsv, convertRgbToLrgb, parseHex, wcagContrast } from 'culori/fn';
 
 import { hsvToRgb, rgbToHex, type RgbTuple } from './color-bytes';
 
@@ -17,18 +17,8 @@ export const hexToRgb = (hex: string): RgbTuple => {
 };
 
 export const rgbToHsv = (r: number, g: number, b: number): [number, number, number] => {
-  const rf = r / 255, gf = g / 255, bf = b / 255;
-  const max = Math.max(rf, gf, bf), min = Math.min(rf, gf, bf);
-  const d = max - min;
-  const v = max;
-  const s = max === 0 ? 0 : d / max;
-  let h = 0;
-  if (d !== 0) {
-    if (max === rf) h = ((gf - bf) / d + (gf < bf ? 6 : 0)) * 60;
-    else if (max === gf) h = ((bf - rf) / d + 2) * 60;
-    else h = ((rf - gf) / d + 4) * 60;
-  }
-  return [h, s, v];
+  const { h, s, v } = convertRgbToHsv(rgbColor([r, g, b]));
+  return [h ?? 0, s, v];
 };
 
 const linearRgb = (rgb: RgbTuple) => convertRgbToLrgb(rgbColor(rgb));
