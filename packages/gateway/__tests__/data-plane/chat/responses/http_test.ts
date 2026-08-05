@@ -728,9 +728,11 @@ test('POST /v1/responses nests a mid-stream failure under `error` so an SDK stre
   const failedChunk = body.split('\n\n').find(part => part.startsWith('event: response.failed'));
   assert(failedChunk !== undefined, `expected a response.failed frame in ${body}`);
   const failed = JSON.parse(failedChunk.slice(failedChunk.indexOf('data: ') + 'data: '.length)) as {
-    response: { status: string; id: string; error: { message: string } };
+    response: { status: string; id: string; store: boolean; completed_at: number; error: { message: string } };
   };
   assertEquals(failed.response.status, 'failed');
+  assertEquals(failed.response.store, false);
+  assertEquals(typeof failed.response.completed_at, 'number');
   assertEquals(failed.response.error.message, 'upstream exploded mid-stream');
   const created = JSON.parse(
     body.split('\n\n').find(part => part.startsWith('event: response.created'))!.split('data: ')[1]!,
