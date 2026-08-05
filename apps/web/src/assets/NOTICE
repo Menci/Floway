@@ -1,6 +1,11 @@
-The five logo marks are taken from microsoft/fluentui-emoji at commit
-62ecdc0d7ca5c6df32148c169556bc8d3782fca4, in the Color style, which is the
-design Windows 11 renders:
+Third-party assets shipped by the Floway web application
+=========================================================
+
+Fluent Emoji
+------------
+
+The following logo marks use the Color artwork from microsoft/fluentui-emoji
+at commit 62ecdc0d7ca5c6df32148c169556bc8d3782fca4:
 
 - emoji-cherry-blossom.svg
   https://github.com/microsoft/fluentui-emoji/blob/62ecdc0d7ca5c6df32148c169556bc8d3782fca4/assets/Cherry%20blossom/Color/cherry_blossom_color.svg
@@ -13,8 +18,9 @@ design Windows 11 renders:
 - emoji-broccoli.svg
   https://github.com/microsoft/fluentui-emoji/blob/62ecdc0d7ca5c6df32148c169556bc8d3782fca4/assets/Broccoli/Color/broccoli_color.svg
 
-Each is passed through svgo 4.0.2 with --precision=2 --multipass, which halves
-the byte count and changes no drawn shape. The artwork is otherwise verbatim.
+Each file is passed through svgo 4.0.2 with --precision=2 --multipass. This
+halves the byte count without changing the drawn shape; the artwork is
+otherwise verbatim.
 
 MIT License
 
@@ -38,7 +44,10 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-The following assets are taken from lobe-icons at commit
+Lobe Icons
+----------
+
+The following assets come from lobe-icons at commit
 a88f09a2892016a74f4c20f096c167c88f6c19c1:
 
 - azure-color.svg
@@ -58,27 +67,24 @@ a88f09a2892016a74f4c20f096c167c88f6c19c1:
 - tavily-color.svg
   https://github.com/lobehub/lobe-icons/blob/a88f09a2892016a74f4c20f096c167c88f6c19c1/packages/static-svg/icons/tavily-color.svg
 
-codex.svg comes from the same project at a later commit, because the Codex mark
-did not exist at the one above:
+codex.svg uses a later commit because the Codex mark did not yet exist:
 
 - codex.svg
   https://github.com/lobehub/lobe-icons/blob/63c800e3db6427b3f156f7b88d426ccb3f7277a1/packages/static-svg/icons/codex-color.svg
 
-codex.svg drops the white app-icon plate and tightens the viewBox to the glyph,
+codex.svg drops the white app-icon plate and tightens its viewBox to the glyph,
 so it renders at the same optical size as the other provider marks.
 
 microsoft-color.svg is the four-square Microsoft logo, which upstream files
 under the Azure name; its title is changed to "Microsoft".
 
-lobe-icons ships Jina as one `currentColor` path and no colour variant.
-jina-color.svg splits that path at its two subpaths — the dot and the J — and
-fills them with Jina's own brand colours, sampled as the two dominant opaque
-values of the 256x256 mark at https://jina.ai/favicon.ico: #EB6161 for the dot
-and #009191 for the J.
+lobe-icons supplies Jina as one currentColor path and no colour variant.
+jina-color.svg splits that path at its two subpaths, then fills the dot with
+#EB6161 and the J with #009191. These are the two dominant opaque colours in
+Jina's 256x256 mark at https://jina.ai/favicon.ico.
 
-Everything else here is verbatim: take a replacement from the static-svg
-directory above rather than from a rendered page, whose gradient ids carry
-React's per-render suffix.
+Everything else is verbatim. Replacements come from the static-svg directory
+above, since rendered-page gradient ids carry React's per-render suffix.
 
 MIT License
 
@@ -101,3 +107,33 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+Meslo LG S
+----------
+
+The four meslo-lg-s-*.generated.woff2 files come from the non-DZ Meslo LG
+v1.2.1 archive at commit 09a431d546d211130352c28eb0466e5d7d5aeaf0:
+
+https://github.com/andreberg/Meslo-Font/blob/09a431d546d211130352c28eb0466e5d7d5aeaf0/dist/v1.2.1/Meslo%20LG%20v1.2.1.zip
+
+They are the Meslo LG S Regular, Italic, Bold, and Bold Italic TrueType faces,
+converted to WOFF2. Every fixed-width glyph is centred in a 1264-unit advance
+to give the family the selected Consolas advance-to-apparent-height ratio. No
+outline, hinting instruction, character map, or proportional-glyph advance is
+otherwise changed.
+
+Meslo LG is a customized version of Apple's Menlo, itself a customized
+Bitstream Vera Sans Mono. The source README records these notices:
+
+Copyright 2009, 2010, 2013 André Berg
+Copyright © 2009 Apple Inc.
+Copyright © 2006 by Tavmjong Bah.
+Copyright © 2003 by Bitstream, Inc. All Rights Reserved.
+
+Menlo is a trademark of Apple Inc. Bitstream Vera is a trademark of Bitstream,
+Inc., designed by Jim Lyles.
+
+https://github.com/andreberg/Meslo-Font/blob/09a431d546d211130352c28eb0466e5d7d5aeaf0/README.textile
+
+Meslo LG is licensed under the Apache License, Version 2.0. A complete copy is
+in fonts/LICENSE-Meslo-LG.txt.
