@@ -267,15 +267,20 @@ Before affinity, candidates are ordered:
 3. addressable-form order within one provider (normally unprefixed before
    prefixed when configured that way).
 
-Chat-shaped ingress then calls `narrowCandidatesByAffinity`. Force evidence
-restricts the list to one required upstream/model pair; preference evidence
-moves the latest exact upstream/model/rules match to the front. Affinity never
-adds a candidate. Carrier placement and restoration are specified in
-[AFFINITY.md](./AFFINITY.md).
+Chat-shaped ingress analyzes client-carried affinity, then
+`selectAffinityCandidates` evaluates every viable candidate. One evaluation
+decides both whether the candidate can retain required continuation state and
+whether projecting optional state would discard a natural opaque blob. Rejected
+candidates leave the list. Among accepted candidates, the latest owned target
+that has an exact upstream/model/rules match moves to the front; the others keep
+their existing resolver order. Candidate degradation is reported by evaluation
+but does not affect ordering. Affinity never adds a candidate. Carrier
+placement, requirement inheritance, restoration, and candidate evaluation are
+specified in [AFFINITY.md](./AFFINITY.md).
 
 ## Sequential candidate iteration
 
-Serve passes the viable, affinity-narrowed list to `iterateCandidates`. Attempts
+Serve passes the affinity-selected list to `iterateCandidates`. Attempts
 run sequentially, never concurrently. The iterator resets per-attempt timing,
 stamps telemetry attribution for the current candidate before calling it, and
 classifies the returned envelope exactly as follows:

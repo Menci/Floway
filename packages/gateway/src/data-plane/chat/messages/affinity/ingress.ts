@@ -1,4 +1,4 @@
-import { type AffinityCodec, blobForExactCandidate, preferredAffinityEvidence, type DecodedAffinityBlob, type PreparedAffinityPayload } from '../../shared/affinity/index.ts';
+import { type AffinityCodec, type AffinityRequestAnalysis, type DecodedAffinityBlob, defineAffinityRequest, projectOptionalAffinityBlob } from '../../shared/affinity/index.ts';
 import type { MessagesAssistantContentBlock, MessagesPayload } from '@floway-dev/protocols/messages';
 
 interface MessagesBlobLocation {
@@ -8,10 +8,10 @@ interface MessagesBlobLocation {
   readonly decoded: DecodedAffinityBlob;
 }
 
-export const prepareMessagesAffinity = async (
+export const analyzeMessagesAffinity = async (
   payload: MessagesPayload,
   codec: AffinityCodec,
-): Promise<PreparedAffinityPayload<MessagesPayload>> => {
+): Promise<AffinityRequestAnalysis<MessagesPayload>> => {
   const locations: MessagesBlobLocation[] = [];
   for (const [messageIndex, message] of payload.messages.entries()) {
     if (message.role !== 'assistant' || !Array.isArray(message.content)) continue;
@@ -24,40 +24,45 @@ export const prepareMessagesAffinity = async (
     }
   }
 
-  return {
-    narrowingEvidence: preferredAffinityEvidence(locations.map(location => location.decoded)),
-    payloadForCandidate: candidate => {
-      const candidatePayload = structuredClone(payload);
-      const byMessage = Map.groupBy(locations, location => location.messageIndex);
-      const emptiedByAffinity = new Set<number>();
-      for (const [messageIndex, messageLocations] of byMessage) {
-        const message = candidatePayload.messages[messageIndex] as { role: 'assistant'; content: MessagesAssistantContentBlock[] };
-        const replacements = new Map<number, MessagesAssistantContentBlock | null>();
-        for (const location of messageLocations) {
-          const block = message.content[location.blockIndex];
-          const selected = blobForExactCandidate(location.decoded, candidate);
-          if (location.kind === 'thinking') {
-            const replacement = { ...block } as Extract<MessagesAssistantContentBlock, { type: 'thinking' }>;
-            if (selected.present) replacement.signature = selected.value;
-            else delete replacement.signature;
-            replacements.set(location.blockIndex, replacement);
-          } else {
-            replacements.set(
-              location.blockIndex,
-              selected.present
-                ? { ...block, type: 'redacted_thinking', data: selected.value }
-                : null,
-            );
+  const preferredTargets = locations.flatMap(location =>
+    location.decoded.kind === 'owned' ? [location.decoded.affinity] : []);
+  return defineAffinityRequest(preferredTargets, [], candidate => {
+    const projections = locations.map(location => ({ location, projection: projectOptionalAffinityBlob(location.decoded, candidate) }));
+    return {
+      kind: 'accepted',
+      degrades: projections.some(item => item.projection.kind === 'remove' && item.projection.degrades),
+      materialize: () => {
+        const candidatePayload = structuredClone(payload);
+        const byMessage = Map.groupBy(projections, item => item.location.messageIndex);
+        const emptiedByAffinity = new Set<number>();
+        for (const [messageIndex, messageProjections] of byMessage) {
+          const message = candidatePayload.messages[messageIndex] as { role: 'assistant'; content: MessagesAssistantContentBlock[] };
+          const replacements = new Map<number, MessagesAssistantContentBlock | null>();
+          for (const { location, projection } of messageProjections) {
+            const block = message.content[location.blockIndex];
+            if (location.kind === 'thinking') {
+              const replacement = { ...block } as Extract<MessagesAssistantContentBlock, { type: 'thinking' }>;
+              if (projection.kind === 'preserve') replacement.signature = projection.value;
+              else if (projection.kind === 'remove') delete replacement.signature;
+              replacements.set(location.blockIndex, replacement);
+            } else {
+              replacements.set(
+                location.blockIndex,
+                projection.kind === 'preserve'
+                  ? { ...block, type: 'redacted_thinking', data: projection.value }
+                  : null,
+              );
+            }
           }
+          message.content = message.content.flatMap((block, blockIndex) => {
+            const replacement = replacements.get(blockIndex);
+            return replacement === undefined ? [block] : replacement === null ? [] : [replacement];
+          });
+          if (message.content.length === 0) emptiedByAffinity.add(messageIndex);
         }
-        message.content = message.content.flatMap((block, blockIndex) => {
-          const replacement = replacements.get(blockIndex);
-          return replacement === undefined ? [block] : replacement === null ? [] : [replacement];
-        });
-        if (message.content.length === 0) emptiedByAffinity.add(messageIndex);
-      }
-      candidatePayload.messages = candidatePayload.messages.filter((_message, messageIndex) => !emptiedByAffinity.has(messageIndex));
-      return candidatePayload;
-    },
-  };
+        candidatePayload.messages = candidatePayload.messages.filter((_message, messageIndex) => !emptiedByAffinity.has(messageIndex));
+        return candidatePayload;
+      },
+    };
+  });
 };
