@@ -1441,12 +1441,16 @@ export class InMemoryRepo implements Repo {
 
   constructor() {
     const mutations = new MemoryMutationCoordinator();
-    let users: MemoryUsersRepo;
-    const isUserActive = (userId: number) => users.isActive(userId);
+    const userHolder: { current?: MemoryUsersRepo } = {};
+    const isUserActive = (userId: number) => {
+      if (!userHolder.current) throw new Error('InMemoryRepo users are not initialized');
+      return userHolder.current.isActive(userId);
+    };
     const sessions = new MemorySessionsRepo(isUserActive, mutations);
     this.expirationSweeps = new MemoryExpirationSweepsRepo();
     const apiKeys = new MemoryApiKeyRepo(this.expirationSweeps, isUserActive, mutations);
-    users = new MemoryUsersRepo(apiKeys, sessions, mutations);
+    const users = new MemoryUsersRepo(apiKeys, sessions, mutations);
+    userHolder.current = users;
     this.users = users;
     this.sessions = sessions;
     this.apiKeys = apiKeys;

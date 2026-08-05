@@ -6,10 +6,8 @@ import type { ApiKey, User } from '../../../src/repo/types.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { flushBackground } from '../../test-utils/background-tracker.ts';
 import { requestControlPlane, setupControlPlaneTest, TEST_PASSWORD, TEST_PASSWORD_HASH } from '../../test-utils/control-plane.ts';
-import { assertEquals, assertExists } from '@floway-dev/test-utils';
 import type { UpstreamRecord } from '@floway-dev/provider';
-
-type TestRepo = Awaited<ReturnType<typeof setupControlPlaneTest>>['repo'];
+import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const adminPost = (sessionId: string, body: unknown) => requestControlPlane('/api/users', {
   method: 'POST',
