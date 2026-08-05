@@ -265,11 +265,19 @@ export interface UpstreamRepo {
   // Catalog-cache writes are conditional on the row generation that started
   // the fetch. A superseded provider can finish serving its own request, but
   // cannot publish models or errors under newer credentials/configuration.
-  saveClaimedModelsCache(id: string, generation: ModelsCacheGeneration, token: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean>;
-  saveClaimedModelsCacheError(id: string, generation: ModelsCacheGeneration, token: string, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean>;
-  claimModelsRefresh(id: string, generation: ModelsCacheGeneration, token: string, now: number, staleClaimedBefore: number, force: boolean, observedActiveToken: string | null): Promise<ModelsRefreshClaimResult>;
-  completeModelsRefreshSuccess(id: string, token: string): Promise<void>;
-  completeModelsRefreshFailure(id: string, token: string, failureCount: number, retryAt: number): Promise<void>;
+  finalizeModelsRefreshSuccess(id: string, generation: ModelsCacheGeneration, token: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean>;
+  finalizeModelsRefreshFailure(id: string, generation: ModelsCacheGeneration, token: string, error: NonNullable<UpstreamModelsCache['lastError']>, failureCount: number, retryAt: number): Promise<boolean>;
+  claimModelsRefresh(input: ModelsRefreshClaimInput): Promise<ModelsRefreshClaimResult>;
+}
+
+export interface ModelsRefreshClaimInput {
+  id: string;
+  generation: ModelsCacheGeneration;
+  token: string;
+  now: number;
+  staleClaimedBefore: number;
+  force: boolean;
+  observedActiveToken: string | null;
 }
 
 export interface ModelsRefreshClaim {

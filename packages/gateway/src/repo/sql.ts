@@ -19,6 +19,7 @@ import type {
   AgentSetupRepository,
   BackoffRow,
   ModelsCacheGeneration,
+  ModelsRefreshClaimInput,
   ModelsRefreshClaimResult,
   ModelAliasesRepo,
   ModelAliasRecord,
@@ -951,30 +952,36 @@ class SqlUpstreamRepo implements UpstreamRepo {
     await this.db.prepare('DELETE FROM upstreams').run();
   }
 
-  async saveClaimedModelsCache(id: string, generation: ModelsCacheGeneration, token: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean> {
+  async finalizeModelsRefreshSuccess(id: string, generation: ModelsCacheGeneration, token: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean> {
     const rawConfig = await this.modelsCacheWriteConfig(id, generation);
     if (rawConfig === null) return false;
     const result = await this.db
-      .prepare("UPDATE upstreams SET models_cache_json = ? WHERE id = ? AND updated_at = ? AND config_json = ? AND json_extract(models_refresh_json, '$.claimToken') = ?")
+      .prepare("UPDATE upstreams SET models_cache_json = ?, models_refresh_json = NULL WHERE id = ? AND updated_at = ? AND config_json = ? AND json_extract(models_refresh_json, '$.claimToken') = ?")
       .bind(encodeUpstreamModelsCache({ ...cache, lastError: null }), id, generation.updatedAt, rawConfig, token)
       .run();
     return (result.meta.changes ?? 0) > 0;
   }
 
-  async saveClaimedModelsCacheError(id: string, generation: ModelsCacheGeneration, token: string, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean> {
+  async finalizeModelsRefreshFailure(id: string, generation: ModelsCacheGeneration, token: string, error: NonNullable<UpstreamModelsCache['lastError']>, failureCount: number, retryAt: number): Promise<boolean> {
     const rawConfig = await this.modelsCacheWriteConfig(id, generation);
     if (rawConfig === null) return false;
     // A cold failure remains immediately stale while preserving the error for
     // the next request and dashboard read.
     const coldFailure = encodeUpstreamModelsCache({ revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError: error });
     const result = await this.db
-      .prepare("UPDATE upstreams SET models_cache_json = CASE WHEN models_cache_json IS NULL THEN ? ELSE json_set(models_cache_json, '$.lastError', json(?)) END WHERE id = ? AND updated_at = ? AND config_json = ? AND json_extract(models_refresh_json, '$.claimToken') = ?")
-      .bind(coldFailure, JSON.stringify(error), id, generation.updatedAt, rawConfig, token)
+      .prepare(
+        `UPDATE upstreams SET
+           models_cache_json = CASE WHEN models_cache_json IS NULL THEN ? ELSE json_set(models_cache_json, '$.lastError', json(?)) END,
+           models_refresh_json = json_object('failCount', ?, 'retryAt', ?, 'claimToken', NULL, 'claimedAt', NULL)
+         WHERE id = ? AND updated_at = ? AND config_json = ? AND json_extract(models_refresh_json, '$.claimToken') = ?`,
+      )
+      .bind(coldFailure, JSON.stringify(error), failureCount, retryAt, id, generation.updatedAt, rawConfig, token)
       .run();
     return (result.meta.changes ?? 0) > 0;
   }
 
-  async claimModelsRefresh(id: string, generation: ModelsCacheGeneration, token: string, now: number, staleClaimedBefore: number, force: boolean, observedActiveToken: string | null): Promise<ModelsRefreshClaimResult> {
+  async claimModelsRefresh(input: ModelsRefreshClaimInput): Promise<ModelsRefreshClaimResult> {
+    const { id, generation, token, now, staleClaimedBefore, force, observedActiveToken } = input;
     const rawConfig = await this.modelsCacheWriteConfig(id, generation);
     if (rawConfig === null) return { kind: 'generation-mismatch' };
     while (true) {
@@ -1030,29 +1037,6 @@ class SqlUpstreamRepo implements UpstreamRepo {
       if (state.retry_at !== null && state.retry_at > now) return { kind: 'backoff' };
       if (observedActiveToken !== null) return { kind: 'completed' };
     }
-  }
-
-  async completeModelsRefreshSuccess(id: string, token: string): Promise<void> {
-    await this.db
-      .prepare("UPDATE upstreams SET models_refresh_json = NULL WHERE id = ? AND json_extract(models_refresh_json, '$.claimToken') = ?")
-      .bind(id, token)
-      .run();
-  }
-
-  async completeModelsRefreshFailure(id: string, token: string, failureCount: number, retryAt: number): Promise<void> {
-    await this.db
-      .prepare(
-        `UPDATE upstreams
-         SET models_refresh_json = json_object(
-           'failCount', ?,
-           'retryAt', ?,
-           'claimToken', NULL,
-           'claimedAt', NULL
-         )
-         WHERE id = ? AND json_extract(models_refresh_json, '$.claimToken') = ?`,
-      )
-      .bind(failureCount, retryAt, id, token)
-      .run();
   }
 
   private async modelsCacheWriteConfig(id: string, generation: ModelsCacheGeneration): Promise<string | null> {

@@ -99,14 +99,13 @@ test('repository JSON codecs round-trip upstream, alias, and Responses state thr
     config: { opaque: { value: true } },
   };
   const cacheToken = 'node-cache-fixture';
-  const cacheClaim = await repo.upstreams.claimModelsRefresh('up_node', cacheGeneration, cacheToken, Date.now(), Number.MIN_SAFE_INTEGER, true, null);
+  const cacheClaim = await repo.upstreams.claimModelsRefresh({ id: 'up_node', generation: cacheGeneration, token: cacheToken, now: Date.now(), staleClaimedBefore: Number.MIN_SAFE_INTEGER, force: true, observedActiveToken: null });
   if (cacheClaim.kind !== 'claimed') throw new Error('expected model-cache fixture claim');
-  await repo.upstreams.saveClaimedModelsCache('up_node', cacheGeneration, cacheToken, {
+  await repo.upstreams.finalizeModelsRefreshSuccess('up_node', cacheGeneration, cacheToken, {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_786_000_000_000,
     models: [stubProviderModel({ id: 'node-model', enabledFlags: new Set(['vendor-kimi'] as const) })],
   });
-  await repo.upstreams.completeModelsRefreshSuccess('up_node', cacheToken);
   await repo.modelAliases.insert({
     id: 'alias_node',
     name: 'node-alias',

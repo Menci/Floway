@@ -26,6 +26,7 @@ import type {
   AgentSetupRepository,
   BackoffRow,
   ModelsCacheGeneration,
+  ModelsRefreshClaimInput,
   ModelsRefreshClaimResult,
   ModelAliasesRepo,
   ModelAliasRecord,
@@ -618,24 +619,27 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     return Promise.resolve();
   }
 
-  saveClaimedModelsCache(id: string, generation: ModelsCacheGeneration, token: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean> {
+  finalizeModelsRefreshSuccess(id: string, generation: ModelsCacheGeneration, token: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean> {
     if (this.modelsRefreshes.get(id)?.claimToken !== token) return Promise.resolve(false);
     const existing = this.store.get(id);
     if (!existing || existing.updatedAt !== generation.updatedAt || serializeStoredConfig(existing.config) !== serializeStoredConfig(generation.config)) return Promise.resolve(false);
     existing.modelsCache = { revision: cache.revision, fetchedAt: cache.fetchedAt, models: [...cache.models], lastError: null };
+    this.modelsRefreshes.delete(id);
     return Promise.resolve(true);
   }
 
-  saveClaimedModelsCacheError(id: string, generation: ModelsCacheGeneration, token: string, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean> {
+  finalizeModelsRefreshFailure(id: string, generation: ModelsCacheGeneration, token: string, error: NonNullable<UpstreamModelsCache['lastError']>, failureCount: number, retryAt: number): Promise<boolean> {
     if (this.modelsRefreshes.get(id)?.claimToken !== token) return Promise.resolve(false);
     const existing = this.store.get(id);
     if (!existing || existing.updatedAt !== generation.updatedAt || serializeStoredConfig(existing.config) !== serializeStoredConfig(generation.config)) return Promise.resolve(false);
     if (existing.modelsCache) existing.modelsCache.lastError = error;
     else existing.modelsCache = { revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError: error };
+    this.modelsRefreshes.set(id, { failCount: failureCount, retryAt, claimToken: null, claimedAt: null });
     return Promise.resolve(true);
   }
 
-  claimModelsRefresh(id: string, generation: ModelsCacheGeneration, token: string, now: number, staleClaimedBefore: number, force: boolean, observedActiveToken: string | null): Promise<ModelsRefreshClaimResult> {
+  claimModelsRefresh(input: ModelsRefreshClaimInput): Promise<ModelsRefreshClaimResult> {
+    const { id, generation, token, now, staleClaimedBefore, force, observedActiveToken } = input;
     const stored = this.store.get(id);
     if (!stored || stored.updatedAt !== generation.updatedAt || serializeStoredConfig(stored.config) !== serializeStoredConfig(generation.config)) return Promise.resolve({ kind: 'generation-mismatch' });
     const existing = this.modelsRefreshes.get(id);
@@ -654,22 +658,6 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     return Promise.resolve({ kind: 'claimed', failureCount: existing?.failCount ?? 0 });
   }
 
-  completeModelsRefreshSuccess(id: string, token: string): Promise<void> {
-    if (this.modelsRefreshes.get(id)?.claimToken === token) this.modelsRefreshes.delete(id);
-    return Promise.resolve();
-  }
-
-  completeModelsRefreshFailure(id: string, token: string, failureCount: number, retryAt: number): Promise<void> {
-    const existing = this.modelsRefreshes.get(id);
-    if (existing?.claimToken !== token) return Promise.resolve();
-    this.modelsRefreshes.set(id, {
-      failCount: failureCount,
-      retryAt,
-      claimToken: null,
-      claimedAt: null,
-    });
-    return Promise.resolve();
-  }
 }
 
 const cloneUpstreamRecord = (upstream: UpstreamRecord): UpstreamRecord => ({

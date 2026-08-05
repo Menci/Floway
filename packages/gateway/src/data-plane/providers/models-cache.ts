@@ -68,32 +68,8 @@ const errorMessage = (err: unknown): string => err instanceof Error ? err.messag
 const runFetch = async (
   instance: GatewayProvider,
   fetcher: Fetcher,
-  key: string,
-  token: string,
   loadProvidedModels?: () => Promise<ProviderModel[]>,
-): Promise<ProviderModel[]> => {
-  const generation = instance.modelsCacheGeneration;
-  try {
-    const models = [...await (loadProvidedModels?.() ?? instance.instance.getProvidedModels(fetcher))];
-    const entry = { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now(), models, lastError: null };
-    const persisted = await getRepo().upstreams.saveClaimedModelsCache(key, generation, token, entry);
-    // The instance carries the row as it was read at request start, and a
-    // request reaches this function more than once -- once per alias target
-    // resolved. Writing the entry back keeps every later read in the request
-    // seeing what was just persisted, which is what re-querying the row used
-    // to give us.
-    if (persisted) instance.modelsCache = entry;
-    return models;
-  } catch (err) {
-    const lastError = { message: errorMessage(err), at: Date.now() };
-    const persisted = await getRepo().upstreams.saveClaimedModelsCacheError(key, generation, token, lastError);
-    if (persisted) {
-      if (instance.modelsCache) instance.modelsCache.lastError = lastError;
-      else instance.modelsCache = { revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError };
-    }
-    throw err;
-  }
-};
+): Promise<ProviderModel[]> => [...await (loadProvidedModels?.() ?? instance.instance.getProvidedModels(fetcher))];
 
 const runClaimedFetch = async (
   instance: GatewayProvider,
@@ -107,15 +83,15 @@ const runClaimedFetch = async (
   let claimed: Extract<Awaited<ReturnType<typeof repo.upstreams.claimModelsRefresh>>, { kind: 'claimed' }>;
   while (true) {
     const now = Date.now();
-    const outcome = await repo.upstreams.claimModelsRefresh(
-      instance.upstreamId,
-      instance.modelsCacheGeneration,
+    const outcome = await repo.upstreams.claimModelsRefresh({
+      id: instance.upstreamId,
+      generation: instance.modelsCacheGeneration,
       token,
       now,
-      now - MODELS_REFRESH_CLAIM_LEASE_MS,
-      mode === 'fetch',
+      staleClaimedBefore: now - MODELS_REFRESH_CLAIM_LEASE_MS,
+      force: mode === 'fetch',
       observedActiveToken,
-    );
+    });
     if (outcome.kind === 'claimed') {
       claimed = outcome;
       break;
@@ -134,18 +110,39 @@ const runClaimedFetch = async (
 
   let models: ProviderModel[];
   try {
-    models = await runFetch(instance, fetcher, instance.upstreamId, token, loadProvidedModels);
+    models = await runFetch(instance, fetcher, loadProvidedModels);
   } catch (error) {
+    const failureCount = claimed.failureCount + 1;
+    const now = Date.now();
+    const lastError = { message: errorMessage(error), at: now };
     try {
-      const failureCount = claimed.failureCount + 1;
-      const now = Date.now();
-      await repo.upstreams.completeModelsRefreshFailure(instance.upstreamId, token, failureCount, modelsRefreshRetryAt(now, claimed.failureCount));
+      const finalized = await repo.upstreams.finalizeModelsRefreshFailure(
+        instance.upstreamId,
+        instance.modelsCacheGeneration,
+        token,
+        lastError,
+        failureCount,
+        modelsRefreshRetryAt(now, claimed.failureCount),
+      );
+      if (finalized) {
+        if (instance.modelsCache) instance.modelsCache.lastError = lastError;
+        else instance.modelsCache = { revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError };
+      }
     } catch (backoffError) {
       throw new AggregateError([error, backoffError], errorMessage(error));
     }
     throw error;
   }
-  await repo.upstreams.completeModelsRefreshSuccess(instance.upstreamId, token);
+  const entry = { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now(), models, lastError: null };
+  const finalized = await repo.upstreams.finalizeModelsRefreshSuccess(
+    instance.upstreamId,
+    instance.modelsCacheGeneration,
+    token,
+    entry,
+  );
+  // The instance is reused across alias targets in one request, so publish the
+  // finalized snapshot locally as well as durably.
+  if (finalized) instance.modelsCache = entry;
   return models;
 };
 
