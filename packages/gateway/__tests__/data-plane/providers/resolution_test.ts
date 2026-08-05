@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { clearInFlightForTesting } from '../../../src/data-plane/providers/models-cache.ts';
+import { clearInFlightForTesting, fetchUpstreamModels } from '../../../src/data-plane/providers/models-cache.ts';
 import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
 import { enumerateModelCandidates, enumerateRealModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { buildCustomUpstreamRecord, copilotModels, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
@@ -170,7 +170,7 @@ test('enumerateRealModelCandidates only loads the selected providers\' catalogs'
   const providers = await listModelProviders(null);
   let secondModelsFetches = 0;
 
-  await withMockedFetch(
+  await withMockedFetchRaw(
     request => {
       const url = new URL(request.url);
       if (url.hostname === 'first.example.com' && url.pathname === '/v1/models') {
@@ -183,7 +183,10 @@ test('enumerateRealModelCandidates only loads the selected providers\' catalogs'
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const { candidates } = await enumerateRealModelCandidates('target-model', 'chat', [providers[0]], () => directFetcher, testScheduler);
+      await fetchUpstreamModels(providers[0], directFetcher);
+      const warmed = (await listModelProviders(null)).find(provider => provider.upstreamId === 'up_first');
+      if (!warmed) throw new Error('warmed provider missing');
+      const { candidates } = await enumerateRealModelCandidates('target-model', 'chat', [warmed], () => directFetcher, testScheduler);
 
       assertEquals(candidates[0]?.model.id, 'target-model');
       assertEquals(candidates[0]?.provider.upstreamId, 'up_first');
@@ -224,6 +227,7 @@ test('enumerateRealModelCandidates rejects a model id disabled on that upstream 
     state: null,
   });
 
+  await warmModelsForTest();
   const providers = await listModelProviders(null);
   const enabled = await enumerateRealModelCandidates('enabled-model', 'chat', providers, () => directFetcher, testScheduler);
   const disabled = await enumerateRealModelCandidates('disabled-model', 'chat', providers, () => directFetcher, testScheduler);
@@ -364,13 +368,7 @@ test('enumerateModelCandidates deduplicates failedUpstreams across the dated-suf
   );
 });
 
-// AbortError must propagate end-to-end so the caller's per-request abort
-// signal cannot be masked by a slow upstream. Burying it in failedUpstreams
-// would let the rest of the data-plane request build a Response against a
-// stale catalog. The provider's `fetchUpstreamModels` wraps the upstream
-// fetch error in a ProviderModelsUnavailableError with the AbortError as
-// its cause, so the resolver's detection walks the cause chain.
-test('enumerateModelCandidates rethrows AbortError from a per-upstream catalog fetch', async () => {
+test('an AbortError from background catalog refresh does not abort model resolution', async () => {
   clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
@@ -391,28 +389,15 @@ test('enumerateModelCandidates rethrows AbortError from a per-upstream catalog f
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      let thrown: unknown = null;
-      try {
-        await enumerateModelCandidates({
-          upstreamIds: null,
-          model: 'any-model',
-          kind: 'chat',
-          scheduler: testScheduler,
-          runtimeLocation: 'TEST',
-        });
-      } catch (e) {
-        thrown = e;
-      }
-      // The thrown error chains back to our injected AbortError via .cause.
-      const isAbortInChain = (err: unknown): boolean => {
-        for (let cur: unknown = err; cur != null; cur = (cur as { cause?: unknown }).cause) {
-          if (cur instanceof Error && cur.name === 'AbortError') return true;
-        }
-        return false;
-      };
-      if (!isAbortInChain(thrown)) {
-        throw new Error(`expected rejection to carry an AbortError in its cause chain; got: ${thrown instanceof Error ? `${thrown.name}: ${thrown.message}` : String(thrown)}`);
-      }
+      const resolved = await enumerateModelCandidates({
+        upstreamIds: null,
+        model: 'any-model',
+        kind: 'chat',
+        scheduler: testScheduler,
+        runtimeLocation: 'TEST',
+      });
+      expect(resolved.candidates).toEqual([]);
+      expect(resolved.failedUpstreams).toEqual(['Aborting']);
     },
   );
 });

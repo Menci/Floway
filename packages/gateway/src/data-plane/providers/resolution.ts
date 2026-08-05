@@ -30,7 +30,7 @@ const enumerateOneUpstreamCandidates = async (
   kind: ModelKind,
   fetcher: Fetcher,
   scheduler: BackgroundScheduler,
-): Promise<{ candidates: ModelCandidate[]; sawAnyId: boolean }> => {
+): Promise<{ candidates: ModelCandidate[]; sawAnyId: boolean; modelsError: boolean }> => {
   const cfg = provider.modelPrefix;
   const lookupIds: string[] = [];
   if (cfg === null) {
@@ -41,7 +41,7 @@ const enumerateOneUpstreamCandidates = async (
       else if (form === 'prefixed' && modelId.startsWith(cfg.prefix)) lookupIds.push(modelId.slice(cfg.prefix.length));
     }
   }
-  if (lookupIds.length === 0) return { candidates: [], sawAnyId: false };
+  if (lookupIds.length === 0) return { candidates: [], sawAnyId: false, modelsError: provider.modelsCache?.lastError != null };
 
   const providedModels = await fetchUpstreamModelsCached(provider, { scheduler, fetcher });
   const disabled = new Set(provider.disabledPublicModelIds);
@@ -55,7 +55,7 @@ const enumerateOneUpstreamCandidates = async (
       candidates.push({ provider, model: internalModelFromProviderModel(match, provider.upstreamId), fetcher });
     }
   }
-  return { candidates, sawAnyId };
+  return { candidates, sawAnyId, modelsError: provider.modelsCache?.lastError != null };
 };
 
 // Walk every visible upstream, in configured order, and collect every
@@ -96,6 +96,7 @@ export const enumerateRealModelCandidates = async (
     }
     candidates.push(...result.value.candidates);
     sawAnyId = sawAnyId || result.value.sawAnyId;
+    if (result.value.modelsError) failedUpstreams.push(providers[index].name);
   }
   return { candidates, sawAnyId, failedUpstreams };
 };

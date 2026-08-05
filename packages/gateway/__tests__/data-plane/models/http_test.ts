@@ -360,9 +360,8 @@ test('/v1/models hides upstream identity when a provider returns an invalid mode
         headers: { 'x-api-key': apiKey.key },
       });
 
-      assertEquals(response.status, 502);
-      const body = (await response.json()) as { error: { message: string } };
-      assertEquals(body.error.message, 'Upstream model listing failed');
+      assertEquals(response.status, 200);
+      assertEquals(await response.json(), { object: 'list', data: [] });
     },
   );
 });
@@ -462,14 +461,11 @@ test('public model list endpoints hide upstream HTTP error bodies and headers', 
         const response = await requestApp(path, {
           headers: { 'x-api-key': apiKey.key },
         });
-        assertEquals(response.status, 502);
+        assertEquals(response.status, 200);
         assertEquals(response.headers.get('x-upstream-id'), null);
-        assertEquals(await response.json(), {
-          error: {
-            message: 'Upstream model listing failed',
-            type: 'api_error',
-          },
-        });
+        const body = JSON.stringify(await response.json());
+        assertEquals(body.includes('secret upstream body'), false);
+        assertEquals(body.includes('up_http_secret_provider'), false);
       }
     },
   );
@@ -505,13 +501,9 @@ test('public model list endpoints hide thrown upstream request errors', async ()
         const response = await requestApp(path, {
           headers: { 'x-api-key': apiKey.key },
         });
-        assertEquals(response.status, 502);
-        assertEquals(await response.json(), {
-          error: {
-            message: 'Upstream model listing failed',
-            type: 'api_error',
-          },
-        });
+        assertEquals(response.status, 200);
+        const body = JSON.stringify(await response.json());
+        assertEquals(body.includes('throw-secret.example.com'), false);
       }
     },
   );
@@ -550,13 +542,10 @@ test('public model list endpoints hide malformed upstream response bodies', asyn
         const response = await requestApp(path, {
           headers: { 'x-api-key': apiKey.key },
         });
-        assertEquals(response.status, 502);
-        assertEquals(await response.json(), {
-          error: {
-            message: 'Upstream model listing failed',
-            type: 'api_error',
-          },
-        });
+        assertEquals(response.status, 200);
+        const body = JSON.stringify(await response.json());
+        assertEquals(body.includes('secret malformed body'), false);
+        assertEquals(body.includes('up_malformed_secret_provider'), false);
       }
     },
   );
