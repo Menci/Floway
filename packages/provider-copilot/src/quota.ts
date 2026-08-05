@@ -27,8 +27,8 @@
 // (https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/extensions/copilot/src/platform/chat/common/chatQuotaServiceImpl.ts#L85-L153).
 
 import { githubHeaders } from './auth.ts';
-import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
 import { githubApiOrigin } from './github-host.ts';
+import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
 import { getProviderRepo, type Fetcher } from '@floway-dev/provider';
 
 // One quota bucket. A seat reports three kinds of bucket and both sources spell

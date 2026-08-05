@@ -1,5 +1,5 @@
-import type { UpstreamRecord } from '@floway-dev/provider';
 import { normalizeGitHubHost } from './github-host.ts';
+import type { UpstreamRecord } from '@floway-dev/provider';
 
 export interface CopilotUpstreamUser {
   login: string;
