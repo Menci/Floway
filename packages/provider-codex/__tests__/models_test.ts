@@ -61,6 +61,17 @@ describe('fetchCodexCatalog', () => {
     await expect(fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher })).rejects.toThrow(/context_window/);
   });
 
+  test.each([
+    { slug: '', display_name: 'GPT-X', context_window: 1 },
+    { slug: 'gpt-x', display_name: '   ', context_window: 1 },
+    { slug: 'gpt-x', display_name: 'GPT-X', context_window: 0 },
+    { slug: 'gpt-x', display_name: 'GPT-X', context_window: 1.5 },
+    { slug: 'gpt-x', display_name: 'GPT-X', context_window: Number.MAX_VALUE },
+  ])('rejects unusable required model metadata: %j', async entry => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({ models: [entry] }));
+    await expect(fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher })).rejects.toThrow();
+  });
+
   test('carries input_modalities, supported_reasoning_levels, default_reasoning_level through to CodexRawModel', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
       models: [{

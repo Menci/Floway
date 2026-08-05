@@ -54,7 +54,7 @@ export const fetchCodexCatalog = async (opts: { accessToken: string; accountId: 
   return parsed.models.map(assertRawModel);
 };
 
-const isPlainRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+const isPlainRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 // Fail loud on malformed upstream catalog responses: a missing field
 // signals an upstream contract change we need to notice. New optional
@@ -64,11 +64,13 @@ const isPlainRecord = (v: unknown): v is Record<string, unknown> => typeof v ===
 const assertRawModel = (value: unknown): CodexRawModel => {
   if (!isPlainRecord(value)) throw new TypeError('Codex model entry is not an object');
   const slug = value.slug;
-  if (typeof slug !== 'string') throw new TypeError('Codex model entry missing slug');
+  if (typeof slug !== 'string' || slug.trim() === '') throw new TypeError('Codex model entry missing slug');
   const display_name = value.display_name;
-  if (typeof display_name !== 'string') throw new TypeError(`Codex model entry ${slug} missing display_name`);
+  if (typeof display_name !== 'string' || display_name.trim() === '') throw new TypeError(`Codex model entry ${slug} missing display_name`);
   const context_window = value.context_window;
-  if (typeof context_window !== 'number') throw new TypeError(`Codex model entry ${slug} missing context_window`);
+  if (typeof context_window !== 'number' || !Number.isSafeInteger(context_window) || context_window <= 0) {
+    throw new TypeError(`Codex model entry ${slug} carries invalid context_window`);
+  }
 
   const raw: CodexRawModel = { id: slug, display_name, context_window };
 
