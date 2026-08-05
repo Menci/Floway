@@ -14,7 +14,7 @@ describe('WinUI switch drag wrapper', () => {
       label="Model discovery"
       root={{ onClickCapture, onPointerDown }}
     />);
-    const input = screen.getByRole('checkbox', { name: 'Model discovery' });
+    const input = screen.getByRole('switch', { name: 'Model discovery' });
     const root = input.closest<HTMLElement>('.fui-Switch');
     if (!root) throw new Error('The Switch rendered no root');
 
