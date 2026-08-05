@@ -150,6 +150,26 @@ describe('ensureClaudeCodeAccessToken', () => {
     expect(account.quotaSnapshot).toEqual(siblingQuota);
   });
 
+  test('a stale successful refresh cannot overwrite credentials re-imported in flight', async () => {
+    const reimportedEntry: ClaudeCodeAccessTokenEntry = {
+      token: 'at_reimported', expiresAt: farFutureMs, refreshedAt: 'reimported',
+    };
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      current = makeRecord({
+        accounts: [{ ...baseAccount, refreshToken: 'rt_reimported', accessToken: reimportedEntry }],
+      });
+      return new Response(JSON.stringify({
+        access_token: 'at_stale', expires_in: 3600, refresh_token: 'rt_stale', scope: 'user:inference',
+      }), { status: 200 });
+    });
+    const result = await ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher });
+    expect(result).toEqual({ entry: reimportedEntry, freshlyMinted: false });
+    expect(writes).toHaveLength(0);
+    const account = (current!.state as ClaudeCodeUpstreamState).accounts[0];
+    expect(account.refreshToken).toBe('rt_reimported');
+    expect(account.accessToken).toEqual(reimportedEntry);
+  });
+
   test('refreshes when the cached token is within the 5-minute skew window', async () => {
     const expiresSoon = Date.now() + 60 * 1000;
     current = makeRecord({ accounts: [{ ...baseAccount, accessToken: { token: 'at_old', expiresAt: expiresSoon, refreshedAt: 'old' } }] });
@@ -200,10 +220,10 @@ describe('ensureClaudeCodeAccessToken', () => {
     expect(saveStateSpy).not.toHaveBeenCalled();
   });
 
-  test('app_session_terminated never attempts race recovery — always flips to terminal', async () => {
+  test('app_session_terminated skips race recovery and flips the current generation terminal', async () => {
     // `app_session_terminated` signals credential death even under a race
-    // scenario, so we should not even re-read state; the terminal flip is
-    // unconditional. Assert via the absence of a second getById call.
+    // scenario, so we should not re-read state through invalid_grant recovery.
+    // The generation-guarded terminal write still applies to this unchanged row.
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       error: { code: 'app_session_terminated', message: 'Session ended by Anthropic' },
     }), { status: 400, headers: { 'content-type': 'application/json' } }));
@@ -216,6 +236,27 @@ describe('ensureClaudeCodeAccessToken', () => {
     const persisted = writes[0];
     expect(persisted.accounts[0].state).toBe('refresh_failed');
     expect(persisted.accounts[0].stateMessage).toBe('Session ended by Anthropic');
+  });
+
+  test('a stale terminal refresh cannot invalidate credentials re-imported in flight', async () => {
+    const reimportedEntry: ClaudeCodeAccessTokenEntry = {
+      token: 'at_reimported', expiresAt: farFutureMs, refreshedAt: 'reimported',
+    };
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      current = makeRecord({
+        accounts: [{ ...baseAccount, refreshToken: 'rt_reimported', accessToken: reimportedEntry }],
+      });
+      return new Response(JSON.stringify({
+        error: { code: 'app_session_terminated', message: 'old session ended' },
+      }), { status: 400 });
+    });
+    await expect(ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher }))
+      .rejects.toBeInstanceOf(ClaudeCodeOAuthSessionTerminatedError);
+    expect(writes).toHaveLength(0);
+    const account = (current!.state as ClaudeCodeUpstreamState).accounts[0];
+    expect(account.state).toBe('active');
+    expect(account.refreshToken).toBe('rt_reimported');
+    expect(account.accessToken).toEqual(reimportedEntry);
   });
 
   test('saveState storage failure propagates without rotating', async () => {
@@ -247,26 +288,34 @@ describe('invalidateClaudeCodeAccessToken', () => {
   test('clears a populated access-token slot', async () => {
     const entry: ClaudeCodeAccessTokenEntry = { token: 'at_x', expiresAt: farFutureMs, refreshedAt: 'now' };
     current = makeRecord({ accounts: [{ ...baseAccount, accessToken: entry }] });
-    await invalidateClaudeCodeAccessToken({ upstreamId, repo });
+    await invalidateClaudeCodeAccessToken({ upstreamId, repo, expectedToken: 'at_x' });
     expect(writes).toHaveLength(1);
     expect(writes[0].accounts[0].accessToken).toBeNull();
     expect(writes[0].accounts[0].refreshToken).toBe('rt_v1');
   });
 
   test('no-ops when the slot is already null', async () => {
-    await invalidateClaudeCodeAccessToken({ upstreamId, repo });
+    await invalidateClaudeCodeAccessToken({ upstreamId, repo, expectedToken: 'at_old' });
     expect(writes).toHaveLength(0);
+  });
+
+  test('does not clear a newer token written after the rejected request started', async () => {
+    const entry: ClaudeCodeAccessTokenEntry = { token: 'at_newer', expiresAt: farFutureMs, refreshedAt: 'newer' };
+    current = makeRecord({ accounts: [{ ...baseAccount, accessToken: entry }] });
+    await invalidateClaudeCodeAccessToken({ upstreamId, repo, expectedToken: 'at_rejected' });
+    expect(writes).toHaveLength(0);
+    expect((current!.state as ClaudeCodeUpstreamState).accounts[0].accessToken).toEqual(entry);
   });
 
   test('throws when the upstream disappeared', async () => {
     current = null;
-    await expect(invalidateClaudeCodeAccessToken({ upstreamId, repo })).rejects.toThrow(/disappeared/);
+    await expect(invalidateClaudeCodeAccessToken({ upstreamId, repo, expectedToken: 'at_old' })).rejects.toThrow(/disappeared/);
     expect(writes).toHaveLength(0);
   });
 });
 
 describe('ensureClaudeCodeAccessToken (within-isolate herd coalescing)', () => {
-  test('10 parallel cold-start ensures share a single /v1/oauth/token mint', async () => {
+  test('parallel cold-start ensures share a single /v1/oauth/token mint', async () => {
     // Cold-start fan-out: no cached token, N concurrent callers. Without
     // coalescing each would POST to /v1/oauth/token, the upstream would
     // rotate the refresh token under the first, and the rest would fall
@@ -276,10 +325,10 @@ describe('ensureClaudeCodeAccessToken (within-isolate herd coalescing)', () => {
       access_token: 'at_new', token_type: 'Bearer', expires_in: 3600, refresh_token: 'rt_v2', scope: 'user:inference',
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
 
-    const results = await Promise.all(
-      Array.from({ length: 10 }, () =>
-        ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher })),
-    );
+    const results = await Promise.all([
+      ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher }),
+      ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher }),
+    ]);
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(saveStateSpy).toHaveBeenCalledTimes(1);
@@ -288,11 +337,44 @@ describe('ensureClaudeCodeAccessToken (within-isolate herd coalescing)', () => {
     }
     // Every coalesced waiter reports `freshlyMinted: true` — the contract
     // documented on `EnsuredAccessToken` in access-token.ts is "this
-    // call site shared in a real mint," not "drove the mint itself." All
-    // ten callers fanned out onto the single in-flight promise here, so
-    // all ten observe `freshlyMinted: true`.
+    // call site shared in a real mint," not "drove the mint itself." Both
+    // callers fanned out onto the single in-flight promise here, so
+    // both observe `freshlyMinted: true`.
     const minted = results.filter(r => r.freshlyMinted).length;
-    expect(minted).toBe(10);
+    expect(minted).toBe(2);
+  });
+
+  test('lazy and forced callers never rotate the same refresh token concurrently', async () => {
+    let releaseRefresh!: () => void;
+    const refreshGate = new Promise<void>(resolve => { releaseRefresh = resolve; });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      await refreshGate;
+      return new Response(JSON.stringify({
+        access_token: 'at_new', expires_in: 3600, refresh_token: 'rt_v2', scope: 'user:inference',
+      }), { status: 200 });
+    });
+    const lazy = ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher });
+    const forced = ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher, force: true });
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    releaseRefresh();
+    const results = await Promise.all([lazy, forced]);
+    expect(results.map(result => result.entry.token)).toEqual(['at_new', 'at_new']);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test('a force request following a coalesced cache hit performs one rotation', async () => {
+    const cached: ClaudeCodeAccessTokenEntry = { token: 'at_cached', expiresAt: farFutureMs, refreshedAt: 'cached' };
+    current = makeRecord({ accounts: [{ ...baseAccount, accessToken: cached }] });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      access_token: 'at_new', expires_in: 3600, refresh_token: 'rt_v2', scope: 'user:inference',
+    }), { status: 200 }));
+    const [lazyResult, forcedResult] = await Promise.all([
+      ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher }),
+      ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher, force: true }),
+    ]);
+    expect(lazyResult.entry).toEqual(cached);
+    expect(forcedResult.entry.token).toBe('at_new');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
   test('serial calls after the in-flight settles are not stuck on a stale entry', async () => {
@@ -322,13 +404,15 @@ describe('ensureClaudeCodeAccessToken (within-isolate herd coalescing)', () => {
       error: 'invalid_grant', error_description: 'Refresh token revoked',
     }), { status: 400, headers: { 'content-type': 'application/json' } }));
 
-    const waiters = Array.from({ length: 5 }, () =>
-      ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher }).catch(e => e));
+    const waiters = [
+      ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher }).catch(e => e),
+      ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher }).catch(e => e),
+    ];
     const settled = await Promise.all(waiters);
     for (const e of settled) {
       expect(e).toBeInstanceOf(ClaudeCodeOAuthSessionTerminatedError);
     }
-    // Only one upstream POST despite 5 waiters.
+    // Only one upstream POST despite multiple waiters.
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });

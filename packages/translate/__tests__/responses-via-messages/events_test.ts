@@ -748,6 +748,34 @@ test('text_delta events on a text block with citations still emit text deltas un
   assertEquals(state.accumulatedText, 'Hello world. More.');
 });
 
+test('non-empty content block starts seed Responses text, reasoning, and tool outputs', () => {
+  const translateBlock = (
+    contentBlock: Extract<MessagesStreamEvent, { type: 'content_block_start' }>['content_block'],
+    customToolNames: ReadonlySet<string> = new Set(),
+  ) => {
+    const state = createMessagesToResponsesStreamState('resp_test', 'claude-test', customToolNames);
+    const started = translateMessagesEventToResponsesEvents({ type: 'content_block_start', index: 0, content_block: contentBlock }, state);
+    const stopped = translateMessagesEventToResponsesEvents({ type: 'content_block_stop', index: 0 }, state);
+    return { events: [...started, ...stopped], state };
+  };
+
+  const text = translateBlock({ type: 'text', text: 'hello' });
+  const thinking = translateBlock({ type: 'thinking', thinking: 'trace' });
+  const tool = translateBlock({ type: 'tool_use', id: 'call_1', name: 'lookup', input: { q: 'x' } });
+  const custom = translateBlock({ type: 'tool_use', id: 'call_2', name: 'freeform', input: { input: 'raw' } }, new Set(['freeform']));
+
+  assertEquals(text.state.accumulatedText, 'hello');
+  assertEquals(text.events.find(event => event.type === 'response.output_text.delta')?.delta, 'hello');
+  assertEquals(thinking.events.find(event => event.type === 'response.reasoning_summary_text.delta')?.delta, 'trace');
+  assertEquals(tool.events.find(event => event.type === 'response.function_call_arguments.delta')?.delta, '{"q":"x"}');
+  assertEquals(custom.state.completedItems[0], expect.objectContaining({
+    type: 'custom_tool_call',
+    call_id: 'call_2',
+    name: 'freeform',
+    input: 'raw',
+  }));
+});
+
 // ── Synthesized output items carry stable, child-consistent ids ──
 
 const itemIdOf = (events: ResponsesStreamEvent[], type: 'response.output_item.added' | 'response.output_item.done'): string => {

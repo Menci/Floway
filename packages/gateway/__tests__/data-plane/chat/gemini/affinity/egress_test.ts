@@ -1,7 +1,8 @@
-import { describe, expect, test, vi } from 'vitest';
+import { describe, expect, test } from 'vitest';
 
 import { wrapGeminiAffinityEgress } from '../../../../../src/data-plane/chat/gemini/affinity/egress.ts';
 import type { AffinityCodec, AffinityTarget } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { createDeferredAffinityCodec } from '../../shared/affinity/helpers.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiCandidate, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 
@@ -19,21 +20,13 @@ const frames = async function* (values: ProtocolFrame<GeminiStreamEvent>[]) {
 const withCandidateExtra = (candidate: GeminiCandidate, key: string, value: unknown): GeminiCandidate =>
   Object.assign(candidate, { [key]: value });
 
-class DelayedCodec implements AffinityEgressCodec {
-  readonly calls: Array<{ value: string | undefined; resolve: (value: string) => void }> = [];
-
-  wrap(value: string | undefined): Promise<string> {
-    return new Promise(resolve => this.calls.push({ value, resolve }));
-  }
-}
-
 const immediateCodec: AffinityEgressCodec = {
   wrap: async value => `wrapped:${value ?? 'synthetic'}`,
 };
 
 describe('Gemini affinity egress', () => {
   test('buffers one event and wraps a natural signature on its content-bearing part', async () => {
-    const codec = new DelayedCodec();
+    const codec = createDeferredAffinityCodec();
     const output = wrapGeminiAffinityEgress(frames([eventFrame({
       candidates: [{
         index: 0,
@@ -44,8 +37,9 @@ describe('Gemini affinity egress', () => {
     })]), { codec, affinity })[Symbol.asyncIterator]();
 
     const pending = output.next();
-    await vi.waitFor(() => expect(codec.calls.map(call => call.value)).toEqual(['opaque']));
-    codec.calls[0].resolve('wrapped-opaque');
+    const wrapCall = await codec.nextCall();
+    expect(wrapCall.value).toBe('opaque');
+    wrapCall.resolve('wrapped-opaque');
     expect((await pending).value).toEqual(eventFrame({
       candidates: [{
         index: 0,
@@ -519,15 +513,24 @@ describe('Gemini affinity egress', () => {
   });
 
   test('flushes pending visible content before propagating an iterator failure', async () => {
+    const wrappedValues: Array<string | undefined> = [];
+    const codec: AffinityEgressCodec = {
+      wrap: async value => {
+        wrappedValues.push(value);
+        return `wrapped:${value ?? 'synthetic'}`;
+      },
+    };
     const source = async function* (): AsyncGenerator<ProtocolFrame<GeminiStreamEvent>> {
       yield eventFrame({ candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'visible' }] } }] });
       throw new Error('upstream failed');
     };
-    const iterator = wrapGeminiAffinityEgress(source(), { codec: immediateCodec, affinity })[Symbol.asyncIterator]();
+    const iterator = wrapGeminiAffinityEgress(source(), { codec, affinity })[Symbol.asyncIterator]();
 
-    await expect(iterator.next()).resolves.toMatchObject({
-      value: { event: { candidates: [{ content: { parts: [{ text: 'visible' }] } }] } },
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: eventFrame({ candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'visible' }] } }] }),
     });
+    expect(wrappedValues).toEqual([]);
     await expect(iterator.next()).rejects.toThrow('upstream failed');
   });
 });

@@ -61,7 +61,7 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   });
   const loadedAt = Date.now();
   return {
-    ...await loadUsagePageData(user.isAdmin, parsed.range, scoped.groupBy, scoped.filters, loadedAt),
+    ...await loadUsagePageData(user.isAdmin, parsed.range, scoped.groupBy, scoped.filters, loadedAt, request.signal),
     currentUserId: String(user.id),
     isAdmin: user.isAdmin,
     loadedAt,

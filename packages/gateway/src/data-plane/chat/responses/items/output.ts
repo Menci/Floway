@@ -4,6 +4,13 @@ import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type ResponsesCompactionResult, type ResponsesOutputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
+// Codex accepts `compaction_summary` as a serde alias of the canonical
+// `compaction` output variant. Either spelling carries a self-contained state
+// replacement and therefore replaces, rather than extends, prior history.
+// https://github.com/openai/codex/blob/9e552e9d15ba52bed7077d5357f3e18e330f8f38/codex-rs/protocol/src/models.rs#L1135-L1148
+const isCompactionItemType = (type: string): boolean =>
+  type === 'compaction' || type === 'compaction_summary';
+
 // Floway derives canonical output identity from `response.output_item.done`
 // lifecycles. Normalize terminal snapshots from that ordered set before
 // downstream transforms so affinity, persistence, and resource completion
@@ -101,7 +108,7 @@ export const wrapResponsesClientOutput = async function* (
 
     if (event.type === 'response.output_item.done') {
       if (store.writesState) {
-        if (event.item.type === 'compaction') sawCompactionItem = true;
+        if (isCompactionItemType(event.item.type)) sawCompactionItem = true;
         await persistFinalizedItem(event.item, event.output_index);
       }
       yield frame;
@@ -137,7 +144,7 @@ export const wrapResponsesClientOutput = async function* (
     }
     if (event.type === 'error') {
       yield frame;
-      return;
+      continue;
     }
 
     yield frame;
@@ -152,11 +159,35 @@ export const syntheticEventsFromResult = async function* (result: ResponsesResul
   yield doneFrame();
 };
 
-// `ResponsesCompactionResult` states no `status`, so the terminal is stated
-// here rather than read off the body: a compaction that got this far is one the
-// upstream answered 200, and there is no spelling for a failed one. Widening it
-// back to `ResponsesResult` is safe because the expansion reads no
-// response-only field — it spreads whatever the body carried.
+// A native `ResponsesCompactionResult` states no status, so its successful HTTP
+// envelope closes as completed. A shimmed compaction retains the status of its
+// summarization turn; preserving failed/incomplete here prevents the stateful
+// boundary from committing a continuation snapshot for a failed turn.
+const compactionTerminal = (
+  result: ResponsesCompactionResult,
+): 'response.completed' | 'response.incomplete' | 'response.failed' => {
+  const status: unknown = (result as { status?: unknown }).status;
+  switch (status) {
+  case undefined:
+  case 'completed':
+    return 'response.completed';
+  case 'incomplete':
+    return 'response.incomplete';
+  case 'failed':
+    return 'response.failed';
+  case 'queued':
+  case 'in_progress':
+  case 'cancelled':
+    throw new TypeError(`Responses compaction reported nonterminal status '${status}'`);
+  default:
+    throw new TypeError(`Responses compaction reported invalid status ${JSON.stringify(status)}`);
+  }
+};
+
 export const syntheticEventsFromCompaction = async function* (result: ResponsesCompactionResult): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
-  yield* responsesResultToEvents(result as unknown as ResponsesResult, { genericOutputItems: true, terminal: 'response.completed' });  yield doneFrame();
+  yield* responsesResultToEvents(result as unknown as ResponsesResult, {
+    genericOutputItems: true,
+    terminal: compactionTerminal(result),
+  });
+  yield doneFrame();
 };

@@ -108,6 +108,36 @@ test('translateToSourceEvents maps text chunks, finish reason, and usage without
   ]);
 });
 
+test('translateToSourceEvents keeps usage-only message deltas nonterminal', async () => {
+  const frames = await collect([
+    eventFrame(messageStart({ input_tokens: 10, output_tokens: 0 })),
+    eventFrame({ type: 'message_delta', delta: {}, usage: { output_tokens: 3 } }),
+    eventFrame({ type: 'message_delta', delta: { stop_reason: 'end_turn' } }),
+    eventFrame({ type: 'message_stop' }),
+  ]);
+
+  assertEquals(frames.length, 2);
+  assertEquals(frames[0], geminiFrame({
+    usageMetadata: {
+      promptTokenCount: 10,
+      candidatesTokenCount: 3,
+      totalTokenCount: 13,
+    },
+  }));
+  assertEquals(frames[1], geminiFrame({
+    candidates: [{
+      index: 0,
+      content: { role: 'model', parts: [] },
+      finishReason: 'STOP',
+    }],
+    usageMetadata: {
+      promptTokenCount: 10,
+      candidatesTokenCount: 3,
+      totalTokenCount: 13,
+    },
+  }));
+});
+
 test('translateToSourceEvents maps thinking text and attaches signature to the next text action', async () => {
   const frames = await collect([
     eventFrame(messageStart()),

@@ -5,12 +5,10 @@
 // Why the sliding TTL is debounced: Cloudflare KV rate-limits writes to a
 // single key to 1/sec (https://developers.cloudflare.com/kv/platform/limits/),
 // and a single agentic request typically batches dozens of identical inline
-// images through `Promise.all`. An unconditional refresh-on-read would race
-// concurrent writes to the same key on every cache hit. The store refreshes
-// the entry's expiry only when the entry has aged past
-// `policy.refreshIfOlderThanMs`, capping refresh writes to one per key per
-// refresh window. The Node sqlite store applies the same threshold so both
-// targets cache identically.
+// images through `Promise.all`. The age threshold avoids sequential rewrites;
+// ImageCacheRefreshCoordinator also joins a concurrent per-key refresh wave
+// inside one runtime instance. The Node sqlite store applies the same policy so
+// both targets cache identically.
 export interface ImageCacheStore {
   get(key: string): Promise<Uint8Array | null>;
   put(key: string, value: Uint8Array): Promise<void>;
@@ -33,6 +31,29 @@ export const IMAGE_CACHE_POLICY: ImageCachePolicy = {
   ttlMs: 24 * 60 * 60 * 1000,
   refreshIfOlderThanMs: 18 * 60 * 60 * 1000,
 };
+
+export const parseImageCacheTimestamp = (value: unknown, context: string): number => {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    const rendered = typeof value === 'string' ? JSON.stringify(value) : String(value);
+    throw new TypeError(`${context} must be a non-negative safe integer, got ${rendered}`);
+  }
+  return value;
+};
+
+export class ImageCacheRefreshCoordinator {
+  private readonly inFlight = new Map<string, Promise<void>>();
+
+  run(key: string, refresh: () => Promise<void>): Promise<void> {
+    const existing = this.inFlight.get(key);
+    if (existing !== undefined) return existing;
+
+    const promise = Promise.resolve().then(refresh);
+    this.inFlight.set(key, promise);
+    return promise.finally(() => {
+      if (this.inFlight.get(key) === promise) this.inFlight.delete(key);
+    });
+  }
+}
 
 let imageCacheStore: ImageCacheStore | null = null;
 

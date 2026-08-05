@@ -48,12 +48,19 @@ test('translateToSourceEvents maps readable reasoning text without opaque Respon
       delta: 'trace',
     }),
     eventFrame({
+      type: 'response.reasoning_summary_text.done',
+      item_id: 'rs_1',
+      output_index: 0,
+      summary_index: 0,
+      text: 'trace complete',
+    }),
+    eventFrame({
       type: 'response.output_item.done',
       output_index: 0,
       item: {
         type: 'reasoning',
         id: 'rs_1',
-        summary: [],
+        summary: [{ type: 'summary_text', text: 'trace complete' }],
       },
     }),
     eventFrame({
@@ -62,6 +69,13 @@ test('translateToSourceEvents maps readable reasoning text without opaque Respon
       output_index: 1,
       content_index: 0,
       delta: 'answer',
+    }),
+    eventFrame({
+      type: 'response.output_text.done',
+      item_id: 'msg_1',
+      output_index: 1,
+      content_index: 0,
+      text: 'answer!',
     }),
     eventFrame({
       type: 'response.completed',
@@ -90,10 +104,26 @@ test('translateToSourceEvents maps readable reasoning text without opaque Respon
       candidates: [
         {
           index: 0,
+          content: { role: 'model', parts: [{ text: ' complete', thought: true }] },
+        },
+      ],
+    }),
+    geminiFrame({
+      candidates: [
+        {
+          index: 0,
           content: {
             role: 'model',
             parts: [{ text: 'answer' }],
           },
+        },
+      ],
+    }),
+    geminiFrame({
+      candidates: [
+        {
+          index: 0,
+          content: { role: 'model', parts: [{ text: '!' }] },
         },
       ],
     }),
@@ -222,7 +252,7 @@ test('translateToSourceEvents accumulates function call arguments after empty re
   ]);
 });
 
-test('translateToSourceEvents uses final function call arguments when streamed draft arguments are empty', async () => {
+test('translateToSourceEvents replaces partial function arguments with the final output item value', async () => {
   const frames = await collect([
     eventFrame({
       type: 'response.output_item.added',
@@ -234,6 +264,12 @@ test('translateToSourceEvents uses final function call arguments when streamed d
         arguments: '',
         status: 'in_progress',
       },
+    }),
+    eventFrame({
+      type: 'response.function_call_arguments.delta',
+      item_id: 'fc_1',
+      output_index: 0,
+      delta: '{"query"',
     }),
     eventFrame({
       type: 'response.output_item.done',

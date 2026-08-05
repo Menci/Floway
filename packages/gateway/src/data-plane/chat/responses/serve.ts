@@ -83,11 +83,20 @@ export const responsesServe = {
     );
     if (result.type !== 'result') return result;
 
-    const stored = wrapResponsesStatefulOutput(syntheticEventsFromCompaction(result.result), ctx);
+    // Complete and validate the client resource before the stateful wrapper can
+    // persist any output item or snapshot. A malformed successful envelope must
+    // fail atomically, without leaving an unreachable response id behind.
+    const completed = completeResponsesCompaction(result.result, responsesCreatedAt(ctx));
+    const stored = wrapResponsesStatefulOutput(syntheticEventsFromCompaction(completed), ctx);
     const persisted = await collectResponsesProtocolEventsToResult(stored);
     return {
       ...result,
-      result: completeResponsesCompaction(persisted, responsesCreatedAt(ctx)),
+      result: {
+        ...persisted,
+        object: completed.object,
+        created_at: completed.created_at,
+        usage: completed.usage,
+      },
     };
   },
 };

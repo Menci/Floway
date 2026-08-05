@@ -104,6 +104,27 @@ describe('createCodexProvider', () => {
     expect(fetchSpy.mock.calls[0][0]).toMatch(/\/codex\/models/);
   });
 
+  test('getProvidedModels invalidates a rejected cached token and retries with one forced refresh', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('{"error":"expired"}', {
+        status: 401,
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(oauthTokenResponse({ access_token: 'at_retried', refresh_token: 'rt_v2' }))
+      .mockResolvedValueOnce(modelsResponse());
+    const instance = createCodexProvider(baseRecord);
+    const models = await instance.instance.getProvidedModels(directFetcher);
+    expect(models.map(model => model.id)).toEqual(['gpt-5.4', 'codex-auto-review']);
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    const firstModelHeaders = new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers);
+    const retriedModelHeaders = new Headers((fetchSpy.mock.calls[2][1] as RequestInit).headers);
+    expect(firstModelHeaders.get('authorization')).toBe('Bearer at');
+    expect(retriedModelHeaders.get('authorization')).toBe('Bearer at_retried');
+    const account = (current!.state as CodexUpstreamState).accounts[0];
+    expect(account.refresh_token).toBe('rt_v2');
+    expect(account.accessToken?.token).toBe('at_retried');
+  });
+
   test('getProvidedModels mints an access token when none is cached, then fetches the catalog', async () => {
     current = baseRecord;
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
@@ -205,6 +226,51 @@ describe('createCodexProvider', () => {
     );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(503);
+  });
+
+  test('a stale terminal response cannot invalidate credentials re-imported while the request was in flight', async () => {
+    let releaseResponse!: () => void;
+    let markRequestStarted!: () => void;
+    const requestStarted = new Promise<void>(resolve => { markRequestStarted = resolve; });
+    const responseGate = new Promise<void>(resolve => { releaseResponse = resolve; });
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      markRequestStarted();
+      await responseGate;
+      return new Response(JSON.stringify({ error: { code: 'token_invalidated', message: 'old session ended' } }), {
+        status: 401,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+    const instance = createCodexProvider(baseRecord);
+    const pending = instance.instance.callResponses(
+      stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { responses: {} } }),
+      { input: [], stream: true },
+      'generate',
+      undefined,
+      noopUpstreamCallOptions(),
+    );
+    await requestStarted;
+    const reimportedAccessToken: CodexAccessTokenEntry = {
+      token: 'at_reimported',
+      expiresAt: farFutureMs,
+      refreshedAt: 'reimported',
+    };
+    current = {
+      ...recordWithAccessToken(reimportedAccessToken),
+      state: {
+        accounts: [{
+          ...(recordWithAccessToken(reimportedAccessToken).state as CodexUpstreamState).accounts[0],
+          refresh_token: 'rt_reimported',
+        }],
+      },
+    };
+    releaseResponse();
+    const result = await pending;
+    expect(result.ok).toBe(false);
+    const account = (current.state as CodexUpstreamState).accounts[0];
+    expect(account.state).toBe('active');
+    expect(account.refresh_token).toBe('rt_reimported');
+    expect(account.accessToken?.token).toBe('at_reimported');
   });
 
   test.each([

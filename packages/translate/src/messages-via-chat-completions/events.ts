@@ -1,4 +1,4 @@
-import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
+import { chatCompletionsErrorPayloadMessage, type ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesContentBlockDeltaEvent, MessagesContentBlockStartEvent, MessagesResult, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
@@ -82,16 +82,20 @@ type DeferredAfterThinking = { type: 'content'; content: string; hasToolCallDelt
 
 type OpenContentBlock = 'text' | 'thinking' | 'tool_use';
 
+interface ChatCompletionsToolCallDraft {
+  id?: string;
+  name?: string;
+  arguments: string;
+  emittedArgumentLength: number;
+  messagesBlockIndex?: number;
+}
+
 interface ChatCompletionsToMessagesStreamState {
   messageStartSent: boolean;
   contentBlockIndex: number;
   openBlock?: OpenContentBlock;
-  toolCalls: Record<
-    number,
-    {
-      messagesBlockIndex: number;
-    }
-  >;
+  toolCalls: Map<number, ChatCompletionsToolCallDraft>;
+  activeToolCallIndex?: number;
   pendingReasoningOpaque?: string;
   pendingThinkingSignature?: string;
   deferredAfterThinking: DeferredAfterThinking[];
@@ -135,6 +139,7 @@ const emitContentBlockDelta = (state: ChatCompletionsToMessagesStreamState, even
 const closeCurrentBlock = (state: ChatCompletionsToMessagesStreamState, events: MessagesStreamEvent[]): void => {
   if (state.openBlock === undefined) return;
 
+  if (state.openBlock === 'tool_use') state.activeToolCallIndex = undefined;
   events.push({ type: 'content_block_stop', index: state.contentBlockIndex });
   state.contentBlockIndex++;
   state.openBlock = undefined;
@@ -242,44 +247,65 @@ const handleReasoningDelta = (delta: ChatCompletionsStreamDelta, state: ChatComp
   state.pendingReasoningOpaque = delta.reasoning_opaque;
 };
 
+// Chat can interleave argument deltas for parallel tool calls, while Messages
+// requires each content block to finish before the next one starts. Stream the
+// first call and buffer its siblings, then emit those siblings sequentially at
+// the Chat terminal boundary.
+const startNextToolCall = (toolCallIndex: number, draft: ChatCompletionsToolCallDraft, state: ChatCompletionsToMessagesStreamState, events: MessagesStreamEvent[]): void => {
+  if (state.activeToolCallIndex !== undefined || draft.messagesBlockIndex !== undefined || !draft.id || !draft.name) return;
+
+  closeCurrentBlock(state, events);
+  draft.messagesBlockIndex = state.contentBlockIndex;
+  state.activeToolCallIndex = toolCallIndex;
+  startContentBlock(state, events, 'tool_use', {
+    type: 'tool_use',
+    id: draft.id,
+    name: draft.name,
+    input: {},
+  });
+};
+
+const emitUnsentToolCallArguments = (draft: ChatCompletionsToolCallDraft, state: ChatCompletionsToMessagesStreamState, events: MessagesStreamEvent[]): void => {
+  if (draft.messagesBlockIndex === undefined || draft.emittedArgumentLength === draft.arguments.length) return;
+
+  emitContentBlockDelta(state, events, {
+    type: 'input_json_delta',
+    partial_json: draft.arguments.slice(draft.emittedArgumentLength),
+  }, draft.messagesBlockIndex);
+  draft.emittedArgumentLength = draft.arguments.length;
+};
+
 const emitToolCallsDelta = (toolCalls: ChatCompletionsStreamToolCalls, state: ChatCompletionsToMessagesStreamState, events: MessagesStreamEvent[]): void => {
   for (const toolCall of toolCalls) {
-    if (toolCall.id && toolCall.function?.name) {
-      closeCurrentBlock(state, events);
-      // Do NOT flush deferredContent here: caozhiyuan's stream translator only
-      // flushes deferred text at message-finish so it lands as the trailing
-      // text block. Flushing on every tool_use open would either (a) emit
-      // same-chunk content+tool_calls text BEFORE the tool_use block, which
-      // is exactly the ordering bug we are guarding against, or (b) split
-      // interleaved text across tool boundaries in a way the reference
-      // implementation does not.
-      const blockIndex = state.contentBlockIndex;
-      state.toolCalls[toolCall.index] = {
-        messagesBlockIndex: blockIndex,
-      };
-      startContentBlock(state, events, 'tool_use', {
-        type: 'tool_use',
-        id: toolCall.id,
-        name: toolCall.function.name,
-        input: {},
-      });
+    const draft = state.toolCalls.get(toolCall.index) ?? { arguments: '', emittedArgumentLength: 0 };
+    if (toolCall.id !== undefined) draft.id = toolCall.id;
+    if (toolCall.function?.name !== undefined) draft.name = toolCall.function.name;
+    if (toolCall.function?.arguments !== undefined) draft.arguments += toolCall.function.arguments;
+    state.toolCalls.set(toolCall.index, draft);
+
+    startNextToolCall(toolCall.index, draft, state, events);
+    if (state.activeToolCallIndex === toolCall.index) emitUnsentToolCallArguments(draft, state, events);
+  }
+};
+
+const flushToolCalls = (state: ChatCompletionsToMessagesStreamState, events: MessagesStreamEvent[]): void => {
+  closeCurrentBlock(state, events);
+
+  for (const [toolCallIndex, draft] of [...state.toolCalls].sort(([left], [right]) => left - right)) {
+    if (draft.messagesBlockIndex !== undefined) {
+      if (draft.emittedArgumentLength !== draft.arguments.length) {
+        throw new Error(`Chat Completions tool call ${toolCallIndex} continued after its Messages content block closed.`);
+      }
+      continue;
     }
 
-    if (!toolCall.function?.arguments) continue;
-
-    const toolCallInfo = state.toolCalls[toolCall.index];
-    if (!toolCallInfo) continue;
-
-    emitContentBlockDelta(
-      state,
-      events,
-      {
-        type: 'input_json_delta',
-        partial_json: toolCall.function.arguments,
-      },
-      toolCallInfo.messagesBlockIndex,
-    );
+    startNextToolCall(toolCallIndex, draft, state, events);
+    if (state.activeToolCallIndex !== toolCallIndex) continue;
+    emitUnsentToolCallArguments(draft, state, events);
+    closeCurrentBlock(state, events);
   }
+
+  state.toolCalls.clear();
 };
 
 const emitPendingReasoningAndDeferred = (state: ChatCompletionsToMessagesStreamState, events: MessagesStreamEvent[]): void => {
@@ -317,8 +343,7 @@ const handleFinishReason = (
   events: MessagesStreamEvent[],
 ): void => {
   emitPendingReasoningAndDeferred(state, events);
-
-  closeCurrentBlock(state, events);
+  flushToolCalls(state, events);
   flushDeferredContent(state, events);
 
   state.pendingFinishReason = finishReason;
@@ -364,13 +389,18 @@ const emitFinalMessageIfReady = (state: ChatCompletionsToMessagesStreamState, ev
 export const createChatCompletionsToMessagesStreamState = (): ChatCompletionsToMessagesStreamState => ({
   messageStartSent: false,
   contentBlockIndex: 0,
-  toolCalls: {},
+  toolCalls: new Map(),
   deferredAfterThinking: [],
   refusalText: '',
   sawRefusal: false,
 });
 
 export const translateChatCompletionsChunkToMessagesEvents = (chunk: ChatCompletionsStreamEvent, state: ChatCompletionsToMessagesStreamState): MessagesStreamEvent[] => {
+  const upstreamError = chatCompletionsErrorPayloadMessage(chunk);
+  if (upstreamError) {
+    throw new Error(`Upstream Chat Completions stream error: ${upstreamError}`, { cause: chunk });
+  }
+
   const events: MessagesStreamEvent[] = [];
 
   if (chunk.service_tier != null) state.upstreamServiceTier = chunk.service_tier;
@@ -445,7 +475,7 @@ export const translateChatCompletionsChunkToMessagesEvents = (chunk: ChatComplet
 export const flushChatCompletionsToMessagesEvents = (state: ChatCompletionsToMessagesStreamState): MessagesStreamEvent[] => {
   const events: MessagesStreamEvent[] = [];
   emitPendingReasoningAndDeferred(state, events);
-  closeCurrentBlock(state, events);
+  flushToolCalls(state, events);
   flushDeferredContent(state, events);
   emitFinalMessageIfReady(state, events);
   return events;

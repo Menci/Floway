@@ -5,7 +5,7 @@ import { clearInFlightForTesting } from '../../../src/data-plane/providers/model
 import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { buildCustomUpstreamRecord, copilotModels, setupAppTest } from '../../test-utils/app.ts';
-import { directFetcher, type InternalModel, type ProviderModel } from '@floway-dev/provider';
+import { directFetcher, isAbortError, type InternalModel, type ProviderModel } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const realProviderModels = (model: InternalModel | undefined): Record<string, ProviderModel> => {
@@ -241,16 +241,11 @@ test('disabledPublicModelIds hides models from the catalog and routing, per upst
   assertEquals(keep.candidates.map(m => m.provider.upstreamId), ['up_a']);
 });
 
-// Per-upstream catalog fetches fan out in parallel: total wall-clock time
-// tracks the slowest upstream, not the sum. The bound is loose because CI
-// timer noise eats into a tight `< sum` comparison; what matters is the
-// ratio.
-test('catalog assembly fans out per-upstream catalog fetches in parallel', async () => {
+test('catalog assembly starts every upstream fetch before waiting for any response', { timeout: 5_000 }, async () => {
   clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const FETCH_DELAY_MS = 60;
   const upstreams = [
     { id: 'up_p1', host: 'p1.example.com', model: 'p1-model' },
     { id: 'up_p2', host: 'p2.example.com', model: 'p2-model' },
@@ -265,29 +260,75 @@ test('catalog assembly fans out per-upstream catalog fetches in parallel', async
     }));
   }
 
+  const started = new Set<string>();
+  let releaseFetches: (() => void) | undefined;
+  const fetchGate = new Promise<void>(resolve => { releaseFetches = resolve; });
+  let markAllStarted: (() => void) | undefined;
+  const allStarted = new Promise<void>(resolve => { markAllStarted = resolve; });
+
   await withMockedFetch(
     async request => {
       const url = new URL(request.url);
       const match = upstreams.find(u => url.hostname === u.host);
       if (match && url.pathname === '/v1/models') {
-        await new Promise(resolve => setTimeout(resolve, FETCH_DELAY_MS));
+        started.add(match.id);
+        if (started.size === upstreams.length) markAllStarted!();
+        await fetchGate;
         return jsonResponse({ object: 'list', data: [{ id: match.model, supported_endpoints: ['/chat/completions'] }] });
       }
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const start = Date.now();
-      const catalog = (await getModelsFromProviders(await listModelProviders(null), () => directFetcher, testScheduler)).models;
-      const elapsed = Date.now() - start;
+      const catalogPromise = getModelsFromProviders(await listModelProviders(null), () => directFetcher, testScheduler);
+      await allStarted;
+      assertEquals([...started].sort(), upstreams.map(upstream => upstream.id).sort());
+      releaseFetches!();
+      const catalog = (await catalogPromise).models;
 
       assertEquals([...catalog.map(m => m.id)].sort(), ['p1-model', 'p2-model', 'p3-model']);
-      // A serial walk would take >= 3 * FETCH_DELAY_MS; parallel is bounded by
-      // ~FETCH_DELAY_MS plus per-test overhead. Half the serial budget is the
-      // loosest threshold that still excludes any serial regression.
-      const serialBudget = upstreams.length * FETCH_DELAY_MS;
-      if (elapsed >= serialBudget / 2) {
-        throw new Error(`expected parallel walk (~${FETCH_DELAY_MS}ms) but took ${elapsed}ms (serial would be ${serialBudget}ms)`);
+    },
+  );
+});
+
+test('catalog abort does not wait for another upstream whose fetch never settles', { timeout: 1_000 }, async () => {
+  clearInFlightForTesting();
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_hanging',
+    name: 'Hanging',
+    sortOrder: 1,
+    config: { baseUrl: 'https://hanging.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+  }));
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_aborting',
+    name: 'Aborting',
+    sortOrder: 2,
+    config: { baseUrl: 'https://aborting.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+  }));
+  const abortError = Object.assign(new Error('aborted'), { name: 'AbortError' });
+  const calls: string[] = [];
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.pathname !== '/v1/models') throw new Error(`Unhandled fetch ${request.url}`);
+      calls.push(url.hostname);
+      if (url.hostname === 'hanging.example.com') return new Promise<Response>(() => {});
+      if (url.hostname === 'aborting.example.com') throw abortError;
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      let thrown: unknown;
+      try {
+        await getModelsFromProviders(await listModelProviders(null), () => directFetcher, testScheduler);
+      } catch (error) {
+        thrown = error;
+      } finally {
+        clearInFlightForTesting();
       }
+      assertEquals(isAbortError(thrown), true);
+      assertEquals(calls.sort(), ['aborting.example.com', 'hanging.example.com']);
     },
   );
 });

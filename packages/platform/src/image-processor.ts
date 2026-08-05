@@ -64,7 +64,10 @@ export const fitWithin = ({ width, height }: ImageDimensions, caps: SizeCaps): I
   if (caps.maxArea !== undefined) factors.push(Math.sqrt(caps.maxArea / (width * height)));
   const scale = Math.min(...factors);
   if (scale >= 1) return { width, height };
-  return { width: Math.round(width * scale), height: Math.round(height * scale) };
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  };
 };
 
 let _imageProcessor: ImageProcessor | null = null;

@@ -1,4 +1,4 @@
-import { memoizedBase64Compressor } from '../image-compression.ts';
+import { mapImageCompressions, memoizedBase64Compressor } from '../image-compression.ts';
 import type { MessagesBoundaryCtx } from './types.ts';
 import { type ImageSizeCalculator, type SizeCaps, fitWithin } from '@floway-dev/platform';
 import type { MessagesImageBlock, MessagesMessage, MessagesToolResultBlock, MessagesToolResultContentBlock, MessagesUserContentBlock } from '@floway-dev/protocols/messages';
@@ -56,11 +56,8 @@ const compressInlineImages = async (ctx: MessagesBoundaryCtx): Promise<void> => 
   const targetSize: ImageSizeCalculator = source => fitWithin(source, caps);
   const compress = memoizedBase64Compressor(targetSize);
   const compressedData = new Map<MessagesImageBlock, string>();
-  await Promise.all(
-    blocks.map(async block => {
-      compressedData.set(block, await compress(block.source.data));
-    }),
-  );
+  const outputs = await mapImageCompressions(blocks, block => compress(block.source.data));
+  blocks.forEach((block, index) => compressedData.set(block, outputs[index]));
   const hasCompressedImage = (block: MessagesToolResultContentBlock | MessagesUserContentBlock): block is MessagesImageBlock =>
     block.type === 'image' && compressedData.has(block);
   const hasCompressedToolResultImage = (

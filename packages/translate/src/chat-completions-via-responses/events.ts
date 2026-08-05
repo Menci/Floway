@@ -1,4 +1,5 @@
 import { hasReadableSummary, toChatCompletionsReasoningItem } from '../shared/chat-completions-and-responses/reasoning.ts';
+import { authoritativeStreamSuffix } from '../shared/via-responses/authoritative-stream-value.ts';
 import { createResponsesOutputOrderState, recordResponsesOutputOrderEvent, type ResponsesOutputOrderState, shouldDeferForEarlierResponsesOutput } from '../shared/via-responses/responses-stream-order.ts';
 import { responsesPartKey } from '../shared/via-responses/responses-stream.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsResult, ChatCompletionsReasoningItem, ChatCompletionsDelta } from '@floway-dev/protocols/chat-completions';
@@ -43,9 +44,9 @@ interface ResponsesToChatCompletionsStreamState {
       text: string;
     }
   >;
-  emittedReasoningSummaryKeys: Set<string>;
-  emittedTextContentKeys: Set<string>;
-  emittedFunctionArgumentOutputIndexes: Set<number>;
+  reasoningSummaryTexts: Map<string, string>;
+  contentTexts: Map<string, string>;
+  functionArguments: Map<number, string>;
   outputOrder: ResponsesOutputOrderState;
   serviceTier?: ChatCompletionsStreamEvent['service_tier'];
   done: boolean;
@@ -59,9 +60,9 @@ export const createResponsesToChatCompletionsStreamState = (): ResponsesToChatCo
   functionCallIndices: new Map(),
   reasoningItems: [],
   pendingReasoningSummaryTexts: new Map(),
-  emittedReasoningSummaryKeys: new Set(),
-  emittedTextContentKeys: new Set(),
-  emittedFunctionArgumentOutputIndexes: new Set(),
+  reasoningSummaryTexts: new Map(),
+  contentTexts: new Map(),
+  functionArguments: new Map(),
   outputOrder: createResponsesOutputOrderState(),
   done: false,
 });
@@ -115,20 +116,26 @@ const emitReasoningSummaryText = (outputIndex: number, summaryIndex: number, tex
   if (!text || !shouldProjectScalarReasoning(outputIndex, state)) return [];
 
   const key = responsesPartKey(outputIndex, summaryIndex);
-  if (mode === 'done-fallback' && state.emittedReasoningSummaryKeys.has(key)) {
-    return [];
-  }
+  const streamed = state.reasoningSummaryTexts.get(key) ?? '';
+  const emitted = mode === 'delta'
+    ? text
+    : authoritativeStreamSuffix(streamed, text, `Responses reasoning summary ${key}`);
 
-  state.emittedReasoningSummaryKeys.add(key);
+  state.reasoningSummaryTexts.set(key, mode === 'delta' ? streamed + text : text);
   state.pendingReasoningSummaryTexts.delete(key);
-  return [makeChunk(state, { reasoning_text: text })];
+  return emitted ? [makeChunk(state, { reasoning_text: emitted })] : [];
 };
+
+const emitReasoningOpaque = (outputIndex: number, encryptedContent: string | undefined, state: ResponsesToChatCompletionsStreamState): ChatCompletionsStreamEvent[] =>
+  encryptedContent !== undefined && shouldProjectScalarReasoning(outputIndex, state)
+    ? [makeChunk(state, { reasoning_opaque: encryptedContent })]
+    : [];
 
 const queueReasoningSummaryDoneFallback = (outputIndex: number, summaryIndex: number, text: string, state: ResponsesToChatCompletionsStreamState): void => {
   if (!text || !shouldProjectScalarReasoning(outputIndex, state)) return;
 
   const key = responsesPartKey(outputIndex, summaryIndex);
-  if (state.emittedReasoningSummaryKeys.has(key)) return;
+  if (!authoritativeStreamSuffix(state.reasoningSummaryTexts.get(key) ?? '', text, `Responses reasoning summary ${key}`)) return;
 
   state.pendingReasoningSummaryTexts.set(key, {
     outputIndex,
@@ -143,6 +150,18 @@ const flushReasoningSummaryDoneFallbacks = (state: ResponsesToChatCompletionsStr
     .sort((a, b) => (a.outputIndex === b.outputIndex ? a.summaryIndex - b.summaryIndex : a.outputIndex - b.outputIndex));
 
   return pending.flatMap(item => emitReasoningSummaryText(item.outputIndex, item.summaryIndex, item.text, state, 'done-fallback'));
+};
+
+const functionArgumentsDoneChunks = (outputIndex: number, complete: string, state: ResponsesToChatCompletionsStreamState): ChatCompletionsStreamEvent[] => {
+  const toolCallIndex = state.functionCallIndices.get(outputIndex);
+  if (toolCallIndex === undefined) return [];
+
+  const streamed = state.functionArguments.get(outputIndex) ?? '';
+  const suffix = authoritativeStreamSuffix(streamed, complete, `Responses function arguments for output ${outputIndex}`);
+  if (complete) state.functionArguments.set(outputIndex, complete);
+  return suffix
+    ? [makeChunk(state, { tool_calls: [{ index: toolCallIndex, function: { arguments: suffix } }] })]
+    : [];
 };
 
 export const translateResponsesEventToChatCompletionsChunks = (event: ResponsesStreamEvent, state: ResponsesToChatCompletionsStreamState): ChatCompletionsStreamEvent[] => {
@@ -168,6 +187,7 @@ export const translateResponsesEventToChatCompletionsChunks = (event: ResponsesS
 
     state.toolCallIndex++;
     state.functionCallIndices.set(output_index, state.toolCallIndex);
+    state.functionArguments.set(output_index, item.arguments);
 
     return [
       makeChunk(state, {
@@ -178,7 +198,7 @@ export const translateResponsesEventToChatCompletionsChunks = (event: ResponsesS
             type: 'function',
             function: {
               name: item.name,
-              arguments: '',
+              arguments: item.arguments,
             },
           },
         ],
@@ -188,6 +208,12 @@ export const translateResponsesEventToChatCompletionsChunks = (event: ResponsesS
 
   case 'response.output_item.done': {
     const { item, output_index } = event as Extract<ResponsesStreamEvent, { type: 'response.output_item.done' }>;
+    if (item.type === 'function_call') {
+      const chunks = functionArgumentsDoneChunks(output_index, item.arguments, state);
+      state.functionCallIndices.delete(output_index);
+      state.functionArguments.delete(output_index);
+      return chunks;
+    }
     if (item.type !== 'reasoning') return [];
 
     const chunks: ChatCompletionsStreamEvent[] = [];
@@ -198,6 +224,7 @@ export const translateResponsesEventToChatCompletionsChunks = (event: ResponsesS
       chunks.push(...emitReasoningSummaryText(output_index, summaryIndex, part.text, state, 'done-fallback'));
     }
     chunks.push(...flushReasoningSummaryDoneFallbacks(state, output_index));
+    chunks.push(...emitReasoningOpaque(output_index, item.encrypted_content, state));
 
     return [...chunks, ...flushReadyDeferredChatChunks(state, true), ...flushPendingReasoningChunks(state), ...flushReadyDeferredChatChunks(state)];
   }
@@ -215,36 +242,34 @@ export const translateResponsesEventToChatCompletionsChunks = (event: ResponsesS
 
   case 'response.output_text.delta': {
     const { delta, output_index, content_index } = event as Extract<ResponsesStreamEvent, { type: 'response.output_text.delta' }>;
-    if (delta) {
-      state.emittedTextContentKeys.add(responsesPartKey(output_index, content_index));
-    }
+    const key = responsesPartKey(output_index, content_index);
+    if (delta) state.contentTexts.set(key, (state.contentTexts.get(key) ?? '') + delta);
     return delta ? [makeChunk(state, { content: delta })] : [];
   }
 
   case 'response.output_text.done': {
     const { text, output_index, content_index } = event as Extract<ResponsesStreamEvent, { type: 'response.output_text.done' }>;
     const key = responsesPartKey(output_index, content_index);
-    if (!text || state.emittedTextContentKeys.has(key)) return [];
-
-    state.emittedTextContentKeys.add(key);
-    return [makeChunk(state, { content: text })];
+    const suffix = authoritativeStreamSuffix(state.contentTexts.get(key) ?? '', text, `Responses output text ${key}`);
+    if (text) state.contentTexts.set(key, text);
+    return suffix ? [makeChunk(state, { content: suffix })] : [];
   }
 
   case 'response.refusal.delta': {
     const { delta, output_index, content_index } = event as Extract<ResponsesStreamEvent, { type: 'response.refusal.delta' }>;
     if (!delta) return [];
 
-    state.emittedTextContentKeys.add(responsesPartKey(output_index, content_index));
+    const key = responsesPartKey(output_index, content_index);
+    state.contentTexts.set(key, (state.contentTexts.get(key) ?? '') + delta);
     return [makeChunk(state, { refusal: delta })];
   }
 
   case 'response.refusal.done': {
     const { refusal, output_index, content_index } = event as Extract<ResponsesStreamEvent, { type: 'response.refusal.done' }>;
     const key = responsesPartKey(output_index, content_index);
-    if (!refusal || state.emittedTextContentKeys.has(key)) return [];
-
-    state.emittedTextContentKeys.add(key);
-    return [makeChunk(state, { refusal })];
+    const suffix = authoritativeStreamSuffix(state.contentTexts.get(key) ?? '', refusal, `Responses refusal ${key}`);
+    if (refusal) state.contentTexts.set(key, refusal);
+    return suffix ? [makeChunk(state, { refusal: suffix })] : [];
   }
 
   case 'response.content_part.done': {
@@ -252,10 +277,9 @@ export const translateResponsesEventToChatCompletionsChunks = (event: ResponsesS
     if (part.type !== 'refusal') return [];
 
     const key = responsesPartKey(output_index, content_index);
-    if (!part.refusal || state.emittedTextContentKeys.has(key)) return [];
-
-    state.emittedTextContentKeys.add(key);
-    return [makeChunk(state, { refusal: part.refusal })];
+    const suffix = authoritativeStreamSuffix(state.contentTexts.get(key) ?? '', part.refusal, `Responses refusal ${key}`);
+    if (part.refusal) state.contentTexts.set(key, part.refusal);
+    return suffix ? [makeChunk(state, { refusal: suffix })] : [];
   }
 
   case 'response.function_call_arguments.delta': {
@@ -265,7 +289,7 @@ export const translateResponsesEventToChatCompletionsChunks = (event: ResponsesS
     const toolCallIndex = state.functionCallIndices.get(output_index);
     if (toolCallIndex === undefined) return [];
 
-    state.emittedFunctionArgumentOutputIndexes.add(output_index);
+    state.functionArguments.set(output_index, (state.functionArguments.get(output_index) ?? '') + delta);
     return [
       makeChunk(state, {
         tool_calls: [
@@ -280,24 +304,7 @@ export const translateResponsesEventToChatCompletionsChunks = (event: ResponsesS
 
   case 'response.function_call_arguments.done': {
     const { arguments: args, output_index } = event as Extract<ResponsesStreamEvent, { type: 'response.function_call_arguments.done' }>;
-    if (!args || state.emittedFunctionArgumentOutputIndexes.has(output_index)) {
-      return [];
-    }
-
-    const toolCallIndex = state.functionCallIndices.get(output_index);
-    if (toolCallIndex === undefined) return [];
-
-    state.emittedFunctionArgumentOutputIndexes.add(output_index);
-    return [
-      makeChunk(state, {
-        tool_calls: [
-          {
-            index: toolCallIndex,
-            function: { arguments: args },
-          },
-        ],
-      }),
-    ];
+    return functionArgumentsDoneChunks(output_index, args, state);
   }
 
   case 'response.completed':

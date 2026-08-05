@@ -46,9 +46,9 @@ export interface EnsureClaudeCodeAccessTokenArgs {
   // always call the OAuth refresh endpoint. The dashboard's Refresh button
   // sets this so the operator sees the row's tokens actually rotate; the
   // data plane leaves it false so a live request served from cache stays
-  // cheap. Coalescing keys on `(upstreamId, force)` so a force call never
-  // returns a lazy call's cache-hit result and vice versa; concurrent
-  // dashboard clicks still collapse to one refresh.
+  // cheap. Lazy and forced calls share one flight per upstream so they can
+  // never rotate the same credential concurrently. A forced caller that
+  // joins a lazy cache hit starts one forced refresh after the hit settles.
   force?: boolean;
 }
 
@@ -68,20 +68,31 @@ export interface EnsureClaudeCodeAccessTokenArgs {
 // for true cluster-wide single-mint; we trade that for zero coordination
 // state at the cost of cross-isolate-only round-trip duplication, which is
 // the rare case.
-const inFlightEnsures = new Map<string, Promise<EnsuredAccessToken>>();
+interface ClaudeCodeAccessTokenFlight {
+  force: boolean;
+  promise: Promise<EnsuredAccessToken>;
+}
+
+const inFlightEnsures = new Map<string, ClaudeCodeAccessTokenFlight>();
 
 export const ensureClaudeCodeAccessToken = async (
   args: EnsureClaudeCodeAccessTokenArgs,
 ): Promise<EnsuredAccessToken> => {
-  const key = `${args.upstreamId}:${args.force ? 'force' : 'lazy'}`;
+  const key = args.upstreamId;
   const existing = inFlightEnsures.get(key);
-  if (existing) return await existing;
+  if (existing) {
+    const ensured = await existing.promise;
+    if (!args.force || existing.force || ensured.freshlyMinted) return ensured;
+    if (inFlightEnsures.get(key) === existing) inFlightEnsures.delete(key);
+    return await ensureClaudeCodeAccessToken(args);
+  }
   const promise = ensureClaudeCodeAccessTokenInner(args, true);
-  inFlightEnsures.set(key, promise);
+  const flight: ClaudeCodeAccessTokenFlight = { force: args.force === true, promise };
+  inFlightEnsures.set(key, flight);
   try {
     return await promise;
   } finally {
-    inFlightEnsures.delete(key);
+    if (inFlightEnsures.get(key) === flight) inFlightEnsures.delete(key);
   }
 };
 
@@ -176,19 +187,31 @@ const ensureClaudeCodeAccessTokenInner = async (
   // The two fields are set on whatever account the repo hands us rather than
   // on the account we read before the round-trip: the upstream has already
   // invalidated the token we rotated out, so this write must survive a
-  // concurrent quota write. A re-import that swapped the credential class in
-  // the meantime leaves nothing to rotate — the account is returned untouched,
-  // which the repo reads as "nothing to do".
+  // concurrent quota write. A re-import that changed the credential class or
+  // refresh-token generation in the meantime leaves the new account untouched;
+  // this call then re-enters against the current generation.
   const rotatedRefreshToken = refreshed.refresh_token;
   if (typeof rotatedRefreshToken !== 'string' || rotatedRefreshToken === '') {
     throw new Error('Claude Code refresh response missing refresh_token');
   }
-  await args.repo.saveState(args.upstreamId, current =>
-    replaceSoleAccount(readClaudeCodeUpstreamState(current), stored => (
-      stored.tokenKind === 'oauth'
-        ? { ...stored, refreshToken: rotatedRefreshToken, accessToken: newAccessTokenEntry }
-        : stored
-    )));
+  let rotationApplied = false;
+  await args.repo.saveState(args.upstreamId, current => {
+    rotationApplied = false;
+    const storedState = readClaudeCodeUpstreamState(current);
+    const stored = storedState.accounts[0];
+    if (
+      stored.state !== 'active'
+      || stored.tokenKind !== 'oauth'
+      || stored.refreshToken !== account.refreshToken
+    ) return storedState;
+    rotationApplied = true;
+    return replaceSoleAccount(storedState, () => ({
+      ...stored,
+      refreshToken: rotatedRefreshToken,
+      accessToken: newAccessTokenEntry,
+    }));
+  });
+  if (!rotationApplied) return await ensureClaudeCodeAccessTokenInner(args, false);
   logInfo('claude_code_refresh_token_rotated', {
     upstream_id: args.upstreamId,
     account_uuid: account.accountUuid,
@@ -218,16 +241,29 @@ const persistTerminalState = async (
   },
 ): Promise<void> => {
   // Stamped before the write: the mutator is replayed on a lost race and must
-  // return the same document each time.
+  // return the same document each time. The write applies only to the
+  // credential generation that produced the failure, so a late response cannot
+  // invalidate an operator's concurrent re-import.
   const flippedAt = new Date().toISOString();
-  await repo.saveState(upstreamId, current =>
-    replaceSoleAccount(readClaudeCodeUpstreamState(current), account => ({
-      ...account,
+  let stateFlipped = false;
+  await repo.saveState(upstreamId, current => {
+    stateFlipped = false;
+    const state = readClaudeCodeUpstreamState(current);
+    const account = state.accounts[0];
+    const generationMatches = previousAccount.tokenKind === 'oauth'
+      ? account.tokenKind === 'oauth' && account.refreshToken === previousAccount.refreshToken
+      : account.tokenKind === 'setup-token' && account.accessToken?.token === previousAccount.accessToken?.token;
+    if (account.state !== 'active' || account.accountUuid !== previousAccount.accountUuid || !generationMatches) return state;
+    stateFlipped = true;
+    return replaceSoleAccount(state, currentAccount => ({
+      ...currentAccount,
       state: 'refresh_failed',
       stateMessage: fields.message,
       stateUpdatedAt: flippedAt,
       accessToken: null,
-    })));
+    }));
+  });
+  if (!stateFlipped) return;
   logWarn('claude_code_account_state_flip', {
     upstream_id: upstreamId,
     account_uuid: previousAccount.accountUuid,
@@ -287,10 +323,11 @@ const recoverFromRefreshRace = async (
 export const invalidateClaudeCodeAccessToken = async (args: {
   upstreamId: string;
   repo: UpstreamsRepoSlim;
+  expectedToken: string;
 }): Promise<void> => {
   await args.repo.saveState(args.upstreamId, current => {
     const state = readClaudeCodeUpstreamState(current);
-    if (state.accounts[0].accessToken === null) return state;
+    if (state.accounts[0].accessToken?.token !== args.expectedToken) return state;
     return replaceSoleAccount(state, account => ({ ...account, accessToken: null }));
   });
 };

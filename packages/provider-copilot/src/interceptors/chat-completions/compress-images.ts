@@ -1,4 +1,4 @@
-import { memoizedDataUrlCompressor } from '../image-compression.ts';
+import { mapImageCompressions, memoizedDataUrlCompressor } from '../image-compression.ts';
 import { targetSizeForResponsesChat } from '../image-size.ts';
 import type { ChatCompletionsBoundaryCtx, CopilotChatCompletionsBoundaryInterceptor } from './types.ts';
 import type { ChatCompletionsContentPart, ChatCompletionsMessage } from '@floway-dev/protocols/chat-completions';
@@ -19,11 +19,8 @@ const compressInlineImages = async (ctx: ChatCompletionsBoundaryCtx): Promise<vo
 
   const compress = memoizedDataUrlCompressor(targetSizeForResponsesChat(ctx.model.id));
   const compressedUrls = new Map<ChatCompletionsImagePart, string>();
-  await Promise.all(
-    targets.map(async target => {
-      compressedUrls.set(target, await compress(target.image_url.url));
-    }),
-  );
+  const outputs = await mapImageCompressions(targets, target => compress(target.image_url.url));
+  targets.forEach((target, index) => compressedUrls.set(target, outputs[index]));
   const hasCompressedImage = (part: ChatCompletionsContentPart): part is ChatCompletionsImagePart =>
     part.type === 'image_url' && compressedUrls.has(part);
   const rewriteImage = (part: ChatCompletionsImagePart): ChatCompletionsImagePart => {

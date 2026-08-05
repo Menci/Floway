@@ -19,6 +19,8 @@ const registerTargetMathFunctions = (db: SqlJsDatabase) => {
   db.create_function('pow', ((base: number, exponent: number) => base ** exponent) as (...args: never[]) => unknown);
 };
 
+const sqlJsModule = initSqlJs();
+
 // Lets a test that drove the migrations itself — seeding rows between two of
 // them — read the result back through the production repository.
 export const wrapSqlJsDatabase = (db: SqlJsDatabase): SqlDatabase => new SqlJsSqlDatabase(db);
@@ -26,14 +28,29 @@ export const wrapSqlJsDatabase = (db: SqlJsDatabase): SqlDatabase => new SqlJsSq
 // The only way to open a sql.js database here, so no test can reach one that
 // is missing a function the deployment targets have.
 export const createSqlJsDatabase = async (): Promise<SqlJsDatabase> => {
-  const db = new (await initSqlJs()).Database();
+  const db = new (await sqlJsModule).Database();
   registerTargetMathFunctions(db);
   return db;
 };
 
+let migratedDatabaseBytes: Promise<Uint8Array> | undefined;
+
+const currentSchemaBytes = (): Promise<Uint8Array> => {
+  migratedDatabaseBytes ??= (async () => {
+    const db = await createSqlJsDatabase();
+    try {
+      for (const [, sql] of migrationSqlByFilename) db.run(sql);
+      return db.export();
+    } finally {
+      db.close();
+    }
+  })();
+  return migratedDatabaseBytes;
+};
+
 export const createSqliteTestDb = async (): Promise<SqlDatabase> => {
-  const db = await createSqlJsDatabase();
-  for (const [, sql] of migrationSqlByFilename) db.run(sql);
+  const db = new (await sqlJsModule).Database((await currentSchemaBytes()).slice());
+  registerTargetMathFunctions(db);
   return wrapSqlJsDatabase(db);
 };
 

@@ -1,3 +1,5 @@
+import { isEqual } from 'es-toolkit';
+
 import { createResponsesStorageKey, hashResponsesItem, responsesItemId } from './identity.ts';
 import { getRepo } from '../../../../repo/index.ts';
 import { assertSameStoredResponsesItem, cloneStoredResponsesItem, cloneStoredResponsesSnapshot, compareResponsesItemsByFreshness, scopedResponsesKey } from '../../../../repo/responses-clone.ts';
@@ -44,6 +46,16 @@ export interface StatefulResponsesStore {
   getPrivatePayload(id: string): unknown;
 }
 
+export class ResponsesInputItemIdCollisionError extends Error {
+  constructor(
+    readonly itemId: string,
+    readonly inputIndex: number,
+  ) {
+    super(`Input item id '${itemId}' is used by multiple different items.`);
+    this.name = 'ResponsesInputItemIdCollisionError';
+  }
+}
+
 export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private readonly loadedItems = new Map<string, StoredResponsesItem>();
   private readonly loadedByItemHash = new Map<string, StoredResponsesItem>();
@@ -51,6 +63,9 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private previousSnapshotItemIds: string[] = [];
   private readonly committedItemIds = new Set<string>();
   private readonly privatePayloads = new Map<string, unknown>();
+  private readonly queriedItemIds = new Set<string>();
+  private readonly queriedItemHashes = new Set<string>();
+  private readonly sourceItemHashes = new WeakMap<object, Promise<string>>();
 
   constructor(private readonly options: LayeredStatefulResponsesStoreOptions) {}
 
@@ -101,7 +116,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     for (const item of this.writesState ? inputItemsToStage : []) {
       if (item.type === 'item_reference' || item.type === 'compaction_trigger') continue;
       if (responsesItemId(item) !== null) continue;
-      itemHashes.add(await hashResponsesItem(item));
+      itemHashes.add(await this.hashInputItem(item));
     }
     await this.loadItems({ ids: [...ids], itemHashes: [...itemHashes] });
   }
@@ -112,6 +127,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   }
 
   async stageInputItems(items: readonly ResponsesInputItem[]): Promise<void> {
+    this.assertUnambiguousFullItemIds(items);
     if (!this.writesState) return;
     for (const item of items) await this.stageInputItem(item);
   }
@@ -170,13 +186,37 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   }
 
   private async loadItems(query: { ids: readonly string[]; itemHashes: readonly string[] }): Promise<void> {
-    let ids = query.ids.filter(id => !this.loadedItems.has(id));
+    const ids = [...new Set(query.ids)].filter(id => !this.queriedItemIds.has(id));
+    const itemHashes = [...new Set(query.itemHashes)].filter(hash => !this.queriedItemHashes.has(hash));
+    if (ids.length === 0 && itemHashes.length === 0) return;
     for (const backing of this.options.reads) {
-      if (ids.length === 0 && query.itemHashes.length === 0) return;
-      const results = await backing.lookupItems({ apiKeyId: this.apiKeyId, ids, itemHashes: query.itemHashes });
+      const results = await backing.lookupItems({ apiKeyId: this.apiKeyId, ids, itemHashes });
       for (const item of results) this.rememberItem(item);
-      ids = ids.filter(id => !this.loadedItems.has(id));
     }
+    for (const id of ids) this.queriedItemIds.add(id);
+    for (const hash of itemHashes) this.queriedItemHashes.add(hash);
+  }
+
+  private assertUnambiguousFullItemIds(items: readonly ResponsesInputItem[]): void {
+    const itemsById = new Map<string, ResponsesInputItem>();
+    for (const [inputIndex, item] of items.entries()) {
+      if (item.type === 'item_reference' || item.type === 'compaction_trigger') continue;
+      const id = responsesItemId(item);
+      if (id === null) continue;
+      const existing = itemsById.get(id);
+      if (existing !== undefined && !isEqual(existing, item)) {
+        throw new ResponsesInputItemIdCollisionError(id, inputIndex);
+      }
+      itemsById.set(id, item);
+    }
+  }
+
+  private hashInputItem(item: ResponsesInputItem): Promise<string> {
+    const cached = this.sourceItemHashes.get(item);
+    if (cached !== undefined) return cached;
+    const hash = hashResponsesItem(item);
+    this.sourceItemHashes.set(item, hash);
+    return hash;
   }
 
   private async stageInputItem(item: ResponsesInputItem): Promise<void> {
@@ -200,7 +240,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
         id,
         apiKeyId: this.apiKeyId,
         payload: { item },
-        itemHash: await hashResponsesItem(item),
+        itemHash: await this.hashInputItem(item),
         refreshedAt: quantizeResponsesRefreshedAt(Date.now()),
       };
       this.stagedInputItemIds.push(id);
@@ -208,7 +248,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       return;
     }
 
-    const itemHash = await hashResponsesItem(item);
+    const itemHash = await this.hashInputItem(item);
     const existing = this.loadedByItemHash.get(itemHash);
     if (existing !== undefined) {
       this.stagedInputItemIds.push(existing.id);
@@ -229,7 +269,10 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private rememberItem(row: StoredResponsesItem): void {
     const cloned = cloneStoredResponsesItem(row);
     const existing = this.loadedItems.get(cloned.id);
-    if (existing !== undefined && existing.refreshedAt >= cloned.refreshedAt) return;
+    if (existing !== undefined) {
+      assertSameStoredResponsesItem(cloned, existing);
+      if (existing.refreshedAt >= cloned.refreshedAt) return;
+    }
     this.loadedItems.set(cloned.id, cloned);
     const byHash = this.loadedByItemHash.get(cloned.itemHash);
     if (byHash === undefined || compareResponsesItemsByFreshness(cloned, byHash) < 0) {

@@ -262,6 +262,20 @@ test('translateToSourceEvents rejects Chat streams without DONE', async () => {
   await assertRejects(async () => await drain(translateToSourceEvents(stream())), Error, 'Upstream Chat Completions stream ended without a DONE sentinel.');
 });
 
+test('translateToSourceEvents surfaces Chat error payloads before reading chunk fields', async () => {
+  async function* stream() {
+    yield eventFrame({
+      error: { type: 'invalid_request_error', message: 'bad request' },
+    } as unknown as ChatCompletionsStreamEvent);
+  }
+
+  await assertRejects(
+    async () => await drain(translateToSourceEvents(stream())),
+    Error,
+    'Upstream Chat Completions stream error: invalid_request_error: bad request',
+  );
+});
+
 test('translateChatCompletionsChunkToResponsesEvents unwraps wrapped custom tool calls into custom_tool_call shape', () => {
   const state = createChatCompletionsToResponsesStreamState(new Set(['apply_patch']));
 
@@ -360,6 +374,7 @@ test('translateChatCompletionsChunkToResponsesEvents keeps late opaque with prio
     type: 'reasoning',
     id: expect.stringMatching(/^rs_[0-9a-f]{32}$/),
     summary: [{ type: 'summary_text', text: 'trace' }],
+    encrypted_content: 'sig',
   });
 });
 

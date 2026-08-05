@@ -22,6 +22,7 @@ export type CopilotUpstreamRecord = UpstreamRecord & {
 type FieldErrorBuilder = (field: string, expected: string) => Error;
 
 const malformedConfig: FieldErrorBuilder = (field, expected) => new Error(`Malformed copilot upstream config: ${field} must be ${expected}`);
+const malformedGitHubUser: FieldErrorBuilder = (field, expected) => new TypeError(`Malformed GitHub user response: ${field} must be ${expected}`);
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -64,6 +65,8 @@ const copilotUserField = (value: unknown, err: FieldErrorBuilder): CopilotUpstre
     id: integerField(value.id, 'user.id', err),
   };
 };
+
+export const parseCopilotUpstreamUser = (value: unknown): CopilotUpstreamUser => copilotUserField(value, malformedGitHubUser);
 
 // Grammar for an incoming config payload. The caller supplies the error
 // builder because the surfaces that accept such a payload word their

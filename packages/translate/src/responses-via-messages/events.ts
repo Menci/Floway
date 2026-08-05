@@ -149,14 +149,17 @@ const handleContentBlockStart = (event: MessagesContentBlockStartEvent, state: M
   case 'thinking': {
     const outputIndex = state.outputIndex++;
     const itemId = createRandomResponsesItemId('reasoning');
+    const thinkingText = event.content_block.thinking;
     state.blockMap.set(event.index, {
       type: 'thinking',
       outputIndex,
       itemId,
-      thinkingText: '',
+      thinkingText,
     });
 
-    return responses.reasoningStart(state, outputIndex, itemId);
+    const events = responses.reasoningStart(state, outputIndex, itemId);
+    if (thinkingText) events.push(...responses.reasoningDelta(state, outputIndex, itemId, thinkingText));
+    return events;
   }
   case 'redacted_thinking': {
     // A redacted upstream reasoning block carries an opaque signature in
@@ -177,18 +180,23 @@ const handleContentBlockStart = (event: MessagesContentBlockStartEvent, state: M
   case 'text': {
     const outputIndex = state.outputIndex++;
     const itemId = createRandomResponsesItemId('message');
+    const blockText = event.content_block.text;
     state.blockMap.set(event.index, {
       type: 'text',
       outputIndex,
       itemId,
-      blockText: '',
+      blockText,
       annotations: [],
     });
+    state.accumulatedText += blockText;
 
-    return responses.textStart(state, outputIndex, itemId);
+    const events = responses.textStart(state, outputIndex, itemId);
+    if (blockText) events.push(...responses.textDelta(state, outputIndex, itemId, blockText));
+    return events;
   }
   case 'tool_use': {
     const outputIndex = state.outputIndex++;
+    const initialArguments = Object.keys(event.content_block.input).length > 0 ? JSON.stringify(event.content_block.input) : '';
     if (state.customToolNames.has(event.content_block.name)) {
       const itemId = createRandomResponsesItemId('custom_tool_call');
       state.blockMap.set(event.index, {
@@ -197,7 +205,7 @@ const handleContentBlockStart = (event: MessagesContentBlockStartEvent, state: M
         itemId,
         toolCallId: event.content_block.id,
         toolName: event.content_block.name,
-        wrappedArguments: '',
+        wrappedArguments: initialArguments,
       });
 
       return responses.itemAdded(state, outputIndex, responses.customToolCallItem(itemId, event.content_block.id, event.content_block.name, ''));
@@ -212,11 +220,13 @@ const handleContentBlockStart = (event: MessagesContentBlockStartEvent, state: M
       toolCallId: event.content_block.id,
       toolName: sourceTool?.name ?? event.content_block.name,
       ...(sourceTool !== undefined ? { toolNamespace: sourceTool.namespace } : {}),
-      toolArguments: '',
+      toolArguments: initialArguments,
     };
     state.blockMap.set(event.index, info);
 
-    return responses.itemAdded(state, outputIndex, responses.functionCallItem(info.itemId, info.toolCallId, info.toolName, info.toolArguments, 'in_progress', info.toolNamespace));
+    const events = responses.itemAdded(state, outputIndex, responses.functionCallItem(info.itemId, info.toolCallId, info.toolName, '', 'in_progress', info.toolNamespace));
+    if (initialArguments) events.push(...responses.argumentsDelta(state, outputIndex, itemId, initialArguments));
+    return events;
   }
   case 'fallback':
     state.model = event.content_block.to.model;

@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { KvImageCacheStore, type KvNamespace } from '../src/kv-image-cache-store.ts';
 import type { ImageCachePolicy } from '@floway-dev/platform';
-import { assert, assertEquals } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const POLICY: ImageCachePolicy = {
   ttlMs: 24 * 60 * 60 * 1000,
@@ -15,7 +15,7 @@ interface PutCall {
   options?: { expirationTtl?: number; metadata?: { writtenAt: number } };
 }
 
-const recordingKv = (initial?: { value: Uint8Array; metadata: { writtenAt: number } | null }): {
+const recordingKv = (initial?: { value: Uint8Array; metadata: unknown | null }): {
   kv: KvNamespace;
   puts: PutCall[];
 } => {
@@ -77,6 +77,17 @@ test('get hit older than the refresh threshold rewrites the entry with a fresh w
   assert(writtenAt !== undefined && writtenAt >= before && writtenAt <= after);
 });
 
+test('concurrent stale hits share one sliding-expiry refresh', async () => {
+  const aged = Date.now() - 20 * 60 * 60 * 1000;
+  const { kv, puts } = recordingKv({ value: new Uint8Array([9]), metadata: { writtenAt: aged } });
+  const cache = new KvImageCacheStore(kv, POLICY);
+
+  const hits = await Promise.all(Array.from({ length: 16 }, async () => await cache.get('k')));
+
+  assertEquals(hits.map(hit => [...hit!]), Array.from({ length: 16 }, () => [9]));
+  assertEquals(puts.length, 1);
+});
+
 test('get hit on a pre-rework entry without metadata self-heals by stamping a fresh writtenAt', async () => {
   const { kv, puts } = recordingKv({ value: new Uint8Array([3]), metadata: null });
   const cache = new KvImageCacheStore(kv, POLICY);
@@ -86,6 +97,22 @@ test('get hit on a pre-rework entry without metadata self-heals by stamping a fr
   assertEquals([...hit!], [3]);
   assertEquals(puts.length, 1);
   assert(puts[0].options?.metadata?.writtenAt !== undefined);
+});
+
+test('get exposes malformed cache metadata instead of treating it as fresh forever', async () => {
+  for (const metadata of [
+    {},
+    { writtenAt: 'corrupt' },
+    { writtenAt: -1 },
+    { writtenAt: 1.5 },
+    { writtenAt: Number.NaN },
+  ]) {
+    const { kv, puts } = recordingKv({ value: new Uint8Array([3]), metadata });
+    const cache = new KvImageCacheStore(kv, POLICY);
+
+    await assertRejects(() => cache.get('bad'), TypeError, 'key="bad"');
+    assertEquals(puts, []);
+  }
 });
 
 test('get miss returns null and does not write', async () => {

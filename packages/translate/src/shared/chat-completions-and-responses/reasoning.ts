@@ -6,6 +6,7 @@ export type ChatCompletionsReasoningSourceItem = Extract<ResponsesInputItem, { t
 export interface ChatCompletionsReasoningProjection {
   items: ChatCompletionsReasoningItem[];
   text?: string;
+  opaque?: string;
 }
 
 export const createChatCompletionsReasoningProjection = (): ChatCompletionsReasoningProjection => ({
@@ -22,11 +23,15 @@ export const addResponsesReasoningToChatCompletionsProjection = (projection: Cha
   projection.items.push(toChatCompletionsReasoningItem(item));
 
   const text = item.summary.map(part => part.text).join('');
-  if (projection.text === undefined && text) projection.text = text;
+  if (projection.text === undefined && projection.opaque === undefined && (text || item.encrypted_content !== undefined)) {
+    if (text) projection.text = text;
+    if (item.encrypted_content !== undefined) projection.opaque = item.encrypted_content;
+  }
 };
 
 export const chatCompletionsReasoningProjectionFields = (projection: ChatCompletionsReasoningProjection) => ({
   ...(projection.text !== undefined ? { reasoning_text: projection.text } : {}),
+  ...(projection.opaque !== undefined ? { reasoning_opaque: projection.opaque } : {}),
   ...(projection.items.length > 0 ? { reasoning_items: projection.items } : {}),
 });
 
@@ -37,13 +42,17 @@ export const toResponsesReasoningItem = <T extends ResponsesReasoningItem>(item:
     summary: item.summary ?? [],
   } as T);
 
-export const scalarToResponsesReasoningItem = <T extends ResponsesReasoningItem>(reasoningText: string | null | undefined): T | null => {
-  if (!reasoningText) return null;
+export const scalarToResponsesReasoningItem = <T extends ResponsesReasoningItem>(
+  reasoningText: string | null | undefined,
+  reasoningOpaque?: string | null,
+): T | null => {
+  if (!reasoningText && (reasoningOpaque === undefined || reasoningOpaque === null)) return null;
 
   return {
     type: 'reasoning',
     id: createRandomResponsesItemId('reasoning'),
     summary: reasoningText ? [{ type: 'summary_text', text: reasoningText }] : [],
+    ...(reasoningOpaque !== undefined && reasoningOpaque !== null ? { encrypted_content: reasoningOpaque } : {}),
   } as T;
 };
 
