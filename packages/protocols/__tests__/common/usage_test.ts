@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { billableServiceTier, splitCacheWriteTokens, splitInclusiveInputTokens, splitInclusiveOutputTokens, sumBillableUsage, usageUpstreamDimensionValue, usageUpstreamFromDimensionValue } from '../../src/common/usage.ts';
+import { billableServiceTier, splitCacheWriteTokens, splitInclusiveInputTokens, splitInclusiveOutputTokens, sumBillableUsage, tokenUsageUnattributedUserId, usageUpstreamDimensionValue, usageUpstreamFromDimensionValue } from '../../src/common/usage.ts';
 
 test('Usage upstream dimension values round-trip null and opaque upstream IDs', () => {
   expect(usageUpstreamDimensionValue(null)).toBe('none');
@@ -8,6 +8,10 @@ test('Usage upstream dimension values round-trip null and opaque upstream IDs', 
   expect(usageUpstreamFromDimensionValue('none')).toBeNull();
   expect(usageUpstreamFromDimensionValue('upstream:none')).toBe('none');
   expect(() => usageUpstreamFromDimensionValue('unknown')).toThrowError('Invalid Usage upstream dimension value');
+});
+
+test('Token Usage reserves user 0 for unattributed records', () => {
+  expect(tokenUsageUnattributedUserId).toBe(0);
 });
 
 test('service-tier normalization preserves authored open strings and maps base markers to null', () => {

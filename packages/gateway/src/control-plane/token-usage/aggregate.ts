@@ -1,6 +1,6 @@
 import type { UsageRecord } from '../../repo/types.ts';
 import { createTelemetryBucket, type TelemetryBucketGranularity } from '../shared/telemetry-bucket.ts';
-import { addDecimalStrings, multiplyDecimalStrings, usageUpstreamDimensionValue, type BillingMetric, type DecimalString } from '@floway-dev/protocols/common';
+import { addDecimalStrings, multiplyDecimalStrings, tokenUsageUnattributedUserId, usageUpstreamDimensionValue, type BillingMetric, type DecimalString } from '@floway-dev/protocols/common';
 
 export interface DisplayUsageMetric {
   metric: BillingMetric;
@@ -108,12 +108,12 @@ export function aggregateUsageForDisplay(records: readonly UsageRecord[]): Displ
   );
 }
 
-// The `/api/token-usage` all-by-user view assigns hard-deleted key rows to
-// synthetic user 0 because it cannot recover their former owner.
+// Token Usage assigns an unrecoverable key owner to the synthetic user bucket
+// so its record and overview responses both preserve unattributed rows.
 export const usageUserIdForKey = (
   keyId: string,
   keyToUser: ReadonlyMap<string, number>,
-): number => keyToUser.get(keyId) ?? 0;
+): number => keyToUser.get(keyId) ?? tokenUsageUnattributedUserId;
 
 export function aggregateUsageByUserForDisplay(
   records: readonly UsageRecord[],

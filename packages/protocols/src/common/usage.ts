@@ -1,6 +1,8 @@
 const usageUpstreamPrefix = 'upstream:';
 const usageWithoutUpstream = 'none';
 
+export const tokenUsageUnattributedUserId = 0;
+
 export const usageUpstreamDimensionValue = (upstream: string | null): string =>
   upstream === null ? usageWithoutUpstream : `${usageUpstreamPrefix}${upstream}`;
 

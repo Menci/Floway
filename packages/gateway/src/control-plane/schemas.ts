@@ -20,7 +20,7 @@ import { z } from 'zod';
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
 import { RETENTION_MAX_SECONDS, SECONDS_PER_DAY } from '../shared/retention.ts';
-import { kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS } from '@floway-dev/protocols/common';
+import { kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS, tokenUsageUnattributedUserId } from '@floway-dev/protocols/common';
 import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, parseFlagOverridesWire, UPSTREAM_HUE_DEGREES } from '@floway-dev/provider';
 
 // --- shared atoms ---
@@ -742,7 +742,7 @@ export const webSearchUsageQuery = z.object({
 // reads through this single coercion into the list shape the handler wants.
 // Empty occurrences represent an unset filter and are discarded before item
 // validation.
-const filterValues = (item: z.ZodString) =>
+const filterValues = (item: z.ZodType<string>) =>
   z.union([z.string(), z.array(z.string())])
     .transform(value => (typeof value === 'string' ? [value] : value).filter(Boolean))
     .pipe(z.array(item))
@@ -752,7 +752,10 @@ const filterValues = (item: z.ZodString) =>
 // can never resolve and are rejected up front rather than silently returning
 // an empty result.
 const filterUserId = z.string().regex(/^[1-9]\d*$/, 'filter_user_id must be a positive integer');
-const filterUsageUserId = z.string().regex(/^(?:0|[1-9]\d*)$/, 'filter_user_id must be zero or a positive integer');
+const filterTokenUsageOverviewUserId = z.union([
+  z.literal(String(tokenUsageUnattributedUserId)),
+  filterUserId,
+]);
 
 const telemetryOverviewQuery = {
   start: z.string().optional(),
@@ -770,9 +773,9 @@ const telemetryOverviewQuery = {
 
 export const tokenUsageOverviewQuery = z.object({
   ...telemetryOverviewQuery,
-  // Usage preserves records whose hard-deleted key has no resolvable owner in
-  // the established synthetic user-0 bucket.
-  filter_user_id: filterValues(filterUsageUserId),
+  // Token Usage overview exposes unattributed hard-deleted-key records through
+  // the synthetic user bucket.
+  filter_user_id: filterValues(filterTokenUsageOverviewUserId),
   group_by: z.enum(['keyId', 'userId', 'model', 'upstream']).optional(),
 });
 
