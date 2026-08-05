@@ -223,7 +223,7 @@ test('fetchOllamaCatalog propagates cancellation from /api/show fetch and body d
   }
 });
 
-test('fetchOllamaCatalog aborts stalled show requests and rejects systemic detail failure', async () => {
+test('fetchOllamaCatalog enforces one catalog deadline across stalled show requests', async () => {
   vi.useFakeTimers();
   try {
     let upstreamReason: unknown;

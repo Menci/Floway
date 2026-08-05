@@ -61,7 +61,8 @@ test('fetchUpstreamModels bounds non-2xx bodies while preserving status and head
     value => value,
     { maxErrorResponseBytes: 8 },
   );
-  await expect(result).rejects.toMatchObject({
+  const error = await assertRejects(() => result, ProviderModelsUnavailableError) as ProviderModelsUnavailableError;
+  expect(error).toMatchObject({
     name: 'ProviderModelsUnavailableError',
     httpResponse: {
       status: 429,
