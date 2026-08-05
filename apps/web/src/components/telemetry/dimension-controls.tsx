@@ -1,6 +1,7 @@
 import { useId, type ReactNode } from 'react';
 
 import { fluentComponents } from '../../fluent';
+import { telemetryDimensionExcludedByGroup } from './filter-state';
 import { Dropdown } from '../ui/fluent-form-controls';
 import { MultiselectCombobox, type MultiselectOption } from '../ui/multiselect-combobox';
 
@@ -56,10 +57,7 @@ export function TelemetryDimensionControls<Key extends string>({
       </div>
     </Field>
     {dimensions
-      .filter(dimension => (
-        dimension.key !== groupBy
-        && !((dimension.key === 'userId' || dimension.key === 'keyId') && (groupBy === 'userId' || groupBy === 'keyId'))
-      ))
+      .filter(dimension => !telemetryDimensionExcludedByGroup(groupBy, dimension.key))
       .map(dimension => <Field className="min-w-[150px] flex-[1_1_150px]" key={dimension.key} label={dimension.filterLabel}>
         <MultiselectCombobox
           className="w-full"
