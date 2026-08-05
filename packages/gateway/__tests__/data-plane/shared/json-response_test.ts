@@ -25,7 +25,7 @@ const harness = () => {
     operation: 'embeddings',
   });
   const flush = async () => {
-    for (let offset = 0; offset < background.length; offset++) await background[offset];
+    for (const promise of background) await promise;
   };
   const observe = (response: Response): Response => observeJsonResponse({
     ctx,

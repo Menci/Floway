@@ -95,5 +95,5 @@ export const respondImages = async (context: PassthroughResponseStrategyContext)
   }
   return isEventStreamMediaType(response.headers.get('content-type'))
     ? respondStreaming(context)
-    : await respondNonStreaming(context);
+    : respondNonStreaming(context);
 };
