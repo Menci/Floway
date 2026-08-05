@@ -4,7 +4,7 @@ import { describe, expect, test } from 'vitest';
 import { inboundHeaders, filterInboundHeaders, filterInboundHeadersForProvider } from '../../../src/data-plane/shared/inbound-headers.ts';
 import { buildUpstreamCallOptions } from '../../../src/data-plane/shared/upstream-call-options.ts';
 import { mockGatewayCtx } from '../../test-utils/gateway-ctx.ts';
-import type { UpstreamProviderKind } from '@floway-dev/provider';
+import type { InboundHeaderMatcher } from '@floway-dev/provider';
 import { stubModelCandidate, stubProvider } from '@floway-dev/test-utils';
 
 const headerRecord = (headers: Headers): Record<string, string> => Object.fromEntries(headers);
@@ -76,75 +76,16 @@ describe('filterInboundHeaders', () => {
 });
 
 describe('provider inbound header policies', () => {
-  test.each<UpstreamProviderKind>(['custom', 'azure', 'ollama', 'copilot'])(
-    '%s accepts no client headers',
-    kind => {
-      const filtered = filterInboundHeadersForProvider(new Headers({
-        'anthropic-beta': 'context-1m',
-        authorization: 'Bearer secret',
-        'x-client-request-id': 'request-1',
-      }), kind);
-      expect([...filtered]).toEqual([]);
-    },
-  );
-
-  test('Claude Code accepts only its declared fingerprint', () => {
-    const accepted = {
-      accept: 'application/json',
-      'accept-encoding': 'identity',
-      'accept-language': 'en-US',
-      'anthropic-dangerous-direct-browser-access': 'true',
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-      'sec-fetch-mode': 'cors',
-      'user-agent': 'claude-cli/2.1.181',
-      'x-app': 'cli',
-      'x-claude-code-session-id': 'session-1',
-      'x-client-request-id': 'request-1',
-      'x-stainless-arch': 'arm64',
-      'x-stainless-helper-method': 'stream',
-      'x-stainless-lang': 'js',
-      'x-stainless-os': 'Linux',
-      'x-stainless-package-version': '0.94.0',
-      'x-stainless-retry-count': '0',
-      'x-stainless-runtime': 'node',
-      'x-stainless-runtime-version': '24.0.0',
-      'x-stainless-timeout': '600',
-    };
-    const source = new Headers({
-      ...accepted,
-      'anthropic-beta': 'claude-code-20250219',
-      authorization: 'Bearer secret',
-      'x-leaky-debug': 'discard',
-      'x-stainless-future': 'discard',
-    });
-
-    const filtered = filterInboundHeadersForProvider(source, 'claude-code');
-    expect(headerRecord(filtered)).toEqual(accepted);
+  const provider = (inboundHeaderAllowlist: readonly InboundHeaderMatcher[]) => ({
+    ...stubModelCandidate().provider,
+    inboundHeaderAllowlist,
   });
 
-  test('Codex accepts only request identity and turn metadata', () => {
-    const source = new Headers({
-      authorization: 'Bearer secret',
-      'session-id': 'session-1',
-      session_id: 'session-legacy',
-      'thread-id': 'thread-1',
-      'user-agent': 'untrusted',
-      'x-client-request-id': 'request-1',
-      'x-codex-installation-id': 'discard',
-      'x-codex-turn-metadata': '{}',
-      'x-codex-window-id': 'window-1',
-    });
+  test('reads the selected provider instance allowlist', () => {
+    const source = new Headers({ 'x-first': 'one', 'x-second': 'two' });
 
-    const filtered = filterInboundHeadersForProvider(source, 'codex');
-    expect(headerRecord(filtered)).toEqual({
-      'session-id': 'session-1',
-      session_id: 'session-legacy',
-      'thread-id': 'thread-1',
-      'x-client-request-id': 'request-1',
-      'x-codex-turn-metadata': '{}',
-      'x-codex-window-id': 'window-1',
-    });
+    expect(headerRecord(filterInboundHeadersForProvider(source, provider(['x-first'])))).toEqual({ 'x-first': 'one' });
+    expect(headerRecord(filterInboundHeadersForProvider(source, provider(['x-second'])))).toEqual({ 'x-second': 'two' });
   });
 
   test('buildUpstreamCallOptions filters independently for each failover candidate', () => {
@@ -153,19 +94,16 @@ describe('provider inbound header policies', () => {
       'user-agent': 'claude-cli/2.1.181',
       'x-client-request-id': 'request-1',
     });
-    const provider = (kind: UpstreamProviderKind) => ({
-      ...stubModelCandidate().provider,
-      kind,
-      instance: stubProvider(),
-    });
     const ctx = mockGatewayCtx();
+    const first = buildUpstreamCallOptions(stubModelCandidate({ provider: provider([]) }), ctx, source);
+    const second = buildUpstreamCallOptions(stubModelCandidate({ provider: {
+      ...provider(['user-agent', 'x-client-request-id']),
+      instance: stubProvider(),
+    } }), ctx, source);
+    first.headers.set('x-client-request-id', 'candidate-mutation');
 
-    const custom = buildUpstreamCallOptions(stubModelCandidate({ provider: provider('custom') }), ctx, source);
-    const claude = buildUpstreamCallOptions(stubModelCandidate({ provider: provider('claude-code') }), ctx, source);
-    custom.headers.set('x-client-request-id', 'candidate-mutation');
-
-    expect([...custom.headers]).toEqual([['x-client-request-id', 'candidate-mutation']]);
-    expect(headerRecord(claude.headers)).toEqual({
+    expect([...first.headers]).toEqual([['x-client-request-id', 'candidate-mutation']]);
+    expect(headerRecord(second.headers)).toEqual({
       'user-agent': 'claude-cli/2.1.181',
       'x-client-request-id': 'request-1',
     });
