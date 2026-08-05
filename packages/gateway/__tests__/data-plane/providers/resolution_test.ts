@@ -41,7 +41,7 @@ test('enumerateModelCandidates blocks a cold catalog fetch after client disconne
   controller.abort(reason);
   let fetches = 0;
 
-  await withMockedFetch(
+  await withMockedFetchRaw(
     () => {
       fetches += 1;
       return jsonResponse({ object: 'list', data: [] });
