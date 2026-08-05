@@ -8,6 +8,7 @@ import { enumerateModelCandidates } from '../providers/resolution.ts';
 import { appendFailedUpstreams } from '../shared/failed-upstreams.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { iterateCandidates } from '../shared/iterate-candidates.ts';
+import { observeJsonResponse } from '../shared/json-response.ts';
 import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
 import { recordFailedRequest, recordPerformance, type PerformanceTelemetryContext } from '../shared/telemetry/performance.ts';
 import { recordUsage } from '../shared/telemetry/usage.ts';
@@ -124,46 +125,46 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Contex
       return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response));
     }
 
-    const sameProtocol = sourceProtocol === terminal.target.protocol;
-    let upstreamBody: unknown;
-    try {
-      upstreamBody = await terminal.response.clone().json() as unknown;
-    } catch (error) {
-      if (!sameProtocol) throw error;
-      console.warn(
-        `rerank: failed to parse same-protocol 2xx upstream body for ${sourceProtocol}; usage row will be request-only`,
-        error instanceof Error ? error.message : String(error),
-      );
-      ctx.dump?.success(terminal.identity, null);
-      settleRerank(ctx, terminal.performance, terminal.identity, undefined, false);
-      usageSettled = true;
-      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response));
-    }
-    try {
-      measuredUsage = parseRerankUsage(terminal.target.protocol, upstreamBody);
-    } catch (error) {
-      if (!sameProtocol) throw error;
-      console.warn(
-        `rerank: failed to parse same-protocol usage for ${sourceProtocol}; usage row will be request-only`,
-        error instanceof Error ? error.message : String(error),
-      );
-      ctx.dump?.success(terminal.identity, null);
-      settleRerank(ctx, terminal.performance, terminal.identity, undefined, false);
-      usageSettled = true;
-      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response));
-    }
+    const successful = terminal;
+    const sameProtocol = sourceProtocol === successful.target.protocol;
     if (sameProtocol) {
-      ctx.dump?.success(terminal.identity, null);
-      settleRerank(ctx, terminal.performance, terminal.identity, measuredUsage, false);
-      usageSettled = true;
-      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response));
+      const observedResponse = observeJsonResponse({
+        ctx,
+        response: successful.response,
+        performance: successful.performance,
+        identity: successful.identity,
+        sourceApi: sourceProtocol,
+        observedFields: ['meta', 'usage'],
+        extractBilling: () => null,
+        settleFields: (fields, outcome) => {
+          let usage: Pick<CanonicalRerankResponse, 'searchUnits' | 'totalTokens'> | undefined;
+          if (!outcome.failed) {
+            try {
+              usage = parseRerankUsage(successful.target.protocol, fields);
+            } catch (error) {
+              console.warn(
+                `rerank: failed to parse same-protocol usage for ${sourceProtocol}; usage row will be request-only`,
+                error instanceof Error ? error.message : String(error),
+              );
+            }
+          }
+          if (outcome.failed) ctx.dump?.failed(outcome.error ?? `${sourceProtocol} response body did not complete`);
+          else ctx.dump?.success(successful.identity, null);
+          settleRerank(ctx, successful.performance, successful.identity, usage, outcome.failed);
+          usageSettled = true;
+        },
+      });
+      return finalizeGatewayResponse(ctx, observedResponse);
     }
-    const canonical = parseRerankResponse(terminal.target.protocol, upstreamBody);
-    const rendered = renderRerankResponse(sourceProtocol, terminal.target.protocol, canonical, request);
-    ctx.dump?.success(terminal.identity, null);
-    settleRerank(ctx, terminal.performance, terminal.identity, measuredUsage, false);
+
+    const upstreamBody = await successful.response.json() as unknown;
+    measuredUsage = parseRerankUsage(successful.target.protocol, upstreamBody);
+    const canonical = parseRerankResponse(successful.target.protocol, upstreamBody);
+    const rendered = renderRerankResponse(sourceProtocol, successful.target.protocol, canonical, request);
+    ctx.dump?.success(successful.identity, null);
+    settleRerank(ctx, successful.performance, successful.identity, measuredUsage, false);
     usageSettled = true;
-    return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response, {
+    return finalizeGatewayResponse(ctx, forwardUpstreamResponse(successful.response, {
       body: JSON.stringify(rendered),
       contentType: 'application/json',
     }));

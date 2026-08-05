@@ -488,6 +488,48 @@ test('same-protocol success forwards opaque result items while still recording u
   assertEquals(usage[0].metrics, [{ metric: 'input_tokens', quantity: '7', unitPrice: null }]);
 });
 
+test('same-protocol success streams before EOF and settles usage after completion', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveRerankUpstream(repo, { protocol: 'jina-v1' });
+  const encoder = new TextEncoder();
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let pulled = false;
+
+  await withMockedFetch(
+    () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('{"model":"raw-reranker","object":"list","results":[],'));
+      },
+      async pull(controller) {
+        if (pulled) return;
+        pulled = true;
+        await gate;
+        controller.enqueue(encoder.encode('"usage":{"total_tokens":9}}'));
+        controller.close();
+      },
+    }, { highWaterMark: 0 }), { headers: { 'content-type': 'application/json' } }),
+    async () => {
+      const response = await requestApp('/jina/v1/rerank', {
+        method: 'POST',
+        headers: requestHeaders(apiKey.key),
+        body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),
+      });
+      const reader = response.body!.getReader();
+      const first = await reader.read();
+      assertEquals(new TextDecoder().decode(first.value), '{"model":"raw-reranker","object":"list","results":[],');
+      assertEquals(await repo.usage.listAll(), []);
+      release();
+      while (!(await reader.read()).done) { /* drain */ }
+    },
+  );
+
+  await flushAsyncWork();
+  const [usage] = await repo.usage.listAll();
+  assertEquals(usage.requests, 1);
+  assertEquals(usage.metrics, [{ metric: 'input_tokens', quantity: '9', unitPrice: null }]);
+});
+
 test('cross-protocol success still validates result items before rendering', async () => {
   const { apiKey, repo } = await setupAppTest();
   await saveRerankUpstream(repo, { protocol: 'jina-v1' });

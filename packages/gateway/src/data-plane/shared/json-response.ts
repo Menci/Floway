@@ -253,8 +253,17 @@ export const observeJsonResponse = ({
 }: ObserveJsonResponseOptions): Response => {
   const upstreamBody = response.body;
   if (upstreamBody === null) {
-    ctx.dump?.success(identity, null);
-    settle(ctx, performance, identity, null, false);
+    if (settleFields === undefined) {
+      ctx.dump?.success(identity, null);
+      settle(ctx, performance, identity, null, false);
+    } else {
+      try {
+        settleFields({}, { failed: false, error: undefined });
+      } catch (error) {
+        ctx.dump?.failed(error);
+        settle(ctx, performance, identity, null, true);
+      }
+    }
     return forwardUpstreamResponse(response, { defaultContentType });
   }
 
