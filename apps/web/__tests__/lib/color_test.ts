@@ -29,6 +29,12 @@ describe('readableTone', () => {
     expect(toned('#00306E', CARD_LIGHT)).toBe('#00306E');
   });
 
+  it('measures alpha colors after compositing them onto the surface', () => {
+    const result = readableTone('#00000080', CARD_LIGHT);
+    expect(result).not.toBe('#00000080');
+    expect(contrast(result, CARD_LIGHT)).toBeGreaterThanOrEqual(4.5);
+  });
+
   it('darkens a mid hue for a light surface and lightens it for a dark one', () => {
     const light = toned('#C239B3', CARD_LIGHT);
     const dark = toned('#C239B3', CARD_DARK);

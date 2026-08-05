@@ -41,7 +41,8 @@ export const readableTone = (hex: string, surface: string): string => {
   const rgb = parseRgb(hex);
   const surfaceRgb = parseRgb(surface);
   const surfaceLinear = linearRgb(surfaceRgb);
-  if (wcagContrast(linearRgb(rgb), surfaceLinear) >= TEXT_CONTRAST_FLOOR) return hex;
+  const paintedRgb = blend([surfaceRgb, rgb], 'normal', 'rgb') as ReturnType<typeof parseRgb>;
+  if (wcagContrast(linearRgb(paintedRgb), surfaceLinear) >= TEXT_CONTRAST_FLOOR) return hex;
 
   const { h, s, v } = convertRgbToHsv(rgb);
   // Which extreme actually clears the floor, not whether the surface is light:
