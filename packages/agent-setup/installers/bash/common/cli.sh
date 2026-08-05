@@ -37,7 +37,10 @@ _download_and_run_installer() {
 _discover_cli() {
   _dc_name=$1
   shift
-  DISCOVERED_BIN=$(command -v "$_dc_name" 2>/dev/null || true)
+  # `command -v` also returns inherited shell functions. Resolve only an
+  # executable file from PATH so a function cannot impersonate an agent CLI in
+  # the secret-bearing installer shell.
+  DISCOVERED_BIN=$(type -P -- "$_dc_name" 2>/dev/null || true)
   if [ -n "$DISCOVERED_BIN" ]; then
     DISCOVERED_COUNT=1
   else
