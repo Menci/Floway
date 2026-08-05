@@ -1,8 +1,8 @@
-import { test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from '../src/config.ts';
 import { fetchOllamaCatalog } from '../src/fetch-models.ts';
-import { ProviderModelsUnavailableError, directFetcher } from '@floway-dev/provider';
+import { ProviderModelsUnavailableError, directFetcher, type Fetcher } from '@floway-dev/provider';
 import { assertEquals, assertRejects, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const config: OllamaUpstreamConfig = assertOllamaUpstreamRecord({
@@ -82,21 +82,13 @@ test('fetchOllamaCatalog projects /api/show capabilities + model_info into the r
     assertEquals(gptoss.capabilities.has('tools'), true);
     assertEquals(gptoss.capabilities.has('embedding'), false);
     assertEquals(gptoss.contextLength, 131072);
+    assertEquals(gptoss.modifiedAt, Math.floor(Date.parse('2025-08-05T00:00:00Z') / 1000));
 
     const embed = catalog.data.find(m => m.id === 'nomic-embed-text:latest')!;
     assertEquals(embed.capabilities.has('embedding'), true);
     // model_info keys are arch-prefixed; the fetcher must enumerate keys to
     // find `.context_length` without hardcoding `gptoss.`.
     assertEquals(embed.contextLength, 8192);
-  });
-});
-
-test('fetchOllamaCatalog converts modified_at ISO string to unix seconds', async () => {
-  await withMockedFetch(respond, async () => {
-    const catalog = await fetchOllamaCatalog(config, directFetcher);
-    const gptoss = catalog.data.find(m => m.id === 'gpt-oss:120b')!;
-    // 2025-08-05T00:00:00Z → 1754352000
-    assertEquals(gptoss.modifiedAt, Math.floor(Date.parse('2025-08-05T00:00:00Z') / 1000));
   });
 });
 
@@ -113,4 +105,153 @@ test('fetchOllamaCatalog rejects with ProviderModelsUnavailableError when /api/t
       );
     },
   );
+
+  await withMockedFetch(
+    async () => jsonResponse({ models: [{}, { name: '' }] }),
+    async () => {
+      await assertRejects(
+        () => fetchOllamaCatalog(config, directFetcher),
+        ProviderModelsUnavailableError,
+      );
+    },
+  );
+});
+
+test('fetchOllamaCatalog bounds /api/show concurrency and deduplicates repeated tags', async () => {
+  const names = Array.from({ length: 20 }, (_, index) => `model-${index}`);
+  let active = 0;
+  let peak = 0;
+  const showCalls: string[] = [];
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let reachedPoolLimit!: () => void;
+  const poolLimitReached = new Promise<void>(resolve => { reachedPoolLimit = resolve; });
+
+  const fetcher: Fetcher = async (url, init) => {
+    if (new URL(url).pathname === '/api/tags') {
+      return jsonResponse({ models: [...names.map(name => ({ name })), { name: names[0] }] });
+    }
+    const name = (JSON.parse(String(init.body)) as { name: string }).name;
+    showCalls.push(name);
+    active++;
+    peak = Math.max(peak, active);
+    if (active === 8) reachedPoolLimit();
+    await gate;
+    active--;
+    return jsonResponse({ capabilities: [], model_info: {} });
+  };
+
+  const pending = fetchOllamaCatalog(config, fetcher);
+  await poolLimitReached;
+  const startedBeforeRelease = showCalls.length;
+  release();
+  const catalog = await pending;
+
+  expect(startedBeforeRelease).toBe(8);
+  expect(peak).toBe(8);
+  expect(showCalls).toHaveLength(names.length);
+  expect(new Set(showCalls).size).toBe(names.length);
+  expect(catalog.data.map(model => model.id)).toEqual(names);
+});
+
+test('fetchOllamaCatalog cancels discarded and oversized /api/show bodies without poisoning siblings', async () => {
+  let failedCancelled = false;
+  let oversizedCancelled = false;
+  const responseBody = (bytes: Uint8Array, onCancel: () => void) => new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(bytes);
+    },
+    cancel() {
+      onCancel();
+      return new Promise<void>(() => {});
+    },
+  });
+  const fetcher: Fetcher = (_url, init) => {
+    if (init.method === 'GET') {
+      return Promise.resolve(jsonResponse({ models: [{ name: 'failed' }, { name: 'oversized' }, { name: 'valid' }] }));
+    }
+    const name = (JSON.parse(String(init.body)) as { name: string }).name;
+    if (name === 'failed') {
+      return Promise.resolve(new Response(responseBody(new TextEncoder().encode('failure'), () => { failedCancelled = true; }), { status: 500 }));
+    }
+    if (name === 'oversized') {
+      return Promise.resolve(new Response(responseBody(new TextEncoder().encode('{"capabilities":[]}'), () => { oversizedCancelled = true; })));
+    }
+    return Promise.resolve(jsonResponse({}));
+  };
+
+  const catalog = await fetchOllamaCatalog(config, fetcher, { maxShowResponseBytes: 8 });
+  expect(catalog.data.map(model => model.id)).toEqual(['valid']);
+  expect(failedCancelled).toBe(true);
+  expect(oversizedCancelled).toBe(true);
+});
+
+test('fetchOllamaCatalog rejects when every model detail lookup fails', async () => {
+  const fetcher: Fetcher = url => new URL(url).pathname === '/api/tags'
+    ? Promise.resolve(jsonResponse({ models: [{ name: 'first' }, { name: 'second' }] }))
+    : Promise.resolve(new Response(null, { status: 500 }));
+  await expect(fetchOllamaCatalog(config, fetcher)).rejects.toMatchObject({
+    name: 'ProviderModelsUnavailableError',
+    cause: expect.objectContaining({ message: 'Every Ollama /api/show request failed' }),
+  });
+});
+
+test('fetchOllamaCatalog propagates cancellation from /api/show fetch and body decoding', async () => {
+  const cancelledShows: Array<(abort: DOMException) => Promise<Response>> = [
+    abort => Promise.reject(abort),
+    abort => Promise.resolve(new Response(new ReadableStream({
+      start(controller) {
+        controller.error(abort);
+      },
+    }))),
+  ];
+  for (const cancelledShow of cancelledShows) {
+    const abort = new DOMException('cancelled', 'AbortError');
+    const fetcher: Fetcher = (url, init) => {
+      if (new URL(url).pathname === '/api/tags') {
+        return Promise.resolve(jsonResponse({ models: [{ name: 'first' }, { name: 'second' }] }));
+      }
+      const name = (JSON.parse(String(init.body)) as { name: string }).name;
+      if (name === 'first') return cancelledShow(abort);
+      return new Promise<Response>((_resolve, reject) => {
+        const signal = init.signal;
+        if (signal?.aborted) reject(signal.reason);
+        else signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+      });
+    };
+    await expect(fetchOllamaCatalog(config, fetcher)).rejects.toBe(abort);
+  }
+});
+
+test('fetchOllamaCatalog enforces one catalog deadline across stalled show requests', async () => {
+  vi.useFakeTimers();
+  try {
+    let upstreamReason: unknown;
+    let showCalls = 0;
+    const fetcher: Fetcher = (url, init) => {
+      if (new URL(url).pathname === '/api/tags') {
+        return Promise.resolve(jsonResponse({
+          models: Array.from({ length: 100 }, (_, index) => ({ name: `stalled-${index}` })),
+        }));
+      }
+      showCalls++;
+      return new Promise<Response>((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => {
+          upstreamReason = init.signal?.reason;
+          reject(init.signal?.reason);
+        }, { once: true });
+      });
+    };
+    const stalled = fetchOllamaCatalog(config, fetcher, { totalTimeoutMs: 35 });
+    const assertion = expect(stalled).rejects.toMatchObject({
+      name: 'ProviderModelsUnavailableError',
+      cause: expect.objectContaining({ name: 'TimeoutError' }),
+    });
+    await vi.advanceTimersByTimeAsync(35);
+    await assertion;
+    expect(upstreamReason).toMatchObject({ name: 'TimeoutError' });
+    expect(showCalls).toBe(8);
+  } finally {
+    vi.useRealTimers();
+  }
 });

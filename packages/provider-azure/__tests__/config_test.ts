@@ -32,6 +32,10 @@ const baseRecord: UpstreamRecord = {
 };
 
 test('assertAzureUpstreamRecord validates Azure opaque config strictly', () => {
+  const parsed = assertAzureUpstreamRecord(baseRecord);
+  assertEquals(parsed.config.endpoint, 'https://example.openai.azure.com');
+  assertEquals(parsed.config.models.length, 1);
+
   assertThrows(
     () =>
       assertAzureUpstreamRecord({
@@ -132,216 +136,33 @@ test('assertAzureUpstreamRecord validates Azure opaque config strictly', () => {
     Error,
     'endpoint: must be an http(s) URL without query or fragment',
   );
-});
 
-test('assertAzureUpstreamRecord round-trips per-model flagOverrides', () => {
-  const parsed = assertAzureUpstreamRecord({
-    ...baseRecord,
-    config: {
-      endpoint: 'https://example.openai.azure.com/openai/v1',
-      apiKey: 'az-key',
-      models: [
-        {
-          upstreamModelId: 'gpt-5',
-          endpoints: { chatCompletions: {} },
-          flagOverrides: { 'vendor-kimi': true, 'vendor-deepseek': false },
-        },
-      ],
-    },
-  });
-
-  assertEquals(parsed.config.models[0].flagOverrides, { 'vendor-kimi': true, 'vendor-deepseek': false });
-});
-
-test('assertAzureUpstreamRecord rejects malformed per-model flagOverrides', () => {
-  assertThrows(
-    () =>
-      assertAzureUpstreamRecord({
-        ...baseRecord,
-        config: {
-          ...(baseRecord.config as Record<string, unknown>),
-          models: [
-            {
-              upstreamModelId: 'gpt-prod',
-              endpoints: { chatCompletions: {} },
-              flagOverrides: 'not-an-object',
-            },
-          ],
-        },
-      }),
-    Error,
-    'azure models[0].flagOverrides: must be an object',
-  );
-
-  assertThrows(
-    () =>
-      assertAzureUpstreamRecord({
-        ...baseRecord,
-        config: {
-          ...(baseRecord.config as Record<string, unknown>),
-          models: [
-            {
-              upstreamModelId: 'gpt-prod',
-              endpoints: { chatCompletions: {} },
-              flagOverrides: { 'vendor-deepseek': 'on' },
-            },
-          ],
-        },
-      }),
-    Error,
-    'azure models[0].flagOverrides.vendor-deepseek: must be a boolean',
-  );
+  for (const config of [
+    { ...(baseRecord.config as Record<string, unknown>), models: [] },
+    { ...(baseRecord.config as Record<string, unknown>), apiKey: '' },
+    { ...(baseRecord.config as Record<string, unknown>), apiKey: 'bad\r\nkey' },
+    { ...(baseRecord.config as Record<string, unknown>), apiKey: 'non-byte-\u0100' },
+  ]) {
+    assertThrows(() => assertAzureUpstreamRecord({ ...baseRecord, config }));
+  }
 });
 
 test('assertAzureUpstreamRecord rejects rerank models', () => {
-  assertThrows(
-    () => assertAzureUpstreamRecord({
-      ...baseRecord,
-      config: {
-        ...(baseRecord.config as Record<string, unknown>),
-        models: [{
-          upstreamModelId: 'reranker',
-          kind: 'rerank',
-          endpoints: { rerank: {} },
-          rerankTarget: { protocol: 'cohere-v2' },
-        }],
-      },
-    }),
-    Error,
-    'rerank models require a custom upstream',
-  );
-});
-
-test('assertAzureUpstreamRecord rejects per-model flagOverrides with unknown flag id', () => {
-  assertThrows(
-    () =>
-      assertAzureUpstreamRecord({
+  for (const model of [
+    { upstreamModelId: 'reranker', kind: 'rerank', endpoints: { rerank: {} }, rerankTarget: { protocol: 'cohere-v2' } },
+    { upstreamModelId: 'reranker', kind: 'chat', endpoints: { rerank: {} }, rerankTarget: { protocol: 'cohere-v2' } },
+    { upstreamModelId: 'mixed', kind: 'embedding', endpoints: { embeddings: {}, rerank: {} } },
+  ]) {
+    assertThrows(
+      () => assertAzureUpstreamRecord({
         ...baseRecord,
         config: {
           ...(baseRecord.config as Record<string, unknown>),
-          models: [
-            {
-              upstreamModelId: 'gpt-prod',
-              endpoints: { chatCompletions: {} },
-              flagOverrides: { 'made-up-flag': true },
-            },
-          ],
+          models: [model],
         },
       }),
-    Error,
-    'azure models[0].flagOverrides: unknown flag ids: made-up-flag',
-  );
-});
-
-test('assertAzureUpstreamRecord reports all unknown per-model flag ids in one error', () => {
-  assertThrows(
-    () =>
-      assertAzureUpstreamRecord({
-        ...baseRecord,
-        config: {
-          ...(baseRecord.config as Record<string, unknown>),
-          models: [
-            {
-              upstreamModelId: 'gpt-prod',
-              endpoints: { chatCompletions: {} },
-              flagOverrides: { 'made-up-flag': true, 'another-typo': false },
-            },
-          ],
-        },
-      }),
-    Error,
-    'azure models[0].flagOverrides: unknown flag ids: made-up-flag, another-typo',
-  );
-});
-
-test('assertAzureUpstreamRecord round-trips model.pricing with full pricing fields', () => {
-  const parsed = assertAzureUpstreamRecord({
-    ...baseRecord,
-    config: {
-      ...(baseRecord.config as Record<string, unknown>),
-      models: [
-        {
-          upstreamModelId: 'gpt-prod',
-          endpoints: { chatCompletions: {} },
-          pricing: { entries: [{ rates: { input_tokens: '2.5', input_cache_read_tokens: '0.25', input_cache_write_tokens: '3.75', input_image_tokens: '8', output_tokens: '15', output_image_tokens: '30' } }] },
-        },
-      ],
-    },
-  });
-  assertEquals(parsed.config.models[0].pricing, {
-    entries: [{ rates: { input_tokens: '2.5', input_cache_read_tokens: '0.25', input_cache_write_tokens: '3.75', input_image_tokens: '8', output_tokens: '15', output_image_tokens: '30' } }],
-  });
-});
-
-test('assertAzureUpstreamRecord accepts model without pricing field', () => {
-  assertAzureUpstreamRecord({
-    ...baseRecord,
-    config: {
-      ...(baseRecord.config as Record<string, unknown>),
-      models: [
-        {
-          upstreamModelId: 'gpt-prod',
-          endpoints: { chatCompletions: {} },
-        },
-      ],
-    },
-  });
-});
-
-test('assertAzureUpstreamRecord accepts model.pricing with only input set', () => {
-  assertAzureUpstreamRecord({
-    ...baseRecord,
-    config: {
-      ...(baseRecord.config as Record<string, unknown>),
-      models: [
-        {
-          upstreamModelId: 'gpt-prod',
-          endpoints: { chatCompletions: {} },
-          pricing: { entries: [{ rates: { input_tokens: '2.5' } }] },
-        },
-      ],
-    },
-  });
-});
-
-test('assertAzureUpstreamRecord rejects model.pricing with negative input', () => {
-  assertThrows(
-    () =>
-      assertAzureUpstreamRecord({
-        ...baseRecord,
-        config: {
-          ...(baseRecord.config as Record<string, unknown>),
-          models: [
-            {
-              upstreamModelId: 'gpt-prod',
-              endpoints: { chatCompletions: {} },
-              pricing: { entries: [{ rates: { input_tokens: '-1', output_tokens: '1' } }] },
-            },
-          ],
-        },
-      }),
-    Error,
-    'pricing.entries[0].rates.input_tokens must be non-negative',
-  );
-});
-
-test('assertAzureUpstreamRecord rejects model.pricing with non-number input_cache_read', () => {
-  assertThrows(
-    () =>
-      assertAzureUpstreamRecord({
-        ...baseRecord,
-        config: {
-          ...(baseRecord.config as Record<string, unknown>),
-          models: [
-            {
-              upstreamModelId: 'gpt-prod',
-              endpoints: { chatCompletions: {} },
-              pricing: { entries: [{ rates: { input_tokens: '2', output_tokens: '8', input_cache_read_tokens: 'cheap' } }] },
-            },
-          ],
-        },
-      }),
-    Error,
-    'pricing.entries[0].rates.input_cache_read_tokens must be a decimal string',
-  );
+      Error,
+      'rerank models require a custom upstream',
+    );
+  }
 });

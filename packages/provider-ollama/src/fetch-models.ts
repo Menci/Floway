@@ -10,17 +10,20 @@
 //                             a varying-per-architecture prefix that carries
 //                             `<arch>.context_length`).
 //
-// We fan out one /api/show per tag in parallel and synthesize the per-model
-// shape the gateway consumes. /api/show calls are independent and read-only;
-// a single failure drops just that model from the catalog rather than
-// poisoning the whole list.
+// We fetch /api/show through a bounded pool and synthesize the per-model shape
+// the gateway consumes. /api/show calls are independent and read-only; a
+// single failure drops just that model from the catalog, while cancellation
+// terminates the catalog request so a partial result cannot enter the cache.
 //
 // /api/embeddings (legacy) is not used — the modern Ollama embedding path is
 // /api/embed for native callers and /v1/embeddings for the OpenAI shim.
 
 import type { OllamaUpstreamConfig } from './config.ts';
 import { ollamaFetchShow, ollamaFetchTags } from './fetch.ts';
-import { fetchUpstreamModels, type Fetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
+import { fetchUpstreamModels, type Fetcher, identityWrapUpstreamCall, isAbortError, ProviderModelsUnavailableError, readBoundedJsonResponse, runProviderModelsTask } from '@floway-dev/provider';
+
+const MAX_CONCURRENT_SHOW_REQUESTS = 8;
+const MAX_SHOW_RESPONSE_BYTES = 4 * 1024 * 1024;
 
 export interface OllamaRawModel {
   // The slug Ollama uses everywhere (e.g. `gpt-oss:120b`, `deepseek-v4-flash`,
@@ -63,10 +66,15 @@ const parseTagEntry = (value: unknown): TagEntry | null => {
 const parseTagsResponse = (value: unknown): TagEntry[] | null => {
   if (!isRecord(value) || !Array.isArray(value.models)) return null;
   const entries: TagEntry[] = [];
+  const seen = new Set<string>();
   for (const item of value.models) {
     const entry = parseTagEntry(item);
-    if (entry) entries.push(entry);
+    if (entry && !seen.has(entry.name)) {
+      seen.add(entry.name);
+      entries.push(entry);
+    }
   }
+  if (value.models.length > 0 && entries.length === 0) return null;
   return entries;
 };
 
@@ -110,41 +118,120 @@ const parseShowResponse = (id: string, modifiedAt: number | undefined, value: un
   return raw;
 };
 
-const fetchShowForTag = async (
+const fetchShowForTag = (
   config: OllamaUpstreamConfig,
   fetcher: Fetcher,
   tag: TagEntry,
-): Promise<OllamaRawModel | null> => {
+  signal: AbortSignal,
+  maxResponseBytes: number,
+  idleTimeoutMs: number | undefined,
+  totalTimeoutMs: number | undefined,
+): Promise<OllamaRawModel | null> => runProviderModelsTask(async taskSignal => {
   const response = await ollamaFetchShow(
     config,
-    { method: 'POST', body: JSON.stringify({ name: tag.name }) },
+    { method: 'POST', body: JSON.stringify({ name: tag.name }), signal: taskSignal },
     { fetcher, wrapUpstreamCall: identityWrapUpstreamCall },
   );
-  if (!response.ok) return null;
+  if (!response.ok) {
+    if (response.body) void response.body.cancel().catch(() => undefined);
+    return null;
+  }
   let parsed: unknown;
   try {
-    parsed = await response.json();
-  } catch {
+    parsed = await readBoundedJsonResponse(response, maxResponseBytes, undefined, { idleTimeoutMs, signal: taskSignal });
+  } catch (error) {
+    if (isAbortError(error)) throw error;
     return null;
   }
   return parseShowResponse(tag.name, tag.modifiedAt, parsed);
-};
+}, { signal, totalTimeoutMs });
 
-export const fetchOllamaCatalog = async (config: OllamaUpstreamConfig, fetcher: Fetcher): Promise<OllamaCatalog> => {
+export const fetchOllamaCatalog = (
+  config: OllamaUpstreamConfig,
+  fetcher: Fetcher,
+  options: { idleTimeoutMs?: number; maxShowResponseBytes?: number; signal?: AbortSignal; totalTimeoutMs?: number } = {},
+): Promise<OllamaCatalog> => runProviderModelsTask(async catalogSignal => {
+  const maxShowResponseBytes = options.maxShowResponseBytes ?? MAX_SHOW_RESPONSE_BYTES;
+  if (!Number.isSafeInteger(maxShowResponseBytes) || maxShowResponseBytes <= 0) {
+    throw new TypeError('maxShowResponseBytes must be a positive safe integer');
+  }
   // /api/tags through the shared scaffold so network / non-2xx / shape errors
   // surface as ProviderModelsUnavailableError — same envelope every other
   // provider's catalog fetch produces, which the control-plane and SWR cache
   // both branch on.
   const tags = await fetchUpstreamModels(
-    () => ollamaFetchTags(config, { method: 'GET' }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }),
+    signal => ollamaFetchTags(config, { method: 'GET', signal }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }),
     parseTagsResponse,
+    { idleTimeoutMs: options.idleTimeoutMs, signal: catalogSignal, totalTimeoutMs: options.totalTimeoutMs },
   );
-  // /api/show fan-out stays outside the scaffold: `allSettled` already drops
-  // a single failed lookup cleanly without poisoning the whole catalog.
-  const settled = await Promise.allSettled(tags.map(tag => fetchShowForTag(config, fetcher, tag)));
+  const results: Array<OllamaRawModel | null | undefined> = new Array(tags.length);
+  const controller = new AbortController();
+  const onCatalogAbort = () => controller.abort(catalogSignal.reason);
+  catalogSignal.addEventListener('abort', onCatalogAbort, { once: true });
+  let nextIndex = 0;
+  let fatalAbort: unknown;
+  let firstShowError: unknown;
+  let rejectFatalAbort!: (error: unknown) => void;
+  const fatalAbortPromise = new Promise<never>((_resolve, reject) => { rejectFatalAbort = reject; });
+  const worker = async (): Promise<void> => {
+    while (fatalAbort === undefined && !controller.signal.aborted) {
+      const index = nextIndex++;
+      if (index >= tags.length) return;
+      try {
+        results[index] = await fetchShowForTag(
+          config,
+          fetcher,
+          tags[index],
+          controller.signal,
+          maxShowResponseBytes,
+          options.idleTimeoutMs,
+          options.totalTimeoutMs,
+        );
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        if (isAbortError(error)) {
+          if (fatalAbort === undefined) {
+            fatalAbort = error;
+            rejectFatalAbort(error);
+            controller.abort(error);
+          }
+          return;
+        }
+        if (firstShowError === undefined) firstShowError = error;
+        results[index] = null;
+      }
+    }
+  };
+  const workers = Promise.all(Array.from(
+    { length: Math.min(MAX_CONCURRENT_SHOW_REQUESTS, tags.length) },
+    worker,
+  ));
+  try {
+    try {
+      await Promise.race([workers, fatalAbortPromise]);
+    } catch (error) {
+      void workers.catch(() => undefined);
+      throw error;
+    }
+  } finally {
+    catalogSignal.removeEventListener('abort', onCatalogAbort);
+  }
+
   const data: OllamaRawModel[] = [];
-  for (const result of settled) {
-    if (result.status === 'fulfilled' && result.value !== null) data.push(result.value);
+  for (const model of results) {
+    if (model !== null && model !== undefined) data.push(model);
+  }
+  if (tags.length > 0 && data.length === 0) {
+    throw new ProviderModelsUnavailableError(
+      null,
+      firstShowError ?? new Error('Every Ollama /api/show request failed'),
+    );
   }
   return { data };
-};
+}, options).catch((cause: unknown) => {
+  if (options.signal?.aborted) throw options.signal.reason;
+  if (cause instanceof DOMException && cause.name === 'TimeoutError') {
+    throw new ProviderModelsUnavailableError(null, cause);
+  }
+  throw cause;
+});

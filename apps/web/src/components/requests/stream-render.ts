@@ -35,6 +35,7 @@ export interface CollectedStream {
 export interface RenderedStreamEvent {
   event: string | null;
   text: string;
+  isJson: boolean;
   parseError: string | null;
   timestamp: number;
 }
@@ -83,11 +84,14 @@ export const collectStream = async (kind: CollectKind, events: DumpStreamEvent[]
 export const renderStreamEvents = (kind: CollectKind | null, events: DumpStreamEvent[]): RenderedStreamEvent[] => {
   return events.map(({ frame, ts }) => {
     const sse = frameToSse(kind, frame);
-    if (!sse) return { event: null, text: '', parseError: null, timestamp: ts };
+    if (!sse) return { event: null, text: '', isJson: false, parseError: null, timestamp: ts };
+    if (sse.data === '[DONE]') {
+      return { event: sse.event ?? null, text: sse.data, isJson: false, parseError: null, timestamp: ts };
+    }
     try {
-      return { event: sse.event ?? null, text: JSON.stringify(JSON.parse(sse.data) as unknown, null, 2), parseError: null, timestamp: ts };
+      return { event: sse.event ?? null, text: JSON.stringify(JSON.parse(sse.data) as unknown, null, 2), isJson: true, parseError: null, timestamp: ts };
     } catch (error) {
-      return { event: sse.event ?? null, text: sse.data, parseError: errorMessage(error), timestamp: ts };
+      return { event: sse.event ?? null, text: sse.data, isJson: false, parseError: errorMessage(error), timestamp: ts };
     }
   });
 };

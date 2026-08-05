@@ -75,4 +75,12 @@ describe('makeExactReader', () => {
     const out = await read(4);
     expect(out.buffer).not.toBe(src.buffer);
   });
+
+  it('detaches retained leftover bytes from a reused transport buffer', async () => {
+    const src = new Uint8Array([1, 2, 3, 4]);
+    const read = makeExactReader(makeReader([src]), 'T');
+    expect(Array.from(await read(2))).toEqual([1, 2]);
+    src.fill(9);
+    expect(Array.from(await read(2))).toEqual([3, 4]);
+  });
 });

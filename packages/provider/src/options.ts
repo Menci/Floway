@@ -30,10 +30,17 @@ export const dispatchUpstreamFetch = (
   init: RequestInit,
 ): Promise<Response> => {
   let owned: RequestInit | undefined = init;
-  return options.wrapUpstreamCall(() => {
+  const wrapped = options.wrapUpstreamCall(() => {
     if (owned === undefined) throw new Error('upstream fetch dispatch invoked more than once');
     const request = owned;
     owned = undefined;
     return options.fetcher(url, request);
+  });
+  return wrapped.then(response => {
+    if (owned !== undefined) {
+      owned = undefined;
+      throw new Error('upstream fetch dispatch was not invoked');
+    }
+    return response;
   });
 };

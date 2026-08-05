@@ -9,15 +9,29 @@ export interface FakeDuplex {
   writable: WritableStream<Uint8Array>;
 
   written(): Uint8Array;
+  waitForWritten(minBytes: number): Promise<Uint8Array>;
   waitWritableClosed(): Promise<void>;
 
   respond(bytes: Uint8Array | string): void;
+  failResponse(reason: unknown): void;
   /** Close the readable (server EOF). */
   endResponse(): void;
 }
 
 export const makeFakeDuplex = (): FakeDuplex => {
   let writeBuffer = new Uint8Array(0);
+  const writeWaiters: Array<{
+    minBytes: number;
+    resolve: (bytes: Uint8Array) => void;
+  }> = [];
+  const dispatchWriteWaiters = (): void => {
+    for (let i = writeWaiters.length - 1; i >= 0; i--) {
+      const waiter = writeWaiters[i]!;
+      if (writeBuffer.byteLength < waiter.minBytes) continue;
+      writeWaiters.splice(i, 1);
+      waiter.resolve(new Uint8Array(writeBuffer));
+    }
+  };
   let writableClosedResolve!: () => void;
   const writableClosedPromise = new Promise<void>(r => { writableClosedResolve = r; });
 
@@ -27,6 +41,7 @@ export const makeFakeDuplex = (): FakeDuplex => {
       next.set(writeBuffer, 0);
       next.set(chunk, writeBuffer.byteLength);
       writeBuffer = next;
+      dispatchWriteWaiters();
     },
     close() { writableClosedResolve(); },
     abort() { writableClosedResolve(); },
@@ -43,11 +58,18 @@ export const makeFakeDuplex = (): FakeDuplex => {
     readable,
     writable,
     written: () => new Uint8Array(writeBuffer),
+    waitForWritten(minBytes) {
+      if (writeBuffer.byteLength >= minBytes) {
+        return Promise.resolve(new Uint8Array(writeBuffer));
+      }
+      return new Promise(resolve => { writeWaiters.push({ minBytes, resolve }); });
+    },
     waitWritableClosed: () => writableClosedPromise,
     respond(bytes) {
       const u = typeof bytes === 'string' ? enc.encode(bytes) : bytes;
       controller.enqueue(new Uint8Array(u));
     },
+    failResponse(reason) { controller.error(reason); },
     endResponse() { controller.close(); },
   };
 };

@@ -35,10 +35,6 @@ const isRetryableStatus = (status: number) =>
 // serializing, the way every other draft in this dashboard does.
 const comparableConfiguration = (configuration: AgentSetupConfiguration): string => JSON.stringify(configuration);
 
-export const agentSetupCommand = (origin: string, path: string, platform: 'unix' | 'windows'): string => platform === 'unix'
-  ? `export SETUP_ENDPOINT='${origin.replaceAll("'", "'\\''")}'; curl -fsSL "$SETUP_ENDPOINT${path}" | bash`
-  : `$SetupEndpoint = '${origin.replaceAll("'", "''")}'; irm "$SetupEndpoint${path}" | iex`;
-
 // The lease is external state: a server owns it, timers renew and expire it,
 // and the save and heartbeat callbacks have to act on what it holds when they
 // run rather than on the render that created them. Holding the whole session in
@@ -170,14 +166,15 @@ export const useAgentSetup = (
 
   // A lease answers with the configuration the account last stored. The fields
   // the draft still holds unsaved survive it and are unsaved against it; every
-  // other field takes the server's value, and the draft becomes the baseline
-  // the next lease is measured from.
+  // other field takes the server's value. The server answer remains the baseline
+  // so an edit that has not been saved yet stays distinguishable across a key
+  // switch.
   const seedDraft = useCallback((configuration: AgentSetupConfiguration) => {
     store.setState(current => {
       const draft = applyLocalAgentSetupChanges(configuration, current.draft, current.baseline);
       return {
         draft,
-        baseline: draft,
+        baseline: cloneAgentSetupConfiguration(configuration),
         generation: comparableConfiguration(draft) === comparableConfiguration(configuration) ? 0 : 1,
         confirmedGeneration: 0,
       };

@@ -13,7 +13,6 @@ const readResponseHeadSection = async (
   try {
     return await readHeadSection(reader, new Uint8Array(0), {
       maxBytes: HEADER_BUFFER_CAP,
-      decodeContext: 'response headers',
       eofError: receivedBytes => new HttpProtocolError(
         `unexpected EOF before headers; got ${receivedBytes} bytes`,
         'EOF',
@@ -37,6 +36,12 @@ describe('readHeadSection', () => {
     await expect(readResponseHeadSection(fake.readable)).rejects.toMatchObject({
       code: 'HEADER_BUFFER_OVERFLOW',
     });
+  });
+
+  it('rejects an oversized head whose terminator arrives in the same chunk', async () => {
+    await expect(readResponseHeadSection(respondAndEnd(
+      `HTTP/1.1 200 OK\r\nX-Big: ${'a'.repeat(70 * 1024)}\r\n\r\n`,
+    ))).rejects.toMatchObject({ code: 'HEADER_BUFFER_OVERFLOW' });
   });
 
   it('rejects EOF before the head terminator', async () => {

@@ -1,5 +1,5 @@
 import { azureEndpointField } from './endpoint.ts';
-import { type UpstreamModelConfig, type UpstreamRecord, isRecord, modelsField, nonEmptyStringField } from '@floway-dev/provider';
+import { type UpstreamModelConfig, type UpstreamRecord, isHttpFieldValue, isRecord, modelsField, nonEmptyStringField } from '@floway-dev/provider';
 
 export interface AzureUpstreamConfig {
   endpoint: string;
@@ -18,13 +18,15 @@ export const assertAzureUpstreamRecord = (record: UpstreamRecord): AzureUpstream
 
   const models = modelsField(record.config.models, 'azure');
   if (models.length === 0) throw new Error('Malformed azure upstream config: models must be a non-empty array');
-  if (models.some(model => model.kind === 'rerank')) {
+  if (models.some(model => model.endpoints.rerank !== undefined)) {
     throw new Error('Malformed azure upstream config: rerank models require a custom upstream');
   }
 
+  const apiKey = nonEmptyStringField(record.config.apiKey, 'azure upstream config: apiKey');
+  if (!isHttpFieldValue(apiKey)) throw new Error('Malformed azure upstream config: apiKey is not a valid HTTP header value');
   const config: AzureUpstreamConfig = {
     endpoint: azureEndpointField(record.config.endpoint, 'azure upstream config: endpoint'),
-    apiKey: nonEmptyStringField(record.config.apiKey, 'azure upstream config: apiKey'),
+    apiKey,
     models,
   };
 

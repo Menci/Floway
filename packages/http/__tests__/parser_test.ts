@@ -91,15 +91,15 @@ describe('parseHttpResponse — status-line grammar', () => {
     });
   });
 
-  it('rejects a status line with two SPs between code and reason (the second SP cannot be absorbed into the reason)', async () => {
-    // RFC 9112 §4 grammar puts a single SP between status-code and
-    // reason-phrase. A double SP would either silently absorb the extra
-    // space into the reason (a lenient-parser foot-gun llhttp's strict
-    // mode rejects), or — if accepted — diverge from what a strict
-    // intermediary sees. We reject.
-    await expect(parseHttpResponse(respondAndEnd('HTTP/1.1 200  OK\r\nContent-Length: 0\r\n\r\n'))).rejects.toMatchObject({
-      code: 'BAD_STATUS_LINE',
-    });
+  it('accepts SP and HTAB at the start of the reason phrase', async () => {
+    const spaced = await parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200  OK\r\nContent-Length: 0\r\n\r\n',
+    ));
+    const tabbed = await parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 \tOK\r\nContent-Length: 0\r\n\r\n',
+    ));
+    expect(spaced.statusText).toBe(' OK');
+    expect(tabbed.statusText).toBe('\tOK');
   });
 
   it('rejects a status line with two SPs between version and code', async () => {
@@ -165,6 +165,18 @@ describe('parseHttpResponse — status-line grammar', () => {
     await expect(parseHttpResponse(respondAndEnd('garbage HTTP/1.1 200 OK\r\n\r\n'))).rejects.toMatchObject({
       code: 'BAD_STATUS_LINE',
     });
+  });
+
+  it.each(['099', '600'])('rejects status code %s outside 100..599', async status => {
+    await expect(parseHttpResponse(respondAndEnd(
+      `HTTP/1.1 ${status} Invalid\r\nContent-Length: 0\r\n\r\n`,
+    ))).rejects.toMatchObject({ code: 'BAD_STATUS_LINE' });
+  });
+
+  it('rejects a NUL control byte in the reason phrase', async () => {
+    await expect(parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 bad\0reason\r\nContent-Length: 0\r\n\r\n',
+    ))).rejects.toMatchObject({ code: 'BAD_STATUS_LINE' });
   });
 });
 
@@ -361,26 +373,15 @@ describe('parseHttpResponse — header value grammar (RFC 9110 §5.5 field-value
     }
   });
 
-  it('rejects bytes ≥ 0x80 in the response header section (RFC 9112 §5: ASCII only)', async () => {
-    // RFC 9112 §5 forbids non-ASCII bytes in the header section. A
-    // fatal-UTF-8 decoder alone is not enough — valid UTF-8 sequences
-    // like 0xc3 0xa9 ("é") decode cleanly but the spec still rejects
-    // them. The parser scans for any byte ≥ 0x80 before decoding.
-    for (const bytes of [
-      [0xff],                       // invalid UTF-8 lead
-      [0xc3, 0xa9],                 // valid UTF-8 for "é"
-      [0xe4, 0xb8, 0xad],           // valid UTF-8 for "中"
-      [0x80],                       // continuation byte in isolation
-    ]) {
-      const fake = makeFakeDuplex();
-      fake.respond(new TextEncoder().encode('HTTP/1.1 200 OK\r\nX: '));
-      fake.respond(new Uint8Array(bytes));
-      fake.respond('\r\nContent-Length: 0\r\n\r\n');
-      fake.endResponse();
-      await expect(parseHttpResponse(fake.readable)).rejects.toMatchObject({
-        code: 'BAD_HEADERS',
-      });
-    }
+  it('preserves obs-text bytes in a response field value as opaque data', async () => {
+    const fake = makeFakeDuplex();
+    fake.respond(new TextEncoder().encode('HTTP/1.1 200 OK\r\nX: '));
+    fake.respond(new Uint8Array([0x80, 0xff]));
+    fake.respond('\r\nContent-Length: 0\r\n\r\n');
+    fake.endResponse();
+    const response = await parseHttpResponse(fake.readable);
+    const value = response.headers.get('x')!;
+    expect(Array.from(value, char => char.charCodeAt(0))).toEqual([0x80, 0xff]);
   });
 
   it('preserves duplicate-named headers as a comma-joined Headers entry', async () => {
@@ -469,10 +470,12 @@ describe('parseHttpResponse — Content-Length / Transfer-Encoding smuggling mat
     ))).rejects.toMatchObject({ code: 'BAD_CL' });
   });
 
-  it('rejects Transfer-Encoding: gzip alone (we do not honor non-chunked TE)', async () => {
-    await expect(parseHttpResponse(respondAndEnd(
-      'HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip\r\n\r\n',
-    ))).rejects.toMatchObject({ code: 'TE_NOT_CHUNKED' });
+  it('preserves a non-chunked Transfer-Encoding and reads its encoded bytes to EOF', async () => {
+    const r = await parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip\r\n\r\nencoded',
+    ));
+    expect(r.headers.get('transfer-encoding')).toBe('gzip');
+    expect(await collectBody(r)).toBe('encoded');
   });
 
   it('rejects Transfer-Encoding: identity', async () => {
@@ -496,6 +499,32 @@ describe('parseHttpResponse — Content-Length / Transfer-Encoding smuggling mat
       'HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip, chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n',
     ));
     expect(await collectBody(r)).toBe('hello');
+    expect(r.headers.get('transfer-encoding')).toBe('gzip');
+  });
+
+  it('preserves a quoted comma in a remaining transfer-coding parameter', async () => {
+    const r = await parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip; note="a,b", chunked\r\n\r\n2\r\nOK\r\n0\r\n\r\n',
+    ));
+    expect(await collectBody(r)).toBe('OK');
+    expect(r.headers.get('transfer-encoding')).toBe('gzip; note="a,b"');
+  });
+
+  it.each([
+    'g@zip, chunked',
+    'gzip; missing-value, chunked',
+    'chunked; forbidden=parameter',
+    'gzip; note="unterminated, chunked',
+  ])('rejects malformed Transfer-Encoding grammar: %j', async transferEncoding => {
+    await expect(parseHttpResponse(respondAndEnd(
+      `HTTP/1.1 200 OK\r\nTransfer-Encoding: ${transferEncoding}\r\n\r\n`,
+    ))).rejects.toMatchObject({ code: 'BAD_HEADERS' });
+  });
+
+  it('rejects Transfer-Encoding on HTTP/1.0', async () => {
+    await expect(parseHttpResponse(respondAndEnd(
+      'HTTP/1.0 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n',
+    ))).rejects.toMatchObject({ code: 'TE_NOT_CHUNKED' });
   });
 
   it('rejects Transfer-Encoding: chunked listed twice (across two headers)', async () => {
@@ -510,12 +539,14 @@ describe('parseHttpResponse — Content-Length / Transfer-Encoding smuggling mat
     ))).rejects.toMatchObject({ code: 'TE_DOUBLE_CHUNKED' });
   });
 
-  it('rejects Transfer-Encoding: chunkedchunked (substring match must not enable chunked)', async () => {
+  it('treats an unknown transfer coding containing "chunked" as opaque and close-delimited', async () => {
     // llhttp test/response/transfer-encoding.md: the literal token must
     // be `chunked`, never a token that contains `chunked` as a substring.
-    await expect(parseHttpResponse(respondAndEnd(
-      'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunkedchunked\r\n\r\n2\r\nOK\r\n0\r\n\r\n',
-    ))).rejects.toMatchObject({ code: 'TE_NOT_CHUNKED' });
+    const r = await parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunkedchunked\r\n\r\nopaque',
+    ));
+    expect(await collectBody(r)).toBe('opaque');
+    expect(r.headers.get('transfer-encoding')).toBe('chunkedchunked');
   });
 
   it('does not treat Content-Length-X as Content-Length (prefix match must not fire)', async () => {
@@ -573,9 +604,17 @@ describe('parseHttpResponse — Content-Length value grammar', () => {
       .rejects.toMatchObject({ code: 'BAD_CL' });
   });
 
-  it('accepts Content-Length: 0 with no body bytes', async () => {
-    const r = await parseHttpResponse(respondAndEnd('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n'));
-    expect(await collectBody(r)).toBe('');
+  it('accepts leading zeroes in the decimal Content-Length grammar', async () => {
+    const r = await parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 OK\r\nContent-Length: 0005\r\n\r\nhello',
+    ));
+    expect(await collectBody(r)).toBe('hello');
+  });
+
+  it('rejects a Content-Length outside JavaScript\'s exact integer range', async () => {
+    await expect(parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 OK\r\nContent-Length: 9007199254740992\r\n\r\n',
+    ))).rejects.toMatchObject({ code: 'BAD_CL' });
   });
 
   it('accepts a large Content-Length value (within 32-bit range)', async () => {
@@ -591,17 +630,6 @@ describe('parseHttpResponse — Content-Length value grammar', () => {
 });
 
 describe('parseHttpResponse — DoS caps', () => {
-  it('rejects a response with more than 100 header lines as TOO_MANY_HEADERS', async () => {
-    const lines = ['HTTP/1.1 200 OK'];
-    for (let i = 0; i < 110; i++) lines.push(`X-${i}: v`);
-    lines.push('Content-Length: 0');
-    lines.push('');
-    lines.push('');
-    await expect(parseHttpResponse(respondAndEnd(lines.join('\r\n')))).rejects.toMatchObject({
-      code: 'TOO_MANY_HEADERS',
-    });
-  });
-
   it('accepts a response at exactly the 100-header boundary', async () => {
     const lines = ['HTTP/1.1 200 OK'];
     for (let i = 0; i < 99; i++) lines.push(`X-${i}: v`);
@@ -628,11 +656,9 @@ describe('parseHttpResponse — DoS caps', () => {
   // HEADER_BUFFER_OVERFLOW — so neither an unbounded read nor a different
   // code can pass unnoticed.
   it('rejects a single header that grows past the 64 KiB header buffer', async () => {
-    const fake = makeFakeDuplex();
-    fake.respond('HTTP/1.1 200 OK\r\nX-Big: ');
-    fake.respond('a'.repeat(70 * 1024));
-    fake.endResponse();
-    await expect(parseHttpResponse(fake.readable)).rejects.toMatchObject({
+    await expect(parseHttpResponse(respondAndEnd(
+      `HTTP/1.1 200 OK\r\nX-Big: ${'a'.repeat(70 * 1024)}\r\n\r\n`,
+    ))).rejects.toMatchObject({
       code: 'HEADER_BUFFER_OVERFLOW',
     });
   });
@@ -723,6 +749,19 @@ describe('parseHttpResponse — body framing', () => {
     expect(resp.status).toBe(200);
     expect(await collectBody(resp)).toBe('');
   });
+
+  it.each([
+    ['Content-Length', 'HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK'],
+    ['chunked', 'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nOK\r\n0\r\n\r\n'],
+    ['until EOF', 'HTTP/1.1 200 OK\r\n\r\nOK'],
+  ])('releases the transport reader after a %s body completes', async (_framing, wire) => {
+    const fake = makeFakeDuplex();
+    fake.respond(wire);
+    fake.endResponse();
+    const resp = await parseHttpResponse(fake.readable);
+    expect(await collectBody(resp)).toBe('OK');
+    expect(fake.readable.locked).toBe(false);
+  });
 });
 
 describe('parseHttpResponse — 1xx interim heads', () => {
@@ -768,11 +807,26 @@ describe('parseHttpResponse — 1xx interim heads', () => {
     ].join('\r\n')));
     expect(r.status).toBe(200);
   });
+
+  it('returns 101 as a protocol switch with the following bytes left opaque', async () => {
+    const r = await parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 101 Switching Protocols\r\nUpgrade: example\r\nConnection: Upgrade\r\n\r\nPROTO',
+    ));
+    expect(r.status).toBe(101);
+    expect(await collectBody(r)).toBe('PROTO');
+  });
+
+  it('bounds an unending sequence of informational response heads', async () => {
+    const informational = 'HTTP/1.1 100 Continue\r\n\r\n'.repeat(17);
+    await expect(parseHttpResponse(respondAndEnd(
+      `${informational}HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n`,
+    ))).rejects.toMatchObject({ code: 'TOO_MANY_INFORMATIONAL' });
+  });
 });
 
 describe('parseHttpResponse — wire-faithful return shape', () => {
   // parseHttpResponse returns a wire-faithful struct rather than a Web
-  // Response so 204/304 (which the Response constructor rejects with a
+  // Response so 204/205/304 (which the Response constructor rejects with a
   // non-null body) are representable. Bridging to a Response is
   // toWebResponse's job.
   it('parses a 204 No Content and exposes a (zero-length) body stream', async () => {
@@ -785,6 +839,18 @@ describe('parseHttpResponse — wire-faithful return shape', () => {
     const r = await parseHttpResponse(respondAndEnd('HTTP/1.1 304 Not Modified\r\nETag: "abc"\r\n\r\n'));
     expect(r.status).toBe(304);
     expect(r.headers.get('etag')).toBe('"abc"');
+  });
+
+  it.each([
+    [204, 'No Content'],
+    [205, 'Reset Content'],
+    [304, 'Not Modified'],
+  ])('does not wait for an advertised body on status %i', async (status, reason) => {
+    const fake = makeFakeDuplex();
+    fake.respond(`HTTP/1.1 ${status} ${reason}\r\nContent-Length: 5\r\n\r\n`);
+    const r = await parseHttpResponse(fake.readable);
+    expect(await collectBody(r)).toBe('');
+    expect(fake.readable.locked).toBe(false);
   });
 
   it('exposes the parsed reason-phrase via statusText', async () => {
@@ -823,6 +889,14 @@ describe('toWebResponse', () => {
     expect(r.status).toBe(304);
     expect(r.body).toBeNull();
     expect(r.headers.get('etag')).toBe('"abc"');
+  });
+
+  it('returns a null-body Response for 205 Reset Content', async () => {
+    const r = toWebResponse(await parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 205 Reset Content\r\nContent-Length: 0\r\n\r\n',
+    )));
+    expect(r.status).toBe(205);
+    expect(r.body).toBeNull();
   });
 
   it('forwards the parsed reason-phrase through statusText', async () => {

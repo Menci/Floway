@@ -47,6 +47,12 @@ const autoModelEndpoints = (model: CustomRawModel, configured: ModelEndpoints): 
   return inferEndpointsFromModelId(model.id) ?? configured;
 };
 
+const hasChatEndpoint = (endpoints: ModelEndpoints): boolean =>
+  endpoints.completions !== undefined
+  || endpoints.chatCompletions !== undefined
+  || endpoints.responses !== undefined
+  || endpoints.messages !== undefined;
+
 const finalizeCustomModels = (
   response: CustomModelsResponse,
   configuredEndpoints: ModelEndpoints,
@@ -60,12 +66,15 @@ const finalizeCustomModels = (
     // only a manual row with rerankTarget enters the routable provider catalog.
     if (rawModel.kind === 'rerank') continue;
     const endpoints = autoModelEndpoints(rawModel, configuredEndpoints);
+    if (Object.keys(endpoints).length === 0) continue;
+    const kind = kindForEndpoints(endpoints);
     models.push({
       ...customRawToProviderModel(rawModel),
-      kind: kindForEndpoints(endpoints),
+      kind,
       endpoints,
       providerData: rawModel.id,
       enabledFlags,
+      ...(hasChatEndpoint(endpoints) && rawModel.chat ? { chat: rawModel.chat } : {}),
     });
   }
   return models;
@@ -82,7 +91,7 @@ export const projectCustomModels = (
   const upstreamFlags = resolveEffectiveFlags([CUSTOM_DEFAULT_FLAGS, record.flagOverrides]);
 
   // Manual models always emit.
-  const overriddenIds = new Set(config.models.map(m => m.upstreamModelId));
+  const overriddenIds = new Set(config.models.flatMap(model => [model.upstreamModelId, publicModelId(model)]));
   const manualModels: ProviderModel[] = config.models.map(model => {
     const enabledFlags = resolveEffectiveFlags([CUSTOM_DEFAULT_FLAGS, record.flagOverrides, model.flagOverrides]);
     const endpoints = model.endpoints;
