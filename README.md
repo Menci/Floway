@@ -88,11 +88,6 @@ responses retain their upstream wire shape.
 | Azure | Azure AI resource or Foundry project endpoint and API key | Configured models |
 | Ollama | ollama.com or a self-hosted Ollama-compatible server | Fetched live from Ollama, with optional manual overrides |
 
-The `*.ghe.com` option is for GitHub Enterprise Cloud with data residency. Enter
-the tenant hostname assigned to the enterprise, such as `octocorp.ghe.com`;
-Floway derives its tenant API origin and follows the Copilot data-plane endpoint
-returned by GitHub during token exchange.
-
 ## Other Deployment Options
 
 ### Cloudflare Workers
