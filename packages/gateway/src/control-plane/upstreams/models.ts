@@ -73,6 +73,9 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
     // never carries a cached catalog.
     modelsCache: null,
   };
+  const cacheGeneration = persisted === null
+    ? { updatedAt: synthRecord.updatedAt, config: synthRecord.config }
+    : { updatedAt: persisted.updatedAt, config: persisted.config };
 
   let fetcher: Fetcher;
   try {
@@ -88,7 +91,7 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
   try {
     if (kind === 'custom') {
       const assertedConfig = assertCustomUpstreamRecord(synthRecord).config;
-      const provider = createProvider(synthRecord);
+      const provider = createProvider(synthRecord, cacheGeneration);
       let result: Awaited<ReturnType<typeof fetchCustomModels>> | undefined;
       if (record.id === '') {
         result = await fetchCustomModels(assertedConfig, fetcher);
@@ -114,7 +117,7 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
     // Force through the SWR cache when the record is persisted so the
     // side-effect refresh keeps the data-plane cache in step; otherwise
     // live-fetch without any caching.
-    const provider = createProvider(synthRecord);
+    const provider = createProvider(synthRecord, cacheGeneration);
     const models = record.id !== ''
       ? await fetchUpstreamModelsCached(provider, { scheduler, fetcher, force: true })
       : await provider.instance.getProvidedModels(fetcher);

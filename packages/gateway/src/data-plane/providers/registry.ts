@@ -19,9 +19,12 @@ const providersByKind: Record<UpstreamProviderKind, ProviderModule> = {
 
 const cacheGenerationByProvider = new WeakMap<Provider, ModelsCacheGeneration>();
 
-export const createProvider = (record: UpstreamRecord): Provider => {
+export const createProvider = (
+  record: UpstreamRecord,
+  cacheGeneration: ModelsCacheGeneration = { updatedAt: record.updatedAt, config: record.config },
+): Provider => {
   const provider = providersByKind[record.kind].create(record);
-  cacheGenerationByProvider.set(provider, { updatedAt: record.updatedAt, config: record.config });
+  cacheGenerationByProvider.set(provider, cacheGeneration);
   return provider;
 };
 
