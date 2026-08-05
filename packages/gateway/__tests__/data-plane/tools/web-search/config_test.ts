@@ -16,11 +16,11 @@ interface WebSearchConfigRow {
   jina_api_key: string;
   passthrough_openai_search: number;
   alpha_search_upstream_id: string;
-  alpha_search_model: string;
+  alpha_search_model_json: string;
 }
 
-const SELECT_SQL = 'SELECT provider, tavily_api_key, microsoft_web_iq_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model FROM search_config WHERE id = 1';
-const UPSERT_SQL = `INSERT INTO search_config (id, provider, tavily_api_key, microsoft_web_iq_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model, updated_at)
+const SELECT_SQL = 'SELECT provider, tavily_api_key, microsoft_web_iq_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model_json FROM search_config WHERE id = 1';
+const UPSERT_SQL = `INSERT INTO search_config (id, provider, tavily_api_key, microsoft_web_iq_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model_json, updated_at)
          VALUES (1, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
          ON CONFLICT (id) DO UPDATE SET
            provider = excluded.provider,
@@ -29,7 +29,7 @@ const UPSERT_SQL = `INSERT INTO search_config (id, provider, tavily_api_key, mic
            jina_api_key = excluded.jina_api_key,
            passthrough_openai_search = excluded.passthrough_openai_search,
            alpha_search_upstream_id = excluded.alpha_search_upstream_id,
-           alpha_search_model = excluded.alpha_search_model,
+           alpha_search_model_json = excluded.alpha_search_model_json,
            updated_at = excluded.updated_at`;
 
 class FakeSqlPreparedStatement {
@@ -63,7 +63,7 @@ class FakeSqlPreparedStatement {
         jina_api_key: String(this.binds[3]),
         passthrough_openai_search: Number(this.binds[4]),
         alpha_search_upstream_id: String(this.binds[5]),
-        alpha_search_model: String(this.binds[6]),
+        alpha_search_model_json: String(this.binds[6]),
       };
       return Promise.resolve({ results: [], success: true, meta: {} });
     }
@@ -203,7 +203,7 @@ test('saveWebSearchConfig writes the typed columns and round-trips through the s
     jina_api_key: 'jina-test',
     passthrough_openai_search: 0,
     alpha_search_upstream_id: '',
-    alpha_search_model: '',
+    alpha_search_model_json: '""',
   });
   assertEquals(await loadWebSearchConfig(), {
     provider: 'disabled',
@@ -223,7 +223,7 @@ test('current SQL schema round-trips Microsoft Web IQ configuration and usage', 
     tavily: { apiKey: '' },
     microsoftWebIq: { apiKey: 'web-iq-test' },
     jina: { apiKey: '' },
-    passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
+    passthroughOpenAiSearch: { enabled: true, upstreamId: 'up-alpha', model: 'alpha\0model' },
   };
   await repo.webSearchConfig.save(config);
   assertEquals(await loadWebSearchConfig(), config);

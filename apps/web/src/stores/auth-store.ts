@@ -89,10 +89,12 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
 
   // Local logout intent takes precedence when server-side revocation fails --
   // transport or status alike; the gateway expires any surviving session
-  // independently.
+  // independently. A login completed while revocation was in flight owns its
+  // new token and must not be cleared by the older request settling.
   logout: async () => {
+    const token = getSessionToken();
     await callApiNoContent(() => api.auth.logout.$post());
-    get().clear();
+    if (getSessionToken() === token) get().clear();
   },
 
   initialize: () => loadSession(set, get, false),

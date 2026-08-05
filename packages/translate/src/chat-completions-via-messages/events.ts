@@ -191,10 +191,12 @@ export const translateMessagesEventToChatCompletionsChunks = (event: MessagesStr
 
   case 'message_delta': {
     const chunks: ChatCompletionsStreamEvent[] = [];
-    if (event.delta.stop_reason === 'refusal') {
-      chunks.push(makeChunk(state, { refusal: messagesRefusalExplanation(event.delta.stop_details) }));
+    if (event.delta.stop_reason !== undefined && event.delta.stop_reason !== null) {
+      if (event.delta.stop_reason === 'refusal') {
+        chunks.push(makeChunk(state, { refusal: messagesRefusalExplanation(event.delta.stop_details) }));
+      }
+      chunks.push(makeChunk(state, {}, mapMessagesStopReasonToChatCompletionsFinishReason(event.delta.stop_reason)));
     }
-    chunks.push(makeChunk(state, {}, mapMessagesStopReasonToChatCompletionsFinishReason(event.delta.stop_reason ?? null)));
 
     if (event.usage) {
       state.usage = mergeMessagesUsageSnapshot(state.usage, event.usage);

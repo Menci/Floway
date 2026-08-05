@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { compactionResponse } from '../src/compaction.ts';
+import { compactionResponse, retainMessagesForCompaction } from '../src/compaction.ts';
 import type { ResponsesCompactionResult, ResponsesInputItem, ResponsesInputText, ResponsesResult } from '@floway-dev/protocols/responses';
 
 const generatedResult = (output: unknown[]): ResponsesResult =>
@@ -115,15 +115,19 @@ test('retains the newest message even when it alone exceeds the 64k budget', () 
 test('the empty-message minimum-1-token charge prevents unbounded retention', () => {
   // Empty-text messages would otherwise consume zero budget; the
   // `Math.max(tokens, 1)` floor stops them from accumulating without bound.
-  // 64_001 empty messages cannot all survive the budget.
-  const empties: ResponsesInputItem[] = Array.from({ length: 64_001 }, () => ({ type: 'message', role: 'user', content: '' }));
-  const result = compactionResponse(empties, generatedResult([compaction]));
+  // Nine empty messages cannot all survive an eight-token budget. The 64k
+  // production budget itself is covered by the oversized-message boundary
+  // tests above, while this focused check exercises the same retention helper
+  // without manufacturing 64k output objects.
+  const empty: ResponsesInputItem = { type: 'message', role: 'user', content: '' };
+  const empties = new Array<ResponsesInputItem>(9).fill(empty);
+  const retained = retainMessagesForCompaction(empties, 8);
 
   // The retained-message count is strictly under the input count.
-  expect(result.output.length - 1).toBeLessThan(empties.length);
+  expect(retained.length).toBeLessThan(empties.length);
   // And exactly equals the budget (each empty message charges 1 token, so
-  // the cap is hit at RETAINED_BUDGET_TOKENS kept entries).
-  expect(result.output).toHaveLength(64_000 + 1);
+  // the cap is hit at tokenBudget kept entries).
+  expect(retained).toHaveLength(8);
 });
 
 test('preserves input_image parts verbatim in retained content', () => {

@@ -124,6 +124,11 @@ const emitReasoningSummaryText = (outputIndex: number, summaryIndex: number, tex
   return [makeChunk(state, { reasoning_text: text })];
 };
 
+const emitReasoningOpaque = (outputIndex: number, encryptedContent: string | undefined, state: ResponsesToChatCompletionsStreamState): ChatCompletionsStreamEvent[] =>
+  encryptedContent !== undefined && shouldProjectScalarReasoning(outputIndex, state)
+    ? [makeChunk(state, { reasoning_opaque: encryptedContent })]
+    : [];
+
 const queueReasoningSummaryDoneFallback = (outputIndex: number, summaryIndex: number, text: string, state: ResponsesToChatCompletionsStreamState): void => {
   if (!text || !shouldProjectScalarReasoning(outputIndex, state)) return;
 
@@ -198,6 +203,7 @@ export const translateResponsesEventToChatCompletionsChunks = (event: ResponsesS
       chunks.push(...emitReasoningSummaryText(output_index, summaryIndex, part.text, state, 'done-fallback'));
     }
     chunks.push(...flushReasoningSummaryDoneFallbacks(state, output_index));
+    chunks.push(...emitReasoningOpaque(output_index, item.encrypted_content, state));
 
     return [...chunks, ...flushReadyDeferredChatChunks(state, true), ...flushPendingReasoningChunks(state), ...flushReadyDeferredChatChunks(state)];
   }

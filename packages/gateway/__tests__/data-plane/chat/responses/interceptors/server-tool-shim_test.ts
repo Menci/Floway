@@ -519,44 +519,23 @@ test('shim no-ops when no hosted web_search tool is present', async () => {
   assertEquals(inv.payload.tools?.[0].type, 'function');
 });
 
-// ── Tool rewrite × 4 hosted alias types ────────────────────────────────
-
-const hostedAliasTypes = ['web_search', 'web_search_2025_08_26', 'web_search_preview', 'web_search_preview_2025_03_11'] as const;
-for (const type of hostedAliasTypes) {
-  test(`shim rewrites hosted ${type} alias into the shim function tool`, async () => {
-    makeStubDeps();
-    const shim = withResponsesWebSearchShim;
-    const inv = makeInvocation({
-      payload: { tools: [{ type }] },
-    });
-    const script = scriptedRun([messageTurn('done')]);
-
-    await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
-
-    assertEquals(inv.payload.tools?.length, 1);
-    assertEquals((inv.payload.tools?.[0] as { name?: string }).name, SHIM_TOOL_NAME);
+test('shim rewrites a hosted web-search alias and its forced choice into the shim function tool', async () => {
+  makeStubDeps();
+  const shim = withResponsesWebSearchShim;
+  const inv = makeInvocation({
+    payload: {
+      tools: [{ type: 'web_search_preview' }],
+      tool_choice: { type: 'web_search_preview' },
+    },
   });
-}
+  const script = scriptedRun([messageTurn('done')]);
 
-// ── tool_choice rewrite × 4 hosted-type values ─────────────────────────
+  await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
 
-for (const type of hostedAliasTypes) {
-  test(`shim rewrites tool_choice {type: ${type}} to forced shim's function tool`, async () => {
-    makeStubDeps();
-    const shim = withResponsesWebSearchShim;
-    const inv = makeInvocation({
-      payload: {
-        tools: [{ type }],
-        tool_choice: { type },
-      },
-    });
-    const script = scriptedRun([messageTurn('done')]);
-
-    await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
-
-    assertEquals(inv.payload.tool_choice, { type: 'function', name: SHIM_TOOL_NAME });
-  });
-}
+  assertEquals(inv.payload.tools?.length, 1);
+  assertEquals((inv.payload.tools?.[0] as { name?: string }).name, SHIM_TOOL_NAME);
+  assertEquals(inv.payload.tool_choice, { type: 'function', name: SHIM_TOOL_NAME });
+});
 
 // ── Per-tool fields propagate ──────────────────────────────────────────
 
@@ -751,19 +730,24 @@ test('find_in_page triggers implicit fetchPage when URL not cached', async () =>
 
 // ── Iteration cap exhausted ───────────────────────────────────────────
 
-test('iteration cap returns the iteration-cap notice without backend call on cap+1', async () => {
+test('iteration cap returns its notice without another backend call or demoting unrelated tool choices', async () => {
   const { backend } = makeStubDeps();
   const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation();
+  const inv = makeInvocation({ payload: { tool_choice: 'auto' } });
   const searchTurns: ScriptedTurn[] = [];
   for (let i = 0; i < 30; i++) {
     searchTurns.push(searchCallTurn(0, `call_${i}`, `q${i}`));
   }
   searchTurns.push(searchCallTurn(0, 'call_cap', 'qcap'));
   searchTurns.push(messageTurn('done', 0));
+  const seenToolChoices: unknown[] = [];
   const script = scriptedRun(searchTurns);
+  const run = async () => {
+    seenToolChoices.push(inv.payload.tool_choice);
+    return await script.run();
+  };
 
-  const result = await shim(inv, makeGatewayCtx(), script.run);
+  const result = await shim(inv, makeGatewayCtx(), run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
 
@@ -787,6 +771,9 @@ test('iteration cap returns the iteration-cap notice without backend call on cap
   const capItem = wsCallDone[30].item as ResponsesOutputWebSearchCall;
   assert(capItem.action !== undefined);
   assertEquals(capItem.action.type, 'search');
+  // The exhausted search budget must not disable client-defined tools.
+  assertEquals(seenToolChoices[30], 'auto');
+  assertEquals(seenToolChoices[31], 'auto');
 });
 
 // ── Ambiguous multi-op function_call rejection ─────────────────────────────
@@ -1016,11 +1003,7 @@ test('invalid request registration preserves an upstream error type and null cod
   });
 });
 
-test('non-empty allowed_domains with every entry malformed is rejected as 400 invalid_request_error (no silent expansion to allow-all)', async () => {
-  // Silently dropping every malformed entry would turn "only allow
-  // this one site" into "allow every site" — strictly worse than a
-  // loud 400 because the client believed they had a restrictive
-  // allow-list.
+test('invalid web-search tool configuration maps to a 400 before any upstream or backend dispatch', async () => {
   const { backend } = makeStubDeps();
   const shim = withResponsesWebSearchShim;
   const inv = makeInvocation({
@@ -1028,7 +1011,7 @@ test('non-empty allowed_domains with every entry malformed is rejected as 400 in
       tools: [
         {
           type: 'web_search',
-          filters: { allowed_domains: ['bad domain with space', 'no_underscore_either'] },
+          filters: { allowed_domains: ['valid.com', 'https://quora.com/'] },
         },
       ],
     },
@@ -1046,366 +1029,7 @@ test('non-empty allowed_domains with every entry malformed is rejected as 400 in
   assertEquals(body.error.type, 'invalid_request_error');
   assertEquals(body.error.code, 'invalid_request_error');
   assertEquals(body.error.param, 'tools');
-  assert(body.error.message.includes('Invalid domain'));
-});
-
-test('non-empty blocked_domains with every entry malformed is rejected as 400 invalid_request_error (no silent expansion to block-nothing)', async () => {
-  // Same logic mirrored on the block-list side: silently dropping
-  // every malformed entry would turn "block these sites" into "block
-  // nothing", letting traffic the client intended to block through.
-  const { backend } = makeStubDeps();
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation({
-    payload: {
-      tools: [
-        {
-          type: 'web_search',
-          filters: { blocked_domains: ['has spaces', '*.wildcards.not.supported'] },
-        },
-      ],
-    },
-  });
-  const script = scriptedRun([messageTurn('never reached', 0)]);
-
-  const result = await shim(inv, makeGatewayCtx(), script.run);
-  assertEquals(result.type, 'api-error');
-  assert(result.type === 'api-error');
-  assertEquals(result.status, 400);
-  assertEquals(script.callCount(), 0);
-  assertEquals(backend.calls.length, 0);
-  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { message: string; type: string; param: string; code: string } };
-  assertEquals(body.error.type, 'invalid_request_error');
-  assertEquals(body.error.param, 'tools');
-});
-
-test('domain lists with any malformed entry alongside valid entries are rejected per-entry (no silent drop)', async () => {
-  // Per-entry strict validation: a single bad entry rejects the whole
-  // list because silently dropping it would let traffic the client
-  // believed was blocked / outside the allow-list through. The
-  // diagnostic must name the offending index so the client can fix it.
-  const { backend } = makeStubDeps();
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation({
-    payload: {
-      tools: [
-        {
-          type: 'web_search',
-          filters: {
-            allowed_domains: ['valid.com', 'bad domain'],
-            blocked_domains: ['also.valid.com'],
-          },
-        },
-      ],
-    },
-  });
-  const script = scriptedRun([messageTurn('never reached', 0)]);
-
-  const result = await shim(inv, makeGatewayCtx(), script.run);
-  assert(result.type === 'api-error');
-  assertEquals(result.status, 400);
-  assertEquals(script.callCount(), 0);
-  assertEquals(backend.calls.length, 0);
-  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { type: string; param: string; message: string } };
-  assertEquals(body.error.type, 'invalid_request_error');
-  assertEquals(body.error.param, 'tools');
-  assert(body.error.message.includes('bad domain'));
-});
-
-test('multiple hosted web_search entries: filter CONTENT is validated on each (not just last-wins)', async () => {
-  // `rewriteToolsForShim` last-wins on filter extraction, so a content
-  // check against `rewritten.filters` alone would miss malformed
-  // entries on earlier hosted tools that get discarded. Per-entry
-  // validation catches them — first failure wins.
-  const { backend } = makeStubDeps();
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation({
-    payload: {
-      tools: [
-        // First entry has all-malformed allowed_domains. A last-wins
-        // content check on rewritten.filters (= the second entry's
-        // empty filters) would let this slip through.
-        { type: 'web_search', filters: { allowed_domains: ['bad domain'] } },
-        { type: 'web_search' },
-      ],
-    },
-  });
-  const script = scriptedRun([messageTurn('never reached', 0)]);
-  const result = await shim(inv, makeGatewayCtx(), script.run);
-  assert(result.type === 'api-error');
-  assertEquals(result.status, 400);
-  assertEquals(script.callCount(), 0);
-  assertEquals(backend.calls.length, 0);
-  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string; type: string } };
-  assertEquals(body.error.type, 'invalid_request_error');
-  assertEquals(body.error.param, 'tools');
-});
-
-test('omitted filters do not trigger the validation reject (no false positive on the default case)', async () => {
-  makeStubDeps();
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation({
-    payload: {
-      tools: [{ type: 'web_search' }],
-    },
-  });
-  const script = scriptedRun([messageTurn('done', 0)]);
-  const result = await shim(inv, makeGatewayCtx(), script.run);
-  assert(result.type === 'events');
-  await collectFrames(result.events);
-});
-
-test('allowed_domains containing a non-string entry rejects with 400 (no 502 crash from .trim())', async () => {
-  // `normalizeDomainList` calls `.trim()` on every entry — a non-string
-  // entry (number, object, null) crashes with a TypeError that surfaces
-  // as a 502 internal-error envelope. Rejecting at the boundary with a
-  // 400 invalid_request_error keeps clients on the diagnostic-rich error
-  // shape SDKs already speak.
-  const { backend } = makeStubDeps();
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation({
-    payload: {
-      tools: [
-        {
-          type: 'web_search',
-          // Cast through unknown — the protocol type declares
-          // `string[]`, but runtime values can be anything.
-          filters: { allowed_domains: [5] as unknown as string[] },
-        },
-      ],
-    },
-  });
-  const script = scriptedRun([messageTurn('never reached', 0)]);
-  const result = await shim(inv, makeGatewayCtx(), script.run);
-  assert(result.type === 'api-error');
-  assertEquals(result.status, 400);
-  assertEquals(script.callCount(), 0);
-  assertEquals(backend.calls.length, 0);
-  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { type: string; param: string; code: string; message: string } };
-  assertEquals(body.error.type, 'invalid_request_error');
-  assertEquals(body.error.param, 'tools');
-});
-
-test('blocked_domains containing an object entry rejects with 400', async () => {
-  const { backend } = makeStubDeps();
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation({
-    payload: {
-      tools: [
-        {
-          type: 'web_search',
-          filters: { blocked_domains: [{}] as unknown as string[] },
-        },
-      ],
-    },
-  });
-  const script = scriptedRun([messageTurn('never reached', 0)]);
-  const result = await shim(inv, makeGatewayCtx(), script.run);
-  assert(result.type === 'api-error');
-  assertEquals(result.status, 400);
-  assertEquals(script.callCount(), 0);
-  assertEquals(backend.calls.length, 0);
-  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { type: string; param: string } };
-  assertEquals(body.error.param, 'tools');
-});
-
-// ── Per-entry domain shape validation ────────────────────────────────
-//
-// Each entry must be a bare hostname per OpenAI's web_search docs
-// (https://developers.openai.com/api/docs/guides/tools-web-search.md):
-// "omit the HTTP or HTTPS prefix" and use a domain like `openai.com`.
-// The shim rejects every deviation at the boundary so silent surface
-// expansion is impossible — `blocked_domains: ['reddit.com',
-// 'https://quora.com/']` used to silently leave quora unblocked
-// because the second entry dropped during normalization.
-
-const runShimWithDomainEntry = async (
-  field: 'allowed_domains' | 'blocked_domains',
-  raw: unknown,
-) => {
-  const { backend } = makeStubDeps();
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation({
-    payload: {
-      tools: [
-        {
-          type: 'web_search',
-          filters: { [field]: [raw] as unknown as string[] },
-        },
-      ],
-    },
-  });
-  const script = scriptedRun([messageTurn('never reached', 0)]);
-  const result = await shim(inv, makeGatewayCtx(), script.run);
-  return { result, backend, script };
-};
-
-for (const field of ['allowed_domains', 'blocked_domains'] as const) {
-  test(`${field} entry with https:// prefix rejects with 400 invalid domain`, async () => {
-    const { result, backend, script } = await runShimWithDomainEntry(field, 'https://quora.com/');
-    assert(result.type === 'api-error');
-    assertEquals(result.status, 400);
-    assertEquals(script.callCount(), 0);
-    assertEquals(backend.calls.length, 0);
-    const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { type: string; param: string; message: string } };
-    assertEquals(body.error.type, 'invalid_request_error');
-    assertEquals(body.error.param, 'tools');
-    assert(body.error.message.includes('Invalid domain'));
-  });
-
-  test(`${field} entry with http:// prefix rejects with 400`, async () => {
-    const { result } = await runShimWithDomainEntry(field, 'http://example.com');
-    assert(result.type === 'api-error');
-    assertEquals(result.status, 400);
-    const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string; message: string } };
-    assertEquals(body.error.param, 'tools');
-    assert(body.error.message.includes('Invalid domain'));
-  });
-
-  test(`${field} entry with a path rejects with 400`, async () => {
-    const { result } = await runShimWithDomainEntry(field, 'example.com/some/path');
-    assert(result.type === 'api-error');
-    assertEquals(result.status, 400);
-    const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string; message: string } };
-    assertEquals(body.error.param, 'tools');
-    assert(body.error.message.includes('Invalid domain'));
-  });
-
-  test(`${field} entry with a port rejects with 400`, async () => {
-    const { result } = await runShimWithDomainEntry(field, 'example.com:8080');
-    assert(result.type === 'api-error');
-    assertEquals(result.status, 400);
-    const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string; message: string } };
-    assertEquals(body.error.param, 'tools');
-  });
-
-  test(`${field} entry with a query string rejects with 400`, async () => {
-    const { result } = await runShimWithDomainEntry(field, 'example.com?q=1');
-    assert(result.type === 'api-error');
-    assertEquals(result.status, 400);
-  });
-
-  test(`${field} empty-string entry rejects with 400`, async () => {
-    const { result } = await runShimWithDomainEntry(field, '');
-    assert(result.type === 'api-error');
-    assertEquals(result.status, 400);
-    const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string; message: string } };
-    assertEquals(body.error.param, 'tools');
-  });
-
-  test(`${field} whitespace-only entry rejects with 400 (no surface expansion via .trim())`, async () => {
-    const { result } = await runShimWithDomainEntry(field, '   ');
-    assert(result.type === 'api-error');
-    assertEquals(result.status, 400);
-  });
-
-  test(`${field} non-string entry rejects with 400 (typed-but-not-string)`, async () => {
-    const { result } = await runShimWithDomainEntry(field, null);
-    assert(result.type === 'api-error');
-    assertEquals(result.status, 400);
-    const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string; message: string } };
-    assertEquals(body.error.param, 'tools');
-    // Non-string rejection mirrors `invalid_type` shape: message
-    // describes what was expected vs got.
-    assert(body.error.message.includes('Expected string'));
-  });
-
-  test(`${field} exceeding 100 entries rejects with 400 (matches OpenAI documented cap)`, async () => {
-    const oversized = Array.from({ length: 101 }, (_, i) => `host${i}.example`);
-    const { backend } = makeStubDeps();
-    const shim = withResponsesWebSearchShim;
-    const inv = makeInvocation({
-      payload: {
-        tools: [{ type: 'web_search', filters: { [field]: oversized } }],
-      },
-    });
-    const script = scriptedRun([messageTurn('never reached', 0)]);
-    const result = await shim(inv, makeGatewayCtx(), script.run);
-    assert(result.type === 'api-error');
-    assertEquals(result.status, 400);
-    assertEquals(script.callCount(), 0);
-    assertEquals(backend.calls.length, 0);
-    const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { type: string; param: string; message: string } };
-    assertEquals(body.error.type, 'invalid_request_error');
-    assertEquals(body.error.param, 'tools');
-    assert(body.error.message.includes('at most 100'));
-    assert(body.error.message.includes('101'));
-  });
-
-  test(`${field} exactly 100 entries is accepted (boundary inclusive)`, async () => {
-    const exactly100 = Array.from({ length: 100 }, (_, i) => `host${i}.example`);
-    makeStubDeps();
-    const shim = withResponsesWebSearchShim;
-    const inv = makeInvocation({
-      payload: {
-        tools: [{ type: 'web_search', filters: { [field]: exactly100 } }],
-      },
-    });
-    const script = scriptedRun([messageTurn('done', 0)]);
-    const result = await shim(inv, makeGatewayCtx(), script.run);
-    assert(result.type === 'events');
-    await collectFrames(result.events);
-  });
-}
-
-test('mixed list with one prefixed entry names the offending index (no silent drop)', async () => {
-  // Concrete regression: a client sending blocked_domains
-  // ['reddit.com', 'https://quora.com/'] previously had `quora.com`
-  // silently NOT blocked. Reject at the boundary so the violating
-  // index is named.
-  const { result } = await runShimMixedList('blocked_domains', ['reddit.com', 'https://quora.com/']);
-  assert(result.type === 'api-error');
-  assertEquals(result.status, 400);
-  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string; message: string } };
-  assertEquals(body.error.param, 'tools');
-  assert(body.error.message.includes('quora.com'));
-});
-
-const runShimMixedList = async (
-  field: 'allowed_domains' | 'blocked_domains',
-  entries: unknown[],
-) => {
-  const { backend } = makeStubDeps();
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation({
-    payload: {
-      tools: [
-        {
-          type: 'web_search',
-          filters: { [field]: entries as unknown as string[] },
-        },
-      ],
-    },
-  });
-  const script = scriptedRun([messageTurn('never reached', 0)]);
-  const result = await shim(inv, makeGatewayCtx(), script.run);
-  return { result, backend, script };
-};
-
-test('invalid search_context_size value rejects with 400 (no silent fall-through to provider default)', async () => {
-  // `search_context_size` is a closed enum on the wire (low/medium/high
-  // per openai-python `WebSearchTool.search_context_size`). An unknown
-  // string used to fall through to the provider's own (smaller)
-  // default — silently shrinking the result set. Reject at the
-  // boundary so the misuse surfaces.
-  const { backend } = makeStubDeps();
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation({
-    payload: {
-      tools: [
-        { type: 'web_search', search_context_size: 'XXL' as 'low' },
-      ],
-    },
-  });
-  const script = scriptedRun([messageTurn('never reached', 0)]);
-  const result = await shim(inv, makeGatewayCtx(), script.run);
-  assert(result.type === 'api-error');
-  assertEquals(result.status, 400);
-  assertEquals(script.callCount(), 0);
-  assertEquals(backend.calls.length, 0);
-  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { type: string; param: string; message: string } };
-  assertEquals(body.error.type, 'invalid_request_error');
-  assertEquals(body.error.param, 'tools[].search_context_size');
-  assert(body.error.message.includes('XXL'));
+  assertEquals(body.error.message, "Invalid domain 'https://quora.com/'");
 });
 
 for (const field of ['external_web_access', 'search_content_types', 'return_token_budget'] as const) {
@@ -1434,77 +1058,6 @@ for (const field of ['external_web_access', 'search_content_types', 'return_toke
     assertEquals(events[events.length - 1].type, 'response.completed');
   });
 }
-
-test('array-shaped filters rejects with 400 (typeof null/[] === "object" guards must not no-op)', async () => {
-  // `typeof []` is `'object'`, so a plain `typeof filtersField !==
-  // 'object'` guard would let `filters: []` pass and then silently
-  // no-op (reading `.allowed_domains` on an array yields undefined).
-  // Per OpenAPI `WebSearchTool.filters` is object-or-null; reject
-  // arrays at the boundary so the client sees the misuse instead of
-  // a downstream filter behaving as if nothing was configured.
-  const { backend } = makeStubDeps();
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation({
-    payload: {
-      tools: [
-        {
-          type: 'web_search',
-          filters: [1, 2, 3] as unknown as { allowed_domains?: string[] },
-        },
-      ],
-    },
-  });
-  const script = scriptedRun([messageTurn('never reached', 0)]);
-  const result = await shim(inv, makeGatewayCtx(), script.run);
-  assert(result.type === 'api-error');
-  assertEquals(result.status, 400);
-  assertEquals(script.callCount(), 0);
-  assertEquals(backend.calls.length, 0);
-  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { message: string; param: string } };
-  assert(body.error.message.includes('must be an object'));
-  assert(body.error.message.includes('array'));
-  // `param` must be exactly `tools` (not a sub-field), since
-  // `tools[].filters` itself is the offending location.
-  assertEquals(body.error.param, 'tools');
-});
-
-test('empty allowed_domains array is a no-op (not a misuse signal)', async () => {
-  // Empty list is the explicit "no allow-list" shape; it's a valid
-  // client input. Only a NON-empty list with all-malformed entries is
-  // a misuse worth rejecting.
-  makeStubDeps();
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation({
-    payload: {
-      tools: [{ type: 'web_search', filters: { allowed_domains: [] } }],
-    },
-  });
-  const script = scriptedRun([messageTurn('done', 0)]);
-  const result = await shim(inv, makeGatewayCtx(), script.run);
-  assert(result.type === 'events');
-  await collectFrames(result.events);
-});
-
-test('null allowed_domains is a no-op (treated the same as omitted)', async () => {
-  // Tool authors sometimes use `null` and `undefined` interchangeably
-  // as the "field absent" signal; neither should reject.
-  makeStubDeps();
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation({
-    payload: {
-      tools: [
-        {
-          type: 'web_search',
-          filters: { allowed_domains: null as unknown as string[] },
-        },
-      ],
-    },
-  });
-  const script = scriptedRun([messageTurn('done', 0)]);
-  const result = await shim(inv, makeGatewayCtx(), script.run);
-  assert(result.type === 'events');
-  await collectFrames(result.events);
-});
 
 // ── Domain filter blocks open ─────────────────────────────────────────
 
@@ -4153,35 +3706,6 @@ test('tool_choice "auto" stays "auto" — no demotion when never forced', async 
   assertEquals(seenToolChoices[1], 'auto');
 });
 
-test('cap-exceeded does NOT set tool_choice="none" — the cap snippet alone nudges the model toward other tools', async () => {
-  // `'none'` blocks every tool the model can call — including client tools
-  // the model needs to make progress on the user's task. The cap intent is
-  // "stop calling web_search", which `'none'` does not express. The cap
-  // path relies solely on the exhausted-budget snippet to nudge the model
-  // to switch tools or settle on a terminal message.
-  makeStubDeps();
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation({ payload: { tool_choice: 'auto' } });
-  // 30 search turns, then turn 31 (cap-exceeded), then a final message.
-  const searchTurns: ScriptedTurn[] = [];
-  for (let i = 0; i < 31; i++) {
-    searchTurns.push(searchCallTurn(0, `call_${i}`, `q${i}`));
-  }
-  searchTurns.push(messageTurn('done', 0));
-  const seenToolChoices: unknown[] = [];
-  const baseScript = scriptedRun(searchTurns);
-  const wrappedRun = async () => {
-    seenToolChoices.push(inv.payload.tool_choice);
-    return await baseScript.run();
-  };
-
-  await runShimAndDrain(shim, inv, makeGatewayCtx(), wrappedRun);
-
-  // Every turn observed `'auto'` — no demotion to 'none' after the cap.
-  assertEquals(seenToolChoices[30], 'auto');
-  assertEquals(seenToolChoices[31], 'auto');
-});
-
 test('max_tool_calls is forwarded to upstream turns but does not locally bypass server tools', async () => {
   const { backend } = makeStubDeps();
   const shim = withResponsesWebSearchShim;
@@ -4603,14 +4127,17 @@ test('downstream AbortSignal threads through to provider search / fetchPage and 
   // Cancelled requests must stop generating upstream load. The shim
   // threads the request's `downstreamAbortSignal` into every backend
   // provider call so providers can observe and abort.
-  let observedSignal: AbortSignal | undefined;
+  let signalObserved!: (signal: AbortSignal | undefined) => void;
+  const searchStarted = new Promise<AbortSignal | undefined>(resolve => {
+    signalObserved = resolve;
+  });
   const controller = new AbortController();
   const { backend } = makeStubDeps({
     providerOverrides: {
       // Capture the signal the shim hands us; resolve only when the
       // signal aborts so we can assert downstream propagation.
       async search(request) {
-        observedSignal = request.signal;
+        signalObserved(request.signal);
         await new Promise<void>((resolve, reject) => {
           if (request.signal?.aborted) {
             reject(new Error('aborted'));
@@ -4641,11 +4168,9 @@ test('downstream AbortSignal threads through to provider search / fetchPage and 
   // until the abort surfaces as a thrown rejection in the loop.
   const drainPromise = collectFrames(result.events).catch(() => []);
 
-  // Wait a microtask for the search() to be invoked and capture the signal.
-  while (observedSignal === undefined) {
-    await new Promise<void>(resolve => setTimeout(resolve, 0));
-  }
+  const observedSignal = await searchStarted;
   // Same instance identity — not a clone.
+  assert(observedSignal !== undefined);
   assertEquals(observedSignal, controller.signal);
   assertFalse(observedSignal.aborted);
 

@@ -210,7 +210,7 @@ export const buildTargetRequest = (payload: GeminiPayload, model: string): ChatC
     stream: true,
     messages: [],
   };
-  const unmatchedToolCallIds: GeminiToolCallIds = {};
+  const unmatchedToolCallIds: GeminiToolCallIds = new Map();
 
   const systemText = geminiText(payload.systemInstruction);
   if (systemText !== null) {

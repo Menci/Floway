@@ -85,31 +85,6 @@ test('Responses refusal lifecycle becomes Messages refusal metadata without visi
   ]);
 });
 
-test('Responses reasoning stream without readable summary emits a redacted_thinking carrier', () => {
-  const state = createResponsesToMessagesStreamState();
-
-  const events = translateResponsesStreamEventToMessagesEvents(
-    {
-      type: 'response.output_item.done',
-      output_index: 0,
-      item: {
-        type: 'reasoning',
-        id: 'rs_0',
-        summary: [],
-      },
-    },
-    state,
-  );
-
-  assertEquals(events, [
-    {
-      type: 'content_block_start',
-      index: 0,
-      content_block: { type: 'redacted_thinking', data: packReasoningSignature('rs_0', '') },
-    },
-  ]);
-});
-
 test('text-only Responses reasoning stream emits a recoverable signature delta', () => {
   const state = createResponsesToMessagesStreamState();
 

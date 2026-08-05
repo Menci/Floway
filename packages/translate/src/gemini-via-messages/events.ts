@@ -171,10 +171,18 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
 
     case 'message_delta': {
       if (event.usage) state.usage = mergeMessagesUsageSnapshot(state.usage, event.usage);
+      if (event.delta.stop_reason === undefined || event.delta.stop_reason === null) {
+        if (event.usage !== undefined) {
+          const usage = mapUsage(state, true);
+          if (usage !== undefined) yield eventFrame({ usageMetadata: usage });
+        }
+        break;
+      }
+      const usage = mapUsage(state, event.usage !== undefined);
       yield eventFrame(geminiCandidateEvent(
         flushGeminiThoughtSignature(state),
         messagesStopReasonToGemini(event.delta.stop_reason),
-        mapUsage(state, event.usage !== undefined),
+        usage,
         event.delta.stop_reason === 'refusal' ? messagesRefusalExplanation(event.delta.stop_details) : undefined,
       ));
       break;

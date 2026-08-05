@@ -60,13 +60,13 @@ const loadPageData = async (
 
 const unloadedPageData: Pick<ApiKeysPageData, 'keys' | 'upstreams' | 'models'> = { keys: null, upstreams: null, models: null };
 
-export async function clientLoader(): Promise<LoaderData> {
+export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise<LoaderData> {
   requireDashboardSession();
-  const data = await loadPageData(unloadedPageData);
+  const data = await loadPageData(unloadedPageData, request.signal);
   const stored = localStorage.getItem(selectedKeyStorageKey) ?? '';
   const selectedKeyId = data.keys?.some(key => key.id === stored) ? stored : '';
   if (!selectedKeyId) return { ...data, selectedKeyId, setupError: null, setupLease: null };
-  const setup = await callApi(() => api.api.setup.$post({ json: { apiKeyId: selectedKeyId } }));
+  const setup = await callApi(() => api.api.setup.$post({ json: { apiKeyId: selectedKeyId } }, { init: { signal: request.signal } }));
   return { ...data, selectedKeyId, setupError: setup.error?.message ?? null, setupLease: setup.data ?? null };
 }
 
@@ -173,7 +173,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
 
         <Panel className="min-w-0">
           <AgentSetupCard
-            initialApiKeyId={loaderData.selectedKeyId || null}
+            initialApiKeyId={loaderData.selectedKeyId ?? null}
             initialError={loaderData.setupError}
             initialLease={loaderData.setupLease}
             models={agentSetupModels}

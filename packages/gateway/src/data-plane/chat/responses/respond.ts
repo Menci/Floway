@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
 import { wrapResponsesClientEgress } from './client-output.ts';
+import { isResponsesResponseTerminalEvent, normalizeResponsesStreamLifecycle } from './stream-lifecycle.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
@@ -11,7 +12,7 @@ import { forwardUpstreamHeaders, mergeForwardedUpstreamHeaders } from '../../sha
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
 import { doneFrame, eventFrame, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { responsesProtocolFrameToSSEFrame, RESPONSES_MISSING_TERMINAL_MESSAGE, collectResponsesProtocolEventsToResult } from '@floway-dev/protocols/responses';
-import { isResponsesTerminalEvent, type CanonicalResponsesPayload, type ClientResponseResource, type ClientResponsesStreamEvent, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { type CanonicalResponsesPayload, type ClientResponseResource, type ClientResponsesStreamEvent, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
 import { apiErrorToResponse } from '@floway-dev/provider';
 
@@ -53,7 +54,7 @@ export const respondResponses = async (
   if (result.type !== 'events') return respondResponsesFailure(result, ctx);
 
   const state = new SourceStreamState();
-  const observed = observeResponsesFrames(result.events, state, ctx);
+  const observed = observeResponsesFrames(normalizeResponsesStreamLifecycle(result.events), state, ctx);
   const frames = wrapResponsesClientEgress(observed, ctx, request);
 
   if (!wantsStream) {
@@ -131,7 +132,7 @@ const internalResponsesStreamErrorEvent = (error: unknown): ClientResponsesStrea
 
 // --- frame observation ---
 
-const isResponsesTerminalFrame = (frame: ProtocolFrame<ResponsesStreamEvent>) => frame.type === 'event' && isResponsesTerminalEvent(frame.event);
+const isResponsesTerminalFrame = (frame: ProtocolFrame<ResponsesStreamEvent>) => frame.type === 'event' && isResponsesResponseTerminalEvent(frame.event);
 
 const observeResponsesFrames = async function* (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>, state: SourceStreamState, ctx: GatewayCtx) {
   for await (const frame of frames) {
@@ -152,7 +153,13 @@ const responsesFailedEvent = (resource: ClientResponseResource, error: unknown):
   const debug = toInternalDebugError(error);
   return {
     type: 'response.failed',
-    response: { ...resource, status: 'failed', error: { code: debug.type, message: debug.message } },
+    response: {
+      ...resource,
+      status: 'failed',
+      completed_at: Math.floor(Date.now() / 1000),
+      store: false,
+      error: { code: debug.type, message: debug.message },
+    },
   } as ClientResponsesStreamEvent;
 };
 

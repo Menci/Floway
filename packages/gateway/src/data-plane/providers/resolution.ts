@@ -1,14 +1,43 @@
-import { isEqual, uniqWith } from 'es-toolkit';
-
 import { internalModelFromProviderModel } from './catalog.ts';
 import { fetchUpstreamModelsCached } from './models-cache.ts';
 import { listModelProviders, type GatewayProvider } from './registry.ts';
+import { settleUnlessAborted } from './settle.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasRecord } from '../../repo/types.ts';
+import { serializeCanonicalJson } from '../../repo/upstream-json.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelKind } from '@floway-dev/protocols/common';
-import { isAbortError, type Fetcher, type ModelCandidate } from '@floway-dev/provider';
+import type { Fetcher, ModelCandidate, ProviderModel } from '@floway-dev/provider';
+
+interface ProviderCatalogAccess {
+  readonly fetcher: Fetcher;
+  readonly models: ProviderModel[];
+}
+
+type ProviderCatalogLoader = (provider: GatewayProvider) => Promise<ProviderCatalogAccess>;
+
+// One model-resolution request gets one catalog promise and one fetcher per
+// provider. Keeping rejected promises in this request-local memo is deliberate:
+// an alias with many targets must not turn one cold catalog outage into one
+// upstream request per target.
+const createProviderCatalogLoader = (
+  fetcherForUpstream: (upstreamId: string) => Fetcher,
+  scheduler: BackgroundScheduler,
+): ProviderCatalogLoader => {
+  const byProvider = new Map<GatewayProvider, Promise<ProviderCatalogAccess>>();
+  return provider => {
+    const existing = byProvider.get(provider);
+    if (existing !== undefined) return existing;
+    const loading = (async () => {
+      const fetcher = fetcherForUpstream(provider.upstreamId);
+      const models = await fetchUpstreamModelsCached(provider, { scheduler, fetcher });
+      return { fetcher, models };
+    })();
+    byProvider.set(provider, loading);
+    return loading;
+  };
+};
 
 // Resolve one inbound id against one upstream. The upstream's
 // `modelPrefix.addressable` configuration decides which lookup branches
@@ -28,8 +57,7 @@ const enumerateOneUpstreamCandidates = async (
   provider: GatewayProvider,
   modelId: string,
   kind: ModelKind,
-  fetcher: Fetcher,
-  scheduler: BackgroundScheduler,
+  loadCatalog: ProviderCatalogLoader,
 ): Promise<{ candidates: ModelCandidate[]; sawAnyId: boolean }> => {
   const cfg = provider.modelPrefix;
   const lookupIds: string[] = [];
@@ -43,7 +71,7 @@ const enumerateOneUpstreamCandidates = async (
   }
   if (lookupIds.length === 0) return { candidates: [], sawAnyId: false };
 
-  const providedModels = await fetchUpstreamModelsCached(provider, { scheduler, fetcher });
+  const { fetcher, models: providedModels } = await loadCatalog(provider);
   const disabled = new Set(provider.disabledPublicModelIds);
   const candidates: ModelCandidate[] = [];
   let sawAnyId = false;
@@ -81,16 +109,28 @@ export const enumerateRealModelCandidates = async (
   readonly sawAnyId: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
-  const settled = await Promise.allSettled(providers.map(provider =>
-    enumerateOneUpstreamCandidates(provider, modelId, kind, fetcherForUpstream(provider.upstreamId), scheduler)));
+  const loadCatalog = createProviderCatalogLoader(fetcherForUpstream, scheduler);
+  return await enumerateRealModelCandidatesWithLoader(modelId, kind, providers, loadCatalog);
+};
+
+const enumerateRealModelCandidatesWithLoader = async (
+  modelId: string,
+  kind: ModelKind,
+  providers: readonly GatewayProvider[],
+  loadCatalog: ProviderCatalogLoader,
+): Promise<{
+  readonly candidates: readonly ModelCandidate[];
+  readonly sawAnyId: boolean;
+  readonly failedUpstreams: readonly string[];
+}> => {
+  const settled = await settleUnlessAborted(providers.map(provider =>
+    enumerateOneUpstreamCandidates(provider, modelId, kind, loadCatalog)));
 
   const failedUpstreams: string[] = [];
   const candidates: ModelCandidate[] = [];
   let sawAnyId = false;
   for (const [index, result] of settled.entries()) {
     if (result.status === 'rejected') {
-      const error = result.reason;
-      if (isAbortError(error)) throw error;
       failedUpstreams.push(providers[index].name);
       continue;
     }
@@ -115,20 +155,18 @@ const DATED_SUFFIX = /-\d{8}$/;
 const resolveRealCandidates = async (
   modelId: string,
   kind: ModelKind,
-  providers: readonly GatewayProvider[],
-  fetcherForUpstream: (upstreamId: string) => Fetcher,
-  scheduler: BackgroundScheduler,
+  enumerateReal: (modelId: string, kind: ModelKind) => ReturnType<typeof enumerateRealModelCandidatesWithLoader>,
 ): Promise<{
   readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
-  const first = await enumerateRealModelCandidates(modelId, kind, providers, fetcherForUpstream, scheduler);
+  const first = await enumerateReal(modelId, kind);
   if (first.candidates.length > 0 || first.sawAnyId || !DATED_SUFFIX.test(modelId)) {
     return { candidates: first.candidates, sawModel: first.sawAnyId, failedUpstreams: first.failedUpstreams };
   }
   const stripped = modelId.replace(DATED_SUFFIX, '');
-  const second = await enumerateRealModelCandidates(stripped, kind, providers, fetcherForUpstream, scheduler);
+  const second = await enumerateReal(stripped, kind);
   return {
     candidates: second.candidates,
     sawModel: second.sawAnyId,
@@ -149,6 +187,33 @@ const orderAliasTargets = (alias: ModelAliasRecord): readonly ModelAliasRecord['
     [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
   }
   return shuffled;
+};
+
+interface AliasCandidateCollector {
+  readonly candidates: ModelCandidate[];
+  readonly add: (candidate: ModelCandidate) => void;
+}
+
+const createAliasCandidateCollector = (): AliasCandidateCollector => {
+  const rulesByUpstreamByModel = new Map<string, Map<string, Set<string>>>();
+  const candidates: ModelCandidate[] = [];
+  const add = (candidate: ModelCandidate): void => {
+    let byUpstream = rulesByUpstreamByModel.get(candidate.model.id);
+    if (byUpstream === undefined) {
+      byUpstream = new Map();
+      rulesByUpstreamByModel.set(candidate.model.id, byUpstream);
+    }
+    let rules = byUpstream.get(candidate.provider.upstreamId);
+    if (rules === undefined) {
+      rules = new Set();
+      byUpstream.set(candidate.provider.upstreamId, rules);
+    }
+    const rulesKey = serializeCanonicalJson(candidate.rules ?? {});
+    if (rules.has(rulesKey)) return;
+    rules.add(rulesKey);
+    candidates.push(candidate);
+  };
+  return { candidates, add };
 };
 
 // Per-request model resolution. Two-branch chain:
@@ -205,12 +270,24 @@ export const enumerateModelCandidates = async ({
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
-  const fetcherForUpstream = await createPerRequestFetcher(runtimeLocation);
-  const providers = await listModelProviders(upstreamIds);
+  if (upstreamIds !== null && upstreamIds.length === 0) {
+    return { candidates: [], sawModel: false, failedUpstreams: [] };
+  }
 
-  const alias = await getRepo().modelAliases.getByName(model);
+  const repo = getRepo();
+  const upstreams = await repo.upstreams.list();
+  const providers = await listModelProviders(upstreamIds, upstreams);
+  if (providers.length === 0) {
+    return { candidates: [], sawModel: false, failedUpstreams: [] };
+  }
+  const fetcherForUpstream = await createPerRequestFetcher(runtimeLocation, upstreams);
+  const loadCatalog = createProviderCatalogLoader(fetcherForUpstream, scheduler);
+  const enumerateReal = (modelId: string, modelKind: ModelKind) =>
+    enumerateRealModelCandidatesWithLoader(modelId, modelKind, providers, loadCatalog);
+
+  const alias = await repo.modelAliases.getByName(model);
   if (alias === null) {
-    return await resolveRealCandidates(model, kind, providers, fetcherForUpstream, scheduler);
+    return await resolveRealCandidates(model, kind, enumerateReal);
   }
 
   // Walk every target, tag each returned candidate with the target's rule
@@ -220,21 +297,17 @@ export const enumerateModelCandidates = async ({
   // same physical binding under two rule variants.
   const aggregatedFailed = new Set<string>();
   let sawAny = false;
-  const flat: ModelCandidate[] = [];
+  const collected = createAliasCandidateCollector();
   for (const target of orderAliasTargets(alias)) {
-    const result = await resolveRealCandidates(target.target_model_id, kind, providers, fetcherForUpstream, scheduler);
+    const result = await resolveRealCandidates(target.target_model_id, kind, enumerateReal);
     for (const name of result.failedUpstreams) aggregatedFailed.add(name);
     if (result.sawModel) sawAny = true;
     for (const candidate of result.candidates) {
-      flat.push({ ...candidate, rules: target.rules });
+      collected.add({ ...candidate, rules: target.rules });
     }
   }
-  const deduped = uniqWith(flat, (candidate, existing) =>
-    candidate.model.id === existing.model.id
-    && candidate.provider.upstreamId === existing.provider.upstreamId
-    && isEqual(candidate.rules, existing.rules));
   return {
-    candidates: deduped,
+    candidates: collected.candidates,
     sawModel: sawAny,
     failedUpstreams: [...aggregatedFailed],
   };

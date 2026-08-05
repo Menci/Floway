@@ -72,7 +72,7 @@ export const buildTargetRequest = (payload: ChatCompletionsPayload): CanonicalRe
     if (message.role === 'assistant') {
       const assistantContent = translateAssistantContent(message);
       const reasoningItems = translateChatCompletionsReasoningItems<ResponsesInputReasoning>(message.reasoning_items);
-      const scalarReasoning = scalarToResponsesReasoningItem<ResponsesInputReasoning>(message.reasoning_text);
+      const scalarReasoning = scalarToResponsesReasoningItem<ResponsesInputReasoning>(message.reasoning_text, message.reasoning_opaque);
       if (reasoningItems) {
         input.push(...reasoningItems);
       } else if (scalarReasoning) {

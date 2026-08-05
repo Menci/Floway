@@ -150,18 +150,44 @@ test('mergeClaudeVariants merges 4.6 base + 1m + fast', () => {
   assertEquals(m.capabilities?.limits?.max_context_window_tokens, 1_000_000);
 });
 
-test('mergeClaudeVariants leaves non-Claude models untouched', () => {
+test('mergeClaudeVariants deterministically projects a family with no exact base entry', () => {
   const input: CopilotModelsResponse = {
     object: 'list',
-    data: [claudeVariant('gpt-5.4', { maxContextWindowTokens: 272_000 }), claudeVariant('gemini-2.5-pro', { maxContextWindowTokens: 1_000_000 })],
+    data: [
+      { ...claudeVariant('claude-opus-4.7-xhigh'), display_name: 'XHigh only' },
+      { ...claudeVariant('claude-opus-4.7-high'), display_name: 'High fallback' },
+    ],
+  };
+
+  const [merged] = mergeClaudeVariants(input).data;
+  assertEquals(merged.id, 'claude-opus-4-7');
+  assertEquals(merged.display_name, 'High fallback');
+});
+
+test('mergeClaudeVariants leaves non-Claude models untouched', () => {
+  const gpt: CopilotRawModel = {
+    ...claudeVariant('gpt-5.4', { maxContextWindowTokens: 272_000 }),
+    name: 'GPT wire name',
+    version: '2026-08-01',
+    display_name: 'GPT display name',
+    owned_by: 'openai',
+  };
+  const gemini: CopilotRawModel = {
+    ...claudeVariant('gemini-2.5-pro', { maxContextWindowTokens: 1_000_000 }),
+    name: 'Gemini wire name',
+    version: '002',
+    display_name: 'Gemini display name',
+    owned_by: 'google',
+  };
+  const input: CopilotModelsResponse = {
+    object: 'list',
+    data: [gpt, gemini],
   };
 
   const merged = mergeClaudeVariants(input);
-  assertEquals(
-    merged.data.map(m => m.id),
-    ['gpt-5.4', 'gemini-2.5-pro'],
-  );
-  assertEquals(merged.data[0].capabilities?.limits?.max_context_window_tokens, 272_000);
+  assertEquals(merged.data, input.data);
+  assertEquals(merged.data[0] === gpt, true);
+  assertEquals(merged.data[1] === gemini, true);
 });
 
 test('mergeClaudeVariants preserves order across mixed claude/non-claude models', () => {

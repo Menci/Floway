@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { test } from 'vitest';
 
 import { FsFileStore } from '../src/fs-file-store.ts';
-import { assertEquals } from '@floway-dev/test-utils';
+import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const withTempRoot = async (fn: (root: string) => Promise<void>): Promise<void> => {
   const root = await mkdtemp(join(tmpdir(), 'fs-file-store-'));
@@ -46,4 +46,21 @@ test('put creates intermediate directories', () => withTempRoot(async root => {
   await store.put('deeply/nested/path/file.bin', new Uint8Array([42]));
   const read = await store.get('deeply/nested/path/file.bin');
   assertEquals(read, new Uint8Array([42]));
+}));
+
+test('every operation rejects a key that escapes the configured root', () => withTempRoot(async root => {
+  const store = new FsFileStore(join(root, 'files'));
+
+  await assertRejects(() => store.put('../escaped.bin', new Uint8Array([1])), Error, 'key escapes root');
+  await assertRejects(() => store.get('nested/../../escaped.bin'), Error, 'key escapes root');
+  await assertRejects(() => store.deleteKeys(['../../../escaped.bin']), Error, 'key escapes root');
+}));
+
+test('every operation rejects absolute keys even when they point inside the root', () => withTempRoot(async root => {
+  const store = new FsFileStore(root);
+  const key = join(root, 'absolute.bin');
+
+  await assertRejects(() => store.put(key, new Uint8Array([1])), Error, 'absolute keys are not supported');
+  await assertRejects(() => store.get(key), Error, 'absolute keys are not supported');
+  await assertRejects(() => store.deleteKeys([key]), Error, 'absolute keys are not supported');
 }));
