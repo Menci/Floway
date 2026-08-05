@@ -112,6 +112,8 @@ export class DumpAccumulator {
   private outputTokens: number | null = null;
   private errorMeta: DumpErrorMeta | null = null;
   private readonly preparedRequestBody: Promise<PreparedDumpRequestBody>;
+  private readonly terminalOutcome: Promise<void>;
+  private terminalOutcomeResolve: (() => void) | undefined;
 
   constructor(
     private readonly apiKey: ApiKey,
@@ -120,6 +122,7 @@ export class DumpAccumulator {
     private readonly startedAt: number,
     private readonly backgroundScheduler: BackgroundScheduler,
   ) {
+    this.terminalOutcome = new Promise(resolve => { this.terminalOutcomeResolve = resolve; });
     this.preparedRequestBody = getDumpStore().prepareRequestBody(requestBody);
     // Preparation starts eagerly and is awaited at terminal persistence. Mark
     // a rejection handled immediately so a long upstream wait cannot surface
@@ -136,10 +139,12 @@ export class DumpAccumulator {
   error(kind: 'upstream' | 'gateway', upstream?: string): void {
     this.errorMeta = { kind };
     if (upstream !== undefined) this.upstreamId = upstream;
+    this.settleTerminalOutcome();
   }
 
   failed(reason: unknown): void {
     this.errorMeta = { kind: 'failed', reason: typeof reason === 'string' ? reason : oneLineError(reason) };
+    this.settleTerminalOutcome();
   }
 
   // Records one protocol frame. Stored as the canonical ProtocolFrame so
@@ -159,6 +164,12 @@ export class DumpAccumulator {
     this.upstreamId = identity.upstream;
     this.inputTokens = tokenUsageInput(usage);
     this.outputTokens = tokenUsageOutput(usage);
+    this.settleTerminalOutcome();
+  }
+
+  private settleTerminalOutcome(): void {
+    this.terminalOutcomeResolve?.();
+    this.terminalOutcomeResolve = undefined;
   }
 
   // --- response-side: handler exit ---
@@ -212,14 +223,17 @@ export class DumpAccumulator {
       const finalizeCapture = (streamError: string | null): void => {
         if (finalized) return;
         finalized = true;
-        this.backgroundScheduler(this.write({
-          status: responseStatus,
-          headers: responseHeaders,
-          isStream: true,
-          bytes: new Uint8Array(),
-          payloadBytes,
-          streamError,
-        }));
+        this.backgroundScheduler((async () => {
+          await this.terminalOutcome;
+          await this.write({
+            status: responseStatus,
+            headers: responseHeaders,
+            isStream: true,
+            bytes: new Uint8Array(),
+            payloadBytes,
+            streamError,
+          });
+        })());
       };
       const forClient = new ReadableStream<Uint8Array>({
         pull: async controller => {
