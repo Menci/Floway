@@ -7,6 +7,7 @@ import { renderInApp } from '../../render';
 import { settle } from '../../settle';
 
 const AUTHORIZE_URL_PATH = '/api/upstreams/claude-code/oauth/authorize-url';
+const SETUP_AUTHORIZE_URL_PATH = '/api/upstreams/claude-code/setup-token/authorize-url';
 
 // Only the generation is under test, so the material is handed out by the
 // suite and the real stash / recall keep writing sessionStorage.
@@ -33,7 +34,7 @@ let authorizeResponse: (state: string) => Promise<Response>;
 let authorizeSignals: AbortSignal[];
 
 const authorizeUrlCount = () =>
-  fetchMock.mock.calls.filter(([input]) => String(input).includes(AUTHORIZE_URL_PATH)).length;
+  fetchMock.mock.calls.filter(([input]) => String(input).includes('/authorize-url')).length;
 
 const stashed = (flowKind: string) => {
   const raw = sessionStorage.getItem(`floway-pkce:claude-code:${flowKind}`);
@@ -47,7 +48,7 @@ beforeEach(() => {
   authorizeResponse = async state => Response.json({ authorize_url: `https://claude.ai/oauth/authorize?state=${state}` });
   fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const { pathname } = new URL(String(input), 'http://localhost');
-    if (pathname !== AUTHORIZE_URL_PATH) throw new Error(`Unexpected request to ${pathname}`);
+    if (pathname !== AUTHORIZE_URL_PATH && pathname !== SETUP_AUTHORIZE_URL_PATH) throw new Error(`Unexpected request to ${pathname}`);
     const body = JSON.parse(String(init?.body)) as { state: string };
     if (!init?.signal) throw new Error('Authorize URL request has no abort signal');
     authorizeSignals.push(init.signal);
