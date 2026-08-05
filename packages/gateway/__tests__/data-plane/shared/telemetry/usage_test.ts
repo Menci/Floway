@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { openAICacheTokensFromUsage, recordUsage } from '../../../../src/data-plane/shared/telemetry/usage.ts';
+import { openAICacheTokensFromUsage, recordUsage, tokenUsageFromImagesBody } from '../../../../src/data-plane/shared/telemetry/usage.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { basePricing } from '@floway-dev/protocols/common';
@@ -79,6 +79,88 @@ test('Zero is a valid count, not a missing signal', () => {
     openAICacheTokensFromUsage({ prompt_tokens: 10, completion_tokens: 2, prompt_tokens_details: { cached_tokens: 0 }, cached_tokens: 999 }),
     { cacheRead: 0, cacheWrite: 0 },
   );
+});
+
+test.each([
+  {
+    name: 'zero counts',
+    usage: { total_tokens: 0, input_tokens: 0, output_tokens: 0, input_tokens_details: { text_tokens: 0, image_tokens: 0 } },
+    expected: {},
+  },
+  {
+    name: 'split input modalities and image output',
+    usage: { total_tokens: 19, input_tokens: 12, output_tokens: 7, input_tokens_details: { text_tokens: 5, image_tokens: 7 } },
+    expected: { input: 5, input_image: 7, output_image: 7 },
+  },
+  {
+    name: 'maximum safe input count',
+    usage: {
+      total_tokens: Number.MAX_SAFE_INTEGER,
+      input_tokens: Number.MAX_SAFE_INTEGER,
+      output_tokens: 0,
+      input_tokens_details: { text_tokens: Number.MAX_SAFE_INTEGER, image_tokens: 0 },
+    },
+    expected: { input: Number.MAX_SAFE_INTEGER },
+  },
+  {
+    name: 'maximum safe output count',
+    usage: {
+      total_tokens: Number.MAX_SAFE_INTEGER,
+      input_tokens: 0,
+      output_tokens: Number.MAX_SAFE_INTEGER,
+      input_tokens_details: { text_tokens: 0, image_tokens: 0 },
+    },
+    expected: { output_image: Number.MAX_SAFE_INTEGER },
+  },
+])('tokenUsageFromImagesBody accepts $name', ({ usage, expected }) => {
+  assertEquals(tokenUsageFromImagesBody({ usage }), expected);
+});
+
+test.each([
+  { name: 'an array response', body: [] },
+  { name: 'missing usage', body: {} },
+  { name: 'array usage', body: { usage: [] } },
+  {
+    name: 'a missing required aggregate',
+    body: { usage: { input_tokens: 1, output_tokens: 1, input_tokens_details: { text_tokens: 1, image_tokens: 0 } } },
+  },
+  {
+    name: 'array input details',
+    body: { usage: { total_tokens: 2, input_tokens: 1, output_tokens: 1, input_tokens_details: [] } },
+  },
+  {
+    name: 'a missing required input detail',
+    body: { usage: { total_tokens: 2, input_tokens: 1, output_tokens: 1, input_tokens_details: { text_tokens: 1 } } },
+  },
+  {
+    name: 'negative counts',
+    body: { usage: { total_tokens: 0, input_tokens: -1, output_tokens: 1, input_tokens_details: { text_tokens: -1, image_tokens: 0 } } },
+  },
+  {
+    name: 'fractional counts',
+    body: { usage: { total_tokens: 2, input_tokens: 1.5, output_tokens: 0.5, input_tokens_details: { text_tokens: 1, image_tokens: 0.5 } } },
+  },
+  {
+    name: 'unsafe counts',
+    body: {
+      usage: {
+        total_tokens: Number.MAX_SAFE_INTEGER + 1,
+        input_tokens: Number.MAX_SAFE_INTEGER,
+        output_tokens: 1,
+        input_tokens_details: { text_tokens: Number.MAX_SAFE_INTEGER, image_tokens: 0 },
+      },
+    },
+  },
+  {
+    name: 'an inconsistent input detail sum',
+    body: { usage: { total_tokens: 3, input_tokens: 2, output_tokens: 1, input_tokens_details: { text_tokens: 1, image_tokens: 0 } } },
+  },
+  {
+    name: 'an inconsistent total',
+    body: { usage: { total_tokens: 4, input_tokens: 2, output_tokens: 1, input_tokens_details: { text_tokens: 1, image_tokens: 1 } } },
+  },
+])('tokenUsageFromImagesBody rejects $name', ({ body }) => {
+  assertEquals(tokenUsageFromImagesBody(body), null);
 });
 
 test('recordUsage persists caller-supplied metrics with resolved prices', async () => {
