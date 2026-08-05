@@ -27,23 +27,42 @@ const responseSnapshot = (event: ResponsesStreamEvent): ResponsesResult | undefi
 export const normalizeResponsesStreamLifecycle = async function* (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+  const iterator = frames[Symbol.asyncIterator]();
+  let sourceOpen = true;
   let announced: ResponsesResult | undefined;
   let upstreamError: Extract<ResponsesStreamEvent, { type: 'error' }> | undefined;
   let lastSequenceNumber: number | undefined;
   let terminalSeen = false;
 
-  for await (const frame of frames) {
-    if (terminalSeen) continue;
-    if (frame.type === 'done') continue;
+  const readSource = async (): Promise<IteratorResult<ProtocolFrame<ResponsesStreamEvent>>> => {
+    try {
+      const next = await iterator.next();
+      if (next.done) sourceOpen = false;
+      return next;
+    } catch (error) {
+      sourceOpen = false;
+      throw error;
+    }
+  };
 
-    const event = frame.event;
-    const snapshot = responseSnapshot(event);
-    if (snapshot !== undefined) announced = snapshot;
-    if (event.type === 'error') upstreamError = event;
-    if (event.sequence_number !== undefined) lastSequenceNumber = event.sequence_number;
+  try {
+    while (true) {
+      const next = await readSource();
+      if (next.done) break;
+      const frame = next.value;
+      if (terminalSeen || frame.type === 'done') continue;
 
-    yield frame;
-    if (isResponsesResponseTerminalEvent(event)) terminalSeen = true;
+      const event = frame.event;
+      const snapshot = responseSnapshot(event);
+      if (snapshot !== undefined) announced = snapshot;
+      if (event.type === 'error') upstreamError = event;
+      if (event.sequence_number !== undefined) lastSequenceNumber = event.sequence_number;
+
+      yield frame;
+      if (isResponsesResponseTerminalEvent(event)) terminalSeen = true;
+    }
+  } finally {
+    while (sourceOpen) await readSource();
   }
 
   if (terminalSeen) return;

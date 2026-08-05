@@ -61,6 +61,13 @@ const createControlledResponsesEvents = (
   let nextCalls = 0;
   const firstNextStarted = deferred<void>();
   const secondNextStarted = deferred<void>();
+  const eofRead = deferred<void>();
+
+  const observed = async (result: Promise<IteratorResult<ResponsesFrame>>): Promise<IteratorResult<ResponsesFrame>> => {
+    const resolved = await result;
+    if (resolved.done) eofRead.resolve();
+    return resolved;
+  };
 
   const offer = (result: IteratorResult<ResponsesFrame>): void => {
     const pending = pendingNext;
@@ -80,12 +87,12 @@ const createControlledResponsesEvents = (
           if (nextCalls === 1) firstNextStarted.resolve();
           if (nextCalls === 2) secondNextStarted.resolve();
           const queuedResult = queued.shift();
-          if (queuedResult !== undefined) return Promise.resolve(queuedResult);
-          if (closed) return Promise.resolve(closedResponsesIteratorResult());
+          if (queuedResult !== undefined) return observed(Promise.resolve(queuedResult));
+          if (closed) return observed(Promise.resolve(closedResponsesIteratorResult()));
 
           const pending = deferred<IteratorResult<ResponsesFrame>>();
           pendingNext = pending;
-          return pending.promise;
+          return observed(pending.promise);
         },
         return(): Promise<IteratorResult<ResponsesFrame>> {
           pendingNext?.resolve(closedResponsesIteratorResult());
@@ -100,6 +107,7 @@ const createControlledResponsesEvents = (
     nextCalls: () => nextCalls,
     firstNextStarted: firstNextStarted.promise,
     secondNextStarted: secondNextStarted.promise,
+    eofRead: eofRead.promise,
     enqueueFrame: (frame: ResponsesFrame) => {
       if (closed) throw new Error('Cannot enqueue a frame after the controlled stream closes');
       offer({ done: false, value: frame });
@@ -1934,7 +1942,7 @@ test('Responses WebSocket send failures close downstream delivery and drain the 
       'Responses WebSocket did not settle the failed downstream send',
     );
 
-    assertEquals(events.nextCalls(), 3);
+    await promiseWithin(events.eofRead, 'Responses WebSocket did not drain upstream EOF after the downstream send failed');
     assertEquals(signal.aborted, true);
     assert(signal.reason === sendFailure, 'expected the original send error to become the abort reason');
     client.close();
