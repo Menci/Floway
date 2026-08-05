@@ -66,8 +66,12 @@ const updateAggregate = (
   for (const bucketRow of record.buckets) {
     const metricMap = aggregate.bucketsByMetric[bucketRow.metric];
     const existing = metricMap.get(String(bucketRow.lower));
-    if (existing) existing.count += bucketRow.count;
-    else metricMap.set(String(bucketRow.lower), { ...bucketRow });
+    if (existing) {
+      if (existing.upper !== bucketRow.upper) {
+        throw new Error('performance_buckets rows disagree on histogram bounds');
+      }
+      existing.count += bucketRow.count;
+    } else metricMap.set(String(bucketRow.lower), { ...bucketRow });
   }
 };
 
