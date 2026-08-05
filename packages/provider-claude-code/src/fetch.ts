@@ -376,10 +376,7 @@ const performUpstreamCall = async (
     if (!('content-type' in passthrough)) passthrough['content-type'] = 'application/json';
     headers = { ...passthrough, authorization: `Bearer ${accessToken.entry.token}` };
   } else {
-    headers = {
-      ...Object.fromEntries(headersForMessagesCall(new Headers(pickClaudeCodeHeaders(upstreamModelId)), opts.call.anthropicBeta)),
-      authorization: `Bearer ${accessToken.entry.token}`,
-    };
+    headers = { ...pickClaudeCodeHeaders(upstreamModelId), authorization: `Bearer ${accessToken.entry.token}` };
   }
 
   // Force stream:true regardless of caller intent. The streaming envelope is

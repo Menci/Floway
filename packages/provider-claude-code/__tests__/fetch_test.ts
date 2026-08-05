@@ -251,7 +251,7 @@ describe('callClaudeCodeMessages — header surface', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     await callClaudeCodeMessages({
       upstreamId, model: sonnetModel, body: minimalBody,
-      shaped: false, call: noopUpstreamCallOptions(),
+      shaped: false, call: noopUpstreamCallOptions({ anthropicBeta: ['caller-beta-must-not-replace-mimicry'] }),
     });
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
     const wireHeaders = new Headers(init.headers);
@@ -264,7 +264,8 @@ describe('callClaudeCodeMessages — header surface', () => {
     seedAccount({ accessToken: freshAccessTokenEntry });
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     await callClaudeCodeMessages({
-      upstreamId, model: haikuModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
+      upstreamId, model: haikuModel, body: minimalBody, shaped: false,
+      call: noopUpstreamCallOptions({ anthropicBeta: ['caller-beta-must-not-replace-mimicry'] }),
     });
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
     expect(new Headers(init.headers).get('anthropic-beta')).toBe(CLAUDE_CODE_HEADERS_HAIKU['anthropic-beta']);
