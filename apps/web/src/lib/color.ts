@@ -30,12 +30,12 @@ export const hexToRgb = (hex: string): RgbTuple => rgbTuple(parseRgb(hex));
 export const rgbToHex = (r: number, g: number, b: number): string =>
   formatHex(rgbColor([r, g, b])).toUpperCase();
 
-export const rgbToHsv = (r: number, g: number, b: number): [number, number, number] => {
+export const rgbToHsv = (r: number, g: number, b: number): [number | undefined, number, number] => {
   const { h, s, v } = convertRgbToHsv(rgbColor([r, g, b]));
-  return [h ?? 0, s, v];
+  return [h, s, v];
 };
 
-export const hsvToRgb = (h: number, s: number, v: number): RgbTuple =>
+export const hsvToRgb = (h: number | undefined, s: number, v: number): RgbTuple =>
   rgbTuple(convertHsvToRgb({ h, s, v }));
 
 const linearRgb = (rgb: RgbTuple) => convertRgbToLrgb(rgbColor(rgb));
