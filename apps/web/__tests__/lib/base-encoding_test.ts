@@ -26,7 +26,9 @@ describe('browser base encoding', () => {
         binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
       }
       const encoded = encodeBase64BinaryString(binary);
-      expect(decodeWebBase64(encoded)).toEqual(bytes);
+      const decoded = decodeWebBase64(encoded);
+      expect(decoded).toHaveLength(bytes.length);
+      expect(decoded.every((byte, index) => byte === bytes[index])).toBe(true);
       expect(decodeWebBase64BinaryString(encoded)).toBe(binary);
     } finally {
       if (fromBase64) Object.defineProperty(Uint8Array, 'fromBase64', fromBase64);
