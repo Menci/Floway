@@ -4,11 +4,26 @@ import { InMemoryRepo } from './memory.ts';
 import { createSqliteTestDb } from './test-sqlite.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type {
+  ApiKey,
   PerformanceDimensions,
+  PerformanceOverviewQueryOptions,
   PerformanceRepo,
   PerformanceSample,
   PerformanceTelemetryRecord,
 } from '../../src/repo/types.ts';
+
+const apiKey = (id: string, userId: number): ApiKey => ({
+  id,
+  userId,
+  name: id,
+  key: `raw-${id}`,
+  serverSecret: String(userId).padStart(2, '0').repeat(32),
+  createdAt: '2026-01-01T00:00:00.000Z',
+  upstreamIds: null,
+  deletedAt: null,
+  dumpRetentionSeconds: null,
+  responsesRetentionSeconds: 0,
+});
 
 const sample = (over: Partial<PerformanceSample> = {}): PerformanceSample => ({
   hour: '2026-06-30T09',
@@ -236,4 +251,76 @@ describe('SqlPerformanceRepo operation vocabulary', () => {
     const repo = new SqlRepo(db).performance;
     await expect(repo.listAll()).rejects.toThrow('Invalid performance operation: "future-operation"');
   });
+});
+
+it('SQL Performance overview matches the in-memory oracle across every grouping and filter', async () => {
+  const sql = new SqlRepo(await createSqliteTestDb());
+  const memory = new InMemoryRepo();
+  const repos = [sql, memory];
+  for (const repo of repos) {
+    await repo.apiKeys.save(apiKey('key-1', 1));
+    await repo.apiKeys.save(apiKey('key-2', 2));
+    await Promise.all([
+      repo.performance.set({
+        hour: '2026-11-01T05', keyId: 'key-1', model: 'model-a', upstream: 'up-a',
+        operation: 'chat', runtimeLocation: 'SJC', requests: 100,
+        ttftSamplesOk: 90, errorsWithOutput: 10, errorsNoOutput: 0, neutral: 0,
+        tpotSamples: 90, ttftMsSum: 12_000, tpotUsSum: 45_000,
+        buckets: [
+          { metric: 'ttft_ms', lower: 0, upper: 100, count: 90 },
+          { metric: 'ttft_ms', lower: 200, upper: 300, count: 10 },
+          { metric: 'tpot_us', lower: 0, upper: 500, count: 90 },
+        ],
+      }),
+      repo.performance.set({
+        hour: '2026-11-01T06', keyId: 'key-2', model: 'model-b', upstream: 'up-b',
+        operation: 'embeddings', runtimeLocation: 'LOCAL', requests: 4,
+        ttftSamplesOk: 0, errorsWithOutput: 0, errorsNoOutput: 1, neutral: 3,
+        tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0, buckets: [],
+      }),
+      repo.performance.set({
+        hour: '2026-11-01T06', keyId: 'ghost', model: 'model-b', upstream: 'up-b',
+        operation: 'chat', runtimeLocation: 'LOCAL', requests: 2,
+        ttftSamplesOk: 2, errorsWithOutput: 0, errorsNoOutput: 0, neutral: 0,
+        tpotSamples: 2, ttftMsSum: 600_000, tpotUsSum: 20_000_000,
+        buckets: [
+          { metric: 'ttft_ms', lower: 300_000, upper: null, count: 2 },
+          { metric: 'tpot_us', lower: 2_500_000, upper: 10_000_000, count: 2 },
+        ],
+      }),
+    ]);
+  }
+  const options: PerformanceOverviewQueryOptions = {
+    actorUserId: 1,
+    isAdmin: true,
+    start: '2026-11-01T05',
+    end: '2026-11-01T07',
+    groupBy: 'model',
+    filters: {
+      keyIds: [], userIds: [], models: [], upstreams: [], operations: [], runtimeLocations: [],
+    },
+    bucketForHour: () => '2026-11-01T01',
+  };
+
+  for (const groupBy of ['model', 'upstream', 'operation', 'runtimeLocation', 'userId', 'keyId'] as const) {
+    assertEquals(
+      await sql.performance.queryOverview({ ...options, groupBy }),
+      await memory.performance.queryOverview({ ...options, groupBy }),
+    );
+  }
+  for (const filters of [
+    { ...options.filters, models: ['model-a', 'model-b'], upstreams: ['up-b'] },
+    { ...options.filters, userIds: [1], keyIds: ['key-1'] },
+    { ...options.filters, operations: ['chat'], runtimeLocations: ['LOCAL'] },
+    { ...options.filters, models: ['missing'] },
+  ]) {
+    assertEquals(
+      await sql.performance.queryOverview({ ...options, filters }),
+      await memory.performance.queryOverview({ ...options, filters }),
+    );
+  }
+  assertEquals(
+    await sql.performance.queryOverview({ ...options, actorUserId: 2, isAdmin: false }),
+    await memory.performance.queryOverview({ ...options, actorUserId: 2, isAdmin: false }),
+  );
 });
