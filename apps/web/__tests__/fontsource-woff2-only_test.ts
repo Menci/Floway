@@ -57,8 +57,8 @@ describe('Fontsource WOFF2-only transform', () => {
     const css = `@font-face {
       src: url('./example.woff2?fallback=.woff') format('woff2'),
         url('./example-alt.woff2#fallback=.woff') format('woff2'),
-        url('./example.woff?cache=1') format('woff'),
-        url('./example-alt.woff#cache') format('woff');
+        url('./example.woff?cache=1'),
+        url('./example-alt.woff#cache');
     }`;
 
     const output = await process(css);
