@@ -320,7 +320,7 @@ test('/api/upstreams/copilot/oauth/device-login/poll clears the previous identit
   await repo.upstreams.saveModelsCache(existing.id, {
     revision: 1,
     fetchedAt: 1_700_000_000_000,
-    models: [stubProviderModel({ id: 'old-tenant-model', name: 'Old tenant model' })],
+    models: [stubProviderModel({ id: 'old-tenant-model' })],
   });
   modelsCacheMock.error = new Error('new tenant catalog unavailable');
 
