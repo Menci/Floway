@@ -348,7 +348,7 @@ test('generate filters out candidates whose endpoints do not satisfy the respons
   assertEquals(callResponses.mock.calls.length, 0);
 });
 
-test.each([true, false])('generate with store=%s rejects conflicting full input items before provider dispatch or state writes', async storeFlag => {
+test.each([true, false])('generate with store=%s renders conflicting full input ids before provider dispatch or state writes', async storeFlag => {
   const repo = installRepo();
   const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => {
     throw new Error('provider must not be called for ambiguous input identity');
@@ -356,7 +356,7 @@ test.each([true, false])('generate with store=%s rejects conflicting full input 
   queueResolution([makeCandidate({ callResponses })]);
   const id = 'msg_input_collision';
 
-  await expect(responsesServe.generate({
+  const result = await responsesServe.generate({
     payload: makePayload({
       store: storeFlag,
       input: [
@@ -366,8 +366,19 @@ test.each([true, false])('generate with store=%s rejects conflicting full input 
     }),
     ctx: makeGatewayCtx(createResponsesHttpStore(testResponsesStatePolicy(API_KEY_ID), Date.now(), storeFlag)),
     headers: new Headers(),
-  })).rejects.toThrow(`Responses item id collision: ${id}`);
+  });
 
+  assertEquals(result.type, 'api-error');
+  if (result.type !== 'api-error') throw new Error('unreachable');
+  assertEquals(result.status, 400);
+  assertEquals(JSON.parse(new TextDecoder().decode(result.body)), {
+    error: {
+      message: `Input item id '${id}' is used by multiple different items.`,
+      type: 'invalid_request_error',
+      param: 'input[1].id',
+      code: 'responses_item_id_collision',
+    },
+  });
   expect(callResponses).not.toHaveBeenCalled();
   expect(await repo.responsesItems.lookupMany(API_KEY_ID, [id], 0)).toEqual([]);
   expect(await repo.responsesSnapshots.findOldestRefreshedAt(API_KEY_ID)).toBeNull();

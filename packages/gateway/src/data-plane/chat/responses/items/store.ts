@@ -46,6 +46,16 @@ export interface StatefulResponsesStore {
   getPrivatePayload(id: string): unknown;
 }
 
+export class ResponsesInputItemIdCollisionError extends Error {
+  constructor(
+    readonly itemId: string,
+    readonly inputIndex: number,
+  ) {
+    super(`Input item id '${itemId}' is used by multiple different items.`);
+    this.name = 'ResponsesInputItemIdCollisionError';
+  }
+}
+
 export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private readonly loadedItems = new Map<string, StoredResponsesItem>();
   private readonly loadedByItemHash = new Map<string, StoredResponsesItem>();
@@ -189,13 +199,13 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
 
   private assertUnambiguousFullItemIds(items: readonly ResponsesInputItem[]): void {
     const itemsById = new Map<string, ResponsesInputItem>();
-    for (const item of items) {
+    for (const [inputIndex, item] of items.entries()) {
       if (item.type === 'item_reference' || item.type === 'compaction_trigger') continue;
       const id = responsesItemId(item);
       if (id === null) continue;
       const existing = itemsById.get(id);
       if (existing !== undefined && !isEqual(existing, item)) {
-        throw new Error(`Responses item id collision: ${id}`);
+        throw new ResponsesInputItemIdCollisionError(id, inputIndex);
       }
       itemsById.set(id, item);
     }
