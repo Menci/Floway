@@ -109,6 +109,8 @@ const responseCreatedFrame = (): ResponsesFrame => eventFrame({
     status: 'in_progress',
     output: [],
     output_text: '',
+    incomplete_details: null,
+    error: null,
   },
 });
 
