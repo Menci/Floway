@@ -42,3 +42,23 @@ test('scheduled maintenance collects exact spilled files after expiration work',
 
   expect(await files.get(key)).toBeNull();
 });
+
+test('scheduled maintenance does not collect spilled files before expiration work finishes', async () => {
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  initFileStore(new MemoryFileStore());
+  initImageCacheStore({ async get() { return null; }, async put() {}, async sweepExpired() {} });
+  let releaseExpiration: (() => void) | null = null;
+  vi.spyOn(repo.expirationSweeps, 'claim').mockImplementation(async () => {
+    await new Promise<void>(resolve => { releaseExpiration = resolve; });
+    return null;
+  });
+  const collect = vi.spyOn(repo.spilledFiles, 'claimCollectible').mockResolvedValue([]);
+
+  const maintenance = runScheduledMaintenance();
+  await vi.waitFor(() => expect(releaseExpiration).not.toBeNull());
+  expect(collect).not.toHaveBeenCalled();
+  releaseExpiration!();
+  await maintenance;
+  expect(collect).toHaveBeenCalledOnce();
+});

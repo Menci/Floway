@@ -22,10 +22,13 @@ export const runScheduledMaintenance = async (
   backgroundScheduler: BackgroundScheduler = defaultBackgroundScheduler,
 ): Promise<void> => {
   const nowMs = Date.now();
+  const storageMaintenance = async (): Promise<void> => {
+    await runSweep('expirations.sweep', () => sweepExpirations(nowMs));
+    await runSweep('spilledFiles.collect', () => collectSpilledFiles(nowMs));
+  };
   await Promise.all([
     runSweep('models.refresh', () => refreshModelsCaches(runtimeLocation, backgroundScheduler)),
-    runSweep('expirations.sweep', () => sweepExpirations(nowMs)),
-    runSweep('spilledFiles.collect', () => collectSpilledFiles(nowMs)),
+    storageMaintenance(),
     runSweep('imageCacheStore.sweepExpired', () => getImageCacheStore().sweepExpired(nowMs)),
   ]);
 };
