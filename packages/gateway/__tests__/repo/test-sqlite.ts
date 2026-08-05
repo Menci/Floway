@@ -5,6 +5,8 @@ import type { SqlBindValue, SqlDatabase, SqlPreparedStatement, SqlResult } from 
 
 export type { SqlJsDatabase };
 
+const sqlJs = initSqlJs();
+
 export const migrationSqlByFilename = Object.entries(import.meta.glob('../../migrations/*.sql', { query: '?raw', import: 'default', eager: true }) as Record<string, string>)
   .map(([path, sql]) => [path.slice(path.lastIndexOf('/') + 1), sql] as const)
   .toSorted(([a], [b]) => a.localeCompare(b));
@@ -25,16 +27,24 @@ export const wrapSqlJsDatabase = (db: SqlJsDatabase): SqlDatabase => new SqlJsSq
 
 // The only way to open a sql.js database here, so no test can reach one that
 // is missing a function the deployment targets have.
-export const createSqlJsDatabase = async (): Promise<SqlJsDatabase> => {
-  const db = new (await initSqlJs()).Database();
+export const createSqlJsDatabase = async (data?: Uint8Array): Promise<SqlJsDatabase> => {
+  const db = new (await sqlJs).Database(data);
   registerTargetMathFunctions(db);
   return db;
 };
 
-export const createSqliteTestDb = async (): Promise<SqlDatabase> => {
+const migratedDatabaseImage = (async (): Promise<Uint8Array> => {
   const db = await createSqlJsDatabase();
-  for (const [, sql] of migrationSqlByFilename) db.run(sql);
-  return wrapSqlJsDatabase(db);
+  try {
+    for (const [, sql] of migrationSqlByFilename) db.run(sql);
+    return new Uint8Array(db.export());
+  } finally {
+    db.close();
+  }
+})();
+
+export const createSqliteTestDb = async (): Promise<SqlDatabase> => {
+  return wrapSqlJsDatabase(await createSqlJsDatabase(await migratedDatabaseImage));
 };
 
 // sql.js binds through JavaScript and happily takes values neither deployment
