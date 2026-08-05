@@ -213,16 +213,17 @@ describe('nodeSocketDial', () => {
 
     try {
       const dialed = await nodeSocketDial.connect('127.0.0.1', address.port);
-      peer = await accepted;
-      const remoteEnded = new Promise<void>(resolve => peer.once('end', () => resolve()));
+      const connectedPeer = await accepted;
+      peer = connectedPeer;
+      const remoteEnded = new Promise<void>(resolve => connectedPeer.once('end', () => resolve()));
       const writer = dialed.writable.getWriter();
 
       await writer.close();
       await remoteEnded;
       writer.releaseLock();
-      expect(peer.readableEnded).toBe(true);
+      expect(connectedPeer.readableEnded).toBe(true);
 
-      peer.write(new TextEncoder().encode('after-half-close'));
+      connectedPeer.write(new TextEncoder().encode('after-half-close'));
       const reader = dialed.readable.getReader();
       expect(new TextDecoder().decode((await reader.read()).value)).toBe('after-half-close');
       reader.releaseLock();
