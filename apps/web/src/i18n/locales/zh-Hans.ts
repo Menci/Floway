@@ -877,7 +877,7 @@ const zhHansCN = {
       usage: {
         empty: '此时间范围内没有使用记录',
         callout: { requests: '请求', cost: '费用', total: '总量', cached: '缓存', cachedRate: '缓存率', prefill: '预填充', output: '输出', hitRate: '命中率' },
-        apiKeyScopeInfo: 'API 密钥维度始终只包含当前账号拥有的 API 密钥，即使你拥有全局遥测权限。其他维度仍按全局范围统计。',
+        apiKeyScopeInfo: 'API 密钥分组和筛选仅包含当前账号拥有的密钥。选择“按 API 密钥”会将用户设为“仅自己”；选择其他用户会清空 API 密钥筛选并回到“按模型”。',
         apiKeyScopeLabel: '关于 API 密钥遥测范围',
         groupBy: { label: '分组依据', model: '按模型', upstream: '按上游', userId: '按用户', keyId: '按 API 密钥' },
         filters: {
@@ -917,7 +917,7 @@ const zhHansCN = {
       performance: {
         empty: '此时间范围内没有性能记录',
         actions: { refresh: '刷新性能数据' },
-        apiKeyScopeInfo: 'API 密钥维度始终只包含当前账号拥有的 API 密钥，即使你拥有全局遥测权限。其他维度仍按全局范围统计。',
+        apiKeyScopeInfo: 'API 密钥分组和筛选仅包含当前账号拥有的密钥。选择“按 API 密钥”会将用户设为“仅自己”；选择其他用户会清空 API 密钥筛选并回到“按模型”。',
         apiKeyScopeLabel: '关于 API 密钥遥测范围',
         breakdown: '性能细分维度',
         metric: { label: '性能指标', ttft: '首 Token 时间', outputSpeed: '输出速度' },
