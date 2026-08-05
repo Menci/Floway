@@ -1,16 +1,15 @@
 import { aggregateUsageForOverview, usageUpstreamDimension, type UsageOverviewGroupBy } from './aggregate.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
-import type { UsageRecord } from '../../repo/types.ts';
 import type { tokenUsageOverviewQuery } from '../schemas.ts';
-import { loadTelemetryOverviewIdentity, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata } from '../shared/telemetry-overview.ts';
+import { loadTelemetryOverviewIdentity, partitionTelemetryOverviewRecords, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata } from '../shared/telemetry-overview.ts';
 import type { TokenUsageOverviewResponse } from '../usage-types.ts';
 
 type Ctx = CtxWithQuery<typeof tokenUsageOverviewQuery>;
 
 interface UsageFilters {
   keyId: ReadonlySet<string>;
-  userId: ReadonlySet<number>;
+  userId: ReadonlySet<string>;
   model: ReadonlySet<string>;
   upstream: ReadonlySet<string>;
 }
@@ -38,47 +37,10 @@ const readUsageOverviewQuery = (
       groupBy: query.group_by ?? 'model',
       filters: {
         keyId: new Set(query.filter_key_id),
-        userId: new Set(query.filter_user_id?.map(Number)),
+        userId: new Set(query.filter_user_id),
         model: new Set(query.filter_model),
         upstream: new Set(query.filter_upstream),
       },
-    },
-  };
-};
-
-const partitionUsage = (
-  records: readonly UsageRecord[],
-  filters: UsageFilters,
-  keyToUser: ReadonlyMap<string, number>,
-  visibleKeyIds: ReadonlySet<string>,
-  includeUserIds: boolean,
-) => {
-  const keyIds = new Set<string>();
-  const userIds = new Set<number>();
-  const models = new Set<string>();
-  const upstreams = new Set<string>();
-  const filtered: UsageRecord[] = [];
-  for (const record of records) {
-    if (visibleKeyIds.has(record.keyId)) keyIds.add(record.keyId);
-    const userId = keyToUser.get(record.keyId);
-    if (includeUserIds && userId !== undefined) userIds.add(userId);
-    models.add(record.model);
-    const upstream = usageUpstreamDimension(record.upstream);
-    upstreams.add(upstream);
-
-    if (filters.keyId.size > 0 && !filters.keyId.has(record.keyId)) continue;
-    if (filters.userId.size > 0 && (userId === undefined || !filters.userId.has(userId))) continue;
-    if (filters.model.size > 0 && !filters.model.has(record.model)) continue;
-    if (filters.upstream.size > 0 && !filters.upstream.has(upstream)) continue;
-    filtered.push(record);
-  }
-  return {
-    filtered,
-    dimensionValues: {
-      keyIds: [...keyIds].sort(),
-      userIds: [...userIds].sort((left, right) => left - right),
-      models: [...models].sort(),
-      upstreams: [...upstreams].sort(),
     },
   };
 };
@@ -96,7 +58,25 @@ export const tokenUsageOverview = async (c: Ctx) => {
   const scopedRecords = !identity.actor.isAdmin || groupBy === 'keyId'
     ? rawRecords.filter(record => identity.ownedKeyIds.has(record.keyId))
     : rawRecords;
-  const { filtered, dimensionValues } = partitionUsage(scopedRecords, filters, identity.keyToUser, identity.ownedKeyIds, identity.actor.isAdmin);
+  const partitioned = partitionTelemetryOverviewRecords(scopedRecords, {
+    keyId: {
+      value: record => record.keyId,
+      includeFacet: record => identity.ownedKeyIds.has(record.keyId),
+    },
+    userId: {
+      value: record => identity.keyToUser.get(record.keyId)?.toString() ?? null,
+      includeFacet: () => identity.actor.isAdmin,
+    },
+    model: { value: record => record.model },
+    upstream: { value: record => usageUpstreamDimension(record.upstream) },
+  }, filters);
+  const { filtered } = partitioned;
+  const dimensionValues = {
+    keyIds: partitioned.dimensionValues.keyId,
+    userIds: partitioned.dimensionValues.userId.map(Number).sort((left, right) => left - right),
+    models: partitioned.dimensionValues.model,
+    upstreams: partitioned.dimensionValues.upstream,
+  };
   const tzOnly = { timeZone: params.value.timeZone, timezoneOffsetMinutes };
   const { series, ...axes } = aggregateUsageForOverview(filtered, {
     series: { ...tzOnly, bucket, groupBy },

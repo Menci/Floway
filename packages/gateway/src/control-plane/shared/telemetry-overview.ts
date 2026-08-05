@@ -54,7 +54,6 @@ export const readTelemetryOverviewWindow = (
 
 export interface TelemetryOverviewIdentity {
   actor: ReturnType<typeof userFromContext>;
-  allKeys: ApiKey[];
   ownedKeys: ApiKey[];
   ownedKeyIds: ReadonlySet<string>;
   keyToUser: ReadonlyMap<string, number>;
@@ -71,7 +70,6 @@ export const loadTelemetryOverviewIdentity = async (c: Context): Promise<Telemet
   const ownedKeys = allKeys.filter(key => key.userId === actor.id);
   return {
     actor,
-    allKeys,
     ownedKeys,
     ownedKeyIds: new Set(ownedKeys.map(key => key.id)),
     keyToUser: buildKeyToUserMap(allKeys),
@@ -82,7 +80,7 @@ export const loadTelemetryOverviewIdentity = async (c: Context): Promise<Telemet
 export const telemetryIdentityError = (
   identity: TelemetryOverviewIdentity,
   groupBy: string,
-  userIds: ReadonlySet<number>,
+  userIds: ReadonlySet<string>,
   keyIds: ReadonlySet<string>,
 ): { status: 403 | 404; error: string } | null => {
   if (!identity.actor.isAdmin && groupBy === 'userId') {
@@ -103,3 +101,35 @@ export const telemetryIdentityMetadata = (identity: TelemetryOverviewIdentity) =
     .map(key => ({ id: key.id, name: key.name, createdAt: key.createdAt }))
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id)),
 });
+
+export interface TelemetryDimensionSpec<Row> {
+  value: (row: Row) => string | null;
+  includeFacet?: (row: Row, value: string) => boolean;
+}
+
+export const partitionTelemetryOverviewRecords = <Row, Dimension extends string>(
+  rows: readonly Row[],
+  dimensions: Record<Dimension, TelemetryDimensionSpec<Row>>,
+  filters: Record<Dimension, ReadonlySet<string>>,
+): { filtered: Row[]; dimensionValues: Record<Dimension, string[]> } => {
+  const entries = Object.entries(dimensions) as Array<[Dimension, TelemetryDimensionSpec<Row>]>;
+  const values = Object.fromEntries(entries.map(([dimension]) => [dimension, new Set<string>()])) as Record<Dimension, Set<string>>;
+  const filtered: Row[] = [];
+  for (const row of rows) {
+    let matches = true;
+    for (const [dimension, spec] of entries) {
+      const value = spec.value(row);
+      if (value !== null && (spec.includeFacet?.(row, value) ?? true)) values[dimension].add(value);
+      const filter = filters[dimension];
+      if (filter.size > 0 && (value === null || !filter.has(value))) matches = false;
+    }
+    if (matches) filtered.push(row);
+  }
+  return {
+    filtered,
+    dimensionValues: Object.fromEntries(entries.map(([dimension]) => [
+      dimension,
+      [...values[dimension]].sort(),
+    ])) as Record<Dimension, string[]>,
+  };
+};
