@@ -122,6 +122,12 @@ export const resolvePerformanceGroup = (
   return group;
 };
 
+const hiddenSeriesFormatVersion = '2';
+
+const parseHiddenSeries = (search: URLSearchParams): string[] => search.get('hidev') === hiddenSeriesFormatVersion
+  ? search.getAll('hide')
+  : (search.get('hide') ?? '').split(',').map(decodeURIComponent).filter(Boolean);
+
 export const parsePerformanceUrlState = (search: URLSearchParams): PerformanceUrlState => ({
   metric: oneOf(search.get('m'), ['ttft', 'tokPerSec'], 'ttft'),
   percentile: oneOf(search.get('pct'), ['p50', 'p95', 'p99'], 'p95'),
@@ -131,7 +137,7 @@ export const parsePerformanceUrlState = (search: URLSearchParams): PerformanceUr
     model: search.get('fm') ?? '', upstream: search.get('fu') ?? '', operation: search.get('fo') ?? '',
     runtimeLocation: search.get('fr') ?? '', userId: search.get('fusr') ?? '', keyId: search.get('fk') ?? '',
   },
-  hidden: search.getAll('hide'),
+  hidden: parseHiddenSeries(search),
 });
 
 export const serializePerformanceUrlState = (state: PerformanceUrlState): URLSearchParams => {
@@ -142,7 +148,10 @@ export const serializePerformanceUrlState = (state: PerformanceUrlState): URLSea
   if (state.range !== 'today') search.set('r', state.range);
   const filters: Array<[string, string]> = [['fm', state.filters.model], ['fu', state.filters.upstream], ['fo', state.filters.operation], ['fr', state.filters.runtimeLocation], ['fusr', state.filters.userId], ['fk', state.filters.keyId]];
   for (const [key, value] of filters) if (value) search.set(key, value);
-  for (const id of [...state.hidden].sort()) search.append('hide', id);
+  if (state.hidden.length) {
+    search.set('hidev', hiddenSeriesFormatVersion);
+    for (const id of [...state.hidden].sort()) search.append('hide', id);
+  }
   return search;
 };
 

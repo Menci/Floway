@@ -36,19 +36,31 @@ describe('performance overview query', () => {
   });
 
   it('round-trips non-default dashboard state through the URL', () => {
-    const search = new URLSearchParams('m=tokPerSec&pct=p99&g=upstream&r=30d&fm=gpt-5');
-    for (const id of ['a,b', '100%', '模型', 'duplicate', 'duplicate']) search.append('hide', id);
-    const state = parsePerformanceUrlState(search);
-    expect(state).toMatchObject({
+    const state = parsePerformanceUrlState(new URLSearchParams('m=tokPerSec&pct=p99&g=upstream&r=30d&fm=gpt-5'));
+    const serialized = serializePerformanceUrlState({ ...state, hidden: ['a,b', '100%', '模型', 'duplicate', 'duplicate'] });
+    expect(parsePerformanceUrlState(serialized)).toMatchObject({
       metric: 'tokPerSec',
       percentile: 'p99',
       groupBy: 'upstream',
       range: '30d',
       filters: { model: 'gpt-5' },
-      hidden: ['a,b', '100%', '模型', 'duplicate', 'duplicate'],
+      hidden: ['100%', 'a,b', 'duplicate', 'duplicate', '模型'],
     });
-    expect(serializePerformanceUrlState(state).get('m')).toBe('tokPerSec');
-    expect(serializePerformanceUrlState(state).get('fm')).toBe('gpt-5');
+    expect(serialized.get('m')).toBe('tokPerSec');
+    expect(serialized.get('fm')).toBe('gpt-5');
+  });
+
+  it('restores hidden series from the original comma format', () => {
+    expect(parsePerformanceUrlState(new URLSearchParams('hide=a%252Cb,c')).hidden).toEqual(['a,b', 'c']);
+  });
+
+  it('distinguishes one comma-containing id in the repeated parameter format', () => {
+    const state = parsePerformanceUrlState(new URLSearchParams());
+    const serialized = serializePerformanceUrlState({ ...state, hidden: ['a,b'] });
+
+    expect(serialized.get('hidev')).toBe('2');
+    expect(serialized.getAll('hide')).toEqual(['a,b']);
+    expect(parsePerformanceUrlState(serialized).hidden).toEqual(['a,b']);
   });
 
   it('serializes hidden series as stable repeated parameters', () => {
@@ -57,6 +69,7 @@ describe('performance overview query', () => {
     const second = serializePerformanceUrlState({ ...state, hidden: ['duplicate', 'a,b', '模型', '100%', 'duplicate'] });
 
     expect(first.toString()).toBe(second.toString());
+    expect(first.get('hidev')).toBe('2');
     expect(first.getAll('hide')).toEqual(['100%', 'a,b', 'duplicate', 'duplicate', '模型']);
     expect(parsePerformanceUrlState(first).hidden).toEqual(['100%', 'a,b', 'duplicate', 'duplicate', '模型']);
   });
