@@ -266,6 +266,17 @@ test('inspectImageSources reads input_image blocks and image_generation_call res
   assertEquals(issue, undefined);
 });
 
+test('inspectImageSources normalizes the media type in an image data URL', () => {
+  const { sources, issue } = inspectImageSources([imageInputContainers.message({
+    type: 'input_image', image_url: `data:IMAGE/PNG;base64,${PNG_B64}`, detail: 'auto',
+  })]);
+  assertEquals(issue, undefined);
+  assertEquals(sources.length, 1);
+  const [source] = sources;
+  assert(source !== undefined && !('wireUrl' in source));
+  assertEquals(source.mimeType, 'image/png');
+});
+
 test('inspectImageSources preserves valid remote image urls for materialization', () => {
   const input: ResponsesInputItem[] = [
     {

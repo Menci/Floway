@@ -176,7 +176,7 @@ const exerciseSqlUpstreamRepo = async (repo: UpstreamRepo) => {
     sortOrder: 1,
     createdAt: '2026-05-21T10:00:03.000Z',
     updatedAt: '2026-05-21T10:00:03.000Z',
-    config: { githubToken: 'gho_d1', user: { id: 1, login: 'copilot', name: null, avatar_url: 'https://avatars.test/1.png' } },
+    config: { githubHost: 'github.com', githubToken: 'gho_d1', user: { id: 1, login: 'copilot', name: null, avatar_url: 'https://avatars.test/1.png' } },
   });
   const azure = upstream({
     id: 'up_azure_sql',
@@ -1227,6 +1227,7 @@ test('model pricing migrations materialize legacy semantics as base-unit metric 
     models: { upstreamModelId: string; display_name?: string; pricing?: ModelPricing }[];
   };
   assertEquals(config, {
+    ingressHeadersRules: [],
     models: [
       {
         upstreamModelId: 'base-and-overlay',

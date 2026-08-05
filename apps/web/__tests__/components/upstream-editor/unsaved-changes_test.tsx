@@ -21,6 +21,7 @@ const customRecord = (
     authStyle: 'bearer',
     apiKey: '',
     endpoints: { chatCompletions: {} },
+    ingressHeadersRules: [],
     modelsFetch,
     models: [],
   },
@@ -93,6 +94,16 @@ describe('upstream editor dirtiness across an edit and its undo', () => {
     fireEvent.click(screen.getByLabelText(label));
     expect(dirty()).toBe('true');
     fireEvent.click(screen.getByLabelText(label));
+    expect(dirty()).toBe('false');
+  });
+
+  it('settles clean when a draft ingress header rule is typed and cleared', () => {
+    renderInApp(<ConfigProbe record={customRecord({ enabled: true })} />);
+    const key = screen.getByLabelText(i18n.t('dashboard.upstreamEditor.headers.keyForRow', { number: 1 }));
+    fireEvent.change(key, { target: { value: 'x-route' } });
+    expect(dirty()).toBe('true');
+    fireEvent.change(key, { target: { value: '' } });
+    fireEvent.blur(key);
     expect(dirty()).toBe('false');
   });
 

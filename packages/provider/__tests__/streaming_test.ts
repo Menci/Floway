@@ -71,6 +71,17 @@ test('streamingProviderCall throws when 2xx content-type is not text/event-strea
   }, Error);
 });
 
+test('streamingProviderCall rejects a content-type that only starts with the SSE essence', async () => {
+  const response = new Response('not really an event stream', {
+    status: 200,
+    headers: { 'content-type': 'text/event-stream-fake' },
+  });
+  await assertRejects(
+    () => streamingProviderCall(Promise.resolve(response), stubParser, 'm-1', undefined),
+    Error,
+  );
+});
+
 test('streamingProviderCall surfaces "unknown" content-type when the header is missing', async () => {
   // Cloudflare Workers sometimes hands us a 200 with no content-type header
   // when the upstream response is malformed; the diagnostic must label that
@@ -103,7 +114,7 @@ test('streamingProviderCall truncates oversized bodies in the error message', as
 test('streamingProviderCall returns ok:true with parsed frames on 2xx SSE', async () => {
   const response = new Response('alpha\nbeta\n', {
     status: 200,
-    headers: { 'content-type': 'text/event-stream; charset=utf-8' },
+    headers: { 'content-type': 'Text/Event-Stream; charset=utf-8' },
   });
   const result = await streamingProviderCall(Promise.resolve(response), stubParser, 'm-1', undefined);
   assertEquals(result.ok, true);

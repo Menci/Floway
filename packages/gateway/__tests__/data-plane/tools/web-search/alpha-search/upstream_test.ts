@@ -1,6 +1,6 @@
 import { test, vi } from 'vitest';
 
-import type { ModelCandidate } from '@floway-dev/provider';
+import type { InboundHeaderMatcher, ModelCandidate } from '@floway-dev/provider';
 import { assertEquals, assertExists, stubModelCandidate, stubProvider } from '@floway-dev/test-utils';
 
 let resolvedCandidate: ModelCandidate | undefined;
@@ -18,13 +18,14 @@ vi.mock('../../../../../src/data-plane/providers/resolution.ts', async importOri
 
 const { resolveAlphaSearchDispatcher } = await import('../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts');
 
-const dispatcherFor = async (kind: 'codex' | 'custom') => {
+const dispatcherFor = async (kind: 'codex' | 'custom', inboundHeaderAllowlist: readonly InboundHeaderMatcher[] = []) => {
   let observedHeaders: Headers | undefined;
   const base = stubModelCandidate();
   const provider = {
     ...base.provider,
     upstreamId: 'search-upstream',
     kind,
+    inboundHeaderAllowlist,
     instance: stubProvider({
       callAlphaSearch: async (_model, _body, _signal, opts) => {
         observedHeaders = opts.headers;
@@ -43,7 +44,7 @@ const dispatcherFor = async (kind: 'codex' | 'custom') => {
 };
 
 test('Codex Alpha Search receives only its declared turn metadata', async () => {
-  const { dispatcher, observedHeaders } = await dispatcherFor('codex');
+  const { dispatcher, observedHeaders } = await dispatcherFor('codex', ['x-codex-turn-metadata']);
   await dispatcher({}, undefined, new Headers({
     authorization: 'Bearer secret',
     'x-codex-turn-metadata': '{"turn_id":"turn-1"}',
@@ -57,15 +58,25 @@ test('Codex Alpha Search receives only its declared turn metadata', async () => 
   });
 });
 
-test('Custom Alpha Search receives no client headers', async () => {
-  const { dispatcher, observedHeaders } = await dispatcherFor('custom');
+test('Custom Alpha Search admits configured names before the provider call', async () => {
+  const { dispatcher, observedHeaders } = await dispatcherFor('custom', [
+    'x-empty',
+    'x-overwrite',
+    'x-passthrough',
+  ]);
   await dispatcher({}, undefined, new Headers({
     authorization: 'Bearer secret',
-    'x-codex-turn-metadata': '{"turn_id":"turn-1"}',
+    'x-empty': 'client-empty',
     'x-debug': 'discard',
+    'x-overwrite': 'client-overwrite',
+    'x-passthrough': 'client-passthrough',
   }));
 
   const headers = observedHeaders();
   assertExists(headers);
-  assertEquals([...headers], []);
+  assertEquals(Object.fromEntries(headers), {
+    'x-empty': 'client-empty',
+    'x-overwrite': 'client-overwrite',
+    'x-passthrough': 'client-passthrough',
+  });
 });

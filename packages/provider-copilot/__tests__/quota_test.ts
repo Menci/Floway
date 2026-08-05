@@ -1,9 +1,24 @@
 import { test } from 'vitest';
 
-import { parseCopilotQuotaHeaders, projectCopilotUsageResponse, type CopilotUsageResponse } from '../src/quota.ts';
-import { assertEquals } from '@floway-dev/test-utils';
+import { fetchCopilotUsage, parseCopilotQuotaHeaders, projectCopilotUsageResponse, type CopilotUsageResponse } from '../src/quota.ts';
+import { directFetcher } from '@floway-dev/provider';
+import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
 
 const NOW = new Date('2026-08-01T19:42:34.000Z');
+
+test('fetchCopilotUsage reads quota from the selected GHE.com tenant API', async () => {
+  await withMockedFetch(
+    request => {
+      assertEquals(request.url, 'https://api.octocorp.ghe.com/copilot_internal/user');
+      assertEquals(request.headers.get('authorization'), 'token ghu_ghe');
+      return new Response('{}');
+    },
+    async () => {
+      const response = await fetchCopilotUsage('octocorp.ghe.com', 'ghu_ghe', directFetcher);
+      assertEquals(response.status, 200);
+    },
+  );
+});
 
 // Verbatim from a live enterprise seat's /chat/completions response.
 const liveHeaders = (): Headers => new Headers({

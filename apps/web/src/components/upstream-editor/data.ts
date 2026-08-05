@@ -208,6 +208,10 @@ export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues =
         // same shape; configFromValues drops the map again when all of it is
         // blank, and a stored path the form does not list survives the merge.
         pathOverrides: { ...Object.fromEntries(PATH_OVERRIDE_PATHS.map(path => [path, ''])), ...record.config.pathOverrides },
+        ingressHeadersRules: [
+          ...structuredClone(record.config.ingressHeadersRules),
+          { key: '', value: null },
+        ],
         modelsFetch: withRegisteredKey('endpoint', structuredClone(record.config.modelsFetch)),
       }
     : record.kind === 'azure'
@@ -249,6 +253,11 @@ const configFromValues = (
   if (record.kind === 'custom') {
     const custom = config as Record<string, unknown>;
     if (custom.authStyle === 'none') delete custom.apiKey;
+    const ingressHeadersRules = custom.ingressHeadersRules as { key: string; value: string | null }[];
+    custom.ingressHeadersRules = ingressHeadersRules.flatMap(rule => {
+      const key = rule.key.trim().toLowerCase();
+      return key === '' ? [] : [{ key, value: rule.value }];
+    });
     if (custom.pathOverrides && typeof custom.pathOverrides === 'object') {
       const entries = Object.entries(custom.pathOverrides as Record<string, string>)
         .map(([key, value]) => [key, typeof value === 'string' ? value.trim() : ''] as const)

@@ -6,6 +6,7 @@ import { useBlocker, useNavigate, type BlockerFunction } from 'react-router';
 import { z } from 'zod';
 
 import { UpstreamConfigSidebar } from './config-sidebar';
+import { refineCustomIngressHeaderRules } from './custom-ingress-header-rules-validation';
 import {
   createBody,
   fetchModelCatalog,
@@ -75,6 +76,10 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     if (values.modelPrefix && !modelPrefixIsValid(values.modelPrefix.prefix)) ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.prefixInvalid', path: ['modelPrefix'] });
     if (values.modelPrefix?.addressable.length === 0) ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.validation.prefix', path: ['modelPrefix'] });
     if (!modelsAreValid(values.manualModels)) ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.validation.models', path: ['manualModels'] });
+    if (record.kind === 'custom') {
+      const config = values.config as Extract<UpstreamRecord, { kind: 'custom' }>['config'];
+      refineCustomIngressHeaderRules(config.ingressHeadersRules, ctx);
+    }
     // An upstream that already exists keeps the credential it was created
     // with, and the editor never sends it back.
     if (data.mode !== 'create') return;

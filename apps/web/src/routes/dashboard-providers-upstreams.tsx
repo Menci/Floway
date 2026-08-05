@@ -532,7 +532,7 @@ const upstreamSummary = (record: UpstreamRecord, t: TFunction): string => {
   case 'custom': return record.config.baseUrl;
   case 'azure': return record.config.endpoint;
   case 'ollama': return record.config.baseUrl || t('dashboard.upstreams.summary.ollama');
-  case 'copilot': return record.config.user.login ? `@${record.config.user.login}` : t('dashboard.upstreams.summary.copilot');
+  case 'copilot': return record.config.user.login ? `${record.config.githubHost}/${record.config.user.login}` : t('dashboard.upstreams.summary.copilot');
   case 'codex': {
     const account = record.config.accounts[0];
     return account ? [account.email, account.planType].filter(Boolean).join(' - ') : t('dashboard.upstreams.summary.noAccount');

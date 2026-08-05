@@ -110,6 +110,7 @@ test('Custom provider projects gpt-image-* models with kind=image and both image
       authStyle: 'bearer',
       apiKey: 'sk-custom',
       endpoints: { chatCompletions: {} },
+      ingressHeadersRules: [],
     },
     state: null,
     flagOverrides: {},

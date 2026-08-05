@@ -135,9 +135,9 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const dimensions = useMemo<Array<TelemetryDimension<UsageGroupBy>> | null>(() => {
     if (!usage) return null;
     const upstreamNames = new Map(upstreams.map(upstream => [usageUpstreamDimensionValue(upstream.id), upstream.name]));
-    const noUpstreamLabel = t('dashboard.usage.filters.noUpstream');
+    const unknownUpstreamLabel = t('dashboard.usage.filters.unknownUpstream');
     for (const value of usage.dimensionValues.upstreams) {
-      if (!upstreamNames.has(value)) upstreamNames.set(value, usageUpstreamFromDimensionValue(value) ?? noUpstreamLabel);
+      if (!upstreamNames.has(value)) upstreamNames.set(value, usageUpstreamFromDimensionValue(value) ?? unknownUpstreamLabel);
     }
     const users = new Map(usage.users.map(user => [String(user.id), user.username]));
     const keys = new Map(usage.keys.map(key => [key.id, key.name]));
@@ -153,7 +153,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
         groupLabel: t('dashboard.usage.groupBy.userId'),
         filterLabel: t('dashboard.usage.filters.userId'),
         allLabel: t('dashboard.usage.filters.all.userId'),
-        options: userIds.map(value => ({ value, label: Number(value) === tokenUsageUnattributedUserId ? t('dashboard.usage.filters.unattributedUser') : requiredLabel(users, value, 'user') })),
+        options: userIds.map(value => ({ value, label: Number(value) === tokenUsageUnattributedUserId ? t('dashboard.usage.filters.unknownUser') : requiredLabel(users, value, 'user') })),
         selectionLabel: values => values.length === 1 && values[0] === loaderData.currentUserId
           ? t('dashboard.telemetry.currentUserOnly')
           : t('dashboard.usage.filters.selected', { count: values.length }),

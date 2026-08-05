@@ -142,7 +142,7 @@ const makeCandidate = (overrides: {
   });
   return {
     provider: {
-      upstreamId: upstream, kind, name: upstream,
+      upstreamId: upstream, kind, name: upstream, inboundHeaderAllowlist: [],
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, instance: provider,
     },
     model: stubInternalModel({

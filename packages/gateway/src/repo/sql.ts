@@ -16,6 +16,7 @@ import type {
   AgentSetupRenewal,
   AgentSetupRepository,
   BackoffRow,
+  ModelsCacheGeneration,
   ModelAliasesRepo,
   ModelAliasRecord,
   PerformanceBucketRow,
@@ -891,7 +892,15 @@ class SqlUpstreamRepo implements UpstreamRepo {
     return row ? toUpstreamRecord(row) : null;
   }
 
-  async save(upstream: UpstreamRecord): Promise<void> {
+  save(upstream: UpstreamRecord): Promise<void> {
+    return this.saveRecord(upstream, false);
+  }
+
+  saveClearingModelsCache(upstream: UpstreamRecord): Promise<void> {
+    return this.saveRecord(upstream, true);
+  }
+
+  private async saveRecord(upstream: UpstreamRecord, clearModelsCache: boolean): Promise<void> {
     // created_at is deliberately not in the ON CONFLICT update list: the row's first INSERT
     // wins, and re-saves preserve that timestamp regardless of what the caller passes.
     await this.db
@@ -909,7 +918,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
            disabled_public_model_ids = excluded.disabled_public_model_ids,
            proxy_fallback_list_json = excluded.proxy_fallback_list_json,
            model_prefix_json = excluded.model_prefix_json,
-           hue = excluded.hue`,
+           hue = excluded.hue${clearModelsCache ? ', models_cache_json = NULL' : ''}`,
       )
       .bind(
         upstream.id,
@@ -942,11 +951,14 @@ class SqlUpstreamRepo implements UpstreamRepo {
   // Written only here and never by save(): an operator edit carries whatever
   // catalog the request happened to read, and folding that back in would let a
   // rename race a refresh.
-  async saveModelsCache(id: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<void> {
-    await this.db
-      .prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ?')
-      .bind(JSON.stringify({ ...cache, lastError: null }, modelsReplacer), id)
+  async saveModelsCache(id: string, generation: ModelsCacheGeneration, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean> {
+    const rawConfig = await this.modelsCacheWriteConfig(id, generation);
+    if (rawConfig === null) return false;
+    const result = await this.db
+      .prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ? AND updated_at = ? AND config_json = ?')
+      .bind(JSON.stringify({ ...cache, lastError: null }, modelsReplacer), id, generation.updatedAt, rawConfig)
       .run();
+    return (result.meta.changes ?? 0) > 0;
   }
 
   // Annotates a previously-successful entry, so an upstream that has never
@@ -954,11 +966,25 @@ class SqlUpstreamRepo implements UpstreamRepo {
   // read-modify-written: it touches one key of a document whose other keys a
   // concurrent refresh may be rewriting, and nothing compares this column's
   // text, so the encoding SQLite produces here is immaterial.
-  async saveModelsCacheError(id: string, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<void> {
-    await this.db
-      .prepare("UPDATE upstreams SET models_cache_json = json_set(models_cache_json, '$.lastError', json(?)) WHERE id = ? AND models_cache_json IS NOT NULL")
-      .bind(JSON.stringify(error), id)
+  async saveModelsCacheError(id: string, generation: ModelsCacheGeneration, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean> {
+    const rawConfig = await this.modelsCacheWriteConfig(id, generation);
+    if (rawConfig === null) return false;
+    const result = await this.db
+      .prepare("UPDATE upstreams SET models_cache_json = json_set(models_cache_json, '$.lastError', json(?)) WHERE id = ? AND updated_at = ? AND config_json = ? AND models_cache_json IS NOT NULL")
+      .bind(JSON.stringify(error), id, generation.updatedAt, rawConfig)
       .run();
+    return (result.meta.changes ?? 0) > 0;
+  }
+
+  private async modelsCacheWriteConfig(id: string, generation: ModelsCacheGeneration): Promise<string | null> {
+    const row = await this.db
+      .prepare('SELECT updated_at, config_json FROM upstreams WHERE id = ?')
+      .bind(id)
+      .first<{ updated_at: string; config_json: string }>();
+    if (row === null || row.updated_at !== generation.updatedAt) return null;
+    return serializeStoredConfig(JSON.parse(row.config_json)) === serializeStoredConfig(generation.config)
+      ? row.config_json
+      : null;
   }
 
   // Read-modify-write under optimistic concurrency, retried against the winner

@@ -4,7 +4,6 @@ import type { ProviderModule } from '@floway-dev/provider';
 
 export const copilotProviderModule: ProviderModule = {
   create: createCopilotProvider,
-  inboundHeaderAllowlist: [],
   defaultFlags: COPILOT_DEFAULT_FLAGS,
 };
 
@@ -13,6 +12,7 @@ export {
   exchangeCopilotToken,
 } from './auth.ts';
 export { fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from './github-device-flow.ts';
+export { normalizeGitHubHost } from './github-host.ts';
 export {
   fetchCopilotUsage,
   projectCopilotUsageResponse,

@@ -33,7 +33,7 @@ const installRepoAndClearCache = async () => {
     modelPrefix: null,
     modelsCache: null,
     hue: 210,
-    config: { githubToken: 'ghu_test', user: { id: 1, login: 't', name: null, avatar_url: '' } },
+    config: { githubHost: 'github.com', githubToken: 'ghu_test', user: { id: 1, login: 't', name: null, avatar_url: '' } },
   };
   initProviderRepo(() => ({
     upstreams: {
@@ -74,7 +74,7 @@ const mockTokenAndCapture = async (
       await copilotAuthedFetch(
         '/v1/messages',
         { method: 'POST', body: '{}' },
-        { id: UPSTREAM_ID, githubToken: 'ghu_test' },
+        { id: UPSTREAM_ID, githubHost: 'github.com', githubToken: 'ghu_test' },
         extraHeaders ? { headers: extraHeaders, fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall } : { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall },
       );
     },
@@ -89,7 +89,7 @@ const runAuthedFetch = async (fetcher: Fetcher, signal?: AbortSignal): Promise<R
   return await copilotAuthedFetch(
     '/v1/messages',
     { method: 'POST', body: '{}', signal },
-    { id: UPSTREAM_ID, githubToken: 'ghu_test' },
+    { id: UPSTREAM_ID, githubHost: 'github.com', githubToken: 'ghu_test' },
     { fetcher, wrapUpstreamCall: identityWrapUpstreamCall },
   );
 };
@@ -289,7 +289,7 @@ test('copilotAuthedFetch persists the minted Copilot token (with baseUrl) into s
       await copilotAuthedFetch(
         '/v1/messages',
         { method: 'POST', body: '{}' },
-        { id: UPSTREAM_ID, githubToken: 'ghu_test' },
+        { id: UPSTREAM_ID, githubHost: 'github.com', githubToken: 'ghu_test' },
         { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall },
       );
     },
@@ -323,12 +323,45 @@ test('copilotAuthedFetch routes the data-plane call through the baseUrl GitHub s
       await copilotAuthedFetch(
         '/v1/messages',
         { method: 'POST', body: '{}' },
-        { id: UPSTREAM_ID, githubToken: 'ghu_test' },
+        { id: UPSTREAM_ID, githubHost: 'github.com', githubToken: 'ghu_test' },
         { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall },
       );
     },
   );
   assertEquals(observedUrl, 'https://api.enterprise.githubcopilot.com/v1/messages');
+});
+
+test('copilotAuthedFetch exchanges a GHE credential on the tenant API and still follows token endpoints.api', async () => {
+  await installRepoAndClearCache();
+  const observed: string[] = [];
+  await withMockedFetch(
+    async request => {
+      observed.push(request.url);
+      const url = new URL(request.url);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'tok-ghe',
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+          refresh_in: 1800,
+          endpoints: { api: 'https://api.business.githubcopilot.com' },
+        });
+      }
+      return new Response('{}', { status: 200 });
+    },
+    async () => {
+      await copilotAuthedFetch(
+        '/v1/messages',
+        { method: 'POST', body: '{}' },
+        { id: UPSTREAM_ID, githubHost: 'octocorp.ghe.com', githubToken: 'ghu_ghe' },
+        { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall },
+      );
+    },
+  );
+
+  assertEquals(observed, [
+    'https://api.octocorp.ghe.com/copilot_internal/v2/token',
+    'https://api.business.githubcopilot.com/v1/messages',
+  ]);
 });
 
 test('copilotAuthedFetch reads a still-valid Copilot token from state_json instead of refreshing', async () => {
@@ -356,7 +389,7 @@ test('copilotAuthedFetch reads a still-valid Copilot token from state_json inste
       const args = [
         '/v1/messages',
         { method: 'POST' as const, body: '{}' },
-        { id: UPSTREAM_ID, githubToken: 'ghu_test' },
+        { id: UPSTREAM_ID, githubHost: 'github.com', githubToken: 'ghu_test' },
         { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall },
       ] as const;
       await copilotAuthedFetch(...args);
@@ -395,7 +428,7 @@ test('copilotAuthedFetch persists a minted token even when the row changed durin
     modelPrefix: null,
     modelsCache: null,
     hue: 210,
-    config: { githubToken: 'ghu_test', user: { id: 1, login: 't', name: null, avatar_url: '' } },
+    config: { githubHost: 'github.com', githubToken: 'ghu_test', user: { id: 1, login: 't', name: null, avatar_url: '' } },
   };
   initProviderRepo(() => ({
     upstreams: {
@@ -431,7 +464,7 @@ test('copilotAuthedFetch persists a minted token even when the row changed durin
       await copilotAuthedFetch(
         '/v1/messages',
         { method: 'POST', body: '{}' },
-        { id: UPSTREAM_ID, githubToken: 'ghu_test' },
+        { id: UPSTREAM_ID, githubHost: 'github.com', githubToken: 'ghu_test' },
         { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall },
       );
     },

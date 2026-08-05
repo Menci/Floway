@@ -249,6 +249,7 @@ test('/api/models — admin self-restriction does NOT leak per-alias metadata va
     config: {
       baseUrl: 'https://small.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'sk-small',
       endpoints: { chatCompletions: {} },
       models: [{ upstreamModelId: 'shared', publicModelId: 'shared', kind: 'chat', endpoints: { chatCompletions: {} }, limits: { max_context_window_tokens: 100_000 } }],
@@ -262,6 +263,7 @@ test('/api/models — admin self-restriction does NOT leak per-alias metadata va
     config: {
       baseUrl: 'https://big.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'sk-big',
       endpoints: { chatCompletions: {} },
       models: [{ upstreamModelId: 'shared', publicModelId: 'shared', kind: 'chat', endpoints: { chatCompletions: {} }, limits: { max_context_window_tokens: 200_000 } }],
