@@ -1,4 +1,5 @@
 import { GEMINI_CANDIDATE_KEYS, GEMINI_RESULT_KEYS } from './field-keys.ts';
+import { assertGeminiCandidateIndex } from './candidate-index.ts';
 import type { GeminiCandidate, GeminiPart, GeminiResult, GeminiStreamEvent } from './index.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
 
@@ -32,6 +33,7 @@ interface GeminiCandidateWithExtras extends GeminiCandidate {
 }
 
 const mergeCandidate = (candidates: Map<number, GeminiCandidateWithExtras>, incoming: GeminiCandidate): void => {
+  assertGeminiCandidateIndex(incoming.index);
   const existing = candidates.get(incoming.index);
   if (!existing) {
     const candidate: GeminiCandidateWithExtras = {

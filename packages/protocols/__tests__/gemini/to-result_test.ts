@@ -97,3 +97,13 @@ test('collectGeminiProtocolEventsToResult waits for every candidate in a stagger
   assertEquals(consumed, 3);
   assertEquals(result.candidates?.[1]?.content.parts, [{ text: 'AB' }]);
 });
+
+test('collectGeminiProtocolEventsToResult rejects invalid candidate coordinates before terminal tracking', async () => {
+  await assertRejects(
+    async () => await collectGeminiProtocolEventsToResult((async function* () {
+      yield eventFrame({ candidates: [{ index: -1, content: { parts: [] }, finishReason: 'STOP' }] } as never);
+    })()),
+    RangeError,
+    'non-negative safe integer',
+  );
+});

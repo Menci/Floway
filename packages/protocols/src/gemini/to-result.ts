@@ -1,4 +1,5 @@
 import type { GeminiErrorResponse, GeminiStreamEvent } from './index.ts';
+import { assertGeminiCandidateIndex } from './candidate-index.ts';
 import { reassembleGeminiEvents } from './reassemble.ts';
 import type { ProtocolFrame } from '../common/index.ts';
 
@@ -12,6 +13,7 @@ export const createGeminiTerminalDetector = (): ((event: GeminiStreamEvent) => b
   return event => {
     if (isGeminiErrorEvent(event)) return true;
     for (const candidate of event.candidates ?? []) {
+      assertGeminiCandidateIndex(candidate.index);
       seenCandidates.add(candidate.index);
       if (candidate.finishReason !== undefined) finishedCandidates.add(candidate.index);
     }

@@ -48,3 +48,12 @@ test('reassembleGeminiEvents preserves unknown fields on streamed text parts', a
     { text: 'B', vendor: 'second' },
   ]);
 });
+
+test.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1])(
+  'reassembleGeminiEvents rejects invalid candidate index %s',
+  async index => {
+    await expect(reassembleGeminiEvents(eventsFrom([{
+      candidates: [{ index, content: { parts: [] } }],
+    }] as never))).rejects.toThrow('non-negative safe integer');
+  },
+);
