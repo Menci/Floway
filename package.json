@@ -8,6 +8,7 @@
     "dev:web": "pnpm --filter @floway-dev/web run dev",
     "dev:node": "pnpm --filter @floway-dev/platform-node run start",
     "build:web": "pnpm --filter @floway-dev/web run build",
+    "check:agent-protocol": "jiti scripts/check-agent-protocol.ts",
     "deploy": "pnpm install --frozen-lockfile && jiti scripts/check-wrangler.ts && pnpm run build:web && wrangler deploy --message \"$(git rev-parse --short HEAD)\"",
     "db:migrate": "jiti scripts/check-wrangler.ts && wrangler d1 migrations apply DB",
     "db:migrate:remote": "jiti scripts/check-wrangler.ts && wrangler d1 migrations apply DB --remote",
