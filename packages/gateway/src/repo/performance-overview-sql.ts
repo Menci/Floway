@@ -76,40 +76,47 @@ const performanceAxisSql: readonly PerformanceAxisSql[] = [
   { axis: 'runtimeLocation', bucket: "'all'", group: 'filtered_summary.runtime_location', where: '1' },
 ];
 
-const summaryAggregateSql = performanceAxisSql.map(({ axis, bucket, group, where }) => `
+const summaryAggregateSql = performanceAxisSql.map(({ axis, bucket, group, where }, index) => {
+  const source = index === 0 ? 'filtered_summary' : 'summary_cube';
+  const sourceBucket = index === 0 ? bucket : bucket.replaceAll('filtered_summary', source);
+  const sourceGroup = group.replaceAll('filtered_summary', source);
+  const sourceWhere = where.replaceAll('filtered_summary', source);
+  return `
   SELECT
     '${axis}' AS axis,
-    ${bucket} AS bucket,
-    ${group} AS group_value,
-    SUM(filtered_summary.requests) AS requests,
-    SUM(filtered_summary.errors_with_output) + SUM(filtered_summary.errors_no_output) AS errors,
-    SUM(filtered_summary.ttft_samples_ok) + SUM(filtered_summary.errors_with_output) AS ttft_samples,
-    SUM(filtered_summary.tpot_samples) AS tpot_samples,
-    SUM(filtered_summary.neutral) AS neutral
-  FROM filtered_summary
+    ${sourceBucket} AS bucket,
+    ${sourceGroup} AS group_value,
+    SUM(${source}.requests) AS requests,
+    SUM(${source}.errors_with_output) + SUM(${source}.errors_no_output) AS errors,
+    SUM(${source}.ttft_samples_ok) + SUM(${source}.errors_with_output) AS ttft_samples,
+    SUM(${source}.tpot_samples) AS tpot_samples,
+    SUM(${source}.neutral) AS neutral
+  FROM ${source}
   CROSS JOIN settings
-  JOIN bucket_map ON bucket_map.hour = filtered_summary.hour
-  WHERE ${where}
-  GROUP BY ${bucket}, ${group}`).join('\n  UNION ALL');
+  ${index === 0 ? 'JOIN bucket_map ON bucket_map.hour = filtered_summary.hour' : ''}
+  WHERE ${sourceWhere}
+  GROUP BY ${sourceBucket}, ${sourceGroup}`;
+}).join('\n  UNION ALL');
 
-const histogramAggregateSql = performanceAxisSql.map(({ axis, bucket, group, where }) => {
-  const histogramBucket = bucket.replaceAll('filtered_summary', 'filtered_histogram');
-  const histogramGroup = group.replaceAll('filtered_summary', 'filtered_histogram');
-  const histogramWhere = where.replaceAll('filtered_summary', 'filtered_histogram');
+const histogramAggregateSql = performanceAxisSql.map(({ axis, bucket, group, where }, index) => {
+  const source = index === 0 ? 'filtered_histogram' : 'histogram_cube';
+  const histogramBucket = index === 0 ? bucket : bucket.replaceAll('filtered_summary', source);
+  const histogramGroup = group.replaceAll('filtered_summary', source);
+  const histogramWhere = where.replaceAll('filtered_summary', source);
   return `
   SELECT
     '${axis}' AS axis,
     ${histogramBucket} AS bucket,
     ${histogramGroup} AS group_value,
-    filtered_histogram.metric,
-    filtered_histogram.lower,
-    MAX(filtered_histogram.upper) AS upper,
-    SUM(filtered_histogram.count) AS count
-  FROM filtered_histogram
+    ${source}.metric,
+    ${source}.lower,
+    MAX(${source}.upper) AS upper,
+    SUM(${source}.count) AS count
+  FROM ${source}
   CROSS JOIN settings
-  JOIN bucket_map ON bucket_map.hour = filtered_histogram.hour
+  ${index === 0 ? 'JOIN bucket_map ON bucket_map.hour = filtered_histogram.hour' : ''}
   WHERE ${histogramWhere}
-  GROUP BY ${histogramBucket}, ${histogramGroup}, filtered_histogram.metric, filtered_histogram.lower`;
+  GROUP BY ${histogramBucket}, ${histogramGroup}, ${source}.metric, ${source}.lower`;
 }).join('\n  UNION ALL');
 
 const overviewSql = (scoped: boolean) => `/* performance-overview */
@@ -188,6 +195,25 @@ filtered_histogram AS MATERIALIZED (
     AND performance_buckets.upstream = filtered_summary.upstream
     AND performance_buckets.operation = filtered_summary.operation
     AND performance_buckets.runtime_location = filtered_summary.runtime_location
+),
+summary_cube AS MATERIALIZED (
+  SELECT
+    key_id, user_id, owned, model, upstream, operation, runtime_location,
+    SUM(requests) AS requests,
+    SUM(ttft_samples_ok) AS ttft_samples_ok,
+    SUM(errors_with_output) AS errors_with_output,
+    SUM(errors_no_output) AS errors_no_output,
+    SUM(neutral) AS neutral,
+    SUM(tpot_samples) AS tpot_samples
+  FROM filtered_summary
+  GROUP BY key_id, user_id, owned, model, upstream, operation, runtime_location
+),
+histogram_cube AS MATERIALIZED (
+  SELECT
+    key_id, user_id, owned, model, upstream, operation, runtime_location,
+    metric, lower, MAX(upper) AS upper, SUM(count) AS count
+  FROM filtered_histogram
+  GROUP BY key_id, user_id, owned, model, upstream, operation, runtime_location, metric, lower
 ),
 summary_aggregates AS MATERIALIZED (
   ${summaryAggregateSql}
