@@ -485,7 +485,7 @@ export const translateChatCompletionsChunkToResponsesEvents = (chunk: ChatComple
       }
     }
 
-    if (choice.finish_reason) {
+    if (choice.finish_reason !== null && choice.finish_reason !== undefined) {
       state.pendingFinishReason = choice.finish_reason;
     }
   }
