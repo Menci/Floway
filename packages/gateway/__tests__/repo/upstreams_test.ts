@@ -1227,6 +1227,7 @@ test('model pricing migrations materialize legacy semantics as base-unit metric 
     models: { upstreamModelId: string; display_name?: string; pricing?: ModelPricing }[];
   };
   assertEquals(config, {
+    ingressHeadersRules: [],
     models: [
       {
         upstreamModelId: 'base-and-overlay',
