@@ -121,7 +121,7 @@ test.each([
       namespace: 'collaboration',
       name: 'spawn_agent',
       arguments: argumentsJson,
-      encrypted_function_args: null,
+      encrypted_function_args: ['message'],
       status: 'completed' as const,
     }),
   },

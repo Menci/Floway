@@ -35,7 +35,7 @@ export const isEncryptedInterAgentCall = (item: ResponsesItem): boolean => {
   if (item.type === 'multi_agent_call') return MESSAGE_ACTIONS.has(item.action);
   if (item.type !== 'function_call' || item.namespace !== 'collaboration' || !MESSAGE_ACTIONS.has(item.name)) return false;
   const encrypted = item.encrypted_function_args;
-  return !Array.isArray(encrypted) || encrypted.includes('message');
+  return !Array.isArray(encrypted) || encrypted.length > 0;
 };
 
 const interAgentMessage = (item: ResponsesItem): string | undefined => {

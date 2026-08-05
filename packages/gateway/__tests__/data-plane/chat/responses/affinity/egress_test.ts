@@ -38,7 +38,6 @@ describe('Responses affinity egress', () => {
       namespace: 'collaboration',
       name: 'spawn_agent',
       arguments: argumentsJson,
-      encrypted_function_args: null,
       status: 'completed' as const,
     };
     const added = { ...item, arguments: '', status: 'in_progress' as const };

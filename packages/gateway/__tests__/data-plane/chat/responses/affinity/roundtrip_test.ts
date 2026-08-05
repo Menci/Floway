@@ -100,7 +100,6 @@ test('inter-agent ciphertext carries one mandatory target from parent function c
     namespace: 'collaboration',
     name: 'spawn_agent',
     arguments: JSON.stringify({ task_name: 'worker', message: rawMessage }),
-    encrypted_function_args: null,
     status: 'completed' as const,
   };
   const upstreamResponse: ResponsesResult = {
