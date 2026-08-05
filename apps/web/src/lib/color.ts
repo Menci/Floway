@@ -20,7 +20,9 @@ export const rgbToHsv = (r: number, g: number, b: number): [number, number, numb
   const { h, v } = convertRgbToHsv(rgbColor([r, g, b]));
   // Culori's equivalent `1 - min / max` changes the last bit for byte inputs,
   // which can move readableTone across a byte-rounding boundary.
-  const s = v === 0 ? 0 : (Math.max(r, g, b) - Math.min(r, g, b)) / Math.max(r, g, b);
+  const channels = [r / 255, g / 255, b / 255];
+  const max = Math.max(...channels);
+  const s = max === 0 ? 0 : (max - Math.min(...channels)) / max;
   return [h ?? 0, s, v];
 };
 
