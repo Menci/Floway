@@ -15,6 +15,7 @@ import { ChartHost } from '../charts/host';
 import { ChartSection } from '../charts/section';
 import type { ChartSeries } from '../charts/series-legends';
 import { visibleSeriesData } from '../charts/series-selection';
+import { positiveLineChartExtent } from '../charts/value-extent';
 import { ScrollArea } from '../ui/scroll-area';
 
 const { makeStyles } = fluentComponents;
@@ -58,7 +59,7 @@ function PerformanceChart({ chart, hidden }: { chart: PerformancePlot; hidden: S
   const formatter = chart.metric === 'ttft' ? formatDuration : formatTokenRate;
   const entryByLegend = useMemo(() => new Map(chart.entries.map(entry => [entry.legend, entry])), [chart.entries]);
   const visibleData = useMemo(() => visibleSeriesData(chart.entries, chart.data, hidden), [chart.data, chart.entries, hidden]);
-  const values = visibleData.lineChartData?.flatMap(series => series.data.map(point => point.y).filter((value): value is number => typeof value === 'number' && value > 0)) ?? [];
+  const extent = useMemo(() => positiveLineChartExtent(visibleData), [visibleData]);
   const labelByTime = useMemo(() => new Map(chart.buckets.map(bucket => [bucket.date.getTime(), bucket.label])), [chart.buckets]);
   const callout = useCallback((props?: CustomizedCalloutData): ReactElement | null => !props?.values.length
     ? null
@@ -70,7 +71,7 @@ function PerformanceChart({ chart, hidden }: { chart: PerformancePlot; hidden: S
       />, [chart.details, chart.range, entryByLegend, labelByTime, locale]);
 
   return <ChartHost className={chartStyles.root} emptyText={t('dashboard.performance.empty')} hasData={Boolean(visibleData.lineChartData?.length)}>
-    {({ size }) => <LineChart styles={chartRootStyles} customDateTimeFormatter={date => formatAxisDate(date, chart.range, locale)} data={visibleData} enablePerfOptimization height={size.height} hideLegend margins={chartMargins} onRenderCalloutPerStack={callout} tickValues={chartTickValues(chart.buckets).map(bucket => bucket.date)} width={size.width} xAxistickSize={-Math.max(0, size.height - chartMargins.top - chartMargins.bottom)} yAxisTickFormat={(value: number) => labelledOnLogAxis(value) ? formatter(value) : ''} yMaxValue={values.length ? Math.max(...values) : undefined} yMinValue={values.length ? Math.min(...values) : undefined} yScaleType="log" />}
+    {({ size }) => <LineChart styles={chartRootStyles} customDateTimeFormatter={date => formatAxisDate(date, chart.range, locale)} data={visibleData} enablePerfOptimization height={size.height} hideLegend margins={chartMargins} onRenderCalloutPerStack={callout} tickValues={chartTickValues(chart.buckets).map(bucket => bucket.date)} width={size.width} xAxistickSize={-Math.max(0, size.height - chartMargins.top - chartMargins.bottom)} yAxisTickFormat={(value: number) => labelledOnLogAxis(value) ? formatter(value) : ''} yMaxValue={extent?.maximum} yMinValue={extent?.minimum} yScaleType="log" />}
   </ChartHost>;
 }
 
