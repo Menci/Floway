@@ -886,6 +886,7 @@ const zhHansCN = {
           keyId: 'API 密钥',
           all: { model: '全部模型', upstream: '全部上游', userId: '全部用户', keyId: '全部 API 密钥' },
           noUpstream: '无上游',
+          unattributedUser: '无法归属的用户',
           selected_other: '已选择 {{count, number}} 项',
         },
         range: {

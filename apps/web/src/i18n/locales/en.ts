@@ -929,6 +929,7 @@ const en = {
           keyId: 'API Key',
           all: { model: 'All models', upstream: 'All upstreams', userId: 'All users', keyId: 'All API keys' },
           noUpstream: 'No upstream',
+          unattributedUser: 'Unattributed user',
           selected_one: '{{count, number}} selected',
           selected_other: '{{count, number}} selected',
         },

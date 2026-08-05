@@ -129,7 +129,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     return [
       { key: 'model', groupLabel: t('dashboard.usage.groupBy.model'), filterLabel: t('dashboard.usage.filters.model'), allLabel: t('dashboard.usage.filters.all.model'), options: usage.dimensionValues.models.map(value => ({ value, label: value })) },
       { key: 'upstream', groupLabel: t('dashboard.usage.groupBy.upstream'), filterLabel: t('dashboard.usage.filters.upstream'), allLabel: t('dashboard.usage.filters.all.upstream'), options: usage.dimensionValues.upstreams.map(value => ({ value, label: requiredLabel(upstreamNames, value, 'upstream') })) },
-      { key: 'userId', groupLabel: t('dashboard.usage.groupBy.userId'), filterLabel: t('dashboard.usage.filters.userId'), allLabel: t('dashboard.usage.filters.all.userId'), options: usage.dimensionValues.userIds.map(value => ({ value: String(value), label: users.get(String(value)) ?? `user ${value}` })) },
+      { key: 'userId', groupLabel: t('dashboard.usage.groupBy.userId'), filterLabel: t('dashboard.usage.filters.userId'), allLabel: t('dashboard.usage.filters.all.userId'), options: usage.dimensionValues.userIds.map(value => ({ value: String(value), label: value === 0 ? t('dashboard.usage.filters.unattributedUser') : requiredLabel(users, String(value), 'user') })) },
       { key: 'keyId', groupLabel: t('dashboard.usage.groupBy.keyId'), filterLabel: t('dashboard.usage.filters.keyId'), allLabel: t('dashboard.usage.filters.all.keyId'), options: usage.dimensionValues.keyIds.map(value => ({ value, label: requiredLabel(keys, value, 'API key') })) },
     ];
   }, [t, upstreams, usage]);
