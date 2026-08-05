@@ -679,7 +679,9 @@ test('buildTargetRequest removes collaboration message encryption from Messages 
     } as ResponsesTool],
   });
 
-  assertEquals(result.target.tools?.[0].input_schema, {
+  const tool = result.target.tools?.[0];
+  if (tool === undefined || !('input_schema' in tool)) throw new Error('Expected translated collaboration function');
+  assertEquals(tool.input_schema, {
     type: 'object',
     properties: { message: { type: 'string' } },
   });
