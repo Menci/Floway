@@ -4,7 +4,7 @@ import { forwardUpstreamResponse } from './upstream-response.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import type { PerformanceTelemetryContext, TelemetryModelIdentity } from '@floway-dev/provider';
 
-const OBSERVED_FIELDS = new Set(['usage', 'service_tier']);
+const DEFAULT_OBSERVED_FIELDS = ['usage', 'service_tier'] as const;
 const MAX_OBSERVED_FIELD_CHARS = 64 * 1024;
 const MAX_KEY_CHARS = 1024;
 
@@ -90,6 +90,8 @@ class TopLevelJsonObserver {
   private readonly fields: Record<string, unknown> = {};
   private failure: string | null = null;
 
+  constructor(private readonly observedFields: ReadonlySet<string>) {}
+
   feed(text: string): void {
     for (let index = 0; index < text.length;) {
       const char = text[index];
@@ -167,7 +169,7 @@ class TopLevelJsonObserver {
       if (this.valueCursor === undefined) {
         if (/\s/.test(char)) return true;
         if (char === ',' || char === '}') return this.invalidate('JSON response object value is missing');
-        this.valueCursor = new JsonValueCursor(char, this.currentKey !== undefined && OBSERVED_FIELDS.has(this.currentKey));
+        this.valueCursor = new JsonValueCursor(char, this.currentKey !== undefined && this.observedFields.has(this.currentKey));
         return true;
       }
       switch (this.valueCursor.push(char)) {
@@ -200,7 +202,7 @@ class TopLevelJsonObserver {
   private finishValue(): void {
     if (this.valueCursor === undefined) return;
     const { overflow, raw } = this.valueCursor.result();
-    if (this.currentKey !== undefined && OBSERVED_FIELDS.has(this.currentKey)) {
+    if (this.currentKey !== undefined && this.observedFields.has(this.currentKey)) {
       if (overflow) {
         this.failure ??= `Observed JSON field ${this.currentKey} exceeds ${MAX_OBSERVED_FIELD_CHARS} characters`;
       } else {
@@ -230,6 +232,12 @@ interface ObserveJsonResponseOptions {
   readonly identity: TelemetryModelIdentity;
   readonly sourceApi: string;
   readonly extractBilling: (body: unknown) => TokenUsage | null;
+  readonly observedFields?: readonly string[];
+  readonly defaultContentType?: string | null;
+  readonly settleFields?: (
+    fields: Record<string, unknown>,
+    outcome: { readonly failed: boolean; readonly error: unknown },
+  ) => void;
 }
 
 export const observeJsonResponse = ({
@@ -239,23 +247,27 @@ export const observeJsonResponse = ({
   identity,
   sourceApi,
   extractBilling,
+  observedFields = DEFAULT_OBSERVED_FIELDS,
+  defaultContentType,
+  settleFields,
 }: ObserveJsonResponseOptions): Response => {
   const upstreamBody = response.body;
   if (upstreamBody === null) {
     ctx.dump?.success(identity, null);
     settle(ctx, performance, identity, null, false);
-    return forwardUpstreamResponse(response);
+    return forwardUpstreamResponse(response, { defaultContentType });
   }
 
   const reader = upstreamBody.getReader();
   const decoder = new TextDecoder('utf-8', { fatal: true });
-  const observer = new TopLevelJsonObserver();
+  const observer = new TopLevelJsonObserver(new Set(observedFields));
   let decodingFailed = false;
   let settled = false;
   const finish = (failed: boolean, error?: unknown): unknown | null => {
     if (settled) return null;
     settled = true;
     let usage: TokenUsage | null = null;
+    let fields: Record<string, unknown> = {};
     if (!failed) {
       try {
         if (!decodingFailed) {
@@ -266,16 +278,28 @@ export const observeJsonResponse = ({
         if (observed.failure !== null) {
           console.warn(`json-response: failed to observe 2xx upstream body for ${sourceApi}; usage row will be request-only`, observed.failure);
         } else {
-          usage = extractBilling(observed.fields);
+          fields = observed.fields;
+          if (settleFields === undefined) usage = extractBilling(fields);
         }
       } catch (cause) {
         failed = true;
         error = cause;
       }
     }
-    if (failed) ctx.dump?.failed(error ?? `${sourceApi} response body did not complete`);
-    else ctx.dump?.success(identity, usage);
-    settle(ctx, performance, identity, usage, failed);
+    if (settleFields !== undefined) {
+      try {
+        settleFields(fields, { failed, error });
+      } catch (cause) {
+        failed = true;
+        error = cause;
+        ctx.dump?.failed(cause);
+        settle(ctx, performance, identity, null, true);
+      }
+    } else {
+      if (failed) ctx.dump?.failed(error ?? `${sourceApi} response body did not complete`);
+      else ctx.dump?.success(identity, usage);
+      settle(ctx, performance, identity, usage, failed);
+    }
     return failed ? (error ?? new Error(`${sourceApi} response body did not complete`)) : null;
   };
 
@@ -310,5 +334,5 @@ export const observeJsonResponse = ({
       }
     },
   });
-  return forwardUpstreamResponse(response, { body });
+  return forwardUpstreamResponse(response, { body, defaultContentType });
 };

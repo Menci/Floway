@@ -1,6 +1,7 @@
 import { streamSSE } from 'hono/streaming';
 
 import { measureAudioTranscriptionUsage } from './usage.ts';
+import { observeJsonResponse } from '../shared/json-response.ts';
 import { passthroughApiError } from '../shared/passthrough-serve.ts';
 import type { PassthroughResponseStrategyContext } from '../shared/passthrough-serve.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/sse.ts';
@@ -10,25 +11,29 @@ import { forwardUpstreamHeaders, forwardUpstreamResponse } from '../shared/upstr
 import { isAudioTranscriptionDoneEvent } from '@floway-dev/protocols/audio';
 import { eventFrame, isEventStreamMediaType, isJsonMediaType, parseSSEStream, sseCommentFrame } from '@floway-dev/protocols/common';
 
-const respondNonStreaming = async ({ ctx, sourceApi, response, performance, identity }: PassthroughResponseStrategyContext): Promise<Response> => {
-  let measurement = requestOnlyUsageMeasurement();
-  if (isJsonMediaType(response.headers.get('content-type'))) {
-    let parsed: unknown;
-    try {
-      parsed = await response.clone().json();
-    } catch (error) {
-      console.warn(
-        `audio-transcription: failed to parse 2xx upstream body for ${sourceApi}; usage row will be request-only`,
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-    if (parsed !== undefined) {
-      measurement = measureAudioTranscriptionUsage(parsed, sourceApi);
-    }
+const respondNonStreaming = ({ ctx, sourceApi, response, performance, identity }: PassthroughResponseStrategyContext): Response => {
+  if (!isJsonMediaType(response.headers.get('content-type'))) {
+    const measurement = requestOnlyUsageMeasurement();
+    ctx.dump?.success(identity, null);
+    settleUsageMeasurement(ctx, performance, identity, measurement, false);
+    return forwardUpstreamResponse(response, { defaultContentType: null });
   }
-  ctx.dump?.success(identity, measurement.dumpTokenUsage);
-  settleUsageMeasurement(ctx, performance, identity, measurement, false);
-  return forwardUpstreamResponse(response, { defaultContentType: null });
+  return observeJsonResponse({
+    ctx,
+    sourceApi,
+    response,
+    performance,
+    identity,
+    observedFields: ['usage', 'duration'],
+    defaultContentType: null,
+    extractBilling: () => null,
+    settleFields: (fields, outcome) => {
+      const measurement = outcome.failed ? requestOnlyUsageMeasurement() : measureAudioTranscriptionUsage(fields, sourceApi);
+      if (outcome.failed) ctx.dump?.failed(outcome.error ?? `${sourceApi} response body did not complete`);
+      else ctx.dump?.success(identity, measurement.dumpTokenUsage);
+      settleUsageMeasurement(ctx, performance, identity, measurement, outcome.failed);
+    },
+  });
 };
 
 const respondStreaming = ({ c, ctx, sourceApi, response, performance, identity }: PassthroughResponseStrategyContext): Response => {
@@ -88,5 +93,5 @@ export const respondAudioTranscription = async (context: PassthroughResponseStra
   }
   return isEventStreamMediaType(response.headers.get('content-type'))
     ? respondStreaming(context)
-    : await respondNonStreaming(context);
+    : respondNonStreaming(context);
 };
