@@ -194,4 +194,45 @@ describe('ensureCodexAccessToken', () => {
     expect(repo.getById).toHaveBeenCalledTimes(1);
     expect(repo.writes).toEqual([]);
   });
+
+  test('parallel cold-start callers share one mint', async () => {
+    const minted: CodexAccessTokenEntry = { token: 'at_minted', expiresAt: farFutureMs, refreshedAt: 'now' };
+    const mint = vi.fn().mockResolvedValue(minted);
+    const results = await Promise.all([
+      ensureCodexAccessToken(upstreamId, accountId, mint),
+      ensureCodexAccessToken(upstreamId, accountId, mint),
+    ]);
+    expect(mint).toHaveBeenCalledTimes(1);
+    expect(results).toEqual([minted, minted]);
+  });
+
+  test('lazy and forced callers never rotate the same refresh token concurrently', async () => {
+    let releaseMint!: () => void;
+    const mintGate = new Promise<void>(resolve => { releaseMint = resolve; });
+    const minted: CodexAccessTokenEntry = { token: 'at_minted', expiresAt: farFutureMs, refreshedAt: 'now' };
+    const mint = vi.fn(async () => {
+      await mintGate;
+      return minted;
+    });
+    const lazy = ensureCodexAccessToken(upstreamId, accountId, mint);
+    const forced = ensureCodexAccessToken(upstreamId, accountId, mint, true);
+    await vi.waitFor(() => expect(mint).toHaveBeenCalledTimes(1));
+    releaseMint();
+    expect(await Promise.all([lazy, forced])).toEqual([minted, minted]);
+    expect(mint).toHaveBeenCalledTimes(1);
+  });
+
+  test('a force request following a coalesced cache hit performs one rotation', async () => {
+    const cached: CodexAccessTokenEntry = { token: 'at_cached', expiresAt: farFutureMs, refreshedAt: 'cached' };
+    const minted: CodexAccessTokenEntry = { token: 'at_minted', expiresAt: farFutureMs, refreshedAt: 'minted' };
+    current = makeRecord({ accounts: [{ ...baseAccount, accessToken: cached }] });
+    const mint = vi.fn().mockResolvedValue(minted);
+    const [lazyResult, forcedResult] = await Promise.all([
+      ensureCodexAccessToken(upstreamId, accountId, mint),
+      ensureCodexAccessToken(upstreamId, accountId, mint, true),
+    ]);
+    expect(lazyResult).toEqual(cached);
+    expect(forcedResult).toEqual(minted);
+    expect(mint).toHaveBeenCalledTimes(1);
+  });
 });
