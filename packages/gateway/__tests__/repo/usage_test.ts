@@ -338,6 +338,18 @@ test('SQL usage overview matches the in-memory oracle across filters, facets, ax
       : '2026-11-01T02',
   };
 
+  for (const groupBy of ['model', 'upstream', 'userId', 'keyId'] as const) {
+    const unfiltered = {
+      ...options,
+      groupBy,
+      filters: { keyIds: [], userIds: [], models: [], upstreams: [] },
+    };
+    assertEquals(
+      await sql.usage.queryOverview(unfiltered),
+      await memory.usage.queryOverview(unfiltered),
+    );
+  }
+
   const expected = await memory.usage.queryOverview(options);
   const actual = await sql.usage.queryOverview(options);
 
