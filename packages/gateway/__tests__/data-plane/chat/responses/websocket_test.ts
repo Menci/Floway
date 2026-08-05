@@ -1448,11 +1448,33 @@ test('Responses WebSocket makes a done reasoning item reusable from a fresh conn
   let responseCalls = 0;
   let resolveSecondBody!: (body: { store?: unknown; input?: unknown }) => void;
   const secondBody = new Promise<{ store?: unknown; input?: unknown }>(resolve => { resolveSecondBody = resolve; });
+  let firstUpstreamController: ReadableStreamDefaultController<Uint8Array> | undefined;
+  let firstUpstreamFinished = false;
   let firstClient: TestWorkerWebSocket | undefined;
   let secondClient: TestWorkerWebSocket | undefined;
 
   const enqueue = (controller: ReadableStreamDefaultController<Uint8Array>, event: string, data: unknown): void =>
     controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+  const finishFirstUpstream = (): void => {
+    if (firstUpstreamFinished || firstUpstreamController === undefined) return;
+    firstUpstreamFinished = true;
+    enqueue(firstUpstreamController, 'response.completed', {
+      type: 'response.completed',
+      sequence_number: 3,
+      response: {
+        id: 'resp_first',
+        object: 'response',
+        model: 'gpt-direct-responses',
+        status: 'completed',
+        output: [originalReasoning],
+        output_text: '',
+        error: null,
+        incomplete_details: null,
+      },
+    });
+    firstUpstreamController.enqueue(encoder.encode('data: [DONE]\n\n'));
+    firstUpstreamController.close();
+  };
 
   await withMockedFetch(
     async request => {
@@ -1480,6 +1502,7 @@ test('Responses WebSocket makes a done reasoning item reusable from a fresh conn
           };
           return new Response(new ReadableStream<Uint8Array>({
             start(controller) {
+              firstUpstreamController = controller;
               enqueue(controller, 'response.created', { type: 'response.created', response, sequence_number: 0 });
               enqueue(controller, 'response.output_item.added', { type: 'response.output_item.added', output_index: 0, item: originalReasoning, sequence_number: 1 });
               enqueue(controller, 'response.output_item.done', { type: 'response.output_item.done', output_index: 0, item: originalReasoning, sequence_number: 2 });
@@ -1529,7 +1552,9 @@ test('Responses WebSocket makes a done reasoning item reusable from a fresh conn
         assert(Array.isArray(replay.input));
         assertEquals(replay.input[0], originalReasoning);
         assertEquals(replay.store, false);
+        finishFirstUpstream();
       } finally {
+        finishFirstUpstream();
         firstClient?.close();
         secondClient?.close();
         await waitForMicrotasks();
