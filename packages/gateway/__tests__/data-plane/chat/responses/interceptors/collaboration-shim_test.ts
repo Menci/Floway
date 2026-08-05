@@ -82,7 +82,6 @@ const response = (output: ResponsesOutputItem[], tools: ResponsesTool[], namespa
 
 test('projects reserved collaboration onto a plaintext upstream namespace and restores every response surface', async () => {
   const ctx = invocation();
-  const clientPayload = structuredClone(ctx.payload);
   let upstreamPayload: ResponsesInvocation['payload'] | undefined;
   const result = await withCollaborationShim(ctx, mockChatGatewayCtx(), async () => {
     upstreamPayload = structuredClone(ctx.payload);
@@ -169,10 +168,10 @@ test('projects reserved collaboration onto a plaintext upstream namespace and re
       { type: 'namespace', name: 'collaboration.audit' },
     ],
   });
-  expect(ctx.payload).toEqual(clientPayload);
+  expect(ctx.payload).toEqual(upstreamPayload);
 });
 
-test('uses a deterministic collision suffix and restores shared context between runs', async () => {
+test('uses a deterministic collision suffix and leaves the projected context for downstream turns', async () => {
   const ctx = invocation();
   ctx.payload = {
     ...ctx.payload,
@@ -181,33 +180,25 @@ test('uses a deterministic collision suffix and restores shared context between 
       { type: 'namespace', name: 'collaboration_2', tools: [] } as ResponsesTool,
     ],
   };
-  const seen: string[] = [];
-  const seenChoices: string[] = [];
-  const run = async () => await withCollaborationShim(ctx, mockChatGatewayCtx(), async () => {
-    seen.push((ctx.payload.tools?.[0] as { name: string }).name);
+  await withCollaborationShim(ctx, mockChatGatewayCtx(), async () => {
+    expect((ctx.payload.tools?.[0] as { name: string }).name).toBe('collaboration_3');
     const choice = ctx.payload.tool_choice as unknown as { tools: Array<{ name: string }> };
-    seenChoices.push(choice.tools[1].name);
+    expect(choice.tools[1].name).toBe('collaboration_3.spawn_agent');
     return eventResult((async function* () {})(), testTelemetryModelIdentity);
   });
-
-  await run();
-  await run();
-  expect(seen).toEqual(['collaboration_3', 'collaboration_3']);
-  expect(seenChoices).toEqual(['collaboration_3.spawn_agent', 'collaboration_3.spawn_agent']);
-  expect((ctx.payload.tools?.[0] as { name: string }).name).toBe('collaboration');
+  expect((ctx.payload.tools?.[0] as { name: string }).name).toBe('collaboration_3');
 });
 
 test('projects Messages targets through the same plaintext namespace', async () => {
   const ctx = invocation('messages');
   ctx.payload = { ...ctx.payload, tool_choice: 'auto' };
-  const original = structuredClone(ctx.payload);
   await withCollaborationShim(ctx, mockChatGatewayCtx(), async () => {
     expect((ctx.payload.tools?.[0] as { name: string }).name).toBe('collaboration_2');
     const namespace = ctx.payload.tools?.[0] as unknown as { tools: Array<{ parameters: { properties: { message: Record<string, unknown> } } }> };
     expect(namespace.tools[0].parameters.properties.message).not.toHaveProperty('encrypted');
     return eventResult((async function* () {})(), testTelemetryModelIdentity);
   });
-  expect(ctx.payload).toEqual(original);
+  expect((ctx.payload.tools?.[0] as { name: string }).name).toBe('collaboration_2');
 });
 
 test('rejects direct Chat Completions projection', async () => {
@@ -221,20 +212,66 @@ test('rejects direct Chat Completions projection', async () => {
 test('projects history-only collaboration calls and applies target eligibility', async () => {
   const ctx = invocation();
   ctx.payload = { ...ctx.payload, tools: undefined, tool_choice: undefined };
-  const original = structuredClone(ctx.payload);
   await withCollaborationShim(ctx, mockChatGatewayCtx(), async () => {
     const item = ctx.payload.input[0];
     expect(item).toMatchObject({ type: 'function_call', namespace: 'collaboration_2' });
     expect(item).not.toHaveProperty('encrypted_function_args');
     return eventResult((async function* () {})(), testTelemetryModelIdentity);
   });
-  expect(ctx.payload).toEqual(original);
+  expect(ctx.payload.input[0]).toMatchObject({ type: 'function_call', namespace: 'collaboration_2' });
 
-  ctx.targetApi = 'chat-completions';
-  await expect(withCollaborationShim(ctx, mockChatGatewayCtx(), async () =>
+  const chatCtx = invocation('chat-completions');
+  chatCtx.payload = { ...chatCtx.payload, tools: undefined, tool_choice: undefined };
+  await expect(withCollaborationShim(chatCtx, mockChatGatewayCtx(), async () =>
     eventResult((async function* () {})(), testTelemetryModelIdentity))).rejects.toThrow(
     'Collaboration shim cannot project a chat-completions target',
   );
+});
+
+test('keeps one plaintext projection across a multi-turn downstream loop', async () => {
+  const ctx = invocation();
+  const namespaces: string[] = [];
+  const upstreamTurn = async (output?: ResponsesOutputFunctionCall) => {
+    namespaces.push((ctx.payload.tools?.[0] as { name: string }).name);
+    return eventResult((async function* () {
+      if (output !== undefined) yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: output });
+    })(), testTelemetryModelIdentity);
+  };
+  const result = await withCollaborationShim(ctx, mockChatGatewayCtx(), async () => {
+    await upstreamTurn();
+    ctx.payload = {
+      ...ctx.payload,
+      input: [
+        ...ctx.payload.input,
+        {
+          type: 'function_call',
+          call_id: 'call_next',
+          namespace: 'collaboration_2',
+          name: 'send_message',
+          arguments: '{"target":"worker","message":"next turn"}',
+          status: 'completed',
+        },
+      ],
+    };
+    const output: ResponsesOutputFunctionCall = {
+      type: 'function_call',
+      id: 'fc_next',
+      call_id: 'call_next',
+      namespace: 'collaboration_2',
+      name: 'send_message',
+      arguments: '{"target":"worker","message":"done"}',
+      status: 'completed',
+    };
+    return await upstreamTurn(output);
+  });
+
+  expect(namespaces).toEqual(['collaboration_2', 'collaboration_2']);
+  expect(ctx.payload.input[1]).toMatchObject({ namespace: 'collaboration_2' });
+  if (result.type !== 'events') throw new Error('Expected events');
+  for await (const frame of result.events) {
+    if (frame.type !== 'event' || frame.event.type !== 'response.output_item.done') continue;
+    expect(frame.event.item).toMatchObject({ namespace: 'collaboration', encrypted_function_args: [] });
+  }
 });
 
 test('rejects ambiguous duplicate collaboration namespaces', async () => {

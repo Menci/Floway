@@ -237,7 +237,6 @@ export const withCollaborationShim: ResponsesInterceptor = async (ctx, _gatewayC
   }
 
   const targetNamespace = upstreamNamespace(namespaceNames(ctx.payload));
-  const clientPayload = ctx.payload;
   ctx.payload = {
     ...ctx.payload,
     tools: rewriteTools(ctx.payload.tools, CLIENT_NAMESPACE, targetNamespace, false),
@@ -245,12 +244,7 @@ export const withCollaborationShim: ResponsesInterceptor = async (ctx, _gatewayC
     input: ctx.payload.input.map(item => requestItem(item, targetNamespace)),
   };
 
-  let result;
-  try {
-    result = await run();
-  } finally {
-    ctx.payload = clientPayload;
-  }
+  const result = await run();
   if (result.type !== 'events') return result;
   return {
     ...result,
