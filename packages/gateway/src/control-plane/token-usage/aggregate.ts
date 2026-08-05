@@ -1,4 +1,4 @@
-import type { UsageRecord } from '../../repo/types.ts';
+import type { UsageOverviewGroupBy, UsageOverviewRecord, UsageRecord } from '../../repo/types.ts';
 import { createTelemetryBucket, type TelemetryBucketGranularity } from '../shared/telemetry-bucket.ts';
 import { addDecimalStrings, multiplyDecimalStrings, tokenUsageUnattributedUserId, usageUpstreamDimensionValue, type BillingMetric, type DecimalString } from '@floway-dev/protocols/common';
 
@@ -25,21 +25,12 @@ export interface DisplayUsageByUserRecord {
   cost: DecimalString | null;
 }
 
-export type UsageOverviewGroupBy = 'keyId' | 'userId' | 'model' | 'upstream';
-
-export interface UsageOverviewRecord {
-  bucket: string;
-  group: string;
-  requests: number;
-  metrics: DisplayUsageMetric[];
-  cost: DecimalString | null;
-}
-
 export interface UsageOverviewAggregateOptions {
   bucket: TelemetryBucketGranularity;
   groupBy: UsageOverviewGroupBy | 'none';
   timeZone?: string;
   timezoneOffsetMinutes: number;
+  bucketForHour?: (hour: string) => string;
 }
 
 const recordCostUsd = (record: UsageRecord): DecimalString | null => {
@@ -52,6 +43,8 @@ const recordCostUsd = (record: UsageRecord): DecimalString | null => {
   }
   return priced ? total : null;
 };
+
+export type { UsageOverviewGroupBy, UsageOverviewRecord } from '../../repo/types.ts';
 
 const accumulate = (
   bucket: { requests: number; cost: DecimalString | null; metrics: DisplayUsageMetric[] },
@@ -150,7 +143,7 @@ export const aggregateUsageForOverview = <K extends string>(
 ): Record<K, UsageOverviewRecord[]> => {
   const entries = Object.entries(axes) as [K, UsageOverviewAggregateOptions][];
   const maps = entries.map(() => new Map<string, UsageOverviewRecord>());
-  const bucketResolvers = entries.map(([, options]) => createTelemetryBucket(options));
+  const bucketResolvers = entries.map(([, options]) => options.bucketForHour ?? createTelemetryBucket(options));
   for (const record of records) {
     for (let index = 0; index < entries.length; index++) {
       const options = entries[index][1];

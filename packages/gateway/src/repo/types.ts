@@ -63,6 +63,46 @@ export interface UsageRecord {
   metrics: UsageMetricRecord[];
 }
 
+export type UsageOverviewGroupBy = 'keyId' | 'userId' | 'model' | 'upstream';
+export type UsageOverviewAxis = UsageOverviewGroupBy | 'none' | 'series';
+
+export interface UsageOverviewRecord {
+  bucket: string;
+  group: string;
+  requests: number;
+  metrics: Array<{ metric: BillingMetric; quantity: DecimalString }>;
+  cost: DecimalString | null;
+}
+
+export interface UsageOverviewFilters {
+  keyIds: readonly string[];
+  userIds: readonly number[];
+  models: readonly string[];
+  upstreams: readonly string[];
+}
+
+export interface UsageOverviewQueryOptions {
+  actorUserId: number;
+  isAdmin: boolean;
+  start: string;
+  end: string;
+  groupBy: UsageOverviewGroupBy;
+  filters: UsageOverviewFilters;
+  keyToUser: ReadonlyMap<string, number>;
+  bucketForHour: (hour: string) => string;
+}
+
+export interface UsageOverviewResult {
+  series: UsageOverviewRecord[];
+  axes: Record<UsageOverviewGroupBy | 'none', UsageOverviewRecord[]>;
+  dimensionValues: {
+    keyIds: string[];
+    userIds: number[];
+    models: string[];
+    upstreams: string[];
+  };
+}
+
 export interface UsageMetricRecord {
   metric: BillingMetric;
   quantity: DecimalString;
@@ -205,6 +245,7 @@ export interface UsageRepo {
   // snapshot; later writes that share the row keep it unchanged.
   record(record: UsageRecord): Promise<void>;
   query(opts: { keyIds?: readonly string[]; start: string; end: string }): Promise<UsageRecord[]>;
+  queryOverview(opts: UsageOverviewQueryOptions): Promise<UsageOverviewResult>;
   listAll(): Promise<UsageRecord[]>;
   // Replacement upsert: quantities and unit prices are overwritten from the record.
   set(record: UsageRecord): Promise<void>;

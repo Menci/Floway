@@ -6,6 +6,7 @@ import { SqlResponsesItemsRepo, SqlResponsesSnapshotsRepo } from './responses-st
 import { generateSessionToken } from './session-tokens.ts';
 import { SqlSpilledFilesRepo } from './spilled-files-sql.ts';
 import { runStatements } from './sql-batch.ts';
+import { querySqlUsageOverview } from './usage-overview-sql.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
@@ -39,6 +40,8 @@ import type {
   SessionsRepo,
   UpstreamRepo,
   UsageRecord,
+  UsageOverviewQueryOptions,
+  UsageOverviewResult,
   UsageRepo,
   User,
   UsersRepo,
@@ -465,6 +468,10 @@ class SqlUsageRepo implements UsageRepo {
       this.db.prepare(`SELECT key_id, model, upstream, model_key, hour, pricing_selector, requests FROM usage_requests WHERE ${where}`).bind(...binds).all<UsageRequestRow>(),
     ]);
     return assembleUsageRecords(metrics, requests);
+  }
+
+  queryOverview(opts: UsageOverviewQueryOptions): Promise<UsageOverviewResult> {
+    return querySqlUsageOverview(this.db, opts);
   }
 
   async listAll(): Promise<UsageRecord[]> {

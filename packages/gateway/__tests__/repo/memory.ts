@@ -1,4 +1,6 @@
 import { normalizeDisabledPublicModelIds } from '../../src/repo/disabled-public-models.ts';
+import { aggregateUsageForOverview, usageUserIdForKey } from '../../src/control-plane/token-usage/aggregate.ts';
+import { partitionTelemetryOverviewRecords } from '../../src/control-plane/shared/telemetry-overview.ts';
 import { normalizeFlagOverrides } from '../../src/repo/flag-overrides.ts';
 import { normalizeProxyFallbackList } from '../../src/repo/proxy-fallback-list.ts';
 import {
@@ -49,6 +51,8 @@ import type {
   StoredResponsesSnapshot,
   UpstreamRepo,
   UsageRecord,
+  UsageOverviewQueryOptions,
+  UsageOverviewResult,
   UsageRepo,
   User,
   UsersRepo,
@@ -58,7 +62,7 @@ import { usageMetricRows } from '../../src/repo/usage-metrics.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../../src/shared/performance-histogram.ts';
 import { assertWebSearchProviderName, type WebSearchConfig } from '../../src/shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
-import { addDecimalStrings, canonicalPricingSelectorKey, canonicalizePricingSelector, type BillingMetric, type DecimalString, type PricingSelector } from '@floway-dev/protocols/common';
+import { addDecimalStrings, canonicalPricingSelectorKey, canonicalizePricingSelector, usageUpstreamDimensionValue, type BillingMetric, type DecimalString, type PricingSelector } from '@floway-dev/protocols/common';
 import { UpstreamGoneError, type UpstreamModelsCache, type UpstreamRecord } from '@floway-dev/provider';
 
 const SEED_ADMIN_USER: User = {
@@ -353,6 +357,52 @@ class MemoryUsageRepo implements UsageRepo {
         .map(r => this.toRecord(r))
         .sort((a, b) => a.hour.localeCompare(b.hour)),
     );
+  }
+
+  async queryOverview(opts: UsageOverviewQueryOptions): Promise<UsageOverviewResult> {
+    const records = await this.query({ start: opts.start, end: opts.end });
+    const scoped = !opts.isAdmin || opts.groupBy === 'keyId'
+      ? records.filter(record => opts.keyToUser.get(record.keyId) === opts.actorUserId)
+      : records;
+    const visibleKeyIds = new Set([...opts.keyToUser]
+      .filter(([, userId]) => userId === opts.actorUserId)
+      .map(([keyId]) => keyId));
+    const partitioned = partitionTelemetryOverviewRecords(scoped, {
+      keyId: {
+        value: record => record.keyId,
+        includeFacet: record => visibleKeyIds.has(record.keyId),
+      },
+      userId: {
+        value: record => String(usageUserIdForKey(record.keyId, opts.keyToUser)),
+        includeFacet: () => opts.isAdmin,
+      },
+      model: { value: record => record.model },
+      upstream: { value: record => usageUpstreamDimensionValue(record.upstream) },
+    }, {
+      keyId: new Set(opts.filters.keyIds),
+      userId: new Set(opts.filters.userIds.map(String)),
+      model: new Set(opts.filters.models),
+      upstream: new Set(opts.filters.upstreams),
+    });
+    const aggregateOptions = { bucket: 'all' as const, timezoneOffsetMinutes: 0 };
+    const { series, ...axes } = aggregateUsageForOverview(partitioned.filtered, {
+      series: { ...aggregateOptions, groupBy: opts.groupBy, bucketForHour: opts.bucketForHour },
+      none: { ...aggregateOptions, groupBy: 'none' },
+      keyId: { ...aggregateOptions, groupBy: 'keyId' },
+      userId: { ...aggregateOptions, groupBy: 'userId' },
+      model: { ...aggregateOptions, groupBy: 'model' },
+      upstream: { ...aggregateOptions, groupBy: 'upstream' },
+    }, opts.keyToUser, visibleKeyIds);
+    return {
+      series,
+      axes: { ...axes, userId: opts.isAdmin ? axes.userId : [] },
+      dimensionValues: {
+        keyIds: partitioned.dimensionValues.keyId,
+        userIds: partitioned.dimensionValues.userId.map(Number).sort((left, right) => left - right),
+        models: partitioned.dimensionValues.model,
+        upstreams: partitioned.dimensionValues.upstream,
+      },
+    };
   }
 
   listAll(): Promise<UsageRecord[]> {
