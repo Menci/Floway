@@ -50,14 +50,17 @@ describe('rgbToHex', () => {
 });
 
 describe('rgbToHsv', () => {
-  it('gives value=0 and saturation=0 for black', () => {
-    const [, s, v] = rgbToHsv(0, 0, 0);
+  it('keeps the public zero-hue convention for achromatic colors', () => {
+    const [h, s, v] = rgbToHsv(0, 0, 0);
+    expect(h).toBe(0);
     expect(v).toBe(0);
     expect(s).toBe(0);
+    expect(rgbToHsv(128, 128, 128)[0]).toBe(0);
   });
 
   it('gives value=1 and saturation=0 for white', () => {
-    const [, s, v] = rgbToHsv(255, 255, 255);
+    const [h, s, v] = rgbToHsv(255, 255, 255);
+    expect(h).toBe(0);
     expect(v).toBe(1);
     expect(s).toBe(0);
   });
