@@ -360,7 +360,9 @@ class MemoryUsageRepo implements UsageRepo {
   }
 
   async queryOverview(opts: UsageOverviewQueryOptions): Promise<UsageOverviewResult> {
-    const records = await this.query({ start: opts.start, end: opts.end });
+    const records = [...this.store.values()]
+      .filter(record => record.hour >= opts.start && record.hour < opts.end)
+      .map(record => this.toRecord(record));
     const scoped = !opts.isAdmin || opts.groupBy === 'keyId'
       ? records.filter(record => opts.keyToUser.get(record.keyId) === opts.actorUserId)
       : records;

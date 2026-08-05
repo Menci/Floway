@@ -145,8 +145,8 @@ test('/api/token-usage/overview delegates every dashboard axis to one overview r
   assertEquals(queryOptions && {
     actorUserId: queryOptions.actorUserId,
     isAdmin: queryOptions.isAdmin,
-    start: '2026-04-30T00',
-    end: '2026-05-01T00',
+    start: queryOptions.start,
+    end: queryOptions.end,
     groupBy: queryOptions.groupBy,
     filters: queryOptions.filters,
   }, {
