@@ -273,7 +273,7 @@ export const claudeCodeProbe = async (c: CtxWithJson<typeof claudeCodeProbeBody>
     await repo.saveState(record.id, current => {
       const currentState = readClaudeCodeUpstreamState(current);
       const account = currentState.accounts[0];
-      if (account.accountUuid !== persistedAccountUuid || account.accessToken?.token !== accessToken) return currentState;
+      if (account.accountUuid !== persistedAccountUuid) return currentState;
       return mergeSnapshotInto(currentState);
     }, { kind: 'claude-code' });
     const updated = await repo.getById(record.id);
