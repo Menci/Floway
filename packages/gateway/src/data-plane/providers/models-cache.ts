@@ -139,7 +139,7 @@ export const triggerUpstreamModelsFetch = (
   loadProvidedModels?: () => Promise<ProviderModel[]>,
 ): void => {
   const key = inFlightKey(instance);
-  scheduler(memoInFlight(key, () => runClaimedFetch(instance, fetcher, false, loadProvidedModels)));
+  scheduler(memoInFlight(key, () => runClaimedFetch(instance, fetcher, false, loadProvidedModels)).then(() => {}));
 };
 
 export const fetchUpstreamModelsCached = async (
