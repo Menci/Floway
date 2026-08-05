@@ -10,6 +10,8 @@ import { forwardUpstreamHeaders, forwardUpstreamResponse } from '../shared/upstr
 import type { TokenUsage } from '../../repo/types.ts';
 import { eventFrame, parseSSEStream, sseCommentFrame } from '@floway-dev/protocols/common';
 
+// https://github.com/openai/openai-openapi/blob/a3276900e58b8b2a92e0cb087cd2e6e005f58458/openapi.yaml#L51068-L51135
+// https://github.com/openai/openai-openapi/blob/a3276900e58b8b2a92e0cb087cd2e6e005f58458/openapi.yaml#L51248-L51316
 const completedEventType = (sourceApi: PassthroughResponseStrategyContext['sourceApi']): string => {
   switch (sourceApi) {
   case '/images/generations': return 'image_generation.completed';
