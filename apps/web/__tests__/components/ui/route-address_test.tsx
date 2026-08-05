@@ -85,4 +85,31 @@ describe('addressed controls', () => {
     expect(onChange).not.toHaveBeenCalled();
     expect(router.state.location.search).toBe('');
   });
+
+  it('keeps an addressed read-only choice focusable without letting it change the view', async () => {
+    const onChange = vi.fn();
+    const { router, getByRole } = renderRouter(<ChoiceGroup
+      ariaLabel="Range"
+      items={[
+        { value: 'today', label: 'Today', to: '?range=today' },
+        { value: '7d', label: '7 days', to: '?range=7d' },
+      ]}
+      onChange={onChange}
+      readOnly
+      value="today"
+    />);
+
+    const today = getByRole('radio', { name: 'Today' });
+    const sevenDays = getByRole('radio', { name: '7 days' });
+    expect(sevenDays.getAttribute('href')).toBeNull();
+    expect(today.getAttribute('tabindex')).toBe('0');
+    expect(sevenDays.getAttribute('tabindex')).toBe('-1');
+    await act(async () => { fireEvent.click(sevenDays, { button: 0 }); });
+    const space = createEvent.keyDown(sevenDays, { key: ' ' });
+    fireEvent(sevenDays, space);
+
+    expect(space.defaultPrevented).toBe(true);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(router.state.location.search).toBe('');
+  });
 });
