@@ -151,6 +151,7 @@ describe('vlessFrameOverStream — reply prefix strip', () => {
       stage: 'proxy-handshake',
       message: expect.stringContaining('bad version'),
     });
+    expect(p.transport.readable.locked).toBe(false);
   });
 
   it('errors the readable when the server hangs up before the prefix arrives', async () => {
@@ -166,6 +167,7 @@ describe('vlessFrameOverStream — reply prefix strip', () => {
       stage: 'proxy-handshake',
       message: expect.stringContaining('EOF before prefix'),
     });
+    expect(p.transport.readable.locked).toBe(false);
   });
 });
 

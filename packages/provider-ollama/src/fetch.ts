@@ -6,9 +6,9 @@
 // hatch the way the generic custom provider needs.
 
 import type { OllamaUpstreamConfig } from './config.ts';
-import { type UpstreamFetchOptions, joinBaseAndPath } from '@floway-dev/provider';
+import { dispatchUpstreamFetch, type UpstreamFetchOptions, joinBaseAndPath } from '@floway-dev/provider';
 
-const ollamaFetchInternal = async (
+const ollamaFetchInternal = (
   config: OllamaUpstreamConfig,
   path: string,
   init: RequestInit,
@@ -22,7 +22,7 @@ const ollamaFetchInternal = async (
   if (options.extraHeaders) {
     for (const [k, v] of options.extraHeaders) headers.set(k, v);
   }
-  return await options.wrapUpstreamCall(() => options.fetcher(joinBaseAndPath(config.baseUrl, path), { ...init, headers }));
+  return dispatchUpstreamFetch(options, joinBaseAndPath(config.baseUrl, path), { ...init, headers });
 };
 
 export const ollamaFetchChatCompletions = (config: OllamaUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
