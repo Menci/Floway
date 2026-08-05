@@ -71,20 +71,22 @@ test('assertOllamaUpstreamRecord rejects malformed base URLs and suffix-swallowi
 });
 
 test('assertOllamaUpstreamRecord rejects rerank models', () => {
-  assertThrows(
-    () => assertOllamaUpstreamRecord({
-      ...baseRecord,
-      config: {
-        ...(baseRecord.config as Record<string, unknown>),
-        models: [{
-          upstreamModelId: 'reranker',
-          kind: 'rerank',
-          endpoints: { rerank: {} },
-          rerankTarget: { protocol: 'cohere-v2' },
-        }],
-      },
-    }),
-    Error,
-    'rerank models require a custom upstream',
-  );
+  for (const kind of ['rerank', 'chat']) {
+    assertThrows(
+      () => assertOllamaUpstreamRecord({
+        ...baseRecord,
+        config: {
+          ...(baseRecord.config as Record<string, unknown>),
+          models: [{
+            upstreamModelId: 'reranker',
+            kind,
+            endpoints: { rerank: {} },
+            rerankTarget: { protocol: 'cohere-v2' },
+          }],
+        },
+      }),
+      Error,
+      'rerank models require a custom upstream',
+    );
+  }
 });
