@@ -6,12 +6,15 @@ describe('positive chart extent', () => {
   it('ignores non-positive readings and preserves empty-data semantics', () => {
     expect(positiveLineChartExtent({
       lineChartData: [
-        { legend: 'series', data: [
-          { x: 1, y: 0 },
-          { x: 2, y: 4 },
-          { x: 3, y: 2 },
-          { x: 4, y: -1 },
-        ] },
+        {
+          legend: 'series',
+          data: [
+            { x: 1, y: 0 },
+            { x: 2, y: 4 },
+            { x: 3, y: 2 },
+            { x: 4, y: -1 },
+          ],
+        },
       ],
     })).toEqual({ minimum: 2, maximum: 4 });
     expect(positiveLineChartExtent({ lineChartData: [] })).toBeNull();
