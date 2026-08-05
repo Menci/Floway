@@ -312,12 +312,10 @@ const resultsArray = (value: unknown, field: string): CanonicalRerankResult[] =>
 };
 
 const requiredTotalTokensFrom = (value: unknown): number => {
-  if (!isRecord(value) || typeof value.total_tokens !== 'number' || !Number.isSafeInteger(value.total_tokens)) {
+  if (!isRecord(value) || typeof value.total_tokens !== 'number' || !Number.isSafeInteger(value.total_tokens) || value.total_tokens < 0) {
     throw new Error('usage.total_tokens must be a non-negative safe integer');
   }
-  const totalTokens = value.total_tokens;
-  if (totalTokens < 0) throw new Error('usage.total_tokens must not be negative');
-  return totalTokens;
+  return value.total_tokens;
 };
 
 const optionalUsage = (
