@@ -36,6 +36,22 @@ describe('where the performance page reads upstream names from', () => {
     expect(data.error).toBeNull();
   });
 
+  it('makes API key grouping explicitly current-user scoped for an administrator', async () => {
+    useAuthStore.getState().primeFromLogin({ token: 'admin-session', user: { id: 1, username: 'admin', isAdmin: true, upstreamIds: null } });
+    const performanceQueries: URL[] = [];
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+      const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost');
+      if (url.pathname === '/api/performance/overview') performanceQueries.push(url);
+      return gatewayForOperator(input);
+    }));
+
+    const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/performance?g=keyId') } as never);
+
+    expect(data.state.groupBy).toBe('keyId');
+    expect(data.state.filters.userId).toEqual(['1']);
+    expect(performanceQueries[0].searchParams.getAll('filter_user_id')).toEqual(['1']);
+  });
+
   it('re-reads a Node overview after removing stale Region URL state', async () => {
     useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, upstreamIds: null } });
     const fetch = vi.fn(gatewayForOperator);
@@ -63,7 +79,7 @@ describe('where the performance page reads upstream names from', () => {
 
     expect(data.regionAvailable).toBe(true);
     expect(data.state.groupBy).toBe('runtimeLocation');
-    expect(data.state.filters.runtimeLocation).toEqual(['SJC']);
+    expect(data.state.filters.runtimeLocation).toEqual([]);
     expect(fetch.mock.calls.filter(([input]) => new URL(String(input), 'http://localhost').pathname === '/api/performance/overview')).toHaveLength(1);
   });
 
@@ -81,7 +97,7 @@ describe('where the performance page reads upstream names from', () => {
 
     expect(data.regionAvailable).toBeNull();
     expect(data.state.groupBy).toBe('runtimeLocation');
-    expect(data.state.filters.runtimeLocation).toEqual(['SJC']);
+    expect(data.state.filters.runtimeLocation).toEqual([]);
     expect(data.error?.message).toBe('Unavailable');
     expect(fetch.mock.calls.filter(([input]) => new URL(String(input), 'http://localhost').pathname === '/api/performance/overview')).toHaveLength(1);
   });

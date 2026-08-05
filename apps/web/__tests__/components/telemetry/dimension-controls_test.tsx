@@ -7,6 +7,7 @@ import { renderInApp } from '../../render';
 describe('telemetry dimension controls', () => {
   it('labels the grouping composite and omits the active dimension filter', () => {
     renderInApp(<TelemetryDimensionControls
+      disabled={false}
       dimensions={[
         { key: 'model', groupLabel: 'By Model', filterLabel: 'Model', allLabel: 'All models', options: [] },
         { key: 'upstream', groupLabel: 'By Upstream', filterLabel: 'Upstream', allLabel: 'All upstreams', options: [] },

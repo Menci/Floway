@@ -16,8 +16,9 @@
 // Round-trip guarantee: `parseProxyUri(formatProxyUri(c))` deep-equals `c`
 // for every supported variant. The serialized string is canonical-shaped
 // but not byte-for-byte identical with arbitrary inputs — query order,
-// percent-encoding, and SS-2022 base64 padding may vary.
+// and percent-encoding may vary.
 
+import { base64UrlDecodeBytes, base64UrlEncodeBytes, utf8Bytes } from './bytes.ts';
 import { ProxyUriError } from './errors.ts';
 import {
   type HttpProxyConfig,
@@ -174,14 +175,12 @@ const parseSs = (
     };
   }
 
-  // Legacy: the entire userinfo is base64(method:password). The base64
-  // alphabet contains no ':' so the URL parser leaves the whole blob in
-  // url.username and never splits it across username/password. Decode
-  // through the pctDecoded `username` so `=` padding (which the WHATWG
-  // URL constructor percent-encodes inside userinfo) reaches `atob` raw.
+  // This branch parses SIP002's Base64URL-encoded UTF-8 `method:password`
+  // form. Padded standard Base64 remains an interoperability extension.
+  // https://github.com/shadowsocks/shadowsocks-org/blob/34598d65054dad975d330ff9d7317b0d41cf1efd/docs/doc/sip002.md#L3-L13
   let decoded: string;
   try {
-    decoded = atob(username);
+    decoded = new TextDecoder('utf-8', { fatal: true }).decode(base64UrlDecodeBytes(username));
   } catch (cause) {
     throw new ProxyUriError('malformed ss userinfo (invalid base64)', { cause });
   }
@@ -365,21 +364,17 @@ const formatSocks5 = (config: Socks5ProxyConfig): string => {
 };
 
 const formatSs = (config: ShadowsocksProxyConfig): string => {
-  // Legacy SS userinfo is the entire base64-encoded `method:password`;
-  // `btoa` handles only Latin-1 input, which matches every byte SS allows
-  // in either field.
-  const userinfo = btoa(`${config.method}:${config.password}`);
+  const userinfo = base64UrlEncodeBytes(utf8Bytes(`${config.method}:${config.password}`));
   return `ss://${userinfo}@${config.host}:${config.port}${
     formatFragment(config.name, config.host, config.port)}`;
 };
 
 const formatSs2022 = (config: Shadowsocks2022ProxyConfig): string => {
-  // SS-2022 keeps userinfo as plaintext `method:base64key`. We emit the
-  // base64 padding (`=`) raw — `parseProxyUri` decodes via
-  // `decodeURIComponent`, which accepts both raw and percent-encoded `=`.
-  return `ss://${config.method}:${config.passwordBase64}`
-    + `@${config.host}:${config.port}${
-      formatFragment(config.name, config.host, config.port)}`;
+  // AEAD-2022 keeps userinfo plaintext and percent-encodes both components;
+  // its PSK remains padded standard Base64.
+  // https://github.com/Shadowsocks-NET/shadowsocks-specs/blob/20b4952e8a54e696ebcabc5f91b5dad7f322f2da/2022-3-shadowsocks-url.md#L1-L18
+  return `${formatAuthority('ss', config.method, config.passwordBase64, config.host, config.port)}${
+    formatFragment(config.name, config.host, config.port)}`;
 };
 
 const formatTrojan = (config: TrojanProxyConfig): string => {

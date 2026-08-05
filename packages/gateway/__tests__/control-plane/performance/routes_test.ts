@@ -453,14 +453,14 @@ test('/api/performance/overview leaves dimensionValues.userIds empty for a non-a
   assertEquals(body.dimensionValues.userIds, []);
 });
 
-test('/api/performance/overview returns dashboard aggregates from one repo query', async () => {
+test('/api/performance/overview delegates every dashboard axis to one overview read', async () => {
   const { repo, apiKey } = await setupAppTest();
   let queryCount = 0;
-  const originalQuery = repo.performance.query.bind(repo.performance);
-  repo.performance.query = (opts => {
+  const originalQuery = repo.performance.queryOverview.bind(repo.performance);
+  repo.performance.queryOverview = opts => {
     queryCount++;
     return originalQuery(opts);
-  }) as typeof repo.performance.query;
+  };
 
   await repo.performance.recordSample({
     hour: '2026-04-30T10',

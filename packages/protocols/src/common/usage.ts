@@ -1,3 +1,17 @@
+export const usageUpstreamDimensionPrefix = 'upstream:';
+export const usageWithoutUpstreamDimensionValue = 'none';
+
+export const tokenUsageUnattributedUserId = 0;
+
+export const usageUpstreamDimensionValue = (upstream: string | null): string =>
+  upstream === null ? usageWithoutUpstreamDimensionValue : `${usageUpstreamDimensionPrefix}${upstream}`;
+
+export const usageUpstreamFromDimensionValue = (value: string): string | null => {
+  if (value === usageWithoutUpstreamDimensionValue) return null;
+  if (!value.startsWith(usageUpstreamDimensionPrefix)) throw new TypeError(`Invalid Usage upstream dimension value: ${value}`);
+  return value.slice(usageUpstreamDimensionPrefix.length);
+};
+
 // Response-side `default` (OpenAI), `standard` (Anthropic), and blank values
 // identify base service. Other open-string values remain byte-preserving.
 // https://developers.openai.com/api/docs/guides/priority-processing

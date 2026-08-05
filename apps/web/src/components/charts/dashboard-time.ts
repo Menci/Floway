@@ -11,6 +11,7 @@ export interface ChartBucket extends DashboardBucketFrame { label: string }
 const pad2 = (value: number) => String(value).padStart(2, '0');
 const localHourKey = (date: Date) =>
   `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}T${pad2(date.getHours())}`;
+const utcHourKey = (date: Date) => date.toISOString().slice(0, 13);
 const localDateKey = (date: Date) =>
   `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 const local4hStart = (date: Date) => {
@@ -26,14 +27,16 @@ export const dashboardBucketFrames = (range: DashboardRange, nowMs: number): Das
     current.setMinutes(0, 0, 0);
     return Array.from({ length: 24 }, (_, index) => {
       const date = new Date(current.getTime() - (23 - index) * 3_600_000);
-      return { key: localHourKey(date), date };
+      return { key: utcHourKey(date), date };
     });
   }
   if (range === '7d') {
     const current = local4hStart(new Date(nowMs));
     return Array.from({ length: 42 }, (_, index) => {
-      const date = new Date(current.getTime() - (41 - index) * 4 * 3_600_000);
-      return { key: localHourKey(date), date };
+      const date = new Date(current);
+      date.setHours(date.getHours() - (41 - index) * 4);
+      const aligned = local4hStart(date);
+      return { key: localHourKey(aligned), date: aligned };
     });
   }
   return Array.from({ length: 30 }, (_, index) => {
@@ -56,7 +59,7 @@ export const dashboardRangeQuery = (range: DashboardRange, nowMs: number) => {
 
 export const dashboardBucketKeyForUtcHour = (range: DashboardRange, hour: string) => {
   const date = new Date(`${hour}:00:00Z`);
-  if (range === 'today') return localHourKey(date);
+  if (range === 'today') return hour;
   if (range === '7d') return localHourKey(local4hStart(date));
   return localDateKey(date);
 };

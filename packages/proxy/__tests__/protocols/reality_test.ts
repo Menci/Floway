@@ -7,7 +7,6 @@ import { hexDecode } from '../../src/bytes.ts';
 import {
   buildRealityAad,
   buildRealitySessionId,
-  constantTimeEqual,
   dialReality,
   extractEd25519RawPubKey,
   parseShortId,
@@ -262,6 +261,10 @@ describe('dialReality — pre-connect base64 decoder corner cases', () => {
     await verifyReachesConnect(`${'A'.repeat(43)}=`);
   });
 
+  it('accepts non-zero trailing padding bits under WHATWG forgiving-base64', async () => {
+    await verifyReachesConnect(`${'A'.repeat(42)}B=`);
+  });
+
   it('accepts a base64url string with the URL-safe alphabet (- and _)', async () => {
     // 32 bytes of 0xfe yields a 43-char base64url with '-' and '_' characters.
     await verifyReachesConnect('_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v4');
@@ -374,23 +377,6 @@ describe('extractEd25519RawPubKey', () => {
     spki.set(ED25519_SPKI_PREFIX, 0);
     spki[6] = 0xff;
     expect(() => extractEd25519RawPubKey(spki)).toThrow(/prefix mismatch/);
-  });
-});
-
-describe('constantTimeEqual', () => {
-  it('returns true for identical buffers', () => {
-    expect(constantTimeEqual(new Uint8Array([1, 2, 3]), new Uint8Array([1, 2, 3]))).toBe(true);
-    expect(constantTimeEqual(new Uint8Array(0), new Uint8Array(0))).toBe(true);
-  });
-
-  it('returns false for buffers that differ in any byte', () => {
-    expect(constantTimeEqual(new Uint8Array([1, 2, 3]), new Uint8Array([1, 2, 4]))).toBe(false);
-    expect(constantTimeEqual(new Uint8Array([0, 0, 0]), new Uint8Array([0, 0, 1]))).toBe(false);
-  });
-
-  it('returns false for buffers of different lengths', () => {
-    expect(constantTimeEqual(new Uint8Array([1, 2, 3]), new Uint8Array([1, 2, 3, 4]))).toBe(false);
-    expect(constantTimeEqual(new Uint8Array(0), new Uint8Array(1))).toBe(false);
   });
 });
 

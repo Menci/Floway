@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deploy to Cloudflare"
+  short_description: "Deploy Floway safely to Cloudflare Workers"
+  default_prompt: "Use $deploy-to-cloudflare to deploy Floway to Cloudflare Workers."

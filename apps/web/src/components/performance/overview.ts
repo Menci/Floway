@@ -1,5 +1,7 @@
 import { oneOf, repeatedValues } from '../../lib/search-params';
 import { dashboardRangeQuery, type DashboardRange } from '../charts/dashboard-time';
+import { clearGroupedTelemetryFilters } from '../telemetry/filter-state';
+import { parseHiddenSeries, serializeHiddenSeries } from '../telemetry/hidden-series-url';
 
 export type PerformanceView = 'all-by-user' | 'self-by-key';
 export type PerformanceRange = DashboardRange;
@@ -63,17 +65,21 @@ export const buildPerformanceQuery = (
   groupBy: PerformanceGroupBy,
   filters: PerformanceFilters,
   nowMs: number,
-): Record<string, string | string[]> => ({
-  ...dashboardRangeQuery(range, nowMs),
-  group_by: groupBy,
-  timezone_offset_minutes: String(new Date(nowMs).getTimezoneOffset()),
-  filter_model: filters.model,
-  filter_upstream: filters.upstream,
-  filter_operation: filters.operation,
-  filter_runtime_location: filters.runtimeLocation,
-  filter_user_id: filters.userId,
-  filter_key_id: filters.keyId,
-});
+): Record<string, string | string[]> => {
+  const utcHours = range === 'today';
+  return {
+    ...dashboardRangeQuery(range, nowMs),
+    group_by: groupBy,
+    timezone: utcHours ? 'UTC' : Intl.DateTimeFormat().resolvedOptions().timeZone,
+    timezone_offset_minutes: utcHours ? '0' : String(new Date(nowMs).getTimezoneOffset()),
+    filter_model: filters.model,
+    filter_upstream: filters.upstream,
+    filter_operation: filters.operation,
+    filter_runtime_location: filters.runtimeLocation,
+    filter_user_id: filters.userId,
+    filter_key_id: filters.keyId,
+  };
+};
 
 export const performanceValue = (
   record: PerformanceDisplayRecord,
@@ -115,17 +121,21 @@ export const resolvePerformanceGroup = (
   return group;
 };
 
-export const parsePerformanceUrlState = (search: URLSearchParams): PerformanceUrlState => ({
-  metric: oneOf(search.get('m'), ['ttft', 'tokPerSec'], 'ttft'),
-  percentile: oneOf(search.get('pct'), ['p50', 'p95', 'p99'], 'p95'),
-  groupBy: oneOf(search.get('g'), ['model', 'upstream', 'operation', 'runtimeLocation', 'keyId', 'userId'], 'model'),
-  range: oneOf(search.get('r'), ['today', '7d', '30d'], 'today'),
-  filters: {
+export const parsePerformanceUrlState = (search: URLSearchParams): PerformanceUrlState => {
+  const groupBy = oneOf(search.get('g'), ['model', 'upstream', 'operation', 'runtimeLocation', 'keyId', 'userId'], 'model');
+  const filters = clearGroupedTelemetryFilters({
     model: repeatedValues(search, 'fm'), upstream: repeatedValues(search, 'fu'), operation: repeatedValues(search, 'fo'),
     runtimeLocation: repeatedValues(search, 'fr'), userId: repeatedValues(search, 'fusr'), keyId: repeatedValues(search, 'fk'),
-  },
-  hidden: (search.get('hide') ?? '').split(',').map(decodeURIComponent).filter(Boolean),
-});
+  }, groupBy);
+  return {
+    metric: oneOf(search.get('m'), ['ttft', 'tokPerSec'], 'ttft'),
+    percentile: oneOf(search.get('pct'), ['p50', 'p95', 'p99'], 'p95'),
+    groupBy,
+    range: oneOf(search.get('r'), ['today', '7d', '30d'], 'today'),
+    filters,
+    hidden: parseHiddenSeries(search, 'hide'),
+  };
+};
 
 export const serializePerformanceUrlState = (state: PerformanceUrlState): URLSearchParams => {
   const search = new URLSearchParams();
@@ -135,33 +145,33 @@ export const serializePerformanceUrlState = (state: PerformanceUrlState): URLSea
   if (state.range !== 'today') search.set('r', state.range);
   const filters: Array<[string, readonly string[]]> = [['fm', state.filters.model], ['fu', state.filters.upstream], ['fo', state.filters.operation], ['fr', state.filters.runtimeLocation], ['fusr', state.filters.userId], ['fk', state.filters.keyId]];
   for (const [key, values] of filters) for (const value of values) search.append(key, value);
-  if (state.hidden.length) search.set('hide', state.hidden.map(encodeURIComponent).join(','));
+  serializeHiddenSeries(search, 'hide', state.hidden);
   return search;
 };
 
-export const clearGroupedFilter = (filters: PerformanceFilters, groupBy: PerformanceGroupBy): PerformanceFilters => ({
-  ...filters,
-  ...(groupBy === 'model' ? { model: [] } : {}),
-  ...(groupBy === 'upstream' ? { upstream: [] } : {}),
-  ...(groupBy === 'operation' ? { operation: [] } : {}),
-  ...(groupBy === 'runtimeLocation' ? { runtimeLocation: [] } : {}),
-  ...(groupBy === 'userId' || groupBy === 'keyId' ? { userId: [], keyId: [] } : {}),
-});
-
 type PerformanceDimensionState = Pick<PerformanceUrlState, 'groupBy' | 'filters' | 'hidden'>;
+type NormalizedPerformanceDimensions<State extends PerformanceDimensionState> = {
+  changed: boolean;
+  state: Omit<State, keyof PerformanceDimensionState> & PerformanceDimensionState;
+};
 
 export const normalizePerformanceDimensionsForRuntime = <State extends PerformanceDimensionState>(
   state: State,
   cloudflare: boolean,
-): Omit<State, keyof PerformanceDimensionState> & PerformanceDimensionState => {
-  if (cloudflare || (state.groupBy !== 'runtimeLocation' && state.filters.runtimeLocation.length === 0)) return state;
+): NormalizedPerformanceDimensions<State> => {
+  if (cloudflare || (state.groupBy !== 'runtimeLocation' && state.filters.runtimeLocation.length === 0)) {
+    return { changed: false, state };
+  }
   const groupedByRegion = state.groupBy === 'runtimeLocation';
   const groupBy = groupedByRegion ? 'model' : state.groupBy;
   const filtersWithoutRegion = { ...state.filters, runtimeLocation: [] };
   return {
-    ...state,
-    groupBy,
-    filters: groupedByRegion ? clearGroupedFilter(filtersWithoutRegion, groupBy) : filtersWithoutRegion,
-    hidden: groupedByRegion ? [] : state.hidden,
+    changed: true,
+    state: {
+      ...state,
+      groupBy,
+      filters: groupedByRegion ? clearGroupedTelemetryFilters(filtersWithoutRegion, groupBy) : filtersWithoutRegion,
+      hidden: groupedByRegion ? [] : state.hidden,
+    },
   };
 };

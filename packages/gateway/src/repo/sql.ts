@@ -1,6 +1,8 @@
 import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { SqlExpirationSweepsRepo } from './expiration-sweeps-sql.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
+import { decodeAliasTargets, decodeAnnouncedMetadata, encodeAliasTargets, encodeAnnouncedMetadata } from './model-alias-codecs.ts';
+import { querySqlPerformanceOverview } from './performance-overview-sql.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
 import { SqlResponsesItemsRepo, SqlResponsesSnapshotsRepo } from './responses-state-sql.ts';
 import { generateSessionToken } from './session-tokens.ts';
@@ -16,11 +18,14 @@ import type {
   AgentSetupRenewal,
   AgentSetupRepository,
   BackoffRow,
+  ModelsCacheGeneration,
   ModelAliasesRepo,
   ModelAliasRecord,
   PerformanceBucketRow,
   PerformanceDimensions,
   PerformanceMetric,
+  PerformanceOverviewQueryOptions,
+  PerformanceOverviewResult,
   PerformanceRepo,
   PerformanceSample,
   PerformanceTelemetryRecord,
@@ -38,19 +43,32 @@ import type {
   SessionsRepo,
   UpstreamRepo,
   UsageRecord,
+  UsageOverviewQueryOptions,
+  UsageOverviewResult,
   UsageRepo,
   User,
   UsersRepo,
 } from './types.ts';
+import {
+  decodeDisabledPublicModelIds,
+  decodeModelPrefix,
+  decodeProxyFallbackList,
+  decodeUpstreamConfig,
+  decodeUpstreamFlagOverrides,
+  decodeUpstreamModelsCache,
+  decodeUpstreamState,
+  encodeUpstreamModelsCache,
+} from './upstream-codecs.ts';
 import { serializeStoredConfig, serializeStoredState } from './upstream-json.ts';
 import { parseUpstreamHue, parseUpstreamKind } from './upstream-parse.ts';
 import { usageMetricRows } from './usage-metrics.ts';
+import { querySqlUsageOverview } from './usage-overview-sql.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
 import { parseServerSecret } from '../shared/server-secret.ts';
 import { assertWebSearchProviderName, type WebSearchConfig } from '../shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import type { SqlBindValue, SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
-import { addDecimalStrings, canonicalPricingSelectorKey, parseBillingMetric, parseModelKind, parseNonNegativeDecimalString, parsePricingSelectorKey, type AliasSelection, type AliasTarget, type AnnouncedMetadata } from '@floway-dev/protocols/common';
+import { addDecimalStrings, canonicalPricingSelectorKey, parseBillingMetric, parseModelKind, parseNonNegativeDecimalString, parsePricingSelectorKey, type AliasSelection, type AnnouncedMetadata } from '@floway-dev/protocols/common';
 import type { ProxyFallbackEntry, ModelPrefixConfig, UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
 import { normalizeModelPrefix, parsePerformanceOperation, UpstreamGoneError } from '@floway-dev/provider';
 
@@ -451,14 +469,23 @@ class SqlUsageRepo implements UsageRepo {
     await Promise.all(usageMetricRows(record).map(row => this.addMetric(record, upstream, selector, row)));
   }
 
-  async query(opts: { keyId?: string; start: string; end: string }): Promise<UsageRecord[]> {
-    const where = opts.keyId ? 'key_id = ? AND hour >= ? AND hour < ?' : 'hour >= ? AND hour < ?';
-    const binds = opts.keyId ? [opts.keyId, opts.start, opts.end] : [opts.start, opts.end];
+  async query(opts: { keyIds?: readonly string[]; start: string; end: string }): Promise<UsageRecord[]> {
+    const keyIds = opts.keyIds === undefined ? undefined : [...new Set(opts.keyIds)];
+    const where = keyIds === undefined
+      ? 'hour >= ? AND hour < ?'
+      : 'key_id IN (SELECT CAST(value AS TEXT) FROM json_each(?)) AND hour >= ? AND hour < ?';
+    const binds = keyIds === undefined
+      ? [opts.start, opts.end]
+      : [JSON.stringify(keyIds), opts.start, opts.end];
     const [{ results: metrics }, { results: requests }] = await Promise.all([
       this.db.prepare(`SELECT key_id, model, upstream, model_key, hour, pricing_selector, metric, quantity, unit_price FROM usage WHERE ${where} ORDER BY rowid`).bind(...binds).all<UsageMetricRow>(),
       this.db.prepare(`SELECT key_id, model, upstream, model_key, hour, pricing_selector, requests FROM usage_requests WHERE ${where}`).bind(...binds).all<UsageRequestRow>(),
     ]);
     return assembleUsageRecords(metrics, requests);
+  }
+
+  queryOverview(opts: UsageOverviewQueryOptions): Promise<UsageOverviewResult> {
+    return querySqlUsageOverview(this.db, opts);
   }
 
   async listAll(): Promise<UsageRecord[]> {
@@ -672,12 +699,12 @@ class SqlPerformanceRepo implements PerformanceRepo {
     await this.upsertSummary(dims, { requests: 1, neutral: 1 }, 'add').run();
   }
 
-  async query(opts: { keyId?: string; start: string; end: string }): Promise<PerformanceTelemetryRecord[]> {
-    return await this.rowsFor(opts);
+  queryOverview(opts: PerformanceOverviewQueryOptions): Promise<PerformanceOverviewResult> {
+    return querySqlPerformanceOverview(this.db, opts);
   }
 
   async listAll(): Promise<PerformanceTelemetryRecord[]> {
-    return await this.rowsFor({});
+    return await this.rowsFor();
   }
 
   async set(record: PerformanceTelemetryRecord): Promise<void> {
@@ -740,27 +767,11 @@ class SqlPerformanceRepo implements PerformanceRepo {
     ).bind(...performanceDimensionBinds(dims), metric, edges.lower, edges.upper);
   }
 
-  private async rowsFor(opts: { keyId?: string; start?: string; end?: string }): Promise<PerformanceTelemetryRecord[]> {
-    const clauses: string[] = [];
-    const binds: SqlBindValue[] = [];
-    if (opts.start !== undefined) {
-      clauses.push('hour >= ?');
-      binds.push(opts.start);
-    }
-    if (opts.end !== undefined) {
-      clauses.push('hour < ?');
-      binds.push(opts.end);
-    }
-    if (opts.keyId !== undefined) {
-      clauses.push('key_id = ?');
-      binds.push(opts.keyId);
-    }
-    const whereClause = clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '';
-
+  private async rowsFor(): Promise<PerformanceTelemetryRecord[]> {
     const { results: summaryRows } = await this.db.prepare(
       `SELECT hour, key_id, model, upstream, operation, runtime_location, requests, ttft_samples_ok, errors_with_output, errors_no_output, neutral, tpot_samples, ttft_ms_sum, tpot_us_sum
-       FROM performance_summary${whereClause} ORDER BY hour`,
-    ).bind(...binds).all<PerformanceDimensionRow & { requests: number; ttft_samples_ok: number; errors_with_output: number; errors_no_output: number; neutral: number; tpot_samples: number; ttft_ms_sum: number; tpot_us_sum: number }>();
+       FROM performance_summary ORDER BY hour`,
+    ).all<PerformanceDimensionRow & { requests: number; ttft_samples_ok: number; errors_with_output: number; errors_no_output: number; neutral: number; tpot_samples: number; ttft_ms_sum: number; tpot_us_sum: number }>();
 
     const records = new Map<string, Omit<PerformanceTelemetryRecord, 'buckets'> & { buckets: PerformanceBucketRow[] }>();
     for (const row of summaryRows) {
@@ -781,8 +792,8 @@ class SqlPerformanceRepo implements PerformanceRepo {
 
     const { results: bucketRows } = await this.db.prepare(
       `SELECT hour, key_id, model, upstream, operation, runtime_location, metric, lower, upper, count
-       FROM performance_buckets${whereClause} ORDER BY hour, metric, lower`,
-    ).bind(...binds).all<PerformanceDimensionRow & { metric: PerformanceMetric; lower: number; upper: number | null; count: number }>();
+       FROM performance_buckets ORDER BY hour, metric, lower`,
+    ).all<PerformanceDimensionRow & { metric: PerformanceMetric; lower: number; upper: number | null; count: number }>();
     for (const row of bucketRows) {
       const dims = performanceDimensionsFromRow(row);
       const key = performanceRecordKey(dims);
@@ -809,15 +820,6 @@ const toWebSearchUsageRecord = (row: { provider: string; key_id: string; action:
     requests: row.requests,
   };
 };
-
-// `ProviderModel.enabledFlags` is a Set, which JSON.stringify renders as `{}`
-// and JSON.parse cannot rebuild on its own. Replace Set with an array on
-// write, and rebuild Set under the same key on read so consumers downstream
-// of the cache see the same shape providers produced.
-const modelsReplacer = (_key: string, value: unknown): unknown =>
-  value instanceof Set ? [...value] : value;
-const modelsReviver = (key: string, value: unknown): unknown =>
-  key === 'enabledFlags' && Array.isArray(value) ? new Set(value) : value;
 
 class SqlWebSearchConfigRepo implements WebSearchConfigRepo {
   constructor(private db: SqlDatabase) {}
@@ -886,7 +888,15 @@ class SqlUpstreamRepo implements UpstreamRepo {
     return row ? toUpstreamRecord(row) : null;
   }
 
-  async save(upstream: UpstreamRecord): Promise<void> {
+  save(upstream: UpstreamRecord): Promise<void> {
+    return this.saveRecord(upstream, false);
+  }
+
+  saveClearingModelsCache(upstream: UpstreamRecord): Promise<void> {
+    return this.saveRecord(upstream, true);
+  }
+
+  private async saveRecord(upstream: UpstreamRecord, clearModelsCache: boolean): Promise<void> {
     // created_at is deliberately not in the ON CONFLICT update list: the row's first INSERT
     // wins, and re-saves preserve that timestamp regardless of what the caller passes.
     await this.db
@@ -904,7 +914,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
            disabled_public_model_ids = excluded.disabled_public_model_ids,
            proxy_fallback_list_json = excluded.proxy_fallback_list_json,
            model_prefix_json = excluded.model_prefix_json,
-           hue = excluded.hue`,
+           hue = excluded.hue${clearModelsCache ? ', models_cache_json = NULL' : ''}`,
       )
       .bind(
         upstream.id,
@@ -937,11 +947,14 @@ class SqlUpstreamRepo implements UpstreamRepo {
   // Written only here and never by save(): an operator edit carries whatever
   // catalog the request happened to read, and folding that back in would let a
   // rename race a refresh.
-  async saveModelsCache(id: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<void> {
-    await this.db
-      .prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ?')
-      .bind(JSON.stringify({ ...cache, lastError: null }, modelsReplacer), id)
+  async saveModelsCache(id: string, generation: ModelsCacheGeneration, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean> {
+    const rawConfig = await this.modelsCacheWriteConfig(id, generation);
+    if (rawConfig === null) return false;
+    const result = await this.db
+      .prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ? AND updated_at = ? AND config_json = ?')
+      .bind(encodeUpstreamModelsCache({ ...cache, lastError: null }), id, generation.updatedAt, rawConfig)
       .run();
+    return (result.meta.changes ?? 0) > 0;
   }
 
   // Annotates a previously-successful entry, so an upstream that has never
@@ -949,11 +962,25 @@ class SqlUpstreamRepo implements UpstreamRepo {
   // read-modify-written: it touches one key of a document whose other keys a
   // concurrent refresh may be rewriting, and nothing compares this column's
   // text, so the encoding SQLite produces here is immaterial.
-  async saveModelsCacheError(id: string, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<void> {
-    await this.db
-      .prepare("UPDATE upstreams SET models_cache_json = json_set(models_cache_json, '$.lastError', json(?)) WHERE id = ? AND models_cache_json IS NOT NULL")
-      .bind(JSON.stringify(error), id)
+  async saveModelsCacheError(id: string, generation: ModelsCacheGeneration, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean> {
+    const rawConfig = await this.modelsCacheWriteConfig(id, generation);
+    if (rawConfig === null) return false;
+    const result = await this.db
+      .prepare("UPDATE upstreams SET models_cache_json = json_set(models_cache_json, '$.lastError', json(?)) WHERE id = ? AND updated_at = ? AND config_json = ? AND models_cache_json IS NOT NULL")
+      .bind(JSON.stringify(error), id, generation.updatedAt, rawConfig)
       .run();
+    return (result.meta.changes ?? 0) > 0;
+  }
+
+  private async modelsCacheWriteConfig(id: string, generation: ModelsCacheGeneration): Promise<string | null> {
+    const row = await this.db
+      .prepare('SELECT updated_at, config_json FROM upstreams WHERE id = ?')
+      .bind(id)
+      .first<{ updated_at: string; config_json: string }>();
+    if (row === null || row.updated_at !== generation.updatedAt) return null;
+    return serializeStoredConfig(JSON.parse(row.config_json)) === serializeStoredConfig(generation.config)
+      ? row.config_json
+      : null;
   }
 
   // Read-modify-write under optimistic concurrency, retried against the winner
@@ -976,14 +1003,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
         .bind(id)
         .first<{ state_json: string | null }>();
       if (!row) throw new UpstreamGoneError(id);
-      let current: unknown = null;
-      if (row.state_json !== null) {
-        try {
-          current = JSON.parse(row.state_json) as unknown;
-        } catch (cause) {
-          throw new Error(`Malformed upstream state JSON for ${id}`, { cause });
-        }
-      }
+      const current = row.state_json === null ? null : decodeUpstreamState(row.state_json, id);
       const next = serializeStoredState(mutate(current));
       // A mutator that decided there is nothing to do returns what it was
       // given, which serializes back to the stored text.
@@ -1017,20 +1037,8 @@ interface UpstreamRow {
 }
 
 const toUpstreamRecord = (row: UpstreamRow): UpstreamRecord => {
-  let config: unknown;
-  try {
-    config = JSON.parse(row.config_json) as unknown;
-  } catch (cause) {
-    throw new Error(`Malformed upstream config JSON for ${row.id}`, { cause });
-  }
-  let state: unknown = null;
-  if (row.state_json !== null) {
-    try {
-      state = JSON.parse(row.state_json) as unknown;
-    } catch (cause) {
-      throw new Error(`Malformed upstream state JSON for ${row.id}`, { cause });
-    }
-  }
+  const config = decodeUpstreamConfig(row.config_json, row.id);
+  const state = row.state_json === null ? null : decodeUpstreamState(row.state_json, row.id);
 
   return {
     id: row.id,
@@ -1051,102 +1059,28 @@ const toUpstreamRecord = (row: UpstreamRow): UpstreamRecord => {
   };
 };
 
-// The whole entry is one document, so a row either has a catalog or does not —
-// there is no half-populated state to reject. `modelsReviver` restores the Sets
-// that `modelsReplacer` flattened on the way in.
+// The whole entry is one document, so a row either has a valid catalog or does
+// not. The codec restores the model-level enabledFlags Sets flattened on write.
 const parseModelsCache = (row: UpstreamRow): UpstreamModelsCache | null => {
   if (row.models_cache_json === null) return null;
-  try {
-    return JSON.parse(row.models_cache_json, modelsReviver) as UpstreamModelsCache;
-  } catch (cause) {
-    throw new Error(`Malformed upstream models cache JSON for ${row.id}`, { cause });
-  }
+  return decodeUpstreamModelsCache(row.models_cache_json, row.id);
 };
 
 const parseFlagOverrides = (id: string, json: string): Record<string, boolean> => {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(json);
-  } catch (cause) {
-    throw new Error(`Malformed upstream flag_overrides JSON for ${id}`, { cause });
-  }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    const got = Array.isArray(parsed) ? 'array' : parsed === null ? 'null' : typeof parsed;
-    throw new Error(`Upstream ${id} flag_overrides must be a JSON object, got ${got}`);
-  }
-  const out: Record<string, boolean> = {};
-  for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-    if (typeof v !== 'boolean') {
-      throw new Error(`Upstream ${id} flag_overrides[${JSON.stringify(k)}] must be a boolean, got ${typeof v}`);
-    }
-    out[k] = v;
-  }
-  return normalizeFlagOverrides(out);
+  return normalizeFlagOverrides(decodeUpstreamFlagOverrides(json, id));
 };
 
 const parseDisabledPublicModelIds = (id: string, json: string): string[] => {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(json);
-  } catch (cause) {
-    throw new Error(`Malformed upstream disabled_public_model_ids JSON for ${id}`, { cause });
-  }
-  if (!Array.isArray(parsed)) {
-    throw new Error(`Upstream ${id} disabled_public_model_ids must be a JSON array, got ${parsed === null ? 'null' : typeof parsed}`);
-  }
-  for (const entry of parsed) {
-    if (typeof entry !== 'string') {
-      throw new Error(`Upstream ${id} disabled_public_model_ids entries must be strings, got ${typeof entry}`);
-    }
-  }
-  return normalizeDisabledPublicModelIds(parsed as string[]);
+  return normalizeDisabledPublicModelIds(decodeDisabledPublicModelIds(json, id));
 };
 
 const parseProxyFallbackList = (id: string, json: string): ProxyFallbackEntry[] => {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(json);
-  } catch (cause) {
-    throw new Error(`Malformed upstream proxy_fallback_list_json for ${id}`, { cause });
-  }
-  if (!Array.isArray(parsed)) {
-    throw new Error(`Upstream ${id} proxy_fallback_list_json must be a JSON array, got ${parsed === null ? 'null' : typeof parsed}`);
-  }
-  const entries: ProxyFallbackEntry[] = [];
-  for (const raw of parsed) {
-    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
-      throw new Error(`Upstream ${id} proxy_fallback_list_json entries must be objects, got ${raw === null ? 'null' : Array.isArray(raw) ? 'array' : typeof raw}`);
-    }
-    const entry = raw as { id?: unknown; colos?: unknown };
-    if (typeof entry.id !== 'string') {
-      throw new Error(`Upstream ${id} proxy_fallback_list entry .id must be a string, got ${typeof entry.id}`);
-    }
-    let colos: string[] | undefined;
-    if (entry.colos !== undefined) {
-      if (!Array.isArray(entry.colos)) {
-        throw new Error(`Upstream ${id} proxy_fallback_list entry .colos must be an array when set, got ${typeof entry.colos}`);
-      }
-      colos = [];
-      for (const c of entry.colos) {
-        if (typeof c !== 'string') {
-          throw new Error(`Upstream ${id} proxy_fallback_list entry .colos members must be strings, got ${typeof c}`);
-        }
-        colos.push(c);
-      }
-    }
-    entries.push(colos === undefined ? { id: entry.id } : { id: entry.id, colos });
-  }
-  return normalizeProxyFallbackList(entries);
+  return normalizeProxyFallbackList(decodeProxyFallbackList(json, id));
 };
 
 const parseModelPrefix = (id: string, json: string | null): ModelPrefixConfig | null => {
   if (json === null) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(json);
-  } catch (cause) {
-    throw new Error(`Malformed upstream model_prefix_json for ${id}`, { cause });
-  }
+  const parsed = decodeModelPrefix(json, id);
   try {
     return normalizeModelPrefix(parsed);
   } catch (cause) {
@@ -1406,26 +1340,6 @@ interface ModelAliasRow {
 
 const MODEL_ALIAS_COLUMNS = 'id, name, kind, selection, display_name, visible_in_models_list, targets, announced_metadata_json, sort_order, created_at, updated_at';
 
-const parseAliasTargets = (raw: string, name: string): AliasTarget[] => {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (cause) {
-    throw new Error(`model_aliases.targets JSON is malformed for ${name}`, { cause });
-  }
-  if (!Array.isArray(parsed)) throw new Error(`model_aliases.targets is not an array for ${name}`);
-  return parsed as AliasTarget[];
-};
-
-const parseAnnouncedMetadata = (raw: string | null, name: string): AnnouncedMetadata | null => {
-  if (raw === null) return null;
-  try {
-    return JSON.parse(raw) as AnnouncedMetadata;
-  } catch (cause) {
-    throw new Error(`model_aliases.announced_metadata_json is malformed for ${name}`, { cause });
-  }
-};
-
 const toModelAliasRecord = (row: ModelAliasRow): ModelAliasRecord => ({
   id: row.id,
   name: row.name,
@@ -1433,15 +1347,15 @@ const toModelAliasRecord = (row: ModelAliasRow): ModelAliasRecord => ({
   selection: row.selection as AliasSelection,
   displayName: row.display_name,
   visibleInModelsList: row.visible_in_models_list !== 0,
-  targets: parseAliasTargets(row.targets, row.name),
-  announcedMetadata: parseAnnouncedMetadata(row.announced_metadata_json, row.name),
+  targets: decodeAliasTargets(row.targets, row.id),
+  announcedMetadata: row.announced_metadata_json === null ? null : decodeAnnouncedMetadata(row.announced_metadata_json, row.id),
   sortOrder: row.sort_order,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
 
 const announcedMetadataBind = (value: AnnouncedMetadata | null): string | null =>
-  value === null ? null : JSON.stringify(value);
+  value === null ? null : encodeAnnouncedMetadata(value);
 
 class SqlModelAliasesRepo implements ModelAliasesRepo {
   constructor(private db: SqlDatabase) {}
@@ -1481,7 +1395,7 @@ class SqlModelAliasesRepo implements ModelAliasesRepo {
         record.selection,
         record.displayName,
         record.visibleInModelsList ? 1 : 0,
-        JSON.stringify(record.targets),
+        encodeAliasTargets(record.targets),
         announcedMetadataBind(record.announcedMetadata),
         record.sortOrder,
         record.createdAt,
@@ -1512,7 +1426,7 @@ class SqlModelAliasesRepo implements ModelAliasesRepo {
         record.selection,
         record.displayName,
         record.visibleInModelsList ? 1 : 0,
-        JSON.stringify(record.targets),
+        encodeAliasTargets(record.targets),
         announcedMetadataBind(record.announcedMetadata),
         record.sortOrder,
         record.createdAt,

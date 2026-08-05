@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildPerformanceQuery, clearGroupedFilter, normalizePerformanceDimensionsForRuntime, parsePerformanceUrlState, performanceLabels, performanceValue, serializePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewResponse } from '../../../src/components/performance/overview';
+import { buildPerformanceQuery, normalizePerformanceDimensionsForRuntime, parsePerformanceUrlState, performanceLabels, performanceValue, serializePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewResponse } from '../../../src/components/performance/overview';
 import { buildPerformanceChart } from '../../../src/components/performance/plot';
 
 const emptyOverview = (): PerformanceOverviewResponse => ({
@@ -17,6 +17,7 @@ describe('performance overview query', () => {
       model: ['gpt-5', 'claude-opus-4-7'], upstream: ['up_1'], operation: [], runtimeLocation: ['SJC'], userId: ['2'], keyId: ['key_1'],
     }, Date.UTC(2026, 6, 12, 4));
     expect(query).toMatchObject({
+      bucket: '4h',
       group_by: 'operation',
       filter_model: ['gpt-5', 'claude-opus-4-7'],
       filter_upstream: ['up_1'],
@@ -27,32 +28,72 @@ describe('performance overview query', () => {
     expect(query).not.toHaveProperty('metric_scope');
   });
 
+  it('requests UTC hours only for the range whose repeated hours stay separate', () => {
+    const filters = { model: [], upstream: [], operation: [], runtimeLocation: [], userId: [], keyId: [] };
+
+    expect(buildPerformanceQuery('today', 'model', filters, Date.UTC(2026, 10, 1, 7))).toMatchObject({
+      bucket: 'hour',
+      timezone: 'UTC',
+      timezone_offset_minutes: '0',
+    });
+    expect(buildPerformanceQuery('30d', 'model', filters, Date.UTC(2026, 10, 1, 7)).bucket).toBe('day');
+  });
+
   it('converts TPOT microseconds to output tokens per second', () => {
     const record = { tpotUsP95: 20_000 } as Parameters<typeof performanceValue>[0];
     expect(performanceValue(record, 'tokPerSec', 'p95')).toBe(50);
   });
 
-  it('clears filters hidden by the selected grouping', () => {
-    const filters = { model: [], upstream: [], operation: [], runtimeLocation: [], userId: ['2'], keyId: ['key_1'] };
-    expect(clearGroupedFilter(filters, 'userId')).toMatchObject({ userId: [], keyId: [] });
-  });
-
   it('round-trips non-default dashboard state through the URL', () => {
     const state = parsePerformanceUrlState(new URLSearchParams('m=tokPerSec&pct=p99&g=upstream&r=30d&fm=&fm=gpt-5&fm=gpt-5&fm=claude-opus-4-7&hide=a%252Cb,c'));
-    expect(state).toMatchObject({ metric: 'tokPerSec', percentile: 'p99', groupBy: 'upstream', range: '30d', filters: { model: ['gpt-5', 'claude-opus-4-7'] }, hidden: ['a,b', 'c'] });
-    const serialized = serializePerformanceUrlState(state);
+    const serialized = serializePerformanceUrlState({ ...state, hidden: ['a,b', '100%', '模型', 'duplicate', 'duplicate'] });
+    expect(parsePerformanceUrlState(serialized)).toMatchObject({
+      metric: 'tokPerSec',
+      percentile: 'p99',
+      groupBy: 'upstream',
+      range: '30d',
+      filters: { model: ['gpt-5', 'claude-opus-4-7'] },
+      hidden: ['100%', 'a,b', 'duplicate', 'duplicate', '模型'],
+    });
     expect(serialized.get('m')).toBe('tokPerSec');
     expect(serialized.getAll('fm')).toEqual(['gpt-5', 'claude-opus-4-7']);
+  });
+
+  it('restores hidden series from the original comma format', () => {
+    expect(parsePerformanceUrlState(new URLSearchParams('hide=a%252Cb,c')).hidden).toEqual(['a,b', 'c']);
+  });
+
+  it('distinguishes one comma-containing id in the repeated parameter format', () => {
+    const state = parsePerformanceUrlState(new URLSearchParams());
+    const serialized = serializePerformanceUrlState({ ...state, hidden: ['a,b'] });
+
+    expect(serialized.get('hidev')).toBe('2');
+    expect(serialized.getAll('hide')).toEqual(['a,b']);
+    expect(parsePerformanceUrlState(serialized).hidden).toEqual(['a,b']);
+  });
+
+  it('serializes hidden series as stable repeated parameters', () => {
+    const state = parsePerformanceUrlState(new URLSearchParams());
+    const first = serializePerformanceUrlState({ ...state, hidden: ['模型', 'duplicate', '100%', 'a,b', 'duplicate'] });
+    const second = serializePerformanceUrlState({ ...state, hidden: ['duplicate', 'a,b', '模型', '100%', 'duplicate'] });
+
+    expect(first.toString()).toBe(second.toString());
+    expect(first.get('hidev')).toBe('2');
+    expect(first.getAll('hide')).toEqual(['100%', 'a,b', 'duplicate', 'duplicate', '模型']);
+    expect(parsePerformanceUrlState(first).hidden).toEqual(['100%', 'a,b', 'duplicate', 'duplicate', '模型']);
   });
 
   it('removes Region state outside the Cloudflare runtime', () => {
     const state = parsePerformanceUrlState(new URLSearchParams('g=runtimeLocation&fm=gpt-5&fr=SJC&hide=SJC'));
     expect(normalizePerformanceDimensionsForRuntime(state, false)).toMatchObject({
-      groupBy: 'model',
-      filters: { model: [], runtimeLocation: [] },
-      hidden: [],
+      changed: true,
+      state: {
+        groupBy: 'model',
+        filters: { model: [], runtimeLocation: [] },
+        hidden: [],
+      },
     });
-    expect(normalizePerformanceDimensionsForRuntime(state, true)).toBe(state);
+    expect(normalizePerformanceDimensionsForRuntime(state, true)).toEqual({ changed: false, state });
   });
 });
 

@@ -141,6 +141,7 @@ describe('upstreamModelSchema rerank', () => {
     config: {
       baseUrl: 'https://rerank.example.com',
       authStyle: 'bearer' as const,
+      ingressHeadersRules: [],
       apiKey: 'key',
       endpoints: {},
       models: [{

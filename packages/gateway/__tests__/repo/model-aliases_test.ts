@@ -209,6 +209,56 @@ test('[sql] rejects an unknown kind stored under the open database constraint', 
   await assertRejects(() => repo.modelAliases.getByName('future-alias'), Error, 'model_aliases.kind for future-alias is invalid');
 });
 
+test('[sql] rejects shape-invalid alias target JSON with the alias row id', async () => {
+  const db = await createSqliteTestDb();
+  await db.prepare(
+    `INSERT INTO model_aliases (id, name, kind, selection, visible_in_models_list, targets, sort_order, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).bind('alias_bad_targets', 'bad-targets', 'chat', 'first-available', 1, '[{"target_model_id":42,"rules":{}}]', 1, '2026-07-21T00:00:00.000Z', '2026-07-21T00:00:00.000Z').run();
+
+  await assertRejects(
+    () => new SqlRepo(db).modelAliases.getById('alias_bad_targets'),
+    Error,
+    'model_aliases.targets JSON is invalid for id=alias_bad_targets: 0.target_model_id',
+  );
+});
+
+test('[sql] preserves passthrough alias metadata fields owned by a future schema', async () => {
+  const db = await createSqliteTestDb();
+  await db.prepare(
+    `INSERT INTO model_aliases (id, name, kind, selection, visible_in_models_list, targets, announced_metadata_json, sort_order, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(
+    'alias_passthrough',
+    'passthrough',
+    'chat',
+    'first-available',
+    1,
+    '[{"target_model_id":"model-a","rules":{"verbosity":"high","futureRule":{"__proto__":{"marker":"rule"}}},"futureTarget":"kept"}]',
+    '{"limits":{"max_output_tokens":1024,"futureLimit":7},"futureMetadata":{"__proto__":{"marker":"metadata"}}}',
+    1,
+    '2026-07-21T00:00:00.000Z',
+    '2026-07-21T00:00:00.000Z',
+  ).run();
+
+  const row = await new SqlRepo(db).modelAliases.getById('alias_passthrough');
+  assertEquals(row?.targets, [{
+    target_model_id: 'model-a',
+    rules: { verbosity: 'high', futureRule: JSON.parse('{"__proto__":{"marker":"rule"}}') },
+    futureTarget: 'kept',
+  }]);
+  assertEquals(row?.announcedMetadata, {
+    limits: { max_output_tokens: 1024, futureLimit: 7 },
+    futureMetadata: JSON.parse('{"__proto__":{"marker":"metadata"}}'),
+  });
+  const futureRule = row === null ? null : Reflect.get(row.targets[0].rules, 'futureRule');
+  const futureMetadata = row?.announcedMetadata === null || row?.announcedMetadata === undefined
+    ? null
+    : Reflect.get(row.announcedMetadata, 'futureMetadata');
+  assertEquals(futureRule !== null && typeof futureRule === 'object' && Object.hasOwn(futureRule, '__proto__'), true);
+  assertEquals(futureMetadata !== null && typeof futureMetadata === 'object' && Object.hasOwn(futureMetadata, '__proto__'), true);
+});
+
 const migrationFilenames = migrationSqlByFilename.map(([filename]) => filename);
 
 const createPreUpstreamsMigrationDatabase = async (): Promise<SqlJsDatabase> => {

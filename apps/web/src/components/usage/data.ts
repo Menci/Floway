@@ -1,77 +1,41 @@
 import type {
   DisplayUsageRecord,
   SearchUsageResponse,
+  SearchUsageView,
+  UsageFilters,
+  UsageGroupBy,
+  UsageOverviewResponse,
   UsageRange,
-  UsageResponse,
   UsageUpstream,
-  UsageView,
 } from './types';
-import { api, callApi, type ApiResult } from '../../api/client';
+import { api, callApi } from '../../api/client';
 import { dashboardRangeQuery } from '../charts/dashboard-time';
 import type {
-  DashboardTokenUsageByKeyResponse,
-  DashboardTokenUsageByUserResponse,
   SearchUsageByKeyResponse,
   SearchUsageByUserResponse,
-  TokenUsageByKeyResponse,
-  TokenUsageByUserResponse,
+  TokenUsageOverviewResponse,
 } from '@floway-dev/gateway/control-plane/usage-types';
 
 const userBucketId = (userId: number) => `user-${userId}`;
 
 export const metricsFromWire = (
-  metrics: DashboardTokenUsageByKeyResponse['records'][number]['metrics'],
+  metrics: TokenUsageOverviewResponse['series'][number]['metrics'],
 ): DisplayUsageRecord['metrics'] => Object.fromEntries(
   metrics.map(({ metric, quantity }) => [metric, quantity]),
 );
 
-// `null` on failure: a failed fetch did not report zero usage, and a zeroed
-// chart beside a dismissible bar reads as a quiet gateway. A body in the other
-// view's shape is a broken contract rather than something to render around.
-const forRequestedView = <T extends { view: UsageView }>(
-  result: ApiResult<T | unknown[], unknown>,
-  view: UsageView,
-  what: string,
-): T | null => {
-  if (result.error) return null;
-  const data = result.data;
-  if (Array.isArray(data) || data.view !== view) {
-    throw new TypeError(`${what} response does not match the requested ${view} view`);
-  }
-  return data;
-};
+const usageRecordForDisplay = (
+  record: TokenUsageOverviewResponse['series'][number],
+): DisplayUsageRecord => ({ ...record, metrics: metricsFromWire(record.metrics) });
 
-type TokenUsageEnvelope =
-  | DashboardTokenUsageByKeyResponse
-  | DashboardTokenUsageByUserResponse
-  | TokenUsageByKeyResponse
-  | TokenUsageByUserResponse;
-
-const requireUpstreamDimension = (
-  data: TokenUsageEnvelope | null,
-  view: UsageView,
-): DashboardTokenUsageByKeyResponse | DashboardTokenUsageByUserResponse | null => {
-  if (data === null) return null;
-  if (!('dimensions' in data) || data.dimensions.length !== 1 || data.dimensions[0] !== 'upstream') {
-    throw new TypeError(`Token usage response does not carry the requested upstream dimension for ${view} view`);
-  }
-  return data;
-};
-
-const tokenUsageForDisplay = (data: DashboardTokenUsageByKeyResponse | DashboardTokenUsageByUserResponse): UsageResponse =>
-  data.view === 'all-by-user'
-    ? {
-        records: data.records.map(({ userId, ...record }) => ({
-          ...record,
-          keyId: userBucketId(userId),
-          metrics: metricsFromWire(record.metrics),
-        })),
-        keys: data.users.map(user => ({ id: userBucketId(user.id), name: user.username })),
-      }
-    : {
-        records: data.records.map(record => ({ ...record, metrics: metricsFromWire(record.metrics) })),
-        keys: data.keys,
-      };
+const usageOverviewForDisplay = (data: TokenUsageOverviewResponse): UsageOverviewResponse => ({
+  ...data,
+  series: data.series.map(usageRecordForDisplay),
+  axes: Object.fromEntries(Object.entries(data.axes).map(([key, records]) => [
+    key,
+    records.map(usageRecordForDisplay),
+  ])) as UsageOverviewResponse['axes'],
+});
 
 const searchUsageForDisplay = (data: SearchUsageByKeyResponse | SearchUsageByUserResponse): SearchUsageResponse =>
   data.view === 'all-by-user'
@@ -81,44 +45,50 @@ const searchUsageForDisplay = (data: SearchUsageByKeyResponse | SearchUsageByUse
       }
     : { records: data.records, keys: data.keys };
 
-const fetchUsageForView = async (view: UsageView, start: string, end: string, signal?: AbortSignal) => {
-  // The views differ only in which metadata the gateway joins in and in how a
-  // record names its bucket on the way out.
-  const query = view === 'all-by-user'
-    ? { start, end, include_user_metadata: '1', view }
-    : { start, end, include_key_metadata: '1', view };
-  const [usageRes, searchRes] = await Promise.all([
-    callApi(() => api.api['token-usage'].$get({ query: { ...query, include_upstream_dimension: '1' } }, { init: { signal } })),
-    callApi(() => api.api['search-usage'].$get({ query }, { init: { signal } })),
-  ]);
-  const usageData = requireUpstreamDimension(
-    forRequestedView<TokenUsageEnvelope>(usageRes, view, 'Token usage'),
-    view,
-  );
-  const searchData = forRequestedView<SearchUsageByKeyResponse | SearchUsageByUserResponse>(searchRes, view, 'Search usage');
-  return {
-    usage: usageData && tokenUsageForDisplay(usageData),
-    search: searchData && searchUsageForDisplay(searchData),
-    error: usageRes.error ?? searchRes.error ?? null,
-  };
-};
+export const buildUsageOverviewQuery = (
+  range: UsageRange,
+  groupBy: UsageGroupBy,
+  filters: UsageFilters,
+  nowMs: number,
+): Record<string, string | string[]> => ({
+  ...dashboardRangeQuery(range, nowMs),
+  bucket: 'hour',
+  group_by: groupBy,
+  timezone: 'UTC',
+  timezone_offset_minutes: '0',
+  filter_model: filters.model,
+  filter_upstream: filters.upstream,
+  filter_user_id: filters.userId,
+  filter_key_id: filters.keyId,
+});
 
 export const loadUsagePageData = async (
-  view: UsageView,
+  isAdmin: boolean,
   range: UsageRange,
+  groupBy: UsageGroupBy,
+  filters: UsageFilters,
   loadedAt: number,
   signal?: AbortSignal,
 ) => {
+  const overviewQuery = buildUsageOverviewQuery(range, groupBy, filters, loadedAt);
   const { start, end } = dashboardRangeQuery(range, loadedAt);
-  const [usageData, modelsResult, upstreamsResult] = await Promise.all([
-    fetchUsageForView(view, start, end, signal),
-    callApi(() => api.api.models.$get({ query: {} }, { init: { signal } })),
+  const searchView: SearchUsageView = isAdmin ? 'all-by-user' : 'self-by-key';
+  const searchQuery = searchView === 'all-by-user'
+    ? { start, end, include_user_metadata: '1', view: searchView }
+    : { start, end, include_key_metadata: '1', view: searchView };
+  const [usageResult, searchResult, upstreamsResult] = await Promise.all([
+    callApi(() => api.api['token-usage'].overview.$get({ query: overviewQuery }, { init: { signal } })),
+    callApi(() => api.api['search-usage'].$get({ query: searchQuery }, { init: { signal } })),
     callApi(() => api.api['upstream-options'].$get({}, { init: { signal } })),
   ]);
+  const searchData = searchResult.error ? null : searchResult.data;
+  if (searchData !== null && (Array.isArray(searchData) || searchData.view !== searchView)) {
+    throw new TypeError(`Search usage response does not match the requested ${searchView} view`);
+  }
   return {
-    ...usageData,
-    models: modelsResult.data?.data ?? null,
+    usage: usageResult.data ? usageOverviewForDisplay(usageResult.data) : null,
+    search: searchData ? searchUsageForDisplay(searchData) : null,
     upstreams: upstreamsResult.data?.map(({ id, name }) => ({ id, name } satisfies UsageUpstream)) ?? [],
-    error: usageData.error ?? modelsResult.error ?? upstreamsResult.error ?? null,
+    error: usageResult.error ?? searchResult.error ?? upstreamsResult.error ?? null,
   };
 };

@@ -39,13 +39,14 @@
 // After REALITY auth completes, the inner protocol is VLESS by convention.
 
 import { gcm } from '@noble/ciphers/aes.js';
+import { equalBytes } from '@noble/ciphers/utils.js';
 import { hkdf } from '@noble/hashes/hkdf.js';
 import { hmac } from '@noble/hashes/hmac.js';
 import { sha256, sha512 } from '@noble/hashes/sha2.js';
 import { setCryptoImplementation, makeTLSClient } from '@reclaimprotocol/tls';
 import { webcryptoCrypto } from '@reclaimprotocol/tls/webcrypto';
 
-import { base64DecodeBytes, copy, utf8Bytes, randomBytes, hexDecode } from '../bytes.ts';
+import { base64UrlDecodeBytes, copy, utf8Bytes, randomBytes, hexDecode } from '../bytes.ts';
 import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../dial-target.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { RealityProxyConfig } from '../proxy-config.ts';
@@ -79,7 +80,7 @@ export const dialReality = async (
   ensureCrypto();
   let serverPub: Uint8Array<ArrayBuffer>;
   try {
-    serverPub = base64UrlDecode(config.publicKey);
+    serverPub = base64UrlDecodeBytes(config.publicKey);
   } catch (cause) {
     throw new ProxyDialError('REALITY: invalid base64 in pbk', 'config', { cause });
   }
@@ -408,13 +409,10 @@ export const verifyRealityLeaf = (authKey: Uint8Array, leafDer: Uint8Array, leaf
   }
   const certHmacWire = leafDer.subarray(leafDer.byteLength - 64);
   const tag = hmac(sha512, authKey, leafPub);
-  if (!constantTimeEqual(tag, certHmacWire)) {
+  if (!equalBytes(tag, certHmacWire)) {
     throw new ProxyDialError('REALITY: server HMAC-SHA512 over leaf pubkey did not match cert signatureValue', 'proxy-handshake');
   }
 };
-
-const base64UrlDecode = (s: string): Uint8Array<ArrayBuffer> =>
-  base64DecodeBytes(s.replace(/-/g, '+').replace(/_/g, '/').padEnd(s.length + ((4 - (s.length % 4)) % 4), '='));
 
 /**
  * Parse REALITY's `sid` URI parameter into the 8-byte slice that fills the
@@ -526,20 +524,4 @@ export const extractEd25519RawPubKey = (spki: Uint8Array): Uint8Array => {
     }
   }
   return spki.slice(ED25519_SPKI_PREFIX.byteLength);
-};
-
-/**
- * Length-safe constant-time byte equality. Returns false immediately on
- * length mismatch — length is not secret here (the HMAC output length is
- * fixed at 64 bytes and the cert's signatureValue tail is wire-visible).
- * The per-byte loop never short-circuits, so a partial-match attack can't
- * read out which prefix matched.
- *
- * Exported for tests.
- */
-export const constantTimeEqual = (a: Uint8Array, b: Uint8Array): boolean => {
-  if (a.byteLength !== b.byteLength) return false;
-  let diff = 0;
-  for (let i = 0; i < a.byteLength; i++) diff |= a[i]! ^ b[i]!;
-  return diff === 0;
 };

@@ -213,6 +213,7 @@ beforeEach(async () => {
     config: {
       baseUrl: 'https://unused.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'unused',
       endpoints: { imagesGenerations: {}, imagesEdits: {} },
       modelsFetch: { enabled: false, endpoint: '/models' },

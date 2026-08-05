@@ -115,33 +115,3 @@ test('Content-Type defaults to application/json for JSON bodies', async () => {
   );
   assertEquals(contentType, 'application/json');
 });
-
-test('extraHeaders is a Headers instance and every entry reaches the wire', async () => {
-  const { config } = assertOllamaUpstreamRecord(baseRecord);
-  let userAgent: string | null = null;
-  let forwarded: string | null = null;
-  let anthropicBeta: string | null = null;
-  await withMockedFetch(
-    request => {
-      userAgent = request.headers.get('User-Agent');
-      forwarded = request.headers.get('Forwarded');
-      anthropicBeta = request.headers.get('anthropic-beta');
-      return new Response('{}', { status: 200 });
-    },
-    async () => {
-      const extraHeaders = new Headers({
-        'User-Agent': 'claude-sdk/1.0',
-        'Forwarded': 'for=192.0.2.1;proto=https',
-        'anthropic-beta': 'context-1m',
-      });
-      await ollamaFetchChatCompletions(
-        config,
-        { method: 'POST', body: '{}' },
-        { fetcher: directFetcher, extraHeaders, wrapUpstreamCall: identityWrapUpstreamCall },
-      );
-    },
-  );
-  assertEquals(userAgent, 'claude-sdk/1.0');
-  assertEquals(forwarded, 'for=192.0.2.1;proto=https');
-  assertEquals(anthropicBeta, 'context-1m');
-});

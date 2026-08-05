@@ -24,6 +24,7 @@ const makeCtx = (speed?: unknown): MessagesBoundaryCtx => ({
     ...(speed !== undefined ? { speed: speed as MessagesPayload['speed'] } : {}),
   },
   headers: new Headers(),
+  anthropicBeta: [],
   model: stubProviderModel({ endpoints: { messages: {} } }),
 });
 

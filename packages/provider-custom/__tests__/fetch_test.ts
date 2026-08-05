@@ -30,6 +30,7 @@ const baseRecord: UpstreamRecord = {
     authStyle: 'bearer',
     apiKey: 'sk-test',
     endpoints: { chatCompletions: {} },
+    ingressHeadersRules: [],
   },
   state: null,
   flagOverrides: {},
@@ -237,6 +238,7 @@ test('authStyle "none" sends neither Authorization nor x-api-key', async () => {
       baseUrl: 'https://internal.example.com',
       authStyle: 'none',
       endpoints: { chatCompletions: {} },
+      ingressHeadersRules: [],
     },
   });
   let authHeader: string | null = null;
@@ -267,6 +269,7 @@ test('Custom provider callImagesEdits forwards multipart body with model field a
       authStyle: 'bearer',
       apiKey: 'sk-custom',
       endpoints: { chatCompletions: {} },
+      ingressHeadersRules: [],
     },
   };
   let forwarded: { url: string; form: FormData } | undefined;
@@ -308,6 +311,7 @@ test('Custom provider callAudioTranscriptions preserves multipart entries and ho
       authStyle: 'bearer',
       apiKey: 'sk-custom',
       endpoints: {},
+      ingressHeadersRules: [],
       pathOverrides: { '/audio/transcriptions': '/speech/to-text' },
       modelsFetch: { enabled: false },
       models: [{ upstreamModelId: 'whisper-upstream', kind: 'transcription', endpoints: { audioTranscriptions: {} } }],

@@ -1,5 +1,5 @@
 import type { UsageRecord } from '../../repo/types.ts';
-import { addDecimalStrings, multiplyDecimalStrings, type BillingMetric, type DecimalString } from '@floway-dev/protocols/common';
+import { addDecimalStrings, multiplyDecimalStrings, tokenUsageUnattributedUserId, type BillingMetric, type DecimalString } from '@floway-dev/protocols/common';
 
 export interface DisplayUsageMetric {
   metric: BillingMetric;
@@ -22,14 +22,6 @@ export interface DisplayUsageByUserRecord {
   requests: number;
   metrics: DisplayUsageMetric[];
   cost: DecimalString | null;
-}
-
-export interface DashboardUsageRecord extends DisplayUsageRecord {
-  upstream: string | null;
-}
-
-export interface DashboardUsageByUserRecord extends DisplayUsageByUserRecord {
-  upstream: string | null;
 }
 
 const recordCostUsd = (record: UsageRecord): DecimalString | null => {
@@ -98,22 +90,13 @@ export function aggregateUsageForDisplay(records: readonly UsageRecord[]): Displ
   );
 }
 
-export function aggregateUsageForDashboard(records: readonly UsageRecord[]): DashboardUsageRecord[] {
-  return aggregateUsage(
-    records,
-    record => ({
-      key: `${record.keyId}\0${record.model}\0${JSON.stringify(record.upstream)}\0${record.hour}`,
-      fields: { keyId: record.keyId, upstream: record.upstream },
-    }),
-    (left, right) => left.hour.localeCompare(right.hour) || left.keyId.localeCompare(right.keyId) || left.model.localeCompare(right.model) || (left.upstream ?? '').localeCompare(right.upstream ?? ''),
-  );
-}
+// The all-by-user record response keeps hard-deleted-key usage in a synthetic
+// user bucket because no owner metadata remains to attribute it further.
+const usageUserIdForKey = (
+  keyId: string,
+  keyToUser: ReadonlyMap<string, number>,
+): number => keyToUser.get(keyId) ?? tokenUsageUnattributedUserId;
 
-// Aggregates per-key UsageRecords into per-(user, model, hour) rows. Records
-// whose keyId no longer resolves to a user (a key the operator hard-deleted by
-// hand directly in the DB, etc.) collapse into a synthetic userId 0 so the
-// dashboard can still surface the lost rows; the keyToUser map is populated
-// from active + soft-deleted api_keys, so a normal soft delete still resolves.
 export function aggregateUsageByUserForDisplay(
   records: readonly UsageRecord[],
   keyToUser: ReadonlyMap<string, number>,
@@ -121,26 +104,9 @@ export function aggregateUsageByUserForDisplay(
   return aggregateUsage(
     records,
     record => {
-      const userId = keyToUser.get(record.keyId) ?? 0;
+      const userId = usageUserIdForKey(record.keyId, keyToUser);
       return { key: `${userId}\0${record.model}\0${record.hour}`, fields: { userId } };
     },
     (left, right) => left.hour.localeCompare(right.hour) || left.userId - right.userId || left.model.localeCompare(right.model),
-  );
-}
-
-export function aggregateUsageByUserForDashboard(
-  records: readonly UsageRecord[],
-  keyToUser: ReadonlyMap<string, number>,
-): DashboardUsageByUserRecord[] {
-  return aggregateUsage(
-    records,
-    record => {
-      const userId = keyToUser.get(record.keyId) ?? 0;
-      return {
-        key: `${userId}\0${record.model}\0${JSON.stringify(record.upstream)}\0${record.hour}`,
-        fields: { userId, upstream: record.upstream },
-      };
-    },
-    (left, right) => left.hour.localeCompare(right.hour) || left.userId - right.userId || left.model.localeCompare(right.model) || (left.upstream ?? '').localeCompare(right.upstream ?? ''),
   );
 }

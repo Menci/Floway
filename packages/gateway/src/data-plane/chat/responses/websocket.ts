@@ -7,7 +7,7 @@ import { responsesServe } from './serve.ts';
 import type { DumpAccumulator } from '../../../dump/accumulator.ts';
 import { apiKeyFromContext, authenticateApiKey, type AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
-import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
+import { inboundHeaders } from '../../shared/inbound-headers.ts';
 import { takeRequestBody } from '../../shared/request-body.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
@@ -16,7 +16,7 @@ import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata } from '../shared/respond.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import { isJsonMediaType, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { RESPONSES_MISSING_TERMINAL_MESSAGE } from '@floway-dev/protocols/responses';
 import { isResponsesTerminalEvent, type CanonicalResponsesPayload, type ClientResponsesStreamEvent, type ResponsesRequestPayload, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
@@ -284,7 +284,7 @@ const handleClientMessage = async (
 
     let result;
     try {
-      result = await responsesServe.generate({ payload, ctx, headers: inboundHeadersForUpstream(c) });
+      result = await responsesServe.generate({ payload, ctx, headers: inboundHeaders(c) });
     } catch (error) {
       if (signal.aborted || isClosed()) return;
       // The HTTP entry renders this verbatim envelope as a 400; WS surfaces the
@@ -652,7 +652,7 @@ const createDownstreamSequence = (): DownstreamSequence => {
 
 const parseMaybeJson = (body: Uint8Array, headers: Headers): unknown => {
   const text = new TextDecoder().decode(body);
-  if (!(headers.get('content-type') ?? '').includes('application/json')) return { message: text };
+  if (!isJsonMediaType(headers.get('content-type'))) return { message: text };
   try {
     return JSON.parse(text) as unknown;
   } catch {

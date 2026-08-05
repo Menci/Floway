@@ -5,7 +5,7 @@ import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completio
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesCompactionResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { serializeModelPathAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, type ProviderInstance, type Provider, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
+import { headersForMessagesCall, serializeModelPathAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, type ProviderInstance, type Provider, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
 
 const upstreamModelIdOf = (model: ProviderModel): string => (model.providerData as { upstreamModelId: string }).upstreamModelId;
 
@@ -87,8 +87,8 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
         throw new Error(`Unhandled ResponsesAction: ${action as string}`);
       }
     },
-    callMessages: (model, body, signal, opts) => callStreaming(azureFetchMessages, model, body, signal, opts.headers, parseMessagesStream, opts),
-    callMessagesCountTokens: (model, body, signal, opts) => callNonStreaming(azureFetchMessagesCountTokens, model, body, signal, opts.headers, opts),
+    callMessages: (model, body, signal, opts) => callStreaming(azureFetchMessages, model, body, signal, headersForMessagesCall(opts.headers, opts.anthropicBeta), parseMessagesStream, opts),
+    callMessagesCountTokens: (model, body, signal, opts) => callNonStreaming(azureFetchMessagesCountTokens, model, body, signal, headersForMessagesCall(opts.headers, opts.anthropicBeta), opts),
     callEmbeddings: (model, body, signal, opts) => callNonStreaming(azureFetchEmbeddings, model, body, signal, opts.headers, opts),
     callImagesGenerations: (model, body, signal, opts) => callNonStreaming(azureFetchImagesGenerations, model, body, signal, opts.headers, opts),
     callImagesEdits: async (model, request, signal, opts) => {
@@ -110,6 +110,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
     upstreamId: azure.id,
     kind: 'azure',
     name: azure.name,
+    inboundHeaderAllowlist: [],
     disabledPublicModelIds: azure.disabledPublicModelIds,
     modelPrefix: azure.modelPrefix,
     modelsCache: azure.modelsCache,

@@ -1,7 +1,8 @@
 import { expect, test } from 'vitest';
 
-import { prepareMessagesAffinity } from '../../../../../src/data-plane/chat/messages/affinity/ingress.ts';
+import { analyzeMessagesAffinity } from '../../../../../src/data-plane/chat/messages/affinity/ingress.ts';
 import { AffinityCodec, type AffinityTarget } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import type { ModelCandidate } from '@floway-dev/provider';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
@@ -26,7 +27,7 @@ test('removes synthetic blocks and strips incompatible signatures without hiding
   const candidateB = candidate('upstream-b');
   const signature = await codec.wrap('signature', targetFor(candidateA), 'messages.thinking.signature');
   const synthetic = await codec.wrap(undefined, targetFor(candidateA), 'messages.redacted_thinking.data');
-  const prepared = await prepareMessagesAffinity({
+  const prepared = await analyzeMessagesAffinity({
     model: 'model',
     max_tokens: 100,
     messages: [{
@@ -39,14 +40,14 @@ test('removes synthetic blocks and strips incompatible signatures without hiding
     }],
   }, codec);
 
-  expect(prepared.payloadForCandidate(candidateA).messages[0]).toEqual({
+  expect(acceptedAffinityEvaluation(prepared, candidateA).materialize().messages[0]).toEqual({
     role: 'assistant',
     content: [
       { type: 'thinking', thinking: 'visible reasoning', signature: 'signature' },
       { type: 'text', text: 'answer' },
     ],
   });
-  expect(prepared.payloadForCandidate(candidateB).messages[0]).toEqual({
+  expect(acceptedAffinityEvaluation(prepared, candidateB).materialize().messages[0]).toEqual({
     role: 'assistant',
     content: [
       { type: 'thinking', thinking: 'visible reasoning' },
@@ -61,21 +62,21 @@ test('removes assistant messages emptied by affinity block stripping', async () 
   const synthetic = await codec.wrap(undefined, targetFor(candidateA), 'messages.redacted_thinking.data');
   const natural = await codec.wrap('natural', targetFor(candidateA), 'messages.redacted_thinking.data');
 
-  const syntheticPrepared = await prepareMessagesAffinity({
+  const syntheticPrepared = await analyzeMessagesAffinity({
     model: 'model',
     max_tokens: 100,
     messages: [{ role: 'assistant', content: [{ type: 'redacted_thinking', data: synthetic }] }],
   }, codec);
-  expect(syntheticPrepared.payloadForCandidate(candidateA).messages).toEqual([]);
-  expect(syntheticPrepared.payloadForCandidate(candidateB).messages).toEqual([]);
+  expect(acceptedAffinityEvaluation(syntheticPrepared, candidateA).materialize().messages).toEqual([]);
+  expect(acceptedAffinityEvaluation(syntheticPrepared, candidateB).materialize().messages).toEqual([]);
 
-  const naturalPrepared = await prepareMessagesAffinity({
+  const naturalPrepared = await analyzeMessagesAffinity({
     model: 'model',
     max_tokens: 100,
     messages: [{ role: 'assistant', content: [{ type: 'redacted_thinking', data: natural }] }],
   }, codec);
-  expect(naturalPrepared.payloadForCandidate(candidateA).messages).toEqual([
+  expect(acceptedAffinityEvaluation(naturalPrepared, candidateA).materialize().messages).toEqual([
     { role: 'assistant', content: [{ type: 'redacted_thinking', data: 'natural' }] },
   ]);
-  expect(naturalPrepared.payloadForCandidate(candidateB).messages).toEqual([]);
+  expect(acceptedAffinityEvaluation(naturalPrepared, candidateB).materialize().messages).toEqual([]);
 });

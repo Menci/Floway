@@ -58,6 +58,65 @@
   font-display: swap;
 }
 
+/* Meslo LG S is the small-line-gap, slashed-zero member of Meslo LG. The four
+   faces come from the non-DZ v1.2.1 archive and retain its true italics:
+   https://github.com/andreberg/Meslo-Font/blob/09a431d546d211130352c28eb0466e5d7d5aeaf0/dist/v1.2.1/Meslo%20LG%20v1.2.1.zip
+
+   The generated WOFF2 files move each fixed-width glyph by half the added
+   advance and widen every face from 1233 to 1264 units. At 99.9895%, that puts
+   Meslo's `o` at the established apparent height while giving each column
+   Consolas's advance-to-`o`-height ratio. One family-wide scale and one
+   advance keep regular, bold, upright, and italic text on the same grid. The
+   metric overrides retain the established 1.32 em line box, so changing the
+   face does not move the surrounding layout. */
+@font-face {
+  font-family: 'Meslo LG S Web';
+  src: url('./assets/fonts/meslo-lg-s-400-normal.generated.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  size-adjust: 99.9895%;
+  ascent-override: 102.0107%;
+  descent-override: 30.0032%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: 'Meslo LG S Web';
+  src: url('./assets/fonts/meslo-lg-s-400-italic.generated.woff2') format('woff2');
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  size-adjust: 99.9895%;
+  ascent-override: 102.0107%;
+  descent-override: 30.0032%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: 'Meslo LG S Web';
+  src: url('./assets/fonts/meslo-lg-s-700-normal.generated.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 600 700;
+  font-display: swap;
+  size-adjust: 99.9895%;
+  ascent-override: 102.0107%;
+  descent-override: 30.0032%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: 'Meslo LG S Web';
+  src: url('./assets/fonts/meslo-lg-s-700-italic.generated.woff2') format('woff2');
+  font-style: italic;
+  font-weight: 600 700;
+  font-display: swap;
+  size-adjust: 99.9895%;
+  ascent-override: 102.0107%;
+  descent-override: 30.0032%;
+  line-gap-override: 0%;
+}
+
 @unocss;
 
 /* The 28 and its 16 at the narrow step transcribe nothing and are ours. The

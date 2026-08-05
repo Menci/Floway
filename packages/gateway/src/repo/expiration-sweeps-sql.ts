@@ -4,6 +4,7 @@ import type {
   ExpirationSweepCompletion,
   ExpirationSweepsRepo,
 } from './types.ts';
+import { decodeDumpBodyDescriptor } from '../dump/storage-codec.ts';
 import type { SqlDatabase } from '@floway-dev/platform';
 
 interface CleanupBackfillSourceState {
@@ -38,14 +39,6 @@ const CLEANUP_BACKFILL_SOURCES = {
 type CleanupBackfillSource = keyof typeof CLEANUP_BACKFILL_SOURCES;
 
 const isCleanupBackfillSource = (source: string): source is CleanupBackfillSource => source in CLEANUP_BACKFILL_SOURCES;
-
-const dumpFileKey = (descriptor: string, source: string): string => {
-  const parsed: unknown = JSON.parse(descriptor);
-  if (typeof parsed !== 'object' || parsed === null || !('key' in parsed) || typeof parsed.key !== 'string') {
-    throw new Error(`Dump ${source} descriptor is missing its file key`);
-  }
-  return parsed.key;
-};
 
 export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
   constructor(private readonly db: SqlDatabase) {}
@@ -110,13 +103,19 @@ export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
   private async registerDumpFiles(rows: readonly DumpBackfillRow[]): Promise<void> {
     const files: DumpFileOwner[] = rows.flatMap(row => [
       ...(row.request_body_descriptor === null ? [] : [{
-        fileKey: dumpFileKey(row.request_body_descriptor, 'request body'),
+        fileKey: decodeDumpBodyDescriptor(
+          row.request_body_descriptor,
+          `dump record ${row.key_id}/${row.id} request body descriptor during expiration backfill`,
+        ).key,
         ownerKind: 'dump-request' as const,
         keyId: row.key_id,
         recordId: row.id,
       }]),
       ...(row.response_body_descriptor === null ? [] : [{
-        fileKey: dumpFileKey(row.response_body_descriptor, 'response body'),
+        fileKey: decodeDumpBodyDescriptor(
+          row.response_body_descriptor,
+          `dump record ${row.key_id}/${row.id} response body descriptor during expiration backfill`,
+        ).key,
         ownerKind: 'dump-response' as const,
         keyId: row.key_id,
         recordId: row.id,

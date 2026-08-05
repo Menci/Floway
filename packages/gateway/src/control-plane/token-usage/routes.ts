@@ -4,13 +4,13 @@
 // returns the actor's own keys, while `all-by-user` aggregates across users and
 // is reserved for administrators.
 
-import { aggregateUsageByUserForDashboard, aggregateUsageByUserForDisplay, aggregateUsageForDashboard, aggregateUsageForDisplay } from './aggregate.ts';
+import { aggregateUsageByUserForDisplay, aggregateUsageForDisplay } from './aggregate.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { tokenUsageQuery } from '../schemas.ts';
 import { buildKeyToUserMap } from '../shared/key-to-user.ts';
 import { resolveUsageView } from '../shared/usage-view.ts';
-import type { DashboardTokenUsageByKeyResponse, DashboardTokenUsageByUserResponse, TokenUsageByKeyResponse, TokenUsageByUserResponse } from '../usage-types.ts';
+import type { TokenUsageByKeyResponse, TokenUsageByUserResponse } from '../usage-types.ts';
 
 export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
   const query = c.req.valid('query');
@@ -33,17 +33,12 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
       repo.apiKeys.listIncludingDeleted(),
     ]);
     const keyToUser = buildKeyToUserMap(keys);
-    if (query.include_user_metadata !== '1' && query.include_upstream_dimension !== '1') {
-      return c.json(aggregateUsageByUserForDisplay(rawRecords, keyToUser));
-    }
+    const records = aggregateUsageByUserForDisplay(rawRecords, keyToUser);
+
+    if (query.include_user_metadata !== '1') return c.json(records);
     const userMetadata = users
       .map(u => ({ id: u.id, username: u.username }))
       .sort((a, b) => a.id - b.id);
-    if (query.include_upstream_dimension === '1') {
-      const records = aggregateUsageByUserForDashboard(rawRecords, keyToUser);
-      return c.json({ view: 'all-by-user', dimensions: ['upstream'], records, users: userMetadata } satisfies DashboardTokenUsageByUserResponse);
-    }
-    const records = aggregateUsageByUserForDisplay(rawRecords, keyToUser);
     return c.json({ view: 'all-by-user', records, users: userMetadata } satisfies TokenUsageByUserResponse);
   }
 
@@ -55,34 +50,26 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
     return c.json({ error: 'Unknown key_id' }, 404);
   }
 
-  const rawRecords = await repo.usage.query({ keyId: explicitKeyId, start, end });
-  const filtered = explicitKeyId ? rawRecords : rawRecords.filter(r => ownedSet.has(r.keyId));
+  const filtered = await repo.usage.query({
+    keyIds: explicitKeyId === undefined ? [...ownedSet] : [explicitKeyId],
+    start,
+    end,
+  });
   const keyMap = new Map(keys.map(k => [k.id, k]));
-  const withKeyMetadata = <Record extends { keyId: string }>(records: Record[]) => records.map(r => {
+  const records = aggregateUsageForDisplay(filtered);
+  const withKeyMetadata = records.map(r => {
     const k = keyMap.get(r.keyId);
     if (!k) throw new Error(`telemetry row references unknown key ${r.keyId} for user ${resolved.scopeUserId}`);
     return { ...r, keyName: k.name, keyCreatedAt: k.createdAt };
   });
-  if (query.include_key_metadata !== '1' && query.include_upstream_dimension !== '1') {
-    return c.json(withKeyMetadata(aggregateUsageForDisplay(filtered)));
-  }
+  if (query.include_key_metadata !== '1') return c.json(withKeyMetadata);
 
   const keyMetadata = keys
     .map(k => ({ id: k.id, name: k.name, createdAt: k.createdAt }))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
-  if (query.include_upstream_dimension === '1') {
-    const records = withKeyMetadata(aggregateUsageForDashboard(filtered));
-    return c.json({
-      view: 'self-by-key',
-      dimensions: ['upstream'],
-      records,
-      keys: keyMetadata,
-    } satisfies DashboardTokenUsageByKeyResponse);
-  }
-  const records = withKeyMetadata(aggregateUsageForDisplay(filtered));
   return c.json({
     view: 'self-by-key',
-    records,
+    records: withKeyMetadata,
     keys: keyMetadata,
   } satisfies TokenUsageByKeyResponse);
 };
