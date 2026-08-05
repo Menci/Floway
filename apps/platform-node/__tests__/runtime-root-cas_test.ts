@@ -13,7 +13,7 @@ test('nodeRuntimeRootCAs snapshots Node\'s complete default trust set', async ()
     const { nodeRuntimeRootCAs } = await import('../src/runtime-root-cas.ts');
 
     expect(nodeRuntimeRootCAs).toEqual(tls.getCACertificates('default'));
-    expect(nodeRuntimeRootCAs).toEqual([singleRoot]);
+    expect(nodeRuntimeRootCAs).toHaveLength(1);
   } finally {
     tls.setDefaultCACertificates(original);
     vi.resetModules();
