@@ -80,4 +80,24 @@ describe.each(factories)('%s models refresh coordination', (_name, createRepo) =
     await repo.upstreams.saveClearingModelsCache(newer);
     await expect(repo.upstreams.claimModelsRefresh(record.id, { updatedAt: next.updatedAt, config: next.config }, 'old-time', now + 900_004, now + 4, false)).resolves.toBeNull();
   });
+
+  test('saving a new upstream generation clears its predecessor refresh state', async () => {
+    const repo = await createRepo();
+    await repo.upstreams.save(record);
+    const now = 1_800_000_000_000;
+    const claim = await repo.upstreams.claimModelsRefresh(record.id, generation, 'failed', now, now - 900_000, false);
+    if (!claim) throw new Error('expected refresh claim');
+    await repo.upstreams.completeModelsRefreshFailure(record.id, 'failed', 1, modelsRefreshRetryAt(now, 0));
+
+    const next = { ...record, name: 'Renamed', updatedAt: '2026-08-01T00:01:00.000Z' };
+    await repo.upstreams.save(next);
+    await expect(repo.upstreams.claimModelsRefresh(
+      record.id,
+      { updatedAt: next.updatedAt, config: next.config },
+      'next-generation',
+      now + 1,
+      now - 899_999,
+      false,
+    )).resolves.toEqual({ failureCount: 0 });
+  });
 });

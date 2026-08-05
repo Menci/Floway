@@ -916,7 +916,8 @@ class SqlUpstreamRepo implements UpstreamRepo {
            disabled_public_model_ids = excluded.disabled_public_model_ids,
            proxy_fallback_list_json = excluded.proxy_fallback_list_json,
            model_prefix_json = excluded.model_prefix_json,
-           hue = excluded.hue${clearModelsCache ? ', models_cache_json = NULL, models_refresh_json = NULL' : ''}`,
+           hue = excluded.hue,
+           models_refresh_json = NULL${clearModelsCache ? ', models_cache_json = NULL' : ''}`,
       )
       .bind(
         upstream.id,

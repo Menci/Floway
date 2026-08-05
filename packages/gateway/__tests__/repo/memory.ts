@@ -578,6 +578,7 @@ class MemoryUpstreamRepo implements UpstreamRepo {
       ? { ...upstream, createdAt: existing.createdAt, modelsCache: existing.modelsCache }
       : { ...upstream, modelsCache: null };
     this.store.set(preserved.id, cloneUpstreamRecord(preserved));
+    this.modelsRefreshes.delete(preserved.id);
     return Promise.resolve();
   }
 
