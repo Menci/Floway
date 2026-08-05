@@ -30,6 +30,7 @@ const registerAudioModel = async (
     config: {
       baseUrl: 'https://audio.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'sk-audio',
       endpoints: {},
       modelsFetch: { enabled: false },

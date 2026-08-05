@@ -20,6 +20,7 @@ const registerCompletionsUpstream = async (repo: Awaited<ReturnType<typeof setup
     config: {
       baseUrl: 'https://passthrough.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'sk-passthrough',
       endpoints: {},
       modelsFetch: { enabled: false },
@@ -212,6 +213,7 @@ test('/v1/completions rejects a model without the completions endpoint with the 
     config: {
       baseUrl: 'https://passthrough.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'sk-x',
       endpoints: {},
       modelsFetch: { enabled: false },

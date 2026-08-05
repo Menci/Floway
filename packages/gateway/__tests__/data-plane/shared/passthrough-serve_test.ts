@@ -31,6 +31,7 @@ const registerEmbeddingsUpstream = async (repo: Awaited<ReturnType<typeof setupA
     config: {
       baseUrl: 'https://passthrough.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'sk-passthrough',
       endpoints: {},
     },

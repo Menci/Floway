@@ -24,6 +24,7 @@ test('enumerateModelCandidates strips an -YYYYMMDD suffix when nothing matched a
       config: {
         baseUrl: 'https://custom.example.com',
         authStyle: 'bearer',
+        ingressHeadersRules: [],
         apiKey: 'sk-custom',
         endpoints: { messages: {} },
       },
@@ -78,6 +79,7 @@ test('enumerateModelCandidates does not retry when the inbound id has no dated s
       config: {
         baseUrl: 'https://custom.example.com',
         authStyle: 'bearer',
+        ingressHeadersRules: [],
         apiKey: 'sk-custom',
         endpoints: { messages: {} },
       },
@@ -112,6 +114,7 @@ test('enumerateModelCandidates prefers the literal dated id over the stripped ba
       config: {
         baseUrl: 'https://custom.example.com',
         authStyle: 'bearer',
+        ingressHeadersRules: [],
         apiKey: 'sk-custom',
         endpoints: { messages: {} },
       },

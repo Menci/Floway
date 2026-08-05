@@ -32,6 +32,7 @@ const custom: UpstreamRecord = {
   config: {
     baseUrl: 'https://api.example.com',
     authStyle: 'bearer',
+    ingressHeadersRules: [],
     apiKey: 'sk-secret-token-12345',
     endpoints: { chatCompletions: {}, responses: {} },
     modelsFetch: { enabled: true, endpoint: '/models' },

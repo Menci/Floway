@@ -23,6 +23,7 @@ const blueprintEnvelope = (kind: UpstreamProviderKind, overrides: Record<string,
 const customConfig = {
   baseUrl: 'https://custom.example.com',
   authStyle: 'bearer',
+  ingressHeadersRules: [],
   apiKey: 'sk-test',
   endpoints: { chatCompletions: {} },
 };
@@ -100,6 +101,7 @@ test('POST /api/upstreams accepts a custom model whose only endpoint is /complet
     config: {
       baseUrl: 'https://custom.example.com',
       authStyle: 'none',
+      ingressHeadersRules: [],
       endpoints: {},
       modelsFetch: { enabled: false },
       models: [{ upstreamModelId: 'davinci-002', endpoints: { completions: {} } }],
@@ -408,7 +410,7 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
     modelPrefix: null,
     modelsCache: null,
     hue: 210,
-    config: { baseUrl: 'https://a.example.com', authStyle: 'bearer', apiKey: 'x', endpoints: { chatCompletions: {} } },
+    config: { baseUrl: 'https://a.example.com', authStyle: 'bearer', apiKey: 'x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
     state: null,
   };
   await repo.upstreams.save({ ...baseRow, id: 'up_fresh', name: 'Fresh', sortOrder: 0 });

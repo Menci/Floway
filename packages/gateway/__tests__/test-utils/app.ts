@@ -86,6 +86,7 @@ export const buildCustomUpstreamRecord = (overrides: Partial<UpstreamRecord> = {
   const config = {
     baseUrl: 'https://custom.example.com',
     authStyle: 'bearer',
+    ingressHeadersRules: [],
     apiKey: 'sk-custom',
     endpoints: { chatCompletions: {} },
   };
