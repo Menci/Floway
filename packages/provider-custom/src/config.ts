@@ -185,6 +185,10 @@ const modelsFetchField = (value: unknown): CustomModelsFetch => {
   }
   const validPath = validateUpstreamPath(value.endpoint, 'modelsFetch.endpoint');
   if (!validPath.ok) throw new Error(`Malformed custom upstream config: ${validPath.error}`);
+  const query = new URL(validPath.value, 'https://floway.invalid').searchParams;
+  if (query.has('before_id') || query.has('after_id')) {
+    throw new Error('Malformed custom upstream config: modelsFetch.endpoint must not set reserved pagination parameters before_id or after_id');
+  }
   return { enabled: value.enabled, endpoint: validPath.value };
 };
 

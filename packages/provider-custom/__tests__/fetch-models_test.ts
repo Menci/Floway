@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { assertCustomUpstreamRecord, fetchCustomModels } from '../src/index.ts';
 import { ProviderModelsUnavailableError, directFetcher, type Fetcher } from '@floway-dev/provider';
-import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertRejects, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const upstreamRecord = () => ({
   id: 'up_custom',
@@ -39,18 +39,38 @@ test('fetchCustomModels returns the parsed response on 2xx', async () => {
   );
 });
 
-test('fetchCustomModels accepts an Anthropic-shape response with no top-level `object`', async () => {
+test('fetchCustomModels follows Anthropic cursor pages and deduplicates their models', async () => {
   const { config } = assertCustomUpstreamRecord(upstreamRecord());
+  config.modelsFetch.endpoint = '/v1/models?region=us';
+  const afterIds: Array<string | null> = [];
+  const regions: Array<string | null> = [];
   await withMockedFetch(
-    () => jsonResponse({
-      data: [{ type: 'model', id: 'claude-opus-4-5', display_name: 'Claude Opus 4.5', created_at: '2026-01-01T00:00:00Z' }],
-      has_more: false,
-      first_id: 'claude-opus-4-5',
-      last_id: 'claude-opus-4-5',
-    }),
+    request => {
+      const afterId = new URL(request.url).searchParams.get('after_id');
+      afterIds.push(afterId);
+      regions.push(new URL(request.url).searchParams.get('region'));
+      return afterId === null
+        ? jsonResponse({
+            data: [{ type: 'model', id: 'claude-opus-4-5', display_name: 'Claude Opus 4.5', created_at: '2026-01-01T00:00:00Z' }],
+            has_more: true,
+            first_id: 'claude-opus-4-5',
+            last_id: 'claude-opus-4-5',
+          })
+        : jsonResponse({
+            data: [
+              { type: 'model', id: 'claude-opus-4-5', display_name: 'duplicate' },
+              { type: 'model', id: 'claude-sonnet-4-5', display_name: 'Claude Sonnet 4.5' },
+            ],
+            has_more: false,
+            first_id: 'claude-opus-4-5',
+            last_id: 'claude-sonnet-4-5',
+          });
+    },
     async () => {
       const result = await fetchCustomModels(config, directFetcher);
-      assertEquals(result.data.length, 1);
+      assertEquals(afterIds, [null, 'claude-opus-4-5']);
+      assertEquals(regions, ['us', 'us']);
+      assertEquals(result.data.map(model => model.id), ['claude-opus-4-5', 'claude-sonnet-4-5']);
       assertEquals(result.data[0].id, 'claude-opus-4-5');
       assertEquals(result.data[0].display_name, 'Claude Opus 4.5');
       assertEquals(result.data[0].created_at, '2026-01-01T00:00:00Z');
@@ -205,16 +225,55 @@ test('fetchCustomModels skips malformed and duplicate ids and unsafe timestamps'
   );
 });
 
+test('fetchCustomModels rejects cursor cycles without returning a partial catalog', async () => {
+  const { config } = assertCustomUpstreamRecord(upstreamRecord());
+  let calls = 0;
+  const error = await withMockedFetch(
+    () => {
+      calls++;
+      return jsonResponse({ data: [{ id: `model-${calls}` }], has_more: true, last_id: 'repeated' });
+    },
+    async () => await assertRejects(() => fetchCustomModels(config, directFetcher), ProviderModelsUnavailableError),
+  );
+  assertEquals(calls, 2);
+  assertEquals((error.cause as Error).message, 'Custom /models pagination repeated cursor "repeated"');
+});
+
+test('fetchCustomModels bounds unique-cursor pagination', async () => {
+  const { config } = assertCustomUpstreamRecord(upstreamRecord());
+  let calls = 0;
+  const fetcher: Fetcher = () => {
+    calls++;
+    return Promise.resolve(jsonResponse({ data: [{ id: `model-${calls}` }], has_more: true, last_id: `cursor-${calls}` }));
+  };
+  const error = await assertRejects(() => fetchCustomModels(config, fetcher), ProviderModelsUnavailableError);
+  assertEquals(calls, 256);
+  assertEquals((error.cause as Error).message, 'Custom /models pagination exceeded 256 pages');
+});
+
+test('fetchCustomModels bounds the number of models retained for caching', async () => {
+  const { config } = assertCustomUpstreamRecord(upstreamRecord());
+  const fetcher: Fetcher = () => Promise.resolve(jsonResponse({
+    data: Array.from({ length: 4097 }, (_, index) => ({ id: `model-${index}` })),
+  }));
+  const error = await assertRejects(() => fetchCustomModels(config, fetcher), ProviderModelsUnavailableError);
+  assertEquals((error.cause as Error).message, 'Custom /models catalog exceeded 4096 models');
+});
+
 test('fetchCustomModels throws ProviderModelsUnavailableError with httpResponse on non-2xx', async () => {
   const { config } = assertCustomUpstreamRecord(upstreamRecord());
   let thrown: unknown;
+  let calls = 0;
   await withMockedFetch(
-    () => new Response('rate limit', { status: 429, headers: { 'retry-after': '5' } }),
+    () => ++calls === 1
+      ? jsonResponse({ data: [{ id: 'first-page' }], has_more: true, last_id: 'first-page' })
+      : new Response('rate limit', { status: 429, headers: { 'retry-after': '5' } }),
     async () => {
       try { await fetchCustomModels(config, directFetcher); } catch (e) { thrown = e; }
     },
   );
   if (!(thrown instanceof ProviderModelsUnavailableError)) throw new Error('expected ProviderModelsUnavailableError');
+  assertEquals(calls, 2);
   assertEquals(thrown.httpResponse?.status, 429);
   assertEquals(thrown.httpResponse?.body, 'rate limit');
   assertEquals(thrown.httpResponse?.headers.get('retry-after'), '5');
@@ -235,15 +294,17 @@ test('fetchCustomModels throws ProviderModelsUnavailableError with null httpResp
 
 test('fetchCustomModels throws ProviderModelsUnavailableError with null httpResponse on shape error', async () => {
   const { config } = assertCustomUpstreamRecord(upstreamRecord());
-  let thrown: unknown;
-  await withMockedFetch(
-    () => jsonResponse({ object: 'list', data: 'oops' }),
-    async () => {
-      try { await fetchCustomModels(config, directFetcher); } catch (e) { thrown = e; }
-    },
-  );
-  if (!(thrown instanceof ProviderModelsUnavailableError)) throw new Error('expected ProviderModelsUnavailableError');
-  assertEquals(thrown.httpResponse, null);
+  for (const body of [
+    { object: 'list', data: 'oops' },
+    { data: [{ id: 'model' }], has_more: true, last_id: null },
+    { data: [{ id: 'model' }], has_more: 'yes', last_id: 'model' },
+  ]) {
+    const error = await withMockedFetch(
+      () => jsonResponse(body),
+      async () => await assertRejects(() => fetchCustomModels(config, directFetcher), ProviderModelsUnavailableError),
+    );
+    assertEquals((error as ProviderModelsUnavailableError).httpResponse, null);
+  }
 });
 
 test('fetchCustomModels routes the catalog GET through the injected fetcher, not globalThis.fetch', async () => {

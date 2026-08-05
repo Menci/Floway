@@ -227,6 +227,20 @@ test('assertCustomUpstreamRecord rejects malformed opaque config instead of drop
     'unsupported pathOverrides key models',
   );
 
+  for (const endpoint of ['/v1/models?before_id=middle', '/v1/models?after_id=middle']) {
+    assertThrows(
+      () => assertCustomUpstreamRecord({
+        ...baseRecord,
+        config: {
+          ...(baseRecord.config as Record<string, unknown>),
+          modelsFetch: { enabled: true, endpoint },
+        },
+      }),
+      Error,
+      'must not set reserved pagination parameters',
+    );
+  }
+
   assertThrows(
     () =>
       assertCustomUpstreamRecord({

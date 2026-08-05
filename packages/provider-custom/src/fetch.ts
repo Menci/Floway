@@ -72,5 +72,15 @@ export const customFetchAlphaSearch = (config: CustomUpstreamConfig, init: Reque
   customFetchInternal(config, pathOverrideFor(config, '/alpha/search'), init, options);
 // /models lives on its own fetch toggle (see config.modelsFetch.endpoint),
 // not in pathOverrides.
-export const customFetchModels = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, config.modelsFetch.endpoint ?? '/v1/models', init, options);
+export const customFetchModels = (
+  config: CustomUpstreamConfig,
+  init: RequestInit,
+  options: UpstreamFetchOptions,
+  afterId?: string,
+): Promise<Response> => {
+  const path = config.modelsFetch.endpoint ?? '/v1/models';
+  if (afterId === undefined) return customFetchInternal(config, path, init, options);
+  const page = new URL(path, 'https://floway.invalid');
+  page.searchParams.set('after_id', afterId);
+  return customFetchInternal(config, `${page.pathname}${page.search}`, init, options);
+};

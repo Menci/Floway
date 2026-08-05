@@ -8,11 +8,16 @@
 //
 // A model is admitted if it has a string `id`; everything else is best-
 // effort metadata. The container is admitted if `data` is an array.
+// Anthropic pages forward `last_id` as the next request's `after_id`:
+// https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/core/pagination.ts#L115-L199
 
 import type { CustomUpstreamConfig } from './config.ts';
 import { customFetchModels } from './fetch.ts';
 import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, type ModelKind, type ModelPricing, parseNonNegativeDecimalString, type PriceVector, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
-import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, identityWrapUpstreamCall } from '@floway-dev/provider';
+import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, identityWrapUpstreamCall, ProviderModelsUnavailableError } from '@floway-dev/provider';
+
+const MAX_CUSTOM_MODEL_PAGES = 256;
+const MAX_CUSTOM_MODELS = 4096;
 
 export interface CustomRawModel {
   id: string;
@@ -41,6 +46,10 @@ export interface CustomRawModel {
 
 export interface CustomModelsResponse {
   data: CustomRawModel[];
+}
+
+interface CustomModelsPage extends CustomModelsResponse {
+  nextAfterId?: string;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -130,22 +139,51 @@ const parseRawModel = (value: unknown): CustomRawModel | null => {
   return model;
 };
 
-const parseCustomModelsResponse = (value: unknown): CustomModelsResponse | null => {
+const parseCustomModelsPage = (value: unknown): CustomModelsPage | null => {
   if (!isRecord(value) || !Array.isArray(value.data)) return null;
   const data: CustomRawModel[] = [];
-  const seen = new Set<string>();
   for (const item of value.data) {
     const model = parseRawModel(item);
-    if (model && !seen.has(model.id)) {
-      seen.add(model.id);
-      data.push(model);
-    }
+    if (model) data.push(model);
+  }
+  if (value.has_more !== undefined && typeof value.has_more !== 'boolean') return null;
+  if (value.has_more === true) {
+    const nextAfterId = optionalStringField(value.last_id);
+    if (data.length === 0 || nextAfterId === undefined) return null;
+    return { data, nextAfterId };
   }
   return { data };
 };
 
-export const fetchCustomModels = (config: CustomUpstreamConfig, fetcher: Fetcher): Promise<CustomModelsResponse> =>
-  fetchUpstreamModels(
-    () => customFetchModels(config, { method: 'GET' }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }),
-    parseCustomModelsResponse,
-  );
+const paginationError = (message: string): ProviderModelsUnavailableError =>
+  new ProviderModelsUnavailableError(null, new Error(message));
+
+export const fetchCustomModels = async (config: CustomUpstreamConfig, fetcher: Fetcher): Promise<CustomModelsResponse> => {
+  const data: CustomRawModel[] = [];
+  const seenModelIds = new Set<string>();
+  const seenCursors = new Set<string>();
+  let afterId: string | undefined;
+
+  for (let pageIndex = 0; pageIndex < MAX_CUSTOM_MODEL_PAGES; pageIndex++) {
+    const page = await fetchUpstreamModels(
+      () => customFetchModels(config, { method: 'GET' }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }, afterId),
+      parseCustomModelsPage,
+    );
+    for (const model of page.data) {
+      if (seenModelIds.has(model.id)) continue;
+      if (seenModelIds.size >= MAX_CUSTOM_MODELS) {
+        throw paginationError(`Custom /models catalog exceeded ${MAX_CUSTOM_MODELS} models`);
+      }
+      seenModelIds.add(model.id);
+      data.push(model);
+    }
+    if (page.nextAfterId === undefined) return { data };
+    if (seenCursors.has(page.nextAfterId)) {
+      throw paginationError(`Custom /models pagination repeated cursor ${JSON.stringify(page.nextAfterId)}`);
+    }
+    seenCursors.add(page.nextAfterId);
+    afterId = page.nextAfterId;
+  }
+
+  throw paginationError(`Custom /models pagination exceeded ${MAX_CUSTOM_MODEL_PAGES} pages`);
+};
