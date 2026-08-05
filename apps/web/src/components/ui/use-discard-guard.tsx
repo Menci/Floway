@@ -1,8 +1,8 @@
 import { useCallback, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 
 import { ConfirmDialog } from './confirm-dialog';
 import { useDialogInvocation } from './use-dialog-invocation';
+import { useTranslation } from '../../i18n/translation';
 
 /**
  * Answers every dismissal of a dialog that holds a draft. Esc, the scrim and

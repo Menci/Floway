@@ -7,8 +7,8 @@ import {
   SettingsRegular,
 } from '@fluentui/react-icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 
+import { useTranslation } from '../i18n/translation';
 import type { Route } from './+types/dashboard-playground';
 import { useDashboardOutletContext } from './dashboard';
 import { requireDashboardSession } from './guards';
@@ -240,7 +240,9 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
     if (customResult.error) {
       const message = customResult.error === 'reserved'
         ? t('dashboard.playground.errors.customReserved', { fields: customResult.fields.join(', ') })
-        : t(`dashboard.playground.errors.custom${customResult.error === 'invalid' ? 'Invalid' : 'Object'}`);
+        : t(customResult.error === 'invalid'
+            ? 'dashboard.playground.errors.customInvalid'
+            : 'dashboard.playground.errors.customObject');
       setCustomError(message);
       return;
     }

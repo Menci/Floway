@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
-import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import { reactRouter } from '@react-router/dev/vite';
+import MagicString from 'magic-string';
 import { defineConfig, runnerImport, type Plugin } from 'vite';
 
 import { wranglerProxiedPaths } from './gateway-paths';
@@ -103,7 +103,12 @@ const prismComponentsEsm = (): Plugin => ({
   transform(code, id) {
     const path = id.split('?', 1)[0]!.replaceAll('\\', '/');
     if (!/\/prismjs\/components\/prism-[^/]+\.js$/.test(path)) return;
-    return `import Prism from "prismjs";\n${code}`;
+    const transformed = new MagicString(code);
+    transformed.prepend('import Prism from "prismjs";\n');
+    return {
+      code: transformed.toString(),
+      map: transformed.generateMap({ hires: true, includeContent: true, source: id }),
+    };
   },
 });
 
@@ -137,37 +142,6 @@ const fontsourceWoff2Only = (): Plugin => ({
   },
 });
 
-// Workers Static Assets uploads every file under the configured `directory`,
-// which for this app is the client build output, so the source maps below
-// would ride along -- 42.4 MiB across 172 files, the largest of them within a
-// factor of 1.4 of Cloudflare's 25 MiB per-file ceiling.
-//
-// `.assetsignore` is wrangler's exclusion list for that directory: it is read
-// from the directory root, takes `.gitignore` syntax, and is itself left out
-// of the upload along with the other metafiles
-// (https://developers.cloudflare.com/workers/static-assets/binding/#ignoring-assets,
-// implemented at
-// https://github.com/cloudflare/workers-sdk/blob/wrangler%404.81.0/packages/workers-shared/utils/helpers.ts#L61-L86).
-// The whole output tree is gitignored, so the file is emitted by the build
-// rather than checked in.
-const excludeSourceMapsFromUpload = (): Plugin => {
-  let assetsIgnorePath: string;
-  return {
-    name: 'floway-assetsignore',
-    apply: 'build',
-    applyToEnvironment: environment => environment.name === 'client',
-    configResolved(config) {
-      // `build.outDir` is kept as authored, so it is the top-level root every
-      // other consumer resolves it against.
-      assetsIgnorePath = resolve(config.root, config.environments.client!.build.outDir, '.assetsignore');
-    },
-    closeBundle: {
-      order: 'post',
-      handler: () => writeFile(assetsIgnorePath, '*.js.map\n'),
-    },
-  };
-};
-
 // The Worker runs at 8788 in `wrangler dev`. Vite proxies every path the Worker
 // owns so the SPA can call relative URLs in both dev and prod. Anything not
 // matched falls through to the Vite dev server, which serves the SPA itself.
@@ -177,6 +151,26 @@ const excludeSourceMapsFromUpload = (): Plugin => {
 // of ports without editing this file.
 const wranglerOrigin = process.env.FLOWAY_DEV_GATEWAY_ORIGIN ?? 'http://127.0.0.1:8788';
 const webPort = Number(process.env.FLOWAY_DEV_WEB_PORT ?? '5174');
+
+// Restoring a position needs `mappings`, `sources` and `names`;
+// `sourcesContent` is the original text, which nothing here reads. Measured
+// over one build of this app: 42.53 MiB of maps, of which 34.16 MiB is
+// `sourcesContent`, and the largest single map falls from 18.1 MiB to 1.3 MiB
+// -- Workers Static Assets uploads every file under the client output
+// directory and rejects any file over 25 MiB, so carrying the text is also
+// what would eventually break the deploy. The cost is that devtools resolves a
+// frame to a file and line it cannot then display.
+// https://github.com/cloudflare/cloudflare-docs/blob/96f2d1edbca7d722c47e0f633f56a970750c48a0/src/content/docs/workers/platform/limits.mdx#L32-L35
+const sourceMapOutput = {
+  // The same id is written into the chunk and into its map, which is what lets
+  // the runtime restore refuse a map built for a different revision of a chunk
+  // whose content hash did not change -- a comment-only edit produces exactly
+  // that pair.
+  // https://github.com/rolldown/rolldown/blob/872b98ac7476eb7d5892a2913e4ba010d124c6ac/packages/rolldown/src/options/output-options.ts#L206-L215
+  sourcemapDebugIds: true,
+  // https://github.com/rolldown/rolldown/blob/872b98ac7476eb7d5892a2913e4ba010d124c6ac/packages/rolldown/src/options/output-options.ts#L266-L277
+  sourcemapExcludeSources: true,
+} as const;
 
 export default defineConfig({
   // React Router discovers route modules lazily. Pre-bundle their browser
@@ -225,7 +219,6 @@ export default defineConfig({
     ],
   },
   plugins: [
-    excludeSourceMapsFromUpload(),
     fontsourceWoff2Only(),
     prismComponentsEsm(),
     typescriptStylesheets(),
@@ -272,25 +265,27 @@ export default defineConfig({
   preview: {
     host: '127.0.0.1',
   },
+  // A `?worker` import is bundled by its own rolldown pass, which the client
+  // environment's output options do not reach.
+  // https://github.com/vitejs/vite/blob/v8.1.5/packages/vite/src/node/plugins/worker.ts#L162-L232
+  worker: {
+    rolldownOptions: { output: sourceMapOutput },
+  },
   environments: {
     client: {
       build: {
-        // The maps are built for the three build checks that read them --
-        // scripts/check-web-monaco-lazy.ts,
+        // The maps ship, and the chunks keep the trailing `sourceMappingURL`
+        // comment that names them: the ErrorBoundary in src/root.tsx restores
+        // its trace through src/lib/source-mapped-stack.ts, and the same
+        // comment is what lets devtools resolve a frame on a live instance.
+        // Three build checks -- scripts/check-web-monaco-lazy.ts,
         // scripts/check-web-gallery-dev-only.ts and
-        // scripts/check-web-locales-split.ts derive chunk membership from
-        // each map's module list, and fall back to a far weaker scan of the
-        // emitted text without one. Both find a map by chunk filename, so
-        // `hidden` serves them while leaving the chunks without the trailing
-        // `sourceMappingURL` comment -- the maps are not deployed (see the
-        // `.assetsignore` plugin above), and a comment naming a file the
-        // upload does not carry is a 404 in anyone's devtools. Nothing in the
-        // browser would consume them anyway: the ErrorBoundary in
-        // src/root.tsx renders `error.stack` as text, and a source map never
-        // reaches that string.
-        sourcemap: 'hidden',
+        // scripts/check-web-locales-split.ts -- read the same files to derive
+        // chunk membership from each map's module list.
+        sourcemap: true,
         rolldownOptions: {
           output: {
+            ...sourceMapOutput,
             codeSplitting: {
               groups: [
                 // The charts are excluded because they are the one part of

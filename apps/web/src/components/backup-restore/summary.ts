@@ -1,6 +1,5 @@
-import type { useTranslation } from 'react-i18next';
-
 import type { BackupFileData } from './file';
+import type { TFunction } from '../../i18n/translation';
 
 export const PREVIEW_LABEL_KEYS = [
   'users',
@@ -26,7 +25,7 @@ export const countRecords = (data: BackupFileData): Record<string, number> => {
 // a join can spell.
 export const recordSummary = (
   counts: Record<string, number>,
-  t: ReturnType<typeof useTranslation>['t'],
+  t: TFunction,
   locale: string,
 ): string => {
   const parts = PREVIEW_LABEL_KEYS

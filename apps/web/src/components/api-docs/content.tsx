@@ -1,7 +1,6 @@
-import { Trans, useTranslation } from 'react-i18next';
-
 import { apiDocsEndpoints, apiDocsGroups, authCurlExample } from './data';
 import { fluentComponents } from '../../fluent';
+import { Trans, useTranslation } from '../../i18n/translation';
 import { CodeBlock } from '../ui/code-block';
 import { HttpMethodBadge } from '../ui/http-badge';
 import { SECTION_STACK_CLASS } from '../ui/layout';

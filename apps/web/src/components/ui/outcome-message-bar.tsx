@@ -1,8 +1,8 @@
 import { DismissRegular } from '@fluentui/react-icons';
 import { Children, type ReactNode } from 'react';
-import { useTranslation } from 'react-i18next';
 
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 
 const { Button, MessageBar, MessageBarActions, MessageBarBody, MessageBarTitle, Tooltip } = fluentComponents;
 

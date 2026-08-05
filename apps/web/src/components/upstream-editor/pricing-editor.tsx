@@ -1,6 +1,5 @@
 import { AddRegular, DeleteRegular, WarningRegular } from '@fluentui/react-icons';
 import { useId, useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 
 import {
   baseEntryOf,
@@ -21,6 +20,7 @@ import {
   type PricingField,
 } from './pricing-model';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { EmptyState } from '../ui/empty-state';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
 import { CONTROL_ROW_CLASS, PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
