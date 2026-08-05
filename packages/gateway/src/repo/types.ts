@@ -1,7 +1,7 @@
 import type { WebSearchConfig, WebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { AgentSetupRepository } from '@floway-dev/agent-setup';
 import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingMetric, DecimalString, ModelKind, PricingSelector } from '@floway-dev/protocols/common';
-import type { PerformanceTelemetryContext, UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
+import type { PerformanceTelemetryContext, UpstreamModelsCache, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 
 export interface ApiKey {
   id: string;
@@ -276,6 +276,16 @@ export interface UpstreamRepo {
   getById(id: string): Promise<UpstreamRecord | null>;
   save(upstream: UpstreamRecord): Promise<void>;
   saveClearingModelsCache(upstream: UpstreamRecord): Promise<void>;
+  // Targeted updates preserve fields owned by a concurrent control-plane
+  // action. Credential exchanges update config/state while metadata edits
+  // update only the fields present in their PATCH; neither can replay a stale
+  // whole-row snapshot over the other.
+  updateFields(
+    id: string,
+    expectedKind: UpstreamProviderKind,
+    patch: UpstreamFieldsPatch,
+    options?: { clearModelsCache?: boolean },
+  ): Promise<boolean>;
   delete(id: string): Promise<boolean>;
   deleteAll(): Promise<void>;
   // Upstream state write with optimistic concurrency, used both by the
@@ -291,6 +301,20 @@ export interface UpstreamRepo {
   saveModelsCache(id: string, generation: ModelsCacheGeneration, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean>;
   saveModelsCacheError(id: string, generation: ModelsCacheGeneration, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean>;
 }
+
+export type UpstreamFieldsPatch = Partial<Pick<UpstreamRecord,
+  | 'name'
+  | 'enabled'
+  | 'sortOrder'
+  | 'updatedAt'
+  | 'flagOverrides'
+  | 'disabledPublicModelIds'
+  | 'proxyFallbackList'
+  | 'modelPrefix'
+  | 'hue'
+  | 'config'
+  | 'state'
+>>;
 
 export interface ModelsCacheGeneration {
   updatedAt: string;

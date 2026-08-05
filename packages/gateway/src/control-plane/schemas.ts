@@ -319,8 +319,8 @@ export const updateKeyBody = z.object({
 // enumerated. When present it must be non-empty: stored and wire shapes stay
 // symmetric, so "all colos" is always the absent field.
 const proxyFallbackListSchema = z.array(z.object({
-  id: z.string().min(1),
-  colos: z.array(z.string().min(1)).min(1).optional(),
+  id: z.string().trim().min(1),
+  colos: z.array(z.string().trim().min(1)).min(1).optional(),
 }));
 
 // Per-upstream model name prefix policy. `null` clears the policy (the upstream

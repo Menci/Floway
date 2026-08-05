@@ -44,6 +44,7 @@ import type {
   Session,
   SessionsRepo,
   UpstreamRepo,
+  UpstreamFieldsPatch,
   UsageRecord,
   UsageRepo,
   User,
@@ -1047,6 +1048,40 @@ class SqlUpstreamRepo implements UpstreamRepo {
 
   saveClearingModelsCache(upstream: UpstreamRecord): Promise<void> {
     return this.saveRecord(upstream, true);
+  }
+
+  async updateFields(
+    id: string,
+    expectedKind: UpstreamRecord['kind'],
+    patch: UpstreamFieldsPatch,
+    options: { clearModelsCache?: boolean } = {},
+  ): Promise<boolean> {
+    const assignments: string[] = [];
+    const values: SqlBindValue[] = [];
+    const add = (column: string, value: SqlBindValue): void => {
+      assignments.push(`${column} = ?`);
+      values.push(value);
+    };
+
+    if (patch.name !== undefined) add('name', patch.name);
+    if (patch.enabled !== undefined) add('enabled', patch.enabled ? 1 : 0);
+    if (patch.sortOrder !== undefined) add('sort_order', patch.sortOrder);
+    if (patch.updatedAt !== undefined) add('updated_at', patch.updatedAt);
+    if (patch.flagOverrides !== undefined) add('flag_overrides', JSON.stringify(normalizeFlagOverrides(patch.flagOverrides)));
+    if (patch.disabledPublicModelIds !== undefined) add('disabled_public_model_ids', JSON.stringify(normalizeDisabledPublicModelIds(patch.disabledPublicModelIds)));
+    if (patch.proxyFallbackList !== undefined) add('proxy_fallback_list_json', JSON.stringify(normalizeProxyFallbackList(patch.proxyFallbackList)));
+    if (patch.modelPrefix !== undefined) add('model_prefix_json', patch.modelPrefix === null ? null : JSON.stringify(patch.modelPrefix));
+    if (patch.hue !== undefined) add('hue', patch.hue);
+    if (Object.hasOwn(patch, 'config')) add('config_json', serializeStoredConfig(patch.config));
+    if (Object.hasOwn(patch, 'state')) add('state_json', serializeStoredState(patch.state));
+    if (options.clearModelsCache) assignments.push('models_cache_json = NULL');
+    if (assignments.length === 0) return false;
+
+    const result = await this.db
+      .prepare(`UPDATE upstreams SET ${assignments.join(', ')} WHERE id = ? AND provider = ?`)
+      .bind(...values, id, expectedKind)
+      .run();
+    return (result.meta.changes ?? 0) > 0;
   }
 
   private async saveRecord(upstream: UpstreamRecord, clearModelsCache: boolean): Promise<void> {

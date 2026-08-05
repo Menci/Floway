@@ -1,6 +1,7 @@
 import { ensureCodexAccessToken, mintCodexAccessToken } from './access-token.ts';
 import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
-import { assertCodexUpstreamRecord, type CodexUpstreamConfig } from './config.ts';
+import { type CodexUpstreamConfig } from './config.ts';
+import { assertCodexUpstreamCredentials } from './credentials.ts';
 import { CODEX_DEFAULT_FLAGS } from './defaults.ts';
 import { callCodexAlphaSearch, callCodexResponses, callCodexResponsesCompact, type CodexCallEffects } from './fetch.ts';
 import { CODEX_RESPONSES_BOUNDARY } from './interceptors/responses/index.ts';
@@ -25,8 +26,7 @@ const INBOUND_HEADER_ALLOWLIST = [
 ] as const;
 
 export const createCodexProvider = (record: UpstreamRecord): Provider => {
-  assertCodexUpstreamRecord(record);
-  assertCodexUpstreamState(record.state);
+  assertCodexUpstreamCredentials(record);
   const config: CodexUpstreamConfig = record.config;
   // Always operates on the first account in the pool. The schema carries an
   // array so a future fan-out can pick a different active account per call

@@ -52,6 +52,7 @@ import type {
   StoredResponsesItem,
   StoredResponsesSnapshot,
   UpstreamRepo,
+  UpstreamFieldsPatch,
   UsageRecord,
   UsageRepo,
   User,
@@ -720,6 +721,23 @@ class MemoryUpstreamRepo implements UpstreamRepo {
       : { ...upstream, modelsCache: null };
     this.store.set(next.id, cloneUpstreamRecord(next));
     return Promise.resolve();
+  }
+
+  updateFields(
+    id: string,
+    expectedKind: UpstreamRecord['kind'],
+    patch: UpstreamFieldsPatch,
+    options: { clearModelsCache?: boolean } = {},
+  ): Promise<boolean> {
+    const existing = this.store.get(id);
+    if (!existing || existing.kind !== expectedKind) return Promise.resolve(false);
+    const next = {
+      ...existing,
+      ...patch,
+      modelsCache: options.clearModelsCache ? null : existing.modelsCache,
+    };
+    this.store.set(id, cloneUpstreamRecord(next));
+    return Promise.resolve(true);
   }
 
   delete(id: string): Promise<boolean> {

@@ -1,17 +1,18 @@
 import { resolveControlPlaneFetcher } from './proxy-resolution.ts';
-import { upstreamErrorMessage as errorMessage } from './shared.ts';
+import { nextUpstreamUpdatedAt, upstreamErrorMessage as errorMessage } from './shared.ts';
 import { userFromContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { claudeCodeOAuthAuthorizeUrlBody, claudeCodeOAuthExchangeBody, claudeCodeOAuthRefreshBody, claudeCodeProbeBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody } from '../schemas.ts';
 import { warmModelsCache } from '../shared/warm-models-cache.ts';
-import type { Fetcher, UpstreamRecord } from '@floway-dev/provider';
+import type { Fetcher } from '@floway-dev/provider';
 import {
   type ClaudeCodeAccountCredential,
   type ClaudeCodeUpstreamConfig,
   type ClaudeCodeUpstreamState,
   ClaudeCodeOAuthSessionTerminatedError,
+  assertClaudeCodeUpstreamCredentials,
   buildClaudeCodeAuthorizeUrl,
   ensureClaudeCodeAccessToken,
   fetchClaudeCodeUsageProbe,
@@ -69,16 +70,21 @@ export const claudeCodeOAuthExchange = async (c: CtxWithJson<typeof claudeCodeOA
   }
 
   if (record.id !== '') {
-    const dbRecord = await getRepo().upstreams.getById(record.id);
+    const repo = getRepo().upstreams;
+    const dbRecord = await repo.getById(record.id);
     if (!dbRecord) return c.json({ error: 'Upstream not found' }, 404);
     if (dbRecord.kind !== 'claude-code') return c.json({ error: 'Upstream is not a Claude Code upstream' }, 400);
-    const next: UpstreamRecord = {
-      ...dbRecord,
+    assertClaudeCodeUpstreamCredentials(dbRecord);
+    const clearModelsCache = dbRecord.config.accounts[0].accountUuid !== ingestion.config.accounts[0].accountUuid;
+    if (!await repo.updateFields(record.id, 'claude-code', {
       config: ingestion.config,
       state: ingestion.state,
-      updatedAt: new Date().toISOString(),
-    };
-    await getRepo().upstreams.save(next);
+      updatedAt: nextUpstreamUpdatedAt(dbRecord),
+    }, { clearModelsCache })) {
+      return c.json({ error: 'Upstream not found' }, 404);
+    }
+    const next = await repo.getById(record.id);
+    if (!next) return c.json({ error: 'Upstream not found' }, 404);
     await warmModelsCache(next, c);
   }
 
@@ -113,16 +119,21 @@ export const claudeCodeSetupTokenExchange = async (c: CtxWithJson<typeof claudeC
   }
 
   if (record.id !== '') {
-    const dbRecord = await getRepo().upstreams.getById(record.id);
+    const repo = getRepo().upstreams;
+    const dbRecord = await repo.getById(record.id);
     if (!dbRecord) return c.json({ error: 'Upstream not found' }, 404);
     if (dbRecord.kind !== 'claude-code') return c.json({ error: 'Upstream is not a Claude Code upstream' }, 400);
-    const next: UpstreamRecord = {
-      ...dbRecord,
+    assertClaudeCodeUpstreamCredentials(dbRecord);
+    const clearModelsCache = dbRecord.config.accounts[0].accountUuid !== ingestion.config.accounts[0].accountUuid;
+    if (!await repo.updateFields(record.id, 'claude-code', {
       config: ingestion.config,
       state: ingestion.state,
-      updatedAt: new Date().toISOString(),
-    };
-    await getRepo().upstreams.save(next);
+      updatedAt: nextUpstreamUpdatedAt(dbRecord),
+    }, { clearModelsCache })) {
+      return c.json({ error: 'Upstream not found' }, 404);
+    }
+    const next = await repo.getById(record.id);
+    if (!next) return c.json({ error: 'Upstream not found' }, 404);
     await warmModelsCache(next, c);
   }
 
@@ -140,8 +151,12 @@ export const claudeCodeOAuthRefresh = async (c: CtxWithJson<typeof claudeCodeOAu
   // refresh_token that has no reason to rotate yet.
   if (record.id === '') return c.json({ error: 'refresh requires a persisted upstream' }, 400);
 
-  const parsedState = readClaudeCodeUpstreamState(record.state);
-  const account = parsedState.accounts[0];
+  const repo = getRepo().upstreams;
+  const persisted = await repo.getById(record.id);
+  if (!persisted) return c.json({ error: 'Upstream not found' }, 404);
+  if (persisted.kind !== 'claude-code') return c.json({ error: 'Upstream is not a Claude Code upstream' }, 400);
+  assertClaudeCodeUpstreamCredentials(persisted);
+  const account = persisted.state.accounts[0];
   if (account.state !== 'active') {
     return c.json({ error: `Claude Code upstream is ${account.state}; re-run OAuth exchange to recover` }, 400);
   }
@@ -165,7 +180,7 @@ export const claudeCodeOAuthRefresh = async (c: CtxWithJson<typeof claudeCodeOAu
     // CAS-write the rotated refresh_token alongside the fresh access
     // token, and flip the row to refresh_failed on a terminal OAuth
     // error. All this handler contributes is the HTTP framing.
-    await ensureClaudeCodeAccessToken({ upstreamId: record.id, repo: getRepo().upstreams, fetcher, force: true });
+    await ensureClaudeCodeAccessToken({ upstreamId: record.id, repo, fetcher, force: true });
   } catch (err) {
     if (err instanceof ClaudeCodeOAuthSessionTerminatedError) {
       return c.json({ error: `Claude Code refresh failed: ${err.upstreamMessage}. Re-run OAuth exchange to recover.` }, 400);
@@ -173,7 +188,7 @@ export const claudeCodeOAuthRefresh = async (c: CtxWithJson<typeof claudeCodeOAu
     return c.json({ error: errorMessage(err) }, 502);
   }
 
-  const updated = await getRepo().upstreams.getById(record.id);
+  const updated = await repo.getById(record.id);
   if (!updated) return c.json({ error: 'Upstream not found' }, 404);
   return c.json({ patch: { state: updated.state } });
 };
@@ -182,6 +197,14 @@ export const claudeCodeProbe = async (c: CtxWithJson<typeof claudeCodeProbeBody>
   const { record } = c.req.valid('json');
   if (record.kind !== 'claude-code') return c.json({ error: 'Quota probe is only supported for claude-code upstreams' }, 400);
   const actor = userFromContext(c).id;
+  const repo = getRepo().upstreams;
+
+  if (record.id !== '') {
+    const persisted = await repo.getById(record.id);
+    if (!persisted) return c.json({ error: 'Upstream not found' }, 404);
+    if (persisted.kind !== 'claude-code') return c.json({ error: 'Upstream is not a Claude Code upstream' }, 400);
+    assertClaudeCodeUpstreamCredentials(persisted);
+  }
 
   let fetcher: Fetcher;
   try {
@@ -205,12 +228,17 @@ export const claudeCodeProbe = async (c: CtxWithJson<typeof claudeCodeProbeBody>
     if (record.id !== '') {
       const access = await ensureClaudeCodeAccessToken({
         upstreamId: record.id,
-        repo: getRepo().upstreams,
+        repo,
         fetcher,
       });
       accessToken = access.entry.token;
     } else {
-      const parsedState = readClaudeCodeUpstreamState(record.state);
+      let parsedState: ClaudeCodeUpstreamState;
+      try {
+        parsedState = readClaudeCodeUpstreamState(record.state);
+      } catch (err) {
+        return c.json({ error: errorMessage(err) }, 400);
+      }
       const account = parsedState.accounts[0];
       if (!account.accessToken?.token) {
         return c.json({ error: 'Draft account has no fresh access token; run OAuth refresh first' }, 400);
@@ -241,24 +269,29 @@ export const claudeCodeProbe = async (c: CtxWithJson<typeof claudeCodeProbeBody>
     accounts: state.accounts.map((a, i): ClaudeCodeAccountCredential => i === 0 ? { ...a, ...snapshotPatch } : a),
   });
 
-  // Merge the freshly-fetched snapshot into the caller's draft state so the
-  // response carries a whole state slot the caller can hand to its uniform
-  // patch merger — the wire contract stays symmetric with refresh/exchange
-  // instead of asking the client to hand-merge into accounts[0].
-  const merged = mergeSnapshotInto(readClaudeCodeUpstreamState(record.state));
+  // Drafts have no authoritative row, so their response merges into the posted
+  // state. Persisted probes read the row back after the state mutation, ensuring
+  // a concurrent credential rotation is reflected in the whole-slot patch.
+  let responseState: ClaudeCodeUpstreamState;
 
   // The snapshot rides on top of whatever state is current at write time, so a
   // concurrent rotation neither loses its own write nor is overwritten by this
   // one. A draft that has never been saved has no row to write to.
   if (record.id !== '') {
-    await getRepo().upstreams.saveState(record.id, current =>
+    await repo.saveState(record.id, current =>
       mergeSnapshotInto(readClaudeCodeUpstreamState(current)));
+    const updated = await repo.getById(record.id);
+    if (!updated) return c.json({ error: 'Upstream not found' }, 404);
+    assertClaudeCodeUpstreamCredentials(updated);
+    responseState = updated.state;
+  } else {
+    responseState = mergeSnapshotInto(readClaudeCodeUpstreamState(record.state));
   }
 
   logInfo('claude_code_admin_action', { upstream_id: record.id, action: 'quota_probe', actor, outcome: 'ok' });
   return c.json({
     fetched_at: probe.fetched_at,
     body: probe.body,
-    patch: { state: merged },
+    patch: { state: responseState },
   });
 };

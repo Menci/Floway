@@ -1,12 +1,12 @@
 import { resolveControlPlaneFetcher } from './proxy-resolution.ts';
-import { upstreamErrorMessage as errorMessage } from './shared.ts';
+import { nextUpstreamUpdatedAt, upstreamErrorMessage as errorMessage } from './shared.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { copilotOAuthDeviceLoginPollBody, copilotOAuthDeviceLoginStartBody, copilotQuotaBody } from '../schemas.ts';
 import { isRecord } from '../shared/field-validators.ts';
 import { warmModelsCache } from '../shared/warm-models-cache.ts';
-import type { Fetcher, UpstreamRecord } from '@floway-dev/provider';
+import type { Fetcher } from '@floway-dev/provider';
 import {
   assertCopilotUpstreamRecord,
   clearInProcessCopilotTokenCache,
@@ -42,7 +42,11 @@ export const copilotOAuthDeviceLoginStart = async (c: CtxWithJson<typeof copilot
   let fetcher: Fetcher;
   try {
     ({ githubHost } = parseCopilotDraftConfig(record.config));
-    fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, runtimeLocation: getRuntimeLocation(c.req.raw) });
+    fetcher = await resolveControlPlaneFetcher({
+      override: record.proxy_fallback_list,
+      upstreamId: record.id || undefined,
+      runtimeLocation: getRuntimeLocation(c.req.raw),
+    });
   } catch (e: unknown) {
     return c.json({ error: errorMessage(e) }, 400);
   }
@@ -74,7 +78,11 @@ export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
   let githubHost: string;
   try {
     ({ githubHost } = parseCopilotDraftConfig(record.config));
-    fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, runtimeLocation: getRuntimeLocation(c.req.raw) });
+    fetcher = await resolveControlPlaneFetcher({
+      override: record.proxy_fallback_list,
+      upstreamId: record.id || undefined,
+      runtimeLocation: getRuntimeLocation(c.req.raw),
+    });
   } catch (err) {
     return c.json({ status: 'error' as const, error: errorMessage(err) }, 400);
   }
@@ -92,7 +100,7 @@ export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
     if (data.error === 'authorization_pending') return c.json({ status: 'pending' as const });
     if (data.error === 'slow_down') return c.json({ status: 'slow_down' as const });
     if (data.error) return c.json({ status: 'error' as const, error: data.error_description ?? data.error }, 400);
-    if (!data.access_token) return c.json({ status: 'error' as const, error: 'Unknown response' }, 500);
+    if (!data.access_token) return c.json({ status: 'error' as const, error: 'GitHub device flow response missing access_token' }, 502);
 
     // Validates the PAT + seeds a fresh Copilot access token so the data
     // plane and dashboard `endpoints.api` calls work immediately without
@@ -115,19 +123,23 @@ export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
   // regardless of caller path.
   let nextState: CopilotUpstreamState;
   if (record.id !== '') {
-    const dbRecord = await getRepo().upstreams.getById(record.id);
+    const repo = getRepo().upstreams;
+    const dbRecord = await repo.getById(record.id);
     if (!dbRecord) return c.json({ status: 'error' as const, error: 'Upstream not found' }, 404);
     if (dbRecord.kind !== 'copilot') return c.json({ status: 'error' as const, error: 'Upstream is not a Copilot upstream' }, 400);
     const previous = assertCopilotUpstreamRecord(dbRecord);
     const sameIdentity = previous.config.githubHost === githubHost && previous.config.user.id === cred.user.id;
     const prevState = sameIdentity ? readCopilotUpstreamState(dbRecord.state) : emptyCopilotUpstreamState();
     nextState = { ...prevState, copilotToken: cred.tokenEntry };
-    const previousUpdatedAt = Date.parse(dbRecord.updatedAt);
-    if (!Number.isFinite(previousUpdatedAt)) throw new Error(`Copilot upstream ${record.id} has an invalid updatedAt timestamp`);
-    const updatedAt = new Date(Math.max(Date.now(), previousUpdatedAt + 1)).toISOString();
-    const next: UpstreamRecord = { ...dbRecord, config: configPatch, state: nextState, updatedAt };
-    if (sameIdentity) await getRepo().upstreams.save(next);
-    else await getRepo().upstreams.saveClearingModelsCache(next);
+    if (!await repo.updateFields(record.id, 'copilot', {
+      config: configPatch,
+      state: nextState,
+      updatedAt: nextUpstreamUpdatedAt(dbRecord),
+    }, { clearModelsCache: !sameIdentity })) {
+      return c.json({ status: 'error' as const, error: 'Upstream not found' }, 404);
+    }
+    const next = await repo.getById(record.id);
+    if (!next) return c.json({ status: 'error' as const, error: 'Upstream not found' }, 404);
     clearInProcessCopilotTokenCache();
     await warmModelsCache(next, c);
   } else {
@@ -158,22 +170,35 @@ export const copilotQuota = async (c: CtxWithJson<typeof copilotQuotaBody>) => {
   const { record } = c.req.valid('json');
   if (record.kind !== 'copilot') return c.json({ error: 'Upstream is not a Copilot upstream' }, 400);
 
+  let configInput = record.config;
+  if (record.id !== '') {
+    const persisted = await getRepo().upstreams.getById(record.id);
+    if (!persisted) return c.json({ error: 'Upstream not found' }, 404);
+    if (persisted.kind !== 'copilot') return c.json({ error: 'Upstream is not a Copilot upstream' }, 400);
+    configInput = assertCopilotUpstreamRecord(persisted).config;
+  }
+
   let githubHost: string;
   let githubToken: string;
   let fetcher: Fetcher;
   try {
-    const parsed = parseCopilotDraftConfig(record.config);
+    const parsed = parseCopilotDraftConfig(configInput);
     githubHost = parsed.githubHost;
     const { config } = parsed;
     if (typeof config.githubToken !== 'string' || config.githubToken === '') {
       return c.json({ error: 'Copilot upstream has no GitHub token' }, 400);
     }
     githubToken = config.githubToken;
-    fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, runtimeLocation: getRuntimeLocation(c.req.raw) });
+    fetcher = await resolveControlPlaneFetcher({
+      override: record.proxy_fallback_list,
+      upstreamId: record.id || undefined,
+      runtimeLocation: getRuntimeLocation(c.req.raw),
+    });
   } catch (e: unknown) {
     return c.json({ error: errorMessage(e) }, 400);
   }
 
+  let snapshot: ReturnType<typeof projectCopilotUsageResponse>;
   try {
     const resp = await fetchCopilotUsage(githubHost, githubToken, fetcher);
 
@@ -183,19 +208,15 @@ export const copilotQuota = async (c: CtxWithJson<typeof copilotQuotaBody>) => {
       return c.json({ error: `GitHub API error: ${resp.status} ${text}` }, status as 400 | 404 | 500 | 502);
     }
 
-    const snapshot = projectCopilotUsageResponse((await resp.json()) as CopilotUsageResponse, new Date());
-    // A body that reports no buckets is "nothing observed", so it neither
-    // persists nor replaces what the dashboard is already showing — the
-    // caller falls back to the stored snapshot. The reading otherwise merges
-    // into whatever state wins the row, and the catch is here only so a
-    // storage failure does not fail the operator's request.
-    if (snapshot !== null && record.id !== '') {
-      await putCopilotQuota(record.id, snapshot).catch((err: unknown) => {
-        console.warn(`Failed to persist Copilot quota snapshot for ${record.id}:`, err);
-      });
-    }
-    return c.json(snapshot);
+    snapshot = projectCopilotUsageResponse((await resp.json()) as CopilotUsageResponse, new Date());
   } catch (e: unknown) {
     return c.json({ error: errorMessage(e) }, 502);
   }
+
+  // A body that reports no buckets is "nothing observed", so it neither
+  // persists nor replaces what the dashboard is already showing. Storage sits
+  // outside the upstream-error catch: a failed durable write is an internal
+  // failure and must reach the gateway's top-level error boundary.
+  if (snapshot !== null && record.id !== '') await putCopilotQuota(record.id, snapshot);
+  return c.json(snapshot);
 };
