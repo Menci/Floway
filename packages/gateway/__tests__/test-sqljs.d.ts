@@ -3,11 +3,12 @@ declare module 'sql.js' {
     create_function(name: string, fn: (...args: never[]) => unknown): void;
     run(sql: string, params?: unknown[]): void;
     exec(sql: string, params?: unknown[]): Array<{ columns: string[]; values: unknown[][] }>;
+    export(): Uint8Array;
     close(): void;
   }
 
   export interface SqlJsStatic {
-    Database: new () => SqlJsDatabase;
+    Database: new (data?: Uint8Array) => SqlJsDatabase;
   }
 
   const initSqlJs: () => Promise<SqlJsStatic>;
