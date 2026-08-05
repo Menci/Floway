@@ -44,7 +44,7 @@ export interface ClipboardCopy {
 export const useCopyToClipboard = (): ClipboardCopy => {
   const [result, setResult] = useState<{ attempt: number; outcome: Exclude<CopyOutcome, 'idle'>; tag: string } | null>(null);
   const latestAttemptRef = useRef(0);
-  const expiryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const expiryTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
 
   useEffect(() => () => {
     if (expiryTimerRef.current !== null) window.clearTimeout(expiryTimerRef.current);
