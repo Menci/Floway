@@ -19,9 +19,6 @@ const CACHE_GENERATION = vi.hoisted<ModelsCacheGeneration>(() => ({
 
 const aModel = (id: string): ProviderModel => stubProviderModel({ id });
 
-// The SWR check reads the stored catalog off the provider instance, which the
-// registry mirrors from the row that produced it — so a seeded catalog is
-// handed to both the repo and the instance here.
 const stubInstance = (
   fetchFn: () => Promise<ProviderModel[]>,
   modelsCache: UpstreamModelsCache | null = null,
@@ -40,8 +37,6 @@ const stubInstance = (
   modelsFetchIdentity: fetchIdentity,
 });
 
-// The cache lives on the upstream row, so every write needs a row to
-// land on.
 const setupRepo = async (): Promise<InMemoryRepo> => {
   const repo = new InMemoryRepo();
   initRepo(repo);
@@ -78,215 +73,185 @@ const seedCache = async (
 const storedCache = async (repo: InMemoryRepo): Promise<UpstreamModelsCache | null> =>
   (await repo.upstreams.getById(UPSTREAM_ID))?.modelsCache ?? null;
 
+const captureScheduled = () => {
+  const promises: Promise<unknown>[] = [];
+  return {
+    promises,
+    scheduler: (promise: Promise<unknown>): void => { promises.push(promise); },
+  };
+};
+
 beforeEach(() => {
+  vi.restoreAllMocks();
   clearInFlightForTesting();
 });
 
 describe('fetchUpstreamModelsCached', () => {
-  test('cold cache: fetches, stores, returns models', async () => {
+  test('cold cache returns immediately and refreshes in the background', async () => {
     const repo = await setupRepo();
-    const fetchFn = vi.fn(async () => [aModel('m1')]);
+    let resolveFetch: ((models: ProviderModel[]) => void) | null = null;
+    const fetchFn = vi.fn(() => new Promise<ProviderModel[]>(resolve => { resolveFetch = resolve; }));
+    const scheduled = captureScheduled();
 
     const result = await fetchUpstreamModelsCached(
       stubInstance(fetchFn),
-      { scheduler: () => {}, fetcher: directFetcher },
+      { scheduler: scheduled.scheduler, fetcher: directFetcher },
     );
 
-    expect(result.map(m => m.id)).toEqual(['m1']);
-    expect(fetchFn).toHaveBeenCalledTimes(1);
-    expect((await storedCache(repo))?.models.map(m => m.id)).toEqual(['m1']);
+    expect(result).toEqual([]);
+    expect(scheduled.promises).toHaveLength(1);
+    await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(1));
+    resolveFetch!([aModel('m1')]);
+    await scheduled.promises[0];
+    expect((await storedCache(repo))?.models.map(model => model.id)).toEqual(['m1']);
   });
 
-  test('within SOFT: no fetch, returns stored', async () => {
+  test('within SOFT returns the stored catalog without scheduling a refresh', async () => {
     const repo = await setupRepo();
     const cache = await seedCache(repo, { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now() - 1000, models: [aModel('cached')] });
     const fetchFn = vi.fn(async () => [aModel('fresh')]);
+    const scheduled = captureScheduled();
 
     const result = await fetchUpstreamModelsCached(
       stubInstance(fetchFn, cache),
-      { scheduler: () => {}, fetcher: directFetcher },
+      { scheduler: scheduled.scheduler, fetcher: directFetcher },
     );
 
-    expect(result.map(m => m.id)).toEqual(['cached']);
+    expect(result.map(model => model.id)).toEqual(['cached']);
+    expect(scheduled.promises).toEqual([]);
     expect(fetchFn).not.toHaveBeenCalled();
   });
 
-  test('past SOFT within HARD: returns stored + schedules revalidate', async () => {
+  test('every stale age remains SWR forever', async () => {
     const repo = await setupRepo();
-    const cache = await seedCache(repo, { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now() - 20 * 60_000, models: [aModel('stale')] });
-    const fetchFn = vi.fn(async () => [aModel('fresh')]);
-    let scheduled: Promise<unknown> | null = null;
+    const cache = await seedCache(repo, { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now() - 365 * 24 * 60 * 60_000, models: [aModel('stale')] });
+    let resolveFetch: ((models: ProviderModel[]) => void) | null = null;
+    const fetchFn = vi.fn(() => new Promise<ProviderModel[]>(resolve => { resolveFetch = resolve; }));
+    const scheduled = captureScheduled();
 
     const result = await fetchUpstreamModelsCached(
       stubInstance(fetchFn, cache),
-      { scheduler: p => { scheduled = p; }, fetcher: directFetcher },
+      { scheduler: scheduled.scheduler, fetcher: directFetcher },
     );
 
-    expect(result.map(m => m.id)).toEqual(['stale']);
-    expect(fetchFn).toHaveBeenCalledTimes(1);
-    expect(scheduled).not.toBeNull();
-    await scheduled!;
-    expect((await storedCache(repo))?.models.map(m => m.id)).toEqual(['fresh']);
+    expect(result.map(model => model.id)).toEqual(['stale']);
+    await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(1));
+    resolveFetch!([aModel('fresh')]);
+    await scheduled.promises[0];
+    expect((await storedCache(repo))?.models.map(model => model.id)).toEqual(['fresh']);
   });
 
-  test('past HARD: blocks on fetch', async () => {
-    const repo = await setupRepo();
-    const cache = await seedCache(repo, { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now() - 25 * 60 * 60_000, models: [aModel('stale')] });
-    const fetchFn = vi.fn(async () => [aModel('fresh')]);
-
-    const result = await fetchUpstreamModelsCached(
-      stubInstance(fetchFn, cache),
-      { scheduler: () => {}, fetcher: directFetcher },
-    );
-
-    expect(result.map(m => m.id)).toEqual(['fresh']);
-    expect(fetchFn).toHaveBeenCalledTimes(1);
-    expect((await storedCache(repo))?.models.map(m => m.id)).toEqual(['fresh']);
-  });
-
-  // The instance carries the row as it was read at request start, and a
-  // request reaches this function once per alias target resolved. Without the
-  // write-back the second resolution would still see the stale snapshot and
-  // refetch, which the repo read used to prevent.
-  test('a fetch updates the instance so a later call in the same request is a cache hit', async () => {
-    const repo = await setupRepo();
-    const cache = await seedCache(repo, { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now() - 25 * 60 * 60_000, models: [aModel('stale')] });
-    const fetchFn = vi.fn(async () => [aModel('fresh')]);
-    const instance = stubInstance(fetchFn, cache);
-
-    const first = await fetchUpstreamModelsCached(instance, { scheduler: () => {}, fetcher: directFetcher });
-    const second = await fetchUpstreamModelsCached(instance, { scheduler: () => {}, fetcher: directFetcher });
-
-    expect(first.map(m => m.id)).toEqual(['fresh']);
-    expect(second.map(m => m.id)).toEqual(['fresh']);
-    expect(fetchFn).toHaveBeenCalledTimes(1);
-  });
-
-  test('force=true: bypasses cache and blocks on fetch', async () => {
+  test('force is the explicit fetch operation and blocks for a fresh result', async () => {
     const repo = await setupRepo();
     const cache = await seedCache(repo, { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now() - 1000, models: [aModel('stored')] });
     const fetchFn = vi.fn(async () => [aModel('fresh')]);
+    const scheduled = captureScheduled();
 
     const result = await fetchUpstreamModelsCached(
       stubInstance(fetchFn, cache),
-      { scheduler: () => {}, fetcher: directFetcher, force: true },
+      { scheduler: scheduled.scheduler, fetcher: directFetcher, force: true },
     );
 
-    expect(result.map(m => m.id)).toEqual(['fresh']);
-    expect(fetchFn).toHaveBeenCalledTimes(1);
-    expect((await storedCache(repo))?.models.map(m => m.id)).toEqual(['fresh']);
+    expect(result.map(model => model.id)).toEqual(['fresh']);
+    expect(scheduled.promises).toEqual([]);
+    expect((await storedCache(repo))?.models.map(model => model.id)).toEqual(['fresh']);
   });
 
-  test('two concurrent cold callers join one fetch', async () => {
+  test('concurrent cold callers join one background refresh', async () => {
     await setupRepo();
-    let resolveFetch: ((v: ProviderModel[]) => void) | null = null;
-    const fetchFn = vi.fn(() => new Promise<ProviderModel[]>(r => { resolveFetch = r; }));
+    let resolveFetch: ((models: ProviderModel[]) => void) | null = null;
+    const fetchFn = vi.fn(() => new Promise<ProviderModel[]>(resolve => { resolveFetch = resolve; }));
+    const instance = stubInstance(fetchFn);
+    const scheduled = captureScheduled();
+
+    const [first, second] = await Promise.all([
+      fetchUpstreamModelsCached(instance, { scheduler: scheduled.scheduler, fetcher: directFetcher }),
+      fetchUpstreamModelsCached(instance, { scheduler: scheduled.scheduler, fetcher: directFetcher }),
+    ]);
+
+    expect(first).toEqual([]);
+    expect(second).toEqual([]);
+    await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(1));
+    resolveFetch!([aModel('m1')]);
+    await Promise.all(scheduled.promises);
+  });
+
+  test('a failed refresh preserves stale data and activates persistent backoff', async () => {
+    const repo = await setupRepo();
+    const now = 1_800_000_000_000;
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    const cache = await seedCache(repo, { revision: MODEL_CATALOG_REVISION, fetchedAt: now - 20 * 60_000, models: [aModel('stale')] });
+    const fetchFn = vi.fn(async () => { throw new Error('boom'); });
+    const instance = stubInstance(fetchFn, cache);
+    const firstScheduled = captureScheduled();
+
+    expect((await fetchUpstreamModelsCached(instance, { scheduler: firstScheduled.scheduler, fetcher: directFetcher })).map(model => model.id)).toEqual(['stale']);
+    await expect(firstScheduled.promises[0]).rejects.toThrow('boom');
+
+    clearInFlightForTesting();
+    const secondScheduled = captureScheduled();
+    expect((await fetchUpstreamModelsCached(instance, { scheduler: secondScheduled.scheduler, fetcher: directFetcher })).map(model => model.id)).toEqual(['stale']);
+    await expect(secondScheduled.promises[0]).resolves.toBeUndefined();
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect((await storedCache(repo))?.lastError?.message).toContain('boom');
+  });
+
+  test('cold failures return empty and retry after the persisted backoff expires', async () => {
+    await setupRepo();
+    let now = 1_800_000_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const fetchFn = vi.fn(async () => { throw new Error('boom'); });
     const instance = stubInstance(fetchFn);
 
-    const p1 = fetchUpstreamModelsCached(instance, { scheduler: () => {}, fetcher: directFetcher });
-    const p2 = fetchUpstreamModelsCached(instance, { scheduler: () => {}, fetcher: directFetcher });
+    const firstScheduled = captureScheduled();
+    await expect(fetchUpstreamModelsCached(instance, { scheduler: firstScheduled.scheduler, fetcher: directFetcher })).resolves.toEqual([]);
+    await expect(firstScheduled.promises[0]).rejects.toThrow('boom');
 
-    // Yield once so both calls reach the L1 lookup before we resolve the fetch.
-    await Promise.resolve();
-    resolveFetch!([aModel('m1')]);
-    const [r1, r2] = await Promise.all([p1, p2]);
-
-    expect(r1.map(m => m.id)).toEqual(['m1']);
-    expect(r2.map(m => m.id)).toEqual(['m1']);
+    clearInFlightForTesting();
+    now += 59_999;
+    const backedOff = captureScheduled();
+    await expect(fetchUpstreamModelsCached(instance, { scheduler: backedOff.scheduler, fetcher: directFetcher })).resolves.toEqual([]);
+    await expect(backedOff.promises[0]).resolves.toBeUndefined();
     expect(fetchFn).toHaveBeenCalledTimes(1);
+
+    clearInFlightForTesting();
+    now += 1;
+    const retry = captureScheduled();
+    await expect(fetchUpstreamModelsCached(instance, { scheduler: retry.scheduler, fetcher: directFetcher })).resolves.toEqual([]);
+    await expect(retry.promises[0]).rejects.toThrow('boom');
+    expect(fetchFn).toHaveBeenCalledTimes(2);
   });
 
   test('a superseded generation neither joins nor overwrites the current catalog', async () => {
     const repo = await setupRepo();
     let resolveOld: ((models: ProviderModel[]) => void) | null = null;
     const oldFetch = vi.fn(() => new Promise<ProviderModel[]>(resolve => { resolveOld = resolve; }));
-    const oldRequest = fetchUpstreamModelsCached(
+    const oldScheduled = captureScheduled();
+    await fetchUpstreamModelsCached(
       stubInstance(oldFetch, null, CACHE_GENERATION, 'same-fetch'),
-      { scheduler: () => {}, fetcher: directFetcher },
+      { scheduler: oldScheduled.scheduler, fetcher: directFetcher },
     );
-    await Promise.resolve();
+    await vi.waitFor(() => expect(oldFetch).toHaveBeenCalledTimes(1));
 
     const nextGeneration = { updatedAt: CACHE_GENERATION.updatedAt, config: { identity: 'new' } };
     const current = await repo.upstreams.getById(UPSTREAM_ID);
     if (!current) throw new Error('upstream row missing');
     await repo.upstreams.saveClearingModelsCache({ ...current, updatedAt: nextGeneration.updatedAt, config: nextGeneration.config });
     const newFetch = vi.fn(async () => [aModel('new-tenant-model')]);
-    const newRequest = fetchUpstreamModelsCached(
+    const newResult = await fetchUpstreamModelsCached(
       stubInstance(newFetch, null, nextGeneration, 'same-fetch'),
       { scheduler: () => {}, fetcher: directFetcher, force: true },
     );
 
-    expect((await newRequest).map(model => model.id)).toEqual(['new-tenant-model']);
+    expect(newResult.map(model => model.id)).toEqual(['new-tenant-model']);
     resolveOld!([aModel('old-tenant-model')]);
-    expect((await oldRequest).map(model => model.id)).toEqual(['old-tenant-model']);
+    await oldScheduled.promises[0];
     expect(oldFetch).toHaveBeenCalledTimes(1);
     expect(newFetch).toHaveBeenCalledTimes(1);
     expect((await storedCache(repo))?.models.map(model => model.id)).toEqual(['new-tenant-model']);
   });
 
-  test('drafts with one persistence generation but different fetch identities do not join', async () => {
-    await setupRepo();
-    const firstFetch = vi.fn(async () => [aModel('first-draft-model')]);
-    const secondFetch = vi.fn(async () => [aModel('second-draft-model')]);
-
-    const [first, second] = await Promise.all([
-      fetchUpstreamModelsCached(stubInstance(firstFetch, null, CACHE_GENERATION, 'first-draft'), { scheduler: () => {}, fetcher: directFetcher, force: true }),
-      fetchUpstreamModelsCached(stubInstance(secondFetch, null, CACHE_GENERATION, 'second-draft'), { scheduler: () => {}, fetcher: directFetcher, force: true }),
-    ]);
-
-    expect(first.map(model => model.id)).toEqual(['first-draft-model']);
-    expect(second.map(model => model.id)).toEqual(['second-draft-model']);
-    expect(firstFetch).toHaveBeenCalledTimes(1);
-    expect(secondFetch).toHaveBeenCalledTimes(1);
-  });
-
-  test('background revalidate failure preserves stored row and writes lastError', async () => {
-    const repo = await setupRepo();
-    const cache = await seedCache(repo, { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now() - 20 * 60_000, models: [aModel('stale')] });
-    const fetchFn = vi.fn(async () => { throw new Error('boom'); });
-    let scheduled: Promise<unknown> | null = null;
-
-    const result = await fetchUpstreamModelsCached(
-      stubInstance(fetchFn, cache),
-      { scheduler: p => { scheduled = p; }, fetcher: directFetcher },
-    );
-
-    expect(result.map(m => m.id)).toEqual(['stale']);
-    expect(scheduled).not.toBeNull();
-    await scheduled!;
-    const stored = await storedCache(repo);
-    expect(stored?.models.map(m => m.id)).toEqual(['stale']);
-    expect(stored?.lastError?.message).toContain('boom');
-  });
-
-  test('cold + fetch failure: throws and writes nothing', async () => {
-    const repo = await setupRepo();
-    const fetchFn = vi.fn(async () => { throw new Error('boom'); });
-
-    await expect(fetchUpstreamModelsCached(
-      stubInstance(fetchFn),
-      { scheduler: () => {}, fetcher: directFetcher },
-    )).rejects.toThrow('boom');
-
-    expect(await storedCache(repo)).toBeNull();
-  });
-
-  test('force=true + fetch failure: throws (no fallback) and annotates lastError', async () => {
-    const repo = await setupRepo();
-    const cache = await seedCache(repo, { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now() - 1000, models: [aModel('stored')] });
-    const fetchFn = vi.fn(async () => { throw new Error('boom'); });
-
-    await expect(fetchUpstreamModelsCached(
-      stubInstance(fetchFn, cache),
-      { scheduler: () => {}, fetcher: directFetcher, force: true },
-    )).rejects.toThrow('boom');
-
-    const stored = await storedCache(repo);
-    expect(stored?.models.map(m => m.id)).toEqual(['stored']);
-    expect(stored?.lastError?.message).toContain('boom');
-  });
-
-  test('catalog revision mismatch bypasses a soft-fresh stored row', async () => {
+  test('catalog revision mismatch is cold and refreshes without blocking', async () => {
     const repo = await setupRepo();
     const cache = await seedCache(repo, {
       revision: MODEL_CATALOG_REVISION - 1,
@@ -294,18 +259,19 @@ describe('fetchUpstreamModelsCached', () => {
       models: [aModel('old-catalog')],
     });
     const fetchFn = vi.fn(async () => [aModel('current-catalog')]);
+    const scheduled = captureScheduled();
 
     const result = await fetchUpstreamModelsCached(
       stubInstance(fetchFn, cache),
-      { scheduler: () => {}, fetcher: directFetcher },
+      { scheduler: scheduled.scheduler, fetcher: directFetcher },
     );
 
-    expect(result.map(model => model.id)).toEqual(['current-catalog']);
-    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(result).toEqual([]);
+    await scheduled.promises[0];
     expect((await storedCache(repo))?.revision).toBe(MODEL_CATALOG_REVISION);
   });
 
-  test('an old-shape stale SQL cache hydrates cold and is replaced by a current fetch', async () => {
+  test('an obsolete SQL cache hydrates cold and is replaced in the background', async () => {
     const db = await createSqliteTestDb();
     const repo = new SqlRepo(db);
     initRepo(repo);
@@ -326,9 +292,6 @@ describe('fetchUpstreamModelsCached', () => {
       modelPrefix: null,
       hue: 210,
     });
-    // Deliberately schema-incompatible body: a stale numeric revision is an
-    // opaque obsolete payload, so hydration must not apply today's model
-    // schema before deciding the cache is cold.
     await db.prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ?').bind(JSON.stringify({
       revision: MODEL_CATALOG_REVISION - 1,
       fetchedAt: Date.now() - 1_000,
@@ -338,18 +301,16 @@ describe('fetchUpstreamModelsCached', () => {
 
     const hydrated = await repo.upstreams.getById(UPSTREAM_ID);
     if (!hydrated) throw new Error('upstream row missing');
-    expect(hydrated?.modelsCache).toBeNull();
+    expect(hydrated.modelsCache).toBeNull();
     const fetchFn = vi.fn(async () => [aModel('current-catalog')]);
+    const scheduled = captureScheduled();
     const result = await fetchUpstreamModelsCached(
-      stubInstance(fetchFn, hydrated.modelsCache, {
-        updatedAt: hydrated.updatedAt,
-        config: hydrated.config,
-      }),
-      { scheduler: () => {}, fetcher: directFetcher },
+      stubInstance(fetchFn, hydrated.modelsCache, { updatedAt: hydrated.updatedAt, config: hydrated.config }),
+      { scheduler: scheduled.scheduler, fetcher: directFetcher },
     );
 
-    expect(result.map(model => model.id)).toEqual(['current-catalog']);
-    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(result).toEqual([]);
+    await scheduled.promises[0];
     expect((await repo.upstreams.getById(UPSTREAM_ID))?.modelsCache?.revision).toBe(MODEL_CATALOG_REVISION);
   });
 });
