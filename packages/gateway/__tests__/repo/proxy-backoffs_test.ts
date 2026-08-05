@@ -11,9 +11,21 @@ import type { Repo } from '../../src/repo/types.ts';
 // at the start of the UPDATE, before the increment is applied'), so the
 // memory-only test would never have caught a drift between the JS mirror
 // and the SQL expression. Run the suite against both backends.
+const sharedSqlRepo = createSqliteTestDb().then(db => new SqlRepo(db));
+
+const resetSharedSqlRepo = async (): Promise<Repo> => {
+  const repo = await sharedSqlRepo;
+  await repo.proxyBackoffs.deleteAll();
+  await repo.proxies.deleteAll();
+  return repo;
+};
+
 const REPO_BACKENDS: Array<readonly [string, () => Promise<Repo>]> = [
   ['memory', async () => new InMemoryRepo()],
-  ['sql', async () => new SqlRepo(await createSqliteTestDb())],
+  // Cases in this file are sequential. Reusing the migrated database while
+  // clearing both owned tables preserves isolation without replaying the full
+  // migration corpus for every small repository assertion.
+  ['sql', resetSharedSqlRepo],
 ];
 
 const proxyUrl = (id: string): string => `socks5://${id}.example.test:1080`;
