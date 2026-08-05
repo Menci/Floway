@@ -105,6 +105,27 @@ describe('usage dimension controls', () => {
     expect(screen.getByRole('combobox', { name: 'Upstream' })).toBeTruthy();
   });
 
+  it('labels unattributed user usage without weakening real-user metadata checks', () => {
+    renderPage({
+      ...loaderData,
+      state: { ...loaderData.state, groupBy: 'userId' },
+      usage: {
+        ...loaderData.usage,
+        series: [{ ...usageRecord, group: '0' }],
+        axes: { ...loaderData.usage.axes, userId: [{ ...usageRecord, bucket: 'all', group: '0' }] },
+        dimensionValues: { ...loaderData.usage.dimensionValues, userIds: [0] },
+        users: [],
+      },
+    });
+
+    expect(screen.getByText('Unattributed user')).toBeTruthy();
+
+    expect(() => renderPage({
+      ...loaderData,
+      usage: { ...loaderData.usage, users: [] },
+    })).toThrow('Usage user dimension is missing metadata for 2');
+  });
+
   it('discloses that API key grouping is account-scoped', () => {
     renderPage({
       ...loaderData,
