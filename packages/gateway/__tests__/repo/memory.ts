@@ -1,8 +1,8 @@
 import { normalizeDisabledPublicModelIds } from '../../src/repo/disabled-public-models.ts';
 import { normalizeFlagOverrides } from '../../src/repo/flag-overrides.ts';
 import { MODEL_CATALOG_REVISION } from '../../src/repo/models-cache-contract.ts';
-import { normalizeProxyFallbackList } from '../../src/repo/proxy-fallback-list.ts';
 import { modelsRefreshRetryAt } from '../../src/repo/models-refresh-contract.ts';
+import { normalizeProxyFallbackList } from '../../src/repo/proxy-fallback-list.ts';
 import {
   assertSameStoredResponsesItem,
   cloneStoredResponsesItem,

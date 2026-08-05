@@ -1,10 +1,10 @@
 import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { SqlExpirationSweepsRepo } from './expiration-sweeps-sql.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
-import { MODEL_CATALOG_REVISION } from './models-cache-contract.ts';
 import { decodeAliasTargets, decodeAnnouncedMetadata, encodeAliasTargets, encodeAnnouncedMetadata } from './model-alias-codecs.ts';
-import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
+import { MODEL_CATALOG_REVISION } from './models-cache-contract.ts';
 import { MODELS_REFRESH_BACKOFF_BASE_MS, MODELS_REFRESH_BACKOFF_CAP_MS, MODELS_REFRESH_BACKOFF_EXPONENT_CAP } from './models-refresh-contract.ts';
+import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
 import { SqlResponsesItemsRepo, SqlResponsesSnapshotsRepo } from './responses-state-sql.ts';
 import { generateSessionToken } from './session-tokens.ts';
 import { SqlSpilledFilesRepo } from './spilled-files-sql.ts';
