@@ -90,7 +90,7 @@ describe('series identity', () => {
       records: [record({ input_tokens: '1' }, 'upstream:up-1'), record({ input_tokens: '2' }, 'upstream:up-deleted'), record({ input_tokens: '3' }, 'none')],
       dimensionOptions: [
         { value: 'upstream:up-1', label: 'Copilot seat' },
-        { value: 'none', label: 'No upstream' },
+        { value: 'none', label: 'Unknown upstream' },
         { value: 'upstream:up-deleted', label: 'up-deleted' },
       ],
       metric: 'total',
@@ -100,7 +100,7 @@ describe('series identity', () => {
 
     expect(model.entries.map(entry => [entry.id, entry.label])).toEqual([
       ['upstream:up-1', 'Copilot seat'],
-      ['none', 'No upstream'],
+      ['none', 'Unknown upstream'],
       ['upstream:up-deleted', 'up-deleted'],
     ]);
   });

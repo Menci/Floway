@@ -110,7 +110,7 @@ describe('usage dimension controls', () => {
     expect(screen.getByRole('combobox', { name: 'Upstream' })).toBeTruthy();
   });
 
-  it('labels unattributed user usage without weakening real-user metadata checks', () => {
+  it('labels unknown-user usage without weakening real-user metadata checks', () => {
     const { unmount } = renderPage({
       ...loaderData,
       state: { ...loaderData.state, groupBy: 'userId' },
@@ -123,7 +123,7 @@ describe('usage dimension controls', () => {
       },
     });
 
-    expect(screen.getByText('Unattributed user')).toBeTruthy();
+    expect(screen.getByText('Unknown user')).toBeTruthy();
     unmount();
 
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
