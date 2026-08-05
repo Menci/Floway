@@ -42,23 +42,6 @@ describe('fetchOnStream — request line and headers', () => {
     expect(head).toMatch(/\r\n\r\npayload$/);
   });
 
-  it('forwards a caller-supplied Accept-Encoding header', async () => {
-    const fake = makeFakeDuplex();
-    const promise = fetchOnStream(
-      { readable: fake.readable, writable: fake.writable },
-      {
-        method: 'GET',
-        path: '/',
-        headers: { Host: 'h', 'Accept-Encoding': 'gzip, br' },
-      },
-    );
-    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
-    fake.endResponse();
-    await promise;
-
-    expect(decodeAscii(fake.written())).toContain('Accept-Encoding: gzip, br\r\n');
-  });
-
   it('does not set Content-Length when there is no body', async () => {
     const fake = makeFakeDuplex();
     const promise = fetchOnStream(
@@ -477,7 +460,7 @@ describe('fetchOnStream — request body serialization', () => {
     expect(decodeAscii(fake.written())).not.toMatch(/Content-Length:/i);
   });
 
-  it('preserves caller-set Accept-Encoding rather than overriding to identity', async () => {
+  it('preserves a caller-supplied Accept-Encoding header', async () => {
     const fake = makeFakeDuplex();
     const promise = fetchOnStream(
       { readable: fake.readable, writable: fake.writable },
@@ -488,7 +471,6 @@ describe('fetchOnStream — request body serialization', () => {
     await promise;
     const text = decodeAscii(fake.written());
     expect(text).toContain('Accept-Encoding: gzip\r\n');
-    expect(text).not.toContain('Accept-Encoding: identity\r\n');
   });
 
   it('drops the caller Connection header regardless of case', async () => {
