@@ -20,7 +20,6 @@ const parseRgb = (hex: string) => {
 };
 
 const linearRgb = (rgb: ReturnType<typeof parseRgb>) => convertRgbToLrgb(rgb);
-const colorHex = (rgb: ReturnType<typeof convertHsvToRgb>): string => formatHex(rgb).toUpperCase();
 
 export const blendHex = (hex: string, alpha: number, backdrop: string): string => {
   const foreground = { ...parseRgb(hex), alpha };
@@ -62,7 +61,7 @@ export const readableTone = (hex: string, surface: string): string => {
       const step = Math.floor((first + last) / 2);
       const value = darken ? v * (1 - step / STEPS) : v + (1 - v) * (step / STEPS);
       const candidate = convertHsvToRgb({ h, s: saturation, v: value });
-      const candidateHex = colorHex(candidate);
+      const candidateHex = formatHex(candidate).toUpperCase();
       if (wcagContrast(linearRgb(parseRgb(candidateHex)), surfaceLinear) >= TEXT_CONTRAST_FLOOR) {
         readable = candidateHex;
         last = step - 1;
