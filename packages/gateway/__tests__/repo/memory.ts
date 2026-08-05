@@ -1152,6 +1152,7 @@ class MemoryModelAliasesRepo implements ModelAliasesRepo {
   }
 
   insert(record: ModelAliasRecord): Promise<void> {
+    if (this.store.has(record.id)) throw new Error('UNIQUE constraint failed: model_aliases.id');
     if (this.nameTaken(record.name, null)) throw new Error('UNIQUE constraint failed: model_aliases.name');
     this.store.set(record.id, cloneModelAliasRecord(record));
     return Promise.resolve();
