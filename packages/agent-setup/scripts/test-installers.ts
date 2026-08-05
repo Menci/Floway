@@ -337,7 +337,7 @@ writeFileSync(FAKE_CODEX_INSTALLER_SCRIPT, FAKE_CODEX_INSTALLER, { mode: 0o755 }
 
 type ModelServerMode =
   | 'ok'
-  | 'installer-sh' | 'installer-ps1' | 'installer-large-ps1' | 'installer-html'
+  | 'installer-sh' | 'installer-ps1' | 'installer-large-ps1' | 'installer-oversized-ps1' | 'installer-html'
   | 'installer-codex-sh' | 'installer-codex-ps1';
 interface ModelServer {
   url: string;
@@ -445,6 +445,11 @@ const startModelServer = async (): Promise<ModelServer> => {
       if (state.mode === 'installer-large-ps1') {
         res.writeHead(200, { 'content-type': 'text/plain' });
         res.end(`Write-Output 'large installer'\n${'#'.repeat(256 * 1024)}`);
+        return;
+      }
+      if (state.mode === 'installer-oversized-ps1') {
+        res.writeHead(200, { 'content-type': 'text/plain' });
+        res.end('#'.repeat(1025));
         return;
       }
       if (state.mode === 'installer-codex-ps1') {
@@ -574,6 +579,7 @@ interface RunOptions {
   installerSleep?: number;
   installerUrl?: string;
   timeoutSeconds?: number;
+  downloadMaxBytes?: number;
   lockTimeoutSeconds?: number;
   lockWaitMarker?: string;
   ambientApiKey?: boolean;
@@ -686,6 +692,7 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
   if (options.withInstallHook !== false) env.AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT = FAKE_INSTALLER_SCRIPT;
   if (options.installerUrl) env.AGENT_SETUP_TEST_CLAUDE_URL = options.installerUrl;
   if (options.timeoutSeconds !== undefined) env.AGENT_SETUP_TEST_TIMEOUT_SECONDS = String(options.timeoutSeconds);
+  if (options.downloadMaxBytes !== undefined) env.AGENT_SETUP_TEST_DOWNLOAD_MAX_BYTES = String(options.downloadMaxBytes);
   if (options.lockTimeoutSeconds !== undefined) env.AGENT_SETUP_TEST_LOCK_TIMEOUT_SECONDS = String(options.lockTimeoutSeconds);
   if (options.lockWaitMarker) env.AGENT_SETUP_TEST_LOCK_WAIT_MARKER = options.lockWaitMarker;
   if (options.failClaudeAfterReplace) env.AGENT_SETUP_TEST_FAIL_CLAUDE_AFTER_REPLACE = '1';
@@ -1679,6 +1686,24 @@ test('claude', 'local PowerShell installer accepts script content and rejects HT
   });
   t.ok(failure.code !== 0, 'HTML installer response must be rejected');
   t.ok(!existsSync(installerMarker(rejected)), 'HTML response never executes');
+});
+
+test('claude', 'PowerShell rejects an oversized installer before execution', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  modelServer.mode = 'installer-oversized-ps1';
+  const run = await runPowerShellInstaller({
+    workspace: ws,
+    configuration: claudeConfig(),
+    baseUrl: modelServer.url,
+    withInstallHook: false,
+    installerUrl: `${modelServer.url}/install.ps1`,
+    downloadMaxBytes: 1024,
+  });
+
+  t.ok(run.code !== 0, 'the byte limit must fail the setup');
+  t.includes(run.combined, 'installer download exceeded the 8 MiB size limit', 'the failure names the size policy');
+  t.ok(!existsSync(installerMarker(ws)), 'an oversized body never reaches an interpreter');
 });
 
 test('claude', 'Bash fallback kills the installer process tree', async t => {

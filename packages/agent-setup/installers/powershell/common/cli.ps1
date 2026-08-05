@@ -1,3 +1,5 @@
+Add-Type -AssemblyName System.Net.Http
+
 function Install-SetupHomebrewCask {
   param([string]$Cask)
   $brew = Get-Command brew -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -80,13 +82,68 @@ function Invoke-SetupShellBody {
   Invoke-SetupInterpreterBody -Body $Body -TimeoutSeconds $TimeoutSeconds -Exe $bash.Source -Arguments '-s'
 }
 
+function Get-SetupRemoteInstaller {
+  param([string]$Uri)
+  $maxBytes = if ($env:AGENT_SETUP_TEST_DOWNLOAD_MAX_BYTES) { [int]$env:AGENT_SETUP_TEST_DOWNLOAD_MAX_BYTES } else { 8388608 }
+  $handler = New-Object System.Net.Http.HttpClientHandler
+  $client = New-Object System.Net.Http.HttpClient($handler)
+  $cancellation = New-Object System.Threading.CancellationTokenSource
+  $cancellation.CancelAfter([TimeSpan]::FromSeconds(60))
+  $response = $null
+  $stream = $null
+  $content = New-Object System.IO.MemoryStream
+  try {
+    # ResponseHeadersRead plus the same cancellation token on every stream read
+    # bounds memory and wall time before an installer body can execute.
+    # https://learn.microsoft.com/dotnet/api/system.net.http.httpcompletionoption
+    $response = $client.GetAsync(
+      $Uri,
+      [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead,
+      $cancellation.Token
+    ).GetAwaiter().GetResult()
+    $response.EnsureSuccessStatusCode()
+    $declaredLength = $response.Content.Headers.ContentLength
+    if (($null -ne $declaredLength) -and ($declaredLength -gt $maxBytes)) {
+      Stop-Setup 'the installer download exceeded the 8 MiB size limit.'
+    }
+    $stream = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+    $buffer = New-Object byte[] 81920
+    while ($true) {
+      $read = $stream.ReadAsync($buffer, 0, $buffer.Length, $cancellation.Token).GetAwaiter().GetResult()
+      if ($read -eq 0) { break }
+      if (($content.Length + $read) -gt $maxBytes) {
+        Stop-Setup 'the installer download exceeded the 8 MiB size limit.'
+      }
+      $content.Write($buffer, 0, $read)
+    }
+    $encoding = New-Object System.Text.UTF8Encoding($false, $true)
+    $charset = $response.Content.Headers.ContentType.CharSet
+    if ($charset) {
+      try { $encoding = [System.Text.Encoding]::GetEncoding($charset.Trim('"')) } catch { }
+    }
+    $body = $encoding.GetString($content.ToArray())
+    if (($body.Length -gt 0) -and ([int]$body[0] -eq 0xfeff)) { $body = $body.Substring(1) }
+    [PSCustomObject]@{
+      Body = $body
+      ContentType = [string]$response.Content.Headers.ContentType
+    }
+  } finally {
+    if ($null -ne $stream) { $stream.Dispose() }
+    if ($null -ne $response) { $response.Dispose() }
+    $content.Dispose()
+    $cancellation.Dispose()
+    $client.Dispose()
+    $handler.Dispose()
+  }
+}
+
 # Download an installer, refuse anything that is not a script (region blocks and
 # captive portals serve HTML in place of the installer), then run it.
 function Invoke-SetupRemoteInstaller {
   param([string]$Uri, [switch]$BypassExecutionPolicy, [switch]$Shell)
-  $response = Invoke-WebRequest -Uri $Uri -UseBasicParsing -TimeoutSec 60
-  $body = [string]$response.Content
-  $contentType = [string]$response.Headers['Content-Type']
+  $response = Get-SetupRemoteInstaller $Uri
+  $body = $response.Body
+  $contentType = $response.ContentType
   $looksLikeHtml = $contentType -match '(?i)^text/html(?:;|$)' -or $body -match '(?is)^\s*(?:<!doctype\s+html|<html(?:\s|>))'
   if ([string]::IsNullOrWhiteSpace($body) -or $looksLikeHtml) {
     Stop-Setup "the installer download was HTML or empty, not an executable script (a login or region-block page?)."
