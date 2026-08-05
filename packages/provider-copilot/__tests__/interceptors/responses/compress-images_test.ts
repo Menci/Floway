@@ -38,7 +38,7 @@ const imageUrlOf = (item: ResponsesInputItem): string | null | undefined => {
   return Array.isArray(content) ? content.find(part => part.type === 'input_image')?.image_url : undefined;
 };
 
-const contentOf = (item: ResponsesInputItem): string | ResponsesInputContent[] | undefined =>
+const contentOf = (item: ResponsesInputItem): string | ResponsesInputContent[] | ResponsesToolOutputContent[] | undefined =>
   item.type === 'message'
     ? item.content
     : item.type === 'function_call_output' || item.type === 'custom_tool_call_output' ? item.output : undefined;
