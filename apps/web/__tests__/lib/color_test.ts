@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { hsvToRgb, rgbToHex } from '../../src/lib/color-bytes';
 import { blendHex, hexToRgb, readableTone, rgbToHsv } from '../../src/lib/color';
+import { hsvToRgb, rgbToHex } from '../../src/lib/color-bytes';
 import { hueBadgeTone } from '../../src/lib/hue';
 
 // The subject decides by contrast, so the assertions compute it independently
