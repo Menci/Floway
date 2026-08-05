@@ -636,6 +636,52 @@ test('translateResponsesEventToChatCompletionsChunks drops multiple reasoning it
   });
 });
 
+test('translateResponsesEventToChatCompletionsChunks projects encrypted reasoning onto the first scalar group', () => {
+  const state = createResponsesToChatCompletionsStreamState();
+  translateResponsesEventToChatCompletionsChunks(
+    {
+      type: 'response.created',
+      response: {
+        id: 'resp_opaque',
+        object: 'response',
+        model: 'gpt-test',
+        status: 'in_progress',
+        output: [],
+        output_text: '',
+        error: null,
+        incomplete_details: null,
+      },
+    },
+    state,
+  );
+
+  const chunks = translateResponsesEventToChatCompletionsChunks(
+    {
+      type: 'response.output_item.done',
+      output_index: 0,
+      item: {
+        type: 'reasoning',
+        id: 'rs_opaque',
+        summary: [{ type: 'summary_text', text: 'trace' }],
+        encrypted_content: 'opaque',
+      },
+    },
+    state,
+  );
+
+  assertEquals(chunks.map(chunk => chunk.choices[0].delta), [
+    { reasoning_text: 'trace' },
+    { reasoning_opaque: 'opaque' },
+    {
+      reasoning_items: [{
+        type: 'reasoning',
+        id: 'rs_opaque',
+        summary: [{ type: 'summary_text', text: 'trace' }],
+      }],
+    },
+  ]);
+});
+
 test('translateResponsesEventToChatCompletionsChunks projects done-only summary text into scalar reasoning_text', () => {
   const state = createResponsesToChatCompletionsStreamState();
 

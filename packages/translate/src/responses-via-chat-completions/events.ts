@@ -53,6 +53,7 @@ const upstreamChatCompletionEventsUntilDone = async function* (frames: AsyncIter
 
 interface PendingScalarReasoningItem {
   text: string;
+  encryptedContent?: string;
 }
 
 interface PendingTextItem {
@@ -177,7 +178,7 @@ const commitPendingScalarReasoning = (state: ChatCompletionsToResponsesStreamSta
   const reasoning = state.pendingScalarReasoning;
   state.pendingScalarReasoning = undefined;
   const outputIndex = state.outputIndex++;
-  const item = responses.reasoningItem(createRandomResponsesItemId('reasoning'), reasoning.text);
+  const item = responses.reasoningItem(createRandomResponsesItemId('reasoning'), reasoning.text, reasoning.encryptedContent);
 
   return emitCompletedReasoningItem(item, outputIndex, state);
 };
@@ -440,6 +441,10 @@ export const translateChatCompletionsChunkToResponsesEvents = (chunk: ChatComple
           reasoning.text += choice.delta.reasoning_text;
         }
       }
+    }
+
+    if (choice.delta.reasoning_opaque !== undefined && choice.delta.reasoning_opaque !== null && !state.reasoningItemsSeen) {
+      openScalarReasoning(state).encryptedContent = choice.delta.reasoning_opaque;
     }
 
     if (choice.delta.content) {
