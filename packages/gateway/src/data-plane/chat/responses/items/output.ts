@@ -4,14 +4,12 @@ import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type ResponsesCompactionResult, type ResponsesOutputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
-// Floway treats closed item lifecycles as the canonical output because a
-// terminal envelope may only partially restate them: a captured Codex turn
-// closed `reasoning` and `message` but stated only `reasoning`, while a
-// compaction turn stated no output. Resolve that partial restatement before
-// affinity and persistence consume it. A terminal reached without a closed
-// item is left as it arrived.
+// Floway derives canonical output identity from `response.output_item.done`
+// lifecycles. Normalize terminal snapshots from that ordered set before
+// downstream transforms so affinity, persistence, and resource completion
+// cannot interpret array positions as different items. When no item closed,
+// preserve the terminal snapshot as the sole observation.
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L313-L337
-// https://github.com/Menci/Floway/commit/eaa7058d81412a070380b817063802113aef2fd4
 export const wrapResponsesObservedOutput = async function* (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
