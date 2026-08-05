@@ -208,6 +208,42 @@ test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer
   assertEquals(body.stream, true);
 });
 
+test('Messages methods serialize typed anthropic-beta metadata only on Messages wire calls', async () => {
+  const instance = createOllamaProvider(buildRecord());
+  const betas: Record<string, string | null> = {};
+
+  await withMockedFetch(
+    async request => {
+      const path = new URL(request.url).pathname;
+      if (path === '/api/tags') return jsonResponse({ models: [{ name: 'gpt-oss:120b' }] });
+      if (path === '/api/show') {
+        return jsonResponse({
+          capabilities: ['completion'],
+          details: { family: 'gptoss' },
+          model_info: { 'general.architecture': 'gptoss', 'gptoss.context_length': 131072 },
+        });
+      }
+      betas[path] = request.headers.get('anthropic-beta');
+      if (path === '/v1/messages') {
+        return new Response('', { status: 200, headers: { 'content-type': 'text/event-stream' } });
+      }
+      if (path === '/v1/messages/count_tokens') return jsonResponse({ input_tokens: 1 });
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const [model] = await instance.instance.getProvidedModels(directFetcher);
+      const opts = noopUpstreamCallOptions({ anthropicBeta: ['context-1m', 'advanced-tool-use'] });
+      await instance.instance.callMessages(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
+      await instance.instance.callMessagesCountTokens(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
+    },
+  );
+
+  assertEquals(betas, {
+    '/v1/messages': 'context-1m,advanced-tool-use',
+    '/v1/messages/count_tokens': 'context-1m,advanced-tool-use',
+  });
+});
+
 test('getProvidedModels populates chat from capabilities: gpt-oss thinking → effort, vision → modalities', async () => {
   const instance = createOllamaProvider(buildRecord());
   await withMockedFetch(tagsAndShow, async () => {

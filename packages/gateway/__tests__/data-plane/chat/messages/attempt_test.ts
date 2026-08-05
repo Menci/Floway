@@ -145,6 +145,7 @@ test('generate carries anthropic-beta through the Messages boundary outside the 
 
 test('generate translate-to-responses branch routes through responsesAttempt', async () => {
   installRepo();
+  let upstreamHeaders: Headers | undefined;
   const respResp: ResponsesResult = {
     id: 'resp_x', object: 'response', model: 'test-model', status: 'completed',
     output: [{
@@ -153,24 +154,58 @@ test('generate translate-to-responses branch routes through responsesAttempt', a
     }],
     output_text: 'hi', error: null, incomplete_details: null,
   };
-  const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
-    action: 'generate', ok: true,
-    events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: respResp }]),
-    modelKey: 'k',
-    headers: new Headers(),
-  }));
+  const callResponses = vi.fn(async (_model, _body, _action, _signal, opts): Promise<ProviderResponsesResult> => {
+    upstreamHeaders = opts?.headers;
+    return {
+      action: 'generate', ok: true,
+      events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: respResp }]),
+      modelKey: 'k',
+      headers: new Headers(),
+    };
+  });
   const result = await messagesAttempt.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     candidate: makeCandidate({ callResponses, endpoints: { responses: {} } }),
-    headers: new Headers(),
-    anthropicBeta: [],
+    headers: new Headers({ 'anthropic-beta': 'must-not-enter-ordinary-headers' }),
+    anthropicBeta: ['context-1m-2025-08-07'],
   });
 
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
   assertEquals(callResponses.mock.calls.length, 1);
+  assertEquals(upstreamHeaders?.has('anthropic-beta'), false);
+});
+
+test('generate does not carry Messages beta metadata through translation to Chat Completions', async () => {
+  installRepo();
+  let upstreamHeaders: Headers | undefined;
+  const callChatCompletions = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => {
+    upstreamHeaders = opts?.headers;
+    return {
+      ok: true,
+      events: makeProtocolFrames([{
+        id: 'chatcmpl_1', object: 'chat.completion.chunk', created: 1, model: 'test-model',
+        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+      }]),
+      modelKey: 'k',
+      headers: new Headers(),
+    };
+  });
+
+  const result = await messagesAttempt.generate({
+    payload: makePayload(),
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({ callChatCompletions, endpoints: { chatCompletions: {} } }),
+    headers: new Headers({ 'anthropic-beta': 'must-not-enter-ordinary-headers' }),
+    anthropicBeta: ['context-1m-2025-08-07'],
+  });
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+  assertEquals(upstreamHeaders?.has('anthropic-beta'), false);
 });
 
 test('generate lets the target system-to-developer rewrite take precedence over the source system-to-user rewrite', async () => {

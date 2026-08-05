@@ -277,6 +277,7 @@ test('callRerank honors the per-model path without adding an upstream path overr
 test('Custom provider forces stream=true for streaming endpoints and leaves count-tokens/embeddings alone', async () => {
   const provider = createCustomProvider(buildCustomUpstream()).instance;
   const bodies: Record<string, Record<string, unknown>> = {};
+  const betas: Record<string, string | null> = {};
 
   await withMockedFetch(
     async request => {
@@ -286,6 +287,7 @@ test('Custom provider forces stream=true for streaming endpoints and leaves coun
       }
 
       bodies[path] = (await request.json()) as Record<string, unknown>;
+      betas[path] = request.headers.get('anthropic-beta');
       if (path === '/v1/chat/completions' || path === '/v1/responses' || path === '/v1/messages') {
         return sseResponse();
       }
@@ -296,7 +298,7 @@ test('Custom provider forces stream=true for streaming endpoints and leaves coun
     async () => {
       const [model] = await provider.getProvidedModels(directFetcher);
       assertExists(model);
-      const opts = noopUpstreamCallOptions();
+      const opts = noopUpstreamCallOptions({ anthropicBeta: ['context-1m', 'advanced-tool-use'] });
       await provider.callChatCompletions(model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
       await provider.callResponses(model, { input: [] }, 'generate', undefined, opts);
       await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
@@ -310,6 +312,11 @@ test('Custom provider forces stream=true for streaming endpoints and leaves coun
   assertEquals(bodies['/v1/messages'].stream, true);
   assertEquals('stream' in bodies['/v1/messages/count_tokens'], false);
   assertEquals('stream' in bodies['/v1/embeddings'], false);
+  assertEquals(betas['/v1/messages'], 'context-1m,advanced-tool-use');
+  assertEquals(betas['/v1/messages/count_tokens'], 'context-1m,advanced-tool-use');
+  assertEquals(betas['/v1/chat/completions'], null);
+  assertEquals(betas['/v1/responses'], null);
+  assertEquals(betas['/v1/embeddings'], null);
 });
 
 test('Custom provider uses configured endpoints regardless of per-model hints in the /models response', async () => {
