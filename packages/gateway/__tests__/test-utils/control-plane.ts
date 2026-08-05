@@ -1,8 +1,11 @@
-import { Hono } from 'hono';
+import { Hono, type Next } from 'hono';
 
-import { controlPlaneRoutes } from '../../src/control-plane/routes.ts';
-import { type AuthVars, authMiddleware } from '../../src/middleware/auth.ts';
+import { authLogin, authLogout, authMe } from '../../src/control-plane/auth/routes.ts';
+import { authLoginBody, changeOwnPasswordBody, createUserBody, updateUserBody } from '../../src/control-plane/schemas.ts';
+import { changeOwnPassword, createUser, deleteUser, listUsers, updateUser } from '../../src/control-plane/users/routes.ts';
+import { type AuthedContext, type AuthVars, authMiddleware, userFromContext } from '../../src/middleware/auth.ts';
 import { internalErrorResponse } from '../../src/middleware/internal-error-response.ts';
+import { zValidator } from '../../src/middleware/zod-validator.ts';
 import { initRepo } from '../../src/repo/index.ts';
 import type { ApiKey } from '../../src/repo/types.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
@@ -15,10 +18,27 @@ interface SetupOptions {
   adminKey?: string | null;
 }
 
+const adminOnly = async (c: AuthedContext, next: Next) => {
+  if (!userFromContext(c).isAdmin) return c.json({ error: 'Admin privileges required' }, 403);
+  await next();
+};
+
+// Handler-level auth/users tests intentionally avoid importing the full
+// control-plane composition root, which pulls every vendor provider and route
+// into each worker. app-control_test.ts separately owns registration coverage.
 const app = new Hono<{ Variables: AuthVars }>()
   .onError(internalErrorResponse)
   .use('*', authMiddleware)
-  .route('/', controlPlaneRoutes);
+  .post('/auth/login', zValidator('json', authLoginBody), authLogin)
+  .post('/auth/logout', authLogout)
+  .get('/auth/me', authMe)
+  .patch('/api/users/me/password', zValidator('json', changeOwnPasswordBody), changeOwnPassword)
+  .route('/api', new Hono<{ Variables: AuthVars }>()
+    .use('*', adminOnly)
+    .get('/users', listUsers)
+    .post('/users', zValidator('json', createUserBody), createUser)
+    .patch('/users/:id', zValidator('json', updateUserBody), updateUser)
+    .delete('/users/:id', deleteUser));
 
 export const setupControlPlaneTest = async (options: SetupOptions = {}) => {
   const repo = new InMemoryRepo();
