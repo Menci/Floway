@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { requestControlPlane, setupControlPlaneTest, TEST_PASSWORD, TEST_PASSWORD_HASH } from '../../test-utils/control-plane.ts';
-import { initRuntimeKind } from '@floway-dev/platform';
+import { initRuntimeKind, initTimingSafeEqual } from '@floway-dev/platform';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const login = (username: string, password: string) => requestControlPlane('/auth/login', {
@@ -12,15 +12,20 @@ const login = (username: string, password: string) => requestControlPlane('/auth
 
 afterEach(() => {
   initRuntimeKind('node');
+  initTimingSafeEqual((a, b) => a.every((byte, index) => byte === b[index]));
   vi.unstubAllEnvs();
 });
 
 test('/auth/login authenticates ADMIN_KEY without leaking the stored user row', async () => {
   const { adminKey } = await setupControlPlaneTest({ adminKey: 'real-admin' });
+  const compare = vi.fn((a: Uint8Array, b: Uint8Array) => a.every((byte, index) => byte === b[index]));
+  initTimingSafeEqual(compare);
 
-  const rejected = await login('', 'fake-admin');
-  assertEquals(rejected.status, 401);
-  assertEquals(await rejected.json(), { error: 'Invalid username or password' });
+  for (const password of ['fake-admin', 'x']) {
+    const rejected = await login('', password);
+    assertEquals(rejected.status, 401);
+    assertEquals(await rejected.json(), { error: 'Invalid username or password' });
+  }
 
   const response = await login('', adminKey);
   assertEquals(response.status, 200);
@@ -28,6 +33,11 @@ test('/auth/login authenticates ADMIN_KEY without leaking the stored user row', 
   expect(body.token).toMatch(/^[0-9a-f]{64}$/);
   assertEquals(body.user, { id: 1, username: 'admin', isAdmin: true, upstreamIds: null });
   assertEquals(Object.keys(body).toSorted(), ['token', 'user']);
+  expect(compare).toHaveBeenCalledTimes(3);
+  for (const [candidate, expected] of compare.mock.calls) {
+    expect(candidate).toHaveLength(32);
+    expect(expected).toHaveLength(32);
+  }
 });
 
 test.each([
