@@ -66,13 +66,14 @@ afterEach(() => {
 });
 
 describe('Copilot device-flow polling', () => {
-  it('sends a freeform GHE host and locks it for the active device flow', async () => {
+  it('sends a required GHE host and locks it for the active device flow', async () => {
     pollResponse = async () => Response.json({ status: 'pending' });
     renderInApp(<ProviderConfigHarness record={record} />);
-    const host = screen.getByRole('combobox', { name: copilot('githubHost') }) as HTMLInputElement;
+    const host = screen.getByRole('textbox', { name: copilot('githubHost') }) as HTMLInputElement;
 
+    expect(host.value).toBe('github.com');
+    expect(host.required).toBe(true);
     fireEvent.change(host, { target: { value: 'octocorp.ghe.com' } });
-    expect(screen.getByText('Connect the Copilot subscription assigned to your octocorp.ghe.com account.')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: copilot('connect') }));
     await advance(0);
 
