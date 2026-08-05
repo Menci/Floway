@@ -5,6 +5,7 @@ import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename } from 
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { Repo, UsageRecord } from '../../src/repo/types.ts';
 import { tokenCountsFromUsage, tokenRatesFromUsage, tokenUsageMetrics } from '../../src/repo/usage-metrics.ts';
+import type { SqlBindValue, SqlDatabase } from '@floway-dev/platform';
 import type { PriceVector } from '@floway-dev/protocols/common';
 import { assertEquals, assertRejects, assertThrows } from '@floway-dev/test-utils';
 
@@ -32,6 +33,27 @@ const record = (overrides: Partial<UsageRecord>): UsageRecord => ({
 });
 
 const query = (repo: Repo) => repo.usage.query({ keyIds: ['key-1'], start: '2026-07-12T00', end: '2026-07-12T01' });
+
+interface CapturedStatement {
+  query: string;
+  binds: readonly SqlBindValue[];
+}
+
+const recordBoundStatements = (db: SqlDatabase, captured: CapturedStatement[]): SqlDatabase => ({
+  prepare: queryText => {
+    const statement = db.prepare(queryText);
+    return {
+      bind: (...binds) => {
+        captured.push({ query: queryText, binds });
+        return statement.bind(...binds);
+      },
+      first: () => statement.first(),
+      all: () => statement.all(),
+      run: () => statement.run(),
+    };
+  },
+  exec: sql => db.exec(sql),
+});
 
 test('0052 preserves distinct open-string service tiers as canonical selectors', async () => {
   const db = await createSqlJsDatabase();
@@ -232,4 +254,29 @@ test('SQL usage repo atomically rolls concurrent decimal writes into one metric 
   assertEquals(stored.metrics, [{ metric: 'input_tokens', quantity: '5', unitPrice: '0.000002' }]);
   assertEquals(stored.requests, 50);
   assertEquals(await db.prepare('SELECT COUNT(*) AS count FROM usage').first(), { count: 1 });
+});
+
+test('SQL usage key scopes use key-hour range indexes in both storage tables', async () => {
+  const db = await createSqliteTestDb();
+  const seedRepo = new SqlRepo(db);
+  await Promise.all([
+    seedRepo.usage.record(record({ keyId: 'key-1' })),
+    seedRepo.usage.record(record({ keyId: 'key-2' })),
+  ]);
+  const captured: CapturedStatement[] = [];
+  const repo = new SqlRepo(recordBoundStatements(db, captured));
+
+  const rows = await repo.usage.query({ keyIds: ['key-2'], start: '2026-07-12T00', end: '2026-07-12T01' });
+
+  assertEquals(rows.map(row => row.keyId), ['key-2']);
+  const usageQueries = captured.filter(statement => statement.query.includes('FROM usage'));
+  assertEquals(usageQueries.length, 2);
+  const plans = await Promise.all(usageQueries.map(async statement => {
+    const { results } = await db.prepare(`EXPLAIN QUERY PLAN ${statement.query}`)
+      .bind(...statement.binds)
+      .all<{ detail: string }>();
+    return results.map(row => row.detail).join('\n');
+  }));
+  assertEquals(plans.some(plan => plan.includes('idx_usage_metric_key_hour')), true);
+  assertEquals(plans.some(plan => plan.includes('idx_usage_requests_key_hour')), true);
 });
