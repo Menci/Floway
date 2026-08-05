@@ -5,16 +5,18 @@
 // The edits handler accepts multipart uploads and JSON `images` references.
 // Both are buffered once for dump capture and normalized into a semantic
 // request; each provider owns the final JSON or multipart serialization.
+// Streaming requests retain the upstream SSE wire and settle only after the
+// endpoint-specific completed event followed by EOF.
 // https://github.com/openai/openai-openapi/blob/a3276900e58b8b2a92e0cb087cd2e6e005f58458/openapi.yaml#L12558-L12620
 
 import type { Context } from 'hono';
 
+import { respondImages } from './respond.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
 import { prepareJsonModelRequest } from '../shared/passthrough-request.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/request-body.ts';
-import { tokenUsageFromImagesBody } from '../shared/telemetry/usage.ts';
 import { isJsonMediaType, isMultipartFormDataMediaType } from '@floway-dev/protocols/common';
 import type { ImageEditReference } from '@floway-dev/protocols/images';
 import { isBase64ImageDataUrl, type ImagesEditsRequest, type ImagesEditsSource } from '@floway-dev/provider';
@@ -71,7 +73,8 @@ const prepareJsonImagesEdit = (body: Record<string, unknown>): PreparedImagesEdi
 export const imagesGenerations = async (c: Context): Promise<Response> => {
   const requestBody = await readRequestBody(c);
   const request = prepareJsonModelRequest(requestBody.bytes, 'Images generations');
-  const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
+  const wantsStream = request.type === 'ok' && request.body.stream === true;
+  const ctx = createGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
   if (request.type === 'invalid') {
     ctx.dump?.error('gateway');
     return finalizeGatewayResponse(ctx, passthroughApiError(c, request.message, 400));
@@ -88,9 +91,9 @@ export const imagesGenerations = async (c: Context): Promise<Response> => {
     modelServesEndpoint: model => model.endpoints.imagesGenerations !== undefined,
     call: (provider, model, opts) => {
       const { model: _model, ...body } = request.body;
-      return provider.instance.callImagesGenerations(model, body, undefined, opts);
+      return provider.instance.callImagesGenerations(model, body, ctx.abortSignal, opts);
     },
-    response: { format: 'json', extractBilling: tokenUsageFromImagesBody },
+    response: { format: 'strategy', respond: respondImages },
   });
   return finalizeGatewayResponse(ctx, response);
 };
@@ -100,8 +103,9 @@ const serveImagesEditRequest = async (
   requestBody: RequestBody,
   model: string,
   request: ImagesEditsRequest,
+  wantsStream: boolean,
 ): Promise<Response> => {
-  const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
+  const ctx = createGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
   ctx.dump?.requestedModel(model);
   const response = await passthroughServe({
     c,
@@ -111,8 +115,8 @@ const serveImagesEditRequest = async (
     model,
     kind: 'image',
     modelServesEndpoint: model => model.endpoints.imagesEdits !== undefined,
-    call: (provider, model, opts) => provider.instance.callImagesEdits(model, request, undefined, opts),
-    response: { format: 'json', extractBilling: tokenUsageFromImagesBody },
+    call: (provider, model, opts) => provider.instance.callImagesEdits(model, request, ctx.abortSignal, opts),
+    response: { format: 'strategy', respond: respondImages },
   });
   return finalizeGatewayResponse(ctx, response);
 };
@@ -134,7 +138,7 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
     if (body.type === 'invalid') return invalid(body.message);
     const request = prepareJsonImagesEdit(body.body);
     if (request.type === 'invalid') return invalid(request.message);
-    return await serveImagesEditRequest(c, requestBody, body.model, request.request);
+    return await serveImagesEditRequest(c, requestBody, body.model, request.request, body.body.stream === true);
   }
 
   if (!isMultipartFormDataMediaType(contentType)) {
@@ -170,5 +174,5 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
     images: images.map(file => ({ type: 'upload', file })),
     ...(mask === undefined ? {} : { mask: { type: 'upload' as const, file: mask } }),
     parameters,
-  });
+  }, form.get('stream') === 'true');
 };
