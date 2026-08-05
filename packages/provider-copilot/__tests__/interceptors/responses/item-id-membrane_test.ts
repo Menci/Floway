@@ -196,13 +196,10 @@ test.each([
     return;
   }
   if (added.type === 'agent_message' && done.type === 'agent_message' && terminal.type === 'agent_message') {
-    const carried = [added, done, terminal].map(item => item.content[0]);
-    expect(carried.map(content => content.type === 'encrypted_content' && typeof content.encrypted_content === 'string'
-      ? unwrapCopilotItemId(content.encrypted_content)
-      : null)).toEqual([
-      expect.objectContaining({ kind: 'owned', value: 'agent state', id: 'amsg_raw' }),
-      expect.objectContaining({ kind: 'owned', value: 'agent state', id: 'amsg_raw' }),
-      expect.objectContaining({ kind: 'owned', value: 'agent state', id: 'amsg_raw' }),
+    expect([added, done, terminal].map(item => item.content)).toEqual([
+      [{ type: 'encrypted_content', encrypted_content: 'agent state' }],
+      [{ type: 'encrypted_content', encrypted_content: 'agent state' }],
+      [{ type: 'encrypted_content', encrypted_content: 'agent state' }],
     ]);
     return;
   }
@@ -345,7 +342,7 @@ test('rewrites reasoning-text item ids', async () => {
   expect(eventAt(frames, 'response.reasoning_text.done').item_id).toBe(added.item.id);
 });
 
-test('carries program and nested agent-message ids in every available blob', async () => {
+test('carries program ids without interpreting agent-message content', async () => {
   const items: ResponsesOutputItem[] = [
     { type: 'program', id: 'cm_raw', call_id: 'call_program', code: 'return 1', fingerprint: 'program state' },
     {
@@ -374,13 +371,10 @@ test('carries program and nested agent-message ids in every available blob', asy
   expect(unwrapCopilotItemId(program.fingerprint)).toMatchObject({ kind: 'owned', value: 'program state', id: 'cm_raw' });
   expect(agent.id).toMatch(/^amsg_[0-9a-f]{32}$/);
   if (agent.type !== 'agent_message') throw new Error('expected agent_message');
-  const encrypted = agent.content.flatMap(part =>
-    part.type === 'encrypted_content' && typeof part.encrypted_content === 'string'
-      ? [part.encrypted_content]
-      : []);
-  expect(encrypted.map(unwrapCopilotItemId)).toEqual([
-    expect.objectContaining({ kind: 'owned', value: 'agent state one', id: 'amsg_raw' }),
-    expect.objectContaining({ kind: 'owned', value: 'agent state two', id: 'amsg_raw' }),
+  expect(agent.content).toEqual([
+    { type: 'encrypted_content', encrypted_content: 'agent state one' },
+    { type: 'input_text', text: 'visible' },
+    { type: 'encrypted_content', encrypted_content: 'agent state two' },
   ]);
 });
 
@@ -419,12 +413,12 @@ test('restores owned blob ids for Copilot input and leaves foreign items unchang
     { type: 'program', id: 'cm_raw', call_id: 'call_program', code: 'return 1', fingerprint: 'program state' },
     {
       type: 'agent_message',
-      id: 'amsg_raw',
+      id: 'amsg_public',
       author: 'a',
       recipient: 'b',
       content: [
-        { type: 'encrypted_content', encrypted_content: 'one' },
-        { type: 'encrypted_content', encrypted_content: 'two' },
+        { type: 'encrypted_content', encrypted_content: wrapCopilotItemId('one', 'amsg_raw') },
+        { type: 'encrypted_content', encrypted_content: wrapCopilotItemId('two', 'amsg_raw') },
       ],
     },
     { type: 'compaction', id: 'cmp_raw', encrypted_content: 'compact state' },
@@ -433,7 +427,7 @@ test('restores owned blob ids for Copilot input and leaves foreign items unchang
   ]);
 });
 
-test('rejects conflicting ids carried by one input item', async () => {
+test('does not interpret agent-message content as item-id state', async () => {
   const ctx = invocation([{
     type: 'agent_message',
     id: 'amsg_public',
@@ -445,9 +439,17 @@ test('rejects conflicting ids carried by one input item', async () => {
     ],
   }]);
 
-  await expect(withCopilotResponsesItemIdMembrane(ctx, {}, () => {
-    throw new Error('must not reach upstream');
-  })).rejects.toThrow(/conflicting upstream ids/);
+  let wireInput: ResponsesInputItem[] | undefined;
+  await withCopilotResponsesItemIdMembrane(ctx, {}, () => {
+    wireInput = structuredClone(ctx.payload.input);
+    return Promise.resolve({
+      action: 'generate',
+      ok: true,
+      events: (async function* () { yield doneFrame(); })(),
+      modelKey: 'test-model',
+    });
+  });
+  expect(wireInput).toEqual(ctx.payload.input);
 });
 
 test('normalizes the generated compaction item without touching retained compact messages', async () => {
