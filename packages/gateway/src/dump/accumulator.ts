@@ -20,6 +20,7 @@ import type { RequestBody } from '../data-plane/shared/request-body.ts';
 import { getRepo } from '../repo/index.ts';
 import type { ApiKey, TokenUsage } from '../repo/types.ts';
 import { ulid } from '../shared/ulid.ts';
+import { utf8ByteLength } from '../shared/utf8.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { isEventStreamMediaType, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
@@ -57,29 +58,6 @@ const DEFAULT_CAPTURE_LIMITS: DumpCaptureLimits = {
   responseBodyBytes: 8 * 1024 * 1024,
   streamEventBytes: 8 * 1024 * 1024,
   streamEvents: 10_000,
-};
-
-const utf8ByteLength = (value: string): number => {
-  let bytes = 0;
-  for (let index = 0; index < value.length; index++) {
-    const codeUnit = value.charCodeAt(index);
-    if (codeUnit <= 0x7F) {
-      bytes += 1;
-    } else if (codeUnit <= 0x7FF) {
-      bytes += 2;
-    } else if (codeUnit >= 0xD800 && codeUnit <= 0xDBFF) {
-      const next = value.charCodeAt(index + 1);
-      if (next >= 0xDC00 && next <= 0xDFFF) {
-        bytes += 4;
-        index += 1;
-      } else {
-        bytes += 3;
-      }
-    } else {
-      bytes += 3;
-    }
-  }
-  return bytes;
 };
 
 const assertCaptureLimit = (name: keyof DumpCaptureLimits, value: number): void => {

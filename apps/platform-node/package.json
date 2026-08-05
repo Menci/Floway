@@ -19,7 +19,7 @@
     "sharp": "^0.35.3",
     "tsx": "^4",
     "undici": "^8.3.0",
-    "ws": "^8.18.0"
+    "ws": "^8.21.2"
   },
   "devDependencies": {
     "@floway-dev/test-utils": "workspace:*",

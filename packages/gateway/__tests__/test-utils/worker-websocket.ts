@@ -7,6 +7,9 @@ type WorkerResponseInit = ResponseInit & { readonly webSocket?: WebSocket };
 export class TestWorkerWebSocket extends EventTarget {
   peer?: TestWorkerWebSocket;
   readyState: number = WebSocket.OPEN;
+  binaryType: BinaryType = 'blob';
+  closeCode?: number;
+  closeReason?: string;
 
   accept(): void {}
 
@@ -14,11 +17,15 @@ export class TestWorkerWebSocket extends EventTarget {
     this.peer?.dispatchEvent(new MessageEvent('message', { data }));
   }
 
-  close(): void {
+  close(code?: number, reason = ''): void {
     this.readyState = WebSocket.CLOSED;
+    this.closeCode = code;
+    this.closeReason = reason;
     if (this.peer) {
       this.peer.readyState = WebSocket.CLOSED;
-      this.peer.dispatchEvent(new Event('close'));
+      this.peer.closeCode = code;
+      this.peer.closeReason = reason;
+      this.peer.dispatchEvent(Object.assign(new Event('close'), { code, reason, wasClean: true }));
     }
   }
 }
