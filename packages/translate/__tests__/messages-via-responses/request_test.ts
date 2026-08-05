@@ -152,15 +152,15 @@ test('buildTargetRequest drops filtered-native tool_choice and rewrites assistan
   ]);
 });
 
-test('buildTargetRequest maps output_config.effort directly to reasoning.effort', () => {
+test.each(['xhigh', ''] as const)('buildTargetRequest maps output_config.effort %j directly to reasoning.effort', (effort) => {
   const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
-    output_config: { effort: 'xhigh' },
+    output_config: { effort },
     messages: [{ role: 'user', content: 'hi' }],
   });
 
-  assertEquals(result.reasoning, { effort: 'xhigh' });
+  assertEquals(result.reasoning, { effort });
   assertFalse('include' in result);
 });
 

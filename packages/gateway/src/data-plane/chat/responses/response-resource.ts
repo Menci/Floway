@@ -225,8 +225,13 @@ export const wrapResponseResourceCompletion = async function* (
       continue;
     case 'response.completed':
     case 'response.incomplete':
-    case 'response.failed':
       yield eventFrame({ ...event, response: completeResponseResource(event.response, sources, true) });
+      continue;
+    case 'response.failed':
+      yield eventFrame({
+        ...event,
+        response: completeResponseResource(event.response, { ...sources, stored: false }, true),
+      });
       continue;
     default:
       yield eventFrame(event);

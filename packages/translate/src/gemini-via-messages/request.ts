@@ -234,7 +234,7 @@ export const buildTargetRequest = (
     max_tokens: fallbackMaxOutputTokens,
     messages: [],
   };
-  const unmatchedToolCallIds: GeminiToolCallIds = {};
+  const unmatchedToolCallIds: GeminiToolCallIds = new Map();
 
   const system = geminiText(payload.systemInstruction);
   if (system !== null) {

@@ -81,7 +81,7 @@ const isUnsafeQuotaId = (id: string): boolean =>
   id === '' || id === '__proto__' || id === 'constructor' || id === 'prototype';
 
 const parseNumber = (raw: string | null): number | null => {
-  if (raw === null) return null;
+  if (raw === null || raw.trim() === '') return null;
   const value = Number(raw);
   return Number.isFinite(value) ? value : null;
 };
@@ -271,8 +271,12 @@ export const putCopilotQuota = async (
   expectedConfig?: unknown,
 ): Promise<void> => {
   const fetchedAt = Date.now();
-  await getProviderRepo().upstreams.saveState(upstreamId, current => ({
-    ...readCopilotUpstreamState(current),
-    quotaSnapshot: { fetchedAt, data: snapshot },
-  } satisfies CopilotUpstreamState), { kind: 'copilot', ...(expectedConfig === undefined ? {} : { config: expectedConfig }) });
+  await getProviderRepo().upstreams.saveState(upstreamId, current => {
+    const state = readCopilotUpstreamState(current);
+    if (state.quotaSnapshot && state.quotaSnapshot.fetchedAt > fetchedAt) return state;
+    return {
+      ...state,
+      quotaSnapshot: { fetchedAt, data: snapshot },
+    } satisfies CopilotUpstreamState;
+  }, { kind: 'copilot', ...(expectedConfig === undefined ? {} : { config: expectedConfig }) });
 };

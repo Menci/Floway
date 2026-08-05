@@ -60,14 +60,19 @@ export interface ClaudeCodeQuotaSnapshot {
 
 const parseUnixSecondsToIso = (raw: string | null): string | null => {
   if (raw === null) return null;
-  const n = Number(raw);
+  const trimmed = raw.trim();
+  if (trimmed === '') return null;
+  const n = Number(trimmed);
   if (!Number.isFinite(n)) return null;
-  return new Date(n * 1000).toISOString();
+  const date = new Date(n * 1000);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 };
 
 const parseNumber = (raw: string | null): number | null => {
   if (raw === null) return null;
-  const n = Number(raw);
+  const trimmed = raw.trim();
+  if (trimmed === '') return null;
+  const n = Number(trimmed);
   return Number.isFinite(n) ? n : null;
 };
 
@@ -153,11 +158,33 @@ const isNumberOrNull = (value: unknown): value is number | null =>
 const isBooleanOrNull = (value: unknown): value is boolean | null =>
   value === null || typeof value === 'boolean';
 
-const assertWindow = (value: unknown, where: string): void => {
+const assertOnlyKeys = (obj: Record<string, unknown>, allowed: ReadonlySet<string>, where: string): void => {
+  for (const key of Object.keys(obj)) {
+    if (!allowed.has(key)) throw new TypeError(`${where} has unexpected key '${key}'`);
+  }
+};
+
+const WINDOW_KEYS = new Set(['status', 'reset', 'utilization']);
+const OVERAGE_KEYS = new Set([...WINDOW_KEYS, 'disabledReason']);
+const SEVEN_DAY_KEYS = new Set([...WINDOW_KEYS, 'surpassedThreshold']);
+const SNAPSHOT_KEYS = new Set([
+  'status',
+  'reset',
+  'fallbackAvailable',
+  'fallbackPercentage',
+  'representativeClaim',
+  'overage',
+  'fiveHour',
+  'sevenDay',
+  'raw',
+]);
+
+const assertWindow = (value: unknown, allowed: ReadonlySet<string>, where: string): void => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new TypeError(`${where} must be a plain object`);
   }
   const obj = value as Record<string, unknown>;
+  assertOnlyKeys(obj, allowed, where);
   if (!isStringOrNull(obj.status)) throw new TypeError(`${where}.status must be a string or null`);
   if (!isStringOrNull(obj.reset)) throw new TypeError(`${where}.reset must be a string or null`);
   if (!isNumberOrNull(obj.utilization)) throw new TypeError(`${where}.utilization must be a number or null`);
@@ -168,25 +195,29 @@ export function assertClaudeCodeQuotaSnapshot(value: unknown, where: string): as
     throw new TypeError(`${where} must be a plain object`);
   }
   const obj = value as Record<string, unknown>;
+  assertOnlyKeys(obj, SNAPSHOT_KEYS, where);
   if (!isStringOrNull(obj.status)) throw new TypeError(`${where}.status must be a string or null`);
   if (!isStringOrNull(obj.reset)) throw new TypeError(`${where}.reset must be a string or null`);
   if (!isBooleanOrNull(obj.fallbackAvailable)) throw new TypeError(`${where}.fallbackAvailable must be boolean or null`);
   if (!isNumberOrNull(obj.fallbackPercentage)) throw new TypeError(`${where}.fallbackPercentage must be number or null`);
   if (!isStringOrNull(obj.representativeClaim)) throw new TypeError(`${where}.representativeClaim must be a string or null`);
   if (obj.overage !== null) {
-    assertWindow(obj.overage, `${where}.overage`);
+    assertWindow(obj.overage, OVERAGE_KEYS, `${where}.overage`);
     if (!isStringOrNull((obj.overage as Record<string, unknown>).disabledReason)) {
       throw new TypeError(`${where}.overage.disabledReason must be a string or null`);
     }
   }
-  if (obj.fiveHour !== null) assertWindow(obj.fiveHour, `${where}.fiveHour`);
+  if (obj.fiveHour !== null) assertWindow(obj.fiveHour, WINDOW_KEYS, `${where}.fiveHour`);
   if (obj.sevenDay !== null) {
-    assertWindow(obj.sevenDay, `${where}.sevenDay`);
+    assertWindow(obj.sevenDay, SEVEN_DAY_KEYS, `${where}.sevenDay`);
     if (!isBooleanOrNull((obj.sevenDay as Record<string, unknown>).surpassedThreshold)) {
       throw new TypeError(`${where}.sevenDay.surpassedThreshold must be boolean or null`);
     }
   }
   if (typeof obj.raw !== 'object' || obj.raw === null || Array.isArray(obj.raw)) {
     throw new TypeError(`${where}.raw must be a plain object`);
+  }
+  for (const [key, rawValue] of Object.entries(obj.raw)) {
+    if (typeof rawValue !== 'string') throw new TypeError(`${where}.raw.${key} must be a string`);
   }
 }

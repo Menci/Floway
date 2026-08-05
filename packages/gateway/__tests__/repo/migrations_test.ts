@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { migrationSqlByFilename } from './test-sqlite.ts';
+import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 // Migration filenames must start with a unique NNNN_ prefix so lexical order
@@ -23,4 +23,15 @@ test('every migration file has a unique numeric prefix', () => {
     .filter(([prefix, bucket]) => bucket.length > 1 && !KNOWN_DUPLICATE_PREFIXES.has(prefix))
     .map(([, bucket]) => bucket);
   assertEquals(collisions, [], `duplicate migration numbers: ${JSON.stringify(collisions)}`);
+});
+
+test('current-schema test databases are isolated clones of one migrated template', async () => {
+  const first = await createSqliteTestDb();
+  const second = await createSqliteTestDb();
+  await first.exec('CREATE TABLE clone_only (id INTEGER PRIMARY KEY)');
+
+  assertEquals(
+    await second.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'clone_only'").first(),
+    null,
+  );
 });

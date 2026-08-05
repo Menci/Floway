@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import { wrapChatCompletionsAffinityEgress } from '../../../../../src/data-plane/chat/chat-completions/affinity/egress.ts';
 import type { AffinityCodec, AffinityTarget } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { createDeferredAffinityCodec } from '../../shared/affinity/helpers.ts';
 import { reassembleChatCompletionsEvents, type ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 
@@ -36,21 +37,13 @@ const withChunkExtra = (event: ChatCompletionsStreamEvent, name: string, value: 
   return event;
 };
 
-class DelayedCodec implements AffinityEgressCodec {
-  readonly calls: Array<{ value: string | undefined; resolve: (value: string) => void }> = [];
-
-  wrap(value: string | undefined): Promise<string> {
-    return new Promise(resolve => this.calls.push({ value, resolve }));
-  }
-}
-
 const immediateCodec: AffinityEgressCodec = {
   wrap: async value => `wrapped:${value ?? 'synthetic'}`,
 };
 
 describe('Chat Completions affinity egress', () => {
   test('forwards visible final data before wrapping the last opaque snapshot', async () => {
-    const codec = new DelayedCodec();
+    const codec = createDeferredAffinityCodec();
     const output = wrapChatCompletionsAffinityEgress(frames([
       eventFrame(chunk([{ index: 0, delta: { reasoning_opaque: 'first' }, finish_reason: null }])),
       eventFrame(chunk([{
@@ -70,9 +63,9 @@ describe('Chat Completions affinity egress', () => {
     expect(codec.calls).toHaveLength(0);
 
     const wrappedPending = output.next();
-    await Promise.resolve();
-    expect(codec.calls.map(call => call.value)).toEqual(['latest']);
-    codec.calls[0].resolve('wrapped-latest');
+    const wrapCall = await codec.nextCall();
+    expect(wrapCall.value).toBe('latest');
+    wrapCall.resolve('wrapped-latest');
     expect((await wrappedPending).value).toEqual(eventFrame(chunk([{
       index: 0,
       delta: { reasoning_opaque: 'wrapped-latest' },
@@ -107,6 +100,31 @@ describe('Chat Completions affinity egress', () => {
     ])));
   });
 
+  test('retains the last natural opaque snapshot when an upstream repeats finish_reason', async () => {
+    const wrappedValues: Array<string | undefined> = [];
+    const codec: AffinityEgressCodec = {
+      wrap: async value => {
+        wrappedValues.push(value);
+        return `wrapped:${value ?? 'synthetic'}`;
+      },
+    };
+    const output: ProtocolFrame<ChatCompletionsStreamEvent>[] = [];
+    for await (const frame of wrapChatCompletionsAffinityEgress(frames([
+      eventFrame(chunk([{ index: 0, delta: { reasoning_opaque: 'natural' }, finish_reason: 'stop' }])),
+      eventFrame(chunk([{ index: 0, delta: {}, finish_reason: 'stop' }])),
+      doneFrame(),
+    ]), { codec, affinity })) output.push(frame);
+
+    const events = async function* () {
+      for (const frame of output) if (frame.type === 'event') yield frame.event;
+    };
+    const reassembled = await reassembleChatCompletionsEvents(events());
+    expect(wrappedValues).toEqual(['natural', 'natural']);
+    expect(reassembled.choices[0].message.reasoning_opaque).toBe('wrapped:natural');
+    expect(output.filter(frame =>
+      frame.type === 'event' && frame.event.choices[0]?.finish_reason === 'stop')).toHaveLength(2);
+  });
+
   test('flushes a carrier before DONE when an upstream omits finish_reason', async () => {
     const output: ProtocolFrame<ChatCompletionsStreamEvent>[] = [];
     for await (const frame of wrapChatCompletionsAffinityEgress(frames([
@@ -132,7 +150,7 @@ describe('Chat Completions affinity egress', () => {
   });
 
   test('emits choice extras once on the visible projection before carrier encryption', async () => {
-    const codec = new DelayedCodec();
+    const codec = createDeferredAffinityCodec();
     const output = wrapChatCompletionsAffinityEgress(frames([
       eventFrame(withChoiceExtra(chunk([{
         index: 0,
@@ -150,8 +168,9 @@ describe('Chat Completions affinity egress', () => {
     expect(codec.calls).toHaveLength(0);
 
     const carrier = output.next();
-    await Promise.resolve();
-    codec.calls[0].resolve('wrapped-opaque');
+    const wrapCall = await codec.nextCall();
+    expect(wrapCall.value).toBe('opaque');
+    wrapCall.resolve('wrapped-opaque');
     expect(JSON.stringify((await carrier).value)).not.toContain('logprobs');
     expect(JSON.stringify((await output.next()).value)).not.toContain('logprobs');
   });

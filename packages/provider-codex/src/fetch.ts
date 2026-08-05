@@ -1,5 +1,4 @@
-import { CodexCredentialRefreshTerminatedError, ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken, putCodexAccessToken, type CodexCredentialGeneration } from './access-token.ts';
-import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
+import { CodexCredentialRefreshTerminatedError, ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken, type CodexCredentialGeneration } from './access-token.ts';
 import {
   CODEX_BACKEND_BASE,
   CODEX_ALPHA_SEARCH_PATH,
@@ -14,7 +13,6 @@ import {
   putCodexQuota,
 } from './quota.ts';
 import type { CodexAccountCredential } from './state.ts';
-import { isEventStreamMediaType } from '@floway-dev/protocols/common';
 import type { CanonicalResponsesCompactPayload, CanonicalResponsesPayload, ResponsesCompactionResult, ResponsesInputItem, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { parseResponsesStream } from '@floway-dev/protocols/responses';
 import { type ProviderCallResult, type ProviderModel, type ProviderStreamResult, streamingProviderCall, type UpstreamCallOptions } from '@floway-dev/provider';
@@ -29,7 +27,11 @@ export type ProviderCompactionResult =
 // state_json row the same way.
 export interface CodexCallEffects {
   persistRefreshTokenRotation(usedRefreshToken: string, newRefreshToken: string): Promise<void>;
-  persistTerminalState(state: 'session_terminated' | 'refresh_failed', message: string, generation: CodexCredentialGeneration): Promise<void>;
+  persistTerminalState(
+    state: 'session_terminated' | 'refresh_failed',
+    message: string,
+    expectedGeneration: CodexCredentialGeneration | { accessToken: string },
+  ): Promise<void>;
 }
 
 // Account selection for one Codex call. Both Codex endpoints share the same
@@ -86,7 +88,11 @@ const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true;
   }
 
   try {
-    const entry = await ensureCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, refresh => mintAccessToken(opts, refresh));
+    const entry = await ensureCodexAccessToken(
+      opts.upstreamId,
+      opts.account.chatgptAccountId,
+      refresh => mintAccessToken(opts, refresh),
+    );
     return { ok: true, accessToken: entry.token };
   } catch (err) {
     if (err instanceof CodexCredentialRefreshTerminatedError) {
@@ -361,7 +367,7 @@ const dispatchCodexHttpCall = async (
     const bodyText = await response.text();
     const { code, message } = parseUpstreamError(bodyText);
     if (code === 'token_invalidated') {
-      await opts.effects.persistTerminalState('session_terminated', message, opts.account);
+      await opts.effects.persistTerminalState('session_terminated', message, { accessToken });
       return synthetic503(`Codex session terminated: ${message}`);
     }
     return new Response(bodyText, { status: 401, headers: response.headers });
@@ -370,24 +376,23 @@ const dispatchCodexHttpCall = async (
   return response;
 };
 
-// Force-mint a fresh access token after a 401, persisting it best-effort.
-// `ensureCodexAccessToken`'s read-then-maybe-mint is bypassed because a
-// re-read can still observe the token we just invalidated: a sibling that
-// minted before our 401 lands its `putCodexAccessToken` after our
-// invalidation, restoring the broken token, and Codex tokens carry multi-day
-// expiresAt so the freshness gate hands it straight back — sending us into an
-// immediate second 401 with `alreadyRetried` already flipped. Minting
-// unconditionally sidesteps that window, and persisting best-effort is enough
-// because the next request re-mints if its read still sees the dead token.
-const refreshAccessTokenForRetry = async (opts: CodexBackendCallBase): Promise<{ ok: true; accessToken: string } | { ok: false; response: Response }> => {
-  await invalidateCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId);
+// Force-mint a fresh access token after a 401. The forced ensure re-reads the
+// current refresh token, so a request whose initial mint rotated rt1 → rt2
+// cannot retry with its stale captured rt1. It also shares the credential's
+// single-flight entry, collapsing simultaneous 401 retries onto one rotation.
+const refreshAccessTokenForRetry = async (opts: CodexBackendCallBase, rejectedAccessToken: string): Promise<{ ok: true; accessToken: string } | { ok: false; response: Response }> => {
+  await invalidateCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, rejectedAccessToken);
   try {
-    const minted = await mintAccessToken(opts, opts.account.refresh_token);
-    registerBackgroundWrite(opts, putCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, minted));
+    const minted = await ensureCodexAccessToken(
+      opts.upstreamId,
+      opts.account.chatgptAccountId,
+      refreshToken => mintAccessToken(opts, refreshToken),
+      true,
+    );
     return { ok: true, accessToken: minted.token };
   } catch (err) {
-    if (err instanceof CodexOAuthSessionTerminatedError) {
-      await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage, opts.account);
+    if (err instanceof CodexCredentialRefreshTerminatedError) {
+      await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage, err.generation);
       return { ok: false, response: synthetic503(`Codex refresh failed: ${err.upstreamMessage}`) };
     }
     throw err;
@@ -417,7 +422,7 @@ const performStreamingResponsesCall = async (
   const result = await streamingProviderCall(upstreamFetch, parseResponsesStream, opts.model.id, opts.signal);
 
   if (!result.ok && result.response.status === 401 && !alreadyRetried) {
-    const fresh = await refreshAccessTokenForRetry(opts);
+    const fresh = await refreshAccessTokenForRetry(opts, accessToken);
     if (!fresh.ok) return { ok: false, modelKey: opts.model.id, response: fresh.response };
     return await performStreamingResponsesCall(opts, fresh.accessToken, true);
   }
@@ -446,7 +451,7 @@ const performUnaryCompactCall = async (
   );
 
   if (response.status === 401 && !alreadyRetried) {
-    const fresh = await refreshAccessTokenForRetry(opts);
+    const fresh = await refreshAccessTokenForRetry(opts, accessToken);
     if (!fresh.ok) return { ok: false, modelKey: opts.model.id, response: fresh.response };
     return await performUnaryCompactCall(opts, fresh.accessToken, true);
   }
@@ -484,7 +489,7 @@ const performAlphaSearchCall = async (
   );
 
   if (response.status === 401 && !alreadyRetried) {
-    const fresh = await refreshAccessTokenForRetry(opts);
+    const fresh = await refreshAccessTokenForRetry(opts, accessToken);
     if (!fresh.ok) return { modelKey: opts.model.id, response: fresh.response };
     return await performAlphaSearchCall(opts, fresh.accessToken, true);
   }
@@ -515,7 +520,9 @@ const synthetic503 = (message: string): Response => new Response(JSON.stringify(
 // content-type as a contract violation, so we synthesize the header on the
 // way through. Body stream is preserved verbatim.
 const ensureSseContentType = (response: Response): Response => {
-  if (isEventStreamMediaType(response.headers.get('content-type'))) return response;
+  if (!response.ok) return response;
+  const contentType = response.headers.get('content-type');
+  if (contentType !== null && contentType.trim() !== '') return response;
   const headers = new Headers(response.headers);
   headers.set('content-type', 'text/event-stream');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });

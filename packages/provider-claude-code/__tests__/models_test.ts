@@ -4,11 +4,17 @@ import {
   aliasFromApiId,
   buildClaudeCodeCatalog,
   chatFromCapabilities,
+  fetchClaudeCodeModelsList,
   type ClaudeCodeApiModel,
   type ClaudeCodeProviderData,
 } from '../src/models.ts';
 import { pricingForClaudeCodeModelKey } from '../src/pricing.ts';
 import type { FlagId } from '@floway-dev/provider';
+
+const fetchModels = (body: unknown) => fetchClaudeCodeModelsList(
+  'at',
+  async () => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } }),
+);
 
 const SAMPLE_API_MODELS: ClaudeCodeApiModel[] = [
   { id: 'claude-fable-5', display_name: 'Claude Fable 5', max_input_tokens: 1_000_000 },
@@ -18,6 +24,29 @@ const SAMPLE_API_MODELS: ClaudeCodeApiModel[] = [
   { id: 'claude-opus-4-5-20251101', display_name: 'Claude Opus 4.5', max_input_tokens: 200_000 },
   { id: 'claude-haiku-4-5-20251001', display_name: 'Claude Haiku 4.5', max_input_tokens: 200_000 },
 ];
+
+describe('fetchClaudeCodeModelsList', () => {
+  test('keeps vendor ids opaque while ignoring unconsumed fields', async () => {
+    const models = await fetchModels({
+      data: [{ id: 'vendor-future:model', display_name: 'Future Model', max_input_tokens: 1, future_field: true }],
+    });
+    expect(models).toEqual([{ id: 'vendor-future:model', display_name: 'Future Model', max_input_tokens: 1 }]);
+  });
+
+  test.each([
+    { id: '', display_name: 'Claude', max_input_tokens: 1 },
+    { id: 'claude-future', display_name: '   ', max_input_tokens: 1 },
+    { id: 'claude-future', display_name: 'Claude', max_input_tokens: 0 },
+    { id: 'claude-future', display_name: 'Claude', max_input_tokens: 1.5 },
+    { id: 'claude-future', display_name: 'Claude', max_input_tokens: Number.MAX_VALUE },
+  ])('rejects unusable required model metadata: %j', async entry => {
+    await expect(fetchModels({ data: [entry] })).rejects.toThrow();
+  });
+
+  test('rejects a non-object catalog envelope explicitly', async () => {
+    await expect(fetchModels(null)).rejects.toThrow(/not an object/);
+  });
+});
 
 describe('aliasFromApiId', () => {
   test('strips an 8-digit date suffix when present', () => {

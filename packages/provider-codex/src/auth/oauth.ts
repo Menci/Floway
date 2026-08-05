@@ -132,14 +132,22 @@ const codexTokenRequest = async (
       throw new Error(`Codex OAuth /token response missing ${key}`);
     }
   }
-  if (typeof root.expires_in !== 'number' || !Number.isFinite(root.expires_in)) {
-    throw new Error('Codex OAuth /token response missing expires_in');
+  const expiresIn = root.expires_in;
+  const expiresAt = typeof expiresIn === 'number' ? Date.now() + expiresIn * 1000 : Number.NaN;
+  if (
+    typeof expiresIn !== 'number'
+    || !Number.isSafeInteger(expiresIn)
+    || expiresIn <= 0
+    || !Number.isSafeInteger(expiresAt)
+    || Number.isNaN(new Date(expiresAt).getTime())
+  ) {
+    throw new Error('Codex OAuth /token response carries invalid expires_in');
   }
   return {
     access_token: root.access_token as string,
     refresh_token: root.refresh_token as string,
     id_token: root.id_token as string,
-    expires_in: root.expires_in as number,
+    expires_in: expiresIn,
   };
 };
 

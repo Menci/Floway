@@ -25,17 +25,24 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
   // trailing empty usage frame cannot wipe a good one. Held outside the
   // generator so an abandoned stream can still settle with what it saw.
   let billableUsage: BillableUsage | undefined;
-  const settleMetadata = (): void => resolveFinal({
-    modelIdentity: identity,
-    ...(context !== undefined ? { performance: context } : {}),
-    ...(billableUsage !== undefined ? { billableUsage } : {}),
-  });
+  let metadataSettled = false;
+  const settleMetadata = (): void => {
+    if (metadataSettled) return;
+    metadataSettled = true;
+    ctx.abortSignal?.removeEventListener('abort', settleMetadata);
+    resolveFinal({
+      modelIdentity: identity,
+      ...(context !== undefined ? { performance: context } : {}),
+      ...(billableUsage !== undefined ? { billableUsage } : {}),
+    });
+  };
   // Every streaming response now resolves its cost here, and the respond
   // layer awaits it in a `finally`. A transport that walks away without
   // closing the generator would otherwise hang that await forever, so the
   // abort settles it too; whichever fires first wins, and the later call is a
   // no-op.
-  ctx.abortSignal?.addEventListener('abort', settleMetadata, { once: true });
+  if (ctx.abortSignal?.aborted) settleMetadata();
+  else ctx.abortSignal?.addEventListener('abort', settleMetadata, { once: true });
   const stampedEvents = (async function* () {
     try {
       for await (const frame of providerResult.events) {

@@ -101,6 +101,25 @@ test('batch preserves rows produced by RETURNING statements', () => withTempDb(a
   assertEquals(results[1].results, [{ id: 1, name: 'A' }]);
 }));
 
+test('batch rejects statements prepared by another database and rolls back its own preceding statements', async () => {
+  const first = createNodeSqliteDatabase(':memory:');
+  const second = createNodeSqliteDatabase(':memory:');
+  await first.prepare('CREATE TABLE t (id INTEGER PRIMARY KEY)').run();
+  await second.prepare('CREATE TABLE t (id INTEGER PRIMARY KEY)').run();
+
+  await assertRejects(
+    () => first.batch!([
+      first.prepare('INSERT INTO t (id) VALUES (?)').bind(1),
+      second.prepare('INSERT INTO t (id) VALUES (?)').bind(2),
+    ]),
+    Error,
+    'statement from a different database adapter',
+  );
+
+  assertEquals((await first.prepare('SELECT id FROM t').all()).results, []);
+  assertEquals((await second.prepare('SELECT id FROM t').all()).results, []);
+});
+
 test('concurrent batch calls do not interleave transactions', () => withTempDb(async path => {
   // Regression: an `await` between BEGIN and COMMIT used to yield a microtask,
   // letting a second batch call's BEGIN run while the first transaction was

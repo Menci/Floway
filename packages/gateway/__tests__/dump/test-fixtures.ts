@@ -42,6 +42,7 @@ export interface DumpStubHandle {
   closedChannels: ReadonlyArray<{ keyId: string; reason: string }>;
   seed: (keyId: string, record: StoredDumpRecord) => void;
   failOn: (method: DumpStubFailMethod, err: Error) => void;
+  waitForStored: (count?: number) => Promise<void>;
 }
 
 export const installDumpStubs = (
@@ -55,6 +56,15 @@ export const installDumpStubs = (
   const closeChannelAttempts: Array<{ keyId: string; reason: string }> = [];
   const closedChannels: Array<{ keyId: string; reason: string }> = [];
   const throws: Partial<Record<DumpStubFailMethod, Error>> = {};
+  const storedWaiters = new Map<number, Array<() => void>>();
+
+  const resolveStoredWaiters = (): void => {
+    for (const [count, waiters] of storedWaiters) {
+      if (stored.length < count) continue;
+      storedWaiters.delete(count);
+      for (const resolve of waiters) resolve();
+    }
+  };
 
   const store: DumpStore = {
     async prepareRequestBody(body) {
@@ -68,6 +78,7 @@ export const installDumpStubs = (
         request: { ...record.request, body: record.request.body.bytes },
       };
       stored.push({ keyId, record: storedRecord });
+      resolveStoredWaiters();
       const list = records.get(keyId) ?? [];
       list.unshift(storedRecord);
       records.set(keyId, list);
@@ -157,5 +168,13 @@ export const installDumpStubs = (
       records.set(keyId, list);
     },
     failOn: (method, err) => { throws[method] = err; },
+    waitForStored: (count = 1) => {
+      if (stored.length >= count) return Promise.resolve();
+      return new Promise(resolve => {
+        const waiters = storedWaiters.get(count) ?? [];
+        waiters.push(resolve);
+        storedWaiters.set(count, waiters);
+      });
+    },
   };
 };

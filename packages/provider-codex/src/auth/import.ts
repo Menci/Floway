@@ -75,18 +75,17 @@ export const importCodexFromAuthJson = async (rawJson: string): Promise<CodexImp
 
   const identity = parseCodexIdTokenClaims(idToken);
   // auth.json carries the access_token + refresh_token but no `expires_in`
-  // for the access_token. Stamp a conservative 7-day fallback so the
-  // freshness gate in the access-token module forces a /oauth/token refresh on
-  // the first data-plane call rather than handing out a token of unknown
-  // remaining lifetime. The refresh_token's own lifetime is set by
-  // auth.openai.com and is unaffected by this fallback.
-  const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+  // for the access token. Preserve the bearer for identity/debugging while
+  // marking it expired now, so the freshness gate rotates it before the first
+  // upstream call rather than trusting an unknown remaining lifetime. The
+  // refresh token's own lifetime is set by auth.openai.com and is unaffected.
+  const importedAt = Date.now();
   return buildCodexImportResult({
     identity,
     accessToken,
     refreshToken,
-    expiresAt: Date.now() + sevenDaysMs,
-    now: new Date().toISOString(),
+    expiresAt: importedAt,
+    now: new Date(importedAt).toISOString(),
   });
 };
 
