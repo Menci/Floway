@@ -13,11 +13,13 @@ describe('AffinityRequestContext', () => {
 
   test('maps the selected candidate and its rule overlay into egress options', () => {
     const base = stubModelCandidate();
-    const candidate = stubModelCandidate({
-      provider: { ...base.provider, upstreamId: 'upstream-selected' },
-      model: { id: 'model-selected' },
+    const candidate = {
+      ...stubModelCandidate({
+        provider: { ...base.provider, upstreamId: 'upstream-selected' },
+        model: { id: 'model-selected' },
+      }),
       rules: { reasoning: { effort: 'high' } },
-    });
+    };
     const affinity = new AffinityRequestContext(SECRET);
     affinity.select(candidate);
 
