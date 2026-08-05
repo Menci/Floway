@@ -1,4 +1,4 @@
-import { trackBackground } from './background-tracker.ts';
+import { flushBackground, trackBackground } from './background-tracker.ts';
 import { app } from '../../src/app.ts';
 import { clearInFlightForTesting } from '../../src/data-plane/providers/models-cache.ts';
 import type { WebSearchConfig } from '../../src/data-plane/tools/web-search/types.ts';
@@ -316,9 +316,8 @@ export function parseSSEText(text: string): Array<{ event: string; data: string 
   });
 }
 
-export async function flushAsyncWork(): Promise<void> {
-  await new Promise(resolve => setTimeout(resolve, 0));
-}
+export { flushBackground };
+export const flushAsyncWork = flushBackground;
 
 export function copilotModels(
   models: Array<{
