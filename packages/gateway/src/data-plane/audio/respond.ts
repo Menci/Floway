@@ -1,4 +1,5 @@
 import { streamSSE } from 'hono/streaming';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 import { measureAudioTranscriptionUsage } from './usage.ts';
 import { observeJsonResponse } from '../shared/json-response.ts';
@@ -45,9 +46,11 @@ const respondStreaming = ({ c, ctx, sourceApi, response, performance, identity }
     return passthroughApiError(c, 'Upstream returned a streaming response with no body.', 502);
   }
   forwardUpstreamHeaders(c, response.headers);
+  c.status(response.status as ContentfulStatusCode);
   return streamSSE(c, async stream => {
     let completion: StreamCompletion = 'error';
     let streamError: unknown;
+    let protocolError: unknown;
     let terminalEventSeen = false;
     let measurement = requestOnlyUsageMeasurement();
     try {
@@ -57,7 +60,10 @@ const respondStreaming = ({ c, ctx, sourceApi, response, performance, identity }
           try {
             event = JSON.parse(frame.data) as unknown;
           } catch (error) {
-            throw new Error(`Malformed upstream ${sourceApi} SSE JSON: ${frame.data}`, { cause: error });
+            protocolError ??= new Error(`Malformed upstream ${sourceApi} SSE JSON: ${frame.data}`, { cause: error });
+            ctx.dump?.frame(eventFrame(frame.data));
+            yield frame;
+            continue;
           }
           ctx.dump?.frame(eventFrame(event));
           if (isAudioTranscriptionDoneEvent(event)) {
@@ -76,8 +82,8 @@ const respondStreaming = ({ c, ctx, sourceApi, response, performance, identity }
     } catch (error) {
       streamError = error;
     } finally {
-      const failed = streamError !== undefined || completion === 'error' || !terminalEventSeen;
-      if (failed) ctx.dump?.failed(streamError ?? `${sourceApi} stream ended with completion=${completion}`);
+      const failed = streamError !== undefined || protocolError !== undefined || completion === 'error' || !terminalEventSeen;
+      if (failed) ctx.dump?.failed(streamError ?? protocolError ?? `${sourceApi} stream ended with completion=${completion}`);
       else ctx.dump?.success(identity, measurement.dumpTokenUsage);
       settleUsageMeasurement(ctx, performance, identity, measurement, failed);
     }
