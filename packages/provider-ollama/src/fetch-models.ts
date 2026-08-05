@@ -10,17 +10,19 @@
 //                             a varying-per-architecture prefix that carries
 //                             `<arch>.context_length`).
 //
-// We fan out one /api/show per tag in parallel and synthesize the per-model
-// shape the gateway consumes. /api/show calls are independent and read-only;
-// a single failure drops just that model from the catalog rather than
-// poisoning the whole list.
+// We fetch /api/show through a bounded pool and synthesize the per-model shape
+// the gateway consumes. /api/show calls are independent and read-only; a
+// single failure drops just that model from the catalog, while cancellation
+// terminates the catalog request so a partial result cannot enter the cache.
 //
 // /api/embeddings (legacy) is not used — the modern Ollama embedding path is
 // /api/embed for native callers and /v1/embeddings for the OpenAI shim.
 
 import type { OllamaUpstreamConfig } from './config.ts';
 import { ollamaFetchShow, ollamaFetchTags } from './fetch.ts';
-import { fetchUpstreamModels, type Fetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
+import { fetchUpstreamModels, type Fetcher, identityWrapUpstreamCall, isAbortError } from '@floway-dev/provider';
+
+const MAX_CONCURRENT_SHOW_REQUESTS = 8;
 
 export interface OllamaRawModel {
   // The slug Ollama uses everywhere (e.g. `gpt-oss:120b`, `deepseek-v4-flash`,
@@ -63,9 +65,13 @@ const parseTagEntry = (value: unknown): TagEntry | null => {
 const parseTagsResponse = (value: unknown): TagEntry[] | null => {
   if (!isRecord(value) || !Array.isArray(value.models)) return null;
   const entries: TagEntry[] = [];
+  const seen = new Set<string>();
   for (const item of value.models) {
     const entry = parseTagEntry(item);
-    if (entry) entries.push(entry);
+    if (entry && !seen.has(entry.name)) {
+      seen.add(entry.name);
+      entries.push(entry);
+    }
   }
   return entries;
 };
@@ -139,12 +145,33 @@ export const fetchOllamaCatalog = async (config: OllamaUpstreamConfig, fetcher: 
     () => ollamaFetchTags(config, { method: 'GET' }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }),
     parseTagsResponse,
   );
-  // /api/show fan-out stays outside the scaffold: `allSettled` already drops
-  // a single failed lookup cleanly without poisoning the whole catalog.
-  const settled = await Promise.allSettled(tags.map(tag => fetchShowForTag(config, fetcher, tag)));
+  const results: Array<OllamaRawModel | null | undefined> = new Array(tags.length);
+  let nextIndex = 0;
+  let fatalAbort: unknown;
+  const worker = async (): Promise<void> => {
+    while (fatalAbort === undefined) {
+      const index = nextIndex++;
+      if (index >= tags.length) return;
+      try {
+        results[index] = await fetchShowForTag(config, fetcher, tags[index]);
+      } catch (error) {
+        if (isAbortError(error)) {
+          if (fatalAbort === undefined) fatalAbort = error;
+          return;
+        }
+        results[index] = null;
+      }
+    }
+  };
+  await Promise.all(Array.from(
+    { length: Math.min(MAX_CONCURRENT_SHOW_REQUESTS, tags.length) },
+    worker,
+  ));
+  if (fatalAbort !== undefined) throw fatalAbort;
+
   const data: OllamaRawModel[] = [];
-  for (const result of settled) {
-    if (result.status === 'fulfilled' && result.value !== null) data.push(result.value);
+  for (const model of results) {
+    if (model !== null && model !== undefined) data.push(model);
   }
   return { data };
 };
