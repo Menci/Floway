@@ -188,7 +188,7 @@ test('SQL model-cache generation accepts semantically equal noncanonical config 
   if (!parsed) throw new Error('upstream row missing');
 
   const saved = await repo.saveModelsCache(record.id, generationFor(parsed), {
-    revision: 7,
+    revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_001_000_000,
     models: [stubProviderModel({ id: 'cached-model' })],
   });
