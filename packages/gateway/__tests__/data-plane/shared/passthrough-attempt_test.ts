@@ -6,7 +6,7 @@ import type { AuthVars } from '../../../src/middleware/auth.ts';
 import { mockGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { assertEquals, assertExists, stubModelCandidate, stubProvider } from '@floway-dev/test-utils';
 
-test('passthroughAttempt binds ingress filtering to the invoked provider method', async () => {
+test('passthroughAttempt applies the selected provider ingress policy', async () => {
   let observed: Headers | undefined;
   const base = stubModelCandidate();
   const candidate = stubModelCandidate({
@@ -28,7 +28,6 @@ test('passthroughAttempt binds ingress filtering to the invoked provider method'
       ctx: mockGatewayCtx(),
       candidate,
       operation: 'embeddings',
-      providerCall: 'callEmbeddings',
       call: (provider, model, opts) => provider.instance.callEmbeddings(model, { input: 'hi' }, undefined, opts),
     });
     return c.text('ok');

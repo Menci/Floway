@@ -48,7 +48,7 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
       };
 
       // Detection runs on the unmodified payload plus the Claude Code
-      // fingerprint admitted by the provider module's header allowlist.
+      // fingerprint admitted by the provider module and Messages boundaries.
       // The re-mimicry chain would clobber operator-supplied `system` content
       // and overwrite the wire shape — exactly what a CC-shaped passthrough
       // needs to preserve. So the chain only runs on the unshaped path; the

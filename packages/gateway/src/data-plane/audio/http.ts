@@ -74,7 +74,6 @@ export const audioTranscriptions = async (c: Context): Promise<Response> => {
     ctx,
     sourceApi: '/audio/transcriptions',
     operation: 'audio_transcription',
-    providerCall: 'callAudioTranscriptions',
     model: request.model,
     kind: 'transcription',
     modelServesEndpoint: model => model.endpoints.audioTranscriptions !== undefined,

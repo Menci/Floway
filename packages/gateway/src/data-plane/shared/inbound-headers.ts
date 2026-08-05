@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 
-import { inboundHeaderAllowlistForCall } from '../providers/registry.ts';
-import type { InboundHeaderMatcher, ProviderCall, UpstreamProviderKind } from '@floway-dev/provider';
+import { inboundHeaderAllowlistForKind } from '../providers/registry.ts';
+import type { InboundHeaderMatcher, UpstreamProviderKind } from '@floway-dev/provider';
 
 export const inboundHeaders = (c: Context): Headers => new Headers(c.req.raw.headers);
 
@@ -27,5 +27,4 @@ export const filterInboundHeaders = (
 export const filterInboundHeadersForProvider = (
   headers: Headers,
   providerKind: UpstreamProviderKind,
-  call: ProviderCall,
-): Headers => filterInboundHeaders(headers, inboundHeaderAllowlistForCall(providerKind, call));
+): Headers => filterInboundHeaders(headers, inboundHeaderAllowlistForKind(providerKind));

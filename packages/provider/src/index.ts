@@ -46,7 +46,6 @@ export { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, normalizeModelPrefix } fro
 
 export type {
   Provider,
-  ProviderCall,
   InboundHeaderMatcher,
   ProviderInstance,
   ProviderCallResult,

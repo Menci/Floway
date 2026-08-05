@@ -11,10 +11,11 @@ import type { ExecuteResult, ProviderModel } from '@floway-dev/provider';
 // `payload` is the source-shape body with `model` re-attached so interceptors
 // that read the public model id (e.g. claude-opus-4-8 carve-outs) keep
 // working unchanged; the terminal strips it before serializing to the wire.
-// `headers` carries every admitted header except `anthropic-beta`; that field
-// is parsed once into `anthropicBeta` so variant selection and interceptors
-// share one token list. The terminal serializes the normalized list back onto
-// a fresh wire-header bag.
+// `headers` carries the provider's ordinary admitted headers.
+// `anthropic-beta` arrives through the native Messages boundary and is parsed
+// once into `anthropicBeta` so variant selection and interceptors share one
+// token list. The terminal serializes the normalized list back onto a fresh
+// wire-header bag.
 export interface MessagesBoundaryCtx {
   payload: MessagesPayload;
   headers: Headers;

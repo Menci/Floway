@@ -96,11 +96,13 @@ export type ProviderResponsesResult =
 // no-op. Providers use it for post-response persistence the caller has
 // already stopped waiting on.
 //
-// `headers` is the single inbound-headers conduit from gateway to provider.
-// The gateway filters the source request through this provider method's entry
-// in `inboundHeaderAllowlist` before constructing the bag. A provider may
-// clone and mutate it for request-specific wire shaping, but must not retain
-// the gateway-owned reference past the call.
+// `headers` is the ordinary inbound-headers conduit from gateway to provider.
+// The gateway filters the source request through the provider module's
+// `inboundHeaderAllowlist` before constructing this bag. Source-protocol
+// metadata is carried by its owning invocation boundary and does not widen
+// this provider-level policy. A provider may clone and mutate the bag for
+// request-specific wire shaping, but must not retain the gateway-owned
+// reference past the call.
 export interface UpstreamCallOptions {
   fetcher: Fetcher;
   waitUntil: (promise: Promise<unknown>) => void;
@@ -130,8 +132,6 @@ export interface ProviderInstance {
   // those upstreams; the rejecting stubs in those providers are pure
   // defense-in-depth.
   callCompletions(model: ProviderModel, body: Omit<CompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
-  // Each protocol receives only the headers declared for this method by the
-  // provider's static module surface.
   callChatCompletions(model: ProviderModel, body: Omit<ChatCompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
   callResponses(model: ProviderModel, body: Omit<CanonicalResponsesPayload, 'model'>, action: ResponsesAction, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderResponsesResult>;
   callMessages(model: ProviderModel, body: Omit<MessagesPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<MessagesStreamEvent>>;
@@ -145,8 +145,6 @@ export interface ProviderInstance {
   callRerank(model: ProviderModel, request: CanonicalRerankRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderRerankCallResult>;
 }
 
-export type ProviderCall = Exclude<keyof ProviderInstance, 'getProvidedModels'>;
-
 // Static, module-shaped surface each provider package exports. The gateway
 // registry keeps a Record<UpstreamProviderKind, ProviderModule> so every
 // kind→X dispatch (instance construction, flag defaults) reads its answer
@@ -158,11 +156,12 @@ export interface ProviderModule {
   // fetch) happens on demand inside the per-request methods on the
   // returned ProviderInstance.
   create: (record: UpstreamRecord) => Provider;
-  // Client-authored headers each call surface can consume. Strings are exact,
+  // Client-authored headers this provider can consume. Strings are exact,
   // ASCII-case-insensitive names; regular expressions run against the
-  // normalized lowercase name. An absent call accepts no inbound headers.
-  // The gateway applies the selected allowlist at the candidate boundary.
-  inboundHeaderAllowlist: Partial<Record<ProviderCall, readonly InboundHeaderMatcher[]>>;
+  // normalized lowercase name. The gateway applies this allowlist at the
+  // candidate boundary before any ProviderInstance method can observe the
+  // ordinary inbound bag.
+  inboundHeaderAllowlist: readonly InboundHeaderMatcher[];
   // Exhaustive default map over every catalog flag id for a fresh
   // upstream of this kind; see each provider package's `defaults.ts`.
   defaultFlags: FlagDefaults;

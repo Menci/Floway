@@ -113,6 +113,33 @@ test('generate native messages target calls provider.callMessages with no rewrit
   assertEquals(callMessages.mock.calls.length, 1);
 });
 
+test('generate carries anthropic-beta through the Messages boundary outside the provider allowlist', async () => {
+  installRepo();
+  let upstreamHeaders: Headers | undefined;
+  const callMessages = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+    upstreamHeaders = opts?.headers;
+    return { ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: new Headers() };
+  });
+
+  const result = await messagesAttempt.generate({
+    payload: makePayload(),
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({ callMessages }),
+    headers: new Headers({
+      'anthropic-beta': 'context-1m-2025-08-07,advanced-tool-use-2025-11-20',
+      'x-unlisted': 'discard',
+    }),
+  });
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+  assertExists(upstreamHeaders);
+  assertEquals(Object.fromEntries(upstreamHeaders), {
+    'anthropic-beta': 'context-1m-2025-08-07,advanced-tool-use-2025-11-20',
+  });
+});
+
 test('generate translate-to-responses branch routes through responsesAttempt', async () => {
   installRepo();
   const respResp: ResponsesResult = {
@@ -281,6 +308,30 @@ test('countTokens proxies the upstream response as a plain result', async () => 
   const body = JSON.parse(new TextDecoder().decode(result.body));
   assertEquals(body.input_tokens, 7);
   assertEquals(callMessagesCountTokens.mock.calls.length, 1);
+});
+
+test('countTokens carries anthropic-beta through the Messages boundary outside the provider allowlist', async () => {
+  installRepo();
+  let upstreamHeaders: Headers | undefined;
+  const callMessagesCountTokens = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderCallResult> => {
+    upstreamHeaders = opts?.headers;
+    return { response: Response.json({ input_tokens: 7 }), modelKey: 'k' };
+  });
+
+  await messagesAttempt.countTokens({
+    payload: makePayload(),
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({ callMessagesCountTokens }),
+    headers: new Headers({
+      'anthropic-beta': 'context-1m-2025-08-07',
+      'x-unlisted': 'discard',
+    }),
+  });
+
+  assertExists(upstreamHeaders);
+  assertEquals(Object.fromEntries(upstreamHeaders), {
+    'anthropic-beta': 'context-1m-2025-08-07',
+  });
 });
 
 test('countTokens applies generation request transforms before provider dispatch', async () => {

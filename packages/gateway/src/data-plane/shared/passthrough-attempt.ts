@@ -17,7 +17,7 @@ import type { PerformanceTelemetryContext } from './telemetry/performance.ts';
 import { buildUpstreamCallOptions } from './upstream-call-options.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import { providerModelOf } from '@floway-dev/provider';
-import type { ModelCandidate, PerformanceOperation, Provider, ProviderCall, ProviderCallResult, ProviderInstance, ProviderModel, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
+import type { ModelCandidate, PerformanceOperation, Provider, ProviderCallResult, ProviderModel, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
 
 // Enlarged `plain` shape: `iterateCandidates` reads `type` + `status`;
 // the passthrough serve reads the rest to forward the response and
@@ -32,36 +32,24 @@ export interface PassthroughAttemptResult {
   readonly identity: TelemetryModelIdentity;
 }
 
-export type PassthroughProviderCall = Extract<ProviderCall,
-  | 'callCompletions'
-  | 'callEmbeddings'
-  | 'callImagesGenerations'
-  | 'callImagesEdits'
-  | 'callAudioTranscriptions'>;
-
-export type PassthroughProvider<TCall extends PassthroughProviderCall> = Pick<Provider, 'upstreamId'> & {
-  readonly instance: Pick<ProviderInstance, TCall>;
-};
-
-export interface PassthroughAttemptArgs<TCall extends PassthroughProviderCall> {
+export interface PassthroughAttemptArgs {
   readonly c: AuthedContext;
   readonly ctx: GatewayCtx;
   readonly candidate: ModelCandidate;
   readonly operation: PerformanceOperation;
-  readonly providerCall: TCall;
   // Delegated to the passthrough caller so each endpoint keeps its
   // request-body shaping (`{ model: _, ...body }`) local. Any throw here
   // is preserved and the serve layer turns it into a 502 with the
   // internal-debug envelope.
-  readonly call: (provider: PassthroughProvider<TCall>, model: ProviderModel, opts: UpstreamCallOptions) => Promise<ProviderCallResult>;
+  readonly call: (provider: Provider, model: ProviderModel, opts: UpstreamCallOptions) => Promise<ProviderCallResult>;
 }
 
-export const passthroughAttempt = async <TCall extends PassthroughProviderCall>(args: PassthroughAttemptArgs<TCall>): Promise<PassthroughAttemptResult> => {
-  const { c, ctx, candidate, operation, providerCall, call } = args;
+export const passthroughAttempt = async (args: PassthroughAttemptArgs): Promise<PassthroughAttemptResult> => {
+  const { c, ctx, candidate, operation, call } = args;
   const { response, modelKey } = await call(
     candidate.provider,
     providerModelOf(candidate),
-    buildUpstreamCallOptions(candidate, ctx, inboundHeaders(c), providerCall),
+    buildUpstreamCallOptions(candidate, ctx, inboundHeaders(c)),
   );
   return {
     type: 'plain',

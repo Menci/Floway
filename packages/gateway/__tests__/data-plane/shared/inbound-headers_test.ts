@@ -4,25 +4,10 @@ import { describe, expect, test } from 'vitest';
 import { inboundHeaders, filterInboundHeaders, filterInboundHeadersForProvider } from '../../../src/data-plane/shared/inbound-headers.ts';
 import { buildUpstreamCallOptions } from '../../../src/data-plane/shared/upstream-call-options.ts';
 import { mockGatewayCtx } from '../../test-utils/gateway-ctx.ts';
-import { ALL_PROVIDER_KINDS, type ProviderCall, type UpstreamProviderKind } from '@floway-dev/provider';
+import type { UpstreamProviderKind } from '@floway-dev/provider';
 import { stubModelCandidate, stubProvider } from '@floway-dev/test-utils';
 
 const headerRecord = (headers: Headers): Record<string, string> => Object.fromEntries(headers);
-
-const providerCallInventory = {
-  callAlphaSearch: null,
-  callCompletions: null,
-  callChatCompletions: null,
-  callResponses: null,
-  callMessages: null,
-  callMessagesCountTokens: null,
-  callEmbeddings: null,
-  callImagesGenerations: null,
-  callImagesEdits: null,
-  callAudioTranscriptions: null,
-  callRerank: null,
-} satisfies Record<ProviderCall, null>;
-const providerCalls = Object.keys(providerCallInventory) as ProviderCall[];
 
 describe('inboundHeaders', () => {
   test('copies the complete request bag for candidate-specific filtering', async () => {
@@ -91,59 +76,23 @@ describe('filterInboundHeaders', () => {
 });
 
 describe('provider inbound header policies', () => {
-  const expectedProbeNames = (kind: UpstreamProviderKind, call: ProviderCall): string[] => {
-    if (kind === 'copilot' && (call === 'callMessages' || call === 'callMessagesCountTokens')) return ['anthropic-beta'];
-    if (kind === 'claude-code' && call === 'callMessages') {
-      return ['accept', 'anthropic-beta', 'user-agent', 'x-client-request-id', 'x-stainless-runtime'];
-    }
-    if (kind === 'codex' && call === 'callAlphaSearch') return ['x-codex-turn-metadata'];
-    if (kind === 'codex' && call === 'callResponses') {
-      return ['session-id', 'session_id', 'thread-id', 'x-client-request-id', 'x-codex-turn-metadata', 'x-codex-window-id'];
-    }
-    return [];
-  };
-
-  test.each(ALL_PROVIDER_KINDS.flatMap(kind => providerCalls.map(call => ({ kind, call }))))(
-    '$kind $call admits only its declared probe headers',
-    ({ kind, call }) => {
+  test.each<UpstreamProviderKind>(['custom', 'azure', 'ollama', 'copilot'])(
+    '%s accepts no client headers',
+    kind => {
       const filtered = filterInboundHeadersForProvider(new Headers({
-        accept: 'application/json',
-        'anthropic-beta': 'context-1m-2025-08-07',
+        'anthropic-beta': 'context-1m',
         authorization: 'Bearer secret',
-        'session-id': 'session-1',
-        session_id: 'session-legacy',
-        'thread-id': 'thread-1',
-        'user-agent': 'client',
         'x-client-request-id': 'request-1',
-        'x-codex-turn-metadata': '{}',
-        'x-codex-window-id': 'window-1',
-        'x-debug': 'discard',
-        'x-stainless-runtime': 'node',
-      }), kind, call);
-      expect([...filtered.keys()]).toEqual(expectedProbeNames(kind, call));
+      }), kind);
+      expect([...filtered]).toEqual([]);
     },
   );
-
-  test('Copilot accepts anthropic-beta only on Messages surfaces', () => {
-    const source = new Headers({
-      'anthropic-beta': 'context-1m-2025-08-07',
-      authorization: 'Bearer secret',
-    });
-    expect(headerRecord(filterInboundHeadersForProvider(source, 'copilot', 'callMessages'))).toEqual({
-      'anthropic-beta': 'context-1m-2025-08-07',
-    });
-    expect(headerRecord(filterInboundHeadersForProvider(source, 'copilot', 'callMessagesCountTokens'))).toEqual({
-      'anthropic-beta': 'context-1m-2025-08-07',
-    });
-    expect([...filterInboundHeadersForProvider(source, 'copilot', 'callResponses')]).toEqual([]);
-  });
 
   test('Claude Code accepts only its declared fingerprint', () => {
     const accepted = {
       accept: 'application/json',
       'accept-encoding': 'identity',
       'accept-language': 'en-US',
-      'anthropic-beta': 'claude-code-20250219',
       'anthropic-dangerous-direct-browser-access': 'true',
       'anthropic-version': '2023-06-01',
       'content-type': 'application/json',
@@ -164,12 +113,13 @@ describe('provider inbound header policies', () => {
     };
     const source = new Headers({
       ...accepted,
+      'anthropic-beta': 'claude-code-20250219',
       authorization: 'Bearer secret',
       'x-leaky-debug': 'discard',
       'x-stainless-future': 'discard',
     });
 
-    const filtered = filterInboundHeadersForProvider(source, 'claude-code', 'callMessages');
+    const filtered = filterInboundHeadersForProvider(source, 'claude-code');
     expect(headerRecord(filtered)).toEqual(accepted);
   });
 
@@ -186,7 +136,7 @@ describe('provider inbound header policies', () => {
       'x-codex-window-id': 'window-1',
     });
 
-    const filtered = filterInboundHeadersForProvider(source, 'codex', 'callResponses');
+    const filtered = filterInboundHeadersForProvider(source, 'codex');
     expect(headerRecord(filtered)).toEqual({
       'session-id': 'session-1',
       session_id: 'session-legacy',
@@ -210,8 +160,8 @@ describe('provider inbound header policies', () => {
     });
     const ctx = mockGatewayCtx();
 
-    const custom = buildUpstreamCallOptions(stubModelCandidate({ provider: provider('custom') }), ctx, source, 'callMessages');
-    const claude = buildUpstreamCallOptions(stubModelCandidate({ provider: provider('claude-code') }), ctx, source, 'callMessages');
+    const custom = buildUpstreamCallOptions(stubModelCandidate({ provider: provider('custom') }), ctx, source);
+    const claude = buildUpstreamCallOptions(stubModelCandidate({ provider: provider('claude-code') }), ctx, source);
     custom.headers.set('x-client-request-id', 'candidate-mutation');
 
     expect([...custom.headers]).toEqual([['x-client-request-id', 'candidate-mutation']]);
@@ -220,23 +170,5 @@ describe('provider inbound header policies', () => {
       'x-client-request-id': 'request-1',
     });
     expect(source.get('x-client-request-id')).toBe('request-1');
-  });
-
-  test('passes Copilot Messages beta intent without exposing it to other surfaces', () => {
-    const base = stubModelCandidate();
-    const candidate = stubModelCandidate({
-      provider: { ...base.provider, kind: 'copilot' },
-    });
-    const source = new Headers({
-      'anthropic-beta': 'other-beta, context-1m-2025-08-07',
-      authorization: 'Bearer secret',
-    });
-    const messages = buildUpstreamCallOptions(candidate, mockGatewayCtx(), source, 'callMessages');
-    const responses = buildUpstreamCallOptions(candidate, mockGatewayCtx(), source, 'callResponses');
-
-    expect(headerRecord(messages.headers)).toEqual({
-      'anthropic-beta': 'other-beta, context-1m-2025-08-07',
-    });
-    expect([...responses.headers]).toEqual([]);
   });
 });
