@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import {
   SETUP_BASH_COMMON,
@@ -18,7 +18,6 @@ import {
   SETUP_POWERSHELL_COMMON_PROCESS,
   SETUP_SCRIPT_SOURCE_FRAGMENTS,
 } from '../src/script-assets.generated.ts';
-import { assert, assertEquals } from '@floway-dev/test-utils';
 
 interface Section {
   file: string;
@@ -72,7 +71,7 @@ const PLATFORM_COMMONS = [
 const startOffset = ({ file, source, start }: Section): number => {
   if (start === undefined) return 0;
   const index = source.indexOf(start);
-  assert(index !== -1, `${file} does not contain the start boundary ${JSON.stringify(start)}`);
+  expect(index, `${file} does not contain the start boundary ${JSON.stringify(start)}`).not.toBe(-1);
   return index;
 };
 
@@ -80,25 +79,25 @@ const sliceOf = (section: Section): string => {
   const start = startOffset(section);
   if (section.end === undefined) return section.source.slice(start);
   const end = section.source.indexOf(section.end, start);
-  assert(end !== -1, `${section.file} does not contain the end boundary ${JSON.stringify(section.end)}`);
+  expect(end, `${section.file} does not contain the end boundary ${JSON.stringify(section.end)}`).not.toBe(-1);
   return section.source.slice(start, end);
 };
 
 test('generated installer sources match the checked-in canonical fragments byte for byte', async () => {
   const { readFile } = await import('node:fs/promises');
   for (const [file, generated] of SETUP_SCRIPT_SOURCE_FRAGMENTS) {
-    assertEquals(generated, await readFile(new URL(`../${file}`, import.meta.url), 'utf8'));
+    expect(generated).toBe(await readFile(new URL(`../${file}`, import.meta.url), 'utf8'));
   }
 });
 
 test.each(PLATFORM_COMMONS)('the prejoined $platform common body is exactly its declared section tiling', ({ prejoined, sections }) => {
-  assertEquals(sections.map(section => sliceOf(section) + (section.append ?? '')).join(''), prejoined);
+  expect(sections.map(section => sliceOf(section) + (section.append ?? '')).join('')).toBe(prejoined);
 });
 
 test.each(PLATFORM_COMMONS)('every byte of each $platform source file reaches the prejoined body', ({ sections }) => {
   const sourceByFile = new Map(sections.map(({ file, source }) => [file, source]));
   for (const [file, source] of sourceByFile) {
     const tiles = sections.filter(section => section.file === file).sort((a, b) => startOffset(a) - startOffset(b));
-    assertEquals(tiles.map(sliceOf).join(''), source, `${file} is not fully covered by its sections`);
+    expect(tiles.map(sliceOf).join(''), `${file} is not fully covered by its sections`).toBe(source);
   }
 });

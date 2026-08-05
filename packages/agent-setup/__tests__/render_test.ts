@@ -63,9 +63,9 @@ describe('renderShellPrefix', () => {
     expect(prefix).toContain("SETUP_CODEX_MODEL='x\ny\t€🚀'");
   });
 
-  test('flattens control characters in the API key label before it reaches terminal metadata', () => {
-    const prefix = renderShellPrefix({ agent: 'claude', apiKey: 'key', apiKeyName: 'CI\n\x1b[2J', configuration: fullConfiguration });
-    expect(prefix).toContain("SETUP_API_KEY_NAME='CI  [2J'");
+  test('flattens seven-bit and eight-bit terminal controls in the API key label', () => {
+    const prefix = renderShellPrefix({ agent: 'claude', apiKey: 'key', apiKeyName: 'CI\n\x1b[2J\u009b31m', configuration: fullConfiguration });
+    expect(prefix).toContain("SETUP_API_KEY_NAME='CI  [2J 31m'");
   });
 
   test('renders empty values for disabled target-agent overrides', () => {

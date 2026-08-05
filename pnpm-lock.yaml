@@ -300,9 +300,6 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
-      '@floway-dev/test-utils':
-        specifier: workspace:*
-        version: link:../test-utils
       '@types/jsesc':
         specifier: ^3.0.3
         version: 3.0.3

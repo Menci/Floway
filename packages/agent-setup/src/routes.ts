@@ -24,7 +24,11 @@ import {
 import { renderPowerShellPrefix, renderShellPrefix } from './render.ts';
 import { type AgentSetupRecord, type AgentSetupRepository, AgentSetupTokenCollisionError } from './repository.ts';
 import { type ScriptAgent, type ScriptLanguage, SETUP_SCRIPT_BODIES } from './script-assets.ts';
-import { AGENT_SETUP_TOKEN_PREFIX_PATTERN, generateAgentSetupToken } from './token.ts';
+import {
+  AGENT_SETUP_TOKEN_PATH_PATTERN,
+  AGENT_SETUP_TOKEN_PREFIX_PATTERN,
+  generateAgentSetupToken,
+} from './token.ts';
 import { agentSetupCreateBody, agentSetupHeartbeatBody, agentSetupUpdateBody } from './wire.ts';
 
 const SETUP_LEASE_TTL_MS = 5 * 60 * 1000;
@@ -117,11 +121,19 @@ const resolveServeableLease = async (
 };
 
 const publicErrorDiagnostics = (error: unknown, token: string): string => {
-  if (!(error instanceof Error)) return `Thrown value type: ${typeof error}`;
-  const lines = error.stack?.split('\n') ?? [];
-  const firstFrame = lines.findIndex(line => /^\s*at\s/.test(line));
-  const frames = firstFrame === -1 ? '(stack unavailable)' : lines.slice(firstFrame).join('\n');
-  return `${error.name}\n${frames.replaceAll(token, '[setup-token]')}`;
+  try {
+    if (!(error instanceof Error)) return `Thrown value type: ${typeof error}`;
+    const stack = error.stack;
+    if (typeof stack !== 'string') return 'Error\n(stack unavailable)';
+    const lines = stack.split('\n');
+    const firstFrame = lines.findIndex(line => /^\s*at\s/.test(line));
+    const frames = firstFrame === -1 ? '(stack unavailable)' : lines.slice(firstFrame).join('\n');
+    // Error instance fields are throwable and may contain request data. Only
+    // fixed text and stack frames below the message line enter diagnostics.
+    return `Error\n${frames.replaceAll(token, '[setup-token]')}`;
+  } catch {
+    return 'Error\n(stack unavailable)';
+  }
 };
 
 export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
@@ -146,13 +158,14 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
   };
 
   const notFound = (c: Context) => c.body(null, 404, SCRIPT_RESPONSE_HEADERS);
+  const exactTokenPath = `/:token{${AGENT_SETUP_TOKEN_PATH_PATTERN}}`;
   const tokenBearingPath = `/:token{${AGENT_SETUP_TOKEN_PREFIX_PATTERN}}`;
 
   return new Hono()
-    .on(['GET', 'HEAD'], '/:token/claude.sh', serveSetupScript('claude', 'sh'))
-    .on(['GET', 'HEAD'], '/:token/claude.ps1', serveSetupScript('claude', 'ps1'))
-    .on(['GET', 'HEAD'], '/:token/codex.sh', serveSetupScript('codex', 'sh'))
-    .on(['GET', 'HEAD'], '/:token/codex.ps1', serveSetupScript('codex', 'ps1'))
+    .on(['GET', 'HEAD'], `${exactTokenPath}/claude.sh`, serveSetupScript('claude', 'sh'))
+    .on(['GET', 'HEAD'], `${exactTokenPath}/claude.ps1`, serveSetupScript('claude', 'ps1'))
+    .on(['GET', 'HEAD'], `${exactTokenPath}/codex.sh`, serveSetupScript('codex', 'sh'))
+    .on(['GET', 'HEAD'], `${exactTokenPath}/codex.ps1`, serveSetupScript('codex', 'ps1'))
     // Consume every near-miss beneath a token-shaped path before the host's
     // middleware. A mistyped filename or HTTP method still carries the live
     // credential in its URL segment and must not fall through to access logs.

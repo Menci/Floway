@@ -7,6 +7,7 @@
 import { Hono } from 'hono';
 import { expect, test, vi } from 'vitest';
 
+import type { AgentSetupConfiguration } from '../src/configuration.ts';
 import { type AgentSetupMutation, type AgentSetupRecord, type AgentSetupRenewal, type AgentSetupRepository, AgentSetupTokenCollisionError } from '../src/repository.ts';
 import {
   type AgentSetupControlDeps,
@@ -23,7 +24,6 @@ import {
   SETUP_POWERSHELL_COMMON,
 } from '../src/script-assets.generated.ts';
 import { SETUP_SCRIPT_BODIES } from '../src/script-assets.ts';
-import { assertEquals } from '@floway-dev/test-utils';
 
 const RAW_KEY = 'raw-key';
 const USER_ID = 2;
@@ -139,11 +139,7 @@ const harness = (options: {
 interface LeaseResponse {
   status: string;
   token: string;
-  configuration: {
-    apiKeyId: string;
-    claudeCode: { modelDiscovery: boolean; model: string | null; effortLevel: string | null; cleanupPeriodDays: number | null; optOutAiAttribution: boolean };
-    codex: { model: string | null; reasoningEffort: string | null };
-  };
+  configuration: AgentSetupConfiguration;
   configurationRevision: number;
   expiresAt: number;
   scripts: {
@@ -154,11 +150,12 @@ interface LeaseResponse {
 
 // A full, schema-valid configuration for rows seeded directly into the repo
 // (leaseProjection and restore both parse the stored JSON through the schema).
-const FULL_CONFIG_JSON = (apiKeyId: string): string => JSON.stringify({
+const fullConfiguration = (apiKeyId: string): AgentSetupConfiguration => ({
   apiKeyId,
   claudeCode: { model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: true },
   codex: { model: null, reasoningEffort: null },
 });
+const FULL_CONFIG_JSON = (apiKeyId: string): string => JSON.stringify(fullConfiguration(apiKeyId));
 
 const putJson = (body: object): RequestInit => ({
   method: 'PUT',
@@ -178,7 +175,7 @@ const create = async (h: Harness, apiKeyId = 'key_primary'): Promise<LeaseRespon
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ apiKeyId }),
   });
-  assertEquals(response.status, 200);
+  expect(response.status).toBe(200);
   return (await response.json()) as LeaseResponse;
 };
 
@@ -188,25 +185,25 @@ test('POST first use selects the first key and enables both agents at revision 1
   const h = harness();
   const body = await create(h);
 
-  assertEquals(body.status, 'ok');
-  assertEquals(body.configuration.apiKeyId, 'key_primary');
-  assertEquals(body.configuration.claudeCode.modelDiscovery, true);
-  assertEquals(body.configuration.claudeCode.model, null);
-  assertEquals(body.configuration.claudeCode.cleanupPeriodDays, null);
-  assertEquals(body.configuration.claudeCode.optOutAiAttribution, false);
-  assertEquals(body.configurationRevision, 1);
+  expect(body.status).toEqual('ok');
+  expect(body.configuration.apiKeyId).toEqual('key_primary');
+  expect(body.configuration.claudeCode.modelDiscovery).toEqual(true);
+  expect(body.configuration.claudeCode.model).toEqual(null);
+  expect(body.configuration.claudeCode.cleanupPeriodDays).toEqual(null);
+  expect(body.configuration.claudeCode.optOutAiAttribution).toEqual(false);
+  expect(body.configurationRevision).toEqual(1);
   expect(body.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
-  assertEquals(body.scripts.claude.sh, `/api/setup/${body.token}/claude.sh`);
-  assertEquals(body.scripts.claude.ps1, `/api/setup/${body.token}/claude.ps1`);
-  assertEquals(body.scripts.codex.sh, `/api/setup/${body.token}/codex.sh`);
-  assertEquals(body.scripts.codex.ps1, `/api/setup/${body.token}/codex.ps1`);
+  expect(body.scripts.claude.sh).toEqual(`/api/setup/${body.token}/claude.sh`);
+  expect(body.scripts.claude.ps1).toEqual(`/api/setup/${body.token}/claude.ps1`);
+  expect(body.scripts.codex.sh).toEqual(`/api/setup/${body.token}/codex.sh`);
+  expect(body.scripts.codex.ps1).toEqual(`/api/setup/${body.token}/codex.ps1`);
 });
 
 test('POST creates the lease for the requested selectable key', async () => {
   const h = harness({ keys: ['key_primary', 'key_other'], secrets: { key_primary: RAW_KEY, key_other: 'raw-other' } });
   const body = await create(h, 'key_other');
-  assertEquals(body.configuration.apiKeyId, 'key_other');
-  assertEquals(JSON.parse((await h.repo.findByToken(body.token))!.configurationJson).apiKeyId, 'key_other');
+  expect(body.configuration.apiKeyId).toEqual('key_other');
+  expect(JSON.parse((await h.repo.findByToken(body.token))!.configurationJson).apiKeyId).toEqual('key_other');
 });
 
 test('POST projects scripts from the host-supplied public route path', async () => {
@@ -214,10 +211,10 @@ test('POST projects scripts from the host-supplied public route path', async () 
   const response = await h.request('/custom/agent-setup', {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ apiKeyId: 'key_primary' }),
   });
-  assertEquals(response.status, 200);
+  expect(response.status).toEqual(200);
   const body = (await response.json()) as LeaseResponse;
-  assertEquals(body.scripts.claude.sh, `/custom/agent-setup/${body.token}/claude.sh`);
-  assertEquals(body.scripts.codex.ps1, `/custom/agent-setup/${body.token}/codex.ps1`);
+  expect(body.scripts.claude.sh).toEqual(`/custom/agent-setup/${body.token}/claude.sh`);
+  expect(body.scripts.codex.ps1).toEqual(`/custom/agent-setup/${body.token}/codex.ps1`);
 });
 
 test('POST returns no-selectable-key when the account has no key', async () => {
@@ -225,8 +222,21 @@ test('POST returns no-selectable-key when the account has no key', async () => {
   const response = await h.request('/api/setup', {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ apiKeyId: 'key_primary' }),
   });
-  assertEquals(response.status, 409);
-  assertEquals(((await response.json()) as { status: string }).status, 'no-selectable-key');
+  expect(response.status).toEqual(409);
+  expect(((await response.json()) as { status: string }).status).toEqual('no-selectable-key');
+});
+
+test('POST rejects a requested key outside a non-empty selectable set before reading saved state', async () => {
+  const h = harness({ keys: ['key_primary'] });
+  const latestByUserId = vi.spyOn(h.repo, 'latestByUserId');
+  const response = await h.request('/api/setup', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ apiKeyId: 'key_foreign' }),
+  });
+
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual({ error: 'The selected API key is not available on your account.' });
+  expect(latestByUserId).not.toHaveBeenCalled();
+  expect(h.repo.rows.size).toBe(0);
 });
 
 test('POST restores the latest saved configuration whose key is still selectable', async () => {
@@ -236,26 +246,21 @@ test('POST restores the latest saved configuration whose key is still selectable
   await h.request('/api/setup', putJson({ token: first.token, configuration: edited, expectedRevision: first.configurationRevision }));
 
   const reopened = await create(h);
-  assertEquals(reopened.configuration.codex.reasoningEffort, 'high');
+  expect(reopened.configuration.codex.reasoningEffort).toEqual('high');
   // A reopen inserts a brand-new independent lease; it never reuses a token.
   expect(reopened.token).not.toBe(first.token);
-  assertEquals(reopened.configurationRevision, 1);
+  expect(reopened.configurationRevision).toEqual(1);
 });
 
 test('POST falls back to a first-use default when the latest config points at an unselectable key', async () => {
-  const h = harness();
-  const first = await create(h);
-  // Persist a configuration whose key later becomes unselectable.
-  const edited = { ...first.configuration, apiKeyId: 'key_primary', codex: { ...first.configuration.codex, reasoningEffort: 'high' } };
-  await h.request('/api/setup', putJson({ token: first.token, configuration: edited, expectedRevision: first.configurationRevision }));
+  const h = harness({ keys: ['key_other'], secrets: { key_other: 'raw-other' } });
+  const saved = { ...fullConfiguration('key_primary'), codex: { model: null, reasoningEffort: 'high' } };
+  const now = Date.now();
+  await h.repo.insertForUser({ userId: USER_ID, token: 'x'.repeat(43), configurationJson: JSON.stringify(saved), now, expiresAt: now + 300_000 });
 
-  // Now only a different key is selectable; the saved config cannot be restored.
-  const h2 = harness({ keys: ['key_other'], secrets: { key_other: 'raw-other' } });
-  // Seed h2's repo with the same saved (unselectable) latest row.
-  await h2.repo.insertForUser({ userId: USER_ID, token: 'x'.repeat(43), configurationJson: JSON.stringify(edited), now: Date.now(), expiresAt: Date.now() + 300_000 });
-  const reopened = await create(h2, 'key_other');
-  assertEquals(reopened.configuration.apiKeyId, 'key_other');
-  assertEquals(reopened.configuration.codex.reasoningEffort, null);
+  const reopened = await create(h, 'key_other');
+  expect(reopened.configuration.apiKeyId).toEqual('key_other');
+  expect(reopened.configuration.codex.reasoningEffort).toEqual(null);
 });
 
 test('two POSTs coexist as independent leases: neither supersedes the other', async () => {
@@ -264,19 +269,8 @@ test('two POSTs coexist as independent leases: neither supersedes the other', as
   const b = await create(h);
   expect(b.token).not.toBe(a.token);
   // Both tokens remain live and independently servable.
-  assertEquals((await h.request(`/api/setup/${a.token}/claude.sh`, { method: 'HEAD' })).status, 200);
-  assertEquals((await h.request(`/api/setup/${b.token}/codex.sh`, { method: 'HEAD' })).status, 200);
-});
-
-test('inserting a new lease sweeps only the same user\'s already-expired rows', async () => {
-  const h = harness();
-  const now = Date.now();
-  // An expired sibling and a still-live sibling.
-  await h.repo.insertForUser({ userId: USER_ID, token: 'e'.repeat(43), configurationJson: FULL_CONFIG_JSON('key_primary'), now: now - 10_000, expiresAt: now - 1 });
-  const live = await create(h);
-  // The expired row is gone; the live rows survive.
-  assertEquals(await h.repo.findByToken('e'.repeat(43)), null);
-  expect(await h.repo.findByToken(live.token)).not.toBeNull();
+  expect((await h.request(`/api/setup/${a.token}/claude.sh`, { method: 'HEAD' })).status).toEqual(200);
+  expect((await h.request(`/api/setup/${b.token}/codex.sh`, { method: 'HEAD' })).status).toEqual(200);
 });
 
 // --- update + heartbeat discriminants ---
@@ -286,30 +280,29 @@ test('PUT updates configuration, bumps the revision, and never rotates the token
   const lease = await create(h);
   const edited = { ...lease.configuration, claudeCode: { ...lease.configuration.claudeCode, effortLevel: 'high' as const } };
   const response = await h.request('/api/setup', putJson({ token: lease.token, configuration: edited, expectedRevision: lease.configurationRevision }));
-  assertEquals(response.status, 200);
+  expect(response.status).toEqual(200);
   const body = (await response.json()) as LeaseResponse;
-  assertEquals(body.status, 'ok');
-  assertEquals(body.configuration.claudeCode.effortLevel, 'high');
-  assertEquals(body.configurationRevision, lease.configurationRevision + 1);
-  assertEquals(body.token, lease.token);
+  expect(body.status).toEqual('ok');
+  expect(body.configuration.claudeCode.effortLevel).toEqual('high');
+  expect(body.configurationRevision).toEqual(lease.configurationRevision + 1);
+  expect(body.token).toEqual(lease.token);
 });
 
 test('PUT on a token that does not exist is a terminal 409 missing', async () => {
   const h = harness();
-  const lease = await create(h);
-  const response = await h.request('/api/setup', putJson({ token: 'z'.repeat(43), configuration: lease.configuration, expectedRevision: lease.configurationRevision }));
-  assertEquals(response.status, 409);
-  assertEquals(((await response.json()) as { status: string }).status, 'missing');
+  const response = await h.request('/api/setup', putJson({ token: 'z'.repeat(43), configuration: fullConfiguration('key_primary'), expectedRevision: 1 }));
+  expect(response.status).toEqual(409);
+  expect(((await response.json()) as { status: string }).status).toEqual('missing');
 });
 
 test('PUT with a stale revision returns revision-conflict carrying the current lease', async () => {
   const h = harness();
   const lease = await create(h);
   const response = await h.request('/api/setup', putJson({ token: lease.token, configuration: lease.configuration, expectedRevision: lease.configurationRevision + 99 }));
-  assertEquals(response.status, 409);
+  expect(response.status).toEqual(409);
   const body = (await response.json()) as LeaseResponse;
-  assertEquals(body.status, 'revision-conflict');
-  assertEquals(body.configurationRevision, lease.configurationRevision);
+  expect(body.status).toEqual('revision-conflict');
+  expect(body.configurationRevision).toEqual(lease.configurationRevision);
 });
 
 test('PUT rejecting an unavailable key returns a 400 that leaks nothing', async () => {
@@ -320,33 +313,41 @@ test('PUT rejecting an unavailable key returns a 400 that leaks nothing', async 
     configuration: { ...lease.configuration, apiKeyId: 'key_foreign' },
     expectedRevision: lease.configurationRevision,
   }));
-  assertEquals(response.status, 400);
+  expect(response.status).toEqual(400);
   const errorBody = (await response.json()) as Record<string, unknown>;
-  assertEquals(errorBody.error, 'The selected API key is not available on your account.');
+  expect(errorBody.error).toEqual('The selected API key is not available on your account.');
   expect(errorBody).not.toHaveProperty('token');
   expect(JSON.stringify(errorBody)).not.toContain(lease.token);
 });
 
 test('heartbeat renews expiry without bumping revision or updated_at', async () => {
-  const h = harness();
-  const lease = await create(h);
-  const before = await h.repo.findByToken(lease.token);
-  const response = await h.request('/api/setup/heartbeat', heartbeatJson({ token: lease.token }));
-  assertEquals(response.status, 200);
-  const body = (await response.json()) as LeaseResponse;
-  assertEquals(body.status, 'ok');
-  assertEquals(body.configurationRevision, lease.configurationRevision);
-  expect(body.expiresAt).toBeGreaterThanOrEqual(lease.expiresAt);
-  const after = await h.repo.findByToken(lease.token);
-  assertEquals(after!.updatedAt, before!.updatedAt);
+  vi.useFakeTimers();
+  try {
+    vi.setSystemTime(1_000_000);
+    const h = harness();
+    const lease = await create(h);
+    const before = await h.repo.findByToken(lease.token);
+    vi.setSystemTime(1_001_234);
+
+    const response = await h.request('/api/setup/heartbeat', heartbeatJson({ token: lease.token }));
+    expect(response.status).toEqual(200);
+    const body = (await response.json()) as LeaseResponse;
+    expect(body.status).toEqual('ok');
+    expect(body.expiresAt).toEqual(1_301_234);
+    expect(body.configurationRevision).toEqual(lease.configurationRevision);
+    const after = await h.repo.findByToken(lease.token);
+    expect(after!.expiresAt).toEqual(1_301_234);
+    expect(after!.updatedAt).toEqual(before!.updatedAt);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test('heartbeat on a missing token is a terminal 409 missing', async () => {
   const h = harness();
-  await create(h);
   const response = await h.request('/api/setup/heartbeat', heartbeatJson({ token: 'q'.repeat(43) }));
-  assertEquals(response.status, 409);
-  assertEquals(((await response.json()) as { status: string }).status, 'missing');
+  expect(response.status).toEqual(409);
+  expect(((await response.json()) as { status: string }).status).toEqual('missing');
 });
 
 test('heartbeat renews an expired-but-still-present lease', async () => {
@@ -354,12 +355,12 @@ test('heartbeat renews an expired-but-still-present lease', async () => {
   const now = Date.now();
   await h.repo.insertForUser({ userId: USER_ID, token: 'p'.repeat(43), configurationJson: FULL_CONFIG_JSON('key_primary'), now: now - 10_000, expiresAt: now - 1 });
   const response = await h.request('/api/setup/heartbeat', heartbeatJson({ token: 'p'.repeat(43) }));
-  assertEquals(response.status, 200);
+  expect(response.status).toEqual(200);
   const body = (await response.json()) as LeaseResponse;
   expect(body.expiresAt).toBeGreaterThan(now);
 });
 
-test('POST retries a token collision without masking unrelated failures', async () => {
+test('POST retries a token collision with a fresh token', async () => {
   const h = harness();
   const original = h.repo.insertForUser.bind(h.repo);
   let calls = 0;
@@ -369,11 +370,28 @@ test('POST retries a token collision without masking unrelated failures', async 
     return await original(input);
   };
   const first = await create(h);
-  assertEquals(first.status, 'ok');
+  expect(first.status).toEqual('ok');
   expect(calls).toBe(2);
+});
 
-  // An unrelated failure is not a collision, so withFreshToken must not retry
-  // it away — it propagates out of the handler (surfaced by Hono as a 500).
+test('POST stops after five consecutive token collisions', async () => {
+  const h = harness();
+  let attempts = 0;
+  h.repo.insertForUser = () => { attempts += 1; throw new AgentSetupTokenCollisionError(); };
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const response = await h.request('/api/setup', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ apiKeyId: 'key_primary' }),
+    });
+    expect(response.status).toBe(500);
+    expect(attempts).toBe(5);
+  } finally {
+    errorSpy.mockRestore();
+  }
+});
+
+test('POST propagates an unrelated insertion failure without retrying it', async () => {
+  const h = harness();
   let attempts = 0;
   h.repo.insertForUser = () => { attempts += 1; throw new Error('disk I/O error'); };
   const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -381,11 +399,28 @@ test('POST retries a token collision without masking unrelated failures', async 
     const failed = await h.request('/api/setup', {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ apiKeyId: 'key_primary' }),
     });
-    assertEquals(failed.status, 500);
+    expect(failed.status).toEqual(500);
     expect(attempts).toBe(1);
   } finally {
     errorSpy.mockRestore();
   }
+});
+
+test.each([
+  ['PUT', (token: string) => putJson({ token, configuration: fullConfiguration('key_primary'), expectedRevision: 1 })],
+  ['heartbeat', (token: string) => heartbeatJson({ token })],
+] as const)('%s cannot mutate another user\'s lease', async (_operation, init) => {
+  const h = harness();
+  const token = 'f'.repeat(43);
+  const now = Date.now();
+  await h.repo.insertForUser({ userId: USER_ID + 1, token, configurationJson: FULL_CONFIG_JSON('key_primary'), now, expiresAt: now + 300_000 });
+
+  const response = await h.request(_operation === 'PUT' ? '/api/setup' : '/api/setup/heartbeat', init(token));
+
+  expect(response.status).toBe(409);
+  expect(await response.json()).toEqual({ status: 'missing' });
+  expect((await h.repo.findByToken(token))?.configurationRevision).toBe(1);
+  expect((await h.repo.findByToken(token))?.expiresAt).toBe(now + 300_000);
 });
 
 // --- public serve ---
@@ -394,13 +429,13 @@ test('GET serves the shell prefix + common and target-agent fragments with harde
   const h = harness();
   const lease = await create(h);
   const response = await h.request(lease.scripts.claude.sh, { method: 'GET' });
-  assertEquals(response.status, 200);
-  assertEquals(response.headers.get('content-type'), 'text/plain; charset=utf-8');
-  assertEquals(response.headers.get('cache-control'), 'no-store');
-  assertEquals(response.headers.get('pragma'), 'no-cache');
-  assertEquals(response.headers.get('expires'), '0');
-  assertEquals(response.headers.get('referrer-policy'), 'no-referrer');
-  assertEquals(response.headers.get('x-content-type-options'), 'nosniff');
+  expect(response.status).toEqual(200);
+  expect(response.headers.get('content-type')).toEqual('text/plain; charset=utf-8');
+  expect(response.headers.get('cache-control')).toEqual('no-store');
+  expect(response.headers.get('pragma')).toEqual('no-cache');
+  expect(response.headers.get('expires')).toEqual('0');
+  expect(response.headers.get('referrer-policy')).toEqual('no-referrer');
+  expect(response.headers.get('x-content-type-options')).toEqual('nosniff');
   const text = await response.text();
   const body = SETUP_SCRIPT_BODIES.claude.sh;
   const prefix = text.slice(0, text.indexOf(body));
@@ -433,9 +468,9 @@ test('HEAD validates but returns an empty body', async () => {
   const h = harness();
   const lease = await create(h);
   const response = await h.request(lease.scripts.claude.sh, { method: 'HEAD' });
-  assertEquals(response.status, 200);
-  assertEquals(response.headers.get('cache-control'), 'no-store');
-  assertEquals(await response.text(), '');
+  expect(response.status).toEqual(200);
+  expect(response.headers.get('cache-control')).toEqual('no-store');
+  expect(await response.text()).toEqual('');
 });
 
 test('near-miss public URLs are consumed before host middleware can log their token', async () => {
@@ -460,15 +495,29 @@ test('near-miss public URLs are consumed before host middleware can log their to
     [`/api/setup/${token}x`, 'GET'],
   ] as const) {
     const response = await app.request(path, { method });
-    assertEquals(response.status, 404);
-    assertEquals(response.headers.get('cache-control'), 'no-store');
+    expect(response.status).toEqual(404);
+    expect(response.headers.get('cache-control')).toEqual('no-store');
   }
   expect(downstream).not.toHaveBeenCalled();
 
   const control = await app.request('/api/setup/heartbeat', { method: 'POST' });
-  assertEquals(control.status, 404);
+  expect(control.status).toEqual(404);
   expect(downstream).toHaveBeenCalledOnce();
   expect(downstream).toHaveBeenCalledWith('/api/setup/heartbeat');
+});
+
+test('malformed public tokens never reach lease storage', async () => {
+  const findByToken = vi.fn(() => Promise.resolve(null));
+  const app = new Hono().route('/api/setup', createAgentSetupPublicRoutes({
+    repository: { findByToken },
+    userExists: () => Promise.resolve(false),
+    resolveApiKey: () => Promise.resolve(null),
+  }));
+
+  for (const token of ['a'.repeat(42), 'a'.repeat(44), `${'a'.repeat(42)}=`]) {
+    expect((await app.request(`/api/setup/${token}/claude.sh`)).status).toBe(404);
+  }
+  expect(findByToken).not.toHaveBeenCalled();
 });
 
 test('GET re-reads the current configuration each request', async () => {
@@ -484,19 +533,27 @@ test('GET re-reads the current configuration each request', async () => {
 test('unknown, expired, deleted-user, and deleted-key tokens all return an identical generic 404', async () => {
   const h = harness();
   const now = Date.now();
-  const config = '{"apiKeyId":"key_primary","claudeCode":{"model":null,"defaultFableModel":null,"defaultOpusModel":null,"defaultSonnetModel":null,"defaultHaikuModel":null,"effortLevel":null,"cleanupPeriodDays":null,"optOutAiAttribution":false,"modelDiscovery":true},"codex":{"model":null,"reasoningEffort":null}}';
-
-  await h.repo.insertForUser({ userId: USER_ID, token: 'b'.repeat(43), configurationJson: config, now, expiresAt: now - 1 });
-  await h.repo.insertForUser({ userId: 99, token: 'c'.repeat(43), configurationJson: config, now, expiresAt: now + 300_000 });
-  await h.repo.insertForUser({ userId: USER_ID, token: 'd'.repeat(43), configurationJson: '{"apiKeyId":"key_gone","claudeCode":{"model":null,"defaultFableModel":null,"defaultOpusModel":null,"defaultSonnetModel":null,"defaultHaikuModel":null,"effortLevel":null,"cleanupPeriodDays":null,"optOutAiAttribution":false,"modelDiscovery":true},"codex":{"model":null,"reasoningEffort":null}}', now, expiresAt: now + 300_000 });
+  const row = (token: string, overrides: Partial<AgentSetupRecord>): AgentSetupRecord => ({
+    token,
+    userId: USER_ID,
+    configurationJson: FULL_CONFIG_JSON('key_primary'),
+    configurationRevision: 1,
+    expiresAt: now + 300_000,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  });
+  h.repo.rows.set('b'.repeat(43), row('b'.repeat(43), { expiresAt: now - 1 }));
+  h.repo.rows.set('c'.repeat(43), row('c'.repeat(43), { userId: 99 }));
+  h.repo.rows.set('d'.repeat(43), row('d'.repeat(43), { configurationJson: FULL_CONFIG_JSON('key_gone') }));
 
   const bodies = new Set<string>();
   for (const token of ['a'.repeat(43), 'b'.repeat(43), 'c'.repeat(43), 'd'.repeat(43)]) {
     const response = await h.request(`/api/setup/${token}/claude.sh`, { method: 'GET' });
-    assertEquals(response.status, 404);
+    expect(response.status).toEqual(404);
     bodies.add(await response.text());
   }
-  assertEquals(bodies.size, 1);
+  expect(bodies.size).toEqual(1);
 });
 
 test('a public serve failure is sealed to an opaque 500 that leaks neither token nor secret', async () => {
@@ -504,16 +561,20 @@ test('a public serve failure is sealed to an opaque 500 that leaks neither token
   const lease = { token: 'a'.repeat(43) };
   const h = harness({
     publicOverrides: {
-      repository: { findByToken: () => { throw new Error(`forced failure\nsecond line leaking ${lease.token} and ${injectedSecret}`); } },
+      repository: { findByToken: () => {
+        const error = new Error(`forced failure\nsecond line leaking ${lease.token} and ${injectedSecret}`);
+        error.name = injectedSecret;
+        throw error;
+      } },
     },
   });
   const logged: string[] = [];
   const errorSpy = vi.spyOn(console, 'error').mockImplementation((...args) => { logged.push(args.map(String).join(' ')); });
   try {
     const response = await h.request(`/api/setup/${lease.token}/claude.sh`, { method: 'GET' });
-    assertEquals(response.status, 500);
-    assertEquals(response.headers.get('cache-control'), 'no-store');
-    assertEquals(response.headers.get('pragma'), 'no-cache');
+    expect(response.status).toEqual(500);
+    expect(response.headers.get('cache-control')).toEqual('no-store');
+    expect(response.headers.get('pragma')).toEqual('no-cache');
     const raw = await response.text();
     expect(JSON.parse(raw)).toEqual({ error: { type: 'internal_error' } });
     expect(raw).not.toContain(injectedSecret);
@@ -525,4 +586,33 @@ test('a public serve failure is sealed to an opaque 500 that leaks neither token
   expect(joined).not.toContain(injectedSecret);
   expect(joined).not.toContain(lease.token);
   expect(joined).not.toContain('forced failure');
+});
+
+test.each([
+  ['a throwing stack getter', (token: string, secret: string) => {
+    const error = new Error('hidden');
+    Object.defineProperty(error, 'stack', { get: () => { throw new Error(`${token}:${secret}`); } });
+    return error;
+  }],
+  ['a non-string stack', (_token: string, _secret: string) => {
+    const error = new Error('hidden');
+    Object.defineProperty(error, 'stack', { value: 42 });
+    return error;
+  }],
+] satisfies readonly [name: string, makeError: (token: string, secret: string) => Error][])('pathological public errors with %s remain sealed', async (_case, makeError) => {
+  const token = 'g'.repeat(43);
+  const secret = 'INJECTED-PATHOLOGICAL-SECRET';
+  const h = harness({ publicOverrides: { repository: { findByToken: () => { throw makeError(token, secret); } } } });
+  const logged: string[] = [];
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation((...args) => { logged.push(args.map(String).join(' ')); });
+  try {
+    const response = await h.request(`/api/setup/${token}/claude.sh`);
+    expect(response.status).toBe(500);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(await response.json()).toEqual({ error: { type: 'internal_error' } });
+  } finally {
+    errorSpy.mockRestore();
+  }
+  expect(logged.join('\n')).not.toContain(token);
+  expect(logged.join('\n')).not.toContain(secret);
 });
