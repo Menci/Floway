@@ -1,7 +1,7 @@
 import type { GatewayProvider } from './registry.ts';
 import { getRepo } from '../../repo/index.ts';
 import { MODEL_CATALOG_REVISION } from '../../repo/models-cache-contract.ts';
-import { MODELS_REFRESH_CLAIM_LEASE_MS } from '../../repo/models-refresh-contract.ts';
+import { MODELS_REFRESH_CLAIM_LEASE_MS, modelsRefreshRetryAt } from '../../repo/models-refresh-contract.ts';
 import { serializeStoredConfig } from '../../repo/upstream-json.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { Fetcher, ProviderModel } from '@floway-dev/provider';
@@ -53,13 +53,14 @@ const runFetch = async (
   instance: GatewayProvider,
   fetcher: Fetcher,
   key: string,
+  token: string,
   loadProvidedModels?: () => Promise<ProviderModel[]>,
 ): Promise<ProviderModel[]> => {
   const generation = instance.modelsCacheGeneration;
   try {
     const models = [...await (loadProvidedModels?.() ?? instance.instance.getProvidedModels(fetcher))];
     const entry = { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now(), models, lastError: null };
-    const persisted = await getRepo().upstreams.saveModelsCache(key, generation, entry);
+    const persisted = await getRepo().upstreams.saveClaimedModelsCache(key, generation, token, entry);
     // The instance carries the row as it was read at request start, and a
     // request reaches this function more than once -- once per alias target
     // resolved. Writing the entry back keeps every later read in the request
@@ -69,7 +70,7 @@ const runFetch = async (
     return models;
   } catch (err) {
     const lastError = { message: errorMessage(err), at: Date.now() };
-    const persisted = await getRepo().upstreams.saveModelsCacheError(key, generation, lastError);
+    const persisted = await getRepo().upstreams.saveClaimedModelsCacheError(key, generation, token, lastError);
     if (persisted) {
       if (instance.modelsCache) instance.modelsCache.lastError = lastError;
       else instance.modelsCache = { revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError };
@@ -95,15 +96,17 @@ const runClaimedFetch = async (
     now - MODELS_REFRESH_CLAIM_LEASE_MS,
     force,
   );
-  if (!claimed) return null;
+  if (claimed === null) return null;
 
   try {
-    const models = await runFetch(instance, fetcher, instance.upstreamId, loadProvidedModels);
+    const models = await runFetch(instance, fetcher, instance.upstreamId, token, loadProvidedModels);
     await repo.upstreams.completeModelsRefreshSuccess(instance.upstreamId, token);
     return models;
   } catch (error) {
     try {
-      await repo.upstreams.completeModelsRefreshFailure(instance.upstreamId, token, Date.now());
+      const failureCount = claimed.failureCount + 1;
+      const now = Date.now();
+      await repo.upstreams.completeModelsRefreshFailure(instance.upstreamId, token, failureCount, modelsRefreshRetryAt(now, claimed.failureCount));
     } catch (backoffError) {
       throw new AggregateError([error, backoffError], errorMessage(error));
     }

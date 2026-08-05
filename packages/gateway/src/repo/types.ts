@@ -267,9 +267,15 @@ export interface UpstreamRepo {
   // cannot publish models or errors under newer credentials/configuration.
   saveModelsCache(id: string, generation: ModelsCacheGeneration, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean>;
   saveModelsCacheError(id: string, generation: ModelsCacheGeneration, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean>;
-  claimModelsRefresh(id: string, generation: ModelsCacheGeneration, token: string, now: number, staleClaimedBefore: number, force: boolean): Promise<boolean>;
+  saveClaimedModelsCache(id: string, generation: ModelsCacheGeneration, token: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean>;
+  saveClaimedModelsCacheError(id: string, generation: ModelsCacheGeneration, token: string, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean>;
+  claimModelsRefresh(id: string, generation: ModelsCacheGeneration, token: string, now: number, staleClaimedBefore: number, force: boolean): Promise<ModelsRefreshClaim | null>;
   completeModelsRefreshSuccess(id: string, token: string): Promise<void>;
-  completeModelsRefreshFailure(id: string, token: string, now: number): Promise<void>;
+  completeModelsRefreshFailure(id: string, token: string, failureCount: number, retryAt: number): Promise<void>;
+}
+
+export interface ModelsRefreshClaim {
+  failureCount: number;
 }
 
 export interface ModelsCacheGeneration {

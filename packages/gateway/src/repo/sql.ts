@@ -3,7 +3,6 @@ import { SqlExpirationSweepsRepo } from './expiration-sweeps-sql.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { decodeAliasTargets, decodeAnnouncedMetadata, encodeAliasTargets, encodeAnnouncedMetadata } from './model-alias-codecs.ts';
 import { MODEL_CATALOG_REVISION } from './models-cache-contract.ts';
-import { MODELS_REFRESH_BACKOFF_BASE_MS, MODELS_REFRESH_BACKOFF_CAP_MS, MODELS_REFRESH_BACKOFF_EXPONENT_CAP } from './models-refresh-contract.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
 import { SqlResponsesItemsRepo, SqlResponsesSnapshotsRepo } from './responses-state-sql.ts';
 import { generateSessionToken } from './session-tokens.ts';
@@ -979,8 +978,31 @@ class SqlUpstreamRepo implements UpstreamRepo {
     return (result.meta.changes ?? 0) > 0;
   }
 
-  async claimModelsRefresh(id: string, generation: ModelsCacheGeneration, token: string, now: number, staleClaimedBefore: number, force: boolean): Promise<boolean> {
+  async saveClaimedModelsCache(id: string, generation: ModelsCacheGeneration, token: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean> {
+    const rawConfig = await this.modelsCacheWriteConfig(id, generation);
+    if (rawConfig === null) return false;
     const result = await this.db
+      .prepare("UPDATE upstreams SET models_cache_json = ? WHERE id = ? AND updated_at = ? AND config_json = ? AND json_extract(models_refresh_json, '$.claimToken') = ?")
+      .bind(encodeUpstreamModelsCache({ ...cache, lastError: null }), id, generation.updatedAt, rawConfig, token)
+      .run();
+    return (result.meta.changes ?? 0) > 0;
+  }
+
+  async saveClaimedModelsCacheError(id: string, generation: ModelsCacheGeneration, token: string, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean> {
+    const rawConfig = await this.modelsCacheWriteConfig(id, generation);
+    if (rawConfig === null) return false;
+    const coldFailure = encodeUpstreamModelsCache({ revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError: error });
+    const result = await this.db
+      .prepare("UPDATE upstreams SET models_cache_json = CASE WHEN models_cache_json IS NULL THEN ? ELSE json_set(models_cache_json, '$.lastError', json(?)) END WHERE id = ? AND updated_at = ? AND config_json = ? AND json_extract(models_refresh_json, '$.claimToken') = ?")
+      .bind(coldFailure, JSON.stringify(error), id, generation.updatedAt, rawConfig, token)
+      .run();
+    return (result.meta.changes ?? 0) > 0;
+  }
+
+  async claimModelsRefresh(id: string, generation: ModelsCacheGeneration, token: string, now: number, staleClaimedBefore: number, force: boolean): Promise<{ failureCount: number } | null> {
+    const rawConfig = await this.modelsCacheWriteConfig(id, generation);
+    if (rawConfig === null) return null;
+    const row = await this.db
       .prepare(
         `UPDATE upstreams
          SET models_refresh_json = json_object(
@@ -989,7 +1011,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
            'claimToken', ?,
            'claimedAt', ?
          )
-         WHERE id = ? AND updated_at = ? AND (
+         WHERE id = ? AND updated_at = ? AND config_json = ? AND (
            ? = 1
            OR models_refresh_json IS NULL
            OR (
@@ -999,11 +1021,12 @@ class SqlUpstreamRepo implements UpstreamRepo {
                OR json_extract(models_refresh_json, '$.claimedAt') <= ?
              )
            )
-         )`,
+         )
+         RETURNING json_extract(models_refresh_json, '$.failCount') AS fail_count`,
       )
-      .bind(token, now, id, generation.updatedAt, sqliteBoolean(force), now, staleClaimedBefore)
-      .run();
-    return (result.meta.changes ?? 0) > 0;
+      .bind(token, now, id, generation.updatedAt, rawConfig, sqliteBoolean(force), now, staleClaimedBefore)
+      .first<{ fail_count: number }>();
+    return row === null ? null : { failureCount: row.fail_count };
   }
 
   async completeModelsRefreshSuccess(id: string, token: string): Promise<void> {
@@ -1013,22 +1036,19 @@ class SqlUpstreamRepo implements UpstreamRepo {
       .run();
   }
 
-  async completeModelsRefreshFailure(id: string, token: string, now: number): Promise<void> {
+  async completeModelsRefreshFailure(id: string, token: string, failureCount: number, retryAt: number): Promise<void> {
     await this.db
       .prepare(
         `UPDATE upstreams
          SET models_refresh_json = json_object(
-           'failCount', coalesce(json_extract(models_refresh_json, '$.failCount'), 0) + 1,
-           'retryAt', ? + min(
-             ? * (1 << min(coalesce(json_extract(models_refresh_json, '$.failCount'), 0), ?)),
-             ?
-           ),
+           'failCount', ?,
+           'retryAt', ?,
            'claimToken', NULL,
            'claimedAt', NULL
          )
          WHERE id = ? AND json_extract(models_refresh_json, '$.claimToken') = ?`,
       )
-      .bind(now, MODELS_REFRESH_BACKOFF_BASE_MS, MODELS_REFRESH_BACKOFF_EXPONENT_CAP, MODELS_REFRESH_BACKOFF_CAP_MS, id, token)
+      .bind(failureCount, retryAt, id, token)
       .run();
   }
 

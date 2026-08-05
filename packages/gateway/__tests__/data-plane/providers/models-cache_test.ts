@@ -252,6 +252,52 @@ describe('fetchUpstreamModelsCached', () => {
     expect((await storedCache(repo))?.models.map(model => model.id)).toEqual(['new-tenant-model']);
   });
 
+  test('a forced fetch prevents an older claim from publishing a late success', async () => {
+    const repo = await setupRepo();
+    let resolveOld: ((models: ProviderModel[]) => void) | null = null;
+    const oldFetch = vi.fn(() => new Promise<ProviderModel[]>(resolve => { resolveOld = resolve; }));
+    const oldScheduled = captureScheduled();
+    await fetchUpstreamModelsCached(
+      stubInstance(oldFetch, null, CACHE_GENERATION, 'old-claim'),
+      { scheduler: oldScheduled.scheduler, fetcher: directFetcher },
+    );
+    await vi.waitFor(() => expect(oldFetch).toHaveBeenCalledTimes(1));
+
+    const forced = await fetchUpstreamModelsCached(
+      stubInstance(async () => [aModel('forced-model')], null, CACHE_GENERATION, 'forced-claim'),
+      { scheduler: () => {}, fetcher: directFetcher, force: true },
+    );
+    expect(forced.map(model => model.id)).toEqual(['forced-model']);
+
+    resolveOld!([aModel('late-old-model')]);
+    await oldScheduled.promises[0];
+    expect((await storedCache(repo))?.models.map(model => model.id)).toEqual(['forced-model']);
+  });
+
+  test('a forced fetch prevents an older claim from publishing a late error', async () => {
+    const repo = await setupRepo();
+    let rejectOld: ((error: Error) => void) | null = null;
+    const oldFetch = vi.fn(() => new Promise<ProviderModel[]>((_resolve, reject) => { rejectOld = reject; }));
+    const oldScheduled = captureScheduled();
+    await fetchUpstreamModelsCached(
+      stubInstance(oldFetch, null, CACHE_GENERATION, 'old-error-claim'),
+      { scheduler: oldScheduled.scheduler, fetcher: directFetcher },
+    );
+    await vi.waitFor(() => expect(oldFetch).toHaveBeenCalledTimes(1));
+
+    await fetchUpstreamModelsCached(
+      stubInstance(async () => [aModel('forced-model')], null, CACHE_GENERATION, 'forced-error-claim'),
+      { scheduler: () => {}, fetcher: directFetcher, force: true },
+    );
+    rejectOld!(new Error('late old failure'));
+    await expect(oldScheduled.promises[0]).rejects.toThrow('late old failure');
+
+    expect(await storedCache(repo)).toMatchObject({
+      models: [{ id: 'forced-model' }],
+      lastError: null,
+    });
+  });
+
   test('catalog revision mismatch is cold and refreshes without blocking', async () => {
     const repo = await setupRepo();
     const cache = await seedCache(repo, {
