@@ -1,4 +1,4 @@
-import { hex } from '@scure/base';
+import { encodeHex } from '../common/base-encoding.ts';
 
 // These are only the Responses item types Floway itself can create, not a
 // catalog or validator for provider-returned item IDs.
@@ -26,5 +26,5 @@ export const createRandomResponsesItemId = (type: GeneratedResponsesItemType): s
   const prefix = generatedItemPrefixes[type];
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
-  return `${prefix}_${hex.encode(bytes)}`;
+  return `${prefix}_${encodeHex(bytes)}`;
 };

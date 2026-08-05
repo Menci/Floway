@@ -16,7 +16,7 @@
 // Round-trip guarantee: `parseProxyUri(formatProxyUri(c))` deep-equals `c`
 // for every supported variant. The serialized string is canonical-shaped
 // but not byte-for-byte identical with arbitrary inputs — query order,
-// percent-encoding, and SS-2022 base64 padding may vary.
+// and percent-encoding may vary.
 
 import { base64UrlDecodeBytes, base64UrlEncodeBytes, utf8Bytes } from './bytes.ts';
 import { ProxyUriError } from './errors.ts';

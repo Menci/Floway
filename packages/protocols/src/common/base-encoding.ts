@@ -36,3 +36,21 @@ export const encodeBase64url = (bytes: Uint8Array): string => base64urlnopad.enc
 export const encodeHex = (bytes: Uint8Array): string => hex.encode(bytes);
 
 export const decodeHex = (value: string): Uint8Array => hex.decode(value);
+
+export const decodeCanonicalBase64 = (value: string): Uint8Array | null => {
+  try {
+    const bytes = base64.decode(value);
+    return base64.encode(bytes) === value ? bytes : null;
+  } catch {
+    return null;
+  }
+};
+
+export const decodeCanonicalBase64url = (value: string): Uint8Array | null => {
+  try {
+    const bytes = base64urlnopad.decode(value);
+    return base64urlnopad.encode(bytes) === value ? bytes : null;
+  } catch {
+    return null;
+  }
+};

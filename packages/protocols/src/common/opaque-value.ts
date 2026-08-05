@@ -1,4 +1,9 @@
-import { base64, base64urlnopad } from '@scure/base';
+import {
+  decodeCanonicalBase64,
+  decodeCanonicalBase64url,
+  encodeBase64,
+  encodeBase64url,
+} from './base-encoding.ts';
 
 export type OpaqueValueOrigin = 'raw' | 'base64' | 'base64url';
 
@@ -40,8 +45,8 @@ export const decodeOpaqueValue = (value: string): DecodedOpaqueValue => {
 
 export const encodeOpaqueValue = (bytes: Uint8Array, origin: OpaqueValueOrigin): string => {
   switch (origin) {
-  case 'base64': return bytesToBase64(bytes);
-  case 'base64url': return bytesToBase64url(bytes);
+  case 'base64': return encodeBase64(bytes);
+  case 'base64url': return encodeBase64url(bytes);
   case 'raw': return rawStringFromBytes(bytes);
   }
 };
@@ -54,7 +59,7 @@ export const appendOpaqueTrailer = (
     throw new RangeError('Opaque trailer exceeds the 2-byte length marker');
   }
   const framed = concatBytes(original?.bytes ?? new Uint8Array(), trailer, uint16be(trailer.length));
-  return original?.origin === 'base64url' ? bytesToBase64url(framed) : bytesToBase64(framed);
+  return original?.origin === 'base64url' ? encodeBase64url(framed) : encodeBase64(framed);
 };
 
 export const splitOpaqueTrailer = (value: string, minimumTrailerBytes = 1): SplitOpaqueTrailer | null => {
@@ -68,28 +73,6 @@ export const splitOpaqueTrailer = (value: string, minimumTrailerBytes = 1): Spli
     trailer: framed.subarray(originalLength, framed.length - LENGTH_MARKER_BYTES),
   };
 };
-
-const decodeCanonicalBase64 = (value: string): Uint8Array | null => {
-  try {
-    const bytes = base64.decode(value);
-    return base64.encode(bytes) === value ? bytes : null;
-  } catch {
-    return null;
-  }
-};
-
-const decodeCanonicalBase64url = (value: string): Uint8Array | null => {
-  try {
-    const bytes = base64urlnopad.decode(value);
-    return base64urlnopad.encode(bytes) === value ? bytes : null;
-  } catch {
-    return null;
-  }
-};
-
-const bytesToBase64 = (bytes: Uint8Array): string => base64.encode(bytes);
-
-const bytesToBase64url = (bytes: Uint8Array): string => base64urlnopad.encode(bytes);
 
 const rawStringToBytes = (value: string): Uint8Array => {
   const bytes = new Uint8Array(value.length * 2);

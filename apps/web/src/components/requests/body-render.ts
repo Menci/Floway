@@ -1,4 +1,4 @@
-import { decodeWebBase64, decodeWebBase64BinaryString, encodeBase64 } from '../../lib/base-encoding';
+import { decodeWebBase64, decodeWebBase64BinaryString, encodeBase64BinaryString } from '../../lib/base-encoding';
 import { errorMessage } from '../../lib/error-message';
 import type { DumpBody } from '@floway-dev/gateway/dump-types';
 import { isTextualMediaType, parseMediaType } from '@floway-dev/protocols/common';
@@ -73,7 +73,7 @@ const renderMultipart = (base64: string, contentType: string): string | null => 
       const type = /^content-type:\s*(.+)$/im.exec(headers)?.[1]?.trim() ?? '';
       const textual = !type || isTextualMediaType(type);
       if (textual) return `${headers}\r\n\r\n${new TextDecoder().decode(Uint8Array.from(data, c => c.charCodeAt(0)))}`;
-      const encoded = encodeBase64(bytesFromBinaryString(data)).replace(/.{76}(?=.)/g, '$&\n');
+      const encoded = encodeBase64BinaryString(data).replace(/.{76}(?=.)/g, '$&\n');
       return `${headers}\r\n\r\n[binary, ${data.length} bytes, content-type=${type}]\r\n${encoded}`;
     });
     return `--${boundary}\r\n${rendered.join(`\r\n--${boundary}\r\n`)}\r\n--${boundary}--\r\n`;
@@ -81,6 +81,3 @@ const renderMultipart = (base64: string, contentType: string): string | null => 
     return null;
   }
 };
-
-const bytesFromBinaryString = (value: string): Uint8Array =>
-  Uint8Array.from(value, character => character.charCodeAt(0));

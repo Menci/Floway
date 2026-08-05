@@ -17,6 +17,9 @@ export const encodeBase64 = (bytes: Uint8Array): string => {
   return btoa(binaryStringFromBytes(bytes));
 };
 
+export const encodeBase64BinaryString = (value: string): string =>
+  hasTypedArrayBase64() ? base64.encode(bytesFromBinaryString(value)) : btoa(value);
+
 export const encodeBase64url = (bytes: Uint8Array): string => base64urlnopad.encode(bytes);
 
 const hasTypedArrayBase64 = (): boolean =>
