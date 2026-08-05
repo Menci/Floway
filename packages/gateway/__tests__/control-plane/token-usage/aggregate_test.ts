@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { aggregateUsageForDashboard, aggregateUsageForDisplay } from '../../../src/control-plane/token-usage/aggregate.ts';
+import { aggregateUsageForDisplay, aggregateUsageForOverview } from '../../../src/control-plane/token-usage/aggregate.ts';
 import type { TokenUsage, UsageRecord } from '../../../src/repo/types.ts';
 import { tokenCountsFromUsage, tokenUsageMetrics } from '../../../src/repo/usage-metrics.ts';
 import type { PriceVector } from '@floway-dev/protocols/common';
@@ -57,18 +57,24 @@ test('aggregateUsageForDisplay groups variants that share public model id', () =
   assertEquals('modelKey' in out[0], false);
 });
 
-test('aggregateUsageForDashboard preserves upstream as a dashboard dimension', () => {
-  const out = aggregateUsageForDashboard([
-    baseRecord({ upstream: 'up_copilot', requests: 2 }),
-    baseRecord({ upstream: 'up_custom', requests: 3 }),
-    baseRecord({ upstream: null, requests: 4 }),
-  ]);
+test('aggregateUsageForOverview builds every axis from one record traversal', () => {
+  const out = aggregateUsageForOverview([
+    baseRecord({ keyId: 'key-1', upstream: 'up_copilot', requests: 2 }),
+    baseRecord({ keyId: 'key-2', upstream: null, requests: 4 }),
+  ], {
+    series: { bucket: 'hour', groupBy: 'upstream', timezoneOffsetMinutes: 0 },
+    none: { bucket: 'all', groupBy: 'none', timezoneOffsetMinutes: 0 },
+    userId: { bucket: 'all', groupBy: 'userId', timezoneOffsetMinutes: 0 },
+    keyId: { bucket: 'all', groupBy: 'keyId', timezoneOffsetMinutes: 0 },
+  }, new Map([['key-1', 1], ['key-2', 2]]), new Set(['key-1']));
 
-  assertEquals(out.map(record => [record.upstream, record.requests]), [
-    [null, 4],
-    ['up_copilot', 2],
-    ['up_custom', 3],
+  assertEquals(out.series.map(record => [record.group, record.requests]), [
+    ['none', 4],
+    ['upstream:up_copilot', 2],
   ]);
+  assertEquals(out.none.map(record => [record.group, record.requests]), [['all', 6]]);
+  assertEquals(out.userId.map(record => [record.group, record.requests]), [['1', 2], ['2', 4]]);
+  assertEquals(out.keyId.map(record => [record.group, record.requests]), [['key-1', 2]]);
 });
 
 test('aggregateUsageForDisplay applies cost from each record rate snapshot', () => {
