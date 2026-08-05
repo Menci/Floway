@@ -1,7 +1,5 @@
 import { converter, formatHex, modeOklch, modeRgb, useMode as registerMode } from 'culori/fn';
 
-// culori/fn starts with an empty global mode registry. Hue rendering owns only
-// the RGB↔OKLCH path it converts here; color.ts uses registry-free operations.
 registerMode(modeRgb);
 registerMode(modeOklch);
 const toRgb = converter('rgb');
