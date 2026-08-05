@@ -484,6 +484,9 @@ importers:
       '@floway-dev/provider':
         specifier: workspace:*
         version: link:../provider
+      oauth4webapi:
+        specifier: ^3.8.6
+        version: 3.8.6
     devDependencies:
       '@floway-dev/test-utils':
         specifier: workspace:*
@@ -4188,6 +4191,9 @@ packages:
   node-releases@2.0.51:
     resolution: {integrity: sha512-wRNIrw4DmVLKQlbgOMdkMx27Wrpzes2hh5Jtbi2bjPd+4wJstWIqP5A+lscnqbm0xxmT5Bpg8Lec5ItEBwx6BQ==}
     engines: {node: '>=18'}
+
+  oauth4webapi@3.8.6:
+    resolution: {integrity: sha512-iwemM91xz8nryHti2yTmg5fhyEMVOkOXwHNqbvcATjyajb5oQxCQzrNOA6uElRHuMhQQTKUyFKV9y/CNyg25BQ==}
 
   object-assign@4.1.1:
     resolution: {integrity: sha512-rJgTQnkUnH1sFw8yT6VSU3zD3sWmu6sZhIseY8VX+GRu3P6F7Fu+JNDoXfklElbLJSnc3FUQHVe4cU5hj+BcUg==}
@@ -9574,6 +9580,8 @@ snapshots:
   node-fetch-native@1.6.7: {}
 
   node-releases@2.0.51: {}
+
+  oauth4webapi@3.8.6: {}
 
   object-assign@4.1.1: {}
 
