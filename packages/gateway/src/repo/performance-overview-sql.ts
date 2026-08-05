@@ -92,27 +92,25 @@ const summaryAggregateSql = performanceAxisSql.map(({ axis, bucket, group, where
   WHERE ${where}
   GROUP BY ${bucket}, ${group}`).join('\n  UNION ALL');
 
-const histogramAggregateSql = performanceAxisSql.map(({ axis, bucket, group, where }) => `
+const histogramAggregateSql = performanceAxisSql.map(({ axis, bucket, group, where }) => {
+  const histogramBucket = bucket.replaceAll('filtered_summary', 'filtered_histogram');
+  const histogramGroup = group.replaceAll('filtered_summary', 'filtered_histogram');
+  const histogramWhere = where.replaceAll('filtered_summary', 'filtered_histogram');
+  return `
   SELECT
     '${axis}' AS axis,
-    ${bucket} AS bucket,
-    ${group} AS group_value,
-    performance_buckets.metric,
-    performance_buckets.lower,
-    MAX(performance_buckets.upper) AS upper,
-    SUM(performance_buckets.count) AS count
-  FROM filtered_summary
+    ${histogramBucket} AS bucket,
+    ${histogramGroup} AS group_value,
+    filtered_histogram.metric,
+    filtered_histogram.lower,
+    MAX(filtered_histogram.upper) AS upper,
+    SUM(filtered_histogram.count) AS count
+  FROM filtered_histogram
   CROSS JOIN settings
-  JOIN bucket_map ON bucket_map.hour = filtered_summary.hour
-  JOIN performance_buckets ON
-    performance_buckets.hour = filtered_summary.hour
-    AND performance_buckets.key_id = filtered_summary.key_id
-    AND performance_buckets.model = filtered_summary.model
-    AND performance_buckets.upstream = filtered_summary.upstream
-    AND performance_buckets.operation = filtered_summary.operation
-    AND performance_buckets.runtime_location = filtered_summary.runtime_location
-  WHERE ${where}
-  GROUP BY ${bucket}, ${group}, performance_buckets.metric, performance_buckets.lower`).join('\n  UNION ALL');
+  JOIN bucket_map ON bucket_map.hour = filtered_histogram.hour
+  WHERE ${histogramWhere}
+  GROUP BY ${histogramBucket}, ${histogramGroup}, filtered_histogram.metric, filtered_histogram.lower`;
+}).join('\n  UNION ALL');
 
 const overviewSql = (scoped: boolean) => `/* performance-overview */
 WITH
@@ -175,11 +173,13 @@ filtered_summary AS MATERIALIZED (
     AND (NOT EXISTS (SELECT 1 FROM user_filter) OR user_id IN (SELECT value FROM user_filter))
     AND (NOT EXISTS (SELECT 1 FROM key_filter) OR key_id IN (SELECT value FROM key_filter))
 ),
-summary_aggregates AS MATERIALIZED (
-  ${summaryAggregateSql}
-),
-invalid_histogram_bounds AS MATERIALIZED (
-  SELECT 1 AS present
+filtered_histogram AS MATERIALIZED (
+  SELECT
+    filtered_summary.*,
+    performance_buckets.metric,
+    performance_buckets.lower,
+    performance_buckets.upper,
+    performance_buckets.count
   FROM filtered_summary
   JOIN performance_buckets ON
     performance_buckets.hour = filtered_summary.hour
@@ -188,8 +188,15 @@ invalid_histogram_bounds AS MATERIALIZED (
     AND performance_buckets.upstream = filtered_summary.upstream
     AND performance_buckets.operation = filtered_summary.operation
     AND performance_buckets.runtime_location = filtered_summary.runtime_location
-  GROUP BY performance_buckets.metric, performance_buckets.lower
-  HAVING COUNT(DISTINCT COALESCE(CAST(performance_buckets.upper AS TEXT), 'null')) > 1
+),
+summary_aggregates AS MATERIALIZED (
+  ${summaryAggregateSql}
+),
+invalid_histogram_bounds AS MATERIALIZED (
+  SELECT 1 AS present
+  FROM filtered_histogram
+  GROUP BY metric, lower
+  HAVING COUNT(DISTINCT COALESCE(CAST(upper AS TEXT), 'null')) > 1
   LIMIT 1
 ),
 histogram AS MATERIALIZED (
