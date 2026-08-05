@@ -18,6 +18,7 @@ import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelCon
 
 const MAX_CUSTOM_MODEL_PAGES = 32;
 const MAX_CUSTOM_MODELS = 4096;
+const MAX_CUSTOM_CATALOG_RESPONSE_BYTES = 16 * 1024 * 1024;
 
 export interface CustomRawModel {
   id: string;
@@ -160,8 +161,17 @@ const parseCustomModelsPage = (value: unknown): CustomModelsPage | null => {
 const paginationError = (message: string): ProviderModelsUnavailableError =>
   new ProviderModelsUnavailableError(null, new Error(message));
 
-export const fetchCustomModels = async (config: CustomUpstreamConfig, fetcher: Fetcher): Promise<CustomModelsResponse> => {
+export const fetchCustomModels = async (
+  config: CustomUpstreamConfig,
+  fetcher: Fetcher,
+  options: { maxCatalogResponseBytes?: number } = {},
+): Promise<CustomModelsResponse> => {
+  const maxCatalogResponseBytes = options.maxCatalogResponseBytes ?? MAX_CUSTOM_CATALOG_RESPONSE_BYTES;
+  if (!Number.isSafeInteger(maxCatalogResponseBytes) || maxCatalogResponseBytes <= 0) {
+    throw new TypeError('maxCatalogResponseBytes must be a positive safe integer');
+  }
   const data: CustomRawModel[] = [];
+  const responseByteBudget = { remainingBytes: maxCatalogResponseBytes };
   const seenModelIds = new Set<string>();
   const seenCursors = new Set<string>();
   let afterId: string | undefined;
@@ -170,6 +180,7 @@ export const fetchCustomModels = async (config: CustomUpstreamConfig, fetcher: F
     const page = await fetchUpstreamModels(
       () => customFetchModels(config, { method: 'GET' }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }, afterId),
       parseCustomModelsPage,
+      { responseByteBudget },
     );
     if (page.modelLimitExceeded) {
       throw paginationError(`Custom /models catalog exceeded ${MAX_CUSTOM_MODELS} models`);

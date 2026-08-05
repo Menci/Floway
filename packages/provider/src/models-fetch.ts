@@ -12,6 +12,10 @@ const DEFAULT_MAX_MODELS_RESPONSE_BYTES = 16 * 1024 * 1024;
 const DEFAULT_MAX_MODELS_ERROR_RESPONSE_BYTES = 64 * 1024;
 const TRUNCATED_BODY_MARKER = '...[truncated]';
 
+export interface ResponseByteBudget {
+  remainingBytes: number;
+}
+
 const bytesToText = (chunks: readonly Uint8Array[], totalBytes: number): string => {
   const bytes = new Uint8Array(totalBytes);
   let offset = 0;
@@ -46,8 +50,18 @@ const readErrorBody = async (response: Response, maxBytes: number): Promise<stri
   }
 };
 
-const readJsonBody = async (response: Response, maxBytes: number): Promise<unknown> => {
+export const readBoundedJsonResponse = async (
+  response: Response,
+  maxBytes: number,
+  budget?: ResponseByteBudget,
+): Promise<unknown> => {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) throw new TypeError('maxBytes must be a positive safe integer');
+  if (budget && (!Number.isSafeInteger(budget.remainingBytes) || budget.remainingBytes < 0)) {
+    throw new TypeError('response byte budget must be a non-negative safe integer');
+  }
   if (!response.body) throw new Error('Provider model listing returned an empty body');
+  const allowedBytes = Math.min(maxBytes, budget?.remainingBytes ?? maxBytes);
+  if (allowedBytes === 0) throw new Error('Provider model listing exhausted its response byte budget');
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let totalBytes = 0;
@@ -56,9 +70,10 @@ const readJsonBody = async (response: Response, maxBytes: number): Promise<unkno
       const { done, value } = await reader.read();
       if (done) break;
       totalBytes += value.byteLength;
-      if (totalBytes > maxBytes) {
+      if (totalBytes > allowedBytes) {
+        if (budget) budget.remainingBytes = 0;
         void reader.cancel().catch(() => undefined);
-        throw new Error(`Provider model listing exceeded ${maxBytes} response bytes`);
+        throw new Error(`Provider model listing exceeded ${allowedBytes} response bytes`);
       }
       chunks.push(value);
     }
@@ -66,6 +81,7 @@ const readJsonBody = async (response: Response, maxBytes: number): Promise<unkno
     reader.releaseLock();
   }
 
+  if (budget) budget.remainingBytes -= totalBytes;
   return JSON.parse(bytesToText(chunks, totalBytes)) as unknown;
 };
 
@@ -87,7 +103,7 @@ export const httpResponseToResponse = (httpResponse: ProviderModelsUnavailableEr
 export const fetchUpstreamModels = async <T>(
   doFetch: () => Promise<Response>,
   parse: (json: unknown) => T | null,
-  options: { maxErrorResponseBytes?: number; maxResponseBytes?: number } = {},
+  options: { maxErrorResponseBytes?: number; maxResponseBytes?: number; responseByteBudget?: ResponseByteBudget } = {},
 ): Promise<T> => {
   const maxErrorResponseBytes = options.maxErrorResponseBytes ?? DEFAULT_MAX_MODELS_ERROR_RESPONSE_BYTES;
   const maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MAX_MODELS_RESPONSE_BYTES;
@@ -115,7 +131,7 @@ export const fetchUpstreamModels = async <T>(
   }
   let parsed: unknown;
   try {
-    parsed = await readJsonBody(response, maxResponseBytes);
+    parsed = await readBoundedJsonResponse(response, maxResponseBytes, options.responseByteBudget);
   } catch (cause) {
     throw new ProviderModelsUnavailableError(null, cause);
   }

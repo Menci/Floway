@@ -263,6 +263,36 @@ test('fetchCustomModels bounds the number of models retained for caching', async
   assertEquals((error.cause as Error).message, 'Custom /models catalog exceeded 4096 models');
 });
 
+test('fetchCustomModels shares one response-byte budget across pages', async () => {
+  const { config } = assertCustomUpstreamRecord(upstreamRecord());
+  const firstPage = JSON.stringify({ data: [{ id: 'first' }], has_more: true, last_id: 'first' });
+  const secondPage = JSON.stringify({ data: [{ id: 'second' }] });
+  const firstBytes = new TextEncoder().encode(firstPage);
+  const secondBytes = new TextEncoder().encode(secondPage);
+  let calls = 0;
+  let cancelled = false;
+  const fetcher: Fetcher = () => {
+    calls++;
+    if (calls === 1) return Promise.resolve(new Response(firstBytes));
+    return Promise.resolve(new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(secondBytes);
+      },
+      cancel() {
+        cancelled = true;
+        return new Promise<void>(() => {});
+      },
+    })));
+  };
+  const error = await assertRejects(
+    () => fetchCustomModels(config, fetcher, { maxCatalogResponseBytes: firstBytes.byteLength + secondBytes.byteLength - 1 }),
+    ProviderModelsUnavailableError,
+  );
+  assertEquals(calls, 2);
+  assertEquals(cancelled, true);
+  assertEquals((error.cause as Error).message, `Provider model listing exceeded ${secondBytes.byteLength - 1} response bytes`);
+});
+
 test('fetchCustomModels throws ProviderModelsUnavailableError with httpResponse on non-2xx', async () => {
   const { config } = assertCustomUpstreamRecord(upstreamRecord());
   let thrown: unknown;

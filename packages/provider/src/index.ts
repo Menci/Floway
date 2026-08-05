@@ -72,7 +72,9 @@ export {
   ProviderModelsUnavailableError,
   fetchUpstreamModels,
   httpResponseToResponse,
+  readBoundedJsonResponse,
 } from './models-fetch.ts';
+export type { ResponseByteBudget } from './models-fetch.ts';
 
 export type { FlagDefaults, FlagId, FlagOverrides } from './flags.ts';
 export {
