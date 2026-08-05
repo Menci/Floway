@@ -3,8 +3,9 @@
 Floway can resolve one public model name or alias to several upstream/model
 targets. Client-carried affinity records which target produced each opaque
 assistant blob. A later request keeps candidates that can retain every natural
-blob ahead of candidates that would discard one, and requires a target when the
-surrounding protocol state is not portable.
+blob ahead of candidates that would discard one. Non-portable state can require
+the exact upstream/model target or only the producing upstream when the state
+may cross models.
 
 Affinity is a source-protocol membrane. Each source protocol authenticates and
 projects Floway metadata before candidate attempts enter protocol interceptors,
@@ -35,8 +36,9 @@ encrypted plaintext is exactly:
 ```
 
 Routing policy is not serialized. Ingress assigns policy from the carrier's
-current protocol position: ordinary history is optional, while non-portable
-continuation state requires the target that produced it. `origin` records how
+current logical role: ordinary history is optional, target-bound continuation
+state requires the producing upstream/model, and model-portable encrypted tool
+state requires only the producing upstream. `origin` records how
 to restore original opaque bytes; its absence means the blob was created solely
 for affinity and contains no original value.
 `syntheticItem` is an independent, authenticated statement that Floway created
@@ -67,10 +69,13 @@ layer independently. The implementation and byte-freeze coverage live in
 
 Ingress first analyzes the source request without reference to the model
 catalog. Chat Completions, Messages, and Gemini record their decoded optional
-blob locations. Responses performs one ordered item walk that records each blob
-as optional or required, the complete items authenticated as synthetic, and the
-required target inherited by blob-less compaction, program, and program-output
-state. This analysis is the only place Responses interprets item position.
+blob locations. Responses uses one typed location inventory for top-level
+properties, content arrays, tool-output arrays, and encrypted JSON argument
+properties. One ordered item walk classifies each owned natural blob as
+optional, exact-target-required, or upstream-required; records complete items
+authenticated as synthetic; and records the exact target inherited by blob-less
+compaction, program, and program-output state. This analysis is the only place
+Responses interprets item position.
 
 The request analysis then evaluates every viable model candidate exactly once.
 Each blob projection produces one of three decisions:
@@ -81,12 +86,14 @@ Each blob projection produces one of three decisions:
   optional natural value and mark the candidate as degrading;
 - **reject** — required owned state cannot be restored for this candidate.
 
-Optional owned blobs require an exact upstream/model/rules match. Required
-owned state requires the upstream/model pair but deliberately ignores alias
-rules, so every rule variant of the same physical target remains eligible. A
-direct candidate's absent rules and an alias target's empty `rules: {}` are the
-same no-overlay variant for optional matching. Foreign blobs never impose a
-requirement and always pass through byte-for-byte.
+Optional owned blobs require an exact upstream/model/rules match. Exact-target
+state requires the upstream/model pair but deliberately ignores alias rules, so
+every rule variant of the same physical target remains eligible. Encrypted
+inter-agent messages and structured encrypted tool outputs require only the
+upstream, allowing Codex to spawn a child with a different model on the same
+producer. A direct candidate's absent rules and an alias target's empty
+`rules: {}` are the same no-overlay variant for optional matching. Foreign
+blobs never impose a requirement and always pass through byte-for-byte.
 
 Responses removes an item in full only when an owned carrier authenticates
 `syntheticItem: true`. That marker is necessarily originless, so removing the
@@ -106,11 +113,12 @@ accepted candidates have the same degradation status, resolver order is
 unchanged. The selected payload is cloned and materialized only when its attempt
 actually runs, and repeated access reuses that materialization.
 
-Mutually incompatible required targets and an unavailable sole required target
-are routing errors. Candidate attempts otherwise follow the sequential
-result-class rules in [RESOLUTION.md](./RESOLUTION.md). A failed non-degrading
-attempt can fall through to a degrading candidate before egress records the
-target of the first successful attempt.
+Mutually incompatible exact targets, multiple required upstreams, a disagreement
+between an exact target and an upstream requirement, and an unavailable sole
+requirement are routing errors. Candidate attempts otherwise follow the
+sequential result-class rules in [RESOLUTION.md](./RESOLUTION.md). A failed
+non-degrading attempt can fall through only among candidates that satisfy every
+requirement before egress records the first successful target.
 
 ## Egress
 
@@ -156,11 +164,29 @@ and client tradeoffs are recorded beside the
 
 ### Responses
 
-Natural blobs are top-level `encrypted_content`, program `fingerprint`, and
-`agent_message.content[].encrypted_content`. A carrier-capable first item
-without a natural blob receives an originless blob in its own slot when that
-item closes. The blob has no `syntheticItem` marker because the upstream item
-already existed.
+Natural blobs are:
+
+- top-level `encrypted_content` and program `fingerprint`;
+- `function_call_output.output[]` and
+  `custom_tool_call_output.output[]` encrypted-content parts;
+- encrypted collaboration `function_call.arguments.message` and beta
+  `multi_agent_call.arguments.message`;
+- `agent_message.content[].encrypted_content`.
+
+Codex emits the message argument from `spawn_agent`, `send_message`, and
+`followup_task`, then moves that exact value into the recipient thread's
+`agent_message`. Both positions therefore share the logical carrier domain
+`responses.inter-agent-message.encrypted-content`, independent of array index.
+Legacy function calls qualify only in the `collaboration` namespace, and an
+explicit `encrypted_function_args: []` leaves their plaintext message outside
+affinity. Owned natural inter-agent and encrypted tool-output carriers require
+their producing upstream; the original value is restored before any provider
+sees it.
+
+A carrier-capable first item without a natural blob receives an originless blob
+in its own slot when that item closes. The blob has no `syntheticItem` marker
+because the upstream item already existed. An originless agent-message slot is
+metadata rather than encrypted tool state and imposes no upstream requirement.
 
 If the first item cannot carry a blob, Floway emits a complete originless
 reasoning `output_item.added` + `output_item.done` pair before the original
@@ -173,6 +199,14 @@ Only the first logical item receives synthetic affinity. Later program and
 program-output items inherit force from the latest earlier owned carrier; they
 do not receive additional blobs. Failed streams do not invent a missing first
 carrier.
+
+Streaming collaboration arguments are buffered only until the authoritative
+full arguments value arrives. Egress wraps its `message`, redistributes the
+rewritten JSON across the original argument-delta event count, and emits the
+same value in `response.function_call_arguments.done`,
+`response.output_item.done`, and every resource snapshot. Codex executes the
+done item, while generic Responses accumulators see a coherent delta/done/item
+sequence. HTTP and WebSocket share this source egress.
 
 ## Copilot item IDs
 

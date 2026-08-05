@@ -325,7 +325,9 @@ Request mapping:
 - assistant `output_text` becomes assistant text blocks.
 - `function_call` becomes assistant `tool_use`.
 - `function_call_output` becomes user `tool_result`; incomplete status marks the
-  tool result as an error.
+  tool result as an error. Structured `encrypted_content` is Responses-native
+  upstream state and is rejected at this translation boundary; affinity routes
+  an owned value only to its producing Responses upstream.
 - readable `agent_message` content uses the Messages user wire role, while
   an explicit non-user-source notice and XML-escaped `<agent-message>` wrapper
   keep it from acquiring user authority. The wrapper preserves `author` and
@@ -568,7 +570,9 @@ Request mapping:
   The synthesized message's legal Chat `user` role is authoritative at provider
   boundaries, so a final lifted-image turn is reported as user-initiated even
   though its image originated in tool output; no out-of-band provenance
-  contradicts the wire role.
+  contradicts the wire role. Structured `encrypted_content` is rejected rather
+  than flattened or dropped; owned encrypted output is upstream-required and
+  therefore remains on its producing Responses target.
 - readable `agent_message` content uses one Chat user wire message with the
   same non-user-source notice and selective typed XML boundaries as the
   Messages target.
