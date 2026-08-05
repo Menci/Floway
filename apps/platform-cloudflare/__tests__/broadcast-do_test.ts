@@ -26,15 +26,21 @@ class FakeWebSocket implements WebSocket {
   readonly sent: string[] = [];
   closed: { code: number; reason: string } | null = null;
 
+  constructor(private readonly failures: { send?: Error; close?: Error } = {}) {}
+
   send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
     // BroadcastDO's `broadcast(payload: string)` contract forbids non-string
     // payloads; throw loud on any binary input so a regression that sneaks
     // ArrayBuffer/Blob through surfaces here instead of becoming a silent
     // empty frame on the wire.
     if (typeof data !== 'string') throw new Error('FakeWebSocket.send: expected string payload');
+    if (this.failures.send) throw this.failures.send;
     this.sent.push(data);
   }
-  close(code = 1000, reason = ''): void { this.closed = { code, reason }; }
+  close(code = 1000, reason = ''): void {
+    if (this.failures.close) throw this.failures.close;
+    this.closed = { code, reason };
+  }
   accept(): void { /* noop */ }
   addEventListener(): void { /* noop */ }
   removeEventListener(): void { /* noop */ }
@@ -79,6 +85,26 @@ test('BroadcastDO.broadcast sends the payload verbatim to every registered socke
   assertEquals(ws2.sent[0], 'hello world');
 });
 
+test('BroadcastDO.broadcast attempts every socket before exposing all send failures', async () => {
+  const firstError = new Error('first socket failed');
+  const secondError = new Error('second socket failed');
+  const state = new FakeState();
+  state.push(new FakeWebSocket({ send: firstError }));
+  const healthy = new FakeWebSocket();
+  state.push(healthy);
+  state.push(new FakeWebSocket({ send: secondError }));
+  const actor = new BroadcastDO(state, {});
+
+  const [result] = await Promise.allSettled([actor.broadcast('survives failures')]);
+
+  assertEquals(result.status, 'rejected');
+  const error = (result as PromiseRejectedResult).reason;
+  assertEquals(error instanceof AggregateError, true);
+  assertEquals(error.message, 'BroadcastDO.broadcast failed for 2 WebSocket connection(s)');
+  assertEquals(error.errors, [firstError, secondError]);
+  assertEquals(healthy.sent, ['survives failures']);
+});
+
 test('BroadcastDO.closeAll closes every socket with the given reason and code 1000', async () => {
   const state = new FakeState();
   const ws1 = new FakeWebSocket();
@@ -93,6 +119,26 @@ test('BroadcastDO.closeAll closes every socket with the given reason and code 10
   assertEquals(ws1.closed?.reason, 'reason of the day');
   assertEquals(ws2.closed?.code, 1000);
   assertEquals(ws2.closed?.reason, 'reason of the day');
+});
+
+test('BroadcastDO.closeAll attempts every socket before exposing all close failures', async () => {
+  const firstError = new Error('first close failed');
+  const secondError = new Error('second close failed');
+  const state = new FakeState();
+  state.push(new FakeWebSocket({ close: firstError }));
+  const healthy = new FakeWebSocket();
+  state.push(healthy);
+  state.push(new FakeWebSocket({ close: secondError }));
+  const actor = new BroadcastDO(state, {});
+
+  const [result] = await Promise.allSettled([actor.closeAll('shutdown')]);
+
+  assertEquals(result.status, 'rejected');
+  const error = (result as PromiseRejectedResult).reason;
+  assertEquals(error instanceof AggregateError, true);
+  assertEquals(error.message, 'BroadcastDO.closeAll failed for 2 WebSocket connection(s)');
+  assertEquals(error.errors, [firstError, secondError]);
+  assertEquals(healthy.closed, { code: 1000, reason: 'shutdown' });
 });
 
 test('BroadcastDO.webSocketClose calls ws.close to complete the close handshake', async () => {
@@ -144,7 +190,9 @@ test('BroadcastDO.fetch upgrades to a WebSocket and registers the server side', 
     const state = new FakeState();
     const actor = new BroadcastDO(state, {});
 
-    const response = await actor.fetch(new Request('https://broadcast.do/subscribe'));
+    const response = await actor.fetch(new Request('https://broadcast.do/subscribe', {
+      headers: { Upgrade: 'websocket' },
+    }));
 
     assertEquals(response.status, 101);
     assertEquals(response.webSocket !== undefined, true);
@@ -156,5 +204,27 @@ test('BroadcastDO.fetch upgrades to a WebSocket and registers the server side', 
     } else {
       (globalThis as Record<string, unknown>).WebSocketPair = realWebSocketPair;
     }
+  }
+});
+
+test('BroadcastDO.fetch rejects malformed upgrades before registering a socket', async () => {
+  const requests = [
+    new Request('https://broadcast.do/subscribe'),
+    new Request('https://broadcast.do/subscribe', { headers: { Upgrade: 'h2c' } }),
+    new Request('https://broadcast.do/subscribe', {
+      method: 'POST',
+      headers: { Upgrade: 'websocket' },
+    }),
+  ];
+
+  for (const request of requests) {
+    const state = new FakeState();
+    const actor = new BroadcastDO(state, {});
+
+    const response = await actor.fetch(request);
+
+    assertEquals(response.status, 426);
+    assertEquals(response.headers.get('Upgrade'), 'websocket');
+    assertEquals(state.sockets.length, 0);
   }
 });
