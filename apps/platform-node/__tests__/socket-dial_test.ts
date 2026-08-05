@@ -35,13 +35,15 @@ const startEchoServer = async (): Promise<{
   port: number;
   close: () => Promise<void>;
   connectionCount: () => number;
-  lastSocket: () => net.Socket | null;
+  socketAt: (index: number) => Promise<net.Socket>;
 }> => {
-  let lastSocket: net.Socket | null = null;
-  let connections = 0;
+  const sockets: net.Socket[] = [];
+  const waiters = new Map<number, (socket: net.Socket) => void>();
   const server = net.createServer(socket => {
-    connections += 1;
-    lastSocket = socket;
+    const index = sockets.length;
+    sockets.push(socket);
+    waiters.get(index)?.(socket);
+    waiters.delete(index);
     socket.on('data', chunk => socket.write(chunk));
     socket.on('error', () => { /* peer hangup is expected during teardown */ });
   });
@@ -51,8 +53,13 @@ const startEchoServer = async (): Promise<{
   return {
     port: address.port,
     close: () => new Promise(resolve => server.close(() => resolve())),
-    connectionCount: () => connections,
-    lastSocket: () => lastSocket,
+    connectionCount: () => sockets.length,
+    socketAt: index => {
+      const socket = sockets[index];
+      return socket
+        ? Promise.resolve(socket)
+        : new Promise(resolve => { waiters.set(index, resolve); });
+    },
   };
 };
 
@@ -157,6 +164,7 @@ describe('nodeSocketDial', () => {
 
   it('destroys the underlying socket when the caller aborts post-connect', async () => {
     const ac = new AbortController();
+    const accepted = server.socketAt(server.connectionCount());
     const dialed = await nodeSocketDial.connect('127.0.0.1', server.port, { signal: ac.signal });
     // Drive a single round-trip so the server-side socket is established.
     const writer = dialed.writable.getWriter();
@@ -166,8 +174,7 @@ describe('nodeSocketDial', () => {
     expect(new TextDecoder().decode((await reader.read()).value)).toBe('warmup');
     reader.releaseLock();
 
-    const remote = server.lastSocket();
-    if (!remote) throw new Error('echo server did not accept the dialed socket');
+    const remote = await accepted;
     const remoteClosed = new Promise<void>(resolve => remote.once('close', () => resolve()));
 
     ac.abort();
@@ -178,9 +185,9 @@ describe('nodeSocketDial', () => {
   });
 
   it('writer.abort destroys both socket halves with no fixed-delay teardown', async () => {
+    const accepted = server.socketAt(server.connectionCount());
     const dialed = await nodeSocketDial.connect('127.0.0.1', server.port);
-    const remote = server.lastSocket();
-    if (!remote) throw new Error('echo server did not accept the dialed socket');
+    const remote = await accepted;
     const remoteClosed = new Promise<void>(resolve => remote.once('close', () => resolve()));
     const writer = dialed.writable.getWriter();
 
@@ -193,9 +200,11 @@ describe('nodeSocketDial', () => {
   });
 
   it('writer.close half-closes plain TCP while the readable side remains usable', async () => {
-    let remote: net.Socket | null = null;
+    let peer: net.Socket | undefined;
+    let acceptRemote!: (socket: net.Socket) => void;
+    const accepted = new Promise<net.Socket>(resolve => { acceptRemote = resolve; });
     const halfOpenServer = net.createServer({ allowHalfOpen: true }, socket => {
-      remote = socket;
+      acceptRemote(socket);
       socket.on('error', () => { /* peer teardown is expected */ });
     });
     await new Promise<void>(resolve => halfOpenServer.listen(0, '127.0.0.1', () => resolve()));
@@ -204,8 +213,7 @@ describe('nodeSocketDial', () => {
 
     try {
       const dialed = await nodeSocketDial.connect('127.0.0.1', address.port);
-      if (!remote) throw new Error('half-open server did not accept the dialed socket');
-      const peer: net.Socket = remote;
+      peer = await accepted;
       const remoteEnded = new Promise<void>(resolve => peer.once('end', () => resolve()));
       const writer = dialed.writable.getWriter();
 
@@ -220,15 +228,15 @@ describe('nodeSocketDial', () => {
       reader.releaseLock();
       await dialed.close();
     } finally {
-      remote?.destroy();
+      peer?.destroy();
       await new Promise<void>(resolve => halfOpenServer.close(() => resolve()));
     }
   });
 
   it('reader.cancel destroys the underlying socket', async () => {
+    const accepted = server.socketAt(server.connectionCount());
     const dialed = await nodeSocketDial.connect('127.0.0.1', server.port);
-    const remote = server.lastSocket();
-    if (!remote) throw new Error('echo server did not accept the dialed socket');
+    const remote = await accepted;
     const remoteClosed = new Promise<void>(resolve => remote.once('close', () => resolve()));
     const reader = dialed.readable.getReader();
 

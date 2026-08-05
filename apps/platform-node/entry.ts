@@ -3,6 +3,7 @@ import { setGlobalDispatcher } from 'undici';
 import { WebSocketServer } from 'ws';
 
 import { bootstrapNodePlatform } from './src/bootstrap.ts';
+import { parseNodeListenPort } from './src/config.ts';
 import { createNodeGlobalDispatcher } from './src/global-dispatcher.ts';
 import { applyMigrations } from './src/migrate.ts';
 import {
@@ -29,7 +30,7 @@ initResponsesWebSocketUpgradeResolver((c, events) =>
   upgradeWebSocket(c, events, { onError: err => console.error('[websocket]', err) }));
 
 const { db } = bootstrapNodePlatform();
-const port = Number(getEnvOptional('PORT', '8788'));
+const port = parseNodeListenPort(getEnvOptional('PORT', '8788'));
 
 // Passwordless admin login is a dev-only shortcut (empty ADMIN_KEY on a
 // local instance grants seed-admin access). Refuse to boot the Node

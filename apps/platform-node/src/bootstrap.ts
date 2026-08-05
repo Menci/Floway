@@ -1,3 +1,4 @@
+import { parseNodeStoragePath } from './config.ts';
 import { EventTargetChannelBroker } from './event-target-channel-broker.ts';
 import { createNodeExternalResourceFetcher } from './external-resource-fetcher.ts';
 import { FsFileStore } from './fs-file-store.ts';
@@ -31,8 +32,8 @@ export const bootstrapNodePlatform = (): { db: SqlDatabase } => {
   initTimingSafeEqual(timingSafeEqual);
   initExternalResourceFetcher(createNodeExternalResourceFetcher());
 
-  const filesDir = getEnvOptional('FLOWAY_FILES_DIR', './data/files');
-  const dbPath = getEnvOptional('FLOWAY_DB_PATH', './data/floway.db');
+  const filesDir = parseNodeStoragePath('FLOWAY_FILES_DIR', getEnvOptional('FLOWAY_FILES_DIR', './data/files'));
+  const dbPath = parseNodeStoragePath('FLOWAY_DB_PATH', getEnvOptional('FLOWAY_DB_PATH', './data/floway.db'));
 
   const files = new FsFileStore(filesDir);
   initFileStore(files);
