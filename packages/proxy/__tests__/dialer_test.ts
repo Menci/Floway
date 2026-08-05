@@ -315,6 +315,10 @@ describe('runDirectConnectRequest', () => {
 });
 
 describe('dial proxy endpoint validation', () => {
+  beforeEach(() => {
+    for (const mock of allDialerMocks) mock.mockClear();
+  });
+
   it.each([
     [{ kind: 'socks5', host: '', port: 1080, name: 'bad' }, 'host'],
     [{ kind: 'socks5', host: 'proxy.example', port: 0, name: 'bad' }, 'port'],
