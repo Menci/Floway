@@ -172,9 +172,16 @@ const clientEvent = (event: ResponsesStreamEvent, upstreamNamespace: string): Re
 // https://github.com/openai/codex/blob/c4f42d161ae44a8d696ee9fb595709661979d187/codex-rs/core/tests/suite/subagent_notifications.rs#L1514-L1563
 export const withPlaintextCollaboration: ResponsesInterceptor = async (ctx, _gatewayCtx, run) => {
   if (ctx.targetApi !== 'responses') return await run();
-  const collaborationTools = (ctx.payload.tools ?? []).filter(tool => namespaceTool(tool)?.name === CLIENT_NAMESPACE);
-  if (collaborationTools.length === 0) return await run();
-  if (collaborationTools.length > 1) throw new TypeError('Responses request carries multiple collaboration namespaces');
+  const toolLists = [
+    ctx.payload.tools,
+    ...ctx.payload.input.flatMap(item => item.type === 'additional_tools' ? [item.tools] : []),
+  ];
+  const collaborationCounts = toolLists.map(tools =>
+    (tools ?? []).filter(tool => namespaceTool(tool)?.name === CLIENT_NAMESPACE).length);
+  if (collaborationCounts.every(count => count === 0)) return await run();
+  if (collaborationCounts.some(count => count > 1)) {
+    throw new TypeError('Responses request carries multiple collaboration namespaces in one tool inventory');
+  }
 
   const upstreamNamespace = randomNamespace(namespaceNames(ctx.payload));
   ctx.payload = {

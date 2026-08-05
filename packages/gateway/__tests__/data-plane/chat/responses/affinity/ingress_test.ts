@@ -15,7 +15,7 @@ const candidate = (upstream: string): ModelCandidate => {
   const base = stubModelCandidate();
   return stubModelCandidate({
     provider: { ...base.provider, upstreamId: upstream },
-    model: { id: 'model' },
+    model: { ...base.model, id: 'model', endpoints: { responses: {} } },
   });
 };
 
@@ -83,6 +83,38 @@ test('leaves legacy encrypted agent messages outside affinity', async () => {
   expect(acceptedAffinityEvaluation(prepared, candidateA).materialize().input).toEqual([item]);
   expect(acceptedAffinityEvaluation(prepared, candidateB).materialize().input).toEqual([item]);
 });
+
+test.each(['function_call_output', 'custom_tool_call_output'] as const)(
+  'forces encrypted content nested in %s to its native Responses upstream',
+  async type => {
+    const encrypted = await codec.wrap(
+      'opaque-output',
+      targetFor(candidateA),
+      `responses.${type}.output.1.encrypted_content`,
+    );
+    const prepared = await analyzeResponsesAffinity({
+      model: 'model',
+      input: [{
+        type,
+        id: 'out_1',
+        call_id: 'call_1',
+        output: [
+          { type: 'input_text', text: 'visible' },
+          { type: 'encrypted_content', encrypted_content: encrypted },
+        ],
+      }],
+    }, codec);
+
+    expect(prepared.requiredNativeResponsesUpstreamIds).toEqual([candidateA.provider.upstreamId]);
+    expect(prepared.evaluateCandidate(candidateB)).toEqual({ kind: 'rejected' });
+    expect(acceptedAffinityEvaluation(prepared, candidateA).materialize().input[0]).toMatchObject({
+      output: [
+        { type: 'input_text', text: 'visible' },
+        { type: 'encrypted_content', encrypted_content: 'opaque-output' },
+      ],
+    });
+  },
+);
 
 test('removes only items explicitly marked synthetic and preserves markerless originless items', async () => {
   const syntheticItem = await codec.wrap(

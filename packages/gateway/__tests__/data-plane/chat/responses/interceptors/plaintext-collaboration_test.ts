@@ -150,6 +150,6 @@ test('rejects ambiguous duplicate collaboration namespaces', async () => {
   ctx.payload = { ...ctx.payload, tools: [collaborationTool(), collaborationTool()] };
   await expect(withPlaintextCollaboration(ctx, mockChatGatewayCtx(), async () =>
     eventResult((async function* () {})(), testTelemetryModelIdentity))).rejects.toThrow(
-    'Responses request carries multiple collaboration namespaces',
+    'Responses request carries multiple collaboration namespaces in one tool inventory',
   );
 });
