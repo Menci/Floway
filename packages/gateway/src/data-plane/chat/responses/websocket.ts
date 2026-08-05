@@ -4,6 +4,7 @@ import { wrapResponsesClientEgress } from './client-output.ts';
 import { createResponsesWsSession } from './items/store.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
+import { isResponsesResponseTerminalEvent, normalizeResponsesStreamLifecycle } from './stream-lifecycle.ts';
 import type { DumpAccumulator } from '../../../dump/accumulator.ts';
 import { apiKeyFromContext, authenticateApiKey, type AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
@@ -389,7 +390,7 @@ const respondResponsesWebSocket = async (input: {
   let completion: StreamCompletion = 'error';
   try {
     let terminalEvent: ClientResponsesStreamEvent | undefined;
-    const observed = observeResponsesWebSocketFrames(result.events, state, ctx);
+    const observed = observeResponsesWebSocketFrames(normalizeResponsesStreamLifecycle(result.events), state, ctx);
     const output = wrapResponsesClientEgress(observed, ctx, payload);
     const iterator = output[Symbol.asyncIterator]();
     let pendingNext = pendingWsFrameResult(iterator.next());
@@ -512,7 +513,7 @@ const respondResponsesWebSocket = async (input: {
         // https://github.com/openai/codex/blob/acd540f1581bf30f963fccbcce43ac494102242c/codex-rs/codex-api/src/endpoint/responses_websocket.rs#L792-L799
         if (terminalEvent !== undefined) continue;
 
-        if (isResponsesTerminalEvent(event)) {
+        if (isResponsesResponseTerminalEvent(event)) {
           terminalEvent = event;
           continue;
         }

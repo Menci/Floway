@@ -339,7 +339,7 @@ test('POST /v1/responses rejects a malformed untyped input item', async () => {
   assertEquals(body.error.param, 'input[0]');
 });
 
-test('POST /v1/responses returns a single JSON body when stream is omitted', async () => {
+test('POST /v1/responses returns one complete response resource when stream is omitted', async () => {
   installRepo();
   queueCompletedResponse('resp_nonstream');
 
@@ -354,21 +354,7 @@ test('POST /v1/responses returns a single JSON body when stream is omitted', asy
   const body = await response.json() as ResponsesResult;
   assert(body.id.length > 0 && body.id !== 'resp_nonstream', 'expected the source boundary to replace the upstream response id');
   assertEquals(body.status, 'completed');
-});
-
-test('POST /v1/responses answers a translated-shape upstream with a complete response resource', async () => {
-  installRepo();
-  queueCompletedResponse('resp_complete');
-
-  const response = await makeApp().request('/v1/responses', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({ model: 'test-model', input: 'hello' }),
-  });
-
-  assertEquals(response.status, 200);
-  const body = await response.json() as Record<string, unknown>;
-  assertEquals(missingRequiredResourceKeys(body), []);
+  assertEquals(missingRequiredResourceKeys(body as unknown as Record<string, unknown>), []);
 });
 
 test('POST /v1/responses returns 502 when a non-streaming output item cannot be persisted', async () => {
@@ -473,28 +459,20 @@ const compactTurn = async (
   return { upstream: compactionResult, response };
 };
 
-test('POST /v1/responses/compact returns a non-streaming compaction body', async () => {
+test('POST /v1/responses/compact returns one complete compaction resource without durable writes for store:false', async () => {
   const repo = installRepo();
-  const { response } = await compactTurn();
-
-  assertEquals(response.status, 200);
-  assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
-  const body = await response.json() as { object: string; id: string; output: Array<{ id: string }> };
-  assertEquals(body.object, 'response.compaction');
-  assert(body.id.length > 0 && body.id !== 'resp_test', 'expected the source boundary to replace the upstream response id');
-  assertEquals(await repo.responsesSnapshots.lookup(API_KEY_ID, body.id, 0), null);
-  assertEquals(await repo.responsesItems.lookupMany(API_KEY_ID, body.output.map(item => item.id), 0), []);
-});
-
-test('POST /v1/responses/compact answers the compaction resource, not the response resource', async () => {
-  installRepo();
   const { upstream, response } = await compactTurn(
     { usage: { input_tokens: 12, output_tokens: 3, total_tokens: 15 } },
     { temperature: 0.3 },
   );
 
   assertEquals(response.status, 200);
-  const body = await response.json() as Record<string, unknown>;
+  assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
+  const body = await response.json() as Record<string, unknown> & { object: string; id: string; output: Array<{ id: string }> };
+  assertEquals(body.object, 'response.compaction');
+  assert(body.id.length > 0 && body.id !== 'resp_test', 'expected the source boundary to replace the upstream response id');
+  assertEquals(await repo.responsesSnapshots.lookup(API_KEY_ID, body.id, 0), null);
+  assertEquals(await repo.responsesItems.lookupMany(API_KEY_ID, body.output.map(item => item.id), 0), []);
   assertEquals(missingRequiredCompactionKeys(body), []);
   assertEquals(typeof body.created_at, 'number');
   assertEquals(body.usage, {
@@ -508,16 +486,39 @@ test('POST /v1/responses/compact answers the compaction resource, not the respon
 });
 
 test('POST /v1/responses/compact reports the failure when the upstream reported no usage', async () => {
-  installRepo();
-  const { response } = await compactTurn({ usage: null });
+  const repo = installRepo();
+  const insertItems = vi.spyOn(repo.responsesItems, 'insertMany');
+  const insertSnapshot = vi.spyOn(repo.responsesSnapshots, 'insert');
+  try {
+    const { response } = await compactTurn({ usage: null }, { store: true });
 
-  assertEquals(response.status, 502);
-  const body = await response.json() as { error: { type: string; message: string } };
-  assertEquals(body.error.type, 'internal_error');
-  assert(
-    body.error.message.includes('reported no token usage'),
-    `expected the missing-usage condition to be named, got ${body.error.message}`,
-  );
+    assertEquals(response.status, 502);
+    const body = await response.json() as { error: { type: string; message: string } };
+    assertEquals(body.error.type, 'internal_error');
+    assert(
+      body.error.message.includes('reported no token usage'),
+      `expected the missing-usage condition to be named, got ${body.error.message}`,
+    );
+    assertEquals(insertItems.mock.calls.length, 0);
+    assertEquals(insertSnapshot.mock.calls.length, 0);
+  } finally {
+    insertItems.mockRestore();
+    insertSnapshot.mockRestore();
+  }
+});
+
+test('POST /v1/responses/compact does not commit a failed compaction snapshot', async () => {
+  const repo = installRepo();
+  const { response } = await compactTurn({
+    status: 'failed',
+    error: { code: 'server_error', message: 'compaction failed' },
+  }, { store: true });
+
+  assertEquals(response.status, 200);
+  const body = await response.json() as { id: string; status: string; output: Array<{ id: string }> };
+  assertEquals(body.status, 'failed');
+  assertEquals(await repo.responsesSnapshots.lookup(API_KEY_ID, body.id, 0), null);
+  assertEquals((await repo.responsesItems.lookupMany(API_KEY_ID, body.output.map(item => item.id), 0)).length, body.output.length);
 });
 
 test('POST /v1/responses with an unresolvable previous_response_id renders the verbatim 400 envelope', async () => {
@@ -540,6 +541,27 @@ test('POST /v1/responses with an unresolvable previous_response_id renders the v
   assertEquals(body.error.type, 'invalid_request_error');
   assertEquals(body.error.param, 'previous_response_id');
   assertEquals(body.error.code, 'previous_response_not_found');
+});
+
+test('POST /v1/responses and /v1/responses/compact reject a non-string previous_response_id before routing', async () => {
+  installRepo();
+
+  for (const path of ['/v1/responses', '/v1/responses/compact']) {
+    const response = await makeApp().request(path, {
+      method: 'POST',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      body: JSON.stringify({ model: 'test-model', input: 'hello', previous_response_id: 42 }),
+    });
+
+    assertEquals(response.status, 400);
+    const body = await response.json() as { error: { message: string; type: string; param: string; code: string | null } };
+    assertEquals(body.error, {
+      message: "Invalid type for 'previous_response_id': expected a string or null.",
+      type: 'invalid_request_error',
+      param: 'previous_response_id',
+      code: null,
+    });
+  }
 });
 
 test('POST /v1/responses and /v1/responses/compact reject a body without `model` with the OpenAI missing-parameter 400', async () => {
@@ -714,4 +736,70 @@ test('POST /v1/responses nests a mid-stream failure under `error` so an SDK stre
     body.split('\n\n').find(part => part.startsWith('event: response.created'))!.split('data: ')[1]!,
   ) as { response: { id: string } };
   assertEquals(failed.response.id, created.response.id);
+});
+
+test('POST /v1/responses does not forward a premature upstream done sentinel as success', async () => {
+  installRepo();
+  const created = { ...makeResponsesResult('resp_premature_done'), status: 'in_progress' as const, output: [] };
+  const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
+    action: 'generate', ok: true,
+    events: (async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+      yield eventFrame({ type: 'response.created', sequence_number: 0, response: created });
+      yield doneFrame();
+    })(),
+    modelKey: 'test-model-key',
+    headers: new Headers(),
+  }));
+  queueResolution([makeCandidate({ callResponses })]);
+
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'test-model', input: 'hello', stream: true }),
+  });
+  const body = await response.text();
+
+  assert(!body.includes('data: [DONE]'), 'a stream without a response terminal must not announce successful completion');
+  assert(body.includes('event: error'));
+  assert(body.includes('event: response.failed'));
+  assert(!body.includes('event: response.completed'));
+});
+
+test('POST /v1/responses preserves upstream error then response.failed and marks the failed resource unstored', async () => {
+  const repo = installRepo();
+  const created = { ...makeResponsesResult('resp_error_then_failed'), status: 'in_progress' as const, output: [] };
+  const failed = {
+    ...created,
+    status: 'failed' as const,
+    error: { code: 'server_error', message: 'upstream failed' },
+  };
+  const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
+    action: 'generate', ok: true,
+    events: makeProviderEvents([
+      { type: 'response.created', sequence_number: 0, response: created },
+      { type: 'error', sequence_number: 1, code: 'server_error', message: 'upstream failed' },
+      { type: 'response.failed', sequence_number: 2, response: failed },
+    ]),
+    modelKey: 'test-model-key',
+    headers: new Headers(),
+  }));
+  queueResolution([makeCandidate({ callResponses })]);
+
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'test-model', input: 'hello', store: true, stream: true }),
+  });
+  const body = await response.text();
+  const chunks = body.split('\n\n');
+  const errorIndex = chunks.findIndex(part => part.startsWith('event: error'));
+  const failedIndex = chunks.findIndex(part => part.startsWith('event: response.failed'));
+  const failedChunk = chunks[failedIndex];
+  assert(errorIndex >= 0 && failedIndex > errorIndex, `expected error then response.failed in ${body}`);
+  assert(failedChunk !== undefined);
+  const failedEvent = JSON.parse(failedChunk.split('data: ')[1]!) as { response: { id: string; store: boolean; completed_at: number } };
+  assertEquals(failedEvent.response.store, false);
+  assertEquals(typeof failedEvent.response.completed_at, 'number');
+  assertEquals(await repo.responsesSnapshots.lookup(API_KEY_ID, failedEvent.response.id, 0), null);
+  assert(body.endsWith('data: [DONE]\n\n'));
 });

@@ -97,7 +97,6 @@ const wrapNaturalResponsesAffinity = async function* (
       continue;
     }
     yield frame;
-    if (event.type === 'error') return;
   }
 };
 
@@ -289,7 +288,6 @@ const wrapResponsesFirstCarrier = async function* (
     }
 
     yield eventFrame(shifted(event));
-    if (event.type === 'error') return;
   }
 };
 

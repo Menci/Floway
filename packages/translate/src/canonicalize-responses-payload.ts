@@ -58,6 +58,10 @@ export function canonicalizeResponsesPayload(value: unknown): CanonicalResponses
   if (typeof input !== 'string' && !Array.isArray(input)) {
     throw new TranslatorInputError('Responses input must be a string or an array.', { param: 'input' });
   }
+  const previousResponseId: unknown = payload.previous_response_id;
+  if (previousResponseId !== undefined && previousResponseId !== null && typeof previousResponseId !== 'string') {
+    throw new TranslatorInputError("Invalid type for 'previous_response_id': expected a string or null.", { param: 'previous_response_id' });
+  }
   return {
     ...payload,
     input: typeof input === 'string'

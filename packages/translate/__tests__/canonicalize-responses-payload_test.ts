@@ -96,6 +96,21 @@ test('rejects malformed untyped input items at the canonical boundary', () => {
   }
 });
 
+test('rejects non-string previous_response_id values at the canonical boundary', () => {
+  for (const previousResponseId of [42, false, ['resp_1'], { id: 'resp_1' }]) {
+    const error = assertThrows(
+      () => canonicalizeResponsesPayload({
+        model: 'gpt-test',
+        input: 'hello',
+        previous_response_id: previousResponseId as never,
+      }),
+      TranslatorInputError,
+      "Invalid type for 'previous_response_id': expected a string or null.",
+    ) as TranslatorInputError;
+    assertEquals(error.param, 'previous_response_id');
+  }
+});
+
 test('canonicalizeResponsesPayload preserves reasoning.context verbatim, including future modes', () => {
   const canonicalCurrent = canonicalizeResponsesPayload({
     model: 'gpt-test',

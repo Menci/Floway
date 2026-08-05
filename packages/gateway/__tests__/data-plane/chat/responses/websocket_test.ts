@@ -210,6 +210,66 @@ test('Responses WebSocket forwards stream events, echoes event_id, and ends the 
   );
 });
 
+test('Responses WebSocket preserves upstream error before response.failed and leaves the failed response unstored', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
+      }
+      if (url.pathname === '/responses') {
+        const created = {
+          id: 'resp_ws_error',
+          object: 'response',
+          model: 'gpt-direct-responses',
+          status: 'in_progress',
+          output: [],
+          error: null,
+          incomplete_details: null,
+        };
+        return sseResponse([
+          { event: 'response.created', data: { type: 'response.created', response: created, sequence_number: 0 } },
+          { event: 'error', data: { type: 'error', code: 'server_error', message: 'upstream failed', sequence_number: 1 } },
+          {
+            event: 'response.failed',
+            data: {
+              type: 'response.failed',
+              response: { ...created, status: 'failed', error: { code: 'server_error', message: 'upstream failed' } },
+              sequence_number: 2,
+            },
+          },
+          { data: '[DONE]' },
+        ]);
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const client = await connectResponsesWebSocket(apiKey.key);
+      const received = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
+      client.send(JSON.stringify({
+        type: 'response.create',
+        event_id: 'evt_error_failed',
+        response: { model: 'gpt-direct-responses', input: 'hello', store: true },
+      }));
+
+      const messages = await received;
+      const errorIndex = messages.findIndex(message => message.type === 'error');
+      const failedIndex = messages.findIndex(message => message.type === 'response.failed');
+      assert(errorIndex >= 0 && failedIndex > errorIndex, `expected error then response.failed in ${JSON.stringify(messages)}`);
+      assert(messages.every(message => message.event_id === 'evt_error_failed'));
+      const failed = messages[failedIndex] as { response?: { id?: unknown; store?: unknown } };
+      assertEquals(failed.response?.store, false);
+      const responseId = terminalResponseId(messages);
+      assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, responseId, 0), null);
+    }),
+  );
+});
+
 test('Responses WebSocket starts capturing on the next turn when dump retention is enabled after upgrade', async () => {
   const { apiKey, repo } = await setupAppTest();
   const dumps = installDumpStubs(initDumpStore, initDumpBroker);
