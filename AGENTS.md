@@ -401,14 +401,15 @@ candidate evaluation and selection, and request context are separate modules
 under `data-plane/chat/shared/affinity/`; each chat source protocol owns
 `affinity/ingress.ts` and `affinity/egress.ts`. Native Responses state is a
 separate source-edge membrane under `data-plane/chat/responses/items/`.
-Responses opaque-location traversal is centralized in its affinity directory:
-top-level state, encrypted tool-output parts, collaboration
-`arguments.message`, and `agent_message` encrypted content cannot grow separate
-ingress/egress inventories. Collaboration arguments and agent messages share a
-logical carrier domain because Codex moves the same ciphertext between those
-positions. Their natural state and structured encrypted tool output require the
-producing native Responses upstream while permitting a child Responses-model override; compaction and
-program continuation state still require the upstream/model pair.
+Responses opaque-location traversal is centralized in its affinity directory;
+top-level state and encrypted tool-output parts cannot grow separate
+ingress/egress inventories. Collaboration messages are deliberately outside
+affinity: the attempt-level plaintext collaboration interceptor aliases Codex's
+reserved namespace on native Responses wires, removes the three encrypted
+message schema markers, then restores client-visible calls with
+`encrypted_function_args: []`. Compaction and program continuation state still
+require the upstream/model pair, while structured encrypted tool output requires
+a native Responses model on its producing upstream.
 Affinity wire behavior and its relationship to Stateful Responses and
 Copilot's provider-private item-id membrane live in `docs/AFFINITY.md`.
 Candidate resolution, target selection, and iteration live in

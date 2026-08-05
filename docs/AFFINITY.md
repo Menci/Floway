@@ -37,8 +37,8 @@ encrypted plaintext is exactly:
 
 Routing policy is not serialized. Ingress assigns policy from the carrier's
 current logical role: ordinary history is optional, target-bound continuation
-state requires the producing upstream/model, and model-portable encrypted tool
-state requires a native Responses candidate on the producing upstream. `origin` records how
+state requires the producing upstream/model, and structured encrypted tool
+output requires a native Responses candidate on the producing upstream. `origin` records how
 to restore original opaque bytes; its absence means the blob was created solely
 for affinity and contains no original value.
 `syntheticItem` is an independent, authenticated statement that Floway created
@@ -88,11 +88,10 @@ Each blob projection produces one of three decisions:
 
 Optional owned blobs require an exact upstream/model/rules match. Exact-target
 state requires the upstream/model pair but deliberately ignores alias rules, so
-every rule variant of the same physical target remains eligible. Encrypted
-inter-agent messages and structured encrypted tool outputs require a native
-Responses candidate on the producing upstream, allowing Codex to spawn a child
-with a different Responses model on the same producer. A translated Messages or
-Chat Completions candidate cannot carry this state. A direct candidate's absent rules and an alias target's empty
+every rule variant of the same physical target remains eligible. Structured
+encrypted tool outputs require a native Responses candidate on the producing
+upstream. A translated Messages or Chat Completions candidate cannot carry this
+state. A direct candidate's absent rules and an alias target's empty
 `rules: {}` are the same no-overlay variant for optional matching. Foreign
 blobs never impose a requirement and always pass through byte-for-byte.
 
@@ -169,27 +168,20 @@ Natural blobs are:
 
 - top-level `encrypted_content` and program `fingerprint`;
 - `function_call_output.output[]` and
-  `custom_tool_call_output.output[]` encrypted-content parts;
-- encrypted collaboration `function_call.arguments.message` and beta
-  `multi_agent_call.arguments.message`;
-- `agent_message.content[].encrypted_content`.
+  `custom_tool_call_output.output[]` encrypted-content parts.
 
-Codex emits the message argument from `spawn_agent`, `send_message`, and
-`followup_task`, then moves that exact value into the recipient thread's
-`agent_message`. Both positions therefore share the logical carrier domain
-`responses.inter-agent-message.encrypted-content`, independent of array index.
-Ingress also authenticates the prior position-bound agent-message domain so a
-deployment does not forward an in-flight older Floway trailer to the upstream.
-Legacy function calls qualify only in the `collaboration` namespace, and an
-explicit `encrypted_function_args: []` leaves their plaintext message outside
-affinity. Owned natural inter-agent and encrypted tool-output carriers require a
-native Responses model on their producing upstream; the original value is
-restored before any provider sees it.
+Collaboration arguments and `agent_message` content are not affinity carriers.
+The native Responses compatibility membrane replaces Codex's reserved encrypted
+collaboration namespace with a request-scoped ordinary plaintext namespace and
+restores client-visible calls with `encrypted_function_args: []`; see
+[TRANSLATION.md](./TRANSLATION.md). Legacy encrypted agent messages stay opaque
+and receive no Floway trailer, routing evidence, or item-id metadata.
 
 A carrier-capable first item without a natural blob receives an originless blob
 in its own slot when that item closes. The blob has no `syntheticItem` marker
-because the upstream item already existed. An originless agent-message slot is
-metadata rather than encrypted tool state and imposes no upstream requirement.
+because the upstream item already existed. `agent_message` is not
+carrier-capable; when it is the first logical output, Floway inserts the
+separate synthetic reasoning prefix described below.
 
 If the first item cannot carry a blob, Floway emits a complete originless
 reasoning `output_item.added` + `output_item.done` pair before the original
@@ -203,25 +195,18 @@ program-output items inherit force from the latest earlier owned carrier; they
 do not receive additional blobs. Failed streams do not invent a missing first
 carrier.
 
-Streaming collaboration arguments are buffered only until the authoritative
-full arguments value arrives. Egress wraps its `message`, redistributes the
-rewritten JSON across the original argument-delta event count, and emits the
-same value in `response.function_call_arguments.done`,
-`response.output_item.done`, and every resource snapshot. Codex executes the
-done item, while generic Responses accumulators see a coherent delta/done/item
-sequence. HTTP and WebSocket share this source egress.
-
 ## Copilot item IDs
 
 The Copilot provider has an independent inner item-id membrane. For reasoning,
-compaction, program, and agent-message outputs that carry replay state, it
+compaction, and program outputs that carry replay state, it
 appends plaintext JSON `{version:1, origin, id}` plus a trailing big-endian
 two-byte JSON length to each decoded/original carrier value. `origin` is `raw`,
 `base64`, or `base64url`; no account identifier or encryption is part of this
 provider-private layer. The client-facing item receives a fresh type-correct
 random ID at `output_item.added`, while raw Copilot IDs travel only inside the
-matching carrier trailers. Known output types without a carrier also receive
-random IDs. An unknown output type fails before its raw ID is yielded.
+matching carrier trailers. Known output types without a carrier, including
+plaintext agent messages, also receive random IDs. An unknown output type fails
+before its raw ID is yielded.
 
 Affinity egress subsequently appends its authenticated outer layer, so two
 trailers on one client-visible blob are expected and independent. On the next

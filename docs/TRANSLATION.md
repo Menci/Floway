@@ -84,6 +84,32 @@ than in pairwise translators.
   a no-backing scratchpad store and cannot take ownership of another source
   protocol's durable item state. See [AFFINITY.md](./AFFINITY.md).
 
+### Plaintext Codex collaboration
+
+Codex declares `collaboration` as a reserved Responses namespace and marks the
+`message` property of `spawn_agent`, `send_message`, and `followup_task` with
+the Responses-only `encrypted: true` schema extension. Native Copilot rejects a
+reserved namespace whose schema removes that field, so Floway projects the
+entire namespace onto a request-scoped ordinary name
+`floway_collaboration_<128-bit random hex>`. Only those three message schemas
+lose `encrypted`; the other collaboration actions and every unrelated tool are
+unchanged.
+
+Historical collaboration function calls use the same request-scoped namespace
+on the upstream wire and omit `encrypted_function_args`. Upstream response items
+map the namespace back to `collaboration`; the three message actions receive
+`encrypted_function_args: []`, which makes Codex construct one plaintext
+`agent_message` `input_text` for the recipient. Argument delta/done bytes,
+`arguments`, IDs, call IDs, tool outputs, and event order are not rewritten.
+Every response snapshot and echoed tool inventory restores the client namespace
+and encrypted schema. HTTP, SSE, WebSocket, Stateful Responses persistence, and
+history replay all consume this same attempt-level membrane.
+
+Messages and Chat Completions targets already produce plaintext tool arguments;
+their response translators restore the collaboration identity and the same
+empty plaintext marker. Legacy `agent_message.encrypted_content` cannot be
+converted to plaintext and passes through as opaque input.
+
 Copilot audits build their inventory from provider registration/default code
 and the `audit-copilot-workarounds` skill, including auth, model shaping,
 compaction, and item-id behavior outside interceptor registries. Support
