@@ -120,11 +120,9 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
   const { config } = assertCustomUpstreamRecord(record);
 
   const headersForCall = (headers: Headers): Headers => {
-    const rules = new Map(config.ingressHeadersRules.map(rule => [rule.key, rule.value]));
-    const resolved = new Headers();
-    for (const [name, value] of headers) {
-      const replacement = rules.get(name);
-      if (replacement !== undefined) resolved.append(name, replacement ?? value);
+    const resolved = new Headers(headers);
+    for (const rule of config.ingressHeadersRules) {
+      if (rule.value !== null && resolved.has(rule.key)) resolved.set(rule.key, rule.value);
     }
     return resolved;
   };
