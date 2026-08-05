@@ -356,7 +356,7 @@ test('DELETE /api/users/:id responds after atomic revocation without waiting onc
       attempts.push(keyId);
       await brokerGate;
     },
-    subscribe: () => (async function*() {})(),
+    async subscribe() { return (async function*() {})(); },
   });
 
   const response = await adminDelete(adminSession, 3);
