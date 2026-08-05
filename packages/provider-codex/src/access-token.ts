@@ -54,12 +54,6 @@ const persistAccessToken = async (
   }
 };
 
-export const putCodexAccessToken = async (
-  upstreamId: string,
-  accountId: string,
-  entry: CodexAccessTokenEntry,
-): Promise<void> => { await persistAccessToken(upstreamId, accountId, entry, 'putCodexAccessToken'); };
-
 export const invalidateCodexAccessToken = async (
   upstreamId: string,
   accountId: string,
