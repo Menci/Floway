@@ -131,8 +131,9 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
   // execution context at all. `sessionScheduler` tracks the task in
   // `pendingWork`; the isolate stays alive throughout because we register
   // ONE lifetime promise up-front (while the fetch handler is still
-  // running, so this waitUntil IS legal) that only resolves when
-  // (WS closed ∧ pendingWork drained).
+  // running, so this waitUntil IS legal) that only resolves when the WebSocket
+  // is closed, its active message queue has finished, and pendingWork is
+  // drained.
   //
   // The drain first joins the serialized message queue, then drains background
   // work to a fixed point. The active handler can enqueue dump.finalize,
