@@ -43,6 +43,9 @@ const WHITE = parseRgb('#FFFFFF');
 export const readableTone = (hex: string, surface: string): string => {
   const rgb = parseRgb(hex);
   const surfaceRgb = parseRgb(surface);
+  if (surfaceRgb.alpha !== undefined && surfaceRgb.alpha < 1) {
+    throw new TypeError('Readable tone requires an opaque surface');
+  }
   const surfaceLinear = linearRgb(surfaceRgb);
   const paintedRgb = blend([surfaceRgb, rgb], 'normal', 'rgb') as ReturnType<typeof parseRgb>;
   if (wcagContrast(linearRgb(paintedRgb), surfaceLinear) >= TEXT_CONTRAST_FLOOR) return hex;

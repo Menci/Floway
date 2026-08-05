@@ -35,6 +35,10 @@ describe('readableTone', () => {
     expect(contrast(result, CARD_LIGHT)).toBeGreaterThanOrEqual(4.5);
   });
 
+  it('rejects a translucent surface without a backdrop to flatten it onto', () => {
+    expect(() => readableTone('#0008', '#FFFFFF80')).toThrow('Readable tone requires an opaque surface');
+  });
+
   it('darkens a mid hue for a light surface and lightens it for a dark one', () => {
     const light = toned('#C239B3', CARD_LIGHT);
     const dark = toned('#C239B3', CARD_DARK);
