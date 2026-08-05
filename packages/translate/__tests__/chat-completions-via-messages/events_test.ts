@@ -174,6 +174,25 @@ test('tool_use content_block_start → tool_calls init chunk', () => {
   assertEquals(tc![0].function!.arguments, '');
 });
 
+test('non-empty content block starts preserve initial text, thinking, and tool input', () => {
+  const translateStart = (contentBlock: Extract<MessagesStreamEvent, { type: 'content_block_start' }>['content_block']) => {
+    const state = createMessagesToChatCompletionsStreamState();
+    translateMessagesEventToChatCompletionsChunks(MSG_START, state);
+    return translateMessagesEventToChatCompletionsChunks({ type: 'content_block_start', index: 0, content_block: contentBlock }, state) as ChatCompletionsStreamEvent[];
+  };
+
+  assertEquals(translateStart({ type: 'text', text: 'hello' })[0].choices[0].delta, { content: 'hello' });
+  assertEquals(translateStart({ type: 'thinking', thinking: 'trace' })[0].choices[0].delta, { reasoning_text: 'trace' });
+  assertEquals(translateStart({ type: 'tool_use', id: 'call_1', name: 'lookup', input: { q: 'x' } })[0].choices[0].delta, {
+    tool_calls: [{
+      index: 0,
+      id: 'call_1',
+      type: 'function',
+      function: { name: 'lookup', arguments: '{"q":"x"}' },
+    }],
+  });
+});
+
 test('multiple tool_use blocks increment index', () => {
   const state = createMessagesToChatCompletionsStreamState();
   translateMessagesEventToChatCompletionsChunks(MSG_START, state);

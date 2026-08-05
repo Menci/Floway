@@ -27,7 +27,7 @@ test('buildTargetRequest prefers output_config.effort over thinking.disabled', (
   assertEquals(result.reasoning_effort, 'high');
 });
 
-test('buildTargetRequest treats empty output_config.effort as absent', () => {
+test('buildTargetRequest forwards empty output_config.effort verbatim', () => {
   const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
@@ -36,7 +36,7 @@ test('buildTargetRequest treats empty output_config.effort as absent', () => {
     messages: [{ role: 'user', content: 'hi' }],
   });
 
-  assertEquals(result.reasoning_effort, 'none');
+  assertEquals(result.reasoning_effort, '');
 });
 
 test('buildTargetRequest maps thinking.enabled to reasoning_effort medium regardless of budget_tokens', () => {

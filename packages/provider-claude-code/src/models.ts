@@ -70,17 +70,23 @@ export const fetchClaudeCodeModelsList = async (
     const body = await response.text();
     throw new Error(`Claude Code /v1/models fetch failed: ${response.status} ${body.slice(0, 200)}`);
   }
-  const parsed = await response.json() as { data?: unknown };
-  if (!Array.isArray(parsed.data)) throw new Error('Claude Code /v1/models response missing data array');
-  return parsed.data.map(assertApiModel);
+  const parsed = await response.json() as unknown;
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('Claude Code /v1/models response is not an object');
+  }
+  const data = (parsed as Record<string, unknown>).data;
+  if (!Array.isArray(data)) throw new Error('Claude Code /v1/models response missing data array');
+  return data.map(assertApiModel);
 };
 
 const assertApiModel = (value: unknown): ClaudeCodeApiModel => {
-  if (typeof value !== 'object' || value === null) throw new TypeError('Claude Code /v1/models entry is not an object');
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new TypeError('Claude Code /v1/models entry is not an object');
   const { id, display_name, max_input_tokens, capabilities } = value as Record<string, unknown>;
-  if (typeof id !== 'string') throw new TypeError(`Claude Code /v1/models entry missing id: ${JSON.stringify(value).slice(0, 200)}`);
-  if (typeof display_name !== 'string') throw new TypeError(`Claude Code /v1/models entry ${id} missing display_name`);
-  if (typeof max_input_tokens !== 'number') throw new TypeError(`Claude Code /v1/models entry ${id} missing max_input_tokens`);
+  if (typeof id !== 'string' || id.trim() === '') throw new TypeError(`Claude Code /v1/models entry missing id: ${JSON.stringify(value).slice(0, 200)}`);
+  if (typeof display_name !== 'string' || display_name.trim() === '') throw new TypeError(`Claude Code /v1/models entry ${id} missing display_name`);
+  if (typeof max_input_tokens !== 'number' || !Number.isSafeInteger(max_input_tokens) || max_input_tokens <= 0) {
+    throw new TypeError(`Claude Code /v1/models entry ${id} carries invalid max_input_tokens`);
+  }
   return {
     id,
     display_name,

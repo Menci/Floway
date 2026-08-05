@@ -1,25 +1,8 @@
+import { assertCodexQuotaSnapshot, type CodexQuotaSnapshot } from './quota-snapshot.ts';
 import { findCodexAccountIndex, readCodexUpstreamState, replaceCodexAccount } from './state.ts';
 import { getProviderRepo } from '@floway-dev/provider';
 
-export interface CodexQuotaSnapshot {
-  observed_at: string;
-  active_limit?: string;
-  plan_type?: string;
-
-  primary_used_percent?: number;
-  primary_window_minutes?: number;
-  primary_reset_after_at?: string;
-
-  secondary_used_percent?: number;
-  secondary_window_minutes?: number;
-  secondary_reset_after_at?: string;
-
-  credits_has_credits?: boolean;
-  credits_balance?: number;
-
-  // Present only when this snapshot was written as a result of a 429.
-  ratelimited_until?: string;
-}
+export { assertCodexQuotaSnapshot, type CodexQuotaSnapshot } from './quota-snapshot.ts';
 
 export type CodexQuotaSnapshotMap = Record<string, CodexQuotaSnapshot>;
 
@@ -52,7 +35,9 @@ export const parseCodexQuotaHeaders = (headers: Headers, options: ParseCodexQuot
   const setNumber = (key: keyof CodexQuotaSnapshot, header: string): void => {
     const v = headers.get(header);
     if (v === null) return;
-    const n = Number(v);
+    const trimmed = v.trim();
+    if (trimmed === '') return;
+    const n = Number(trimmed);
     if (Number.isFinite(n)) assign[key] = n;
   };
   const setBool = (key: keyof CodexQuotaSnapshot, header: string): void => {
@@ -65,9 +50,12 @@ export const parseCodexQuotaHeaders = (headers: Headers, options: ParseCodexQuot
   const setResetAfter = (key: keyof CodexQuotaSnapshot, header: string): void => {
     const v = headers.get(header);
     if (v === null) return;
-    const seconds = Number(v);
+    const trimmed = v.trim();
+    if (trimmed === '') return;
+    const seconds = Number(trimmed);
     if (!Number.isFinite(seconds)) return;
-    assign[key] = new Date(options.now.getTime() + seconds * 1000).toISOString();
+    const resetAt = new Date(options.now.getTime() + seconds * 1000);
+    if (!Number.isNaN(resetAt.getTime())) assign[key] = resetAt.toISOString();
   };
 
   setString('active_limit', 'x-codex-active-limit');
@@ -86,7 +74,8 @@ export const parseCodexQuotaHeaders = (headers: Headers, options: ParseCodexQuot
     const secondary = Number(headers.get('x-codex-secondary-reset-after-seconds'));
     const seconds = Math.max(Number.isFinite(primary) ? primary : 0, Number.isFinite(secondary) ? secondary : 0);
     if (seconds > 0) {
-      snapshot.ratelimited_until = new Date(options.now.getTime() + seconds * 1000).toISOString();
+      const retryAt = new Date(options.now.getTime() + seconds * 1000);
+      if (!Number.isNaN(retryAt.getTime())) snapshot.ratelimited_until = retryAt.toISOString();
     }
   }
 
@@ -130,6 +119,7 @@ export const putCodexQuota = async (
   accountId: string,
   snapshot: CodexQuotaSnapshot,
 ): Promise<void> => {
+  assertCodexQuotaSnapshot(snapshot, 'putCodexQuota.snapshot');
   // Stamped before the write so a replay against a winning sibling produces
   // the same document rather than a later `fetchedAt`.
   const fetchedAt = Date.now();

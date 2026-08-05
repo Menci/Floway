@@ -120,6 +120,16 @@ describe('refreshClaudeCodeAccessToken', () => {
     await expect(refreshClaudeCodeAccessToken('rt_dead', directFetcher))
       .rejects.toBeInstanceOf(ClaudeCodeOAuthSessionTerminatedError);
   });
+
+  test.each([0, -1, 0.5, Number.MAX_SAFE_INTEGER])(
+    'rejects unusable expires_in=%s before it can corrupt cached state',
+    async expiresIn => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(okResponse({
+        access_token: 'at', expires_in: expiresIn, refresh_token: 'rt2', scope: 'user:inference',
+      }));
+      await expect(refreshClaudeCodeAccessToken('rt_old', directFetcher)).rejects.toThrow(/invalid expires_in/);
+    },
+  );
 });
 
 describe('buildClaudeCodeAuthorizeUrl', () => {

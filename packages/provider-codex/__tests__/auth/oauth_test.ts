@@ -70,4 +70,14 @@ describe('refreshCodexAccessToken', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorResponse(400, { error: { code: 'invalid_grant', message: 'Your refresh token has already been used to generate a new access token. Please try signing in again.' } }));
     await expect(refreshCodexAccessToken('rt_replayed', directFetcher)).rejects.toBeInstanceOf(CodexOAuthSessionTerminatedError);
   });
+
+  test.each([0, -1, 0.5, Number.MAX_SAFE_INTEGER])(
+    'rejects unusable expires_in=%s before it can corrupt cached state',
+    async expiresIn => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(okResponse({
+        access_token: 'at2', refresh_token: 'rt2', id_token: 'it2', expires_in: expiresIn,
+      }));
+      await expect(refreshCodexAccessToken('rt_old', directFetcher)).rejects.toThrow(/invalid expires_in/);
+    },
+  );
 });

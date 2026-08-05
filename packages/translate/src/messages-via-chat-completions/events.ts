@@ -1,4 +1,4 @@
-import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
+import { chatCompletionsErrorPayloadMessage, type ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesContentBlockDeltaEvent, MessagesContentBlockStartEvent, MessagesResult, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
@@ -398,6 +398,11 @@ export const createChatCompletionsToMessagesStreamState = (): ChatCompletionsToM
 });
 
 export const translateChatCompletionsChunkToMessagesEvents = (chunk: ChatCompletionsStreamEvent, state: ChatCompletionsToMessagesStreamState): MessagesStreamEvent[] => {
+  const upstreamError = chatCompletionsErrorPayloadMessage(chunk);
+  if (upstreamError) {
+    throw new Error(`Upstream Chat Completions stream error: ${upstreamError}`, { cause: chunk });
+  }
+
   const events: MessagesStreamEvent[] = [];
 
   if (chunk.service_tier != null) state.upstreamServiceTier = chunk.service_tier;

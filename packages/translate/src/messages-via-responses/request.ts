@@ -221,7 +221,7 @@ export const buildTargetRequest = (payload: MessagesPayload): CanonicalResponses
   // Responses upstream may reject it. Translation stays pairwise and leaves
   // target-side validation to the selected upstream endpoint.
   const effort = resolveMessagesReasoningEffort(payload);
-  const reasoning = effort ? { effort } : undefined;
+  const reasoning = effort !== undefined ? { effort } : undefined;
   const clientTools = filterMessagesClientTools(payload.tools);
   const { instructions, prependItems } = placeMessagesSystem(payload.system);
   const jsonSchema = openAiJsonSchemaCoreFromMessagesFormat(payload.output_config?.format);
