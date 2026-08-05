@@ -1,15 +1,17 @@
-import { test, vi } from 'vitest';
+import { afterEach, test, vi } from 'vitest';
 
 // Copilot OAuth poll handlers warm the model cache after rotating the PAT. The
 // cache behavior has dedicated coverage; these route tests isolate credential
 // exchange and persistence.
+const modelsCacheMock = vi.hoisted<{ error: Error | null }>(() => ({ error: null }));
+
 vi.mock('../../../src/data-plane/providers/models-cache.ts', () => ({
-  fetchUpstreamModelsCached: () => Promise.resolve([]),
+  fetchUpstreamModelsCached: () => modelsCacheMock.error ? Promise.reject(modelsCacheMock.error) : Promise.resolve([]),
   clearInFlightForTesting: () => {},
 }));
 
 import { buildCopilotUpstreamRecord, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
-import { assertEquals, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertStringIncludes, jsonResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
 const githubUser = {
   id: 777,
@@ -17,6 +19,10 @@ const githubUser = {
   name: 'Octo Auth',
   avatar_url: 'https://example.com/octo-auth.png',
 };
+
+afterEach(() => {
+  modelsCacheMock.error = null;
+});
 
 test('/api/upstreams/copilot/oauth/device-login/start starts GitHub device flow', async () => {
   const { adminSession } = await setupAppTest();
@@ -302,4 +308,49 @@ test('/api/upstreams/copilot/oauth/device-login/poll targeted-patches config+sta
   assertEquals((rows[0].config as Record<string, any>).githubToken, 'ghu_refreshed');
   const persistedState = rows[0].state as { copilotToken: { baseUrl: string } | null } | null;
   assertEquals(persistedState?.copilotToken?.baseUrl, 'https://api.business.githubcopilot.com');
+});
+
+test('/api/upstreams/copilot/oauth/device-login/poll clears the previous identity model cache before warming', async () => {
+  const { repo, adminSession, githubAccount } = await setupAppTest({
+    githubAccount: { token: 'ghu_old', user: githubUser },
+  });
+  const existing = buildCopilotUpstreamRecord(githubAccount, { id: 'up_switch_identity' });
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save(existing);
+  await repo.upstreams.saveModelsCache(existing.id, {
+    revision: 1,
+    fetchedAt: 1_700_000_000_000,
+    models: [stubProviderModel({ id: 'old-tenant-model', name: 'Old tenant model' })],
+  });
+  modelsCacheMock.error = new Error('new tenant catalog unavailable');
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.origin === 'https://octocorp.ghe.com' && url.pathname === '/login/oauth/access_token') return jsonResponse({ access_token: 'ghu_ghe' });
+      if (url.origin === 'https://api.octocorp.ghe.com' && url.pathname === '/user') return jsonResponse(githubUser);
+      if (url.origin === 'https://api.octocorp.ghe.com' && url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'ct_ghe',
+          expires_at: Math.floor(Date.now() / 1000) + 1500,
+          refresh_in: 1200,
+          endpoints: { api: 'https://api.business.githubcopilot.com' },
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/api/upstreams/copilot/oauth/device-login/poll', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
+        body: JSON.stringify({
+          record: { ...copilotBlueprintEnvelope, id: existing.id, config: { githubHost: 'octocorp.ghe.com' } },
+          deviceCode: 'ghe-device',
+        }),
+      });
+      assertEquals(response.status, 200);
+    },
+  );
+
+  assertEquals((await repo.upstreams.getById(existing.id))?.modelsCache, null);
 });

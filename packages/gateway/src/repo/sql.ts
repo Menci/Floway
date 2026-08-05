@@ -937,6 +937,10 @@ class SqlUpstreamRepo implements UpstreamRepo {
   // Written only here and never by save(): an operator edit carries whatever
   // catalog the request happened to read, and folding that back in would let a
   // rename race a refresh.
+  async clearModelsCache(id: string): Promise<void> {
+    await this.db.prepare('UPDATE upstreams SET models_cache_json = NULL WHERE id = ?').bind(id).run();
+  }
+
   async saveModelsCache(id: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<void> {
     await this.db
       .prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ?')

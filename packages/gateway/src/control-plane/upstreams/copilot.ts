@@ -122,6 +122,7 @@ export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
     const prevState = sameIdentity ? readCopilotUpstreamState(dbRecord.state) : emptyCopilotUpstreamState();
     nextState = { ...prevState, copilotToken: cred.tokenEntry };
     const next: UpstreamRecord = { ...dbRecord, config: configPatch, state: nextState, updatedAt: new Date().toISOString() };
+    if (!sameIdentity) await getRepo().upstreams.clearModelsCache(record.id);
     await getRepo().upstreams.save(next);
     clearInProcessCopilotTokenCache();
     await warmModelsCache(next, c);

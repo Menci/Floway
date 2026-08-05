@@ -264,6 +264,7 @@ export interface UpstreamRepo {
   // Catalog-cache writes. They touch only the cache column, so a refresh and a
   // credential write to the same row do not contend — `saveState`'s CAS
   // predicate reads `state_json` alone.
+  clearModelsCache(id: string): Promise<void>;
   saveModelsCache(id: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<void>;
   saveModelsCacheError(id: string, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<void>;
 }

@@ -607,6 +607,12 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     return Promise.resolve();
   }
 
+  clearModelsCache(id: string): Promise<void> {
+    const existing = this.store.get(id);
+    if (existing) existing.modelsCache = null;
+    return Promise.resolve();
+  }
+
   // No-op on a row that has never cached a catalog: the annotation belongs to a
   // previously-successful fetch.
   saveModelsCacheError(id: string, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<void> {

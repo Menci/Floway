@@ -73,6 +73,20 @@ test('SQL upstream repo saveModelsCacheError is a no-op on a row that never cach
   assertEquals((await repo.getById('up_test'))?.modelsCache, null);
 });
 
+test('SQL upstream repo clearModelsCache removes the cached catalog', async () => {
+  const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
+  await repo.save(baseRecord());
+  await repo.saveModelsCache('up_test', {
+    revision: 7,
+    fetchedAt: 1_700_000_000_000,
+    models: [stubProviderModel({ id: 'cached-model' })],
+  });
+
+  await repo.clearModelsCache('up_test');
+
+  assertEquals((await repo.getById('up_test'))?.modelsCache, null);
+});
+
 test('SQL upstream repo save leaves an existing cached catalog alone', async () => {
   const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
   await repo.save(baseRecord());
