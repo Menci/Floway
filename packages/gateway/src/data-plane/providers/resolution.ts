@@ -271,10 +271,11 @@ export const enumerateModelCandidates = async ({
 
   const repo = getRepo();
   const upstreams = await repo.upstreams.list();
-  const [fetcherForUpstream, providers] = await Promise.all([
-    createPerRequestFetcher(runtimeLocation, upstreams),
-    listModelProviders(upstreamIds, upstreams),
-  ]);
+  const providers = await listModelProviders(upstreamIds, upstreams);
+  if (providers.length === 0) {
+    return { candidates: [], sawModel: false, failedUpstreams: [] };
+  }
+  const fetcherForUpstream = await createPerRequestFetcher(runtimeLocation, upstreams);
   const loadCatalog = createProviderCatalogLoader(fetcherForUpstream, scheduler);
   const enumerateReal = (modelId: string, modelKind: ModelKind) =>
     enumerateRealModelCandidatesWithLoader(modelId, modelKind, providers, loadCatalog);

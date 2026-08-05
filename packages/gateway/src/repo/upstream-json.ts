@@ -16,8 +16,11 @@ const canonicalize = (value: unknown): unknown => {
   return value;
 };
 
-export const serializeCanonicalJson = (value: unknown): string =>
-  JSON.stringify(canonicalize(value));
+export const serializeCanonicalJson = (value: unknown): string => {
+  const serialized = JSON.stringify(canonicalize(value));
+  if (serialized === undefined) throw new TypeError('Value is not JSON-serializable');
+  return serialized;
+};
 
 // state_json is nullable; null/undefined collapse to SQL NULL.
 export const serializeStoredState = (value: unknown): string | null =>
