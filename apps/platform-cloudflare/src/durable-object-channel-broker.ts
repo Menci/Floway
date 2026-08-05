@@ -56,7 +56,6 @@ const iterateFromBroadcastSocket = <T>(
 
       let socket: WebSocket | null = null;
       let terminated = false;
-      let openPromise: Promise<void>;
       let pendingError: { error: unknown } | null = null;
 
       const detach = (): void => {
@@ -112,7 +111,7 @@ const iterateFromBroadcastSocket = <T>(
       };
       pull = flushError;
 
-      openPromise = (async (): Promise<void> => {
+      const openPromise = (async (): Promise<void> => {
         const response = await stub.fetch(new Request('https://broadcast.do/subscribe', {
           headers: { Upgrade: 'websocket' },
         }));
