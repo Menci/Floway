@@ -65,6 +65,8 @@ const seriesGroupSql = (source: string) => `CASE settings.series_group_by
   WHEN 'operation' THEN ${source}.operation
   WHEN 'runtimeLocation' THEN ${source}.runtime_location
 END`;
+const seriesWhereSql = (source: string) =>
+  `settings.series_group_by != 'userId' OR ${source}.user_id IS NOT NULL`;
 
 const performanceBreakdownSql: readonly PerformanceBreakdownSql[] = [
   { axis: 'none', group: () => "'all'" },
@@ -93,7 +95,7 @@ const summarySeriesSql = `
   FROM filtered_summary
   CROSS JOIN settings
   JOIN bucket_map ON bucket_map.hour = filtered_summary.hour
-  WHERE settings.series_group_by != 'userId' OR filtered_summary.user_id IS NOT NULL
+  WHERE ${seriesWhereSql('filtered_summary')}
   GROUP BY bucket_map.bucket, group_value`;
 
 const summaryBreakdownSql = performanceBreakdownSql.map(({ axis, group, where }) => {
@@ -130,7 +132,7 @@ const histogramSeriesSql = `
   FROM filtered_histogram
   CROSS JOIN settings
   JOIN bucket_map ON bucket_map.hour = filtered_histogram.hour
-  WHERE settings.series_group_by != 'userId' OR filtered_histogram.user_id IS NOT NULL
+  WHERE ${seriesWhereSql('filtered_histogram')}
   GROUP BY bucket_map.bucket, group_value, filtered_histogram.metric, filtered_histogram.lower`;
 
 const histogramBreakdownSql = performanceBreakdownSql.map(({ axis, group, where }) => {
