@@ -134,13 +134,12 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
   // running, so this waitUntil IS legal) that only resolves when
   // (WS closed ∧ pendingWork drained).
   //
-  // The drain uses a `while (size > 0)` loop rather than a single
-  // `Promise.allSettled(pendingWork)` snapshot: the in-flight message
-  // handler running at close time may still enqueue a final
-  // dump.finalize / settle / recordFailedRequest from its finally/catch after
-  // `sessionClosed` resolves. The loop keeps going until the Set is
-  // genuinely empty, which is bounded because `closed = true` short-
-  // circuits future message handlers at the top of `handleClientMessage`.
+  // The drain first joins the serialized message queue, then drains background
+  // work to a fixed point. The active handler can enqueue dump.finalize,
+  // settle, or recordFailedRequest after `sessionClosed` resolves; observing an
+  // empty Set before that handler finishes would let the lifetime promise exit
+  // while those writes have not even been scheduled. The fixed-point check also
+  // covers a message callback that was already dispatched when close arrived.
   const pendingWork = new Set<Promise<unknown>>();
   let sessionClosedResolve: (() => void) | undefined;
   const sessionClosed = new Promise<void>(resolve => { sessionClosedResolve = resolve; });
@@ -152,8 +151,11 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
   };
   backgroundSchedulerFromContext(c)((async () => {
     await sessionClosed;
-    while (pendingWork.size > 0) {
-      await Promise.allSettled([...pendingWork]);
+    while (true) {
+      const activeQueue = queue;
+      await activeQueue;
+      if (pendingWork.size > 0) await Promise.allSettled([...pendingWork]);
+      if (queue === activeQueue && pendingWork.size === 0) break;
     }
   })());
 

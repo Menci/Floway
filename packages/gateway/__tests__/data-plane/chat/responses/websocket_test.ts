@@ -13,11 +13,12 @@ import { copilotModels, flushAsyncWork, setupAppTest, sseResponse, sseResponsesR
 import { installWorkerWebSocketRuntime, type TestWorkerWebSocket } from '../../../test-utils/worker-websocket.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import type { EventResult, TelemetryModelIdentity } from '@floway-dev/provider';
+import type { EventResult, EventResultMetadata, TelemetryModelIdentity } from '@floway-dev/provider';
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 type ResponsesFrame = ProtocolFrame<ResponsesStreamEvent>;
-const conditionSetTimeout = globalThis.setTimeout;
+const timeoutSetTimeout = globalThis.setTimeout;
+const timeoutClearTimeout = globalThis.clearTimeout;
 
 interface Deferred<T> {
   readonly promise: Promise<T>;
@@ -49,13 +50,17 @@ const createControlledResponsesEvents = (
   let first = firstFrame;
   let pendingNext: Deferred<IteratorResult<ResponsesFrame>> | undefined;
   let nextCalls = 0;
-  let returnCalled = false;
+  const firstNextStarted = deferred<void>();
+  const secondNextStarted = deferred<void>();
+  const iteratorReturned = deferred<void>();
 
   const events: AsyncIterable<ResponsesFrame> = {
     [Symbol.asyncIterator]() {
       return {
         next(): Promise<IteratorResult<ResponsesFrame>> {
           nextCalls += 1;
+          if (nextCalls === 1) firstNextStarted.resolve();
+          if (nextCalls === 2) secondNextStarted.resolve();
           if (first !== undefined) {
             const value = first;
             first = undefined;
@@ -69,7 +74,7 @@ const createControlledResponsesEvents = (
           return pending.promise;
         },
         return(): Promise<IteratorResult<ResponsesFrame>> {
-          returnCalled = true;
+          iteratorReturned.resolve();
           pendingNext?.resolve(closedResponsesIteratorResult());
           return Promise.resolve(closedResponsesIteratorResult());
         },
@@ -80,7 +85,9 @@ const createControlledResponsesEvents = (
   return {
     events,
     nextCalls: () => nextCalls,
-    returnCalled: () => returnCalled,
+    firstNextStarted: firstNextStarted.promise,
+    secondNextStarted: secondNextStarted.promise,
+    iteratorReturned: iteratorReturned.promise,
     resolvePendingFrame: (frame: ResponsesFrame) => {
       assertExists(pendingNext);
       pendingNext.resolve({ done: false, value: frame });
@@ -106,44 +113,60 @@ const responseCreatedFrame = (): ResponsesFrame => eventFrame({
 const controlledEventResult = (
   events: AsyncIterable<ResponsesFrame>,
   metadataRead: () => void,
+  finalMetadata: Promise<EventResultMetadata>,
 ): EventResult<ResponsesFrame> => ({
   type: 'events',
   events,
   modelIdentity: TEST_MODEL_IDENTITY,
   get finalMetadata() {
     metadataRead();
-    return Promise.resolve({ modelIdentity: TEST_MODEL_IDENTITY });
+    return finalMetadata;
   },
 });
 
 const mockControlledResponsesTurn = (
   createEvents: (signal: AbortSignal) => ControlledResponsesEvents,
+  finalMetadata: Promise<EventResultMetadata> = Promise.resolve({ modelIdentity: TEST_MODEL_IDENTITY }),
 ) => {
-  let turnSignal: AbortSignal | undefined;
-  let controlledEvents: ControlledResponsesEvents | undefined;
-  let metadataRead = false;
+  const turnSignal = deferred<AbortSignal>();
+  const controlledEvents = deferred<ControlledResponsesEvents>();
+  const metadataRead = deferred<void>();
   const generate = vi.spyOn(responsesServe, 'generate').mockImplementation(async ({ ctx }) => {
     const signal = ctx.abortSignal;
     assertExists(signal);
-    turnSignal = signal;
-    controlledEvents = createEvents(signal);
-    return controlledEventResult(controlledEvents.events, () => { metadataRead = true; });
+    const events = createEvents(signal);
+    turnSignal.resolve(signal);
+    controlledEvents.resolve(events);
+    return controlledEventResult(events.events, () => { metadataRead.resolve(); }, finalMetadata);
   });
   onTestFinished(() => generate.mockRestore());
 
   return {
-    signal: (): AbortSignal => {
-      assertExists(turnSignal);
-      return turnSignal;
-    },
-    events: (): ControlledResponsesEvents => {
-      assertExists(controlledEvents);
-      return controlledEvents;
-    },
-    nextCalls: () => controlledEvents?.nextCalls() ?? 0,
-    returnCalled: () => controlledEvents?.returnCalled() ?? false,
-    metadataRead: () => metadataRead,
+    signal: turnSignal.promise,
+    events: controlledEvents.promise,
+    metadataRead: metadataRead.promise,
   };
+};
+
+const promiseWithin = async <T>(promise: Promise<T>, failureMessage: string, timeoutMs = 1_000): Promise<T> => {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timeoutId = timeoutSetTimeout(() => reject(new Error(failureMessage)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== undefined) timeoutClearTimeout(timeoutId);
+  }
+};
+
+const flushImmediateFakeTime = async (time: FakeTime): Promise<void> => {
+  for (let i = 0; i < 10; i++) {
+    await new Promise<void>(resolve => { timeoutSetTimeout(resolve, 0); });
+    await time.tickAsync(0);
+  }
 };
 
 const waitForMessages = async (
@@ -185,14 +208,6 @@ const waitForMicrotasks = async (): Promise<void> => {
   for (let i = 0; i < 10; i++) await Promise.resolve();
 };
 
-const waitForCondition = async (condition: () => boolean, failureMessage: string): Promise<void> => {
-  for (let i = 0; i < 200; i++) {
-    if (condition()) return;
-    await new Promise<void>(resolve => { conditionSetTimeout(resolve, 0); });
-  }
-  throw new Error(failureMessage);
-};
-
 const isTerminalResponseEvent = (message: Record<string, unknown>): boolean =>
   message.type === 'response.completed' || message.type === 'response.failed' || message.type === 'response.incomplete';
 
@@ -206,12 +221,14 @@ const terminalResponseId = (messages: readonly Record<string, unknown>[]): strin
   return id;
 };
 
-const connectResponsesWebSocket = async (apiKey: string): Promise<TestWorkerWebSocket> => {
-  const executionCtx = {
+const connectResponsesWebSocket = async (
+  apiKey: string,
+  executionCtx: ExecutionContext = {
     waitUntil: () => {},
     passThroughOnException: () => {},
     props: {},
-  } satisfies ExecutionContext;
+  },
+): Promise<TestWorkerWebSocket> => {
   const response = await app.fetch(new Request('https://example.test/v1/responses', {
     method: 'GET',
     headers: {
@@ -1641,27 +1658,32 @@ test('Responses WebSocket close interrupts an idle frame wait before the keep-al
 
   await withWorkerWebSocketRuntime(async () => {
     const client = await connectResponsesWebSocket(apiKey.key);
-    const time = new FakeTime();
-    onTestFinished(() => time.restore());
     client.send(JSON.stringify({
       type: 'response.create',
       response: { model: 'gpt-direct-responses', input: 'idle until closed' },
     }));
 
-    await waitForCondition(
-      () => turn.nextCalls() === 1,
+    const events = await promiseWithin(
+      turn.events,
+      'Responses WebSocket did not create the controlled idle stream',
+    );
+    await promiseWithin(
+      events.firstNextStarted,
       'Responses WebSocket did not begin its idle frame wait',
     );
     client.close();
-    await waitForCondition(
-      turn.metadataRead,
-      'Responses WebSocket did not settle the closed turn before the keep-alive timer',
-    );
+    try {
+      await promiseWithin(
+        turn.metadataRead,
+        'Responses WebSocket did not settle the closed turn before the keep-alive timer',
+      );
+    } finally {
+      events.resolvePendingFrame(responseCreatedFrame());
+    }
 
-    assertEquals(turn.signal().aborted, true);
-    turn.events().resolvePendingFrame(responseCreatedFrame());
-    await waitForCondition(
-      turn.returnCalled,
+    assertEquals((await turn.signal).aborted, true);
+    await promiseWithin(
+      events.iteratorReturned,
       'Responses WebSocket did not finish queued iterator cleanup after the idle read settled',
     );
   });
@@ -1682,18 +1704,23 @@ test('Responses WebSocket send failures abort the turn before another iterator r
       type: 'response.create',
       response: { model: 'gpt-direct-responses', input: 'fail the first send' },
     }));
-    await waitForCondition(
+    const events = await promiseWithin(
+      turn.events,
+      'Responses WebSocket did not create the controlled send-failure stream',
+    );
+    await promiseWithin(
       turn.metadataRead,
       'Responses WebSocket did not settle the failed downstream send',
     );
-    await waitForCondition(
-      turn.returnCalled,
+    await promiseWithin(
+      events.iteratorReturned,
       'Responses WebSocket did not close the upstream iterator after the failed send',
     );
 
-    assertEquals(turn.nextCalls(), 1);
-    assertEquals(turn.signal().aborted, true);
-    assert(turn.signal().reason === sendFailure, 'expected the original send error to become the abort reason');
+    const signal = await turn.signal;
+    assertEquals(events.nextCalls(), 1);
+    assertEquals(signal.aborted, true);
+    assert(signal.reason === sendFailure, 'expected the original send error to become the abort reason');
     client.close();
   });
 });
@@ -1721,19 +1748,98 @@ test('Responses WebSocket keep-alive readiness failures abort the pending turn',
       type: 'response.create',
       response: { model: 'gpt-direct-responses', input: 'fail the keep-alive readiness check' },
     }));
-    await waitForCondition(
-      () => turn.nextCalls() === 2,
+    await flushImmediateFakeTime(time);
+    const events = await promiseWithin(
+      turn.events,
+      'Responses WebSocket did not create the controlled keep-alive stream',
+    );
+    await promiseWithin(
+      events.secondNextStarted,
       'Responses WebSocket did not resume its frame wait after the first event',
     );
     await time.tickAsync(DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS);
-    await waitForCondition(
+    await promiseWithin(
       turn.metadataRead,
       'Responses WebSocket did not settle the failed keep-alive send',
     );
 
     assertEquals(sendCalls, 1);
-    assertEquals(turn.signal().aborted, true);
+    assertEquals((await turn.signal).aborted, true);
     client.close();
+  });
+});
+
+test('Responses WebSocket session lifetime joins the active turn and its background work after close', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const finalMetadata = deferred<EventResultMetadata>();
+  const turn = mockControlledResponsesTurn(
+    () => createControlledResponsesEvents(),
+    finalMetadata.promise,
+  );
+  const usageStarted = deferred<void>();
+  const finishUsage = deferred<void>();
+  const usageRecord = vi.spyOn(repo.usage, 'record').mockImplementation(async () => {
+    usageStarted.resolve();
+    await finishUsage.promise;
+  });
+  onTestFinished(() => {
+    finishUsage.resolve();
+    usageRecord.mockRestore();
+  });
+  const lifetimeCaptured = deferred<Promise<unknown>>();
+  const executionCtx: ExecutionContext = {
+    waitUntil: promise => { lifetimeCaptured.resolve(promise); },
+    passThroughOnException: () => {},
+    props: {},
+  };
+
+  await withWorkerWebSocketRuntime(async () => {
+    const client = await connectResponsesWebSocket(apiKey.key, executionCtx);
+    const lifetime = await promiseWithin(
+      lifetimeCaptured.promise,
+      'Responses WebSocket did not register its session lifetime',
+    );
+    let lifetimeSettled = false;
+    void lifetime.then(() => { lifetimeSettled = true; });
+    client.send(JSON.stringify({
+      type: 'response.create',
+      response: { model: 'gpt-direct-responses', input: 'close during final metadata' },
+    }));
+    const events = await promiseWithin(
+      turn.events,
+      'Responses WebSocket did not create the controlled lifetime stream',
+    );
+    await promiseWithin(
+      events.firstNextStarted,
+      'Responses WebSocket did not begin the active lifetime turn',
+    );
+
+    client.close();
+    await promiseWithin(
+      turn.metadataRead,
+      'Responses WebSocket did not enter final metadata settlement after close',
+    );
+    await new Promise<void>(resolve => { timeoutSetTimeout(resolve, 0); });
+    assertEquals(lifetimeSettled, false, 'session lifetime exited before the active turn settled');
+
+    finalMetadata.resolve({ modelIdentity: TEST_MODEL_IDENTITY });
+    await promiseWithin(
+      usageStarted.promise,
+      'Responses WebSocket did not schedule usage settlement from the active turn',
+    );
+    await new Promise<void>(resolve => { timeoutSetTimeout(resolve, 0); });
+    assertEquals(lifetimeSettled, false, 'session lifetime exited before background usage completed');
+
+    finishUsage.resolve();
+    await promiseWithin(
+      lifetime,
+      'Responses WebSocket session lifetime did not finish after background work drained',
+    );
+    events.resolvePendingFrame(responseCreatedFrame());
+    await promiseWithin(
+      events.iteratorReturned,
+      'Responses WebSocket did not finish iterator cleanup after lifetime settlement',
+    );
   });
 });
 
