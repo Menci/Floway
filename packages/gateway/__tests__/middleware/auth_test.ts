@@ -83,7 +83,7 @@ test('API key whose owner was deleted is rejected', async () => {
     createdAt: '2026-01-01T00:00:00.000Z',
     deletedAt: null,
   });
-  await repo.apiKeys.save({ ...apiKey, id: 'key_alice', userId: 2, key: 'raw_alice', deletedAt: null });
+  await repo.apiKeys.save({ ...apiKey, id: 'key_alice', userId: 2, key: 'raw_alice', serverSecret: '11'.repeat(32), deletedAt: null });
   await repo.users.softDelete(2);
 
   const app = authTestApp();
