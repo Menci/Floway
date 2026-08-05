@@ -115,7 +115,7 @@ export const replaceResponsesOpaqueLocations = <T extends ResponsesItem>(
   item: T,
   replacements: ReadonlyMap<string, string | undefined>,
 ): T => {
-  let result = { ...item } as ResponsesItem & Record<string, unknown>;
+  let result = { ...item } as Record<string, unknown>;
   for (const key of ['encrypted_content', 'fingerprint'] as const) {
     if (!replacements.has(key)) continue;
     const replacement = replacements.get(key);
@@ -132,26 +132,32 @@ export const replaceResponsesOpaqueLocations = <T extends ResponsesItem>(
   }
 
   if (item.type === 'agent_message') {
+    const content = item.content.flatMap((part, index) => {
+      if (part.type !== 'encrypted_content' || typeof part.encrypted_content !== 'string') return [part];
+      const replacement = replacementAt(replacements, `content.${index}.encrypted_content`, part.encrypted_content);
+      return replacement === undefined ? [] : [{ ...part, encrypted_content: replacement }];
+    });
     result = {
       ...result,
-      content: item.content.flatMap((content, index) => {
-        if (content.type !== 'encrypted_content') return [content];
-        const replacement = replacementAt(replacements, `content.${index}.encrypted_content`, content.encrypted_content);
-        return replacement === undefined ? [] : [{ ...content, encrypted_content: replacement }];
-      }),
+      content,
     };
   }
 
   const output = toolOutput(item);
   if (output !== undefined) {
+    const replacedOutput: ResponsesToolOutputContent[] = [];
+    output.forEach((content, index) => {
+      if (content.type !== 'encrypted_content') {
+        replacedOutput.push(content);
+        return;
+      }
+      const replacement = replacementAt(replacements, `output.${index}.encrypted_content`, content.encrypted_content);
+      if (replacement !== undefined) replacedOutput.push({ ...content, encrypted_content: replacement });
+    });
     result = {
       ...result,
-      output: output.flatMap((content, index) => {
-        if (content.type !== 'encrypted_content') return [content];
-        const replacement = replacementAt(replacements, `output.${index}.encrypted_content`, content.encrypted_content);
-        return replacement === undefined ? [] : [{ ...content, encrypted_content: replacement }];
-      }),
+      output: replacedOutput,
     };
   }
-  return result as T;
+  return result as unknown as T;
 };

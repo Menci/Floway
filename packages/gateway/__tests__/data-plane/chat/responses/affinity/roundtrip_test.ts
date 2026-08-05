@@ -129,7 +129,7 @@ test('inter-agent ciphertext carries one mandatory target from parent function c
 
   const parentReplay = await analyzeResponsesAffinity({
     model: 'model-a',
-    input: [clientResponse.output[0]],
+    input: [{ ...clientResponse.output[0], status: 'completed' }],
   }, codec);
   const childReplay = await analyzeResponsesAffinity({
     model: 'model-a',
