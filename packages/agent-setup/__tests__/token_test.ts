@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest';
 
-import { generateAgentSetupToken } from '../src/token.ts';
+import { generateAgentSetupToken, isAgentSetupToken } from '../src/token.ts';
 
 test('generateAgentSetupToken encodes all 32 CSPRNG bytes as unpadded base64url', () => {
   const randomSpy = vi.spyOn(crypto, 'getRandomValues').mockImplementation(array => {
@@ -16,4 +16,13 @@ test('generateAgentSetupToken encodes all 32 CSPRNG bytes as unpadded base64url'
   } finally {
     randomSpy.mockRestore();
   }
+});
+
+test('isAgentSetupToken accepts only the canonical persisted token shape', () => {
+  expect(isAgentSetupToken('a'.repeat(43))).toBe(true);
+  expect(isAgentSetupToken('_'.repeat(43))).toBe(true);
+  expect(isAgentSetupToken('-'.repeat(43))).toBe(true);
+  expect(isAgentSetupToken('a'.repeat(42))).toBe(false);
+  expect(isAgentSetupToken('a'.repeat(44))).toBe(false);
+  expect(isAgentSetupToken(`${'a'.repeat(42)}+`)).toBe(false);
 });

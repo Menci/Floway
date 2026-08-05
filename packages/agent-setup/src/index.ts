@@ -16,3 +16,4 @@ export {
   type AgentSetupRepository,
   AgentSetupTokenCollisionError,
 } from './repository.ts';
+export { isAgentSetupToken } from './token.ts';

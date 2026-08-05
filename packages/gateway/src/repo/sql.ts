@@ -62,7 +62,7 @@ import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogra
 import { parseServerSecret } from '../shared/server-secret.ts';
 import { parseUpstreamIdsValue } from '../shared/upstream-ids.ts';
 import { assertWebSearchProviderName, type WebSearchConfig } from '../shared/web-search-providers.ts';
-import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
+import { AgentSetupTokenCollisionError, isAgentSetupToken } from '@floway-dev/agent-setup';
 import type { SqlBindValue, SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
 import { addDecimalStrings, canonicalPricingSelectorKey, parseBillingMetric, parseModelKind, parseNonNegativeDecimalString, parsePricingSelectorKey, type AliasSelection, type AnnouncedMetadata } from '@floway-dev/protocols/common';
 import type { ProxyFallbackEntry, ModelPrefixConfig, UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
@@ -1490,6 +1490,13 @@ const decodeAgentSetupText = (value: unknown, column: string): string => {
   return value;
 };
 
+const decodeAgentSetupToken = (value: unknown): string => {
+  if (typeof value !== 'string' || !isAgentSetupToken(value)) {
+    throw new TypeError('Stored agent_setup.token must be a 43-character base64url string');
+  }
+  return value;
+};
+
 const decodeAgentSetupInteger = (value: unknown, column: string, minimum: number): number => {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < minimum) {
     throw new TypeError(`Stored agent_setup.${column} must be a safe integer greater than or equal to ${minimum}`);
@@ -1498,7 +1505,7 @@ const decodeAgentSetupInteger = (value: unknown, column: string, minimum: number
 };
 
 const toAgentSetupRecord = (row: AgentSetupRow): AgentSetupRecord => ({
-  token: decodeAgentSetupText(row.token, 'token'),
+  token: decodeAgentSetupToken(row.token),
   userId: decodeAgentSetupInteger(row.user_id, 'user_id', 1),
   configurationJson: decodeAgentSetupText(row.configuration_json, 'configuration_json'),
   configurationRevision: decodeAgentSetupInteger(row.configuration_revision, 'configuration_revision', 1),

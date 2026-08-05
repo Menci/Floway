@@ -140,10 +140,18 @@ test('migration 0068 adds the Claude fable override without replacing existing c
   }
 });
 
+const PRIMARY_TOKEN = 'a'.repeat(43);
+const SECONDARY_TOKEN = 'b'.repeat(43);
+const EXPIRED_OWN_TOKEN = 'c'.repeat(43);
+const LIVE_OWN_TOKEN = 'd'.repeat(43);
+const EXPIRED_FOREIGN_TOKEN = 'e'.repeat(43);
+const FRESH_TOKEN = 'f'.repeat(43);
+const NEWEST_FOREIGN_TOKEN = 'g'.repeat(43);
+
 const insert = (repo: Repo, over: Partial<Parameters<Repo['agentSetup']['insertForUser']>[0]> = {}) =>
   repo.agentSetup.insertForUser({
     userId: 7,
-    token: 'token-a',
+    token: PRIMARY_TOKEN,
     configurationJson: '{"apiKeyId":"key-a"}',
     now: 1_000,
     expiresAt: 1_300,
@@ -156,7 +164,7 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
     const created = await insert(repo);
     expect(created).toEqual({
       userId: 7,
-      token: 'token-a',
+      token: PRIMARY_TOKEN,
       configurationJson: '{"apiKeyId":"key-a"}',
       configurationRevision: 1,
       expiresAt: 1_300,
@@ -168,7 +176,7 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
   test('findByToken loads exactly the addressed row', async () => {
     const repo = await makeRepo();
     const created = await insert(repo);
-    expect(await repo.agentSetup.findByToken('token-a')).toEqual(created);
+    expect(await repo.agentSetup.findByToken(PRIMARY_TOKEN)).toEqual(created);
     expect(await repo.agentSetup.findByToken('nope')).toBeNull();
   });
 
@@ -178,46 +186,46 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
     // The SQL backend rejects; the in-memory backend throws synchronously. An
     // async wrapper normalizes both into a rejected promise for the assertion.
     await expect((async () => await insert(repo, { userId: 8 }))()).rejects.toBeInstanceOf(AgentSetupTokenCollisionError);
-    expect(await repo.agentSetup.findByToken('token-a')).toEqual(created);
+    expect(await repo.agentSetup.findByToken(PRIMARY_TOKEN)).toEqual(created);
   });
 
   test('multiple unexpired leases per user coexist; insert never sweeps a live sibling', async () => {
     const repo = await makeRepo();
-    await insert(repo, { token: 'token-a', now: 1_000, expiresAt: 5_000 });
-    await insert(repo, { token: 'token-b', now: 2_000, expiresAt: 5_000 });
-    expect((await repo.agentSetup.findByToken('token-a'))?.token).toBe('token-a');
-    expect((await repo.agentSetup.findByToken('token-b'))?.token).toBe('token-b');
+    await insert(repo, { token: PRIMARY_TOKEN, now: 1_000, expiresAt: 5_000 });
+    await insert(repo, { token: SECONDARY_TOKEN, now: 2_000, expiresAt: 5_000 });
+    expect((await repo.agentSetup.findByToken(PRIMARY_TOKEN))?.token).toBe(PRIMARY_TOKEN);
+    expect((await repo.agentSetup.findByToken(SECONDARY_TOKEN))?.token).toBe(SECONDARY_TOKEN);
   });
 
   test('insert sweeps same-user expiry at the created_at boundary and preserves every other row', async () => {
     const repo = await makeRepo();
-    await insert(repo, { token: 'expired-mine', userId: 7, now: 500, expiresAt: 1_000 });
-    await insert(repo, { token: 'live-mine', userId: 7, now: 500, expiresAt: 1_001 });
-    await insert(repo, { token: 'expired-other', userId: 8, now: 500, expiresAt: 1_000 });
-    await insert(repo, { token: 'fresh', userId: 7, now: 1_000, expiresAt: 5_000 });
-    expect(await repo.agentSetup.findByToken('expired-mine')).toBeNull();
-    expect((await repo.agentSetup.findByToken('live-mine'))?.token).toBe('live-mine');
-    expect((await repo.agentSetup.findByToken('expired-other'))?.token).toBe('expired-other');
-    expect((await repo.agentSetup.findByToken('fresh'))?.token).toBe('fresh');
+    await insert(repo, { token: EXPIRED_OWN_TOKEN, userId: 7, now: 500, expiresAt: 1_000 });
+    await insert(repo, { token: LIVE_OWN_TOKEN, userId: 7, now: 500, expiresAt: 1_001 });
+    await insert(repo, { token: EXPIRED_FOREIGN_TOKEN, userId: 8, now: 500, expiresAt: 1_000 });
+    await insert(repo, { token: FRESH_TOKEN, userId: 7, now: 1_000, expiresAt: 5_000 });
+    expect(await repo.agentSetup.findByToken(EXPIRED_OWN_TOKEN)).toBeNull();
+    expect((await repo.agentSetup.findByToken(LIVE_OWN_TOKEN))?.token).toBe(LIVE_OWN_TOKEN);
+    expect((await repo.agentSetup.findByToken(EXPIRED_FOREIGN_TOKEN))?.token).toBe(EXPIRED_FOREIGN_TOKEN);
+    expect((await repo.agentSetup.findByToken(FRESH_TOKEN))?.token).toBe(FRESH_TOKEN);
   });
 
   test('latestByUserId is deterministic: updated_at, then created_at, then token, all descending', async () => {
     const repo = await makeRepo();
     // Two rows with identical timestamps: the higher token wins.
-    await insert(repo, { token: 'token-a', now: 1_000, expiresAt: 9_000 });
-    await insert(repo, { token: 'token-b', now: 1_000, expiresAt: 9_000 });
-    expect((await repo.agentSetup.latestByUserId(7))?.token).toBe('token-b');
+    await insert(repo, { token: PRIMARY_TOKEN, now: 1_000, expiresAt: 9_000 });
+    await insert(repo, { token: SECONDARY_TOKEN, now: 1_000, expiresAt: 9_000 });
+    expect((await repo.agentSetup.latestByUserId(7))?.token).toBe(SECONDARY_TOKEN);
 
     // A configuration write bumps updated_at, so that row becomes latest.
     await repo.agentSetup.updateConfiguration({
-      userId: 7, token: 'token-a', expectedRevision: 1,
+      userId: 7, token: PRIMARY_TOKEN, expectedRevision: 1,
       configurationJson: '{"apiKeyId":"key-a","edited":true}', now: 2_000, expiresAt: 9_000,
     });
-    expect((await repo.agentSetup.latestByUserId(7))?.token).toBe('token-a');
+    expect((await repo.agentSetup.latestByUserId(7))?.token).toBe(PRIMARY_TOKEN);
 
-    await insert(repo, { token: 'foreign-newest', userId: 8, now: 3_000, expiresAt: 9_000 });
-    expect((await repo.agentSetup.latestByUserId(7))?.token).toBe('token-a');
-    expect((await repo.agentSetup.latestByUserId(8))?.token).toBe('foreign-newest');
+    await insert(repo, { token: NEWEST_FOREIGN_TOKEN, userId: 8, now: 3_000, expiresAt: 9_000 });
+    expect((await repo.agentSetup.latestByUserId(7))?.token).toBe(PRIMARY_TOKEN);
+    expect((await repo.agentSetup.latestByUserId(8))?.token).toBe(NEWEST_FOREIGN_TOKEN);
     expect(await repo.agentSetup.latestByUserId(999)).toBeNull();
   });
 
@@ -226,7 +234,7 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
     const created = await insert(repo);
     const configurationJson = '{"apiKeyId":"key-a","claudeCode":{"enabled":true}}';
     const result = await repo.agentSetup.updateConfiguration({
-      userId: 7, token: 'token-a', expectedRevision: 1,
+      userId: 7, token: PRIMARY_TOKEN, expectedRevision: 1,
       configurationJson, now: 1_010, expiresAt: 1_310,
     });
     expect(result.status).toBe('ok');
@@ -244,13 +252,13 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
     const repo = await makeRepo();
     const created = await insert(repo);
     const stale = await repo.agentSetup.updateConfiguration({
-      userId: 7, token: 'token-a', expectedRevision: 0,
+      userId: 7, token: PRIMARY_TOKEN, expectedRevision: 0,
       configurationJson: '{"apiKeyId":"key-a"}', now: 1_010, expiresAt: 1_310,
     });
     expect(stale.status).toBe('revision-conflict');
     if (stale.status !== 'revision-conflict') throw new Error('unreachable');
     expect(stale.record).toEqual(created);
-    expect(await repo.agentSetup.findByToken('token-a')).toEqual(created);
+    expect(await repo.agentSetup.findByToken(PRIMARY_TOKEN)).toEqual(created);
   });
 
   test('two concurrent updates from one revision commit exactly one configuration', async () => {
@@ -258,11 +266,11 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
     await insert(repo);
     const [left, right] = await Promise.all([
       repo.agentSetup.updateConfiguration({
-        userId: 7, token: 'token-a', expectedRevision: 1,
+        userId: 7, token: PRIMARY_TOKEN, expectedRevision: 1,
         configurationJson: '{"apiKeyId":"key-left"}', now: 1_010, expiresAt: 1_310,
       }),
       repo.agentSetup.updateConfiguration({
-        userId: 7, token: 'token-a', expectedRevision: 1,
+        userId: 7, token: PRIMARY_TOKEN, expectedRevision: 1,
         configurationJson: '{"apiKeyId":"key-right"}', now: 1_011, expiresAt: 1_311,
       }),
     ]);
@@ -272,7 +280,7 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
     if (winner === null || conflict === null) throw new Error('concurrent update outcomes were not ok + revision-conflict');
     expect(winner.configurationRevision).toBe(2);
     expect(conflict).toEqual(winner);
-    expect(await repo.agentSetup.findByToken('token-a')).toEqual(winner);
+    expect(await repo.agentSetup.findByToken(PRIMARY_TOKEN)).toEqual(winner);
   });
 
   test('updateConfiguration reports missing when the token does not exist or belongs to another user', async () => {
@@ -284,24 +292,24 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
     });
     expect(absent.status).toBe('missing');
     const foreign = await repo.agentSetup.updateConfiguration({
-      userId: 8, token: 'token-a', expectedRevision: 1,
+      userId: 8, token: PRIMARY_TOKEN, expectedRevision: 1,
       configurationJson: '{"apiKeyId":"key-a"}', now: 1_010, expiresAt: 1_310,
     });
     expect(foreign.status).toBe('missing');
     // The live lease is untouched by either rejection.
-    expect((await repo.agentSetup.findByToken('token-a'))?.configurationRevision).toBe(1);
+    expect((await repo.agentSetup.findByToken(PRIMARY_TOKEN))?.configurationRevision).toBe(1);
   });
 
   test('updateConfiguration writes an already-expired but present lease', async () => {
     const repo = await makeRepo();
     await insert(repo, { expiresAt: 1_300 });
     const result = await repo.agentSetup.updateConfiguration({
-      userId: 7, token: 'token-a', expectedRevision: 1,
+      userId: 7, token: PRIMARY_TOKEN, expectedRevision: 1,
       configurationJson: '{"apiKeyId":"key-a"}', now: 1_500, expiresAt: 1_800,
     });
     expect(result.status).toBe('ok');
     if (result.status !== 'ok') throw new Error('unreachable');
-    expect(result.record.token).toBe('token-a');
+    expect(result.record.token).toBe(PRIMARY_TOKEN);
     expect(result.record.expiresAt).toBe(1_800);
     expect(result.record.configurationRevision).toBe(2);
   });
@@ -309,7 +317,7 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
   test('renewLease extends expiry without touching the token, revision, or updated_at', async () => {
     const repo = await makeRepo();
     const created = await insert(repo);
-    const renewed = await repo.agentSetup.renewLease({ userId: 7, token: 'token-a', expiresAt: 1_400 });
+    const renewed = await repo.agentSetup.renewLease({ userId: 7, token: PRIMARY_TOKEN, expiresAt: 1_400 });
     expect(renewed.status).toBe('ok');
     if (renewed.status !== 'ok') throw new Error('unreachable');
     expect(renewed.record).toEqual({ ...created, expiresAt: 1_400 });
@@ -318,7 +326,7 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
   test('renewLease revives an expired-but-present lease', async () => {
     const repo = await makeRepo();
     await insert(repo, { expiresAt: 1_300 });
-    const renewed = await repo.agentSetup.renewLease({ userId: 7, token: 'token-a', expiresAt: 5_000 });
+    const renewed = await repo.agentSetup.renewLease({ userId: 7, token: PRIMARY_TOKEN, expiresAt: 5_000 });
     expect(renewed.status).toBe('ok');
     if (renewed.status !== 'ok') throw new Error('unreachable');
     expect(renewed.record.expiresAt).toBe(5_000);
@@ -329,8 +337,8 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
     const repo = await makeRepo();
     await insert(repo);
     expect((await repo.agentSetup.renewLease({ userId: 7, token: 'nope', expiresAt: 1_400 })).status).toBe('missing');
-    expect((await repo.agentSetup.renewLease({ userId: 8, token: 'token-a', expiresAt: 1_400 })).status).toBe('missing');
-    expect((await repo.agentSetup.findByToken('token-a'))?.expiresAt).toBe(1_300);
+    expect((await repo.agentSetup.renewLease({ userId: 8, token: PRIMARY_TOKEN, expiresAt: 1_400 })).status).toBe('missing');
+    expect((await repo.agentSetup.findByToken(PRIMARY_TOKEN))?.expiresAt).toBe(1_300);
   });
 });
 
@@ -341,7 +349,7 @@ test('SQL AgentSetupRepository rejects every corrupt persisted scalar', async ()
     'token', 'user_id', 'configuration_json', 'configuration_revision', 'expires_at', 'created_at', 'updated_at',
   ] as const;
   const validSql: Record<typeof columns[number], string> = {
-    token: "'token-a'",
+    token: `'${PRIMARY_TOKEN}'`,
     user_id: '7',
     configuration_json: `'${JSON.stringify({ apiKeyId: 'key-a' })}'`,
     configuration_revision: '1',
@@ -350,19 +358,21 @@ test('SQL AgentSetupRepository rejects every corrupt persisted scalar', async ()
     updated_at: '1000',
   };
   const corruptions = [
-    { column: 'token', value: "''", lookupToken: '' },
-    { column: 'user_id', value: "'seven'", lookupToken: 'token-a' },
-    { column: 'configuration_json', value: "''", lookupToken: 'token-a' },
-    { column: 'configuration_revision', value: '0', lookupToken: 'token-a' },
-    { column: 'expires_at', value: "'not-a-number'", lookupToken: 'token-a' },
-    { column: 'created_at', value: '-1', lookupToken: 'token-a' },
-    { column: 'updated_at', value: '1.5', lookupToken: 'token-a' },
+    { column: 'token', value: "'short'", readLatest: true },
+    { column: 'token', value: `'${'!'.repeat(43)}'`, readLatest: true },
+    { column: 'user_id', value: "'seven'", readLatest: false },
+    { column: 'configuration_json', value: "''", readLatest: false },
+    { column: 'configuration_revision', value: '0', readLatest: false },
+    { column: 'expires_at', value: "'not-a-number'", readLatest: false },
+    { column: 'created_at', value: '-1', readLatest: false },
+    { column: 'updated_at', value: '1.5', readLatest: false },
   ] as const;
 
-  for (const { column, value, lookupToken } of corruptions) {
+  for (const { column, value, readLatest } of corruptions) {
     await db.exec('DELETE FROM agent_setup');
     const rowSql = { ...validSql, [column]: value };
     await db.exec(`INSERT INTO agent_setup (${columns.join(', ')}) VALUES (${columns.map(name => rowSql[name]).join(', ')})`);
-    await expect(repo.agentSetup.findByToken(lookupToken)).rejects.toThrow(`agent_setup.${column}`);
+    const read = readLatest ? repo.agentSetup.latestByUserId(7) : repo.agentSetup.findByToken(PRIMARY_TOKEN);
+    await expect(read).rejects.toThrow(`agent_setup.${column}`);
   }
 });

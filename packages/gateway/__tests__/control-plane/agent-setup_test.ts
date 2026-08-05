@@ -52,11 +52,18 @@ test('control routes require authentication', async () => {
 
 test('control acquisition rejects foreign and soft-deleted API keys without creating a lease', async () => {
   const { repo, apiKey } = await setupAppTest({ apiKey: testApiKey() });
-  const foreign = testApiKey({ id: 'key_foreign', userId: 1, name: 'Foreign key', key: 'foreign-raw' });
+  const foreign = testApiKey({
+    id: 'key_foreign',
+    userId: 1,
+    name: 'Foreign key',
+    key: 'foreign-raw',
+    serverSecret: '11'.repeat(32),
+  });
   const deleted = testApiKey({
     id: 'key_deleted',
     name: 'Deleted key',
     key: 'deleted-raw',
+    serverSecret: '22'.repeat(32),
     deletedAt: '2026-08-06T00:00:00.000Z',
   });
   await repo.apiKeys.save(foreign);
@@ -127,7 +134,11 @@ const publicLeaseInvalidations = [
   },
   {
     label: 'the lease owner is deleted',
-    apply: async ({ repo, apiKey }: AppTestContext) => { await repo.users.softDelete(apiKey.userId); },
+    apply: async ({ repo, apiKey }: AppTestContext) => {
+      const user = await repo.users.getById(apiKey.userId);
+      if (user === null) throw new Error(`missing lease owner ${apiKey.userId}`);
+      await repo.users.save({ ...user, deletedAt: '2026-08-06T00:00:00.000Z' });
+    },
   },
 ] as const;
 
