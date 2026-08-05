@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import type { GeminiResult, GeminiStreamEvent } from '../../src/gemini/index.ts';
 import { reassembleGeminiEvents } from '../../src/gemini/reassemble.ts';

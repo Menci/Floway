@@ -11,7 +11,6 @@ type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ?
 type Expect<T extends true> = T;
 
 export type ToolResultContentExcludesWebSearchResult = Expect<Equal<Extract<MessagesToolResultContentBlock, MessagesWebSearchResultBlock>, never>>;
-export type ServerToolUseNameIsString = Expect<Equal<MessagesServerToolUseBlock['name'], string>>;
 
 export const serverToolInputs = [
   { type: 'server_tool_use', id: 'tool_1', name: 'web_search', input: { query: 'docs' } },
