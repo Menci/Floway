@@ -4,7 +4,7 @@ import { InMemoryRepo } from './memory.ts';
 import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename } from './test-sqlite.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { Repo } from '../../src/repo/types.ts';
-import { type AgentSetupConfiguration, AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
+import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 
 type RepoFactory = () => Promise<Repo>;
 
@@ -26,14 +26,14 @@ test('migration 0061 adds optional Claude settings without replacing existing ch
     const baseConfiguration = {
       apiKeyId: 'key-a',
       claudeCode: {
-        model: null,
-        defaultOpusModel: null,
-        defaultSonnetModel: null,
-        defaultHaikuModel: null,
-        effortLevel: null,
-        modelDiscovery: true,
+        model: 'claude-custom',
+        defaultOpusModel: 'claude-opus-custom',
+        defaultSonnetModel: 'claude-sonnet-custom',
+        defaultHaikuModel: 'claude-haiku-custom',
+        effortLevel: 'xhigh',
+        modelDiscovery: false,
       },
-      codex: { model: null, reasoningEffort: null },
+      codex: { model: 'gpt-custom', reasoningEffort: 'vendor-tier' },
     };
     db.run(
       `INSERT INTO agent_setup
@@ -60,12 +60,22 @@ test('migration 0061 adds optional Claude settings without replacing existing ch
     if (rows === undefined) throw new Error('migration 0061 returned no agent_setup rows');
     const configurations = Object.fromEntries(rows.values.map(([token, json]) => [
       token as string,
-      JSON.parse(json as string) as AgentSetupConfiguration,
+      JSON.parse(json as string) as unknown,
     ]));
-    expect(configurations.legacy?.claudeCode.cleanupPeriodDays).toBeNull();
-    expect(configurations.legacy?.claudeCode.optOutAiAttribution).toBe(false);
-    expect(configurations.selected?.claudeCode.cleanupPeriodDays).toBe(365);
-    expect(configurations['opted-out']?.claudeCode.optOutAiAttribution).toBe(true);
+    expect(configurations).toEqual({
+      legacy: {
+        ...baseConfiguration,
+        claudeCode: { ...baseConfiguration.claudeCode, cleanupPeriodDays: null, optOutAiAttribution: false },
+      },
+      'opted-out': {
+        ...baseConfiguration,
+        claudeCode: { ...baseConfiguration.claudeCode, cleanupPeriodDays: null, optOutAiAttribution: true },
+      },
+      selected: {
+        ...baseConfiguration,
+        claudeCode: { ...baseConfiguration.claudeCode, cleanupPeriodDays: 365, optOutAiAttribution: false },
+      },
+    });
   } finally {
     db.close();
   }
@@ -81,16 +91,16 @@ test('migration 0068 adds the Claude fable override without replacing existing c
     const baseConfiguration = {
       apiKeyId: 'key-a',
       claudeCode: {
-        model: null,
-        defaultOpusModel: null,
-        defaultSonnetModel: null,
-        defaultHaikuModel: null,
-        effortLevel: null,
-        cleanupPeriodDays: null,
-        optOutAiAttribution: false,
-        modelDiscovery: true,
+        model: 'claude-custom',
+        defaultOpusModel: 'claude-opus-custom',
+        defaultSonnetModel: 'claude-sonnet-custom',
+        defaultHaikuModel: 'claude-haiku-custom',
+        effortLevel: 'xhigh',
+        cleanupPeriodDays: 99999,
+        optOutAiAttribution: true,
+        modelDiscovery: false,
       },
-      codex: { model: null, reasoningEffort: null },
+      codex: { model: 'gpt-custom', reasoningEffort: 'vendor-tier' },
     };
     db.run(
       `INSERT INTO agent_setup
@@ -113,10 +123,18 @@ test('migration 0068 adds the Claude fable override without replacing existing c
     if (rows === undefined) throw new Error('migration 0068 returned no agent_setup rows');
     const configurations = Object.fromEntries(rows.values.map(([token, json]) => [
       token as string,
-      JSON.parse(json as string) as AgentSetupConfiguration,
+      JSON.parse(json as string) as unknown,
     ]));
-    expect(configurations.legacy?.claudeCode.defaultFableModel).toBeNull();
-    expect(configurations.selected?.claudeCode.defaultFableModel).toBe('claude-fable-5[1m]');
+    expect(configurations).toEqual({
+      legacy: {
+        ...baseConfiguration,
+        claudeCode: { ...baseConfiguration.claudeCode, defaultFableModel: null },
+      },
+      selected: {
+        ...baseConfiguration,
+        claudeCode: { ...baseConfiguration.claudeCode, defaultFableModel: 'claude-fable-5[1m]' },
+      },
+    });
   } finally {
     db.close();
   }
@@ -154,12 +172,13 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
     expect(await repo.agentSetup.findByToken('nope')).toBeNull();
   });
 
-  test('a token collision throws AgentSetupTokenCollisionError', async () => {
+  test('a token collision throws AgentSetupTokenCollisionError without replacing the existing lease', async () => {
     const repo = await makeRepo();
-    await insert(repo);
+    const created = await insert(repo);
     // The SQL backend rejects; the in-memory backend throws synchronously. An
     // async wrapper normalizes both into a rejected promise for the assertion.
     await expect((async () => await insert(repo, { userId: 8 }))()).rejects.toBeInstanceOf(AgentSetupTokenCollisionError);
+    expect(await repo.agentSetup.findByToken('token-a')).toEqual(created);
   });
 
   test('multiple unexpired leases per user coexist; insert never sweeps a live sibling', async () => {
@@ -170,14 +189,14 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
     expect((await repo.agentSetup.findByToken('token-b'))?.token).toBe('token-b');
   });
 
-  test('insert sweeps only the same user\'s expired rows, measured against the new created_at', async () => {
+  test('insert sweeps same-user expiry at the created_at boundary and preserves every other row', async () => {
     const repo = await makeRepo();
-    await insert(repo, { token: 'expired-mine', userId: 7, now: 500, expiresAt: 900 });
-    await insert(repo, { token: 'expired-other', userId: 8, now: 500, expiresAt: 900 });
+    await insert(repo, { token: 'expired-mine', userId: 7, now: 500, expiresAt: 1_000 });
+    await insert(repo, { token: 'live-mine', userId: 7, now: 500, expiresAt: 1_001 });
+    await insert(repo, { token: 'expired-other', userId: 8, now: 500, expiresAt: 1_000 });
     await insert(repo, { token: 'fresh', userId: 7, now: 1_000, expiresAt: 5_000 });
-    // My expired sibling is swept; a different user's expired row is untouched;
-    // the new row survives.
     expect(await repo.agentSetup.findByToken('expired-mine')).toBeNull();
+    expect((await repo.agentSetup.findByToken('live-mine'))?.token).toBe('live-mine');
     expect((await repo.agentSetup.findByToken('expired-other'))?.token).toBe('expired-other');
     expect((await repo.agentSetup.findByToken('fresh'))?.token).toBe('fresh');
   });
@@ -195,23 +214,30 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
       configurationJson: '{"apiKeyId":"key-a","edited":true}', now: 2_000, expiresAt: 9_000,
     });
     expect((await repo.agentSetup.latestByUserId(7))?.token).toBe('token-a');
+
+    await insert(repo, { token: 'foreign-newest', userId: 8, now: 3_000, expiresAt: 9_000 });
+    expect((await repo.agentSetup.latestByUserId(7))?.token).toBe('token-a');
+    expect((await repo.agentSetup.latestByUserId(8))?.token).toBe('foreign-newest');
     expect(await repo.agentSetup.latestByUserId(999)).toBeNull();
   });
 
   test('updateConfiguration applies the change, bumps the revision, and never rotates the token', async () => {
     const repo = await makeRepo();
-    await insert(repo);
+    const created = await insert(repo);
+    const configurationJson = '{"apiKeyId":"key-a","claudeCode":{"enabled":true}}';
     const result = await repo.agentSetup.updateConfiguration({
       userId: 7, token: 'token-a', expectedRevision: 1,
-      configurationJson: '{"apiKeyId":"key-a","claudeCode":{"enabled":true}}', now: 1_010, expiresAt: 1_310,
+      configurationJson, now: 1_010, expiresAt: 1_310,
     });
     expect(result.status).toBe('ok');
     if (result.status !== 'ok') throw new Error('unreachable');
-    expect(result.record.configurationRevision).toBe(2);
-    expect(result.record.configurationJson).toBe('{"apiKeyId":"key-a","claudeCode":{"enabled":true}}');
-    expect(result.record.token).toBe('token-a');
-    expect(result.record.expiresAt).toBe(1_310);
-    expect(result.record.updatedAt).toBe(1_010);
+    expect(result.record).toEqual({
+      ...created,
+      configurationJson,
+      configurationRevision: 2,
+      expiresAt: 1_310,
+      updatedAt: 1_010,
+    });
   });
 
   test('updateConfiguration reports revision-conflict without mutating when the revision is stale', async () => {
@@ -224,6 +250,29 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
     expect(stale.status).toBe('revision-conflict');
     if (stale.status !== 'revision-conflict') throw new Error('unreachable');
     expect(stale.record).toEqual(created);
+    expect(await repo.agentSetup.findByToken('token-a')).toEqual(created);
+  });
+
+  test('two concurrent updates from one revision commit exactly one configuration', async () => {
+    const repo = await makeRepo();
+    await insert(repo);
+    const [left, right] = await Promise.all([
+      repo.agentSetup.updateConfiguration({
+        userId: 7, token: 'token-a', expectedRevision: 1,
+        configurationJson: '{"apiKeyId":"key-left"}', now: 1_010, expiresAt: 1_310,
+      }),
+      repo.agentSetup.updateConfiguration({
+        userId: 7, token: 'token-a', expectedRevision: 1,
+        configurationJson: '{"apiKeyId":"key-right"}', now: 1_011, expiresAt: 1_311,
+      }),
+    ]);
+    expect([left.status, right.status].toSorted()).toEqual(['ok', 'revision-conflict']);
+    const winner = left.status === 'ok' ? left.record : right.status === 'ok' ? right.record : null;
+    const conflict = left.status === 'revision-conflict' ? left.record : right.status === 'revision-conflict' ? right.record : null;
+    if (winner === null || conflict === null) throw new Error('concurrent update outcomes were not ok + revision-conflict');
+    expect(winner.configurationRevision).toBe(2);
+    expect(conflict).toEqual(winner);
+    expect(await repo.agentSetup.findByToken('token-a')).toEqual(winner);
   });
 
   test('updateConfiguration reports missing when the token does not exist or belongs to another user', async () => {
@@ -259,15 +308,11 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
 
   test('renewLease extends expiry without touching the token, revision, or updated_at', async () => {
     const repo = await makeRepo();
-    await insert(repo);
+    const created = await insert(repo);
     const renewed = await repo.agentSetup.renewLease({ userId: 7, token: 'token-a', expiresAt: 1_400 });
     expect(renewed.status).toBe('ok');
     if (renewed.status !== 'ok') throw new Error('unreachable');
-    expect(renewed.record.token).toBe('token-a');
-    expect(renewed.record.expiresAt).toBe(1_400);
-    expect(renewed.record.configurationRevision).toBe(1);
-    expect(renewed.record.updatedAt).toBe(1_000);
-    expect(renewed.record.configurationJson).toBe('{"apiKeyId":"key-a"}');
+    expect(renewed.record).toEqual({ ...created, expiresAt: 1_400 });
   });
 
   test('renewLease revives an expired-but-present lease', async () => {
@@ -287,12 +332,37 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
     expect((await repo.agentSetup.renewLease({ userId: 8, token: 'token-a', expiresAt: 1_400 })).status).toBe('missing');
     expect((await repo.agentSetup.findByToken('token-a'))?.expiresAt).toBe(1_300);
   });
+});
 
-  test('an expired lease preserves its configuration until it is renewed', async () => {
-    const repo = await makeRepo();
-    await insert(repo);
-    const stored = await repo.agentSetup.findByToken('token-a');
-    expect(stored?.configurationJson).toBe('{"apiKeyId":"key-a"}');
-    expect(stored?.expiresAt).toBe(1_300);
-  });
+test('SQL AgentSetupRepository rejects every corrupt persisted scalar', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  const columns = [
+    'token', 'user_id', 'configuration_json', 'configuration_revision', 'expires_at', 'created_at', 'updated_at',
+  ] as const;
+  const validSql: Record<typeof columns[number], string> = {
+    token: "'token-a'",
+    user_id: '7',
+    configuration_json: `'${JSON.stringify({ apiKeyId: 'key-a' })}'`,
+    configuration_revision: '1',
+    expires_at: '1300',
+    created_at: '1000',
+    updated_at: '1000',
+  };
+  const corruptions = [
+    { column: 'token', value: "''", lookupToken: '' },
+    { column: 'user_id', value: "'seven'", lookupToken: 'token-a' },
+    { column: 'configuration_json', value: "''", lookupToken: 'token-a' },
+    { column: 'configuration_revision', value: '0', lookupToken: 'token-a' },
+    { column: 'expires_at', value: "'not-a-number'", lookupToken: 'token-a' },
+    { column: 'created_at', value: '-1', lookupToken: 'token-a' },
+    { column: 'updated_at', value: '1.5', lookupToken: 'token-a' },
+  ] as const;
+
+  for (const { column, value, lookupToken } of corruptions) {
+    await db.exec('DELETE FROM agent_setup');
+    const rowSql = { ...validSql, [column]: value };
+    await db.exec(`INSERT INTO agent_setup (${columns.join(', ')}) VALUES (${columns.map(name => rowSql[name]).join(', ')})`);
+    await expect(repo.agentSetup.findByToken(lookupToken)).rejects.toThrow(`agent_setup.${column}`);
+  }
 });

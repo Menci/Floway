@@ -1471,26 +1471,40 @@ class SqlModelAliasesRepo implements ModelAliasesRepo {
 }
 
 interface AgentSetupRow {
-  token: string;
-  user_id: number;
-  configuration_json: string;
-  configuration_revision: number;
-  expires_at: number;
-  created_at: number;
-  updated_at: number;
+  token: unknown;
+  user_id: unknown;
+  configuration_json: unknown;
+  configuration_revision: unknown;
+  expires_at: unknown;
+  created_at: unknown;
+  updated_at: unknown;
 }
 
 const AGENT_SETUP_COLUMNS = 'token, user_id, configuration_json, configuration_revision, expires_at, created_at, updated_at';
 const AGENT_SETUP_LATEST_ORDER = 'updated_at DESC, created_at DESC, token DESC';
 
+const decodeAgentSetupText = (value: unknown, column: string): string => {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new TypeError(`Stored agent_setup.${column} must be a non-empty string`);
+  }
+  return value;
+};
+
+const decodeAgentSetupInteger = (value: unknown, column: string, minimum: number): number => {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < minimum) {
+    throw new TypeError(`Stored agent_setup.${column} must be a safe integer greater than or equal to ${minimum}`);
+  }
+  return value;
+};
+
 const toAgentSetupRecord = (row: AgentSetupRow): AgentSetupRecord => ({
-  token: row.token,
-  userId: row.user_id,
-  configurationJson: row.configuration_json,
-  configurationRevision: row.configuration_revision,
-  expiresAt: row.expires_at,
-  createdAt: row.created_at,
-  updatedAt: row.updated_at,
+  token: decodeAgentSetupText(row.token, 'token'),
+  userId: decodeAgentSetupInteger(row.user_id, 'user_id', 1),
+  configurationJson: decodeAgentSetupText(row.configuration_json, 'configuration_json'),
+  configurationRevision: decodeAgentSetupInteger(row.configuration_revision, 'configuration_revision', 1),
+  expiresAt: decodeAgentSetupInteger(row.expires_at, 'expires_at', 0),
+  createdAt: decodeAgentSetupInteger(row.created_at, 'created_at', 0),
+  updatedAt: decodeAgentSetupInteger(row.updated_at, 'updated_at', 0),
 });
 
 // The token PK's SQLite/D1 uniqueness message. Matching it lets the route retry
