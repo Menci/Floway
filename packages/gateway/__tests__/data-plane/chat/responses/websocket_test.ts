@@ -1787,13 +1787,13 @@ test('Responses WebSocket session lifetime joins the active turn and its backgro
     finishUsage.resolve();
     usageRecord.mockRestore();
   });
-  const lifetimeCaptured = deferred<Promise<unknown>>();
-  initBackgroundSchedulerResolver(_c => promise => { lifetimeCaptured.resolve(promise); });
+  const lifetimeCaptured = deferred<{ readonly promise: Promise<unknown> }>();
+  initBackgroundSchedulerResolver(_c => promise => { lifetimeCaptured.resolve({ promise }); });
   onTestFinished(() => { initBackgroundSchedulerResolver(_c => trackBackground); });
 
   await withWorkerWebSocketRuntime(async () => {
     const client = await connectResponsesWebSocket(apiKey.key);
-    const lifetime = await promiseWithin(
+    const { promise: lifetime } = await promiseWithin(
       lifetimeCaptured.promise,
       'Responses WebSocket did not register its session lifetime',
     );
