@@ -1,4 +1,5 @@
 import { CodexCredentialRefreshTerminatedError, ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken, putCodexAccessToken, type CodexCredentialGeneration } from './access-token.ts';
+import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import {
   CODEX_BACKEND_BASE,
   CODEX_ALPHA_SEARCH_PATH,
