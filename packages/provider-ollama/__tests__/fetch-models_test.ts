@@ -167,7 +167,7 @@ test('fetchOllamaCatalog cancels discarded and oversized /api/show bodies withou
     if (name === 'oversized') {
       return Promise.resolve(new Response(responseBody(new TextEncoder().encode('{"capabilities":[]}'), () => { oversizedCancelled = true; })));
     }
-    return Promise.resolve(jsonResponse({ capabilities: ['completion'], model_info: {} }));
+    return Promise.resolve(jsonResponse({}));
   };
 
   const catalog = await fetchOllamaCatalog(config, fetcher, { maxShowResponseBytes: 8 });
