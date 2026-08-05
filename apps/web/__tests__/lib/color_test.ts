@@ -1,41 +1,20 @@
 import { convertRgbToHsv, parseHex } from 'culori/fn';
 import { describe, expect, it } from 'vitest';
 
-import { blendHex, hexToRgb, readableTone } from '../../src/lib/color';
+import { blendHex, readableTone } from '../../src/lib/color';
 import { hueBadgeTone } from '../../src/lib/hue';
 
 // The subject decides by contrast, so the assertions compute it independently
 // rather than borrowing the function under test.
 const contrast = (a: string, b: string) => {
   const luminance = (hex: string) => {
-    const [r, g, b2] = hexToRgb(hex);
-    const channel = (value: number) => {
-      const s = value / 255;
-      return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-    };
-    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b2);
+    const { r, g, b } = parseHex(hex)!;
+    const channel = (value: number) => value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
   };
   const [x, y] = [luminance(a) + 0.05, luminance(b) + 0.05];
   return x > y ? x / y : y / x;
 };
-
-describe('hexToRgb', () => {
-  it('rejects everything that is not 6-digit hex', () => {
-    for (const value of ['#F00', '#00E5FFAA', '', '00E5FF', '#GGGGGG', '#00 5FF', '#XYZXYZ']) {
-      expect(() => hexToRgb(value), value).toThrow(TypeError);
-    }
-  });
-
-  it('parses uppercase and lowercase to the same tuple', () => {
-    expect(hexToRgb('#00E5FF')).toEqual([0, 229, 255]);
-    expect(hexToRgb('#00e5ff')).toEqual([0, 229, 255]);
-  });
-
-  it('parses the black and white boundaries', () => {
-    expect(hexToRgb('#000000')).toEqual([0, 0, 0]);
-    expect(hexToRgb('#FFFFFF')).toEqual([255, 255, 255]);
-  });
-});
 
 describe('readableTone', () => {
   // The component resolves the label against the chip's own fill -- 10% of the
@@ -57,8 +36,8 @@ describe('readableTone', () => {
     expect(contrast('#C239B3', chip('#C239B3', CARD_DARK))).toBeLessThan(4.5);
     expect(contrast(light, chip('#C239B3', CARD_LIGHT))).toBeGreaterThanOrEqual(4.5);
     expect(contrast(dark, chip('#C239B3', CARD_DARK))).toBeGreaterThanOrEqual(4.5);
-    expect(hexToRgb(light)[0]).toBeLessThan(hexToRgb('#C239B3')[0]);
-    expect(hexToRgb(dark)[0]).toBeGreaterThan(hexToRgb('#C239B3')[0]);
+    expect(parseHex(light)!.r).toBeLessThan(parseHex('#C239B3')!.r);
+    expect(parseHex(dark)!.r).toBeGreaterThan(parseHex('#C239B3')!.r);
   });
 
   it('holds the hue while it moves value', () => {

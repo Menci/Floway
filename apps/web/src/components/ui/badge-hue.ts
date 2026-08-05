@@ -1,7 +1,8 @@
+import { formatRgb, parseHex } from 'culori/fn';
 import type { CSSProperties } from 'react';
 
 import { fluentComponents } from '../../fluent';
-import { blendHex, hexToRgb, readableTone } from '../../lib/color';
+import { blendHex, readableTone } from '../../lib/color';
 
 const { makeStyles } = fluentComponents;
 
@@ -38,7 +39,7 @@ const useStyles = makeStyles({
   },
 });
 
-const alpha = (hex: string, fraction: number): string => `rgba(${hexToRgb(hex).join(', ')}, ${fraction})`;
+const alpha = (hex: string, fraction: number): string => formatRgb({ ...parseHex(hex)!, alpha: fraction })!;
 
 /**
  * A badge painted in an arbitrary hue. The label is resolved against the fill

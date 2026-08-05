@@ -1,6 +1,6 @@
+import { parseHex } from 'culori/fn';
 import { describe, expect, it } from 'vitest';
 
-import { hexToRgb } from '../../src/lib/color';
 import { winuiTokenCss } from '../../src/winui/tokens';
 
 // The theme dictionaries write colour as AARRGGBB and CSS reads eight digits as
@@ -17,6 +17,11 @@ const deliberatelyInvisible = new Set([
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L233-L237
   '--winui-control-alt-fill-disabled',
 ]);
+
+const rgbBytes = (hex: string) => {
+  const { r, g, b } = parseHex(hex)!;
+  return [r, g, b].map(channel => Math.round(channel * 255));
+};
 
 describe('winui token channel order', () => {
   it('gives no token a transparent alpha unless it means to be invisible', () => {
@@ -71,7 +76,7 @@ describe('winui token channel order', () => {
           continue;
         }
         const channels = value.split(',').map(part => Number(part.trim()));
-        if (String(channels) !== String(hexToRgb(hex))) faults.push(`${name} is ${value} but ${source} is ${hex}`);
+        if (String(channels) !== String(rgbBytes(hex))) faults.push(`${name} is ${value} but ${source} is ${hex}`);
       }
     }
     expect(faults).toEqual([]);

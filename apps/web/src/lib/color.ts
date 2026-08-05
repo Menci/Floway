@@ -11,19 +11,13 @@ import {
 } from 'culori/fn';
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
-type RgbTuple = [number, number, number];
 
 registerMode(modeRgb);
-
-const rgbTuple = ({ r, g, b }: { r: number; g: number; b: number }): RgbTuple =>
-  [r, g, b].map(channel => Math.round(channel * 255)) as RgbTuple;
 
 const parseRgb = (hex: string) => {
   if (!HEX_RE.test(hex)) throw new TypeError(`Not a #RRGGBB colour: ${hex}`);
   return parseHex(hex)!;
 };
-
-export const hexToRgb = (hex: string): RgbTuple => rgbTuple(parseRgb(hex));
 
 const linearRgb = (rgb: ReturnType<typeof parseRgb>) => convertRgbToLrgb(rgb);
 const colorHex = (rgb: ReturnType<typeof convertHsvToRgb>): string => formatHex(rgb).toUpperCase();
