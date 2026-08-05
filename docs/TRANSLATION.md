@@ -108,8 +108,9 @@ history replay all consume this same attempt-level membrane.
 
 Messages targets flatten a top-level namespace, remove the same schema marker,
 and restore the collaboration identity plus the empty plaintext marker. A
-deferred collaboration inventory or an `allowed_tools`/namespace choice cannot
-be represented faithfully and removes Messages from the candidate set. Chat
+deferred collaboration inventory, an `allowed_tools`/namespace choice, or a
+namespace-qualified function choice cannot be represented faithfully and
+removes Messages from the candidate set. Chat
 Completions cannot represent namespace tools and is always removed for a
 Responses request that declares collaboration. Legacy
 `agent_message.encrypted_content` cannot be converted to plaintext: it stays

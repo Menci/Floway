@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { buildTargetRequest } from '../../src/responses-via-messages/request.ts';
 import { MESSAGES_FALLBACK_MAX_TOKENS, type MessagesClientTool, type MessagesToolResultBlock, type MessagesUserContentBlock } from '@floway-dev/protocols/messages';
-import type { ResponsesInputMultiAgentCallOutputItem, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
+import type { ResponsesInputMultiAgentCallOutputItem, ResponsesTool } from '@floway-dev/protocols/responses';
 import { assert, assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
 
 const stubRemoteImageLoader = (result: { mediaType: string | null; data: Uint8Array } | null) => () => Promise.resolve(result);
@@ -629,7 +629,7 @@ test('buildTargetRequest flattens namespace functions collision-safely and maps 
       { type: 'function', name: 'web_run', parameters: { type: 'object' }, strict: false },
       namespaceTool,
     ],
-    tool_choice: { type: 'function', name: 'run', namespace: 'web' } as ResponsesToolChoice & { namespace: string },
+    tool_choice: { type: 'function', name: 'web.run' },
   });
 
   assertEquals(result.namespaceToolNames.sourceToTarget, new Map([['web.run', 'web_run_2']]));

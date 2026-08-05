@@ -468,10 +468,7 @@ const translateToolChoice = (
   // Both function and wrapped custom tools land on the target as named tool
   // choices since they share the function-tool wire shape after translation.
   if (toolChoice.type === 'function' || toolChoice.type === 'custom') {
-    if (!toolChoice.name) return undefined;
-    const namespace = (toolChoice as ResponsesToolChoice & { namespace?: unknown }).namespace;
-    const sourceName = typeof namespace === 'string' ? `${namespace}.${toolChoice.name}` : toolChoice.name;
-    return { type: 'tool', name: namespaceSourceToTarget.get(sourceName) ?? toolChoice.name };
+    return toolChoice.name ? { type: 'tool', name: namespaceSourceToTarget.get(toolChoice.name) ?? toolChoice.name } : undefined;
   }
   return undefined;
 };
