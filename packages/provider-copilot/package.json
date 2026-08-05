@@ -14,7 +14,9 @@
     "@floway-dev/platform": "workspace:*",
     "@floway-dev/protocols": "workspace:*",
     "@floway-dev/provider": "workspace:*",
-    "@scure/base": "^2.2.0"
+    "@scure/base": "^2.2.0",
+    "p-retry": "^8.0.0",
+    "uuid": "^14.0.1"
   },
   "devDependencies": {
     "@floway-dev/test-utils": "workspace:*"

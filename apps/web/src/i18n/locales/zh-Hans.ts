@@ -920,7 +920,17 @@ const zhHansCN = {
         breakdown: '性能细分维度',
         metric: { label: '性能指标', ttft: '首 Token 时间', outputSpeed: '输出速度' },
         groupBy: { label: '分组依据', model: '按模型', upstream: '按上游', operation: '按操作', runtimeLocation: '按区域', userId: '按用户', keyId: '按 API 密钥' },
-        filters: { label: '筛选', all: { model: '全部模型', upstream: '全部上游', operation: '全部操作', runtimeLocation: '全部区域', userId: '全部用户', keyId: '全部 API 密钥' }, model: '模型', upstream: '上游', operation: '操作', runtimeLocation: '区域', userId: '用户', keyId: 'API 密钥' },
+        filters: {
+          label: '筛选',
+          all: { model: '全部模型', upstream: '全部上游', operation: '全部操作', runtimeLocation: '全部区域', userId: '全部用户', keyId: '全部 API 密钥' },
+          selected_other: '已选择 {{count, number}} 项',
+          model: '模型',
+          upstream: '上游',
+          operation: '操作',
+          runtimeLocation: '区域',
+          userId: '用户',
+          keyId: 'API 密钥',
+        },
         range: {
           label: '性能数据范围',
           today: '最近一天',

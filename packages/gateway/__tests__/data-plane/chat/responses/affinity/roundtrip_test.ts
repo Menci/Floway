@@ -1,11 +1,11 @@
 import { expect, test } from 'vitest';
 
 import { wrapResponsesAffinityEgress } from '../../../../../src/data-plane/chat/responses/affinity/egress.ts';
-import { prepareResponsesAffinity } from '../../../../../src/data-plane/chat/responses/affinity/ingress.ts';
+import { analyzeResponsesAffinity } from '../../../../../src/data-plane/chat/responses/affinity/ingress.ts';
 import { hydrateResponsesPayload } from '../../../../../src/data-plane/chat/responses/items/hydrate.ts';
 import { wrapResponsesClientOutput } from '../../../../../src/data-plane/chat/responses/items/output.ts';
 import { createResponsesHttpStore } from '../../../../../src/data-plane/chat/responses/items/store.ts';
-import { AffinityCodec } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { AffinityCodec, selectAffinityCandidates } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import { initRepo } from '../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { TEST_RESPONSES_RETENTION_SECONDS, testResponsesStatePolicy } from '../test-policy.ts';
@@ -78,11 +78,14 @@ test('affinity selects the route while item storage preserves the exact emitted 
   const input = clientResponse.output as unknown as ResponsesInputItem[];
   await store.loadInputItems(input, input);
   const hydrated = hydrateResponsesPayload({ model: 'model-a', input }, store);
-  const affinity = await prepareResponsesAffinity(hydrated.payload, codec);
-  expect(affinity.narrowingEvidence.map(evidence => evidence.mode)).toEqual(['prefer', 'force']);
-
-  expect(affinity.payloadForCandidate(candidateA).input).toEqual([programOutput]);
-  expect(affinity.payloadForCandidate(candidateB).input).toEqual([programOutput]);
+  const affinity = await analyzeResponsesAffinity(hydrated.payload, codec);
+  expect(affinity.requiredTargets).toEqual([{ upstreamId: candidateA.provider.upstreamId, modelId: candidateA.model.id }]);
+  expect(affinity.evaluateCandidate(candidateA)).toMatchObject({ kind: 'accepted', degrades: false });
+  expect(affinity.evaluateCandidate(candidateB)).toMatchObject({ kind: 'rejected' });
+  const selection = selectAffinityCandidates([candidateB, candidateA], affinity);
+  if ('kind' in selection) throw new Error(`Expected affinity selection, received ${selection.kind}`);
+  expect(selection.candidates).toEqual([candidateA]);
+  expect(selection.payloadFor(candidateA).input).toEqual([programOutput]);
 });
 
 test('agent-message natural and originless nested carriers round-trip without changing ids', async () => {
@@ -115,11 +118,13 @@ test('agent-message natural and originless nested carriers round-trip without ch
   })) if (frame.type === 'event' && frame.event.type === 'response.completed') clientResponse = frame.event.response;
   if (clientResponse === undefined) throw new Error('Expected completed client response');
 
-  const prepared = await prepareResponsesAffinity({
+  const prepared = await analyzeResponsesAffinity({
     model: 'model-a',
     input: clientResponse.output as unknown as ResponsesInputItem[],
   }, codec);
-  expect(prepared.payloadForCandidate(candidate).input).toEqual([empty, natural]);
+  const evaluation = prepared.evaluateCandidate(candidate);
+  if (evaluation.kind === 'rejected') throw new Error('Expected candidate affinity evaluation to be accepted');
+  expect(evaluation.materialize().input).toEqual([empty, natural]);
 });
 
 test('compaction_summary carrier authenticates after alias canonicalization without rewriting its id', async () => {
@@ -154,9 +159,11 @@ test('compaction_summary carrier authenticates after alias canonicalization with
   if (wrapped === undefined) throw new Error('Expected wrapped compaction summary');
 
   const canonical = { type: 'compaction', id: 'cmp_public', encrypted_content: wrapped } as unknown as ResponsesInputItem;
-  const prepared = await prepareResponsesAffinity({ model: 'model-a', input: [canonical] }, codec);
-  expect(prepared.narrowingEvidence.map(evidence => evidence.mode)).toEqual(['prefer', 'force']);
-  expect(prepared.payloadForCandidate(candidate).input[0]).toMatchObject({
+  const prepared = await analyzeResponsesAffinity({ model: 'model-a', input: [canonical] }, codec);
+  expect(prepared.requiredTargets).toEqual([{ upstreamId: candidate.provider.upstreamId, modelId: candidate.model.id }]);
+  const evaluation = prepared.evaluateCandidate(candidate);
+  if (evaluation.kind === 'rejected') throw new Error('Expected candidate affinity evaluation to be accepted');
+  expect(evaluation.materialize().input[0]).toMatchObject({
     type: 'compaction',
     id: 'cmp_public',
     encrypted_content: 'opaque',

@@ -1,4 +1,4 @@
-import { isEqual } from 'es-toolkit';
+import { isEqual, uniqWith } from 'es-toolkit';
 
 import { internalModelFromProviderModel } from './catalog.ts';
 import { fetchUpstreamModelsCached } from './models-cache.ts';
@@ -229,14 +229,10 @@ export const enumerateModelCandidates = async ({
       flat.push({ ...candidate, rules: target.rules });
     }
   }
-  const deduped: ModelCandidate[] = [];
-  for (const candidate of flat) {
-    const duplicate = deduped.some(existing =>
-      existing.model.id === candidate.model.id
-      && existing.provider.upstreamId === candidate.provider.upstreamId
-      && isEqual(existing.rules, candidate.rules));
-    if (!duplicate) deduped.push(candidate);
-  }
+  const deduped = uniqWith(flat, (candidate, existing) =>
+    candidate.model.id === existing.model.id
+    && candidate.provider.upstreamId === existing.provider.upstreamId
+    && isEqual(candidate.rules, existing.rules));
   return {
     candidates: deduped,
     sawModel: sawAny,

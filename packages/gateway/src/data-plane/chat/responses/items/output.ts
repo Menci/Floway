@@ -4,6 +4,39 @@ import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type ResponsesCompactionResult, type ResponsesOutputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
+// Floway derives canonical output identity from `response.output_item.done`
+// lifecycles. Normalize terminal snapshots from that ordered set before
+// downstream transforms so affinity, persistence, and resource completion
+// cannot interpret array positions as different items. When no item closed,
+// preserve the terminal snapshot as the sole observation.
+// https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L313-L337
+export const wrapResponsesObservedOutput = async function* (
+  frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
+): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+  const observed = new Map<number, ResponsesOutputItem>();
+  for await (const frame of frames) {
+    if (frame.type !== 'event') {
+      yield frame;
+      continue;
+    }
+    const event = frame.event;
+    if (event.type === 'response.output_item.done') {
+      observed.set(event.output_index, event.item);
+      yield frame;
+      continue;
+    }
+    if (
+      observed.size > 0
+      && (event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed')
+    ) {
+      const output = [...observed].sort(([left], [right]) => left - right).map(([, item]) => item);
+      yield eventFrame({ ...event, response: { ...event.response, output } });
+      continue;
+    }
+    yield frame;
+  }
+};
+
 // Complete output items become reusable at their first done frame, so each row
 // commits before that frame is yielded. Later done frames remain
 // visible but cannot replace the durable item. The response snapshot commits

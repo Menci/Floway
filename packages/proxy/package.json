@@ -33,6 +33,7 @@
     "@noble/ciphers": "^2.2.0",
     "@noble/hashes": "^2.2.0",
     "@reclaimprotocol/tls": "0.1.2",
-    "@scure/base": "^2.2.0"
+    "@scure/base": "^2.2.0",
+    "ipaddr.js": "2.5.0"
   }
 }

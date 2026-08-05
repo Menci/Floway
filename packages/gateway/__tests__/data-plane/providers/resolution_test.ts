@@ -556,6 +556,38 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
     );
   });
 
+  test('keeps the first representative in its original position when duplicate bindings are interleaved', async () => {
+    clearInFlightForTesting();
+    const { repo } = await setupAppTest();
+    await seedUpstreams(repo);
+    await repo.modelAliases.insert({
+      id: 'alias_interleaved-duplicates',
+      name: 'interleaved-duplicates', kind: 'chat', selection: 'first-available',
+      targets: [
+        { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low' } } },
+        { target_model_id: 'claude', rules: { reasoning: { effort: 'high' } } },
+        { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low' } } },
+      ],
+      ...aliasCommon,
+    });
+
+    await withMockedFetch(
+      buildCatalogFetch({ up_a: ['gpt-5'], up_b: ['claude'] }),
+      async () => {
+        const resolved = await enumerateModelCandidates({
+          upstreamIds: null, model: 'interleaved-duplicates', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST',
+        });
+        expect(resolved.candidates.map(candidate => ({
+          binding: `${candidate.model.id}@${candidate.provider.upstreamId}`,
+          effort: candidate.rules?.reasoning?.effort,
+        }))).toEqual([
+          { binding: 'gpt-5@up_a', effort: 'low' },
+          { binding: 'claude@up_b', effort: 'high' },
+        ]);
+      },
+    );
+  });
+
   test('keeps two entries for the same (model, upstream) with distinct rules', async () => {
     clearInFlightForTesting();
     const { repo } = await setupAppTest();

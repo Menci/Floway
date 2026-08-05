@@ -4,7 +4,7 @@ import { messagesServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../../shared/gateway-ctx.ts';
-import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
+import { inboundHeaders } from '../../shared/inbound-headers.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
@@ -76,7 +76,7 @@ export const messagesHttp = {
 
       const wantsStream = payload.stream === true;
       ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKey => createNonResponsesSourceStore(apiKey.id));
-      const result = await messagesServe.generate({ payload, ctx, headers: inboundHeadersForUpstream(c) });
+      const result = await messagesServe.generate({ payload, ctx, headers: inboundHeaders(c) });
       const response = await respondMessages(c, result, wantsStream, ctx);
       return finalizeGatewayResponse(ctx, response);
     } catch (error) {
@@ -93,7 +93,7 @@ export const messagesHttp = {
       if (rejected) return rejected;
 
       ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKey => createNonResponsesSourceStore(apiKey.id));
-      const result = await messagesServe.countTokens({ payload, ctx, headers: inboundHeadersForUpstream(c) });
+      const result = await messagesServe.countTokens({ payload, ctx, headers: inboundHeaders(c) });
       const response = await respondMessages(c, result, false, ctx);
       return finalizeGatewayResponse(ctx, response);
     } catch (error) {

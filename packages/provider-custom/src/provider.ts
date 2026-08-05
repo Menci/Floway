@@ -8,7 +8,7 @@ import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/com
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { DEFAULT_RERANK_PATHS, serializeRerankRequest } from '@floway-dev/protocols/rerank';
 import { parseResponsesStream, type ResponsesCompactionResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { serializeOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, publicModelId, resolveEffectiveFlags, streamingProviderCall, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { headersForMessagesCall, serializeOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, publicModelId, resolveEffectiveFlags, streamingProviderCall, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 const rawModelIdOf = (model: ProviderModel): string => model.providerData as string;
 
@@ -189,8 +189,8 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
         throw new Error(`Unhandled ResponsesAction: ${action as string}`);
       }
     },
-    callMessages: (model, body, signal, opts) => callStreaming(customFetchMessages, model, body, signal, opts.headers, parseMessagesStream, opts),
-    callMessagesCountTokens: (model, body, signal, opts) => call(customFetchMessagesCountTokens, model, body, signal, opts.headers, opts),
+    callMessages: (model, body, signal, opts) => callStreaming(customFetchMessages, model, body, signal, headersForMessagesCall(opts.headers, opts.anthropicBeta), parseMessagesStream, opts),
+    callMessagesCountTokens: (model, body, signal, opts) => call(customFetchMessagesCountTokens, model, body, signal, headersForMessagesCall(opts.headers, opts.anthropicBeta), opts),
     callEmbeddings: (model, body, signal, opts) => call(customFetchEmbeddings, model, body, signal, opts.headers, opts),
     callImagesGenerations: (model, body, signal, opts) => call(customFetchImagesGenerations, model, body, signal, opts.headers, opts),
     callImagesEdits: async (model, request, signal, opts) => {

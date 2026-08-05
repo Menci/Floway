@@ -9,7 +9,7 @@ import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '
 import type { GeminiPayload } from '@floway-dev/protocols/gemini';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
+import { type MessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_gemini_attempt_test';
@@ -74,10 +74,10 @@ const makeChatCompletionsEvents = (): readonly ChatCompletionsStreamEvent[] => [
 const makeCandidate = (overrides: {
   upstream?: string;
   endpoints?: ModelEndpoints;
-  callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
+  callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: MessagesUpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
   callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
   callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
-  callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
+  callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: MessagesUpstreamCallOptions) => Promise<ProviderCallResult>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const provider = stubProvider({
@@ -124,20 +124,24 @@ test('generate translates through Chat Completions when targetApi is chat-comple
 
 test('generate translates through Messages when targetApi is messages', async () => {
   installRepo();
-  const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: new Headers(),
-  }));
+  let callOptions: MessagesUpstreamCallOptions | undefined;
+  const callMessages = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+    callOptions = opts;
+    return { ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: new Headers() };
+  });
   const result = await geminiAttempt.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     candidate: makeCandidate({ callMessages, endpoints: { messages: {} } }),
-    headers: new Headers(),
+    headers: new Headers({ 'anthropic-beta': 'must-not-cross-source-protocols' }),
   });
 
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
   assertEquals(callMessages.mock.calls.length, 1);
+  assertEquals(callOptions?.anthropicBeta, []);
+  assertEquals(callOptions?.headers.has('anthropic-beta'), false);
 });
 
 test('generate translates through Responses when targetApi is responses', async () => {
@@ -161,8 +165,10 @@ test('generate translates through Responses when targetApi is responses', async 
 test('countTokens translates Gemini to Messages count_tokens and reshapes to totalTokens envelope', async () => {
   installRepo();
   let upstreamBody: Record<string, unknown> | undefined;
-  const callMessagesCountTokens = vi.fn(async (_model, body): Promise<ProviderCallResult> => {
+  let callOptions: MessagesUpstreamCallOptions | undefined;
+  const callMessagesCountTokens = vi.fn(async (_model, body, _signal, opts): Promise<ProviderCallResult> => {
     upstreamBody = body as Record<string, unknown>;
+    callOptions = opts;
     return {
       response: new Response(JSON.stringify({ input_tokens: 42 }), {
         status: 200,
@@ -175,7 +181,7 @@ test('countTokens translates Gemini to Messages count_tokens and reshapes to tot
     payload: makePayload({ systemInstruction: { parts: [{ text: 'system' }] } }),
     ctx: makeGatewayCtx(),
     candidate: makeCandidate({ callMessagesCountTokens }),
-    headers: new Headers(),
+    headers: new Headers({ 'anthropic-beta': 'must-not-cross-source-protocols' }),
   });
 
   assertEquals(result.type, 'plain');
@@ -184,6 +190,8 @@ test('countTokens translates Gemini to Messages count_tokens and reshapes to tot
   const body = JSON.parse(new TextDecoder().decode(result.body));
   assertEquals(body, { totalTokens: 42 });
   assertEquals(callMessagesCountTokens.mock.calls.length, 1);
+  assertEquals(callOptions?.anthropicBeta, []);
+  assertEquals(callOptions?.headers.has('anthropic-beta'), false);
   // The Messages count_tokens body should never carry the translation-time
   // `stream: true` flag — that field belongs to the streaming path only.
   if (upstreamBody === undefined) throw new Error('upstreamBody not captured');

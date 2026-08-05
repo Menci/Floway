@@ -1,20 +1,15 @@
+import { dumpBrokerFrameSchema } from './schemas.ts';
 import type { DumpMetadata } from './types.ts';
 import type { ChannelCodec } from '@floway-dev/platform';
 
-const APPENDED_EVENT = 'appended';
-
-interface AppendedFrame {
-  event: typeof APPENDED_EVENT;
-  data: DumpMetadata;
-}
-
 export const dumpCodec: ChannelCodec<DumpMetadata> = {
-  encode: meta => JSON.stringify({ event: APPENDED_EVENT, data: meta } satisfies AppendedFrame),
+  encode: meta => JSON.stringify(dumpBrokerFrameSchema.parse({ event: 'appended', data: meta })),
   decode: text => {
-    const parsed = JSON.parse(text) as { event: unknown; data: unknown };
-    if (parsed.event !== APPENDED_EVENT) {
-      throw new Error(`dump broker frame had unexpected event ${String(parsed.event)}`);
+    try {
+      return dumpBrokerFrameSchema.parse(JSON.parse(text)).data;
+    } catch (cause) {
+      const detail = cause instanceof Error ? `: ${cause.message}` : '';
+      throw new Error(`Invalid dump broker frame${detail}`, { cause });
     }
-    return parsed.data as DumpMetadata;
   },
 };
