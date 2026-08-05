@@ -52,7 +52,9 @@ export const parseCodexQuotaHeaders = (headers: Headers, options: ParseCodexQuot
   const setNumber = (key: keyof CodexQuotaSnapshot, header: string): void => {
     const v = headers.get(header);
     if (v === null) return;
-    const n = Number(v);
+    const trimmed = v.trim();
+    if (trimmed === '') return;
+    const n = Number(trimmed);
     if (Number.isFinite(n)) assign[key] = n;
   };
   const setBool = (key: keyof CodexQuotaSnapshot, header: string): void => {
@@ -65,9 +67,12 @@ export const parseCodexQuotaHeaders = (headers: Headers, options: ParseCodexQuot
   const setResetAfter = (key: keyof CodexQuotaSnapshot, header: string): void => {
     const v = headers.get(header);
     if (v === null) return;
-    const seconds = Number(v);
+    const trimmed = v.trim();
+    if (trimmed === '') return;
+    const seconds = Number(trimmed);
     if (!Number.isFinite(seconds)) return;
-    assign[key] = new Date(options.now.getTime() + seconds * 1000).toISOString();
+    const resetAt = new Date(options.now.getTime() + seconds * 1000);
+    if (!Number.isNaN(resetAt.getTime())) assign[key] = resetAt.toISOString();
   };
 
   setString('active_limit', 'x-codex-active-limit');
@@ -86,7 +91,8 @@ export const parseCodexQuotaHeaders = (headers: Headers, options: ParseCodexQuot
     const secondary = Number(headers.get('x-codex-secondary-reset-after-seconds'));
     const seconds = Math.max(Number.isFinite(primary) ? primary : 0, Number.isFinite(secondary) ? secondary : 0);
     if (seconds > 0) {
-      snapshot.ratelimited_until = new Date(options.now.getTime() + seconds * 1000).toISOString();
+      const retryAt = new Date(options.now.getTime() + seconds * 1000);
+      if (!Number.isNaN(retryAt.getTime())) snapshot.ratelimited_until = retryAt.toISOString();
     }
   }
 
