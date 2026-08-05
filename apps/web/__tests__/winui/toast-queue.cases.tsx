@@ -1,10 +1,10 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { useRef } from 'react';
 import { describe, expect, it } from 'vitest';
 
 import { fluentComponents } from '../../src/fluent';
-import { stubMatchMedia } from '../match-media-stub';
 import { renderInApp } from '../render';
+import { settle } from '../settle';
 
 const { Toast, Toaster, ToastTitle, useToastController } = fluentComponents;
 
@@ -35,17 +35,17 @@ const QueueHarness = () => {
 };
 
 describe('winui toaster queue', () => {
-  stubMatchMedia(query => query.includes('(prefers-reduced-motion: reduce)'));
-
   it('holds a toast dispatched past the limit until a slot frees instead of removing it', async () => {
     renderInApp(<QueueHarness />);
 
     fireEvent.click(screen.getByRole('button', { name: 'fire' }));
-    await screen.findByText('held');
+    await settle();
+    expect(screen.getByText('held')).toBeTruthy();
     expect(screen.queryByText('queued')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'dismiss' }));
-    await screen.findByText('queued');
-    await waitFor(() => expect(screen.queryByText('held')).toBeNull());
+    await settle();
+    expect(screen.getByText('queued')).toBeTruthy();
+    expect(screen.queryByText('held')).toBeNull();
   });
 });
