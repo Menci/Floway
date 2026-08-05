@@ -151,28 +151,24 @@ const upstreamWireSchema = parsedBy((value): UpstreamRecord => {
     throw new Error('id must use a raw upstream id, not a legacy provider-prefixed identity');
   }
 
-  try {
-    const record: UpstreamRecord = {
-      id,
-      kind,
-      name: parseValue(nonEmptyStringSchema('name'), wire.name),
-      enabled,
-      sortOrder,
-      createdAt: parseValue(nonEmptyStringSchema('created_at'), wire.created_at),
-      updatedAt: parseValue(nonEmptyStringSchema('updated_at'), wire.updated_at),
-      flagOverrides: parseValue(parsedBy(parseFlagOverridesWire), wire.flag_overrides),
-      disabledPublicModelIds: parseValue(parsedBy(parseDisabledPublicModelIdsWire).optional().default([]), wire.disabled_public_model_ids),
-      proxyFallbackList: parseValue(proxyFallbackListSchema, wire.proxy_fallback_list),
-      modelPrefix: parseValue(parsedBy(normalizeModelPrefix).optional().default(null), wire.model_prefix),
-      hue: parseValue(parsedBy(normalizeUpstreamHue), wire.hue),
-      config: wire.config,
-      state: normalizeUpstreamState(kind, wire.state),
-      modelsCache: null,
-    };
-    return { ...record, config: normalizeUpstreamConfig(record) };
-  } catch (cause) {
-    throw new Error(messageFor(cause));
-  }
+  const record: UpstreamRecord = {
+    id,
+    kind,
+    name: parseValue(nonEmptyStringSchema('name'), wire.name),
+    enabled,
+    sortOrder,
+    createdAt: parseValue(nonEmptyStringSchema('created_at'), wire.created_at),
+    updatedAt: parseValue(nonEmptyStringSchema('updated_at'), wire.updated_at),
+    flagOverrides: parseValue(parsedBy(parseFlagOverridesWire), wire.flag_overrides),
+    disabledPublicModelIds: parseValue(parsedBy(parseDisabledPublicModelIdsWire).optional().default([]), wire.disabled_public_model_ids),
+    proxyFallbackList: parseValue(proxyFallbackListSchema, wire.proxy_fallback_list),
+    modelPrefix: parseValue(parsedBy(normalizeModelPrefix).optional().default(null), wire.model_prefix),
+    hue: parseValue(parsedBy(normalizeUpstreamHue), wire.hue),
+    config: wire.config,
+    state: normalizeUpstreamState(kind, wire.state),
+    modelsCache: null,
+  };
+  return { ...record, config: normalizeUpstreamConfig(record) };
 });
 
 const proxySchema = parsedBy((value): SerializedProxy => {
