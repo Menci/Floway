@@ -350,6 +350,18 @@ test('SQL usage overview matches the in-memory oracle across filters, facets, ax
     );
   }
 
+  for (const filters of [
+    { keyIds: [], userIds: [0], models: [], upstreams: [] },
+    { keyIds: ['key-1'], userIds: [1], models: ['model-a'], upstreams: ['none'] },
+    { keyIds: [], userIds: [], models: ['missing'], upstreams: [] },
+  ]) {
+    const filtered = { ...options, filters };
+    assertEquals(
+      await sql.usage.queryOverview(filtered),
+      await memory.usage.queryOverview(filtered),
+    );
+  }
+
   const expected = await memory.usage.queryOverview(options);
   const actual = await sql.usage.queryOverview(options);
 
@@ -367,6 +379,45 @@ test('SQL usage overview matches the in-memory oracle across filters, facets, ax
     metrics: [{ metric: 'input_tokens', quantity: '9007199254740992.1' }],
     cost: '900719925.4940992',
   });
+});
+
+test('SQL usage overview preserves request-only and metric-only storage identities', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  await repo.apiKeys.save(apiKey('key-1', 1));
+  await db.prepare(`INSERT INTO usage_requests (
+    key_id, model, upstream, model_key, hour, pricing_selector, requests
+  ) VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(
+    'key-1', 'request-only', null, 'request-only', '2026-07-12T00', '{}', 3,
+  ).run();
+  await db.prepare(`INSERT INTO usage (
+    key_id, model, upstream, model_key, hour, pricing_selector, metric, quantity, unit_price
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+    'key-1', 'metric-only', null, 'metric-only', '2026-07-12T00', '{}',
+    'input_tokens', '0.25', '0.4',
+  ).run();
+
+  const overview = await repo.usage.queryOverview({
+    actorUserId: 1,
+    isAdmin: true,
+    start: '2026-07-12T00',
+    end: '2026-07-12T01',
+    groupBy: 'model',
+    filters: { keyIds: [], userIds: [], models: [], upstreams: [] },
+    keyToUser: new Map([['key-1', 1]]),
+    bucketForHour: hour => hour,
+  });
+
+  assertEquals(overview.series, [
+    {
+      bucket: '2026-07-12T00', group: 'metric-only', requests: 0,
+      metrics: [{ metric: 'input_tokens', quantity: '0.25' }], cost: '0.1',
+    },
+    {
+      bucket: '2026-07-12T00', group: 'request-only', requests: 3,
+      metrics: [], cost: null,
+    },
+  ]);
 });
 
 test('SQL usage overview uses key-hour indexes for an actor-scoped aggregate', async () => {
