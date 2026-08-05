@@ -421,17 +421,17 @@ test('responsesResultToEvents preserves advanced tool item wire fields', () => {
 test('responsesResultToEvents surfaces a missing function_call item id instead of inventing one', () => {
   assertThrows(
     () => responsesResultToEvents({
-        ...completedResponse,
-        output: [
-          {
-            type: 'function_call',
-            call_id: 'call_1',
-            name: 'do_thing',
-            arguments: '{}',
-            status: 'completed',
-          },
-        ],
-      }),
+      ...completedResponse,
+      output: [
+        {
+          type: 'function_call',
+          call_id: 'call_1',
+          name: 'do_thing',
+          arguments: '{}',
+          status: 'completed',
+        },
+      ],
+    }),
     Error,
     'Responses function_call output item is missing its id',
   );
