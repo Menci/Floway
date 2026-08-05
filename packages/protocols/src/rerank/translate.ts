@@ -1,11 +1,21 @@
 import type { ParsedRerankRequest, CanonicalRerankRequest, CanonicalRerankResponse, CanonicalRerankResult, RerankInput } from './index.ts';
-import type { RerankProtocol, RerankSourceProtocol } from '../common/models.ts';
+import { RERANK_PROTOCOLS, type RerankProtocol, type RerankSourceProtocol } from '../common/models.ts';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const unsupportedProtocol = (protocol: never, operation: string): never => {
   throw new TypeError(`Unsupported rerank protocol for ${operation}: ${String(protocol)}`);
+};
+
+const assertRerankProtocol = (protocol: RerankProtocol, operation: string): void => {
+  if (!(RERANK_PROTOCOLS as readonly string[]).includes(protocol)) unsupportedProtocol(protocol as never, operation);
+};
+
+const assertRerankSourceProtocol = (protocol: RerankSourceProtocol, operation: string): void => {
+  assertRerankProtocol(protocol, operation);
+  const runtimeProtocol: string = protocol;
+  if (runtimeProtocol === 'dashscope-compatible' || runtimeProtocol === 'dashscope-native') unsupportedProtocol(protocol as never, operation);
 };
 
 const requiredString = (value: unknown, field: string): string => {
@@ -89,6 +99,7 @@ const rejectFields = (body: Record<string, unknown>, protocol: RerankSourceProto
 };
 
 export const parseRerankRequest = (protocol: RerankSourceProtocol, value: unknown): ParsedRerankRequest => {
+  assertRerankSourceProtocol(protocol, 'request parsing');
   if (!isRecord(value)) throw new Error('Rerank request body must be an object');
   const model = requiredString(value.model, 'model');
   switch (protocol) {
@@ -212,6 +223,8 @@ export const serializeRerankRequest = (
   model: string,
   request: CanonicalRerankRequest,
 ): Record<string, unknown> => {
+  assertRerankProtocol(protocol, 'request serialization');
+  assertRerankSourceProtocol(request.sourceProtocol, 'request serialization');
   const incompatibility = rerankRequestIncompatibility(protocol, request);
   if (incompatibility !== null) throw new Error(incompatibility);
   if (protocol === request.sourceProtocol) return { ...request.raw, model };
@@ -342,8 +355,8 @@ const cohereUsage = (meta: unknown): Pick<CanonicalRerankResponse, 'totalTokens'
   const tokens = optionalRecord(metadata.tokens, 'meta.tokens');
   const searchUnits = optionalNullableFiniteNumber(billedUnits?.search_units, 'meta.billed_units.search_units');
   const inputTokens = optionalNullableFiniteNumber(tokens?.input_tokens, 'meta.tokens.input_tokens');
-  if (searchUnits !== undefined && searchUnits < 0) throw new Error('meta.billed_units.search_units must not be negative');
-  if (inputTokens !== undefined && inputTokens < 0) throw new Error('meta.tokens.input_tokens must not be negative');
+  if (searchUnits !== undefined && (!Number.isSafeInteger(searchUnits) || searchUnits < 0)) throw new Error('meta.billed_units.search_units must be a non-negative safe integer');
+  if (inputTokens !== undefined && (!Number.isSafeInteger(inputTokens) || inputTokens < 0)) throw new Error('meta.tokens.input_tokens must be a non-negative safe integer');
   return {
     ...(inputTokens === undefined ? {} : { totalTokens: inputTokens }),
     ...(searchUnits === undefined ? {} : { searchUnits }),
@@ -354,6 +367,7 @@ export const parseRerankUsage = (
   protocol: RerankProtocol,
   value: unknown,
 ): Pick<CanonicalRerankResponse, 'totalTokens' | 'searchUnits'> => {
+  assertRerankProtocol(protocol, 'usage parsing');
   if (!isRecord(value)) return {};
   switch (protocol) {
   case 'cohere-v1':
@@ -369,6 +383,7 @@ export const parseRerankUsage = (
 };
 
 export const parseRerankResponse = (protocol: RerankProtocol, value: unknown): CanonicalRerankResponse => {
+  assertRerankProtocol(protocol, 'response parsing');
   if (!isRecord(value)) throw new Error('Rerank response body must be an object');
   const usage = parseRerankUsage(protocol, value);
   switch (protocol) {
@@ -446,6 +461,8 @@ export const renderRerankResponse = (
   response: CanonicalRerankResponse,
   request: CanonicalRerankRequest,
 ): Record<string, unknown> => {
+  assertRerankSourceProtocol(sourceProtocol, 'response rendering');
+  assertRerankProtocol(targetProtocol, 'response rendering');
   if (sourceProtocol === targetProtocol) return response.raw;
   switch (sourceProtocol) {
   case 'cohere-v1':

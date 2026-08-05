@@ -7,6 +7,19 @@ describe('rerank request ingress', () => {
     expect(() => parseRerankRequest('future' as never, {
       model: 'rerank', query: 'query', documents: ['one'],
     })).toThrow('Unsupported rerank protocol for request parsing');
+
+    const request = parseRerankRequest('cohere-v1', {
+      model: 'rerank', query: 'query', documents: ['one'],
+    }).request;
+    expect(() => serializeRerankRequest('future' as never, 'raw', { ...request, sourceProtocol: 'future' as never }))
+      .toThrow('Unsupported rerank protocol for request serialization');
+    expect(() => parseRerankUsage('future' as never, null)).toThrow('Unsupported rerank protocol for usage parsing');
+    expect(() => renderRerankResponse('future' as never, 'future' as never, {
+      raw: {}, results: [],
+    }, { ...request, sourceProtocol: 'future' as never })).toThrow('Unsupported rerank protocol for response rendering');
+    expect(() => renderRerankResponse('cohere-v1', 'future' as never, {
+      raw: {}, results: [],
+    }, request)).toThrow('Unsupported rerank protocol for response rendering');
   });
 
   test('Cohere v1 retains structured documents and v1-only options', () => {
@@ -233,6 +246,12 @@ describe('rerank response translation', () => {
     expect(() => parseRerankUsage('cohere-v2', { meta: { tokens: [] } })).toThrow('meta.tokens must be an object or null');
     expect(() => parseRerankUsage('cohere-v2', { meta: { billed_units: { search_units: '2' } } })).toThrow('meta.billed_units.search_units must be a finite number');
     expect(() => parseRerankUsage('cohere-v2', { meta: { tokens: { input_tokens: '3' } } })).toThrow('meta.tokens.input_tokens must be a finite number');
+    for (const input_tokens of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() => parseRerankUsage('cohere-v2', { meta: { tokens: { input_tokens } } })).toThrow('non-negative safe integer');
+    }
+    for (const search_units of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() => parseRerankUsage('cohere-v2', { meta: { billed_units: { search_units } } })).toThrow('non-negative safe integer');
+    }
   });
 
   test('normalizes Voyage and both DashScope response envelopes', () => {
