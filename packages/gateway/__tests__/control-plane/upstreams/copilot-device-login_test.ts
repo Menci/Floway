@@ -30,7 +30,11 @@ test('/api/upstreams/copilot/oauth/device-login/start starts GitHub device flow'
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/api/upstreams/copilot/oauth/device-login/start', { method: 'POST', headers: { 'x-floway-session': adminSession } });
+      const response = await requestApp('/api/upstreams/copilot/oauth/device-login/start', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
+        body: JSON.stringify({ record: copilotBlueprintEnvelope }),
+      });
       assertEquals(response.status, 200);
       assertEquals(await response.json(), { device_code: 'device', user_code: 'ABCD', verification_uri: 'https://github.com/login/device', expires_in: 900, interval: 5 });
     },
@@ -40,9 +44,65 @@ test('/api/upstreams/copilot/oauth/device-login/start starts GitHub device flow'
 // The blueprint envelope shape the SPA sends when the operator has not yet
 // saved a Copilot row. Matches `blueprintUpstreamRecord('copilot')` on the
 // wire — the exchange endpoint only reads `id`, `kind`, and
-// `proxy_fallback_list` from the envelope, so a minimal literal keeps the
+// `config.githubHost` and `proxy_fallback_list` from the envelope, so a minimal literal keeps the
 // test focused on the exchange semantics.
-const copilotBlueprintEnvelope = { id: '', kind: 'copilot', config: null, state: null, proxy_fallback_list: MOCKED_FETCH_EGRESS };
+const copilotBlueprintEnvelope = { id: '', kind: 'copilot', config: { githubHost: 'github.com' }, state: null, proxy_fallback_list: MOCKED_FETCH_EGRESS };
+
+test('/api/upstreams/copilot/oauth/device-login/start targets the selected GHE.com tenant', async () => {
+  const { adminSession } = await setupAppTest();
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      assertEquals(url.origin, 'https://octocorp.ghe.com');
+      assertEquals(url.pathname, '/login/device/code');
+      return jsonResponse({ device_code: 'ghe-device', user_code: 'GHE1', verification_uri: 'https://octocorp.ghe.com/login/device', expires_in: 900, interval: 5 });
+    },
+    async () => {
+      const response = await requestApp('/api/upstreams/copilot/oauth/device-login/start', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
+        body: JSON.stringify({ record: { ...copilotBlueprintEnvelope, config: { githubHost: 'octocorp.ghe.com' } } }),
+      });
+      assertEquals(response.status, 200);
+      const body = (await response.json()) as { verification_uri: string };
+      assertEquals(body.verification_uri, 'https://octocorp.ghe.com/login/device');
+    },
+  );
+});
+
+test('/api/upstreams/copilot/oauth/device-login/poll completes against the selected GHE.com tenant', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  const record = { ...copilotBlueprintEnvelope, config: { githubHost: 'octocorp.ghe.com' } };
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.origin === 'https://octocorp.ghe.com' && url.pathname === '/login/oauth/access_token') return jsonResponse({ access_token: 'ghu_ghe' });
+      if (url.origin === 'https://api.octocorp.ghe.com' && url.pathname === '/user') return jsonResponse(githubUser);
+      if (url.origin === 'https://api.octocorp.ghe.com' && url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'ct_ghe',
+          expires_at: Math.floor(Date.now() / 1000) + 1500,
+          refresh_in: 1200,
+          endpoints: { api: 'https://api.business.githubcopilot.com' },
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/api/upstreams/copilot/oauth/device-login/poll', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
+        body: JSON.stringify({ record, deviceCode: 'ghe-device' }),
+      });
+      assertEquals(response.status, 200);
+      const body = (await response.json()) as { patch: { config: { githubHost: string }; state: { copilotToken: { baseUrl: string } } } };
+      assertEquals(body.patch.config.githubHost, 'octocorp.ghe.com');
+      assertEquals(body.patch.state.copilotToken.baseUrl, 'https://api.business.githubcopilot.com');
+    },
+  );
+});
 
 test('/api/upstreams/copilot/oauth/device-login/poll returns a config+state patch and identity from the token exchange', async () => {
   const { repo, adminSession } = await setupAppTest();
