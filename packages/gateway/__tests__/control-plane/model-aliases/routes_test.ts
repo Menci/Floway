@@ -136,7 +136,7 @@ test('concurrent POST /api/aliases requests leave one complete row and report on
 });
 
 test('PUT /api/aliases/:id updates rules and refreshes updated_at', async () => {
-  const { repo, adminSession } = await setupAppTest();
+  const { adminSession } = await setupAppTest();
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
   try {

@@ -2,9 +2,9 @@ import { act } from '@testing-library/react';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { flowayTokenStorageKey } from '../../src/auth/session';
 import { OutcomeToastProvider } from '../../src/components/ui/outcome-toast';
 import DashboardServicesApiKeys, { clientLoader } from '../../src/routes/dashboard-services-api-keys';
-import { flowayTokenStorageKey } from '../../src/auth/session';
 import { stubLocalStorage } from '../local-storage-stub';
 import { renderInApp } from '../render';
 

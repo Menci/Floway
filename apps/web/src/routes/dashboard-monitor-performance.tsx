@@ -48,7 +48,7 @@ const groupByValues: PerformanceGroupBy[] = ['model', 'upstream', 'operation', '
 
 export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise<PerformancePageData> {
   const user = await requireDashboardUser();
-  return loadPerformancePageData(request, user);
+  return await loadPerformancePageData(request, user);
 }
 
 export const shouldRevalidate = revalidateOnPathnameChange;
