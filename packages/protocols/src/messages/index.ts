@@ -298,7 +298,7 @@ export interface MessagesResult {
   role: 'assistant';
   content: MessagesAssistantContentBlock[];
   model: string;
-  stop_reason: 'end_turn' | 'max_tokens' | 'stop_sequence' | 'tool_use' | 'pause_turn' | 'refusal' | null;
+  stop_reason: 'end_turn' | 'max_tokens' | 'stop_sequence' | 'tool_use' | 'pause_turn' | 'refusal' | (string & {}) | null;
   stop_details?: MessagesRefusalStopDetails | null;
   stop_sequence: string | null;
   usage: MessagesUsage;
