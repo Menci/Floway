@@ -21,6 +21,7 @@ export interface FakeServer {
   respond(bytes: Uint8Array | string): void;
   /** Close the dialer's readable (server EOF). */
   endResponse(): void;
+  closed(): boolean;
 }
 
 export interface FakeSocketDial {
@@ -110,6 +111,7 @@ const makeFakeSocket = (): { socket: DialedSocket; srv: FakeServer } => {
   });
 
   const enc = new TextEncoder();
+  let closed = false;
 
   const srv: FakeServer = {
     read(n) {
@@ -134,9 +136,9 @@ const makeFakeSocket = (): { socket: DialedSocket; srv: FakeServer } => {
       readableController.enqueue(new Uint8Array(u));
     },
     endResponse() { readableController.close(); },
+    closed: () => closed,
   };
 
-  let closed = false;
   const socket: DialedSocket = {
     readable,
     writable,
