@@ -7,9 +7,9 @@ import {
   WarningRegular,
 } from '@fluentui/react-icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { Link, useLocation, useNavigate } from 'react-router';
 
+import { type TFunction, useTranslation } from '../i18n/translation';
 import type { Route } from './+types/dashboard-providers-upstreams';
 import { requireDashboardAdmin } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
@@ -64,12 +64,10 @@ interface LoaderData {
   modelsError: string | null;
 }
 
-// The record name travels with the mutation so the pending toast keeps naming
-// the same subject while the list underneath it is optimistically rewritten.
 type Mutation =
-  | { kind: 'toggle'; id: string; name: string }
-  | { kind: 'reorder'; id: string; name: string }
-  | { kind: 'delete'; id: string; name: string };
+  | { kind: 'toggle'; id: string }
+  | { kind: 'reorder'; id: string }
+  | { kind: 'delete'; id: string };
 
 const PROVIDER_MENU_ORDER: readonly UpstreamProviderKind[] = [
   'custom',
@@ -156,12 +154,11 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   // Delete is excluded because it owns its handle: it has a success line to
   // announce, and that has to update the toast the pending line already holds.
   const mutationKind = mutation?.kind ?? null;
-  const mutationName = mutation?.name ?? null;
   useEffect(() => {
     if (!mutationKind || mutationKind === 'delete') return;
-    const handle = toasts.start(t(`dashboard.upstreams.toast.${mutationKind}.pending`, { name: mutationName }));
+    const handle = toasts.start(t(`dashboard.upstreams.toast.${mutationKind}.pending`));
     return () => handle.settle();
-  }, [mutationKind, mutationName, t, toasts]);
+  }, [mutationKind, t, toasts]);
 
   const { refresh: reload, refreshing } = useRefresh(useCallback(async (signal: AbortSignal) => {
     const next = await loadPageData(signal);
@@ -183,7 +180,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
 
   const setEnabled = async (record: UpstreamRecord, enabled: boolean) => {
     if (data.upstreams === null) return;
-    setMutation({ kind: 'toggle', id: record.id, name: record.name });
+    setMutation({ kind: 'toggle', id: record.id });
     setPageError(null);
     setPendingEnabled({ id: record.id, enabled });
 
@@ -211,7 +208,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     const next = [...snapshot];
     next[index] = target;
     next[targetIndex] = record;
-    setMutation({ kind: 'reorder', id: record.id, name: record.name });
+    setMutation({ kind: 'reorder', id: record.id });
     setPageError(null);
     setData(current => ({ ...current, upstreams: next }));
 
@@ -239,7 +236,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   };
 
   const deleteUpstream = async (record: UpstreamRecord) => {
-    setMutation({ kind: 'delete', id: record.id, name: record.name });
+    setMutation({ kind: 'delete', id: record.id });
     setDeleteError(null);
     const handle = toasts.start(t('dashboard.upstreams.toast.delete.pending', { name: record.name }));
     const result = await callApi(() =>
@@ -530,7 +527,7 @@ const buildModelCounts = (
   return new Map(upstreams.map(record => [record.id, countFor(record)]));
 };
 
-const upstreamSummary = (record: UpstreamRecord, t: ReturnType<typeof useTranslation>['t']): string => {
+const upstreamSummary = (record: UpstreamRecord, t: TFunction): string => {
   switch (record.kind) {
   case 'custom': return record.config.baseUrl;
   case 'azure': return record.config.endpoint;

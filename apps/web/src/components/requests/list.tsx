@@ -7,13 +7,13 @@ import {
 } from '@fluentui/react-icons';
 import { useCallback, useMemo, useState } from 'react';
 import type { CSSProperties, KeyboardEvent } from 'react';
-import { useTranslation } from 'react-i18next';
 import { List } from 'react-window';
 import type { ListImperativeAPI, RowComponentProps } from 'react-window';
 
 import { errorLabel, requestSeverity, totalTokens } from './format';
 import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { formatDuration } from '../../lib/format-duration';
 import { formatBytes, formatCompactCount } from '../../lib/format-number';
 import { dateTime, relativeTime, shortDate } from '../../lib/format-time';

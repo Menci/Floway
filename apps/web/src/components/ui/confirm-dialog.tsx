@@ -1,8 +1,7 @@
-import { useTranslation } from 'react-i18next';
-
 import { DialogShell } from './dialog-shell';
 import { OutcomeMessageBar } from './outcome-message-bar';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 
 const { Button, DialogActions, DialogTitle, makeStyles, mergeClasses } = fluentComponents;
 

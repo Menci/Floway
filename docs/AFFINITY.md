@@ -186,11 +186,12 @@ Item IDs are opaque: hydration performs no prefix validation and no
 candidate-specific rewrite. Affinity never reads, writes, authenticates, or
 validates item IDs, including when it recognizes a fully synthetic item.
 
-On output, affinity wraps the source-shaped events first. When state is
-writable, persistence stores the first `response.output_item.done` value for
-every output index under the exact client-facing item ID; duplicate done or
-terminal frames remain wire-visible but cannot replace that durable row.
-Completed item rows survive a later failed stream, but a response snapshot
+On output, closed item lifecycles first canonicalize any partial terminal
+restatement. Affinity wraps that source-shaped canonical stream, then, when
+state is writable, persistence stores the first `response.output_item.done`
+value for every output index under the exact client-facing item ID; duplicate
+done or terminal frames remain wire-visible but cannot replace that durable
+row. Completed item rows survive a later failed stream, but a response snapshot
 commits only before a successful `response.completed` or `response.incomplete`
 terminal.
 
