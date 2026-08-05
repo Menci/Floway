@@ -5,6 +5,9 @@ import { directFetcher, type Fetcher } from '@floway-dev/provider';
 
 const GITHUB_CLIENT_ID = 'Iv1.b507a08c87ecfe98';
 const GITHUB_SCOPES = 'read:user';
+// GitHub's device flow sends the public client_id in the request body at both
+// endpoints and does not require a client secret.
+// https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#device-flow
 const GITHUB_AUTHORIZATION_SERVER = {
   issuer: 'https://github.com',
   device_authorization_endpoint: 'https://github.com/login/device/code',
