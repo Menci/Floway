@@ -617,29 +617,21 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     return Promise.resolve();
   }
 
-  saveModelsCache(id: string, generation: ModelsCacheGeneration, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean> {
+  saveClaimedModelsCache(id: string, generation: ModelsCacheGeneration, token: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean> {
+    if (this.modelsRefreshes.get(id)?.claimToken !== token) return Promise.resolve(false);
     const existing = this.store.get(id);
     if (!existing || existing.updatedAt !== generation.updatedAt || serializeStoredConfig(existing.config) !== serializeStoredConfig(generation.config)) return Promise.resolve(false);
     existing.modelsCache = { revision: cache.revision, fetchedAt: cache.fetchedAt, models: [...cache.models], lastError: null };
     return Promise.resolve(true);
   }
 
-  saveModelsCacheError(id: string, generation: ModelsCacheGeneration, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean> {
+  saveClaimedModelsCacheError(id: string, generation: ModelsCacheGeneration, token: string, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean> {
+    if (this.modelsRefreshes.get(id)?.claimToken !== token) return Promise.resolve(false);
     const existing = this.store.get(id);
     if (!existing || existing.updatedAt !== generation.updatedAt || serializeStoredConfig(existing.config) !== serializeStoredConfig(generation.config)) return Promise.resolve(false);
     if (existing.modelsCache) existing.modelsCache.lastError = error;
     else existing.modelsCache = { revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError: error };
     return Promise.resolve(true);
-  }
-
-  saveClaimedModelsCache(id: string, generation: ModelsCacheGeneration, token: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean> {
-    if (this.modelsRefreshes.get(id)?.claimToken !== token) return Promise.resolve(false);
-    return this.saveModelsCache(id, generation, cache);
-  }
-
-  saveClaimedModelsCacheError(id: string, generation: ModelsCacheGeneration, token: string, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean> {
-    if (this.modelsRefreshes.get(id)?.claimToken !== token) return Promise.resolve(false);
-    return this.saveModelsCacheError(id, generation, error);
   }
 
   claimModelsRefresh(id: string, generation: ModelsCacheGeneration, token: string, now: number, staleClaimedBefore: number, force: boolean): Promise<ModelsRefreshClaimResult> {

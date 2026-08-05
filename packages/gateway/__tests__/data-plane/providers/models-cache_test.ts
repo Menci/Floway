@@ -7,6 +7,7 @@ import { SqlRepo } from '../../../src/repo/sql.ts';
 import type { ModelsCacheGeneration } from '../../../src/repo/types.ts';
 import { serializeStoredConfig } from '../../../src/repo/upstream-json.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
+import { seedModelsCache } from '../../repo/models-cache-fixture.ts';
 import { createSqliteTestDb } from '../../repo/test-sqlite.ts';
 import { directFetcher, type ProviderModel, type UpstreamModelsCache } from '@floway-dev/provider';
 import { stubProvider, stubProviderModel } from '@floway-dev/test-utils';
@@ -64,7 +65,7 @@ const seedCache = async (
   repo: InMemoryRepo,
   cache: { revision: number; fetchedAt: number; models: ProviderModel[] },
 ): Promise<UpstreamModelsCache> => {
-  await repo.upstreams.saveModelsCache(UPSTREAM_ID, CACHE_GENERATION, cache);
+  await seedModelsCache(repo.upstreams, UPSTREAM_ID, CACHE_GENERATION, cache);
   const stored = (await repo.upstreams.getById(UPSTREAM_ID))?.modelsCache;
   if (!stored) throw new Error('the seeded catalog did not land on the upstream row');
   return stored;

@@ -948,38 +948,6 @@ class SqlUpstreamRepo implements UpstreamRepo {
     await this.db.prepare('DELETE FROM upstreams').run();
   }
 
-  // Written only here and never by save(): an operator edit carries whatever
-  // catalog the request happened to read, and folding that back in would let a
-  // rename race a refresh.
-  async saveModelsCache(id: string, generation: ModelsCacheGeneration, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean> {
-    const rawConfig = await this.modelsCacheWriteConfig(id, generation);
-    if (rawConfig === null) return false;
-    const result = await this.db
-      .prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ? AND updated_at = ? AND config_json = ?')
-      .bind(encodeUpstreamModelsCache({ ...cache, lastError: null }), id, generation.updatedAt, rawConfig)
-      .run();
-    return (result.meta.changes ?? 0) > 0;
-  }
-
-  // A cold failure persists an empty, immediately-stale catalog so the error
-  // remains visible without making the failed attempt look soft-fresh. An
-  // existing last-known-good catalog keeps its models and fetch timestamp.
-  async saveModelsCacheError(id: string, generation: ModelsCacheGeneration, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean> {
-    const rawConfig = await this.modelsCacheWriteConfig(id, generation);
-    if (rawConfig === null) return false;
-    const coldFailure = encodeUpstreamModelsCache({
-      revision: MODEL_CATALOG_REVISION,
-      fetchedAt: 0,
-      models: [],
-      lastError: error,
-    });
-    const result = await this.db
-      .prepare("UPDATE upstreams SET models_cache_json = CASE WHEN models_cache_json IS NULL THEN ? ELSE json_set(models_cache_json, '$.lastError', json(?)) END WHERE id = ? AND updated_at = ? AND config_json = ?")
-      .bind(coldFailure, JSON.stringify(error), id, generation.updatedAt, rawConfig)
-      .run();
-    return (result.meta.changes ?? 0) > 0;
-  }
-
   async saveClaimedModelsCache(id: string, generation: ModelsCacheGeneration, token: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean> {
     const rawConfig = await this.modelsCacheWriteConfig(id, generation);
     if (rawConfig === null) return false;
@@ -993,6 +961,8 @@ class SqlUpstreamRepo implements UpstreamRepo {
   async saveClaimedModelsCacheError(id: string, generation: ModelsCacheGeneration, token: string, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean> {
     const rawConfig = await this.modelsCacheWriteConfig(id, generation);
     if (rawConfig === null) return false;
+    // A cold failure remains immediately stale while preserving the error for
+    // the next request and dashboard read.
     const coldFailure = encodeUpstreamModelsCache({ revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError: error });
     const result = await this.db
       .prepare("UPDATE upstreams SET models_cache_json = CASE WHEN models_cache_json IS NULL THEN ? ELSE json_set(models_cache_json, '$.lastError', json(?)) END WHERE id = ? AND updated_at = ? AND config_json = ? AND json_extract(models_refresh_json, '$.claimToken') = ?")
