@@ -57,12 +57,15 @@ const seedAccountState = (overrides: Partial<CodexAccountCredential>): void => {
 const readQuotaEntry = (): CodexQuotaSnapshotEntryMap | null =>
   (currentRecord.state as CodexUpstreamState).accounts[0].quotaSnapshot;
 
-// putCodexQuota fires-and-forgets via .catch(() => {}); yield to the task
-// queue so the saveState promise resolves before the caller asserts on state.
-const flushMicrotasks = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
+const captureBackgroundWrites = () => {
+  const writes: Promise<unknown>[] = [];
+  return {
+    call: { ...noopUpstreamCallOptions(), waitUntil: (write: Promise<unknown>) => { writes.push(write); } },
+    settle: async () => { await Promise.all(writes); },
+  };
+};
 
 beforeEach(() => {
-  vi.useRealTimers();
   currentRecord = makeRecord({ accounts: [{ ...activeAccount }] });
   initProviderRepo(() => ({
     upstreams: createUpstreamStateRepoStub(() => currentRecord, state => {
@@ -177,12 +180,13 @@ describe('callCodexResponses — upstream classification', () => {
   test('happy path: 200 → ok:true, quota persisted', async () => {
     seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    const background = captureBackgroundWrites();
     const result = await callCodexResponses({
       upstreamId, account: activeAccount,
-      model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
+      model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(), call: background.call,
     });
     expect(result.ok).toBe(true);
-    await flushMicrotasks();
+    await background.settle();
     const stored = readQuotaEntry();
     expect(stored?.premium.data.primary_used_percent).toBe(42);
     expect(stored?.premium.data.ratelimited_until).toBeUndefined();
@@ -724,16 +728,17 @@ describe('callCodexResponses — upstream classification', () => {
       'x-codex-primary-reset-after-seconds': '3600',
       'x-codex-secondary-reset-after-seconds': '7200',
     }));
+    const background = captureBackgroundWrites();
     const result = await callCodexResponses({
       upstreamId, account: activeAccount,
-      model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
+      model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(), call: background.call,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.response.status).toBe(429);
       expect(result.response.headers.get('content-type')).toBe('application/json');
     }
-    await flushMicrotasks();
+    await background.settle();
     const stored = readQuotaEntry();
     expect(stored?.premium.data.ratelimited_until).toBeTruthy();
   });
@@ -903,13 +908,14 @@ describe('callCodexResponsesCompact', () => {
       'x-codex-primary-reset-after-seconds': '3600',
       'x-codex-secondary-reset-after-seconds': '7200',
     }));
+    const background = captureBackgroundWrites();
     const result = await callCodexResponsesCompact({
       upstreamId, account: activeAccount, model,
-      body: { input: [] }, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
+      body: { input: [] }, headers: new Headers(), effects: makeEffects(), call: background.call,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(429);
-    await flushMicrotasks();
+    await background.settle();
     const stored = readQuotaEntry();
     expect(stored?.premium.data.ratelimited_until).toBeTruthy();
   });
