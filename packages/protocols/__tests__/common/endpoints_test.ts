@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { kindForEndpoints, parseModelKind } from '../../src/common/endpoints.ts';
+import { endpointsSupportKind, kindForEndpoints, parseModelKind } from '../../src/common/endpoints.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 test('parseModelKind accepts endpoint families and rejects unknown storage values', () => {
@@ -28,4 +28,15 @@ test('kindForEndpoints returns embedding for embeddings and chat for chat-protoc
 
 test('kindForEndpoints returns rerank for the semantic rerank endpoint', () => {
   assertEquals(kindForEndpoints({ rerank: {} }), 'rerank');
+});
+
+test('endpointsSupportKind preserves every family in a mixed endpoint map', () => {
+  const endpoints = { chatCompletions: {}, responses: {}, embeddings: {} };
+  assertEquals(kindForEndpoints(endpoints), 'embedding');
+  assertEquals(endpointsSupportKind(endpoints, 'chat'), true);
+  assertEquals(endpointsSupportKind(endpoints, 'embedding'), true);
+  assertEquals(endpointsSupportKind(endpoints, 'image'), false);
+  assertEquals(endpointsSupportKind(endpoints, 'rerank'), false);
+  assertEquals(endpointsSupportKind(endpoints, 'transcription'), false);
+  assertEquals(endpointsSupportKind({}, 'chat'), false);
 });

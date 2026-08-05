@@ -69,9 +69,9 @@ interface PassthroughServeContext {
   // id with the requested kind, the client sees a 404 with the standard
   // wording.
   readonly model: string;
-  // The model kind this endpoint serves. The resolver filters candidates
-  // to `model.kind === kind`; `sawModel=true && candidates=[]` becomes
-  // the "model exists but doesn't support this endpoint" 400.
+  // The endpoint family this route serves. The resolver accepts every model
+  // whose endpoint map serves that family, including mixed-family maps;
+  // `sawModel=true && candidates=[]` becomes the unsupported-endpoint 400.
   readonly kind: ModelKind;
   // Endpoint-availability gate against a resolved candidate's `InternalModel`.
   // Reads `.endpoints` on the candidate — the row narrows to exactly one

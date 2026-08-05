@@ -8,7 +8,7 @@ import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasRecord } from '../../repo/types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { ModelKind } from '@floway-dev/protocols/common';
+import { endpointsSupportKind, type ModelKind } from '@floway-dev/protocols/common';
 import type { Fetcher, ModelCandidate } from '@floway-dev/provider';
 
 // Resolve one inbound id against one upstream. The upstream's
@@ -52,7 +52,7 @@ const enumerateOneUpstreamCandidates = async (
     const match = providedModels.find(m => m.id === lookupId && !disabled.has(m.id));
     if (!match) continue;
     sawAnyId = true;
-    if (match.kind === kind) {
+    if (endpointsSupportKind(match.endpoints, kind)) {
       candidates.push({ provider, model: internalModelFromProviderModel(match, provider.upstreamId), fetcher });
     }
   }

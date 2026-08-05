@@ -11,7 +11,7 @@ import { geminiStatusForHttpStatus } from '../chat/gemini/errors.ts';
 import { enumerateAddressableModelIds, listedRealModels } from '../shared/listing/addressable.ts';
 import { mergeAliasesIntoModels } from '../shared/listing/alias.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { ModelPricing } from '@floway-dev/protocols/common';
+import { endpointsSupportKind, type ModelPricing } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 import type { InternalModel, Fetcher } from '@floway-dev/provider';
 
@@ -85,13 +85,12 @@ const loadGeminiModels = async (
   ]);
   const gatewayAddressableModelIds = gatewayAddressable ?? callerAddressable;
   const realModels = listedRealModels(callerAddressable);
-  // Gemini surfaces chat-kind models only; filter both the real catalog and
-  // the synthesized alias entries before the merge so the alias collision
-  // step only ever weighs chat-on-chat.
+  // Gemini surfaces models with a reachable chat endpoint. A mixed model can
+  // keep a different primary kind while remaining valid on this surface.
   const merged = mergeAliasesIntoModels({
-    realModels: realModels.filter(model => model.kind === 'chat'),
-    gatewayAddressableModelIds: gatewayAddressableModelIds.filter(entry => entry.model.kind === 'chat'),
-    callerAddressableModelIds: callerAddressable.filter(entry => entry.model.kind === 'chat'),
+    realModels: realModels.filter(model => endpointsSupportKind(model.endpoints, 'chat')),
+    gatewayAddressableModelIds: gatewayAddressableModelIds.filter(entry => endpointsSupportKind(entry.model.endpoints, 'chat')),
+    callerAddressableModelIds: callerAddressable.filter(entry => endpointsSupportKind(entry.model.endpoints, 'chat')),
     aliases: aliases.filter(alias => alias.kind === 'chat'),
     narrowTargets: true,
   });

@@ -74,26 +74,36 @@ describe('chatTargetPicker', () => {
 });
 
 describe('enumerateModelCandidates + chatTargetPicker', () => {
-  test('a multi-endpoint candidate is filterable by canServe and pickable by every matching preference', async () => {
+  test('an Azure mixed chat and embedding model remains one candidate in both families', async () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
-    await repo.upstreams.save(azureUpstream('up_multi', 10, ['test-model'], { messages: {}, responses: {} }));
+    await repo.upstreams.save(azureUpstream('up_multi', 10, ['test-model'], { messages: {}, responses: {}, embeddings: {} }));
 
-    const { candidates } = await enumerateModelCandidates({
+    const chat = await enumerateModelCandidates({
       upstreamIds: null,
       model: 'test-model',
       kind: 'chat',
       scheduler: testScheduler,
       runtimeLocation: 'TEST',
     });
-    assertEquals(candidates.length, 1);
+    const embedding = await enumerateModelCandidates({
+      upstreamIds: null,
+      model: 'test-model',
+      kind: 'embedding',
+      scheduler: testScheduler,
+      runtimeLocation: 'TEST',
+    });
+    assertEquals(chat.candidates.length, 1);
+    assertEquals(embedding.candidates.length, 1);
+    assertEquals(chat.candidates[0].provider.upstreamId, 'up_multi');
+    assertEquals(embedding.candidates[0].provider.upstreamId, 'up_multi');
 
     const messagesFirst = chatTargetPicker(['messages', 'responses']);
     const responsesFirst = chatTargetPicker(['responses', 'messages']);
-    assertEquals(messagesFirst.canServe(candidates[0].model.endpoints), true);
-    assertEquals(responsesFirst.canServe(candidates[0].model.endpoints), true);
-    assertEquals(messagesFirst.pick(candidates[0].model.endpoints), 'messages');
-    assertEquals(responsesFirst.pick(candidates[0].model.endpoints), 'responses');
+    assertEquals(messagesFirst.canServe(chat.candidates[0].model.endpoints), true);
+    assertEquals(responsesFirst.canServe(chat.candidates[0].model.endpoints), true);
+    assertEquals(messagesFirst.pick(chat.candidates[0].model.endpoints), 'messages');
+    assertEquals(responsesFirst.pick(chat.candidates[0].model.endpoints), 'responses');
   });
 
   test('a candidate whose endpoint surface lacks every preferred key is filtered out by canServe', async () => {

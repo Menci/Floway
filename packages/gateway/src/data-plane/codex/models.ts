@@ -18,6 +18,7 @@ import { resolveCodexCatalog, type CatalogModel, type CodexCatalog, type CodexCa
 import { synthesizeCatalogEntry } from './synthesize.ts';
 import { enumerateAddressableModelIds, type AddressableIdEntry } from '../shared/listing/addressable.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
+import { endpointsSupportKind } from '@floway-dev/protocols/common';
 import type { Fetcher } from '@floway-dev/provider';
 
 // Pure transformation: client catalog + addressable entries →
@@ -53,7 +54,7 @@ export const assembleCodexCatalog = (
     // publish stay off the codex picker too — they are routable at
     // request time but never surface as their own picker row.
     if (entry.unlisted !== undefined) continue;
-    if (entry.model.kind !== 'chat') continue;
+    if (!endpointsSupportKind(entry.model.endpoints, 'chat')) continue;
     models.push(synthesizeCatalogEntry(entry.model, matchCatalog(entry.model.id), capabilities));
   }
   return { models };

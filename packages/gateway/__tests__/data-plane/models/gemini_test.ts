@@ -145,7 +145,7 @@ test('/v1beta/models includes custom upstream LLM models', async () => {
       authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-custom',
-      endpoints: { chatCompletions: {} },
+      endpoints: { chatCompletions: {}, embeddings: {} },
     },
   }));
 

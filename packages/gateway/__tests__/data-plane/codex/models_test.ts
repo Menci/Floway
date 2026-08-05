@@ -129,13 +129,13 @@ describe('assembleCodexCatalog', () => {
     expect(withCapability.models[0].multi_agent_version).toBe('v2');
   });
 
-  test('non-chat models are dropped', () => {
+  test('pure non-chat models are dropped while mixed models with chat endpoints remain', () => {
     const out = assembleCodexCatalog(bundled, [
-      entry({ id: 'text-embedding-3', display_name: 'emb', kind: 'embedding', limits: {}, endpoints: {} } as InternalModel),
+      entry({ id: 'text-embedding-3', display_name: 'emb', kind: 'embedding', limits: {}, endpoints: { embeddings: {} } } as InternalModel),
+      entry({ ...chat('mixed-model'), kind: 'embedding', endpoints: { responses: {}, embeddings: {} } }),
       entry(chat('gpt-5.5')),
     ]);
-    expect(out.models).toHaveLength(1);
-    expect(out.models[0].slug).toBe('gpt-5.5');
+    expect(out.models.map(model => model.slug)).toEqual(['mixed-model', 'gpt-5.5']);
   });
 
   test('unlisted addressable entries are dropped', () => {

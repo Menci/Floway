@@ -37,7 +37,7 @@
 import type { AddressableIdEntry } from './addressable.ts';
 import type { ModelAliasRecord } from '../../../repo/types.ts';
 import { unionEndpoints } from '../../providers/endpoint-union.ts';
-import { composeAliasDisplayName } from '@floway-dev/protocols/common';
+import { composeAliasDisplayName, endpointsSupportKind } from '@floway-dev/protocols/common';
 import type { AliasTarget, AnnouncedMetadata, ChatModelInfo, PublicModelLimits } from '@floway-dev/protocols/common';
 import type { InternalAliasedFrom, InternalModel } from '@floway-dev/provider';
 
@@ -261,7 +261,7 @@ const synthesizeOne = (
   const gatewayById = new Map(gatewayAddressableModelIds.map(entry => [entry.id, entry.model] as const));
   const gatewayAvailable = alias.targets
     .map(target => ({ target, real: gatewayById.get(target.target_model_id) }))
-    .filter((entry): entry is { target: AliasTarget; real: InternalModel } => entry.real !== undefined && entry.real.kind === alias.kind);
+    .filter((entry): entry is { target: AliasTarget; real: InternalModel } => entry.real !== undefined && endpointsSupportKind(entry.real.endpoints, alias.kind));
   if (gatewayAvailable.length === 0) return null;
 
   // Caller-scope visibility: the alias appears only if at least one

@@ -223,6 +223,30 @@ test('enumerateRealModelCandidates rejects a model id disabled on that upstream 
   assertEquals(disabled.candidates.length, 0);
 });
 
+test('a Custom mixed chat and embedding model resolves once in both endpoint families', async () => {
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_mixed',
+    config: {
+      baseUrl: 'https://mixed.example.com',
+      authStyle: 'bearer',
+      apiKey: 'sk-mixed',
+      ingressHeadersRules: [],
+      endpoints: {},
+      modelsFetch: { enabled: false },
+      models: [{ upstreamModelId: 'mixed-model', endpoints: { chatCompletions: {}, embeddings: {} } }],
+    },
+  }));
+
+  const chat = await enumerateModelCandidates({ upstreamIds: null, model: 'mixed-model', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
+  const embedding = await enumerateModelCandidates({ upstreamIds: null, model: 'mixed-model', kind: 'embedding', scheduler: testScheduler, runtimeLocation: 'TEST' });
+  assertEquals(chat.candidates.map(candidate => candidate.provider.upstreamId), ['up_mixed']);
+  assertEquals(embedding.candidates.map(candidate => candidate.provider.upstreamId), ['up_mixed']);
+  assertEquals(chat.candidates[0].model.endpoints, { chatCompletions: {}, embeddings: {} });
+  assertEquals(embedding.candidates[0].model.endpoints, { chatCompletions: {}, embeddings: {} });
+});
+
 // Regression: when an upstream's force re-fetch rejects past HARD, the call
 // site asking for a model belonging to one of the *healthy* upstreams must
 // still resolve. The broken upstream's display name flows back via
