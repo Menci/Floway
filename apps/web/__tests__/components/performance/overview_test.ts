@@ -39,10 +39,41 @@ describe('performance overview query', () => {
 
   it('round-trips non-default dashboard state through the URL', () => {
     const state = parsePerformanceUrlState(new URLSearchParams('m=tokPerSec&pct=p99&g=upstream&r=30d&fm=&fm=gpt-5&fm=gpt-5&fm=claude-opus-4-7&hide=a%252Cb,c'));
-    expect(state).toMatchObject({ metric: 'tokPerSec', percentile: 'p99', groupBy: 'upstream', range: '30d', filters: { model: ['gpt-5', 'claude-opus-4-7'] }, hidden: ['a,b', 'c'] });
-    const serialized = serializePerformanceUrlState(state);
+    const serialized = serializePerformanceUrlState({ ...state, hidden: ['a,b', '100%', '模型', 'duplicate', 'duplicate'] });
+    expect(parsePerformanceUrlState(serialized)).toMatchObject({
+      metric: 'tokPerSec',
+      percentile: 'p99',
+      groupBy: 'upstream',
+      range: '30d',
+      filters: { model: ['gpt-5', 'claude-opus-4-7'] },
+      hidden: ['100%', 'a,b', 'duplicate', 'duplicate', '模型'],
+    });
     expect(serialized.get('m')).toBe('tokPerSec');
     expect(serialized.getAll('fm')).toEqual(['gpt-5', 'claude-opus-4-7']);
+  });
+
+  it('restores hidden series from the original comma format', () => {
+    expect(parsePerformanceUrlState(new URLSearchParams('hide=a%252Cb,c')).hidden).toEqual(['a,b', 'c']);
+  });
+
+  it('distinguishes one comma-containing id in the repeated parameter format', () => {
+    const state = parsePerformanceUrlState(new URLSearchParams());
+    const serialized = serializePerformanceUrlState({ ...state, hidden: ['a,b'] });
+
+    expect(serialized.get('hidev')).toBe('2');
+    expect(serialized.getAll('hide')).toEqual(['a,b']);
+    expect(parsePerformanceUrlState(serialized).hidden).toEqual(['a,b']);
+  });
+
+  it('serializes hidden series as stable repeated parameters', () => {
+    const state = parsePerformanceUrlState(new URLSearchParams());
+    const first = serializePerformanceUrlState({ ...state, hidden: ['模型', 'duplicate', '100%', 'a,b', 'duplicate'] });
+    const second = serializePerformanceUrlState({ ...state, hidden: ['duplicate', 'a,b', '模型', '100%', 'duplicate'] });
+
+    expect(first.toString()).toBe(second.toString());
+    expect(first.get('hidev')).toBe('2');
+    expect(first.getAll('hide')).toEqual(['100%', 'a,b', 'duplicate', 'duplicate', '模型']);
+    expect(parsePerformanceUrlState(first).hidden).toEqual(['100%', 'a,b', 'duplicate', 'duplicate', '模型']);
   });
 });
 

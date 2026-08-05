@@ -1,3 +1,4 @@
+import { parse, validate, version } from 'uuid';
 import { test } from 'vitest';
 
 import { withInteractionIdHeaderSet } from '../../../src/interceptors/messages/set-interaction-id-header.ts';
@@ -71,15 +72,16 @@ test('Interaction-id hashing is deterministic across repeated invocations', asyn
   assertEquals(first.headers.get('x-interaction-id'), second.headers.get('x-interaction-id'));
 });
 
-test('Interaction-id has the UUID v4 shape (8-4-4-4-12 hex with version + variant bits)', async () => {
+test('Interaction-id has RFC UUIDv4 version and variant bits', async () => {
   const ctx = invocation(payloadWith(JSON.stringify({ session_id: 'sess-shape-check' })));
 
   await withInteractionIdHeaderSet(ctx, stubRequest, okEvents);
 
   const value = ctx.headers.get('x-interaction-id');
-  // RFC 4122 v4 layout: third group starts with '4', fourth group starts
-  // with one of 8/9/a/b. Same bit-pattern caozhiyuan stamps.
-  assert(value !== null && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value));
+  assert(value !== null && validate(value));
+  assertEquals(value, 'beaa3c07-13ee-4265-8432-db45acf47d67');
+  assertEquals(version(value), 4);
+  assertEquals(parse(value)[8] & 0xc0, 0x80);
 });
 
 test('Interaction-id absent when metadata.user_id is missing', async () => {

@@ -20,9 +20,11 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "big.js": "^7.0.1",
     "eventsource-parser": "^3.1.0"
   },
   "devDependencies": {
-    "@floway-dev/test-utils": "workspace:*"
+    "@floway-dev/test-utils": "workspace:*",
+    "@types/big.js": "^7.0.0"
   }
 }
