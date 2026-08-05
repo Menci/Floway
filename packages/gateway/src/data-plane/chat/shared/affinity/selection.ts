@@ -5,7 +5,6 @@ import type { ChatServeFailure } from '../errors.ts';
 import type { ModelCandidate } from '@floway-dev/provider';
 
 export interface AffinityRequestAnalysis<T> {
-  readonly preferredTargets: readonly AffinityTarget[];
   readonly requiredTargets: readonly AffinityTarget[];
   readonly evaluateCandidate: (candidate: ModelCandidate) => CandidateAffinityEvaluation<T>;
 }
@@ -65,7 +64,6 @@ export const projectRequiredAffinityBlob = (
 };
 
 export const defineAffinityRequest = <T>(
-  preferredTargets: readonly AffinityTarget[],
   requiredTargets: readonly AffinityTarget[],
   evaluate: (candidate: ModelCandidate) => CandidateAffinityEvaluation<T>,
 ): AffinityRequestAnalysis<T> => {
@@ -75,7 +73,6 @@ export const defineAffinityRequest = <T>(
   }
   const evaluations = new WeakMap<ModelCandidate, CandidateAffinityEvaluation<T>>();
   return {
-    preferredTargets,
     requiredTargets: uniqueRequiredTargets,
     evaluateCandidate: candidate => {
       const existing = evaluations.get(candidate);
@@ -131,17 +128,12 @@ export const selectAffinityCandidates = <T>(
     };
   }
 
-  let ordered = accepted;
-  for (let index = affinity.preferredTargets.length - 1; index >= 0; index -= 1) {
-    const preferred = affinity.preferredTargets[index];
-    const matching = accepted.filter(item => candidateMatchesExactTarget(item.candidate, preferred));
-    if (matching.length === 0) continue;
-    ordered = [
-      ...matching,
-      ...accepted.filter(item => !candidateMatchesExactTarget(item.candidate, preferred)),
-    ];
-    break;
+  const nonDegrading: typeof accepted = [];
+  const degrading: typeof accepted = [];
+  for (const item of accepted) {
+    (item.evaluation.degrades ? degrading : nonDegrading).push(item);
   }
+  const ordered = nonDegrading.length === 0 ? accepted : [...nonDegrading, ...degrading];
   const evaluations = new WeakMap(ordered.map(item => [item.candidate, item.evaluation]));
   return {
     candidates: ordered.map(item => item.candidate),

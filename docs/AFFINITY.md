@@ -2,9 +2,9 @@
 
 Floway can resolve one public model name or alias to several upstream/model
 targets. Client-carried affinity records which target produced each opaque
-assistant blob so a later request can prefer the latest available exact target,
-or require a physical target when the surrounding protocol state is not
-portable.
+assistant blob. A later request keeps candidates that can retain every natural
+blob ahead of candidates that would discard one, and requires a target when the
+surrounding protocol state is not portable.
 
 Affinity is a source-protocol membrane. Each source protocol authenticates and
 projects Floway metadata before candidate attempts enter protocol interceptors,
@@ -35,10 +35,10 @@ encrypted plaintext is exactly:
 ```
 
 Routing policy is not serialized. Ingress assigns policy from the carrier's
-current protocol position: ordinary history contributes a target preference,
-while non-portable continuation state requires the target that produced it.
-`origin` records how to restore original opaque bytes; its absence means the
-blob was created solely for affinity and contains no original value.
+current protocol position: ordinary history is optional, while non-portable
+continuation state requires the target that produced it. `origin` records how
+to restore original opaque bytes; its absence means the blob was created solely
+for affinity and contains no original value.
 `syntheticItem` is an independent, authenticated statement that Floway created
 the complete protocol item carrying the blob. It is valid only without
 `origin`. Item IDs and persistence metadata are not affinity data and are not
@@ -67,9 +67,8 @@ layer independently. The implementation and byte-freeze coverage live in
 
 Ingress first analyzes the source request without reference to the model
 catalog. Chat Completions, Messages, and Gemini record their decoded optional
-blob locations and owned-target preference order. Responses performs one
-ordered item walk that records every owned-target preference, each blob as
-optional or required, the complete items authenticated as synthetic, and the
+blob locations. Responses performs one ordered item walk that records each blob
+as optional or required, the complete items authenticated as synthetic, and the
 required target inherited by blob-less compaction, program, and program-output
 state. This analysis is the only place Responses interprets item position.
 
@@ -98,19 +97,20 @@ program-output item inherits a requirement.
 
 Candidate evaluation returns either `rejected`, or `accepted` with a degradation
 bit and a lazy payload materializer. Eligibility and degradation therefore come
-from the same protocol projection decisions, although degradation is not an
-ordering input. No candidate payload is cloned while ordering.
-[`selectAffinityCandidates`](../packages/gateway/src/data-plane/chat/shared/affinity/selection.ts)
-rejects candidates that cannot retain required state, then moves the latest
-available exact owned-target preference to the front. Other accepted candidates
-retain resolver order. The selected payload is cloned and materialized only
-when its attempt actually runs, and repeated access reuses that materialization.
+from the same protocol projection decisions. No candidate payload is cloned
+while ordering. [`selectAffinityCandidates`](../packages/gateway/src/data-plane/chat/shared/affinity/selection.ts)
+rejects candidates that cannot retain required state, then stable-partitions the
+accepted candidates: every non-degrading candidate stays in resolver order at
+the front and every degrading fallback stays in resolver order behind it. If all
+accepted candidates have the same degradation status, resolver order is
+unchanged. The selected payload is cloned and materialized only when its attempt
+actually runs, and repeated access reuses that materialization.
 
 Mutually incompatible required targets and an unavailable sole required target
 are routing errors. Candidate attempts otherwise follow the sequential
-result-class rules in [RESOLUTION.md](./RESOLUTION.md). A failed preferred
-attempt can fall through to another accepted candidate before egress records
-the target of the first successful attempt.
+result-class rules in [RESOLUTION.md](./RESOLUTION.md). A failed non-degrading
+attempt can fall through to a degrading candidate before egress records the
+target of the first successful attempt.
 
 ## Egress
 

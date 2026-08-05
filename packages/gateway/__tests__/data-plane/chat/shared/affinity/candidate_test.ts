@@ -40,10 +40,9 @@ const ownedBlob = (
 });
 
 const affinity = (
-  preferredTargets: readonly AffinityTarget[] = [],
   requiredTargets: readonly AffinityTarget[] = [],
   degrading: readonly ModelCandidate[] = [],
-): AffinityRequestAnalysis<undefined> => defineAffinityRequest(preferredTargets, requiredTargets, candidate => {
+): AffinityRequestAnalysis<undefined> => defineAffinityRequest(requiredTargets, candidate => {
   const unsatisfiedTargets = requiredTargets.filter(target => !candidateSatisfiesAffinityTarget(candidate, target));
   return unsatisfiedTargets.length > 0
     ? { kind: 'rejected' }
@@ -60,25 +59,23 @@ const selectedCandidates = (
 };
 
 describe('client-carried affinity candidate selection', () => {
-  test('moves the latest available exact preference ahead of resolver order', () => {
+  test('keeps non-degrading candidates in resolver order before degrading fallbacks', () => {
     const first = candidate('up-a', 'model');
     const second = candidate('up-b', 'model');
     const third = candidate('up-c', 'model');
-    const unavailable = candidate('up-d', 'model');
 
     expect(selectedCandidates(
       [first, second, third],
-      affinity([targetFor(first), targetFor(third), targetFor(unavailable)]),
-    )).toEqual([third, first, second]);
+      affinity([], [first, third]),
+    )).toEqual([second, first, third]);
   });
 
-  test('keeps resolver order without an available preference', () => {
+  test('keeps resolver order when every candidate preserves blobs or every candidate degrades', () => {
     const first = candidate('up-a', 'model');
     const second = candidate('up-b', 'model');
-    const unavailable = candidate('up-c', 'model');
 
     expect(selectedCandidates([first, second], affinity())).toEqual([first, second]);
-    expect(selectedCandidates([first, second], affinity([targetFor(unavailable)]))).toEqual([first, second]);
+    expect(selectedCandidates([first, second], affinity([], [first, second]))).toEqual([first, second]);
   });
 
   test('evaluates requirement eligibility and degradation before materializing selected payloads', () => {
@@ -87,7 +84,7 @@ describe('client-carried affinity candidate selection', () => {
     const rejected = candidate('up-b', 'model');
     const evaluations: ModelCandidate[] = [];
     let materializations = 0;
-    const analysis = defineAffinityRequest([targetFor(sameTargetAlias)], [targetFor(required)], value => {
+    const analysis = defineAffinityRequest([targetFor(required)], value => {
       evaluations.push(value);
       if (!candidateSatisfiesAffinityTarget(value, targetFor(required))) {
         return { kind: 'rejected' };
@@ -113,18 +110,18 @@ describe('client-carried affinity candidate selection', () => {
     expect(() => selection.payloadFor(rejected)).toThrow('outside the selected set');
   });
 
-  test('required state matches upstream and model while exact preference orders rule variants', () => {
+  test('required state matches upstream and model while degradation orders rule variants', () => {
     const direct = candidate('up-a', 'model');
     const alias = candidate('up-a', 'model', { reasoning: { effort: 'low' } });
     const other = candidate('up-b', 'model');
 
     expect(selectedCandidates(
       [direct, alias, other],
-      affinity([], [targetFor(alias)]),
+      affinity([targetFor(alias)]),
     )).toEqual([direct, alias]);
     expect(selectedCandidates(
       [direct, alias, other],
-      affinity([targetFor(alias)], [targetFor(alias)], [direct]),
+      affinity([targetFor(alias)], [direct]),
     )).toEqual([alias, direct]);
   });
 
@@ -132,22 +129,22 @@ describe('client-carried affinity candidate selection', () => {
     const first = candidate('up-a', 'model');
     const second = candidate('up-b', 'model');
 
-    expect(selectAffinityCandidates([first], affinity([], [targetFor(second)]))).toMatchObject({ kind: 'routing-unavailable' });
+    expect(selectAffinityCandidates([first], affinity([targetFor(second)]))).toMatchObject({ kind: 'routing-unavailable' });
     expect(selectAffinityCandidates(
       [first, second],
-      affinity([], [targetFor(first), targetFor(second)]),
+      affinity([targetFor(first), targetFor(second)]),
     )).toMatchObject({ kind: 'routing-unavailable' });
   });
 
   test('rejects request analyses whose requirement inventory and candidate evaluation drift apart', () => {
     const first = candidate('up-a', 'model');
     const second = candidate('up-b', 'model');
-    const acceptsUnsatisfied = defineAffinityRequest([], [targetFor(first)], () => ({
+    const acceptsUnsatisfied = defineAffinityRequest([targetFor(first)], () => ({
       kind: 'accepted',
       degrades: false,
       materialize: () => undefined,
     }));
-    const rejectsSatisfied = defineAffinityRequest([], [], () => ({ kind: 'rejected' }));
+    const rejectsSatisfied = defineAffinityRequest([], () => ({ kind: 'rejected' }));
 
     expect(() => acceptsUnsatisfied.evaluateCandidate(second)).toThrow('disagrees with the request requirement analysis');
     expect(() => rejectsSatisfied.evaluateCandidate(first)).toThrow('disagrees with the request requirement analysis');

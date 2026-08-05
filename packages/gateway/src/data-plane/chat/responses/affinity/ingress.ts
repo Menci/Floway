@@ -31,7 +31,6 @@ interface ResponsesItemAnalysis {
 }
 
 interface ResponsesRequestAnalysis {
-  readonly preferredTargets: readonly AffinityTarget[];
   readonly requiredTargets: readonly AffinityTarget[];
   readonly items: readonly ResponsesItemAnalysis[];
 }
@@ -98,7 +97,6 @@ const analyzeResponsesRequest = (
   locations: readonly ResponsesBlobLocation[],
 ): ResponsesRequestAnalysis => {
   const locationsByItem = Map.groupBy(locations, location => location.itemIndex);
-  const preferredTargets: AffinityTarget[] = [];
   const requiredTargets: AffinityTarget[] = [];
   const itemAnalyses: ResponsesItemAnalysis[] = [];
   let latestOwnedTarget: AffinityTarget | undefined;
@@ -109,7 +107,6 @@ const analyzeResponsesRequest = (
       const required = blobRequiresOriginalTarget(item, location.decoded);
       if (location.decoded.kind === 'owned') {
         latestOwnedTarget = location.decoded.affinity;
-        preferredTargets.push(latestOwnedTarget);
         if (required) requiredTargets.push(latestOwnedTarget);
       }
       return { ...location, required };
@@ -129,7 +126,7 @@ const analyzeResponsesRequest = (
     });
   }
 
-  return { preferredTargets, requiredTargets, items: itemAnalyses };
+  return { requiredTargets, items: itemAnalyses };
 };
 
 const materializeResponsesPayload = (
@@ -216,7 +213,6 @@ export const analyzeResponsesAffinity = async (
   const locations = await opaqueBlobLocations(payload.input, codec);
   const analysis = analyzeResponsesRequest(payload.input, locations);
   return defineAffinityRequest(
-    analysis.preferredTargets,
     analysis.requiredTargets,
     candidate => evaluateResponsesCandidate(payload, analysis, candidate),
   );

@@ -25,9 +25,7 @@ export const analyzeGeminiAffinity = async (
     }
   }
 
-  const preferredTargets = locations.flatMap(location =>
-    location.decoded.kind === 'owned' ? [location.decoded.affinity] : []);
-  return defineAffinityRequest(preferredTargets, [], candidate => {
+  return defineAffinityRequest([], candidate => {
     const projections = locations.map(location => ({ location, projection: projectOptionalAffinityBlob(location.decoded, candidate) }));
     return {
       kind: 'accepted',

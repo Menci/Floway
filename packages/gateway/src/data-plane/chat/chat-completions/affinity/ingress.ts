@@ -11,8 +11,7 @@ export const analyzeChatCompletionsAffinity = async (
     decoded.set(index, await codec.unwrap(message.reasoning_opaque, 'chat-completions.reasoning_opaque'));
   }
 
-  const preferredTargets = [...decoded.values()].flatMap(blob => blob.kind === 'owned' ? [blob.affinity] : []);
-  return defineAffinityRequest(preferredTargets, [], candidate => {
+  return defineAffinityRequest([], candidate => {
     const projections = [...decoded].map(([index, blob]) => ({ index, projection: projectOptionalAffinityBlob(blob, candidate) }));
     return {
       kind: 'accepted',

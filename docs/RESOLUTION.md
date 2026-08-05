@@ -271,12 +271,15 @@ Chat-shaped ingress analyzes client-carried affinity, then
 `selectAffinityCandidates` evaluates every viable candidate. One evaluation
 decides both whether the candidate can retain required continuation state and
 whether projecting optional state would discard a natural opaque blob. Rejected
-candidates leave the list. Among accepted candidates, the latest owned target
-that has an exact upstream/model/rules match moves to the front; the others keep
-their existing resolver order. Candidate degradation is reported by evaluation
-but does not affect ordering. Affinity never adds a candidate. Carrier
-placement, requirement inheritance, restoration, and candidate evaluation are
-specified in [AFFINITY.md](./AFFINITY.md).
+candidates leave the list. Accepted candidates that retain every natural blob
+come first in their existing order, followed by degrading fallbacks in their
+existing order. Removing an originless carrier is not degradation because it
+loses no upstream value, though Responses can use its target as the source of a
+requirement inherited by later non-portable state. If all accepted candidates
+have the same degradation status, alias `first-available` order passes through
+unchanged even when another candidate served the previous turn. Affinity never
+adds a candidate. Carrier placement, requirement inheritance, restoration, and
+the degradation boundary are specified in [AFFINITY.md](./AFFINITY.md).
 
 ## Sequential candidate iteration
 

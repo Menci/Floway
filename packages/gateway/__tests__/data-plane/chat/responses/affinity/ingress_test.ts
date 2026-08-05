@@ -185,8 +185,8 @@ test('derives force routing from blob-less program state after the turn carrier'
   expect(prepared.evaluateCandidate(candidateB)).toEqual({ kind: 'rejected' });
   const selection = select([firstVariant, lastRoutedVariant, candidateB], prepared);
   expect(selection.candidates).toEqual([
-    lastRoutedVariant,
     firstVariant,
+    lastRoutedVariant,
   ]);
   const firstEvaluation = acceptedAffinityEvaluation(prepared, firstVariant);
   expect(firstEvaluation.degrades).toBe(false);
@@ -233,8 +233,8 @@ test('treats compaction_summary as force state across alias-rule variants', asyn
   expect(prepared.evaluateCandidate(candidateB)).toMatchObject({ kind: 'rejected' });
   const selection = select([firstVariant, lastRoutedVariant, candidateB], prepared);
   expect(selection.candidates).toEqual([
-    lastRoutedVariant,
     firstVariant,
+    lastRoutedVariant,
   ]);
   expect(selection.payloadFor(firstVariant).input[0]).toMatchObject({
     id: 'cmp_client',
