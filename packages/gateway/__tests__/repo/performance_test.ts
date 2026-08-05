@@ -280,4 +280,29 @@ describe('SqlPerformanceRepo operation vocabulary', () => {
     const repo = new SqlRepo(db).performance;
     await expect(repo.listAll()).rejects.toThrow('Invalid performance operation: "future-operation"');
   });
+
+  it('rejects a bucket row whose summary is missing', async () => {
+    const db = await createSqliteTestDb();
+    await db.prepare(
+      `INSERT INTO performance_buckets (
+         hour, key_id, model_json, upstream, operation, runtime_location,
+         metric, lower, upper, count
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      '2026-06-30T09',
+      'key_a',
+      encodeOpaqueSqlText('model'),
+      'upstream',
+      'chat',
+      'hkg',
+      'ttft_ms',
+      0,
+      100,
+      1,
+    ).run();
+
+    await expect(new SqlRepo(db).performance.listAll()).rejects.toThrow(
+      'performance_buckets row has no matching summary',
+    );
+  });
 });

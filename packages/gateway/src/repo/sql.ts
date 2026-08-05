@@ -654,6 +654,22 @@ type PerformanceDimensionRow = {
   runtime_location: string;
 };
 
+type PerformanceStorageRow = PerformanceDimensionRow & {
+  row_kind: 0 | 1;
+  requests: number | null;
+  ttft_samples_ok: number | null;
+  errors_with_output: number | null;
+  errors_no_output: number | null;
+  neutral: number | null;
+  tpot_samples: number | null;
+  ttft_ms_sum: number | null;
+  tpot_us_sum: number | null;
+  metric: PerformanceMetric | null;
+  lower: number | null;
+  upper: number | null;
+  count: number | null;
+};
+
 const performanceDimensionsFromRow = (row: PerformanceDimensionRow): PerformanceDimensions => ({
   hour: row.hour,
   keyId: row.key_id,
@@ -772,8 +788,10 @@ class SqlPerformanceRepo implements PerformanceRepo {
   }
 
   async deleteAll(): Promise<void> {
-    await this.db.prepare('DELETE FROM performance_buckets').run();
-    await this.db.prepare('DELETE FROM performance_summary').run();
+    await runStatements(this.db, [
+      this.db.prepare('DELETE FROM performance_buckets'),
+      this.db.prepare('DELETE FROM performance_summary'),
+    ]);
   }
 
   private buildBucketStmt(dims: PerformanceDimensions, metric: PerformanceMetric, edges: { lower: number; upper: number | null }): SqlPreparedStatement {
@@ -802,40 +820,47 @@ class SqlPerformanceRepo implements PerformanceRepo {
     }
     const whereClause = clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '';
 
-    const { results: summaryRows } = await this.db.prepare(
-      `SELECT hour, key_id, model_json, upstream, operation, runtime_location, requests, ttft_samples_ok, errors_with_output, errors_no_output, neutral, tpot_samples, ttft_ms_sum, tpot_us_sum
-       FROM performance_summary${whereClause} ORDER BY hour`,
-    ).bind(...binds).all<PerformanceDimensionRow & { requests: number; ttft_samples_ok: number; errors_with_output: number; errors_no_output: number; neutral: number; tpot_samples: number; ttft_ms_sum: number; tpot_us_sum: number }>();
-
+    const { results: rows } = await this.db.prepare(
+      `SELECT
+         0 AS row_kind,
+         hour, key_id, model_json, upstream, operation, runtime_location,
+         requests, ttft_samples_ok, errors_with_output, errors_no_output,
+         neutral, tpot_samples, ttft_ms_sum, tpot_us_sum,
+         NULL AS metric, NULL AS lower, NULL AS upper, NULL AS count
+       FROM performance_summary${whereClause}
+       UNION ALL
+       SELECT
+         1 AS row_kind,
+         hour, key_id, model_json, upstream, operation, runtime_location,
+         NULL AS requests, NULL AS ttft_samples_ok, NULL AS errors_with_output,
+         NULL AS errors_no_output, NULL AS neutral, NULL AS tpot_samples,
+         NULL AS ttft_ms_sum, NULL AS tpot_us_sum,
+         metric, lower, upper, count
+       FROM performance_buckets${whereClause}
+       ORDER BY hour, row_kind, metric, lower`,
+    ).bind(...binds, ...binds).all<PerformanceStorageRow>();
     const records = new Map<string, Omit<PerformanceTelemetryRecord, 'buckets'> & { buckets: PerformanceBucketRow[] }>();
-    for (const row of summaryRows) {
-      const dims = performanceDimensionsFromRow(row);
-      records.set(performanceRecordKey(dims), {
-        ...dims,
-        requests: row.requests,
-        ttftSamplesOk: row.ttft_samples_ok,
-        errorsWithOutput: row.errors_with_output,
-        errorsNoOutput: row.errors_no_output,
-        neutral: row.neutral,
-        tpotSamples: row.tpot_samples,
-        ttftMsSum: row.ttft_ms_sum,
-        tpotUsSum: row.tpot_us_sum,
-        buckets: [],
-      });
-    }
-
-    const { results: bucketRows } = await this.db.prepare(
-      `SELECT hour, key_id, model_json, upstream, operation, runtime_location, metric, lower, upper, count
-       FROM performance_buckets${whereClause} ORDER BY hour, metric, lower`,
-    ).bind(...binds).all<PerformanceDimensionRow & { metric: PerformanceMetric; lower: number; upper: number | null; count: number }>();
-    for (const row of bucketRows) {
+    for (const row of rows) {
       const dims = performanceDimensionsFromRow(row);
       const key = performanceRecordKey(dims);
+      if (row.row_kind === 0) {
+        records.set(key, {
+          ...dims,
+          requests: row.requests!,
+          ttftSamplesOk: row.ttft_samples_ok!,
+          errorsWithOutput: row.errors_with_output!,
+          errorsNoOutput: row.errors_no_output!,
+          neutral: row.neutral!,
+          tpotSamples: row.tpot_samples!,
+          ttftMsSum: row.ttft_ms_sum!,
+          tpotUsSum: row.tpot_us_sum!,
+          buckets: [],
+        });
+        continue;
+      }
       const record = records.get(key);
-      // Every write path inserts the summary + buckets atomically, so a bucket
-      // row without its summary is a DB invariant violation, not a domain case.
       if (!record) throw new Error(`performance_buckets row has no matching summary for key ${key}`);
-      record.buckets.push({ metric: row.metric, lower: row.lower, upper: row.upper, count: row.count });
+      record.buckets.push({ metric: row.metric!, lower: row.lower!, upper: row.upper, count: row.count! });
     }
 
     return [...records.values()];
