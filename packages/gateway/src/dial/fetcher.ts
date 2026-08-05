@@ -187,9 +187,8 @@ const tryOne = async (
     }
     attemptedProxy = config;
     const materialized = await request.materialized();
-    // Caller cancellation flows through init.signal into the dialer's
-    // combined controller so a disconnected client tears down any
-    // in-flight handshake instead of waiting for the per-proxy deadline.
+    // An explicit request signal joins the dialer's timeout controller so its
+    // caller can stop an in-flight handshake before the per-proxy deadline.
     const options: RunProxiedRequestOptions = {
       socketDial: input.socketDial(),
       signal: request.signal,
@@ -214,9 +213,8 @@ const tryOne = async (
     }
     return response;
   } catch (err) {
-    // Caller-driven cancellation must propagate up immediately. Without
-    // this, a client disconnect would let the dial chain continue burning
-    // the deadline budget against every other entry in the list.
+    // Explicit request cancellation propagates immediately so the dial chain
+    // does not continue against later fallback entries.
     if (isAbortError(err)) {
       throw err;
     }

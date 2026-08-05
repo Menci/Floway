@@ -6,6 +6,7 @@ import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasRecord } from '../../repo/types.ts';
 import { serializeCanonicalJson } from '../../repo/upstream-json.ts';
+import { retainUpstreamFetcher } from '../shared/retained-response.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { endpointsSupportKind, type ModelKind } from '@floway-dev/protocols/common';
 import type { Fetcher, ModelCandidate, ProviderModel } from '@floway-dev/provider';
@@ -88,9 +89,9 @@ const enumerateOneUpstreamCandidates = async (
 // Walk every visible upstream, in configured order, and collect every
 // (provider, model, fetcher) candidate the inbound id resolves against
 // at the requested kind. Per-upstream catalog fetches fan out concurrently
-// so a slow upstream cannot stall the rest. Cancellation (`AbortError`)
-// propagates so the per-request abort signal cannot be masked by a slow
-// upstream's rejection.
+// so a slow upstream cannot stall the rest. Provider `AbortError` values still
+// propagate. Client disconnect prevents a catalog request that has not yet
+// dispatched, while a retained request already in flight runs to completion.
 //
 // `sawAnyId` aggregates the per-upstream signal: true when at least one
 // upstream's catalog carried the inbound id under any endpoint family. The
@@ -101,13 +102,14 @@ export const enumerateRealModelCandidates = async (
   providers: readonly GatewayProvider[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
+  clientDisconnectSignal?: AbortSignal,
 ): Promise<{
   readonly candidates: readonly ModelCandidate[];
   readonly sawAnyId: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
   const loadCatalog = createProviderCatalogLoader(fetcherForUpstream, scheduler);
-  return await enumerateRealModelCandidatesWithLoader(modelId, kind, providers, loadCatalog);
+  return await enumerateRealModelCandidatesWithLoader(modelId, kind, providers, loadCatalog, clientDisconnectSignal);
 };
 
 const enumerateRealModelCandidatesWithLoader = async (
@@ -115,19 +117,23 @@ const enumerateRealModelCandidatesWithLoader = async (
   kind: ModelKind,
   providers: readonly GatewayProvider[],
   loadCatalog: ProviderCatalogLoader,
+  clientDisconnectSignal?: AbortSignal,
 ): Promise<{
   readonly candidates: readonly ModelCandidate[];
   readonly sawAnyId: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
-  const settled = await settleUnlessAborted(providers.map(provider =>
-    enumerateOneUpstreamCandidates(provider, modelId, kind, loadCatalog)));
+  const settled = await settleUnlessAborted(providers.map(provider => {
+    clientDisconnectSignal?.throwIfAborted();
+    return enumerateOneUpstreamCandidates(provider, modelId, kind, loadCatalog);
+  }));
 
   const failedUpstreams: string[] = [];
   const candidates: ModelCandidate[] = [];
   let sawAnyId = false;
   for (const [index, result] of settled.entries()) {
     if (result.status === 'rejected') {
+      clientDisconnectSignal?.throwIfAborted();
       failedUpstreams.push(providers[index].name);
       continue;
     }
@@ -228,12 +234,12 @@ const createAliasCandidateCollector = (): AliasCandidateCollector => {
 //   2. Otherwise (no alias match at all) run the real-catalog resolver
 //      directly on the inbound id.
 //
-// The real-catalog resolver walks every visible upstream, filters by kind
-// inside the walk (so wrong-kind entries never become candidates), and
+// The real-catalog resolver walks every visible upstream, filters by requested
+// endpoint-family support inside the walk, and
 // retries once with an eight-digit dated suffix stripped when the id
 // matched nothing at all. `sawModel` reports whether the id was known to
-// any upstream regardless of kind, so the caller can distinguish "model
-// missing" (404) from "model wrong kind" (400).
+// any upstream regardless of family, so the caller can distinguish "model
+// missing" (404) from "model does not serve this family" (400).
 //
 // Endpoint-level narrowing — picking the chat target protocol from
 // `model.endpoints`, or checking the specific `imagesEdits` /
@@ -248,7 +254,7 @@ const createAliasCandidateCollector = (): AliasCandidateCollector => {
 // whose first target matches its own name) resolves to the real model on
 // the first pass; alias names never re-enter the alias layer.
 export const enumerateModelCandidates = async ({
-  upstreamIds, model, kind, scheduler, runtimeLocation,
+  upstreamIds, model, kind, scheduler, runtimeLocation, clientDisconnectSignal,
 }: {
   // null = unrestricted; empty list = no providers visible.
   upstreamIds: readonly string[] | null;
@@ -262,6 +268,7 @@ export const enumerateModelCandidates = async ({
   // Threaded into the per-request fetcher so colo-scoped fallback entries
   // can be honoured at dial time.
   runtimeLocation: string;
+  clientDisconnectSignal?: AbortSignal;
 }): Promise<{
   readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
@@ -277,10 +284,16 @@ export const enumerateModelCandidates = async ({
   if (providers.length === 0) {
     return { candidates: [], sawModel: false, failedUpstreams: [] };
   }
-  const fetcherForUpstream = await createPerRequestFetcher(runtimeLocation, upstreams);
+  const createFetcherForUpstream = await createPerRequestFetcher(runtimeLocation, upstreams);
+  const fetcherForUpstream = (upstreamId: string): Fetcher => {
+    const fetcher = createFetcherForUpstream(upstreamId);
+    return clientDisconnectSignal === undefined
+      ? fetcher
+      : retainUpstreamFetcher(fetcher, clientDisconnectSignal, scheduler);
+  };
   const loadCatalog = createProviderCatalogLoader(fetcherForUpstream, scheduler);
   const enumerateReal = (modelId: string, modelKind: ModelKind) =>
-    enumerateRealModelCandidatesWithLoader(modelId, modelKind, providers, loadCatalog);
+    enumerateRealModelCandidatesWithLoader(modelId, modelKind, providers, loadCatalog, clientDisconnectSignal);
 
   const alias = await repo.modelAliases.getByName(model);
   if (alias === null) {

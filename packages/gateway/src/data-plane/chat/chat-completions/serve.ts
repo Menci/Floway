@@ -26,6 +26,7 @@ export const chatCompletionsServe = {
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
       runtimeLocation: ctx.runtimeLocation,
+      clientDisconnectSignal: ctx.clientDisconnectSignal,
     });
     const viable = enumerated.filter(c => chatCompletionsTarget.canServe(c.model.endpoints));
     const selection = selectAffinityCandidates(viable, affinity);

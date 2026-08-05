@@ -11,7 +11,7 @@ interface SseKeepAliveOptions {
 
 interface SseStreamOptions {
   keepAlive?: SseKeepAliveOptions;
-  downstreamAbortController?: AbortController;
+  clientDisconnectController?: AbortController;
 }
 
 type ResolvedSseKeepAliveOptions = Required<SseKeepAliveOptions>;
@@ -60,6 +60,12 @@ const streamAbortPromise = (stream: SSEStreamingApi): Promise<void> => {
   });
 };
 
+const signalAbortPromise = (signal: AbortSignal | undefined): Promise<void> => {
+  if (signal === undefined) return new Promise(() => {});
+  if (signal.aborted) return Promise.resolve();
+  return new Promise(resolve => signal.addEventListener('abort', () => resolve(), { once: true }));
+};
+
 const pendingFrameResult = (pendingNext: Promise<IteratorResult<SseFrame>>): Promise<NextFrameResult> =>
   pendingNext.then(
     (result): NextFrameResult => ({ type: 'frame', result }),
@@ -97,85 +103,80 @@ const drainSSEFrames = async (
   stream: SSEStreamingApi,
   events: AsyncIterable<SseFrame>,
   keepAlive: ResolvedSseKeepAliveOptions | undefined,
-  downstreamAbortController: AbortController | undefined,
+  clientDisconnectController: AbortController | undefined,
 ): Promise<StreamCompletion> => {
   const iterator = events[Symbol.asyncIterator]();
-  const abortDownstream = () => {
-    if (!downstreamAbortController?.signal.aborted) {
-      downstreamAbortController?.abort();
+  let clientDisconnected = false;
+  const recordClientDisconnect = () => {
+    clientDisconnected = true;
+    if (!clientDisconnectController?.signal.aborted) {
+      clientDisconnectController?.abort();
     }
   };
-  const abortResult = streamAbortPromise(stream).then((): NextFrameResult => {
-    abortDownstream();
+  const abortResult = Promise.race([
+    streamAbortPromise(stream),
+    signalAbortPromise(clientDisconnectController?.signal),
+  ]).then((): NextFrameResult => {
+    recordClientDisconnect();
     return { type: 'abort' };
   });
   let pendingNext = pendingFrameResult(iterator.next());
   let completed = false;
-  let stoppedByDownstream = false;
   let failure: StreamFailure | undefined;
-
-  const stopForDownstream = () => {
-    stoppedByDownstream = true;
-    abortDownstream();
+  const writeFrame = async (frame: SseWritableFrame): Promise<void> => {
+    if (clientDisconnected) return;
+    try {
+      await writeSSEFrame(stream, frame);
+    } catch (error) {
+      if (stream.aborted || stream.closed || clientDisconnectController?.signal.aborted) {
+        recordClientDisconnect();
+      } else {
+        throw error;
+      }
+    }
   };
 
   try {
     while (true) {
-      if (stream.aborted || stream.closed) {
-        stopForDownstream();
-        return 'cancel';
+      if (!clientDisconnected && (stream.aborted || stream.closed)) {
+        recordClientDisconnect();
       }
 
-      const next = await nextFrameOrKeepAlive(pendingNext, abortResult, keepAlive);
+      const next = clientDisconnected
+        ? await pendingNext
+        : await nextFrameOrKeepAlive(pendingNext, abortResult, keepAlive);
 
       if (next.type === 'abort') {
-        stopForDownstream();
-        return 'cancel';
+        recordClientDisconnect();
+        continue;
       }
       if (next.type === 'keep-alive') {
         if (!keepAlive) continue;
-        await writeSSEFrame(stream, keepAlive.frame);
+        await writeFrame(keepAlive.frame);
         continue;
       }
       if (next.type === 'next-error') {
-        if (stream.aborted || stream.closed) {
-          stopForDownstream();
-          return 'cancel';
-        }
         throw next.error;
       }
 
       if (next.result.done) {
         completed = true;
-        return 'eof';
+        return clientDisconnected ? 'cancel' : 'eof';
       }
 
-      await writeSSEFrame(stream, next.result.value);
+      await writeFrame(next.result.value);
       pendingNext = pendingFrameResult(iterator.next());
     }
   } catch (error) {
     failure = { error };
-    abortDownstream();
     throw error;
   } finally {
     if (!completed) {
-      // A downstream cancellation must not wait behind an iterator whose
-      // current next() never settles. Start its cleanup, consume any rejection,
-      // and let the transport finish immediately because it has nowhere to
-      // report a cleanup failure.
-      if (stoppedByDownstream) {
-        try {
-          iterator.return?.().catch(() => {});
-        } catch {
-          // A synchronous cleanup failure is equally unactionable here.
-        }
-      } else {
-        try {
-          await iterator.return?.();
-        } catch (cleanupError) {
-          if (failure !== undefined) throw cleanupFailure(failure, cleanupError);
-          throw cleanupError;
-        }
+      try {
+        await iterator.return?.();
+      } catch (cleanupError) {
+        if (failure !== undefined) throw cleanupFailure(failure, cleanupError);
+        throw cleanupError;
       }
     }
   }
@@ -183,5 +184,5 @@ const drainSSEFrames = async (
 
 export const writeSSEFrames = async (stream: SSEStreamingApi, events: AsyncIterable<SseFrame>, options: SseStreamOptions = {}): Promise<StreamCompletion> => {
   const keepAlive = resolveKeepAliveOptions(options.keepAlive);
-  return await drainSSEFrames(stream, events, keepAlive, options.downstreamAbortController);
+  return await drainSSEFrames(stream, events, keepAlive, options.clientDisconnectController);
 };

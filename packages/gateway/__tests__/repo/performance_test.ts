@@ -1,15 +1,31 @@
 import { describe, expect, it } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
+import { type CompletedStatement, recordCompletedStatements } from './recording-sql.ts';
 import { createSqliteTestDb } from './test-sqlite.ts';
 import { encodeOpaqueSqlText } from '../../src/repo/opaque-sql-text.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type {
+  ApiKey,
   PerformanceDimensions,
+  PerformanceOverviewQueryOptions,
   PerformanceRepo,
   PerformanceSample,
   PerformanceTelemetryRecord,
 } from '../../src/repo/types.ts';
+
+const apiKey = (id: string, userId: number): ApiKey => ({
+  id,
+  userId,
+  name: id,
+  key: `raw-${id}`,
+  serverSecret: String(userId).padStart(2, '0').repeat(32),
+  createdAt: '2026-01-01T00:00:00.000Z',
+  upstreamIds: null,
+  deletedAt: null,
+  dumpRetentionSeconds: null,
+  responsesRetentionSeconds: 0,
+});
 
 const sample = (over: Partial<PerformanceSample> = {}): PerformanceSample => ({
   hour: '2026-06-30T09',
@@ -133,16 +149,6 @@ for (const impl of impls) {
         buckets: [],
       }]);
     });
-
-    it('query filters by keyId and time range', async () => {
-      const repo = await impl.open();
-      await repo.recordSample(sample({ hour: '2026-06-30T08', keyId: 'key_a' }));
-      await repo.recordSample(sample({ hour: '2026-06-30T09', keyId: 'key_b' }));
-      const scoped = await repo.query({ keyId: 'key_a', start: '2026-06-30T00', end: '2026-06-30T23' });
-      expect(scoped).toHaveLength(1);
-      expect(scoped[0]!.keyId).toBe('key_a');
-    });
-
     it('set() replaces (not adds) a row and its buckets', async () => {
       const repo = await impl.open();
       await repo.recordSample(sample({ ttftMs: 100, tpotUs: 8_000 }));
@@ -305,4 +311,196 @@ describe('SqlPerformanceRepo operation vocabulary', () => {
       'performance_buckets row has no matching summary',
     );
   });
+});
+
+it('SQL Performance overview matches the in-memory oracle across every grouping and filter', async () => {
+  const sql = new SqlRepo(await createSqliteTestDb());
+  const memory = new InMemoryRepo();
+  const repos = [sql, memory];
+  for (const repo of repos) {
+    await repo.apiKeys.save(apiKey('key-1', 1));
+    await repo.apiKeys.save(apiKey('key-2', 2));
+    await Promise.all([
+      repo.performance.set({
+        hour: '2026-11-01T05', keyId: 'key-1', model: 'model-a', upstream: 'up-a',
+        operation: 'chat', runtimeLocation: 'SJC', requests: 100,
+        ttftSamplesOk: 90, errorsWithOutput: 10, errorsNoOutput: 0, neutral: 0,
+        tpotSamples: 90, ttftMsSum: 12_000, tpotUsSum: 45_000,
+        buckets: [
+          { metric: 'ttft_ms', lower: 0, upper: 100, count: 90 },
+          { metric: 'ttft_ms', lower: 200, upper: 300, count: 10 },
+          { metric: 'tpot_us', lower: 0, upper: 500, count: 90 },
+        ],
+      }),
+      repo.performance.set({
+        hour: '2026-11-01T06', keyId: 'key-2', model: 'model-b', upstream: 'up-b',
+        operation: 'embeddings', runtimeLocation: 'LOCAL', requests: 4,
+        ttftSamplesOk: 0, errorsWithOutput: 0, errorsNoOutput: 1, neutral: 3,
+        tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0, buckets: [],
+      }),
+      repo.performance.set({
+        hour: '2026-11-01T06', keyId: 'ghost', model: 'model-b', upstream: 'up-b',
+        operation: 'chat', runtimeLocation: 'LOCAL', requests: 2,
+        ttftSamplesOk: 2, errorsWithOutput: 0, errorsNoOutput: 0, neutral: 0,
+        tpotSamples: 2, ttftMsSum: 600_000, tpotUsSum: 20_000_000,
+        buckets: [
+          { metric: 'ttft_ms', lower: 300_000, upper: null, count: 2 },
+          { metric: 'tpot_us', lower: 2_500_000, upper: 10_000_000, count: 2 },
+        ],
+      }),
+    ]);
+  }
+  const options: PerformanceOverviewQueryOptions = {
+    actorUserId: 1,
+    isAdmin: true,
+    start: '2026-11-01T05',
+    end: '2026-11-01T07',
+    groupBy: 'model',
+    filters: {
+      keyIds: [], userIds: [], models: [], upstreams: [], operations: [], runtimeLocations: [],
+    },
+    bucketForHour: () => '2026-11-01T01',
+  };
+
+  for (const groupBy of ['model', 'upstream', 'operation', 'runtimeLocation', 'userId', 'keyId'] as const) {
+    expect(await sql.performance.queryOverview({ ...options, groupBy }))
+      .toEqual(await memory.performance.queryOverview({ ...options, groupBy }));
+  }
+  for (const filters of [
+    { ...options.filters, models: ['model-a', 'model-b'], upstreams: ['up-b'] },
+    { ...options.filters, userIds: [1], keyIds: ['key-1'] },
+    { ...options.filters, operations: ['chat'], runtimeLocations: ['LOCAL'] },
+    { ...options.filters, models: ['missing'] },
+  ]) {
+    expect(await sql.performance.queryOverview({ ...options, filters }))
+      .toEqual(await memory.performance.queryOverview({ ...options, filters }));
+  }
+  expect(await sql.performance.queryOverview({ ...options, actorUserId: 2, isAdmin: false }))
+    .toEqual(await memory.performance.queryOverview({ ...options, actorUserId: 2, isAdmin: false }));
+});
+
+it('SQL Performance overview rejects a histogram row without its summary identity', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  await db.prepare(`INSERT INTO performance_buckets (
+    hour, key_id, model_json, upstream, operation, runtime_location, metric, lower, upper, count
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+    '2026-06-30T09', 'ghost', encodeOpaqueSqlText('model'), 'upstream', 'chat', 'LOCAL',
+    'ttft_ms', 0, 100, 1,
+  ).run();
+
+  await expect(repo.performance.queryOverview({
+    actorUserId: 1,
+    isAdmin: true,
+    start: '2026-06-30T00',
+    end: '2026-06-30T23',
+    groupBy: 'model',
+    filters: {
+      keyIds: [], userIds: [], models: [], upstreams: [], operations: [], runtimeLocations: [],
+    },
+    bucketForHour: hour => hour,
+  })).rejects.toThrow('performance_buckets row has no matching summary');
+});
+
+it('SQL Performance overview ignores out-of-scope orphan histograms under key grouping', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  await repo.apiKeys.save(apiKey('key-1', 1));
+  await repo.apiKeys.save(apiKey('key-2', 2));
+  await repo.performance.recordNeutral(errSample({ keyId: 'key-1' }));
+  await db.prepare(`INSERT INTO performance_buckets (
+    hour, key_id, model_json, upstream, operation, runtime_location, metric, lower, upper, count
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+    '2026-06-30T09', 'key-2', encodeOpaqueSqlText('model'), 'upstream', 'chat', 'LOCAL',
+    'ttft_ms', 0, 100, 1,
+  ).run();
+
+  const overview = await repo.performance.queryOverview({
+    actorUserId: 1,
+    isAdmin: true,
+    start: '2026-06-30T00',
+    end: '2026-06-30T23',
+    groupBy: 'keyId',
+    filters: {
+      keyIds: [], userIds: [], models: [], upstreams: [], operations: [], runtimeLocations: [],
+    },
+    bucketForHour: hour => hour,
+  });
+  expect(overview.axes.none[0]?.requests).toBe(1);
+});
+
+it('Performance overview repositories reject inconsistent upper bounds for one merged histogram bucket', async () => {
+  for (const repo of [new SqlRepo(await createSqliteTestDb()), new InMemoryRepo()]) {
+    await repo.apiKeys.save(apiKey('key-1', 1));
+    await repo.apiKeys.save(apiKey('key-2', 2));
+    for (const [keyId, upper] of [['key-1', 100], ['key-2', 200]] as const) {
+      await repo.performance.set({
+        hour: '2026-06-30T09', keyId, model: 'model', upstream: 'upstream',
+        operation: 'chat', runtimeLocation: 'LOCAL', requests: 1,
+        ttftSamplesOk: 1, errorsWithOutput: 0, errorsNoOutput: 0, neutral: 0,
+        tpotSamples: 0, ttftMsSum: 50, tpotUsSum: 0,
+        buckets: [{ metric: 'ttft_ms', lower: 0, upper, count: 1 }],
+      });
+    }
+
+    await expect(repo.performance.queryOverview({
+      actorUserId: 1,
+      isAdmin: true,
+      start: '2026-06-30T00',
+      end: '2026-06-30T23',
+      groupBy: 'model',
+      filters: {
+        keyIds: [], userIds: [], models: [], upstreams: [], operations: [], runtimeLocations: [],
+      },
+      bucketForHour: hour => hour,
+    })).rejects.toThrow('performance_buckets rows disagree on histogram bounds');
+  }
+});
+
+it('SQL Performance overview uses actor indexes and returns aggregate cardinality', async () => {
+  const db = await createSqliteTestDb();
+  const seedRepo = new SqlRepo(db);
+  await seedRepo.apiKeys.save(apiKey('key-1', 1));
+  for (let index = 0; index < 40; index++) {
+    await seedRepo.performance.set({
+      hour: new Date(Date.UTC(2026, 5, 1, index)).toISOString().slice(0, 13),
+      keyId: 'key-1', model: 'shared-model', upstream: 'shared-upstream',
+      operation: 'chat', runtimeLocation: 'LOCAL', requests: 1,
+      ttftSamplesOk: 1, errorsWithOutput: 0, errorsNoOutput: 0, neutral: 0,
+      tpotSamples: 1, ttftMsSum: 100, tpotUsSum: 500,
+      buckets: [
+        { metric: 'ttft_ms', lower: 0, upper: 100, count: 1 },
+        { metric: 'tpot_us', lower: 0, upper: 500, count: 1 },
+      ],
+    });
+  }
+  const completed: CompletedStatement[] = [];
+  const repo = new SqlRepo(recordCompletedStatements(db, completed));
+
+  const overview = await repo.performance.queryOverview({
+    actorUserId: 1,
+    isAdmin: true,
+    start: '2026-06-01T00',
+    end: '2026-08-01T00',
+    groupBy: 'keyId',
+    filters: {
+      keyIds: [], userIds: [], models: [], upstreams: [], operations: [], runtimeLocations: [],
+    },
+    bucketForHour: () => 'one-bucket',
+  });
+
+  const aggregates = completed.filter(statement => statement.query.startsWith('/* performance-overview */'));
+  const aggregate = aggregates.at(-1);
+  if (!aggregate) throw new Error('Performance overview SQL evidence was not captured');
+  const { results } = await db.prepare(`EXPLAIN QUERY PLAN ${aggregate.query}`)
+    .bind(...aggregate.binds)
+    .all<{ detail: string }>();
+  const plan = results.map(row => row.detail).join('\n');
+  const rawRows = await db.prepare('SELECT (SELECT COUNT(*) FROM performance_summary) + (SELECT COUNT(*) FROM performance_buckets) AS count')
+    .first<{ count: number }>();
+  expect(plan).toContain('idx_performance_summary_key_hour');
+  expect(rawRows?.count).toBe(120);
+  expect(aggregates).toHaveLength(1);
+  expect(aggregate.resultCount).toBeLessThan(120);
+  expect(overview.axes.none[0]).toMatchObject({ requests: 40, ttftSamples: 40, tpotSamples: 40 });
 });

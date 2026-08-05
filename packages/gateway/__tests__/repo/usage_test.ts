@@ -1,10 +1,11 @@
 import { test } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
+import { type CapturedStatement, type CompletedStatement, recordBoundStatements, recordCompletedStatements } from './recording-sql.ts';
 import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename } from './test-sqlite.ts';
 import { encodeOpaqueSqlText } from '../../src/repo/opaque-sql-text.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
-import type { Repo, UsageRecord } from '../../src/repo/types.ts';
+import type { ApiKey, Repo, UsageOverviewQueryOptions, UsageRecord } from '../../src/repo/types.ts';
 import { tokenCountsFromUsage, tokenRatesFromUsage, tokenUsageMetrics } from '../../src/repo/usage-metrics.ts';
 import type { PriceVector } from '@floway-dev/protocols/common';
 import { assertEquals, assertRejects, assertThrows } from '@floway-dev/test-utils';
@@ -32,7 +33,20 @@ const record = (overrides: Partial<UsageRecord>): UsageRecord => ({
   ...overrides,
 });
 
-const query = (repo: Repo) => repo.usage.query({ keyId: 'key-1', start: '2026-07-12T00', end: '2026-07-12T01' });
+const apiKey = (id: string, userId: number): ApiKey => ({
+  id,
+  userId,
+  name: id,
+  key: `raw-${id}`,
+  serverSecret: String(userId).padStart(2, '0').repeat(32),
+  createdAt: '2026-01-01T00:00:00.000Z',
+  upstreamIds: null,
+  deletedAt: null,
+  dumpRetentionSeconds: null,
+  responsesRetentionSeconds: 0,
+});
+
+const query = (repo: Repo) => repo.usage.query({ keyIds: ['key-1'], start: '2026-07-12T00', end: '2026-07-12T01' });
 
 test('0052 preserves distinct open-string service tiers as canonical selectors', async () => {
   const db = await createSqlJsDatabase();
@@ -94,6 +108,21 @@ test('0062 rejects malformed legacy usage quantities and prices', async () => {
 });
 
 for (const backend of backends) {
+  test(`${backend.name} usage repo scopes a time window to a set of keys`, async () => {
+    const repo = await backend.make();
+    await Promise.all([
+      repo.usage.record(record({ keyId: 'key-1', requests: 1 })),
+      repo.usage.record(record({ keyId: 'key-2', requests: 2 })),
+      repo.usage.record(record({ keyId: 'key-3', requests: 3 })),
+      repo.usage.record(record({ keyId: 'key-2', hour: '2026-07-12T01', requests: 4 })),
+    ]);
+
+    const scoped = await repo.usage.query({ keyIds: ['key-2', 'key-2', 'key-3'], start: '2026-07-12T00', end: '2026-07-12T01' });
+    assertEquals(scoped.map(row => [row.keyId, row.requests]), [['key-2', 2], ['key-3', 3]]);
+    assertEquals(await repo.usage.query({ keyIds: [], start: '2026-07-12T00', end: '2026-07-12T01' }), []);
+    assertEquals((await repo.usage.query({ start: '2026-07-12T00', end: '2026-07-12T01' })).length, 3);
+  });
+
   test(`${backend.name} usage repo folds the selected input-length pricing entry into per-metric unit prices at write time`, async () => {
     const repo = await backend.make();
     await repo.usage.record(record({ pricingSelector: { inputTokens: { operator: 'gt', value: 272000 } } }));
@@ -257,4 +286,240 @@ test('SQL usage repo atomically rolls concurrent decimal writes into one metric 
   assertEquals(stored.metrics, [{ metric: 'input_tokens', quantity: '5', unitPrice: '0.000002' }]);
   assertEquals(stored.requests, 50);
   assertEquals(await db.prepare('SELECT COUNT(*) AS count FROM usage').first(), { count: 1 });
+});
+
+test('SQL usage key scopes use key-hour range indexes in both storage tables', async () => {
+  const db = await createSqliteTestDb();
+  const seedRepo = new SqlRepo(db);
+  await Promise.all([
+    seedRepo.usage.record(record({ keyId: 'key-1' })),
+    seedRepo.usage.record(record({ keyId: 'key-2' })),
+  ]);
+  const captured: CapturedStatement[] = [];
+  const repo = new SqlRepo(recordBoundStatements(db, captured));
+
+  const rows = await repo.usage.query({ keyIds: ['key-2'], start: '2026-07-12T00', end: '2026-07-12T01' });
+
+  assertEquals(rows.map(row => row.keyId), ['key-2']);
+  const usageQueries = captured.filter(statement => statement.query.includes('FROM usage'));
+  assertEquals(usageQueries.length, 2);
+  const plans = await Promise.all(usageQueries.map(async statement => {
+    const { results } = await db.prepare(`EXPLAIN QUERY PLAN ${statement.query}`)
+      .bind(...statement.binds)
+      .all<{ detail: string }>();
+    return results.map(row => row.detail).join('\n');
+  }));
+  assertEquals(plans.some(plan => plan.includes('idx_usage_metric_key_hour')), true);
+  assertEquals(plans.some(plan => plan.includes('idx_usage_requests_key_hour')), true);
+});
+
+test('SQL usage overview matches the in-memory oracle across filters, facets, axes, and exact decimals', async () => {
+  const sql = new SqlRepo(await createSqliteTestDb());
+  const memory = new InMemoryRepo();
+  const repos = [sql, memory];
+  for (const repo of repos) {
+    await repo.apiKeys.save(apiKey('key-1', 1));
+    await repo.apiKeys.save(apiKey('key-2', 2));
+    await Promise.all([
+      repo.usage.set(record({
+        keyId: 'key-1', model: 'model-a', modelKey: 'storage-a', upstream: null,
+        hour: '2026-11-01T05', requests: 1,
+        metrics: [{ metric: 'input_tokens', quantity: '9007199254740992', unitPrice: '0.0000001' }],
+      })),
+      repo.usage.set(record({
+        keyId: 'key-1', model: 'model-a', modelKey: 'storage-b', upstream: null,
+        hour: '2026-11-01T06', requests: 2,
+        pricingSelector: { serviceTier: 'priority' },
+        metrics: [{ metric: 'input_tokens', quantity: '0.1', unitPrice: '0.2' }],
+      })),
+      repo.usage.set(record({
+        keyId: 'key-2', model: 'model-b', upstream: 'none',
+        hour: '2026-11-01T06', requests: 4,
+        metrics: [{ metric: 'output_tokens', quantity: '3', unitPrice: null }],
+      })),
+      repo.usage.set(record({
+        keyId: 'ghost', model: 'model-b', upstream: null,
+        hour: '2026-11-01T07', requests: 8,
+        metrics: [{ metric: 'input_tokens', quantity: '0', unitPrice: '0.3' }],
+      })),
+    ]);
+  }
+  const options: UsageOverviewQueryOptions = {
+    actorUserId: 1,
+    isAdmin: true,
+    start: '2026-11-01T05',
+    end: '2026-11-01T08',
+    groupBy: 'model',
+    filters: { keyIds: [], userIds: [], models: ['model-a', 'model-b'], upstreams: ['none'] },
+    bucketForHour: hour => hour === '2026-11-01T05' || hour === '2026-11-01T06'
+      ? '2026-11-01T01'
+      : '2026-11-01T02',
+  };
+
+  for (const groupBy of ['model', 'upstream', 'userId', 'keyId'] as const) {
+    const unfiltered = {
+      ...options,
+      groupBy,
+      filters: { keyIds: [], userIds: [], models: [], upstreams: [] },
+    };
+    assertEquals(
+      await sql.usage.queryOverview(unfiltered),
+      await memory.usage.queryOverview(unfiltered),
+    );
+  }
+
+  for (const filters of [
+    { keyIds: [], userIds: [0], models: [], upstreams: [] },
+    { keyIds: ['key-1'], userIds: [1], models: ['model-a'], upstreams: ['none'] },
+    { keyIds: [], userIds: [], models: ['missing'], upstreams: [] },
+  ]) {
+    const filtered = { ...options, filters };
+    assertEquals(
+      await sql.usage.queryOverview(filtered),
+      await memory.usage.queryOverview(filtered),
+    );
+  }
+
+  const expected = await memory.usage.queryOverview(options);
+  const actual = await sql.usage.queryOverview(options);
+
+  assertEquals(actual, expected);
+  assertEquals(actual.dimensionValues, {
+    keyIds: ['key-1'],
+    userIds: [0, 1, 2],
+    models: ['model-a', 'model-b'],
+    upstreams: ['none', 'upstream:none'],
+  });
+  assertEquals(actual.axes.none[0], {
+    bucket: 'all',
+    group: 'all',
+    requests: 11,
+    metrics: [{ metric: 'input_tokens', quantity: '9007199254740992.1' }],
+    cost: '900719925.4940992',
+  });
+});
+
+test('SQL usage overview preserves request-only and metric-only storage identities', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  await repo.apiKeys.save(apiKey('key-1', 1));
+  await db.prepare(`INSERT INTO usage_requests (
+    key_id, model_json, upstream, model_key_json, hour, pricing_selector, requests
+  ) VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(
+    'key-1', encodeOpaqueSqlText('request-only'), null, encodeOpaqueSqlText('request-only'), '2026-07-12T00', '{}', 3,
+  ).run();
+  await db.prepare(`INSERT INTO usage (
+    key_id, model_json, upstream, model_key_json, hour, pricing_selector, metric, quantity, unit_price
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+    'key-1', encodeOpaqueSqlText('metric-only'), null, encodeOpaqueSqlText('metric-only'), '2026-07-12T00', '{}',
+    'input_tokens', '0.25', '0.4',
+  ).run();
+
+  const overview = await repo.usage.queryOverview({
+    actorUserId: 1,
+    isAdmin: true,
+    start: '2026-07-12T00',
+    end: '2026-07-12T01',
+    groupBy: 'model',
+    filters: { keyIds: [], userIds: [], models: [], upstreams: [] },
+    bucketForHour: hour => hour,
+  });
+
+  assertEquals(overview.series, [
+    {
+      bucket: '2026-07-12T00', group: 'metric-only', requests: 0,
+      metrics: [{ metric: 'input_tokens', quantity: '0.25' }], cost: '0.1',
+    },
+    {
+      bucket: '2026-07-12T00', group: 'request-only', requests: 3,
+      metrics: [], cost: null,
+    },
+  ]);
+});
+
+test('SQL usage overview validates scoped metric rows before dashboard filters', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  await repo.apiKeys.save(apiKey('key-1', 1));
+  await db.prepare(`INSERT INTO usage (
+    key_id, model_json, upstream, model_key_json, hour, pricing_selector, metric, quantity, unit_price
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+    'key-1', encodeOpaqueSqlText('excluded-model'), null, encodeOpaqueSqlText('excluded-model'), '2026-07-12T00', '{}',
+    'unknown_metric', '1', null,
+  ).run();
+
+  await assertRejects(() => repo.usage.queryOverview({
+    actorUserId: 1,
+    isAdmin: true,
+    start: '2026-07-12T00',
+    end: '2026-07-12T01',
+    groupBy: 'model',
+    filters: { keyIds: [], userIds: [], models: ['included-model'], upstreams: [] },
+    bucketForHour: hour => hour,
+  }), TypeError, 'usage.metric is invalid: "unknown_metric"');
+});
+
+test('SQL usage overview uses key-hour indexes for an actor-scoped aggregate', async () => {
+  const db = await createSqliteTestDb();
+  const seedRepo = new SqlRepo(db);
+  await seedRepo.apiKeys.save(apiKey('key-1', 1));
+  await seedRepo.usage.set(record({ keyId: 'key-1' }));
+  const captured: CapturedStatement[] = [];
+  const repo = new SqlRepo(recordBoundStatements(db, captured));
+
+  await repo.usage.queryOverview({
+    actorUserId: 1,
+    isAdmin: true,
+    start: '2026-07-12T00',
+    end: '2026-07-12T01',
+    groupBy: 'keyId',
+    filters: { keyIds: [], userIds: [], models: [], upstreams: [] },
+    bucketForHour: hour => hour,
+  });
+
+  const statement = captured.find(candidate => candidate.query.startsWith('/* usage-overview */'));
+  if (!statement) throw new Error('Usage overview SQL was not captured');
+  const { results } = await db.prepare(`EXPLAIN QUERY PLAN ${statement.query}`)
+    .bind(...statement.binds)
+    .all<{ detail: string }>();
+  const plan = results.map(row => row.detail).join('\n');
+  assertEquals(plan.includes('idx_usage_metric_key_hour'), true);
+  assertEquals(plan.includes('idx_usage_requests_key_hour'), true);
+});
+
+test('SQL usage overview returns grouped term cardinality rather than raw storage rows', async () => {
+  const db = await createSqliteTestDb();
+  const seedRepo = new SqlRepo(db);
+  await seedRepo.apiKeys.save(apiKey('key-1', 1));
+  await Promise.all(Array.from({ length: 80 }, (_, index) => seedRepo.usage.set(record({
+    model: 'shared-model',
+    modelKey: `storage-${index}`,
+    pricingSelector: { serviceTier: `tier-${index}` },
+    metrics: [{ metric: 'input_tokens', quantity: String(index + 1) as `${number}`, unitPrice: '0.5' }],
+  }))));
+  const completed: CompletedStatement[] = [];
+  const repo = new SqlRepo(recordCompletedStatements(db, completed));
+
+  const overview = await repo.usage.queryOverview({
+    actorUserId: 1,
+    isAdmin: true,
+    start: '2026-07-12T00',
+    end: '2026-07-12T01',
+    groupBy: 'model',
+    filters: { keyIds: [], userIds: [], models: [], upstreams: [] },
+    bucketForHour: hour => hour,
+  });
+
+  const rawRows = await db.prepare('SELECT (SELECT COUNT(*) FROM usage) + (SELECT COUNT(*) FROM usage_requests) AS count')
+    .first<{ count: number }>();
+  const aggregates = completed.filter(statement => statement.query.startsWith('/* usage-overview */'));
+  const aggregate = aggregates.at(-1);
+  if (!aggregate || !rawRows) throw new Error('Usage overview SQL evidence was not captured');
+  assertEquals(rawRows.count, 160);
+  assertEquals(aggregates.length, 1);
+  assertEquals(aggregate.resultCount < rawRows.count, true);
+  assertEquals(overview.axes.none[0], {
+    bucket: 'all', group: 'all', requests: 80,
+    metrics: [{ metric: 'input_tokens', quantity: '3240' }], cost: '1620',
+  });
 });

@@ -5,7 +5,7 @@ import { decodeOpaqueSqlText, encodeOpaqueSqlText } from '../../src/repo/opaque-
 import { SqlRepo } from '../../src/repo/sql.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
-const MIGRATION = '0077_opaque_model_storage.sql';
+const MIGRATION = '0078_opaque_model_storage.sql';
 
 test('opaque SQL text codec is a reversible JSON string representation', () => {
   for (const value of ['', 'plain', 'nul\0inside', 'snow-雪', '\ud800']) {

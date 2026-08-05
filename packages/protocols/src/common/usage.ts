@@ -1,15 +1,15 @@
-const usageUpstreamPrefix = 'upstream:';
-const usageWithoutUpstream = 'none';
+export const usageUpstreamDimensionPrefix = 'upstream:';
+export const usageWithoutUpstreamDimensionValue = 'none';
 
 export const tokenUsageUnattributedUserId = 0;
 
 export const usageUpstreamDimensionValue = (upstream: string | null): string =>
-  upstream === null ? usageWithoutUpstream : `${usageUpstreamPrefix}${upstream}`;
+  upstream === null ? usageWithoutUpstreamDimensionValue : `${usageUpstreamDimensionPrefix}${upstream}`;
 
 export const usageUpstreamFromDimensionValue = (value: string): string | null => {
-  if (value === usageWithoutUpstream) return null;
-  if (!value.startsWith(usageUpstreamPrefix)) throw new TypeError(`Invalid Usage upstream dimension value: ${value}`);
-  return value.slice(usageUpstreamPrefix.length);
+  if (value === usageWithoutUpstreamDimensionValue) return null;
+  if (!value.startsWith(usageUpstreamDimensionPrefix)) throw new TypeError(`Invalid Usage upstream dimension value: ${value}`);
+  return value.slice(usageUpstreamDimensionPrefix.length);
 };
 
 const BILLABLE_USAGE_COUNT_FIELDS = ['input', 'cacheRead', 'cacheWrite', 'cacheWrite1h', 'output'] as const;

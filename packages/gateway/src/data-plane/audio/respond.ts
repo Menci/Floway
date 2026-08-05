@@ -55,7 +55,7 @@ const respondStreaming = ({ c, ctx, sourceApi, response, performance, identity }
     let measurement = requestOnlyUsageMeasurement();
     try {
       const frames = (async function* () {
-        for await (const frame of parseSSEStream(upstreamBody, { signal: ctx.abortSignal })) {
+        for await (const frame of parseSSEStream(upstreamBody)) {
           let event: unknown;
           try {
             event = JSON.parse(frame.data) as unknown;
@@ -77,7 +77,7 @@ const respondStreaming = ({ c, ctx, sourceApi, response, performance, identity }
       })();
       completion = await writeSSEFrames(stream, frames, {
         keepAlive: { frame: sseCommentFrame('keepalive') },
-        downstreamAbortController: ctx.downstreamAbortController,
+        clientDisconnectController: ctx.clientDisconnectController,
       });
     } catch (error) {
       streamError = error;

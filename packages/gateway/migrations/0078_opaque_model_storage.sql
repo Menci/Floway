@@ -2,6 +2,8 @@
 -- every JavaScript string reversible through SQLite-family drivers, including
 -- strings containing embedded NUL, and the column names make that contract
 -- visible to every future query.
+-- The table rebuilds recreate the telemetry overview indexes installed by the
+-- preceding migration.
 -- https://github.com/cloudflare/workerd/blob/80c80a712532b012cbeaef4d08ff6ab15407e960/src/workerd/util/sqlite.c%2B%2B#L1591-L1600
 -- https://github.com/cloudflare/workerd/blob/80c80a712532b012cbeaef4d08ff6ab15407e960/src/workerd/util/sqlite.c%2B%2B#L1738-L1743
 -- https://github.com/sqlite/sqlite/blob/a790e273e2a10573e8d4c5267d494b451044fb23/src/sqlite.h.in#L4957-L4972

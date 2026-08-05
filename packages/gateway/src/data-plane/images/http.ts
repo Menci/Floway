@@ -95,7 +95,7 @@ export const imagesGenerations = async (c: Context): Promise<Response> => {
     modelServesEndpoint: model => model.endpoints.imagesGenerations !== undefined,
     call: (provider, model, opts) => {
       const { model: _model, ...body } = request.body;
-      return provider.instance.callImagesGenerations(model, body, ctx.abortSignal, opts);
+      return provider.instance.callImagesGenerations(model, body, undefined, opts);
     },
     response: { format: 'strategy', respond: respondImages },
   });
@@ -119,7 +119,7 @@ const serveImagesEditRequest = async (
     model,
     kind: 'image',
     modelServesEndpoint: model => model.endpoints.imagesEdits !== undefined,
-    call: (provider, model, opts) => provider.instance.callImagesEdits(model, request, ctx.abortSignal, opts),
+    call: (provider, model, opts) => provider.instance.callImagesEdits(model, request, undefined, opts),
     response: { format: 'strategy', respond: respondImages },
   });
   return finalizeGatewayResponse(ctx, response);

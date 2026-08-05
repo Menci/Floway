@@ -28,7 +28,7 @@ export const rerankAttempt = async (
   const result: ProviderRerankCallResult = await candidate.provider.instance.callRerank(
     model,
     request,
-    ctx.abortSignal,
+    undefined,
     buildUpstreamCallOptions(candidate, ctx, inboundHeaders(c)),
   );
   return {

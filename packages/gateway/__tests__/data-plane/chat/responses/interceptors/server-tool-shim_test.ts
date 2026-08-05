@@ -4123,29 +4123,19 @@ test('wrong-typed supported sub-property (search_query as object) synthesizes a 
   assertEquals(backend.calls.length, 0);
 });
 
-test('downstream AbortSignal threads through to provider search / fetchPage and propagates aborts', async () => {
-  // Cancelled requests must stop generating upstream load. The shim
-  // threads the request's `downstreamAbortSignal` into every backend
-  // provider call so providers can observe and abort.
-  let signalObserved!: (signal: AbortSignal | undefined) => void;
-  const searchStarted = new Promise<AbortSignal | undefined>(resolve => {
-    signalObserved = resolve;
-  });
+test('client disconnect does not abort a web-search request after dispatch', async () => {
+  let observedSignal: AbortSignal | undefined;
+  let releaseSearch!: () => void;
+  const searchReleased = new Promise<void>(resolve => { releaseSearch = resolve; });
+  let markSearchStarted!: () => void;
+  const searchStarted = new Promise<void>(resolve => { markSearchStarted = resolve; });
   const controller = new AbortController();
   const { backend } = makeStubDeps({
     providerOverrides: {
-      // Capture the signal the shim hands us; resolve only when the
-      // signal aborts so we can assert downstream propagation.
       async search(request) {
-        signalObserved(request.signal);
-        await new Promise<void>((resolve, reject) => {
-          if (request.signal?.aborted) {
-            reject(new Error('aborted'));
-            return;
-          }
-          request.signal?.addEventListener('abort', () => reject(new Error('aborted')));
-        });
-        // Unreachable — the await above either rejects or hangs.
+        observedSignal = request.signal;
+        markSearchStarted();
+        await searchReleased;
         return { type: 'ok', results: [] };
       },
     },
@@ -4155,30 +4145,23 @@ test('downstream AbortSignal threads through to provider search / fetchPage and 
   const gatewayCtx = mockChatGatewayCtx({
     apiKeyId: 'k1',
     wantsStream: true,
-    abortSignal: controller.signal,
+    clientDisconnectSignal: controller.signal,
+    clientDisconnectController: controller,
   });
   const script = scriptedRun([
-    searchCallTurn(0, 'call_1', 'will-be-aborted'),
+    searchCallTurn(0, 'call_1', 'will-complete'),
+    messageTurn('done', 0),
   ]);
 
   const result = await shim(inv, gatewayCtx, script.run);
   assert(result.type === 'events');
-  // Drain the events stream in the background. The backend search
-  // will hang until we abort, so the drain promise won't resolve
-  // until the abort surfaces as a thrown rejection in the loop.
-  const drainPromise = collectFrames(result.events).catch(() => []);
+  const drainPromise = collectFrames(result.events);
+  await searchStarted;
+  assertEquals(observedSignal, undefined);
 
-  const observedSignal = await searchStarted;
-  // Same instance identity — not a clone.
-  assert(observedSignal !== undefined);
-  assertEquals(observedSignal, controller.signal);
-  assertFalse(observedSignal.aborted);
-
-  // Abort and let the drain complete (the rejected backend promise
-  // will surface as a mid-stream synthesized response.failed).
   controller.abort();
+  releaseSearch();
   await drainPromise;
-  // Only the one search was attempted; no follow-up turn fired.
   assertEquals(backend.calls.length, 1);
 });
 

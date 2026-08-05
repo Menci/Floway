@@ -2,7 +2,7 @@
 -- the attempted URL on the row so only the current endpoint generation can
 -- create, advance, or clear its cooldown; the FK makes deletion atomic with
 -- backoff cleanup and rejects any write outside the repository guard.
-ALTER TABLE proxy_upstream_backoffs RENAME TO proxy_upstream_backoffs_pre_0078;
+ALTER TABLE proxy_upstream_backoffs RENAME TO proxy_upstream_backoffs_pre_0079;
 
 CREATE TABLE proxy_upstream_backoffs (
   proxy_id      TEXT NOT NULL REFERENCES proxies(id) ON DELETE CASCADE,
@@ -18,7 +18,7 @@ CREATE TABLE proxy_upstream_backoffs (
 INSERT INTO proxy_upstream_backoffs
   (proxy_id, upstream_id, proxy_url, fail_count, expires_at, last_error, last_error_at)
 SELECT b.proxy_id, b.upstream_id, p.url, b.fail_count, b.expires_at, b.last_error, b.last_error_at
-FROM proxy_upstream_backoffs_pre_0078 b
+FROM proxy_upstream_backoffs_pre_0079 b
 JOIN proxies p ON p.id = b.proxy_id;
 
-DROP TABLE proxy_upstream_backoffs_pre_0078;
+DROP TABLE proxy_upstream_backoffs_pre_0079;

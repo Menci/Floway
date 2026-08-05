@@ -1,10 +1,10 @@
-import { aggregateUsageForOverview, usageUserIdForKey, type UsageOverviewGroupBy } from './aggregate.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
+import type { UsageOverviewGroupBy } from '../../repo/types.ts';
 import type { tokenUsageOverviewQuery } from '../schemas.ts';
-import { loadTelemetryOverviewIdentity, partitionTelemetryOverviewRecords, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata } from '../shared/telemetry-overview.ts';
+import { createTelemetryBucket } from '../shared/telemetry-bucket.ts';
+import { loadTelemetryOverviewIdentity, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata } from '../shared/telemetry-overview.ts';
 import type { TokenUsageOverviewResponse } from '../usage-types.ts';
-import { usageUpstreamDimensionValue } from '@floway-dev/protocols/common';
 
 type Ctx = CtxWithQuery<typeof tokenUsageOverviewQuery>;
 
@@ -55,44 +55,28 @@ export const tokenUsageOverview = async (c: Ctx) => {
   const identityError = telemetryIdentityError(identity, groupBy, filters.userId, filters.keyId);
   if (identityError !== null) return c.json({ error: identityError.error }, identityError.status);
 
-  const rawRecords = await repo.usage.query({ start, end });
-  const scopedRecords = !identity.actor.isAdmin || groupBy === 'keyId'
-    ? rawRecords.filter(record => identity.ownedKeyIds.has(record.keyId))
-    : rawRecords;
-  const partitioned = partitionTelemetryOverviewRecords(scopedRecords, {
-    keyId: {
-      value: record => record.keyId,
-      includeFacet: record => identity.ownedKeyIds.has(record.keyId),
+  const overview = await repo.usage.queryOverview({
+    actorUserId: identity.actor.id,
+    isAdmin: identity.actor.isAdmin,
+    start,
+    end,
+    groupBy,
+    filters: {
+      keyIds: [...filters.keyId],
+      userIds: [...filters.userId].map(Number),
+      models: [...filters.model],
+      upstreams: [...filters.upstream],
     },
-    userId: {
-      value: record => String(usageUserIdForKey(record.keyId, identity.keyToUser)),
-      includeFacet: () => identity.actor.isAdmin,
-    },
-    model: { value: record => record.model },
-    upstream: { value: record => usageUpstreamDimensionValue(record.upstream) },
-  }, filters);
-  const { filtered } = partitioned;
-  const dimensionValues = {
-    keyIds: partitioned.dimensionValues.keyId,
-    userIds: partitioned.dimensionValues.userId.map(Number).sort((left, right) => left - right),
-    models: partitioned.dimensionValues.model,
-    upstreams: partitioned.dimensionValues.upstream,
-  };
-  const tzOnly = { timeZone: params.value.timeZone, timezoneOffsetMinutes };
-  const { series, ...axes } = aggregateUsageForOverview(filtered, {
-    series: { ...tzOnly, bucket, groupBy },
-    none: { ...tzOnly, bucket: 'all', groupBy: 'none' },
-    keyId: { ...tzOnly, bucket: 'all', groupBy: 'keyId' },
-    userId: { ...tzOnly, bucket: 'all', groupBy: 'userId' },
-    model: { ...tzOnly, bucket: 'all', groupBy: 'model' },
-    upstream: { ...tzOnly, bucket: 'all', groupBy: 'upstream' },
-  }, identity.keyToUser, identity.ownedKeyIds);
+    bucketForHour: createTelemetryBucket({
+      bucket,
+      timeZone: params.value.timeZone,
+      timezoneOffsetMinutes,
+    }),
+  });
   const metadata = telemetryIdentityMetadata(identity);
 
   return c.json({
-    series,
-    axes: { ...axes, userId: identity.actor.isAdmin ? axes.userId : [] },
-    dimensionValues,
+    ...overview,
     ...metadata,
   } satisfies TokenUsageOverviewResponse);
 };

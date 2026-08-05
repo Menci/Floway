@@ -6,21 +6,23 @@ import { stubModelCandidate } from '@floway-dev/test-utils';
 
 // Shared minimal GatewayCtx for tests that exercise serve / respond /
 // interceptor code in isolation. Defaults satisfy every required field; pass
-// `overrides` to nudge what each test cares about. Callers that need a
-// downstream abort controller should construct one and spread
-// `{ abortSignal: controller.signal, downstreamAbortController: controller }`
-// into the overrides.
-export const mockGatewayCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx => ({
-  apiKeyId: 'key_test',
-  requestStartedAt: 0,
-  upstreamIds: null,
-  wantsStream: false,
-  runtimeLocation: 'TEST',
-  dump: null,
-  backgroundScheduler: promise => { void promise; },
-  attempt: { firstOutputTokenAt: null, upstreamCallStartedAt: null, telemetry: undefined },
-  ...overrides,
-});
+// `overrides` to nudge what each test cares about.
+export const mockGatewayCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx => {
+  const clientDisconnectController = overrides.clientDisconnectController ?? new AbortController();
+  return {
+    apiKeyId: 'key_test',
+    requestStartedAt: 0,
+    upstreamIds: null,
+    clientDisconnectSignal: overrides.clientDisconnectSignal ?? clientDisconnectController.signal,
+    clientDisconnectController,
+    wantsStream: false,
+    runtimeLocation: 'TEST',
+    dump: null,
+    backgroundScheduler: promise => { void promise; },
+    attempt: { firstOutputTokenAt: null, upstreamCallStartedAt: null, telemetry: undefined },
+    ...overrides,
+  };
+};
 
 // Chat-protocol counterpart: adds the affinity membrane and the Responses item
 // store. Tests that exercise durable Responses behavior override `.store`

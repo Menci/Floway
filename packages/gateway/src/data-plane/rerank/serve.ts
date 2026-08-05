@@ -81,6 +81,7 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Contex
       kind: 'rerank',
       scheduler: ctx.backgroundScheduler,
       runtimeLocation: ctx.runtimeLocation,
+      clientDisconnectSignal: ctx.clientDisconnectSignal,
     });
     if (candidates.length === 0) {
       ctx.dump?.error('gateway');

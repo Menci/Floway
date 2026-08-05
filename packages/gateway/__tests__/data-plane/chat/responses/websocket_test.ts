@@ -1615,16 +1615,17 @@ test('Responses WebSocket session-level store: second message resolves prior ite
   );
 });
 
-test('Responses WebSocket aborts the in-flight Responses request when the client closes', async () => {
-  const { apiKey } = await setupAppTest();
-  let resolveResponsesStarted: (() => void) | undefined;
-  const responsesStarted = new Promise<void>(resolve => {
-    resolveResponsesStarted = resolve;
-  });
-  let resolveUpstreamAborted: (() => void) | undefined;
-  const upstreamAborted = new Promise<void>(resolve => {
-    resolveUpstreamAborted = resolve;
-  });
+test('Responses WebSocket drains terminal usage without aborting upstream after the client closes', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  let upstreamController!: ReadableStreamDefaultController<Uint8Array>;
+  let requestSignal!: AbortSignal;
+  let upstreamCanceled = false;
+  let resolveUpstreamRead!: () => void;
+  const upstreamRead = new Promise<void>(resolve => { resolveUpstreamRead = resolve; });
+  const encoder = new TextEncoder();
+  const enqueueEvent = (event: string, data: unknown): void => {
+    upstreamController.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+  };
 
   await withMockedFetch(
     async request => {
@@ -1637,20 +1638,29 @@ test('Responses WebSocket aborts the in-flight Responses request when the client
         return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
       }
       if (url.pathname === '/responses') {
-        resolveResponsesStarted?.();
-        return await new Promise<Response>(resolve => {
-          request.signal.addEventListener('abort', () => {
-            resolveUpstreamAborted?.();
-            resolve(sseResponsesResponse({
-              id: 'resp_ws_abort',
-              object: 'response',
-              model: 'gpt-direct-responses',
-              status: 'completed',
-              output: [],
-              output_text: '',
-            }));
-          }, { once: true });
-        });
+        requestSignal = request.signal;
+        const response = {
+          id: 'resp_ws_disconnect',
+          object: 'response',
+          model: 'gpt-direct-responses',
+          status: 'in_progress',
+          output: [],
+          output_text: '',
+          error: null,
+          incomplete_details: null,
+        };
+        return new Response(new ReadableStream<Uint8Array>({
+          start(controller) {
+            upstreamController = controller;
+            enqueueEvent('response.created', { type: 'response.created', response, sequence_number: 0 });
+          },
+          pull() {
+            resolveUpstreamRead();
+          },
+          cancel() {
+            upstreamCanceled = true;
+          },
+        }), { headers: { 'content-type': 'text/event-stream' } });
       }
       throw new Error(`Unhandled fetch ${request.url}`);
     },
@@ -1664,9 +1674,29 @@ test('Responses WebSocket aborts the in-flight Responses request when the client
         },
       }));
 
-      await responsesStarted;
+      await upstreamRead;
       client.close();
-      await upstreamAborted;
+      await waitForMicrotasks();
+      assertEquals(requestSignal.aborted, false);
+      assertEquals(upstreamCanceled, false);
+
+      const completed = {
+        id: 'resp_ws_disconnect',
+        object: 'response',
+        model: 'gpt-direct-responses',
+        status: 'completed',
+        output: [],
+        output_text: 'done',
+        error: null,
+        incomplete_details: null,
+        usage: { input_tokens: 7, output_tokens: 3, total_tokens: 10 },
+      };
+      enqueueEvent('response.completed', { type: 'response.completed', response: completed, sequence_number: 1 });
+      upstreamController.enqueue(encoder.encode('data: [DONE]\n\n'));
+      upstreamController.close();
+      await flushAsyncWork();
+      await vi.waitFor(async () => assertEquals((await repo.usage.listAll()).length, 1));
+      assertEquals(upstreamCanceled, false);
     }),
   );
 });
