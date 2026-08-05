@@ -24,15 +24,16 @@ import {
   type MessagesUserContentBlock,
   type MessagesUserMessage,
 } from '@floway-dev/protocols/messages';
-import type {
-  ResponsesInputImage,
-  ResponsesInputItem,
-  ResponsesInputMessage,
-  ResponsesInputText,
-  ResponsesRequestPayload,
-  ResponsesTool,
-  ResponsesToolChoice,
-  ResponsesToolOutputContent,
+import {
+  RESPONSES_INTER_AGENT_MESSAGE_ACTIONS,
+  type ResponsesInputImage,
+  type ResponsesInputItem,
+  type ResponsesInputMessage,
+  type ResponsesInputText,
+  type ResponsesRequestPayload,
+  type ResponsesTool,
+  type ResponsesToolChoice,
+  type ResponsesToolOutputContent,
 } from '@floway-dev/protocols/responses';
 
 interface BuildTargetRequestOptions {
@@ -309,6 +310,26 @@ const translateResponsesInput = async (
 const namespaceTargetName = (namespace: string, tool: string): string =>
   `${namespace}_${tool}`.replaceAll(/[^a-zA-Z0-9_-]/g, '_');
 
+const INTER_AGENT_MESSAGE_ACTIONS = new Set<string>(RESPONSES_INTER_AGENT_MESSAGE_ACTIONS);
+
+const plaintextNamespaceParameters = (
+  namespace: string,
+  name: string,
+  parameters: Record<string, unknown>,
+): Record<string, unknown> => {
+  if (namespace !== 'collaboration' || !INTER_AGENT_MESSAGE_ACTIONS.has(name)) return parameters;
+  const properties = parameters.properties;
+  if (typeof properties !== 'object' || properties === null || Array.isArray(properties)) return parameters;
+  const message = (properties as Record<string, unknown>).message;
+  if (typeof message !== 'object' || message === null || Array.isArray(message)) return parameters;
+  const plaintextMessage = { ...(message as Record<string, unknown>) };
+  delete plaintextMessage.encrypted;
+  return {
+    ...parameters,
+    properties: { ...(properties as Record<string, unknown>), message: plaintextMessage },
+  };
+};
+
 const uniqueToolName = (preferred: string, reserved: Set<string>): string => {
   if (!reserved.has(preferred)) {
     reserved.add(preferred);
@@ -401,7 +422,11 @@ const translateTools = (
       out.push({
         name: targetName,
         ...(typeof functionTool.description === 'string' ? { description: functionTool.description } : {}),
-        input_schema: functionTool.parameters as Record<string, unknown>,
+        input_schema: plaintextNamespaceParameters(
+          tool.name,
+          functionTool.name,
+          functionTool.parameters as Record<string, unknown>,
+        ),
         ...(typeof functionTool.strict === 'boolean' ? { strict: functionTool.strict } : {}),
       });
     }

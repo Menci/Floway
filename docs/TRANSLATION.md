@@ -91,9 +91,10 @@ Codex declares `collaboration` as a reserved Responses namespace and marks the
 the Responses-only `encrypted: true` schema extension. Native Copilot rejects a
 reserved namespace whose schema removes that field, so Floway projects the
 entire namespace onto a request-scoped ordinary name
-`floway_collaboration_<128-bit random hex>`. Only those three message schemas
-lose `encrypted`; the other collaboration actions and every unrelated tool are
-unchanged.
+`floway_collaboration`, adding the first free numeric suffix only when that name
+is already occupied. The deterministic name preserves prompt-cache prefixes.
+Only those three message schemas lose `encrypted`; the other collaboration
+actions and every unrelated tool are unchanged.
 
 Historical collaboration function calls use the same request-scoped namespace
 on the upstream wire and omit `encrypted_function_args`. Upstream response items
@@ -105,10 +106,12 @@ Every response snapshot and echoed tool inventory restores the client namespace
 and encrypted schema. HTTP, SSE, WebSocket, Stateful Responses persistence, and
 history replay all consume this same attempt-level membrane.
 
-Messages and Chat Completions targets already produce plaintext tool arguments;
-their response translators restore the collaboration identity and the same
-empty plaintext marker. Legacy `agent_message.encrypted_content` cannot be
-converted to plaintext and passes through as opaque input.
+Messages targets flatten the namespace, remove the same schema marker, and
+restore the collaboration identity plus the empty plaintext marker. Chat
+Completions cannot represent namespace tools and is removed from the candidate
+set for a Responses request that declares collaboration. Legacy
+`agent_message.encrypted_content` cannot be converted to plaintext and passes
+through as opaque input.
 
 Copilot audits build their inventory from provider registration/default code
 and the `audit-copilot-workarounds` skill, including auth, model shaping,

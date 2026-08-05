@@ -1,6 +1,7 @@
 import { analyzeResponsesAffinity } from './affinity/ingress.ts';
 import { responsesTarget } from './attempt.ts';
 import { renderResponsesFailure, type ResponsesServeFailure } from './errors.ts';
+import { hasCollaborationNamespace } from './interceptors/plaintext-collaboration.ts';
 import { hydrateResponsesPayload } from './items/hydrate.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
 import { enumerateModelCandidates } from '../../providers/resolution.ts';
@@ -90,7 +91,9 @@ export const prepareResponsesServePlan = async (args: {
     scheduler: ctx.backgroundScheduler,
     runtimeLocation: ctx.runtimeLocation,
   });
-  const viable = candidates.filter(c => responsesTarget.canServe(c.model.endpoints));
+  const viable = candidates.filter(candidate =>
+    responsesTarget.canServe(candidate.model.endpoints)
+    && (!hasCollaborationNamespace(prepared) || responsesTarget.pick(candidate.model.endpoints) !== 'chat-completions'));
   await store.loadInputItems(prepared.input, payload.input);
   let hydrated: ReturnType<typeof hydrateResponsesPayload>;
   try {

@@ -4,7 +4,7 @@ import { withPlaintextCollaboration } from '../../../../../src/data-plane/chat/r
 import type { ResponsesInvocation } from '../../../../../src/data-plane/chat/responses/interceptors/types.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesOutputFunctionCall, ResponsesResult, ResponsesStreamEvent, ResponsesTool } from '@floway-dev/protocols/responses';
+import type { ResponsesOutputFunctionCall, ResponsesOutputItem, ResponsesResult, ResponsesStreamEvent, ResponsesTool } from '@floway-dev/protocols/responses';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
@@ -50,7 +50,7 @@ const invocation = (targetApi: ResponsesInvocation['targetApi'] = 'responses'): 
   action: 'generate',
 });
 
-const response = (output: ResponsesOutputFunctionCall[], tools: ResponsesTool[], namespace: string): ResponsesResult => ({
+const response = (output: ResponsesOutputItem[], tools: ResponsesTool[], namespace: string): ResponsesResult => ({
   id: 'resp_1',
   object: 'response',
   model: 'model',
@@ -64,6 +64,7 @@ const response = (output: ResponsesOutputFunctionCall[], tools: ResponsesTool[],
 
 test('projects reserved collaboration onto a plaintext upstream namespace and restores every response surface', async () => {
   const ctx = invocation();
+  const clientPayload = structuredClone(ctx.payload);
   let upstreamPayload: ResponsesInvocation['payload'] | undefined;
   const result = await withPlaintextCollaboration(ctx, mockChatGatewayCtx(), async () => {
     upstreamPayload = structuredClone(ctx.payload);
@@ -98,7 +99,7 @@ test('projects reserved collaboration onto a plaintext upstream namespace and re
 
   if (upstreamPayload === undefined) throw new Error('Expected upstream payload');
   const upstreamNamespace = (upstreamPayload.tools?.[0] as { name: string }).name;
-  expect(upstreamNamespace).toMatch(/^floway_collaboration_[0-9a-f]{32}$/);
+  expect(upstreamNamespace).toBe('floway_collaboration');
   const upstreamNamespaceTool = upstreamPayload.tools?.[0] as unknown as { tools: Array<{ name: string; parameters?: Record<string, unknown> }> };
   for (const tool of upstreamNamespaceTool.tools.filter(tool => ['spawn_agent', 'send_message', 'followup_task'].includes(tool.name))) {
     expect((tool.parameters?.properties as Record<string, Record<string, unknown>>).message).not.toHaveProperty('encrypted');
@@ -135,6 +136,28 @@ test('projects reserved collaboration onto a plaintext upstream namespace and re
   expect(restoredNamespace.name).toBe('collaboration');
   expect((restoredNamespace.tools[0].parameters?.properties as Record<string, Record<string, unknown>>).message.encrypted).toBe(true);
   expect(terminal.response.tool_choice).toMatchObject({ tools: [{ type: 'namespace', name: 'collaboration' }] });
+  expect(ctx.payload).toEqual(clientPayload);
+});
+
+test('uses a deterministic collision suffix and restores shared context between runs', async () => {
+  const ctx = invocation();
+  ctx.payload = {
+    ...ctx.payload,
+    tools: [
+      ...(ctx.payload.tools ?? []),
+      { type: 'namespace', name: 'floway_collaboration', tools: [] } as ResponsesTool,
+    ],
+  };
+  const seen: string[] = [];
+  const run = async () => await withPlaintextCollaboration(ctx, mockChatGatewayCtx(), async () => {
+    seen.push((ctx.payload.tools?.[0] as { name: string }).name);
+    return eventResult((async function* () {})(), testTelemetryModelIdentity);
+  });
+
+  await run();
+  await run();
+  expect(seen).toEqual(['floway_collaboration_2', 'floway_collaboration_2']);
+  expect((ctx.payload.tools?.[0] as { name: string }).name).toBe('collaboration');
 });
 
 test('leaves translated targets unchanged', async () => {
@@ -152,4 +175,85 @@ test('rejects ambiguous duplicate collaboration namespaces', async () => {
     eventResult((async function* () {})(), testTelemetryModelIdentity))).rejects.toThrow(
     'Responses request carries multiple collaboration namespaces in one tool inventory',
   );
+});
+
+test.each([null, ['message']] as const)('rejects explicitly encrypted history marker %j', async marker => {
+  const ctx = invocation();
+  const item = ctx.payload.input[0];
+  if (item.type !== 'function_call') throw new Error('Expected function call');
+  ctx.payload = {
+    ...ctx.payload,
+    input: [{ ...item, encrypted_function_args: marker === null ? null : [...marker] }],
+  };
+  await expect(withPlaintextCollaboration(ctx, mockChatGatewayCtx(), async () =>
+    eventResult((async function* () {})(), testTelemetryModelIdentity))).rejects.toThrow(
+    'Cannot project encrypted collaboration history',
+  );
+});
+
+test('projects deferred tool-search inventories without a top-level tool list', async () => {
+  const ctx = invocation();
+  ctx.payload = {
+    ...ctx.payload,
+    tools: undefined,
+    input: [{ type: 'tool_search_output', id: 'tso_1', tools: [collaborationTool()] }],
+  };
+  let upstreamItem: unknown;
+  const result = await withPlaintextCollaboration(ctx, mockChatGatewayCtx(), async () => {
+    upstreamItem = structuredClone(ctx.payload.input[0]);
+    const item = ctx.payload.input[0];
+    if (item.type !== 'tool_search_output') throw new Error('Expected tool-search output');
+    return eventResult((async function* () {
+      yield eventFrame({ type: 'response.output_item.done', output_index: 0, item });
+      yield eventFrame({ type: 'response.completed', response: response([item], [], 'floway_collaboration') });
+    })(), testTelemetryModelIdentity);
+  });
+
+  expect(upstreamItem).toMatchObject({ tools: [{ name: 'floway_collaboration' }] });
+  if (result.type !== 'events') throw new Error('Expected events');
+  const items: ResponsesOutputItem[] = [];
+  for await (const frame of result.events) {
+    if (frame.type === 'event' && frame.event.type === 'response.output_item.done') items.push(frame.event.item);
+  }
+  expect(items[0]).toMatchObject({ tools: [{ name: 'collaboration' }] });
+});
+
+test('rejects an upstream encrypted marker before labeling the call plaintext', async () => {
+  const ctx = invocation();
+  const output = {
+    type: 'function_call' as const,
+    id: 'fc_1',
+    call_id: 'call_1',
+    namespace: 'floway_collaboration',
+    name: 'spawn_agent',
+    arguments: '{"message":"opaque"}',
+    encrypted_function_args: ['message'],
+    status: 'completed',
+  };
+  const result = await withPlaintextCollaboration(ctx, mockChatGatewayCtx(), async () =>
+    eventResult((async function* () {
+      yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: output });
+    })(), testTelemetryModelIdentity));
+  if (result.type !== 'events') throw new Error('Expected events');
+  await expect(async () => {
+    for await (const _frame of result.events) { /* consume */ }
+  }).rejects.toThrow('Plaintext collaboration upstream returned encrypted arguments');
+});
+
+test('preserves explicit null tools in response snapshots', async () => {
+  const ctx = invocation();
+  const snapshot = {
+    ...response([], [], 'floway_collaboration'),
+    tools: null,
+  } as unknown as ResponsesResult;
+  const result = await withPlaintextCollaboration(ctx, mockChatGatewayCtx(), async () =>
+    eventResult((async function* () {
+      yield eventFrame({ type: 'response.completed', response: snapshot });
+    })(), testTelemetryModelIdentity));
+  if (result.type !== 'events') throw new Error('Expected events');
+  for await (const frame of result.events) {
+    if (frame.type !== 'event' || frame.event.type !== 'response.completed') continue;
+    expect(Object.hasOwn(frame.event.response, 'tools')).toBe(true);
+    expect((frame.event.response as unknown as { tools: null }).tools).toBeNull();
+  }
 });

@@ -13,7 +13,7 @@ import {
 } from '@floway-dev/protocols/responses';
 
 const CLIENT_NAMESPACE = 'collaboration';
-const UPSTREAM_NAMESPACE_PREFIX = 'floway_collaboration_';
+const UPSTREAM_NAMESPACE = 'floway_collaboration';
 const MESSAGE_ACTIONS = new Set<string>(RESPONSES_INTER_AGENT_MESSAGE_ACTIONS);
 
 type NamespaceTool = ResponsesHostedTool & {
@@ -29,6 +29,16 @@ const namespaceTool = (tool: ResponsesTool): NamespaceTool | undefined =>
     ? tool as NamespaceTool
     : undefined;
 
+const toolInventories = (payload: CanonicalResponsesPayload): Array<readonly ResponsesTool[] | null | undefined> => [
+  payload.tools,
+  ...payload.input.flatMap(item =>
+    item.type === 'additional_tools' || item.type === 'tool_search_output' ? [item.tools] : []),
+];
+
+export const hasCollaborationNamespace = (payload: CanonicalResponsesPayload): boolean =>
+  toolInventories(payload).some(tools =>
+    (tools ?? []).some(tool => namespaceTool(tool)?.name === CLIENT_NAMESPACE));
+
 const namespaceNames = (payload: CanonicalResponsesPayload): Set<string> => {
   const names = new Set<string>();
   const visit = (tools: readonly ResponsesTool[] | null | undefined) => {
@@ -38,19 +48,16 @@ const namespaceNames = (payload: CanonicalResponsesPayload): Set<string> => {
   };
   visit(payload.tools);
   for (const item of payload.input) {
-    if (item.type === 'additional_tools') visit(item.tools);
+    if (item.type === 'additional_tools' || item.type === 'tool_search_output') visit(item.tools);
     if (item.type === 'function_call' && item.namespace !== undefined) names.add(item.namespace);
   }
   return names;
 };
 
-const randomNamespace = (occupied: ReadonlySet<string>): string => {
-  while (true) {
-    const bytes = crypto.getRandomValues(new Uint8Array(16));
-    const suffix = [...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('');
-    const candidate = `${UPSTREAM_NAMESPACE_PREFIX}${suffix}`;
-    if (!occupied.has(candidate)) return candidate;
-  }
+const upstreamNamespace = (occupied: ReadonlySet<string>): string => {
+  let candidate = UPSTREAM_NAMESPACE;
+  for (let suffix = 2; occupied.has(candidate); suffix += 1) candidate = `${UPSTREAM_NAMESPACE}_${suffix}`;
+  return candidate;
 };
 
 const rewriteMessageSchema = (tool: ResponsesTool, encrypted: boolean): ResponsesTool => {
@@ -109,25 +116,43 @@ const rewriteToolChoice = (
 };
 
 const requestItem = (item: ResponsesInputItem, upstreamNamespace: string): ResponsesInputItem => {
-  if (item.type === 'additional_tools') {
+  if (item.type === 'additional_tools' || item.type === 'tool_search_output') {
     return {
       ...item,
       tools: rewriteTools(item.tools, CLIENT_NAMESPACE, upstreamNamespace, false) ?? [],
     };
   }
   if (item.type !== 'function_call' || item.namespace !== CLIENT_NAMESPACE) return item;
+  // Codex removes this marker from replay for providers not named exactly
+  // `OpenAI`, including Floway. Absence must therefore remain the plaintext
+  // replay form; explicit null/non-empty values still prove encrypted mode.
+  // https://github.com/openai/codex/blob/c4f42d161ae44a8d696ee9fb595709661979d187/codex-rs/core/src/client.rs#L848-L860
+  if (
+    MESSAGE_ACTIONS.has(item.name)
+    && item.encrypted_function_args !== undefined
+    && (!Array.isArray(item.encrypted_function_args) || item.encrypted_function_args.length > 0)
+  ) {
+    throw new TypeError(`Cannot project encrypted collaboration history '${item.name}' onto a plaintext upstream`);
+  }
   const { encrypted_function_args: _plaintextMarker, ...rest } = item;
   return { ...rest, namespace: upstreamNamespace };
 };
 
 const clientItem = (item: ResponsesOutputItem, upstreamNamespace: string): ResponsesOutputItem => {
-  if (item.type === 'additional_tools') {
+  if (item.type === 'additional_tools' || item.type === 'tool_search_output') {
     return {
       ...item,
       tools: rewriteTools(item.tools, upstreamNamespace, CLIENT_NAMESPACE, true) ?? [],
     };
   }
   if (item.type !== 'function_call' || item.namespace !== upstreamNamespace) return item;
+  if (
+    MESSAGE_ACTIONS.has(item.name)
+    && item.encrypted_function_args !== undefined
+    && (!Array.isArray(item.encrypted_function_args) || item.encrypted_function_args.length > 0)
+  ) {
+    throw new TypeError(`Plaintext collaboration upstream returned encrypted arguments for '${item.name}'`);
+  }
   return {
     ...item,
     namespace: CLIENT_NAMESPACE,
@@ -135,16 +160,19 @@ const clientItem = (item: ResponsesOutputItem, upstreamNamespace: string): Respo
   };
 };
 
-const clientResponse = (response: ResponsesResult, upstreamNamespace: string): ResponsesResult => ({
-  ...response,
-  output: response.output.map(item => clientItem(item, upstreamNamespace)),
-  ...(response.tools !== undefined
-    ? { tools: rewriteTools(response.tools, upstreamNamespace, CLIENT_NAMESPACE, true) ?? undefined }
-    : {}),
-  ...(response.tool_choice !== undefined
-    ? { tool_choice: rewriteToolChoice(response.tool_choice, upstreamNamespace, CLIENT_NAMESPACE) }
-    : {}),
-});
+const clientResponse = (response: ResponsesResult, upstreamNamespace: string): ResponsesResult => {
+  const record = response as ResponsesResult & { tools?: ResponsesTool[] | null };
+  return {
+    ...response,
+    output: response.output.map(item => clientItem(item, upstreamNamespace)),
+    ...(Object.hasOwn(record, 'tools')
+      ? { tools: record.tools === null ? null : rewriteTools(record.tools, upstreamNamespace, CLIENT_NAMESPACE, true) }
+      : {}),
+    ...(response.tool_choice !== undefined
+      ? { tool_choice: rewriteToolChoice(response.tool_choice, upstreamNamespace, CLIENT_NAMESPACE) }
+      : {}),
+  } as ResponsesResult;
+};
 
 const clientEvent = (event: ResponsesStreamEvent, upstreamNamespace: string): ResponsesStreamEvent => {
   if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') {
@@ -172,10 +200,7 @@ const clientEvent = (event: ResponsesStreamEvent, upstreamNamespace: string): Re
 // https://github.com/openai/codex/blob/c4f42d161ae44a8d696ee9fb595709661979d187/codex-rs/core/tests/suite/subagent_notifications.rs#L1514-L1563
 export const withPlaintextCollaboration: ResponsesInterceptor = async (ctx, _gatewayCtx, run) => {
   if (ctx.targetApi !== 'responses') return await run();
-  const toolLists = [
-    ctx.payload.tools,
-    ...ctx.payload.input.flatMap(item => item.type === 'additional_tools' ? [item.tools] : []),
-  ];
+  const toolLists = toolInventories(ctx.payload);
   const collaborationCounts = toolLists.map(tools =>
     (tools ?? []).filter(tool => namespaceTool(tool)?.name === CLIENT_NAMESPACE).length);
   if (collaborationCounts.every(count => count === 0)) return await run();
@@ -183,15 +208,21 @@ export const withPlaintextCollaboration: ResponsesInterceptor = async (ctx, _gat
     throw new TypeError('Responses request carries multiple collaboration namespaces in one tool inventory');
   }
 
-  const upstreamNamespace = randomNamespace(namespaceNames(ctx.payload));
+  const targetNamespace = upstreamNamespace(namespaceNames(ctx.payload));
+  const clientPayload = ctx.payload;
   ctx.payload = {
     ...ctx.payload,
-    tools: rewriteTools(ctx.payload.tools, CLIENT_NAMESPACE, upstreamNamespace, false),
-    tool_choice: rewriteToolChoice(ctx.payload.tool_choice, CLIENT_NAMESPACE, upstreamNamespace),
-    input: ctx.payload.input.map(item => requestItem(item, upstreamNamespace)),
+    tools: rewriteTools(ctx.payload.tools, CLIENT_NAMESPACE, targetNamespace, false),
+    tool_choice: rewriteToolChoice(ctx.payload.tool_choice, CLIENT_NAMESPACE, targetNamespace),
+    input: ctx.payload.input.map(item => requestItem(item, targetNamespace)),
   };
 
-  const result = await run();
+  let result;
+  try {
+    result = await run();
+  } finally {
+    ctx.payload = clientPayload;
+  }
   if (result.type !== 'events') return result;
   return {
     ...result,
@@ -201,7 +232,7 @@ export const withPlaintextCollaboration: ResponsesInterceptor = async (ctx, _gat
           yield frame;
           continue;
         }
-        const event = clientEvent(frame.event, upstreamNamespace);
+        const event = clientEvent(frame.event, targetNamespace);
         yield event === frame.event ? frame : eventFrame(event);
       }
     })(),

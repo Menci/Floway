@@ -662,6 +662,29 @@ test('buildTargetRequest flattens namespace functions collision-safely and maps 
   assertEquals(result.target.tool_choice, { type: 'tool', name: 'web_run_2' });
 });
 
+test('buildTargetRequest removes collaboration message encryption from Messages schemas', async () => {
+  const result = await buildTargetRequest({
+    ...minimalPayload,
+    tools: [{
+      type: 'namespace',
+      name: 'collaboration',
+      tools: [{
+        type: 'function',
+        name: 'spawn_agent',
+        parameters: {
+          type: 'object',
+          properties: { message: { type: 'string', encrypted: true } },
+        },
+      }],
+    } as ResponsesTool],
+  });
+
+  assertEquals(result.target.tools?.[0].input_schema, {
+    type: 'object',
+    properties: { message: { type: 'string' } },
+  });
+});
+
 test('buildTargetRequest gives a schema-less function tool the empty object schema', async () => {
   const result = await buildTargetRequest({
     ...minimalPayload,

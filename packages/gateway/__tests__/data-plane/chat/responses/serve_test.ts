@@ -10,7 +10,7 @@ import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import type { CanonicalResponsesPayload, ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ResponsesPayload, ResponsesResult, ResponsesStreamEvent, ResponsesTool } from '@floway-dev/protocols/responses';
 import { type ModelCandidate, directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
@@ -595,6 +595,31 @@ test('generate falls through translate-out to chat-completions target', async ()
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
   assertEquals(callChatCompletions.mock.calls.length, 1);
+});
+
+test('generate excludes chat-completions targets for collaboration namespaces', async () => {
+  installRepo();
+  const callChatCompletions = vi.fn();
+  queueResolution([makeCandidate({
+    upstream: 'up_c',
+    endpoints: { chatCompletions: {} },
+    callChatCompletions,
+  })]);
+
+  const result = await responsesServe.generate({
+    payload: makePayload({
+      tools: [{
+        type: 'namespace',
+        name: 'collaboration',
+        tools: [{ type: 'function', name: 'spawn_agent', parameters: { type: 'object' } }],
+      } as ResponsesTool],
+    }),
+    ctx: makeGatewayCtx(),
+    headers: new Headers(),
+  });
+
+  assert(result.type !== 'events');
+  assertEquals(callChatCompletions.mock.calls.length, 0);
 });
 
 test('alias resolution swaps the inbound model id for the target and overlays rules onto the Responses IR', async () => {
