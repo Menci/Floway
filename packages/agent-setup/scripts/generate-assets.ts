@@ -9,6 +9,8 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { typescriptString } from './typescript-string.ts';
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(HERE, '..');
 const GENERATED_PATH = resolve(PACKAGE_ROOT, 'src/script-assets.generated.ts');
@@ -98,21 +100,6 @@ const renderSection = (section: SourceSection): string => {
   const end = section.end === undefined ? source.length : findBoundary(source, section.end, start, section.name);
   return source.slice(start, end) + (section.append ?? '');
 };
-
-const typescriptString = (value: string): string => `'${[...value].map(character => {
-  if (character === '\\') return '\\\\';
-  if (character === '\'') return '\\\'';
-  if (character === '\b') return '\\b';
-  if (character === '\f') return '\\f';
-  if (character === '\n') return '\\n';
-  if (character === '\r') return '\\r';
-  if (character === '\t') return '\\t';
-  const codePoint = character.charCodeAt(0);
-  if (codePoint < 0x20 || codePoint === 0x2028 || codePoint === 0x2029) {
-    return `\\u${codePoint.toString(16).padStart(4, '0')}`;
-  }
-  return character;
-}).join('')}'`;
 
 const sourceConstants = [...sourceFiles].map(([name]) => {
   const source = sourceByName.get(name);

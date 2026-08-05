@@ -47,7 +47,7 @@ export function UsageChart({ chart, hidden, valueFormatter }: { chart: UsageChar
     <UsageChartCallout chart={chart} labelByTime={labelByTime} point={point} valueFormatter={valueFormatter} />
   ), [chart, labelByTime, valueFormatter]);
 
-  // The chart keeps its own hover state across a range or view switch, so it
+  // The chart keeps its own hover state across a query switch, so it
   // can ask for a callout carrying legends from the dataset it just replaced.
   // Such a row is dropped rather than substituted -- a table describing the
   // data must not name a series the data does not have.

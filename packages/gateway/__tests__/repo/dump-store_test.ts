@@ -5,6 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import { expect, test } from 'vitest';
 
 import { createSqliteTestDb } from './test-sqlite.ts';
+import { decodeDumpBodyDescriptor } from '../../src/dump/storage-codec.ts';
 import type { DumpWriteRecord } from '../../src/dump/types.ts';
 import { FileDumpStore } from '../../src/repo/dump-store.ts';
 import { initRepo } from '../../src/repo/index.ts';
@@ -166,6 +167,74 @@ test('FileDumpStore round-trips an SSE record as a stream events array', async (
   if (fetched.response.body.type !== 'stream') throw new Error('expected stream');
   assertEquals(fetched.response.body.events.length, 2);
   assertEquals(fetched.response.body.events[0]!.frame.type, 'event');
+});
+
+test('FileDumpStore rejects malformed metadata with its row identity', async () => {
+  const db = await openDb();
+  const store = new FileDumpStore(db, new MemoryFileStore());
+  const record = baseRecord('01HZZ000000000000000000BADM', Date.UTC(2026, 5, 1, 12));
+  await store.put('key_x', record);
+  await db.prepare('UPDATE dump_records SET meta_json = ? WHERE key_id = ? AND id = ?')
+    .bind(JSON.stringify({ ...record.meta, upstream: undefined, status: '200' }), 'key_x', record.meta.id)
+    .run();
+
+  await expect(store.list('key_x', { limit: 10 }))
+    .rejects.toThrow(/Invalid dump record 01HZZ000000000000000000BADM metadata.*status/su);
+});
+
+test('FileDumpStore rejects malformed header pairs with their record and side', async () => {
+  const db = await openDb();
+  const store = new FileDumpStore(db, new MemoryFileStore());
+  const record = baseRecord('01HZZ000000000000000000BADH', Date.UTC(2026, 5, 1, 12));
+  await store.put('key_x', record);
+  await db.prepare('UPDATE dump_records SET request_headers_json = ? WHERE key_id = ? AND id = ?')
+    .bind(JSON.stringify([['x-bad', 1]]), 'key_x', record.meta.id)
+    .run();
+
+  await expect(store.get('key_x', record.meta.id))
+    .rejects.toThrow(/Invalid dump record 01HZZ000000000000000000BADH request headers/u);
+});
+
+test('FileDumpStore rejects malformed body descriptors before file access', async () => {
+  const db = await openDb();
+  const store = new FileDumpStore(db, new MemoryFileStore());
+  const record = baseRecord('01HZZ000000000000000000BADD', Date.UTC(2026, 5, 1, 12));
+  await store.put('key_x', record);
+  await db.prepare('UPDATE dump_records SET request_body_descriptor = ? WHERE key_id = ? AND id = ?')
+    .bind(JSON.stringify({ key: 'dumps/v1/key_x/request.gz', type: 'chunks' }), 'key_x', record.meta.id)
+    .run();
+
+  await expect(store.get('key_x', record.meta.id))
+    .rejects.toThrow(/Invalid dump record 01HZZ000000000000000000BADD request body descriptor.*type/su);
+});
+
+test('FileDumpStore rejects malformed stream events with record and file context', async () => {
+  const db = await openDb();
+  const files = new MemoryFileStore();
+  const store = new FileDumpStore(db, files);
+  const record: DumpWriteRecord = {
+    ...baseRecord('01HZZ000000000000000000BADE', Date.UTC(2026, 5, 1, 12)),
+    response: {
+      status: 200,
+      headers: [['content-type', 'text/event-stream']],
+      body: { type: 'stream', events: [{ frame: { type: 'done' }, ts: 1 }] },
+    },
+  };
+  await store.put('key_x', record);
+  const row = await db.prepare('SELECT response_body_descriptor FROM dump_records WHERE key_id = ? AND id = ?')
+    .bind('key_x', record.meta.id)
+    .first<{ response_body_descriptor: string }>();
+  if (row === null) throw new Error('expected stored dump row');
+  const descriptor = decodeDumpBodyDescriptor(row.response_body_descriptor, 'test response descriptor');
+  const malformedEvents = utf8(JSON.stringify([{ frame: { type: 'done' }, ts: 'late' }]));
+  const compressed = new Uint8Array(await new Response(
+    new Blob([malformedEvents as BlobPart]).stream().pipeThrough(new CompressionStream('gzip')),
+  ).arrayBuffer());
+  await files.put(descriptor.key, compressed);
+
+  await expect(store.get('key_x', record.meta.id)).rejects.toThrow(
+    new RegExp(`Invalid dump record ${record.meta.id} response events at key=${descriptor.key}.*ts`, 'su'),
+  );
 });
 
 test('FileDumpStore.list paginates newest-first with the (createdAt, id) cursor', async () => {

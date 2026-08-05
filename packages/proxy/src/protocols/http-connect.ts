@@ -57,11 +57,10 @@ const dialHttpConnectInner = async (
     'Proxy-Connection: keep-alive',
   ];
   if (auth) {
-    // RFC 7617 §2.1 defaults the credential charset to UTF-8. `btoa` on a
-    // JS string Latin-1-encodes each code unit, so a password byte in
-    // U+0080..U+00FF would go on the wire as that single Latin-1 byte
-    // and a code point > U+00FF would throw InvalidCharacterError mid-
-    // dial. Encode to UTF-8 bytes first, then base64.
+    // RFC 7617 leaves the default credential charset undefined and allows a
+    // server to advertise UTF-8. Floway consistently emits UTF-8 rather than
+    // mapping JavaScript code units directly to bytes.
+    // https://www.rfc-editor.org/rfc/rfc7617.html#section-2.1
     const token = base64EncodeBytes(utf8Bytes(`${auth.username}:${auth.password}`));
     lines.push(`Proxy-Authorization: Basic ${token}`);
   }

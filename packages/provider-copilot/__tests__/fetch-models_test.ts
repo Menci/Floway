@@ -23,7 +23,7 @@ const installRepoAndConfig = async () => {
     modelPrefix: null,
     modelsCache: null,
     hue: 210,
-    config: { githubToken, user: { id: 1, login: 't', name: null, avatar_url: '' } },
+    config: { githubHost: 'github.com', githubToken, user: { id: 1, login: 't', name: null, avatar_url: '' } },
   };
   initProviderRepo(() => ({
     upstreams: {
@@ -32,7 +32,7 @@ const installRepoAndConfig = async () => {
     },
   }));
   clearInProcessCopilotTokenCache();
-  return { id, githubToken };
+  return { id, githubHost: 'github.com', githubToken };
 };
 
 const copilotTokenResponse = (request: Request): Response | null => {

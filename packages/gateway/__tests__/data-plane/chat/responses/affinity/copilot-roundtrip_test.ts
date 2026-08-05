@@ -1,8 +1,9 @@
 import { expect, test } from 'vitest';
 
 import { wrapResponsesAffinityEgress } from '../../../../../src/data-plane/chat/responses/affinity/egress.ts';
-import { prepareResponsesAffinity } from '../../../../../src/data-plane/chat/responses/affinity/ingress.ts';
+import { analyzeResponsesAffinity } from '../../../../../src/data-plane/chat/responses/affinity/ingress.ts';
 import { AffinityCodec } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalResponsesPayload, ResponsesOutputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { initProviderRepo, providerModelOf, type UpstreamRecord } from '@floway-dev/provider';
@@ -32,6 +33,7 @@ const upstream: UpstreamRecord = {
   modelsCache: null,
   hue: 210,
   config: {
+    githubHost: 'github.com',
     githubToken: 'ghu_test',
     user: { id: 1, login: 'tester', name: null, avatar_url: 'https://example.com/avatar.png' },
   },
@@ -80,6 +82,7 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
       upstreamId: 'up-other',
       kind: 'custom',
       name: 'Other',
+      inboundHeaderAllowlist: [],
       disabledPublicModelIds: [],
       modelPrefix: null,
       modelsCache: null,
@@ -141,9 +144,9 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
         stream: true,
         store: false,
       };
-      const prepared = await prepareResponsesAffinity(payload, codec);
-      const exact = prepared.payloadForCandidate(candidate);
-      const foreign = prepared.payloadForCandidate(otherCandidate);
+      const prepared = await analyzeResponsesAffinity(payload, codec);
+      const exact = acceptedAffinityEvaluation(prepared, candidate).materialize();
+      const foreign = acceptedAffinityEvaluation(prepared, otherCandidate).materialize();
       expect(exact.input[0]).toMatchObject({ type: 'reasoning', id: publicItem.id });
       expect(foreign.input[0]).toEqual({ type: 'reasoning', id: publicItem.id, summary: [] });
 

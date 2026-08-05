@@ -5,14 +5,7 @@ import type {
   StoredDumpRecord,
   StoredDumpResponseBody,
 } from './types.ts';
-
-const TEXT_CONTENT_TYPE_PREFIXES = ['text/', 'application/json', 'application/javascript', 'application/xml', 'application/x-www-form-urlencoded'];
-
-const bytesToBase64 = (bytes: Uint8Array): string => {
-  let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]!);
-  return btoa(binary);
-};
+import { encodeBase64, isTextualMediaType } from '@floway-dev/protocols/common';
 
 const contentTypeOf = (headers: ReadonlyArray<readonly [string, string]>): string =>
   headers.find(([name]) => name.toLowerCase() === 'content-type')?.[1] ?? '';
@@ -21,13 +14,12 @@ const contentTypeOf = (headers: ReadonlyArray<readonly [string, string]>): strin
 // back to base64 when the bytes do not decode cleanly (a content-type
 // that lied about being text).
 const encodeBodyForWire = (bytes: Uint8Array, contentType: string): DumpBody => {
-  const base = contentType.toLowerCase().split(';')[0]!.trim();
-  if (TEXT_CONTENT_TYPE_PREFIXES.some(prefix => base.startsWith(prefix))) {
+  if (isTextualMediaType(contentType)) {
     try {
       return { encoding: 'utf8', data: new TextDecoder('utf-8', { fatal: true }).decode(bytes) };
     } catch {}
   }
-  return { encoding: 'base64', data: bytesToBase64(bytes) };
+  return { encoding: 'base64', data: encodeBase64(bytes) };
 };
 
 const responseBodyToWire = (body: StoredDumpResponseBody, contentType: string): DumpResponseBody => {

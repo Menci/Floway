@@ -9,17 +9,18 @@
 //
 // `DumpMetadata` and `DumpStreamEvent` are body-free and shared verbatim.
 
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { UpstreamProviderKind } from '@floway-dev/provider';
+import type { z } from 'zod';
+
+import type {
+  dumpErrorSchema,
+  dumpMetadataSchema,
+  dumpStreamEventSchema,
+  dumpUpstreamRefSchema,
+} from './schemas.ts';
 
 export type DumpRecordId = string;
 
-export interface DumpUpstreamRef {
-  id: string;
-  name: string;
-  kind: UpstreamProviderKind;
-  hue: number;
-}
+export type DumpUpstreamRef = z.infer<typeof dumpUpstreamRefSchema>;
 
 // What went wrong on a failed turn. Either a categorized api-error envelope
 // (real upstream non-2xx or a gateway-synthesized envelope — `kind` matches
@@ -28,29 +29,9 @@ export interface DumpUpstreamRef {
 // exceptions, source-emitted error events, downstream cancels, write
 // errors) carrying its one-line reason text. The categorized form stores
 // no status — `DumpMetadata.status` already does.
-export type DumpErrorMeta =
-  | { kind: 'upstream' | 'gateway' }
-  | { kind: 'failed'; reason: string };
+export type DumpErrorMeta = z.infer<typeof dumpErrorSchema>;
 
-export interface DumpMetadata {
-  id: DumpRecordId;
-  startedAt: number;        // unix ms
-  completedAt: number;      // unix ms
-  method: string;
-  path: string;             // includes query string
-  status: number | null;    // null when no upstream response status was produced
-  upstream: DumpUpstreamRef | null;
-  model: string | null;
-  inputTokens: number | null;
-  outputTokens: number | null;
-  // Captured application-payload bytes. HTTP counts body bytes; WebSocket
-  // counts UTF-8 message payloads. Transport framing/compression and the
-  // dump store's gzip encoding are excluded.
-  requestBytes: number;
-  responseBytes: number;
-  durationMs: number;
-  error: DumpErrorMeta | null;
-}
+export type DumpMetadata = z.infer<typeof dumpMetadataSchema>;
 
 // Canonical protocol frame the gateway's respond layer fans out to every
 // dump-enabled key. Stored as ProtocolFrame (not the SSE-serialized form)
@@ -61,10 +42,7 @@ export interface DumpMetadata {
 // `unknown` for the event payload because the storage layer is protocol-
 // agnostic — the dashboard dispatches the right per-protocol serializer
 // based on `meta.path`.
-export interface DumpStreamEvent {
-  frame: ProtocolFrame<unknown>;
-  ts: number;               // ms relative to startedAt
-}
+export type DumpStreamEvent = z.infer<typeof dumpStreamEventSchema>;
 
 // --- Storage shape (in-process, never serialized) ---
 

@@ -72,4 +72,17 @@ describe('parseCodexIdTokenClaims', () => {
     });
     expect(parseCodexIdTokenClaims(token).chatgptAccountId).toBe('a');
   });
+
+  test('rejects noncanonical JWT payload encodings', () => {
+    const token = makeJwt({
+      'https://api.openai.com/auth': { chatgpt_account_id: 'a', chatgpt_user_id: 'u', chatgpt_plan_type: 'plus' },
+      'https://api.openai.com/profile': { email: 'a@b' },
+      x: '',
+    });
+    const [header, payload, signature] = token.split('.');
+    expect(payload?.endsWith('Q')).toBe(true);
+    expect(() => parseCodexIdTokenClaims(`${header}.${payload}=.${signature}`)).toThrow();
+    expect(() => parseCodexIdTokenClaims(`${header}.${payload}\n.${signature}`)).toThrow();
+    expect(() => parseCodexIdTokenClaims(`${header}.${payload!.slice(0, -1)}R.${signature}`)).toThrow();
+  });
 });

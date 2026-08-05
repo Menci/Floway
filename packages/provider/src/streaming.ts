@@ -1,5 +1,5 @@
 import type { ProviderStreamResult } from './provider.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import { isEventStreamMediaType, type ProtocolFrame } from '@floway-dev/protocols/common';
 
 export type ProviderStreamParser<TEvent> = (
   body: ReadableStream<Uint8Array>,
@@ -35,7 +35,7 @@ export const streamingProviderCall = async <TEvent>(
     return { ok: false, response, modelKey };
   }
   const contentType = response.headers.get('content-type') ?? '';
-  if (!response.body || !contentType.includes('text/event-stream')) {
+  if (!response.body || !isEventStreamMediaType(contentType)) {
     const snippet = await readBodySnippet(response);
     throw new Error(`Upstream returned ${response.status} with content-type "${contentType || 'unknown'}" but stream is required (provider must force stream=true and return text/event-stream when response.ok). Body: ${snippet}`);
   }

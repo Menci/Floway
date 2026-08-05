@@ -1,7 +1,8 @@
-import { act, renderHook } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { useCallback } from 'react';
+import { describe, expect, it, test, vi } from 'vitest';
 
-import { useRefresh } from '../../../src/components/ui/use-refresh';
+import { useRefresh, useRefreshOnChange } from '../../../src/components/ui/use-refresh';
 
 interface Run { background: boolean; settle: () => void; signal: AbortSignal }
 
@@ -74,3 +75,108 @@ describe('refresh supersession', () => {
     expect(runs.map(run => run.background)).toEqual([true, false]);
   });
 });
+
+test('query-driven refresh commits the query only when its response arrives', async () => {
+  const runs: Array<{ settle: (succeeded: boolean) => void }> = [];
+  const reload = (_signal: AbortSignal, _options: { background: boolean; requestedAt: number }) =>
+    new Promise<boolean>(resolve => { runs.push({ settle: resolve }); });
+  const restore = vi.fn();
+  const onCommit = vi.fn();
+  const { result, rerender } = renderHook(
+    ({ query }) => useRefreshOnChange(query, 100, reload, restore, onCommit),
+    { initialProps: { query: { groupBy: 'model' } } },
+  );
+
+  rerender({ query: { groupBy: 'upstream' } });
+  await waitFor(() => expect(runs).toHaveLength(1));
+  expect(result.current.loadedQuery).toEqual({ groupBy: 'model' });
+
+  await act(async () => {
+    runs[0]!.settle(true);
+  });
+  expect(result.current.loadedQuery).toEqual({ groupBy: 'upstream' });
+  expect(result.current.loadedAt).toBeGreaterThan(100);
+  expect(onCommit).toHaveBeenCalledWith({ groupBy: 'model' }, { groupBy: 'upstream' });
+});
+
+test('query-driven refresh keeps the displayed query after a failed response', async () => {
+  const runs: Array<{ settle: (succeeded: boolean) => void }> = [];
+  const reload = (_signal: AbortSignal, _options: { background: boolean; requestedAt: number }) =>
+    new Promise<boolean>(resolve => { runs.push({ settle: resolve }); });
+  const restore = vi.fn();
+  const { result, rerender } = renderHook(
+    ({ query }) => useRefreshOnChange(query, 100, reload, restore),
+    { initialProps: { query: { groupBy: 'model' } } },
+  );
+
+  rerender({ query: { groupBy: 'upstream' } });
+  await waitFor(() => expect(runs).toHaveLength(1));
+  await act(async () => { runs[0]!.settle(false); });
+
+  expect(result.current.loadedQuery).toEqual({ groupBy: 'model' });
+  expect(result.current.loadedAt).toBe(100);
+  expect(restore).toHaveBeenCalledWith({ groupBy: 'model' });
+
+  await act(async () => { void result.current.refresh(); });
+  expect(runs).toHaveLength(2);
+});
+
+test.each(['superseded-first', 'newest-first'] as const)(
+  'query-driven refresh commits only the newest response when requests settle %s',
+  async settlementOrder => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(101);
+    const runs: Array<{
+      query: { groupBy: string };
+      requestedAt: number;
+      settle: (succeeded: boolean) => void;
+      signal: AbortSignal;
+    }> = [];
+    const responses: string[] = [];
+    const restore = vi.fn();
+    const onCommit = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ query }) => {
+        const reload = useCallback(async (signal: AbortSignal, { requestedAt }: { requestedAt: number }) => {
+          const succeeded = await new Promise<boolean>(resolve => {
+            runs.push({ query, requestedAt, settle: resolve, signal });
+          });
+          if (signal.aborted) return false;
+          if (succeeded) responses.push(query.groupBy);
+          return succeeded;
+        }, [query]);
+        return useRefreshOnChange(query, 100, reload, restore, onCommit);
+      },
+      { initialProps: { query: { groupBy: 'model' } } },
+    );
+
+    rerender({ query: { groupBy: 'upstream' } });
+    await waitFor(() => expect(runs).toHaveLength(1));
+    now.mockReturnValue(202);
+    rerender({ query: { groupBy: 'keyId' } });
+    await waitFor(() => expect(runs).toHaveLength(2));
+
+    expect(runs.map(run => run.requestedAt)).toEqual([101, 202]);
+    expect(runs[0]!.signal.aborted).toBe(true);
+    expect(runs[1]!.signal.aborted).toBe(false);
+    const first = settlementOrder === 'superseded-first' ? runs[0]! : runs[1]!;
+    const second = settlementOrder === 'superseded-first' ? runs[1]! : runs[0]!;
+    await act(async () => { first.settle(true); });
+
+    if (settlementOrder === 'superseded-first') {
+      expect(responses).toEqual([]);
+      expect(result.current.loadedQuery).toEqual({ groupBy: 'model' });
+      expect(result.current.loadedAt).toBe(100);
+      expect(onCommit).not.toHaveBeenCalled();
+    }
+
+    await act(async () => { second.settle(true); });
+
+    expect(responses).toEqual(['keyId']);
+    expect(result.current.loadedQuery).toEqual({ groupBy: 'keyId' });
+    expect(result.current.loadedAt).toBe(runs[1]!.requestedAt);
+    expect(restore).not.toHaveBeenCalled();
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenCalledWith({ groupBy: 'model' }, { groupBy: 'keyId' });
+    now.mockRestore();
+  },
+);

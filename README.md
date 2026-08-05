@@ -81,10 +81,10 @@ responses retain their upstream wire shape.
 
 | Provider | Connection | Model catalog |
 | --- | --- | --- |
-| GitHub Copilot | GitHub device OAuth | Fetched live from Copilot |
+| GitHub Copilot | GitHub device OAuth on `github.com` or a `*.ghe.com` tenant | Fetched live from Copilot |
 | Codex | ChatGPT subscription through the Codex CLI OAuth client | Fetched live from the Codex backend |
 | Claude Code | Claude.ai Pro, Max, Team, or Enterprise subscription through the Claude Code CLI OAuth client | Fetched live from Anthropic |
-| Custom | Configurable multi-protocol HTTP endpoint and credential | Live `/models` (OpenAI, Anthropic, or superset shapes), manual models, or both |
+| Custom | Configurable multi-protocol HTTP endpoint, credential, and per-header ingress passthrough/overwrite rules | Live `/models` (OpenAI, Anthropic, or superset shapes), manual models, or both |
 | Azure | Azure AI resource or Foundry project endpoint and API key | Configured models |
 | Ollama | ollama.com or a self-hosted Ollama-compatible server | Fetched live from Ollama, with optional manual overrides |
 

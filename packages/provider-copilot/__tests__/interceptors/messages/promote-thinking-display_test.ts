@@ -27,6 +27,7 @@ const makeCtx = (
     ...(thinking ? { thinking } : {}),
   },
   headers: new Headers(),
+  anthropicBeta: [],
   model: stubProviderModel({ endpoints: { messages: {} } }),
 });
 

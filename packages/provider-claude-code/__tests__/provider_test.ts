@@ -4,8 +4,8 @@ import { buildClaudeCodeCatalog, type ClaudeCodeApiModel } from '../src/models.t
 import { pricingForClaudeCodeModelKey } from '../src/pricing.ts';
 import { createClaudeCodeProvider } from '../src/provider.ts';
 import type { ClaudeCodeAccessTokenEntry, ClaudeCodeAccountCredential, ClaudeCodeUpstreamState } from '../src/state.ts';
-import { initProviderRepo, type FlagId, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
-import { noopUpstreamCallOptions } from '@floway-dev/test-utils';
+import { initProviderRepo, type FlagId, type MessagesUpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { noopMessagesUpstreamCallOptions, noopUpstreamCallOptions } from '@floway-dev/test-utils';
 
 const upstreamId = 'up_cc_provider';
 
@@ -84,14 +84,14 @@ const sseResponse = (): Response => new Response(
   { status: 200, headers: { 'content-type': 'text/event-stream' } },
 );
 
-const cliClientCallOpts = (overrides: Partial<UpstreamCallOptions> = {}): UpstreamCallOptions => ({
-  ...noopUpstreamCallOptions(),
+const cliClientCallOpts = (overrides: Partial<MessagesUpstreamCallOptions> = {}): MessagesUpstreamCallOptions => ({
+  ...noopMessagesUpstreamCallOptions(),
   headers: new Headers({
     'user-agent': 'claude-cli/2.1.181 (external, cli)',
     'x-app': 'cli',
-    'anthropic-beta': 'oauth-2025-04-20',
     'anthropic-version': '2023-06-01',
   }),
+  anthropicBeta: ['oauth-2025-04-20'],
   ...overrides,
 });
 
@@ -107,6 +107,25 @@ const stubModelsListFetch = (): ReturnType<typeof vi.spyOn> => vi.spyOn(globalTh
 );
 
 describe('createClaudeCodeProvider — factory surface', () => {
+  test('owns the Claude Code client header fingerprint on the instance', () => {
+    const provider = createClaudeCodeProvider(currentRecord);
+
+    expect(provider.inboundHeaderAllowlist).toEqual([
+      'accept',
+      /^x-stainless-(?:retry-count|timeout|lang|package-version|os|arch|runtime|runtime-version|helper-method)$/,
+      'anthropic-dangerous-direct-browser-access',
+      'anthropic-version',
+      'x-app',
+      'accept-language',
+      'sec-fetch-mode',
+      'user-agent',
+      'content-type',
+      'accept-encoding',
+      'x-claude-code-session-id',
+      'x-client-request-id',
+    ]);
+  });
+
   test('getProvidedModels mirrors the live /v1/models catalog under public aliases', async () => {
     stubModelsListFetch();
     const instance = createClaudeCodeProvider(currentRecord);
@@ -159,7 +178,7 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
       sonnetProviderModel,
       { max_tokens: 16, messages: [{ role: 'user', content: 'hello' }] },
       undefined,
-      noopUpstreamCallOptions(),
+      noopMessagesUpstreamCallOptions(),
     );
 
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
@@ -221,7 +240,7 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
       sonnetProviderModel,
       { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
       undefined,
-      { ...noopUpstreamCallOptions(), headers: new Headers({ 'user-agent': 'claude-cli/2.1.181' }) },
+      { ...noopMessagesUpstreamCallOptions(), headers: new Headers({ 'user-agent': 'claude-cli/2.1.181' }) },
     );
 
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;

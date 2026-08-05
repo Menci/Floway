@@ -1,6 +1,7 @@
+import { parseHex } from 'culori/fn';
 import { describe, expect, it } from 'vitest';
 
-import { blendHex, hexToRgb } from '../../src/lib/color';
+import { blendHex } from '../../src/lib/color';
 import { listCss } from '../../src/winui/controls/list.css';
 import { winuiTokenCss } from '../../src/winui/tokens';
 
@@ -53,6 +54,11 @@ const statedShare = (css: string, of: string) => {
   return stated;
 };
 
+const rgbBytes = (hex: string) => {
+  const { r, g, b } = parseHex(hex)!;
+  return [r, g, b].map(channel => Math.round(channel * 255));
+};
+
 describe('folded winui derivations', () => {
   it('keeps every accent tint the wash its recipe states', () => {
     const schemes = declarationsByScheme(winuiTokenCss);
@@ -100,6 +106,6 @@ describe('folded winui derivations', () => {
     // light value for both schemes would make either check vacuous.
     const schemes = declarationsByScheme(winuiTokenCss);
     expect(resolve(schemes[0]!, '--winui-accent-base')).not.toBe(resolve(schemes[1]!, '--winui-accent-base'));
-    expect(hexToRgb(resolve(schemes[0]!, '--winui-accent-base'))).toEqual([0, 103, 192]);
+    expect(rgbBytes(resolve(schemes[0]!, '--winui-accent-base'))).toEqual([0, 103, 192]);
   });
 });
