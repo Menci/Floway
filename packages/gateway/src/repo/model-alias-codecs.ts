@@ -1,7 +1,7 @@
-import type { AliasTarget, AnnouncedMetadata } from '@floway-dev/protocols/common';
 import { z } from 'zod';
 
 import { decodeStoredJson } from './stored-json.ts';
+import type { AliasTarget, AnnouncedMetadata } from '@floway-dev/protocols/common';
 
 const reasoningSchema = z.object({
   effort: z.string().optional(),
