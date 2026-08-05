@@ -16,7 +16,7 @@ import { customFetchModels } from './fetch.ts';
 import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, type ModelKind, type ModelPricing, parseNonNegativeDecimalString, type PriceVector, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
 import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, identityWrapUpstreamCall, ProviderModelsUnavailableError } from '@floway-dev/provider';
 
-const MAX_CUSTOM_MODEL_PAGES = 256;
+const MAX_CUSTOM_MODEL_PAGES = 32;
 const MAX_CUSTOM_MODELS = 4096;
 
 export interface CustomRawModel {

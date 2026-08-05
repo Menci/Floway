@@ -43,11 +43,13 @@ test('fetchCustomModels follows Anthropic cursor pages and deduplicates their mo
   const { config } = assertCustomUpstreamRecord(upstreamRecord());
   config.modelsFetch.endpoint = '/v1/models?region=us';
   const afterIds: Array<string | null> = [];
+  const limits: Array<string | null> = [];
   const regions: Array<string | null> = [];
   await withMockedFetch(
     request => {
       const afterId = new URL(request.url).searchParams.get('after_id');
       afterIds.push(afterId);
+      limits.push(new URL(request.url).searchParams.get('limit'));
       regions.push(new URL(request.url).searchParams.get('region'));
       return afterId === null
         ? jsonResponse({
@@ -69,6 +71,7 @@ test('fetchCustomModels follows Anthropic cursor pages and deduplicates their mo
     async () => {
       const result = await fetchCustomModels(config, directFetcher);
       assertEquals(afterIds, [null, 'claude-opus-4-5']);
+      assertEquals(limits, [null, '1000']);
       assertEquals(regions, ['us', 'us']);
       assertEquals(result.data.map(model => model.id), ['claude-opus-4-5', 'claude-sonnet-4-5']);
       assertEquals(result.data[0].id, 'claude-opus-4-5');
@@ -247,8 +250,8 @@ test('fetchCustomModels bounds unique-cursor pagination', async () => {
     return Promise.resolve(jsonResponse({ data: [{ id: `model-${calls}` }], has_more: true, last_id: `cursor-${calls}` }));
   };
   const error = await assertRejects(() => fetchCustomModels(config, fetcher), ProviderModelsUnavailableError);
-  assertEquals(calls, 256);
-  assertEquals((error.cause as Error).message, 'Custom /models pagination exceeded 256 pages');
+  assertEquals(calls, 32);
+  assertEquals((error.cause as Error).message, 'Custom /models pagination exceeded 32 pages');
 });
 
 test('fetchCustomModels bounds the number of models retained for caching', async () => {

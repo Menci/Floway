@@ -3,6 +3,8 @@ import { dispatchUpstreamFetch, type UpstreamFetchOptions, joinBaseAndPath } fro
 
 // https://docs.anthropic.com/en/api/versioning
 const ANTHROPIC_VERSION = '2023-06-01';
+// https://github.com/anthropics/anthropic-sdk-python/blob/f5c30d0490fb7bcd8e0b65d8d8e63c0e7d1bfe59/src/anthropic/resources/models.py#L89-L152
+const ANTHROPIC_MAX_MODELS_PAGE_SIZE = '1000';
 
 // Endpoint key is the OpenAI-canonical path fragment (`/chat/completions`,
 // `/images/generations`, ...). The default upstream URL is the key prefixed
@@ -82,5 +84,6 @@ export const customFetchModels = (
   if (afterId === undefined) return customFetchInternal(config, path, init, options);
   const page = new URL(path, 'https://floway.invalid');
   page.searchParams.set('after_id', afterId);
+  if (!page.searchParams.has('limit')) page.searchParams.set('limit', ANTHROPIC_MAX_MODELS_PAGE_SIZE);
   return customFetchInternal(config, `${page.pathname}${page.search}`, init, options);
 };
