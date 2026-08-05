@@ -38,6 +38,7 @@ const record = upstreamRecord('up_test', {
     authStyle: 'bearer',
     apiKey: '',
     endpoints: { responses: {} },
+    ingressHeadersRules: [],
     modelsFetch: { enabled: false },
     models: [model('model-a'), model('model-b')],
   },

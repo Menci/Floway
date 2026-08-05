@@ -10,7 +10,7 @@ import {
   type PerformancePercentile,
   type PerformanceRange,
 } from './overview';
-import { dashboardBucketFrames, formatAxisDate, type ChartBucket } from '../charts/dashboard-time';
+import { dashboardBucketFrames, dashboardBucketKeyForUtcHour, formatAxisDate, type ChartBucket } from '../charts/dashboard-time';
 import { withUniqueSeriesLegends, type ChartSeries } from '../charts/series-legends';
 import { lineSeries } from '../charts/series-plot';
 
@@ -39,7 +39,10 @@ export const buildPerformanceChart = (
     label: resolvePerformanceGroup(group, groupBy, labels),
     colorSlot,
   })));
-  const values = new Map(records.map(record => [`${record.bucket}\0${record.group}`, record]));
+  const values = new Map(records.map(record => [
+    `${range === 'today' ? dashboardBucketKeyForUtcHour(range, record.bucket) : record.bucket}\0${record.group}`,
+    record,
+  ]));
   return {
     entries,
     buckets,

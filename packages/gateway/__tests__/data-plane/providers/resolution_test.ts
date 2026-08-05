@@ -24,6 +24,7 @@ test('enumerateModelCandidates strips an -YYYYMMDD suffix when nothing matched a
       config: {
         baseUrl: 'https://custom.example.com',
         authStyle: 'bearer',
+        ingressHeadersRules: [],
         apiKey: 'sk-custom',
         endpoints: { messages: {} },
       },
@@ -78,6 +79,7 @@ test('enumerateModelCandidates does not retry when the inbound id has no dated s
       config: {
         baseUrl: 'https://custom.example.com',
         authStyle: 'bearer',
+        ingressHeadersRules: [],
         apiKey: 'sk-custom',
         endpoints: { messages: {} },
       },
@@ -112,6 +114,7 @@ test('enumerateModelCandidates prefers the literal dated id over the stripped ba
       config: {
         baseUrl: 'https://custom.example.com',
         authStyle: 'bearer',
+        ingressHeadersRules: [],
         apiKey: 'sk-custom',
         endpoints: { messages: {} },
       },
@@ -147,13 +150,13 @@ test('enumerateRealModelCandidates only loads the selected providers\' catalogs'
     id: 'up_first',
     name: 'First',
     sortOrder: 0,
-    config: { baseUrl: 'https://first.example.com', authStyle: 'bearer', apiKey: 'sk-first', endpoints: { responses: {} } },
+    config: { baseUrl: 'https://first.example.com', authStyle: 'bearer', apiKey: 'sk-first', endpoints: { responses: {} }, ingressHeadersRules: [] },
   }));
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_second',
     name: 'Second',
     sortOrder: 100,
-    config: { baseUrl: 'https://second.example.com', authStyle: 'bearer', apiKey: 'sk-second', endpoints: { responses: {} } },
+    config: { baseUrl: 'https://second.example.com', authStyle: 'bearer', apiKey: 'sk-second', endpoints: { responses: {} }, ingressHeadersRules: [] },
   }));
 
   const providers = await listModelProviders(null);
@@ -233,13 +236,13 @@ test('enumerateModelCandidates: healthy upstream still resolves alongside a reje
     id: 'up_broken',
     name: 'Broken upstream',
     sortOrder: 1,
-    config: { baseUrl: 'https://broken.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} } },
+    config: { baseUrl: 'https://broken.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
   }));
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_ok',
     name: 'Healthy upstream',
     sortOrder: 2,
-    config: { baseUrl: 'https://ok.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} } },
+    config: { baseUrl: 'https://ok.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
   }));
 
   await withMockedFetch(
@@ -284,7 +287,7 @@ test('enumerateModelCandidates does NOT trigger the dated-suffix retry on a wron
     id: 'up_chat_only',
     name: 'ChatOnly',
     sortOrder: 1,
-    config: { baseUrl: 'https://chatonly.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} } },
+    config: { baseUrl: 'https://chatonly.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
   }));
 
   await withMockedFetch(
@@ -325,7 +328,7 @@ test('enumerateModelCandidates deduplicates failedUpstreams across the dated-suf
     id: 'up_broken',
     name: 'Broken',
     sortOrder: 1,
-    config: { baseUrl: 'https://broken.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} } },
+    config: { baseUrl: 'https://broken.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
   }));
 
   await withMockedFetch(
@@ -367,7 +370,7 @@ test('enumerateModelCandidates rethrows AbortError from a per-upstream catalog f
     id: 'up_aborting',
     name: 'Aborting',
     sortOrder: 1,
-    config: { baseUrl: 'https://aborting.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} } },
+    config: { baseUrl: 'https://aborting.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
   }));
 
   const abortError = Object.assign(new Error('aborted'), { name: 'AbortError' });
@@ -460,11 +463,11 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
     await repo.upstreams.deleteAll();
     await repo.upstreams.save(buildCustomUpstreamRecord({
       id: 'up_a', name: 'A', sortOrder: 1,
-      config: { baseUrl: 'https://a.example.com', authStyle: 'bearer', apiKey: 'sk-a', endpoints: { chatCompletions: {} } },
+      config: { baseUrl: 'https://a.example.com', authStyle: 'bearer', apiKey: 'sk-a', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
     }));
     await repo.upstreams.save(buildCustomUpstreamRecord({
       id: 'up_b', name: 'B', sortOrder: 2,
-      config: { baseUrl: 'https://b.example.com', authStyle: 'bearer', apiKey: 'sk-b', endpoints: { chatCompletions: {} } },
+      config: { baseUrl: 'https://b.example.com', authStyle: 'bearer', apiKey: 'sk-b', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
     }));
   };
 

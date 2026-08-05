@@ -8,6 +8,7 @@ import { directFetcher } from '@floway-dev/provider';
 import { assertEquals, assertExists, assertRejects, jsonResponse, noopMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 interface BuildOptions {
+  ingressHeadersRules?: { key: string; value: string | null }[];
   modelsFetchEnabled?: boolean;
   models?: UpstreamModelConfig[];
 }
@@ -32,9 +33,50 @@ const buildCustomUpstream = (options: BuildOptions = {}): UpstreamRecord => ({
     authStyle: 'bearer',
     apiKey: 'sk-test',
     endpoints: { chatCompletions: {} },
+    ingressHeadersRules: options.ingressHeadersRules ?? [],
     modelsFetch: { enabled: options.modelsFetchEnabled ?? true },
     models: options.models ?? [],
   },
+});
+
+test('Custom applies empty and override rules after admitted headers reach the provider', async () => {
+  const provider = createCustomProvider(buildCustomUpstream({
+    ingressHeadersRules: [
+      { key: 'x-passthrough', value: null },
+      { key: 'x-empty', value: '' },
+      { key: 'x-override', value: 'configured' },
+      { key: 'x-absent', value: 'not-synthesized' },
+    ],
+    modelsFetchEnabled: false,
+    models: [{ upstreamModelId: 'chat', kind: 'chat', endpoints: { chatCompletions: {} } }],
+  }));
+  let observed: Headers | undefined;
+
+  await withMockedFetch(
+    request => {
+      observed = request.headers;
+      return sseResponse();
+    },
+    async () => {
+      const [model] = await provider.instance.getProvidedModels(directFetcher);
+      const opts = noopUpstreamCallOptions({
+        headers: new Headers({
+          'x-admitted-by-gateway': 'gateway-value',
+          'x-passthrough': 'client-pass',
+          'x-empty': 'client-empty',
+          'x-override': 'client-override',
+        }),
+      });
+      await provider.instance.callChatCompletions(model, { messages: [] }, undefined, opts);
+    },
+  );
+
+  assertExists(observed);
+  assertEquals(observed.get('x-admitted-by-gateway'), 'gateway-value');
+  assertEquals(observed.get('x-passthrough'), 'client-pass');
+  assertEquals(observed.get('x-empty'), '');
+  assertEquals(observed.get('x-override'), 'configured');
+  assertEquals(observed.has('x-absent'), false);
 });
 
 test('getProvidedModels returns only manual models and never fetches when modelsFetch is disabled', async () => {

@@ -2,13 +2,13 @@ import { isEqual, uniqWith } from 'es-toolkit';
 
 import { internalModelFromProviderModel } from './catalog.ts';
 import { fetchUpstreamModelsCached } from './models-cache.ts';
-import { listModelProviders } from './registry.ts';
+import { listModelProviders, type GatewayProvider } from './registry.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasRecord } from '../../repo/types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelKind } from '@floway-dev/protocols/common';
-import { isAbortError, type Fetcher, type ModelCandidate, type Provider } from '@floway-dev/provider';
+import { isAbortError, type Fetcher, type ModelCandidate } from '@floway-dev/provider';
 
 // Resolve one inbound id against one upstream. The upstream's
 // `modelPrefix.addressable` configuration decides which lookup branches
@@ -25,7 +25,7 @@ import { isAbortError, type Fetcher, type ModelCandidate, type Provider } from '
 // catalog regardless of kind, so the caller can distinguish
 // "id is unknown to this upstream" from "id exists but wrong kind".
 const enumerateOneUpstreamCandidates = async (
-  provider: Provider,
+  provider: GatewayProvider,
   modelId: string,
   kind: ModelKind,
   fetcher: Fetcher,
@@ -73,7 +73,7 @@ const enumerateOneUpstreamCandidates = async (
 export const enumerateRealModelCandidates = async (
   modelId: string,
   kind: ModelKind,
-  providers: readonly Provider[],
+  providers: readonly GatewayProvider[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<{
@@ -115,7 +115,7 @@ const DATED_SUFFIX = /-\d{8}$/;
 const resolveRealCandidates = async (
   modelId: string,
   kind: ModelKind,
-  providers: readonly Provider[],
+  providers: readonly GatewayProvider[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<{

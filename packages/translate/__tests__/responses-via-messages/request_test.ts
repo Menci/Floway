@@ -448,7 +448,7 @@ test('buildTargetRequest resolves remote input images through the shared loader'
     },
     {
       loadRemoteImage: stubRemoteImageLoader({
-        mediaType: 'image/png',
+        mediaType: 'IMAGE/PNG; charset=binary',
         data: new Uint8Array([1, 2, 3]),
       }),
     },

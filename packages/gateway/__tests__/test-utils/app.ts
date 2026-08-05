@@ -57,6 +57,7 @@ export const MOCKED_FETCH_EGRESS: ProxyFallbackEntry[] = [{ id: 'direct_fetch' }
 
 export const buildCopilotUpstreamRecord = (githubAccount: CopilotAccountFixture, overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
   const config = {
+    githubHost: 'github.com',
     githubToken: githubAccount.token,
     user: githubAccount.user,
   };
@@ -86,6 +87,7 @@ export const buildCustomUpstreamRecord = (overrides: Partial<UpstreamRecord> = {
   const config = {
     baseUrl: 'https://custom.example.com',
     authStyle: 'bearer',
+    ingressHeadersRules: [],
     apiKey: 'sk-custom',
     endpoints: { chatCompletions: {} },
   };

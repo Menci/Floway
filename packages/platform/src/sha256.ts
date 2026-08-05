@@ -1,3 +1,5 @@
+import { hex } from '@scure/base';
+
 // Hex-encoded SHA-256 digest. Used for content-addressed cache keys and for
 // integrity-checking spilled file payloads — anywhere the runtime needs a
 // stable hash of arbitrary bytes. Web Crypto is available in every JS runtime
@@ -9,5 +11,5 @@
 // BufferSource check fails on slices and SharedArrayBuffer-backed inputs.
 export const sha256Hex = async (bytes: Uint8Array): Promise<string> => {
   const digest = await crypto.subtle.digest('SHA-256', new Uint8Array(bytes));
-  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+  return hex.encode(new Uint8Array(digest));
 };

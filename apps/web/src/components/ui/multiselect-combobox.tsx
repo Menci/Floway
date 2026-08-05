@@ -22,6 +22,7 @@ export function MultiselectCombobox({
   className,
   clearLabel,
   closedLabel = '',
+  disabled = false,
   freeform = false,
   normalizeValue = entry => entry,
   onChange,
@@ -35,6 +36,7 @@ export function MultiselectCombobox({
   className?: string;
   clearLabel?: string;
   closedLabel?: string;
+  disabled?: boolean;
   freeform?: boolean;
   normalizeValue?: (entry: string) => string;
   onChange: (value: string[]) => void;
@@ -63,6 +65,7 @@ export function MultiselectCombobox({
   return <Combobox
     aria-label={ariaLabel}
     className={className}
+    disabled={disabled}
     freeform={freeform}
     multiselect
     onChange={event => setQuery(event.target.value)}

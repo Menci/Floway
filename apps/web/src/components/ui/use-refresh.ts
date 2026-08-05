@@ -4,10 +4,18 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 // without writing state if it aborted. It also receives whether anybody asked
 // for the run: a background run must not clear a failure nobody has read yet.
 export interface RefreshControl {
+  cancel: () => void;
   refresh: () => Promise<void>;
   poll: (options: { background: boolean }) => Promise<void>;
   refreshing: boolean;
 }
+
+export interface RefreshOnChangeControl<Query> extends RefreshControl {
+  loadedAt: number;
+  loadedQuery: Query;
+}
+
+interface QueryRefreshOptions { background: boolean; requestedAt: number }
 
 export const useRefresh = (
   reload: (signal: AbortSignal, options: { background: boolean }) => Promise<void>,
@@ -16,6 +24,12 @@ export const useRefresh = (
   const controllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => () => controllerRef.current?.abort(), []);
+
+  const cancel = useCallback(() => {
+    controllerRef.current?.abort();
+    controllerRef.current = null;
+    setRefreshing(false);
+  }, []);
 
   const poll = useCallback(async ({ background }: { background: boolean }) => {
     controllerRef.current?.abort();
@@ -36,7 +50,7 @@ export const useRefresh = (
 
   const refresh = useCallback(() => poll({ background: false }), [poll]);
 
-  return { poll, refresh, refreshing };
+  return { cancel, poll, refresh, refreshing };
 };
 
 const sameQuery = <Query extends Record<string, unknown>>(left: Query, right: Query): boolean =>
@@ -44,31 +58,48 @@ const sameQuery = <Query extends Record<string, unknown>>(left: Query, right: Qu
 
 /**
  * A page whose data is a function of a query refetches whenever the query
- * changes. `reload` reports the moment the answer lands by calling `arrived`,
- * and that is where the query the data on screen came back for is recorded. A
- * "have I mounted yet" flag instead would make StrictMode's double invocation
+ * changes. The query is committed only when `reload` returns true, keeping the
+ * controls and URL paired with the usable response on screen. A "have I
+ * mounted yet" flag would make StrictMode's double invocation
  * indistinguishable from a real change and refetch on every visit; recording
- * the query at request time instead would strand a run torn down before it
- * answered.
+ * the query at request time would strand a run torn down before it answered.
  *
  * `query` also carries the identity every run and the poll interval hang from,
  * so the caller holds it across the renders in which its fields do not change.
  */
 export const useRefreshOnChange = <Query extends Record<string, unknown>>(
   query: Query,
-  reload: (signal: AbortSignal, options: { background: boolean }, arrived: () => void) => Promise<void>,
-): RefreshControl => {
+  initialLoadedAt: number,
+  reload: (signal: AbortSignal, options: QueryRefreshOptions) => Promise<boolean>,
+  restore: (query: Query) => void,
+  onCommit?: (previous: Query, next: Query) => void,
+): RefreshOnChangeControl<Query> => {
   const loadedFor = useRef(query);
-  const control = useRefresh(useCallback(
-    (signal: AbortSignal, options: { background: boolean }) => reload(signal, options, () => { loadedFor.current = query; }),
-    [query, reload],
-  ));
-  const { refresh } = control;
+  const [loadedAt, setLoadedAt] = useState(initialLoadedAt);
+  const [loadedQuery, setLoadedQuery] = useState(query);
+  const control = useRefresh(useCallback(async (signal: AbortSignal, options: { background: boolean }) => {
+    const requestedAt = Date.now();
+    const succeeded = await reload(signal, { ...options, requestedAt });
+    if (signal.aborted) return;
+    if (!succeeded) {
+      restore(loadedFor.current);
+      return;
+    }
+    const previous = loadedFor.current;
+    loadedFor.current = query;
+    setLoadedQuery(query);
+    setLoadedAt(requestedAt);
+    onCommit?.(previous, query);
+  }, [onCommit, query, reload, restore]));
+  const { cancel, refresh } = control;
 
   useEffect(() => {
-    if (sameQuery(loadedFor.current, query)) return;
+    if (sameQuery(loadedFor.current, query)) {
+      cancel();
+      return;
+    }
     void refresh();
-  }, [query, refresh]);
+  }, [cancel, query, refresh]);
 
-  return control;
+  return { ...control, loadedAt, loadedQuery };
 };

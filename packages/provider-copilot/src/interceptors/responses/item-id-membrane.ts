@@ -1,6 +1,6 @@
 import { unwrapCopilotItemId, wrapCopilotItemId } from './item-id-carrier.ts';
 import type { CopilotResponsesBoundaryInterceptor } from './types.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import { encodeHex, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalResponsesPayload, ResponsesCompactionResult, ResponsesInputItem, ResponsesOutputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 // OpenAI's published examples establish these item-specific prefixes. Keeping
@@ -37,7 +37,7 @@ const copilotOutputItemType = (item: ResponsesOutputItem): CopilotOutputItemType
 
 const createPublicItemId = (type: CopilotOutputItemType): string => {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
-  const suffix = [...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('');
+  const suffix = encodeHex(bytes);
   return `${COPILOT_OUTPUT_ITEM_POLICIES[type].prefix}_${suffix}`;
 };
 

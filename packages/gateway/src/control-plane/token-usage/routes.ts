@@ -32,7 +32,8 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
       repo.users.listIncludingDeleted(),
       repo.apiKeys.listIncludingDeleted(),
     ]);
-    const records = aggregateUsageByUserForDisplay(rawRecords, buildKeyToUserMap(keys));
+    const keyToUser = buildKeyToUserMap(keys);
+    const records = aggregateUsageByUserForDisplay(rawRecords, keyToUser);
 
     if (query.include_user_metadata !== '1') return c.json(records);
     const userMetadata = users
@@ -51,23 +52,21 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
 
   const rawRecords = await repo.usage.query({ keyId: explicitKeyId, start, end });
   const filtered = explicitKeyId ? rawRecords : rawRecords.filter(r => ownedSet.has(r.keyId));
-  const records = aggregateUsageForDisplay(filtered);
-
   const keyMap = new Map(keys.map(k => [k.id, k]));
-  const recordsWithKeyMetadata = records.map(r => {
+  const records = aggregateUsageForDisplay(filtered);
+  const withKeyMetadata = records.map(r => {
     const k = keyMap.get(r.keyId);
     if (!k) throw new Error(`telemetry row references unknown key ${r.keyId} for user ${resolved.scopeUserId}`);
     return { ...r, keyName: k.name, keyCreatedAt: k.createdAt };
   });
-
-  if (query.include_key_metadata !== '1') return c.json(recordsWithKeyMetadata);
+  if (query.include_key_metadata !== '1') return c.json(withKeyMetadata);
 
   const keyMetadata = keys
     .map(k => ({ id: k.id, name: k.name, createdAt: k.createdAt }))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
   return c.json({
     view: 'self-by-key',
-    records: recordsWithKeyMetadata,
+    records: withKeyMetadata,
     keys: keyMetadata,
   } satisfies TokenUsageByKeyResponse);
 };

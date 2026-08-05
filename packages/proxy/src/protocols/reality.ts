@@ -46,7 +46,7 @@ import { sha256, sha512 } from '@noble/hashes/sha2.js';
 import { setCryptoImplementation, makeTLSClient } from '@reclaimprotocol/tls';
 import { webcryptoCrypto } from '@reclaimprotocol/tls/webcrypto';
 
-import { base64DecodeBytes, copy, utf8Bytes, randomBytes, hexDecode } from '../bytes.ts';
+import { base64UrlDecodeBytes, copy, utf8Bytes, randomBytes, hexDecode } from '../bytes.ts';
 import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../dial-target.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { RealityProxyConfig } from '../proxy-config.ts';
@@ -80,7 +80,7 @@ export const dialReality = async (
   ensureCrypto();
   let serverPub: Uint8Array<ArrayBuffer>;
   try {
-    serverPub = base64UrlDecode(config.publicKey);
+    serverPub = base64UrlDecodeBytes(config.publicKey);
   } catch (cause) {
     throw new ProxyDialError('REALITY: invalid base64 in pbk', 'config', { cause });
   }
@@ -413,9 +413,6 @@ export const verifyRealityLeaf = (authKey: Uint8Array, leafDer: Uint8Array, leaf
     throw new ProxyDialError('REALITY: server HMAC-SHA512 over leaf pubkey did not match cert signatureValue', 'proxy-handshake');
   }
 };
-
-const base64UrlDecode = (s: string): Uint8Array<ArrayBuffer> =>
-  base64DecodeBytes(s.replace(/-/g, '+').replace(/_/g, '/').padEnd(s.length + ((4 - (s.length % 4)) % 4), '='));
 
 /**
  * Parse REALITY's `sid` URI parameter into the 8-byte slice that fills the

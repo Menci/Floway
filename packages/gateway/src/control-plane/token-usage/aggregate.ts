@@ -1,5 +1,6 @@
 import type { UsageRecord } from '../../repo/types.ts';
-import { addDecimalStrings, multiplyDecimalStrings, type BillingMetric, type DecimalString } from '@floway-dev/protocols/common';
+import { createTelemetryBucket, type TelemetryBucketGranularity } from '../shared/telemetry-bucket.ts';
+import { addDecimalStrings, multiplyDecimalStrings, tokenUsageUnattributedUserId, usageUpstreamDimensionValue, type BillingMetric, type DecimalString } from '@floway-dev/protocols/common';
 
 export interface DisplayUsageMetric {
   metric: BillingMetric;
@@ -22,6 +23,23 @@ export interface DisplayUsageByUserRecord {
   requests: number;
   metrics: DisplayUsageMetric[];
   cost: DecimalString | null;
+}
+
+export type UsageOverviewGroupBy = 'keyId' | 'userId' | 'model' | 'upstream';
+
+export interface UsageOverviewRecord {
+  bucket: string;
+  group: string;
+  requests: number;
+  metrics: DisplayUsageMetric[];
+  cost: DecimalString | null;
+}
+
+export interface UsageOverviewAggregateOptions {
+  bucket: TelemetryBucketGranularity;
+  groupBy: UsageOverviewGroupBy | 'none';
+  timeZone?: string;
+  timezoneOffsetMinutes: number;
 }
 
 const recordCostUsd = (record: UsageRecord): DecimalString | null => {
@@ -49,43 +67,111 @@ const accumulate = (
   }
 };
 
-export function aggregateUsageForDisplay(records: readonly UsageRecord[]): DisplayUsageRecord[] {
-  const byKey = new Map<string, DisplayUsageRecord>();
+interface UsageDisplayFields {
+  model: string;
+  hour: string;
+  requests: number;
+  metrics: DisplayUsageMetric[];
+  cost: DecimalString | null;
+}
 
+const aggregateUsage = <Coordinate extends object>(
+  records: readonly UsageRecord[],
+  coordinateFor: (record: UsageRecord) => { key: string; fields: Coordinate },
+  compare: (left: UsageDisplayFields & Coordinate, right: UsageDisplayFields & Coordinate) => number,
+): Array<UsageDisplayFields & Coordinate> => {
+  const buckets = new Map<string, UsageDisplayFields & Coordinate>();
   for (const record of records) {
-    const key = `${record.keyId}\0${record.model}\0${record.hour}`;
-    let existing = byKey.get(key);
+    const coordinate = coordinateFor(record);
+    let existing = buckets.get(coordinate.key);
     if (!existing) {
-      existing = { keyId: record.keyId, model: record.model, hour: record.hour, requests: 0, metrics: [], cost: null };
-      byKey.set(key, existing);
+      existing = {
+        ...coordinate.fields,
+        model: record.model,
+        hour: record.hour,
+        requests: 0,
+        metrics: [],
+        cost: null,
+      };
+      buckets.set(coordinate.key, existing);
     }
     accumulate(existing, record);
   }
+  return [...buckets.values()].sort(compare);
+};
 
-  return [...byKey.values()].sort((a, b) => a.hour.localeCompare(b.hour) || a.keyId.localeCompare(b.keyId) || a.model.localeCompare(b.model));
+export function aggregateUsageForDisplay(records: readonly UsageRecord[]): DisplayUsageRecord[] {
+  return aggregateUsage(
+    records,
+    record => ({ key: `${record.keyId}\0${record.model}\0${record.hour}`, fields: { keyId: record.keyId } }),
+    (left, right) => left.hour.localeCompare(right.hour) || left.keyId.localeCompare(right.keyId) || left.model.localeCompare(right.model),
+  );
 }
 
-// Aggregates per-key UsageRecords into per-(user, model, hour) rows. Records
-// whose keyId no longer resolves to a user (a key the operator hard-deleted by
-// hand directly in the DB, etc.) collapse into a synthetic userId 0 so the
-// dashboard can still surface the lost rows; the keyToUser map is populated
-// from active + soft-deleted api_keys, so a normal soft delete still resolves.
+// Token Usage assigns an unrecoverable key owner to the synthetic user bucket
+// so its record and overview responses both preserve unattributed rows.
+export const usageUserIdForKey = (
+  keyId: string,
+  keyToUser: ReadonlyMap<string, number>,
+): number => keyToUser.get(keyId) ?? tokenUsageUnattributedUserId;
+
 export function aggregateUsageByUserForDisplay(
   records: readonly UsageRecord[],
   keyToUser: ReadonlyMap<string, number>,
 ): DisplayUsageByUserRecord[] {
-  const byUser = new Map<string, DisplayUsageByUserRecord>();
+  return aggregateUsage(
+    records,
+    record => {
+      const userId = usageUserIdForKey(record.keyId, keyToUser);
+      return { key: `${userId}\0${record.model}\0${record.hour}`, fields: { userId } };
+    },
+    (left, right) => left.hour.localeCompare(right.hour) || left.userId - right.userId || left.model.localeCompare(right.model),
+  );
+}
 
+const overviewGroup = (
+  record: UsageRecord,
+  groupBy: UsageOverviewAggregateOptions['groupBy'],
+  keyToUser: ReadonlyMap<string, number>,
+): string | null => {
+  if (groupBy === 'none') return 'all';
+  if (groupBy === 'userId') {
+    return String(usageUserIdForKey(record.keyId, keyToUser));
+  }
+  if (groupBy === 'upstream') return usageUpstreamDimensionValue(record.upstream);
+  return record[groupBy];
+};
+
+export const aggregateUsageForOverview = <K extends string>(
+  records: readonly UsageRecord[],
+  axes: Record<K, UsageOverviewAggregateOptions>,
+  keyToUser: ReadonlyMap<string, number>,
+  visibleKeyIds: ReadonlySet<string>,
+): Record<K, UsageOverviewRecord[]> => {
+  const entries = Object.entries(axes) as [K, UsageOverviewAggregateOptions][];
+  const maps = entries.map(() => new Map<string, UsageOverviewRecord>());
+  const bucketResolvers = entries.map(([, options]) => createTelemetryBucket(options));
   for (const record of records) {
-    const userId = keyToUser.get(record.keyId) ?? 0;
-    const key = `${userId}\0${record.model}\0${record.hour}`;
-    let existing = byUser.get(key);
-    if (!existing) {
-      existing = { userId, model: record.model, hour: record.hour, requests: 0, metrics: [], cost: null };
-      byUser.set(key, existing);
+    for (let index = 0; index < entries.length; index++) {
+      const options = entries[index][1];
+      if (options.groupBy === 'keyId' && !visibleKeyIds.has(record.keyId)) continue;
+      const group = overviewGroup(record, options.groupBy, keyToUser);
+      if (group === null) continue;
+      const bucket = bucketResolvers[index](record.hour);
+      const key = `${bucket}\0${group}`;
+      let aggregate = maps[index].get(key);
+      if (!aggregate) {
+        aggregate = { bucket, group, requests: 0, metrics: [], cost: null };
+        maps[index].set(key, aggregate);
+      }
+      accumulate(aggregate, record);
     }
-    accumulate(existing, record);
   }
 
-  return [...byUser.values()].sort((a, b) => a.hour.localeCompare(b.hour) || a.userId - b.userId || a.model.localeCompare(b.model));
-}
+  const result = {} as Record<K, UsageOverviewRecord[]>;
+  for (let index = 0; index < entries.length; index++) {
+    result[entries[index][0]] = [...maps[index].values()]
+      .sort((left, right) => left.bucket.localeCompare(right.bucket) || left.group.localeCompare(right.group));
+  }
+  return result;
+};

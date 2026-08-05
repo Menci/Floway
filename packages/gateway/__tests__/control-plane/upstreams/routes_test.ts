@@ -23,6 +23,7 @@ const blueprintEnvelope = (kind: UpstreamProviderKind, overrides: Record<string,
 const customConfig = {
   baseUrl: 'https://custom.example.com',
   authStyle: 'bearer',
+  ingressHeadersRules: [],
   apiKey: 'sk-test',
   endpoints: { chatCompletions: {} },
 };
@@ -40,6 +41,7 @@ const azureConfig = {
 };
 
 const copilotConfig = {
+  githubHost: 'github.com',
   githubToken: 'ghu_secret',
   user: {
     id: 12345,
@@ -72,7 +74,17 @@ test('POST /api/upstreams creates custom upstreams and redacts bearer tokens', a
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const resp = await requestApp('/api/upstreams', authed(adminSession, createBody({ flag_overrides: { 'vendor-kimi': true } })));
+  const resp = await requestApp('/api/upstreams', authed(adminSession, createBody({
+    config: {
+      ...customConfig,
+      ingressHeadersRules: [
+        { key: 'X-Request-ID', value: null },
+        { key: 'X-Empty', value: '' },
+        { key: 'X-Route', value: 'configured' },
+      ],
+    },
+    flag_overrides: { 'vendor-kimi': true },
+  })));
 
   assertEquals(resp.status, 201);
   const created = (await resp.json()) as JsonObject;
@@ -80,10 +92,16 @@ test('POST /api/upstreams creates custom upstreams and redacts bearer tokens', a
   assertEquals(created.config.apiKey, undefined);
   assertEquals(created.config.apiKeySet, true);
   assertEquals(created.config.baseUrl, 'https://custom.example.com');
+  assertEquals(created.config.ingressHeadersRules, [
+    { key: 'x-request-id', value: null },
+    { key: 'x-empty', value: '' },
+    { key: 'x-route', value: 'configured' },
+  ]);
   assertEquals(created.flag_overrides, { 'vendor-kimi': true });
 
   const stored = await repo.upstreams.getById(created.id);
   assertEquals((stored?.config as Record<string, unknown>).apiKey, 'sk-test');
+  assertEquals((stored?.config as Record<string, unknown>).ingressHeadersRules, created.config.ingressHeadersRules);
 
   const list = await requestApp('/api/upstreams', { headers: { 'x-floway-session': adminSession } });
   const items = (await list.json()) as JsonObject[];
@@ -100,6 +118,7 @@ test('POST /api/upstreams accepts a custom model whose only endpoint is /complet
     config: {
       baseUrl: 'https://custom.example.com',
       authStyle: 'none',
+      ingressHeadersRules: [],
       endpoints: {},
       modelsFetch: { enabled: false },
       models: [{ upstreamModelId: 'davinci-002', endpoints: { completions: {} } }],
@@ -263,7 +282,7 @@ test('PATCH /api/upstreams preserves omitted secrets and re-warms the models cac
   // Plant a stale row so the post-PATCH read can verify the warm overwrote
   // it with the new upstream-supplied catalog rather than leaving the old
   // models in place.
-  await repo.upstreams.saveModelsCache(created.id, {
+  await repo.upstreams.saveModelsCache(created.id, await getCacheGeneration(repo, created.id), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1,
     models: [{ id: 'stale-model', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
@@ -284,7 +303,12 @@ test('PATCH /api/upstreams preserves omitted secrets and re-warms the models cac
           'content-type': 'application/json',
           'x-floway-session': adminSession,
         },
-        body: JSON.stringify({ config: { endpoints: { responses: {} } } }),
+        body: JSON.stringify({
+          config: {
+            endpoints: { responses: {} },
+            ingressHeadersRules: [{ key: 'X-Route', value: 'patched' }],
+          },
+        }),
       });
       assertEquals(patch.status, 200);
     },
@@ -293,6 +317,7 @@ test('PATCH /api/upstreams preserves omitted secrets and re-warms the models cac
   const updated = await repo.upstreams.getById(created.id);
   assertEquals((updated?.config as Record<string, unknown>).apiKey, 'sk-test');
   assertEquals((updated?.config as Record<string, unknown>).endpoints, { responses: {} });
+  assertEquals((updated?.config as Record<string, unknown>).ingressHeadersRules, [{ key: 'x-route', value: 'patched' }]);
 
   const cached = updated?.modelsCache;
   assertEquals(cached?.models.map(model => model.id), ['fresh-model']);
@@ -408,24 +433,24 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
     modelPrefix: null,
     modelsCache: null,
     hue: 210,
-    config: { baseUrl: 'https://a.example.com', authStyle: 'bearer', apiKey: 'x', endpoints: { chatCompletions: {} } },
+    config: { baseUrl: 'https://a.example.com', authStyle: 'bearer', apiKey: 'x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
     state: null,
   };
   await repo.upstreams.save({ ...baseRow, id: 'up_fresh', name: 'Fresh', sortOrder: 0 });
   await repo.upstreams.save({ ...baseRow, id: 'up_warm', name: 'Warm', sortOrder: 1 });
   await repo.upstreams.save({ ...baseRow, id: 'up_failed', name: 'Failed', sortOrder: 2 });
 
-  await repo.upstreams.saveModelsCache('up_warm', {
+  await repo.upstreams.saveModelsCache('up_warm', { updatedAt: baseRow.updatedAt, config: baseRow.config }, {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [{ id: 'm1', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
   });
-  await repo.upstreams.saveModelsCache('up_failed', {
+  await repo.upstreams.saveModelsCache('up_failed', { updatedAt: baseRow.updatedAt, config: baseRow.config }, {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [{ id: 'm1', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
   });
-  await repo.upstreams.saveModelsCacheError('up_failed', { message: 'boom', at: 1_700_000_500_000 });
+  await repo.upstreams.saveModelsCacheError('up_failed', { updatedAt: baseRow.updatedAt, config: baseRow.config }, { message: 'boom', at: 1_700_000_500_000 });
 
   const list = await requestApp('/api/upstreams', { headers: { 'x-floway-session': adminSession } });
   assertEquals(list.status, 200);
@@ -462,7 +487,7 @@ test('GET /api/upstream-options returns the minimal picker shape to admin and no
   });
   // A disabled upstream is absent from the live catalog, so the picker's count
   // comes from the catalog it stored while it was on.
-  await repo.upstreams.saveModelsCache('up_disabled_custom', {
+  await repo.upstreams.saveModelsCache('up_disabled_custom', await getCacheGeneration(repo, 'up_disabled_custom'), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [
@@ -719,14 +744,14 @@ test('PATCH /api/upstreams warms the models cache before responding', async () =
   // Overwrite whatever the create-time warm landed on the row with a marker
   // catalog, so the assertion below can only pass if the PATCH-time warm wrote
   // over it.
-  await repo.upstreams.saveModelsCache(created.id, {
+  await repo.upstreams.saveModelsCache(created.id, await getCacheGeneration(repo, created.id), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1,
     models: [{ id: 'warmed-on-create', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
   });
   // …and annotate it with an error the successful PATCH-time warm must clear,
   // so the response body cannot pass by echoing the pre-warm row.
-  await repo.upstreams.saveModelsCacheError(created.id, { message: 'stale failure', at: 1 });
+  await repo.upstreams.saveModelsCacheError(created.id, await getCacheGeneration(repo, created.id), { message: 'stale failure', at: 1 });
 
   const patched = await withMockedFetch(
     async request => {
@@ -837,6 +862,11 @@ const getRecord = async (repo: { upstreams: { getById: (id: string) => Promise<U
   const record = await repo.upstreams.getById(id);
   if (!record) throw new Error(`Expected upstream ${id} to exist`);
   return record;
+};
+
+const getCacheGeneration = async (repo: { upstreams: { getById: (id: string) => Promise<UpstreamRecord | null> } }, id: string) => {
+  const record = await getRecord(repo, id);
+  return { updatedAt: record.updatedAt, config: record.config };
 };
 
 test('POST /api/upstreams/codex/oauth/authorize-url stamps SPA-provided challenge + state into the auth.openai.com URL', async () => {
@@ -1204,7 +1234,7 @@ test('PATCH /api/upstreams rejects config edits on a copilot row', async () => {
   const patch = await requestApp(`/api/upstreams/${copilotUpstream.id}`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
-    body: JSON.stringify({ config: { githubToken: 'ghu_hijack', user: { login: 'x', id: 0, avatar_url: '', name: null } } }),
+    body: JSON.stringify({ config: { githubHost: 'github.com', githubToken: 'ghu_hijack', user: { login: 'x', id: 0, avatar_url: '', name: null } } }),
   });
   assertEquals(patch.status, 400);
   const body = (await patch.json()) as { error: string };
@@ -2187,6 +2217,7 @@ test('GET /api/upstreams/blueprint serves the record a new upstream starts as wi
   assertEquals(custom.config.authStyle, 'bearer');
   assertEquals(custom.config.apiKey, '');
   assertEquals(custom.config.endpoints, { chatCompletions: {} });
+  assertEquals(custom.config.ingressHeadersRules, []);
   assertEquals(custom.config.modelsFetch, { enabled: true });
   const azure = (await (await requestApp('/api/upstreams/blueprint?kind=azure', { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;
   assertEquals(azure.config.models, []);
@@ -2367,6 +2398,16 @@ test('POST /api/upstreams/copilot/quota rejects a record missing its GitHub toke
   assertEquals(resp.status, 400);
   const body = (await resp.json()) as { error: string };
   assertEquals(body.error.toLowerCase().includes('github token'), true);
+});
+
+test('POST /api/upstreams/copilot/quota rejects an invalid GitHub host with 400', async () => {
+  const { adminSession } = await setupAppTest();
+  const envelope = blueprintEnvelope('copilot', {
+    config: { ...copilotConfig, githubHost: 'https://github.com' },
+  });
+  const resp = await requestApp('/api/upstreams/copilot/quota', authed(adminSession, { record: envelope }));
+  assertEquals(resp.status, 400);
+  assertEquals(await resp.json(), { error: 'GitHub host must be github.com or a tenant hostname ending in .ghe.com' });
 });
 
 test('POST /api/upstreams/copilot/quota remaps upstream 401 to 502 and passes upstream 500 through', async () => {

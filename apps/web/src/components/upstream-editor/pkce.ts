@@ -1,19 +1,17 @@
+import { encodeBase64url } from '../../lib/base-encoding';
 import type { UpstreamProviderKind } from '@floway-dev/provider/model';
 
 const encoder = new TextEncoder();
 
-const base64url = (bytes: Uint8Array) =>
-  btoa(String.fromCharCode(...bytes)).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
-
 const random = (length: number) => {
   const bytes = new Uint8Array(length);
   crypto.getRandomValues(bytes);
-  return base64url(bytes);
+  return encodeBase64url(bytes);
 };
 
 export const generatePkce = async () => {
   const verifier = random(48);
-  const challenge = base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(verifier))));
+  const challenge = encodeBase64url(new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(verifier))));
   return { verifier, challenge, state: random(24) };
 };
 
