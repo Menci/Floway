@@ -29,7 +29,8 @@ describe('AffinityRequestContext', () => {
       rules: { reasoning: { effort: 'high' } },
     };
     expect(affinity.selectedTarget()).toEqual(expectedTarget);
-    expect(affinityEgressOptions({ ...mockGatewayCtx(), affinity })).toEqual({
+    const gatewayCtx = { ...mockGatewayCtx(), affinity };
+    expect(affinityEgressOptions(gatewayCtx)).toEqual({
       codec: affinity.codec,
       affinity: expectedTarget,
     });
