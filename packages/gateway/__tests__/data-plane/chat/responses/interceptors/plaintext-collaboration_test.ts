@@ -42,7 +42,14 @@ const invocation = (targetApi: ResponsesInvocation['targetApi'] = 'responses'): 
       status: 'completed',
     }],
     tools: [collaborationTool()],
-    tool_choice: { type: 'allowed_tools', mode: 'auto', tools: [{ type: 'namespace', name: 'collaboration' }] },
+    tool_choice: {
+      type: 'allowed_tools',
+      mode: 'auto',
+      tools: [
+        { type: 'namespace', name: 'collaboration' },
+        { type: 'function', name: 'collaboration.spawn_agent' },
+      ],
+    },
   },
   candidate: stubModelCandidate(),
   targetApi,
@@ -109,6 +116,12 @@ test('projects reserved collaboration onto a plaintext upstream namespace and re
   expect(history.namespace).toBe(upstreamNamespace);
   expect(history).not.toHaveProperty('encrypted_function_args');
   expect(history.arguments).toContain('prior plaintext');
+  expect(upstreamPayload.tool_choice).toMatchObject({
+    tools: [
+      { type: 'namespace', name: 'collaboration_2' },
+      { type: 'function', name: 'collaboration_2.spawn_agent' },
+    ],
+  });
 
   if (result.type !== 'events') throw new Error('Expected events');
   const events: ResponsesStreamEvent[] = [];
@@ -135,7 +148,12 @@ test('projects reserved collaboration onto a plaintext upstream namespace and re
   const restoredNamespace = terminal.response.tools?.[0] as unknown as { name: string; tools: Array<{ name: string; parameters?: Record<string, unknown> }> };
   expect(restoredNamespace.name).toBe('collaboration');
   expect((restoredNamespace.tools[0].parameters?.properties as Record<string, Record<string, unknown>>).message.encrypted).toBe(true);
-  expect(terminal.response.tool_choice).toMatchObject({ tools: [{ type: 'namespace', name: 'collaboration' }] });
+  expect(terminal.response.tool_choice).toMatchObject({
+    tools: [
+      { type: 'namespace', name: 'collaboration' },
+      { type: 'function', name: 'collaboration.spawn_agent' },
+    ],
+  });
   expect(ctx.payload).toEqual(clientPayload);
 });
 
@@ -149,14 +167,18 @@ test('uses a deterministic collision suffix and restores shared context between 
     ],
   };
   const seen: string[] = [];
+  const seenChoices: string[] = [];
   const run = async () => await withPlaintextCollaboration(ctx, mockChatGatewayCtx(), async () => {
     seen.push((ctx.payload.tools?.[0] as { name: string }).name);
+    const choice = ctx.payload.tool_choice as { tools: Array<{ name: string }> };
+    seenChoices.push(choice.tools[1].name);
     return eventResult((async function* () {})(), testTelemetryModelIdentity);
   });
 
   await run();
   await run();
   expect(seen).toEqual(['collaboration_3', 'collaboration_3']);
+  expect(seenChoices).toEqual(['collaboration_3.spawn_agent', 'collaboration_3.spawn_agent']);
   expect((ctx.payload.tools?.[0] as { name: string }).name).toBe('collaboration');
 });
 

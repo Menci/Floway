@@ -119,15 +119,21 @@ const rewriteToolChoice = (
   toNamespace: string,
 ): ResponsesToolChoice | null | undefined => {
   if (!isRecord(toolChoice)) return toolChoice;
+  const rewriteQualifiedName = (name: unknown): unknown =>
+    typeof name === 'string' && name.startsWith(`${fromNamespace}.`)
+      ? `${toNamespace}.${name.slice(fromNamespace.length + 1)}`
+      : name;
   const rewritten: Record<string, unknown> = { ...toolChoice };
   if (rewritten.namespace === fromNamespace) rewritten.namespace = toNamespace;
   if (rewritten.type === 'namespace' && rewritten.name === fromNamespace) rewritten.name = toNamespace;
+  else rewritten.name = rewriteQualifiedName(rewritten.name);
   if (Array.isArray(rewritten.tools)) {
     rewritten.tools = rewritten.tools.map(tool => {
       if (!isRecord(tool)) return tool;
       const entry = { ...tool };
       if (entry.namespace === fromNamespace) entry.namespace = toNamespace;
       if (entry.type === 'namespace' && entry.name === fromNamespace) entry.name = toNamespace;
+      else entry.name = rewriteQualifiedName(entry.name);
       return entry;
     });
   }
