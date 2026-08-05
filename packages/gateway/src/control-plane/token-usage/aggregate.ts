@@ -110,6 +110,11 @@ export function aggregateUsageForDisplay(records: readonly UsageRecord[]): Displ
 
 // The `/api/token-usage` all-by-user view assigns hard-deleted key rows to
 // synthetic user 0 because it cannot recover their former owner.
+export const usageUserIdForKey = (
+  keyId: string,
+  keyToUser: ReadonlyMap<string, number>,
+): number => keyToUser.get(keyId) ?? 0;
+
 export function aggregateUsageByUserForDisplay(
   records: readonly UsageRecord[],
   keyToUser: ReadonlyMap<string, number>,
@@ -117,7 +122,7 @@ export function aggregateUsageByUserForDisplay(
   return aggregateUsage(
     records,
     record => {
-      const userId = keyToUser.get(record.keyId) ?? 0;
+      const userId = usageUserIdForKey(record.keyId, keyToUser);
       return { key: `${userId}\0${record.model}\0${record.hour}`, fields: { userId } };
     },
     (left, right) => left.hour.localeCompare(right.hour) || left.userId - right.userId || left.model.localeCompare(right.model),
@@ -131,8 +136,7 @@ const overviewGroup = (
 ): string | null => {
   if (groupBy === 'none') return 'all';
   if (groupBy === 'userId') {
-    const userId = keyToUser.get(record.keyId);
-    return userId === undefined ? null : String(userId);
+    return String(usageUserIdForKey(record.keyId, keyToUser));
   }
   if (groupBy === 'upstream') return usageUpstreamDimensionValue(record.upstream);
   return record[groupBy];

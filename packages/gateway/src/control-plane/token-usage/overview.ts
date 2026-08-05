@@ -1,4 +1,4 @@
-import { aggregateUsageForOverview, type UsageOverviewGroupBy } from './aggregate.ts';
+import { aggregateUsageForOverview, usageUserIdForKey, type UsageOverviewGroupBy } from './aggregate.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { tokenUsageOverviewQuery } from '../schemas.ts';
@@ -65,7 +65,7 @@ export const tokenUsageOverview = async (c: Ctx) => {
       includeFacet: record => identity.ownedKeyIds.has(record.keyId),
     },
     userId: {
-      value: record => identity.keyToUser.get(record.keyId)?.toString() ?? null,
+      value: record => String(usageUserIdForKey(record.keyId, identity.keyToUser)),
       includeFacet: () => identity.actor.isAdmin,
     },
     model: { value: record => record.model },

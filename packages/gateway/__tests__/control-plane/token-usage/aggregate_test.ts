@@ -77,6 +77,18 @@ test('aggregateUsageForOverview builds every axis from one record traversal', ()
   assertEquals(out.keyId.map(record => [record.group, record.requests]), [['key-1', 2]]);
 });
 
+test('aggregateUsageForOverview keeps hard-deleted key usage on the synthetic user axis', () => {
+  const out = aggregateUsageForOverview([
+    baseRecord({ keyId: 'hard-deleted-key', requests: 3 }),
+  ], {
+    none: { bucket: 'all', groupBy: 'none', timezoneOffsetMinutes: 0 },
+    userId: { bucket: 'all', groupBy: 'userId', timezoneOffsetMinutes: 0 },
+  }, new Map(), new Set());
+
+  assertEquals(out.none.map(record => [record.group, record.requests]), [['all', 3]]);
+  assertEquals(out.userId.map(record => [record.group, record.requests]), [['0', 3]]);
+});
+
 test('aggregateUsageForDisplay applies cost from each record rate snapshot', () => {
   const records: UsageRecord[] = [baseRecord({ modelKey: 'claude-opus-4-7-xhigh', tokens: { input: 1_000_000, output: 50 } })];
   const out = aggregateUsageForDisplay(records);

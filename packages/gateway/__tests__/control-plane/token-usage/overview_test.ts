@@ -76,6 +76,24 @@ test('/api/token-usage/overview scopes every axis to an administrator under grou
   assertEquals(body.dimensionValues.userIds, [1]);
 });
 
+test('/api/token-usage/overview preserves hard-deleted key usage under synthetic user 0', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.apiKeys.save(adminKey);
+  await seedUsage(repo, { keyId: 'hard-deleted-key', model: 'gpt-5', upstream: 'up-a', hour: '2026-04-30T10', requests: 3 });
+
+  const response = await requestApp('/api/token-usage/overview?start=2026-04-30T00&end=2026-05-01T00&group_by=userId&filter_user_id=0', { headers: { 'x-floway-session': adminSession } });
+
+  assertEquals(response.status, 200);
+  const body = await response.json();
+  assertEquals(body.series.map((record: { group: string; requests: number }) => [record.group, record.requests]), [['0', 3]]);
+  assertEquals(body.axes.none.map((record: { group: string; requests: number }) => [record.group, record.requests]), [['all', 3]]);
+  assertEquals(body.axes.userId.map((record: { group: string; requests: number }) => [record.group, record.requests]), [['0', 3]]);
+  assertEquals(body.dimensionValues.userIds, [0]);
+  assertEquals(body.dimensionValues.keyIds, []);
+  assertEquals(body.users.some((user: { id: number }) => user.id === 0), false);
+  assertEquals(body.keys, [{ id: adminKey.id, name: adminKey.name, createdAt: adminKey.createdAt }]);
+});
+
 test('/api/token-usage/overview limits a non-admin to owned keys and withholds user attribution', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save(adminKey);
