@@ -20,6 +20,8 @@ describe('base codecs', () => {
 
   test('round-trips a large byte buffer without binary-string conversion', () => {
     const bytes = Uint8Array.from({ length: 1024 * 1024 }, (_, index) => index & 0xff);
-    expect(base64DecodeBytes(base64EncodeBytes(bytes))).toEqual(bytes);
+    const decoded = base64DecodeBytes(base64EncodeBytes(bytes));
+    expect(decoded).toHaveLength(bytes.length);
+    expect(decoded.every((byte, index) => byte === bytes[index])).toBe(true);
   });
 });
