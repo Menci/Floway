@@ -287,9 +287,10 @@ describe('rerank response translation', () => {
 
   test('rejects fractional and unsafe integer coordinates and usage', () => {
     const request = { model: 'rerank', query: 'query', documents: ['one'] };
-    for (const top_n of [1.5, Number.MAX_SAFE_INTEGER + 1, Number.POSITIVE_INFINITY]) {
+    for (const top_n of [1.5, Number.MAX_SAFE_INTEGER + 1]) {
       expect(() => parseRerankRequest('cohere-v2', { ...request, top_n })).toThrow('positive integer in the safe range');
     }
+    expect(() => parseRerankRequest('cohere-v2', { ...request, top_n: Number.POSITIVE_INFINITY })).toThrow('finite number');
     for (const total_tokens of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1, Number.POSITIVE_INFINITY]) {
       expect(() => parseRerankUsage('jina-v1', { usage: { total_tokens } })).toThrow('non-negative safe integer');
     }
