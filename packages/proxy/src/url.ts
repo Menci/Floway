@@ -175,8 +175,8 @@ const parseSs = (
     };
   }
 
-  // SIP002 encodes UTF-8 `method:password` as Base64URL. The decoder retains
-  // padded and standard-alphabet input compatibility used by older clients.
+  // This branch parses SIP002's Base64URL-encoded UTF-8 `method:password`
+  // form. Padded standard Base64 remains an interoperability extension.
   // https://github.com/shadowsocks/shadowsocks-org/blob/34598d65054dad975d330ff9d7317b0d41cf1efd/docs/doc/sip002.md#L3-L13
   let decoded: string;
   try {

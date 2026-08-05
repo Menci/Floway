@@ -59,7 +59,7 @@ const dialHttpConnectInner = async (
   if (auth) {
     // RFC 7617 leaves the default credential charset undefined and allows a
     // server to advertise UTF-8. Floway consistently emits UTF-8 rather than
-    // mapping JavaScript code units to a runtime-dependent single-byte form.
+    // mapping JavaScript code units directly to bytes.
     // https://www.rfc-editor.org/rfc/rfc7617.html#section-2.1
     const token = base64EncodeBytes(utf8Bytes(`${auth.username}:${auth.password}`));
     lines.push(`Proxy-Authorization: Basic ${token}`);
