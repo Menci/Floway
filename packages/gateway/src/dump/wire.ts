@@ -5,13 +5,7 @@ import type {
   StoredDumpRecord,
   StoredDumpResponseBody,
 } from './types.ts';
-import { isTextualMediaType } from '@floway-dev/protocols/common';
-
-const bytesToBase64 = (bytes: Uint8Array): string => {
-  let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]!);
-  return btoa(binary);
-};
+import { encodeBase64, isTextualMediaType } from '@floway-dev/protocols/common';
 
 const contentTypeOf = (headers: ReadonlyArray<readonly [string, string]>): string =>
   headers.find(([name]) => name.toLowerCase() === 'content-type')?.[1] ?? '';
@@ -25,7 +19,7 @@ const encodeBodyForWire = (bytes: Uint8Array, contentType: string): DumpBody => 
       return { encoding: 'utf8', data: new TextDecoder('utf-8', { fatal: true }).decode(bytes) };
     } catch {}
   }
-  return { encoding: 'base64', data: bytesToBase64(bytes) };
+  return { encoding: 'base64', data: encodeBase64(bytes) };
 };
 
 const responseBodyToWire = (body: StoredDumpResponseBody, contentType: string): DumpResponseBody => {

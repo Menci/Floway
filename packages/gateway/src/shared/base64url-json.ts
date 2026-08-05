@@ -6,25 +6,18 @@
 // slot remains forward-compatible with a native-compaction upstream's own
 // opaque content.
 
-const bytesToBase64Url = (bytes: Uint8Array): string => {
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-};
+import { decodeForgivingBase64url, encodeBase64url } from '@floway-dev/protocols/common';
 
 const base64UrlToBytes = (value: string): Uint8Array | null => {
-  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
-  const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
   try {
-    const binary = atob(padded);
-    return Uint8Array.from(binary, char => char.charCodeAt(0));
+    return decodeForgivingBase64url(value);
   } catch {
     return null;
   }
 };
 
 export const encodeBase64UrlJson = (payload: unknown): string =>
-  bytesToBase64Url(new TextEncoder().encode(JSON.stringify(payload)));
+  encodeBase64url(new TextEncoder().encode(JSON.stringify(payload)));
 
 export const decodeBase64UrlJson = (value: string): unknown | null => {
   const bytes = base64UrlToBytes(value);

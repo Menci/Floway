@@ -261,6 +261,10 @@ describe('dialReality — pre-connect base64 decoder corner cases', () => {
     await verifyReachesConnect(`${'A'.repeat(43)}=`);
   });
 
+  it('accepts non-zero trailing padding bits under WHATWG forgiving-base64', async () => {
+    await verifyReachesConnect(`${'A'.repeat(42)}B=`);
+  });
+
   it('accepts a base64url string with the URL-safe alphabet (- and _)', async () => {
     // 32 bytes of 0xfe yields a 43-char base64url with '-' and '_' characters.
     await verifyReachesConnect('_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v4');

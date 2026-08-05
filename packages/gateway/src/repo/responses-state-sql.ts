@@ -7,6 +7,7 @@ import {
   type PreparedStoredResponsesPayload,
 } from './responses-payload.ts';
 import { quantizeResponsesRefreshedAt, RESPONSES_REFRESH_GRANULARITY_MS } from './responses-retention.ts';
+import { decodeResponsesSnapshotItemIds, encodeResponsesSnapshotItemIds } from './responses-snapshot-codec.ts';
 import { SPILLED_FILE_STAGE_GRACE_MS } from './spilled-files-policy.ts';
 import { runStatements } from './sql-batch.ts';
 import type {
@@ -334,14 +335,10 @@ interface ResponsesSnapshotRow {
 }
 
 const toStoredResponsesSnapshot = (row: ResponsesSnapshotRow): StoredResponsesSnapshot => {
-  const parsed: unknown = JSON.parse(row.item_ids_json);
-  if (!Array.isArray(parsed) || parsed.some(item => typeof item !== 'string')) {
-    throw new Error(`Invalid responses_snapshots.item_ids_json for id=${row.id}`);
-  }
   return {
     id: row.id,
     apiKeyId: row.api_key_id,
-    itemIds: parsed,
+    itemIds: decodeResponsesSnapshotItemIds(row.item_ids_json, row.id, row.api_key_id),
     refreshedAt: row.refreshed_at,
   };
 };
@@ -377,7 +374,7 @@ export class SqlResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
       .bind(
         quantized.id,
         quantized.apiKeyId,
-        JSON.stringify(quantized.itemIds),
+        encodeResponsesSnapshotItemIds(quantized.itemIds),
         quantized.refreshedAt,
       )
       .run();

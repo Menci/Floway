@@ -25,16 +25,17 @@ const useStyles = makeStyles({
   },
 });
 
-// `to` is for the back that leaves the page rather than the one that steps back
-// within it: an anchor there is what a middle click can open, and Fluent's
-// anchor root keeps Enter and Space through react-aria's button props.
+// `to` is for a destination that remains useful beside the current view, while
+// `onClick` moves within one editing session. The former gives middle and
+// modified clicks a real address; Fluent's anchor root keeps Enter and Space
+// through react-aria's button props.
 // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-aria/library/src/button/useARIAButtonProps.ts#L84-L120
 export function BackNavigationButton(props: { children: ReactNode } & (
   | { onClick: () => void; to?: never }
   | { onClick?: never; to: string }
 )) {
   return props.to === undefined
-    ? <BackButton>{props.children}</BackButton>
+    ? <BackButton onClick={props.onClick}>{props.children}</BackButton>
     : <AddressedBackButton to={props.to}>{props.children}</AddressedBackButton>;
 }
 

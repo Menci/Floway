@@ -1,3 +1,10 @@
+import {
+  decodeCanonicalBase64,
+  decodeCanonicalBase64url,
+  encodeBase64,
+  encodeBase64url,
+} from './base-encoding.ts';
+
 export type OpaqueValueOrigin = 'raw' | 'base64' | 'base64url';
 
 export interface DecodedOpaqueValue {
@@ -38,8 +45,8 @@ export const decodeOpaqueValue = (value: string): DecodedOpaqueValue => {
 
 export const encodeOpaqueValue = (bytes: Uint8Array, origin: OpaqueValueOrigin): string => {
   switch (origin) {
-  case 'base64': return bytesToBase64(bytes);
-  case 'base64url': return bytesToBase64url(bytes);
+  case 'base64': return encodeBase64(bytes);
+  case 'base64url': return encodeBase64url(bytes);
   case 'raw': return rawStringFromBytes(bytes);
   }
 };
@@ -52,7 +59,7 @@ export const appendOpaqueTrailer = (
     throw new RangeError('Opaque trailer exceeds the 2-byte length marker');
   }
   const framed = concatBytes(original?.bytes ?? new Uint8Array(), trailer, uint16be(trailer.length));
-  return original?.origin === 'base64url' ? bytesToBase64url(framed) : bytesToBase64(framed);
+  return original?.origin === 'base64url' ? encodeBase64url(framed) : encodeBase64(framed);
 };
 
 export const splitOpaqueTrailer = (value: string, minimumTrailerBytes = 1): SplitOpaqueTrailer | null => {
@@ -65,48 +72,6 @@ export const splitOpaqueTrailer = (value: string, minimumTrailerBytes = 1): Spli
     original: framed.subarray(0, originalLength),
     trailer: framed.subarray(originalLength, framed.length - LENGTH_MARKER_BYTES),
   };
-};
-
-const bytesToBase64 = (bytes: Uint8Array): string => {
-  let binary = '';
-  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
-  }
-  return btoa(binary);
-};
-
-const base64ToBytes = (value: string): Uint8Array => {
-  const binary = atob(value);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  return bytes;
-};
-
-const bytesToBase64url = (bytes: Uint8Array): string =>
-  bytesToBase64(bytes).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
-
-const base64urlToBytes = (value: string): Uint8Array => {
-  const standard = value.replaceAll('-', '+').replaceAll('_', '/');
-  const padding = (4 - standard.length % 4) % 4;
-  return base64ToBytes(`${standard}${'='.repeat(padding)}`);
-};
-
-const decodeCanonicalBase64 = (value: string): Uint8Array | null => {
-  try {
-    const bytes = base64ToBytes(value);
-    return bytesToBase64(bytes) === value ? bytes : null;
-  } catch {
-    return null;
-  }
-};
-
-const decodeCanonicalBase64url = (value: string): Uint8Array | null => {
-  try {
-    const bytes = base64urlToBytes(value);
-    return bytesToBase64url(bytes) === value ? bytes : null;
-  } catch {
-    return null;
-  }
 };
 
 const rawStringToBytes = (value: string): Uint8Array => {

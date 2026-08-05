@@ -3,9 +3,11 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { clearInFlightForTesting, fetchUpstreamModelsCached, MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
 import type { GatewayProvider } from '../../../src/data-plane/providers/registry.ts';
 import { initRepo } from '../../../src/repo/index.ts';
+import { SqlRepo } from '../../../src/repo/sql.ts';
 import type { ModelsCacheGeneration } from '../../../src/repo/types.ts';
 import { serializeStoredConfig } from '../../../src/repo/upstream-json.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
+import { createSqliteTestDb } from '../../repo/test-sqlite.ts';
 import { directFetcher, type ProviderModel, type UpstreamModelsCache } from '@floway-dev/provider';
 import { stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -301,5 +303,53 @@ describe('fetchUpstreamModelsCached', () => {
     expect(result.map(model => model.id)).toEqual(['current-catalog']);
     expect(fetchFn).toHaveBeenCalledTimes(1);
     expect((await storedCache(repo))?.revision).toBe(MODEL_CATALOG_REVISION);
+  });
+
+  test('an old-shape stale SQL cache hydrates cold and is replaced by a current fetch', async () => {
+    const db = await createSqliteTestDb();
+    const repo = new SqlRepo(db);
+    initRepo(repo);
+    await repo.upstreams.save({
+      id: UPSTREAM_ID,
+      kind: 'custom',
+      name: 'Upstream A',
+      enabled: true,
+      sortOrder: 0,
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:00:00.000Z',
+      config: {},
+      state: null,
+      modelsCache: null,
+      flagOverrides: {},
+      disabledPublicModelIds: [],
+      proxyFallbackList: [],
+      modelPrefix: null,
+      hue: 210,
+    });
+    // Deliberately schema-incompatible body: a stale numeric revision is an
+    // opaque obsolete payload, so hydration must not apply today's model
+    // schema before deciding the cache is cold.
+    await db.prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ?').bind(JSON.stringify({
+      revision: MODEL_CATALOG_REVISION - 1,
+      fetchedAt: Date.now() - 1_000,
+      models: [{ id: 'old-catalog', enabledFlags: [] }],
+      lastError: null,
+    }), UPSTREAM_ID).run();
+
+    const hydrated = await repo.upstreams.getById(UPSTREAM_ID);
+    if (!hydrated) throw new Error('upstream row missing');
+    expect(hydrated?.modelsCache).toBeNull();
+    const fetchFn = vi.fn(async () => [aModel('current-catalog')]);
+    const result = await fetchUpstreamModelsCached(
+      stubInstance(fetchFn, hydrated.modelsCache, {
+        updatedAt: hydrated.updatedAt,
+        config: hydrated.config,
+      }),
+      { scheduler: () => {}, fetcher: directFetcher },
+    );
+
+    expect(result.map(model => model.id)).toEqual(['current-catalog']);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect((await repo.upstreams.getById(UPSTREAM_ID))?.modelsCache?.revision).toBe(MODEL_CATALOG_REVISION);
   });
 });

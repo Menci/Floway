@@ -1,3 +1,5 @@
+import { encodeHex } from '../common/base-encoding.ts';
+
 // These are only the Responses item types Floway itself can create, not a
 // catalog or validator for provider-returned item IDs.
 // OpenAI's wire examples use msg_/rs_/ws_/ctc_ for their corresponding item
@@ -24,5 +26,5 @@ export const createRandomResponsesItemId = (type: GeneratedResponsesItemType): s
   const prefix = generatedItemPrefixes[type];
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
-  return `${prefix}_${[...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('')}`;
+  return `${prefix}_${encodeHex(bytes)}`;
 };
