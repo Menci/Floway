@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import type { AnnouncedMetadataField, AnnouncedMetadataIssues } from './validation';
 import { fluentComponents } from '../../fluent';
@@ -102,21 +102,22 @@ function CommaSeparatedEffortsInput({ disabled, hint, label, onChange, readOnly,
   readOnly: boolean;
   value: readonly string[];
 }) {
-  const [draft, setDraft] = useState(() => value.join(', '));
-
-  useEffect(() => {
-    setDraft(current => sameOrderedValues(commaSeparatedValues(current), value) ? current : value.join(', '));
-  }, [value]);
+  const [draft, setDraft] = useState(() => ({ projected: [...value], text: value.join(', ') }));
+  const currentDraft = sameOrderedValues(draft.projected, value)
+    ? draft
+    : { projected: [...value], text: value.join(', ') };
+  if (currentDraft !== draft) setDraft(currentDraft);
 
   return <Field hint={hint} label={label}>
     <Input
       disabled={disabled}
       readOnly={readOnly}
-      value={draft}
-      onBlur={() => setDraft(value.join(', '))}
+      value={currentDraft.text}
+      onBlur={() => setDraft({ projected: [...value], text: value.join(', ') })}
       onChange={(_, data) => {
-        setDraft(data.value);
-        onChange(commaSeparatedValues(data.value));
+        const projected = commaSeparatedValues(data.value);
+        setDraft({ projected, text: data.value });
+        onChange(projected);
       }}
     />
   </Field>;

@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest';
 
 import { MetadataEditor } from '../../../src/components/model-alias/metadata-editor';
 import { i18n } from '../../../src/i18n';
-import type { AnnouncedMetadata } from '@floway-dev/protocols/common';
 import { renderInApp } from '../../render';
+import type { AnnouncedMetadata } from '@floway-dev/protocols/common';
 
 const initialValue: AnnouncedMetadata = {
   chat: {
