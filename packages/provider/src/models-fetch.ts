@@ -11,6 +11,15 @@ export class ProviderModelsUnavailableError extends Error {
 const DEFAULT_MAX_MODELS_RESPONSE_BYTES = 16 * 1024 * 1024;
 const DEFAULT_MAX_MODELS_ERROR_RESPONSE_BYTES = 64 * 1024;
 const TRUNCATED_BODY_MARKER = '...[truncated]';
+const REWRITTEN_BODY_HEADERS = [
+  'content-length',
+  'content-encoding',
+  'transfer-encoding',
+  'content-md5',
+  'digest',
+  'content-digest',
+  'repr-digest',
+] as const;
 
 export interface ResponseByteBudget {
   remainingBytes: number;
@@ -26,21 +35,21 @@ const bytesToText = (chunks: readonly Uint8Array[], totalBytes: number): string 
   return new TextDecoder().decode(bytes);
 };
 
-const readErrorBody = async (response: Response, maxBytes: number): Promise<string> => {
-  if (!response.body) return '';
+const readErrorBody = async (response: Response, maxBytes: number): Promise<{ body: string; truncated: boolean }> => {
+  if (!response.body) return { body: '', truncated: false };
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let totalBytes = 0;
   try {
     for (;;) {
       const { done, value } = await reader.read();
-      if (done) return bytesToText(chunks, totalBytes);
+      if (done) return { body: bytesToText(chunks, totalBytes), truncated: false };
       const remaining = maxBytes - totalBytes;
       if (value.byteLength > remaining) {
         if (remaining > 0) chunks.push(value.slice(0, remaining));
         totalBytes += Math.max(remaining, 0);
         void reader.cancel().catch(() => undefined);
-        return `${bytesToText(chunks, totalBytes)}${TRUNCATED_BODY_MARKER}`;
+        return { body: `${bytesToText(chunks, totalBytes)}${TRUNCATED_BODY_MARKER}`, truncated: true };
       }
       chunks.push(value);
       totalBytes += value.byteLength;
@@ -48,6 +57,10 @@ const readErrorBody = async (response: Response, maxBytes: number): Promise<stri
   } finally {
     reader.releaseLock();
   }
+};
+
+const stripRewrittenBodyHeaders = (headers: Headers): void => {
+  for (const name of REWRITTEN_BODY_HEADERS) headers.delete(name);
 };
 
 export const readBoundedJsonResponse = async (
@@ -123,8 +136,11 @@ export const fetchUpstreamModels = async <T>(
       body: '',
     };
     try {
-      httpResponse.body = await readErrorBody(response, maxErrorResponseBytes);
+      const captured = await readErrorBody(response, maxErrorResponseBytes);
+      httpResponse.body = captured.body;
+      if (captured.truncated) stripRewrittenBodyHeaders(httpResponse.headers);
     } catch (cause) {
+      stripRewrittenBodyHeaders(httpResponse.headers);
       throw new ProviderModelsUnavailableError(httpResponse, cause);
     }
     throw new ProviderModelsUnavailableError(httpResponse);

@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { fetchUpstreamModels, ProviderModelsUnavailableError } from '../src/models-fetch.ts';
+import { fetchUpstreamModels, httpResponseToResponse, ProviderModelsUnavailableError } from '../src/models-fetch.ts';
 
 test('fetchUpstreamModels accepts the byte boundary and cancels an oversized success body', async () => {
   const json = '{"ok":true}';
@@ -47,7 +47,15 @@ test('fetchUpstreamModels bounds non-2xx bodies while preserving status and head
     },
   });
   const result = fetchUpstreamModels(
-    () => Promise.resolve(new Response(body, { status: 429, headers: { 'retry-after': '5' } })),
+    () => Promise.resolve(new Response(body, {
+      status: 429,
+      headers: {
+        'content-digest': 'sha-256=:invalid-after-truncation:',
+        'content-encoding': 'gzip',
+        'content-length': '999',
+        'retry-after': '5',
+      },
+    })),
     value => value,
     { maxErrorResponseBytes: 8 },
   );
@@ -60,5 +68,11 @@ test('fetchUpstreamModels bounds non-2xx bodies while preserving status and head
   });
   const error = await result.catch(cause => cause as ProviderModelsUnavailableError);
   expect(error.httpResponse?.headers.get('retry-after')).toBe('5');
+  expect(error.httpResponse?.headers.get('content-length')).toBeNull();
+  expect(error.httpResponse?.headers.get('content-encoding')).toBeNull();
+  expect(error.httpResponse?.headers.get('content-digest')).toBeNull();
+  const reconstructed = httpResponseToResponse(error.httpResponse);
+  expect(reconstructed?.status).toBe(429);
+  expect(await reconstructed?.text()).toBe('rate-lim...[truncated]');
   expect(cancelled).toBe(true);
 });
