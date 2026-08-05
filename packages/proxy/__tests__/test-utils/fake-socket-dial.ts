@@ -17,6 +17,7 @@ export interface FakeServer {
   read(n: number): Promise<Uint8Array>;
   /** Returns all bytes the dialer wrote so far without removing them. */
   peekWritten(): Uint8Array;
+  writtenChunks(): readonly number[];
   /** Push bytes into the dialer's readable. */
   respond(bytes: Uint8Array | string): void;
   /** Close the dialer's readable (server EOF). */
@@ -67,6 +68,7 @@ export const makeFakeSocketDial = (): FakeSocketDial => {
 
 const makeFakeSocket = (): { socket: DialedSocket; srv: FakeServer } => {
   let writeBuffer = new Uint8Array(0);
+  const writeSizes: number[] = [];
   let writableClosed = false;
   const readWaiters: Array<{ n: number; resolve: (v: Uint8Array) => void; reject: (e: unknown) => void }> = [];
 
@@ -89,6 +91,7 @@ const makeFakeSocket = (): { socket: DialedSocket; srv: FakeServer } => {
 
   const writable = new WritableStream<Uint8Array>({
     write(chunk) {
+      writeSizes.push(chunk.byteLength);
       const next = new Uint8Array(writeBuffer.byteLength + chunk.byteLength);
       next.set(writeBuffer, 0);
       next.set(chunk, writeBuffer.byteLength);
@@ -131,6 +134,7 @@ const makeFakeSocket = (): { socket: DialedSocket; srv: FakeServer } => {
       });
     },
     peekWritten: () => new Uint8Array(writeBuffer),
+    writtenChunks: () => writeSizes,
     respond(bytes) {
       const u = typeof bytes === 'string' ? enc.encode(bytes) : bytes;
       readableController.enqueue(new Uint8Array(u));

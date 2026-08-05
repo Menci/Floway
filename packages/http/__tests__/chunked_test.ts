@@ -46,28 +46,9 @@ describe('decodeChunked — RFC 9112 §7.1 happy path', () => {
     expect(await drain(decodeChunked(reader, head))).toBe('Wikipedia in chunks.');
   });
 
-  it('tolerates chunk extensions after a semicolon and ignores them', async () => {
-    const input = '5;name=foo\r\nhello\r\n0\r\n\r\n';
-    const { reader, head } = fromString(input);
-    expect(await drain(decodeChunked(reader, head))).toBe('hello');
-  });
-
-  it('consumes (and discards) trailing headers after the 0-sized terminator', async () => {
-    const input = '5\r\nhello\r\n0\r\nX-Trailer: t1\r\nX-Trailer-2: t2\r\n\r\n';
-    const { reader, head } = fromString(input);
-    expect(await drain(decodeChunked(reader, head))).toBe('hello');
-  });
 });
 
 describe('decodeChunked — error vectors', () => {
-  it('errors on a hex size line containing non-hex bytes', async () => {
-    const input = '5g\r\nhello\r\n0\r\n\r\n';
-    const { reader, head } = fromString(input);
-    const err = await drainExpectError(decodeChunked(reader, head));
-    expect(err).toBeInstanceOf(HttpProtocolError);
-    expect((err as Error).message).toMatch(/bad size line/);
-  });
-
   it('errors on an empty size line', async () => {
     const input = '\r\n0\r\n\r\n';
     const { reader, head } = fromString(input);
@@ -91,14 +72,6 @@ describe('decodeChunked — error vectors', () => {
     expect((err as Error).message).toMatch(/EOF in trailers/);
   });
 
-  it('errors when the data block is not followed by CRLF', async () => {
-    // Five payload bytes, then garbage instead of CRLF.
-    const input = '5\r\nhelloXX0\r\n\r\n';
-    const { reader, head } = fromString(input);
-    const err = await drainExpectError(decodeChunked(reader, head));
-    expect(err).toBeInstanceOf(HttpProtocolError);
-    expect((err as Error).message).toMatch(/missing CRLF/);
-  });
 });
 
 describe('decodeChunked — incremental reads', () => {

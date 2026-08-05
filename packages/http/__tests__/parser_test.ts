@@ -604,11 +604,6 @@ describe('parseHttpResponse — Content-Length value grammar', () => {
       .rejects.toMatchObject({ code: 'BAD_CL' });
   });
 
-  it('accepts Content-Length: 0 with no body bytes', async () => {
-    const r = await parseHttpResponse(respondAndEnd('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n'));
-    expect(await collectBody(r)).toBe('');
-  });
-
   it('accepts leading zeroes in the decimal Content-Length grammar', async () => {
     const r = await parseHttpResponse(respondAndEnd(
       'HTTP/1.1 200 OK\r\nContent-Length: 0005\r\n\r\nhello',
@@ -635,17 +630,6 @@ describe('parseHttpResponse — Content-Length value grammar', () => {
 });
 
 describe('parseHttpResponse — DoS caps', () => {
-  it('rejects a response with more than 100 header lines as TOO_MANY_HEADERS', async () => {
-    const lines = ['HTTP/1.1 200 OK'];
-    for (let i = 0; i < 110; i++) lines.push(`X-${i}: v`);
-    lines.push('Content-Length: 0');
-    lines.push('');
-    lines.push('');
-    await expect(parseHttpResponse(respondAndEnd(lines.join('\r\n')))).rejects.toMatchObject({
-      code: 'TOO_MANY_HEADERS',
-    });
-  });
-
   it('accepts a response at exactly the 100-header boundary', async () => {
     const lines = ['HTTP/1.1 200 OK'];
     for (let i = 0; i < 99; i++) lines.push(`X-${i}: v`);

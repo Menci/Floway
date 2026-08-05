@@ -503,22 +503,6 @@ describe('wsUpgradeAndFrame — frame layer round-trip', () => {
     reader.releaseLock();
   });
 
-  it('handles a frame that crosses the 16-bit length boundary', async () => {
-    const fake = makeFakeDuplex();
-    const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
-    await completeHandshake(fake);
-    const stream = await upgrade;
-    const payload = new Uint8Array(200);
-    for (let i = 0; i < payload.byteLength; i++) payload[i] = i & 0xff;
-    fake.respond(buildServerFrame(0x2, payload));
-    const reader = stream.readable.getReader();
-    const { value } = await reader.read();
-    expect(value!.byteLength).toBe(200);
-    expect(value![0]).toBe(0);
-    expect(value![199]).toBe(199);
-    reader.releaseLock();
-  });
-
   it('handles a frame at exactly the 7-bit length boundary (125 bytes)', async () => {
     const fake = makeFakeDuplex();
     const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });

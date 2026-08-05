@@ -19,10 +19,10 @@ describe('base codecs', () => {
   });
 
   it('round-trips a large byte buffer without binary-string conversion', () => {
-    // 256 KiB remains well above engines' argument-spread limits, which is
+    // 128 KiB remains above engines' argument-spread limits, which is
     // the failure mode this regression guards, without spending four times
     // the allocation and codec work on every suite run.
-    const bytes = Uint8Array.from({ length: 256 * 1024 }, (_, index) => index & 0xff);
+    const bytes = Uint8Array.from({ length: 128 * 1024 }, (_, index) => index & 0xff);
     const decoded = base64DecodeBytes(base64EncodeBytes(bytes));
     expect(decoded).toHaveLength(bytes.length);
     expect(decoded.every((byte, index) => byte === bytes[index])).toBe(true);

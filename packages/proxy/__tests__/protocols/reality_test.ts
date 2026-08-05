@@ -249,7 +249,7 @@ describe('dialReality — pre-connect base64 decoder corner cases', () => {
     await fake.awaitConnect();
     ctrl.abort();
     expect(fake.connectCount()).toBe(1);
-    await Promise.race([p, new Promise(r => setTimeout(r, 50))]).catch(() => {});
+    await p.catch(() => {});
   };
 
   it('accepts a 43-char base64url string (no padding)', async () => {
@@ -293,7 +293,7 @@ describe('dialReality — shortId hex decoder corner cases', () => {
     await fake.awaitConnect();
     ctrl.abort();
     expect(fake.connectCount()).toBe(1);
-    await Promise.race([p, new Promise(r => setTimeout(r, 50))]).catch(() => {});
+    await p.catch(() => {});
   };
 
   it('accepts uppercase hex characters', async () => {
