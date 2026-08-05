@@ -144,6 +144,38 @@ test('fetchOllamaCatalog bounds /api/show concurrency and deduplicates repeated 
   expect(catalog.data.map(model => model.id)).toEqual(names);
 });
 
+test('fetchOllamaCatalog cancels discarded and oversized /api/show bodies without poisoning siblings', async () => {
+  let failedCancelled = false;
+  let oversizedCancelled = false;
+  const responseBody = (bytes: Uint8Array, onCancel: () => void) => new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(bytes);
+    },
+    cancel() {
+      onCancel();
+      return new Promise<void>(() => {});
+    },
+  });
+  const fetcher: Fetcher = (_url, init) => {
+    if (init.method === 'GET') {
+      return Promise.resolve(jsonResponse({ models: [{ name: 'failed' }, { name: 'oversized' }, { name: 'valid' }] }));
+    }
+    const name = (JSON.parse(String(init.body)) as { name: string }).name;
+    if (name === 'failed') {
+      return Promise.resolve(new Response(responseBody(new TextEncoder().encode('failure'), () => { failedCancelled = true; }), { status: 500 }));
+    }
+    if (name === 'oversized') {
+      return Promise.resolve(new Response(responseBody(new TextEncoder().encode('{"capabilities":[]}'), () => { oversizedCancelled = true; })));
+    }
+    return Promise.resolve(jsonResponse({ capabilities: ['completion'], model_info: {} }));
+  };
+
+  const catalog = await fetchOllamaCatalog(config, fetcher, { maxShowResponseBytes: 8 });
+  expect(catalog.data.map(model => model.id)).toEqual(['valid']);
+  expect(failedCancelled).toBe(true);
+  expect(oversizedCancelled).toBe(true);
+});
+
 test('fetchOllamaCatalog propagates cancellation from /api/show fetch and body decoding', async () => {
   const cancelledShows: Array<(abort: DOMException) => Promise<Response>> = [
     abort => Promise.reject(abort),
@@ -155,9 +187,18 @@ test('fetchOllamaCatalog propagates cancellation from /api/show fetch and body d
   ];
   for (const cancelledShow of cancelledShows) {
     const abort = new DOMException('cancelled', 'AbortError');
-    const fetcher: Fetcher = (url) => new URL(url).pathname === '/api/tags'
-      ? Promise.resolve(jsonResponse({ models: [{ name: 'first' }, { name: 'second' }] }))
-      : cancelledShow(abort);
+    const fetcher: Fetcher = (url, init) => {
+      if (new URL(url).pathname === '/api/tags') {
+        return Promise.resolve(jsonResponse({ models: [{ name: 'first' }, { name: 'second' }] }));
+      }
+      const name = (JSON.parse(String(init.body)) as { name: string }).name;
+      if (name === 'first') return cancelledShow(abort);
+      return new Promise<Response>((_resolve, reject) => {
+        const signal = init.signal;
+        if (signal?.aborted) reject(signal.reason);
+        else signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+      });
+    };
     await expect(fetchOllamaCatalog(config, fetcher)).rejects.toBe(abort);
   }
 });
