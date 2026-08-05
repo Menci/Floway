@@ -459,6 +459,12 @@ export type ResponsesMultiAgentAction =
   | 'followup_task'
   | 'wait_agent';
 
+export const RESPONSES_ENCRYPTED_INTER_AGENT_MESSAGE_ACTIONS = [
+  'spawn_agent',
+  'send_message',
+  'followup_task',
+] as const satisfies readonly ResponsesMultiAgentAction[];
+
 export interface ResponsesInputMultiAgentCallItem {
   type: 'multi_agent_call';
   action: ResponsesMultiAgentAction;

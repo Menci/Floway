@@ -1,4 +1,4 @@
-import type { ResponsesInputItem, ResponsesOutputItem, ResponsesToolOutputContent } from '@floway-dev/protocols/responses';
+import { RESPONSES_ENCRYPTED_INTER_AGENT_MESSAGE_ACTIONS, type ResponsesInputItem, type ResponsesOutputItem, type ResponsesToolOutputContent } from '@floway-dev/protocols/responses';
 
 type ResponsesItem = ResponsesInputItem | ResponsesOutputItem;
 
@@ -6,11 +6,12 @@ export interface ResponsesOpaqueLocation {
   readonly key: string;
   readonly value: string;
   readonly domain: string;
+  readonly legacyDomains?: readonly string[];
   readonly required: boolean;
 }
 
 export const INTER_AGENT_MESSAGE_DOMAIN = 'responses.inter-agent-message.encrypted-content';
-const MESSAGE_ACTIONS = new Set(['spawn_agent', 'send_message', 'followup_task']);
+const MESSAGE_ACTIONS = new Set<string>(RESPONSES_ENCRYPTED_INTER_AGENT_MESSAGE_ACTIONS);
 
 const canonicalItemType = (itemType: string): string =>
   itemType === 'compaction_summary' ? 'compaction' : itemType;
@@ -90,6 +91,7 @@ export const responsesOpaqueLocations = (item: ResponsesItem): ResponsesOpaqueLo
           key: `content.${index}.encrypted_content`,
           value: content.encrypted_content,
           domain: INTER_AGENT_MESSAGE_DOMAIN,
+          legacyDomains: [responsesCarrierDomain(item.type, `content.${index}.encrypted_content`)],
           required: true,
         });
       }

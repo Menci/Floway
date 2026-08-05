@@ -843,6 +843,40 @@ test('flattened namespace tool calls recover their source Responses name', () =>
   assertEquals(item.arguments, '{"search_query":[]}');
 });
 
+test('translated collaboration messages are explicitly plaintext', () => {
+  const state = createMessagesToResponsesStreamState(
+    'resp_test',
+    'claude-test',
+    new Set(),
+    new Map([['collaboration_spawn_agent', { namespace: 'collaboration', name: 'spawn_agent' }]]),
+  );
+
+  translateMessagesEventToResponsesEvents(
+    {
+      type: 'content_block_start',
+      index: 0,
+      content_block: { type: 'tool_use', id: 'toolu_spawn', name: 'collaboration_spawn_agent', input: {} },
+    } as MessagesStreamEvent,
+    state,
+  );
+  translateMessagesEventToResponsesEvents(
+    {
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'input_json_delta', partial_json: '{"task_name":"worker","message":"plain"}' },
+    } as MessagesStreamEvent,
+    state,
+  );
+  translateMessagesEventToResponsesEvents({ type: 'content_block_stop', index: 0 } as MessagesStreamEvent, state);
+
+  expect(state.completedItems[0]).toMatchObject({
+    type: 'function_call',
+    namespace: 'collaboration',
+    name: 'spawn_agent',
+    encrypted_function_args: [],
+  });
+});
+
 // ── speed / service_tier pass-through ──
 
 test('Anthropic speed:fast maps to service_tier:fast on the Responses result', () => {

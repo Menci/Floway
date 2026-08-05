@@ -17,7 +17,7 @@ const modelCandidate = (upstream: string) => {
   const base = stubModelCandidate();
   return stubModelCandidate({
     provider: { ...base.provider, upstreamId: upstream },
-    model: { id: 'model-a' },
+    model: { ...base.model, id: 'model-a', endpoints: { responses: {} } },
   });
 };
 
@@ -146,7 +146,7 @@ test('inter-agent ciphertext carries one mandatory target from parent function c
 
   for (const replay of [parentReplay, childReplay]) {
     expect(replay.requiredTargets).toEqual([]);
-    expect(replay.requiredUpstreamIds).toEqual([candidateA.provider.upstreamId]);
+    expect(replay.requiredNativeResponsesUpstreamIds).toEqual([candidateA.provider.upstreamId]);
     expect(replay.evaluateCandidate(candidateB)).toEqual({ kind: 'rejected' });
   }
   const parentInput = parentReplay.evaluateCandidate(candidateA);

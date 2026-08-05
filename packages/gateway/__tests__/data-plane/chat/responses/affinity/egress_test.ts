@@ -50,12 +50,13 @@ describe('Responses affinity egress', () => {
     };
     const output: ResponsesStreamEvent[] = [];
     for await (const frame of wrapResponsesAffinityEgress(frames([
-      eventFrame({ type: 'response.output_item.added', output_index: 0, item: added }),
-      eventFrame({ type: 'response.function_call_arguments.delta', item_id: 'fc_1', output_index: 0, delta: argumentsJson.slice(0, 20) }),
-      eventFrame({ type: 'response.function_call_arguments.delta', item_id: 'fc_1', output_index: 0, delta: argumentsJson.slice(20) }),
-      eventFrame({ type: 'response.function_call_arguments.done', item_id: 'fc_1', output_index: 0, arguments: argumentsJson }),
-      eventFrame({ type: 'response.output_item.done', output_index: 0, item }),
-      eventFrame({ type: 'response.completed', response: response([item]) }),
+      eventFrame({ type: 'response.output_item.added', output_index: 0, item: added, sequence_number: 0 }),
+      eventFrame({ type: 'response.function_call_arguments.delta', item_id: 'fc_1', output_index: 0, delta: argumentsJson.slice(0, 20), sequence_number: 1 } as ResponsesStreamEvent),
+      eventFrame({ type: 'response.reasoning_summary_text.delta', item_id: 'rs_2', output_index: 1, summary_index: 0, delta: 'interleaved', sequence_number: 2 }),
+      eventFrame({ type: 'response.function_call_arguments.delta', item_id: 'fc_1', output_index: 0, delta: argumentsJson.slice(20), sequence_number: 3 } as ResponsesStreamEvent),
+      eventFrame({ type: 'response.function_call_arguments.done', item_id: 'fc_1', output_index: 0, arguments: argumentsJson, sequence_number: 4 } as ResponsesStreamEvent),
+      eventFrame({ type: 'response.output_item.done', output_index: 0, item, sequence_number: 5 }),
+      eventFrame({ type: 'response.completed', response: response([item]), sequence_number: 6 }),
     ]), { codec, affinity })) {
       if (frame.type === 'event') output.push(frame.event);
     }
@@ -79,6 +80,42 @@ describe('Responses affinity egress', () => {
       value: 'gAAAA-ciphertext',
       domain: 'responses.inter-agent-message.encrypted-content',
     }]);
+    expect(output.map(event => event.sequence_number)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+  });
+
+  test('preserves global order while two encrypted collaboration calls stream concurrently', async () => {
+    const call = (id: string, action: 'send_message' | 'followup_task', message: string) => ({
+      type: 'function_call' as const,
+      id,
+      call_id: `call_${id}`,
+      namespace: 'collaboration',
+      name: action,
+      arguments: JSON.stringify({ target: '/root/worker', message }),
+      status: 'completed' as const,
+    });
+    const first = call('fc_1', 'send_message', 'cipher-one');
+    const second = call('fc_2', 'followup_task', 'cipher-two');
+    const output: ResponsesStreamEvent[] = [];
+    for await (const frame of wrapResponsesAffinityEgress(frames([
+      eventFrame({ type: 'response.output_item.added', output_index: 0, item: { ...first, arguments: '', status: 'in_progress' }, sequence_number: 0 }),
+      eventFrame({ type: 'response.function_call_arguments.delta', item_id: first.id, output_index: 0, delta: first.arguments, sequence_number: 1 } as ResponsesStreamEvent),
+      eventFrame({ type: 'response.output_item.added', output_index: 1, item: { ...second, arguments: '', status: 'in_progress' }, sequence_number: 2 }),
+      eventFrame({ type: 'response.function_call_arguments.delta', item_id: second.id, output_index: 1, delta: second.arguments, sequence_number: 3 } as ResponsesStreamEvent),
+      eventFrame({ type: 'response.function_call_arguments.done', item_id: first.id, output_index: 0, arguments: first.arguments, sequence_number: 4 } as ResponsesStreamEvent),
+      eventFrame({ type: 'response.function_call_arguments.done', item_id: second.id, output_index: 1, arguments: second.arguments, sequence_number: 5 } as ResponsesStreamEvent),
+      eventFrame({ type: 'response.output_item.done', output_index: 0, item: first, sequence_number: 6 }),
+      eventFrame({ type: 'response.output_item.done', output_index: 1, item: second, sequence_number: 7 }),
+      eventFrame({ type: 'response.completed', response: response([first, second]), sequence_number: 8 }),
+    ]), { codec: immediateCodec, affinity })) {
+      if (frame.type === 'event') output.push(frame.event);
+    }
+
+    expect(output.map(event => event.sequence_number)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    const doneArguments = output
+      .filter((event): event is Extract<ResponsesStreamEvent, { type: 'response.function_call_arguments.done' }> =>
+        event.type === 'response.function_call_arguments.done')
+      .map(event => JSON.parse(event.arguments).message);
+    expect(doneArguments).toEqual(['wrapped:cipher-one', 'wrapped:cipher-two']);
   });
 
   test('does not rewrite a collaboration call whose encrypted argument list is explicitly empty', async () => {
@@ -103,6 +140,28 @@ describe('Responses affinity egress', () => {
     if (terminal?.type !== 'response.completed') throw new Error('Expected completed response');
     expect(terminal.response.output.find(outputItem => outputItem.type === 'function_call')).toEqual(item);
   });
+
+  test.each(['not json', '{}', '{"message":42}'])(
+    'rejects an encrypted collaboration call without a string message: %s',
+    async argumentsJson => {
+      const item = {
+        type: 'function_call' as const,
+        id: 'fc_invalid',
+        call_id: 'call_invalid',
+        namespace: 'collaboration',
+        name: 'spawn_agent',
+        arguments: argumentsJson,
+        status: 'completed' as const,
+      };
+      const output = wrapResponsesAffinityEgress(frames([
+        eventFrame({ type: 'response.completed', response: response([item]) }),
+      ]), { codec: immediateCodec, affinity });
+
+      await expect(async () => {
+        for await (const _frame of output) { /* consume */ }
+      }).rejects.toThrow('Encrypted collaboration call has no string message argument');
+    },
+  );
 
   test.each(['function_call_output', 'custom_tool_call_output'] as const)(
     'wraps encrypted content nested in %s',

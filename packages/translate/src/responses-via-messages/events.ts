@@ -19,9 +19,13 @@ import type {
   MessagesTextCitation,
   MessagesUsageSnapshot,
 } from '@floway-dev/protocols/messages';
-import { createRandomResponsesItemId, type ResponsesAnnotation, type ResponsesOutputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { createRandomResponsesItemId, RESPONSES_ENCRYPTED_INTER_AGENT_MESSAGE_ACTIONS, type ResponsesAnnotation, type ResponsesOutputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const UPSTREAM_MESSAGES_MISSING_TERMINAL_MESSAGE = 'Upstream Messages stream ended without a message_stop event.';
+const ENCRYPTED_INTER_AGENT_MESSAGE_ACTIONS = new Set<string>(RESPONSES_ENCRYPTED_INTER_AGENT_MESSAGE_ACTIONS);
+
+const plaintextEncryptedFunctionArgs = (namespace: string | undefined, name: string): [] | undefined =>
+  namespace === 'collaboration' && ENCRYPTED_INTER_AGENT_MESSAGE_ACTIONS.has(name) ? [] : undefined;
 
 const upstreamMessagesEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>): AsyncGenerator<MessagesStreamEvent> {
   for await (const frame of frames) {
@@ -216,7 +220,15 @@ const handleContentBlockStart = (event: MessagesContentBlockStartEvent, state: M
     };
     state.blockMap.set(event.index, info);
 
-    return responses.itemAdded(state, outputIndex, responses.functionCallItem(info.itemId, info.toolCallId, info.toolName, info.toolArguments, 'in_progress', info.toolNamespace));
+    return responses.itemAdded(state, outputIndex, responses.functionCallItem(
+      info.itemId,
+      info.toolCallId,
+      info.toolName,
+      info.toolArguments,
+      'in_progress',
+      info.toolNamespace,
+      plaintextEncryptedFunctionArgs(info.toolNamespace, info.toolName),
+    ));
   }
   case 'fallback':
     state.model = event.content_block.to.model;
@@ -358,7 +370,15 @@ const handleContentBlockStop = (event: MessagesContentBlockStopEvent, state: Mes
     return responses.customToolCallDone(state, info.outputIndex, info.itemId, input, item);
   }
 
-  const item = responses.functionCallItem(info.itemId, info.toolCallId, info.toolName, info.toolArguments, 'completed', info.toolNamespace);
+  const item = responses.functionCallItem(
+    info.itemId,
+    info.toolCallId,
+    info.toolName,
+    info.toolArguments,
+    'completed',
+    info.toolNamespace,
+    plaintextEncryptedFunctionArgs(info.toolNamespace, info.toolName),
+  );
 
   state.completedItems.push(item);
 

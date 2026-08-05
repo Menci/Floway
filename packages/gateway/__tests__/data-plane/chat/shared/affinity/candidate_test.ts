@@ -8,7 +8,7 @@ import {
   defineAffinityRequest,
   projectOptionalAffinityBlob,
   projectRequiredAffinityBlob,
-  projectUpstreamAffinityBlob,
+  projectNativeResponsesUpstreamAffinityBlob,
   selectAffinityCandidates,
 } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import type { AliasRules } from '@floway-dev/protocols/common';
@@ -19,7 +19,7 @@ const candidate = (upstreamId: string, model: string, rules?: AliasRules) => {
   const base = stubModelCandidate();
   const value = stubModelCandidate({
     provider: { ...base.provider, upstreamId },
-    model: { id: model },
+    model: { ...base.model, id: model, endpoints: { responses: {} } },
   });
   return rules === undefined ? value : { ...value, rules };
 };
@@ -130,12 +130,13 @@ describe('client-carried affinity candidate selection', () => {
     const producer = candidate('up-a', 'model-a');
     const consumer = candidate('up-a', 'model-b');
     const other = candidate('up-b', 'model-b');
+    const translated = { ...consumer, model: { ...consumer.model, endpoints: { messages: {} } } };
     const analysis = defineAffinityRequest([], value =>
-      value.provider.upstreamId === 'up-a'
+      value.provider.upstreamId === 'up-a' && value.model.endpoints.responses !== undefined
         ? { kind: 'accepted', degrades: false, materialize: () => undefined }
         : { kind: 'rejected' }, ['up-a']);
 
-    expect(selectedCandidates([other, consumer, producer], analysis)).toEqual([consumer, producer]);
+    expect(selectedCandidates([other, translated, consumer, producer], analysis)).toEqual([consumer, producer]);
   });
 
   test('fails unavailable and conflicting required affinity', () => {
@@ -173,7 +174,7 @@ describe('affinity blob projection', () => {
     const foreign = { kind: 'foreign', value: 'opaque' } as const;
     expect(projectOptionalAffinityBlob(foreign, other)).toEqual({ kind: 'preserve', value: 'opaque' });
     expect(projectRequiredAffinityBlob(foreign, other)).toEqual({ kind: 'preserve', value: 'opaque' });
-    expect(projectUpstreamAffinityBlob(foreign, other)).toEqual({ kind: 'preserve', value: 'opaque' });
+    expect(projectNativeResponsesUpstreamAffinityBlob(foreign, other)).toEqual({ kind: 'preserve', value: 'opaque' });
   });
 
   test('removes originless metadata without degradation', () => {
@@ -198,7 +199,9 @@ describe('affinity blob projection', () => {
   test('upstream-scoped state survives a model change but rejects another upstream', () => {
     const natural = ownedBlob(targetFor(exact), 'opaque');
     const otherModel = candidate('up-a', 'other-model');
-    expect(projectUpstreamAffinityBlob(natural, otherModel)).toEqual({ kind: 'preserve', value: 'opaque' });
-    expect(projectUpstreamAffinityBlob(natural, other)).toEqual({ kind: 'reject', requiredTarget: targetFor(exact) });
+    const translated = { ...otherModel, model: { ...otherModel.model, endpoints: { messages: {} } } };
+    expect(projectNativeResponsesUpstreamAffinityBlob(natural, otherModel)).toEqual({ kind: 'preserve', value: 'opaque' });
+    expect(projectNativeResponsesUpstreamAffinityBlob(natural, translated)).toEqual({ kind: 'reject', requiredTarget: targetFor(exact) });
+    expect(projectNativeResponsesUpstreamAffinityBlob(natural, other)).toEqual({ kind: 'reject', requiredTarget: targetFor(exact) });
   });
 });

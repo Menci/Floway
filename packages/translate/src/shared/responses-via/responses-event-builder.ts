@@ -151,12 +151,14 @@ export const functionCallItem = (
   args: string,
   status: ResponsesOutputFunctionCall['status'],
   namespace?: string,
+  encryptedFunctionArgs?: string[] | null,
 ): ResponsesOutputFunctionCall => ({
   type: 'function_call',
   id,
   call_id: callId,
   name,
   ...(namespace !== undefined ? { namespace } : {}),
+  ...(encryptedFunctionArgs !== undefined ? { encrypted_function_args: encryptedFunctionArgs } : {}),
   arguments: args,
   status,
 });

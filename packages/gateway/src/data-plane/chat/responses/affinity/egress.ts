@@ -8,10 +8,7 @@ const wrapNaturalResponsesAffinity = async function* (
   options: AffinityEgressOptions,
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
   const wrapped = new Map<string, Promise<string>>();
-  const streamedInterAgentCalls = new Map<number, {
-    readonly item: Extract<ResponsesOutputItem, { type: 'function_call' }>;
-    readonly deltas: Array<Extract<ResponsesStreamEvent, { type: 'response.function_call_arguments.delta' }>>;
-  }>();
+  const streamedInterAgentCalls = new Map<number, Extract<ResponsesOutputItem, { type: 'function_call' }>>();
 
   const wrapItem = async (item: ResponsesOutputItem, outputIndex: number): Promise<ResponsesOutputItem> => {
     const replacements = new Map<string, string>();
@@ -46,35 +43,29 @@ const wrapNaturalResponsesAffinity = async function* (
     output: await Promise.all(response.output.map(async (item, index) => await wrapItem(item, index))),
   });
 
-  for await (const frame of frames) {
+  const wrapArguments = async (outputIndex: number, argumentsJson: string): Promise<string> => {
+    const item = streamedInterAgentCalls.get(outputIndex);
+    if (item === undefined) return argumentsJson;
+    const wrappedItem = await wrapItem({ ...item, arguments: argumentsJson }, outputIndex);
+    if (wrappedItem.type !== 'function_call') throw new TypeError('Wrapped inter-agent call changed item type');
+    return wrappedItem.arguments;
+  };
+
+  const transformFrame = async function* (
+    frame: ProtocolFrame<ResponsesStreamEvent>,
+  ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
     if (frame.type !== 'event') {
       yield frame;
-      continue;
+      return;
     }
     const event = frame.event;
-    if (event.type === 'response.output_item.added' && event.item.type === 'function_call' && isEncryptedInterAgentCall(event.item)) {
-      streamedInterAgentCalls.set(event.output_index, { item: event.item, deltas: [] });
-    }
-    if (event.type === 'response.function_call_arguments.delta') {
-      const call = streamedInterAgentCalls.get(event.output_index);
-      if (call !== undefined) {
-        call.deltas.push(event);
-        continue;
-      }
-    }
-    if (event.type === 'response.function_call_arguments.done') {
-      const call = streamedInterAgentCalls.get(event.output_index);
-      if (call !== undefined) {
-        const item = await wrapItem({ ...call.item, arguments: event.arguments }, event.output_index);
-        if (item.type !== 'function_call') throw new TypeError('Wrapped inter-agent call changed item type');
-        for (const delta of rewrittenDeltas(call.deltas, item.arguments)) yield eventFrame(delta);
-        yield eventFrame({ ...event, arguments: item.arguments });
-        continue;
-      }
+    if (event.type === 'response.function_call_arguments.done' && streamedInterAgentCalls.has(event.output_index)) {
+      yield eventFrame({ ...event, arguments: await wrapArguments(event.output_index, event.arguments) });
+      return;
     }
     if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') {
       yield eventFrame({ ...event, item: await wrapItem(event.item, event.output_index) });
-      continue;
+      return;
     }
     if (
       event.type === 'response.queued'
@@ -85,11 +76,82 @@ const wrapNaturalResponsesAffinity = async function* (
       || event.type === 'response.failed'
     ) {
       yield eventFrame({ ...event, response: await wrapResult(event.response) });
-      if (event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed') return;
-      continue;
+      return;
     }
     yield frame;
-    if (event.type === 'error') return;
+  };
+
+  let pending: {
+    readonly frames: ProtocolFrame<ResponsesStreamEvent>[];
+    readonly blocked: Set<number>;
+    readonly argumentsByIndex: Map<number, string>;
+  } | undefined;
+  const endsStream = (frame: ProtocolFrame<ResponsesStreamEvent>): boolean =>
+    frame.type === 'event'
+    && ['response.completed', 'response.incomplete', 'response.failed', 'error'].includes(frame.event.type);
+
+  for await (const frame of frames) {
+    const event = frame.type === 'event' ? frame.event : undefined;
+    if (event?.type === 'response.output_item.added' && event.item.type === 'function_call' && isEncryptedInterAgentCall(event.item)) {
+      streamedInterAgentCalls.set(event.output_index, event.item);
+    }
+
+    const encryptedDelta = event?.type === 'response.function_call_arguments.delta'
+      && streamedInterAgentCalls.has(event.output_index);
+    if (pending !== undefined || encryptedDelta) {
+      pending ??= { frames: [], blocked: new Set(), argumentsByIndex: new Map() };
+      pending.frames.push(frame);
+      if (encryptedDelta && event !== undefined && 'output_index' in event) pending.blocked.add(event.output_index);
+      if (event?.type === 'response.function_call_arguments.done' && streamedInterAgentCalls.has(event.output_index)) {
+        pending.argumentsByIndex.set(event.output_index, await wrapArguments(event.output_index, event.arguments));
+        pending.blocked.delete(event.output_index);
+      }
+      if (pending.blocked.size > 0) continue;
+
+      const ready = pending;
+      pending = undefined;
+      const rewrittenByIndex = new Map<number, ReturnType<typeof rewrittenDeltas>>();
+      for (const [outputIndex, argumentsJson] of ready.argumentsByIndex) {
+        const deltas = ready.frames.flatMap(queued =>
+          queued.type === 'event'
+          && queued.event.type === 'response.function_call_arguments.delta'
+          && queued.event.output_index === outputIndex
+            ? [queued.event]
+            : []);
+        rewrittenByIndex.set(outputIndex, rewrittenDeltas(deltas, argumentsJson));
+      }
+      const deltaOffsets = new Map<number, number>();
+      for (const queued of ready.frames) {
+        let rewritten = queued;
+        let transformedPayload = false;
+        if (queued.type === 'event' && queued.event.type === 'response.function_call_arguments.delta') {
+          const deltas = rewrittenByIndex.get(queued.event.output_index);
+          if (deltas !== undefined) {
+            const offset = deltaOffsets.get(queued.event.output_index) ?? 0;
+            rewritten = eventFrame(deltas[offset]!);
+            deltaOffsets.set(queued.event.output_index, offset + 1);
+            transformedPayload = true;
+          }
+        } else if (queued.type === 'event' && queued.event.type === 'response.function_call_arguments.done') {
+          const argumentsJson = ready.argumentsByIndex.get(queued.event.output_index);
+          if (argumentsJson !== undefined) {
+            rewritten = eventFrame({ ...queued.event, arguments: argumentsJson });
+            transformedPayload = true;
+          }
+        }
+        if (transformedPayload) yield rewritten;
+        else yield* transformFrame(rewritten);
+        if (endsStream(rewritten)) return;
+      }
+      continue;
+    }
+
+    yield* transformFrame(frame);
+    if (endsStream(frame)) return;
+  }
+
+  if (pending !== undefined) {
+    for (const frame of pending.frames) yield* transformFrame(frame);
   }
 };
 
@@ -127,6 +189,9 @@ const wrapResponsesFirstCarrier = async function* (
 
   const ensureItemCarrier = async (item: ResponsesOutputItem, outputIndex: number): Promise<ResponsesOutputItem> => {
     if (responsesOpaqueLocations(item).length > 0) return item;
+    if (isEncryptedInterAgentCall(item)) {
+      throw new TypeError('Encrypted collaboration call has no string message argument');
+    }
     if (!canCarryAffinity(item)) throw new Error(`Responses item type ${item.type} cannot carry affinity`);
 
     if (item.type === 'program') {

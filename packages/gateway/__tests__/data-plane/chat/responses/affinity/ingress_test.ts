@@ -16,7 +16,7 @@ const candidate = (upstream: string): ModelCandidate => {
   const base = stubModelCandidate();
   return stubModelCandidate({
     provider: { ...base.provider, upstreamId: upstream },
-    model: { id: 'model' },
+    model: { ...base.model, id: 'model', endpoints: { responses: {} } },
   });
 };
 
@@ -80,6 +80,11 @@ test('forces nested agent-message ciphertext to its producer and preserves forei
     targetFor(candidateA),
     INTER_AGENT_MESSAGE_DOMAIN,
   );
+  const legacy = await codec.wrap(
+    'legacy',
+    targetFor(candidateA),
+    carrierDomain('agent_message', 'content.1.encrypted_content'),
+  );
   const prepared = await analyzeResponsesAffinity({
     model: 'model',
     input: [{
@@ -89,6 +94,7 @@ test('forces nested agent-message ciphertext to its producer and preserves forei
       recipient: 'b',
       content: [
         { type: 'encrypted_content', encrypted_content: first },
+        { type: 'encrypted_content', encrypted_content: legacy },
         { type: 'encrypted_content', encrypted_content: synthetic },
         { type: 'encrypted_content', encrypted_content: 'foreign' },
         { type: 'input_text', text: 'visible' },
@@ -98,11 +104,12 @@ test('forces nested agent-message ciphertext to its producer and preserves forei
 
   const projectionA = acceptedAffinityEvaluation(prepared, candidateA);
   expect(prepared.requiredTargets).toEqual([]);
-  expect(prepared.requiredUpstreamIds).toEqual([candidateA.provider.upstreamId]);
+  expect(prepared.requiredNativeResponsesUpstreamIds).toEqual([candidateA.provider.upstreamId]);
   expect(projectionA.materialize().input[0]).toMatchObject({
     id: 'amsg_client',
     content: [
       { type: 'encrypted_content', encrypted_content: 'first' },
+      { type: 'encrypted_content', encrypted_content: 'legacy' },
       { type: 'encrypted_content', encrypted_content: 'foreign' },
       { type: 'input_text', text: 'visible' },
     ],
@@ -143,7 +150,7 @@ test.each([
   }, codec);
 
   expect(prepared.requiredTargets).toEqual([]);
-  expect(prepared.requiredUpstreamIds).toEqual([candidateA.provider.upstreamId]);
+  expect(prepared.requiredNativeResponsesUpstreamIds).toEqual([candidateA.provider.upstreamId]);
   expect(prepared.evaluateCandidate(candidateB)).toEqual({ kind: 'rejected' });
   const sameUpstreamOtherModel = { ...candidateA, model: { ...candidateA.model, id: 'child-model' } };
   expect(prepared.evaluateCandidate(sameUpstreamOtherModel)).toMatchObject({ kind: 'accepted', degrades: false });
@@ -169,6 +176,28 @@ test('leaves explicitly plaintext collaboration arguments outside affinity', asy
   expect(acceptedAffinityEvaluation(prepared, candidateB).materialize().input).toEqual([item]);
 });
 
+test.each([null, ['message'], ['target']] as const)(
+  'treats encrypted_function_args=%j as encrypted collaboration mode',
+  async encryptedFunctionArgs => {
+    const encrypted = await codec.wrap('opaque', targetFor(candidateA), INTER_AGENT_MESSAGE_DOMAIN);
+    const prepared = await analyzeResponsesAffinity({
+      model: 'model',
+      input: [{
+        type: 'function_call',
+        id: 'fc_1',
+        call_id: 'call_1',
+        namespace: 'collaboration',
+        name: 'send_message',
+        arguments: JSON.stringify({ target: '/root/worker', message: encrypted }),
+        encrypted_function_args: encryptedFunctionArgs === null ? null : [...encryptedFunctionArgs],
+        status: 'completed',
+      }],
+    }, codec);
+
+    expect(prepared.requiredNativeResponsesUpstreamIds).toEqual([candidateA.provider.upstreamId]);
+  },
+);
+
 test.each(['function_call_output', 'custom_tool_call_output'] as const)(
   'forces encrypted content nested in %s to its producer',
   async type => {
@@ -188,7 +217,7 @@ test.each(['function_call_output', 'custom_tool_call_output'] as const)(
     }, codec);
 
     expect(prepared.requiredTargets).toEqual([]);
-    expect(prepared.requiredUpstreamIds).toEqual([candidateA.provider.upstreamId]);
+    expect(prepared.requiredNativeResponsesUpstreamIds).toEqual([candidateA.provider.upstreamId]);
     expect(prepared.evaluateCandidate(candidateB)).toEqual({ kind: 'rejected' });
     expect(acceptedAffinityEvaluation(prepared, candidateA).materialize().input[0]).toMatchObject({
       output: [

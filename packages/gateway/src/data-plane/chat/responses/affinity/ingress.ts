@@ -8,7 +8,7 @@ import {
   type OptionalAffinityBlobProjection,
   projectOptionalAffinityBlob,
   projectRequiredAffinityBlob,
-  projectUpstreamAffinityBlob,
+  projectNativeResponsesUpstreamAffinityBlob,
 } from '../../shared/affinity/index.ts';
 import { replaceResponsesOpaqueLocations, responsesOpaqueLocations, type ResponsesOpaqueLocation } from './opaque-locations.ts';
 import type { CanonicalResponsesPayload, ResponsesInputItem } from '@floway-dev/protocols/responses';
@@ -32,7 +32,7 @@ interface ResponsesItemAnalysis {
 
 interface ResponsesRequestAnalysis {
   readonly requiredTargets: readonly AffinityTarget[];
-  readonly requiredUpstreamIds: readonly string[];
+  readonly requiredNativeResponsesUpstreamIds: readonly string[];
   readonly items: readonly ResponsesItemAnalysis[];
 }
 
@@ -60,10 +60,15 @@ const opaqueBlobLocations = async (
   const locations: ResponsesBlobLocation[] = [];
   for (const [itemIndex, item] of items.entries()) {
     for (const location of responsesOpaqueLocations(item)) {
+      let decoded = await codec.unwrap(location.value, location.domain);
+      for (const legacyDomain of location.legacyDomains ?? []) {
+        if (decoded.kind === 'owned') break;
+        decoded = await codec.unwrap(location.value, legacyDomain);
+      }
       locations.push({
         ...location,
         itemIndex,
-        decoded: await codec.unwrap(location.value, location.domain),
+        decoded,
       });
     }
   }
@@ -76,7 +81,7 @@ const analyzeResponsesRequest = (
 ): ResponsesRequestAnalysis => {
   const locationsByItem = Map.groupBy(locations, location => location.itemIndex);
   const requiredTargets: AffinityTarget[] = [];
-  const requiredUpstreamIds: string[] = [];
+  const requiredNativeResponsesUpstreamIds: string[] = [];
   const itemAnalyses: ResponsesItemAnalysis[] = [];
   let latestOwnedTarget: AffinityTarget | undefined;
 
@@ -87,7 +92,7 @@ const analyzeResponsesRequest = (
       if (location.decoded.kind === 'owned') {
         latestOwnedTarget = location.decoded.affinity;
         if (requirement === 'target') requiredTargets.push(latestOwnedTarget);
-        if (requirement === 'upstream') requiredUpstreamIds.push(latestOwnedTarget.upstreamId);
+        if (requirement === 'upstream') requiredNativeResponsesUpstreamIds.push(latestOwnedTarget.upstreamId);
       }
       return { ...location, requirement };
     });
@@ -106,7 +111,7 @@ const analyzeResponsesRequest = (
     });
   }
 
-  return { requiredTargets, requiredUpstreamIds, items: itemAnalyses };
+  return { requiredTargets, requiredNativeResponsesUpstreamIds, items: itemAnalyses };
 };
 
 const materializeResponsesPayload = (
@@ -148,7 +153,7 @@ const evaluateResponsesCandidate = (
       const projection = blob.requirement === 'target'
         ? projectRequiredAffinityBlob(blob.decoded, candidate)
         : blob.requirement === 'upstream'
-          ? projectUpstreamAffinityBlob(blob.decoded, candidate)
+          ? projectNativeResponsesUpstreamAffinityBlob(blob.decoded, candidate)
           : projectOptionalAffinityBlob(blob.decoded, candidate);
       if (projection.kind === 'reject') {
         unsatisfiedTargets.push(projection.requiredTarget);
@@ -181,6 +186,6 @@ export const analyzeResponsesAffinity = async (
   return defineAffinityRequest(
     analysis.requiredTargets,
     candidate => evaluateResponsesCandidate(payload, analysis, candidate),
-    analysis.requiredUpstreamIds,
+    analysis.requiredNativeResponsesUpstreamIds,
   );
 };
