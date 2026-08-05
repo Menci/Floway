@@ -1,5 +1,5 @@
 import { partitionTelemetryOverviewRecords } from '../../src/control-plane/shared/telemetry-overview.ts';
-import { aggregateUsageForOverview, usageUserIdForKey } from '../../src/control-plane/token-usage/aggregate.ts';
+import { usageUserIdForKey } from '../../src/control-plane/token-usage/aggregate.ts';
 import { normalizeDisabledPublicModelIds } from '../../src/repo/disabled-public-models.ts';
 import { normalizeFlagOverrides } from '../../src/repo/flag-overrides.ts';
 import { normalizeProxyFallbackList } from '../../src/repo/proxy-fallback-list.ts';
@@ -51,7 +51,9 @@ import type {
   StoredResponsesSnapshot,
   UpstreamRepo,
   UsageRecord,
+  UsageOverviewAxis,
   UsageOverviewQueryOptions,
+  UsageOverviewRecord,
   UsageOverviewResult,
   UsageRepo,
   User,
@@ -62,7 +64,7 @@ import { usageMetricRows } from '../../src/repo/usage-metrics.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../../src/shared/performance-histogram.ts';
 import { assertWebSearchProviderName, type WebSearchConfig } from '../../src/shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
-import { addDecimalStrings, canonicalPricingSelectorKey, canonicalizePricingSelector, usageUpstreamDimensionValue, type BillingMetric, type DecimalString, type PricingSelector } from '@floway-dev/protocols/common';
+import { addDecimalStrings, canonicalPricingSelectorKey, canonicalizePricingSelector, multiplyDecimalStrings, usageUpstreamDimensionValue, type BillingMetric, type DecimalString, type PricingSelector } from '@floway-dev/protocols/common';
 import { UpstreamGoneError, type UpstreamModelsCache, type UpstreamRecord } from '@floway-dev/provider';
 
 const SEED_ADMIN_USER: User = {
@@ -312,6 +314,64 @@ interface UsageBucketState extends UsageBucketIdentity {
   requests: number;
 }
 
+const accumulateMemoryOverview = (aggregate: UsageOverviewRecord, record: UsageRecord) => {
+  aggregate.requests += record.requests;
+  for (const row of record.metrics) {
+    const metric = aggregate.metrics.find(candidate => candidate.metric === row.metric);
+    if (metric) metric.quantity = addDecimalStrings(metric.quantity, row.quantity);
+    else aggregate.metrics.push({ metric: row.metric, quantity: row.quantity });
+    if (row.unitPrice !== null) {
+      aggregate.cost = addDecimalStrings(
+        aggregate.cost ?? '0',
+        multiplyDecimalStrings(row.quantity, row.unitPrice),
+      );
+    }
+  }
+};
+
+const memoryOverviewGroup = (
+  record: UsageRecord,
+  axis: UsageOverviewAxis,
+  opts: UsageOverviewQueryOptions,
+): string => {
+  if (axis === 'none') return 'all';
+  const groupBy = axis === 'series' ? opts.groupBy : axis;
+  if (groupBy === 'userId') return String(usageUserIdForKey(record.keyId, opts.keyToUser));
+  if (groupBy === 'upstream') return usageUpstreamDimensionValue(record.upstream);
+  return record[groupBy];
+};
+
+const aggregateMemoryOverview = (
+  records: readonly UsageRecord[],
+  opts: UsageOverviewQueryOptions,
+  visibleKeyIds: ReadonlySet<string>,
+): Map<UsageOverviewAxis, UsageOverviewRecord[]> => {
+  const axes: UsageOverviewAxis[] = ['series', 'none', 'keyId', 'userId', 'model', 'upstream'];
+  const result = new Map<UsageOverviewAxis, UsageOverviewRecord[]>();
+  for (const axis of axes) {
+    if (axis === 'userId' && !opts.isAdmin) {
+      result.set(axis, []);
+      continue;
+    }
+    const aggregates = new Map<string, UsageOverviewRecord>();
+    for (const record of records) {
+      if (axis === 'keyId' && !visibleKeyIds.has(record.keyId)) continue;
+      const bucket = axis === 'series' ? opts.bucketForHour(record.hour) : 'all';
+      const group = memoryOverviewGroup(record, axis, opts);
+      const key = `${bucket}\0${group}`;
+      let aggregate = aggregates.get(key);
+      if (!aggregate) {
+        aggregate = { bucket, group, requests: 0, metrics: [], cost: null };
+        aggregates.set(key, aggregate);
+      }
+      accumulateMemoryOverview(aggregate, record);
+    }
+    result.set(axis, [...aggregates.values()]
+      .sort((left, right) => left.bucket.localeCompare(right.bucket) || left.group.localeCompare(right.group)));
+  }
+  return result;
+};
+
 class MemoryUsageRepo implements UsageRepo {
   private store = new Map<string, UsageBucketState>();
 
@@ -386,18 +446,16 @@ class MemoryUsageRepo implements UsageRepo {
       model: new Set(opts.filters.models),
       upstream: new Set(opts.filters.upstreams),
     });
-    const aggregateOptions = { bucket: 'all' as const, timezoneOffsetMinutes: 0 };
-    const { series, ...axes } = aggregateUsageForOverview(partitioned.filtered, {
-      series: { ...aggregateOptions, groupBy: opts.groupBy, bucketForHour: opts.bucketForHour },
-      none: { ...aggregateOptions, groupBy: 'none' },
-      keyId: { ...aggregateOptions, groupBy: 'keyId' },
-      userId: { ...aggregateOptions, groupBy: 'userId' },
-      model: { ...aggregateOptions, groupBy: 'model' },
-      upstream: { ...aggregateOptions, groupBy: 'upstream' },
-    }, opts.keyToUser, visibleKeyIds);
+    const aggregates = aggregateMemoryOverview(partitioned.filtered, opts, visibleKeyIds);
     return {
-      series,
-      axes: { ...axes, userId: opts.isAdmin ? axes.userId : [] },
+      series: aggregates.get('series')!,
+      axes: {
+        none: aggregates.get('none')!,
+        keyId: aggregates.get('keyId')!,
+        userId: aggregates.get('userId')!,
+        model: aggregates.get('model')!,
+        upstream: aggregates.get('upstream')!,
+      },
       dimensionValues: {
         keyIds: partitioned.dimensionValues.keyId,
         userIds: partitioned.dimensionValues.userId.map(Number).sort((left, right) => left - right),

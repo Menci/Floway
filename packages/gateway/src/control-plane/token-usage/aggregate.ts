@@ -1,6 +1,5 @@
-import type { UsageOverviewGroupBy, UsageOverviewRecord, UsageRecord } from '../../repo/types.ts';
-import { createTelemetryBucket, type TelemetryBucketGranularity } from '../shared/telemetry-bucket.ts';
-import { addDecimalStrings, multiplyDecimalStrings, tokenUsageUnattributedUserId, usageUpstreamDimensionValue, type BillingMetric, type DecimalString } from '@floway-dev/protocols/common';
+import type { UsageRecord } from '../../repo/types.ts';
+import { addDecimalStrings, multiplyDecimalStrings, tokenUsageUnattributedUserId, type BillingMetric, type DecimalString } from '@floway-dev/protocols/common';
 
 export interface DisplayUsageMetric {
   metric: BillingMetric;
@@ -25,14 +24,6 @@ export interface DisplayUsageByUserRecord {
   cost: DecimalString | null;
 }
 
-export interface UsageOverviewAggregateOptions {
-  bucket: TelemetryBucketGranularity;
-  groupBy: UsageOverviewGroupBy | 'none';
-  timeZone?: string;
-  timezoneOffsetMinutes: number;
-  bucketForHour?: (hour: string) => string;
-}
-
 const recordCostUsd = (record: UsageRecord): DecimalString | null => {
   let total: DecimalString = '0';
   let priced = false;
@@ -43,8 +34,6 @@ const recordCostUsd = (record: UsageRecord): DecimalString | null => {
   }
   return priced ? total : null;
 };
-
-export type { UsageOverviewGroupBy, UsageOverviewRecord } from '../../repo/types.ts';
 
 const accumulate = (
   bucket: { requests: number; cost: DecimalString | null; metrics: DisplayUsageMetric[] },
@@ -121,50 +110,3 @@ export function aggregateUsageByUserForDisplay(
     (left, right) => left.hour.localeCompare(right.hour) || left.userId - right.userId || left.model.localeCompare(right.model),
   );
 }
-
-const overviewGroup = (
-  record: UsageRecord,
-  groupBy: UsageOverviewAggregateOptions['groupBy'],
-  keyToUser: ReadonlyMap<string, number>,
-): string | null => {
-  if (groupBy === 'none') return 'all';
-  if (groupBy === 'userId') {
-    return String(usageUserIdForKey(record.keyId, keyToUser));
-  }
-  if (groupBy === 'upstream') return usageUpstreamDimensionValue(record.upstream);
-  return record[groupBy];
-};
-
-export const aggregateUsageForOverview = <K extends string>(
-  records: readonly UsageRecord[],
-  axes: Record<K, UsageOverviewAggregateOptions>,
-  keyToUser: ReadonlyMap<string, number>,
-  visibleKeyIds: ReadonlySet<string>,
-): Record<K, UsageOverviewRecord[]> => {
-  const entries = Object.entries(axes) as [K, UsageOverviewAggregateOptions][];
-  const maps = entries.map(() => new Map<string, UsageOverviewRecord>());
-  const bucketResolvers = entries.map(([, options]) => options.bucketForHour ?? createTelemetryBucket(options));
-  for (const record of records) {
-    for (let index = 0; index < entries.length; index++) {
-      const options = entries[index][1];
-      if (options.groupBy === 'keyId' && !visibleKeyIds.has(record.keyId)) continue;
-      const group = overviewGroup(record, options.groupBy, keyToUser);
-      if (group === null) continue;
-      const bucket = bucketResolvers[index](record.hour);
-      const key = `${bucket}\0${group}`;
-      let aggregate = maps[index].get(key);
-      if (!aggregate) {
-        aggregate = { bucket, group, requests: 0, metrics: [], cost: null };
-        maps[index].set(key, aggregate);
-      }
-      accumulate(aggregate, record);
-    }
-  }
-
-  const result = {} as Record<K, UsageOverviewRecord[]>;
-  for (let index = 0; index < entries.length; index++) {
-    result[entries[index][0]] = [...maps[index].values()]
-      .sort((left, right) => left.bucket.localeCompare(right.bucket) || left.group.localeCompare(right.group));
-  }
-  return result;
-};
