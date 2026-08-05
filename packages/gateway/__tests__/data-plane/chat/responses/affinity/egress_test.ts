@@ -150,7 +150,10 @@ describe('Responses affinity egress', () => {
       },
     };
     const reasoning: ResponsesOutputReasoning = { type: 'reasoning', id: 'rs_changed', summary: [] };
-    const compaction = { type: 'compaction', id: 'cmp_changed' } as ResponsesOutputItem;
+    const compaction = {
+      type: 'compaction',
+      id: 'cmp_changed',
+    } as unknown as Extract<ResponsesOutputItem, { type: 'compaction' }>;
     const output: ProtocolFrame<ResponsesStreamEvent>[] = [];
     for await (const frame of wrapResponsesAffinityEgress(frames([
       eventFrame({ type: 'response.output_item.done', output_index: 0, item: reasoning }),
