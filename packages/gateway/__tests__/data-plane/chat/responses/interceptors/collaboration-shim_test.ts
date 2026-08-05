@@ -233,7 +233,7 @@ test('keeps one plaintext projection across a multi-turn downstream loop', async
   const namespaces: string[] = [];
   const upstreamTurn = async (output?: ResponsesOutputFunctionCall) => {
     namespaces.push((ctx.payload.tools?.[0] as { name: string }).name);
-    return eventResult((async function* () {
+    return eventResult((async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
       if (output !== undefined) yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: output });
     })(), testTelemetryModelIdentity);
   };
